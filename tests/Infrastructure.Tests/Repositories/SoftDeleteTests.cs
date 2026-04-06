@@ -565,6 +565,55 @@ public class SoftDeleteTests
 	}
 
 	[Fact]
+	public async Task SoftDelete_YnabSyncRecord_AllowsReCreationAfterSoftDelete()
+	{
+		// Arrange
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		AccountEntity account = AccountEntityGenerator.Generate();
+		ReceiptEntity receipt = ReceiptEntityGenerator.Generate();
+		TransactionEntity transaction = TransactionEntityGenerator.Generate(receiptId: receipt.Id, accountId: account.Id);
+
+		using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			await context.Accounts.AddAsync(account);
+			await context.Receipts.AddAsync(receipt);
+			await context.Transactions.AddAsync(transaction);
+			YnabSyncRecordEntity syncRecord = YnabSyncRecordEntityGenerator.Generate(localTransactionId: transaction.Id);
+			await context.YnabSyncRecords.AddAsync(syncRecord);
+			await context.SaveChangesAsync();
+		}
+
+		// Act - soft-delete the sync record
+		using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			YnabSyncRecordEntity record = await context.YnabSyncRecords.FirstAsync();
+			context.YnabSyncRecords.Remove(record);
+			await context.SaveChangesAsync();
+		}
+
+		// Act - create a new sync record with the same (LocalTransactionId, SyncType) pair
+		YnabSyncRecordEntity newRecord = YnabSyncRecordEntityGenerator.Generate(localTransactionId: transaction.Id);
+		using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			await context.YnabSyncRecords.AddAsync(newRecord);
+			await context.SaveChangesAsync();
+		}
+
+		// Assert - both records should exist (one soft-deleted, one active)
+		using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			List<YnabSyncRecordEntity> allRecords = await context.YnabSyncRecords.IgnoreQueryFilters().ToListAsync();
+			allRecords.Should().HaveCount(2);
+
+			List<YnabSyncRecordEntity> activeRecords = await context.YnabSyncRecords.ToListAsync();
+			activeRecords.Should().HaveCount(1);
+			activeRecords[0].Id.Should().Be(newRecord.Id);
+		}
+
+		contextFactory.ResetDatabase();
+	}
+
+	[Fact]
 	public async Task SoftDelete_YnabSyncRecord_SetsDeletedAtOnDelete()
 	{
 		// Arrange

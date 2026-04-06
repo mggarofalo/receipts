@@ -20,6 +20,11 @@ public class TrashService(ApplicationDbContext context) : ITrashService
 			.Where(e => e.DeletedAt != null)
 			.ExecuteDeleteAsync(cancellationToken);
 
+		await context.YnabSyncRecords
+			.IgnoreQueryFilters()
+			.Where(e => e.DeletedAt != null)
+			.ExecuteDeleteAsync(cancellationToken);
+
 		await context.Transactions
 			.IgnoreQueryFilters()
 			.Where(e => e.DeletedAt != null)

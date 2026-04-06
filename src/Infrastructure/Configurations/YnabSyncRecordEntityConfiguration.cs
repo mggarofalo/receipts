@@ -18,7 +18,8 @@ public class YnabSyncRecordEntityConfiguration : IEntityTypeConfiguration<YnabSy
 			.HasMaxLength(2000);
 
 		builder.HasIndex(e => new { e.LocalTransactionId, e.SyncType })
-			.IsUnique();
+			.IsUnique()
+			.HasFilter("\"DeletedAt\" IS NULL");
 
 		builder.HasOne(e => e.Transaction)
 			.WithMany()
