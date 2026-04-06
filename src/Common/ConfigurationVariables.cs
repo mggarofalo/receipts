@@ -26,5 +26,7 @@ public static class ConfigurationVariables
 	public const string TessdataPath = "Ocr:TessdataPath";
 	public const string OcrTimeoutSeconds = "Ocr:TimeoutSeconds";
 	public const string OcrMaxImageBytes = "Ocr:MaxImageBytes";
+
+	public const string YnabPat = "YNAB_PAT";
 }
 

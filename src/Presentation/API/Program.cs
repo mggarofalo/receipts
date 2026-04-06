@@ -24,9 +24,16 @@ builder.WebHost.UseSentry(o =>
 	o.SendDefaultPii = false;
 });
 
-// Persist DataProtection keys to the /data volume so they survive container restarts
-builder.Services.AddDataProtection()
-	.PersistKeysToFileSystem(new DirectoryInfo("/data/DataProtection-Keys"));
+// Persist DataProtection keys: use /data volume in containers, default location in development
+if (Directory.Exists("/data"))
+{
+	builder.Services.AddDataProtection()
+		.PersistKeysToFileSystem(new DirectoryInfo("/data/DataProtection-Keys"));
+}
+else
+{
+	builder.Services.AddDataProtection();
+}
 
 // Register services
 builder.Services
@@ -53,6 +60,7 @@ app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseMiddleware<GlobalExceptionHandlerMiddleware>();
 app.UseOpenApiServices()
    .UseApplicationServices()
+   .UseOpenApiResponseValidation()
    .UseSentryTracing()
    .UseCorsServices()
    .UseAuthServices();

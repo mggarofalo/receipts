@@ -30,8 +30,8 @@ public partial class CleanUpInvalidCategories : Migration
 		// 1. Insert the "Uncategorized" seed category (EF Core HasData).
 		migrationBuilder.InsertData(
 			table: "Categories",
-			columns: new[] { "Id", "Description", "Name" },
-			values: new object[] { new Guid("f0e7a123-9b56-4d3a-8c1e-2a5b7d9f4e6c"), "Default category for items without a valid category", "Uncategorized" });
+			columns: ["Id", "Description", "Name"],
+			values: [new Guid("f0e7a123-9b56-4d3a-8c1e-2a5b7d9f4e6c"), "Default category for items without a valid category", "Uncategorized"]);
 
 		string validList = string.Join(", ", Array.ConvertAll(ValidCategoryNames, n => $"'{n.Replace("'", "''")}'"));
 
