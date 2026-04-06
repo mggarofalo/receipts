@@ -52,6 +52,83 @@ public class YnabSyncRecordService(IYnabSyncRecordRepository repository) : IYnab
 		await repository.UpdateAsync(entity, cancellationToken);
 	}
 
+	public async Task<List<ReceiptYnabSyncStatusDto>> GetSyncStatusesByReceiptIdsAsync(List<Guid> receiptIds, CancellationToken cancellationToken)
+	{
+		List<YnabSyncRecordEntity> syncRecords = await repository.GetByReceiptIdsAsync(receiptIds, cancellationToken);
+
+		Dictionary<Guid, List<YnabSyncRecordEntity>> recordsByReceipt = [];
+		foreach (YnabSyncRecordEntity record in syncRecords)
+		{
+			Guid receiptId = record.Transaction?.ReceiptId ?? Guid.Empty;
+			if (receiptId == Guid.Empty)
+			{
+				continue;
+			}
+
+			if (!recordsByReceipt.TryGetValue(receiptId, out List<YnabSyncRecordEntity>? records))
+			{
+				records = [];
+				recordsByReceipt[receiptId] = records;
+			}
+			records.Add(record);
+		}
+
+		List<ReceiptYnabSyncStatusDto> result = [];
+		foreach (Guid receiptId in receiptIds)
+		{
+			if (!recordsByReceipt.TryGetValue(receiptId, out List<YnabSyncRecordEntity>? records) || records.Count == 0)
+			{
+				result.Add(new ReceiptYnabSyncStatusDto(receiptId, ReceiptSyncStatusValue.NotSynced));
+				continue;
+			}
+
+			ReceiptSyncStatusValue aggregateStatus = AggregateStatus(records);
+			result.Add(new ReceiptYnabSyncStatusDto(receiptId, aggregateStatus));
+		}
+
+		return result;
+	}
+
+	private static ReceiptSyncStatusValue AggregateStatus(List<YnabSyncRecordEntity> records)
+	{
+		bool hasFailed = false;
+		bool hasPending = false;
+		bool hasSynced = false;
+
+		foreach (YnabSyncRecordEntity record in records)
+		{
+			switch (record.SyncStatus)
+			{
+				case YnabSyncStatus.Failed:
+					hasFailed = true;
+					break;
+				case YnabSyncStatus.Pending:
+					hasPending = true;
+					break;
+				case YnabSyncStatus.Synced:
+					hasSynced = true;
+					break;
+			}
+		}
+
+		if (hasFailed)
+		{
+			return ReceiptSyncStatusValue.Failed;
+		}
+
+		if (hasPending)
+		{
+			return ReceiptSyncStatusValue.Pending;
+		}
+
+		if (hasSynced)
+		{
+			return ReceiptSyncStatusValue.Synced;
+		}
+
+		return ReceiptSyncStatusValue.NotSynced;
+	}
+
 	private static YnabSyncRecordDto ToDto(YnabSyncRecordEntity entity) => new(
 		entity.Id,
 		entity.LocalTransactionId,

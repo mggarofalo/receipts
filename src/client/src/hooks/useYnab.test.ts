@@ -40,6 +40,7 @@ import {
   useMemoSyncSummary,
   usePushYnabTransactions,
   useBulkPushYnabTransactions,
+  useReceiptYnabSyncStatuses,
 } from "./useYnab";
 
 function createWrapper() {
@@ -656,6 +657,52 @@ describe("useYnab", () => {
         "Failed to push transactions to YNAB",
       );
     });
+  });
+
+  it("useReceiptYnabSyncStatuses returns status map on success", async () => {
+    const statuses = {
+      data: [
+        { receiptId: "r1", syncStatus: "Synced" },
+        { receiptId: "r2", syncStatus: "Failed" },
+        { receiptId: "r3", syncStatus: "NotSynced" },
+      ],
+    };
+    (client.GET as Mock).mockResolvedValue({ data: statuses, error: undefined });
+
+    const { result } = renderHook(
+      () => useReceiptYnabSyncStatuses(["r1", "r2", "r3"]),
+      { wrapper: createWrapper() },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.statusMap.get("r1")).toBe("Synced");
+    expect(result.current.statusMap.get("r2")).toBe("Failed");
+    expect(result.current.statusMap.get("r3")).toBe("NotSynced");
+    expect(client.GET).toHaveBeenCalledWith("/api/ynab/receipt-sync-statuses", {
+      params: { query: { receiptIds: ["r1", "r2", "r3"] } },
+    });
+  });
+
+  it("useReceiptYnabSyncStatuses returns empty map on error", async () => {
+    (client.GET as Mock).mockResolvedValue({ data: undefined, error: "Server error" });
+
+    const { result } = renderHook(
+      () => useReceiptYnabSyncStatuses(["r1"]),
+      { wrapper: createWrapper() },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.statusMap.size).toBe(0);
+  });
+
+  it("useReceiptYnabSyncStatuses is disabled when receiptIds is empty", () => {
+    const { result } = renderHook(
+      () => useReceiptYnabSyncStatuses([]),
+      { wrapper: createWrapper() },
+    );
+
+    expect(result.current.statusMap.size).toBe(0);
+    expect(client.GET).not.toHaveBeenCalledWith("/api/ynab/receipt-sync-statuses", expect.anything());
   });
 
   it("useBulkPushYnabTransactions calls POST and shows success toast", async () => {

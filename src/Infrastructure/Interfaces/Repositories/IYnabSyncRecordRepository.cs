@@ -10,4 +10,5 @@ public interface IYnabSyncRecordRepository
 	Task<YnabSyncRecordEntity?> GetByTransactionAndTypeAsync(Guid localTransactionId, YnabSyncType syncType, CancellationToken cancellationToken);
 	Task UpdateAsync(YnabSyncRecordEntity entity, CancellationToken cancellationToken);
 	Task DeleteAsync(Guid id, CancellationToken cancellationToken);
+	Task<List<YnabSyncRecordEntity>> GetByReceiptIdsAsync(List<Guid> receiptIds, CancellationToken cancellationToken);
 }

@@ -412,6 +412,18 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 		}
 	}
 
+	[HttpGet("receipt-sync-statuses")]
+	[EndpointSummary("Get YNAB sync statuses for receipts")]
+	[EndpointDescription("Returns the aggregate YNAB sync status for each receipt, joining through transactions to sync records.")]
+	public async Task<Ok<ReceiptYnabSyncStatusListResponse>> GetReceiptSyncStatuses(
+		[FromQuery] List<Guid> receiptIds,
+		CancellationToken cancellationToken)
+	{
+		List<ReceiptYnabSyncStatusDto> statuses = await mediator.Send(
+			new GetReceiptYnabSyncStatusesQuery(receiptIds), cancellationToken);
+		return TypedResults.Ok(mapper.ToReceiptSyncStatusListResponse(statuses));
+	}
+
 	[HttpPost("push-transactions/bulk")]
 	[EndpointSummary("Push transactions for multiple receipts to YNAB")]
 	[EndpointDescription("Creates split transactions in YNAB for each receipt in the batch. Each receipt is processed independently.")]

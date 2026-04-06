@@ -469,6 +469,38 @@ export function useBulkPushYnabTransactions() {
   });
 }
 
+export type ReceiptYnabSyncStatus =
+  components["schemas"]["ReceiptYnabSyncStatus"];
+export type ReceiptYnabSyncStatusValue =
+  components["schemas"]["ReceiptYnabSyncStatusValue"];
+
+export function useReceiptYnabSyncStatuses(receiptIds: string[]) {
+  const query = useQuery({
+    queryKey: ["ynab", "receipt-sync-statuses", receiptIds],
+    queryFn: async () => {
+      if (receiptIds.length === 0) return { data: [] };
+      const { data, error } = await client.GET(
+        "/api/ynab/receipt-sync-statuses",
+        {
+          params: { query: { receiptIds } },
+        },
+      );
+      if (error) return { data: [] };
+      return data;
+    },
+    enabled: receiptIds.length > 0,
+    retry: false,
+    staleTime: 30_000,
+  });
+  return useMemo(() => {
+    const statusMap = new Map<string, ReceiptYnabSyncStatusValue>();
+    for (const item of query.data?.data ?? []) {
+      statusMap.set(item.receiptId, item.syncStatus);
+    }
+    return { ...query, statusMap };
+  }, [query]);
+}
+
 export function useYnabSyncStatus(transactionId: string | null) {
   return useQuery({
     queryKey: ["ynab", "sync-status", transactionId],

@@ -209,6 +209,25 @@ public partial class YnabMapper
 		};
 	}
 
+	[MapperIgnoreTarget(nameof(ReceiptYnabSyncStatus.AdditionalProperties))]
+	public ReceiptYnabSyncStatus ToReceiptSyncStatus(ReceiptYnabSyncStatusDto source)
+	{
+		return new ReceiptYnabSyncStatus
+		{
+			ReceiptId = source.ReceiptId,
+			SyncStatus = Enum.Parse<ReceiptYnabSyncStatusValue>(source.SyncStatus.ToString()),
+		};
+	}
+
+	[MapperIgnoreTarget(nameof(ReceiptYnabSyncStatusListResponse.AdditionalProperties))]
+	public ReceiptYnabSyncStatusListResponse ToReceiptSyncStatusListResponse(List<ReceiptYnabSyncStatusDto> statuses)
+	{
+		return new ReceiptYnabSyncStatusListResponse
+		{
+			Data = statuses.Select(ToReceiptSyncStatus).ToList(),
+		};
+	}
+
 	[MapperIgnoreTarget(nameof(BulkPushYnabTransactionsResponse.AdditionalProperties))]
 	public BulkPushYnabTransactionsResponse ToBulkPushTransactionsResponse(BulkPushYnabTransactionsResult source)
 	{

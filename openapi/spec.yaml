@@ -4129,6 +4129,33 @@ paths:
         "503":
           description: YNAB integration is not configured
 
+  /api/ynab/receipt-sync-statuses:
+    get:
+      operationId: GetReceiptYnabSyncStatuses
+      tags: [YNAB]
+      summary: Get YNAB sync statuses for receipts
+      description: >
+        Returns the aggregate YNAB sync status for each receipt.
+        Joins through transactions to sync records and returns the worst-case status per receipt.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: receiptIds
+          in: query
+          required: true
+          schema:
+            type: array
+            items:
+              type: string
+              format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReceiptYnabSyncStatusListResponse"
+
 components:
   schemas:
     # ── Reports ───────────────────────────────────
@@ -6160,6 +6187,29 @@ components:
 
     YnabSyncRecordResponseSyncStatus:
       enum: [Pending, Synced, Failed]
+
+    ReceiptYnabSyncStatus:
+      type: object
+      required: [receiptId, syncStatus]
+      properties:
+        receiptId:
+          type: string
+          format: uuid
+        syncStatus:
+          $ref: "#/components/schemas/ReceiptYnabSyncStatusValue"
+
+    ReceiptYnabSyncStatusValue:
+      type: string
+      enum: [NotSynced, Pending, Synced, Failed]
+
+    ReceiptYnabSyncStatusListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReceiptYnabSyncStatus"
 
     YnabAccountSummary:
       type: object

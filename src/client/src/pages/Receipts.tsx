@@ -46,6 +46,8 @@ import { Spinner } from "@/components/ui/spinner";
 import { formatCurrency } from "@/lib/format";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Info, Pencil } from "lucide-react";
+import { useReceiptYnabSyncStatuses } from "@/hooks/useYnab";
+import { YnabSyncBadge } from "@/components/YnabSyncBadge";
 
 interface ReceiptResponse {
   id: string;
@@ -105,6 +107,9 @@ function Receipts() {
 
   const data = (receiptsData as ReceiptResponse[] | undefined) ?? [];
 
+  const receiptIds = useMemo(() => data.map((r) => r.id), [data]);
+  const { statusMap: syncStatusMap } = useReceiptYnabSyncStatuses(receiptIds);
+
   const {
     filters: savedFilters,
     save: saveFilter,
@@ -163,7 +168,7 @@ function Receipts() {
   });
 
   if (isLoading) {
-    return <TableSkeleton columns={5} />;
+    return <TableSkeleton columns={6} />;
   }
 
   return (
@@ -264,6 +269,7 @@ function Receipts() {
                   <SortableTableHead column="location" label="Location" currentSortBy={sortBy} currentSortDirection={sortDirection} onToggleSort={handleSort} />
                   <SortableTableHead column="date" label="Date" currentSortBy={sortBy} currentSortDirection={sortDirection} onToggleSort={handleSort} />
                   <SortableTableHead column="taxAmount" label="Tax Amount" currentSortBy={sortBy} currentSortDirection={sortDirection} onToggleSort={handleSort} className="text-right" />
+                  <TableHead>YNAB</TableHead>
                   <TableHead>Detail</TableHead>
                   <TableHead className="w-24">Actions</TableHead>
                 </TableRow>
@@ -299,6 +305,9 @@ function Receipts() {
                       <TableCell>{receipt.date}</TableCell>
                       <TableCell className="text-right">
                         {formatCurrency(receipt.taxAmount)}
+                      </TableCell>
+                      <TableCell>
+                        <YnabSyncBadge status={syncStatusMap.get(receipt.id)} />
                       </TableCell>
                       <TableCell>
                         <Link to={`/receipts/${receipt.id}`} className="text-sm text-primary hover:underline">

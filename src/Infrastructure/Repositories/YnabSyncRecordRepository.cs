@@ -49,4 +49,17 @@ public class YnabSyncRecordRepository(IDbContextFactory<ApplicationDbContext> co
 			await context.SaveChangesAsync(cancellationToken);
 		}
 	}
+
+	public async Task<List<YnabSyncRecordEntity>> GetByReceiptIdsAsync(List<Guid> receiptIds, CancellationToken cancellationToken)
+	{
+		using ApplicationDbContext context = contextFactory.CreateDbContext();
+		return await context.YnabSyncRecords
+			.Where(sr => context.Set<TransactionEntity>()
+				.Where(t => receiptIds.Contains(t.ReceiptId))
+				.Select(t => t.Id)
+				.Contains(sr.LocalTransactionId))
+			.Include(sr => sr.Transaction)
+			.AsNoTracking()
+			.ToListAsync(cancellationToken);
+	}
 }
