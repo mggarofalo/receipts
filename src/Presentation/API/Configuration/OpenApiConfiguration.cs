@@ -17,7 +17,9 @@ public static class OpenApiConfiguration
 		{
 			app.MapOpenApi();
 			app.MapScalarApiReference();
-			app.UseOpenApiResponseValidation();
+			// Response validation is registered separately via UseOpenApiResponseValidation()
+			// AFTER UseApplicationServices() (which includes UseResponseCompression()).
+			// This ensures the validation middleware reads uncompressed response bodies.
 		}
 		else
 		{

@@ -141,12 +141,12 @@ public partial class AddAuditTables : Migration
 		migrationBuilder.CreateIndex(
 			name: "IX_AuditLogs_EntityType_EntityId",
 			table: "AuditLogs",
-			columns: new[] { "EntityType", "EntityId" });
+			columns: ["EntityType", "EntityId"]);
 
 		migrationBuilder.CreateIndex(
 			name: "IX_AuthAuditLogs_EventType_Timestamp",
 			table: "AuthAuditLogs",
-			columns: new[] { "EventType", "Timestamp" });
+			columns: ["EventType", "Timestamp"]);
 
 		migrationBuilder.CreateIndex(
 			name: "IX_AuthAuditLogs_IpAddress",
@@ -161,7 +161,7 @@ public partial class AddAuditTables : Migration
 		migrationBuilder.CreateIndex(
 			name: "IX_AuthAuditLogs_UserId_Timestamp",
 			table: "AuthAuditLogs",
-			columns: new[] { "UserId", "Timestamp" });
+			columns: ["UserId", "Timestamp"]);
 	}
 
 	/// <inheritdoc />
