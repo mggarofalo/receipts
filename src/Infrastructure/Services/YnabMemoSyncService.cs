@@ -110,12 +110,14 @@ public class YnabMemoSyncService(
 			return new YnabMemoSyncResult(transaction.Id, receipt.Id, YnabMemoSyncOutcome.AlreadySynced, existingRecord.YnabTransactionId, null, null);
 		}
 
-		// Fetch YNAB transactions for the same date using delta sync when possible
+		// Fetch YNAB transactions for the same date.
+		// NOTE: Do NOT use delta sync (last_knowledge_of_server) here — memo matching
+		// requires the full set of transactions on a date, not just changed ones.
+		// Delta sync is available on the API client for polling/change-detection consumers.
 		List<YnabTransaction> ynabTransactions;
 		try
 		{
-			long? lastKnowledge = await serverKnowledgeRepository.GetAsync(budgetId, cancellationToken);
-			YnabTransactionsResult result = await ynabClient.GetTransactionsByDateAsync(budgetId, transaction.Date, lastKnowledge, cancellationToken);
+			YnabTransactionsResult result = await ynabClient.GetTransactionsByDateAsync(budgetId, transaction.Date, cancellationToken: cancellationToken);
 			ynabTransactions = result.Transactions;
 			await serverKnowledgeRepository.UpsertAsync(budgetId, result.ServerKnowledge, cancellationToken);
 		}
