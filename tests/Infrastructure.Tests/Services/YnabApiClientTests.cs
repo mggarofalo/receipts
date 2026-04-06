@@ -162,6 +162,177 @@ public class YnabApiClientTests
 	}
 
 	[Fact]
+	public async Task GetCategoriesAsync_FiltersInternalMasterCategoryGroup()
+	{
+		// Arrange
+		string json = JsonSerializer.Serialize(new
+		{
+			data = new
+			{
+				category_groups = new object[]
+				{
+					new
+					{
+						id = "group-internal", name = "Internal Master Category", hidden = false, deleted = false,
+						categories = new[]
+						{
+							new { id = "cat-tbb", category_group_id = "group-internal", category_group_name = "Internal Master Category", name = "To be Budgeted", hidden = false, deleted = false },
+						}
+					},
+					new
+					{
+						id = "group-normal", name = "Everyday Expenses", hidden = false, deleted = false,
+						categories = new[]
+						{
+							new { id = "cat-groceries", category_group_id = "group-normal", category_group_name = "Everyday Expenses", name = "Groceries", hidden = false, deleted = false },
+						}
+					},
+				}
+			}
+		});
+
+		YnabApiClient client = CreateClient(CreateHandler(HttpStatusCode.OK, json));
+
+		// Act
+		var categories = await client.GetCategoriesAsync("budget-1", CancellationToken.None);
+
+		// Assert
+		categories.Should().HaveCount(1);
+		categories[0].Name.Should().Be("Groceries");
+		categories[0].CategoryGroupName.Should().Be("Everyday Expenses");
+	}
+
+	[Fact]
+	public async Task GetCategoriesAsync_FiltersCreditCardPaymentsGroup()
+	{
+		// Arrange
+		string json = JsonSerializer.Serialize(new
+		{
+			data = new
+			{
+				category_groups = new object[]
+				{
+					new
+					{
+						id = "group-cc", name = "Credit Card Payments", hidden = false, deleted = false,
+						categories = new[]
+						{
+							new { id = "cat-visa", category_group_id = "group-cc", category_group_name = "Credit Card Payments", name = "Visa", hidden = false, deleted = false },
+						}
+					},
+					new
+					{
+						id = "group-normal", name = "Monthly Bills", hidden = false, deleted = false,
+						categories = new[]
+						{
+							new { id = "cat-rent", category_group_id = "group-normal", category_group_name = "Monthly Bills", name = "Rent", hidden = false, deleted = false },
+						}
+					},
+				}
+			}
+		});
+
+		YnabApiClient client = CreateClient(CreateHandler(HttpStatusCode.OK, json));
+
+		// Act
+		var categories = await client.GetCategoriesAsync("budget-1", CancellationToken.None);
+
+		// Assert
+		categories.Should().HaveCount(1);
+		categories[0].Name.Should().Be("Rent");
+	}
+
+	[Fact]
+	public async Task GetCategoriesAsync_FiltersDeletedGroupsAndInternalGroups()
+	{
+		// Arrange
+		string json = JsonSerializer.Serialize(new
+		{
+			data = new
+			{
+				category_groups = new object[]
+				{
+					new
+					{
+						id = "group-deleted", name = "Old Group", hidden = false, deleted = true,
+						categories = new[]
+						{
+							new { id = "cat-old", category_group_id = "group-deleted", category_group_name = "Old Group", name = "Old Category", hidden = false, deleted = false },
+						}
+					},
+					new
+					{
+						id = "group-internal", name = "Internal Master Category", hidden = false, deleted = false,
+						categories = new[]
+						{
+							new { id = "cat-tbb", category_group_id = "group-internal", category_group_name = "Internal Master Category", name = "To be Budgeted", hidden = false, deleted = false },
+						}
+					},
+					new
+					{
+						id = "group-cc", name = "Credit Card Payments", hidden = false, deleted = false,
+						categories = new[]
+						{
+							new { id = "cat-visa", category_group_id = "group-cc", category_group_name = "Credit Card Payments", name = "Visa", hidden = false, deleted = false },
+						}
+					},
+					new
+					{
+						id = "group-normal", name = "Fun Money", hidden = false, deleted = false,
+						categories = new[]
+						{
+							new { id = "cat-hobbies", category_group_id = "group-normal", category_group_name = "Fun Money", name = "Hobbies", hidden = false, deleted = false },
+						}
+					},
+				}
+			}
+		});
+
+		YnabApiClient client = CreateClient(CreateHandler(HttpStatusCode.OK, json));
+
+		// Act
+		var categories = await client.GetCategoriesAsync("budget-1", CancellationToken.None);
+
+		// Assert
+		categories.Should().HaveCount(1);
+		categories[0].Name.Should().Be("Hobbies");
+		categories[0].CategoryGroupName.Should().Be("Fun Money");
+	}
+
+	[Fact]
+	public async Task GetCategoriesAsync_ReturnsNormalCategories_ExcludingDeletedCategories()
+	{
+		// Arrange
+		string json = JsonSerializer.Serialize(new
+		{
+			data = new
+			{
+				category_groups = new object[]
+				{
+					new
+					{
+						id = "group-1", name = "Everyday Expenses", hidden = false, deleted = false,
+						categories = new[]
+						{
+							new { id = "cat-1", category_group_id = "group-1", category_group_name = "Everyday Expenses", name = "Groceries", hidden = false, deleted = false },
+							new { id = "cat-2", category_group_id = "group-1", category_group_name = "Everyday Expenses", name = "Deleted Cat", hidden = false, deleted = true },
+						}
+					},
+				}
+			}
+		});
+
+		YnabApiClient client = CreateClient(CreateHandler(HttpStatusCode.OK, json));
+
+		// Act
+		var categories = await client.GetCategoriesAsync("budget-1", CancellationToken.None);
+
+		// Assert
+		categories.Should().HaveCount(1);
+		categories[0].Name.Should().Be("Groceries");
+	}
+
+	[Fact]
 	public void IsConfigured_ReturnsFalse_WhenPatIsMissing()
 	{
 		// Arrange

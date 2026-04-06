@@ -25,6 +25,12 @@ public class YnabApiClient(
 	private const string AccountsCacheKeyPrefix = "ynab:accounts:";
 	private const string CategoriesCacheKeyPrefix = "ynab:categories:";
 
+	private static readonly HashSet<string> ExcludedCategoryGroups = new(StringComparer.OrdinalIgnoreCase)
+	{
+		"Internal Master Category",
+		"Credit Card Payments",
+	};
+
 	private readonly YnabClientOptions _options = new();
 
 	private string? Pat => configuration[ConfigurationVariables.YnabPat];
@@ -80,7 +86,7 @@ public class YnabApiClient(
 			$"budgets/{Uri.EscapeDataString(budgetId)}/categories", cancellationToken);
 
 		List<YnabCategory> categories = envelope.Data.CategoryGroups
-			.Where(g => !g.Deleted)
+			.Where(g => !g.Deleted && !ExcludedCategoryGroups.Contains(g.Name))
 			.SelectMany(g => g.Categories
 				.Where(c => !c.Deleted)
 				.Select(c => new YnabCategory(
