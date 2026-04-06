@@ -5,6 +5,7 @@ using Application.Commands.Ynab.CategoryMapping;
 using Application.Commands.Ynab.MemoSync;
 using Application.Commands.Ynab.PushTransactions;
 using Application.Commands.Ynab.SelectBudget;
+using Application.Commands.Ynab.StaleMappings;
 using Application.Interfaces.Services;
 using Application.Models.Ynab;
 using Application.Queries.Core.Ynab;
@@ -603,5 +604,88 @@ public class YnabControllerTests
 		Ok<BulkPushYnabTransactionsResponse> okResult = Assert.IsType<Ok<BulkPushYnabTransactionsResponse>>(result.Result);
 		BulkPushYnabTransactionsResponse response = okResult.Value!;
 		response.Results.Should().HaveCount(2);
+	}
+
+	[Fact]
+	public async Task GetStaleMappings_Returns200_WithStaleCounts()
+	{
+		// Arrange
+		string budgetId = Guid.NewGuid().ToString();
+		StaleMappingsResult staleMappings = new(3, 5, budgetId);
+
+		_mediatorMock.Setup(m => m.Send(
+			It.IsAny<GetStaleMappingsQuery>(),
+			It.IsAny<CancellationToken>()))
+			.ReturnsAsync(staleMappings);
+
+		// Act
+		Ok<StaleMappingsResponse> result = await _controller.GetStaleMappings(CancellationToken.None);
+
+		// Assert
+		StaleMappingsResponse response = result.Value!;
+		response.StaleAccountMappingCount.Should().Be(3);
+		response.StaleCategoryMappingCount.Should().Be(5);
+		response.CurrentBudgetId.Should().Be(budgetId);
+	}
+
+	[Fact]
+	public async Task GetStaleMappings_Returns200_WithZeroCounts_WhenNoBudgetSelected()
+	{
+		// Arrange
+		StaleMappingsResult staleMappings = new(0, 0, null);
+
+		_mediatorMock.Setup(m => m.Send(
+			It.IsAny<GetStaleMappingsQuery>(),
+			It.IsAny<CancellationToken>()))
+			.ReturnsAsync(staleMappings);
+
+		// Act
+		Ok<StaleMappingsResponse> result = await _controller.GetStaleMappings(CancellationToken.None);
+
+		// Assert
+		StaleMappingsResponse response = result.Value!;
+		response.StaleAccountMappingCount.Should().Be(0);
+		response.StaleCategoryMappingCount.Should().Be(0);
+		response.CurrentBudgetId.Should().BeNull();
+	}
+
+	[Fact]
+	public async Task ClearStaleMappings_Returns200_WithDeletedCounts()
+	{
+		// Arrange
+		ClearStaleMappingsResult clearResult = new(2, 4);
+
+		_mediatorMock.Setup(m => m.Send(
+			It.IsAny<ClearStaleMappingsCommand>(),
+			It.IsAny<CancellationToken>()))
+			.ReturnsAsync(clearResult);
+
+		// Act
+		Ok<ClearStaleMappingsResponse> result = await _controller.ClearStaleMappings(CancellationToken.None);
+
+		// Assert
+		ClearStaleMappingsResponse response = result.Value!;
+		response.DeletedAccountMappings.Should().Be(2);
+		response.DeletedCategoryMappings.Should().Be(4);
+	}
+
+	[Fact]
+	public async Task ClearStaleMappings_Returns200_WithZeros_WhenNothingToDelete()
+	{
+		// Arrange
+		ClearStaleMappingsResult clearResult = new(0, 0);
+
+		_mediatorMock.Setup(m => m.Send(
+			It.IsAny<ClearStaleMappingsCommand>(),
+			It.IsAny<CancellationToken>()))
+			.ReturnsAsync(clearResult);
+
+		// Act
+		Ok<ClearStaleMappingsResponse> result = await _controller.ClearStaleMappings(CancellationToken.None);
+
+		// Assert
+		ClearStaleMappingsResponse response = result.Value!;
+		response.DeletedAccountMappings.Should().Be(0);
+		response.DeletedCategoryMappings.Should().Be(0);
 	}
 }

@@ -40,6 +40,8 @@ import {
   useMemoSyncSummary,
   usePushYnabTransactions,
   useBulkPushYnabTransactions,
+  useStaleMappings,
+  useClearStaleMappings,
 } from "./useYnab";
 
 function createWrapper() {
@@ -690,6 +692,93 @@ describe("useYnab", () => {
     );
     expect(toast.success).toHaveBeenCalledWith(
       "Pushed 1/2 receipt(s) to YNAB",
+    );
+  });
+
+  it("useStaleMappings returns stale counts on success", async () => {
+    (client.GET as Mock).mockResolvedValue({
+      data: {
+        staleAccountMappingCount: 2,
+        staleCategoryMappingCount: 3,
+        currentBudgetId: "budget-1",
+      },
+      error: undefined,
+    });
+
+    const { result } = renderHook(() => useStaleMappings(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.staleAccountMappingCount).toBe(2);
+    expect(result.current.staleCategoryMappingCount).toBe(3);
+    expect(result.current.hasStaleMappings).toBe(true);
+    expect(client.GET).toHaveBeenCalledWith("/api/ynab/stale-mappings");
+  });
+
+  it("useStaleMappings returns hasStaleMappings false when no stale mappings", async () => {
+    (client.GET as Mock).mockResolvedValue({
+      data: {
+        staleAccountMappingCount: 0,
+        staleCategoryMappingCount: 0,
+        currentBudgetId: "budget-1",
+      },
+      error: undefined,
+    });
+
+    const { result } = renderHook(() => useStaleMappings(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.hasStaleMappings).toBe(false);
+  });
+
+  it("useStaleMappings returns defaults when data is undefined", async () => {
+    (client.GET as Mock).mockResolvedValue({
+      data: undefined,
+      error: "Failed",
+    });
+
+    const { result } = renderHook(() => useStaleMappings(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.staleAccountMappingCount).toBe(0);
+    expect(result.current.staleCategoryMappingCount).toBe(0);
+    expect(result.current.hasStaleMappings).toBe(false);
+  });
+
+  it("useClearStaleMappings calls DELETE endpoint and shows toast", async () => {
+    (client.DELETE as Mock).mockResolvedValue({
+      data: { deletedAccountMappings: 2, deletedCategoryMappings: 3 },
+      error: undefined,
+    });
+
+    const { result } = renderHook(() => useClearStaleMappings(), {
+      wrapper: createWrapper(),
+    });
+
+    await result.current.mutateAsync();
+
+    expect(client.DELETE).toHaveBeenCalledWith("/api/ynab/stale-mappings");
+    expect(toast.success).toHaveBeenCalledWith("Cleared 5 stale mapping(s)");
+  });
+
+  it("useClearStaleMappings shows error toast on failure", async () => {
+    (client.DELETE as Mock).mockResolvedValue({
+      data: undefined,
+      error: "Server error",
+    });
+
+    const { result } = renderHook(() => useClearStaleMappings(), {
+      wrapper: createWrapper(),
+    });
+
+    await expect(result.current.mutateAsync()).rejects.toBeDefined();
+    expect(toast.error).toHaveBeenCalledWith(
+      "Failed to clear stale mappings",
     );
   });
 });
