@@ -31,9 +31,6 @@ vi.mock("@/pages/ItemTemplates", () => ({
 vi.mock("@/pages/ReceiptDetail", () => ({
   default: () => <div data-testid="page-receipt-detail">ReceiptDetail</div>,
 }));
-vi.mock("@/pages/ReceiptDetailRedirect", () => ({
-  default: () => <div data-testid="page-receipt-detail-redirect">Redirect</div>,
-}));
 vi.mock("@/pages/ApiKeys", () => ({
   default: () => <div data-testid="page-api-keys">ApiKeys</div>,
 }));
@@ -119,23 +116,11 @@ describe("App router", () => {
     expect(await screen.findByTestId("page-not-found")).toBeInTheDocument();
   });
 
-  it("redirects /receipt-items to /receipts", async () => {
-    renderRoute("/receipt-items");
-    expect(await screen.findByTestId("page-receipts")).toBeInTheDocument();
-  });
-
-  it("redirects /transactions to /receipts", async () => {
-    renderRoute("/transactions");
-    expect(await screen.findByTestId("page-receipts")).toBeInTheDocument();
-  });
-
-  it("redirects /transaction-detail to /receipts", async () => {
-    renderRoute("/transaction-detail");
-    expect(await screen.findByTestId("page-receipts")).toBeInTheDocument();
-  });
-
-  it("redirects /trips to /receipts", async () => {
-    renderRoute("/trips");
-    expect(await screen.findByTestId("page-receipts")).toBeInTheDocument();
+  it("renders NotFound for deprecated redirect routes", async () => {
+    for (const path of ["/receipt-items", "/transactions", "/trips", "/transaction-detail", "/receipt-detail"]) {
+      const { unmount } = renderRoute(path);
+      expect(await screen.findByTestId("page-not-found")).toBeInTheDocument();
+      unmount();
+    }
   });
 });

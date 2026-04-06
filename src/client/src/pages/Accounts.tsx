@@ -247,8 +247,8 @@ function Accounts() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Link to={`/transactions?accountId=${account.id}`} className="text-sm text-primary hover:underline">
-                          Txns
+                        <Link to="/receipts" className="text-sm text-primary hover:underline">
+                          Receipts
                         </Link>
                       </TableCell>
                       <TableCell>
