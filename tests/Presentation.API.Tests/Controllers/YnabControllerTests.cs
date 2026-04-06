@@ -48,8 +48,6 @@ public class YnabControllerTests
 	public async Task GetBudgets_Returns200_WithBudgetList_WhenConfigured()
 	{
 		// Arrange
-
-
 		List<YnabBudget> budgets =
 		[
 			new("budget-1", "My Budget"),
@@ -74,8 +72,6 @@ public class YnabControllerTests
 	public async Task GetBudgets_Returns503_OnYnabAuthException()
 	{
 		// Arrange
-
-
 		_mediatorMock.Setup(m => m.Send(
 			It.IsAny<GetYnabBudgetsQuery>(),
 			It.IsAny<CancellationToken>()))
@@ -133,7 +129,6 @@ public class YnabControllerTests
 	public async Task GetCategories_Returns200_WithCategories_WhenConfigured()
 	{
 		// Arrange
-
 		_budgetSelectionMock.Setup(s => s.GetSelectedBudgetIdAsync(It.IsAny<CancellationToken>()))
 			.ReturnsAsync("budget-1");
 
@@ -162,7 +157,6 @@ public class YnabControllerTests
 	public async Task GetCategories_Returns503_WhenNoBudgetSelected()
 	{
 		// Arrange
-
 		_budgetSelectionMock.Setup(s => s.GetSelectedBudgetIdAsync(It.IsAny<CancellationToken>()))
 			.ReturnsAsync((string?)null);
 
@@ -324,8 +318,6 @@ public class YnabControllerTests
 	public async Task SyncMemos_Returns200_WithResults_WhenConfigured()
 	{
 		// Arrange
-
-
 		Guid receiptId = Guid.NewGuid();
 		Guid txId = Guid.NewGuid();
 		List<Application.Models.Ynab.YnabMemoSyncResult> results =
@@ -354,8 +346,6 @@ public class YnabControllerTests
 	public async Task SyncMemos_Returns503_OnYnabAuthException()
 	{
 		// Arrange
-
-
 		_mediatorMock.Setup(m => m.Send(
 			It.IsAny<SyncYnabMemosCommand>(),
 			It.IsAny<CancellationToken>()))
@@ -375,8 +365,6 @@ public class YnabControllerTests
 	public async Task SyncMemosBulk_Returns200_WithResults_WhenConfigured()
 	{
 		// Arrange
-
-
 		Guid receiptId = Guid.NewGuid();
 		List<Application.Models.Ynab.YnabMemoSyncResult> results =
 		[
@@ -402,8 +390,6 @@ public class YnabControllerTests
 	public async Task ResolveMemoSync_Returns200_WithResult_WhenConfigured()
 	{
 		// Arrange
-
-
 		Guid txId = Guid.NewGuid();
 		Application.Models.Ynab.YnabMemoSyncResult expected = new(
 			txId, Guid.NewGuid(), Application.Models.Ynab.YnabMemoSyncOutcome.Synced, "yt-1", null, null);
@@ -427,7 +413,6 @@ public class YnabControllerTests
 	public async Task PushTransactions_Returns200_OnSuccess()
 	{
 		// Arrange
-
 		Guid receiptId = Guid.NewGuid();
 		Guid txId = Guid.NewGuid();
 
@@ -459,7 +444,6 @@ public class YnabControllerTests
 	public async Task PushTransactions_Returns400_OnFailure()
 	{
 		// Arrange
-
 		Guid receiptId = Guid.NewGuid();
 
 		PushYnabTransactionsResult pushResult = new(false, [],
@@ -487,7 +471,6 @@ public class YnabControllerTests
 	public async Task BulkPushTransactions_Returns200_WithResults()
 	{
 		// Arrange
-
 		Guid receiptId1 = Guid.NewGuid();
 		Guid receiptId2 = Guid.NewGuid();
 
