@@ -47,6 +47,10 @@ vi.mock("@/hooks/useYnab", () => ({
   useDeleteYnabCategoryMapping: vi.fn(() => mockMutationResult()),
 }));
 
+vi.mock("@/components/YnabBulkSyncCard", () => ({
+  YnabBulkSyncCard: () => <div data-testid="ynab-bulk-sync-card">Bulk YNAB Sync</div>,
+}));
+
 describe("YnabSettings – Category Mapping", () => {
   it("shows 'Configure YNAB to map categories.' when notConfigured is true", async () => {
     const { useYnabBudgets } = await import("@/hooks/useYnab");
@@ -133,6 +137,49 @@ describe("YnabSettings – Category Mapping", () => {
         "No receipt item categories found. Create some receipts first.",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("shows bulk sync card when YNAB is configured and budget is selected", async () => {
+    const { useYnabBudgets, useSelectedYnabBudget } = await import(
+      "@/hooks/useYnab"
+    );
+    vi.mocked(useYnabBudgets).mockReturnValue(
+      mockQueryResult({ budgets: [{ id: "b1", name: "Budget" }], isLoading: false, isError: false }),
+    );
+    vi.mocked(useSelectedYnabBudget).mockReturnValue(
+      mockQueryResult({ selectedBudgetId: "b1", isLoading: false }),
+    );
+
+    renderWithProviders(<YnabSettings />);
+
+    expect(screen.getByTestId("ynab-bulk-sync-card")).toBeInTheDocument();
+  });
+
+  it("hides bulk sync card when YNAB is not configured", async () => {
+    const { useYnabBudgets } = await import("@/hooks/useYnab");
+    vi.mocked(useYnabBudgets).mockReturnValue(
+      mockQueryResult({ budgets: [], isLoading: false, isError: true }),
+    );
+
+    renderWithProviders(<YnabSettings />);
+
+    expect(screen.queryByTestId("ynab-bulk-sync-card")).not.toBeInTheDocument();
+  });
+
+  it("hides bulk sync card when no budget is selected", async () => {
+    const { useYnabBudgets, useSelectedYnabBudget } = await import(
+      "@/hooks/useYnab"
+    );
+    vi.mocked(useYnabBudgets).mockReturnValue(
+      mockQueryResult({ budgets: [{ id: "b1", name: "Budget" }], isLoading: false, isError: false }),
+    );
+    vi.mocked(useSelectedYnabBudget).mockReturnValue(
+      mockQueryResult({ selectedBudgetId: null, isLoading: false }),
+    );
+
+    renderWithProviders(<YnabSettings />);
+
+    expect(screen.queryByTestId("ynab-bulk-sync-card")).not.toBeInTheDocument();
   });
 
   it("renders mapping rows when fully configured with categories", async () => {

@@ -40,6 +40,7 @@ import {
   useMemoSyncSummary,
   usePushYnabTransactions,
   useBulkPushYnabTransactions,
+  useAllReceiptIds,
 } from "./useYnab";
 
 function createWrapper() {
@@ -691,5 +692,51 @@ describe("useYnab", () => {
     expect(toast.success).toHaveBeenCalledWith(
       "Pushed 1/2 receipt(s) to YNAB",
     );
+  });
+
+  it("useAllReceiptIds returns receipt IDs on success", async () => {
+    const receipts = [
+      { id: "r1", location: "Store A", date: "2024-01-01", taxAmount: 5 },
+      { id: "r2", location: "Store B", date: "2024-01-02", taxAmount: 3 },
+    ];
+    (client.GET as Mock).mockResolvedValue({
+      data: { data: receipts, total: 2, offset: 0, limit: 10000 },
+      error: undefined,
+    });
+
+    const { result } = renderHook(() => useAllReceiptIds(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.receiptIds).toEqual(["r1", "r2"]);
+    expect(result.current.totalReceipts).toBe(2);
+    expect(client.GET).toHaveBeenCalledWith("/api/receipts", {
+      params: { query: { offset: 0, limit: 10000 } },
+    });
+  });
+
+  it("useAllReceiptIds returns empty array when data is undefined", async () => {
+    (client.GET as Mock).mockResolvedValue({
+      data: undefined,
+      error: "Server error",
+    });
+
+    const { result } = renderHook(() => useAllReceiptIds(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.receiptIds).toEqual([]);
+    expect(result.current.totalReceipts).toBe(0);
+  });
+
+  it("useAllReceiptIds respects enabled flag", () => {
+    const { result } = renderHook(() => useAllReceiptIds(false), {
+      wrapper: createWrapper(),
+    });
+
+    expect(result.current.receiptIds).toEqual([]);
+    expect(client.GET).not.toHaveBeenCalled();
   });
 });

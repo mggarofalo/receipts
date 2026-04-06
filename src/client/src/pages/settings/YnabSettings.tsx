@@ -18,6 +18,7 @@ import {
   useUpdateYnabCategoryMapping,
   useDeleteYnabCategoryMapping,
 } from "@/hooks/useYnab";
+import { YnabBulkSyncCard } from "@/components/YnabBulkSyncCard";
 import {
   Card,
   CardContent,
@@ -398,6 +399,8 @@ export default function YnabSettings() {
           )}
         </CardContent>
       </Card>
+
+      {!notConfigured && selectedBudgetId && <YnabBulkSyncCard />}
     </div>
   );
 }

@@ -469,6 +469,28 @@ export function useBulkPushYnabTransactions() {
   });
 }
 
+export function useAllReceiptIds(enabled = true) {
+  const query = useQuery({
+    queryKey: ["receipts", "all-ids"],
+    queryFn: async () => {
+      const { data, error } = await client.GET("/api/receipts", {
+        params: { query: { offset: 0, limit: 10000 } },
+      });
+      if (error) throw error;
+      return data;
+    },
+    enabled,
+  });
+  return useMemo(
+    () => ({
+      ...query,
+      receiptIds: query.data?.data?.map((r) => r.id).filter(Boolean) as string[] ?? [],
+      totalReceipts: query.data?.total ?? 0,
+    }),
+    [query],
+  );
+}
+
 export function useYnabSyncStatus(transactionId: string | null) {
   return useQuery({
     queryKey: ["ynab", "sync-status", transactionId],
