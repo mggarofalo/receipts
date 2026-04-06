@@ -146,7 +146,11 @@ public class OpenApiResponseValidationMiddleware
 			return null;
 		}
 
-		// Find the matching path template
+		// Find the matching path template. Prefer exact matches over parameterized
+		// to avoid /api/items/{id} matching /api/items/distinct-categories.
+		JsonProperty? exactMatch = null;
+		JsonProperty? parameterizedMatch = null;
+
 		foreach (JsonProperty pathEntry in paths.EnumerateObject())
 		{
 			if (!PathMatchesTemplate(requestPath, pathEntry.Name))
@@ -154,30 +158,48 @@ public class OpenApiResponseValidationMiddleware
 				continue;
 			}
 
-			if (!pathEntry.Value.TryGetProperty(method, out JsonElement operation))
+			if (pathEntry.Name.Contains('{'))
 			{
-				continue;
+				parameterizedMatch ??= pathEntry;
 			}
+			else
+			{
+				exactMatch = pathEntry;
+				break; // Exact match is always preferred
+			}
+		}
 
-			if (!operation.TryGetProperty("responses", out JsonElement responses))
-			{
-				continue;
-			}
+		JsonProperty? bestMatch = exactMatch ?? parameterizedMatch;
+		if (bestMatch is null)
+		{
+			return null;
+		}
 
-			// Try exact status code, then "default"
-			JsonElement responseElement;
-			if (!responses.TryGetProperty(statusCode, out responseElement)
-				&& !responses.TryGetProperty("default", out responseElement))
-			{
-				continue;
-			}
+		JsonProperty match = bestMatch.Value;
 
-			if (responseElement.TryGetProperty("content", out JsonElement content)
-				&& content.TryGetProperty("application/json", out JsonElement mediaType)
-				&& mediaType.TryGetProperty("schema", out JsonElement schema))
-			{
-				return schema;
-			}
+		if (!match.Value.TryGetProperty(method, out JsonElement operation))
+		{
+			return null;
+		}
+
+		if (!operation.TryGetProperty("responses", out JsonElement responses))
+		{
+			return null;
+		}
+
+		// Try exact status code, then "default"
+		JsonElement responseElement;
+		if (!responses.TryGetProperty(statusCode, out responseElement)
+			&& !responses.TryGetProperty("default", out responseElement))
+		{
+			return null;
+		}
+
+		if (responseElement.TryGetProperty("content", out JsonElement content)
+			&& content.TryGetProperty("application/json", out JsonElement mediaType)
+			&& mediaType.TryGetProperty("schema", out JsonElement schema))
+		{
+			return schema;
 		}
 
 		return null;

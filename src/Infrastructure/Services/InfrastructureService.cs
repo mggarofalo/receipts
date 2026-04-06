@@ -1,3 +1,4 @@
+using System.Net;
 using Application.Interfaces;
 using Application.Interfaces.Services;
 using Common;
@@ -5,14 +6,18 @@ using Infrastructure.Entities;
 using Infrastructure.Interfaces.Repositories;
 using Infrastructure.Mapping;
 using Infrastructure.Repositories;
+using Infrastructure.Ynab;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using Polly;
 
 namespace Infrastructure.Services;
 
@@ -142,7 +147,44 @@ public static class InfrastructureService
 			.AddScoped<IReportService, ReportService>()
 			.AddScoped<IBackupService, BackupService>()
 			.AddScoped<IImageStorageService, LocalImageStorageService>()
-			.AddScoped<IImageProcessingService, ImageProcessingService>();
+			.AddScoped<IImageProcessingService, ImageProcessingService>()
+			.AddScoped<IYnabSyncRecordRepository, YnabSyncRecordRepository>()
+			.AddScoped<IYnabBudgetSelectionRepository, YnabBudgetSelectionRepository>()
+			.AddScoped<IYnabAccountMappingRepository, YnabAccountMappingRepository>()
+			.AddScoped<IYnabCategoryMappingRepository, YnabCategoryMappingRepository>()
+			.AddScoped<IYnabBudgetSelectionService, YnabBudgetSelectionService>()
+			.AddScoped<IYnabSyncRecordService, YnabSyncRecordService>()
+			.AddScoped<IYnabAccountMappingService, YnabAccountMappingService>()
+			.AddScoped<IYnabCategoryMappingService, YnabCategoryMappingService>()
+			.AddScoped<IYnabMemoSyncService, YnabMemoSyncService>()
+			.AddSingleton<IYnabSplitCalculator, YnabSplitCalculator>();
+
+		services.AddMemoryCache();
+
+		YnabClientOptions ynabOptions = new();
+		services.AddHttpClient<IYnabApiClient, YnabApiClient>(client =>
+		{
+			client.BaseAddress = new Uri(ynabOptions.BaseUrl.TrimEnd('/') + "/");
+		})
+		.AddResilienceHandler("ynab", builder =>
+		{
+			builder.AddRetry(new HttpRetryStrategyOptions
+			{
+				MaxRetryAttempts = 3,
+				BackoffType = DelayBackoffType.Exponential,
+				UseJitter = true,
+				ShouldHandle = new PredicateBuilder<HttpResponseMessage>()
+					.HandleResult(r => r.StatusCode == HttpStatusCode.TooManyRequests)
+					.Handle<HttpRequestException>(),
+			});
+			builder.AddCircuitBreaker(new HttpCircuitBreakerStrategyOptions
+			{
+				SamplingDuration = TimeSpan.FromSeconds(30),
+				FailureRatio = 0.5,
+				MinimumThroughput = 5,
+				BreakDuration = TimeSpan.FromSeconds(60),
+			});
+		});
 
 		// Singleton AI/ML services (local models — always available)
 		services.AddSingleton<IEmbeddingService, OnnxEmbeddingService>();
