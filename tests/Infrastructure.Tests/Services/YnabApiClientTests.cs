@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using Application.Models.Ynab;
 using FluentAssertions;
 using Infrastructure.Services;
 using Infrastructure.Ynab;
@@ -179,5 +180,143 @@ public class YnabApiClientTests
 
 		// Act & Assert
 		client.IsConfigured.Should().BeTrue();
+	}
+
+	[Fact]
+	public async Task GetTransactionsByDateAsync_ReturnsTransactionsAndServerKnowledge()
+	{
+		// Arrange
+		string json = JsonSerializer.Serialize(new
+		{
+			data = new
+			{
+				transactions = new[]
+				{
+					new { id = "tx-1", date = "2026-04-01", amount = -25500, memo = "Groceries", cleared = "cleared", approved = true, account_id = "acc-1", category_id = "cat-1", payee_name = "Walmart", deleted = false },
+				},
+				server_knowledge = 1234
+			}
+		});
+
+		YnabApiClient client = CreateClient(CreateHandler(HttpStatusCode.OK, json));
+
+		// Act
+		YnabTransactionsResult result = await client.GetTransactionsByDateAsync(
+			"budget-1", new DateOnly(2026, 4, 1), cancellationToken: CancellationToken.None);
+
+		// Assert
+		result.Transactions.Should().ContainSingle();
+		result.Transactions[0].Id.Should().Be("tx-1");
+		result.Transactions[0].Amount.Should().Be(-25500);
+		result.ServerKnowledge.Should().Be(1234);
+	}
+
+	[Fact]
+	public async Task GetTransactionsByDateAsync_FiltersDeletedTransactions()
+	{
+		// Arrange
+		string json = JsonSerializer.Serialize(new
+		{
+			data = new
+			{
+				transactions = new[]
+				{
+					new { id = "tx-1", date = "2026-04-01", amount = -10000, memo = (string?)null, cleared = "cleared", approved = true, account_id = "acc-1", category_id = "cat-1", payee_name = "Store", deleted = false },
+					new { id = "tx-2", date = "2026-04-01", amount = -20000, memo = (string?)null, cleared = "cleared", approved = true, account_id = "acc-1", category_id = "cat-1", payee_name = "Deleted Store", deleted = true },
+				},
+				server_knowledge = 5678
+			}
+		});
+
+		YnabApiClient client = CreateClient(CreateHandler(HttpStatusCode.OK, json));
+
+		// Act
+		YnabTransactionsResult result = await client.GetTransactionsByDateAsync(
+			"budget-1", new DateOnly(2026, 4, 1), cancellationToken: CancellationToken.None);
+
+		// Assert
+		result.Transactions.Should().ContainSingle();
+		result.Transactions[0].Id.Should().Be("tx-1");
+		result.ServerKnowledge.Should().Be(5678);
+	}
+
+	[Fact]
+	public async Task GetTransactionsByDateAsync_PassesLastKnowledgeOfServerQueryParam()
+	{
+		// Arrange
+		string json = JsonSerializer.Serialize(new
+		{
+			data = new
+			{
+				transactions = Array.Empty<object>(),
+				server_knowledge = 9999
+			}
+		});
+
+		Uri? capturedUri = null;
+		Mock<HttpMessageHandler> handlerMock = new();
+		handlerMock.Protected()
+			.Setup<Task<HttpResponseMessage>>("SendAsync",
+				ItExpr.IsAny<HttpRequestMessage>(),
+				ItExpr.IsAny<CancellationToken>())
+			.Returns((HttpRequestMessage req, CancellationToken _) =>
+			{
+				capturedUri = req.RequestUri;
+				return Task.FromResult(new HttpResponseMessage
+				{
+					StatusCode = HttpStatusCode.OK,
+					Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json"),
+				});
+			});
+
+		YnabApiClient client = CreateClient(handlerMock.Object);
+
+		// Act
+		await client.GetTransactionsByDateAsync(
+			"budget-1", new DateOnly(2026, 4, 1), lastKnowledgeOfServer: 42, cancellationToken: CancellationToken.None);
+
+		// Assert
+		capturedUri.Should().NotBeNull();
+		capturedUri!.ToString().Should().Contain("last_knowledge_of_server=42");
+	}
+
+	[Fact]
+	public async Task GetTransactionsByDateAsync_OmitsLastKnowledgeOfServerWhenNull()
+	{
+		// Arrange
+		string json = JsonSerializer.Serialize(new
+		{
+			data = new
+			{
+				transactions = Array.Empty<object>(),
+				server_knowledge = 100
+			}
+		});
+
+		Uri? capturedUri = null;
+		Mock<HttpMessageHandler> handlerMock = new();
+		handlerMock.Protected()
+			.Setup<Task<HttpResponseMessage>>("SendAsync",
+				ItExpr.IsAny<HttpRequestMessage>(),
+				ItExpr.IsAny<CancellationToken>())
+			.Returns((HttpRequestMessage req, CancellationToken _) =>
+			{
+				capturedUri = req.RequestUri;
+				return Task.FromResult(new HttpResponseMessage
+				{
+					StatusCode = HttpStatusCode.OK,
+					Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json"),
+				});
+			});
+
+		YnabApiClient client = CreateClient(handlerMock.Object);
+
+		// Act
+		await client.GetTransactionsByDateAsync(
+			"budget-1", new DateOnly(2026, 4, 1), cancellationToken: CancellationToken.None);
+
+		// Assert
+		capturedUri.Should().NotBeNull();
+		capturedUri!.ToString().Should().NotContain("last_knowledge_of_server");
 	}
 }

@@ -525,6 +525,72 @@ public class YnabMemoSyncServiceTests
 
 	#endregion
 
+	#region Server Knowledge Tests
+
+	[Fact]
+	public async Task SyncMemosByReceipt_StoresServerKnowledgeAfterFetch()
+	{
+		// Arrange
+		SetupBudgetSelection(BudgetId);
+		ReceiptEntity receipt = CreateReceipt("Walmart");
+		TransactionEntity transaction = CreateTransaction(receipt.Id, 25.50m);
+
+		SetupReceiptRepo(receipt);
+		SetupTransactionRepo(receipt.Id, [transaction]);
+		SetupNoExistingSyncRecord(transaction.Id);
+
+		YnabTransaction ynabTx = CreateYnabTransaction("yt-1", transaction.Date, -25500, "Walmart");
+		_ynabClientMock
+			.Setup(c => c.GetTransactionsByDateAsync(BudgetId, transaction.Date, It.IsAny<long?>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new YnabTransactionsResult([ynabTx], 5678));
+
+		SetupSyncRecordCreation();
+		SetupSyncRecordUpdate();
+		_ynabClientMock
+			.Setup(c => c.UpdateTransactionMemoAsync(BudgetId, "yt-1", It.IsAny<string>(), It.IsAny<CancellationToken>()))
+			.Returns(Task.CompletedTask);
+
+		// Act
+		await _service.SyncMemosByReceiptAsync(receipt.Id, CancellationToken.None);
+
+		// Assert: server knowledge was persisted with the value from the API response
+		_serverKnowledgeRepoMock.Verify(
+			r => r.UpsertAsync(BudgetId, 5678, It.IsAny<CancellationToken>()),
+			Times.Once);
+	}
+
+	[Fact]
+	public async Task SyncMemosByReceipt_DoesNotPassServerKnowledgeToApiClient()
+	{
+		// Arrange: memo sync should do full fetches, NOT delta sync
+		SetupBudgetSelection(BudgetId);
+		ReceiptEntity receipt = CreateReceipt("Walmart");
+		TransactionEntity transaction = CreateTransaction(receipt.Id, 25.50m);
+
+		SetupReceiptRepo(receipt);
+		SetupTransactionRepo(receipt.Id, [transaction]);
+		SetupNoExistingSyncRecord(transaction.Id);
+
+		// Set up server knowledge repo to return a stored value
+		_serverKnowledgeRepoMock
+			.Setup(r => r.GetAsync(BudgetId, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(999L);
+
+		_ynabClientMock
+			.Setup(c => c.GetTransactionsByDateAsync(BudgetId, transaction.Date, It.IsAny<long?>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new YnabTransactionsResult([], 1000));
+
+		// Act
+		await _service.SyncMemosByReceiptAsync(receipt.Id, CancellationToken.None);
+
+		// Assert: API client was called WITHOUT lastKnowledgeOfServer (null, not 999)
+		_ynabClientMock.Verify(
+			c => c.GetTransactionsByDateAsync(BudgetId, transaction.Date, null, It.IsAny<CancellationToken>()),
+			Times.Once);
+	}
+
+	#endregion
+
 	#region Helpers
 
 	private void SetupBudgetSelection(string? budgetId)
