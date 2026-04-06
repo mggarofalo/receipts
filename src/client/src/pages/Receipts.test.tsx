@@ -9,6 +9,14 @@ vi.mock("@/hooks/usePageTitle", () => ({
   usePageTitle: vi.fn(),
 }));
 
+vi.mock("@/hooks/useYnab", () => ({
+  useReceiptYnabSyncStatuses: vi.fn(() => ({
+    statusMap: new Map(),
+    data: undefined,
+    isLoading: false,
+  })),
+}));
+
 vi.mock("@/hooks/useReceipts", () => ({
   useReceipts: vi.fn(() => ({ data: [], total: 0, isLoading: false })),
   useCreateReceipt: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
@@ -453,6 +461,68 @@ describe("Receipts", () => {
     expect(
       screen.getByRole("button", { name: /delete \(2\)/i }),
     ).toBeInTheDocument();
+  });
+
+  it("renders YNAB sync status badges when data is available", async () => {
+    const items = [
+      mockReceiptResponse({ id: "r1", location: "Walmart", date: "2024-01-15", taxAmount: 5.25 }),
+      mockReceiptResponse({ id: "r2", location: "Target", date: "2024-01-20", taxAmount: 3.50 }),
+    ];
+
+    const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
+    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
+      search: "",
+      setSearch: vi.fn(),
+      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
+      totalCount: items.length,
+      isSearching: false,
+      clearSearch: vi.fn(),
+    }));
+
+    const { useReceipts } = await import("@/hooks/useReceipts");
+    vi.mocked(useReceipts).mockReturnValue(mockQueryResult({
+      data: items,
+      total: items.length,
+      isLoading: false,
+    }));
+
+    const { useReceiptYnabSyncStatuses } = await import("@/hooks/useYnab");
+    vi.mocked(useReceiptYnabSyncStatuses).mockReturnValue(mockQueryResult({
+      statusMap: new Map([
+        ["r1", "Synced"],
+        ["r2", "Failed"],
+      ]),
+    }));
+
+    renderWithProviders(<Receipts />);
+    expect(screen.getByText("Synced")).toBeInTheDocument();
+    expect(screen.getByText("Failed")).toBeInTheDocument();
+  });
+
+  it("renders YNAB column header", async () => {
+    const items = [
+      mockReceiptResponse({ id: "1", location: "Walmart", date: "2024-01-15", taxAmount: 5.25 }),
+    ];
+
+    const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
+    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
+      search: "",
+      setSearch: vi.fn(),
+      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
+      totalCount: items.length,
+      isSearching: false,
+      clearSearch: vi.fn(),
+    }));
+
+    const { useReceipts } = await import("@/hooks/useReceipts");
+    vi.mocked(useReceipts).mockReturnValue(mockQueryResult({
+      data: items,
+      total: items.length,
+      isLoading: false,
+    }));
+
+    renderWithProviders(<Receipts />);
+    expect(screen.getByText("YNAB")).toBeInTheDocument();
   });
 
   it("opens create dialog on shortcut:new-item event", async () => {
