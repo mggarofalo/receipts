@@ -223,8 +223,6 @@ public class YnabAccountMappingControllerTests
 	public async Task GetAccounts_Returns200_WithActiveAccounts()
 	{
 		// Arrange
-		_ynabClientMock.Setup(c => c.IsConfigured).Returns(true);
-
 		_mediatorMock.Setup(m => m.Send(
 			It.IsAny<GetSelectedYnabBudgetQuery>(),
 			It.IsAny<CancellationToken>()))
@@ -252,26 +250,9 @@ public class YnabAccountMappingControllerTests
 	}
 
 	[Fact]
-	public async Task GetAccounts_Returns503_WhenNotConfigured()
-	{
-		// Arrange
-		_ynabClientMock.Setup(c => c.IsConfigured).Returns(false);
-
-		// Act
-		Results<Ok<YnabAccountListResponse>, StatusCodeHttpResult> result =
-			await _controller.GetAccounts(CancellationToken.None);
-
-		// Assert
-		StatusCodeHttpResult statusResult = Assert.IsType<StatusCodeHttpResult>(result.Result);
-		statusResult.StatusCode.Should().Be(StatusCodes.Status503ServiceUnavailable);
-	}
-
-	[Fact]
 	public async Task GetAccounts_ReturnsEmptyList_WhenNoBudgetSelected()
 	{
 		// Arrange
-		_ynabClientMock.Setup(c => c.IsConfigured).Returns(true);
-
 		_mediatorMock.Setup(m => m.Send(
 			It.IsAny<GetSelectedYnabBudgetQuery>(),
 			It.IsAny<CancellationToken>()))

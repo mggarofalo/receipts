@@ -1,3 +1,4 @@
+using API.Filters;
 using API.Generated.Dtos;
 using API.Mapping.Core;
 using Application.Commands.Ynab.AccountMapping;
@@ -29,14 +30,9 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 	[EndpointSummary("List YNAB budgets")]
 	[EndpointDescription("Returns the list of budgets from the connected YNAB account.")]
 	[ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+	[RequireYnabConfigured]
 	public async Task<Results<Ok<YnabBudgetListResponse>, StatusCodeHttpResult>> GetBudgets(CancellationToken cancellationToken)
 	{
-		if (!ynabClient.IsConfigured)
-		{
-			logger.LogWarning("YNAB API client is not configured — missing personal access token");
-			return TypedResults.StatusCode(StatusCodes.Status503ServiceUnavailable);
-		}
-
 		try
 		{
 			List<YnabBudget> budgets = await mediator.Send(new GetYnabBudgetsQuery(), cancellationToken);
@@ -53,14 +49,9 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 	[EndpointSummary("List YNAB accounts")]
 	[EndpointDescription("Returns the list of open/active accounts from the selected YNAB budget.")]
 	[ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+	[RequireYnabConfigured]
 	public async Task<Results<Ok<YnabAccountListResponse>, StatusCodeHttpResult>> GetAccounts(CancellationToken cancellationToken)
 	{
-		if (!ynabClient.IsConfigured)
-		{
-			logger.LogWarning("YNAB API client is not configured — missing personal access token");
-			return TypedResults.StatusCode(StatusCodes.Status503ServiceUnavailable);
-		}
-
 		try
 		{
 			YnabBudgetSelection selection = await mediator.Send(new GetSelectedYnabBudgetQuery(), cancellationToken);
@@ -86,14 +77,9 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 	[EndpointSummary("List YNAB categories")]
 	[EndpointDescription("Returns all YNAB categories for the selected budget, grouped by category group, with hidden categories excluded.")]
 	[ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+	[RequireYnabConfigured]
 	public async Task<Results<Ok<YnabCategoryListResponse>, StatusCodeHttpResult>> GetCategories(CancellationToken cancellationToken)
 	{
-		if (!ynabClient.IsConfigured)
-		{
-			logger.LogWarning("YNAB API client is not configured — missing personal access token");
-			return TypedResults.StatusCode(StatusCodes.Status503ServiceUnavailable);
-		}
-
 		string? budgetId = await budgetSelectionService.GetSelectedBudgetIdAsync(cancellationToken);
 		if (string.IsNullOrEmpty(budgetId))
 		{
@@ -301,16 +287,11 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 	[EndpointSummary("Sync YNAB memo for a receipt")]
 	[EndpointDescription("Matches local transactions to YNAB transactions and updates their memos with a receipt link.")]
 	[ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+	[RequireYnabConfigured]
 	public async Task<Results<Ok<YnabMemoSyncResponse>, StatusCodeHttpResult>> SyncMemos(
 		[FromBody] SyncYnabMemosRequest request,
 		CancellationToken cancellationToken)
 	{
-		if (!ynabClient.IsConfigured)
-		{
-			logger.LogWarning("YNAB API client is not configured — missing personal access token");
-			return TypedResults.StatusCode(StatusCodes.Status503ServiceUnavailable);
-		}
-
 		try
 		{
 			List<YnabMemoSyncResult> results = await mediator.Send(new SyncYnabMemosCommand(request.ReceiptId), cancellationToken);
@@ -327,16 +308,11 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 	[EndpointSummary("Push receipt transactions to YNAB")]
 	[EndpointDescription("Creates split transactions in YNAB from a single receipt. Allocates tax and adjustments proportionally across item categories.")]
 	[ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+	[RequireYnabConfigured]
 	public async Task<Results<Ok<PushYnabTransactionsResponse>, BadRequest<PushYnabTransactionsResponse>, StatusCodeHttpResult>> PushTransactions(
 		[FromBody] PushYnabTransactionsRequest request,
 		CancellationToken cancellationToken)
 	{
-		if (!ynabClient.IsConfigured)
-		{
-			logger.LogWarning("YNAB API client is not configured — missing personal access token");
-			return TypedResults.StatusCode(StatusCodes.Status503ServiceUnavailable);
-		}
-
 		try
 		{
 			PushYnabTransactionsResult result = await mediator.Send(
@@ -362,16 +338,11 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 	[EndpointSummary("Bulk sync YNAB memos")]
 	[EndpointDescription("Batch syncs YNAB memos for multiple receipts.")]
 	[ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+	[RequireYnabConfigured]
 	public async Task<Results<Ok<YnabMemoSyncResponse>, StatusCodeHttpResult>> SyncMemosBulk(
 		[FromBody] SyncYnabMemosBulkRequest request,
 		CancellationToken cancellationToken)
 	{
-		if (!ynabClient.IsConfigured)
-		{
-			logger.LogWarning("YNAB API client is not configured — missing personal access token");
-			return TypedResults.StatusCode(StatusCodes.Status503ServiceUnavailable);
-		}
-
 		try
 		{
 			List<YnabMemoSyncResult> results = await mediator.Send(
@@ -389,16 +360,11 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 	[EndpointSummary("Resolve ambiguous YNAB memo sync")]
 	[EndpointDescription("Resolves an ambiguous match by linking a local transaction to a specific YNAB transaction.")]
 	[ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+	[RequireYnabConfigured]
 	public async Task<Results<Ok<YnabMemoSyncResultItem>, StatusCodeHttpResult>> ResolveMemoSync(
 		[FromBody] ResolveYnabMemoSyncRequest request,
 		CancellationToken cancellationToken)
 	{
-		if (!ynabClient.IsConfigured)
-		{
-			logger.LogWarning("YNAB API client is not configured — missing personal access token");
-			return TypedResults.StatusCode(StatusCodes.Status503ServiceUnavailable);
-		}
-
 		try
 		{
 			YnabMemoSyncResult result = await mediator.Send(
@@ -416,16 +382,11 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 	[EndpointSummary("Push transactions for multiple receipts to YNAB")]
 	[EndpointDescription("Creates split transactions in YNAB for each receipt in the batch. Each receipt is processed independently.")]
 	[ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+	[RequireYnabConfigured]
 	public async Task<Results<Ok<BulkPushYnabTransactionsResponse>, StatusCodeHttpResult>> BulkPushTransactions(
 		[FromBody] BulkPushYnabTransactionsRequest request,
 		CancellationToken cancellationToken)
 	{
-		if (!ynabClient.IsConfigured)
-		{
-			logger.LogWarning("YNAB API client is not configured — missing personal access token");
-			return TypedResults.StatusCode(StatusCodes.Status503ServiceUnavailable);
-		}
-
 		try
 		{
 			BulkPushYnabTransactionsResult result = await mediator.Send(

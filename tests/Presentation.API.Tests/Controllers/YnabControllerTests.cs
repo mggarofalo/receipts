@@ -48,7 +48,7 @@ public class YnabControllerTests
 	public async Task GetBudgets_Returns200_WithBudgetList_WhenConfigured()
 	{
 		// Arrange
-		_ynabClientMock.Setup(c => c.IsConfigured).Returns(true);
+
 
 		List<YnabBudget> budgets =
 		[
@@ -71,24 +71,10 @@ public class YnabControllerTests
 	}
 
 	[Fact]
-	public async Task GetBudgets_Returns503_WhenNotConfigured()
-	{
-		// Arrange
-		_ynabClientMock.Setup(c => c.IsConfigured).Returns(false);
-
-		// Act
-		Results<Ok<YnabBudgetListResponse>, StatusCodeHttpResult> result = await _controller.GetBudgets(CancellationToken.None);
-
-		// Assert
-		StatusCodeHttpResult statusResult = Assert.IsType<StatusCodeHttpResult>(result.Result);
-		statusResult.StatusCode.Should().Be(StatusCodes.Status503ServiceUnavailable);
-	}
-
-	[Fact]
 	public async Task GetBudgets_Returns503_OnYnabAuthException()
 	{
 		// Arrange
-		_ynabClientMock.Setup(c => c.IsConfigured).Returns(true);
+
 
 		_mediatorMock.Setup(m => m.Send(
 			It.IsAny<GetYnabBudgetsQuery>(),
@@ -147,7 +133,7 @@ public class YnabControllerTests
 	public async Task GetCategories_Returns200_WithCategories_WhenConfigured()
 	{
 		// Arrange
-		_ynabClientMock.Setup(c => c.IsConfigured).Returns(true);
+
 		_budgetSelectionMock.Setup(s => s.GetSelectedBudgetIdAsync(It.IsAny<CancellationToken>()))
 			.ReturnsAsync("budget-1");
 
@@ -173,24 +159,10 @@ public class YnabControllerTests
 	}
 
 	[Fact]
-	public async Task GetCategories_Returns503_WhenNotConfigured()
-	{
-		// Arrange
-		_ynabClientMock.Setup(c => c.IsConfigured).Returns(false);
-
-		// Act
-		Results<Ok<YnabCategoryListResponse>, StatusCodeHttpResult> result = await _controller.GetCategories(CancellationToken.None);
-
-		// Assert
-		StatusCodeHttpResult statusResult = Assert.IsType<StatusCodeHttpResult>(result.Result);
-		statusResult.StatusCode.Should().Be(StatusCodes.Status503ServiceUnavailable);
-	}
-
-	[Fact]
 	public async Task GetCategories_Returns503_WhenNoBudgetSelected()
 	{
 		// Arrange
-		_ynabClientMock.Setup(c => c.IsConfigured).Returns(true);
+
 		_budgetSelectionMock.Setup(s => s.GetSelectedBudgetIdAsync(It.IsAny<CancellationToken>()))
 			.ReturnsAsync((string?)null);
 
@@ -352,7 +324,7 @@ public class YnabControllerTests
 	public async Task SyncMemos_Returns200_WithResults_WhenConfigured()
 	{
 		// Arrange
-		_ynabClientMock.Setup(c => c.IsConfigured).Returns(true);
+
 
 		Guid receiptId = Guid.NewGuid();
 		Guid txId = Guid.NewGuid();
@@ -379,26 +351,10 @@ public class YnabControllerTests
 	}
 
 	[Fact]
-	public async Task SyncMemos_Returns503_WhenNotConfigured()
-	{
-		// Arrange
-		_ynabClientMock.Setup(c => c.IsConfigured).Returns(false);
-
-		SyncYnabMemosRequest request = new() { ReceiptId = Guid.NewGuid() };
-
-		// Act
-		Results<Ok<YnabMemoSyncResponse>, StatusCodeHttpResult> result = await _controller.SyncMemos(request, CancellationToken.None);
-
-		// Assert
-		StatusCodeHttpResult statusResult = Assert.IsType<StatusCodeHttpResult>(result.Result);
-		statusResult.StatusCode.Should().Be(StatusCodes.Status503ServiceUnavailable);
-	}
-
-	[Fact]
 	public async Task SyncMemos_Returns503_OnYnabAuthException()
 	{
 		// Arrange
-		_ynabClientMock.Setup(c => c.IsConfigured).Returns(true);
+
 
 		_mediatorMock.Setup(m => m.Send(
 			It.IsAny<SyncYnabMemosCommand>(),
@@ -419,7 +375,7 @@ public class YnabControllerTests
 	public async Task SyncMemosBulk_Returns200_WithResults_WhenConfigured()
 	{
 		// Arrange
-		_ynabClientMock.Setup(c => c.IsConfigured).Returns(true);
+
 
 		Guid receiptId = Guid.NewGuid();
 		List<Application.Models.Ynab.YnabMemoSyncResult> results =
@@ -443,26 +399,10 @@ public class YnabControllerTests
 	}
 
 	[Fact]
-	public async Task SyncMemosBulk_Returns503_WhenNotConfigured()
-	{
-		// Arrange
-		_ynabClientMock.Setup(c => c.IsConfigured).Returns(false);
-
-		SyncYnabMemosBulkRequest request = new() { ReceiptIds = [Guid.NewGuid()] };
-
-		// Act
-		Results<Ok<YnabMemoSyncResponse>, StatusCodeHttpResult> result = await _controller.SyncMemosBulk(request, CancellationToken.None);
-
-		// Assert
-		StatusCodeHttpResult statusResult = Assert.IsType<StatusCodeHttpResult>(result.Result);
-		statusResult.StatusCode.Should().Be(StatusCodes.Status503ServiceUnavailable);
-	}
-
-	[Fact]
 	public async Task ResolveMemoSync_Returns200_WithResult_WhenConfigured()
 	{
 		// Arrange
-		_ynabClientMock.Setup(c => c.IsConfigured).Returns(true);
+
 
 		Guid txId = Guid.NewGuid();
 		Application.Models.Ynab.YnabMemoSyncResult expected = new(
@@ -484,26 +424,10 @@ public class YnabControllerTests
 	}
 
 	[Fact]
-	public async Task ResolveMemoSync_Returns503_WhenNotConfigured()
-	{
-		// Arrange
-		_ynabClientMock.Setup(c => c.IsConfigured).Returns(false);
-
-		ResolveYnabMemoSyncRequest request = new() { LocalTransactionId = Guid.NewGuid(), YnabTransactionId = "yt-1" };
-
-		// Act
-		Results<Ok<YnabMemoSyncResultItem>, StatusCodeHttpResult> result = await _controller.ResolveMemoSync(request, CancellationToken.None);
-
-		// Assert
-		StatusCodeHttpResult statusResult = Assert.IsType<StatusCodeHttpResult>(result.Result);
-		statusResult.StatusCode.Should().Be(StatusCodes.Status503ServiceUnavailable);
-	}
-
-	[Fact]
 	public async Task PushTransactions_Returns200_OnSuccess()
 	{
 		// Arrange
-		_ynabClientMock.Setup(c => c.IsConfigured).Returns(true);
+
 		Guid receiptId = Guid.NewGuid();
 		Guid txId = Guid.NewGuid();
 
@@ -535,7 +459,7 @@ public class YnabControllerTests
 	public async Task PushTransactions_Returns400_OnFailure()
 	{
 		// Arrange
-		_ynabClientMock.Setup(c => c.IsConfigured).Returns(true);
+
 		Guid receiptId = Guid.NewGuid();
 
 		PushYnabTransactionsResult pushResult = new(false, [],
@@ -560,26 +484,10 @@ public class YnabControllerTests
 	}
 
 	[Fact]
-	public async Task PushTransactions_Returns503_WhenNotConfigured()
-	{
-		// Arrange
-		_ynabClientMock.Setup(c => c.IsConfigured).Returns(false);
-		PushYnabTransactionsRequest request = new() { ReceiptId = Guid.NewGuid() };
-
-		// Act
-		Results<Ok<PushYnabTransactionsResponse>, BadRequest<PushYnabTransactionsResponse>, StatusCodeHttpResult> result =
-			await _controller.PushTransactions(request, CancellationToken.None);
-
-		// Assert
-		StatusCodeHttpResult statusResult = Assert.IsType<StatusCodeHttpResult>(result.Result);
-		statusResult.StatusCode.Should().Be(StatusCodes.Status503ServiceUnavailable);
-	}
-
-	[Fact]
 	public async Task BulkPushTransactions_Returns200_WithResults()
 	{
 		// Arrange
-		_ynabClientMock.Setup(c => c.IsConfigured).Returns(true);
+
 		Guid receiptId1 = Guid.NewGuid();
 		Guid receiptId2 = Guid.NewGuid();
 
