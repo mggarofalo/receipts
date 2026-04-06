@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { useAccounts } from "@/hooks/useAccounts";
 import {
+  useYnabConnectionStatus,
   useYnabBudgets,
   useSelectedYnabBudget,
   useSelectYnabBudget,
@@ -41,8 +42,29 @@ import { Badge } from "@/components/ui/badge";
 
 const UNMAPPED_VALUE = "__unmapped__";
 
+function formatRelativeTime(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  const diffHrs = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMin < 1) return "just now";
+  if (diffMin < 60) return `${diffMin}m ago`;
+  if (diffHrs < 24) return `${diffHrs}h ago`;
+  return `${diffDays}d ago`;
+}
+
 export default function YnabSettings() {
   usePageTitle("YNAB Settings");
+
+  const {
+    isConfigured: connectionConfigured,
+    isConnected,
+    lastSuccessfulSyncUtc,
+    isLoading: connectionLoading,
+  } = useYnabConnectionStatus();
 
   const { budgets, isLoading: budgetsLoading, isError: budgetsError } = useYnabBudgets();
   const { selectedBudgetId, isLoading: settingsLoading } = useSelectedYnabBudget();
@@ -176,6 +198,52 @@ export default function YnabSettings() {
           Configure your YNAB integration for transaction sync.
         </p>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Connection Status</CardTitle>
+          <CardDescription>
+            Current status of your YNAB integration.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {connectionLoading ? (
+            <div className="flex items-center gap-2">
+              <Spinner className="h-4 w-4" />
+              <span className="text-sm text-muted-foreground">Checking connection...</span>
+            </div>
+          ) : connectionConfigured && isConnected ? (
+            <div className="flex items-center gap-3">
+              <Badge className="bg-green-100 text-green-800 hover:bg-green-100 border-green-300">
+                Connected
+              </Badge>
+              <span className="text-sm text-muted-foreground">
+                {lastSuccessfulSyncUtc
+                  ? `Last sync: ${formatRelativeTime(lastSuccessfulSyncUtc)}`
+                  : "No syncs yet"}
+              </span>
+            </div>
+          ) : connectionConfigured && !isConnected ? (
+            <div className="flex items-center gap-3">
+              <Badge variant="destructive">
+                Disconnected
+              </Badge>
+              <span className="text-sm text-muted-foreground">
+                YNAB PAT is configured but the connection failed. Check your token.
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3">
+              <Badge variant="outline" className="text-muted-foreground">
+                Not Configured
+              </Badge>
+              <span className="text-sm text-muted-foreground">
+                Set the <code>YNAB_PAT</code> environment variable to enable the integration.
+              </span>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {notConfigured && (
         <Alert variant="destructive">

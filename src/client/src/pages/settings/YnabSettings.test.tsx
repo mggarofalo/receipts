@@ -14,6 +14,14 @@ vi.mock("@/hooks/useAccounts", () => ({
 }));
 
 vi.mock("@/hooks/useYnab", () => ({
+  useYnabConnectionStatus: vi.fn(() =>
+    mockQueryResult({
+      isConfigured: false,
+      isConnected: false,
+      lastSuccessfulSyncUtc: null,
+      isLoading: false,
+    }),
+  ),
   useYnabBudgets: vi.fn(() =>
     mockQueryResult({ budgets: [], isLoading: false, isError: false }),
   ),
@@ -46,6 +54,91 @@ vi.mock("@/hooks/useYnab", () => ({
   useUpdateYnabCategoryMapping: vi.fn(() => mockMutationResult()),
   useDeleteYnabCategoryMapping: vi.fn(() => mockMutationResult()),
 }));
+
+describe("YnabSettings – Connection Status", () => {
+  it("shows 'Connected' badge when configured and connected", async () => {
+    const { useYnabConnectionStatus } = await import("@/hooks/useYnab");
+    vi.mocked(useYnabConnectionStatus).mockReturnValue(
+      mockQueryResult({
+        isConfigured: true,
+        isConnected: true,
+        lastSuccessfulSyncUtc: null,
+        isLoading: false,
+      }),
+    );
+
+    renderWithProviders(<YnabSettings />);
+
+    expect(screen.getByText("Connected")).toBeInTheDocument();
+    expect(screen.getByText("No syncs yet")).toBeInTheDocument();
+  });
+
+  it("shows 'Connected' badge with last sync time when available", async () => {
+    const { useYnabConnectionStatus } = await import("@/hooks/useYnab");
+    const recentDate = new Date(Date.now() - 5 * 60000).toISOString();
+    vi.mocked(useYnabConnectionStatus).mockReturnValue(
+      mockQueryResult({
+        isConfigured: true,
+        isConnected: true,
+        lastSuccessfulSyncUtc: recentDate,
+        isLoading: false,
+      }),
+    );
+
+    renderWithProviders(<YnabSettings />);
+
+    expect(screen.getByText("Connected")).toBeInTheDocument();
+    expect(screen.getByText(/Last sync:/)).toBeInTheDocument();
+  });
+
+  it("shows 'Not Configured' badge when PAT is missing", async () => {
+    const { useYnabConnectionStatus } = await import("@/hooks/useYnab");
+    vi.mocked(useYnabConnectionStatus).mockReturnValue(
+      mockQueryResult({
+        isConfigured: false,
+        isConnected: false,
+        lastSuccessfulSyncUtc: null,
+        isLoading: false,
+      }),
+    );
+
+    renderWithProviders(<YnabSettings />);
+
+    expect(screen.getByText("Not Configured")).toBeInTheDocument();
+  });
+
+  it("shows 'Disconnected' badge when configured but connection fails", async () => {
+    const { useYnabConnectionStatus } = await import("@/hooks/useYnab");
+    vi.mocked(useYnabConnectionStatus).mockReturnValue(
+      mockQueryResult({
+        isConfigured: true,
+        isConnected: false,
+        lastSuccessfulSyncUtc: null,
+        isLoading: false,
+      }),
+    );
+
+    renderWithProviders(<YnabSettings />);
+
+    expect(screen.getByText("Disconnected")).toBeInTheDocument();
+  });
+
+  it("shows loading spinner while checking connection", async () => {
+    const { useYnabConnectionStatus } = await import("@/hooks/useYnab");
+    vi.mocked(useYnabConnectionStatus).mockReturnValue(
+      mockQueryResult({
+        isConfigured: false,
+        isConnected: false,
+        lastSuccessfulSyncUtc: null,
+        isLoading: true,
+      }),
+    );
+
+    renderWithProviders(<YnabSettings />);
+
+    expect(screen.getByText("Checking connection...")).toBeInTheDocument();
+  });
+});
 
 describe("YnabSettings – Category Mapping", () => {
   it("shows 'Configure YNAB to map categories.' when notConfigured is true", async () => {

@@ -3686,6 +3686,22 @@ paths:
   # YNAB
   # ──────────────────────────────────────────────
 
+  /api/ynab/connection-status:
+    get:
+      operationId: GetYnabConnectionStatus
+      tags: [YNAB]
+      summary: Get YNAB connection status
+      description: Returns whether YNAB is configured, whether the connection is active, and the last successful sync timestamp.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/YnabConnectionStatusResponse"
+
   /api/ynab/budgets:
     get:
       operationId: GetYnabBudgets
@@ -6099,6 +6115,23 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/YnabBudgetSummary"
+
+    YnabConnectionStatusResponse:
+      type: object
+      required: [isConfigured, isConnected]
+      properties:
+        isConfigured:
+          type: boolean
+          description: Whether the YNAB personal access token is set.
+        isConnected:
+          type: boolean
+          description: Whether the YNAB API is reachable with the configured token.
+        lastSuccessfulSyncUtc:
+          type:
+            - string
+            - "null"
+          format: date-time
+          description: The timestamp of the last successful YNAB sync operation, or null if no syncs have completed.
 
     YnabBudgetSettingsResponse:
       type: object

@@ -52,6 +52,9 @@ public class YnabSyncRecordService(IYnabSyncRecordRepository repository) : IYnab
 		await repository.UpdateAsync(entity, cancellationToken);
 	}
 
+	public Task<DateTimeOffset?> GetLatestSuccessfulSyncTimestampAsync(CancellationToken cancellationToken)
+		=> repository.GetLatestSuccessfulSyncTimestampAsync(cancellationToken);
+
 	private static YnabSyncRecordDto ToDto(YnabSyncRecordEntity entity) => new(
 		entity.Id,
 		entity.LocalTransactionId,

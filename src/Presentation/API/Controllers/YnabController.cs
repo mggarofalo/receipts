@@ -25,6 +25,15 @@ namespace API.Controllers;
 [Authorize]
 public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnabBudgetSelectionService budgetSelectionService, YnabMapper mapper, ILogger<YnabController> logger) : ControllerBase
 {
+	[HttpGet("connection-status")]
+	[EndpointSummary("Get YNAB connection status")]
+	[EndpointDescription("Returns whether YNAB is configured, whether the connection is active, and the last successful sync timestamp.")]
+	public async Task<Ok<YnabConnectionStatusResponse>> GetConnectionStatus(CancellationToken cancellationToken)
+	{
+		YnabConnectionStatus status = await mediator.Send(new GetYnabConnectionStatusQuery(), cancellationToken);
+		return TypedResults.Ok(mapper.ToConnectionStatusResponse(status));
+	}
+
 	[HttpGet("budgets")]
 	[EndpointSummary("List YNAB budgets")]
 	[EndpointDescription("Returns the list of budgets from the connected YNAB account.")]

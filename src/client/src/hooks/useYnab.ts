@@ -4,6 +4,28 @@ import client from "@/lib/api-client";
 import { toast } from "sonner";
 import type { components } from "@/generated/api";
 
+export function useYnabConnectionStatus() {
+  const query = useQuery({
+    queryKey: ["ynab", "connection-status"],
+    queryFn: async () => {
+      const { data, error } = await client.GET(
+        "/api/ynab/connection-status",
+      );
+      if (error) throw error;
+      return data;
+    },
+  });
+  return useMemo(
+    () => ({
+      ...query,
+      isConfigured: query.data?.isConfigured ?? false,
+      isConnected: query.data?.isConnected ?? false,
+      lastSuccessfulSyncUtc: query.data?.lastSuccessfulSyncUtc ?? null,
+    }),
+    [query],
+  );
+}
+
 export function useYnabBudgets() {
   const query = useQuery({
     queryKey: ["ynab", "budgets"],

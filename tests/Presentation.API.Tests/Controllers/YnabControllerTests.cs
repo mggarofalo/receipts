@@ -45,6 +45,63 @@ public class YnabControllerTests
 	}
 
 	[Fact]
+	public async Task GetConnectionStatus_ReturnsConnected_WhenConfiguredAndReachable()
+	{
+		// Arrange
+		_ynabClientMock.Setup(c => c.IsConfigured).Returns(true);
+		_mediatorMock.Setup(m => m.Send(
+			It.IsAny<GetYnabConnectionStatusQuery>(),
+			It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new YnabConnectionStatus(true, true, DateTimeOffset.UtcNow));
+
+		// Act
+		Ok<YnabConnectionStatusResponse> result = await _controller.GetConnectionStatus(CancellationToken.None);
+
+		// Assert
+		YnabConnectionStatusResponse response = result.Value!;
+		response.IsConfigured.Should().BeTrue();
+		response.IsConnected.Should().BeTrue();
+		response.LastSuccessfulSyncUtc.Should().NotBeNull();
+	}
+
+	[Fact]
+	public async Task GetConnectionStatus_ReturnsNotConfigured_WhenPatMissing()
+	{
+		// Arrange
+		_mediatorMock.Setup(m => m.Send(
+			It.IsAny<GetYnabConnectionStatusQuery>(),
+			It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new YnabConnectionStatus(false, false, null));
+
+		// Act
+		Ok<YnabConnectionStatusResponse> result = await _controller.GetConnectionStatus(CancellationToken.None);
+
+		// Assert
+		YnabConnectionStatusResponse response = result.Value!;
+		response.IsConfigured.Should().BeFalse();
+		response.IsConnected.Should().BeFalse();
+		response.LastSuccessfulSyncUtc.Should().BeNull();
+	}
+
+	[Fact]
+	public async Task GetConnectionStatus_ReturnsDisconnected_WhenAuthFails()
+	{
+		// Arrange
+		_mediatorMock.Setup(m => m.Send(
+			It.IsAny<GetYnabConnectionStatusQuery>(),
+			It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new YnabConnectionStatus(true, false, null));
+
+		// Act
+		Ok<YnabConnectionStatusResponse> result = await _controller.GetConnectionStatus(CancellationToken.None);
+
+		// Assert
+		YnabConnectionStatusResponse response = result.Value!;
+		response.IsConfigured.Should().BeTrue();
+		response.IsConnected.Should().BeFalse();
+	}
+
+	[Fact]
 	public async Task GetBudgets_Returns200_WithBudgetList_WhenConfigured()
 	{
 		// Arrange

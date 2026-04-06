@@ -12,6 +12,17 @@ namespace API.Mapping.Core;
 [Mapper]
 public partial class YnabMapper
 {
+	[MapperIgnoreTarget(nameof(YnabConnectionStatusResponse.AdditionalProperties))]
+	public YnabConnectionStatusResponse ToConnectionStatusResponse(YnabConnectionStatus source)
+	{
+		return new YnabConnectionStatusResponse
+		{
+			IsConfigured = source.IsConfigured,
+			IsConnected = source.IsConnected,
+			LastSuccessfulSyncUtc = source.LastSuccessfulSyncUtc,
+		};
+	}
+
 	[MapperIgnoreTarget(nameof(YnabBudgetSummary.AdditionalProperties))]
 	public partial YnabBudgetSummary ToBudgetSummary(YnabBudget source);
 

@@ -19,6 +19,7 @@ vi.mock("sonner", () => ({
 import client from "@/lib/api-client";
 import { toast } from "sonner";
 import {
+  useYnabConnectionStatus,
   useYnabBudgets,
   useSelectedYnabBudget,
   useSelectYnabBudget,
@@ -56,6 +57,38 @@ beforeEach(() => {
 });
 
 describe("useYnab", () => {
+  it("useYnabConnectionStatus returns connection status on success", async () => {
+    const status = {
+      isConfigured: true,
+      isConnected: true,
+      lastSuccessfulSyncUtc: "2026-04-05T12:00:00Z",
+    };
+    (client.GET as Mock).mockResolvedValue({ data: status, error: undefined });
+
+    const { result } = renderHook(() => useYnabConnectionStatus(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.isConfigured).toBe(true);
+    expect(result.current.isConnected).toBe(true);
+    expect(result.current.lastSuccessfulSyncUtc).toBe("2026-04-05T12:00:00Z");
+    expect(client.GET).toHaveBeenCalledWith("/api/ynab/connection-status");
+  });
+
+  it("useYnabConnectionStatus returns defaults when data is undefined", async () => {
+    (client.GET as Mock).mockResolvedValue({ data: undefined, error: "Server error" });
+
+    const { result } = renderHook(() => useYnabConnectionStatus(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.isConfigured).toBe(false);
+    expect(result.current.isConnected).toBe(false);
+    expect(result.current.lastSuccessfulSyncUtc).toBeNull();
+  });
+
   it("useYnabBudgets returns budgets on success", async () => {
     const budgets = [
       { id: "budget-1", name: "My Budget" },
