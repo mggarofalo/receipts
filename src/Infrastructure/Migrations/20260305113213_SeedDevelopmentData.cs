@@ -15,7 +15,7 @@ public partial class SeedDevelopmentData : Migration
 	{
 		migrationBuilder.InsertData(
 			table: "Categories",
-			columns: new[] { "Id", "DeletedAt", "DeletedByApiKeyId", "DeletedByUserId", "Description", "Name" },
+			columns: ["Id", "DeletedAt", "DeletedByApiKeyId", "DeletedByUserId", "Description", "Name"],
 			values: new object[,]
 			{
 				{ new Guid("3a131ca1-3300-4cde-b7ee-24704934feea"), null, null, null, "Gas, transit, parking, and rideshare", "Transportation" },
@@ -27,7 +27,7 @@ public partial class SeedDevelopmentData : Migration
 
 		migrationBuilder.InsertData(
 			table: "ItemTemplates",
-			columns: new[] { "Id", "DefaultCategory", "DefaultItemCode", "DefaultPricingMode", "DefaultSubcategory", "DefaultUnitPrice", "DefaultUnitPriceCurrency", "DeletedAt", "DeletedByApiKeyId", "DeletedByUserId", "Description", "Name" },
+			columns: ["Id", "DefaultCategory", "DefaultItemCode", "DefaultPricingMode", "DefaultSubcategory", "DefaultUnitPrice", "DefaultUnitPriceCurrency", "DeletedAt", "DeletedByApiKeyId", "DeletedByUserId", "Description", "Name"],
 			values: new object[,]
 			{
 				{ new Guid("33255f68-44df-4813-ad55-92260303c0ce"), "Groceries", "BREAD", "quantity", "Bakery", 3.49m, "USD", null, null, null, null, "Loaf of Bread" },
@@ -38,7 +38,7 @@ public partial class SeedDevelopmentData : Migration
 
 		migrationBuilder.InsertData(
 			table: "Subcategories",
-			columns: new[] { "Id", "CategoryId", "DeletedAt", "DeletedByApiKeyId", "DeletedByUserId", "Description", "Name" },
+			columns: ["Id", "CategoryId", "DeletedAt", "DeletedByApiKeyId", "DeletedByUserId", "Description", "Name"],
 			values: new object[,]
 			{
 				{ new Guid("079d5267-8091-460b-86d4-7b2565b8bb25"), new Guid("3a131ca1-3300-4cde-b7ee-24704934feea"), null, null, null, null, "Parking" },

@@ -131,7 +131,7 @@ jobs:
           format: markdown
           output: both
           badge: false
-          thresholds: '70 65'
+          thresholds: '78 70'
           fail_below_min: true
 
       - name: Post coverage to PR

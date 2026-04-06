@@ -53,9 +53,17 @@ State management, Effects, component patterns, and custom hook conventions for t
 
 ## Agent Rules
 
-**All new functionality must include tests.** When implementing a feature, endpoint, command, query, or bug fix, include corresponding unit tests in the same PR. Follow existing conventions (xUnit, Arrange/Act/Assert, FluentAssertions, Moq).
+**All new functionality must include tests — backend and frontend.** When implementing a feature, endpoint, command, query, or bug fix, include corresponding unit tests in the same PR. Never defer tests to a follow-up.
+
+- **Backend:** Follow existing conventions (xUnit, Arrange/Act/Assert, FluentAssertions, Moq). Test MediatR handlers, mappers, validators, and services with business logic.
+- **Frontend:** Every new hook (`useX`) must have a `useX.test.ts`. Every new page component must have a test covering rendered content, loading/error states, and primary interactions. Follow the mock patterns in [docs/testing.md](docs/testing.md#mock-fidelity-rules).
+- **Test-first when possible.** Write the failing test before the implementation. Coverage is an observed outcome, not a target — never write tests solely to increase a coverage number.
+
+For principles on test quality, what to test vs. skip, and Goodhart's Law risks, see **[docs/agentic-testing.md](docs/agentic-testing.md)**.
 
 **Integration tests** use `[Trait("Category", "Integration")]` and are excluded from CI/pre-commit via `--filter "Category!=Integration"`.
+
+**Never modify coverage thresholds or CI configuration** unless explicitly asked. Coverage gates are not part of feature implementation.
 
 **Never write tests or perform code review in the main conversation context.** Always spawn subagents:
 - Use `test-runner` or equivalent for running/writing tests

@@ -11,12 +11,18 @@ const routeLabels: Record<string, string> = {
   "/reports": "Reports",
   "/api-keys": "API Keys",
   "/security": "Security",
+  "/settings": "Settings",
   "/audit": "Audit Log",
   "/trash": "Recycle Bin",
   "/admin/users": "User Management",
   "/admin/backup": "Backup & Restore",
   "/login": "Login",
   "/change-password": "Change Password",
+};
+
+/** Overrides for individual path segments where `toTitleCase` produces the wrong result. */
+const segmentOverrides: Record<string, string> = {
+  ynab: "YNAB",
 };
 
 /** Maps query param keys to breadcrumb label resolvers for specific routes. */
@@ -66,7 +72,8 @@ export function useBreadcrumbs(): BreadcrumbSegment[] {
       let accumulated = "";
       for (const part of parts) {
         accumulated += `/${part}`;
-        const segLabel = routeLabels[accumulated] ?? toTitleCase(part);
+        const segLabel =
+          routeLabels[accumulated] ?? segmentOverrides[part] ?? toTitleCase(part);
         crumbs.push({ label: segLabel, path: accumulated });
       }
     }
