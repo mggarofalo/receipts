@@ -17,6 +17,7 @@ public class YnabMemoSyncServiceTests
 	private readonly Mock<IYnabSyncRecordService> _syncRecordServiceMock = new();
 	private readonly Mock<ITransactionRepository> _transactionRepoMock = new();
 	private readonly Mock<IReceiptRepository> _receiptRepoMock = new();
+	private readonly Mock<IYnabServerKnowledgeRepository> _serverKnowledgeRepoMock = new();
 	private readonly Mock<ILogger<YnabMemoSyncService>> _loggerMock = new();
 	private readonly YnabMemoSyncService _service;
 
@@ -26,12 +27,20 @@ public class YnabMemoSyncServiceTests
 
 	public YnabMemoSyncServiceTests()
 	{
+		_serverKnowledgeRepoMock
+			.Setup(r => r.GetAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync((long?)null);
+		_serverKnowledgeRepoMock
+			.Setup(r => r.UpsertAsync(It.IsAny<string>(), It.IsAny<long>(), It.IsAny<CancellationToken>()))
+			.Returns(Task.CompletedTask);
+
 		_service = new YnabMemoSyncService(
 			_ynabClientMock.Object,
 			_budgetSelectionMock.Object,
 			_syncRecordServiceMock.Object,
 			_transactionRepoMock.Object,
 			_receiptRepoMock.Object,
+			_serverKnowledgeRepoMock.Object,
 			_loggerMock.Object);
 	}
 
@@ -174,8 +183,8 @@ public class YnabMemoSyncServiceTests
 		// YNAB amount should be negated: 25.50 * 1000 = 25500, negated = -25500
 		YnabTransaction ynabTx = CreateYnabTransaction("yt-1", transaction.Date, -25500, "Walmart");
 		_ynabClientMock
-			.Setup(c => c.GetTransactionsByDateAsync(BudgetId, transaction.Date, It.IsAny<CancellationToken>()))
-			.ReturnsAsync([ynabTx]);
+			.Setup(c => c.GetTransactionsByDateAsync(BudgetId, transaction.Date, It.IsAny<long?>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new YnabTransactionsResult([ynabTx], 42));
 
 		SetupSyncRecordCreation();
 		SetupSyncRecordUpdate();
@@ -206,8 +215,8 @@ public class YnabMemoSyncServiceTests
 
 		YnabTransaction ynabTx = CreateYnabTransaction("yt-1", transaction.Date, 25500, "Walmart");
 		_ynabClientMock
-			.Setup(c => c.GetTransactionsByDateAsync(BudgetId, transaction.Date, It.IsAny<CancellationToken>()))
-			.ReturnsAsync([ynabTx]);
+			.Setup(c => c.GetTransactionsByDateAsync(BudgetId, transaction.Date, It.IsAny<long?>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new YnabTransactionsResult([ynabTx], 42));
 
 		// Act
 		List<YnabMemoSyncResult> results = await _service.SyncMemosByReceiptAsync(receipt.Id, CancellationToken.None);
@@ -268,8 +277,8 @@ public class YnabMemoSyncServiceTests
 		YnabTransaction ynabTx2 = CreateYnabTransaction("yt-2", transaction.Date, -50000, "Walmart Supercenter");
 
 		_ynabClientMock
-			.Setup(c => c.GetTransactionsByDateAsync(BudgetId, transaction.Date, It.IsAny<CancellationToken>()))
-			.ReturnsAsync([ynabTx1, ynabTx2]);
+			.Setup(c => c.GetTransactionsByDateAsync(BudgetId, transaction.Date, It.IsAny<long?>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new YnabTransactionsResult([ynabTx1, ynabTx2], 42));
 
 		// Act
 		List<YnabMemoSyncResult> results = await _service.SyncMemosByReceiptAsync(receipt.Id, CancellationToken.None);
@@ -294,8 +303,8 @@ public class YnabMemoSyncServiceTests
 
 		// Empty YNAB transactions
 		_ynabClientMock
-			.Setup(c => c.GetTransactionsByDateAsync(BudgetId, transaction.Date, It.IsAny<CancellationToken>()))
-			.ReturnsAsync([]);
+			.Setup(c => c.GetTransactionsByDateAsync(BudgetId, transaction.Date, It.IsAny<long?>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new YnabTransactionsResult([], 42));
 
 		// Act
 		List<YnabMemoSyncResult> results = await _service.SyncMemosByReceiptAsync(receipt.Id, CancellationToken.None);
@@ -336,7 +345,7 @@ public class YnabMemoSyncServiceTests
 		results[0].Outcome.Should().Be(YnabMemoSyncOutcome.AlreadySynced);
 		// Should NOT call YNAB API
 		_ynabClientMock.Verify(c => c.GetTransactionsByDateAsync(
-			It.IsAny<string>(), It.IsAny<DateOnly>(), It.IsAny<CancellationToken>()), Times.Never);
+			It.IsAny<string>(), It.IsAny<DateOnly>(), It.IsAny<long?>(), It.IsAny<CancellationToken>()), Times.Never);
 	}
 
 	[Fact]
@@ -355,8 +364,8 @@ public class YnabMemoSyncServiceTests
 		YnabTransaction ynabTx = new("yt-1", transaction.Date, -25500, existingMemo, "cleared", true, "acc-1", null, "Walmart");
 
 		_ynabClientMock
-			.Setup(c => c.GetTransactionsByDateAsync(BudgetId, transaction.Date, It.IsAny<CancellationToken>()))
-			.ReturnsAsync([ynabTx]);
+			.Setup(c => c.GetTransactionsByDateAsync(BudgetId, transaction.Date, It.IsAny<long?>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new YnabTransactionsResult([ynabTx], 42));
 
 		SetupSyncRecordCreation();
 		SetupSyncRecordUpdate();
@@ -422,7 +431,7 @@ public class YnabMemoSyncServiceTests
 		SetupNoExistingSyncRecord(transaction.Id);
 
 		_ynabClientMock
-			.Setup(c => c.GetTransactionsByDateAsync(BudgetId, transaction.Date, It.IsAny<CancellationToken>()))
+			.Setup(c => c.GetTransactionsByDateAsync(BudgetId, transaction.Date, It.IsAny<long?>(), It.IsAny<CancellationToken>()))
 			.ThrowsAsync(new HttpRequestException("YNAB API error"));
 
 		// Act
@@ -465,8 +474,8 @@ public class YnabMemoSyncServiceTests
 		SetupNoExistingSyncRecordForAny();
 
 		_ynabClientMock
-			.Setup(c => c.GetTransactionsByDateAsync(BudgetId, It.IsAny<DateOnly>(), It.IsAny<CancellationToken>()))
-			.ReturnsAsync([]);
+			.Setup(c => c.GetTransactionsByDateAsync(BudgetId, It.IsAny<DateOnly>(), It.IsAny<long?>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new YnabTransactionsResult([], 42));
 
 		// Act
 		List<YnabMemoSyncResult> results = await _service.SyncMemosBulkAsync(

@@ -14,6 +14,7 @@ public class YnabMemoSyncService(
 	IYnabSyncRecordService syncRecordService,
 	ITransactionRepository transactionRepository,
 	IReceiptRepository receiptRepository,
+	IYnabServerKnowledgeRepository serverKnowledgeRepository,
 	ILogger<YnabMemoSyncService> logger) : IYnabMemoSyncService
 {
 	internal const int YnabMemoMaxLength = 200;
@@ -109,11 +110,14 @@ public class YnabMemoSyncService(
 			return new YnabMemoSyncResult(transaction.Id, receipt.Id, YnabMemoSyncOutcome.AlreadySynced, existingRecord.YnabTransactionId, null, null);
 		}
 
-		// Fetch YNAB transactions for the same date
+		// Fetch YNAB transactions for the same date using delta sync when possible
 		List<YnabTransaction> ynabTransactions;
 		try
 		{
-			ynabTransactions = await ynabClient.GetTransactionsByDateAsync(budgetId, transaction.Date, cancellationToken);
+			long? lastKnowledge = await serverKnowledgeRepository.GetAsync(budgetId, cancellationToken);
+			YnabTransactionsResult result = await ynabClient.GetTransactionsByDateAsync(budgetId, transaction.Date, lastKnowledge, cancellationToken);
+			ynabTransactions = result.Transactions;
+			await serverKnowledgeRepository.UpsertAsync(budgetId, result.ServerKnowledge, cancellationToken);
 		}
 		catch (Exception ex)
 		{

@@ -30,6 +30,9 @@ internal sealed class YnabTransactionsListResponseData
 {
 	[JsonPropertyName("transactions")]
 	public List<YnabTransactionDto> Transactions { get; set; } = [];
+
+	[JsonPropertyName("server_knowledge")]
+	public long ServerKnowledge { get; set; }
 }
 
 /// <summary>

@@ -163,15 +163,21 @@ public class YnabApiClient(
 		return new YnabCreateTransactionResponse(transactionId);
 	}
 
-	public async Task<List<YnabTransaction>> GetTransactionsByDateAsync(string budgetId, DateOnly sinceDate, CancellationToken cancellationToken)
+	public async Task<YnabTransactionsResult> GetTransactionsByDateAsync(string budgetId, DateOnly sinceDate, long? lastKnowledgeOfServer = null, CancellationToken cancellationToken = default)
 	{
 		string encodedBudgetId = Uri.EscapeDataString(budgetId);
 		string formattedDate = sinceDate.ToString("yyyy-MM-dd");
 
-		YnabTransactionsListResponseEnvelope envelope = await GetAsync<YnabTransactionsListResponseEnvelope>(
-			$"budgets/{encodedBudgetId}/transactions?since_date={formattedDate}", cancellationToken);
+		string url = $"budgets/{encodedBudgetId}/transactions?since_date={formattedDate}";
+		if (lastKnowledgeOfServer.HasValue)
+		{
+			url += $"&last_knowledge_of_server={lastKnowledgeOfServer.Value}";
+		}
 
-		return envelope.Data.Transactions
+		YnabTransactionsListResponseEnvelope envelope = await GetAsync<YnabTransactionsListResponseEnvelope>(
+			url, cancellationToken);
+
+		List<YnabTransaction> transactions = envelope.Data.Transactions
 			.Where(t => !t.Deleted)
 			.Select(t => new YnabTransaction(
 				t.Id,
@@ -184,6 +190,8 @@ public class YnabApiClient(
 				t.CategoryId,
 				t.PayeeName))
 			.ToList();
+
+		return new YnabTransactionsResult(transactions, envelope.Data.ServerKnowledge);
 	}
 
 	public async Task UpdateTransactionMemoAsync(string budgetId, string transactionId, string memo, CancellationToken cancellationToken)
