@@ -47,6 +47,11 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 	public virtual DbSet<AuditLogEntity> AuditLogs { get; set; } = null!;
 	public virtual DbSet<AuthAuditLogEntity> AuthAuditLogs { get; set; } = null!;
 	public virtual DbSet<SeedHistoryEntry> SeedHistory { get; set; } = null!;
+	public virtual DbSet<YnabSyncRecordEntity> YnabSyncRecords { get; set; } = null!;
+	public virtual DbSet<YnabSelectedBudgetEntity> YnabSelectedBudgets { get; set; } = null!;
+	public virtual DbSet<YnabAccountMappingEntity> YnabAccountMappings { get; set; } = null!;
+	public virtual DbSet<YnabCategoryMappingEntity> YnabCategoryMappings { get; set; } = null!;
+	public virtual DbSet<YnabServerKnowledgeEntity> YnabServerKnowledge { get; set; } = null!;
 
 	protected override void OnModelCreating(ModelBuilder modelBuilder)
 	{
@@ -198,7 +203,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 
 	private List<AuditEntry> CollectAuditEntries()
 	{
-		HashSet<Type> excludedTypes = [typeof(AuditLogEntity), typeof(AuthAuditLogEntity), typeof(SeedHistoryEntry)];
+		HashSet<Type> excludedTypes = [typeof(AuditLogEntity), typeof(AuthAuditLogEntity), typeof(SeedHistoryEntry), typeof(YnabSyncRecordEntity), typeof(YnabSelectedBudgetEntity), typeof(YnabAccountMappingEntity), typeof(YnabCategoryMappingEntity), typeof(YnabServerKnowledgeEntity)];
 		List<AuditEntry> auditEntries = [];
 		DateTimeOffset now = DateTimeOffset.UtcNow;
 
