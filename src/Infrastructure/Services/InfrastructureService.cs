@@ -162,6 +162,11 @@ public static class InfrastructureService
 		services.AddMemoryCache();
 
 		YnabClientOptions ynabOptions = new();
+		services.AddSingleton(ynabOptions);
+		services.AddSingleton<IYnabRateLimitTracker>(sp =>
+			new YnabRateLimitTracker(
+				sp.GetRequiredService<YnabClientOptions>(),
+				sp.GetService<TimeProvider>() ?? TimeProvider.System));
 		services.AddHttpClient<IYnabApiClient, YnabApiClient>(client =>
 		{
 			client.BaseAddress = new Uri(ynabOptions.BaseUrl.TrimEnd('/') + "/");

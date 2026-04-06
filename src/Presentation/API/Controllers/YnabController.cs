@@ -412,6 +412,15 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 		}
 	}
 
+	[HttpGet("rate-limit-status")]
+	[EndpointSummary("Get YNAB API rate limit status")]
+	[EndpointDescription("Returns the current YNAB API rate limit status including remaining requests, total quota, and window reset time.")]
+	public async Task<Ok<YnabRateLimitStatusResponse>> GetRateLimitStatus(CancellationToken cancellationToken)
+	{
+		YnabRateLimitStatus status = await mediator.Send(new GetYnabRateLimitStatusQuery(), cancellationToken);
+		return TypedResults.Ok(mapper.ToRateLimitStatusResponse(status));
+	}
+
 	[HttpPost("push-transactions/bulk")]
 	[EndpointSummary("Push transactions for multiple receipts to YNAB")]
 	[EndpointDescription("Creates split transactions in YNAB for each receipt in the batch. Each receipt is processed independently.")]

@@ -6,4 +6,6 @@ public class YnabClientOptions
 	public int BudgetCacheTtlSeconds { get; set; } = 300;
 	public int AccountCacheTtlSeconds { get; set; } = 300;
 	public int CategoryCacheTtlSeconds { get; set; } = 300;
+	public int RateLimitMaxRequests { get; set; } = 200;
+	public int RateLimitWindowSeconds { get; set; } = 3600;
 }

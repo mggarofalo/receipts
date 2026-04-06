@@ -489,3 +489,25 @@ export function useYnabSyncStatus(transactionId: string | null) {
     enabled: !!transactionId,
   });
 }
+
+export function useYnabRateLimitStatus(enabled = true) {
+  const query = useQuery({
+    queryKey: ["ynab", "rate-limit-status"],
+    queryFn: async () => {
+      const { data, error } = await client.GET(
+        "/api/ynab/rate-limit-status",
+      );
+      if (error) throw error;
+      return data;
+    },
+    enabled,
+    refetchInterval: 30_000,
+  });
+  return useMemo(
+    () => ({
+      ...query,
+      rateLimitStatus: query.data ?? null,
+    }),
+    [query],
+  );
+}

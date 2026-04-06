@@ -40,6 +40,7 @@ import {
   useMemoSyncSummary,
   usePushYnabTransactions,
   useBulkPushYnabTransactions,
+  useYnabRateLimitStatus,
 } from "./useYnab";
 
 function createWrapper() {
@@ -691,5 +692,35 @@ describe("useYnab", () => {
     expect(toast.success).toHaveBeenCalledWith(
       "Pushed 1/2 receipt(s) to YNAB",
     );
+  });
+
+  it("useYnabRateLimitStatus returns rate limit data on success", async () => {
+    const rateLimitData = {
+      remainingRequests: 150,
+      maxRequests: 200,
+      requestsUsed: 50,
+      windowResetAt: "2026-04-05T23:00:00Z",
+      oldestRequestAt: "2026-04-05T22:00:00Z",
+    };
+    (client.GET as Mock).mockResolvedValue({ data: rateLimitData, error: undefined });
+
+    const { result } = renderHook(() => useYnabRateLimitStatus(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.rateLimitStatus).toEqual(rateLimitData);
+    expect(client.GET).toHaveBeenCalledWith("/api/ynab/rate-limit-status");
+  });
+
+  it("useYnabRateLimitStatus returns null when data is undefined", async () => {
+    (client.GET as Mock).mockResolvedValue({ data: undefined, error: "Error" });
+
+    const { result } = renderHook(() => useYnabRateLimitStatus(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.rateLimitStatus).toBeNull();
   });
 });

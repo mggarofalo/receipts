@@ -17,6 +17,7 @@ import {
   useCreateYnabCategoryMapping,
   useUpdateYnabCategoryMapping,
   useDeleteYnabCategoryMapping,
+  useYnabRateLimitStatus,
 } from "@/hooks/useYnab";
 import {
   Card,
@@ -66,6 +67,8 @@ export default function YnabSettings() {
   const createCategoryMapping = useCreateYnabCategoryMapping();
   const updateCategoryMapping = useUpdateYnabCategoryMapping();
   const deleteCategoryMapping = useDeleteYnabCategoryMapping();
+
+  const { rateLimitStatus } = useYnabRateLimitStatus(ynabReady);
 
   const isLoading = budgetsLoading || settingsLoading;
   const notConfigured = budgetsError;
@@ -398,6 +401,56 @@ export default function YnabSettings() {
           )}
         </CardContent>
       </Card>
+
+      {ynabReady && rateLimitStatus && (
+        <Card>
+          <CardHeader>
+            <CardTitle>API Rate Limit</CardTitle>
+            <CardDescription>
+              YNAB enforces 200 requests per hour. This tracks your current usage.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">
+                  {rateLimitStatus.requestsUsed} / {rateLimitStatus.maxRequests} requests used
+                </span>
+                <span className="font-medium">
+                  {rateLimitStatus.remainingRequests} remaining
+                </span>
+              </div>
+              <div className="h-2 rounded-full bg-muted overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${
+                    rateLimitStatus.remainingRequests <= 20
+                      ? "bg-destructive"
+                      : rateLimitStatus.remainingRequests <= 50
+                        ? "bg-amber-500"
+                        : "bg-primary"
+                  }`}
+                  style={{
+                    width: `${(rateLimitStatus.requestsUsed / rateLimitStatus.maxRequests) * 100}%`,
+                  }}
+                />
+              </div>
+              {rateLimitStatus.oldestRequestAt && (
+                <p className="text-xs text-muted-foreground">
+                  Window resets at{" "}
+                  {new Date(rateLimitStatus.windowResetAt).toLocaleTimeString()}
+                </p>
+              )}
+              {rateLimitStatus.remainingRequests <= 20 && (
+                <Alert variant="destructive">
+                  <AlertDescription>
+                    API quota is running low. Bulk operations may be blocked until the window resets.
+                  </AlertDescription>
+                </Alert>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

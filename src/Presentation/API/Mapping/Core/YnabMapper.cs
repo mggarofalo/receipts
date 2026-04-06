@@ -221,4 +221,17 @@ public partial class YnabMapper
 			}).ToList(),
 		};
 	}
+
+	[MapperIgnoreTarget(nameof(YnabRateLimitStatusResponse.AdditionalProperties))]
+	public YnabRateLimitStatusResponse ToRateLimitStatusResponse(YnabRateLimitStatus source)
+	{
+		return new YnabRateLimitStatusResponse
+		{
+			RemainingRequests = source.RemainingRequests,
+			MaxRequests = source.MaxRequests,
+			RequestsUsed = source.RequestsUsed,
+			WindowResetAt = source.WindowResetAt,
+			OldestRequestAt = source.OldestRequestAt,
+		};
+	}
 }

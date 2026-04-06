@@ -45,6 +45,9 @@ vi.mock("@/hooks/useYnab", () => ({
   useCreateYnabCategoryMapping: vi.fn(() => mockMutationResult()),
   useUpdateYnabCategoryMapping: vi.fn(() => mockMutationResult()),
   useDeleteYnabCategoryMapping: vi.fn(() => mockMutationResult()),
+  useYnabRateLimitStatus: vi.fn(() =>
+    mockQueryResult({ rateLimitStatus: null }),
+  ),
 }));
 
 describe("YnabSettings – Category Mapping", () => {
@@ -182,5 +185,75 @@ describe("YnabSettings – Category Mapping", () => {
 
     expect(screen.getByText("Food")).toBeInTheDocument();
     expect(screen.getByText("Transport")).toBeInTheDocument();
+  });
+});
+
+describe("YnabSettings – Rate Limit Card", () => {
+  it("renders rate limit card when YNAB is configured and status is available", async () => {
+    const { useYnabBudgets, useYnabRateLimitStatus } = await import(
+      "@/hooks/useYnab"
+    );
+    vi.mocked(useYnabBudgets).mockReturnValue(
+      mockQueryResult({ budgets: [], isLoading: false, isError: false }),
+    );
+    vi.mocked(useYnabRateLimitStatus).mockReturnValue(
+      mockQueryResult({
+        rateLimitStatus: {
+          remainingRequests: 150,
+          maxRequests: 200,
+          requestsUsed: 50,
+          windowResetAt: "2026-04-05T23:00:00Z",
+          oldestRequestAt: "2026-04-05T22:00:00Z",
+        },
+      }),
+    );
+
+    renderWithProviders(<YnabSettings />);
+
+    expect(screen.getByText("API Rate Limit")).toBeInTheDocument();
+    expect(screen.getByText("50 / 200 requests used")).toBeInTheDocument();
+    expect(screen.getByText("150 remaining")).toBeInTheDocument();
+  });
+
+  it("does not render rate limit card when YNAB is not configured", async () => {
+    const { useYnabBudgets, useYnabRateLimitStatus } = await import(
+      "@/hooks/useYnab"
+    );
+    vi.mocked(useYnabBudgets).mockReturnValue(
+      mockQueryResult({ budgets: [], isLoading: false, isError: true }),
+    );
+    vi.mocked(useYnabRateLimitStatus).mockReturnValue(
+      mockQueryResult({ rateLimitStatus: null }),
+    );
+
+    renderWithProviders(<YnabSettings />);
+
+    expect(screen.queryByText("API Rate Limit")).not.toBeInTheDocument();
+  });
+
+  it("shows warning when quota is low", async () => {
+    const { useYnabBudgets, useYnabRateLimitStatus } = await import(
+      "@/hooks/useYnab"
+    );
+    vi.mocked(useYnabBudgets).mockReturnValue(
+      mockQueryResult({ budgets: [], isLoading: false, isError: false }),
+    );
+    vi.mocked(useYnabRateLimitStatus).mockReturnValue(
+      mockQueryResult({
+        rateLimitStatus: {
+          remainingRequests: 10,
+          maxRequests: 200,
+          requestsUsed: 190,
+          windowResetAt: "2026-04-05T23:00:00Z",
+          oldestRequestAt: "2026-04-05T22:00:00Z",
+        },
+      }),
+    );
+
+    renderWithProviders(<YnabSettings />);
+
+    expect(
+      screen.getByText(/API quota is running low/),
+    ).toBeInTheDocument();
   });
 });

@@ -4129,6 +4129,26 @@ paths:
         "503":
           description: YNAB integration is not configured
 
+  /api/ynab/rate-limit-status:
+    get:
+      operationId: GetYnabRateLimitStatus
+      tags: [YNAB]
+      summary: Get YNAB API rate limit status
+      description: >
+        Returns the current YNAB API rate limit status including remaining
+        requests, total quota, and window reset time. YNAB enforces 200
+        requests per hour with no response headers, so this is tracked
+        proactively on the client side.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Rate limit status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/YnabRateLimitStatusResponse"
+
 components:
   schemas:
     # ── Reports ───────────────────────────────────
@@ -6511,6 +6531,33 @@ components:
             - string
         accountId:
           type: string
+
+    YnabRateLimitStatusResponse:
+      type: object
+      required: [remainingRequests, maxRequests, requestsUsed, windowResetAt]
+      properties:
+        remainingRequests:
+          type: integer
+          format: int32
+          description: Number of requests remaining in the current window
+        maxRequests:
+          type: integer
+          format: int32
+          description: Maximum requests allowed per window (default 200)
+        requestsUsed:
+          type: integer
+          format: int32
+          description: Number of requests made in the current window
+        windowResetAt:
+          type: string
+          format: date-time
+          description: When the oldest request in the window expires
+        oldestRequestAt:
+          type:
+            - "null"
+            - string
+          format: date-time
+          description: Timestamp of the oldest tracked request, null if no requests
 
     YnabMemoSyncOutcome:
       enum: [Synced, AlreadySynced, NoMatch, Ambiguous, CurrencySkipped, Failed]

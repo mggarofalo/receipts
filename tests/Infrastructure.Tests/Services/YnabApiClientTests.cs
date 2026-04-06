@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using Application.Interfaces.Services;
 using FluentAssertions;
 using Infrastructure.Services;
 using Infrastructure.Ynab;
@@ -18,10 +19,12 @@ public class YnabApiClientTests
 	private static YnabApiClient CreateClient(
 		HttpMessageHandler handler,
 		string? pat = "test-pat",
-		IMemoryCache? cache = null)
+		IMemoryCache? cache = null,
+		IYnabRateLimitTracker? rateLimitTracker = null)
 	{
 		HttpClient httpClient = new(handler) { BaseAddress = new Uri("https://api.ynab.com/v1/") };
 		cache ??= new MemoryCache(new MemoryCacheOptions());
+		rateLimitTracker ??= new Mock<IYnabRateLimitTracker>().Object;
 
 		Dictionary<string, string?> configValues = new();
 		if (pat is not null)
@@ -34,7 +37,7 @@ public class YnabApiClientTests
 			.Build();
 
 		Mock<ILogger<YnabApiClient>> logger = new();
-		return new YnabApiClient(httpClient, cache, configuration, logger.Object);
+		return new YnabApiClient(httpClient, cache, configuration, rateLimitTracker, logger.Object);
 	}
 
 	private static HttpMessageHandler CreateHandler(HttpStatusCode statusCode, string content)
