@@ -374,7 +374,13 @@ Both stacks enforce minimum coverage as CI required status checks on `main`. PRs
 
 | Stack | Line % | Branch % | Configured In |
 |-------|--------|----------|---------------|
-| Backend (.NET) | 70% | 65% | `irongut/CodeCoverageSummary` in `build` job |
-| Frontend (React) | 80% | 80% | `irongut/CodeCoverageSummary` in `frontend-test` job |
+| Backend (.NET) | 78% | 70% | `irongut/CodeCoverageSummary` in `build` job |
+| Frontend (React) | 80% | 80% | `irongut/CodeCoverageSummary` in `frontend-test-report` job |
+
+Vitest also enforces local thresholds (75% statements, 65% branches, 70% functions, 78% lines) in `vite.config.ts`. These are disabled during CI shard runs (partial coverage would fail) but apply during local development.
 
 Thresholds are set slightly below measured coverage to allow minor fluctuations. Raise them incrementally as test coverage improves.
+
+## Agentic Testing Guide
+
+For principles on how agents should approach test authoring — including test-first workflow, what makes a good test, and when coverage metrics don't apply — see **[docs/agentic-testing.md](agentic-testing.md)**.

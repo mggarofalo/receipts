@@ -60,7 +60,7 @@ public partial class AddCategoryAndSubcategory : Migration
 		migrationBuilder.CreateIndex(
 			name: "IX_Subcategories_CategoryId_Name",
 			table: "Subcategories",
-			columns: new[] { "CategoryId", "Name" },
+			columns: ["CategoryId", "Name"],
 			unique: true,
 			filter: "\"DeletedAt\" IS NULL");
 	}

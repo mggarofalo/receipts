@@ -1,8 +1,10 @@
 using FluentAssertions;
 using Infrastructure.Entities.Core;
 using Infrastructure.Extensions;
+using Infrastructure.Interfaces;
 using Infrastructure.Tests.Helpers;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 using SampleData.Entities;
 
 namespace Infrastructure.Tests.Repositories;
@@ -519,6 +521,141 @@ public class SoftDeleteTests
 				log.EntityType == "ReceiptItem" &&
 				log.EntityId == item.Id.ToString() &&
 				log.Action == Infrastructure.Entities.Audit.AuditAction.Delete);
+		}
+
+		contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public void AllSoftDeletableRelationships_HaveQueryFiltersOnBothEnds()
+	{
+		// Arrange — build the EF Core model
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		using ApplicationDbContext context = contextFactory.CreateDbContext();
+		IModel model = context.Model;
+
+		// Act — for every foreign key where BOTH sides are ISoftDeletable, verify both
+		// have a query filter. A mismatch triggers EF Core warning
+		// CoreEventId.PossibleIncorrectRequiredNavigationWithQueryFilterInteraction.
+		// Relationships to non-soft-deletable entities (e.g. AccountEntity) are excluded
+		// because they intentionally lack query filters.
+		List<string> mismatches = [];
+
+		foreach (IEntityType entityType in model.GetEntityTypes())
+		{
+			foreach (IForeignKey foreignKey in entityType.GetForeignKeys())
+			{
+				IEntityType principal = foreignKey.PrincipalEntityType;
+				IEntityType dependent = foreignKey.DeclaringEntityType;
+
+				bool principalIsSoftDeletable = typeof(ISoftDeletable).IsAssignableFrom(principal.ClrType);
+				bool dependentIsSoftDeletable = typeof(ISoftDeletable).IsAssignableFrom(dependent.ClrType);
+
+				// Only check relationships where both sides are ISoftDeletable
+				if (!principalIsSoftDeletable || !dependentIsSoftDeletable)
+				{
+					continue;
+				}
+
+				bool principalHasFilter = principal.GetDeclaredQueryFilters().Any();
+				bool dependentHasFilter = dependent.GetDeclaredQueryFilters().Any();
+
+				if (!principalHasFilter)
+				{
+					mismatches.Add(
+						$"{principal.ClrType.Name} is ISoftDeletable but missing a query filter " +
+						$"(relationship with {dependent.ClrType.Name})");
+				}
+
+				if (!dependentHasFilter)
+				{
+					mismatches.Add(
+						$"{dependent.ClrType.Name} is ISoftDeletable but missing a query filter " +
+						$"(relationship with {principal.ClrType.Name})");
+				}
+			}
+		}
+
+		// Assert — no mismatches should exist
+		mismatches.Should().BeEmpty(
+			"all ISoftDeletable entities in a relationship with another ISoftDeletable entity " +
+			"must have a query filter to avoid EF Core warning " +
+			"CoreEventId.PossibleIncorrectRequiredNavigationWithQueryFilterInteraction");
+	}
+
+	[Fact]
+	public async Task SoftDelete_YnabSyncRecord_ExcludedFromNormalQueriesWhenSoftDeleted()
+	{
+		// Arrange
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		AccountEntity account = AccountEntityGenerator.Generate();
+		ReceiptEntity receipt = ReceiptEntityGenerator.Generate();
+		TransactionEntity transaction = TransactionEntityGenerator.Generate(receiptId: receipt.Id, accountId: account.Id);
+
+		using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			await context.Accounts.AddAsync(account);
+			await context.Receipts.AddAsync(receipt);
+			await context.Transactions.AddAsync(transaction);
+			YnabSyncRecordEntity syncRecord = YnabSyncRecordEntityGenerator.Generate(localTransactionId: transaction.Id);
+			await context.YnabSyncRecords.AddAsync(syncRecord);
+			await context.SaveChangesAsync();
+		}
+
+		// Act
+		using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			YnabSyncRecordEntity record = await context.YnabSyncRecords.FirstAsync();
+			context.YnabSyncRecords.Remove(record);
+			await context.SaveChangesAsync();
+		}
+
+		// Assert
+		using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			List<YnabSyncRecordEntity> visibleRecords = await context.YnabSyncRecords.ToListAsync();
+			visibleRecords.Should().BeEmpty();
+
+			List<YnabSyncRecordEntity> allRecords = await context.YnabSyncRecords.IgnoreQueryFilters().ToListAsync();
+			allRecords.Should().HaveCount(1);
+		}
+
+		contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task SoftDelete_YnabSyncRecord_SetsDeletedAtOnDelete()
+	{
+		// Arrange
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		AccountEntity account = AccountEntityGenerator.Generate();
+		ReceiptEntity receipt = ReceiptEntityGenerator.Generate();
+		TransactionEntity transaction = TransactionEntityGenerator.Generate(receiptId: receipt.Id, accountId: account.Id);
+
+		using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			await context.Accounts.AddAsync(account);
+			await context.Receipts.AddAsync(receipt);
+			await context.Transactions.AddAsync(transaction);
+			YnabSyncRecordEntity syncRecord = YnabSyncRecordEntityGenerator.Generate(localTransactionId: transaction.Id);
+			await context.YnabSyncRecords.AddAsync(syncRecord);
+			await context.SaveChangesAsync();
+		}
+
+		// Act
+		using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			YnabSyncRecordEntity record = await context.YnabSyncRecords.FirstAsync();
+			context.YnabSyncRecords.Remove(record);
+			await context.SaveChangesAsync();
+		}
+
+		// Assert
+		using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			List<YnabSyncRecordEntity> allRecords = await context.YnabSyncRecords.IgnoreQueryFilters().ToListAsync();
+			allRecords.Should().HaveCount(1);
+			allRecords[0].DeletedAt.Should().NotBeNull();
 		}
 
 		contextFactory.ResetDatabase();

@@ -36,3 +36,16 @@ public enum AuthEventType
 	TokenRevoked,
 	RateLimitExceeded,
 }
+
+public enum YnabSyncType
+{
+	MemoUpdate,
+	TransactionPush
+}
+
+public enum YnabSyncStatus
+{
+	Pending,
+	Synced,
+	Failed
+}
