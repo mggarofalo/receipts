@@ -77,6 +77,16 @@ public class YnabCategoryMappingService(IYnabCategoryMappingRepository repositor
 		await repository.DeleteAsync(id, cancellationToken);
 	}
 
+	public async Task<int> CountStaleMappingsAsync(string currentBudgetId, CancellationToken cancellationToken)
+	{
+		return await repository.CountByBudgetIdNotAsync(currentBudgetId, cancellationToken);
+	}
+
+	public async Task<int> DeleteStaleMappingsAsync(string currentBudgetId, CancellationToken cancellationToken)
+	{
+		return await repository.DeleteByBudgetIdNotAsync(currentBudgetId, cancellationToken);
+	}
+
 	public async Task<List<string>> GetDistinctReceiptItemCategoriesAsync(CancellationToken cancellationToken)
 	{
 		return await repository.GetDistinctReceiptItemCategoriesAsync(cancellationToken);

@@ -57,6 +57,16 @@ public class YnabAccountMappingService(IYnabAccountMappingRepository repository)
 		await repository.DeleteAsync(id, cancellationToken);
 	}
 
+	public async Task<int> CountStaleMappingsAsync(string currentBudgetId, CancellationToken cancellationToken)
+	{
+		return await repository.CountByBudgetIdNotAsync(currentBudgetId, cancellationToken);
+	}
+
+	public async Task<int> DeleteStaleMappingsAsync(string currentBudgetId, CancellationToken cancellationToken)
+	{
+		return await repository.DeleteByBudgetIdNotAsync(currentBudgetId, cancellationToken);
+	}
+
 	private static YnabAccountMappingDto ToDto(YnabAccountMappingEntity entity) => new(
 		entity.Id,
 		entity.ReceiptsAccountId,

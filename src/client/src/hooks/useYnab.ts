@@ -300,6 +300,50 @@ export function useUpdateYnabCategoryMapping() {
   });
 }
 
+export function useStaleMappings(enabled = true) {
+  const query = useQuery({
+    queryKey: ["ynab", "stale-mappings"],
+    queryFn: async () => {
+      const { data, error } = await client.GET("/api/ynab/stale-mappings");
+      if (error) throw error;
+      return data;
+    },
+    enabled,
+  });
+  return useMemo(
+    () => ({
+      ...query,
+      staleAccountMappingCount: query.data?.staleAccountMappingCount ?? 0,
+      staleCategoryMappingCount: query.data?.staleCategoryMappingCount ?? 0,
+      hasStaleMappings:
+        (query.data?.staleAccountMappingCount ?? 0) > 0 ||
+        (query.data?.staleCategoryMappingCount ?? 0) > 0,
+    }),
+    [query],
+  );
+}
+
+export function useClearStaleMappings() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const { data, error } = await client.DELETE("/api/ynab/stale-mappings");
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["ynab"] });
+      const total =
+        (data?.deletedAccountMappings ?? 0) +
+        (data?.deletedCategoryMappings ?? 0);
+      toast.success(`Cleared ${total} stale mapping(s)`);
+    },
+    onError: () => {
+      toast.error("Failed to clear stale mappings");
+    },
+  });
+}
+
 export function useDeleteYnabCategoryMapping() {
   const queryClient = useQueryClient();
   return useMutation({

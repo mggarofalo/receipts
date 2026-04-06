@@ -9,4 +9,6 @@ public interface IYnabAccountMappingRepository
 	Task<YnabAccountMappingEntity> CreateAsync(YnabAccountMappingEntity entity, CancellationToken cancellationToken);
 	Task UpdateAsync(YnabAccountMappingEntity entity, CancellationToken cancellationToken);
 	Task DeleteAsync(Guid id, CancellationToken cancellationToken);
+	Task<int> CountByBudgetIdNotAsync(string currentBudgetId, CancellationToken cancellationToken);
+	Task<int> DeleteByBudgetIdNotAsync(string currentBudgetId, CancellationToken cancellationToken);
 }

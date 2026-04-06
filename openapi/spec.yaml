@@ -3968,6 +3968,36 @@ paths:
               schema:
                 $ref: "#/components/schemas/UnmappedCategoriesResponse"
 
+  /api/ynab/stale-mappings:
+    get:
+      operationId: GetStaleMappings
+      tags: [YNAB]
+      summary: Check for stale account/category mappings
+      description: Returns counts of account and category mappings whose YnabBudgetId does not match the currently selected budget.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StaleMappingsResponse"
+    delete:
+      operationId: ClearStaleMappings
+      tags: [YNAB]
+      summary: Clear stale account/category mappings
+      description: Deletes all account and category mappings whose YnabBudgetId does not match the currently selected budget.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClearStaleMappingsResponse"
+
   /api/ynab/sync-memos:
     post:
       operationId: SyncYnabMemos
@@ -6338,6 +6368,32 @@ components:
           type: string
         ynabBudgetId:
           type: string
+
+    StaleMappingsResponse:
+      type: object
+      required: [staleAccountMappingCount, staleCategoryMappingCount]
+      properties:
+        staleAccountMappingCount:
+          type: integer
+          format: int32
+        staleCategoryMappingCount:
+          type: integer
+          format: int32
+        currentBudgetId:
+          type:
+            - string
+            - "null"
+
+    ClearStaleMappingsResponse:
+      type: object
+      required: [deletedAccountMappings, deletedCategoryMappings]
+      properties:
+        deletedAccountMappings:
+          type: integer
+          format: int32
+        deletedCategoryMappings:
+          type: integer
+          format: int32
 
     UnmappedCategoriesResponse:
       type: object

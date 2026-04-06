@@ -67,4 +67,19 @@ public class YnabCategoryMappingRepository(IDbContextFactory<ApplicationDbContex
 			.OrderBy(c => c)
 			.ToListAsync(cancellationToken);
 	}
+
+	public async Task<int> CountByBudgetIdNotAsync(string currentBudgetId, CancellationToken cancellationToken)
+	{
+		using ApplicationDbContext context = contextFactory.CreateDbContext();
+		return await context.YnabCategoryMappings
+			.CountAsync(e => e.YnabBudgetId != currentBudgetId, cancellationToken);
+	}
+
+	public async Task<int> DeleteByBudgetIdNotAsync(string currentBudgetId, CancellationToken cancellationToken)
+	{
+		using ApplicationDbContext context = contextFactory.CreateDbContext();
+		return await context.YnabCategoryMappings
+			.Where(e => e.YnabBudgetId != currentBudgetId)
+			.ExecuteDeleteAsync(cancellationToken);
+	}
 }

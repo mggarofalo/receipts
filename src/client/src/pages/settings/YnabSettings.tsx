@@ -17,6 +17,8 @@ import {
   useCreateYnabCategoryMapping,
   useUpdateYnabCategoryMapping,
   useDeleteYnabCategoryMapping,
+  useStaleMappings,
+  useClearStaleMappings,
 } from "@/hooks/useYnab";
 import {
   Card,
@@ -66,6 +68,13 @@ export default function YnabSettings() {
   const createCategoryMapping = useCreateYnabCategoryMapping();
   const updateCategoryMapping = useUpdateYnabCategoryMapping();
   const deleteCategoryMapping = useDeleteYnabCategoryMapping();
+
+  const {
+    staleAccountMappingCount,
+    staleCategoryMappingCount,
+    hasStaleMappings,
+  } = useStaleMappings(ynabReady && !!selectedBudgetId);
+  const clearStaleMappings = useClearStaleMappings();
 
   const isLoading = budgetsLoading || settingsLoading;
   const notConfigured = budgetsError;
@@ -183,6 +192,30 @@ export default function YnabSettings() {
             YNAB is not configured. Set the <code>YNAB_PAT</code> environment
             variable with your YNAB personal access token to enable the
             integration.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {hasStaleMappings && (
+        <Alert>
+          <AlertDescription className="flex items-center justify-between">
+            <span>
+              Budget changed: {staleAccountMappingCount > 0 &&
+                `${staleAccountMappingCount} account mapping(s)`}
+              {staleAccountMappingCount > 0 && staleCategoryMappingCount > 0 &&
+                " and "}
+              {staleCategoryMappingCount > 0 &&
+                `${staleCategoryMappingCount} category mapping(s)`}{" "}
+              reference a previous budget and may not work correctly.
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => clearStaleMappings.mutate()}
+              disabled={clearStaleMappings.isPending}
+            >
+              {clearStaleMappings.isPending ? "Clearing..." : "Clear stale mappings"}
+            </Button>
           </AlertDescription>
         </Alert>
       )}

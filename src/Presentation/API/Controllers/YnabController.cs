@@ -5,6 +5,7 @@ using Application.Commands.Ynab.CategoryMapping;
 using Application.Commands.Ynab.MemoSync;
 using Application.Commands.Ynab.PushTransactions;
 using Application.Commands.Ynab.SelectBudget;
+using Application.Commands.Ynab.StaleMappings;
 using Application.Interfaces.Services;
 using Application.Models.Ynab;
 using Application.Queries.Core.Ynab;
@@ -277,6 +278,24 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 	{
 		List<string> unmapped = await mediator.Send(new GetUnmappedCategoriesQuery(), cancellationToken);
 		return TypedResults.Ok(new UnmappedCategoriesResponse { UnmappedCategories = unmapped.ToList() });
+	}
+
+	[HttpGet("stale-mappings")]
+	[EndpointSummary("Check for stale account/category mappings")]
+	[EndpointDescription("Returns counts of account and category mappings whose YnabBudgetId does not match the currently selected budget.")]
+	public async Task<Ok<StaleMappingsResponse>> GetStaleMappings(CancellationToken cancellationToken)
+	{
+		StaleMappingsResult result = await mediator.Send(new GetStaleMappingsQuery(), cancellationToken);
+		return TypedResults.Ok(mapper.ToStaleMappingsResponse(result));
+	}
+
+	[HttpDelete("stale-mappings")]
+	[EndpointSummary("Clear stale account/category mappings")]
+	[EndpointDescription("Deletes all account and category mappings whose YnabBudgetId does not match the currently selected budget.")]
+	public async Task<Ok<ClearStaleMappingsResponse>> ClearStaleMappings(CancellationToken cancellationToken)
+	{
+		ClearStaleMappingsResult result = await mediator.Send(new ClearStaleMappingsCommand(), cancellationToken);
+		return TypedResults.Ok(mapper.ToClearStaleMappingsResponse(result));
 	}
 
 	[HttpGet("sync-status/{transactionId}")]

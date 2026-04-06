@@ -11,4 +11,6 @@ public interface IYnabCategoryMappingRepository
 	Task UpdateAsync(YnabCategoryMappingEntity entity, CancellationToken cancellationToken);
 	Task DeleteAsync(Guid id, CancellationToken cancellationToken);
 	Task<List<string>> GetDistinctReceiptItemCategoriesAsync(CancellationToken cancellationToken);
+	Task<int> CountByBudgetIdNotAsync(string currentBudgetId, CancellationToken cancellationToken);
+	Task<int> DeleteByBudgetIdNotAsync(string currentBudgetId, CancellationToken cancellationToken);
 }

@@ -209,6 +209,27 @@ public partial class YnabMapper
 		};
 	}
 
+	[MapperIgnoreTarget(nameof(StaleMappingsResponse.AdditionalProperties))]
+	public StaleMappingsResponse ToStaleMappingsResponse(StaleMappingsResult source)
+	{
+		return new StaleMappingsResponse
+		{
+			StaleAccountMappingCount = source.StaleAccountMappingCount,
+			StaleCategoryMappingCount = source.StaleCategoryMappingCount,
+			CurrentBudgetId = source.CurrentBudgetId,
+		};
+	}
+
+	[MapperIgnoreTarget(nameof(ClearStaleMappingsResponse.AdditionalProperties))]
+	public ClearStaleMappingsResponse ToClearStaleMappingsResponse(ClearStaleMappingsResult source)
+	{
+		return new ClearStaleMappingsResponse
+		{
+			DeletedAccountMappings = source.DeletedAccountMappings,
+			DeletedCategoryMappings = source.DeletedCategoryMappings,
+		};
+	}
+
 	[MapperIgnoreTarget(nameof(BulkPushYnabTransactionsResponse.AdditionalProperties))]
 	public BulkPushYnabTransactionsResponse ToBulkPushTransactionsResponse(BulkPushYnabTransactionsResult source)
 	{

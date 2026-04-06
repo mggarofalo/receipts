@@ -49,4 +49,19 @@ public class YnabAccountMappingRepository(IDbContextFactory<ApplicationDbContext
 			await context.SaveChangesAsync(cancellationToken);
 		}
 	}
+
+	public async Task<int> CountByBudgetIdNotAsync(string currentBudgetId, CancellationToken cancellationToken)
+	{
+		using ApplicationDbContext context = contextFactory.CreateDbContext();
+		return await context.YnabAccountMappings
+			.CountAsync(e => e.YnabBudgetId != currentBudgetId, cancellationToken);
+	}
+
+	public async Task<int> DeleteByBudgetIdNotAsync(string currentBudgetId, CancellationToken cancellationToken)
+	{
+		using ApplicationDbContext context = contextFactory.CreateDbContext();
+		return await context.YnabAccountMappings
+			.Where(e => e.YnabBudgetId != currentBudgetId)
+			.ExecuteDeleteAsync(cancellationToken);
+	}
 }

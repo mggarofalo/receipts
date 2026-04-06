@@ -12,4 +12,6 @@ public interface IYnabCategoryMappingService
 	Task DeleteAsync(Guid id, CancellationToken cancellationToken);
 	Task<List<string>> GetDistinctReceiptItemCategoriesAsync(CancellationToken cancellationToken);
 	Task<List<string>> GetUnmappedCategoriesAsync(CancellationToken cancellationToken);
+	Task<int> CountStaleMappingsAsync(string currentBudgetId, CancellationToken cancellationToken);
+	Task<int> DeleteStaleMappingsAsync(string currentBudgetId, CancellationToken cancellationToken);
 }
