@@ -46,6 +46,10 @@ public static class DatabaseSeederService
 
 		if (string.IsNullOrWhiteSpace(adminEmail) || string.IsNullOrWhiteSpace(adminPassword))
 		{
+			logger.LogWarning(
+				"AdminSeed configuration is missing (AdminSeed:Email and/or AdminSeed:Password not set). " +
+				"Roles were seeded but no admin user was created. " +
+				"Set AdminSeed__Email and AdminSeed__Password environment variables to seed an admin user.");
 			return;
 		}
 

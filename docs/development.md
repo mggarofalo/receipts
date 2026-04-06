@@ -100,6 +100,22 @@ dotnet run --project src/Presentation/API/API.csproj
 
 The API does not self-migrate or self-seed. You must run DbMigrator and DbSeeder before starting the API. Re-run DbMigrator after pulling new migrations.
 
+### Admin User Seeding
+
+The DbSeeder creates an initial admin user when `AdminSeed__Email` and `AdminSeed__Password` are set. Under **Aspire**, these are passed automatically via `AppHost.cs`. For **standalone** runs, set the environment variables manually:
+
+```bash
+export AdminSeed__Email=admin@receipts.local
+export AdminSeed__Password="Admin123!@#"
+export AdminSeed__FirstName=Admin
+export AdminSeed__LastName=User
+dotnet run --project src/Tools/DbSeeder/DbSeeder.csproj
+```
+
+If the variables are absent, the seeder logs a warning and seeds only roles (no admin user). The seed is not recorded in `__SeedHistory` when admin config is missing, so you can re-run the seeder with the correct variables later.
+
+> **Tip:** The `src/Tools/DbSeeder/appsettings.Development.json` file provides these defaults automatically when running with `DOTNET_ENVIRONMENT=Development` (the default for `dotnet run`).
+
 ## Build and Test
 
 ```bash

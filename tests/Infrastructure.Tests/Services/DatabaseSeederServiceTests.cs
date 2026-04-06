@@ -377,4 +377,59 @@ public class DatabaseSeederServiceTests : IDisposable
 			.WithMessage("*Admin role*Admin role assignment failed*");
 		_mockUserManager.Verify(u => u.DeleteAsync(It.IsAny<ApplicationUser>()), Times.Never);
 	}
+
+	[Fact]
+	public async Task SeedRolesAndAdminAsync_WhenAdminConfigMissing_LogsWarningAndDoesNotRecordSeedHistory()
+	{
+		// Arrange — build a service provider with no admin seed config
+		IConfiguration emptyAdminConfig = new ConfigurationBuilder()
+			.AddInMemoryCollection(new Dictionary<string, string?>())
+			.Build();
+
+		Mock<IRoleStore<IdentityRole>> roleStore = new();
+		Mock<RoleManager<IdentityRole>> roleManager = new(roleStore.Object, null!, null!, null!, null!);
+		roleManager.Setup(r => r.RoleExistsAsync(It.IsAny<string>())).ReturnsAsync(true);
+
+		Mock<IUserStore<ApplicationUser>> userStore = new();
+		Mock<UserManager<ApplicationUser>> userManager = new(userStore.Object, null!, null!, null!, null!, null!, null!, null!, null!);
+
+		Mock<ILogger> mockLogger = new();
+		Mock<ILoggerFactory> mockLoggerFactory = new();
+		mockLoggerFactory.Setup(f => f.CreateLogger(It.IsAny<string>())).Returns(mockLogger.Object);
+
+		DbContextOptions<ApplicationDbContext> dbOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
+			.UseInMemoryDatabase(Guid.NewGuid().ToString())
+			.Options;
+
+		ServiceCollection services = new();
+		services.AddSingleton(roleManager.Object);
+		services.AddSingleton(userManager.Object);
+		services.AddSingleton<IConfiguration>(emptyAdminConfig);
+		services.AddSingleton<ILoggerFactory>(mockLoggerFactory.Object);
+		services.AddScoped(_ => new ApplicationDbContext(dbOptions));
+
+		using ServiceProvider sp = services.BuildServiceProvider();
+
+		// Act
+		await DatabaseSeederService.SeedRolesAndAdminAsync(sp);
+
+		// Assert — warning was logged
+		mockLogger.Verify(
+			l => l.Log(
+				LogLevel.Warning,
+				It.IsAny<EventId>(),
+				It.Is<It.IsAnyType>((v, _) => v.ToString()!.Contains("AdminSeed configuration is missing")),
+				null,
+				It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+			Times.Once);
+
+		// Assert — seed history was NOT recorded (so a retry with config will work)
+		await using ApplicationDbContext db = new(dbOptions);
+		bool recorded = await db.SeedHistory.AnyAsync(s => s.SeedId == "RolesAndAdmin_v1");
+		recorded.Should().BeFalse();
+
+		// Assert — no user operations attempted
+		userManager.Verify(u => u.FindByEmailAsync(It.IsAny<string>()), Times.Never);
+		userManager.Verify(u => u.CreateAsync(It.IsAny<ApplicationUser>(), It.IsAny<string>()), Times.Never);
+	}
 }

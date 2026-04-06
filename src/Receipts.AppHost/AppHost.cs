@@ -12,10 +12,14 @@ IResourceBuilder<ProjectResource> migrator = builder.AddProject<Projects.DbMigra
 	.WithReference(db)
 	.WaitFor(db);
 
-// DbSeeder: seeds roles, then exits
+// DbSeeder: seeds roles and admin user, then exits
 IResourceBuilder<ProjectResource> seeder = builder.AddProject<Projects.DbSeeder>("db-seeder")
 	.WithReference(db)
-	.WaitForCompletion(migrator);
+	.WaitForCompletion(migrator)
+	.WithEnvironment("AdminSeed__Email", "admin@receipts.local")
+	.WithEnvironment("AdminSeed__Password", "Admin123!@#")
+	.WithEnvironment("AdminSeed__FirstName", "Admin")
+	.WithEnvironment("AdminSeed__LastName", "User");
 
 // API: starts after seeder completes
 IResourceBuilder<ProjectResource> api = builder.AddProject<Projects.API>("api")
