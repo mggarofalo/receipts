@@ -116,6 +116,11 @@ const navGroups: NavGroup[] = [
         label: "Security",
         description: "Security settings and sessions",
       },
+      {
+        to: "/settings/ynab",
+        label: "YNAB",
+        description: "YNAB sync settings",
+      },
     ],
   },
 ];
@@ -207,6 +212,7 @@ export function Layout() {
     { to: "/reports", label: "Reports" },
     { to: "/item-templates", label: "Item Templates" },
     { to: "/security", label: "Security" },
+    { to: "/settings/ynab", label: "YNAB" },
   ];
 
   const adminLinks = [

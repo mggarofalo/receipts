@@ -554,11 +554,11 @@ namespace Infrastructure.Migrations
 
                     b.Property<string>("OriginalImagePath")
                         .HasMaxLength(1024)
-                        .HasColumnType("character varying(1024)");
+                        .HasColumnType("text");
 
                     b.Property<string>("ProcessedImagePath")
                         .HasMaxLength(1024)
-                        .HasColumnType("character varying(1024)");
+                        .HasColumnType("text");
 
                     b.Property<decimal>("TaxAmount")
                         .HasColumnType("decimal(18,2)");
@@ -814,6 +814,168 @@ namespace Infrastructure.Migrations
                     b.ToTable("Transactions");
                 });
 
+            modelBuilder.Entity("Infrastructure.Entities.Core.YnabAccountMappingEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<Guid>("ReceiptsAccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("YnabAccountId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("text");
+
+                    b.Property<string>("YnabAccountName")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("text");
+
+                    b.Property<string>("YnabBudgetId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReceiptsAccountId")
+                        .IsUnique();
+
+                    b.ToTable("YnabAccountMappings");
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Core.YnabCategoryMappingEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("ReceiptsCategory")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("YnabBudgetId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("text");
+
+                    b.Property<string>("YnabCategoryGroupName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("text");
+
+                    b.Property<string>("YnabCategoryId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("text");
+
+                    b.Property<string>("YnabCategoryName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReceiptsCategory")
+                        .IsUnique();
+
+                    b.ToTable("YnabCategoryMappings");
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Core.YnabSelectedBudgetEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("BudgetId")
+                        .IsRequired()
+                        .HasMaxLength(36)
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("YnabSelectedBudgets");
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Core.YnabSyncRecordEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("CascadeDeletedByParentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<Guid?>("DeletedByApiKeyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("DeletedByUserId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(2000)
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("LocalTransactionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("SyncStatus")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("SyncType")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("SyncedAtUtc")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("YnabAccountId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("YnabBudgetId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("YnabTransactionId")
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LocalTransactionId", "SyncType")
+                        .IsUnique();
+
+                    b.ToTable("YnabSyncRecords");
+                });
+
             modelBuilder.Entity("Infrastructure.Entities.SeedHistoryEntry", b =>
                 {
                     b.Property<string>("SeedId")
@@ -1021,6 +1183,28 @@ namespace Infrastructure.Migrations
                     b.Navigation("Account");
 
                     b.Navigation("Receipt");
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Core.YnabAccountMappingEntity", b =>
+                {
+                    b.HasOne("Infrastructure.Entities.Core.AccountEntity", "Account")
+                        .WithMany()
+                        .HasForeignKey("ReceiptsAccountId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Account");
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Core.YnabSyncRecordEntity", b =>
+                {
+                    b.HasOne("Infrastructure.Entities.Core.TransactionEntity", "Transaction")
+                        .WithMany()
+                        .HasForeignKey("LocalTransactionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Transaction");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>

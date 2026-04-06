@@ -523,4 +523,82 @@ public class SoftDeleteTests
 
 		contextFactory.ResetDatabase();
 	}
+
+	[Fact]
+	public async Task SoftDelete_YnabSyncRecord_ExcludedFromNormalQueriesWhenSoftDeleted()
+	{
+		// Arrange
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		AccountEntity account = AccountEntityGenerator.Generate();
+		ReceiptEntity receipt = ReceiptEntityGenerator.Generate();
+		TransactionEntity transaction = TransactionEntityGenerator.Generate(receiptId: receipt.Id, accountId: account.Id);
+
+		using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			await context.Accounts.AddAsync(account);
+			await context.Receipts.AddAsync(receipt);
+			await context.Transactions.AddAsync(transaction);
+			YnabSyncRecordEntity syncRecord = YnabSyncRecordEntityGenerator.Generate(localTransactionId: transaction.Id);
+			await context.YnabSyncRecords.AddAsync(syncRecord);
+			await context.SaveChangesAsync();
+		}
+
+		// Act
+		using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			YnabSyncRecordEntity record = await context.YnabSyncRecords.FirstAsync();
+			context.YnabSyncRecords.Remove(record);
+			await context.SaveChangesAsync();
+		}
+
+		// Assert
+		using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			List<YnabSyncRecordEntity> visibleRecords = await context.YnabSyncRecords.ToListAsync();
+			visibleRecords.Should().BeEmpty();
+
+			List<YnabSyncRecordEntity> allRecords = await context.YnabSyncRecords.IgnoreQueryFilters().ToListAsync();
+			allRecords.Should().HaveCount(1);
+		}
+
+		contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task SoftDelete_YnabSyncRecord_SetsDeletedAtOnDelete()
+	{
+		// Arrange
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		AccountEntity account = AccountEntityGenerator.Generate();
+		ReceiptEntity receipt = ReceiptEntityGenerator.Generate();
+		TransactionEntity transaction = TransactionEntityGenerator.Generate(receiptId: receipt.Id, accountId: account.Id);
+
+		using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			await context.Accounts.AddAsync(account);
+			await context.Receipts.AddAsync(receipt);
+			await context.Transactions.AddAsync(transaction);
+			YnabSyncRecordEntity syncRecord = YnabSyncRecordEntityGenerator.Generate(localTransactionId: transaction.Id);
+			await context.YnabSyncRecords.AddAsync(syncRecord);
+			await context.SaveChangesAsync();
+		}
+
+		// Act
+		using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			YnabSyncRecordEntity record = await context.YnabSyncRecords.FirstAsync();
+			context.YnabSyncRecords.Remove(record);
+			await context.SaveChangesAsync();
+		}
+
+		// Assert
+		using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			List<YnabSyncRecordEntity> allRecords = await context.YnabSyncRecords.IgnoreQueryFilters().ToListAsync();
+			allRecords.Should().HaveCount(1);
+			allRecords[0].DeletedAt.Should().NotBeNull();
+		}
+
+		contextFactory.ResetDatabase();
+	}
 }

@@ -189,4 +189,15 @@ describe("useBreadcrumbs", () => {
       path: "/reports?report=item-cost-over-time",
     });
   });
+
+  it("maps /settings/ynab with correct YNAB casing", () => {
+    const { result } = renderHook(() => useBreadcrumbs(), {
+      wrapper: createWrapper("/settings/ynab"),
+    });
+    expect(result.current).toEqual([
+      { label: "Home", path: "/" },
+      { label: "Settings", path: "/settings" },
+      { label: "YNAB", path: "/settings/ynab" },
+    ]);
+  });
 });

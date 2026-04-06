@@ -8,6 +8,7 @@ using Application.Commands.ReceiptItem.Update;
 using Application.Models;
 using Application.Queries.Core.ReceiptItem;
 using Application.Queries.Core.ReceiptItem.GetReceiptItemSuggestions;
+using Application.Queries.Core.Ynab;
 using Asp.Versioning;
 using Domain.Core;
 using MediatR;
@@ -34,6 +35,7 @@ public class ReceiptItemsController(IMediator mediator, ReceiptItemMapper mapper
 	public const string RouteGetDeleted = "deleted";
 	public const string RouteRestore = "{id}/restore";
 	public const string RouteGetSuggestions = "suggestions";
+	public const string RouteGetDistinctCategories = "distinct-categories";
 
 	[HttpGet(RouteGetById)]
 	[EndpointSummary("Get a receipt item by ID")]
@@ -252,5 +254,14 @@ public class ReceiptItemsController(IMediator mediator, ReceiptItemMapper mapper
 		})];
 
 		return TypedResults.Ok(response);
+	}
+
+	[HttpGet(RouteGetDistinctCategories)]
+	[EndpointSummary("Get distinct receipt item categories")]
+	[EndpointDescription("Returns the distinct Category values from all non-deleted receipt items.")]
+	public async Task<Ok<DistinctCategoriesResponse>> GetDistinctCategories(CancellationToken cancellationToken)
+	{
+		List<string> categories = await mediator.Send(new GetDistinctReceiptItemCategoriesQuery(), cancellationToken);
+		return TypedResults.Ok(new DistinctCategoriesResponse { Categories = categories.ToList() });
 	}
 }

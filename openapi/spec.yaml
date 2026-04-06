@@ -3682,6 +3682,469 @@ paths:
                 type: string
                 format: binary
 
+  # ──────────────────────────────────────────────
+  # YNAB
+  # ──────────────────────────────────────────────
+
+  /api/ynab/connection-status:
+    get:
+      operationId: GetYnabConnectionStatus
+      tags: [YNAB]
+      summary: Get YNAB connection status
+      description: Returns whether YNAB is configured, whether the connection is active, and the last successful sync timestamp.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/YnabConnectionStatusResponse"
+
+  /api/ynab/budgets:
+    get:
+      operationId: GetYnabBudgets
+      tags: [YNAB]
+      summary: List YNAB budgets
+      description: Returns the list of budgets from the connected YNAB account.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/YnabBudgetListResponse"
+        "503":
+          description: YNAB integration is not configured
+
+  /api/ynab/settings/budget:
+    get:
+      operationId: GetYnabBudgetSettings
+      tags: [YNAB]
+      summary: Get the selected YNAB budget
+      description: Returns the currently selected YNAB budget ID.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/YnabBudgetSettingsResponse"
+    put:
+      operationId: SelectYnabBudget
+      tags: [YNAB]
+      summary: Select a YNAB budget
+      description: Sets the active YNAB budget for sync operations.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SelectYnabBudgetRequest"
+      responses:
+        "204":
+          description: No Content
+
+  /api/ynab/accounts:
+    get:
+      operationId: GetYnabAccounts
+      tags: [YNAB]
+      summary: List YNAB accounts
+      description: Returns the list of open/active accounts from the selected YNAB budget.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/YnabAccountListResponse"
+        "503":
+          description: YNAB integration is not configured
+
+  /api/ynab/account-mappings:
+    get:
+      operationId: GetYnabAccountMappings
+      tags: [YNAB]
+      summary: List YNAB account mappings
+      description: Returns all mappings between receipts accounts and YNAB accounts.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/YnabAccountMappingListResponse"
+    post:
+      operationId: CreateYnabAccountMapping
+      tags: [YNAB]
+      summary: Create a YNAB account mapping
+      description: Maps a receipts account to a YNAB account.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateYnabAccountMappingRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/YnabAccountMappingResponse"
+        "400":
+          description: Invalid request (e.g. nonexistent receipts account)
+
+  /api/ynab/account-mappings/{id}:
+    put:
+      operationId: UpdateYnabAccountMapping
+      tags: [YNAB]
+      summary: Update a YNAB account mapping
+      description: Updates the YNAB account for an existing mapping.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateYnabAccountMappingRequest"
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Mapping not found
+    delete:
+      operationId: DeleteYnabAccountMapping
+      tags: [YNAB]
+      summary: Delete a YNAB account mapping
+      description: Removes a mapping between a receipts account and a YNAB account.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Mapping not found
+
+  /api/ynab/categories:
+    get:
+      operationId: GetYnabCategories
+      tags: [YNAB]
+      summary: List YNAB categories
+      description: Returns all YNAB categories for the selected budget, grouped by category group, with hidden categories excluded.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/YnabCategoryListResponse"
+        "503":
+          description: YNAB integration is not configured
+
+  /api/receipt-items/distinct-categories:
+    get:
+      operationId: GetDistinctReceiptItemCategories
+      tags: [ReceiptItems]
+      summary: Get distinct receipt item categories
+      description: Returns the distinct Category values from all non-deleted receipt items.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DistinctCategoriesResponse"
+
+  /api/ynab/category-mappings:
+    get:
+      operationId: GetYnabCategoryMappings
+      tags: [YNAB]
+      summary: List all category mappings
+      description: Returns all receipts-to-YNAB category mappings.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/YnabCategoryMappingListResponse"
+    post:
+      operationId: CreateYnabCategoryMapping
+      tags: [YNAB]
+      summary: Create a category mapping
+      description: Creates a new mapping from a receipts category to a YNAB category.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateYnabCategoryMappingRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/YnabCategoryMappingResponse"
+        "409":
+          description: Conflict — mapping for this receipts category already exists
+
+  /api/ynab/category-mappings/{id}:
+    put:
+      operationId: UpdateYnabCategoryMapping
+      tags: [YNAB]
+      summary: Update a category mapping
+      description: Updates the YNAB category for an existing mapping.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateYnabCategoryMappingRequest"
+      responses:
+        "204":
+          description: No Content
+    delete:
+      operationId: DeleteYnabCategoryMapping
+      tags: [YNAB]
+      summary: Delete a category mapping
+      description: Permanently deletes a category mapping.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: No Content
+
+  /api/ynab/category-mappings/unmapped:
+    get:
+      operationId: GetUnmappedCategories
+      tags: [YNAB]
+      summary: Get unmapped receipt categories
+      description: Returns receipts categories that do not yet have a YNAB category mapping.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnmappedCategoriesResponse"
+
+  /api/ynab/sync-memos:
+    post:
+      operationId: SyncYnabMemos
+      tags: [YNAB]
+      summary: Sync YNAB memo for a receipt
+      description: Matches local transactions to YNAB transactions and updates their memos with a receipt link.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SyncYnabMemosRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/YnabMemoSyncResponse"
+        "503":
+          description: YNAB integration is not configured
+
+  /api/ynab/sync-memos/bulk:
+    post:
+      operationId: SyncYnabMemosBulk
+      tags: [YNAB]
+      summary: Bulk sync YNAB memos
+      description: Batch syncs YNAB memos for multiple receipts.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SyncYnabMemosBulkRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/YnabMemoSyncResponse"
+        "503":
+          description: YNAB integration is not configured
+
+  /api/ynab/sync-memos/resolve:
+    post:
+      operationId: ResolveYnabMemoSync
+      tags: [YNAB]
+      summary: Resolve ambiguous YNAB memo sync
+      description: Resolves an ambiguous match by linking a local transaction to a specific YNAB transaction.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResolveYnabMemoSyncRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/YnabMemoSyncResultItem"
+        "503":
+          description: YNAB integration is not configured
+
+  /api/ynab/sync-status/{transactionId}:
+    get:
+      operationId: GetYnabSyncStatus
+      tags: [YNAB]
+      summary: Get YNAB sync status for a transaction
+      description: Returns the sync record for a given local transaction ID and sync type.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: transactionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: syncType
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [MemoUpdate, TransactionPush]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/YnabSyncRecordResponse"
+        "404":
+          description: No sync record found
+
+  /api/ynab/push-transactions:
+    post:
+      operationId: PushYnabTransactions
+      tags: [YNAB]
+      summary: Push receipt transactions to YNAB
+      description: >
+        Creates split transactions in YNAB from a single receipt.
+        Allocates tax and adjustments proportionally across item categories.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushYnabTransactionsRequest"
+      responses:
+        "200":
+          description: Push completed (check result for per-transaction status)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PushYnabTransactionsResponse"
+        "400":
+          description: Validation failed (unmapped categories, currency mismatch, etc.)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PushYnabTransactionsResponse"
+        "503":
+          description: YNAB integration is not configured
+
+  /api/ynab/push-transactions/bulk:
+    post:
+      operationId: BulkPushYnabTransactions
+      tags: [YNAB]
+      summary: Push transactions for multiple receipts to YNAB
+      description: >
+        Creates split transactions in YNAB for each receipt in the batch.
+        Each receipt is processed independently; failures don't block other receipts.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkPushYnabTransactionsRequest"
+      responses:
+        "200":
+          description: Bulk push completed (check per-receipt results)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkPushYnabTransactionsResponse"
+        "503":
+          description: YNAB integration is not configured
+
 components:
   schemas:
     # ── Reports ───────────────────────────────────
@@ -5632,6 +6095,461 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/EnumValuePair"
+
+    # ── YNAB ──────────────────────────────────────
+
+    YnabBudgetSummary:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+
+    YnabBudgetListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/YnabBudgetSummary"
+
+    YnabConnectionStatusResponse:
+      type: object
+      required: [isConfigured, isConnected]
+      properties:
+        isConfigured:
+          type: boolean
+          description: Whether the YNAB personal access token is set.
+        isConnected:
+          type: boolean
+          description: Whether the YNAB API is reachable with the configured token.
+        lastSuccessfulSyncUtc:
+          type:
+            - string
+            - "null"
+          format: date-time
+          description: The timestamp of the last successful YNAB sync operation, or null if no syncs have completed.
+
+    YnabBudgetSettingsResponse:
+      type: object
+      properties:
+        selectedBudgetId:
+          type:
+            - string
+            - "null"
+
+    SelectYnabBudgetRequest:
+      type: object
+      required: [budgetId]
+      properties:
+        budgetId:
+          type: string
+
+    YnabSyncRecordResponse:
+      type: object
+      required: [id, localTransactionId, ynabBudgetId, syncType, syncStatus, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        localTransactionId:
+          type: string
+          format: uuid
+        ynabTransactionId:
+          type:
+            - "null"
+            - string
+        ynabBudgetId:
+          type: string
+        ynabAccountId:
+          type:
+            - "null"
+            - string
+        syncType:
+          $ref: "#/components/schemas/YnabSyncRecordResponseSyncType"
+        syncStatus:
+          $ref: "#/components/schemas/YnabSyncRecordResponseSyncStatus"
+        syncedAtUtc:
+          type:
+            - "null"
+            - string
+          format: date-time
+        lastError:
+          type:
+            - "null"
+            - string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    YnabSyncRecordResponseSyncType:
+      enum: [MemoUpdate, TransactionPush]
+
+    YnabSyncRecordResponseSyncStatus:
+      enum: [Pending, Synced, Failed]
+
+    YnabAccountSummary:
+      type: object
+      required: [id, name, type, onBudget, closed, balance]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+        onBudget:
+          type: boolean
+        closed:
+          type: boolean
+        balance:
+          type: integer
+          format: int64
+
+    YnabAccountListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/YnabAccountSummary"
+
+    YnabAccountMappingResponse:
+      type: object
+      required: [id, receiptsAccountId, ynabAccountId, ynabAccountName, ynabBudgetId, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        receiptsAccountId:
+          type: string
+          format: uuid
+        ynabAccountId:
+          type: string
+        ynabAccountName:
+          type: string
+        ynabBudgetId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    YnabAccountMappingListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/YnabAccountMappingResponse"
+
+    CreateYnabAccountMappingRequest:
+      type: object
+      required: [receiptsAccountId, ynabAccountId, ynabAccountName, ynabBudgetId]
+      properties:
+        receiptsAccountId:
+          type: string
+          format: uuid
+        ynabAccountId:
+          type: string
+        ynabAccountName:
+          type: string
+        ynabBudgetId:
+          type: string
+
+    UpdateYnabAccountMappingRequest:
+      type: object
+      required: [ynabAccountId, ynabAccountName, ynabBudgetId]
+      properties:
+        ynabAccountId:
+          type: string
+        ynabAccountName:
+          type: string
+        ynabBudgetId:
+          type: string
+
+    YnabCategorySummary:
+      type: object
+      required: [id, name, categoryGroupId, categoryGroupName, hidden]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        categoryGroupId:
+          type: string
+        categoryGroupName:
+          type: string
+        hidden:
+          type: boolean
+
+    YnabCategoryListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/YnabCategorySummary"
+
+    DistinctCategoriesResponse:
+      type: object
+      required: [categories]
+      properties:
+        categories:
+          type: array
+          items:
+            type: string
+
+    YnabCategoryMappingResponse:
+      type: object
+      required: [id, receiptsCategory, ynabCategoryId, ynabCategoryName, ynabCategoryGroupName, ynabBudgetId, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        receiptsCategory:
+          type: string
+        ynabCategoryId:
+          type: string
+        ynabCategoryName:
+          type: string
+        ynabCategoryGroupName:
+          type: string
+        ynabBudgetId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    YnabCategoryMappingListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/YnabCategoryMappingResponse"
+
+    CreateYnabCategoryMappingRequest:
+      type: object
+      required: [receiptsCategory, ynabCategoryId, ynabCategoryName, ynabCategoryGroupName, ynabBudgetId]
+      properties:
+        receiptsCategory:
+          type: string
+        ynabCategoryId:
+          type: string
+        ynabCategoryName:
+          type: string
+        ynabCategoryGroupName:
+          type: string
+        ynabBudgetId:
+          type: string
+
+    UpdateYnabCategoryMappingRequest:
+      type: object
+      required: [ynabCategoryId, ynabCategoryName, ynabCategoryGroupName, ynabBudgetId]
+      properties:
+        ynabCategoryId:
+          type: string
+        ynabCategoryName:
+          type: string
+        ynabCategoryGroupName:
+          type: string
+        ynabBudgetId:
+          type: string
+
+    UnmappedCategoriesResponse:
+      type: object
+      required: [unmappedCategories]
+      properties:
+        unmappedCategories:
+          type: array
+          items:
+            type: string
+
+    SyncYnabMemosRequest:
+      type: object
+      required: [receiptId]
+      properties:
+        receiptId:
+          type: string
+          format: uuid
+
+    PushYnabTransactionsRequest:
+      type: object
+      required: [receiptId]
+      properties:
+        receiptId:
+          type: string
+          format: uuid
+
+    SyncYnabMemosBulkRequest:
+      type: object
+      required: [receiptIds]
+      properties:
+        receiptIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          minItems: 1
+          maxItems: 100
+
+    PushedTransactionInfo:
+      type: object
+      required: [localTransactionId, ynabTransactionId, milliunits, subTransactionCount]
+      properties:
+        localTransactionId:
+          type: string
+          format: uuid
+        ynabTransactionId:
+          type: string
+        milliunits:
+          type: integer
+          format: int64
+        subTransactionCount:
+          type: integer
+          format: int32
+
+    PushYnabTransactionsResponse:
+      type: object
+      required: [success, pushedTransactions]
+      properties:
+        success:
+          type: boolean
+        pushedTransactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/PushedTransactionInfo"
+        unmappedCategories:
+          type:
+            - "null"
+            - array
+          items:
+            type: string
+        error:
+          type:
+            - "null"
+            - string
+
+    BulkPushYnabTransactionsRequest:
+      type: object
+      required: [receiptIds]
+      properties:
+        receiptIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    ResolveYnabMemoSyncRequest:
+      type: object
+      required: [localTransactionId, ynabTransactionId]
+      properties:
+        localTransactionId:
+          type: string
+          format: uuid
+        ynabTransactionId:
+          type: string
+          maxLength: 256
+
+    YnabMemoSyncResponse:
+      type: object
+      required: [results]
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/YnabMemoSyncResultItem"
+
+    ReceiptPushResult:
+      type: object
+      required: [receiptId, result]
+      properties:
+        receiptId:
+          type: string
+          format: uuid
+        result:
+          $ref: "#/components/schemas/PushYnabTransactionsResponse"
+
+    BulkPushYnabTransactionsResponse:
+      type: object
+      required: [results]
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReceiptPushResult"
+
+    YnabMemoSyncResultItem:
+      type: object
+      required: [localTransactionId, receiptId, outcome]
+      properties:
+        localTransactionId:
+          type: string
+          format: uuid
+        receiptId:
+          type: string
+          format: uuid
+        outcome:
+          $ref: "#/components/schemas/YnabMemoSyncOutcome"
+        ynabTransactionId:
+          type:
+            - "null"
+            - string
+        error:
+          type:
+            - "null"
+            - string
+        ambiguousCandidates:
+          type:
+            - "null"
+            - array
+          items:
+            $ref: "#/components/schemas/YnabTransactionCandidate"
+
+    YnabTransactionCandidate:
+      type: object
+      required: [id, date, amount, accountId]
+      properties:
+        id:
+          type: string
+        date:
+          type: string
+          format: date
+        amount:
+          type: integer
+          format: int64
+        memo:
+          type:
+            - "null"
+            - string
+        payeeName:
+          type:
+            - "null"
+            - string
+        accountId:
+          type: string
+
+    YnabMemoSyncOutcome:
+      enum: [Synced, AlreadySynced, NoMatch, Ambiguous, CurrencySkipped, Failed]
+
+    YnabSyncType:
+      type: integer
 
   headers:
     X-Resource-Id:

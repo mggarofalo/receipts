@@ -203,6 +203,20 @@ public static class ApplicationConfiguration
 					diagnosticContext.Set("UserId", userId);
 				}
 			};
+
+			// 503 on YNAB endpoints is expected when YNAB_PAT is not configured — log as Warning not Error
+			options.GetLevel = (httpContext, elapsed, ex) =>
+			{
+				if (httpContext.Response.StatusCode == 503
+					&& httpContext.Request.Path.StartsWithSegments("/api/ynab"))
+				{
+					return Serilog.Events.LogEventLevel.Warning;
+				}
+
+				return ex is not null || httpContext.Response.StatusCode >= 500
+					? Serilog.Events.LogEventLevel.Error
+					: Serilog.Events.LogEventLevel.Information;
+			};
 		});
 		app.UseMiddleware<ValidationExceptionMiddleware>();
 		if (app.Environment.IsDevelopment())
