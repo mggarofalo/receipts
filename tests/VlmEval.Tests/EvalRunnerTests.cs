@@ -353,12 +353,12 @@ public class EvalRunnerTests : IDisposable
 
 		return new EvalRunner(
 			httpFactory.Object,
-			Options.Create(vlmOptions),
 			loader,
 			evaluator,
 			reporter,
 			options,
-			NullLogger<EvalRunner>.Instance);
+			NullLogger<EvalRunner>.Instance,
+			Options.Create(vlmOptions));
 	}
 
 	private static IReceiptExtractionService BuildExtractionService(ParsedReceipt? result)

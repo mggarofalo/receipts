@@ -134,7 +134,15 @@ if (!app.Environment.IsDevelopment())
 // URL resolution mirrors RegisterReceiptExtractionService — both check Ocr:Vlm:OllamaUrl, then
 // Ollama:BaseUrl. When neither is configured the smoke test is skipped and a startup warning is
 // emitted so misconfigured deployments are visible in logs (RECEIPTS-635).
-if (!string.IsNullOrWhiteSpace(smokeOllamaBaseUrl))
+//
+// RECEIPTS-652: the smoke test probes Ollama specifically (model-presence in /api/tags).
+// When the Anthropic provider is selected via Ocr:Vlm:Provider=anthropic, there is no
+// Ollama daemon to probe, so we skip the smoke test entirely. The Anthropic provider's
+// readiness is enforced at startup via AnthropicOptions.ApiKey [Required] + ValidateOnStart.
+string vlmProvider = (builder.Configuration[Common.ConfigurationVariables.OcrVlmProvider] ?? "ollama").ToLowerInvariant();
+bool isOllamaProvider = string.Equals(vlmProvider, "ollama", StringComparison.Ordinal);
+
+if (isOllamaProvider && !string.IsNullOrWhiteSpace(smokeOllamaBaseUrl))
 {
 	app.Lifetime.ApplicationStarted.Register(() =>
 	{
@@ -152,6 +160,16 @@ if (!string.IsNullOrWhiteSpace(smokeOllamaBaseUrl))
 				smokeLogger.LogWarning(ex, "VLM OCR: unexpected error during smoke test for {Url}", smokeOllamaBaseUrl);
 			}
 		});
+	});
+}
+else if (!isOllamaProvider)
+{
+	app.Lifetime.ApplicationStarted.Register(() =>
+	{
+		ILogger<Program> startupLogger = app.Services.GetRequiredService<ILogger<Program>>();
+		startupLogger.LogInformation(
+			"VLM OCR: skipping Ollama smoke test — provider={Provider}",
+			vlmProvider);
 	});
 }
 else

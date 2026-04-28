@@ -12,37 +12,68 @@ HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
 VlmEvalOptions evalOptions = new();
 builder.Configuration.GetSection("VlmEval").Bind(evalOptions);
 
-VlmOcrOptions vlmOptions = new();
-builder.Configuration.GetSection(ConfigurationVariables.OcrVlmSection).Bind(vlmOptions);
-
-if (string.IsNullOrWhiteSpace(vlmOptions.OllamaUrl))
-{
-	vlmOptions.OllamaUrl = builder.Configuration[ConfigurationVariables.OllamaBaseUrl]
-		?? "http://localhost:11434";
-}
-
-if (evalOptions.OllamaTimeoutSeconds > 0)
-{
-	vlmOptions.TimeoutSeconds = evalOptions.OllamaTimeoutSeconds;
-}
-
 // CLI args take precedence over env/appsettings — typical for tools where you want to override
-// just one knob (--report-path) without unsetting it from your shell. Supported:
+// just one knob (--report-path, --provider) without unsetting it from your shell. Supported:
 //   --output console|json|markdown   (sets VlmEval:OutputFormat)
 //   --report-path <path>             (sets VlmEval:ReportPath)
+//   --provider ollama|anthropic      (sets VlmEval:Provider)
 // Unknown flags are ignored to remain compatible with future hosts (e.g. Aspire) that may pass
 // extra args.
 ParseCliArgs(args, evalOptions);
 
+string provider = string.IsNullOrWhiteSpace(evalOptions.Provider)
+	? "ollama"
+	: evalOptions.Provider.ToLowerInvariant();
+
+// Register the matching production-shape VLM client. Keeping the same registration helpers used
+// by the API ensures eval results reflect production behavior (retry + circuit breaker +
+// per-attempt timeout, with the standard ServiceDefaults handler removed). See RECEIPTS-639
+// (Ollama) and RECEIPTS-652 (Anthropic).
+switch (provider)
+{
+	case "ollama":
+		{
+			VlmOcrOptions vlmOptions = new();
+			builder.Configuration.GetSection(ConfigurationVariables.OcrVlmSection).Bind(vlmOptions);
+
+			if (string.IsNullOrWhiteSpace(vlmOptions.OllamaUrl))
+			{
+				vlmOptions.OllamaUrl = builder.Configuration[ConfigurationVariables.OllamaBaseUrl]
+					?? "http://localhost:11434";
+			}
+
+			if (evalOptions.OllamaTimeoutSeconds > 0)
+			{
+				vlmOptions.TimeoutSeconds = evalOptions.OllamaTimeoutSeconds;
+			}
+
+			builder.Services.AddVlmOcrClient(vlmOptions);
+			break;
+		}
+	case "anthropic":
+		{
+			AnthropicOptions anthropicOptions = new();
+			builder.Configuration.GetSection(ConfigurationVariables.AnthropicSection).Bind(anthropicOptions);
+
+			// Per-call timeout reuses the same VlmEval-level knob the Ollama path does so users can
+			// give long fixtures the same headroom regardless of provider. Anthropic Haiku typically
+			// returns in <20s but cold-start fixtures can spike, hence the same cushion.
+			if (evalOptions.OllamaTimeoutSeconds > 0)
+			{
+				anthropicOptions.TimeoutSeconds = evalOptions.OllamaTimeoutSeconds;
+			}
+
+			builder.Services.AddAnthropicVlmClient(anthropicOptions);
+			break;
+		}
+	default:
+		throw new InvalidOperationException(
+			$"Unknown VLM provider '{provider}'. Set VlmEval:Provider (or --provider) to 'ollama' or 'anthropic'.");
+}
+
 string fixturesPath = Path.GetFullPath(evalOptions.FixturesPath);
 
 builder.Services.AddSingleton(evalOptions);
-
-// Share the production VLM client registration so eval results reflect production behavior
-// (retry + circuit breaker + per-attempt timeout, with the standard ServiceDefaults handler
-// removed). Without this, a flaky local Ollama would inflate the model's apparent failure
-// rate during evaluation. See RECEIPTS-639.
-builder.Services.AddVlmOcrClient(vlmOptions);
 
 builder.Services.AddHttpClient("ollama-probe");
 
@@ -87,6 +118,10 @@ static void ParseCliArgs(string[] args, VlmEvalOptions options)
 		else if (string.Equals(arg, "--report-path", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
 		{
 			options.ReportPath = args[++i];
+		}
+		else if (string.Equals(arg, "--provider", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+		{
+			options.Provider = args[++i];
 		}
 	}
 }

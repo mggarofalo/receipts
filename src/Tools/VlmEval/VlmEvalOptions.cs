@@ -26,6 +26,15 @@ public sealed class VlmEvalOptions
 	/// regardless. <c>Console</c> means the file output is skipped.
 	/// </summary>
 	public ReportOutputFormat OutputFormat { get; set; } = ReportOutputFormat.Console;
+
+	/// <summary>
+	/// VLM provider used for the eval run (RECEIPTS-652). Allowed values: <c>ollama</c> (default,
+	/// matches the production default) and <c>anthropic</c> (POC hosted-VLM path). The reporter
+	/// stamps this value into the run header and the JSON artifact so two runs (Ollama vs
+	/// Anthropic) over the same fixtures can be diffed by an external script. Override via
+	/// <c>VlmEval:Provider</c> in config or <c>--provider anthropic</c> on the CLI.
+	/// </summary>
+	public string Provider { get; set; } = "ollama";
 }
 
 public enum ReportOutputFormat
