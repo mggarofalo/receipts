@@ -89,24 +89,20 @@ IResourceBuilder<ContainerResource> vlmOcrPull = builder.AddContainer("vlm-ocr-p
 // before the API boots so the smoke test in InfrastructureService never catches Ollama mid-pull
 // (RECEIPTS-636).
 //
-// RECEIPTS-652: VLM provider + Anthropic API key are exposed as Aspire parameters so they
-// surface in the dashboard's Parameters panel and persist across runs via user-secrets:
+// RECEIPTS-652: VLM provider + Anthropic API key are exposed as required Aspire parameters.
+// Aspire fails fast at startup if either is missing, so the user is forced to set them
+// intentionally rather than landing on a silent default that masks misconfiguration.
+//
+// Set once via .NET user-secrets (recommended for dev, persists across runs and is gitignored):
 //
 //   dotnet user-secrets --project src/Receipts.AppHost set "Parameters:vlm-provider" "anthropic"
 //   dotnet user-secrets --project src/Receipts.AppHost set "Parameters:anthropic-api-key" "sk-ant-..."
 //
-// or set them once in the dashboard UI. Defaults are sourced from the same env vars the
-// previous wiring used, so existing setups (ANTHROPIC_API_KEY exported, Ocr__Vlm__Provider
-// set) continue to work without changes. The secret parameter is masked in the dashboard.
-IResourceBuilder<ParameterResource> vlmProviderParam = builder.AddParameter(
-	"vlm-provider",
-	Environment.GetEnvironmentVariable("Ocr__Vlm__Provider")
-		?? Environment.GetEnvironmentVariable("OCR__VLM__PROVIDER")
-		?? "ollama");
-IResourceBuilder<ParameterResource> anthropicApiKeyParam = builder.AddParameter(
-	"anthropic-api-key",
-	Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY") ?? string.Empty,
-	secret: true);
+// or via appsettings.AppHost.json under the `Parameters` section, or via
+// `Parameters__vlm-provider` / `Parameters__anthropic-api-key` env vars. The secret
+// parameter is masked in the Aspire dashboard's Parameters panel.
+IResourceBuilder<ParameterResource> vlmProviderParam = builder.AddParameter("vlm-provider");
+IResourceBuilder<ParameterResource> anthropicApiKeyParam = builder.AddParameter("anthropic-api-key", secret: true);
 
 IResourceBuilder<ProjectResource> api = builder.AddProject<Projects.API>("api")
 	.WithReference(db)
