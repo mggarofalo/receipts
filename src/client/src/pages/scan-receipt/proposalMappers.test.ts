@@ -174,6 +174,172 @@ describe("mapProposalToInitialValues", () => {
 
     expect(result.header.date).toBe("2024-06-15");
   });
+
+  // RECEIPTS-655: Walmart-style receipts only print a per-line total — quantity
+  // and unit-price arrive as 0/None confidence. The mapper must enter "flat"
+  // pricing mode and use totalPrice as the source of truth, not silently produce
+  // a $0.00 row by computing 1 × 0.
+  describe("flat-vs-quantity pricing decision (RECEIPTS-655)", () => {
+    it("enters flat mode when only totalPrice is reliable (Walmart shape)", () => {
+      const proposal = makeProposal({
+        items: [
+          {
+            code: "WMT-001",
+            codeConfidence: "high",
+            description: "GV WHL MLK",
+            descriptionConfidence: "high",
+            quantity: 0,
+            quantityConfidence: "none",
+            unitPrice: 0,
+            unitPriceConfidence: "none",
+            totalPrice: 4.97,
+            totalPriceConfidence: "high",
+            taxCode: "F",
+            taxCodeConfidence: "high",
+          },
+        ],
+      });
+
+      const result = mapProposalToInitialValues(proposal);
+
+      expect(result.items).toHaveLength(1);
+      const item = result.items[0];
+      expect(item.pricingMode).toBe("flat");
+      expect(item.totalPrice).toBe(4.97);
+      // Domain rule: flat-priced items keep quantity == 1 and unitPrice == 0.
+      expect(item.quantity).toBe(1);
+      expect(item.unitPrice).toBe(0);
+      // The reference Walmart bug surfaced as $0.00 placeholders — assert we
+      // never produce a row whose effective line total is zero when the VLM
+      // returned a positive total.
+      expect(item.totalPrice).toBeGreaterThan(0);
+    });
+
+    it("uses quantity mode for traditional q × p receipts", () => {
+      const proposal = makeProposal({
+        items: [
+          {
+            code: "MILK-GAL",
+            codeConfidence: "high",
+            description: "Whole milk",
+            descriptionConfidence: "high",
+            quantity: 2,
+            quantityConfidence: "high",
+            unitPrice: 3.99,
+            unitPriceConfidence: "high",
+            totalPrice: 7.98,
+            totalPriceConfidence: "high",
+            taxCode: "F",
+            taxCodeConfidence: "high",
+          },
+        ],
+      });
+
+      const result = mapProposalToInitialValues(proposal);
+
+      const item = result.items[0];
+      expect(item.pricingMode).toBe("quantity");
+      expect(item.quantity).toBe(2);
+      expect(item.unitPrice).toBe(3.99);
+      expect(item.totalPrice).toBe(7.98);
+    });
+
+    it("falls back to computed total when VLM omits totalPrice for a quantity row", () => {
+      const proposal = makeProposal({
+        items: [
+          {
+            code: "X",
+            codeConfidence: "high",
+            description: "Bananas",
+            descriptionConfidence: "high",
+            quantity: 3,
+            quantityConfidence: "high",
+            unitPrice: 0.5,
+            unitPriceConfidence: "high",
+            totalPrice: null,
+            totalPriceConfidence: "none",
+            taxCode: null,
+            taxCodeConfidence: "none",
+          },
+        ],
+      });
+
+      const result = mapProposalToInitialValues(proposal);
+
+      const item = result.items[0];
+      expect(item.pricingMode).toBe("quantity");
+      expect(item.totalPrice).toBeCloseTo(1.5, 2);
+    });
+
+    it("handles a mixed-shape receipt (one flat, one quantity)", () => {
+      const proposal = makeProposal({
+        items: [
+          {
+            code: null,
+            codeConfidence: "none",
+            description: "Bread",
+            descriptionConfidence: "high",
+            quantity: 0,
+            quantityConfidence: "none",
+            unitPrice: 0,
+            unitPriceConfidence: "none",
+            totalPrice: 3.49,
+            totalPriceConfidence: "high",
+            taxCode: null,
+            taxCodeConfidence: "none",
+          },
+          {
+            code: "MILK",
+            codeConfidence: "high",
+            description: "Milk",
+            descriptionConfidence: "high",
+            quantity: 2,
+            quantityConfidence: "high",
+            unitPrice: 2.0,
+            unitPriceConfidence: "high",
+            totalPrice: 4.0,
+            totalPriceConfidence: "high",
+            taxCode: "F",
+            taxCodeConfidence: "high",
+          },
+        ],
+      });
+
+      const result = mapProposalToInitialValues(proposal);
+
+      expect(result.items[0].pricingMode).toBe("flat");
+      expect(result.items[0].totalPrice).toBe(3.49);
+      expect(result.items[1].pricingMode).toBe("quantity");
+      expect(result.items[1].totalPrice).toBe(4.0);
+    });
+
+    it("does not regress to $0.00: every item has a positive line value when the VLM gave one", () => {
+      const proposal = makeProposal({
+        items: Array.from({ length: 5 }, (_, idx) => ({
+          code: `WMT-${idx}`,
+          codeConfidence: "high" as const,
+          description: `Item ${idx}`,
+          descriptionConfidence: "high" as const,
+          quantity: 0,
+          quantityConfidence: "none" as const,
+          unitPrice: 0,
+          unitPriceConfidence: "none" as const,
+          totalPrice: 1.99 + idx,
+          totalPriceConfidence: "high" as const,
+          taxCode: null,
+          taxCodeConfidence: "none" as const,
+        })),
+      });
+
+      const result = mapProposalToInitialValues(proposal);
+
+      // Every row should be non-zero — the bug was producing all-$0 rows.
+      for (const item of result.items) {
+        expect(item.pricingMode).toBe("flat");
+        expect(item.totalPrice).toBeGreaterThan(0);
+      }
+    });
+  });
 });
 
 describe("mapProposalToConfidenceMap", () => {
@@ -403,6 +569,7 @@ describe("initialItemsAndConfidence", () => {
           pricingMode: "quantity",
           quantity: 1,
           unitPrice: 3.5,
+          totalPrice: 3.5,
           category: "",
           subcategory: "",
           taxCode: "",
@@ -413,6 +580,7 @@ describe("initialItemsAndConfidence", () => {
           pricingMode: "quantity",
           quantity: 2,
           unitPrice: 2.5,
+          totalPrice: 5,
           category: "",
           subcategory: "",
           taxCode: "",
@@ -436,6 +604,7 @@ describe("initialItemsAndConfidence", () => {
           pricingMode: "quantity",
           quantity: 1,
           unitPrice: 3.5,
+          totalPrice: 3.5,
           category: "",
           subcategory: "",
           taxCode: "F",
@@ -446,6 +615,7 @@ describe("initialItemsAndConfidence", () => {
           pricingMode: "quantity",
           quantity: 1,
           unitPrice: 2,
+          totalPrice: 2,
           category: "",
           subcategory: "",
           taxCode: "",
@@ -472,6 +642,7 @@ describe("initialItemsAndConfidence", () => {
           pricingMode: "quantity",
           quantity: 1,
           unitPrice: 3.5,
+          totalPrice: 3.5,
           category: "",
           subcategory: "",
           taxCode: "",

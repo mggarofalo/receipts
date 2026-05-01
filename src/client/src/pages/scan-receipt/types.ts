@@ -57,6 +57,7 @@ export interface ScanInitialValues {
     pricingMode: "quantity" | "flat";
     quantity: number;
     unitPrice: number;
+    totalPrice: number;
     category: string;
     subcategory: string;
     taxCode: string;

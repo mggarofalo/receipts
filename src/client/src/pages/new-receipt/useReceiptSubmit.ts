@@ -78,6 +78,12 @@ export function useReceiptSubmit({
           description: item.description,
           quantity: item.quantity,
           unitPrice: item.unitPrice,
+          // Send totalPrice as a first-class field so flat-priced items (where
+          // unitPrice is 0) round-trip with the correct dollar value. For
+          // quantity-priced items the server still computes the same value, so
+          // sending it explicitly is harmless and keeps the wire shape uniform.
+          // See RECEIPTS-655.
+          totalPrice: item.totalPrice,
           category: item.category,
           subcategory: item.subcategory,
           pricingMode: item.pricingMode,

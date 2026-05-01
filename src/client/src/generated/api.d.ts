@@ -3200,6 +3200,11 @@ export interface components {
             quantity: number;
             /** Format: double */
             unitPrice: number;
+            /**
+             * Format: double
+             * @description Optional explicit line total. When omitted, the server computes it as quantity x unitPrice. Required for 'flat' pricing mode where the source receipt prints only the line total (e.g. unit-priced items without a quantity column).
+             */
+            totalPrice?: number | null;
             category: string;
             subcategory?: string | null;
             /**
@@ -3217,6 +3222,11 @@ export interface components {
             quantity: number;
             /** Format: double */
             unitPrice: number;
+            /**
+             * Format: double
+             * @description Optional explicit line total. When omitted, the server computes it as quantity x unitPrice. Required for 'flat' pricing mode where the source receipt prints only the line total.
+             */
+            totalPrice?: number | null;
             category: string;
             subcategory?: string | null;
             /**
@@ -3236,6 +3246,11 @@ export interface components {
             quantity: number;
             /** Format: double */
             unitPrice: number;
+            /**
+             * Format: double
+             * @description Persisted line total. For 'quantity' mode this equals quantity x unitPrice (with floor-to-cent rounding); for 'flat' mode this is the receipt-printed line total.
+             */
+            totalPrice: number;
             category: string;
             subcategory?: string | null;
             /** @description Pricing mode: 'quantity' (qty x unit price) or 'flat' (single flat price) */

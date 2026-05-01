@@ -53,21 +53,46 @@ import type { ConfidenceLevel } from "@/pages/scan-receipt/types";
 
 const TAX_CODE_PATTERN = /^[A-Za-z]?$/;
 
-const itemSchema = z.object({
-  receiptItemCode: z.string().optional().default(""),
-  description: z.string().min(1, "Description is required"),
-  quantity: z.number().positive("Quantity must be positive"),
-  unitPrice: z.number().min(0, "Unit price must be non-negative"),
-  category: z.string().min(1, "Category is required"),
-  subcategory: z.string().optional().default(""),
-  taxCode: z
-    .string()
-    .optional()
-    .default("")
-    .refine((v) => !v || TAX_CODE_PATTERN.test(v), {
-      message: "Tax code must be a single letter",
-    }),
-});
+const itemSchema = z
+  .object({
+    receiptItemCode: z.string().optional().default(""),
+    description: z.string().min(1, "Description is required"),
+    pricingMode: z.enum(["quantity", "flat"]).default("quantity"),
+    quantity: z.number().positive("Quantity must be positive"),
+    unitPrice: z.number().min(0, "Unit price must be non-negative"),
+    totalPrice: z.number().min(0, "Total price must be non-negative"),
+    category: z.string().min(1, "Category is required"),
+    subcategory: z.string().optional().default(""),
+    taxCode: z
+      .string()
+      .optional()
+      .default("")
+      .refine((v) => !v || TAX_CODE_PATTERN.test(v), {
+        message: "Tax code must be a single letter",
+      }),
+  })
+  .superRefine((value, ctx) => {
+    // Flat mode requires a positive line total (the unit-priced source receipt
+    // doesn't print a per-unit price, so the total carries the dollar value).
+    // Quantity mode requires a positive unit price (the legacy contract).
+    if (value.pricingMode === "flat") {
+      if (value.totalPrice <= 0) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["totalPrice"],
+          message: "Total price must be positive",
+        });
+      }
+    } else {
+      if (value.unitPrice <= 0) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["unitPrice"],
+          message: "Unit price must be positive",
+        });
+      }
+    }
+  });
 
 type ItemFormValues = z.output<typeof itemSchema>;
 
@@ -78,9 +103,33 @@ export interface ReceiptLineItem {
   pricingMode: "quantity" | "flat";
   quantity: number;
   unitPrice: number;
+  /**
+   * Persisted line total. For "quantity" mode this equals quantity x unitPrice
+   * (the rolling subtotal still computes from those); for "flat" mode this is
+   * the receipt-printed line total and the source of truth for the row.
+   */
+  totalPrice: number;
   category: string;
   subcategory: string;
   taxCode: string;
+}
+
+/**
+ * Compute the per-row line total, picking the source-of-truth field based on
+ * pricingMode. For "quantity" rows this honors the quantity x unit-price math
+ * (with cent rounding to dodge IEEE-754 noise); for "flat" rows it returns
+ * the receipt-printed total verbatim.
+ */
+function computeLineTotal(item: {
+  pricingMode: "quantity" | "flat";
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number;
+}): number {
+  if (item.pricingMode === "flat") {
+    return item.totalPrice;
+  }
+  return Math.round(item.quantity * item.unitPrice * 100) / 100;
 }
 
 interface LineItemsSectionProps {
@@ -120,8 +169,10 @@ export function LineItemsSection({
     defaultValues: {
       receiptItemCode: "",
       description: "",
+      pricingMode: "quantity",
       quantity: 1,
       unitPrice: 0,
+      totalPrice: 0,
       category: "",
       subcategory: "",
       taxCode: "",
@@ -132,6 +183,7 @@ export function LineItemsSection({
   const itemCode = form.watch("receiptItemCode");
   const description = form.watch("description");
   const selectedCategory = form.watch("category");
+  const formPricingMode = form.watch("pricingMode");
 
   // Item code autocomplete
   const [showItemCodeSuggestions, setShowItemCodeSuggestions] = useState(false);
@@ -225,12 +277,7 @@ export function LineItemsSection({
   );
 
   const subtotal = useMemo(
-    () =>
-      items.reduce(
-        (sum, item) =>
-          sum + Math.round(item.quantity * item.unitPrice * 100) / 100,
-        0,
-      ),
+    () => items.reduce((sum, item) => sum + computeLineTotal(item), 0),
     [items],
   );
 
@@ -282,13 +329,21 @@ export function LineItemsSection({
 
   const handleAdd = useCallback(
     (values: ItemFormValues) => {
+      const isFlat = values.pricingMode === "flat";
+      // Domain rule: flat-priced items must have quantity == 1.
+      const quantity = isFlat ? 1 : values.quantity;
+      const unitPrice = isFlat ? 0 : values.unitPrice;
+      const totalPrice = isFlat
+        ? values.totalPrice
+        : Math.round(quantity * unitPrice * 100) / 100;
       const newItem: ReceiptLineItem = {
         id: generateId(),
         receiptItemCode: values.receiptItemCode ?? "",
         description: values.description,
-        pricingMode: "quantity",
-        quantity: values.quantity,
-        unitPrice: values.unitPrice,
+        pricingMode: values.pricingMode,
+        quantity,
+        unitPrice,
+        totalPrice,
         category: values.category,
         subcategory: values.subcategory ?? "",
         taxCode: (values.taxCode ?? "").toUpperCase(),
@@ -297,8 +352,10 @@ export function LineItemsSection({
       form.reset({
         receiptItemCode: "",
         description: "",
+        pricingMode: values.pricingMode,
         quantity: 1,
         unitPrice: 0,
+        totalPrice: 0,
         category: values.category,
         subcategory: "",
         taxCode: "",
@@ -318,17 +375,28 @@ export function LineItemsSection({
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<{
     description: string;
+    pricingMode: "quantity" | "flat";
     quantity: number;
     unitPrice: number;
+    totalPrice: number;
     taxCode: string;
-  }>({ description: "", quantity: 1, unitPrice: 0, taxCode: "" });
+  }>({
+    description: "",
+    pricingMode: "quantity",
+    quantity: 1,
+    unitPrice: 0,
+    totalPrice: 0,
+    taxCode: "",
+  });
 
   const startEditing = useCallback((item: ReceiptLineItem) => {
     setEditingItemId(item.id);
     setEditDraft({
       description: item.description,
+      pricingMode: item.pricingMode,
       quantity: item.quantity,
       unitPrice: item.unitPrice,
+      totalPrice: item.totalPrice,
       taxCode: item.taxCode ?? "",
     });
   }, []);
@@ -340,8 +408,17 @@ export function LineItemsSection({
   const saveEditing = useCallback(() => {
     if (!editingItemId) return;
     if (!editDraft.description.trim()) return;
-    if (!Number.isFinite(editDraft.quantity) || editDraft.quantity <= 0) return;
-    if (!Number.isFinite(editDraft.unitPrice) || editDraft.unitPrice < 0) return;
+    const isFlat = editDraft.pricingMode === "flat";
+    if (isFlat) {
+      if (!Number.isFinite(editDraft.totalPrice) || editDraft.totalPrice <= 0) {
+        return;
+      }
+    } else {
+      if (!Number.isFinite(editDraft.quantity) || editDraft.quantity <= 0) return;
+      if (!Number.isFinite(editDraft.unitPrice) || editDraft.unitPrice <= 0) {
+        return;
+      }
+    }
     if (editDraft.taxCode && !TAX_CODE_PATTERN.test(editDraft.taxCode)) return;
 
     onChange(
@@ -350,8 +427,16 @@ export function LineItemsSection({
           ? {
               ...item,
               description: editDraft.description.trim(),
-              quantity: editDraft.quantity,
-              unitPrice: editDraft.unitPrice,
+              // Flat-priced items: domain requires quantity == 1, persist
+              // unitPrice = 0 since the source receipt didn't print one. The
+              // line total is the source of truth.
+              quantity: isFlat ? 1 : editDraft.quantity,
+              unitPrice: isFlat ? 0 : editDraft.unitPrice,
+              totalPrice: isFlat
+                ? editDraft.totalPrice
+                : Math.round(
+                    editDraft.quantity * editDraft.unitPrice * 100,
+                  ) / 100,
               taxCode: editDraft.taxCode.toUpperCase(),
             }
           : item,
@@ -687,38 +772,86 @@ export function LineItemsSection({
 
               <FormField
                 control={form.control}
-                name="quantity"
+                name="pricingMode"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel required>Qty</FormLabel>
+                    <FormLabel>Mode</FormLabel>
                     <FormControl>
-                      <Input
-                        type="number"
-                        step="any"
-                        min="0.01"
-                        className="w-20"
-                        {...field}
-                        onChange={(e) => field.onChange(Number(e.target.value))}
-                      />
+                      <label className="flex items-center gap-1.5 text-sm h-9 px-2 rounded-md border bg-background cursor-pointer select-none whitespace-nowrap">
+                        <input
+                          type="checkbox"
+                          aria-label="Flat price"
+                          className="h-3.5 w-3.5"
+                          checked={field.value === "flat"}
+                          onChange={(e) =>
+                            field.onChange(e.target.checked ? "flat" : "quantity")
+                          }
+                        />
+                        <span>Flat</span>
+                      </label>
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
 
-              <FormField
-                control={form.control}
-                name="unitPrice"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel required>Unit Price</FormLabel>
-                    <FormControl>
-                      <CurrencyInput {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              {formPricingMode === "flat" ? (
+                <FormField
+                  control={form.control}
+                  name="totalPrice"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel required>Total Price</FormLabel>
+                      <FormControl>
+                        <CurrencyInput aria-label="Total price" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              ) : (
+                <>
+                  <FormField
+                    control={form.control}
+                    name="quantity"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel required>Qty</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            step="any"
+                            min="0.01"
+                            className="w-20"
+                            {...field}
+                            onChange={(e) =>
+                              field.onChange(Number(e.target.value))
+                            }
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="unitPrice"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel required>Unit Price</FormLabel>
+                        <FormControl>
+                          <CurrencyInput
+                            aria-label="Unit price"
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </>
+              )}
 
               <div className="flex justify-end sm:mb-0.5">
                 <Button type="submit" variant="secondary" size="sm">
@@ -748,6 +881,13 @@ export function LineItemsSection({
             <TableBody>
               {items.map((item) => {
                 const taxCodeConfidence = itemConfidenceById?.get(item.id)?.taxCode;
+                const lineTotal = computeLineTotal(item);
+                const editLineTotal =
+                  editDraft.pricingMode === "flat"
+                    ? editDraft.totalPrice
+                    : Math.round(
+                        editDraft.quantity * editDraft.unitPrice * 100,
+                      ) / 100;
                 return isEditing && editingItemId === item.id ? (
                   <TableRow key={item.id}>
                     <TableCell>
@@ -777,7 +917,7 @@ export function LineItemsSection({
                         }
                         aria-label="Edit quantity"
                         className="h-8 w-20"
-                        disabled={item.pricingMode === "flat"}
+                        disabled={editDraft.pricingMode === "flat"}
                       />
                     </TableCell>
                     <TableCell>
@@ -788,10 +928,22 @@ export function LineItemsSection({
                         }
                         aria-label="Edit unit price"
                         className="h-8"
+                        disabled={editDraft.pricingMode === "flat"}
                       />
                     </TableCell>
                     <TableCell>
-                      {formatCurrency(editDraft.quantity * editDraft.unitPrice)}
+                      {editDraft.pricingMode === "flat" ? (
+                        <CurrencyInput
+                          value={editDraft.totalPrice}
+                          onChange={(v) =>
+                            setEditDraft((d) => ({ ...d, totalPrice: v }))
+                          }
+                          aria-label="Edit total price"
+                          className="h-8"
+                        />
+                      ) : (
+                        formatCurrency(editLineTotal)
+                      )}
                     </TableCell>
                     <TableCell>
                       {item.category}
@@ -839,11 +991,21 @@ export function LineItemsSection({
                 ) : (
                   <TableRow key={item.id}>
                     <TableCell>{item.description}</TableCell>
-                    <TableCell>{item.quantity}</TableCell>
-                    <TableCell>{formatCurrency(item.unitPrice)}</TableCell>
                     <TableCell>
-                      {formatCurrency(item.quantity * item.unitPrice)}
+                      {item.pricingMode === "flat" ? (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      ) : (
+                        item.quantity
+                      )}
                     </TableCell>
+                    <TableCell>
+                      {item.pricingMode === "flat" ? (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      ) : (
+                        formatCurrency(item.unitPrice)
+                      )}
+                    </TableCell>
+                    <TableCell>{formatCurrency(lineTotal)}</TableCell>
                     <TableCell>
                       {item.category}
                       {item.subcategory ? ` / ${item.subcategory}` : ""}

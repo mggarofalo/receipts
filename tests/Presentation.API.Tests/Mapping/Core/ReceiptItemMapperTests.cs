@@ -481,4 +481,134 @@ public class ReceiptItemMapperTests
 		Assert.Null(actual.NormalizedDescriptionName);
 		Assert.Null(actual.NormalizedDescriptionMatchScore);
 	}
+
+	// RECEIPTS-655: round-trip a flat-priced item where the source receipt
+	// printed only a line total (e.g. Walmart unit-priced items). The client
+	// supplies pricingMode="flat", quantity=1, unitPrice=0, totalPrice>0.
+	// The mapper must honor totalPrice as the persisted line total instead of
+	// silently computing 1 * 0 = 0.
+	[Fact]
+	public void ToDomain_FromCreateRequest_FlatWithExplicitTotalPrice_UsesTotalPrice()
+	{
+		// Arrange — Walmart shape: only the line total is meaningful.
+		CreateReceiptItemRequest request = new()
+		{
+			ReceiptItemCode = "WMT-001",
+			Description = "GV WHL MLK",
+			Quantity = 1.0,
+			UnitPrice = 0.0,
+			TotalPrice = 4.97,
+			Category = "Groceries",
+			Subcategory = null,
+			PricingMode = "flat"
+		};
+
+		// Act
+		ReceiptItem actual = _mapper.ToDomain(request);
+
+		// Assert
+		Assert.Equal(PricingMode.Flat, actual.PricingMode);
+		Assert.Equal(1.0m, actual.Quantity);
+		Assert.Equal(0.0m, actual.UnitPrice.Amount);
+		Assert.Equal(4.97m, actual.TotalAmount.Amount);
+	}
+
+	[Fact]
+	public void ToDomain_FromUpdateRequest_FlatWithExplicitTotalPrice_UsesTotalPrice()
+	{
+		// Arrange
+		Guid expectedId = Guid.NewGuid();
+		UpdateReceiptItemRequest request = new()
+		{
+			Id = expectedId,
+			ReceiptItemCode = "WMT-UPD-001",
+			Description = "Updated flat item",
+			Quantity = 1.0,
+			UnitPrice = 0.0,
+			TotalPrice = 12.34,
+			Category = "Groceries",
+			Subcategory = null,
+			PricingMode = "flat"
+		};
+
+		// Act
+		ReceiptItem actual = _mapper.ToDomain(request);
+
+		// Assert
+		Assert.Equal(expectedId, actual.Id);
+		Assert.Equal(PricingMode.Flat, actual.PricingMode);
+		Assert.Equal(12.34m, actual.TotalAmount.Amount);
+	}
+
+	[Fact]
+	public void ToDomain_FromCreateRequest_QuantityWithExplicitTotalPrice_HonorsTotalPrice()
+	{
+		// Arrange — when the client supplies an explicit totalPrice for a
+		// quantity-priced item, use it verbatim so cent-level rounding chosen
+		// upstream is preserved through the wire.
+		CreateReceiptItemRequest request = new()
+		{
+			ReceiptItemCode = "MILK-GAL",
+			Description = "Whole milk",
+			Quantity = 2.0,
+			UnitPrice = 3.99,
+			TotalPrice = 7.98,
+			Category = "Groceries"
+		};
+
+		// Act
+		ReceiptItem actual = _mapper.ToDomain(request);
+
+		// Assert
+		Assert.Equal(PricingMode.Quantity, actual.PricingMode);
+		Assert.Equal(7.98m, actual.TotalAmount.Amount);
+	}
+
+	[Fact]
+	public void ToDomain_FromCreateRequest_QuantityWithNullTotalPrice_FallsBackToComputed()
+	{
+		// Arrange — backwards-compat: a client that doesn't yet send totalPrice
+		// must still get a computed total via the legacy floor-to-cent rule.
+		CreateReceiptItemRequest request = new()
+		{
+			ReceiptItemCode = "X",
+			Description = "Bananas",
+			Quantity = 3.0,
+			UnitPrice = 1.333,
+			TotalPrice = null,
+			Category = "Groceries"
+		};
+
+		// Act
+		ReceiptItem actual = _mapper.ToDomain(request);
+
+		// Assert
+		decimal expectedTotal = Math.Floor(3.0m * 1.333m * 100) / 100;
+		Assert.Equal(expectedTotal, actual.TotalAmount.Amount);
+	}
+
+	[Fact]
+	public void ToResponse_ExposesTotalPriceFromTotalAmount()
+	{
+		// Arrange — flat-priced item with totalPrice differing from q * u.
+		Guid id = Guid.NewGuid();
+		ReceiptItem item = new(
+			id,
+			"WMT-001",
+			"Walmart unit-priced",
+			1.0m,
+			new Money(0.0m, Currency.USD),
+			new Money(4.97m, Currency.USD),
+			"Groceries",
+			null,
+			PricingMode.Flat
+		);
+
+		// Act
+		ReceiptItemResponse actual = _mapper.ToResponse(item);
+
+		// Assert
+		Assert.Equal(4.97, actual.TotalPrice);
+		Assert.Equal("flat", actual.PricingMode);
+	}
 }

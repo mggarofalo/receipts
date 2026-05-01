@@ -61,6 +61,7 @@ function makeItem(overrides: Partial<ReceiptLineItem> = {}): ReceiptLineItem {
     pricingMode: "quantity",
     quantity: 1,
     unitPrice: 0,
+    totalPrice: 0,
     category: "Food",
     subcategory: "",
     taxCode: "",
@@ -110,6 +111,7 @@ describe("LineItemsSection", () => {
         pricingMode: "quantity",
         quantity: 2,
         unitPrice: 3.5,
+        totalPrice: 7,
         category: "Food",
         subcategory: "",
         taxCode: "",
@@ -133,6 +135,7 @@ describe("LineItemsSection", () => {
         pricingMode: "quantity",
         quantity: 2,
         unitPrice: 3.5,
+        totalPrice: 7,
         category: "Food",
         subcategory: "",
         taxCode: "",
@@ -144,6 +147,7 @@ describe("LineItemsSection", () => {
         pricingMode: "flat",
         quantity: 1,
         unitPrice: 4.0,
+        totalPrice: 4,
         category: "Food",
         subcategory: "",
         taxCode: "",
@@ -153,6 +157,96 @@ describe("LineItemsSection", () => {
       <LineItemsSection {...defaultProps} items={items} />,
     );
     expect(screen.getByText("Subtotal: $11.00")).toBeInTheDocument();
+  });
+
+  // RECEIPTS-655: flat-priced items (Walmart shape) carry the line total in
+  // `totalPrice` while `quantity`/`unitPrice` may be 0/0. The render must use
+  // totalPrice for both the line cell and the rolling subtotal.
+  it("renders flat-priced rows using totalPrice for the line cell (RECEIPTS-655)", () => {
+    const items: ReceiptLineItem[] = [
+      {
+        id: "1",
+        receiptItemCode: "WMT-001",
+        description: "GV WHL MLK",
+        pricingMode: "flat",
+        quantity: 1,
+        unitPrice: 0,
+        totalPrice: 4.97,
+        category: "Food",
+        subcategory: "",
+        taxCode: "F",
+      },
+    ];
+    renderWithProviders(
+      <LineItemsSection {...defaultProps} items={items} />,
+    );
+
+    // The previous bug rendered "$0.00" because the table multiplied
+    // quantity * unitPrice (1 * 0). Assert the row shows the real total.
+    expect(screen.getByText("$4.97")).toBeInTheDocument();
+    expect(screen.queryByText("$0.00")).not.toBeInTheDocument();
+  });
+
+  it("subtotal sums flat-priced totalPrice and quantity-priced q × p (RECEIPTS-655)", () => {
+    const items: ReceiptLineItem[] = [
+      // Flat: only the line total is meaningful.
+      {
+        id: "1",
+        receiptItemCode: "WMT-001",
+        description: "GV WHL MLK",
+        pricingMode: "flat",
+        quantity: 1,
+        unitPrice: 0,
+        totalPrice: 4.97,
+        category: "Food",
+        subcategory: "",
+        taxCode: "F",
+      },
+      // Quantity: 2 × 1.50 = 3.00
+      {
+        id: "2",
+        receiptItemCode: "BANANA",
+        description: "Bananas",
+        pricingMode: "quantity",
+        quantity: 2,
+        unitPrice: 1.5,
+        totalPrice: 3.0,
+        category: "Food",
+        subcategory: "",
+        taxCode: "",
+      },
+    ];
+    renderWithProviders(
+      <LineItemsSection {...defaultProps} items={items} />,
+    );
+
+    // 4.97 + 3.00 = 7.97
+    expect(screen.getByText("Subtotal: $7.97")).toBeInTheDocument();
+  });
+
+  it("hides quantity/unit-price columns with em-dash for flat-priced rows (RECEIPTS-655)", () => {
+    const items: ReceiptLineItem[] = [
+      {
+        id: "1",
+        receiptItemCode: "WMT-001",
+        description: "Walmart unit-priced",
+        pricingMode: "flat",
+        quantity: 1,
+        unitPrice: 0,
+        totalPrice: 12.34,
+        category: "Food",
+        subcategory: "",
+        taxCode: "",
+      },
+    ];
+    renderWithProviders(
+      <LineItemsSection {...defaultProps} items={items} />,
+    );
+
+    // The line total is rendered.
+    expect(screen.getByText("$12.34")).toBeInTheDocument();
+    // No "$0.00" should appear in the row (the bug surface).
+    expect(screen.queryByText("$0.00")).not.toBeInTheDocument();
   });
 
   it("rounds per-item totals to nearest cent when computing subtotal", () => {
@@ -168,6 +262,7 @@ describe("LineItemsSection", () => {
         pricingMode: "quantity",
         quantity: 10,
         unitPrice: 0.09,
+        totalPrice: 0.9,
         category: "Food",
         subcategory: "",
         taxCode: "",
@@ -190,6 +285,7 @@ describe("LineItemsSection", () => {
         pricingMode: "quantity",
         quantity: 1,
         unitPrice: 3.5,
+        totalPrice: 3.5,
         category: "Food",
         subcategory: "",
         taxCode: "",
@@ -212,6 +308,7 @@ describe("LineItemsSection", () => {
         pricingMode: "flat",
         quantity: 1,
         unitPrice: 5,
+        totalPrice: 5,
         category: "Household",
         subcategory: "Cleaning",
         taxCode: "",
@@ -234,6 +331,7 @@ describe("LineItemsSection", () => {
         pricingMode: "quantity",
         quantity: 2,
         unitPrice: 3.5,
+        totalPrice: 7,
         category: "Food",
         subcategory: "",
         taxCode: "",
@@ -255,6 +353,7 @@ describe("LineItemsSection", () => {
         pricingMode: "quantity",
         quantity: 2,
         unitPrice: 3.5,
+        totalPrice: 7,
         category: "Food",
         subcategory: "",
         taxCode: "",
@@ -284,6 +383,7 @@ describe("LineItemsSection", () => {
         pricingMode: "quantity",
         quantity: 2,
         unitPrice: 3.5,
+        totalPrice: 7,
         category: "Food",
         subcategory: "",
         taxCode: "",
@@ -317,6 +417,7 @@ describe("LineItemsSection", () => {
         pricingMode: "quantity",
         quantity: 2,
         unitPrice: 3.5,
+        totalPrice: 7,
         category: "Food",
         subcategory: "",
         taxCode: "",
@@ -350,6 +451,7 @@ describe("LineItemsSection", () => {
         pricingMode: "quantity",
         quantity: 2,
         unitPrice: 3.5,
+        totalPrice: 7,
         category: "Food",
         subcategory: "",
         taxCode: "",
@@ -413,6 +515,7 @@ describe("LineItemsSection", () => {
         pricingMode: "flat",
         quantity: 1,
         unitPrice: 25,
+        totalPrice: 25,
         category: "Food",
         subcategory: "",
         taxCode: "",
@@ -424,6 +527,36 @@ describe("LineItemsSection", () => {
 
     await user.click(screen.getByRole("button", { name: /edit/i }));
 
+    expect(screen.getByLabelText("Edit quantity")).toBeDisabled();
+  });
+
+  // RECEIPTS-655: when editing a flat-priced row, the user must be able to
+  // change the line total directly (since the source receipt didn't print a
+  // unit price). The unit-price input is also locked.
+  it("exposes 'Edit total price' input for flat-priced rows in edit mode (RECEIPTS-655)", async () => {
+    const user = userEvent.setup();
+    const items: ReceiptLineItem[] = [
+      {
+        id: "1",
+        receiptItemCode: "",
+        description: "Walmart unit item",
+        pricingMode: "flat",
+        quantity: 1,
+        unitPrice: 0,
+        totalPrice: 4.97,
+        category: "Food",
+        subcategory: "",
+        taxCode: "",
+      },
+    ];
+    renderWithProviders(
+      <LineItemsSection {...defaultProps} items={items} />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /edit/i }));
+
+    expect(screen.getByLabelText("Edit total price")).toBeInTheDocument();
+    expect(screen.getByLabelText("Edit unit price")).toBeDisabled();
     expect(screen.getByLabelText("Edit quantity")).toBeDisabled();
   });
 
