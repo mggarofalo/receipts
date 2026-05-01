@@ -10,7 +10,7 @@ namespace API.Mapping.Core;
 public partial class ReceiptItemMapper
 {
 	[MapProperty(nameof(ReceiptItem.UnitPrice.Amount), nameof(ReceiptItemResponse.UnitPrice))]
-	[MapperIgnoreSource(nameof(ReceiptItem.TotalAmount))]
+	[MapProperty(nameof(ReceiptItem.TotalAmount.Amount), nameof(ReceiptItemResponse.TotalPrice))]
 	[MapperIgnoreSource(nameof(ReceiptItem.PricingMode))]
 	[MapperIgnoreTarget(nameof(ReceiptItemResponse.AdditionalProperties))]
 	[MapperIgnoreTarget(nameof(ReceiptItemResponse.PricingMode))]
@@ -28,10 +28,11 @@ public partial class ReceiptItemMapper
 		decimal quantity = (decimal)source.Quantity;
 		decimal unitPrice = (decimal)source.UnitPrice;
 		Money unitPriceMoney = new(unitPrice, Currency.USD);
-		Money totalAmount = new(Math.Floor(quantity * unitPrice * 100) / 100, Currency.USD);
 
 		PricingMode pricingMode = Enum.TryParse<PricingMode>(source.PricingMode, ignoreCase: true, out PricingMode mode)
 			? mode : PricingMode.Quantity;
+
+		Money totalAmount = ResolveTotalAmount(source.TotalPrice, quantity, unitPrice);
 
 		return new ReceiptItem(
 			Guid.Empty,
@@ -51,10 +52,11 @@ public partial class ReceiptItemMapper
 		decimal quantity = (decimal)source.Quantity;
 		decimal unitPrice = (decimal)source.UnitPrice;
 		Money unitPriceMoney = new(unitPrice, Currency.USD);
-		Money totalAmount = new(Math.Floor(quantity * unitPrice * 100) / 100, Currency.USD);
 
 		PricingMode pricingMode = Enum.TryParse<PricingMode>(source.PricingMode, ignoreCase: true, out PricingMode mode)
 			? mode : PricingMode.Quantity;
+
+		Money totalAmount = ResolveTotalAmount(source.TotalPrice, quantity, unitPrice);
 
 		return new ReceiptItem(
 			source.Id,
@@ -67,6 +69,20 @@ public partial class ReceiptItemMapper
 			source.Subcategory,
 			pricingMode
 		);
+	}
+
+	/// <summary>
+	/// Resolve the persisted line total. When the client supplies <paramref name="totalPrice"/>
+	/// (e.g. for a flat-priced item where the source receipt prints only a line total and no
+	/// unit price), use that value verbatim. Otherwise compute it from quantity x unitPrice
+	/// with floor-to-cent rounding to match historical behavior.
+	/// </summary>
+	private static Money ResolveTotalAmount(double? totalPrice, decimal quantity, decimal unitPrice)
+	{
+		decimal total = totalPrice.HasValue
+			? (decimal)totalPrice.Value
+			: Math.Floor(quantity * unitPrice * 100) / 100;
+		return new Money(total, Currency.USD);
 	}
 
 	private double MapDecimalToDouble(decimal value) => (double)value;

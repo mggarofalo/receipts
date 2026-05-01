@@ -66,16 +66,54 @@ export function mapProposalToInitialValues(
       amount: Number(p.amount ?? 0),
       lastFour: p.lastFour ?? "",
     })),
-    items: items.map((item) => ({
-      receiptItemCode: item.code ?? "",
-      description: item.description ?? "",
-      pricingMode: "quantity" as const,
-      quantity: Number(item.quantity ?? 1),
-      unitPrice: Number(item.unitPrice ?? 0),
-      category: "",
-      subcategory: "",
-      taxCode: item.taxCode ?? "",
-    })),
+    items: items.map((item) => {
+      // Decide pricingMode from confidence + presence: when only the line total
+      // is reliable (Walmart-style: unit-priced items printed without quantity
+      // or unit-price columns), the wizard must enter "flat" mode and treat the
+      // total as the source of truth. Otherwise fall back to traditional
+      // quantity x unit-price math. See RECEIPTS-655.
+      const hasOnlyTotal =
+        item.totalPriceConfidence === "high" &&
+        (item.quantityConfidence === "none" || !item.quantity) &&
+        (item.unitPriceConfidence === "none" || !item.unitPrice);
+
+      if (hasOnlyTotal) {
+        const totalPrice = Number(item.totalPrice ?? 0);
+        return {
+          receiptItemCode: item.code ?? "",
+          description: item.description ?? "",
+          pricingMode: "flat" as const,
+          // Domain requires quantity == 1 for flat-priced items.
+          quantity: 1,
+          unitPrice: 0,
+          totalPrice,
+          category: "",
+          subcategory: "",
+          taxCode: item.taxCode ?? "",
+        };
+      }
+
+      const quantity = Number(item.quantity ?? 1);
+      const unitPrice = Number(item.unitPrice ?? 0);
+      // Carry totalPrice through: prefer the VLM's value when present so the
+      // saved total survives any later rounding ambiguity. Fall back to the
+      // computed total for round-trip consistency on traditional receipts.
+      const totalPrice =
+        item.totalPrice != null
+          ? Number(item.totalPrice)
+          : Math.round(quantity * unitPrice * 100) / 100;
+      return {
+        receiptItemCode: item.code ?? "",
+        description: item.description ?? "",
+        pricingMode: "quantity" as const,
+        quantity,
+        unitPrice,
+        totalPrice,
+        category: "",
+        subcategory: "",
+        taxCode: item.taxCode ?? "",
+      };
+    }),
   };
 }
 

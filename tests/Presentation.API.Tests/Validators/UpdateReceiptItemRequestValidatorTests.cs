@@ -103,4 +103,50 @@ public class UpdateReceiptItemRequestValidatorTests
 		Assert.False(result.IsValid);
 		Assert.Contains(result.Errors, e => e.ErrorMessage == UpdateReceiptItemRequestValidator.CategoryMustNotBeEmpty);
 	}
+
+	// RECEIPTS-655: flat-mode unit-price relaxation, parallels CreateValidator.
+	[Fact]
+	public void Should_Pass_When_FlatMode_UnitPriceZero_TotalPricePositive()
+	{
+		// Arrange
+		UpdateReceiptItemRequest request = new()
+		{
+			Id = Guid.NewGuid(),
+			UnitPrice = 0,
+			TotalPrice = 4.97,
+			Description = "Walmart unit-priced",
+			Quantity = 1,
+			Category = "Groceries",
+			PricingMode = "flat"
+		};
+
+		// Act
+		FluentValidation.Results.ValidationResult result = _validator.Validate(request);
+
+		// Assert
+		Assert.True(result.IsValid);
+	}
+
+	[Fact]
+	public void Should_Fail_When_FlatMode_TotalPriceMissing()
+	{
+		// Arrange
+		UpdateReceiptItemRequest request = new()
+		{
+			Id = Guid.NewGuid(),
+			UnitPrice = 0,
+			TotalPrice = null,
+			Description = "Walmart unit-priced",
+			Quantity = 1,
+			Category = "Groceries",
+			PricingMode = "flat"
+		};
+
+		// Act
+		FluentValidation.Results.ValidationResult result = _validator.Validate(request);
+
+		// Assert
+		Assert.False(result.IsValid);
+		Assert.Contains(result.Errors, e => e.ErrorMessage == UpdateReceiptItemRequestValidator.TotalPriceRequiredForFlat);
+	}
 }

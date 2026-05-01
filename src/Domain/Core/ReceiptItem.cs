@@ -31,6 +31,8 @@ public class ReceiptItem
 	public const string CategoryCannotBeEmpty = "Category cannot be empty";
 	public const string FlatPricingModeQuantityMustBeOne = "Quantity must be 1 when pricing mode is flat.";
 	public const string UnitPriceMustBePositive = "Unit price must be positive";
+	public const string UnitPriceMustBeNonNegative = "Unit price must be non-negative";
+	public const string TotalAmountMustBePositive = "Total amount must be positive";
 	public const string TotalAmountExceedsTolerance = "Total amount must be within $0.01 of quantity times unit price";
 
 	public ReceiptItem(Guid id, string? receiptItemCode, string description, decimal quantity, Money unitPrice, Money totalAmount, string category, string? subcategory, PricingMode pricingMode = PricingMode.Quantity)
@@ -45,15 +47,34 @@ public class ReceiptItem
 			throw new ArgumentException(QuantityMustBePositive, nameof(quantity));
 		}
 
-		if (unitPrice.Amount <= 0)
+		// Flat-priced items legitimately carry an unknown unitPrice (e.g. a Walmart
+		// receipt prints only the line total for unit-priced items). The line total
+		// is the source of truth in that case, so we relax the unit-price floor for
+		// flat mode but still require a positive total.
+		if (pricingMode == PricingMode.Flat)
 		{
-			throw new ArgumentException(UnitPriceMustBePositive, nameof(unitPrice));
-		}
+			if (unitPrice.Amount < 0)
+			{
+				throw new ArgumentException(UnitPriceMustBeNonNegative, nameof(unitPrice));
+			}
 
-		decimal expectedTotal = Math.Floor(quantity * unitPrice.Amount * 100) / 100;
-		if (Math.Abs(totalAmount.Amount - expectedTotal) > 0.01m)
+			if (totalAmount.Amount <= 0)
+			{
+				throw new ArgumentException(TotalAmountMustBePositive, nameof(totalAmount));
+			}
+		}
+		else
 		{
-			throw new ArgumentException(TotalAmountExceedsTolerance, nameof(totalAmount));
+			if (unitPrice.Amount <= 0)
+			{
+				throw new ArgumentException(UnitPriceMustBePositive, nameof(unitPrice));
+			}
+
+			decimal expectedTotal = Math.Floor(quantity * unitPrice.Amount * 100) / 100;
+			if (Math.Abs(totalAmount.Amount - expectedTotal) > 0.01m)
+			{
+				throw new ArgumentException(TotalAmountExceedsTolerance, nameof(totalAmount));
+			}
 		}
 
 		if (string.IsNullOrWhiteSpace(category))

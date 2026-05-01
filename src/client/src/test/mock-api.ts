@@ -167,6 +167,7 @@ export function mockReceiptItemResponse(
     description: "Test Item",
     quantity: 1,
     unitPrice: 9.99,
+    totalPrice: 9.99,
     category: "General",
     subcategory: null,
     pricingMode: "quantity",

@@ -86,6 +86,20 @@ const sampleItem: ReceiptLineItem = {
   pricingMode: "quantity",
   quantity: 1,
   unitPrice: 50,
+  totalPrice: 50,
+  category: "Food",
+  subcategory: "",
+  taxCode: "",
+};
+
+const sampleFlatItem: ReceiptLineItem = {
+  id: "i2",
+  receiptItemCode: "",
+  description: "Walmart-style flat",
+  pricingMode: "flat",
+  quantity: 1,
+  unitPrice: 0,
+  totalPrice: 12.34,
   category: "Food",
   subcategory: "",
   taxCode: "",
@@ -187,5 +201,38 @@ describe("useReceiptSubmit", () => {
     });
 
     expect(toast.error).toHaveBeenCalledWith("Failed to create receipt.");
+  });
+
+  // RECEIPTS-655: a Walmart-style scan produces flat-priced items where the
+  // line total carries the dollar value (unitPrice = 0). The submit hook must
+  // forward `totalPrice` and `pricingMode = "flat"` so the server can persist
+  // the real line total instead of computing 1 × 0.
+  it("forwards totalPrice and pricingMode='flat' for flat-priced items (RECEIPTS-655)", async () => {
+    const flatTxn: ReceiptTransaction = {
+      ...sampleTxn,
+      // The receipt-level invariant requires total transactions = total items.
+      amount: sampleFlatItem.totalPrice,
+    };
+
+    const { result } = renderHookWithForm({
+      transactions: [flatTxn],
+      items: [sampleFlatItem],
+    });
+
+    await act(async () => {
+      await result.current.submit();
+    });
+
+    expect(mockCreateCompleteReceiptAsync).toHaveBeenCalledTimes(1);
+    const body = mockCreateCompleteReceiptAsync.mock.calls[0][0];
+    expect(body.items).toEqual([
+      expect.objectContaining({
+        description: "Walmart-style flat",
+        pricingMode: "flat",
+        quantity: 1,
+        unitPrice: 0,
+        totalPrice: 12.34,
+      }),
+    ]);
   });
 });
