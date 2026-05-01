@@ -45,6 +45,21 @@ public sealed class AnthropicOptions
 	public const int DefaultMaxImageBytes = 15 * 1024 * 1024;
 
 	/// <summary>
+	/// Default soft cap on the raw image byte length BEFORE base64 encoding, beyond which
+	/// <see cref="AnthropicReceiptExtractionService"/> downscales the image rather than
+	/// rejecting it (RECEIPTS-654). 3,700,000 raw bytes encodes to ~4.93 MB base64, leaving
+	/// a comfortable headroom under Anthropic's documented 5 MB (5,242,880 byte) per-image
+	/// API limit. Distinct from <see cref="DefaultMaxImageBytes"/>: that value is the hard
+	/// reject ceiling (oversized inputs short-circuit before any work), while this is the
+	/// downscale-trigger soft cap (inputs over this but under the hard ceiling get
+	/// resampled to fit). The two values intentionally differ — a 200 DPI rasterized PDF
+	/// from <c>PdfConversionService</c> can routinely produce 5–8 MB raw PNGs that base64
+	/// over the 5 MB API limit, and downscaling preserves more signal than failing the
+	/// upload outright.
+	/// </summary>
+	public const int DefaultMaxRawImageBytes = 3_700_000;
+
+	/// <summary>
 	/// Anthropic API key (<c>x-api-key</c> request header). Bound from <c>Anthropic:ApiKey</c>
 	/// (or, in deployed environments, the <c>ANTHROPIC_API_KEY</c> env var via the standard
 	/// <c>:</c>-to-<c>__</c> mapping). Required — the service cannot operate without it.
@@ -105,6 +120,23 @@ public sealed class AnthropicOptions
 	/// </summary>
 	[Range(1, int.MaxValue)]
 	public int MaxImageBytes { get; set; } = DefaultMaxImageBytes;
+
+	/// <summary>
+	/// Soft cap on the raw image byte length before base64 encoding (RECEIPTS-654). Images
+	/// larger than this but under <see cref="MaxImageBytes"/> are iteratively downscaled by
+	/// <c>AnthropicReceiptExtractionService</c> until the encoded request fits under
+	/// Anthropic's 5 MB per-image API limit, rather than failing the upload outright.
+	/// Default <see cref="DefaultMaxRawImageBytes"/> (3,700,000 bytes ≈ 4.93 MB base64).
+	/// Setting this above ~3.93 MB raw (the byte budget where base64 reaches 5 MB) defeats
+	/// the guard and lets the API reject the request with an opaque 400. Range is
+	/// 1..MaxImageBytes — exceeding the hard ceiling would be incoherent. The boundary is
+	/// not enforced by DataAnnotations because cross-property validation requires
+	/// <c>IValidateOptions</c>; the runtime guard in the service treats any value above
+	/// the hard ceiling as identical to a no-op (the ArgumentException check in
+	/// ExtractAsync runs first) so a misconfiguration degrades safely.
+	/// </summary>
+	[Range(1, int.MaxValue)]
+	public int MaxRawImageBytes { get; set; } = DefaultMaxRawImageBytes;
 
 	/// <summary>
 	/// When <c>true</c>, the raw Anthropic response body is logged at <c>Debug</c> level after

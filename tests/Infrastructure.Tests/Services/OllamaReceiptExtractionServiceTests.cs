@@ -2041,6 +2041,88 @@ public class OllamaReceiptExtractionServiceTests
 		response.Model.Should().Be("glm-ocr:q8_0");
 	}
 
+	// ----------------------------------------------------------------------
+	// RECEIPTS-654: shared retry predicate is wired into the Ollama VLM client
+	// pipeline. The predicate is tested in detail in
+	// AnthropicReceiptExtractionServiceTests; this test verifies the same
+	// policy applies to the Ollama side, since AddRetryAndCircuitBreaker is
+	// shared between the two clients.
+	// ----------------------------------------------------------------------
+
+	[Fact]
+	public async Task Resilience_PermanentClientError_400_IsNotRetried_OllamaPipeline()
+	{
+		// Arrange — the same retry predicate applies to the Ollama client. A permanent
+		// 4xx must not be retried even when emitted from the local Ollama daemon.
+		int callCount = 0;
+		Mock<HttpMessageHandler> handlerMock = new();
+		handlerMock.Protected()
+			.Setup<Task<HttpResponseMessage>>("SendAsync",
+				ItExpr.IsAny<HttpRequestMessage>(),
+				ItExpr.IsAny<CancellationToken>())
+			.Returns(() =>
+			{
+				Interlocked.Increment(ref callCount);
+				return Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
+				{
+					Content = new StringContent("""{ "error": "bad request" }""",
+						System.Text.Encoding.UTF8, "application/json"),
+				});
+			});
+		VlmOcrOptions options = new()
+		{
+			OllamaUrl = "http://test-ollama",
+			Model = "glm-ocr:q8_0",
+			TimeoutSeconds = 30,
+		};
+
+		await RunWithPipelineServiceAsync(handlerMock.Object, options, async service =>
+		{
+			// Act
+			Func<Task> act = () => service.ExtractAsync(FakeImage, CancellationToken.None);
+
+			// Assert
+			await act.Should().ThrowAsync<Exception>();
+			callCount.Should().Be(1, "HTTP 400 must not be retried by the shared predicate");
+		});
+	}
+
+	[Fact]
+	public async Task Resilience_TransientServerError_503_IsRetried_OllamaPipeline()
+	{
+		// Arrange — control case: a 503 must still trigger a retry on the Ollama client.
+		int callCount = 0;
+		Mock<HttpMessageHandler> handlerMock = new();
+		handlerMock.Protected()
+			.Setup<Task<HttpResponseMessage>>("SendAsync",
+				ItExpr.IsAny<HttpRequestMessage>(),
+				ItExpr.IsAny<CancellationToken>())
+			.Returns(() =>
+			{
+				Interlocked.Increment(ref callCount);
+				return Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+				{
+					Content = new StringContent("{}"),
+				});
+			});
+		VlmOcrOptions options = new()
+		{
+			OllamaUrl = "http://test-ollama",
+			Model = "glm-ocr:q8_0",
+			TimeoutSeconds = 30,
+		};
+
+		await RunWithPipelineServiceAsync(handlerMock.Object, options, async service =>
+		{
+			// Act
+			Func<Task> act = () => service.ExtractAsync(FakeImage, CancellationToken.None);
+
+			// Assert
+			await act.Should().ThrowAsync<Exception>();
+			callCount.Should().BeGreaterThan(1, "HTTP 503 must be retried");
+		});
+	}
+
 	/// <summary>
 	/// Captures formatted log messages and the active scope chain at log time, so tests can
 	/// assert both message content (for raw-response PII gating) and ambient scope state

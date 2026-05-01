@@ -7,6 +7,7 @@ using Application.Models.Ocr;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Polly.Timeout;
+using SkiaSharp;
 
 namespace Infrastructure.Services;
 
@@ -36,6 +37,26 @@ public sealed class AnthropicReceiptExtractionService : IReceiptExtractionServic
 	/// service's contract (RECEIPTS-639).
 	/// </summary>
 	internal const int ExceptionMessageMaxChars = 500;
+
+	/// <summary>
+	/// Maximum number of downscale passes before declaring the image cannot be made to
+	/// fit under <see cref="AnthropicOptions.MaxRawImageBytes"/> (RECEIPTS-654). Each pass
+	/// shrinks linear dimensions by <c>sqrt(target / current) * safetyMargin</c>, so three
+	/// passes can reduce a 7-8 MB rasterized PNG down to well under the cap; pathological
+	/// inputs (e.g. high-entropy noise that doesn't compress) eventually surface as a
+	/// clear <see cref="InvalidOperationException"/> instead of looping forever.
+	/// </summary>
+	internal const int MaxDownscaleAttempts = 3;
+
+	/// <summary>
+	/// Linear-scale safety multiplier applied to the analytical scale factor on each
+	/// downscale pass (RECEIPTS-654). PNG byte size scales sub-quadratically with linear
+	/// dimensions for natural images (compression efficiency improves at lower
+	/// resolution), so an exact <c>sqrt(target / current)</c> factor often overshoots and
+	/// produces an output still slightly above the cap. The 0.95 cushion keeps the first
+	/// pass under the cap in the common case, avoiding a needless second downscale.
+	/// </summary>
+	internal const double DownscaleSafetyMargin = 0.95;
 
 	private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
 	{
@@ -96,7 +117,17 @@ public sealed class AnthropicReceiptExtractionService : IReceiptExtractionServic
 			"Extracting receipt via Anthropic VLM (model={Model}, promptVersion={PromptVersion}, bytes={Bytes})",
 			_options.Model, prompt.Version, imageBytes.Length);
 
-		string base64 = Convert.ToBase64String(imageBytes);
+		// Downscale before base64 encoding (RECEIPTS-654). Anthropic's per-image API limit
+		// is 5 MB *after* base64 encoding (5,242,880 bytes), so a 200 DPI rasterized PDF
+		// from PdfConversionService routinely produces 5–8 MB raw PNGs that overflow the
+		// limit. Rather than fail the upload outright (the API returns an opaque 400),
+		// iteratively resample the PNG until it fits under MaxRawImageBytes — which is
+		// chosen to leave headroom under the 5 MB base64 ceiling. This sits inside the
+		// service rather than PdfConversionService because the cap is provider-specific
+		// (Ollama has no such limit; Anthropic does).
+		byte[] payloadBytes = DownscaleIfNeeded(imageBytes);
+
+		string base64 = Convert.ToBase64String(payloadBytes);
 		AnthropicMessagesRequest request = BuildRequest(prompt, base64);
 
 		// Per-attempt timeout is enforced by the resilience pipeline (Polly Timeout strategy
@@ -192,6 +223,95 @@ public sealed class AnthropicReceiptExtractionService : IReceiptExtractionServic
 		}
 
 		return OllamaReceiptExtractionService.MapToParsedReceipt(payload);
+	}
+
+	/// <summary>
+	/// Iteratively downscales a PNG until its raw byte length fits under
+	/// <see cref="AnthropicOptions.MaxRawImageBytes"/>. Returns the original buffer
+	/// unchanged when the input already fits — the common case for camera/JPEG-derived
+	/// uploads. Re-encodes as PNG (lossless) on each pass to preserve OCR-relevant detail;
+	/// switching to JPEG would compress more aggressively at the cost of edge sharpness,
+	/// which the VLM exploits when reading low-contrast price lines. Throws
+	/// <see cref="InvalidOperationException"/> with both the original and the final byte
+	/// counts in the message after <see cref="MaxDownscaleAttempts"/> passes still fail
+	/// to fit, so the user gets actionable feedback instead of a silent truncation.
+	/// </summary>
+	internal byte[] DownscaleIfNeeded(byte[] imageBytes)
+	{
+		if (imageBytes.Length <= _options.MaxRawImageBytes)
+		{
+			return imageBytes;
+		}
+
+		int originalLength = imageBytes.Length;
+		int targetBytes = _options.MaxRawImageBytes;
+		byte[] current = imageBytes;
+
+		for (int attempt = 1; attempt <= MaxDownscaleAttempts; attempt++)
+		{
+			// Compute scale factor from current image, not original — each pass starts
+			// from the previous pass's output so the analytical sqrt() relationship still
+			// holds. The 0.95 safety multiplier compensates for sub-quadratic byte growth
+			// on natural images so a single pass usually suffices.
+			double rawScale = Math.Sqrt((double)targetBytes / current.Length);
+			double scale = Math.Min(rawScale, 1.0) * DownscaleSafetyMargin;
+
+			byte[] resampled = ResamplePng(current, scale);
+
+			if (resampled.Length <= targetBytes)
+			{
+				// First downscale wins: log once at Info so the operator sees the cap
+				// engaged. Subsequent passes are diagnostic-level only — they only happen
+				// on pathological inputs.
+				_logger.LogInformation(
+					"Anthropic VLM image downscaled to fit API cap (originalBytes={OriginalBytes}, finalBytes={FinalBytes}, scale={Scale:F3}, attempts={Attempts})",
+					originalLength, resampled.Length, scale, attempt);
+				return resampled;
+			}
+
+			current = resampled;
+		}
+
+		throw new InvalidOperationException(
+			$"Anthropic VLM image could not be downscaled below the {targetBytes}-byte cap after "
+			+ $"{MaxDownscaleAttempts} attempts (original={originalLength} bytes, final={current.Length} bytes). "
+			+ $"The image may be too large or contain incompressible noise; reduce the source resolution before retrying.");
+	}
+
+	/// <summary>
+	/// Resamples a PNG by a linear scale factor and re-encodes as PNG. Caller controls
+	/// the scale; this helper is intentionally stateless so unit tests can drive it
+	/// directly. Decoding via <see cref="SKBitmap.Decode(byte[])"/> handles any input
+	/// SkiaSharp recognises (PNG/JPEG/WEBP/etc.) — useful here because the PdfConversionService
+	/// emits PNG today but a future change to JPEG-from-PDFtoImage would still work.
+	/// </summary>
+	internal static byte[] ResamplePng(byte[] imageBytes, double scale)
+	{
+		using SKBitmap source = SKBitmap.Decode(imageBytes)
+			?? throw new InvalidOperationException(
+				"Failed to decode image bytes as a PNG/JPEG/etc. for downscaling.");
+
+		// Floor at 1 pixel per dimension. SkiaSharp.Resize rejects non-positive sizes and
+		// pathological scale=0 inputs would otherwise blow up here rather than producing
+		// a (still-wrong-but-debuggable) tiny output.
+		int newWidth = Math.Max(1, (int)Math.Round(source.Width * scale));
+		int newHeight = Math.Max(1, (int)Math.Round(source.Height * scale));
+
+		using SKBitmap resized = source.Resize(
+			new SKImageInfo(newWidth, newHeight),
+			new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear));
+
+		if (resized is null)
+		{
+			throw new InvalidOperationException(
+				$"Failed to resample image to {newWidth}x{newHeight} during downscale.");
+		}
+
+		using SKImage image = SKImage.FromBitmap(resized);
+		using SKData encoded = image.Encode(SKEncodedImageFormat.Png, quality: 100)
+			?? throw new InvalidOperationException("Failed to re-encode image as PNG after downscale.");
+
+		return encoded.ToArray();
 	}
 
 	private AnthropicMessagesRequest BuildRequest(ReceiptExtractionPromptValue prompt, string base64)
