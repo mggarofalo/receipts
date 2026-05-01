@@ -5,9 +5,7 @@ import { PaymentsSection, type ReceiptPayment } from "./PaymentsSection";
 
 describe("PaymentsSection", () => {
   it("renders an empty state when there are no payments", () => {
-    renderWithProviders(
-      <PaymentsSection payments={[]} onChange={vi.fn()} />,
-    );
+    renderWithProviders(<PaymentsSection payments={[]} onChange={vi.fn()} />);
     expect(
       screen.getByText("No payments detected on the receipt."),
     ).toBeInTheDocument();
@@ -31,9 +29,7 @@ describe("PaymentsSection", () => {
   it("calls onChange when adding a payment", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
-    renderWithProviders(
-      <PaymentsSection payments={[]} onChange={onChange} />,
-    );
+    renderWithProviders(<PaymentsSection payments={[]} onChange={onChange} />);
 
     await user.click(screen.getByRole("button", { name: /add payment/i }));
 
@@ -130,8 +126,10 @@ describe("PaymentsSection", () => {
       />,
     );
 
-    // ConfidenceIndicator renders "Low confidence" badge text for low.
-    expect(screen.getByText(/low confidence/i)).toBeInTheDocument();
+    // ConfidenceIndicator renders a chip with an aria-label exposing the rating.
+    expect(
+      screen.getByLabelText("AI confidence rating: low"),
+    ).toBeInTheDocument();
   });
 
   it("keeps the confidence indicator paired with the surviving payment after a removal", async () => {
@@ -168,7 +166,9 @@ describe("PaymentsSection", () => {
       />,
     );
 
-    expect(screen.getByText(/low confidence/i)).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("AI confidence rating: low"),
+    ).toBeInTheDocument();
     expect(screen.getByDisplayValue("VISA")).toBeInTheDocument();
   });
 

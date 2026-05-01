@@ -76,7 +76,9 @@ describe("ReceiptDetailsPanel", () => {
     await user.click(
       screen.getByRole("button", { name: /expand receipt details/i }),
     );
-    expect(screen.getByText(/low confidence/i)).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("AI confidence rating: low"),
+    ).toBeInTheDocument();
   });
 
   it("renders nothing in the value list when no metadata fields are populated", async () => {

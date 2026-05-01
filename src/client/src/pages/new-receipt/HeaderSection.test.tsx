@@ -77,8 +77,10 @@ describe("HeaderSection", () => {
 
   it("displays low-confidence indicator next to location label when confidenceMap.location is low", () => {
     renderWithProviders(<HeaderHost confidenceMap={{ location: "low" }} />);
-    // ConfidenceIndicator renders "Low confidence" text for low-confidence fields.
-    expect(screen.getByText(/low confidence/i)).toBeInTheDocument();
+    // ConfidenceIndicator renders a chip with an aria-label exposing the rating.
+    expect(
+      screen.getByLabelText("AI confidence rating: low"),
+    ).toBeInTheDocument();
   });
 
   it("validates a missing location on submit", async () => {
@@ -96,9 +98,7 @@ describe("HeaderSection", () => {
     const user = userEvent.setup();
     renderWithProviders(<HeaderHost defaultValues={{ location: "Walmart" }} />);
     await user.click(screen.getByRole("button", { name: /submit/i }));
-    expect(
-      await screen.findByText(/date is required/i),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/date is required/i)).toBeInTheDocument();
   });
 
   it("rejects an invalid store phone format", async () => {
