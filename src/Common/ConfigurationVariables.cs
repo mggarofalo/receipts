@@ -32,6 +32,20 @@ public static class ConfigurationVariables
 	public const string OcrVlmTimeoutSeconds = "Ocr:Vlm:TimeoutSeconds";
 	public const string OcrVlmSection = "Ocr:Vlm";
 
+	/// <summary>
+	/// VLM provider switch (RECEIPTS-652). Allowed values:
+	/// <c>ollama</c> (default) selects <c>OllamaReceiptExtractionService</c>;
+	/// <c>anthropic</c> selects <c>AnthropicReceiptExtractionService</c>.
+	/// Both register <c>IReceiptExtractionService</c> — only one provider is active at a time.
+	/// </summary>
+	public const string OcrVlmProvider = "Ocr:Vlm:Provider";
+
+	// Anthropic Messages API config section (RECEIPTS-652). The API key is the only required
+	// field; everything else has a sensible default in AnthropicOptions.
+	public const string AnthropicSection = "Anthropic";
+	public const string AnthropicApiKey = "Anthropic:ApiKey";
+	public const string AnthropicModel = "Anthropic:Model";
+
 	// PDF conversion thresholds (RECEIPTS-638). Per-environment tuning of the PDF page-count
 	// budget, etc. Bound via IOptions<PdfConversionOptions> with DataAnnotations validation.
 	public const string PdfConversionSection = "PdfConversion";

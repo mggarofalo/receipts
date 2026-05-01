@@ -11,7 +11,8 @@ public sealed class EvalRunner
 	private const int ExitCodeCancelled = 130;
 
 	private readonly IHttpClientFactory _httpClientFactory;
-	private readonly VlmOcrOptions _vlmOptions;
+	private readonly IOptions<VlmOcrOptions>? _vlmOptions;
+	private readonly IOptions<AnthropicOptions>? _anthropicOptions;
 	private readonly FixtureLoader _fixtureLoader;
 	private readonly FixtureEvaluator _fixtureEvaluator;
 	private readonly Reporter _reporter;
@@ -20,15 +21,15 @@ public sealed class EvalRunner
 
 	public EvalRunner(
 		IHttpClientFactory httpClientFactory,
-		IOptions<VlmOcrOptions> vlmOptions,
 		FixtureLoader fixtureLoader,
 		FixtureEvaluator fixtureEvaluator,
 		Reporter reporter,
 		VlmEvalOptions options,
-		ILogger<EvalRunner> logger)
+		ILogger<EvalRunner> logger,
+		IOptions<VlmOcrOptions>? vlmOptions = null,
+		IOptions<AnthropicOptions>? anthropicOptions = null)
 	{
 		ArgumentNullException.ThrowIfNull(httpClientFactory);
-		ArgumentNullException.ThrowIfNull(vlmOptions);
 		ArgumentNullException.ThrowIfNull(fixtureLoader);
 		ArgumentNullException.ThrowIfNull(fixtureEvaluator);
 		ArgumentNullException.ThrowIfNull(reporter);
@@ -36,19 +37,23 @@ public sealed class EvalRunner
 		ArgumentNullException.ThrowIfNull(logger);
 
 		_httpClientFactory = httpClientFactory;
-		_vlmOptions = vlmOptions.Value;
 		_fixtureLoader = fixtureLoader;
 		_fixtureEvaluator = fixtureEvaluator;
 		_reporter = reporter;
 		_options = options;
 		_logger = logger;
+		_vlmOptions = vlmOptions;
+		_anthropicOptions = anthropicOptions;
 	}
 
 	public async Task<int> RunAsync(string fixturesDirectory, CancellationToken cancellationToken)
 	{
-		string ollamaUrl = _vlmOptions.OllamaUrl ?? "(unset)";
+		string provider = string.IsNullOrWhiteSpace(_options.Provider)
+			? "ollama"
+			: _options.Provider.ToLowerInvariant();
+		string providerEndpoint = ResolveProviderEndpoint(provider);
 		DateTimeOffset startedAt = DateTimeOffset.UtcNow;
-		_reporter.PrintHeader(ollamaUrl, fixturesDirectory);
+		_reporter.PrintHeader(provider, providerEndpoint, fixturesDirectory);
 
 		// Missing fixtures dir is a configuration error: a typo'd FixturesPath looks identical
 		// to "no fixtures yet" if we silently mkdir. Treat it as failure when the strict flag
@@ -57,18 +62,22 @@ public sealed class EvalRunner
 		{
 			_reporter.PrintMissingFixturesDirectory(fixturesDirectory);
 			_reporter.WriteReport(
-				new RunInfo(startedAt, ollamaUrl, fixturesDirectory),
+				new RunInfo(startedAt, provider, providerEndpoint, fixturesDirectory),
 				results: [],
 				totalElapsed: TimeSpan.Zero,
 				cancelled: false);
 			return _options.FailOnAnyFixtureFailure ? 1 : 0;
 		}
 
-		if (!await IsOllamaReachableAsync(cancellationToken))
+		// Reachability probe is only meaningful for the Ollama provider — the Anthropic API is
+		// SaaS, no preflight needed (the per-call resilience pipeline + auth header validation
+		// handle outages). RECEIPTS-652.
+		if (string.Equals(provider, "ollama", StringComparison.Ordinal)
+			&& !await IsOllamaReachableAsync(cancellationToken))
 		{
-			_reporter.PrintOllamaUnreachable(ollamaUrl);
+			_reporter.PrintOllamaUnreachable(providerEndpoint);
 			_reporter.WriteReport(
-				new RunInfo(startedAt, ollamaUrl, fixturesDirectory),
+				new RunInfo(startedAt, provider, providerEndpoint, fixturesDirectory),
 				results: [],
 				totalElapsed: TimeSpan.Zero,
 				cancelled: false);
@@ -81,7 +90,7 @@ public sealed class EvalRunner
 		{
 			_reporter.PrintEmptyFixturesDirectory(fixturesDirectory);
 			_reporter.WriteReport(
-				new RunInfo(startedAt, ollamaUrl, fixturesDirectory),
+				new RunInfo(startedAt, provider, providerEndpoint, fixturesDirectory),
 				results: [],
 				totalElapsed: TimeSpan.Zero,
 				cancelled: false);
@@ -97,7 +106,7 @@ public sealed class EvalRunner
 		{
 			_reporter.PrintNoValidFixtures();
 			_reporter.WriteReport(
-				new RunInfo(startedAt, ollamaUrl, fixturesDirectory),
+				new RunInfo(startedAt, provider, providerEndpoint, fixturesDirectory),
 				results: [],
 				totalElapsed: TimeSpan.Zero,
 				cancelled: false);
@@ -136,7 +145,7 @@ public sealed class EvalRunner
 		{
 			_reporter.PrintCancelled(results.Count, loaded.Fixtures.Count);
 			_reporter.WriteReport(
-				new RunInfo(startedAt, ollamaUrl, fixturesDirectory),
+				new RunInfo(startedAt, provider, providerEndpoint, fixturesDirectory),
 				results,
 				total.Elapsed,
 				cancelled: true);
@@ -145,7 +154,7 @@ public sealed class EvalRunner
 
 		_reporter.PrintSummary(results, total.Elapsed);
 		_reporter.WriteReport(
-			new RunInfo(startedAt, ollamaUrl, fixturesDirectory),
+			new RunInfo(startedAt, provider, providerEndpoint, fixturesDirectory),
 			results,
 			total.Elapsed,
 			cancelled: false);
@@ -158,15 +167,25 @@ public sealed class EvalRunner
 		return results.Any(r => !r.Passed) ? 1 : 0;
 	}
 
+	private string ResolveProviderEndpoint(string provider)
+	{
+		return provider switch
+		{
+			"anthropic" => _anthropicOptions?.Value.BaseUrl ?? "(unset)",
+			_ => _vlmOptions?.Value.OllamaUrl ?? "(unset)",
+		};
+	}
+
 	private async Task<bool> IsOllamaReachableAsync(CancellationToken cancellationToken)
 	{
-		if (string.IsNullOrWhiteSpace(_vlmOptions.OllamaUrl))
+		string? ollamaUrl = _vlmOptions?.Value.OllamaUrl;
+		if (string.IsNullOrWhiteSpace(ollamaUrl))
 		{
 			return false;
 		}
 
 		using HttpClient probe = _httpClientFactory.CreateClient("ollama-probe");
-		probe.BaseAddress = new Uri(_vlmOptions.OllamaUrl.TrimEnd('/') + "/");
+		probe.BaseAddress = new Uri(ollamaUrl.TrimEnd('/') + "/");
 		probe.Timeout = TimeSpan.FromSeconds(5);
 
 		using CancellationTokenSource cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);

@@ -88,10 +88,22 @@ IResourceBuilder<ContainerResource> vlmOcrPull = builder.AddContainer("vlm-ocr-p
 // .WaitForCompletion(vlmOcrPull) ensures the model is fully pulled (cold first-run can be ~3 GB)
 // before the API boots so the smoke test in InfrastructureService never catches Ollama mid-pull
 // (RECEIPTS-636).
+//
+// RECEIPTS-652: ANTHROPIC_API_KEY is forwarded from the host environment when present so a
+// developer can flip Ocr:Vlm:Provider=anthropic for a single run without separately exporting
+// the key for the API project. The variable name uses the standard config-binder mapping
+// (Anthropic:ApiKey -> Anthropic__ApiKey) so the existing IConfiguration binding picks it up.
+string anthropicApiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY") ?? string.Empty;
+string vlmProvider = Environment.GetEnvironmentVariable("Ocr__Vlm__Provider")
+	?? Environment.GetEnvironmentVariable("OCR__VLM__PROVIDER")
+	?? "ollama";
+
 IResourceBuilder<ProjectResource> api = builder.AddProject<Projects.API>("api")
 	.WithReference(db)
 	.WithEnvironment("Ollama__BaseUrl", vlmOcr.GetEndpoint("http"))
 	.WithEnvironment("Ocr__Vlm__Model", vlmModel)
+	.WithEnvironment("Ocr__Vlm__Provider", vlmProvider)
+	.WithEnvironment("Anthropic__ApiKey", anthropicApiKey)
 	.WaitForCompletion(seeder)
 	.WaitFor(vlmOcr)
 	.WaitForCompletion(vlmOcrPull);
@@ -109,6 +121,10 @@ builder.AddProject<Projects.VlmEval>("vlm-eval")
 	.WithEnvironment("Ollama__BaseUrl", vlmOcr.GetEndpoint("http"))
 	.WithEnvironment("Ocr__Vlm__Model", vlmModel)
 	.WithEnvironment("VlmEval__FixturesPath", vlmEvalFixturesPath)
+	// RECEIPTS-652: forward the Anthropic API key so VlmEval can run with --provider anthropic
+	// (or VlmEval__Provider=anthropic) without a separate export. Empty is fine; Anthropic
+	// option binding only fires when the provider is selected.
+	.WithEnvironment("Anthropic__ApiKey", anthropicApiKey)
 	// Dev convenience: an empty fixtures directory is a warning, not a hard error.
 	// CI sets FailOnAnyFixtureFailure=true via env override to make accuracy regressions
 	// fail the pipeline once real fixtures exist.

@@ -188,6 +188,11 @@ services:
       - AdminSeed__LastName=User
       - Ollama__BaseUrl=http://vlm-ocr:11434
       - Ocr__Vlm__Model=${VLM_MODEL:-glm-ocr:q8_0}
+      # RECEIPTS-652: VLM provider switch. Default `ollama` keeps the local-only behavior;
+      # set to `anthropic` (in your .env) to route receipt extraction through the Anthropic
+      # Messages API instead. Provider=anthropic also requires ANTHROPIC_API_KEY to be set.
+      - Ocr__Vlm__Provider=${OCR_VLM_PROVIDER:-ollama}
+      - Anthropic__ApiKey=${ANTHROPIC_API_KEY:-}
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
       - OTEL_SERVICE_NAME=receipts-api
       - SENTRY_DSN=${SENTRY_DSN:-}

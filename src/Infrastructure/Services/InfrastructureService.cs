@@ -262,20 +262,35 @@ public static class InfrastructureService
 	}
 
 	/// <summary>
-	/// Registers the Ollama-backed <see cref="IReceiptExtractionService"/> with a single
-	/// resilience pipeline tailored to long-running VLM inferences. URL resolves from
-	/// <c>Ocr:Vlm:OllamaUrl</c>, then <c>Ollama:BaseUrl</c> (Aspire-injected), then localhost default.
+	/// Registers the configured <see cref="IReceiptExtractionService"/> implementation
+	/// (Ollama or Anthropic — RECEIPTS-652) with a resilience pipeline tailored to
+	/// long-running VLM inferences. The provider is selected via
+	/// <c>Ocr:Vlm:Provider</c>: <c>ollama</c> (default, current behavior) or
+	/// <c>anthropic</c> (POC hosted-VLM path).
 	/// <para>
-	/// We explicitly <see cref="ResilienceHttpClientBuilderExtensions.RemoveAllResilienceHandlers"/>
-	/// so the standard handler injected by <c>Receipts.ServiceDefaults</c> (30s per attempt /
-	/// 90s total) does NOT stack on top of our pipeline. Real VLM inferences routinely
-	/// exceed 30s; without removal the documented <see cref="VlmOcrOptions.TimeoutSeconds"/>
-	/// budget would never apply. See RECEIPTS-630.
+	/// Both implementations explicitly
+	/// <see cref="ResilienceHttpClientBuilderExtensions.RemoveAllResilienceHandlers"/>
+	/// so the standard handler injected by <c>Receipts.ServiceDefaults</c> (30s per
+	/// attempt / 90s total) does NOT stack on top of the per-provider pipeline. Real
+	/// VLM inferences routinely exceed 30s; without removal the documented
+	/// per-provider <c>TimeoutSeconds</c> budget would never apply. See RECEIPTS-630.
 	/// </para>
 	/// </summary>
 	internal static void RegisterReceiptExtractionService(IServiceCollection services, IConfiguration configuration)
 	{
-		services.AddVlmOcrClient(configuration);
+		string provider = configuration[ConfigurationVariables.OcrVlmProvider] ?? "ollama";
+		switch (provider.ToLowerInvariant())
+		{
+			case "ollama":
+				services.AddVlmOcrClient(configuration);
+				break;
+			case "anthropic":
+				services.AddAnthropicVlmClient(configuration);
+				break;
+			default:
+				throw new InvalidOperationException(
+					$"Unknown VLM provider '{provider}'. Set {ConfigurationVariables.OcrVlmProvider} to 'ollama' or 'anthropic'.");
+		}
 	}
 
 	/// <summary>
@@ -386,6 +401,98 @@ public static class InfrastructureService
 	{
 		AddRetryAndCircuitBreaker(builder);
 		// Per-attempt timeout sits INSIDE the retry — each retry resets the clock.
+		builder.AddTimeout(TimeSpan.FromSeconds(options.TimeoutSeconds));
+	}
+
+	/// <summary>
+	/// Binds <see cref="AnthropicOptions"/> from the <c>Anthropic</c> configuration section
+	/// using the standard options pattern (<see cref="OptionsBuilderExtensions.ValidateDataAnnotations{TOptions}"/>
+	/// + <see cref="OptionsBuilderExtensions.ValidateOnStart{TOptions}"/>) and registers the
+	/// Anthropic-backed <see cref="IReceiptExtractionService"/> typed HTTP client with the
+	/// production resilience pipeline. Misconfigured options (e.g. missing <c>ApiKey</c>)
+	/// fail loudly at startup rather than producing a confusing 401 on the first upload.
+	/// See RECEIPTS-652.
+	/// </summary>
+	public static IServiceCollection AddAnthropicVlmClient(this IServiceCollection services, IConfiguration configuration)
+	{
+		ArgumentNullException.ThrowIfNull(services);
+		ArgumentNullException.ThrowIfNull(configuration);
+
+		services.AddOptions<AnthropicOptions>()
+			.Bind(configuration.GetSection(ConfigurationVariables.AnthropicSection))
+			.ValidateDataAnnotations()
+			.ValidateOnStart();
+
+		return AddAnthropicVlmHttpClient(services);
+	}
+
+	/// <summary>
+	/// Registers the Anthropic-backed <see cref="IReceiptExtractionService"/> typed HTTP
+	/// client using a pre-bound <see cref="AnthropicOptions"/> instance. Used by the
+	/// <c>VlmEval</c> tool where CLI args may mutate the bound options before registration.
+	/// Production code paths should prefer the <see cref="AddAnthropicVlmClient(IServiceCollection, IConfiguration)"/>
+	/// overload so DataAnnotations validation runs at startup. Mirrors the Ollama
+	/// instance overload for symmetry (RECEIPTS-638 + RECEIPTS-652).
+	/// </summary>
+	public static IServiceCollection AddAnthropicVlmClient(this IServiceCollection services, AnthropicOptions options)
+	{
+		ArgumentNullException.ThrowIfNull(services);
+		ArgumentNullException.ThrowIfNull(options);
+
+		List<ValidationResult> validationResults = [];
+		if (!Validator.TryValidateObject(
+			options,
+			new ValidationContext(options),
+			validationResults,
+			validateAllProperties: true))
+		{
+			string details = string.Join("; ", validationResults.Select(r => r.ErrorMessage));
+			throw new ArgumentException(
+				$"{nameof(AnthropicOptions)} failed DataAnnotations validation: {details}",
+				nameof(options));
+		}
+
+		services.AddSingleton<IOptions<AnthropicOptions>>(new OptionsWrapper<AnthropicOptions>(options));
+		return AddAnthropicVlmHttpClient(services);
+	}
+
+	private static IServiceCollection AddAnthropicVlmHttpClient(IServiceCollection services)
+	{
+#pragma warning disable EXTEXP0001 // RemoveAllResilienceHandlers is in evaluation; required to opt out of the standard handler injected by ServiceDefaults.
+		services.AddHttpClient<IReceiptExtractionService, AnthropicReceiptExtractionService>((sp, client) =>
+		{
+			AnthropicOptions options = sp.GetRequiredService<IOptions<AnthropicOptions>>().Value;
+			client.BaseAddress = new Uri(options.BaseUrl.TrimEnd('/') + "/");
+			client.DefaultRequestHeaders.Remove("x-api-key");
+			client.DefaultRequestHeaders.Add("x-api-key", options.ApiKey);
+			client.DefaultRequestHeaders.Remove("anthropic-version");
+			client.DefaultRequestHeaders.Add("anthropic-version", options.ApiVersion);
+			// The resilience pipeline (per-attempt Timeout strategy) owns request budgeting.
+			// HttpClient.Timeout must be Infinite so it doesn't fight the pipeline.
+			client.Timeout = Timeout.InfiniteTimeSpan;
+		})
+			.RemoveAllResilienceHandlers()
+			.AddResilienceHandler("anthropic-vlm", (builder, context) =>
+			{
+				AnthropicOptions options = context.ServiceProvider.GetRequiredService<IOptions<AnthropicOptions>>().Value;
+				ConfigureAnthropicVlmResilience(builder, options);
+			});
+#pragma warning restore EXTEXP0001
+
+		return services;
+	}
+
+	/// <summary>
+	/// Resilience pipeline for the Anthropic Messages API. Same shape as the Ollama
+	/// pipeline (retry wraps the per-attempt timeout so each retry resets the clock),
+	/// but parameterized by <see cref="AnthropicOptions.TimeoutSeconds"/>. See
+	/// RECEIPTS-630 for the rationale on opt-out + outer retry / inner timeout ordering.
+	/// </summary>
+	internal static void ConfigureAnthropicVlmResilience(
+		ResiliencePipelineBuilder<HttpResponseMessage> builder,
+		AnthropicOptions options)
+	{
+		AddRetryAndCircuitBreaker(builder);
 		builder.AddTimeout(TimeSpan.FromSeconds(options.TimeoutSeconds));
 	}
 

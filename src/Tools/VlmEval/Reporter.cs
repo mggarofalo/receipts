@@ -18,16 +18,17 @@ public sealed class Reporter(VlmEvalOptions options, ILogger<Reporter> logger)
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
 	};
 
-	public void PrintHeader(string ollamaUrl, string fixturesPath)
+	public void PrintHeader(string provider, string providerEndpoint, string fixturesPath)
 	{
 		logger.LogInformation("VLM accuracy eval — {Timestamp}", DateTimeOffset.UtcNow.ToString("u", CultureInfo.InvariantCulture));
-		logger.LogInformation("Ollama base URL: {Url}", ollamaUrl);
+		logger.LogInformation("Provider: {Provider}", provider);
+		logger.LogInformation("Endpoint: {Endpoint}", providerEndpoint);
 		logger.LogInformation("Fixtures directory: {Path}", fixturesPath);
 	}
 
-	public void PrintOllamaUnreachable(string ollamaUrl)
+	public void PrintOllamaUnreachable(string endpoint)
 	{
-		logger.LogError("Ollama is not reachable at {Url}. Verify the vlm-ocr container is running.", ollamaUrl);
+		logger.LogError("Ollama is not reachable at {Url}. Verify the vlm-ocr container is running.", endpoint);
 	}
 
 	public void PrintMissingFixturesDirectory(string path)
@@ -177,7 +178,8 @@ public sealed class Reporter(VlmEvalOptions options, ILogger<Reporter> logger)
 		sb.AppendLine("# VLM eval report");
 		sb.AppendLine();
 		sb.Append("- Started: `").Append(run.StartedAt.ToString("u", CultureInfo.InvariantCulture)).AppendLine("`");
-		sb.Append("- Ollama URL: `").Append(run.OllamaUrl).AppendLine("`");
+		sb.Append("- Provider: `").Append(run.Provider).AppendLine("`");
+		sb.Append("- Endpoint: `").Append(run.ProviderEndpoint).AppendLine("`");
 		sb.Append("- Fixtures path: `").Append(run.FixturesPath).AppendLine("`");
 		sb.Append("- Cancelled: ").AppendLine(cancelled ? "yes" : "no");
 		sb.AppendLine();
@@ -240,7 +242,7 @@ public sealed class Reporter(VlmEvalOptions options, ILogger<Reporter> logger)
 			[.. r.FieldDiffs.Select(d => new FieldDiffReport(d.Field, d.Status, d.Expected, d.Actual, d.Detail))]))];
 
 		return new ReportArtifact(
-			new RunReport(run.StartedAt, run.OllamaUrl, run.FixturesPath, cancelled),
+			new RunReport(run.StartedAt, run.Provider, run.ProviderEndpoint, run.FixturesPath, cancelled),
 			fixtures,
 			new SummaryReport(results.Count, passed, failed, (long)totalElapsed.TotalMilliseconds));
 	}
@@ -290,9 +292,17 @@ public sealed class Reporter(VlmEvalOptions options, ILogger<Reporter> logger)
 
 	internal sealed record RunReport(
 		[property: JsonPropertyName("startedAt")] DateTimeOffset StartedAt,
-		[property: JsonPropertyName("ollamaUrl")] string OllamaUrl,
+		[property: JsonPropertyName("provider")] string Provider,
+		[property: JsonPropertyName("providerEndpoint")] string ProviderEndpoint,
 		[property: JsonPropertyName("fixturesPath")] string FixturesPath,
-		[property: JsonPropertyName("cancelled")] bool Cancelled);
+		[property: JsonPropertyName("cancelled")] bool Cancelled)
+	{
+		// Backwards-compatibility shim: keep the legacy `ollamaUrl` JSON property in the
+		// artifact (mirrors RunInfo.OllamaUrl). External diff scripts still parsing the old
+		// shape will continue to work; new consumers should prefer `providerEndpoint`.
+		[JsonPropertyName("ollamaUrl")]
+		public string OllamaUrl => ProviderEndpoint;
+	}
 
 	internal sealed record FixtureReport(
 		[property: JsonPropertyName("name")] string Name,
