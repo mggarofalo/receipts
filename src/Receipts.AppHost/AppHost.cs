@@ -89,21 +89,31 @@ IResourceBuilder<ContainerResource> vlmOcrPull = builder.AddContainer("vlm-ocr-p
 // before the API boots so the smoke test in InfrastructureService never catches Ollama mid-pull
 // (RECEIPTS-636).
 //
-// RECEIPTS-652: ANTHROPIC_API_KEY is forwarded from the host environment when present so a
-// developer can flip Ocr:Vlm:Provider=anthropic for a single run without separately exporting
-// the key for the API project. The variable name uses the standard config-binder mapping
-// (Anthropic:ApiKey -> Anthropic__ApiKey) so the existing IConfiguration binding picks it up.
-string anthropicApiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY") ?? string.Empty;
-string vlmProvider = Environment.GetEnvironmentVariable("Ocr__Vlm__Provider")
-	?? Environment.GetEnvironmentVariable("OCR__VLM__PROVIDER")
-	?? "ollama";
+// RECEIPTS-652: VLM provider + Anthropic API key are exposed as Aspire parameters so they
+// surface in the dashboard's Parameters panel and persist across runs via user-secrets:
+//
+//   dotnet user-secrets --project src/Receipts.AppHost set "Parameters:vlm-provider" "anthropic"
+//   dotnet user-secrets --project src/Receipts.AppHost set "Parameters:anthropic-api-key" "sk-ant-..."
+//
+// or set them once in the dashboard UI. Defaults are sourced from the same env vars the
+// previous wiring used, so existing setups (ANTHROPIC_API_KEY exported, Ocr__Vlm__Provider
+// set) continue to work without changes. The secret parameter is masked in the dashboard.
+IResourceBuilder<ParameterResource> vlmProviderParam = builder.AddParameter(
+	"vlm-provider",
+	Environment.GetEnvironmentVariable("Ocr__Vlm__Provider")
+		?? Environment.GetEnvironmentVariable("OCR__VLM__PROVIDER")
+		?? "ollama");
+IResourceBuilder<ParameterResource> anthropicApiKeyParam = builder.AddParameter(
+	"anthropic-api-key",
+	Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY") ?? string.Empty,
+	secret: true);
 
 IResourceBuilder<ProjectResource> api = builder.AddProject<Projects.API>("api")
 	.WithReference(db)
 	.WithEnvironment("Ollama__BaseUrl", vlmOcr.GetEndpoint("http"))
 	.WithEnvironment("Ocr__Vlm__Model", vlmModel)
-	.WithEnvironment("Ocr__Vlm__Provider", vlmProvider)
-	.WithEnvironment("Anthropic__ApiKey", anthropicApiKey)
+	.WithEnvironment("Ocr__Vlm__Provider", vlmProviderParam)
+	.WithEnvironment("Anthropic__ApiKey", anthropicApiKeyParam)
 	.WaitForCompletion(seeder)
 	.WaitFor(vlmOcr)
 	.WaitForCompletion(vlmOcrPull);
@@ -121,10 +131,10 @@ builder.AddProject<Projects.VlmEval>("vlm-eval")
 	.WithEnvironment("Ollama__BaseUrl", vlmOcr.GetEndpoint("http"))
 	.WithEnvironment("Ocr__Vlm__Model", vlmModel)
 	.WithEnvironment("VlmEval__FixturesPath", vlmEvalFixturesPath)
-	// RECEIPTS-652: forward the Anthropic API key so VlmEval can run with --provider anthropic
-	// (or VlmEval__Provider=anthropic) without a separate export. Empty is fine; Anthropic
-	// option binding only fires when the provider is selected.
-	.WithEnvironment("Anthropic__ApiKey", anthropicApiKey)
+	// RECEIPTS-652: forward the Anthropic API key parameter so VlmEval can run with
+	// --provider anthropic (or VlmEval__Provider=anthropic) without a separate export.
+	// Empty is fine; Anthropic option binding only fires when the provider is selected.
+	.WithEnvironment("Anthropic__ApiKey", anthropicApiKeyParam)
 	// Dev convenience: an empty fixtures directory is a warning, not a hard error.
 	// CI sets FailOnAnyFixtureFailure=true via env override to make accuracy regressions
 	// fail the pipeline once real fixtures exist.
