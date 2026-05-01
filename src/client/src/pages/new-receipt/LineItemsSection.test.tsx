@@ -117,9 +117,7 @@ describe("LineItemsSection", () => {
         taxCode: "",
       },
     ];
-    renderWithProviders(
-      <LineItemsSection {...defaultProps} items={items} />,
-    );
+    renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
     expect(screen.getByText("Milk")).toBeInTheDocument();
     expect(screen.getByText("$3.50")).toBeInTheDocument();
     expect(screen.getByText("$7.00")).toBeInTheDocument(); // line total
@@ -153,9 +151,7 @@ describe("LineItemsSection", () => {
         taxCode: "",
       },
     ];
-    renderWithProviders(
-      <LineItemsSection {...defaultProps} items={items} />,
-    );
+    renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
     expect(screen.getByText("Subtotal: $11.00")).toBeInTheDocument();
   });
 
@@ -268,9 +264,7 @@ describe("LineItemsSection", () => {
         taxCode: "",
       },
     ];
-    renderWithProviders(
-      <LineItemsSection {...defaultProps} items={items} />,
-    );
+    renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
     expect(screen.getByText("Subtotal: $0.90")).toBeInTheDocument();
   });
 
@@ -291,9 +285,7 @@ describe("LineItemsSection", () => {
         taxCode: "",
       },
     ];
-    renderWithProviders(
-      <LineItemsSection items={items} onChange={onChange} />,
-    );
+    renderWithProviders(<LineItemsSection items={items} onChange={onChange} />);
 
     await user.click(screen.getByRole("button", { name: /remove/i }));
     expect(onChange).toHaveBeenCalledWith([]);
@@ -314,9 +306,7 @@ describe("LineItemsSection", () => {
         taxCode: "",
       },
     ];
-    renderWithProviders(
-      <LineItemsSection {...defaultProps} items={items} />,
-    );
+    renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
     expect(screen.getByText("Household / Cleaning")).toBeInTheDocument();
   });
 
@@ -337,9 +327,7 @@ describe("LineItemsSection", () => {
         taxCode: "",
       },
     ];
-    renderWithProviders(
-      <LineItemsSection {...defaultProps} items={items} />,
-    );
+    renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
     expect(screen.getByRole("button", { name: /edit/i })).toBeInTheDocument();
   });
 
@@ -359,9 +347,7 @@ describe("LineItemsSection", () => {
         taxCode: "",
       },
     ];
-    renderWithProviders(
-      <LineItemsSection {...defaultProps} items={items} />,
-    );
+    renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
 
     await user.click(screen.getByRole("button", { name: /edit/i }));
 
@@ -389,9 +375,7 @@ describe("LineItemsSection", () => {
         taxCode: "",
       },
     ];
-    renderWithProviders(
-      <LineItemsSection items={items} onChange={onChange} />,
-    );
+    renderWithProviders(<LineItemsSection items={items} onChange={onChange} />);
 
     await user.click(screen.getByRole("button", { name: /edit/i }));
 
@@ -423,9 +407,7 @@ describe("LineItemsSection", () => {
         taxCode: "",
       },
     ];
-    renderWithProviders(
-      <LineItemsSection items={items} onChange={onChange} />,
-    );
+    renderWithProviders(<LineItemsSection items={items} onChange={onChange} />);
 
     await user.click(screen.getByRole("button", { name: /edit/i }));
 
@@ -457,9 +439,7 @@ describe("LineItemsSection", () => {
         taxCode: "",
       },
     ];
-    renderWithProviders(
-      <LineItemsSection items={items} onChange={onChange} />,
-    );
+    renderWithProviders(<LineItemsSection items={items} onChange={onChange} />);
 
     await user.click(screen.getByRole("button", { name: /edit/i }));
 
@@ -495,9 +475,7 @@ describe("LineItemsSection", () => {
     expect(screen.getByLabelText("Edit description")).toBeInTheDocument();
 
     // Parent removes item-1 from state externally.
-    rerender(
-      <LineItemsSection items={[items[1]]} onChange={onChange} />,
-    );
+    rerender(<LineItemsSection items={[items[1]]} onChange={onChange} />);
 
     // Edit form should no longer be visible because no row matches the stale
     // editingItemId. Bread (item-2) renders in display mode, not edit mode.
@@ -521,9 +499,7 @@ describe("LineItemsSection", () => {
         taxCode: "",
       },
     ];
-    renderWithProviders(
-      <LineItemsSection {...defaultProps} items={items} />,
-    );
+    renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
 
     await user.click(screen.getByRole("button", { name: /edit/i }));
 
@@ -563,10 +539,10 @@ describe("LineItemsSection", () => {
   // --- Tax code column tests ---
 
   it("renders the Tax column header in the items table", () => {
-    const items: ReceiptLineItem[] = [makeItem({ id: "1", description: "Milk" })];
-    renderWithProviders(
-      <LineItemsSection {...defaultProps} items={items} />,
-    );
+    const items: ReceiptLineItem[] = [
+      makeItem({ id: "1", description: "Milk" }),
+    ];
+    renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
     expect(
       screen.getByRole("columnheader", { name: /tax/i }),
     ).toBeInTheDocument();
@@ -576,9 +552,7 @@ describe("LineItemsSection", () => {
     const items: ReceiptLineItem[] = [
       makeItem({ id: "1", description: "Milk", taxCode: "F" }),
     ];
-    renderWithProviders(
-      <LineItemsSection {...defaultProps} items={items} />,
-    );
+    renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
     expect(screen.getByText("F")).toBeInTheDocument();
   });
 
@@ -586,9 +560,7 @@ describe("LineItemsSection", () => {
     const items: ReceiptLineItem[] = [
       makeItem({ id: "1", description: "Milk", taxCode: "" }),
     ];
-    renderWithProviders(
-      <LineItemsSection {...defaultProps} items={items} />,
-    );
+    renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
     expect(screen.getByLabelText("No tax code")).toBeInTheDocument();
   });
 
@@ -619,7 +591,9 @@ describe("LineItemsSection", () => {
         itemConfidenceById={itemConfidenceById}
       />,
     );
-    expect(screen.getByText(/low confidence/i)).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("AI confidence rating: low"),
+    ).toBeInTheDocument();
   });
 
   it("keeps the confidence indicator paired with the surviving item after a removal", async () => {
@@ -657,7 +631,9 @@ describe("LineItemsSection", () => {
       />,
     );
 
-    expect(screen.getByText(/low confidence/i)).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("AI confidence rating: low"),
+    ).toBeInTheDocument();
     // Bread (item-2) is the only row left; the indicator still belongs to it.
     expect(screen.getByText("Bread")).toBeInTheDocument();
   });
@@ -675,9 +651,7 @@ describe("LineItemsSection", () => {
       }),
     ];
 
-    renderWithProviders(
-      <LineItemsSection items={items} onChange={onChange} />,
-    );
+    renderWithProviders(<LineItemsSection items={items} onChange={onChange} />);
 
     await user.click(screen.getByRole("button", { name: /edit/i }));
     await user.click(screen.getByRole("button", { name: /save/i }));
@@ -700,13 +674,13 @@ describe("LineItemsSection", () => {
       }),
     ];
 
-    renderWithProviders(
-      <LineItemsSection items={items} onChange={onChange} />,
-    );
+    renderWithProviders(<LineItemsSection items={items} onChange={onChange} />);
 
     await user.click(screen.getByRole("button", { name: /edit/i }));
 
-    const taxCodeInput = screen.getByLabelText("Edit tax code") as HTMLInputElement;
+    const taxCodeInput = screen.getByLabelText(
+      "Edit tax code",
+    ) as HTMLInputElement;
     await user.type(taxCodeInput, "n");
 
     expect(taxCodeInput.value).toBe("N");
