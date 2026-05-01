@@ -88,6 +88,25 @@ preserved).
 The Anthropic provider needs an API key. Get one from
 [console.anthropic.com](https://console.anthropic.com).
 
+#### Aspire (recommended for dev)
+
+The provider switch and the API key are exposed as Aspire **parameters**, so
+they show up in the dashboard's *Parameters* panel and persist across runs
+via .NET user-secrets. Set them once:
+
+```bash
+dotnet user-secrets --project src/Receipts.AppHost set "Parameters:vlm-provider" "anthropic"
+dotnet user-secrets --project src/Receipts.AppHost set "Parameters:anthropic-api-key" "sk-ant-..."
+```
+
+The secret parameter is masked in the dashboard. To flip back to the local
+model for a single run, change the value of `vlm-provider` to `ollama` in the
+dashboard or via `dotnet user-secrets set`. Defaults are sourced from the
+`Ocr__Vlm__Provider` and `ANTHROPIC_API_KEY` env vars when set, so existing
+shells already configured for previous releases continue to work.
+
+#### Standalone / docker-compose
+
 ```bash
 # Local dev (no Aspire)
 export Anthropic__ApiKey="sk-ant-..."
