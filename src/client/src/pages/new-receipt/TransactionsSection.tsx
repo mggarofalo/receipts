@@ -1,4 +1,5 @@
 import { useMemo, useCallback, useRef, useEffect } from "react";
+import { toast } from "sonner";
 import { generateId } from "@/lib/id";
 import { useForm } from "react-hook-form";
 import { z } from "zod/v4";
@@ -96,6 +97,35 @@ export function TransactionsSection({
     return map;
   }, [cards]);
 
+  // Lookup for resolving Account names when surfacing the Card-overrode-Account
+  // toast (RECEIPTS-659). The toast message references the new account by name
+  // so the user sees what the row was switched to.
+  const accountById = useMemo(() => {
+    const map = new Map<string, { id: string; name: string }>();
+    for (const a of accounts ?? []) map.set(a.id, a);
+    return map;
+  }, [accounts]);
+
+  // Show a non-blocking toast when picking a Card overrides an already-selected
+  // Account on a row. Only fires when the prior Account differs from the new
+  // card.accountId — same-account swaps and clear-card flows stay silent. This
+  // is invoked exclusively from user-driven onValueChange handlers, so it never
+  // fires during scan pre-population (which seeds rows through the
+  // `transactions` prop, not these handlers).
+  const notifyAccountOverride = useCallback(
+    (priorAccountId: string, newAccountId: string) => {
+      if (!priorAccountId) return;
+      if (priorAccountId === newAccountId) return;
+      const newAccount = accountById.get(newAccountId);
+      toast.info(
+        newAccount?.name
+          ? `Account changed to ${newAccount.name} to match the selected card.`
+          : "Account changed to match the selected card.",
+      );
+    },
+    [accountById],
+  );
+
   const form = useForm<TxnFormValues>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     resolver: zodResolver(txnSchema) as any,
@@ -123,7 +153,8 @@ export function TransactionsSection({
     if (!value) {
       // Clearing the card releases the account lock and clears the auto-fill.
       // Clearing rather than preserving the previous accountId avoids leaving
-      // a stale read-only value in a now-editable field.
+      // a stale read-only value in a now-editable field. No toast — the
+      // re-enabled dropdown is self-explanatory (RECEIPTS-659).
       form.setValue("accountId", "", { shouldValidate: true });
       return;
     }
@@ -131,6 +162,10 @@ export function TransactionsSection({
     if (card?.accountId) {
       // Card wins: even if the user had picked an account first, the resolved
       // card's FK overwrites it. The Account dropdown then renders read-only.
+      // If the prior Account differs from the new one, surface a toast so the
+      // overwrite is not silent (RECEIPTS-659).
+      const priorAccountId = form.getValues("accountId");
+      notifyAccountOverride(priorAccountId, card.accountId);
       form.setValue("accountId", card.accountId, { shouldValidate: true });
     }
   }
@@ -185,10 +220,16 @@ export function TransactionsSection({
   // Inline-edit handlers for pre-populated rows. Card change cascades to
   // accountId for the target row when the resolved Card carries one — the
   // same "Card wins" rule as the new-row form above. Without this an account
-  // override would persist after a card swap, contradicting the FK.
+  // override would persist after a card swap, contradicting the FK. When the
+  // cascade overrides a non-empty prior Account, surface a sonner toast so the
+  // overwrite is visible (RECEIPTS-659).
   const handleRowCardChange = useCallback(
     (id: string, cardId: string) => {
       const card = cardId ? cardById.get(cardId) : undefined;
+      const targetRow = transactions.find((t) => t.id === id);
+      if (cardId && card?.accountId && targetRow) {
+        notifyAccountOverride(targetRow.accountId, card.accountId);
+      }
       onChange(
         transactions.map((t) =>
           t.id === id
@@ -205,7 +246,7 @@ export function TransactionsSection({
         ),
       );
     },
-    [transactions, onChange, cardById],
+    [transactions, onChange, cardById, notifyAccountOverride],
   );
 
   const handleRowField = useCallback(

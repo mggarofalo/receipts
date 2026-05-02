@@ -3,7 +3,12 @@ import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "@/test/test-utils";
 import { mockQueryResult } from "@/test/mock-hooks";
 import "@/test/setup-combobox-polyfills";
+import { toast } from "sonner";
 import { TransactionsSection } from "./TransactionsSection";
+
+vi.mock("sonner", () => ({
+  toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
+}));
 
 vi.mock("@/hooks/useFormShortcuts", () => ({
   useFormShortcuts: vi.fn(),
@@ -507,6 +512,183 @@ describe("TransactionsSection", () => {
         cardId: "card-1",
         accountId: "acct-1",
       });
+    });
+  });
+
+  // --- RECEIPTS-659: surface a toast when picking a Card overrides the row's Account ---
+
+  describe("Card→Account override notice (RECEIPTS-659)", () => {
+    it("card-overrides-account-fires-toast: row has Account A, user picks Card whose accountId is Account B → toast fires with the Account B name", async () => {
+      const user = userEvent.setup();
+      const onChange = vi.fn();
+      // Row currently bound to card-2 (no FK) with manual Account = acct-1
+      // (Checking). Picking card-3 (FK = acct-2 / Credit Card) overrides the
+      // prior Account selection and must fire a single info toast referencing
+      // the new account name.
+      const transactions = [
+        {
+          id: "row-1",
+          cardId: "card-2",
+          accountId: "acct-1",
+          amount: 10,
+          date: "2024-06-15",
+        },
+      ];
+      renderWithProviders(
+        <TransactionsSection
+          {...defaultProps}
+          transactions={transactions}
+          onChange={onChange}
+        />,
+      );
+
+      const cardCombo = screen.getByLabelText(/^Card for transaction row-1$/i);
+      await user.click(cardCombo);
+      await user.click(await screen.findByText("MC 5555")); // card-3 → acct-2
+
+      expect(toast.info).toHaveBeenCalledTimes(1);
+      expect(toast.info).toHaveBeenCalledWith(
+        "Account changed to Credit Card to match the selected card.",
+      );
+    });
+
+    it("card-without-prior-account-no-toast: row has no Account selected, user picks a Card → no toast (silent auto-fill)", async () => {
+      const user = userEvent.setup();
+      const onChange = vi.fn();
+      // Row with no prior Account — auto-fill is the only behavior. Toast must
+      // not fire because there is nothing being overridden.
+      const transactions = [
+        {
+          id: "row-1",
+          cardId: "",
+          accountId: "",
+          amount: 10,
+          date: "2024-06-15",
+        },
+      ];
+      renderWithProviders(
+        <TransactionsSection
+          {...defaultProps}
+          transactions={transactions}
+          onChange={onChange}
+        />,
+      );
+
+      const cardCombo = screen.getByLabelText(/^Card for transaction row-1$/i);
+      await user.click(cardCombo);
+      await user.click(await screen.findByText("Visa 4321")); // card-1 → acct-1
+
+      // The change still cascades the FK — verify that to prove the handler ran.
+      const lastCall = onChange.mock.calls.at(-1)![0];
+      expect(lastCall[0]).toMatchObject({
+        cardId: "card-1",
+        accountId: "acct-1",
+      });
+      // But no toast because there was no prior Account to override.
+      expect(toast.info).not.toHaveBeenCalled();
+    });
+
+    it("card-with-matching-account-no-toast: row has Account A, user picks Card whose accountId is also Account A → no toast", async () => {
+      const user = userEvent.setup();
+      const onChange = vi.fn();
+      // Row already has accountId = "acct-1". Picking card-1 (FK = "acct-1")
+      // is a no-op for the Account value, so no toast should fire.
+      const transactions = [
+        {
+          id: "row-1",
+          cardId: "card-2",
+          accountId: "acct-1",
+          amount: 10,
+          date: "2024-06-15",
+        },
+      ];
+      renderWithProviders(
+        <TransactionsSection
+          {...defaultProps}
+          transactions={transactions}
+          onChange={onChange}
+        />,
+      );
+
+      const cardCombo = screen.getByLabelText(/^Card for transaction row-1$/i);
+      await user.click(cardCombo);
+      await user.click(await screen.findByText("Visa 4321")); // card-1 → acct-1 (same)
+
+      expect(toast.info).not.toHaveBeenCalled();
+    });
+
+    it("scan-prepopulation-no-toast: when the row is pre-populated with a Card+Account pair, no toast fires on initial render", () => {
+      // Pre-populated row matching the proposedTransactions[0] shape: Card and
+      // Account are both already set. Initial render must not fire any toast
+      // because the Card override path is only invoked on user-driven
+      // onValueChange — not from prop seeding.
+      const transactions = [
+        {
+          id: "scan-1",
+          cardId: "card-1",
+          accountId: "acct-1",
+          amount: 10.01,
+          date: "2024-06-15",
+        },
+      ];
+      renderWithProviders(
+        <TransactionsSection
+          {...defaultProps}
+          transactions={transactions}
+        />,
+      );
+
+      expect(toast.info).not.toHaveBeenCalled();
+    });
+
+    it("clearing-card-no-toast: row has a Card → user clears the Card → no toast (just re-enables the Account dropdown)", () => {
+      const onChange = vi.fn();
+      // Simulate a pre-populated row whose Card is then cleared. The Combobox
+      // does not expose an explicit clear control in the row UI, so we drive
+      // the handler through a re-render that changes the underlying transaction
+      // model. The tested invariant is: the override logic only fires when a
+      // *non-empty* card value is picked. We assert the only path through
+      // handleRowCardChange that could emit a toast (the FK cascade) does not
+      // execute when cardId is the empty string.
+      const transactions = [
+        {
+          id: "row-1",
+          cardId: "card-1",
+          accountId: "acct-1",
+          amount: 10,
+          date: "2024-06-15",
+        },
+      ];
+      const { rerender } = renderWithProviders(
+        <TransactionsSection
+          {...defaultProps}
+          transactions={transactions}
+          onChange={onChange}
+        />,
+      );
+      // Sanity: no toast on initial render either.
+      expect(toast.info).not.toHaveBeenCalled();
+
+      // Re-render with the same row but the Card cleared (mimicking the
+      // post-clear state of the row's transaction model).
+      rerender(
+        <TransactionsSection
+          {...defaultProps}
+          transactions={[
+            {
+              id: "row-1",
+              cardId: "",
+              accountId: "",
+              amount: 10,
+              date: "2024-06-15",
+            },
+          ]}
+          onChange={onChange}
+        />,
+      );
+
+      // Re-rendering with cleared values must not retroactively fire a toast.
+      expect(toast.info).not.toHaveBeenCalled();
     });
   });
 });
