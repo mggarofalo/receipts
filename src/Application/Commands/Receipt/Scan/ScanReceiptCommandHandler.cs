@@ -7,7 +7,8 @@ namespace Application.Commands.Receipt.Scan;
 
 public class ScanReceiptCommandHandler(
 	IReceiptExtractionService extractionService,
-	IPdfConversionService pdfConversionService) : IRequestHandler<ScanReceiptCommand, ScanReceiptResult>
+	IPdfConversionService pdfConversionService,
+	IProposedTransactionResolver proposedTransactionResolver) : IRequestHandler<ScanReceiptCommand, ScanReceiptResult>
 {
 	internal const string PdfContentType = "application/pdf";
 
@@ -23,7 +24,18 @@ public class ScanReceiptCommandHandler(
 			throw new OcrNoTextException("The receipt could not be extracted from the provided file.");
 		}
 
-		return new ScanReceiptResult(parsed, droppedPageCount);
+		// Resolve VLM payments → pre-populated Transaction rows. The resolver looks up
+		// each tender's last-four against the user's active cards, populating cardId/
+		// accountId when a single match is found. This replaces the legacy "Detected
+		// Payments" section in the wizard with directly-actionable transaction rows.
+		// See RECEIPTS-657.
+		IReadOnlyList<ProposedTransaction> proposedTransactions =
+			await proposedTransactionResolver.ResolveAsync(
+				parsed.Payments,
+				parsed.Date,
+				cancellationToken);
+
+		return new ScanReceiptResult(parsed, droppedPageCount, proposedTransactions);
 	}
 
 	private async Task<(byte[] ImageBytes, int DroppedPageCount)> ResolveImageAsync(

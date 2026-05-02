@@ -3137,7 +3137,13 @@ export interface components {
             totalConfidence: components["schemas"]["ConfidenceLevel"];
             paymentMethod?: string | null;
             paymentMethodConfidence: components["schemas"]["ConfidenceLevel"];
+            /**
+             * @deprecated
+             * @description Raw payment tenders extracted from the receipt. Retained for evaluation and debugging (e.g. VlmEval scoring) but no longer consumed by the new-receipt wizard. Clients should use `proposedTransactions` instead, which resolves card-by-lastFour and surfaces matched cardId/accountId so the wizard can pre-populate Transaction rows directly. See RECEIPTS-657. Will be removed in a follow-up issue once the new path has stabilised.
+             */
             payments: components["schemas"]["ProposedPaymentResponse"][];
+            /** @description Pre-resolved Transaction rows derived from the VLM-extracted payments. Each entry's `lastFour` is looked up against the user's active cards; when a single match is found, `cardId` and `accountId` are populated and the corresponding confidences are `high`. Multiple matches collapse to `cardId: null` with `cardIdConfidence: low`. No match yields `cardId: null` with `cardIdConfidence: none`. The wizard pre-populates a Transaction row per entry on first mount. */
+            proposedTransactions?: components["schemas"]["ProposedTransactionResponse"][];
             receiptId?: string | null;
             receiptIdConfidence: components["schemas"]["ConfidenceLevel"];
             storeNumber?: string | null;
@@ -3182,6 +3188,23 @@ export interface components {
             amountConfidence: components["schemas"]["ConfidenceLevel"];
             lastFour?: string | null;
             lastFourConfidence: components["schemas"]["ConfidenceLevel"];
+        };
+        /** @description A pre-resolved Transaction row derived from a single VLM-extracted payment. The server resolves `lastFour` against the user's active cards; when a single non-deleted card matches, `cardId` and `accountId` are populated with `high` confidence. Ambiguous matches (multiple cards sharing a last-four) yield `cardId: null` with `cardIdConfidence: low` so the user is prompted to pick. No match yields nulls with `none` confidence. `methodSnapshot` preserves the raw VLM payment method text (e.g. "VISA", "Cash") for display only — the canonical payment type is encoded by the matched card. */
+        ProposedTransactionResponse: {
+            /** Format: uuid */
+            cardId?: string | null;
+            cardIdConfidence: components["schemas"]["ConfidenceLevel"];
+            /** Format: uuid */
+            accountId?: string | null;
+            accountIdConfidence: components["schemas"]["ConfidenceLevel"];
+            /** Format: double */
+            amount?: number | null;
+            amountConfidence: components["schemas"]["ConfidenceLevel"];
+            /** Format: date */
+            date?: string | null;
+            dateConfidence: components["schemas"]["ConfidenceLevel"];
+            /** @description Informational raw payment method text from the VLM (e.g. "VISA", "Cash"). Not used for matching — the canonical payment type is already encoded by the resolved card. */
+            methodSnapshot?: string | null;
         };
         CreateCompleteReceiptRequest: {
             receipt: components["schemas"]["CreateReceiptRequest"];

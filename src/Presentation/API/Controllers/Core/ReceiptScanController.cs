@@ -111,7 +111,11 @@ public class ReceiptScanController(
 			TotalConfidence = MapConfidence(parsed.Total.Confidence),
 			PaymentMethod = parsed.PaymentMethod.Value,
 			PaymentMethodConfidence = MapConfidence(parsed.PaymentMethod.Confidence),
+#pragma warning disable CS0612 // Payments is intentionally populated for back-compat with the existing client UI; RECEIPTS-658 removes both the field and this writer.
 			Payments = parsed.Payments.Select(MapPayment).ToList(),
+#pragma warning restore CS0612
+			ProposedTransactions = (result.ProposedTransactions ?? [])
+				.Select(MapProposedTransaction).ToList(),
 			ReceiptId = parsed.ReceiptId.Value,
 			ReceiptIdConfidence = MapConfidence(parsed.ReceiptId.Confidence),
 			StoreNumber = parsed.StoreNumber.Value,
@@ -162,6 +166,22 @@ public class ReceiptScanController(
 			AmountConfidence = MapConfidence(payment.Amount.Confidence),
 			LastFour = payment.LastFour.Value,
 			LastFourConfidence = MapConfidence(payment.LastFour.Confidence),
+		};
+	}
+
+	private static ProposedTransactionResponse MapProposedTransaction(ProposedTransaction txn)
+	{
+		return new ProposedTransactionResponse
+		{
+			CardId = txn.CardId.Value,
+			CardIdConfidence = MapConfidence(txn.CardId.Confidence),
+			AccountId = txn.AccountId.Value,
+			AccountIdConfidence = MapConfidence(txn.AccountId.Confidence),
+			Amount = ToNullableDouble(txn.Amount.Value),
+			AmountConfidence = MapConfidence(txn.Amount.Confidence),
+			Date = txn.Date.Value,
+			DateConfidence = MapConfidence(txn.Date.Confidence),
+			MethodSnapshot = txn.MethodSnapshot.Value,
 		};
 	}
 

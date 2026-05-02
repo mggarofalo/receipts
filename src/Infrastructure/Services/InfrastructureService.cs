@@ -156,6 +156,7 @@ public static class InfrastructureService
 			.AddScoped<IImageStorageService, LocalImageStorageService>()
 			.AddScoped<IImageValidationService, ImageValidationService>()
 			.AddScoped<IPdfConversionService, PdfConversionService>()
+			.AddScoped<IProposedTransactionResolver, ProposedTransactionResolver>()
 			.AddScoped<IYnabSyncRecordRepository, YnabSyncRecordRepository>()
 			.AddScoped<IYnabBudgetSelectionRepository, YnabBudgetSelectionRepository>()
 			.AddScoped<IYnabAccountMappingRepository, YnabAccountMappingRepository>()
