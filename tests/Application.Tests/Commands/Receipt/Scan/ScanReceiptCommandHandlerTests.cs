@@ -64,15 +64,26 @@ public class ScanReceiptCommandHandlerTests
 {
 	private readonly Mock<IReceiptExtractionService> _mockExtractionService;
 	private readonly Mock<IPdfConversionService> _mockPdfConversionService;
+	private readonly Mock<IProposedTransactionResolver> _mockProposedTransactionResolver;
 	private readonly ScanReceiptCommandHandler _handler;
 
 	public ScanReceiptCommandHandlerTests()
 	{
 		_mockExtractionService = new Mock<IReceiptExtractionService>();
 		_mockPdfConversionService = new Mock<IPdfConversionService>();
+		_mockProposedTransactionResolver = new Mock<IProposedTransactionResolver>();
+		// Default: resolver returns an empty list — most existing tests don't care
+		// about the proposed-transactions side effect and benefit from a no-op stub.
+		_mockProposedTransactionResolver
+			.Setup(r => r.ResolveAsync(
+				It.IsAny<IReadOnlyList<ParsedPayment>>(),
+				It.IsAny<FieldConfidence<DateOnly>>(),
+				It.IsAny<CancellationToken>()))
+			.ReturnsAsync([]);
 		_handler = new ScanReceiptCommandHandler(
 			_mockExtractionService.Object,
-			_mockPdfConversionService.Object);
+			_mockPdfConversionService.Object,
+			_mockProposedTransactionResolver.Object);
 	}
 
 	private static ParsedReceipt BuildPopulatedReceipt(string storeName = "WALMART", decimal total = 3.74m)
@@ -490,6 +501,111 @@ public class ScanReceiptCommandHandlerTests
 			Times.Once);
 		_mockExtractionService.Verify(
 			s => s.ExtractAsync(firstPageImage, It.Is<CancellationToken>(t => t == expected)),
+			Times.Once);
+	}
+
+	[Fact]
+	public async Task Handle_PassesParsedPaymentsAndDateToResolver()
+	{
+		// Arrange — RECEIPTS-657: the handler must hand the VLM-extracted payments and
+		// the receipt date through to IProposedTransactionResolver. The resolver is the
+		// component that turns "I extracted a payment with last-four 3409" into a
+		// pre-populated Transaction row, so dropping its inputs would silently disable
+		// the auto-population.
+		byte[] imageBytes = [0xFF, 0xD8];
+		ScanReceiptCommand command = new(imageBytes, "image/jpeg");
+
+		ParsedReceipt parsed = BuildPopulatedReceipt() with
+		{
+			Date = FieldConfidence<DateOnly>.High(new DateOnly(2026, 4, 10)),
+			Payments =
+			[
+				new ParsedPayment(
+					FieldConfidence<string?>.High("VISA"),
+					FieldConfidence<decimal?>.High(70.43m),
+					FieldConfidence<string?>.High("3409")),
+			],
+		};
+
+		_mockExtractionService
+			.Setup(s => s.ExtractAsync(imageBytes, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(parsed);
+
+		// Act
+		await _handler.Handle(command, CancellationToken.None);
+
+		// Assert
+		_mockProposedTransactionResolver.Verify(
+			r => r.ResolveAsync(
+				It.Is<IReadOnlyList<ParsedPayment>>(p => p.Count == 1 && p[0].LastFour.Value == "3409"),
+				It.Is<FieldConfidence<DateOnly>>(d =>
+					d.Confidence == ConfidenceLevel.High &&
+					d.Value == new DateOnly(2026, 4, 10)),
+				It.IsAny<CancellationToken>()),
+			Times.Once);
+	}
+
+	[Fact]
+	public async Task Handle_AttachesResolverOutputToResultAsProposedTransactions()
+	{
+		// Arrange — the resolved ProposedTransaction list is the wizard's pre-population
+		// payload. The handler must surface it on ScanReceiptResult so the controller
+		// (and downstream OpenAPI mapping) can pick it up. A regression that swallowed
+		// the resolver output would silently regress the entire feature.
+		byte[] imageBytes = [0xFF, 0xD8];
+		ScanReceiptCommand command = new(imageBytes, "image/jpeg");
+
+		_mockExtractionService
+			.Setup(s => s.ExtractAsync(imageBytes, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(BuildPopulatedReceipt());
+
+		List<ProposedTransaction> resolverOutput =
+		[
+			new ProposedTransaction(
+				FieldConfidence<Guid?>.High(Guid.Parse("11111111-1111-1111-1111-111111111111")),
+				FieldConfidence<Guid?>.High(Guid.Parse("22222222-2222-2222-2222-222222222222")),
+				FieldConfidence<decimal?>.High(70.43m),
+				FieldConfidence<DateOnly?>.High(new DateOnly(2026, 4, 10)),
+				FieldConfidence<string?>.High("VISA")),
+		];
+
+		_mockProposedTransactionResolver
+			.Setup(r => r.ResolveAsync(
+				It.IsAny<IReadOnlyList<ParsedPayment>>(),
+				It.IsAny<FieldConfidence<DateOnly>>(),
+				It.IsAny<CancellationToken>()))
+			.ReturnsAsync(resolverOutput);
+
+		// Act
+		ScanReceiptResult result = await _handler.Handle(command, CancellationToken.None);
+
+		// Assert
+		result.ProposedTransactions.Should().NotBeNull();
+		result.ProposedTransactions.Should().BeEquivalentTo(resolverOutput);
+	}
+
+	[Fact]
+	public async Task Handle_PropagatesCancellationTokenToResolver()
+	{
+		// Arrange — same RECEIPTS-647 contract, applied to the new fan-out point.
+		byte[] imageBytes = [0xFF, 0xD8];
+		ScanReceiptCommand command = new(imageBytes, "image/jpeg");
+		using CancellationTokenSource cts = new();
+		CancellationToken expected = cts.Token;
+
+		_mockExtractionService
+			.Setup(s => s.ExtractAsync(imageBytes, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(BuildPopulatedReceipt());
+
+		// Act
+		await _handler.Handle(command, expected);
+
+		// Assert
+		_mockProposedTransactionResolver.Verify(
+			r => r.ResolveAsync(
+				It.IsAny<IReadOnlyList<ParsedPayment>>(),
+				It.IsAny<FieldConfidence<DateOnly>>(),
+				It.Is<CancellationToken>(t => t == expected)),
 			Times.Once);
 	}
 }

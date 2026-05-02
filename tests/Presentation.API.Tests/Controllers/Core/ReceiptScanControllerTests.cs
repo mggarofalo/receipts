@@ -1,3 +1,7 @@
+// CS0612: ProposedReceiptResponse.Payments is intentionally exercised here for back-compat
+// regression coverage until RECEIPTS-658 deletes the field.
+#pragma warning disable CS0612
+
 using API.Controllers.Core;
 using API.Generated.Dtos;
 using Application.Commands.Receipt.Scan;
