@@ -500,8 +500,18 @@ public static class InfrastructureService
 	/// Shared retry + circuit-breaker policy used by the YNAB and VLM-OCR HTTP clients:
 	/// 3 retries with exponential backoff + jitter (honoring <c>Retry-After</c> when the
 	/// server provides it), and a circuit breaker on sustained failure.
+	/// <para>
+	/// The retry predicate (RECEIPTS-654) handles ONLY transient failures: network
+	/// exceptions (<see cref="HttpRequestException"/>), client-side cancellation/timeout
+	/// (<see cref="TaskCanceledException"/>), and the documented retryable HTTP codes
+	/// (408, 429, 500, 502, 503, 504, 529). Permanent client errors (400, 401, 403, 404,
+	/// 422) bypass the retry — repeating a request that's structurally invalid only
+	/// doubles latency and burns the retry budget. This was a regression discovered when
+	/// an Anthropic 400 (image-size limit) was retried unnecessarily; see RECEIPTS-654
+	/// for the trace.
+	/// </para>
 	/// </summary>
-	private static void AddRetryAndCircuitBreaker(ResiliencePipelineBuilder<HttpResponseMessage> builder)
+	internal static void AddRetryAndCircuitBreaker(ResiliencePipelineBuilder<HttpResponseMessage> builder)
 	{
 		builder.AddRetry(new HttpRetryStrategyOptions
 		{
@@ -510,9 +520,13 @@ public static class InfrastructureService
 			UseJitter = true,
 			ShouldHandle = new PredicateBuilder<HttpResponseMessage>()
 				.Handle<HttpRequestException>()
-				.HandleResult(r => r.StatusCode is System.Net.HttpStatusCode.TooManyRequests
-					or System.Net.HttpStatusCode.ServiceUnavailable
-					or System.Net.HttpStatusCode.GatewayTimeout),
+				// TaskCanceledException covers HttpClient request timeouts (the SocketsHttpHandler
+				// implementation surfaces them this way). Caller-initiated cancellations also
+				// land here, but those carry the user's CancellationToken — Polly only retries
+				// when the linked token is not cancelled, so user-cancels short-circuit
+				// correctly without extra checks here.
+				.Handle<TaskCanceledException>()
+				.HandleResult(r => IsRetryableStatusCode(r.StatusCode)),
 			DelayGenerator = args =>
 			{
 				if (args.Outcome.Result?.Headers.RetryAfter?.Delta is TimeSpan delta)
@@ -530,5 +544,25 @@ public static class InfrastructureService
 			MinimumThroughput = 5,
 			BreakDuration = TimeSpan.FromSeconds(60),
 		});
+	}
+
+	/// <summary>
+	/// True when <paramref name="statusCode"/> represents a transient failure that warrants
+	/// a retry per Anthropic's documented retry guidance and standard HTTP semantics
+	/// (RECEIPTS-654). The 5xx set explicitly includes 529 — Anthropic's "API overloaded"
+	/// response — which is documented as transient even though it is not in
+	/// <see cref="System.Net.HttpStatusCode"/>. All other 4xx codes (400, 401, 403, 404,
+	/// 422 in particular) are permanent client errors and must NOT be retried — repeating
+	/// an invalid request only burns the retry budget and adds latency.
+	/// </summary>
+	internal static bool IsRetryableStatusCode(System.Net.HttpStatusCode statusCode)
+	{
+		return statusCode == System.Net.HttpStatusCode.RequestTimeout            // 408
+			|| statusCode == System.Net.HttpStatusCode.TooManyRequests           // 429
+			|| statusCode == System.Net.HttpStatusCode.InternalServerError       // 500
+			|| statusCode == System.Net.HttpStatusCode.BadGateway                // 502
+			|| statusCode == System.Net.HttpStatusCode.ServiceUnavailable        // 503
+			|| statusCode == System.Net.HttpStatusCode.GatewayTimeout            // 504
+			|| (int)statusCode == 529;                                            // Anthropic overloaded
 	}
 }

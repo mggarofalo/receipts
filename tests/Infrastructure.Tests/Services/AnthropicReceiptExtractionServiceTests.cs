@@ -16,6 +16,7 @@ using Microsoft.Extensions.Options;
 using Moq;
 using Moq.Protected;
 using Polly;
+using SkiaSharp;
 
 namespace Infrastructure.Tests.Services;
 
@@ -988,6 +989,500 @@ public class AnthropicReceiptExtractionServiceTests
 			record.Scopes.Any(scope =>
 				scope.TryGetValue("VlmProvider", out object? v) && v as string == "anthropic"));
 		anyRecordHasProviderScope.Should().BeTrue("the provider tag must flow into the structured log scope");
+	}
+
+	// ----------------------------------------------------------------------
+	// RECEIPTS-654: Auto-downscale path for Anthropic image-size cap.
+	// Mirrors the failure mode where a 200 DPI rasterized PDF base64-encodes
+	// past Anthropic's 5 MB per-image API limit. The service must downscale
+	// before the encode rather than letting the API reject with an opaque 400.
+	// ----------------------------------------------------------------------
+
+	/// <summary>
+	/// Builds a real PNG of <paramref name="width"/>x<paramref name="height"/> filled with
+	/// natural-image-like content (a horizontal gradient + sparse noise) so PNG compression
+	/// produces non-trivial output but still scales predictably. A solid-color PNG would
+	/// compress to a few bytes regardless of dimensions, defeating the size-driven test.
+	/// </summary>
+	private static byte[] BuildSyntheticPng(int width, int height)
+	{
+		using SKBitmap bitmap = new(width, height, SKColorType.Rgba8888, SKAlphaType.Opaque);
+		// Fill with a deterministic gradient + noise pattern so the encoded PNG is
+		// non-trivially sized but still a valid image. Random-seeded so each call is
+		// reproducible without test flakiness.
+		Random rng = new(width * 31 + height);
+		for (int y = 0; y < height; y++)
+		{
+			for (int x = 0; x < width; x++)
+			{
+				byte r = (byte)((x * 255) / Math.Max(1, width - 1));
+				byte g = (byte)((y * 255) / Math.Max(1, height - 1));
+				byte b = (byte)rng.Next(256);
+				bitmap.SetPixel(x, y, new SKColor(r, g, b, 255));
+			}
+		}
+		using SKImage image = SKImage.FromBitmap(bitmap);
+		using SKData encoded = image.Encode(SKEncodedImageFormat.Png, quality: 100);
+		return encoded.ToArray();
+	}
+
+	[Fact]
+	public async Task ExtractAsync_OversizeImage_DownscalesUntilFits()
+	{
+		// Arrange — synthesize a PNG that overflows the configured raw-byte cap. The
+		// service must downscale before encoding and the outgoing request body must
+		// carry an image small enough that base64 stays under Anthropic's 5 MB API limit.
+		byte[] largeImage = BuildSyntheticPng(2400, 2400);
+		largeImage.Length.Should().BeGreaterThan(2_000_000,
+			"synthetic gradient must be large enough to require downscaling");
+
+		// Configure a tight cap so downscaling is forced even on the synthetic image.
+		AnthropicOptions options = new()
+		{
+			ApiKey = "test-api-key",
+			Model = "claude-haiku-4-5",
+			TimeoutSeconds = 30,
+			MaxRawImageBytes = 500_000, // well under largeImage.Length
+			MaxImageBytes = 50 * 1024 * 1024, // hard ceiling well above input
+		};
+
+		string? capturedDataField = null;
+		Mock<HttpMessageHandler> handlerMock = new();
+		handlerMock.Protected()
+			.Setup<Task<HttpResponseMessage>>("SendAsync",
+				ItExpr.IsAny<HttpRequestMessage>(),
+				ItExpr.IsAny<CancellationToken>())
+			.Returns(async (HttpRequestMessage req, CancellationToken _) =>
+			{
+				string body = await req.Content!.ReadAsStringAsync();
+				using JsonDocument doc = JsonDocument.Parse(body);
+				JsonElement userContent = doc.RootElement
+					.GetProperty("messages")[0]
+					.GetProperty("content");
+				for (int i = 0; i < userContent.GetArrayLength(); i++)
+				{
+					JsonElement block = userContent[i];
+					if (string.Equals(block.GetProperty("type").GetString(), "image", StringComparison.Ordinal))
+					{
+						capturedDataField = block.GetProperty("source").GetProperty("data").GetString();
+						break;
+					}
+				}
+				return new HttpResponseMessage(HttpStatusCode.OK)
+				{
+					Content = new StringContent(WrapInToolUseEnvelope("""{ "schema_version": 1 }"""),
+						System.Text.Encoding.UTF8, "application/json"),
+				};
+			});
+		AnthropicReceiptExtractionService service = CreateService(handlerMock.Object, options);
+
+		// Act
+		await service.ExtractAsync(largeImage, CancellationToken.None);
+
+		// Assert — image was downscaled before encoding.
+		capturedDataField.Should().NotBeNull();
+		byte[] sentBytes = Convert.FromBase64String(capturedDataField!);
+		sentBytes.Length.Should().BeLessThanOrEqualTo(options.MaxRawImageBytes,
+			"the downscale loop must produce an output below the configured cap");
+		sentBytes.Length.Should().BeLessThan(largeImage.Length,
+			"the request body must carry the resampled image, not the original");
+	}
+
+	[Fact]
+	public void DownscaleIfNeeded_ImageUnderCap_ReturnsOriginalBuffer()
+	{
+		// Arrange — image smaller than cap must short-circuit (no allocation, no resample)
+		// and return the same array reference. This is the hot path for camera/JPEG
+		// uploads that already fit comfortably under the limit.
+		AnthropicOptions options = new()
+		{
+			ApiKey = "test-api-key",
+			Model = "claude-haiku-4-5",
+			TimeoutSeconds = 30,
+			MaxRawImageBytes = 1_000_000,
+		};
+		HttpClient httpClient = new(CreateHandler(WrapInToolUseEnvelope("""{ "schema_version": 1 }""")))
+		{
+			BaseAddress = new Uri("https://api.anthropic.com/"),
+		};
+		AnthropicReceiptExtractionService service = new(
+			httpClient, Options.Create(options), NullLogger<AnthropicReceiptExtractionService>.Instance);
+
+		byte[] smallImage = BuildSyntheticPng(100, 100);
+		smallImage.Length.Should().BeLessThan(options.MaxRawImageBytes);
+
+		// Act
+		byte[] result = service.DownscaleIfNeeded(smallImage);
+
+		// Assert — same reference, no allocation.
+		result.Should().BeSameAs(smallImage);
+	}
+
+	[Fact]
+	public void DownscaleIfNeeded_OversizeImage_ResamplesUnderCap()
+	{
+		// Arrange
+		AnthropicOptions options = new()
+		{
+			ApiKey = "test-api-key",
+			Model = "claude-haiku-4-5",
+			TimeoutSeconds = 30,
+			MaxRawImageBytes = 200_000,
+		};
+		HttpClient httpClient = new(CreateHandler(WrapInToolUseEnvelope("""{ "schema_version": 1 }""")))
+		{
+			BaseAddress = new Uri("https://api.anthropic.com/"),
+		};
+		AnthropicReceiptExtractionService service = new(
+			httpClient, Options.Create(options), NullLogger<AnthropicReceiptExtractionService>.Instance);
+
+		byte[] largeImage = BuildSyntheticPng(2000, 2000);
+		largeImage.Length.Should().BeGreaterThan(options.MaxRawImageBytes);
+
+		// Act
+		byte[] result = service.DownscaleIfNeeded(largeImage);
+
+		// Assert
+		result.Length.Should().BeLessThanOrEqualTo(options.MaxRawImageBytes);
+		result.Should().NotBeSameAs(largeImage); // resampled buffer
+	}
+
+	[Fact]
+	public void DownscaleIfNeeded_DownscaleFailureMessageIncludesByteCounts()
+	{
+		// Arrange — pin MaxRawImageBytes to a value below the absolute floor of any
+		// 1×1 PNG (PNG header alone is ~67 bytes for a minimal image), which forces
+		// the downscale loop to exhaust its attempts and throw the failure exception.
+		// The exception message must carry both byte counts so the user gets actionable
+		// feedback ("the image was X bytes, dropped to Y, still over the cap").
+		AnthropicOptions options = new()
+		{
+			ApiKey = "test-api-key",
+			Model = "claude-haiku-4-5",
+			TimeoutSeconds = 30,
+			MaxRawImageBytes = 50, // smaller than any encoded PNG header
+		};
+		HttpClient httpClient = new(CreateHandler(WrapInToolUseEnvelope("""{ "schema_version": 1 }""")))
+		{
+			BaseAddress = new Uri("https://api.anthropic.com/"),
+		};
+		AnthropicReceiptExtractionService service = new(
+			httpClient, Options.Create(options), NullLogger<AnthropicReceiptExtractionService>.Instance);
+
+		byte[] image = BuildSyntheticPng(800, 800);
+		image.Length.Should().BeGreaterThan(options.MaxRawImageBytes);
+
+		// Act
+		Action act = () => service.DownscaleIfNeeded(image);
+
+		// Assert — message names both the original and the final byte count.
+		ExceptionAssertions<InvalidOperationException> thrown = act.Should().Throw<InvalidOperationException>();
+		thrown.Which.Message.Should().Contain("could not be downscaled");
+		thrown.Which.Message.Should().Contain($"original={image.Length}");
+		thrown.Which.Message.Should().Contain("final=");
+		thrown.Which.Message.Should().Contain("attempts");
+	}
+
+	[Fact]
+	public void DownscaleIfNeeded_LogsDownscaleAtInfo()
+	{
+		// Arrange — first downscale path must log at Info so operators see the cap engage
+		// in production telemetry. The log must include the original/final byte counts
+		// and scale factor — the same info echoed in the failure exception, so a future
+		// silent regression (downscale stops but logs nothing) is detectable.
+		AnthropicOptions options = new()
+		{
+			ApiKey = "test-api-key",
+			Model = "claude-haiku-4-5",
+			TimeoutSeconds = 30,
+			MaxRawImageBytes = 200_000,
+		};
+		CapturingLogger<AnthropicReceiptExtractionService> logger = new();
+		HttpClient httpClient = new(CreateHandler(WrapInToolUseEnvelope("""{ "schema_version": 1 }""")))
+		{
+			BaseAddress = new Uri("https://api.anthropic.com/"),
+		};
+		AnthropicReceiptExtractionService service = new(
+			httpClient, Options.Create(options), logger);
+
+		byte[] largeImage = BuildSyntheticPng(2000, 2000);
+
+		// Act
+		service.DownscaleIfNeeded(largeImage);
+
+		// Assert
+		logger.Records.Should().Contain(record =>
+			record.Level == LogLevel.Information
+			&& record.FormattedMessage.Contains("downscaled")
+			&& record.FormattedMessage.Contains("originalBytes=")
+			&& record.FormattedMessage.Contains("finalBytes=")
+			&& record.FormattedMessage.Contains("scale="));
+	}
+
+	[Fact]
+	public void ResamplePng_ScalesLinearDimensions()
+	{
+		// Arrange / Act
+		byte[] source = BuildSyntheticPng(400, 200);
+		byte[] resampled = AnthropicReceiptExtractionService.ResamplePng(source, 0.5);
+
+		// Assert — decoded output has half the linear dimensions.
+		using SKBitmap decoded = SKBitmap.Decode(resampled);
+		decoded.Width.Should().BeCloseTo(200, 1);
+		decoded.Height.Should().BeCloseTo(100, 1);
+	}
+
+	[Fact]
+	public void ResamplePng_FloorsAtOnePixel()
+	{
+		// Arrange — extreme scale must not produce zero-pixel output; the helper floors
+		// dimensions at 1 to keep SkiaSharp's resize call from rejecting the input.
+		byte[] source = BuildSyntheticPng(10, 10);
+
+		// Act
+		byte[] resampled = AnthropicReceiptExtractionService.ResamplePng(source, 0.001);
+
+		// Assert
+		using SKBitmap decoded = SKBitmap.Decode(resampled);
+		decoded.Width.Should().BeGreaterThanOrEqualTo(1);
+		decoded.Height.Should().BeGreaterThanOrEqualTo(1);
+	}
+
+	// ----------------------------------------------------------------------
+	// RECEIPTS-654: Resilience-pipeline retry predicate.
+	// Permanent client errors (400, 401, 403, 404, 422) must NOT be retried.
+	// Transient errors (408, 429, 500, 502, 503, 504, 529) MUST be retried.
+	// ----------------------------------------------------------------------
+
+	/// <summary>
+	/// Counts handler invocations, returns the configured response body and status on every
+	/// call. The status is stable so retry-driven invocations all hit the same outcome —
+	/// useful for "must be invoked exactly once" assertions on permanent errors.
+	/// </summary>
+	private static (HttpMessageHandler Handler, Func<int> CallCount) CreateCountingHandler(
+		HttpStatusCode status,
+		string body = "{}")
+	{
+		int callCount = 0;
+		Mock<HttpMessageHandler> handlerMock = new();
+		handlerMock.Protected()
+			.Setup<Task<HttpResponseMessage>>("SendAsync",
+				ItExpr.IsAny<HttpRequestMessage>(),
+				ItExpr.IsAny<CancellationToken>())
+			.Returns(() =>
+			{
+				Interlocked.Increment(ref callCount);
+				return Task.FromResult(new HttpResponseMessage(status)
+				{
+					Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json"),
+				});
+			});
+		return (handlerMock.Object, () => callCount);
+	}
+
+	private static async Task RunWithProductionPipelineAsync(
+		HttpMessageHandler primaryHandler,
+		AnthropicOptions options,
+		Func<IReceiptExtractionService, Task> action)
+	{
+		ServiceCollection services = new();
+		services.AddLogging();
+		services.AddSingleton<IOptions<AnthropicOptions>>(Options.Create(options));
+#pragma warning disable EXTEXP0001
+		services.AddHttpClient<IReceiptExtractionService, AnthropicReceiptExtractionService>(client =>
+		{
+			client.BaseAddress = new Uri(options.BaseUrl.TrimEnd('/') + "/");
+			client.DefaultRequestHeaders.Add("x-api-key", options.ApiKey);
+			client.DefaultRequestHeaders.Add("anthropic-version", options.ApiVersion);
+			client.Timeout = Timeout.InfiniteTimeSpan;
+		})
+		.ConfigurePrimaryHttpMessageHandler(() => primaryHandler)
+		.RemoveAllResilienceHandlers()
+		.AddResilienceHandler("anthropic-vlm-test", builder =>
+			InfrastructureService.ConfigureAnthropicVlmResilience(builder, options));
+#pragma warning restore EXTEXP0001
+
+		await using ServiceProvider sp = services.BuildServiceProvider();
+		IReceiptExtractionService service = sp.GetRequiredService<IReceiptExtractionService>();
+		await action(service);
+	}
+
+	[Theory]
+	[InlineData(HttpStatusCode.BadRequest)]                  // 400
+	[InlineData(HttpStatusCode.Unauthorized)]                // 401
+	[InlineData(HttpStatusCode.Forbidden)]                   // 403
+	[InlineData(HttpStatusCode.NotFound)]                    // 404
+	[InlineData(HttpStatusCode.UnprocessableEntity)]         // 422
+	public async Task Resilience_PermanentClientError_IsNotRetried(HttpStatusCode status)
+	{
+		// Arrange — permanent client errors (RECEIPTS-654) must short-circuit the retry
+		// pipeline. The Anthropic 400 (image-too-large) was the canonical failure mode
+		// that drove this change; the other 4xx codes are covered to lock in the policy.
+		(HttpMessageHandler handler, Func<int> callCount) = CreateCountingHandler(
+			status,
+			"""{ "type": "error", "error": { "type": "invalid_request_error", "message": "test" } }""");
+		AnthropicOptions options = new()
+		{
+			ApiKey = "test-api-key",
+			Model = "claude-haiku-4-5",
+			TimeoutSeconds = 30,
+		};
+
+		await RunWithProductionPipelineAsync(handler, options, async service =>
+		{
+			// Act
+			Func<Task> act = () => service.ExtractAsync(FakeImage, CancellationToken.None);
+
+			// Assert — the call surfaces the upstream error with a single handler invocation.
+			await act.Should().ThrowAsync<InvalidOperationException>();
+			callCount().Should().Be(1, $"HTTP {(int)status} is permanent and must not be retried");
+		});
+	}
+
+	[Theory]
+	[InlineData(HttpStatusCode.RequestTimeout)]              // 408
+	[InlineData(HttpStatusCode.TooManyRequests)]             // 429
+	[InlineData(HttpStatusCode.InternalServerError)]         // 500
+	[InlineData(HttpStatusCode.BadGateway)]                  // 502
+	[InlineData(HttpStatusCode.ServiceUnavailable)]          // 503
+	[InlineData(HttpStatusCode.GatewayTimeout)]              // 504
+	[InlineData((HttpStatusCode)529)]                        // 529 (Anthropic overloaded)
+	public async Task Resilience_TransientServerError_IsRetried(HttpStatusCode status)
+	{
+		// Arrange — transient errors must be retried. The pipeline retries up to 3 times
+		// (4 total attempts). Asserting >1 invocations is sufficient — the exact retry
+		// count depends on the circuit breaker / Retry-After / jitter machinery and is
+		// not the contract under test here.
+		(HttpMessageHandler handler, Func<int> callCount) = CreateCountingHandler(
+			status,
+			"""{ "type": "error", "error": { "type": "transient", "message": "test" } }""");
+		AnthropicOptions options = new()
+		{
+			ApiKey = "test-api-key",
+			Model = "claude-haiku-4-5",
+			TimeoutSeconds = 30,
+		};
+
+		await RunWithProductionPipelineAsync(handler, options, async service =>
+		{
+			// Act
+			Func<Task> act = () => service.ExtractAsync(FakeImage, CancellationToken.None);
+
+			// Assert — transient errors trigger retries.
+			await act.Should().ThrowAsync<Exception>();
+			callCount().Should().BeGreaterThan(1, $"HTTP {(int)status} is transient and must be retried");
+		});
+	}
+
+	[Fact]
+	public async Task Resilience_TransientThenSuccess_ReturnsReceipt()
+	{
+		// Arrange — fail twice with 503, then succeed. Mirror the Ollama test
+		// (ExtractAsync_RetryThenSuccess_ReturnsReceipt) on the Anthropic side so the
+		// retry pipeline is verified to actually recover, not just to swallow errors.
+		int callCount = 0;
+		string successBody = WrapInToolUseEnvelope("""{ "schema_version": 1, "store": { "name": "Walmart" }, "total": 10.00 }""");
+		Mock<HttpMessageHandler> handlerMock = new();
+		handlerMock.Protected()
+			.Setup<Task<HttpResponseMessage>>("SendAsync",
+				ItExpr.IsAny<HttpRequestMessage>(),
+				ItExpr.IsAny<CancellationToken>())
+			.Returns(() =>
+			{
+				int call = Interlocked.Increment(ref callCount);
+				HttpResponseMessage message = call <= 2
+					? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+					{
+						Content = new StringContent("{}"),
+					}
+					: new HttpResponseMessage(HttpStatusCode.OK)
+					{
+						Content = new StringContent(successBody, System.Text.Encoding.UTF8, "application/json"),
+					};
+				return Task.FromResult(message);
+			});
+		AnthropicOptions options = new()
+		{
+			ApiKey = "test-api-key",
+			Model = "claude-haiku-4-5",
+			TimeoutSeconds = 30,
+		};
+
+		await RunWithProductionPipelineAsync(handlerMock.Object, options, async service =>
+		{
+			// Act
+			ParsedReceipt receipt = await service.ExtractAsync(FakeImage, CancellationToken.None);
+
+			// Assert
+			receipt.StoreName.Value.Should().Be("Walmart");
+			callCount.Should().Be(3); // 2 transient failures + 1 success
+		});
+	}
+
+	[Fact]
+	public void IsRetryableStatusCode_PermanentErrors_ReturnsFalse()
+	{
+		// Direct unit test of the predicate. Locks in the contract that no permanent
+		// 4xx is retryable.
+		InfrastructureService.IsRetryableStatusCode(HttpStatusCode.BadRequest).Should().BeFalse();
+		InfrastructureService.IsRetryableStatusCode(HttpStatusCode.Unauthorized).Should().BeFalse();
+		InfrastructureService.IsRetryableStatusCode(HttpStatusCode.Forbidden).Should().BeFalse();
+		InfrastructureService.IsRetryableStatusCode(HttpStatusCode.NotFound).Should().BeFalse();
+		InfrastructureService.IsRetryableStatusCode(HttpStatusCode.UnprocessableEntity).Should().BeFalse();
+	}
+
+	[Fact]
+	public void IsRetryableStatusCode_TransientErrors_ReturnsTrue()
+	{
+		InfrastructureService.IsRetryableStatusCode(HttpStatusCode.RequestTimeout).Should().BeTrue();
+		InfrastructureService.IsRetryableStatusCode(HttpStatusCode.TooManyRequests).Should().BeTrue();
+		InfrastructureService.IsRetryableStatusCode(HttpStatusCode.InternalServerError).Should().BeTrue();
+		InfrastructureService.IsRetryableStatusCode(HttpStatusCode.BadGateway).Should().BeTrue();
+		InfrastructureService.IsRetryableStatusCode(HttpStatusCode.ServiceUnavailable).Should().BeTrue();
+		InfrastructureService.IsRetryableStatusCode(HttpStatusCode.GatewayTimeout).Should().BeTrue();
+		InfrastructureService.IsRetryableStatusCode((HttpStatusCode)529).Should().BeTrue();
+	}
+
+	[Fact]
+	public void IsRetryableStatusCode_SuccessCodes_ReturnsFalse()
+	{
+		// Sanity check — a 200 is not retryable. Helps lock in the policy against an
+		// accidental "retry on anything not 2xx" regression.
+		InfrastructureService.IsRetryableStatusCode(HttpStatusCode.OK).Should().BeFalse();
+		InfrastructureService.IsRetryableStatusCode(HttpStatusCode.Created).Should().BeFalse();
+		InfrastructureService.IsRetryableStatusCode(HttpStatusCode.NoContent).Should().BeFalse();
+	}
+
+	[Fact]
+	public async Task ThrowFromAnthropicError_PreservesUpstreamMessage()
+	{
+		// Arrange — the user-facing failure mode driven by the original RECEIPTS-654 bug
+		// report: a 400 from Anthropic carries an actionable error message
+		// ("image exceeds 5 MB maximum: ..."). The InvalidOperationException must carry
+		// that message verbatim so it propagates through ScanReceiptCommandHandler and
+		// surfaces in the 422 problem-details `detail` field — the user uploading a
+		// too-large PDF needs actionable feedback, not "Failed to process scanned receipt".
+		const string upstreamMessage = "messages.0.content.0.image.source.base64: image exceeds 5 MB maximum: 7827556 bytes > 5242880 bytes";
+		string errorBody = $$"""
+			{
+			  "type": "error",
+			  "error": {
+			    "type": "invalid_request_error",
+			    "message": "{{upstreamMessage}}"
+			  }
+			}
+			""";
+		AnthropicReceiptExtractionService service = CreateService(CreateHandler(errorBody, HttpStatusCode.BadRequest));
+
+		// Act
+		Func<Task> act = () => service.ExtractAsync(FakeImage, CancellationToken.None);
+
+		// Assert — the upstream message is verbatim in the exception message, available
+		// for ReceiptScanController to relay as the 422 detail.
+		ExceptionAssertions<InvalidOperationException> thrown = await act.Should().ThrowAsync<InvalidOperationException>();
+		thrown.Which.Message.Should().Contain(upstreamMessage);
+		thrown.Which.Message.Should().Contain("HTTP 400");
+		thrown.Which.Message.Should().Contain("invalid_request_error");
 	}
 
 	/// <summary>
