@@ -9,9 +9,9 @@ export type {
   ConfidenceLevel,
   ReceiptConfidenceMap,
   ScanInitialValues,
-  ScanPayment,
+  ScanProposedTransaction,
   ProposedReceiptResponse,
   ProposedReceiptItemResponse,
   ProposedTaxLineResponse,
-  ProposedPaymentResponse,
+  ProposedTransactionResponse,
 } from "./types";

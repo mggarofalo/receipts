@@ -26,17 +26,21 @@ describe("scanProposal fixture", () => {
     expect(() => mapProposalToConfidenceMap(scanProposal)).not.toThrow();
   });
 
-  it("provides a non-empty payments array", () => {
-    // The wizard renders payment chips; an empty array silently hides them
-    // and would mask a real regression in upstream payment extraction.
-    expect(scanProposal.payments.length).toBeGreaterThan(0);
-    for (const payment of scanProposal.payments) {
-      expect(payment).toHaveProperty("method");
-      expect(payment).toHaveProperty("amount");
-      expect(payment).toHaveProperty("lastFour");
-      expect(payment).toHaveProperty("methodConfidence");
-      expect(payment).toHaveProperty("amountConfidence");
-      expect(payment).toHaveProperty("lastFourConfidence");
+  it("provides a non-empty proposedTransactions array (RECEIPTS-658)", () => {
+    // The wizard pre-populates Transaction rows from this array; an empty
+    // value silently hides the prefilled rows and would mask an upstream
+    // resolver regression.
+    expect(scanProposal.proposedTransactions).toBeDefined();
+    expect(scanProposal.proposedTransactions!.length).toBeGreaterThan(0);
+    for (const txn of scanProposal.proposedTransactions!) {
+      expect(txn).toHaveProperty("cardId");
+      expect(txn).toHaveProperty("cardIdConfidence");
+      expect(txn).toHaveProperty("accountId");
+      expect(txn).toHaveProperty("accountIdConfidence");
+      expect(txn).toHaveProperty("amount");
+      expect(txn).toHaveProperty("amountConfidence");
+      expect(txn).toHaveProperty("date");
+      expect(txn).toHaveProperty("dateConfidence");
     }
   });
 

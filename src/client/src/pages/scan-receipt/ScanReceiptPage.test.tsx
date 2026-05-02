@@ -27,7 +27,12 @@ vi.mock("@/pages/new-receipt/NewReceiptPage", () => ({
     initialValues?: {
       header: { location: string; storeAddress: string; storePhone: string };
       metadata: { receiptId: string; storeNumber: string; terminalId: string };
-      payments: Array<{ method: string; amount: number; lastFour: string }>;
+      proposedTransactions: Array<{
+        cardId: string;
+        accountId: string;
+        amount: number;
+        date: string;
+      }>;
     };
     confidenceMap?: Record<string, unknown>;
     droppedPageCount?: number;
@@ -53,11 +58,12 @@ vi.mock("@/pages/new-receipt/NewReceiptPage", () => ({
           {initialValues.metadata.receiptId}
         </span>
       )}
-      {initialValues?.payments && initialValues.payments.length > 0 && (
-        <span data-testid="prepopulated-payments">
-          {JSON.stringify(initialValues.payments)}
-        </span>
-      )}
+      {initialValues?.proposedTransactions &&
+        initialValues.proposedTransactions.length > 0 && (
+          <span data-testid="prepopulated-transactions">
+            {JSON.stringify(initialValues.proposedTransactions)}
+          </span>
+        )}
       {confidenceMap && (
         <span data-testid="confidence-map">{JSON.stringify(confidenceMap)}</span>
       )}
@@ -96,6 +102,7 @@ function makeProposal(
     paymentMethod: null,
     paymentMethodConfidence: "high",
     payments: [],
+    proposedTransactions: [],
     receiptId: null,
     receiptIdConfidence: "high",
     storeNumber: null,
@@ -302,7 +309,7 @@ describe("ScanReceiptPage", () => {
     expect(screen.getByTestId("dropped-page-count")).toHaveTextContent("0");
   });
 
-  it("forwards new fields (address, phone, metadata, payments) to the wizard", async () => {
+  it("forwards new fields (address, phone, metadata, proposedTransactions) to the wizard", async () => {
     mockMutate.mockImplementation(
       (
         _file: File,
@@ -315,14 +322,17 @@ describe("ScanReceiptPage", () => {
             receiptId: "TX-987654",
             storeNumber: "0042",
             terminalId: "T01",
-            payments: [
+            proposedTransactions: [
               {
-                method: "MASTERCARD",
-                methodConfidence: "high",
+                cardId: "card-99",
+                cardIdConfidence: "high",
+                accountId: "acct-99",
+                accountIdConfidence: "high",
                 amount: 54.32,
                 amountConfidence: "high",
-                lastFour: "4538",
-                lastFourConfidence: "high",
+                date: "2024-06-15",
+                dateConfidence: "high",
+                methodSnapshot: "MASTERCARD",
               },
             ],
           }),
@@ -351,11 +361,16 @@ describe("ScanReceiptPage", () => {
     expect(screen.getByTestId("prepopulated-receipt-id")).toHaveTextContent(
       "TX-987654",
     );
-    const payments = JSON.parse(
-      screen.getByTestId("prepopulated-payments").textContent!,
+    const proposedTransactions = JSON.parse(
+      screen.getByTestId("prepopulated-transactions").textContent!,
     );
-    expect(payments).toEqual([
-      { method: "MASTERCARD", amount: 54.32, lastFour: "4538" },
+    expect(proposedTransactions).toEqual([
+      {
+        cardId: "card-99",
+        accountId: "acct-99",
+        amount: 54.32,
+        date: "2024-06-15",
+      },
     ]);
   });
 });

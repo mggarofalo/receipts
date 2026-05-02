@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   initialItemsAndConfidence,
-  initialPaymentsAndConfidence,
+  initialTransactionsAndConfidence,
   mapProposalToInitialValues,
   mapProposalToConfidenceMap,
 } from "./proposalMappers";
@@ -31,6 +31,7 @@ function makeProposal(
     paymentMethod: null,
     paymentMethodConfidence: "high",
     payments: [],
+    proposedTransactions: [],
     receiptId: null,
     receiptIdConfidence: "high",
     storeNumber: null,
@@ -86,34 +87,96 @@ describe("mapProposalToInitialValues", () => {
     });
   });
 
-  it("populates payments array preserving order", () => {
+  it("populates proposedTransactions array preserving order (RECEIPTS-658)", () => {
     const proposal = makeProposal({
-      payments: [
+      proposedTransactions: [
         {
-          method: "MASTERCARD",
-          methodConfidence: "high",
+          cardId: "card-a",
+          cardIdConfidence: "high",
+          accountId: "acct-a",
+          accountIdConfidence: "high",
           amount: 54.32,
           amountConfidence: "high",
-          lastFour: "4538",
-          lastFourConfidence: "high",
+          date: "2024-06-15",
+          dateConfidence: "high",
+          methodSnapshot: "MASTERCARD",
         },
         {
-          method: "Cash",
-          methodConfidence: "high",
+          cardId: "card-b",
+          cardIdConfidence: "high",
+          accountId: "acct-b",
+          accountIdConfidence: "high",
           amount: 5.0,
           amountConfidence: "high",
-          lastFour: null,
-          lastFourConfidence: "high",
+          date: "2024-06-15",
+          dateConfidence: "high",
+          methodSnapshot: "VISA",
         },
       ],
     });
 
     const result = mapProposalToInitialValues(proposal);
 
-    expect(result.payments).toEqual([
-      { method: "MASTERCARD", amount: 54.32, lastFour: "4538" },
-      { method: "Cash", amount: 5.0, lastFour: "" },
+    expect(result.proposedTransactions).toEqual([
+      {
+        cardId: "card-a",
+        accountId: "acct-a",
+        amount: 54.32,
+        date: "2024-06-15",
+      },
+      {
+        cardId: "card-b",
+        accountId: "acct-b",
+        amount: 5.0,
+        date: "2024-06-15",
+      },
     ]);
+  });
+
+  it("falls back to proposal date when transaction date is missing", () => {
+    const proposal = makeProposal({
+      date: "2024-06-15",
+      proposedTransactions: [
+        {
+          cardId: "card-a",
+          cardIdConfidence: "high",
+          accountId: "acct-a",
+          accountIdConfidence: "high",
+          amount: 10,
+          amountConfidence: "high",
+          date: null,
+          dateConfidence: "none",
+          methodSnapshot: null,
+        },
+      ],
+    });
+
+    const result = mapProposalToInitialValues(proposal);
+
+    expect(result.proposedTransactions[0].date).toBe("2024-06-15");
+  });
+
+  it("coerces null cardId/accountId to empty strings (unmatched payment)", () => {
+    const proposal = makeProposal({
+      proposedTransactions: [
+        {
+          cardId: null,
+          cardIdConfidence: "none",
+          accountId: null,
+          accountIdConfidence: "none",
+          amount: 10,
+          amountConfidence: "high",
+          date: "2024-06-15",
+          dateConfidence: "high",
+          methodSnapshot: "Cash",
+        },
+      ],
+    });
+
+    const result = mapProposalToInitialValues(proposal);
+
+    expect(result.proposedTransactions[0].cardId).toBe("");
+    expect(result.proposedTransactions[0].accountId).toBe("");
   });
 
   it("populates per-item taxCode", () => {
@@ -163,8 +226,19 @@ describe("mapProposalToInitialValues", () => {
       storeNumber: "",
       terminalId: "",
     });
-    expect(result.payments).toEqual([]);
+    expect(result.proposedTransactions).toEqual([]);
     expect(result.items).toEqual([]);
+  });
+
+  it("treats omitted proposedTransactions as an empty array", () => {
+    // Defensive guard: the OpenAPI contract declares proposedTransactions as
+    // optional; older fixtures or partially-stubbed handlers may omit it.
+    const proposal = makeProposal();
+    delete (proposal as { proposedTransactions?: unknown }).proposedTransactions;
+
+    const result = mapProposalToInitialValues(proposal);
+
+    expect(result.proposedTransactions).toEqual([]);
   });
 
   it("strips ISO time component from a datetime date", () => {
@@ -413,26 +487,6 @@ describe("mapProposalToConfidenceMap", () => {
     expect(result.taxAmount).toBe("low");
   });
 
-  it("flags low/medium confidence but never 'none' on per-payment fields", () => {
-    const proposal = makeProposal({
-      payments: [
-        {
-          method: "VISA",
-          methodConfidence: "low",
-          amount: 5,
-          amountConfidence: "high",
-          lastFour: null,
-          lastFourConfidence: "none",
-        },
-      ],
-    });
-
-    const result = mapProposalToConfidenceMap(proposal);
-
-    // method: "low" surfaces; amount/lastFour are dropped (high + none).
-    expect(result.payments).toEqual([{ method: "low" }]);
-  });
-
   it("flags low/medium confidence on the new fields", () => {
     const proposal = makeProposal({
       storeAddress: "123 Main St",
@@ -458,47 +512,87 @@ describe("mapProposalToConfidenceMap", () => {
     });
   });
 
-  it("emits a payments array entry for each payment, dropping high-confidence fields", () => {
+  it("emits a transactions array entry for each pre-resolved transaction, dropping high-confidence fields", () => {
     const proposal = makeProposal({
-      payments: [
+      proposedTransactions: [
         {
-          method: "MASTERCARD",
-          methodConfidence: "high",
+          cardId: "card-a",
+          cardIdConfidence: "low",
+          accountId: "acct-a",
+          accountIdConfidence: "high",
           amount: 54.32,
           amountConfidence: "low",
-          lastFour: "4538",
-          lastFourConfidence: "medium",
+          date: "2024-06-15",
+          dateConfidence: "medium",
+          methodSnapshot: "MASTERCARD",
         },
         {
-          method: "Cash",
-          methodConfidence: "high",
+          cardId: "card-b",
+          cardIdConfidence: "high",
+          accountId: "acct-b",
+          accountIdConfidence: "high",
           amount: 5,
           amountConfidence: "high",
-          lastFour: null,
-          lastFourConfidence: "high",
+          date: "2024-06-15",
+          dateConfidence: "high",
+          methodSnapshot: "Cash",
         },
       ],
     });
 
     const result = mapProposalToConfidenceMap(proposal);
 
-    // The empty object `{}` for the all-high-confidence "Cash" payment is
-    // intentional: the array is positional (entry N corresponds to payment N),
-    // so we cannot omit "high"-only payments without misaligning indices.
-    // Each high-confidence field is dropped from its entry, leaving an empty
-    // object that contributes nothing to the UI but preserves position.
-    expect(result.payments).toEqual([
-      { amount: "low", lastFour: "medium" },
+    // The empty object `{}` for the all-high-confidence transaction is
+    // intentional: the array is positional (entry N corresponds to row N),
+    // so we cannot omit "high"-only entries without misaligning indices.
+    expect(result.transactions).toEqual([
+      { cardId: "low", amount: "low", date: "medium" },
       {},
     ]);
   });
 
-  it("does not include payments key when no payments exist", () => {
-    const proposal = makeProposal({ payments: [] });
+  it("flags low cardId confidence (ambiguous lookup) but never 'none'", () => {
+    // A no-match yields `cardIdConfidence: "none"`; the user has no card to
+    // confirm so no badge is needed. An ambiguous lookup yields "low" so the
+    // user is prompted to pick the right card.
+    const proposal = makeProposal({
+      proposedTransactions: [
+        {
+          cardId: null,
+          cardIdConfidence: "none",
+          accountId: null,
+          accountIdConfidence: "none",
+          amount: 5,
+          amountConfidence: "high",
+          date: "2024-06-15",
+          dateConfidence: "high",
+          methodSnapshot: "Cash",
+        },
+        {
+          cardId: null,
+          cardIdConfidence: "low",
+          accountId: null,
+          accountIdConfidence: "low",
+          amount: 5,
+          amountConfidence: "high",
+          date: "2024-06-15",
+          dateConfidence: "high",
+          methodSnapshot: "VISA",
+        },
+      ],
+    });
 
     const result = mapProposalToConfidenceMap(proposal);
 
-    expect(result.payments).toBeUndefined();
+    expect(result.transactions).toEqual([{}, { cardId: "low" }]);
+  });
+
+  it("does not include transactions key when proposedTransactions is empty", () => {
+    const proposal = makeProposal({ proposedTransactions: [] });
+
+    const result = mapProposalToConfidenceMap(proposal);
+
+    expect(result.transactions).toBeUndefined();
   });
 
   it("includes items entries only when at least one taxCode confidence is non-high", () => {
@@ -543,7 +637,7 @@ describe("initialItemsAndConfidence", () => {
         storePhone: "",
       },
       metadata: { receiptId: "", storeNumber: "", terminalId: "" },
-      payments: [],
+      proposedTransactions: [],
       items,
     };
   }
@@ -656,9 +750,9 @@ describe("initialItemsAndConfidence", () => {
   });
 });
 
-describe("initialPaymentsAndConfidence", () => {
+describe("initialTransactionsAndConfidence", () => {
   function makeInitial(
-    payments: ScanInitialValues["payments"],
+    proposedTransactions: ScanInitialValues["proposedTransactions"],
   ): ScanInitialValues {
     return {
       header: {
@@ -669,57 +763,85 @@ describe("initialPaymentsAndConfidence", () => {
         storePhone: "",
       },
       metadata: { receiptId: "", storeNumber: "", terminalId: "" },
-      payments,
+      proposedTransactions,
       items: [],
     };
   }
 
-  it("returns empty payments + empty Map when initialValues is undefined", () => {
-    const result = initialPaymentsAndConfidence(undefined, undefined);
-    expect(result.payments).toEqual([]);
-    expect(result.paymentConfidenceById.size).toBe(0);
+  it("returns empty transactions + empty Map when initialValues is undefined", () => {
+    const result = initialTransactionsAndConfidence(undefined, undefined);
+    expect(result.transactions).toEqual([]);
+    expect(result.transactionConfidenceById.size).toBe(0);
   });
 
-  it("preserves method/amount/lastFour fields and assigns ids", () => {
-    const result = initialPaymentsAndConfidence(
+  it("returns empty transactions + empty Map when initialValues has no proposedTransactions", () => {
+    const result = initialTransactionsAndConfidence(makeInitial([]), undefined);
+    expect(result.transactions).toEqual([]);
+    expect(result.transactionConfidenceById.size).toBe(0);
+  });
+
+  it("preserves cardId/accountId/amount/date and assigns unique ids", () => {
+    const result = initialTransactionsAndConfidence(
       makeInitial([
-        { method: "MASTERCARD", amount: 54.32, lastFour: "4538" },
-        { method: "Cash", amount: 5, lastFour: "" },
+        {
+          cardId: "card-a",
+          accountId: "acct-a",
+          amount: 54.32,
+          date: "2024-06-15",
+        },
+        {
+          cardId: "card-b",
+          accountId: "acct-b",
+          amount: 5,
+          date: "2024-06-15",
+        },
       ]),
       undefined,
     );
 
-    expect(result.payments).toHaveLength(2);
-    expect(result.payments[0]).toMatchObject({
-      method: "MASTERCARD",
+    expect(result.transactions).toHaveLength(2);
+    expect(result.transactions[0]).toMatchObject({
+      cardId: "card-a",
+      accountId: "acct-a",
       amount: 54.32,
-      lastFour: "4538",
+      date: "2024-06-15",
     });
-    expect(result.payments[1]).toMatchObject({
-      method: "Cash",
+    expect(result.transactions[1]).toMatchObject({
+      cardId: "card-b",
+      accountId: "acct-b",
       amount: 5,
-      lastFour: "",
+      date: "2024-06-15",
     });
-    expect(result.payments[0].id).toBeTruthy();
-    expect(result.payments[0].id).not.toBe(result.payments[1].id);
+    expect(result.transactions[0].id).toBeTruthy();
+    expect(result.transactions[0].id).not.toBe(result.transactions[1].id);
   });
 
-  it("pairs each payment id with its confidence entry", () => {
-    const result = initialPaymentsAndConfidence(
+  it("pairs each transaction id with its confidence entry", () => {
+    const result = initialTransactionsAndConfidence(
       makeInitial([
-        { method: "MASTERCARD", amount: 54.32, lastFour: "4538" },
-        { method: "Cash", amount: 5, lastFour: "" },
+        {
+          cardId: "card-a",
+          accountId: "acct-a",
+          amount: 54.32,
+          date: "2024-06-15",
+        },
+        {
+          cardId: "card-b",
+          accountId: "acct-b",
+          amount: 5,
+          date: "2024-06-15",
+        },
       ]),
       {
-        payments: [{ method: "low" }, { amount: "medium" }],
+        transactions: [{ cardId: "low" }, { amount: "medium" }],
       },
     );
 
-    expect(result.paymentConfidenceById.get(result.payments[0].id)).toEqual({
-      method: "low",
-    });
-    expect(result.paymentConfidenceById.get(result.payments[1].id)).toEqual({
-      amount: "medium",
-    });
+    expect(
+      result.transactionConfidenceById.get(result.transactions[0].id),
+    ).toEqual({ cardId: "low" });
+    expect(
+      result.transactionConfidenceById.get(result.transactions[1].id),
+    ).toEqual({ amount: "medium" });
   });
 });

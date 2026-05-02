@@ -42,13 +42,33 @@ vi.mock("sonner", () => ({
 // Mock child sections to isolate page logic
 vi.mock("./TransactionsSection", () => ({
   TransactionsSection: ({
+    transactions,
     onChange,
+    confidenceById,
   }: {
-    transactions: unknown[];
+    transactions: Array<{
+      id: string;
+      cardId: string;
+      accountId: string;
+      amount: number;
+      date: string;
+    }>;
     receiptDate: string;
     onChange: (data: unknown[]) => void;
+    confidenceById?: Map<string, { cardId?: string; amount?: string }>;
   }) => (
     <div data-testid="transactions-section">
+      <span data-testid="transactions-count">{transactions.length}</span>
+      {confidenceById && (
+        <span data-testid="transactions-confidence-size">
+          {confidenceById.size}
+        </span>
+      )}
+      {transactions.map((t) => (
+        <span key={t.id} data-testid={`txn-${t.cardId || "empty"}`}>
+          {t.cardId}:{t.accountId}:{t.amount}:{t.date}
+        </span>
+      ))}
       <button
         onClick={() =>
           onChange([
@@ -97,26 +117,6 @@ vi.mock("./LineItemsSection", () => ({
       >
         Add Item
       </button>
-    </div>
-  ),
-}));
-
-vi.mock("./PaymentsSection", () => ({
-  PaymentsSection: ({
-    payments,
-    onChange,
-  }: {
-    payments: Array<{ id: string; method: string; amount: number; lastFour: string }>;
-    onChange: (data: unknown[]) => void;
-  }) => (
-    <div data-testid="payments-section">
-      <span data-testid="payments-count">{payments.length}</span>
-      {payments.map((p) => (
-        <span key={p.id} data-testid={`payment-${p.method}`}>
-          {p.method}:{p.amount}:{p.lastFour}
-        </span>
-      ))}
-      <button onClick={() => onChange([])}>Clear Payments</button>
     </div>
   ),
 }));
@@ -390,7 +390,7 @@ describe("NewReceiptPage", () => {
             storePhone: "(555) 123-4567",
           },
           metadata: { receiptId: "", storeNumber: "", terminalId: "" },
-          payments: [],
+          proposedTransactions: [],
           items: [],
         }}
       />,
@@ -427,7 +427,7 @@ describe("NewReceiptPage", () => {
             storeNumber: "0042",
             terminalId: "T01",
           },
-          payments: [],
+          proposedTransactions: [],
           items: [],
         }}
       />,
@@ -447,12 +447,14 @@ describe("NewReceiptPage", () => {
     expect(screen.getByText("T01")).toBeInTheDocument();
   });
 
-  it("does not render the payments section when no payments are present", () => {
+  // --- Pre-populated transactions (RECEIPTS-658) ---
+
+  it("does not render any transactions when initial proposedTransactions is empty", () => {
     renderWithProviders(<NewReceiptPage />);
-    expect(screen.queryByTestId("payments-section")).not.toBeInTheDocument();
+    expect(screen.getByTestId("transactions-count")).toHaveTextContent("0");
   });
 
-  it("renders the payments section when initial payments are populated", () => {
+  it("pre-populates transactions from initial proposedTransactions", () => {
     renderWithProviders(
       <NewReceiptPage
         initialValues={{
@@ -464,27 +466,26 @@ describe("NewReceiptPage", () => {
             storePhone: "",
           },
           metadata: { receiptId: "", storeNumber: "", terminalId: "" },
-          payments: [
-            { method: "MASTERCARD", amount: 54.32, lastFour: "4538" },
+          proposedTransactions: [
+            {
+              cardId: "card-99",
+              accountId: "acct-99",
+              amount: 10.01,
+              date: "2024-06-15",
+            },
           ],
           items: [],
         }}
       />,
     );
 
-    expect(screen.getByTestId("payments-section")).toBeInTheDocument();
-    expect(screen.getByTestId("payments-count")).toHaveTextContent("1");
-    expect(screen.getByTestId("payment-MASTERCARD")).toHaveTextContent(
-      "MASTERCARD:54.32:4538",
+    expect(screen.getByTestId("transactions-count")).toHaveTextContent("1");
+    expect(screen.getByTestId("txn-card-99")).toHaveTextContent(
+      "card-99:acct-99:10.01:2024-06-15",
     );
   });
 
-  it("keeps the payments section visible after the user removes every detected payment", async () => {
-    // Regression for RECEIPTS-644: gating visibility on the live `payments`
-    // array length trapped users — emptying the list hid the entire section
-    // (including the Add Payment button) with no path to recover. The fix
-    // pins visibility to initial presence captured at mount.
-    const user = userEvent.setup();
+  it("builds a transaction-confidence Map keyed by transaction id when scan transactions are present", () => {
     renderWithProviders(
       <NewReceiptPage
         initialValues={{
@@ -496,26 +497,23 @@ describe("NewReceiptPage", () => {
             storePhone: "",
           },
           metadata: { receiptId: "", storeNumber: "", terminalId: "" },
-          payments: [
-            { method: "MASTERCARD", amount: 54.32, lastFour: "4538" },
+          proposedTransactions: [
+            {
+              cardId: "card-99",
+              accountId: "acct-99",
+              amount: 10.01,
+              date: "2024-06-15",
+            },
           ],
           items: [],
         }}
+        confidenceMap={{ transactions: [{ amount: "low" }] }}
       />,
     );
 
-    // Initially shown with one payment.
-    expect(screen.getByTestId("payments-section")).toBeInTheDocument();
-    expect(screen.getByTestId("payments-count")).toHaveTextContent("1");
-
-    // The mocked PaymentsSection exposes a "Clear Payments" button that
-    // sends an empty array to onChange — equivalent to the user removing
-    // every payment row.
-    await user.click(screen.getByText("Clear Payments"));
-
-    // Section still rendered — only the count drops to zero.
-    expect(screen.getByTestId("payments-section")).toBeInTheDocument();
-    expect(screen.getByTestId("payments-count")).toHaveTextContent("0");
+    expect(screen.getByTestId("transactions-confidence-size")).toHaveTextContent(
+      "1",
+    );
   });
 
   it("uses the pageTitle prop for the visible heading", () => {
@@ -547,7 +545,7 @@ describe("NewReceiptPage", () => {
             storePhone: "",
           },
           metadata: { receiptId: "", storeNumber: "", terminalId: "" },
-          payments: [],
+          proposedTransactions: [],
           items: [
             {
               receiptItemCode: "MILK",
@@ -584,7 +582,7 @@ describe("NewReceiptPage", () => {
             storePhone: "",
           },
           metadata: { receiptId: "", storeNumber: "", terminalId: "" },
-          payments: [],
+          proposedTransactions: [],
           items: [
             {
               receiptItemCode: "MILK",

@@ -25,10 +25,10 @@ interface UseReceiptSubmitResult {
  * history, the create-complete-receipt mutation, success/failure toasts,
  * and the final navigate to the new receipt.
  *
- * NOTE: storeAddress / storePhone / payments / metadata / taxCode are
- * accepted and reviewable in the UI but not yet persisted by the
- * `CreateCompleteReceipt` API. They will round-trip once the backend is
- * extended (tracked by separate issues under the VLM epic).
+ * NOTE: storeAddress / storePhone / metadata / taxCode are accepted and
+ * reviewable in the UI but not yet persisted by the `CreateCompleteReceipt`
+ * API. They will round-trip once the backend is extended (tracked by
+ * separate issues under the VLM epic).
  */
 export function useReceiptSubmit({
   form,
