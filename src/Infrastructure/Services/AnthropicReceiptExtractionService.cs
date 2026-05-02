@@ -246,6 +246,7 @@ public sealed class AnthropicReceiptExtractionService : IReceiptExtractionServic
 		int originalLength = imageBytes.Length;
 		int targetBytes = _options.MaxRawImageBytes;
 		byte[] current = imageBytes;
+		double cumulativeScale = 1.0;
 
 		for (int attempt = 1; attempt <= MaxDownscaleAttempts; attempt++)
 		{
@@ -255,6 +256,7 @@ public sealed class AnthropicReceiptExtractionService : IReceiptExtractionServic
 			// on natural images so a single pass usually suffices.
 			double rawScale = Math.Sqrt((double)targetBytes / current.Length);
 			double scale = Math.Min(rawScale, 1.0) * DownscaleSafetyMargin;
+			cumulativeScale *= scale;
 
 			byte[] resampled = ResamplePng(current, scale);
 
@@ -262,10 +264,13 @@ public sealed class AnthropicReceiptExtractionService : IReceiptExtractionServic
 			{
 				// First downscale wins: log once at Info so the operator sees the cap
 				// engaged. Subsequent passes are diagnostic-level only — they only happen
-				// on pathological inputs.
+				// on pathological inputs. The logged scale is cumulative from the
+				// original image (product of per-pass scales), which is the metric an
+				// operator actually wants — the per-pass scale is meaningless on its
+				// own once attempts > 1.
 				_logger.LogInformation(
 					"Anthropic VLM image downscaled to fit API cap (originalBytes={OriginalBytes}, finalBytes={FinalBytes}, scale={Scale:F3}, attempts={Attempts})",
-					originalLength, resampled.Length, scale, attempt);
+					originalLength, resampled.Length, cumulativeScale, attempt);
 				return resampled;
 			}
 
@@ -307,7 +312,17 @@ public sealed class AnthropicReceiptExtractionService : IReceiptExtractionServic
 				$"Failed to resample image to {newWidth}x{newHeight} during downscale.");
 		}
 
-		using SKImage image = SKImage.FromBitmap(resized);
+		using SKImage? image = SKImage.FromBitmap(resized);
+		if (image is null)
+		{
+			// SKImage.FromBitmap returns null on native allocation failure (out-of-memory,
+			// invalid bitmap state). Surface a typed exception rather than letting the
+			// subsequent .Encode call throw NullReferenceException — same shape as the
+			// other null-check guards in this method so the failure is debuggable.
+			throw new InvalidOperationException(
+				$"Failed to wrap resized {newWidth}x{newHeight} bitmap as an SKImage during downscale.");
+		}
+
 		using SKData encoded = image.Encode(SKEncodedImageFormat.Png, quality: 100)
 			?? throw new InvalidOperationException("Failed to re-encode image as PNG after downscale.");
 
