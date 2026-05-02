@@ -12,6 +12,11 @@ type ProposedReceiptResponse = components["schemas"]["ProposedReceiptResponse"];
  *
  * Confidence values are intentionally a mix of high/medium/low so the
  * new-receipt wizard's badge rendering is exercised under realistic data.
+ *
+ * `payments[]` is still emitted by the server (deprecated, retained for
+ * VLM evaluation/scoring) but is no longer consumed by the client; the
+ * wizard now reads `proposedTransactions[]` instead. See RECEIPTS-657
+ * and RECEIPTS-658.
  */
 export const scanProposal: ProposedReceiptResponse = {
   storeName: "Walmart Supercenter",
@@ -66,6 +71,9 @@ export const scanProposal: ProposedReceiptResponse = {
   totalConfidence: "high",
   paymentMethod: "VISA",
   paymentMethodConfidence: "medium",
+  // Server still emits the deprecated `payments[]` for back-compat (e.g. VLM
+  // evaluation scoring); the client no longer reads it. Kept populated here
+  // so the OpenAPI-typed fixture continues to satisfy the contract.
   payments: [
     {
       method: "VISA",
@@ -74,6 +82,23 @@ export const scanProposal: ProposedReceiptResponse = {
       amountConfidence: "high",
       lastFour: "4242",
       lastFourConfidence: "medium",
+    },
+  ],
+  // The new path: the server resolved the VISA tender (last four 4242)
+  // against an active card and produced a Transaction row pre-populated with
+  // both cardId and accountId. cardIdConfidence is "high" because exactly
+  // one matching card was found.
+  proposedTransactions: [
+    {
+      cardId: "00000000-0000-0000-0000-000000004242",
+      cardIdConfidence: "high",
+      accountId: "00000000-0000-0000-0000-000000000099",
+      accountIdConfidence: "high",
+      amount: 10.01,
+      amountConfidence: "high",
+      date: "2024-06-15",
+      dateConfidence: "high",
+      methodSnapshot: "VISA",
     },
   ],
   receiptId: "TX-987654321",

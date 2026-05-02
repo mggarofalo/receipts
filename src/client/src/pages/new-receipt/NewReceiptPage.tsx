@@ -5,12 +5,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { useLocationHistory } from "@/hooks/useLocationHistory";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import {
-  TransactionsSection,
-  type ReceiptTransaction,
-} from "./TransactionsSection";
+import { TransactionsSection } from "./TransactionsSection";
 import { LineItemsSection } from "./LineItemsSection";
-import { PaymentsSection } from "./PaymentsSection";
 import { BalanceSidebar } from "./BalanceSidebar";
 import { HeaderSection } from "./HeaderSection";
 import { headerSchema, type HeaderFormValues } from "./headerSchema";
@@ -23,7 +19,7 @@ import type {
 } from "@/pages/scan-receipt/types";
 import {
   initialItemsAndConfidence,
-  initialPaymentsAndConfidence,
+  initialTransactionsAndConfidence,
 } from "@/pages/scan-receipt/proposalMappers";
 
 interface NewReceiptPageProps {
@@ -50,34 +46,30 @@ export default function NewReceiptPage({
   const locationRef = useRef<HTMLButtonElement>(null);
   const { options: locationOptions } = useLocationHistory();
 
-  const [transactions, setTransactions] = useState<ReceiptTransaction[]>([]);
-
-  // Items, payments, and their confidence-by-id maps are initialised together
-  // from the scan proposal so confidence stays correctly paired with rows
-  // after additions or deletions. The bundles are stored in `useState` with
-  // a lazy initializer — React contractually guarantees this runs exactly
+  // Items and transactions (with their confidence-by-id maps) are initialised
+  // together from the scan proposal so confidence stays correctly paired with
+  // rows after additions or deletions. The bundles are stored in `useState`
+  // with a lazy initializer — React contractually guarantees this runs exactly
   // once per mount and the result is then immutably retained in component
   // state. (`useMemo` is documented as a performance optimization that *may*
   // re-run, which would re-generate row ids and silently break the id ->
-  // confidence mapping.) The items setter then drives the editable list
-  // while the confidence map stays immutable: a stale entry for a deleted
-  // row is harmless because no row will ever look it up again.
+  // confidence mapping.) The setters then drive the editable lists while the
+  // confidence maps stay immutable: a stale entry for a deleted row is
+  // harmless because no row will ever look it up again.
   const [initialItemsBundle] = useState(() =>
     initialItemsAndConfidence(initialValues, confidenceMap),
   );
   const [items, setItems] = useState(initialItemsBundle.items);
   const itemConfidenceById = initialItemsBundle.itemConfidenceById;
 
-  const [initialPaymentsBundle] = useState(() =>
-    initialPaymentsAndConfidence(initialValues, confidenceMap),
+  const [initialTransactionsBundle] = useState(() =>
+    initialTransactionsAndConfidence(initialValues, confidenceMap),
   );
-  const [payments, setPayments] = useState(initialPaymentsBundle.payments);
-  const paymentConfidenceById = initialPaymentsBundle.paymentConfidenceById;
-  // Section visibility is gated on initial-presence (captured once at mount), not
-  // current-array-length. Otherwise removing every detected payment would hide the
-  // entire section — including the "Add Payment" button — leaving the user no path
-  // back. See RECEIPTS-644.
-  const hasInitialPayments = initialPaymentsBundle.payments.length > 0;
+  const [transactions, setTransactions] = useState(
+    initialTransactionsBundle.transactions,
+  );
+  const transactionConfidenceById =
+    initialTransactionsBundle.transactionConfidenceById;
 
   const [showDiscard, setShowDiscard] = useState(false);
 
@@ -132,7 +124,6 @@ export default function NewReceiptPage({
     (metadata.receiptId !== "" ||
       metadata.storeNumber !== "" ||
       metadata.terminalId !== "");
-  const showPaymentsSection = hasInitialPayments;
 
   const hasData =
     location !== "" ||
@@ -140,7 +131,6 @@ export default function NewReceiptPage({
     taxAmount !== 0 ||
     transactions.length > 0 ||
     items.length > 0 ||
-    payments.length > 0 ||
     (storeAddress ?? "") !== "" ||
     (storePhone ?? "") !== "";
 
@@ -194,20 +184,12 @@ export default function NewReceiptPage({
             />
           )}
 
-          {/* Detected payments — only shown when populated from a scan */}
-          {showPaymentsSection && (
-            <PaymentsSection
-              payments={payments}
-              onChange={setPayments}
-              confidenceById={paymentConfidenceById}
-            />
-          )}
-
           {/* Transactions */}
           <TransactionsSection
             transactions={transactions}
             defaultDate={receiptDate}
             onChange={setTransactions}
+            confidenceById={transactionConfidenceById}
           />
 
           {/* Line Items */}

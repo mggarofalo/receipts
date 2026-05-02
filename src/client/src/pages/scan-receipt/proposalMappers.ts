@@ -1,7 +1,7 @@
 import type { components } from "@/generated/api";
 import { generateId } from "@/lib/id";
 import type { ReceiptLineItem } from "@/pages/new-receipt/LineItemsSection";
-import type { ReceiptPayment } from "@/pages/new-receipt/PaymentsSection";
+import type { ReceiptTransaction } from "@/pages/new-receipt/TransactionsSection";
 import type {
   ConfidenceLevel,
   ScanInitialValues,
@@ -11,8 +11,8 @@ import type {
 type ProposedReceiptResponse = components["schemas"]["ProposedReceiptResponse"];
 
 type ItemConfidenceEntry = NonNullable<ReceiptConfidenceMap["items"]>[number];
-type PaymentConfidenceEntry = NonNullable<
-  ReceiptConfidenceMap["payments"]
+type TransactionConfidenceEntry = NonNullable<
+  ReceiptConfidenceMap["transactions"]
 >[number];
 
 /**
@@ -37,8 +37,11 @@ export function mapProposalToInitialValues(
   // omit them. Coalescing to [] prevents a hard `TypeError: Cannot read
   // properties of undefined` and keeps the wizard usable. See RECEIPTS-632.
   const taxLines = proposal.taxLines ?? [];
-  const payments = proposal.payments ?? [];
   const items = proposal.items ?? [];
+  // proposedTransactions is the new (RECEIPTS-657) replacement for the legacy
+  // payments[] field; it is declared optional in the OpenAPI contract because
+  // it ships alongside the deprecated payments[] until the latter is removed.
+  const proposedTransactions = proposal.proposedTransactions ?? [];
 
   const taxAmount = Number(taxLines[0]?.amount ?? 0);
 
@@ -61,11 +64,21 @@ export function mapProposalToInitialValues(
       storeNumber: proposal.storeNumber ?? "",
       terminalId: proposal.terminalId ?? "",
     },
-    payments: payments.map((p) => ({
-      method: p.method ?? "",
-      amount: Number(p.amount ?? 0),
-      lastFour: p.lastFour ?? "",
-    })),
+    // Pre-resolved Transaction rows (RECEIPTS-657). The server resolves cards
+    // by lastFour and surfaces the matching cardId/accountId so the wizard can
+    // pre-populate Transaction rows directly. An unmatched payment yields a
+    // null cardId; we coerce to "" so the row falls back to "needs picker".
+    proposedTransactions: proposedTransactions.map((t) => {
+      const proposalDate = t.date
+        ? t.date.split("T")[0]
+        : (date ?? "");
+      return {
+        cardId: t.cardId ?? "",
+        accountId: t.accountId ?? "",
+        amount: Number(t.amount ?? 0),
+        date: proposalDate,
+      };
+    }),
     items: items.map((item) => {
       // Decide pricingMode from confidence + presence: when only the line total
       // is reliable (Walmart-style: unit-priced items printed without quantity
@@ -131,8 +144,8 @@ export function mapProposalToConfidenceMap(
 ): ReceiptConfidenceMap {
   // See note in mapProposalToInitialValues — same defensive guards.
   const taxLines = proposal.taxLines ?? [];
-  const payments = proposal.payments ?? [];
   const items = proposal.items ?? [];
+  const proposedTransactions = proposal.proposedTransactions ?? [];
 
   const map: ReceiptConfidenceMap = {};
 
@@ -173,15 +186,15 @@ export function mapProposalToConfidenceMap(
     map.terminalId = proposal.terminalIdConfidence;
   }
 
-  // Per-payment confidences. Always emit an entry per payment so indices align,
+  // Per-transaction confidences. Always emit an entry per pre-resolved
+  // transaction so indices align with the same array consumed by the wizard,
   // omitting fields whose confidence is "high" or "none".
-  if (payments.length > 0) {
-    map.payments = payments.map((p) => {
-      const entry: PaymentConfidenceEntry = {};
-      if (needsReview(p.methodConfidence)) entry.method = p.methodConfidence;
-      if (needsReview(p.amountConfidence)) entry.amount = p.amountConfidence;
-      if (needsReview(p.lastFourConfidence))
-        entry.lastFour = p.lastFourConfidence;
+  if (proposedTransactions.length > 0) {
+    map.transactions = proposedTransactions.map((t) => {
+      const entry: TransactionConfidenceEntry = {};
+      if (needsReview(t.cardIdConfidence)) entry.cardId = t.cardIdConfidence;
+      if (needsReview(t.amountConfidence)) entry.amount = t.amountConfidence;
+      if (needsReview(t.dateConfidence)) entry.date = t.dateConfidence;
       return entry;
     });
   }
@@ -236,32 +249,39 @@ export function initialItemsAndConfidence(
 }
 
 /**
- * Build the new-receipt wizard's initial payments along with a confidence
+ * Build the new-receipt wizard's initial transactions along with a confidence
  * map keyed by the freshly-generated row id. See {@link initialItemsAndConfidence}
- * for rationale.
+ * for the rationale. The transactions originate from the server-side
+ * {@link ProposedTransactionResolver} (RECEIPTS-657), which resolves each
+ * VLM-extracted payment to a Card by lastFour and propagates the Card's
+ * accountId so the wizard can pre-populate a Transaction row directly.
  */
-export function initialPaymentsAndConfidence(
+export function initialTransactionsAndConfidence(
   initialValues: ScanInitialValues | undefined,
   confidenceMap: ReceiptConfidenceMap | undefined,
 ): {
-  payments: ReceiptPayment[];
-  paymentConfidenceById: Map<string, PaymentConfidenceEntry>;
+  transactions: ReceiptTransaction[];
+  transactionConfidenceById: Map<string, TransactionConfidenceEntry>;
 } {
-  const sourcePayments = initialValues?.payments ?? [];
-  const sourceConfidence = confidenceMap?.payments ?? [];
+  const sourceTransactions = initialValues?.proposedTransactions ?? [];
+  const sourceConfidence = confidenceMap?.transactions ?? [];
 
-  const payments: ReceiptPayment[] = sourcePayments.map((p) => ({
+  const transactions: ReceiptTransaction[] = sourceTransactions.map((t) => ({
     id: generateId(),
-    method: p.method,
-    amount: p.amount,
-    lastFour: p.lastFour,
+    cardId: t.cardId,
+    accountId: t.accountId,
+    amount: t.amount,
+    date: t.date,
   }));
-  const paymentConfidenceById = new Map<string, PaymentConfidenceEntry>();
-  for (let i = 0; i < payments.length; i++) {
+  const transactionConfidenceById = new Map<
+    string,
+    TransactionConfidenceEntry
+  >();
+  for (let i = 0; i < transactions.length; i++) {
     const entry = sourceConfidence[i];
     if (entry) {
-      paymentConfidenceById.set(payments[i].id, entry);
+      transactionConfidenceById.set(transactions[i].id, entry);
     }
   }
-  return { payments, paymentConfidenceById };
+  return { transactions, transactionConfidenceById };
 }

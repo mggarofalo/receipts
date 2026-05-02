@@ -30,6 +30,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Plus, Trash2 } from "lucide-react";
+import { ConfidenceIndicator } from "@/pages/scan-receipt/ConfidenceIndicator";
+import type { ReceiptConfidenceMap } from "@/pages/scan-receipt/types";
 
 const txnSchema = z.object({
   cardId: z.string().min(1, "Card is required"),
@@ -48,16 +50,29 @@ export interface ReceiptTransaction {
   date: string;
 }
 
+type TransactionConfidenceEntry = NonNullable<
+  ReceiptConfidenceMap["transactions"]
+>[number];
+
 interface TransactionsSectionProps {
   transactions: ReceiptTransaction[];
   defaultDate: string;
   onChange: (transactions: ReceiptTransaction[]) => void;
+  /**
+   * Per-transaction confidence levels keyed by stable transaction id (not
+   * index). Set on first mount from the scan-proposal mapping in NewReceiptPage
+   * so confidence stays correctly paired with rows after additions or deletions.
+   * An index-based lookup would misalign confidence with the wrong row after
+   * a deletion. See {@link initialTransactionsAndConfidence}.
+   */
+  confidenceById?: Map<string, TransactionConfidenceEntry>;
 }
 
 export function TransactionsSection({
   transactions,
   defaultDate,
   onChange,
+  confidenceById,
 }: TransactionsSectionProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const cardRef = useRef<HTMLButtonElement>(null);
@@ -74,20 +89,6 @@ export function TransactionsSection({
     () => (cards ?? []).map(cardToOption),
     [cards],
   );
-
-  const accountNameMap = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const opt of accountOptions) {
-      map.set(opt.value, opt.label);
-    }
-    return map;
-  }, [accountOptions]);
-
-  const cardNameMap = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const c of cards ?? []) map.set(c.id, c.name);
-    return map;
-  }, [cards]);
 
   const cardById = useMemo(() => {
     const map = new Map<string, { id: string; accountId?: string | null }>();
@@ -106,10 +107,30 @@ export function TransactionsSection({
     },
   });
 
+  // Whether the Account field should be locked (driven by an explicit Card
+  // pick whose Card carries an accountId). Card is the source of truth: when
+  // a Card with a known accountId is selected the Account dropdown auto-fills
+  // and becomes read-only; clearing the Card re-enables manual selection.
+  const watchedCardId = form.watch("cardId");
+  const isAccountLockedByCard = useMemo(() => {
+    if (!watchedCardId) return false;
+    const card = cardById.get(watchedCardId);
+    return !!card?.accountId;
+  }, [watchedCardId, cardById]);
+
   function handleCardChange(value: string) {
     form.setValue("cardId", value, { shouldValidate: true });
+    if (!value) {
+      // Clearing the card releases the account lock and clears the auto-fill.
+      // Clearing rather than preserving the previous accountId avoids leaving
+      // a stale read-only value in a now-editable field.
+      form.setValue("accountId", "", { shouldValidate: true });
+      return;
+    }
     const card = cardById.get(value);
     if (card?.accountId) {
+      // Card wins: even if the user had picked an account first, the resolved
+      // card's FK overwrites it. The Account dropdown then renders read-only.
       form.setValue("accountId", card.accountId, { shouldValidate: true });
     }
   }
@@ -157,6 +178,47 @@ export function TransactionsSection({
   const handleRemove = useCallback(
     (id: string) => {
       onChange(transactions.filter((t) => t.id !== id));
+    },
+    [transactions, onChange],
+  );
+
+  // Inline-edit handlers for pre-populated rows. Card change cascades to
+  // accountId for the target row when the resolved Card carries one — the
+  // same "Card wins" rule as the new-row form above. Without this an account
+  // override would persist after a card swap, contradicting the FK.
+  const handleRowCardChange = useCallback(
+    (id: string, cardId: string) => {
+      const card = cardId ? cardById.get(cardId) : undefined;
+      onChange(
+        transactions.map((t) =>
+          t.id === id
+            ? {
+                ...t,
+                cardId,
+                accountId: !cardId
+                  ? ""
+                  : card?.accountId
+                    ? card.accountId
+                    : t.accountId,
+              }
+            : t,
+        ),
+      );
+    },
+    [transactions, onChange, cardById],
+  );
+
+  const handleRowField = useCallback(
+    <K extends keyof Omit<ReceiptTransaction, "id" | "cardId">>(
+      id: string,
+      field: K,
+      value: ReceiptTransaction[K],
+    ) => {
+      onChange(
+        transactions.map((t) =>
+          t.id === id ? { ...t, [field]: value } : t,
+        ),
+      );
     },
     [transactions, onChange],
   );
@@ -216,8 +278,14 @@ export function TransactionsSection({
                       searchPlaceholder="Search accounts..."
                       emptyMessage="No accounts found."
                       aria-required="true"
+                      disabled={isAccountLockedByCard}
                     />
                   </FormControl>
+                  {isAccountLockedByCard && (
+                    <p className="text-xs text-muted-foreground">
+                      Account is set by the selected card.
+                    </p>
+                  )}
                   <FormMessage />
                 </FormItem>
               )}
@@ -272,28 +340,90 @@ export function TransactionsSection({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {transactions.map((txn) => (
-                <TableRow key={txn.id}>
-                  <TableCell>
-                    {cardNameMap.get(txn.cardId) ?? ""}
-                  </TableCell>
-                  <TableCell>
-                    {accountNameMap.get(txn.accountId) ?? txn.accountId}
-                  </TableCell>
-                  <TableCell>{formatCurrency(txn.amount)}</TableCell>
-                  <TableCell>{txn.date}</TableCell>
-                  <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleRemove(txn.id)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      <span className="sr-only">Remove</span>
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {transactions.map((txn) => {
+                const fieldConfidence = confidenceById?.get(txn.id);
+                const card = txn.cardId
+                  ? cardById.get(txn.cardId)
+                  : undefined;
+                const rowAccountLockedByCard = !!card?.accountId;
+                return (
+                  <TableRow key={txn.id} data-testid={`txn-row-${txn.id}`}>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Combobox
+                          options={cardOptions}
+                          value={txn.cardId}
+                          onValueChange={(v) =>
+                            handleRowCardChange(txn.id, v)
+                          }
+                          placeholder="Select card..."
+                          searchPlaceholder="Search cards..."
+                          emptyMessage="No cards found."
+                          aria-label={`Card for transaction ${txn.id}`}
+                        />
+                        <ConfidenceIndicator
+                          confidence={fieldConfidence?.cardId}
+                        />
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Combobox
+                        options={accountOptions}
+                        value={txn.accountId}
+                        onValueChange={(v) =>
+                          handleRowField(txn.id, "accountId", v)
+                        }
+                        placeholder="Select account..."
+                        searchPlaceholder="Search accounts..."
+                        emptyMessage="No accounts found."
+                        aria-label={`Account for transaction ${txn.id}`}
+                        disabled={rowAccountLockedByCard}
+                      />
+                      {rowAccountLockedByCard && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Account is set by the selected card.
+                        </p>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <CurrencyInput
+                          value={txn.amount}
+                          onChange={(v) =>
+                            handleRowField(txn.id, "amount", v)
+                          }
+                          aria-label={`Amount for transaction ${txn.id}`}
+                        />
+                        <ConfidenceIndicator
+                          confidence={fieldConfidence?.amount}
+                        />
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <DateInput
+                          value={txn.date}
+                          onChange={(v) => handleRowField(txn.id, "date", v)}
+                          aria-label={`Date for transaction ${txn.id}`}
+                        />
+                        <ConfidenceIndicator
+                          confidence={fieldConfidence?.date}
+                        />
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleRemove(txn.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        <span className="sr-only">Remove</span>
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         )}

@@ -7,17 +7,20 @@ export type ProposedReceiptItemResponse =
   components["schemas"]["ProposedReceiptItemResponse"];
 export type ProposedTaxLineResponse =
   components["schemas"]["ProposedTaxLineResponse"];
-export type ProposedPaymentResponse =
-  components["schemas"]["ProposedPaymentResponse"];
+export type ProposedTransactionResponse =
+  components["schemas"]["ProposedTransactionResponse"];
 
-export interface ScanPayment {
-  method: string;
+export interface ScanProposedTransaction {
+  cardId: string;
+  accountId: string;
   amount: number;
-  lastFour: string;
+  date: string;
 }
 
 // Confidence map for new-receipt fields populated from a scan proposal.
-// Items are keyed by index since they are identified by position, not id.
+// Items and transactions are keyed by index in the source proposal; the
+// new-receipt page re-keys them by stable row id at mount time so confidence
+// stays correctly attached after additions or deletions.
 export interface ReceiptConfidenceMap {
   location?: ConfidenceLevel;
   date?: ConfidenceLevel;
@@ -27,10 +30,10 @@ export interface ReceiptConfidenceMap {
   receiptId?: ConfidenceLevel;
   storeNumber?: ConfidenceLevel;
   terminalId?: ConfidenceLevel;
-  payments?: Array<{
-    method?: ConfidenceLevel;
+  transactions?: Array<{
+    cardId?: ConfidenceLevel;
     amount?: ConfidenceLevel;
-    lastFour?: ConfidenceLevel;
+    date?: ConfidenceLevel;
   }>;
   items?: Array<{
     taxCode?: ConfidenceLevel;
@@ -50,7 +53,7 @@ export interface ScanInitialValues {
     storeNumber: string;
     terminalId: string;
   };
-  payments: ScanPayment[];
+  proposedTransactions: ScanProposedTransaction[];
   items: Array<{
     receiptItemCode: string;
     description: string;
