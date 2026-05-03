@@ -1,3 +1,4 @@
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System.Security.Cryptography;
@@ -75,6 +76,19 @@ static int Split(string[] args)
 
 	Microsoft.CodeAnalysis.SyntaxTree tree = CSharpSyntaxTree.ParseText(sourceText);
 	CompilationUnitSyntax root = tree.GetCompilationUnitRoot();
+
+	// AST-rewrite the parsed tree to strip per-property
+	// [JsonConverter(typeof(JsonStringEnumConverter<T>))] attributes that NSwag
+	// emits on every enum-typed property. The global JsonStringEnumConverter
+	// (registered in API/Configuration/ApplicationConfiguration.cs with
+	// JsonNamingPolicy.CamelCase) is the single source of truth for enum wire
+	// format. The per-property attribute, when present, *wins* over the global
+	// converter and falls back to C# enum names ("None"/"Low"/"Medium"/"High"
+	// for ConfidenceLevel) — which violates the OpenAPI contract that declares
+	// lowercase enum values. Stripping the per-property override at codegen time
+	// lets the global converter apply uniformly. See RECEIPTS-660.
+	JsonStringEnumConverterAttributeRemover rewriter = new();
+	root = (CompilationUnitSyntax)rewriter.Visit(root);
 
 	// Find the namespace declaration (block-scoped with braces, as NSwag uses)
 	NamespaceDeclarationSyntax? ns = root.DescendantNodes()
@@ -289,4 +303,93 @@ static int Error(string message)
 {
 	Console.Error.WriteLine(message);
 	return 1;
+}
+
+/// <summary>
+/// Removes per-property <c>[JsonConverter(typeof(JsonStringEnumConverter&lt;T&gt;))]</c>
+/// attributes from the NSwag-generated source so the globally-registered
+/// <c>JsonStringEnumConverter(JsonNamingPolicy.CamelCase)</c> applies uniformly.
+/// See RECEIPTS-660 for why this matters.
+/// </summary>
+internal sealed class JsonStringEnumConverterAttributeRemover : CSharpSyntaxRewriter
+{
+	public override SyntaxNode? VisitAttributeList(AttributeListSyntax node)
+	{
+		// First recurse into children so any nested transformations (none today,
+		// but future-proof) are applied before we evaluate the resulting list.
+		AttributeListSyntax? visited = (AttributeListSyntax?)base.VisitAttributeList(node);
+		if (visited is null)
+		{
+			return null;
+		}
+
+		SeparatedSyntaxList<AttributeSyntax> kept = SyntaxFactory.SeparatedList<AttributeSyntax>();
+		foreach (AttributeSyntax attr in visited.Attributes)
+		{
+			if (!IsJsonStringEnumConverterAttribute(attr))
+			{
+				kept = kept.Add(attr);
+			}
+		}
+
+		if (kept.Count == 0)
+		{
+			// All attributes in this list were stripped — drop the empty list
+			// entirely (an empty `[]` would not parse). Preserve the leading
+			// trivia (indentation, comments) so downstream nodes keep formatting.
+			return null;
+		}
+
+		if (kept.Count == visited.Attributes.Count)
+		{
+			return visited;
+		}
+
+		return visited.WithAttributes(kept);
+	}
+
+	private static bool IsJsonStringEnumConverterAttribute(AttributeSyntax attr)
+	{
+		// The attribute name as NSwag emits it: System.Text.Json.Serialization.JsonConverter.
+		// Strip "Attribute" suffix if present and compare the trailing identifier.
+		string name = attr.Name.ToString();
+		string lastSegment = name.Split('.').Last();
+		if (lastSegment != "JsonConverter" && lastSegment != "JsonConverterAttribute")
+		{
+			return false;
+		}
+
+		AttributeArgumentListSyntax? argList = attr.ArgumentList;
+		if (argList is null || argList.Arguments.Count == 0)
+		{
+			return false;
+		}
+
+		// We expect a single typeof(...) argument referencing
+		// JsonStringEnumConverter<TEnum>.
+		AttributeArgumentSyntax firstArg = argList.Arguments[0];
+		if (firstArg.Expression is not TypeOfExpressionSyntax typeOfExpr)
+		{
+			return false;
+		}
+
+		// Drill into the typeof's type argument and look for a generic name
+		// "JsonStringEnumConverter" (with one or more type parameters). The
+		// type can be qualified (System.Text.Json.Serialization.JsonStringEnumConverter<T>)
+		// or bare (JsonStringEnumConverter<T>) depending on the emitted form.
+		TypeSyntax inner = typeOfExpr.Type;
+		GenericNameSyntax? generic = inner switch
+		{
+			GenericNameSyntax g => g,
+			QualifiedNameSyntax q when q.Right is GenericNameSyntax g => g,
+			_ => null,
+		};
+
+		if (generic is null)
+		{
+			return false;
+		}
+
+		return generic.Identifier.Text == "JsonStringEnumConverter";
+	}
 }

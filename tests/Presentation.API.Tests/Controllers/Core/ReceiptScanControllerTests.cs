@@ -2,6 +2,8 @@
 // regression coverage until RECEIPTS-658 deletes the field.
 #pragma warning disable CS0612
 
+using System.Text.Json;
+using API.Configuration;
 using API.Controllers.Core;
 using API.Generated.Dtos;
 using Application.Commands.Receipt.Scan;
@@ -11,7 +13,11 @@ using FluentAssertions;
 using MediatR;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Moq;
 using DtoConfidenceLevel = global::API.Generated.Dtos.ConfidenceLevel;
 
@@ -474,6 +480,67 @@ public class ReceiptScanControllerTests
 				c.ImageBytes.Length == 512),
 			It.IsAny<CancellationToken>()),
 			Times.Once);
+	}
+
+	[Fact]
+	public async Task ScanReceipt_ResponseSerializesConfidenceFieldsAsLowercase()
+	{
+		// RECEIPTS-660: confidence fields must serialize as lowercase strings ("high",
+		// "medium", "low", "none") to match the OpenAPI contract. Prior to the
+		// DtoSplitter rewriter, NSwag emitted a per-property [JsonConverter] that
+		// produced PascalCase ("High"/"Medium"/...), tripping OpenAPI response
+		// validation and the wizard's CHIP_CONFIG[confidence] lookup.
+		IFormFile file = CreateMockFormFile("receipt.jpg", "image/jpeg", 1024);
+
+		ParsedReceipt parsedReceipt = new(
+			FieldConfidence<string>.High("WALMART"),
+			FieldConfidence<DateOnly>.Medium(new DateOnly(2026, 3, 15)),
+			[
+				new ParsedReceiptItem(
+					FieldConfidence<string?>.None(),
+					FieldConfidence<string>.High("MILK 2%"),
+					FieldConfidence<decimal>.High(1m),
+					FieldConfidence<decimal>.High(3.49m),
+					FieldConfidence<decimal>.High(3.49m))
+			],
+			FieldConfidence<decimal>.Medium(3.49m),
+			[],
+			FieldConfidence<decimal>.High(3.74m),
+			FieldConfidence<string?>.Low("VISA")
+		);
+
+		_mediatorMock
+			.Setup(m => m.Send(It.IsAny<ScanReceiptCommand>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new ScanReceiptResult(parsedReceipt));
+
+		Results<Ok<ProposedReceiptResponse>, BadRequest<string>, StatusCodeHttpResult, UnprocessableEntity<string>> actual = await _controller.ScanReceipt(file);
+
+		ProposedReceiptResponse response = actual.Result.Should().BeOfType<Ok<ProposedReceiptResponse>>().Subject.Value!;
+
+		// Round-trip through the controller-configured serializer to capture the
+		// exact wire format clients receive.
+		string json = JsonSerializer.Serialize(response, GetConfiguredJsonOptions());
+
+		json.Should().Contain("\"storeNameConfidence\":\"high\"");
+		json.Should().Contain("\"dateConfidence\":\"medium\"");
+		json.Should().Contain("\"subtotalConfidence\":\"medium\"");
+		json.Should().Contain("\"totalConfidence\":\"high\"");
+		json.Should().Contain("\"paymentMethodConfidence\":\"low\"");
+
+		// Hard guard: nothing should escape as PascalCase.
+		json.Should().NotContain("\"High\"");
+		json.Should().NotContain("\"Medium\"");
+		json.Should().NotContain("\"Low\"");
+		json.Should().NotContain("\"None\"");
+	}
+
+	private static JsonSerializerOptions GetConfiguredJsonOptions()
+	{
+		ServiceCollection services = new();
+		services.AddApplicationServices(new ConfigurationBuilder().Build());
+		ServiceProvider provider = services.BuildServiceProvider();
+		JsonOptions mvcJsonOptions = provider.GetRequiredService<IOptions<JsonOptions>>().Value;
+		return mvcJsonOptions.JsonSerializerOptions;
 	}
 
 	private static IFormFile CreateMockFormFile(string fileName, string contentType, int size)
