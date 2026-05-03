@@ -234,7 +234,8 @@ describe("mapProposalToInitialValues", () => {
     // Defensive guard: the OpenAPI contract declares proposedTransactions as
     // optional; older fixtures or partially-stubbed handlers may omit it.
     const proposal = makeProposal();
-    delete (proposal as { proposedTransactions?: unknown }).proposedTransactions;
+    delete (proposal as { proposedTransactions?: unknown })
+      .proposedTransactions;
 
     const result = mapProposalToInitialValues(proposal);
 
@@ -412,6 +413,202 @@ describe("mapProposalToInitialValues", () => {
         expect(item.pricingMode).toBe("flat");
         expect(item.totalPrice).toBeGreaterThan(0);
       }
+    });
+  });
+
+  // RECEIPTS-661: Weight-priced items (Walmart "TOMATO 2.300 lb @ 0.92") arrive
+  // from the VLM with quantity + unitPrice populated and a recognised
+  // confidence, but no separate totalPrice — the API serialises this as
+  // `totalPrice: 0, totalPriceConfidence: "none"` because the C# value-type
+  // defaults to 0. The previous fallback `totalPrice ?? quantity * unitPrice`
+  // short-circuited to 0 because nullish-coalescing only fires for null /
+  // undefined, leaving the wizard with $0.00 rows. The server now derives the
+  // missing total upstream; this defensive check still covers any path that
+  // emits a 0 + none pair.
+  describe("zero-totalPrice + none-confidence fallback (RECEIPTS-661)", () => {
+    it("computes totalPrice from quantity * unitPrice when API sends 0 + none", () => {
+      const proposal = makeProposal({
+        items: [
+          {
+            code: "TOMATO",
+            codeConfidence: "high",
+            description: "TOMATO",
+            descriptionConfidence: "high",
+            quantity: 2.3,
+            quantityConfidence: "high",
+            unitPrice: 0.92,
+            unitPriceConfidence: "high",
+            totalPrice: 0,
+            totalPriceConfidence: "none",
+            taxCode: null,
+            taxCodeConfidence: "none",
+          },
+        ],
+      });
+
+      const result = mapProposalToInitialValues(proposal);
+
+      const tomato = result.items[0];
+      expect(tomato.pricingMode).toBe("quantity");
+      // 2.3 * 0.92 = 2.116; the wizard rounds to cents = 2.12
+      expect(tomato.totalPrice).toBeCloseTo(2.12, 2);
+      expect(tomato.totalPrice).toBeGreaterThan(0);
+    });
+
+    it("does not overwrite a positive totalPrice when confidence is high", () => {
+      // Pass-through: the server already supplied a totalPrice; respect it
+      // even when q * p computes to a slightly different value.
+      const proposal = makeProposal({
+        items: [
+          {
+            code: "MILK",
+            codeConfidence: "high",
+            description: "Milk",
+            descriptionConfidence: "high",
+            quantity: 2,
+            quantityConfidence: "high",
+            unitPrice: 3,
+            unitPriceConfidence: "high",
+            totalPrice: 5.99, // VLM said 5.99 even though 2 * 3 = 6
+            totalPriceConfidence: "high",
+            taxCode: null,
+            taxCodeConfidence: "none",
+          },
+        ],
+      });
+
+      const result = mapProposalToInitialValues(proposal);
+
+      expect(result.items[0].totalPrice).toBe(5.99);
+    });
+
+    it("uses totalPrice when confidence is medium and value is positive", () => {
+      const proposal = makeProposal({
+        items: [
+          {
+            code: "X",
+            codeConfidence: "high",
+            description: "x",
+            descriptionConfidence: "high",
+            quantity: 1,
+            quantityConfidence: "high",
+            unitPrice: 2,
+            unitPriceConfidence: "high",
+            totalPrice: 1.99,
+            totalPriceConfidence: "medium",
+            taxCode: null,
+            taxCodeConfidence: "none",
+          },
+        ],
+      });
+
+      const result = mapProposalToInitialValues(proposal);
+
+      expect(result.items[0].totalPrice).toBe(1.99);
+    });
+
+    it("uses totalPrice when confidence is low and value is positive", () => {
+      const proposal = makeProposal({
+        items: [
+          {
+            code: "X",
+            codeConfidence: "high",
+            description: "x",
+            descriptionConfidence: "high",
+            quantity: 1,
+            quantityConfidence: "high",
+            unitPrice: 2,
+            unitPriceConfidence: "high",
+            totalPrice: 1.49,
+            totalPriceConfidence: "low",
+            taxCode: null,
+            taxCodeConfidence: "none",
+          },
+        ],
+      });
+
+      const result = mapProposalToInitialValues(proposal);
+
+      expect(result.items[0].totalPrice).toBe(1.49);
+    });
+
+    it("tolerates capitalised confidence values until RECEIPTS-660 lands", () => {
+      // The model occasionally emits "None" / "High" before serialisation
+      // normalisation. Defensive `.toLowerCase()` keeps the fallback working
+      // until RECEIPTS-660 forces a single lowercase wire format.
+      const proposal = makeProposal({
+        items: [
+          {
+            code: "BANANAS",
+            codeConfidence: "high",
+            description: "BANANAS",
+            descriptionConfidence: "high",
+            quantity: 2.46,
+            quantityConfidence: "high",
+            unitPrice: 0.5,
+            unitPriceConfidence: "high",
+            totalPrice: 0,
+            // Cast away the lowercase enum constraint so the test can express
+            // the (incorrect-but-real) capitalised wire shape.
+            totalPriceConfidence: "None" as unknown as "none",
+            taxCode: null,
+            taxCodeConfidence: "none",
+          },
+        ],
+      });
+
+      const result = mapProposalToInitialValues(proposal);
+
+      const bananas = result.items[0];
+      expect(bananas.totalPrice).toBeCloseTo(1.23, 2); // 2.46 * 0.5
+      expect(bananas.totalPrice).toBeGreaterThan(0);
+    });
+
+    it("rolling subtotal across mixed weight-priced rows matches sum of q × p", () => {
+      // The real-world Walmart bug: TOMATO and BANANAS rows both arrive with
+      // (totalPrice=0, none) — the rolling subtotal must equal 2.116 + 1.23 = 3.346
+      // (rounded to cents = $3.35), not $0.00.
+      const proposal = makeProposal({
+        items: [
+          {
+            code: "TOMATO",
+            codeConfidence: "high",
+            description: "TOMATO",
+            descriptionConfidence: "high",
+            quantity: 2.3,
+            quantityConfidence: "high",
+            unitPrice: 0.92,
+            unitPriceConfidence: "high",
+            totalPrice: 0,
+            totalPriceConfidence: "none",
+            taxCode: null,
+            taxCodeConfidence: "none",
+          },
+          {
+            code: "BANANAS",
+            codeConfidence: "high",
+            description: "BANANAS",
+            descriptionConfidence: "high",
+            quantity: 2.46,
+            quantityConfidence: "high",
+            unitPrice: 0.5,
+            unitPriceConfidence: "high",
+            totalPrice: 0,
+            totalPriceConfidence: "none",
+            taxCode: null,
+            taxCodeConfidence: "none",
+          },
+        ],
+      });
+
+      const result = mapProposalToInitialValues(proposal);
+
+      const subtotal = result.items.reduce(
+        (sum, item) => sum + item.totalPrice,
+        0,
+      );
+      expect(subtotal).toBeGreaterThan(0);
+      expect(subtotal).toBeCloseTo(3.35, 2);
     });
   });
 });
@@ -625,9 +822,7 @@ describe("mapProposalToConfidenceMap", () => {
 });
 
 describe("initialItemsAndConfidence", () => {
-  function makeInitial(
-    items: ScanInitialValues["items"],
-  ): ScanInitialValues {
+  function makeInitial(items: ScanInitialValues["items"]): ScanInitialValues {
     return {
       header: {
         location: "",

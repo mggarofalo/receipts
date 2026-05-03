@@ -69,9 +69,7 @@ export function mapProposalToInitialValues(
     // pre-populate Transaction rows directly. An unmatched payment yields a
     // null cardId; we coerce to "" so the row falls back to "needs picker".
     proposedTransactions: proposedTransactions.map((t) => {
-      const proposalDate = t.date
-        ? t.date.split("T")[0]
-        : (date ?? "");
+      const proposalDate = t.date ? t.date.split("T")[0] : (date ?? "");
       return {
         cardId: t.cardId ?? "",
         accountId: t.accountId ?? "",
@@ -108,13 +106,27 @@ export function mapProposalToInitialValues(
 
       const quantity = Number(item.quantity ?? 1);
       const unitPrice = Number(item.unitPrice ?? 0);
-      // Carry totalPrice through: prefer the VLM's value when present so the
-      // saved total survives any later rounding ambiguity. Fall back to the
-      // computed total for round-trip consistency on traditional receipts.
-      const totalPrice =
-        item.totalPrice != null
-          ? Number(item.totalPrice)
-          : Math.round(quantity * unitPrice * 100) / 100;
+      // Carry totalPrice through when the VLM extracted one (any of low/medium/
+      // high confidence) AND the value is positive. RECEIPTS-661: when the model
+      // omits a total for a weight-priced item the API serialises the value-type
+      // default (`0`) with `none` confidence — `totalPrice ?? quantity * unitPrice`
+      // would short-circuit to 0 (nullish-coalescing only fires for null /
+      // undefined), producing a $0.00 row even though `quantity * unitPrice` is
+      // computable. The server now derives a missing total upstream, but this
+      // defensive check protects the wizard against any future path that emits a
+      // `0` + `none` pair. `.toLowerCase()` tolerates RECEIPTS-660's in-flight
+      // capitalisation fix without needing a coordinated landing.
+      const totalPriceConfidence = (
+        item.totalPriceConfidence ?? "none"
+      ).toLowerCase();
+      const totalPriceCarriesValue =
+        (totalPriceConfidence === "high" ||
+          totalPriceConfidence === "medium" ||
+          totalPriceConfidence === "low") &&
+        Number(item.totalPrice ?? 0) > 0;
+      const totalPrice = totalPriceCarriesValue
+        ? Number(item.totalPrice)
+        : Math.round(quantity * unitPrice * 100) / 100;
       return {
         receiptItemCode: item.code ?? "",
         description: item.description ?? "",

@@ -20,6 +20,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
 using DtoConfidenceLevel = global::API.Generated.Dtos.ConfidenceLevel;
+using OcrConfidenceLevel = Application.Models.Ocr.ConfidenceLevel;
 
 namespace Presentation.API.Tests.Controllers.Core;
 
@@ -541,6 +542,178 @@ public class ReceiptScanControllerTests
 		ServiceProvider provider = services.BuildServiceProvider();
 		JsonOptions mvcJsonOptions = provider.GetRequiredService<IOptions<JsonOptions>>().Value;
 		return mvcJsonOptions.JsonSerializerOptions;
+	}
+
+	// RECEIPTS-661: Weight-priced items (e.g. Walmart "TOMATO 2.300 lb @ 0.92")
+	// arrive with quantity + unitPrice populated and a recognised confidence,
+	// but no separate totalPrice — the model didn't print one as a distinct
+	// line, so the value-type defaults to 0 and confidence to None. Without
+	// derivation the wizard renders such rows as $0.00 and the rolling subtotal
+	// is wrong by the same amount. The controller must derive the missing total
+	// upstream so every client sees a usable value.
+	[Fact]
+	public async Task ScanReceipt_WeightPricedItemMissingTotal_DerivesFromQuantityTimesUnitPrice()
+	{
+		// Arrange — TOMATO 2.300 lb @ 0.92 with totalPrice absent (the bug shape).
+		IFormFile file = CreateMockFormFile("walmart.jpg", "image/jpeg", 1024);
+
+		ParsedReceipt parsedReceipt = new(
+			FieldConfidence<string>.High("WALMART"),
+			FieldConfidence<DateOnly>.High(new DateOnly(2026, 5, 1)),
+			[
+				new ParsedReceiptItem(
+					FieldConfidence<string?>.None(),
+					FieldConfidence<string>.High("TOMATO"),
+					FieldConfidence<decimal>.High(2.300m),
+					FieldConfidence<decimal>.High(0.92m),
+					FieldConfidence<decimal>.None())
+			],
+			FieldConfidence<decimal>.High(2.116m),
+			[],
+			FieldConfidence<decimal>.High(2.116m),
+			FieldConfidence<string?>.None()
+		);
+
+		_mediatorMock
+			.Setup(m => m.Send(It.IsAny<ScanReceiptCommand>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new ScanReceiptResult(parsedReceipt));
+
+		// Act
+		Results<Ok<ProposedReceiptResponse>, BadRequest<string>, StatusCodeHttpResult, UnprocessableEntity<string>> actual = await _controller.ScanReceipt(file);
+
+		// Assert — totalPrice derived as 2.300 * 0.92 = 2.116; confidence elevated
+		// from None to the floor of (high, high) = high so the client treats it
+		// as authoritative.
+		ProposedReceiptResponse response = actual.Result.Should().BeOfType<Ok<ProposedReceiptResponse>>().Subject.Value!;
+		response.Items.Should().HaveCount(1);
+		ProposedReceiptItemResponse tomato = response.Items.First();
+		tomato.TotalPrice.Should().Be(2.116d);
+		tomato.TotalPriceConfidence.Should().Be(DtoConfidenceLevel.High);
+	}
+
+	[Theory]
+	[InlineData(OcrConfidenceLevel.High, OcrConfidenceLevel.High, DtoConfidenceLevel.High)]
+	[InlineData(OcrConfidenceLevel.High, OcrConfidenceLevel.Medium, DtoConfidenceLevel.Medium)]
+	[InlineData(OcrConfidenceLevel.Medium, OcrConfidenceLevel.High, DtoConfidenceLevel.Medium)]
+	[InlineData(OcrConfidenceLevel.Medium, OcrConfidenceLevel.Low, DtoConfidenceLevel.Low)]
+	[InlineData(OcrConfidenceLevel.Low, OcrConfidenceLevel.Low, DtoConfidenceLevel.Low)]
+	public async Task ScanReceipt_DerivedTotal_TakesLowerOfQuantityAndUnitPriceConfidence(
+		OcrConfidenceLevel quantityConfidence,
+		OcrConfidenceLevel unitPriceConfidence,
+		DtoConfidenceLevel expectedTotalConfidence)
+	{
+		// Arrange — derived confidence should equal min(quantityConfidence, unitPriceConfidence).
+		IFormFile file = CreateMockFormFile("walmart.jpg", "image/jpeg", 1024);
+
+		ParsedReceipt parsedReceipt = new(
+			FieldConfidence<string>.High("WALMART"),
+			FieldConfidence<DateOnly>.High(new DateOnly(2026, 5, 1)),
+			[
+				new ParsedReceiptItem(
+					FieldConfidence<string?>.None(),
+					FieldConfidence<string>.High("BANANAS"),
+					new FieldConfidence<decimal>(2.460m, quantityConfidence),
+					new FieldConfidence<decimal>(0.50m, unitPriceConfidence),
+					FieldConfidence<decimal>.None())
+			],
+			FieldConfidence<decimal>.High(1.23m),
+			[],
+			FieldConfidence<decimal>.High(1.23m),
+			FieldConfidence<string?>.None()
+		);
+
+		_mediatorMock
+			.Setup(m => m.Send(It.IsAny<ScanReceiptCommand>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new ScanReceiptResult(parsedReceipt));
+
+		// Act
+		Results<Ok<ProposedReceiptResponse>, BadRequest<string>, StatusCodeHttpResult, UnprocessableEntity<string>> actual = await _controller.ScanReceipt(file);
+
+		// Assert
+		ProposedReceiptResponse response = actual.Result.Should().BeOfType<Ok<ProposedReceiptResponse>>().Subject.Value!;
+		ProposedReceiptItemResponse bananas = response.Items.First();
+		bananas.TotalPrice.Should().Be(1.23d); // 2.460 * 0.50
+		bananas.TotalPriceConfidence.Should().Be(expectedTotalConfidence);
+	}
+
+	[Fact]
+	public async Task ScanReceipt_AllThreePriceFieldsNone_LeavesTotalPriceZeroWithNoneConfidence()
+	{
+		// Arrange — corrupted/blurry receipt where the model couldn't extract any
+		// price fields. Derivation requires quantity AND unitPrice to be present,
+		// so the response should fall through to the original (None, 0) values
+		// rather than fabricating a $0.00 line at "high" confidence.
+		IFormFile file = CreateMockFormFile("blurry.jpg", "image/jpeg", 1024);
+
+		ParsedReceipt parsedReceipt = new(
+			FieldConfidence<string>.High("WALMART"),
+			FieldConfidence<DateOnly>.High(new DateOnly(2026, 5, 1)),
+			[
+				new ParsedReceiptItem(
+					FieldConfidence<string?>.None(),
+					FieldConfidence<string>.High("MYSTERY ITEM"),
+					FieldConfidence<decimal>.None(),
+					FieldConfidence<decimal>.None(),
+					FieldConfidence<decimal>.None())
+			],
+			FieldConfidence<decimal>.None(),
+			[],
+			FieldConfidence<decimal>.None(),
+			FieldConfidence<string?>.None()
+		);
+
+		_mediatorMock
+			.Setup(m => m.Send(It.IsAny<ScanReceiptCommand>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new ScanReceiptResult(parsedReceipt));
+
+		// Act
+		Results<Ok<ProposedReceiptResponse>, BadRequest<string>, StatusCodeHttpResult, UnprocessableEntity<string>> actual = await _controller.ScanReceipt(file);
+
+		// Assert
+		ProposedReceiptResponse response = actual.Result.Should().BeOfType<Ok<ProposedReceiptResponse>>().Subject.Value!;
+		ProposedReceiptItemResponse mystery = response.Items.First();
+		mystery.TotalPrice.Should().Be(0d);
+		mystery.TotalPriceConfidence.Should().Be(DtoConfidenceLevel.None);
+	}
+
+	[Fact]
+	public async Task ScanReceipt_TotalPriceAlreadyPopulated_PassesThroughUnchanged()
+	{
+		// Arrange — when the VLM extracted a totalPrice with any of low/medium/high
+		// confidence the controller must not overwrite it with a derived value.
+		// Use a value that *differs* from quantity * unitPrice so we can
+		// distinguish pass-through from derivation: 2 * 3 = 6 but the VLM said 5.99.
+		IFormFile file = CreateMockFormFile("traditional.jpg", "image/jpeg", 1024);
+
+		ParsedReceipt parsedReceipt = new(
+			FieldConfidence<string>.High("STORE"),
+			FieldConfidence<DateOnly>.High(new DateOnly(2026, 5, 1)),
+			[
+				new ParsedReceiptItem(
+					FieldConfidence<string?>.None(),
+					FieldConfidence<string>.High("MILK"),
+					FieldConfidence<decimal>.High(2m),
+					FieldConfidence<decimal>.High(3m),
+					FieldConfidence<decimal>.High(5.99m))
+			],
+			FieldConfidence<decimal>.High(5.99m),
+			[],
+			FieldConfidence<decimal>.High(5.99m),
+			FieldConfidence<string?>.None()
+		);
+
+		_mediatorMock
+			.Setup(m => m.Send(It.IsAny<ScanReceiptCommand>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new ScanReceiptResult(parsedReceipt));
+
+		// Act
+		Results<Ok<ProposedReceiptResponse>, BadRequest<string>, StatusCodeHttpResult, UnprocessableEntity<string>> actual = await _controller.ScanReceipt(file);
+
+		// Assert — value carried through verbatim, no recomputation.
+		ProposedReceiptResponse response = actual.Result.Should().BeOfType<Ok<ProposedReceiptResponse>>().Subject.Value!;
+		ProposedReceiptItemResponse milk = response.Items.First();
+		milk.TotalPrice.Should().Be(5.99d);
+		milk.TotalPriceConfidence.Should().Be(DtoConfidenceLevel.High);
 	}
 
 	private static IFormFile CreateMockFormFile(string fileName, string contentType, int size)
