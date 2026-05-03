@@ -128,6 +128,16 @@ public class ReceiptScanController(
 
 	private static ProposedReceiptItemResponse MapItem(ParsedReceiptItem item)
 	{
+		// RECEIPTS-661: Weight-priced items (e.g. "TOMATO 2.300 lb @ 0.92") arrive
+		// from the VLM with quantity + unitPrice populated and a recognised
+		// confidence, but no separate totalPrice — the model didn't print one as
+		// a distinct line, so the value-type defaults to 0 and confidence to
+		// None. Without intervention the wizard renders such rows as $0.00 and
+		// the rolling subtotal is wrong by the same amount. Derive the missing
+		// total here so the response carries a usable value (single source of
+		// truth) rather than relying on every client to recompute it.
+		(decimal? derivedTotal, OcrConfidenceLevel derivedConfidence) = DeriveTotalPrice(item);
+
 		return new ProposedReceiptItemResponse
 		{
 			Code = item.Code.Value,
@@ -138,11 +148,47 @@ public class ReceiptScanController(
 			QuantityConfidence = MapConfidence(item.Quantity.Confidence),
 			UnitPrice = ToNullableDouble(item.UnitPrice.Value),
 			UnitPriceConfidence = MapConfidence(item.UnitPrice.Confidence),
-			TotalPrice = ToNullableDouble(item.TotalPrice.Value),
-			TotalPriceConfidence = MapConfidence(item.TotalPrice.Confidence),
+			TotalPrice = ToNullableDouble(derivedTotal),
+			TotalPriceConfidence = MapConfidence(derivedConfidence),
 			TaxCode = item.TaxCode.Value,
 			TaxCodeConfidence = MapConfidence(item.TaxCode.Confidence),
 		};
+	}
+
+	/// <summary>
+	/// RECEIPTS-661: When the VLM omits a separate <c>totalPrice</c> for a
+	/// weight-priced or per-unit-priced item but supplies both <c>quantity</c>
+	/// and <c>unitPrice</c>, derive the total here. The derived confidence is
+	/// the lower of the two source confidences (both are non-None by precondition),
+	/// so high+high => high, high+medium => medium, medium+low => low. When the
+	/// VLM already supplied <c>totalPrice</c> at any confidence (Low/Medium/High)
+	/// the original value is passed through unchanged.
+	/// </summary>
+	private static (decimal? TotalPrice, OcrConfidenceLevel Confidence) DeriveTotalPrice(ParsedReceiptItem item)
+	{
+		bool totalPriceMissing = item.TotalPrice.Confidence == OcrConfidenceLevel.None;
+		bool quantityPresent = item.Quantity.Confidence != OcrConfidenceLevel.None;
+		bool unitPricePresent = item.UnitPrice.Confidence != OcrConfidenceLevel.None;
+
+		if (totalPriceMissing && quantityPresent && unitPricePresent)
+		{
+			// Floor-to-cent rounding to match the rest of the system: the
+			// client-side fallback in proposalMappers.ts uses Math.round(...*100)/100
+			// for round-trip parity, ReceiptItemMapper.ResolveTotalAmount uses
+			// Math.Floor(...*100)/100 when the client omits a total, and
+			// computeLineTotal in LineItemsSection always rounds to cents for
+			// quantity-mode display. Without this rounding, weight-priced items
+			// like TOMATO 2.300 lb @ 0.92 would persist as 2.116m even though
+			// every UI surface shows $2.12 — silent sub-cent precision in the DB.
+			decimal product = item.Quantity.Value * item.UnitPrice.Value;
+			decimal computed = Math.Floor(product * 100m) / 100m;
+			OcrConfidenceLevel derived = item.Quantity.Confidence < item.UnitPrice.Confidence
+				? item.Quantity.Confidence
+				: item.UnitPrice.Confidence;
+			return (computed, derived);
+		}
+
+		return (item.TotalPrice.Value, item.TotalPrice.Confidence);
 	}
 
 	private static ProposedTaxLineResponse MapTaxLine(ParsedTaxLine taxLine)

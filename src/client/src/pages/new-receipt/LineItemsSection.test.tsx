@@ -173,9 +173,7 @@ describe("LineItemsSection", () => {
         taxCode: "F",
       },
     ];
-    renderWithProviders(
-      <LineItemsSection {...defaultProps} items={items} />,
-    );
+    renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
 
     // The previous bug rendered "$0.00" because the table multiplied
     // quantity * unitPrice (1 * 0). Assert the row shows the real total.
@@ -212,9 +210,7 @@ describe("LineItemsSection", () => {
         taxCode: "",
       },
     ];
-    renderWithProviders(
-      <LineItemsSection {...defaultProps} items={items} />,
-    );
+    renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
 
     // 4.97 + 3.00 = 7.97
     expect(screen.getByText("Subtotal: $7.97")).toBeInTheDocument();
@@ -235,9 +231,7 @@ describe("LineItemsSection", () => {
         taxCode: "",
       },
     ];
-    renderWithProviders(
-      <LineItemsSection {...defaultProps} items={items} />,
-    );
+    renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
 
     // The line total is rendered.
     expect(screen.getByText("$12.34")).toBeInTheDocument();
@@ -266,6 +260,69 @@ describe("LineItemsSection", () => {
     ];
     renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
     expect(screen.getByText("Subtotal: $0.90")).toBeInTheDocument();
+  });
+
+  // RECEIPTS-661: Weight-priced rows (Walmart "TOMATO 2.300 lb @ 0.92") arrive
+  // in quantity mode with a populated totalPrice — the upstream fix at the
+  // controller / mapper levels guarantees `totalPrice` is no longer `0` for
+  // these rows. Assert the cell renders the correct currency value AND the
+  // rolling subtotal sums to the printed receipt subtotal, not $0.00.
+  it("renders quantity-mode weight-priced rows with the correct line total (RECEIPTS-661)", () => {
+    const items: ReceiptLineItem[] = [
+      {
+        id: "1",
+        receiptItemCode: "TOMATO",
+        description: "TOMATO",
+        pricingMode: "quantity",
+        quantity: 2.3,
+        unitPrice: 0.92,
+        totalPrice: 2.12, // 2.3 * 0.92 = 2.116, rounded to cents
+        category: "Food",
+        subcategory: "",
+        taxCode: "",
+      },
+    ];
+    renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
+
+    // Cell shows the right currency, not $0.00.
+    expect(screen.getByText("$2.12")).toBeInTheDocument();
+    expect(screen.queryByText("$0.00")).not.toBeInTheDocument();
+  });
+
+  it("rolling subtotal across two weight-priced rows matches printed receipt total (RECEIPTS-661)", () => {
+    // The reference Walmart bug: TOMATO 2.300 lb @ 0.92 + BANANAS 2.460 lb @ 0.50.
+    // Real-world subtotal printed on the receipt: $3.35 (2.116 + 1.230 = 3.346).
+    const items: ReceiptLineItem[] = [
+      {
+        id: "1",
+        receiptItemCode: "TOMATO",
+        description: "TOMATO",
+        pricingMode: "quantity",
+        quantity: 2.3,
+        unitPrice: 0.92,
+        totalPrice: 2.12,
+        category: "Food",
+        subcategory: "",
+        taxCode: "",
+      },
+      {
+        id: "2",
+        receiptItemCode: "BANANAS",
+        description: "BANANAS",
+        pricingMode: "quantity",
+        quantity: 2.46,
+        unitPrice: 0.5,
+        totalPrice: 1.23,
+        category: "Food",
+        subcategory: "",
+        taxCode: "",
+      },
+    ];
+    renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
+
+    // computeLineTotal in quantity mode uses q × p with cent rounding:
+    // 2.3 * 0.92 → 2.12 ; 2.46 * 0.5 → 1.23 ; sum = 3.35.
+    expect(screen.getByText("Subtotal: $3.35")).toBeInTheDocument();
   });
 
   it("calls onChange when an item is removed", async () => {
@@ -525,9 +582,7 @@ describe("LineItemsSection", () => {
         taxCode: "",
       },
     ];
-    renderWithProviders(
-      <LineItemsSection {...defaultProps} items={items} />,
-    );
+    renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
 
     await user.click(screen.getByRole("button", { name: /edit/i }));
 
