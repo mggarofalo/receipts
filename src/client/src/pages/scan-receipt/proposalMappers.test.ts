@@ -564,6 +564,38 @@ describe("mapProposalToInitialValues", () => {
       expect(bananas.totalPrice).toBeGreaterThan(0);
     });
 
+    it("falls back to computed total when VLM emits (0, 'high') for a quantity row", () => {
+      // Defence against a hallucinated zero: ReceiptItem's domain validator
+      // rejects `totalAmount = 0` for a quantity-mode row whose unitPrice > 0
+      // (|0 − Math.Floor(q×up×100)/100| > 0.01). Passing the bogus zero through
+      // would surface as a server-side ArgumentException at submit time — falling
+      // back to `q × up` keeps the wizard usable without forcing the user to
+      // manually re-enter every line total.
+      const proposal = makeProposal({
+        items: [
+          {
+            code: "X",
+            codeConfidence: "high",
+            description: "x",
+            descriptionConfidence: "high",
+            quantity: 2,
+            quantityConfidence: "high",
+            unitPrice: 5.99,
+            unitPriceConfidence: "high",
+            totalPrice: 0,
+            totalPriceConfidence: "high",
+            taxCode: null,
+            taxCodeConfidence: "none",
+          },
+        ],
+      });
+
+      const result = mapProposalToInitialValues(proposal);
+
+      // 2 × 5.99 = 11.98 (cent-rounded fallback), not 0.
+      expect(result.items[0].totalPrice).toBeCloseTo(11.98, 2);
+    });
+
     it("rolling subtotal across mixed weight-priced rows matches sum of q × p", () => {
       // The real-world Walmart bug: TOMATO and BANANAS rows both arrive with
       // (totalPrice=0, none) — the rolling subtotal must equal 2.116 + 1.23 = 3.346

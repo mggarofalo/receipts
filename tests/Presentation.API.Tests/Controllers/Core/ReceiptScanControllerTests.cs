@@ -581,14 +581,57 @@ public class ReceiptScanControllerTests
 		// Act
 		Results<Ok<ProposedReceiptResponse>, BadRequest<string>, StatusCodeHttpResult, UnprocessableEntity<string>> actual = await _controller.ScanReceipt(file);
 
-		// Assert — totalPrice derived as 2.300 * 0.92 = 2.116; confidence elevated
-		// from None to the floor of (high, high) = high so the client treats it
-		// as authoritative.
+		// Assert — totalPrice derived as Math.Floor(2.300 * 0.92 * 100) / 100 =
+		// 2.11 (floor-to-cent matches the convention in
+		// ReceiptItemMapper.ResolveTotalAmount and proposalMappers.ts so the
+		// derived value never introduces sub-cent precision into the DB).
+		// Confidence is elevated from None to the floor of (high, high) = high
+		// so the client treats it as authoritative.
 		ProposedReceiptResponse response = actual.Result.Should().BeOfType<Ok<ProposedReceiptResponse>>().Subject.Value!;
 		response.Items.Should().HaveCount(1);
 		ProposedReceiptItemResponse tomato = response.Items.First();
-		tomato.TotalPrice.Should().Be(2.116d);
+		tomato.TotalPrice.Should().Be(2.11d);
 		tomato.TotalPriceConfidence.Should().Be(DtoConfidenceLevel.High);
+	}
+
+	[Fact]
+	public async Task ScanReceipt_DerivedTotal_RoundsDownToWholeCents()
+	{
+		// Arrange — guard against sub-cent precision leaking into the DB.
+		// 2.300 * 0.92 = 2.116; floor-to-cent yields 2.11 (matching the
+		// convention used by ReceiptItemMapper.ResolveTotalAmount and the
+		// client-side fallback in proposalMappers.ts).
+		IFormFile file = CreateMockFormFile("walmart.jpg", "image/jpeg", 1024);
+
+		ParsedReceipt parsedReceipt = new(
+			FieldConfidence<string>.High("WALMART"),
+			FieldConfidence<DateOnly>.High(new DateOnly(2026, 5, 1)),
+			[
+				new ParsedReceiptItem(
+					FieldConfidence<string?>.None(),
+					FieldConfidence<string>.High("TOMATO"),
+					FieldConfidence<decimal>.High(2.300m),
+					FieldConfidence<decimal>.High(0.92m),
+					FieldConfidence<decimal>.None())
+			],
+			FieldConfidence<decimal>.High(2.11m),
+			[],
+			FieldConfidence<decimal>.High(2.11m),
+			FieldConfidence<string?>.None()
+		);
+
+		_mediatorMock
+			.Setup(m => m.Send(It.IsAny<ScanReceiptCommand>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new ScanReceiptResult(parsedReceipt));
+
+		// Act
+		Results<Ok<ProposedReceiptResponse>, BadRequest<string>, StatusCodeHttpResult, UnprocessableEntity<string>> actual = await _controller.ScanReceipt(file);
+
+		// Assert — never 2.116, always cent-aligned.
+		ProposedReceiptResponse response = actual.Result.Should().BeOfType<Ok<ProposedReceiptResponse>>().Subject.Value!;
+		double total = response.Items.First().TotalPrice!.Value;
+		total.Should().Be(2.11d);
+		(total * 100d).Should().Be(Math.Floor(total * 100d));
 	}
 
 	[Theory]

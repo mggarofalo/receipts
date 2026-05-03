@@ -114,8 +114,16 @@ export function mapProposalToInitialValues(
       // undefined), producing a $0.00 row even though `quantity * unitPrice` is
       // computable. The server now derives a missing total upstream, but this
       // defensive check protects the wizard against any future path that emits a
-      // `0` + `none` pair. `.toLowerCase()` tolerates RECEIPTS-660's in-flight
-      // capitalisation fix without needing a coordinated landing.
+      // `0` + `none` pair.
+      //
+      // The `> 0` guard also defends against the inverse: if a VLM hallucinated
+      // (0, "high") for a quantity-mode row (unitPrice > 0), passing 0 through
+      // would fail `ReceiptItem`'s domain validator (which requires
+      // |totalAmount − Math.Floor(q×up×100)/100| ≤ 0.01) at submit time — a
+      // server-side ArgumentException rather than a silent success. Falling
+      // back to the computed total is the safer default. `.toLowerCase()`
+      // tolerates RECEIPTS-660's in-flight capitalisation fix without needing
+      // a coordinated landing.
       const totalPriceConfidence = (
         item.totalPriceConfidence ?? "none"
       ).toLowerCase();

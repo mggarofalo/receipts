@@ -172,9 +172,16 @@ public class ReceiptScanController(
 
 		if (totalPriceMissing && quantityPresent && unitPricePresent)
 		{
-			// Decimal multiplication preserves the precision of the source
-			// receipt values (e.g. 2.300 * 0.92 = 2.116) without IEEE-754 noise.
-			decimal computed = item.Quantity.Value * item.UnitPrice.Value;
+			// Floor-to-cent rounding to match the rest of the system: the
+			// client-side fallback in proposalMappers.ts uses Math.round(...*100)/100
+			// for round-trip parity, ReceiptItemMapper.ResolveTotalAmount uses
+			// Math.Floor(...*100)/100 when the client omits a total, and
+			// computeLineTotal in LineItemsSection always rounds to cents for
+			// quantity-mode display. Without this rounding, weight-priced items
+			// like TOMATO 2.300 lb @ 0.92 would persist as 2.116m even though
+			// every UI surface shows $2.12 — silent sub-cent precision in the DB.
+			decimal product = item.Quantity.Value * item.UnitPrice.Value;
+			decimal computed = Math.Floor(product * 100m) / 100m;
 			OcrConfidenceLevel derived = item.Quantity.Confidence < item.UnitPrice.Confidence
 				? item.Quantity.Confidence
 				: item.UnitPrice.Confidence;
