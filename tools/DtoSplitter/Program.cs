@@ -250,7 +250,11 @@ static string BuildPostamble(List<string> pragmaRestores)
 static string ComputeHash(string filePath)
 {
 	byte[] fileBytes = File.ReadAllBytes(filePath);
-	byte[] hashBytes = SHA256.HashData(fileBytes);
+	byte[] versionBytes = Encoding.UTF8.GetBytes($"\nsplitter-version:{SplitterMetadata.Version}");
+	byte[] combined = new byte[fileBytes.Length + versionBytes.Length];
+	Buffer.BlockCopy(fileBytes, 0, combined, 0, fileBytes.Length);
+	Buffer.BlockCopy(versionBytes, 0, combined, fileBytes.Length, versionBytes.Length);
+	byte[] hashBytes = SHA256.HashData(combined);
 	return Convert.ToHexStringLower(hashBytes);
 }
 
@@ -303,6 +307,18 @@ static int Error(string message)
 {
 	Console.Error.WriteLine(message);
 	return 1;
+}
+
+internal static class SplitterMetadata
+{
+	// Bump when DtoSplitter's generation logic changes (rewriter rules,
+	// preamble/postamble shape, etc.). Folded into the spec hash so a logic
+	// change invalidates existing generated files even when the OpenAPI spec
+	// is unchanged. See RECEIPTS-660 for the regression that motivated this:
+	// the per-property JsonStringEnumConverter rewriter was added but stale
+	// generated files weren't regenerated, so the bug it was supposed to fix
+	// persisted in the wild.
+	public const string Version = "2";
 }
 
 /// <summary>
