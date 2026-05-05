@@ -404,6 +404,125 @@ public class OllamaReceiptExtractionServiceTests
 	}
 
 	[Fact]
+	public void MergeWeightSublines_PhantomParent_AbsorbsSubline()
+	{
+		// Arrange — Walmart 2026-01-14 shape (RECEIPTS-662). Walmart prints the price on the
+		// weight line, so the VLM emits a phantom header (lineTotal/qty/unitPrice all 0) with
+		// taxCode "F" plus a sub-line carrying the actual values and taxCode "N".
+		List<VlmReceiptItem> items =
+		[
+			new() { Description = "TOMATO", Code = "000000004664", LineTotal = 0m, Quantity = 0m, UnitPrice = 0m, TaxCode = "F" },
+			new() { Description = "2.300 lb. @ 1 lb. /0.92", Code = null, LineTotal = 2.12m, Quantity = 2.300m, UnitPrice = 0.92m, TaxCode = "N" },
+		];
+
+		// Act
+		List<VlmReceiptItem> merged = OllamaReceiptExtractionService.MergeWeightSublines(items);
+
+		// Assert — single merged item with the sub-line's values; taxCode "N" wins
+		merged.Should().HaveCount(1);
+		merged[0].Description.Should().Be("TOMATO");
+		merged[0].Code.Should().Be("000000004664");
+		merged[0].LineTotal.Should().Be(2.12m);
+		merged[0].Quantity.Should().Be(2.300m);
+		merged[0].UnitPrice.Should().Be(0.92m);
+		merged[0].TaxCode.Should().Be("N");
+	}
+
+	[Fact]
+	public void MergeWeightSublines_PhantomParentNullFields_AbsorbsSubline()
+	{
+		// Arrange — defensive: phantom parent emits null instead of zero. Same outcome.
+		List<VlmReceiptItem> items =
+		[
+			new() { Description = "TOMATO", Code = "000000004664", LineTotal = null, Quantity = null, UnitPrice = null, TaxCode = "F" },
+			new() { Description = "2.300 lb. @ 1 lb. /0.92", Code = null, LineTotal = 2.12m, Quantity = 2.300m, UnitPrice = 0.92m, TaxCode = "N" },
+		];
+
+		// Act
+		List<VlmReceiptItem> merged = OllamaReceiptExtractionService.MergeWeightSublines(items);
+
+		// Assert
+		merged.Should().HaveCount(1);
+		merged[0].LineTotal.Should().Be(2.12m);
+		merged[0].Quantity.Should().Be(2.300m);
+		merged[0].TaxCode.Should().Be("N");
+	}
+
+	[Fact]
+	public void MergeWeightSublines_PhantomParentNullLineTotal_DoesNotMatchExistingPredicate()
+	{
+		// Arrange — defensive: when both parent (phantom) and sub-line emit lineTotal=null,
+		// the existing "matching lineTotal" predicate fires on null==null, which would route
+		// the merge through the wrong case and leave the phantom's taxCode untouched. The
+		// phantom-parent guard on case (a) keeps phantoms exclusively in case (b).
+		List<VlmReceiptItem> items =
+		[
+			new() { Description = "TOMATO", Code = "000000004664", LineTotal = null, Quantity = null, UnitPrice = null, TaxCode = "F" },
+			new() { Description = "2.300 lb. @ 1 lb. /0.92", Code = null, LineTotal = null, Quantity = 2.300m, UnitPrice = 0.92m, TaxCode = "N" },
+		];
+
+		// Act
+		List<VlmReceiptItem> merged = OllamaReceiptExtractionService.MergeWeightSublines(items);
+
+		// Assert — case (b) requires sub-line lineTotal > 0; this case is preserved as two rows
+		// rather than silently absorbed with the wrong taxCode. The user can correct manually.
+		merged.Should().HaveCount(2);
+		merged[0].TaxCode.Should().Be("F");
+	}
+
+	[Fact]
+	public void MergeWeightSublines_PhantomParentSublineMissingTaxCode_LeavesParentTaxCodeUntouched()
+	{
+		// Arrange — phantom parent has taxCode, sub-line doesn't. The parent's taxCode is
+		// preserved (no overwrite) because sub-line carries no replacement signal.
+		List<VlmReceiptItem> items =
+		[
+			new() { Description = "TOMATO", Code = "000000004664", LineTotal = 0m, Quantity = 0m, UnitPrice = 0m, TaxCode = "F" },
+			new() { Description = "2.300 lb. @ 1 lb. /0.92", Code = null, LineTotal = 2.12m, Quantity = 2.300m, UnitPrice = 0.92m, TaxCode = null },
+		];
+
+		// Act
+		List<VlmReceiptItem> merged = OllamaReceiptExtractionService.MergeWeightSublines(items);
+
+		// Assert — values absorbed; pre-existing taxCode kept
+		merged.Should().HaveCount(1);
+		merged[0].LineTotal.Should().Be(2.12m);
+		merged[0].TaxCode.Should().Be("F");
+	}
+
+	[Fact]
+	public async Task ExtractAsync_PhantomHeaderWithWeightSubline_ProducesSingleItem()
+	{
+		// Arrange — full pipeline reproduction of the Walmart 2026-01-14 shape (RECEIPTS-662).
+		string innerJson = """
+			{
+			  "schema_version": 1,
+			  "store": { "name": "Walmart" },
+			  "items": [
+			    { "description": "TOMATO", "code": "000000004664", "lineTotal": 0,
+			      "quantity": 0, "unitPrice": 0, "taxCode": "F" },
+			    { "description": "2.300 lb. @ 1 lb. /0.92", "code": null, "lineTotal": 2.12,
+			      "quantity": 2.300, "unitPrice": 0.92, "taxCode": "N" }
+			  ],
+			  "total": 2.12
+			}
+			""";
+		OllamaReceiptExtractionService service = CreateService(CreateHandler(WrapInOllamaEnvelope(innerJson)));
+
+		// Act
+		ParsedReceipt receipt = await service.ExtractAsync(FakeImage, CancellationToken.None);
+
+		// Assert — phantom is absorbed; merged item carries the printed values
+		receipt.Items.Should().HaveCount(1);
+		receipt.Items[0].Description.Value.Should().Be("TOMATO");
+		receipt.Items[0].Code.Value.Should().Be("000000004664");
+		receipt.Items[0].TotalPrice.Value.Should().Be(2.12m);
+		receipt.Items[0].Quantity.Value.Should().Be(2.300m);
+		receipt.Items[0].UnitPrice.Value.Should().Be(0.92m);
+		receipt.Items[0].TaxCode.Value.Should().Be("N");
+	}
+
+	[Fact]
 	public async Task ExtractAsync_MissingOptionalFields_ReturnsNoneConfidence()
 	{
 		// Arrange — no payments, no taxLines, items with unitPrice/quantity omitted (preferred per V2 prompt)

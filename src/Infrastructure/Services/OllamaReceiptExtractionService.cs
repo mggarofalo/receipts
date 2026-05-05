@@ -336,9 +336,12 @@ public sealed partial class OllamaReceiptExtractionService : IReceiptExtractionS
 	/// emit "2.460 lb. @ 1 lb. /0.50" as its own item row when prompted via few-shot examples
 	/// (they reliably extract the quantity/unitPrice but not the parent-merging structure).
 	/// We detect these sub-lines deterministically: null <c>code</c> + description containing
-	/// <c>" @ "</c> + non-null <c>quantity</c> and <c>unitPrice</c>. When the preceding item
-	/// shares the same <c>lineTotal</c> and has null <c>quantity</c>, we absorb the sub-line's
-	/// quantity/unitPrice into the parent and drop the sub-line.
+	/// <c>" @ "</c> + non-null <c>quantity</c> and <c>unitPrice</c>. Two parent shapes merge:
+	/// (a) parent shares the sub-line's <c>lineTotal</c> with null <c>quantity</c> — absorb
+	/// quantity/unitPrice into the parent; (b) phantom-header parent (lineTotal/qty/unitPrice
+	/// all 0 or null) — Walmart prints the price on the weight line, so absorb the sub-line
+	/// entirely (RECEIPTS-662). The sub-line's taxCode wins for case (b) because the phantom
+	/// row's marker (often "F") is the wrong code for taxable produce-by-weight.
 	/// </summary>
 	internal static List<VlmReceiptItem> MergeWeightSublines(List<VlmReceiptItem> items)
 	{
@@ -348,7 +351,7 @@ public sealed partial class OllamaReceiptExtractionService : IReceiptExtractionS
 			if (IsWeightSubline(item) && merged.Count > 0)
 			{
 				VlmReceiptItem parent = merged[^1];
-				if (parent.LineTotal == item.LineTotal && parent.Quantity is null)
+				if (!IsPhantomParent(parent) && parent.LineTotal == item.LineTotal && parent.Quantity is null)
 				{
 					parent.Quantity = item.Quantity;
 					parent.UnitPrice = item.UnitPrice;
@@ -357,6 +360,18 @@ public sealed partial class OllamaReceiptExtractionService : IReceiptExtractionS
 					// taxCode wins when both are present (the printed marker sits next to the
 					// parent line on the physical receipt).
 					if (string.IsNullOrWhiteSpace(parent.TaxCode) && !string.IsNullOrWhiteSpace(item.TaxCode))
+					{
+						parent.TaxCode = item.TaxCode;
+					}
+					continue;
+				}
+
+				if (IsPhantomParent(parent) && item.LineTotal is > 0)
+				{
+					parent.LineTotal = item.LineTotal;
+					parent.Quantity = item.Quantity;
+					parent.UnitPrice = item.UnitPrice;
+					if (!string.IsNullOrWhiteSpace(item.TaxCode))
 					{
 						parent.TaxCode = item.TaxCode;
 					}
@@ -375,6 +390,13 @@ public sealed partial class OllamaReceiptExtractionService : IReceiptExtractionS
 			&& item.Description.Contains(" @ ", StringComparison.Ordinal)
 			&& item.Quantity is not null
 			&& item.UnitPrice is not null;
+	}
+
+	private static bool IsPhantomParent(VlmReceiptItem item)
+	{
+		return item.LineTotal is null or 0m
+			&& item.Quantity is null or 0m
+			&& item.UnitPrice is null or 0m;
 	}
 
 	private static ParsedReceiptItem MapItem(VlmReceiptItem item)
