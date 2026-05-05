@@ -56,7 +56,13 @@ export function ConfidenceIndicator({
     return null;
   }
 
+  // Defensive: if the wire format ever drifts from the contract (e.g. a serializer
+  // regression emits PascalCase enum names), fall back to rendering nothing rather
+  // than NRE'ing on an undefined CHIP_CONFIG entry.
   const config = CHIP_CONFIG[confidence];
+  if (!config) {
+    return null;
+  }
 
   return (
     <Tooltip>
