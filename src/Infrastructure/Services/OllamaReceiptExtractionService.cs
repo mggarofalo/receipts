@@ -35,9 +35,10 @@ public sealed partial class OllamaReceiptExtractionService : IReceiptExtractionS
 	/// When the VLM's extracted <c>subtotal</c> disagrees with the sum of <c>items[].totalPrice</c>
 	/// by more than this amount, the subtotal's confidence is downgraded so the wizard renders a
 	/// review badge. The discrepancy is otherwise preserved as-extracted so the user can see both
-	/// values and adjudicate. See RECEIPTS-663.
+	/// values and adjudicate. Public so the VlmEval regression suite can mirror the live threshold
+	/// rather than its own per-fixture money tolerance. See RECEIPTS-663.
 	/// </summary>
-	internal const decimal SubtotalReconciliationTolerance = 0.05m;
+	public const decimal SubtotalReconciliationTolerance = 0.05m;
 
 	private static readonly string[] DateFormats =
 	[

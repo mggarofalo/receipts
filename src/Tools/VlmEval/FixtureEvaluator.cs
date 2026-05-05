@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using Application.Interfaces.Services;
 using Application.Models.Ocr;
+using Infrastructure.Services;
 using Microsoft.Extensions.Logging;
 
 namespace VlmEval;
@@ -53,7 +54,13 @@ public sealed class FixtureEvaluator(
 		diffs.Add(DiffDate(fixture.Expected.Date, parsed.Date));
 		diffs.Add(DiffMoney("subtotal", fixture.Expected.Subtotal, parsed.Subtotal, tolerance));
 		diffs.Add(DiffMoney("total", fixture.Expected.Total, parsed.Total, tolerance));
-		diffs.Add(DiffSubtotalReconciliation(parsed.Subtotal, parsed.Items, tolerance));
+		// Use the production reconciliation threshold (RECEIPTS-663) rather than the per-fixture
+		// money tolerance: the eval check should mirror the live confidence-downgrade rule, not
+		// the unrelated subtotal/total comparison tolerance.
+		diffs.Add(DiffSubtotalReconciliation(
+			parsed.Subtotal,
+			parsed.Items,
+			OllamaReceiptExtractionService.SubtotalReconciliationTolerance));
 		diffs.Add(DiffTaxLines(fixture.Expected.TaxLines, parsed.TaxLines, tolerance));
 		diffs.Add(DiffPaymentMethod(fixture.Expected.PaymentMethod, parsed.PaymentMethod));
 		diffs.Add(DiffMinItemCount(fixture.Expected.MinItemCount, parsed.Items));
