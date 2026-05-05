@@ -649,6 +649,87 @@ public class FixtureEvaluatorTests
 
 	#endregion
 
+	#region DiffSubtotalReconciliation
+
+	[Fact]
+	public void DiffSubtotalReconciliation_ExactMatch_ReturnsPass()
+	{
+		List<ParsedReceiptItem> items =
+		[
+			MakeItem("Apple", 1.00m),
+			MakeItem("Bread", 2.00m),
+			MakeItem("Cheese", 3.00m),
+		];
+
+		FieldDiff diff = FixtureEvaluator.DiffSubtotalReconciliation(FieldConfidence<decimal>.High(6.00m), items);
+
+		diff.Field.Should().Be("subtotalReconciliation");
+		diff.Status.Should().Be(DiffStatus.Pass);
+		diff.Detail.Should().BeNull();
+	}
+
+	[Fact]
+	public void DiffSubtotalReconciliation_DeltaWithinDefaultTolerance_ReturnsPass()
+	{
+		List<ParsedReceiptItem> items = [MakeItem("Apple", 1.00m)];
+
+		// Default tolerance is $0.01 (inclusive). Delta of exactly $0.01 passes.
+		FieldDiff diff = FixtureEvaluator.DiffSubtotalReconciliation(FieldConfidence<decimal>.High(1.01m), items);
+
+		diff.Status.Should().Be(DiffStatus.Pass);
+	}
+
+	[Fact]
+	public void DiffSubtotalReconciliation_DeltaOverTolerance_ReturnsFail()
+	{
+		// Walmart 2026-01-14 (RECEIPTS-663): subtotal=$69.68, items sum to $69.57, delta=$0.11.
+		List<ParsedReceiptItem> items =
+		[
+			MakeItem("Item A", 30.00m),
+			MakeItem("Item B", 25.57m),
+			MakeItem("Item C", 14.00m),
+		];
+
+		FieldDiff diff = FixtureEvaluator.DiffSubtotalReconciliation(FieldConfidence<decimal>.High(69.68m), items, tolerance: 0.05m);
+
+		diff.Status.Should().Be(DiffStatus.Fail);
+		diff.Actual.Should().Contain("delta=0.11");
+		diff.Detail.Should().Contain("0.11");
+	}
+
+	[Fact]
+	public void DiffSubtotalReconciliation_DeltaAtCustomToleranceBoundary_ReturnsPass()
+	{
+		// Inclusive bound: delta == tolerance passes (RECEIPTS-634 convention).
+		List<ParsedReceiptItem> items = [MakeItem("Item", 10.00m)];
+
+		FieldDiff diff = FixtureEvaluator.DiffSubtotalReconciliation(FieldConfidence<decimal>.High(10.05m), items, tolerance: 0.05m);
+
+		diff.Status.Should().Be(DiffStatus.Pass);
+	}
+
+	[Fact]
+	public void DiffSubtotalReconciliation_NoSubtotal_ReturnsNotDeclared()
+	{
+		List<ParsedReceiptItem> items = [MakeItem("Apple", 1.00m)];
+
+		FieldDiff diff = FixtureEvaluator.DiffSubtotalReconciliation(FieldConfidence<decimal>.None(), items);
+
+		diff.Status.Should().Be(DiffStatus.NotDeclared);
+		diff.Detail.Should().Be("subtotal not extracted");
+	}
+
+	[Fact]
+	public void DiffSubtotalReconciliation_NoItems_ReturnsNotDeclared()
+	{
+		FieldDiff diff = FixtureEvaluator.DiffSubtotalReconciliation(FieldConfidence<decimal>.High(10.00m), []);
+
+		diff.Status.Should().Be(DiffStatus.NotDeclared);
+		diff.Detail.Should().Be("no item totals extracted");
+	}
+
+	#endregion
+
 	#region DiffItems
 
 	[Fact]

@@ -491,6 +491,102 @@ public class OllamaReceiptExtractionServiceTests
 	}
 
 	[Fact]
+	public void ReconcileSubtotal_NoExtractedValue_ReturnsNoneConfidence()
+	{
+		FieldConfidence<decimal> result = OllamaReceiptExtractionService.ReconcileSubtotal(
+			extracted: null,
+			items: [MakeReceiptItem(1.00m)]);
+
+		result.IsPresent.Should().BeFalse();
+		result.Confidence.Should().Be(ConfidenceLevel.None);
+	}
+
+	[Fact]
+	public void ReconcileSubtotal_SubtotalMatchesItemSumExactly_ReturnsHighConfidence()
+	{
+		FieldConfidence<decimal> result = OllamaReceiptExtractionService.ReconcileSubtotal(
+			extracted: 6.00m,
+			items: [MakeReceiptItem(1.00m), MakeReceiptItem(2.00m), MakeReceiptItem(3.00m)]);
+
+		result.Confidence.Should().Be(ConfidenceLevel.High);
+		result.Value.Should().Be(6.00m);
+	}
+
+	[Fact]
+	public void ReconcileSubtotal_DeltaAtToleranceBoundary_ReturnsHighConfidence()
+	{
+		// Inclusive bound: delta exactly equal to tolerance ($0.05) is High confidence.
+		FieldConfidence<decimal> result = OllamaReceiptExtractionService.ReconcileSubtotal(
+			extracted: 10.05m,
+			items: [MakeReceiptItem(10.00m)]);
+
+		result.Confidence.Should().Be(ConfidenceLevel.High);
+	}
+
+	[Fact]
+	public void ReconcileSubtotal_DeltaExceedsTolerance_ReturnsLowConfidencePreservingValue()
+	{
+		// Walmart 2026-01-14 (RECEIPTS-663): subtotal=$69.68, items sum to $69.57, delta=$0.11.
+		FieldConfidence<decimal> result = OllamaReceiptExtractionService.ReconcileSubtotal(
+			extracted: 69.68m,
+			items:
+			[
+				MakeReceiptItem(30.00m),
+				MakeReceiptItem(25.57m),
+				MakeReceiptItem(14.00m),
+			]);
+
+		result.Confidence.Should().Be(ConfidenceLevel.Low);
+		result.Value.Should().Be(69.68m);
+	}
+
+	[Fact]
+	public void ReconcileSubtotal_NoItems_TreatsSumAsZero()
+	{
+		// Defensive: an empty items list shouldn't crash. Sum is 0, so non-zero subtotal
+		// disagrees and ends up Low confidence — exactly the "we missed every item" signal
+		// that motivates the cross-check (Option 1 in RECEIPTS-663).
+		FieldConfidence<decimal> result = OllamaReceiptExtractionService.ReconcileSubtotal(
+			extracted: 5.00m,
+			items: []);
+
+		result.Confidence.Should().Be(ConfidenceLevel.Low);
+		result.Value.Should().Be(5.00m);
+	}
+
+	[Fact]
+	public async Task ExtractAsync_SubtotalDisagreesWithItemSum_DowngradesConfidence()
+	{
+		// End-to-end: Walmart 2026-01-14 shape. Subtotal=$69.68, items sum to $69.57.
+		string innerJson = """
+			{
+			  "schema_version": 1,
+			  "store": { "name": "Walmart" },
+			  "items": [
+			    { "description": "ITEM A", "code": "A", "lineTotal": 30.00 },
+			    { "description": "ITEM B", "code": "B", "lineTotal": 25.57 },
+			    { "description": "ITEM C", "code": "C", "lineTotal": 14.00 }
+			  ],
+			  "subtotal": 69.68,
+			  "total": 70.43
+			}
+			""";
+		OllamaReceiptExtractionService service = CreateService(CreateHandler(WrapInOllamaEnvelope(innerJson)));
+
+		ParsedReceipt receipt = await service.ExtractAsync(FakeImage, CancellationToken.None);
+
+		receipt.Subtotal.Confidence.Should().Be(ConfidenceLevel.Low);
+		receipt.Subtotal.Value.Should().Be(69.68m);
+	}
+
+	private static ParsedReceiptItem MakeReceiptItem(decimal totalPrice) =>
+		new(FieldConfidence<string?>.None(),
+			FieldConfidence<string>.High("X"),
+			FieldConfidence<decimal>.None(),
+			FieldConfidence<decimal>.None(),
+			FieldConfidence<decimal>.High(totalPrice));
+
+	[Fact]
 	public async Task ExtractAsync_PhantomHeaderWithWeightSubline_ProducesSingleItem()
 	{
 		// Arrange — full pipeline reproduction of the Walmart 2026-01-14 shape (RECEIPTS-662).
@@ -1053,7 +1149,8 @@ public class OllamaReceiptExtractionServiceTests
 			  "subtotal": "9.10",
 			  "total": "9.71",
 			  "items": [
-			    { "description": "MILK", "lineTotal": "3.49", "quantity": "1", "unitPrice": "3.49" }
+			    { "description": "MILK", "lineTotal": "3.49", "quantity": "1", "unitPrice": "3.49" },
+			    { "description": "BREAD", "lineTotal": "5.61", "quantity": "1", "unitPrice": "5.61" }
 			  ],
 			  "taxLines": [{ "label": "TAX1", "amount": "0.61" }]
 			}
@@ -1063,17 +1160,19 @@ public class OllamaReceiptExtractionServiceTests
 		// Act
 		ParsedReceipt receipt = await service.ExtractAsync(FakeImage, CancellationToken.None);
 
-		// Assert — every numeric-as-string value parsed without loss
+		// Assert — every numeric-as-string value parsed without loss. Two items sum to the
+		// declared subtotal so RECEIPTS-663 reconciliation keeps confidence High.
 		receipt.Subtotal.Value.Should().Be(9.10m);
 		receipt.Subtotal.Confidence.Should().Be(ConfidenceLevel.High);
 		receipt.Total.Value.Should().Be(9.71m);
 		receipt.Total.Confidence.Should().Be(ConfidenceLevel.High);
 		receipt.TaxLines.Should().HaveCount(1);
 		receipt.TaxLines[0].Amount.Value.Should().Be(0.61m);
-		receipt.Items.Should().HaveCount(1);
+		receipt.Items.Should().HaveCount(2);
 		receipt.Items[0].TotalPrice.Value.Should().Be(3.49m);
 		receipt.Items[0].Quantity.Value.Should().Be(1m);
 		receipt.Items[0].UnitPrice.Value.Should().Be(3.49m);
+		receipt.Items[1].TotalPrice.Value.Should().Be(5.61m);
 	}
 
 	[Theory]

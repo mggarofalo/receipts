@@ -31,6 +31,14 @@ public sealed partial class OllamaReceiptExtractionService : IReceiptExtractionS
 	/// </summary>
 	internal const int ExceptionMessageMaxChars = 500;
 
+	/// <summary>
+	/// When the VLM's extracted <c>subtotal</c> disagrees with the sum of <c>items[].totalPrice</c>
+	/// by more than this amount, the subtotal's confidence is downgraded so the wizard renders a
+	/// review badge. The discrepancy is otherwise preserved as-extracted so the user can see both
+	/// values and adjudicate. See RECEIPTS-663.
+	/// </summary>
+	internal const decimal SubtotalReconciliationTolerance = 0.05m;
+
 	private static readonly string[] DateFormats =
 	[
 		"yyyy-MM-dd",
@@ -287,9 +295,7 @@ public sealed partial class OllamaReceiptExtractionService : IReceiptExtractionS
 
 		List<ParsedReceiptItem> items = MergeWeightSublines(payload.Items ?? []).Select(MapItem).ToList();
 
-		FieldConfidence<decimal> subtotal = payload.Subtotal is { } s
-			? FieldConfidence<decimal>.High(s)
-			: FieldConfidence<decimal>.None();
+		FieldConfidence<decimal> subtotal = ReconcileSubtotal(payload.Subtotal, items);
 
 		List<ParsedTaxLine> taxLines = (payload.TaxLines ?? []).Select(MapTaxLine).ToList();
 
@@ -397,6 +403,30 @@ public sealed partial class OllamaReceiptExtractionService : IReceiptExtractionS
 		return item.LineTotal is null or 0m
 			&& item.Quantity is null or 0m
 			&& item.UnitPrice is null or 0m;
+	}
+
+	/// <summary>
+	/// Cross-checks the VLM's extracted <c>subtotal</c> against the sum of item line totals.
+	/// When the two disagree by more than <see cref="SubtotalReconciliationTolerance"/>, the
+	/// extracted value is preserved (so the user sees what the VLM read) but the confidence is
+	/// downgraded to <see cref="ConfidenceLevel.Low"/> so the wizard surfaces a review badge.
+	/// Without this cross-check the wizard's on-page subtotal and line-item sum could disagree
+	/// silently and break the user's mental balance check. See RECEIPTS-663.
+	/// </summary>
+	internal static FieldConfidence<decimal> ReconcileSubtotal(decimal? extracted, List<ParsedReceiptItem> items)
+	{
+		if (extracted is not { } subtotal)
+		{
+			return FieldConfidence<decimal>.None();
+		}
+
+		decimal itemSum = items
+			.Where(i => i.TotalPrice.IsPresent)
+			.Sum(i => i.TotalPrice.Value);
+		decimal delta = Math.Abs(subtotal - itemSum);
+		return delta <= SubtotalReconciliationTolerance
+			? FieldConfidence<decimal>.High(subtotal)
+			: FieldConfidence<decimal>.Low(subtotal);
 	}
 
 	private static ParsedReceiptItem MapItem(VlmReceiptItem item)

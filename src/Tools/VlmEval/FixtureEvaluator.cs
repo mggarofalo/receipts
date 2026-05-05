@@ -53,6 +53,7 @@ public sealed class FixtureEvaluator(
 		diffs.Add(DiffDate(fixture.Expected.Date, parsed.Date));
 		diffs.Add(DiffMoney("subtotal", fixture.Expected.Subtotal, parsed.Subtotal, tolerance));
 		diffs.Add(DiffMoney("total", fixture.Expected.Total, parsed.Total, tolerance));
+		diffs.Add(DiffSubtotalReconciliation(parsed.Subtotal, parsed.Items, tolerance));
 		diffs.Add(DiffTaxLines(fixture.Expected.TaxLines, parsed.TaxLines, tolerance));
 		diffs.Add(DiffPaymentMethod(fixture.Expected.PaymentMethod, parsed.PaymentMethod));
 		diffs.Add(DiffMinItemCount(fixture.Expected.MinItemCount, parsed.Items));
@@ -220,6 +221,42 @@ public sealed class FixtureEvaluator(
 			expected,
 			actual.Value,
 			match ? null : "payment method does not contain expected substring");
+	}
+
+	/// <summary>
+	/// Cross-check that the VLM's extracted <c>subtotal</c> agrees with the sum of
+	/// <c>items[].totalPrice</c> within <paramref name="tolerance"/>. Fires for every fixture
+	/// (no per-sidecar opt-in). Returns <see cref="DiffStatus.NotDeclared"/> when either side
+	/// of the equation is missing — the assertion only makes sense when both are present.
+	/// See RECEIPTS-663.
+	/// </summary>
+	internal static FieldDiff DiffSubtotalReconciliation(FieldConfidence<decimal> subtotal, List<ParsedReceiptItem> items, decimal tolerance = DefaultMoneyTolerance)
+	{
+		if (!subtotal.IsPresent)
+		{
+			return new FieldDiff("subtotalReconciliation", DiffStatus.NotDeclared, null, null, "subtotal not extracted");
+		}
+
+		List<decimal> totals = [.. items
+			.Where(i => i.TotalPrice.IsPresent)
+			.Select(i => i.TotalPrice.Value)];
+
+		if (totals.Count == 0)
+		{
+			return new FieldDiff("subtotalReconciliation", DiffStatus.NotDeclared, null, null, "no item totals extracted");
+		}
+
+		decimal sum = totals.Sum();
+		decimal delta = Math.Abs(subtotal.Value - sum);
+		bool match = delta <= tolerance;
+		string expected = $"|subtotal - sum(items)| <= {tolerance.ToString("0.00", CultureInfo.InvariantCulture)}";
+		string actual = $"subtotal={subtotal.Value.ToString("0.00", CultureInfo.InvariantCulture)}, sum={sum.ToString("0.00", CultureInfo.InvariantCulture)}, delta={delta.ToString("0.00", CultureInfo.InvariantCulture)}";
+		return new FieldDiff(
+			"subtotalReconciliation",
+			match ? DiffStatus.Pass : DiffStatus.Fail,
+			expected,
+			actual,
+			match ? null : $"delta=${delta.ToString("0.00", CultureInfo.InvariantCulture)}");
 	}
 
 	internal static FieldDiff DiffMinItemCount(int? expected, List<ParsedReceiptItem> actual)
