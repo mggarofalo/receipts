@@ -7,6 +7,7 @@ import { useLocationHistory } from "@/hooks/useLocationHistory";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { TransactionsSection } from "./TransactionsSection";
 import { LineItemsSection } from "./LineItemsSection";
+import { computeLineTotal } from "./computeLineTotal";
 import { BalanceSidebar } from "./BalanceSidebar";
 import { HeaderSection } from "./HeaderSection";
 import { headerSchema, type HeaderFormValues } from "./headerSchema";
@@ -96,13 +97,12 @@ export default function NewReceiptPage({
     locationRef.current?.focus();
   }, []);
 
+  // Must mirror LineItemsSection's per-row total (which branches on pricingMode):
+  // flat-priced rows store the receipt-printed total in `totalPrice` and have
+  // quantity=1, unitPrice=0, so a naïve `q × p` would silently drop them and
+  // surface a sidebar subtotal that disagrees with the table's footer.
   const subtotal = useMemo(
-    () =>
-      items.reduce(
-        (sum, item) =>
-          sum + Math.round(item.quantity * item.unitPrice * 100) / 100,
-        0,
-      ),
+    () => items.reduce((sum, item) => sum + computeLineTotal(item), 0),
     [items],
   );
 
