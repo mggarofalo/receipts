@@ -351,7 +351,7 @@ public sealed partial class OllamaReceiptExtractionService : IReceiptExtractionS
 			if (IsWeightSubline(item) && merged.Count > 0)
 			{
 				VlmReceiptItem parent = merged[^1];
-				if (parent.LineTotal == item.LineTotal && parent.Quantity is null)
+				if (!IsPhantomParent(parent) && parent.LineTotal == item.LineTotal && parent.Quantity is null)
 				{
 					parent.Quantity = item.Quantity;
 					parent.UnitPrice = item.UnitPrice;

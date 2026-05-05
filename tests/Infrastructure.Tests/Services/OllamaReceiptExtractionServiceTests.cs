@@ -449,6 +449,28 @@ public class OllamaReceiptExtractionServiceTests
 	}
 
 	[Fact]
+	public void MergeWeightSublines_PhantomParentNullLineTotal_DoesNotMatchExistingPredicate()
+	{
+		// Arrange — defensive: when both parent (phantom) and sub-line emit lineTotal=null,
+		// the existing "matching lineTotal" predicate fires on null==null, which would route
+		// the merge through the wrong case and leave the phantom's taxCode untouched. The
+		// phantom-parent guard on case (a) keeps phantoms exclusively in case (b).
+		List<VlmReceiptItem> items =
+		[
+			new() { Description = "TOMATO", Code = "000000004664", LineTotal = null, Quantity = null, UnitPrice = null, TaxCode = "F" },
+			new() { Description = "2.300 lb. @ 1 lb. /0.92", Code = null, LineTotal = null, Quantity = 2.300m, UnitPrice = 0.92m, TaxCode = "N" },
+		];
+
+		// Act
+		List<VlmReceiptItem> merged = OllamaReceiptExtractionService.MergeWeightSublines(items);
+
+		// Assert — case (b) requires sub-line lineTotal > 0; this case is preserved as two rows
+		// rather than silently absorbed with the wrong taxCode. The user can correct manually.
+		merged.Should().HaveCount(2);
+		merged[0].TaxCode.Should().Be("F");
+	}
+
+	[Fact]
 	public void MergeWeightSublines_PhantomParentSublineMissingTaxCode_LeavesParentTaxCodeUntouched()
 	{
 		// Arrange — phantom parent has taxCode, sub-line doesn't. The parent's taxCode is
