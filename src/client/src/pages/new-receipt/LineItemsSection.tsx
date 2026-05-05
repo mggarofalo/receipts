@@ -13,6 +13,7 @@ import {
   useCategoryRecommendations,
 } from "@/hooks/useSimilarItems";
 import { useReceiptItemSuggestions } from "@/hooks/useReceiptItemSuggestions";
+import { computeLineTotal } from "./computeLineTotal";
 import { formatCurrency } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -112,24 +113,6 @@ export interface ReceiptLineItem {
   category: string;
   subcategory: string;
   taxCode: string;
-}
-
-/**
- * Compute the per-row line total, picking the source-of-truth field based on
- * pricingMode. For "quantity" rows this honors the quantity x unit-price math
- * (with cent rounding to dodge IEEE-754 noise); for "flat" rows it returns
- * the receipt-printed total verbatim.
- */
-function computeLineTotal(item: {
-  pricingMode: "quantity" | "flat";
-  quantity: number;
-  unitPrice: number;
-  totalPrice: number;
-}): number {
-  if (item.pricingMode === "flat") {
-    return item.totalPrice;
-  }
-  return Math.round(item.quantity * item.unitPrice * 100) / 100;
 }
 
 interface LineItemsSectionProps {
