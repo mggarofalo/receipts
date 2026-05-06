@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/command";
 import { Combobox } from "@/components/ui/combobox";
 import { CurrencyInput } from "@/components/ui/currency-input";
+import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import {
   Form,
@@ -760,18 +761,16 @@ export function LineItemsSection({
                   <FormItem>
                     <FormLabel>Mode</FormLabel>
                     <FormControl>
-                      <label className="flex items-center gap-1.5 text-sm h-9 px-2 rounded-md border bg-background cursor-pointer select-none whitespace-nowrap">
-                        <input
-                          type="checkbox"
+                      <div className="flex items-center gap-2 text-sm h-9 px-2 rounded-md border bg-background select-none whitespace-nowrap">
+                        <Switch
                           aria-label="Flat price"
-                          className="h-3.5 w-3.5"
                           checked={field.value === "flat"}
-                          onChange={(e) =>
-                            field.onChange(e.target.checked ? "flat" : "quantity")
+                          onCheckedChange={(checked) =>
+                            field.onChange(checked ? "flat" : "quantity")
                           }
                         />
                         <span>Flat</span>
-                      </label>
+                      </div>
                     </FormControl>
                     <FormMessage />
                   </FormItem>
