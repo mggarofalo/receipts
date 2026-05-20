@@ -1,71 +1,53 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, beforeEach } from "vitest";
+import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { renderWithProviders } from "@/test/test-utils";
 import { ThemeToggle } from "./ThemeToggle";
-
-const mockSetTheme = vi.fn();
-
-vi.mock("next-themes", () => ({
-  useTheme: vi.fn(() => ({
-    theme: "system",
-    setTheme: mockSetTheme,
-  })),
-}));
-
-import { useTheme } from "next-themes";
 
 describe("ThemeToggle", () => {
   beforeEach(() => {
-    mockSetTheme.mockClear();
-    vi.mocked(useTheme).mockReturnValue({
-      theme: "system",
-      setTheme: mockSetTheme,
-      resolvedTheme: "light",
-      themes: ["light", "dark", "system"],
-      systemTheme: "light",
-      forcedTheme: undefined,
-    });
+    localStorage.clear();
+    document.documentElement.removeAttribute("data-palette");
+    document.documentElement.removeAttribute("data-density");
   });
 
-  it("renders the toggle button with sr-only label", () => {
-    render(<ThemeToggle />);
-    expect(screen.getByText("Toggle theme")).toBeInTheDocument();
+  it("renders the toggle button with an sr-only label", () => {
+    renderWithProviders(<ThemeToggle />);
+    expect(screen.getByText("Appearance settings")).toBeInTheDocument();
   });
 
-  it("opens dropdown menu when clicked", async () => {
+  it("opens the appearance menu with all preference groups", async () => {
     const user = userEvent.setup();
-    render(<ThemeToggle />);
+    renderWithProviders(<ThemeToggle />);
 
     await user.click(screen.getByRole("button"));
-    expect(screen.getByText("Light")).toBeInTheDocument();
-    expect(screen.getByText("Dark")).toBeInTheDocument();
-    expect(screen.getByText("System")).toBeInTheDocument();
+
+    expect(screen.getByText("Palette")).toBeInTheDocument();
+    expect(screen.getByText("Density")).toBeInTheDocument();
+    expect(screen.getByText("Paper intensity")).toBeInTheDocument();
+    expect(screen.getByText("Motion")).toBeInTheDocument();
   });
 
-  it("calls setTheme with 'light' when Light is selected", async () => {
+  it("applies the palette to <html> and localStorage when selected", async () => {
     const user = userEvent.setup();
-    render(<ThemeToggle />);
+    renderWithProviders(<ThemeToggle />);
 
     await user.click(screen.getByRole("button"));
-    await user.click(screen.getByText("Light"));
-    expect(mockSetTheme).toHaveBeenCalledWith("light");
+    await user.click(screen.getByRole("menuitemradio", { name: "Paper" }));
+
+    expect(document.documentElement.getAttribute("data-palette")).toBe("paper");
+    expect(localStorage.getItem("appearance.palette")).toBe("paper");
   });
 
-  it("calls setTheme with 'dark' when Dark is selected", async () => {
+  it("applies the density to <html> when selected", async () => {
     const user = userEvent.setup();
-    render(<ThemeToggle />);
+    renderWithProviders(<ThemeToggle />);
 
     await user.click(screen.getByRole("button"));
-    await user.click(screen.getByText("Dark"));
-    expect(mockSetTheme).toHaveBeenCalledWith("dark");
-  });
+    await user.click(screen.getByRole("menuitemradio", { name: "Compact" }));
 
-  it("calls setTheme with 'system' when System is selected", async () => {
-    const user = userEvent.setup();
-    render(<ThemeToggle />);
-
-    await user.click(screen.getByRole("button"));
-    await user.click(screen.getByText("System"));
-    expect(mockSetTheme).toHaveBeenCalledWith("system");
+    expect(document.documentElement.getAttribute("data-density")).toBe(
+      "compact",
+    );
   });
 });

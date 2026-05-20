@@ -130,7 +130,7 @@ describe("ReceiptDetail", () => {
   it("renders the page heading when id is present", () => {
     renderWithRoutes("/receipts/some-uuid");
     expect(
-      screen.getByRole("heading", { name: /receipt details/i }),
+      screen.getByRole("heading", { name: /receipt/i }),
     ).toBeInTheDocument();
   });
 
@@ -197,9 +197,7 @@ describe("ReceiptDetail", () => {
     );
 
     renderWithRoutes("/receipts/bad-id");
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      /no receipt found for this id/i,
-    );
+    expect(screen.getByRole("alert")).toHaveTextContent(/receipt not found/i);
   });
 
   it("renders transactions card when trip has transactions", async () => {
@@ -302,7 +300,7 @@ describe("ReceiptDetail", () => {
 
     renderWithRoutes("/receipts/r1");
     expect(
-      screen.getByRole("button", { name: /edit receipt/i }),
+      screen.getByRole("button", { name: /^edit$/i }),
     ).toBeInTheDocument();
   });
 
@@ -323,8 +321,8 @@ describe("ReceiptDetail", () => {
     );
 
     renderWithRoutes("/receipts/r1");
-    await user.click(screen.getByRole("button", { name: /edit receipt/i }));
-    expect(screen.getByText("Edit Receipt")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /^edit$/i }));
+    expect(screen.getByText(/edit receipt/i)).toBeInTheDocument();
     expect(screen.getByTestId("receipt-header-form")).toBeInTheDocument();
   });
 

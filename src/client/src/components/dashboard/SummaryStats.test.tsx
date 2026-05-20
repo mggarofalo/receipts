@@ -19,10 +19,10 @@ describe("SummaryStats", () => {
     } as ReturnType<typeof useDashboardSummary>);
 
     renderWithQueryClient(<SummaryStats dateRange={dateRange} />);
-    expect(screen.getByText("Total Receipts")).toBeInTheDocument();
-    expect(screen.getByText("Total Spent")).toBeInTheDocument();
-    expect(screen.getByText("Avg Trip Amount")).toBeInTheDocument();
-    expect(screen.getByText("Top Category")).toBeInTheDocument();
+    expect(screen.getByText("Total receipts")).toBeInTheDocument();
+    expect(screen.getByText("Total spent")).toBeInTheDocument();
+    expect(screen.getByText("Avg trip")).toBeInTheDocument();
+    expect(screen.getByText("Top category")).toBeInTheDocument();
   });
 
   it("renders data when loaded", () => {

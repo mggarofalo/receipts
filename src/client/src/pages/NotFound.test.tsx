@@ -1,4 +1,5 @@
 import { screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "@/test/test-utils";
 import NotFound from "./NotFound";
 
@@ -6,11 +7,13 @@ vi.mock("@/hooks/usePageTitle", () => ({
   usePageTitle: vi.fn(),
 }));
 
+const navigateMock = vi.fn();
+
 vi.mock("react-router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router")>();
   return {
     ...actual,
-    useNavigate: vi.fn(() => vi.fn()),
+    useNavigate: vi.fn(() => navigateMock),
   };
 });
 
@@ -20,36 +23,31 @@ describe("NotFound", () => {
     expect(screen.getByText("404")).toBeInTheDocument();
   });
 
-  it("renders the page not found heading", () => {
+  it("renders a not-found message", () => {
     renderWithProviders(<NotFound />);
     expect(
-      screen.getByRole("heading", { name: /page not found/i }),
+      screen.getByText(/this page left the counter/i),
     ).toBeInTheDocument();
   });
 
-  it("renders the description text", () => {
+  it("renders the descriptive sub-copy", () => {
     renderWithProviders(<NotFound />);
     expect(
-      screen.getByText(/the page you are looking for does not exist/i),
+      screen.getByText(/that route doesn’t exist/i),
     ).toBeInTheDocument();
   });
 
-  it("renders the Go Home button", () => {
+  it("renders the Dashboard link", () => {
     renderWithProviders(<NotFound />);
-    expect(
-      screen.getByRole("button", { name: /go home/i }),
-    ).toBeInTheDocument();
+    const link = screen.getByRole("link", { name: /dashboard/i });
+    expect(link).toHaveAttribute("href", "/");
   });
 
-  it("calls navigate when Go Home button is clicked", async () => {
-    const user = (await import("@testing-library/user-event")).default.setup();
-    const mockNavigate = vi.fn();
-    const { useNavigate } = await import("react-router");
-    vi.mocked(useNavigate).mockReturnValue(mockNavigate);
-
+  it("calls navigate(-1) when the Back button is clicked", async () => {
+    navigateMock.mockClear();
+    const user = userEvent.setup();
     renderWithProviders(<NotFound />);
-    await user.click(screen.getByRole("button", { name: /go home/i }));
-
-    expect(mockNavigate).toHaveBeenCalledWith("/");
+    await user.click(screen.getByRole("button", { name: /back/i }));
+    expect(navigateMock).toHaveBeenCalledWith(-1);
   });
 });

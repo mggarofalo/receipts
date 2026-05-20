@@ -13,6 +13,7 @@ import { useEnumMetadata } from "@/hooks/useEnumMetadata";
 import { AuthAuditTable } from "@/components/AuthAuditTable";
 import { Pagination } from "@/components/Pagination";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PageHead } from "@/components/primitives";
 
 function SecurityLog() {
   usePageTitle("Security Log");
@@ -44,8 +45,9 @@ function SecurityLog() {
   const failedTotal = failedLogs.total;
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">Security Log</h1>
+    <>
+      <PageHead title="Security log" sub="Sign-in activity and security events" />
+      <div className="space-y-4">
 
       <Tabs defaultValue="my-activity">
         <TabsList>
@@ -122,6 +124,7 @@ function SecurityLog() {
         )}
       </Tabs>
     </div>
+    </>
   );
 }
 

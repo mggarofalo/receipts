@@ -1,18 +1,7 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { screen } from "@testing-library/react";
 import { renderWithProviders } from "@/test/test-utils";
 import { PublicLayout } from "./PublicLayout";
-
-vi.mock("next-themes", () => ({
-  useTheme: vi.fn(() => ({
-    theme: "system",
-    setTheme: vi.fn(),
-    resolvedTheme: "light",
-    themes: ["light", "dark", "system"],
-    systemTheme: "light",
-    forcedTheme: undefined,
-  })),
-}));
 
 describe("PublicLayout", () => {
   it("renders the Receipts brand link", () => {
@@ -22,9 +11,9 @@ describe("PublicLayout", () => {
     expect(brandLink.closest("a")).toHaveAttribute("href", "/");
   });
 
-  it("renders the ThemeToggle button", () => {
+  it("renders the appearance settings button", () => {
     renderWithProviders(<PublicLayout />);
-    expect(screen.getByText("Toggle theme")).toBeInTheDocument();
+    expect(screen.getByText("Appearance settings")).toBeInTheDocument();
   });
 
   it("renders a header element", () => {

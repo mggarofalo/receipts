@@ -24,6 +24,7 @@ import { SortableTableHead } from "@/components/SortableTableHead";
 import { NoResults } from "@/components/NoResults";
 import { Pagination } from "@/components/Pagination";
 import { Button } from "@/components/ui/button";
+import { Icon, PageHead } from "@/components/primitives";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -145,19 +146,31 @@ function Categories() {
   }
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-semibold tracking-tight">Categories</h1>
-      <div className="flex items-center justify-between">
-        <FuzzySearchInput
-          aria-label="Search categories"
-          value={search}
-          onChange={setSearch}
-          placeholder="Search categories..."
-          resultCount={filteredResults.length}
-          totalCount={totalCount}
-          className="max-w-sm"
-        />
-        <Button onClick={() => setCreateOpen(true)}>New Category</Button>
+    <>
+      <PageHead
+        title="Categories"
+        sub={`${serverTotal} total${statusFilter === "all" ? "" : ` · ${statusFilter === "true" ? "active" : "inactive"}`}`}
+        actions={
+          <button
+            type="button"
+            className="btn primary"
+            onClick={() => setCreateOpen(true)}
+          >
+            <Icon.Plus /> New category
+          </button>
+        }
+      />
+      <div className="filter-strip">
+        <div style={{ flex: 1, minWidth: 240 }}>
+          <FuzzySearchInput
+            aria-label="Search categories"
+            value={search}
+            onChange={setSearch}
+            placeholder="Search categories…"
+            resultCount={filteredResults.length}
+            totalCount={totalCount}
+          />
+        </div>
       </div>
 
       <Tabs value={statusFilter} onValueChange={handleStatusChange}>
@@ -364,7 +377,7 @@ function Categories() {
         </DialogContent>
       </Dialog>
 
-    </div>
+    </>
   );
 }
 

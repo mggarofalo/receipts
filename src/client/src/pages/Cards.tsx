@@ -25,6 +25,7 @@ import { SortableTableHead } from "@/components/SortableTableHead";
 import { NoResults } from "@/components/NoResults";
 import { Pagination } from "@/components/Pagination";
 import { Button } from "@/components/ui/button";
+import { Icon, PageHead } from "@/components/primitives";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -188,28 +189,41 @@ function Cards() {
   }
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-semibold tracking-tight">Cards</h1>
-      <div className="flex items-center justify-between">
-        <FuzzySearchInput
-          aria-label="Search cards"
-          value={search}
-          onChange={setSearch}
-          placeholder="Search cards..."
-          resultCount={filteredResults.length}
-          totalCount={totalCount}
-          className="max-w-sm"
-        />
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            onClick={() => setMergeOpen(true)}
-            disabled={selectedIds.size < 2}
-            aria-label="Merge selected cards into an account"
-          >
-            Merge into Account… ({selectedIds.size})
-          </Button>
-          <Button onClick={() => setCreateOpen(true)}>New Card</Button>
+    <>
+      <PageHead
+        title="Cards"
+        sub={`${serverTotal} total${statusFilter === "all" ? "" : ` · ${statusFilter === "true" ? "active" : "inactive"}`}`}
+        actions={
+          <>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => setMergeOpen(true)}
+              aria-label="Merge selected cards into an account"
+              disabled={selectedIds.size < 2}
+            >
+              Merge ({selectedIds.size})
+            </button>
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => setCreateOpen(true)}
+            >
+              <Icon.Plus /> New card
+            </button>
+          </>
+        }
+      />
+      <div className="filter-strip">
+        <div style={{ flex: 1, minWidth: 240 }}>
+          <FuzzySearchInput
+            aria-label="Search cards"
+            value={search}
+            onChange={setSearch}
+            placeholder="Search cards…"
+            resultCount={filteredResults.length}
+            totalCount={totalCount}
+          />
         </div>
       </div>
 
@@ -429,7 +443,7 @@ function Cards() {
         </DialogContent>
       </Dialog>
 
-    </div>
+    </>
   );
 }
 

@@ -5,21 +5,41 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Receipts</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
   </head>
   <body>
     <script>
-      (function() {
+      (function () {
         var d = document.documentElement;
-        var theme = localStorage.getItem("theme");
-        var isDark = theme === "dark" || (theme !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
-        if (isDark) {
-          d.classList.add("dark");
-          d.style.colorScheme = "dark";
-          d.style.backgroundColor = "oklch(0.145 0 0)";
-        } else {
-          d.style.colorScheme = "light";
-          d.style.backgroundColor = "oklch(1 0 0)";
+        function read(key, fallback, allowed) {
+          var v = localStorage.getItem(key);
+          return v && allowed.indexOf(v) !== -1 ? v : fallback;
         }
+        d.setAttribute(
+          "data-palette",
+          read("appearance.palette", "graphite", ["graphite", "paper"]),
+        );
+        d.setAttribute(
+          "data-density",
+          read("appearance.density", "comfortable", [
+            "compact",
+            "comfortable",
+            "spacious",
+          ]),
+        );
+        d.setAttribute(
+          "data-paper",
+          read("appearance.paper", "soft", ["none", "soft"]),
+        );
+        d.setAttribute(
+          "data-motion",
+          read("appearance.motion", "subtle", ["subtle", "none"]),
+        );
       })();
     </script>
     <div id="root"></div>

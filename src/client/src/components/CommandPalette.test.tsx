@@ -27,10 +27,6 @@ vi.mock("react-router", async () => {
   };
 });
 
-vi.mock("next-themes", () => ({
-  useTheme: () => ({ theme: "light", setTheme: vi.fn() }),
-}));
-
 vi.mock("@/hooks/usePermission", () => ({
   usePermission: vi.fn(() => ({ isAdmin: () => false })),
 }));

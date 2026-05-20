@@ -5,6 +5,7 @@ import { useBackupExport } from "@/hooks/useBackup";
 import { getAccessToken } from "@/lib/auth";
 import { showSuccess, showError } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
+import { PageHead } from "@/components/primitives";
 import {
   Card,
   CardContent,
@@ -101,13 +102,12 @@ function BackupRestore() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Backup & Restore</h1>
-        <p className="text-sm text-muted-foreground">
-          Export or import a portable SQLite backup of your data
-        </p>
-      </div>
+    <>
+      <PageHead
+        title="Backup & restore"
+        sub="Export or import a portable SQLite backup of your data"
+      />
+      <div className="space-y-6">
 
       <div className="grid gap-6 md:grid-cols-2">
         {/* Export Card */}
@@ -229,6 +229,7 @@ function BackupRestore() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+    </>
   );
 }
 

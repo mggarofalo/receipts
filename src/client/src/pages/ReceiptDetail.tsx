@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useParams, Navigate } from "react-router";
+import { Link, useParams, Navigate } from "react-router";
 import { useTripByReceiptId } from "@/hooks/useTrips";
 import { useUpdateReceipt } from "@/hooks/useReceipts";
 import { useReceiptYnabSyncStatuses } from "@/hooks/useYnab";
@@ -18,7 +18,6 @@ import {
   type ReceiptHeaderFormValues,
 } from "@/components/ReceiptHeaderForm";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -47,7 +46,7 @@ import { CardSkeleton } from "@/components/ui/card-skeleton";
 import { formatCurrency } from "@/lib/format";
 import { YnabPushButton } from "@/components/YnabPushButton";
 import { YnabSplitComparisonCard } from "@/components/YnabSplitComparisonCard";
-import { Pencil } from "lucide-react";
+import { Icon, PageHead, YnabChip } from "@/components/primitives";
 
 function ReceiptDetail() {
   usePageTitle("Receipt Detail");
@@ -70,8 +69,7 @@ function ReceiptDetail() {
 
   const transactionsTotal =
     trip?.transactions?.reduce(
-      (sum: number, ta) =>
-        sum + Number(ta.transaction.amount ?? 0),
+      (sum: number, ta) => sum + Number(ta.transaction.amount ?? 0),
       0,
     ) ?? 0;
 
@@ -109,15 +107,54 @@ function ReceiptDetail() {
     );
   }
 
+  const yChip: "synced" | "pending" | "error" | "none" =
+    persistedYnabStatus === "Synced"
+      ? "synced"
+      : persistedYnabStatus === "Pending"
+        ? "pending"
+        : persistedYnabStatus === "Failed"
+          ? "error"
+          : "none";
+
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Receipt Details</h1>
+    <>
+      <PageHead
+        title={trip?.receipt?.receipt?.location ?? "Receipt"}
+        sub={
+          trip
+            ? `${trip.receipt.receipt.date} · REC-${id.slice(0, 8).toUpperCase()}`
+            : "Loading…"
+        }
+        actions={
+          trip && (
+            <>
+              <Link to="/receipts" className="btn">
+                ← All receipts
+              </Link>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  setServerErrors({});
+                  setEditOpen(true);
+                }}
+              >
+                <Icon.Edit /> Edit
+              </button>
+              <YnabChip status={yChip} />
+            </>
+          )
+        }
+      />
 
       {isLoading && (
-        <div role="status" aria-live="polite" aria-busy="true" className="space-y-4">
-          <span className="sr-only">Loading receipt details...</span>
-          {/* silent=true prevents each CardSkeleton from adding its own live region,
-              avoiding three back-to-back "Loading…" announcements */}
+        <div
+          role="status"
+          aria-live="polite"
+          aria-busy="true"
+          style={{ display: "flex", flexDirection: "column", gap: 14 }}
+        >
+          <span className="sr-only">Loading receipt details…</span>
           <CardSkeleton lines={1} silent />
           <CardSkeleton lines={3} silent />
           <CardSkeleton lines={3} silent />
@@ -125,15 +162,31 @@ function ReceiptDetail() {
       )}
 
       {isError && (
-        <div role="alert" className="py-12 text-center text-muted-foreground">
-          No receipt found for this ID.
+        <div className="empty" role="alert">
+          <div className="icon-frame">
+            <Icon.AlertTriangle />
+          </div>
+          <h3>Receipt not found</h3>
+          <p>No receipt matches this ID. It may have been deleted.</p>
+          <div className="actions">
+            <Link to="/receipts" className="btn primary">
+              Back to receipts
+            </Link>
+          </div>
         </div>
       )}
 
       {trip && (
-        <>
+        <div
+          style={{ display: "flex", flexDirection: "column", gap: 14 }}
+        >
           {allWarnings.length > 0 && (
-            <ValidationWarnings warnings={allWarnings} />
+            <div className="warn-banner">
+              <Icon.AlertTriangle className="ico" />
+              <div style={{ flex: 1 }}>
+                <ValidationWarnings warnings={allWarnings} />
+              </div>
+            </div>
           )}
 
           <BalanceSummaryCard
@@ -144,32 +197,6 @@ function ReceiptDetail() {
             transactionsTotal={transactionsTotal}
             showBalance={trip.transactions.length > 0}
           />
-
-          {/* Receipt Info */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>Receipt</CardTitle>
-                  <CardDescription>
-                    {trip.receipt.receipt.location} &mdash;{" "}
-                    {trip.receipt.receipt.date}
-                  </CardDescription>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Edit receipt"
-                  onClick={() => {
-                    setServerErrors({});
-                    setEditOpen(true);
-                  }}
-                >
-                  <Pencil className="h-4 w-4" />
-                </Button>
-              </div>
-            </CardHeader>
-          </Card>
 
           <ReceiptItemsCard
             receiptId={id}
@@ -187,7 +214,6 @@ function ReceiptDetail() {
             location={trip.receipt.receipt.location}
           />
 
-          {/* Adjustments Table (read-only) */}
           <Card>
             <CardHeader>
               <CardTitle>
@@ -210,31 +236,26 @@ function ReceiptDetail() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {trip.receipt.adjustments.map(
-                        (adj) => (
-                          <TableRow key={adj.id}>
-                            <TableCell>
-                              <Badge variant="outline">
-                                {adjustmentTypeLabels[adj.type] ?? adj.type}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-muted-foreground">
-                              {adj.description ?? "\u2014"}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              {formatCurrency(Number(adj.amount ?? 0))}
-                            </TableCell>
-                          </TableRow>
-                        ),
-                      )}
+                      {trip.receipt.adjustments.map((adj) => (
+                        <TableRow key={adj.id}>
+                          <TableCell>
+                            <Badge variant="outline">
+                              {adjustmentTypeLabels[adj.type] ?? adj.type}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {adj.description ?? "—"}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {formatCurrency(Number(adj.amount ?? 0))}
+                          </TableCell>
+                        </TableRow>
+                      ))}
                     </TableBody>
                     <TableFooter>
                       <TableRow>
-                        <TableCell
-                          colSpan={2}
-                          className="text-right font-medium"
-                        >
-                          Adjustment Total
+                        <TableCell colSpan={2} className="text-right font-medium">
+                          Adjustment total
                         </TableCell>
                         <TableCell className="text-right font-bold">
                           {formatCurrency(adjustmentTotal)}
@@ -268,12 +289,11 @@ function ReceiptDetail() {
 
           <YnabMemoSyncCard receiptId={id} />
 
-          {/* YNAB Push */}
           <Card>
             <CardHeader>
-              <CardTitle>YNAB Sync</CardTitle>
+              <CardTitle>YNAB sync</CardTitle>
               <CardDescription>
-                Push this receipt's transactions to YNAB with category splits.
+                Push this receipt’s transactions to YNAB with category splits.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -289,18 +309,17 @@ function ReceiptDetail() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Change History</CardTitle>
+              <CardTitle>Change history</CardTitle>
             </CardHeader>
             <CardContent>
               <ChangeHistory entityType="Receipt" entityId={id} />
             </CardContent>
           </Card>
 
-          {/* Edit Receipt Dialog */}
           <Dialog open={editOpen} onOpenChange={setEditOpen}>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Edit Receipt</DialogTitle>
+                <DialogTitle>Edit receipt</DialogTitle>
               </DialogHeader>
               <ReceiptHeaderForm
                 defaultValues={{
@@ -315,9 +334,9 @@ function ReceiptDetail() {
               />
             </DialogContent>
           </Dialog>
-        </>
+        </div>
       )}
-    </div>
+    </>
   );
 }
 

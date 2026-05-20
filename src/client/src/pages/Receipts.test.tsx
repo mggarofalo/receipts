@@ -91,7 +91,7 @@ describe("Receipts", () => {
   it("renders the page heading", () => {
     renderWithProviders(<Receipts />);
     expect(
-      screen.getByRole("heading", { name: /receipts/i }),
+      screen.getByRole("heading", { level: 1, name: /^receipts$/i }),
     ).toBeInTheDocument();
   });
 
@@ -497,8 +497,8 @@ describe("Receipts", () => {
     }));
 
     renderWithProviders(<Receipts />);
-    expect(screen.getByText("Synced")).toBeInTheDocument();
-    expect(screen.getByText("Failed")).toBeInTheDocument();
+    expect(screen.getAllByText("YNAB").length).toBeGreaterThan(0);
+    expect(screen.getByText("Error")).toBeInTheDocument();
   });
 
   it("renders YNAB column header", async () => {

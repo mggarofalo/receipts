@@ -24,6 +24,7 @@ import { SortableTableHead } from "@/components/SortableTableHead";
 import { NoResults } from "@/components/NoResults";
 import { Pagination } from "@/components/Pagination";
 import { Button } from "@/components/ui/button";
+import { Icon, PageHead } from "@/components/primitives";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -198,19 +199,31 @@ function Accounts() {
   }
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-semibold tracking-tight">Accounts</h1>
-      <div className="flex items-center justify-between">
-        <FuzzySearchInput
-          aria-label="Search accounts"
-          value={search}
-          onChange={setSearch}
-          placeholder="Search accounts..."
-          resultCount={filteredResults.length}
-          totalCount={totalCount}
-          className="max-w-sm"
-        />
-        <Button onClick={() => setCreateOpen(true)}>New Account</Button>
+    <>
+      <PageHead
+        title="Accounts"
+        sub={`${serverTotal} total${statusFilter === "all" ? "" : ` · ${statusFilter === "true" ? "active" : "inactive"}`}`}
+        actions={
+          <button
+            type="button"
+            className="btn primary"
+            onClick={() => setCreateOpen(true)}
+          >
+            <Icon.Plus /> New account
+          </button>
+        }
+      />
+      <div className="filter-strip">
+        <div style={{ flex: 1, minWidth: 240 }}>
+          <FuzzySearchInput
+            aria-label="Search accounts"
+            value={search}
+            onChange={setSearch}
+            placeholder="Search accounts…"
+            resultCount={filteredResults.length}
+            totalCount={totalCount}
+          />
+        </div>
       </div>
 
       <Tabs value={statusFilter} onValueChange={handleStatusChange}>
@@ -414,7 +427,7 @@ function Accounts() {
         </DialogContent>
       </Dialog>
 
-    </div>
+    </>
   );
 }
 

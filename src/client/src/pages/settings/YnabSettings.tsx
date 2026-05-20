@@ -42,6 +42,7 @@ import {
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import { PageHead } from "@/components/primitives";
 import { Badge } from "@/components/ui/badge";
 
 const UNMAPPED_VALUE = "__unmapped__";
@@ -203,13 +204,12 @@ export default function YnabSettings() {
   const categoryMappingLoading = ynabCatsLoading || receiptCatsLoading || categoryMappingsLoading;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">YNAB Settings</h1>
-        <p className="text-muted-foreground">
-          Configure your YNAB integration for transaction sync.
-        </p>
-      </div>
+    <>
+      <PageHead
+        title="YNAB"
+        sub="Configure your YNAB integration for transaction sync"
+      />
+      <div className="space-y-6">
 
       <Card>
         <CardHeader>
@@ -560,5 +560,6 @@ export default function YnabSettings() {
         </Card>
       )}
     </div>
+    </>
   );
 }

@@ -16,6 +16,7 @@ import { useServerPagination } from "@/hooks/useServerPagination";
 import { useServerSort } from "@/hooks/useServerSort";
 import { useListKeyboardNav } from "@/hooks/useListKeyboardNav";
 import { Button } from "@/components/ui/button";
+import { Icon, PageHead } from "@/components/primitives";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
@@ -219,11 +220,21 @@ function AdminUsers() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">User Management</h1>
-        <Button onClick={() => setCreateOpen(true)}>Create User</Button>
-      </div>
+    <>
+      <PageHead
+        title="Users"
+        sub={`${serverTotal} total`}
+        actions={
+          <button
+            type="button"
+            className="btn primary"
+            onClick={() => setCreateOpen(true)}
+          >
+            <Icon.Plus /> New user
+          </button>
+        }
+      />
+      <div className="space-y-6">
 
       {isLoading && <TableSkeleton rows={5} columns={7} />}
 
@@ -355,7 +366,7 @@ function AdminUsers() {
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Create User</DialogTitle>
+            <DialogTitle>New user</DialogTitle>
             <DialogDescription>
               Create a new user account. They will be required to change their
               password on first login.
@@ -453,8 +464,8 @@ function AdminUsers() {
                 >
                   {createForm.formState.isSubmitting && <Spinner size="sm" />}
                   {createForm.formState.isSubmitting
-                    ? "Creating..."
-                    : "Create User"}
+                    ? "Creating…"
+                    : "New user"}
                 </Button>
               </DialogFooter>
             </form>
@@ -655,6 +666,7 @@ function AdminUsers() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+    </>
   );
 }
 

@@ -5,9 +5,9 @@ import { dirname, resolve } from "node:path";
 import { describe, it, expect } from "vitest";
 
 // Regression guard for RECEIPTS-567: `text-muted-foreground` must meet WCAG AA
-// (4.5:1 for normal text) against every surface it can plausibly render on,
-// in both light and dark themes. Bumping `--muted-foreground` lighter will fail
-// this test.
+// (4.5:1 for normal text) against every surface it can plausibly render small
+// text on, in both palettes. Updated for the Phase 18 design system
+// (RECEIPTS-592): palettes are hex-based and selected via `data-palette`.
 //
 // Reads index.css from disk (rather than `?raw` import) because the vite
 // tailwindcss plugin transforms CSS imports through the vitest pipeline,
@@ -21,70 +21,95 @@ const CSS = readFileSync(CSS_PATH, "utf8");
 
 const WCAG_AA_NORMAL = 4.5;
 
-// Token neighborhoods a small-text caller might reasonably sit on.
-// Extend if new surface tokens are introduced.
+// Surfaces a small-text caller using `text-muted-foreground` may sit on.
+// `--muted` (a structural elevated background) is intentionally excluded:
+// content on it uses `--ink-2`, not `--mute`.
 const BACKGROUND_TOKENS = [
   "background",
   "card",
   "popover",
-  "muted",
   "secondary",
-  "accent",
-  "sidebar",
+  "accent-surface",
   "sidebar-accent",
 ] as const;
 
-type ThemeBlock = ":root" | ".dark";
-
-function extractBlock(css: string, selector: ThemeBlock): string {
+/** Collect every `--name: value;` declaration inside a selector's block. */
+function parseBlock(css: string, selector: string): Map<string, string> {
   const start = css.indexOf(`${selector} {`);
-  if (start === -1) throw new Error(`Missing ${selector} block in index.css`);
+  if (start === -1) throw new Error(`Missing "${selector}" block in index.css`);
   const end = css.indexOf("}", start);
-  return css.slice(start, end);
-}
-
-function getTokenL(block: string, name: string): number {
-  // Match `--name: oklch(<L> 0 0);` — chroma must be 0 for the gray math below
-  // to hold. If a token introduces chroma, the test needs a proper OKLCH→sRGB
-  // conversion; the current shadcn theme is all-neutral for these tokens.
-  const re = new RegExp(
-    `--${name}:\\s*oklch\\(\\s*([0-9.]+)\\s+0\\s+0\\s*\\)`,
-  );
-  const match = block.match(re);
-  if (!match) {
-    throw new Error(
-      `Token --${name} not found or uses non-neutral OKLCH in block`,
-    );
+  const body = css.slice(start, end);
+  const decls = new Map<string, string>();
+  const re = /--([\w-]+):\s*([^;]+);/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(body)) !== null) {
+    decls.set(match[1], match[2].trim());
   }
-  return Number.parseFloat(match[1]);
+  return decls;
 }
 
-// For neutral grays (chroma=0), OKLCH L cubed equals the WCAG relative
-// luminance: oklab.l = lin_R^(1/3), and for r=g=b the WCAG Y reduces to lin_R.
-function luminance(oklchL: number): number {
-  return oklchL ** 3;
+/** Resolve a token through any `var(--x)` indirection to a literal value. */
+function resolveToken(decls: Map<string, string>, name: string): string {
+  const seen = new Set<string>();
+  let value = decls.get(name);
+  while (value !== undefined) {
+    const varMatch = value.match(/^var\(--([\w-]+)\)$/);
+    if (!varMatch) return value;
+    const next = varMatch[1];
+    if (seen.has(next)) throw new Error(`Cyclic var reference at --${next}`);
+    seen.add(next);
+    value = decls.get(next);
+  }
+  throw new Error(`Token --${name} could not be resolved`);
 }
 
-function contrast(fgL: number, bgL: number): number {
-  const a = luminance(fgL);
-  const b = luminance(bgL);
-  const [lighter, darker] = a > b ? [a, b] : [b, a];
+function hexToRgb(hex: string): [number, number, number] {
+  const m = hex.trim().match(/^#([0-9a-f]{6})$/i);
+  if (!m) throw new Error(`Expected a 6-digit hex color, got "${hex}"`);
+  const n = Number.parseInt(m[1], 16);
+  return [(n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff];
+}
+
+/** WCAG relative luminance for an sRGB hex color. */
+function luminance(hex: string): number {
+  const channel = (c: number) => {
+    const s = c / 255;
+    return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  };
+  const [r, g, b] = hexToRgb(hex);
+  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+}
+
+function contrast(a: string, b: string): number {
+  const la = luminance(a);
+  const lb = luminance(b);
+  const [lighter, darker] = la > lb ? [la, lb] : [lb, la];
   return (lighter + 0.05) / (darker + 0.05);
 }
 
+// The Graphite palette block also carries the shadcn semantic mappings; the
+// Paper block only overrides raw palette tokens, so it inherits the mappings.
+const graphite = parseBlock(CSS, 'html[data-palette="graphite"]');
+const paper = new Map(graphite);
+for (const [k, v] of parseBlock(CSS, 'html[data-palette="paper"]')) {
+  paper.set(k, v);
+}
+
 describe("muted-foreground contrast meets WCAG AA", () => {
-  for (const theme of [":root", ".dark"] as const) {
-    describe(theme, () => {
-      const block = extractBlock(CSS, theme);
-      const fg = getTokenL(block, "muted-foreground");
+  for (const [name, decls] of [
+    ["graphite", graphite],
+    ["paper", paper],
+  ] as const) {
+    describe(name, () => {
+      const fg = resolveToken(decls, "muted-foreground");
 
       for (const bgName of BACKGROUND_TOKENS) {
         it(`on --${bgName}`, () => {
-          const bg = getTokenL(block, bgName);
+          const bg = resolveToken(decls, bgName);
           const ratio = contrast(fg, bg);
           expect(
             ratio,
-            `muted-foreground on --${bgName} in ${theme}: ${ratio.toFixed(2)}:1`,
+            `muted-foreground on --${bgName} in ${name}: ${ratio.toFixed(2)}:1`,
           ).toBeGreaterThanOrEqual(WCAG_AA_NORMAL);
         });
       }

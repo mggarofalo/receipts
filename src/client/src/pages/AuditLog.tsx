@@ -10,6 +10,7 @@ import { AuditLogTable } from "@/components/AuditLogTable";
 import { Pagination } from "@/components/Pagination";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Icon, PageHead } from "@/components/primitives";
 import { Calendar } from "@/components/ui/calendar";
 import {
   Popover,
@@ -220,18 +221,22 @@ function AuditLog() {
   const logs = (data ?? []) as AuditLogEntry[];
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Audit Log</h1>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => exportToCsv(logs)}
-          disabled={logs.length === 0}
-        >
-          Export CSV
-        </Button>
-      </div>
+    <>
+      <PageHead
+        title="Audit log"
+        sub={`${logs.length} ${logs.length === 1 ? "entry" : "entries"}`}
+        actions={
+          <button
+            type="button"
+            className="btn"
+            onClick={() => exportToCsv(logs)}
+            disabled={logs.length === 0}
+          >
+            <Icon.Upload /> Export CSV
+          </button>
+        }
+      />
+      <div className="space-y-4">
 
       <div className="flex items-center gap-3 flex-wrap">
         <Input
@@ -288,6 +293,7 @@ function AuditLog() {
         onPageSizeChange={pagination.setPageSize}
       />
     </div>
+    </>
   );
 }
 

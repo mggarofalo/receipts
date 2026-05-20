@@ -1,60 +1,87 @@
-import { useTheme } from "next-themes";
-import { Sun, Moon, SunMoon } from "lucide-react";
+import { Palette } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useAppearance } from "@/hooks/useAppearance";
 
-function ThemeIcon() {
-  const { theme } = useTheme();
-
-  if (theme === "system") {
-    return <SunMoon className="h-4 w-4" />;
-  }
-
-  if (theme === "dark") {
-    return <Moon className="h-4 w-4" />;
-  }
-
-  return <Sun className="h-4 w-4" />;
-}
-
+/**
+ * Topbar appearance control. Exposes the four design-system preferences
+ * (palette, density, paper intensity, motion) until the full
+ * Settings → Appearance panel ships in a later phase.
+ */
 export function ThemeToggle() {
-  const { theme, setTheme } = useTheme();
+  const {
+    palette,
+    density,
+    paper,
+    motion,
+    setPalette,
+    setDensity,
+    setPaper,
+    setMotion,
+  } = useAppearance();
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="icon" className="h-8 w-8">
-          <ThemeIcon />
-          <span className="sr-only">Toggle theme</span>
+          <Palette className="h-4 w-4" />
+          <span className="sr-only">Appearance settings</span>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem
-          onClick={() => setTheme("light")}
-          className={theme === "light" ? "font-semibold" : ""}
+      <DropdownMenuContent align="end" className="w-44">
+        <DropdownMenuLabel>Palette</DropdownMenuLabel>
+        <DropdownMenuRadioGroup
+          value={palette}
+          onValueChange={(v) => setPalette(v as typeof palette)}
         >
-          <Sun className="mr-2 h-4 w-4" />
-          Light
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={() => setTheme("dark")}
-          className={theme === "dark" ? "font-semibold" : ""}
+          <DropdownMenuRadioItem value="graphite">
+            Graphite
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="paper">Paper</DropdownMenuRadioItem>
+        </DropdownMenuRadioGroup>
+
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel>Density</DropdownMenuLabel>
+        <DropdownMenuRadioGroup
+          value={density}
+          onValueChange={(v) => setDensity(v as typeof density)}
         >
-          <Moon className="mr-2 h-4 w-4" />
-          Dark
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={() => setTheme("system")}
-          className={theme === "system" ? "font-semibold" : ""}
+          <DropdownMenuRadioItem value="compact">Compact</DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="comfortable">
+            Comfortable
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="spacious">
+            Spacious
+          </DropdownMenuRadioItem>
+        </DropdownMenuRadioGroup>
+
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel>Paper intensity</DropdownMenuLabel>
+        <DropdownMenuRadioGroup
+          value={paper}
+          onValueChange={(v) => setPaper(v as typeof paper)}
         >
-          <SunMoon className="mr-2 h-4 w-4" />
-          System
-        </DropdownMenuItem>
+          <DropdownMenuRadioItem value="soft">Soft</DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="none">None</DropdownMenuRadioItem>
+        </DropdownMenuRadioGroup>
+
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel>Motion</DropdownMenuLabel>
+        <DropdownMenuRadioGroup
+          value={motion}
+          onValueChange={(v) => setMotion(v as typeof motion)}
+        >
+          <DropdownMenuRadioItem value="subtle">Subtle</DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="none">None</DropdownMenuRadioItem>
+        </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );

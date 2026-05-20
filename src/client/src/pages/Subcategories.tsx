@@ -33,6 +33,7 @@ import { SortableTableHead } from "@/components/SortableTableHead";
 import { NoResults } from "@/components/NoResults";
 import { Pagination } from "@/components/Pagination";
 import { Button } from "@/components/ui/button";
+import { Icon, PageHead } from "@/components/primitives";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -261,26 +262,38 @@ function Subcategories() {
   }
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-semibold tracking-tight">Subcategories</h1>
-      <div className="flex items-center justify-between">
-        <FuzzySearchInput
-          aria-label="Search subcategories"
-          value={search}
-          onChange={setSearch}
-          placeholder="Search subcategories..."
-          resultCount={filteredResults.length}
-          totalCount={totalCount}
-          className="max-w-sm"
-        />
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={expandAll}>
-            Expand All
-          </Button>
-          <Button variant="outline" size="sm" onClick={collapseAll}>
-            Collapse All
-          </Button>
-          <Button onClick={() => setCreateOpen(true)}>New Subcategory</Button>
+    <>
+      <PageHead
+        title="Subcategories"
+        sub={`${serverTotal} total${statusFilter === "all" ? "" : ` · ${statusFilter === "true" ? "active" : "inactive"}`}`}
+        actions={
+          <>
+            <button type="button" className="btn sm" onClick={expandAll}>
+              Expand all
+            </button>
+            <button type="button" className="btn sm" onClick={collapseAll}>
+              Collapse all
+            </button>
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => setCreateOpen(true)}
+            >
+              <Icon.Plus /> New subcategory
+            </button>
+          </>
+        }
+      />
+      <div className="filter-strip">
+        <div style={{ flex: 1, minWidth: 240 }}>
+          <FuzzySearchInput
+            aria-label="Search subcategories"
+            value={search}
+            onChange={setSearch}
+            placeholder="Search subcategories…"
+            resultCount={filteredResults.length}
+            totalCount={totalCount}
+          />
         </div>
       </div>
 
@@ -600,7 +613,7 @@ function Subcategories() {
         </DialogContent>
       </Dialog>
 
-    </div>
+    </>
   );
 }
 
