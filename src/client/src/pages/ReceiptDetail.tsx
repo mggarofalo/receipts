@@ -1,8 +1,8 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { Link, useParams, Navigate } from "react-router";
-import { toast } from "sonner";
 import { useTripByReceiptId } from "@/hooks/useTrips";
 import { useUpdateReceipt } from "@/hooks/useReceipts";
+import { useCreateAdjustment } from "@/hooks/useAdjustments";
 import { useReceiptYnabSyncStatuses } from "@/hooks/useYnab";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { useEnumMetadata } from "@/hooks/useEnumMetadata";
@@ -47,10 +47,7 @@ import { CardSkeleton } from "@/components/ui/card-skeleton";
 import { formatCurrency } from "@/lib/format";
 import { YnabPushButton } from "@/components/YnabPushButton";
 import { YnabSplitComparisonCard } from "@/components/YnabSplitComparisonCard";
-import {
-  ReconcileSheet,
-  type ReconcileLine,
-} from "@/components/ReconcileSheet";
+import { ReconcileSheet } from "@/components/ReconcileSheet";
 import { Icon, PageHead, YnabChip } from "@/components/primitives";
 
 function ReceiptDetail() {
@@ -60,6 +57,7 @@ function ReceiptDetail() {
 
   const { data: trip, isLoading, isError } = useTripByReceiptId(id ?? null);
   const updateReceipt = useUpdateReceipt();
+  const createAdjustment = useCreateAdjustment();
   const { statusMap: ynabStatusMap } = useReceiptYnabSyncStatuses(
     id ? [id] : [],
   );
@@ -68,14 +66,6 @@ function ReceiptDetail() {
   const [editOpen, setEditOpen] = useState(false);
   const [reconcileOpen, setReconcileOpen] = useState(false);
   const [serverErrors, setServerErrors] = useState<Record<string, string>>({});
-  // When the reconcile sheet's "Accept transactions" path opens the Edit
-  // dialog, it prefills tax to the value that balances the receipt total
-  // against the transactions total. null = use the receipt's stored tax.
-  const [reconcileTaxPrefill, setReconcileTaxPrefill] = useState<number | null>(
-    null,
-  );
-  // "Edit and balance" scrolls/focuses the line-item table.
-  const itemsRef = useRef<HTMLDivElement>(null);
 
   if (!id) {
     return <Navigate to="/receipts" replace />;
@@ -121,46 +111,13 @@ function ReceiptDetail() {
     );
   }
 
-  const reconcileLines: ReconcileLine[] = trip
-    ? [
-        ...trip.receipt.items.map((item) => {
-          const amount = Number(item.quantity ?? 0) * Number(item.unitPrice ?? 0);
-          const missingCategory = !item.category;
-          const zeroAmount = amount === 0;
-          return {
-            id: `item-${item.id}`,
-            kind: "item" as const,
-            label: item.description ?? "Untitled item",
-            qty: `${Number(item.quantity ?? 0)} × ${formatCurrency(Number(item.unitPrice ?? 0))}`,
-            amount,
-            flagged: missingCategory || zeroAmount,
-            reason: zeroAmount
-              ? "zero amount"
-              : missingCategory
-                ? "uncategorized"
-                : undefined,
-          };
-        }),
-        ...trip.receipt.adjustments.map((adj) => ({
-          id: `adj-${adj.id}`,
-          kind: "adjustment" as const,
-          label:
-            adj.description ??
-            adjustmentTypeLabels[adj.type] ??
-            adj.type ??
-            "Adjustment",
-          qty: adjustmentTypeLabels[adj.type] ?? adj.type ?? "adjustment",
-          amount: Number(adj.amount ?? 0),
-          flagged: false,
-        })),
-      ]
-    : [];
-
+  // Reconcile is offered only for a total mismatch — its single action is to
+  // add a balancing adjustment. Validation warnings still surface in the
+  // banner, but they are not something the reconcile sheet can resolve.
   const transactionsImbalanced =
     trip != null &&
     trip.transactions.length > 0 &&
     Math.abs(expectedTotal - transactionsTotal) >= 0.005;
-  const showReconcile = transactionsImbalanced || allWarnings.length > 0;
 
   const yChip: "synced" | "pending" | "error" | "none" =
     persistedYnabStatus === "Synced"
@@ -191,7 +148,6 @@ function ReceiptDetail() {
                 className="btn"
                 onClick={() => {
                   setServerErrors({});
-                  setReconcileTaxPrefill(null);
                   setEditOpen(true);
                 }}
               >
@@ -252,7 +208,7 @@ function ReceiptDetail() {
                   </div>
                 )}
               </div>
-              {showReconcile && (
+              {transactionsImbalanced && (
                 <button
                   type="button"
                   className="btn"
@@ -273,28 +229,21 @@ function ReceiptDetail() {
             showBalance={trip.transactions.length > 0}
           />
 
-          <div
-            ref={itemsRef}
-            tabIndex={-1}
-            aria-label="Line items"
-            style={{ outline: "none" }}
-          >
-            <ReceiptItemsCard
-              receiptId={id}
-              items={trip.receipt.items.map((i) => ({
-                id: i.id,
-                receiptItemCode: i.receiptItemCode,
-                description: i.description,
-                quantity: Number(i.quantity ?? 0),
-                unitPrice: Number(i.unitPrice ?? 0),
-                category: i.category,
-                subcategory: i.subcategory,
-                normalizedDescriptionName: i.normalizedDescriptionName,
-              }))}
-              subtotal={subtotal}
-              location={trip.receipt.receipt.location}
-            />
-          </div>
+          <ReceiptItemsCard
+            receiptId={id}
+            items={trip.receipt.items.map((i) => ({
+              id: i.id,
+              receiptItemCode: i.receiptItemCode,
+              description: i.description,
+              quantity: Number(i.quantity ?? 0),
+              unitPrice: Number(i.unitPrice ?? 0),
+              category: i.category,
+              subcategory: i.subcategory,
+              normalizedDescriptionName: i.normalizedDescriptionName,
+            }))}
+            subtotal={subtotal}
+            location={trip.receipt.receipt.location}
+          />
 
           <Card>
             <CardHeader>
@@ -401,63 +350,21 @@ function ReceiptDetail() {
           <ReconcileSheet
             open={reconcileOpen}
             onClose={() => setReconcileOpen(false)}
+            isSubmitting={createAdjustment.isPending}
             receiptId={id}
             receiptLabel={trip.receipt.receipt.location}
             receiptDate={trip.receipt.receipt.date}
             receiptTotal={expectedTotal}
             transactionsTotal={transactionsTotal}
-            lines={reconcileLines}
-            onResolve={({ path }) => {
-              if (path === "receipt") {
-                // Accept receipt total: nothing to change — the receipt total
-                // is already the source of truth.
-                toast.success(
-                  "Receipt total kept as the source of truth — no changes made.",
-                );
-              } else if (path === "transactions") {
-                // Accept transactions: open Edit with tax prefilled so the
-                // receipt total lands on the transactions total. If tax can't
-                // absorb the gap (would go negative), fall back to a hint to
-                // record an adjustment.
-                const targetTax =
-                  Math.round(
-                    (transactionsTotal - subtotal - adjustmentTotal) * 100,
-                  ) / 100;
-                setServerErrors({});
-                if (targetTax >= 0) {
-                  setReconcileTaxPrefill(targetTax);
-                  toast.message(
-                    "Edit opened with tax set so the receipt total matches the transactions. Review and save.",
-                  );
-                } else {
-                  setReconcileTaxPrefill(null);
-                  toast.message(
-                    "Open Edit to record an adjustment that balances to the transactions total.",
-                  );
-                }
-                setEditOpen(true);
-              } else {
-                // Edit and balance: send the user to the line-item table.
-                toast.message("Edit the line items below to balance the receipt.");
-                // Deferred past the sheet's own focus-restore-on-close.
-                setTimeout(() => {
-                  itemsRef.current?.scrollIntoView({
-                    behavior: "smooth",
-                    block: "start",
-                  });
-                  itemsRef.current?.focus();
-                }, 60);
-              }
+            onCreateAdjustment={(adjustment) => {
+              createAdjustment.mutate(
+                { receiptId: id, body: adjustment },
+                { onSuccess: () => setReconcileOpen(false) },
+              );
             }}
           />
 
-          <Dialog
-            open={editOpen}
-            onOpenChange={(open) => {
-              setEditOpen(open);
-              if (!open) setReconcileTaxPrefill(null);
-            }}
-          >
+          <Dialog open={editOpen} onOpenChange={setEditOpen}>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Edit receipt</DialogTitle>
@@ -466,9 +373,7 @@ function ReceiptDetail() {
                 defaultValues={{
                   location: trip.receipt.receipt.location,
                   date: trip.receipt.receipt.date,
-                  taxAmount:
-                    reconcileTaxPrefill ??
-                    Number(trip.receipt.receipt.taxAmount ?? 0),
+                  taxAmount: Number(trip.receipt.receipt.taxAmount ?? 0),
                 }}
                 isSubmitting={updateReceipt.isPending}
                 serverErrors={serverErrors}

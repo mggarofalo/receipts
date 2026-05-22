@@ -1792,10 +1792,10 @@ body {
   font-variant-numeric: tabular-nums;
 }
 .recon-delta-bar .v.neg {
-  color: var(--neg);
+  color: var(--neg-ink);
 }
 .recon-delta-bar .v.pos {
-  color: var(--pos);
+  color: var(--pos-ink);
 }
 .recon-body {
   flex: 1;

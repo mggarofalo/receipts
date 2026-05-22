@@ -2,10 +2,15 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route } from "react-router";
 import { mockQueryResult, mockMutationResult } from "@/test/mock-hooks";
+import "@/test/setup-combobox-polyfills";
 import ReceiptDetail from "./ReceiptDetail";
 
 vi.mock("@/hooks/usePageTitle", () => ({
   usePageTitle: vi.fn(),
+}));
+
+vi.mock("@/hooks/useAdjustments", () => ({
+  useCreateAdjustment: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
 }));
 
 vi.mock("@/hooks/useTrips", () => ({
@@ -26,6 +31,11 @@ vi.mock("@/hooks/useReceipts", () => ({
 vi.mock("@/hooks/useEnumMetadata", () => ({
   useEnumMetadata: vi.fn(() => ({
     adjustmentTypeLabels: { Coupon: "Coupon", Discount: "Discount" },
+    adjustmentTypes: [
+      { value: "coupon", label: "Coupon" },
+      { value: "discount", label: "Discount" },
+      { value: "other", label: "Other" },
+    ],
   })),
 }));
 
@@ -347,7 +357,7 @@ describe("ReceiptDetail", () => {
     expect(useUpdateReceipt).toHaveBeenCalled();
   });
 
-  it("hands off to the edit dialog from the reconcile sheet's Accept transactions path", async () => {
+  it("creates a balancing adjustment from the reconcile sheet", async () => {
     const user = userEvent.setup();
     const { useTripByReceiptId } = await import("@/hooks/useTrips");
     vi.mocked(useTripByReceiptId).mockReturnValue(
@@ -367,20 +377,31 @@ describe("ReceiptDetail", () => {
       }),
     );
 
-    const { container } = renderWithRoutes("/receipts/r1");
+    const createMutate = vi.fn();
+    const { useCreateAdjustment } = await import("@/hooks/useAdjustments");
+    vi.mocked(useCreateAdjustment).mockReturnValue(
+      mockMutationResult({ mutate: createMutate, isPending: false }),
+    );
+
+    renderWithRoutes("/receipts/r1");
 
     // The imbalance surfaces a Reconcile entry point.
     await user.click(screen.getByRole("button", { name: /reconcile/i }));
-    // Choose the "Accept transactions" resolution path, then save.
+    // Pick an adjustment type, then create the balancing adjustment.
     await user.click(
-      screen.getByRole("button", { name: /accept transactions/i }),
+      screen.getByRole("combobox", { name: /adjustment type/i }),
     );
+    await user.click(await screen.findByRole("option", { name: "Coupon" }));
     await user.click(
-      container.querySelector("button.btn.primary") as HTMLElement,
+      screen.getByRole("button", { name: /create adjustment/i }),
     );
 
-    // Accept-transactions hands off to the Edit dialog so the user can apply
-    // the balancing change.
-    expect(screen.getByTestId("receipt-header-form")).toBeInTheDocument();
+    expect(createMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        receiptId: "r1",
+        body: expect.objectContaining({ type: "coupon", amount: 24.75 }),
+      }),
+      expect.anything(),
+    );
   });
 });
