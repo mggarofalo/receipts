@@ -15,6 +15,7 @@ import type { SignalRConnectionState } from "@/hooks/useSignalR";
 import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
 import { useKeyboardShortcut } from "@/hooks/useKeyboardShortcut";
 import { useIsMobile } from "@/hooks/useIsMobile";
+import { useLastRoutePersistence } from "@/hooks/useLastRoutePersistence";
 import { ShortcutsHelp } from "@/components/ShortcutsHelp";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { MobileTabbar } from "@/components/MobileTabbar";
@@ -126,6 +127,7 @@ export function Layout() {
   const location = useLocation();
   const { connectionState } = useSignalR(!!user);
   const isMobile = useIsMobile();
+  useLastRoutePersistence();
   const [searchOpen, setSearchOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   useGlobalShortcuts();
