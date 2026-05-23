@@ -65,4 +65,37 @@ describe("Dashboard", () => {
     renderWithQueryClient(<Dashboard />);
     expect(usePageTitle).toHaveBeenCalledWith("Dashboard");
   });
+
+  // RECEIPTS-742: dashboard recent strip used to render only "Loading…"
+  // text. Replace with a proper skeleton + aria-live announcement.
+  it("renders a skeleton placeholder for the recent strip while loading", async () => {
+    const { useReceipts } = await import("@/hooks/useReceipts");
+    vi.mocked(useReceipts).mockReturnValue({
+      data: undefined,
+      total: 0,
+      isLoading: true,
+    } as unknown as ReturnType<typeof useReceipts>);
+
+    renderWithQueryClient(<Dashboard />);
+    // The recent-strip becomes a live region while loading and contains
+    // the SR-only "Loading recent receipts…" message.
+    expect(
+      screen.getByText(/loading recent receipts/i),
+    ).toBeInTheDocument();
+  });
+
+  it("shows an empty state with a New receipt CTA when there are no receipts", async () => {
+    const { useReceipts } = await import("@/hooks/useReceipts");
+    vi.mocked(useReceipts).mockReturnValue({
+      data: [],
+      total: 0,
+      isLoading: false,
+    } as unknown as ReturnType<typeof useReceipts>);
+
+    renderWithQueryClient(<Dashboard />);
+    expect(screen.getByText("No receipts yet")).toBeInTheDocument();
+    const cta = screen.getAllByRole("link", { name: /new receipt/i });
+    // One in the PageHead actions, one in the empty-state card.
+    expect(cta.length).toBeGreaterThanOrEqual(2);
+  });
 });
