@@ -28,7 +28,16 @@ export const shortcuts: ShortcutDefinition[] = [
     label: "Open / edit focused item",
     category: "List Navigation",
   },
-  { keys: "Space", label: "Toggle selection", category: "List Navigation" },
+  {
+    keys: "Space / x",
+    label: "Toggle selection on focused row",
+    category: "List Navigation",
+  },
+  {
+    keys: "/",
+    label: "Focus the search field",
+    category: "List Navigation",
+  },
   {
     keys: "Delete",
     label: "Delete selected items",
