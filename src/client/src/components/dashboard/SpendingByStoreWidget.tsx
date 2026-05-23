@@ -44,11 +44,16 @@ export function SpendingByStoreWidget({
       emptyMessage="No store data"
       className={className}
     >
+      {(titleId) => (
       <div className="space-y-4">
+        {/* The table below is a full text alternative; no sr-only
+            summary needed. aria-labelledby ties the chart to the card
+            title so AT users still get a label. */}
         <BarChart
           data={chartData}
           layout="horizontal"
           formatValue={formatCurrency}
+          aria-labelledby={titleId}
         />
         {items.length > 0 && (
           <div className="overflow-x-auto">
@@ -86,6 +91,7 @@ export function SpendingByStoreWidget({
           </div>
         )}
       </div>
+      )}
     </ChartCard>
   );
 }
