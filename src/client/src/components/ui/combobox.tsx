@@ -72,6 +72,7 @@ const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps>(
             variant="outline"
             role="combobox"
             aria-expanded={open}
+            aria-busy={loading || undefined}
             disabled={disabled}
             className={cn(
               "h-9 w-full justify-between font-normal",
@@ -118,7 +119,14 @@ const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps>(
                     Use &quot;{search}&quot;
                   </button>
                 ) : loading ? (
-                  "Loading..."
+                  // Consumers can supply a domain-specific loading message via
+                  // emptyMessage (e.g. "Loading adjustment types…"). Fall back
+                  // to a generic string only when nothing was provided.
+                  emptyMessage && emptyMessage !== "No results found." ? (
+                    emptyMessage
+                  ) : (
+                    "Loading..."
+                  )
                 ) : (
                   emptyMessage
                 )}

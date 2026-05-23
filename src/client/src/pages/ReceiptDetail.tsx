@@ -5,7 +5,6 @@ import { useUpdateReceipt } from "@/hooks/useReceipts";
 import { useCreateAdjustment } from "@/hooks/useAdjustments";
 import { useReceiptYnabSyncStatuses } from "@/hooks/useYnab";
 import { usePageTitle } from "@/hooks/usePageTitle";
-import { useEnumMetadata } from "@/hooks/useEnumMetadata";
 import {
   parseProblemDetails,
   extractFieldErrors,
@@ -14,11 +13,11 @@ import { ValidationWarnings } from "@/components/ValidationWarnings";
 import { BalanceSummaryCard } from "@/components/BalanceSummaryCard";
 import { ReceiptItemsCard } from "@/components/ReceiptItemsCard";
 import { ReceiptTransactionsCard } from "@/components/ReceiptTransactionsCard";
+import { AdjustmentsCard } from "@/components/AdjustmentsCard";
 import {
   ReceiptHeaderForm,
   type ReceiptHeaderFormValues,
 } from "@/components/ReceiptHeaderForm";
-import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
@@ -32,19 +31,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableFooter,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { ChangeHistory } from "@/components/ChangeHistory";
 import { YnabMemoSyncCard } from "@/components/YnabMemoSyncCard";
 import { CardSkeleton } from "@/components/ui/card-skeleton";
-import { formatCurrency } from "@/lib/format";
 import { YnabPushButton } from "@/components/YnabPushButton";
 import { YnabSplitComparisonCard } from "@/components/YnabSplitComparisonCard";
 import { ReconcileSheet } from "@/components/ReconcileSheet";
@@ -53,7 +42,6 @@ import { Icon, PageHead, YnabChip } from "@/components/primitives";
 function ReceiptDetail() {
   usePageTitle("Receipt Detail");
   const { id } = useParams<{ id: string }>();
-  const { adjustmentTypeLabels } = useEnumMetadata();
 
   const { data: trip, isLoading, isError } = useTripByReceiptId(id ?? null);
   const updateReceipt = useUpdateReceipt();
@@ -245,59 +233,17 @@ function ReceiptDetail() {
             location={trip.receipt.receipt.location}
           />
 
-          <Card>
-            <CardHeader>
-              <CardTitle>
-                Adjustments ({trip.receipt.adjustments.length})
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {trip.receipt.adjustments.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No adjustments for this receipt.
-                </p>
-              ) : (
-                <div className="rounded-md border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Description</TableHead>
-                        <TableHead className="text-right">Amount</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {trip.receipt.adjustments.map((adj) => (
-                        <TableRow key={adj.id}>
-                          <TableCell>
-                            <Badge variant="outline">
-                              {adjustmentTypeLabels[adj.type] ?? adj.type}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-muted-foreground">
-                            {adj.description ?? "—"}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {formatCurrency(Number(adj.amount ?? 0))}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                    <TableFooter>
-                      <TableRow>
-                        <TableCell colSpan={2} className="text-right font-medium">
-                          Adjustment total
-                        </TableCell>
-                        <TableCell className="text-right font-bold">
-                          {formatCurrency(adjustmentTotal)}
-                        </TableCell>
-                      </TableRow>
-                    </TableFooter>
-                  </Table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <AdjustmentsCard
+            receiptId={id}
+            adjustments={trip.receipt.adjustments.map((adj) => ({
+              id: adj.id,
+              receiptId: id,
+              type: adj.type,
+              amount: Number(adj.amount ?? 0),
+              description: adj.description ?? null,
+            }))}
+            adjustmentTotal={adjustmentTotal}
+          />
 
           <ReceiptTransactionsCard
             receiptId={id}

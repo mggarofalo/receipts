@@ -1703,11 +1703,16 @@ body {
 }
 
 /* ===== RECONCILE SHEET ===== */
+/* z-index matches Radix conventions (Dialog/Popover at z-50): overlay sits
+   just below the panel, and portal-rendered popovers from within the panel
+   (e.g. the adjustment-type Combobox) stack ABOVE because they appear later
+   in the DOM. If the sheet were at z-90, popovers at z-50 would render
+   behind the overlay and be invisible. */
 .recon-overlay {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.45);
-  z-index: 80;
+  z-index: 40;
 }
 .recon-sheet {
   position: fixed;
@@ -1717,7 +1722,7 @@ body {
   width: min(720px, 92vw);
   background: var(--surface);
   border-left: 1px solid var(--line);
-  z-index: 90;
+  z-index: 50;
   display: flex;
   flex-direction: column;
   box-shadow: -18px 0 40px rgba(0, 0, 0, 0.3);

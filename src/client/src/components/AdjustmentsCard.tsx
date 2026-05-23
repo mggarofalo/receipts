@@ -24,6 +24,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -276,11 +277,11 @@ export function AdjustmentsCard({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete Adjustments</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete {selectedAdjs.size}{" "}
+              adjustment(s)? This action can be undone by restoring.
+            </DialogDescription>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            Are you sure you want to delete {selectedAdjs.size} adjustment(s)?
-            This action can be undone by restoring.
-          </p>
           <div className="flex justify-end gap-2 pt-4">
             <Button variant="outline" onClick={() => setDeleteOpen(false)}>
               Cancel

@@ -11,6 +11,8 @@ vi.mock("@/hooks/usePageTitle", () => ({
 
 vi.mock("@/hooks/useAdjustments", () => ({
   useCreateAdjustment: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useUpdateAdjustment: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useDeleteAdjustments: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
 }));
 
 vi.mock("@/hooks/useTrips", () => ({

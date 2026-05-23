@@ -47,7 +47,7 @@ export function ReconcileSheet({
   receiptTotal,
   transactionsTotal,
 }: ReconcileSheetProps) {
-  const { adjustmentTypes } = useEnumMetadata();
+  const { adjustmentTypes, isLoading: metadataLoading } = useEnumMetadata();
   const [type, setType] = useState("");
   const [description, setDescription] = useState("");
 
@@ -248,6 +248,12 @@ export function ReconcileSheet({
                   onValueChange={setType}
                   placeholder="Select adjustment type…"
                   searchPlaceholder="Search types…"
+                  emptyMessage={
+                    metadataLoading
+                      ? "Loading adjustment types…"
+                      : "No adjustment types available."
+                  }
+                  loading={metadataLoading && adjustmentTypes.length === 0}
                   aria-label="Adjustment type"
                 />
               </div>
