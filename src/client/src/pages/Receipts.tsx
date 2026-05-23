@@ -37,7 +37,11 @@ import { Spinner } from "@/components/ui/spinner";
 import { formatCurrency } from "@/lib/format";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Info } from "lucide-react";
-import { useReceiptYnabSyncStatuses } from "@/hooks/useYnab";
+import {
+  useReceiptYnabSyncStatuses,
+  useBulkPushYnabTransactions,
+} from "@/hooks/useYnab";
+import { BulkActionsBar } from "@/components/BulkActionsBar";
 import {
   Checkbox,
   Icon,
@@ -119,6 +123,7 @@ function Receipts() {
   const createReceipt = useCreateReceipt();
   const updateReceipt = useUpdateReceipt();
   const deleteReceipts = useDeleteReceipts();
+  const bulkPushYnab = useBulkPushYnabTransactions();
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [createOpen, setCreateOpen] = useState(false);
@@ -225,15 +230,6 @@ function Receipts() {
         sub={`${serverTotal} total · ${filteredResults.length} shown`}
         actions={
           <>
-            {selected.size > 0 && (
-              <button
-                type="button"
-                className="btn danger"
-                onClick={() => setDeleteOpen(true)}
-              >
-                <Icon.Trash /> Delete ({selected.size})
-              </button>
-            )}
             <button
               type="button"
               className="btn"
@@ -508,6 +504,20 @@ function Receipts() {
             totalPages={totalPages(serverTotal)}
             onPageChange={(page) => setPage(page, serverTotal)}
             onPageSizeChange={setPageSize}
+          />
+          <BulkActionsBar
+            selectedCount={selected.size}
+            totalCount={filteredResults.length}
+            itemLabel="receipt"
+            onClearSelection={() => setSelected(new Set())}
+            onDelete={() => setDeleteOpen(true)}
+            onPushToYnab={() => {
+              bulkPushYnab.mutate(Array.from(selected), {
+                onSuccess: () => setSelected(new Set()),
+              });
+            }}
+            isPushingToYnab={bulkPushYnab.isPending}
+            isDeleting={deleteReceipts.isPending}
           />
         </>
       )}

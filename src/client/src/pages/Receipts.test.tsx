@@ -15,6 +15,10 @@ vi.mock("@/hooks/useYnab", () => ({
     data: undefined,
     isLoading: false,
   })),
+  useBulkPushYnabTransactions: vi.fn(() => ({
+    mutate: vi.fn(),
+    isPending: false,
+  })),
 }));
 
 vi.mock("@/hooks/useReceipts", () => ({
@@ -460,8 +464,12 @@ describe("Receipts", () => {
     renderWithProviders(<Receipts />);
     await user.click(screen.getByLabelText("Select all rows"));
 
+    // Selecting all rows reveals the bulk-actions bar with the count
+    // ("2 receipts selected") and a Delete button.
+    const bar = await screen.findByRole("region", { name: "Bulk actions" });
+    expect(bar).toHaveTextContent(/2.* receipts selected/);
     expect(
-      screen.getByRole("button", { name: /delete \(2\)/i }),
+      screen.getByRole("button", { name: /^delete$/i }),
     ).toBeInTheDocument();
   });
 
