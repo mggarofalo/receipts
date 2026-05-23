@@ -1479,6 +1479,46 @@ body {
   line-height: 1.5;
 }
 
+/* ── Bulk actions bar ───────────────────────────────────────────────── */
+.bulk-actions {
+  position: sticky;
+  bottom: 12px;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 14px;
+  margin-top: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(8px);
+}
+.bulk-actions-count {
+  font-size: 13px;
+  color: var(--ink);
+}
+.bulk-actions-count strong {
+  color: var(--accent);
+  font-weight: 600;
+  margin-right: 4px;
+}
+.bulk-actions-spacer {
+  flex: 1;
+}
+@media (max-width: 900px) {
+  .bulk-actions {
+    /* Sit above the mobile tabbar (60px tall, fixed at bottom: 0). */
+    bottom: 72px;
+    margin-left: -14px;
+    margin-right: -14px;
+    border-radius: 8px;
+  }
+}
+
 /* ── Mobile tabbar + responsive shell ───────────────────────────────── */
 .mobile-tabbar {
   display: none;
