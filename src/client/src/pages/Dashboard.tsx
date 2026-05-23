@@ -5,6 +5,7 @@ import { usePageTitle } from "@/hooks/usePageTitle";
 import { useReceipts } from "@/hooks/useReceipts";
 import type { DateRange } from "@/hooks/useDashboard";
 import { PageHead, Icon } from "@/components/primitives";
+import { Skeleton } from "@/components/ui/skeleton";
 import { DateRangeSelector } from "@/components/dashboard/DateRangeSelector";
 import { SummaryStats } from "@/components/dashboard/SummaryStats";
 import { SpendingOverTimeWidget } from "@/components/dashboard/SpendingOverTimeWidget";
@@ -98,15 +99,32 @@ function Dashboard() {
           See all <Icon.Arrow />
         </Link>
       </div>
-      <div className="recent-strip">
+      <div
+        className="recent-strip"
+        role={recent.isLoading || !recent.data ? "status" : undefined}
+        aria-busy={recent.isLoading || !recent.data || undefined}
+        aria-live={recent.isLoading || !recent.data ? "polite" : undefined}
+      >
         {recent.isLoading || !recent.data ? (
-          <div className="recent" aria-hidden>
-            <div className="r-store">Loading…</div>
-          </div>
+          <>
+            <span className="sr-only">Loading recent receipts…</span>
+            {/* Mono placeholder bars matching the .recent card structure
+                — keeps the dashboard layout stable while data fetches. */}
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="recent" aria-hidden="true">
+                <Skeleton className="h-4 w-24 mb-2" />
+                <Skeleton className="h-3 w-16 mb-2" />
+                <Skeleton className="h-4 w-14" />
+              </div>
+            ))}
+          </>
         ) : recent.data.length === 0 ? (
           <div className="recent" style={{ gridColumn: "1 / -1" }}>
             <div className="r-store">No receipts yet</div>
             <div className="r-meta">Add your first receipt to get started.</div>
+            <Link to="/receipts/new" className="btn xs ghost" style={{ marginTop: 6 }}>
+              <Icon.Plus /> New receipt
+            </Link>
           </div>
         ) : (
           recent.data.slice(0, 4).map((r) => (

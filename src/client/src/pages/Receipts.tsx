@@ -314,6 +314,9 @@ function Receipts() {
       {isLoading ? (
         <TableSkeleton columns={6} />
       ) : filteredResults.length === 0 ? (
+        // Three-way split: search vs. filters vs. genuinely empty. The
+        // first two surface "you can clear what you applied"; the last is
+        // the first-run "create your first receipt" CTA (RECEIPTS-742).
         search ? (
           <NoResults
             searchTerm={search}
@@ -321,6 +324,23 @@ function Receipts() {
             onSelectSuggestion={setSearch}
             entityName="receipts"
           />
+        ) : Object.keys(filterValues).length > 0 ? (
+          <div className="empty">
+            <div className="icon-frame">
+              <Icon.Inbox />
+            </div>
+            <h3>No receipts match your filters</h3>
+            <p>Try widening the date range or clearing filters.</p>
+            <div className="actions">
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setFilterValues({})}
+              >
+                Clear filters
+              </button>
+            </div>
+          </div>
         ) : (
           <div className="empty">
             <div className="icon-frame">
