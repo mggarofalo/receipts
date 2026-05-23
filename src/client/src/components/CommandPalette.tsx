@@ -1,7 +1,6 @@
 import { Fragment, useCallback, useContext, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { ChevronDown, Star } from "lucide-react";
-import { useTheme } from "next-themes";
 import { toast } from "sonner";
 import {
   CommandDialog,
@@ -23,6 +22,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { useAppearance } from "@/hooks/useAppearance";
 import { useAuth } from "@/hooks/useAuth";
 import { usePermission } from "@/hooks/usePermission";
 import { useBackupExport } from "@/hooks/useBackup";
@@ -101,7 +101,7 @@ function resolveCommands(ids: string[], registry: Command[]): Command[] {
 export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { setTheme } = useTheme();
+  const { setPalette } = useAppearance();
   const { logout } = useAuth();
   const { isAdmin } = usePermission();
   const shortcutsCtx = useContext(ShortcutsContext);
@@ -165,7 +165,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       navigate,
       close,
       currentPath: location.pathname,
-      setTheme,
+      setPalette,
       logout,
       openShortcutsHelp,
       syncYnab,
@@ -176,7 +176,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       navigate,
       close,
       location.pathname,
-      setTheme,
+      setPalette,
       logout,
       openShortcutsHelp,
       syncYnab,

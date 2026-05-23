@@ -1,10 +1,10 @@
 import { useState, useCallback } from "react";
 import { Link } from "react-router";
 import { format, subMonths } from "date-fns";
-import { Plus } from "lucide-react";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import { useReceipts } from "@/hooks/useReceipts";
 import type { DateRange } from "@/hooks/useDashboard";
-import { Button } from "@/components/ui/button";
+import { PageHead, Icon } from "@/components/primitives";
 import { DateRangeSelector } from "@/components/dashboard/DateRangeSelector";
 import { SummaryStats } from "@/components/dashboard/SummaryStats";
 import { SpendingOverTimeWidget } from "@/components/dashboard/SpendingOverTimeWidget";
@@ -20,6 +20,21 @@ function getDefaultRange(): DateRange {
   };
 }
 
+function formatMoney(value: number | string | null | undefined): string {
+  const n = Number(value ?? 0);
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+  }).format(n);
+}
+
+function formatShortDate(value: string | null | undefined): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
 function Dashboard() {
   usePageTitle("Dashboard");
   const [dateRange, setDateRange] = useState<DateRange>(getDefaultRange);
@@ -28,36 +43,87 @@ function Dashboard() {
     setDateRange(range);
   }, []);
 
+  const recent = useReceipts(0, 4, "date", "desc");
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-        <div className="flex items-center gap-2">
-          <Button asChild>
-            <Link to="/receipts/new">
-              <Plus className="h-4 w-4" />
-              Create Receipt
+    <>
+      <PageHead
+        title="Dashboard"
+        sub={`${dateRange.startDate} → ${dateRange.endDate}`}
+        actions={
+          <>
+            <DateRangeSelector
+              value={dateRange}
+              onChange={handleDateRangeChange}
+            />
+            <Link to="/receipts/new" className="btn primary">
+              <Icon.Plus /> New receipt
             </Link>
-          </Button>
-          <DateRangeSelector value={dateRange} onChange={handleDateRangeChange} />
-        </div>
-      </div>
+          </>
+        }
+      />
 
       <SummaryStats dateRange={dateRange} />
 
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        <SpendingOverTimeWidget
-          dateRange={dateRange}
-          className="md:col-span-2"
-        />
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+          gap: 20,
+          marginTop: 18,
+        }}
+      >
+        <SpendingOverTimeWidget dateRange={dateRange} />
         <SpendingByCategoryWidget dateRange={dateRange} />
       </div>
-
-      <div className="grid gap-6 md:grid-cols-2">
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+          gap: 20,
+          marginTop: 14,
+        }}
+      >
         <SpendingByAccountWidget dateRange={dateRange} />
         <SpendingByStoreWidget dateRange={dateRange} />
       </div>
-    </div>
+
+      <div className="section-head">
+        <h3>Recent</h3>
+        <div className="line" />
+        <div className="aux">
+          {recent.total ? `Last ${recent.data?.length ?? 0} of ${recent.total}` : "—"}
+        </div>
+        <Link to="/receipts" className="card-action">
+          See all <Icon.Arrow />
+        </Link>
+      </div>
+      <div className="recent-strip">
+        {recent.isLoading || !recent.data ? (
+          <div className="recent" aria-hidden>
+            <div className="r-store">Loading…</div>
+          </div>
+        ) : recent.data.length === 0 ? (
+          <div className="recent" style={{ gridColumn: "1 / -1" }}>
+            <div className="r-store">No receipts yet</div>
+            <div className="r-meta">Add your first receipt to get started.</div>
+          </div>
+        ) : (
+          recent.data.slice(0, 4).map((r) => (
+            <Link
+              key={r.id}
+              to={`/receipts/${r.id}`}
+              className="recent"
+              aria-label={`Open receipt for ${r.location}`}
+            >
+              <div className="r-store">{r.location}</div>
+              <div className="r-meta">{formatShortDate(r.date)}</div>
+              <div className="r-amt">{formatMoney(r.taxAmount)} tax</div>
+            </Link>
+          ))
+        )}
+      </div>
+    </>
   );
 }
 

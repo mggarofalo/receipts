@@ -1,4 +1,3 @@
-import { Receipt, DollarSign, TrendingUp, Tag } from "lucide-react";
 import { useDashboardSummary } from "@/hooks/useDashboard";
 import type { DateRange } from "@/hooks/useDashboard";
 import { StatCard } from "./StatCard";
@@ -20,36 +19,30 @@ export function SummaryStats({ dateRange, className }: SummaryStatsProps) {
   const { data, isLoading } = useDashboardSummary(dateRange);
 
   return (
-    <div
-      className={`grid gap-4 sm:grid-cols-2 lg:grid-cols-4 ${className ?? ""}`}
-    >
+    <div className={`kpis ${className ?? ""}`}>
       <StatCard
-        title="Total Receipts"
+        title="Total receipts"
         value={String(Number(data?.totalReceipts ?? 0))}
-        icon={Receipt}
         loading={isLoading}
       />
       <StatCard
-        title="Total Spent"
+        title="Total spent"
         value={formatCurrency(data?.totalSpent)}
-        icon={DollarSign}
         loading={isLoading}
       />
       <StatCard
-        title="Avg Trip Amount"
+        title="Avg trip"
         value={formatCurrency(data?.averageTripAmount)}
-        icon={TrendingUp}
         loading={isLoading}
       />
       <StatCard
-        title="Top Category"
+        title="Top category"
         value={data?.mostUsedCategory?.name ?? "—"}
         subtitle={
           data?.mostUsedCategory?.count
             ? `${Number(data.mostUsedCategory.count)} receipts`
             : undefined
         }
-        icon={Tag}
         loading={isLoading}
       />
     </div>

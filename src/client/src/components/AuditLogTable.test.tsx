@@ -106,4 +106,33 @@ describe("AuditLogTable", () => {
     // The second log has 1 change
     expect(screen.getByText("1")).toBeInTheDocument();
   });
+
+  it("labels writes with no user and no API key as System", () => {
+    const systemLog: AuditLog[] = [
+      {
+        id: "log-sys",
+        entityType: "ItemEmbedding",
+        entityId: "embedding-001",
+        action: "Created",
+        changesJson: "[]",
+        changedByUserId: null,
+        changedByApiKeyId: null,
+        changedAt: "2025-01-17T09:00:00Z",
+        ipAddress: null,
+      },
+    ];
+    renderWithTooltip(<AuditLogTable logs={systemLog} isLoading={false} />);
+    expect(screen.getByText("System")).toBeInTheDocument();
+  });
+
+  it("resolves a changed-by user id to a friendly label", () => {
+    renderWithTooltip(
+      <AuditLogTable
+        logs={mockLogs}
+        isLoading={false}
+        userLabels={{ "user-001-full-uuid": "ada@receipts.local" }}
+      />,
+    );
+    expect(screen.getByText("ada@receipts.local")).toBeInTheDocument();
+  });
 });

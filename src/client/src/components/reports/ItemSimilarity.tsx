@@ -172,8 +172,8 @@ export default function ItemSimilarity() {
           </div>
         </div>
         <div className="text-right">
-          <p className="text-sm text-muted-foreground">Groups Found</p>
-          <p className="text-2xl font-bold">{data?.totalCount ?? 0}</p>
+          <p className="card-sub">Groups Found</p>
+          <p className="money-med">{data?.totalCount ?? 0}</p>
         </div>
       </div>
 
@@ -197,7 +197,7 @@ export default function ItemSimilarity() {
 
       {!data || data.totalCount === 0 ? (
         <div className="rounded-lg border p-6 text-center">
-          <h2 className="text-lg font-semibold">No Similar Items</h2>
+          <h2 className="card-title">No Similar Items</h2>
           <p className="mt-2 text-muted-foreground">
             No similar item descriptions found at this threshold. Try lowering
             the similarity threshold.
@@ -252,10 +252,10 @@ export default function ItemSimilarity() {
                       ))}
                     </div>
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-right money">
                     {group.occurrences}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-right money">
                     {formatDecimal(Number(group.maxSimilarity ?? 0))}
                   </TableCell>
                   <TableCell className="text-right">

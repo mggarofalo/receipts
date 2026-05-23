@@ -10,6 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageHead } from "@/components/primitives";
 
 interface ReportConfig {
   slug: string;
@@ -108,26 +109,29 @@ function Reports() {
   );
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <h1 className="text-2xl font-bold tracking-tight">Reports</h1>
-        <Select value={activeReport.slug} onValueChange={handleReportChange}>
-          <SelectTrigger className="w-[260px]" aria-label="Select report">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {availableReports.map((report) => (
-              <SelectItem key={report.slug} value={report.slug}>
-                {report.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+    <>
+      <PageHead
+        title="Reports"
+        sub={activeReport.name}
+        actions={
+          <Select value={activeReport.slug} onValueChange={handleReportChange}>
+            <SelectTrigger className="w-[260px]" aria-label="Select report">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {availableReports.map((report) => (
+                <SelectItem key={report.slug} value={report.slug}>
+                  {report.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        }
+      />
       <Suspense fallback={<ReportFallback />}>
         <activeReport.component />
       </Suspense>
-    </div>
+    </>
   );
 }
 

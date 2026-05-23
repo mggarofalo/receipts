@@ -7,7 +7,7 @@ function makeCtx(overrides: Partial<CommandContext> = {}): CommandContext {
     navigate: vi.fn(),
     close: vi.fn(),
     currentPath: "/",
-    setTheme: vi.fn(),
+    setPalette: vi.fn(),
     logout: vi.fn(async () => {}),
     openShortcutsHelp: vi.fn(),
     syncYnab: vi.fn(),
@@ -51,9 +51,8 @@ describe("command registry", () => {
       "create:api-key",
       "create:user",
       "pref:shortcuts-help",
-      "pref:theme-light",
-      "pref:theme-dark",
-      "pref:theme-system",
+      "pref:palette-graphite",
+      "pref:palette-paper",
       "pref:sign-out",
     ];
     for (const id of expected) {
@@ -117,10 +116,10 @@ describe("command registry", () => {
     expect(ctx.navigate).toHaveBeenCalledWith("/accounts");
   });
 
-  it("theme commands call setTheme with expected values", () => {
+  it("palette commands call setPalette with expected values", () => {
     const ctx = makeCtx();
-    COMMANDS.find((c) => c.id === "pref:theme-dark")!.run(ctx);
-    expect(ctx.setTheme).toHaveBeenCalledWith("dark");
+    COMMANDS.find((c) => c.id === "pref:palette-paper")!.run(ctx);
+    expect(ctx.setPalette).toHaveBeenCalledWith("paper");
   });
 
   it("sign-out calls logout and redirects to /login", async () => {

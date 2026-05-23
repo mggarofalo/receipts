@@ -1,4 +1,5 @@
 import { renderHook } from "@testing-library/react";
+import { MemoryRouter } from "react-router";
 import { useGlobalShortcuts } from "./useGlobalShortcuts";
 import { ShortcutsContext } from "@/contexts/shortcuts-context";
 import type { ReactNode } from "react";
@@ -23,11 +24,13 @@ describe("useGlobalShortcuts", () => {
   it("toggles help via ? key", () => {
     const setHelpOpen = vi.fn();
     const wrapper = ({ children }: { children: ReactNode }) => (
-      <ShortcutsContext.Provider
-        value={{ helpOpen: false, setHelpOpen }}
-      >
-        {children}
-      </ShortcutsContext.Provider>
+      <MemoryRouter>
+        <ShortcutsContext.Provider
+          value={{ helpOpen: false, setHelpOpen }}
+        >
+          {children}
+        </ShortcutsContext.Provider>
+      </MemoryRouter>
     );
 
     renderHook(() => useGlobalShortcuts(), { wrapper });
@@ -39,11 +42,13 @@ describe("useGlobalShortcuts", () => {
 
   it("dispatches shortcut:new-item event on Shift+N", () => {
     const wrapper = ({ children }: { children: ReactNode }) => (
-      <ShortcutsContext.Provider
-        value={{ helpOpen: false, setHelpOpen: vi.fn() }}
-      >
-        {children}
-      </ShortcutsContext.Provider>
+      <MemoryRouter>
+        <ShortcutsContext.Provider
+          value={{ helpOpen: false, setHelpOpen: vi.fn() }}
+        >
+          {children}
+        </ShortcutsContext.Provider>
+      </MemoryRouter>
     );
 
     renderHook(() => useGlobalShortcuts(), { wrapper });

@@ -3,6 +3,7 @@ import { MemoryRouter } from "react-router";
 import type { ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthContext, type AuthContextValue } from "@/contexts/auth-context";
+import { AppearanceProvider } from "@/contexts/AppearanceContext";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 const defaultAuth: AuthContextValue = {
@@ -14,7 +15,9 @@ const defaultAuth: AuthContextValue = {
   changePassword: async () => {},
 };
 
-type RouteEntry = string | { pathname: string; search?: string; state?: unknown };
+type RouteEntry =
+  | string
+  | { pathname: string; search?: string; state?: unknown };
 
 interface WrapperOptions {
   auth?: Partial<AuthContextValue>;
@@ -26,11 +29,13 @@ export function createWrapper({ auth, route = "/" }: WrapperOptions = {}) {
   return function Wrapper({ children }: { children: ReactNode }) {
     return (
       <MemoryRouter initialEntries={[route]}>
-        <TooltipProvider>
-          <AuthContext.Provider value={authValue}>
-            {children}
-          </AuthContext.Provider>
-        </TooltipProvider>
+        <AppearanceProvider>
+          <TooltipProvider>
+            <AuthContext.Provider value={authValue}>
+              {children}
+            </AuthContext.Provider>
+          </TooltipProvider>
+        </AppearanceProvider>
       </MemoryRouter>
     );
   };
@@ -63,11 +68,13 @@ export function createQueryWrapper(wrapperOptions?: WrapperOptions) {
     return (
       <QueryClientProvider client={queryClient}>
         <MemoryRouter initialEntries={[wrapperOptions?.route ?? "/"]}>
-          <TooltipProvider>
-            <AuthContext.Provider value={authValue}>
-              {children}
-            </AuthContext.Provider>
-          </TooltipProvider>
+          <AppearanceProvider>
+            <TooltipProvider>
+              <AuthContext.Provider value={authValue}>
+                {children}
+              </AuthContext.Provider>
+            </TooltipProvider>
+          </AppearanceProvider>
         </MemoryRouter>
       </QueryClientProvider>
     );

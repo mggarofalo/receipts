@@ -16,6 +16,18 @@ describe("parseChanges", () => {
     expect(result[0]).toEqual({ field: "name", oldValue: "A", newValue: "B" });
   });
 
+  it("parses PascalCase FieldChange objects from the backend serializer", () => {
+    const json = JSON.stringify([
+      { FieldName: "Location", OldValue: "Target", NewValue: "Costco" },
+      { FieldName: "TaxAmount", OldValue: null, NewValue: "1.50" },
+    ]);
+    const result = parseChanges(json);
+    expect(result).toEqual([
+      { field: "Location", oldValue: "Target", newValue: "Costco" },
+      { field: "TaxAmount", oldValue: null, newValue: "1.50" },
+    ]);
+  });
+
   it("filters out invalid entries", () => {
     const json = JSON.stringify([
       { field: "name", oldValue: "A", newValue: "B" },

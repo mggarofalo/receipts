@@ -41,7 +41,7 @@ describe("ChangePassword", () => {
   it("shows description text about password requirement", () => {
     renderWithProviders(<ChangePassword />);
     expect(
-      screen.getByText(/you must change your password before continuing/i),
+      screen.getByText(/required before continuing/i),
     ).toBeInTheDocument();
   });
 

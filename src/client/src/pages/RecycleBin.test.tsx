@@ -66,7 +66,7 @@ describe("RecycleBin", () => {
   it("renders the page heading", () => {
     renderWithProviders(<RecycleBin />);
     expect(
-      screen.getByRole("heading", { name: /recycle bin/i }),
+      screen.getByRole("heading", { name: /^trash$/i }),
     ).toBeInTheDocument();
   });
 

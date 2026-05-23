@@ -30,6 +30,10 @@ vi.mock("@/hooks/useAudit", () => ({
   })),
 }));
 
+vi.mock("@/hooks/useUsers", () => ({
+  useUsers: vi.fn(() => ({ data: [], total: 0, isLoading: false })),
+}));
+
 vi.mock("@/hooks/useServerPagination", () => ({
   useServerPagination: vi.fn(() => ({
     offset: 0,

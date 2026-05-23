@@ -9,17 +9,40 @@ export interface FieldChange {
   newValue: string | null;
 }
 
+/**
+ * Reads a string property from a record, accepting either camelCase or
+ * PascalCase keys. The backend serializes `FieldChange` with PascalCase keys
+ * (`FieldName`/`OldValue`/`NewValue`); historically the client only looked for
+ * camelCase, so every audit row's changes silently parsed to `[]`.
+ */
+function pickString(
+  rec: Record<string, unknown>,
+  ...keys: string[]
+): string | null {
+  for (const key of keys) {
+    const value = rec[key];
+    if (typeof value === "string") return value;
+  }
+  return null;
+}
+
 export function parseChanges(changesJson: string): FieldChange[] {
   try {
     const parsed: unknown = JSON.parse(changesJson);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (c): c is FieldChange =>
-        typeof c === "object" &&
-        c !== null &&
-        "field" in c &&
-        typeof c.field === "string",
-    );
+    const changes: FieldChange[] = [];
+    for (const entry of parsed) {
+      if (typeof entry !== "object" || entry === null) continue;
+      const rec = entry as Record<string, unknown>;
+      const field = pickString(rec, "field", "fieldName", "FieldName");
+      if (field === null) continue;
+      changes.push({
+        field,
+        oldValue: pickString(rec, "oldValue", "OldValue"),
+        newValue: pickString(rec, "newValue", "NewValue"),
+      });
+    }
+    return changes;
   } catch {
     return [];
   }

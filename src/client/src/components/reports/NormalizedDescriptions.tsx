@@ -135,7 +135,7 @@ function ReviewQueueTab() {
   if (pending.length === 0) {
     return (
       <div className="rounded-lg border p-6 text-center">
-        <h2 className="text-lg font-semibold">Review Queue Empty</h2>
+        <h2 className="card-title">Review Queue Empty</h2>
         <p className="mt-2 text-muted-foreground">
           No descriptions are awaiting review right now.
         </p>
@@ -147,8 +147,8 @@ function ReviewQueueTab() {
     <div className="space-y-4">
       <div className="flex gap-6 rounded-lg border p-4">
         <div>
-          <p className="text-sm text-muted-foreground">Pending Review</p>
-          <p className="text-2xl font-bold">
+          <p className="card-sub">Pending Review</p>
+          <p className="money-med">
             {pendingData?.totalCount ?? pending.length}
           </p>
         </div>
@@ -455,8 +455,8 @@ function RegistryTab() {
           />
         </div>
         <div className="text-right">
-          <p className="text-sm text-muted-foreground">Active Entries</p>
-          <p className="text-2xl font-bold">{data?.totalCount ?? 0}</p>
+          <p className="card-sub">Active Entries</p>
+          <p className="money-med">{data?.totalCount ?? 0}</p>
         </div>
       </div>
       {filtered.length === 0 ? (
@@ -659,7 +659,7 @@ function SettingsForm({
               className="rounded border p-3 text-sm"
               data-testid="preview-impact-panel"
             >
-              <h3 className="font-semibold">Projected impact</h3>
+              <h3 className="card-title">Projected impact</h3>
               <div className="mt-2 grid grid-cols-3 gap-4">
                 <div>
                   <p className="text-xs text-muted-foreground">Auto-accepted</p>
@@ -789,7 +789,7 @@ function SettingsForm({
                             {c.status}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-right money">
                           {formatDecimal(c.cosineSimilarity, 4)}
                         </TableCell>
                       </TableRow>

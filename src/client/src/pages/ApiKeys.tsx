@@ -10,6 +10,7 @@ import client from "@/lib/api-client";
 import { showSuccess, showError } from "@/lib/toast";
 import { capitalize } from "@/lib/format";
 import { Button } from "@/components/ui/button";
+import { Icon, PageHead } from "@/components/primitives";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Card,
@@ -186,16 +187,21 @@ function ApiKeys() {
   });
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">API Keys</h1>
-          <p className="text-sm text-muted-foreground">
-            Manage API keys for programmatic access
-          </p>
-        </div>
-        <Button onClick={handleCreateOpen}>Create API Key</Button>
-      </div>
+    <>
+      <PageHead
+        title="API keys"
+        sub="Manage API keys for programmatic access"
+        actions={
+          <button
+            type="button"
+            className="btn primary"
+            onClick={handleCreateOpen}
+          >
+            <Icon.Plus /> New API key
+          </button>
+        }
+      />
+      <div className="space-y-6">
 
       <Card>
         <CardHeader>
@@ -410,6 +416,7 @@ function ApiKeys() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+    </>
   );
 }
 

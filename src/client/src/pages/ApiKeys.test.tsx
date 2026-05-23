@@ -66,10 +66,10 @@ describe("ApiKeys", () => {
     ).toBeInTheDocument();
   });
 
-  it("renders the Create API Key button", () => {
+  it("renders the New API Key button", () => {
     renderWithQueryClient(<ApiKeys />);
     expect(
-      screen.getByRole("button", { name: /create api key/i }),
+      screen.getByRole("button", { name: /new api key/i }),
     ).toBeInTheDocument();
   });
 
@@ -116,12 +116,12 @@ describe("ApiKeys", () => {
     ).toBeInTheDocument();
   });
 
-  it("opens create dialog when Create API Key button is clicked", async () => {
+  it("opens create dialog when the New API Key button is clicked", async () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     renderWithQueryClient(<ApiKeys />);
 
     await user.click(
-      screen.getByRole("button", { name: /create api key/i }),
+      screen.getByRole("button", { name: /new api key/i }),
     );
 
     expect(
@@ -307,7 +307,7 @@ describe("ApiKeys", () => {
     })) as unknown as typeof useMutation);
 
     renderWithQueryClient(<ApiKeys />);
-    await user.click(screen.getByRole("button", { name: /create api key/i }));
+    await user.click(screen.getByRole("button", { name: /new api key/i }));
     await user.type(screen.getByPlaceholderText(/paperless integration/i), "My Key");
     await user.click(screen.getByRole("button", { name: /create key/i }));
 
@@ -339,7 +339,7 @@ describe("ApiKeys", () => {
     })) as unknown as typeof useMutation);
 
     renderWithQueryClient(<ApiKeys />);
-    await user.click(screen.getByRole("button", { name: /create api key/i }));
+    await user.click(screen.getByRole("button", { name: /new api key/i }));
     await user.type(screen.getByPlaceholderText(/paperless integration/i), "Copy Test");
     await user.click(screen.getByRole("button", { name: /create key/i }));
 
@@ -397,7 +397,7 @@ describe("ApiKeys", () => {
     })) as unknown as typeof useMutation);
 
     renderWithQueryClient(<ApiKeys />);
-    await user.click(screen.getByRole("button", { name: /create api key/i }));
+    await user.click(screen.getByRole("button", { name: /new api key/i }));
     await user.type(screen.getByPlaceholderText(/paperless integration/i), "New API Key");
     await user.click(screen.getByRole("button", { name: /create key/i }));
 
@@ -485,7 +485,7 @@ describe("ApiKeys", () => {
     })) as unknown as typeof useMutation);
 
     renderWithQueryClient(<ApiKeys />);
-    await user.click(screen.getByRole("button", { name: /create api key/i }));
+    await user.click(screen.getByRole("button", { name: /new api key/i }));
     await user.type(screen.getByPlaceholderText(/paperless integration/i), "Fail Copy");
     await user.click(screen.getByRole("button", { name: /create key/i }));
 
@@ -519,7 +519,7 @@ describe("ApiKeys", () => {
     })) as unknown as typeof useMutation);
 
     renderWithQueryClient(<ApiKeys />);
-    await user.click(screen.getByRole("button", { name: /create api key/i }));
+    await user.click(screen.getByRole("button", { name: /new api key/i }));
     await user.type(screen.getByPlaceholderText(/paperless integration/i), "Error Key");
     await user.click(screen.getByRole("button", { name: /create key/i }));
 
@@ -586,7 +586,7 @@ describe("ApiKeys", () => {
     })) as unknown as typeof useMutation);
 
     renderWithQueryClient(<ApiKeys />);
-    await user.click(screen.getByRole("button", { name: /create api key/i }));
+    await user.click(screen.getByRole("button", { name: /new api key/i }));
     await user.type(screen.getByPlaceholderText(/paperless integration/i), "Dismiss Test");
     await user.click(screen.getByRole("button", { name: /create key/i }));
 
@@ -613,7 +613,7 @@ describe("ApiKeys", () => {
     })) as unknown as typeof useMutation);
 
     renderWithQueryClient(<ApiKeys />);
-    await user.click(screen.getByRole("button", { name: /create api key/i }));
+    await user.click(screen.getByRole("button", { name: /new api key/i }));
     await user.type(screen.getByPlaceholderText(/paperless integration/i), "No Data Key");
     await user.click(screen.getByRole("button", { name: /create key/i }));
 
@@ -683,7 +683,7 @@ describe("ApiKeys", () => {
   it("does not show bypass checkbox for non-admin users", async () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     renderWithQueryClient(<ApiKeys />);
-    await user.click(screen.getByRole("button", { name: /create api key/i }));
+    await user.click(screen.getByRole("button", { name: /new api key/i }));
 
     expect(screen.queryByLabelText(/bypass rate limiting/i)).not.toBeInTheDocument();
   });
@@ -697,7 +697,7 @@ describe("ApiKeys", () => {
     });
     const user = (await import("@testing-library/user-event")).default.setup();
     renderWithQueryClient(<ApiKeys />);
-    await user.click(screen.getByRole("button", { name: /create api key/i }));
+    await user.click(screen.getByRole("button", { name: /new api key/i }));
 
     expect(screen.getByLabelText(/bypass rate limiting/i)).toBeInTheDocument();
   });
@@ -742,7 +742,7 @@ describe("ApiKeys", () => {
     })) as unknown as typeof useMutation);
 
     renderWithQueryClient(<ApiKeys />);
-    await user.click(screen.getByRole("button", { name: /create api key/i }));
+    await user.click(screen.getByRole("button", { name: /new api key/i }));
     await user.type(screen.getByPlaceholderText(/paperless integration/i), "Select Test");
     await user.click(screen.getByRole("button", { name: /create key/i }));
 
@@ -851,7 +851,7 @@ describe("ApiKeys", () => {
     })) as unknown as typeof useMutation);
 
     renderWithQueryClient(<ApiKeys />);
-    await user.click(screen.getByRole("button", { name: /create api key/i }));
+    await user.click(screen.getByRole("button", { name: /new api key/i }));
 
     expect(screen.getByRole("button", { name: /creating/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /creating/i })).toBeDisabled();

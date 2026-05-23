@@ -231,7 +231,7 @@ export default function UncategorizedItems() {
   if (!data || data.totalCount === 0) {
     return (
       <div className="rounded-lg border p-6 text-center">
-        <h2 className="text-lg font-semibold">All Categorized</h2>
+        <h2 className="card-title">All Categorized</h2>
         <p className="mt-2 text-muted-foreground">
           All receipt items have been categorized. No uncategorized items found.
         </p>
@@ -243,8 +243,8 @@ export default function UncategorizedItems() {
     <div className="space-y-4">
       <div className="flex gap-6 rounded-lg border p-4">
         <div>
-          <p className="text-sm text-muted-foreground">Uncategorized Items</p>
-          <p className="text-2xl font-bold">{data.totalCount}</p>
+          <p className="card-sub">Uncategorized Items</p>
+          <p className="money-med">{data.totalCount}</p>
         </div>
       </div>
 
@@ -339,7 +339,7 @@ export default function UncategorizedItems() {
                   View
                 </button>
               </TableCell>
-              <TableCell className="text-right">
+              <TableCell className="text-right money">
                 {formatCurrency(Number(item.totalAmount ?? 0))}
               </TableCell>
               <TableCell className="text-muted-foreground">

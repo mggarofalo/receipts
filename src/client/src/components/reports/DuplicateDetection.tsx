@@ -158,7 +158,7 @@ export default function DuplicateDetection() {
 
       {!data || data.groupCount === 0 ? (
         <div className="rounded-lg border p-6 text-center">
-          <h2 className="text-lg font-semibold">No Duplicates Found</h2>
+          <h2 className="card-title">No Duplicates Found</h2>
           <p className="mt-2 text-muted-foreground">
             No potential duplicate receipts were detected with the current
             settings.
@@ -168,14 +168,14 @@ export default function DuplicateDetection() {
         <>
           <div className="flex gap-6 rounded-lg border p-4">
             <div>
-              <p className="text-sm text-muted-foreground">Duplicate Groups</p>
-              <p className="text-2xl font-bold">{data.groupCount}</p>
+              <p className="card-sub">Duplicate Groups</p>
+              <p className="money-med">{data.groupCount}</p>
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">
+              <p className="card-sub">
                 Total Duplicate Receipts
               </p>
-              <p className="text-2xl font-bold">
+              <p className="money-med">
                 {data.totalDuplicateReceipts}
               </p>
             </div>
@@ -211,11 +211,12 @@ export default function DuplicateDetection() {
                           <div className="flex items-start justify-between gap-2">
                             <div className="space-y-1 min-w-0">
                               <p
-                                className={`text-sm font-medium truncate ${
+                                className="text-sm font-medium truncate"
+                                style={
                                   locationDiffers
-                                    ? "text-amber-600 dark:text-amber-400"
-                                    : ""
-                                }`}
+                                    ? { color: "var(--warn-ink)" }
+                                    : undefined
+                                }
                               >
                                 {receipt.location}
                               </p>
@@ -223,11 +224,12 @@ export default function DuplicateDetection() {
                                 {receipt.date}
                               </p>
                               <p
-                                className={`text-sm font-medium ${
+                                className="text-sm font-medium"
+                                style={
                                   totalDiffers
-                                    ? "text-amber-600 dark:text-amber-400"
-                                    : ""
-                                }`}
+                                    ? { color: "var(--warn-ink)" }
+                                    : undefined
+                                }
                               >
                                 {formatCurrency(Number(receipt.transactionTotal ?? 0))}
                               </p>

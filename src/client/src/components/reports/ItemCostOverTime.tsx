@@ -306,7 +306,7 @@ export default function ItemCostOverTime() {
 
       {!selectedItem && (
         <div className="rounded-lg border p-6 text-center">
-          <h2 className="text-lg font-semibold">Item Cost Over Time</h2>
+          <h2 className="card-title">Item Cost Over Time</h2>
           <p className="mt-2 text-muted-foreground">
             Search for an item above to see its price history
           </p>

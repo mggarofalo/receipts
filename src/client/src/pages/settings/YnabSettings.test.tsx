@@ -156,7 +156,7 @@ describe("YnabSettings – Connection Status", () => {
 });
 
 describe("YnabSettings – Category Mapping", () => {
-  it("shows 'Configure YNAB to map categories.' when notConfigured is true", async () => {
+  it("hides the mapping cards when YNAB is not configured", async () => {
     const { useYnabBudgets } = await import("@/hooks/useYnab");
     vi.mocked(useYnabBudgets).mockReturnValue(
       mockQueryResult({ budgets: [], isLoading: false, isError: true }),
@@ -164,9 +164,12 @@ describe("YnabSettings – Category Mapping", () => {
 
     renderWithProviders(<YnabSettings />);
 
-    expect(
-      screen.getByText("Configure YNAB to map categories."),
-    ).toBeInTheDocument();
+    // Only the Connection Status card renders; the mapping cards (and their
+    // empty "Configure YNAB to..." placeholders) are hidden until a PAT is set.
+    expect(screen.getByText("Connection Status")).toBeInTheDocument();
+    expect(screen.queryByText("Budget Selection")).not.toBeInTheDocument();
+    expect(screen.queryByText("Account Mapping")).not.toBeInTheDocument();
+    expect(screen.queryByText("Category Mapping")).not.toBeInTheDocument();
   });
 
   it("shows 'Select a budget above to map categories.' when selectedBudgetId is null and not in error state", async () => {

@@ -11,7 +11,7 @@ import { toast } from "sonner";
 import { showApiError, showNetworkError } from "@/lib/toast";
 import { isTimeoutError } from "@/lib/api-client";
 import { sentryCreateBrowserRouter } from "@/lib/sentry";
-import { ThemeProvider } from "next-themes";
+import { AppearanceProvider } from "@/contexts/AppearanceContext";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ShortcutsProvider } from "@/contexts/ShortcutsContext";
@@ -59,7 +59,7 @@ const queryClient = new QueryClient({
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+    <AppearanceProvider>
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
           <ShortcutsProvider>
@@ -69,6 +69,6 @@ createRoot(document.getElementById("root")!).render(
           </ShortcutsProvider>
         </AuthProvider>
       </QueryClientProvider>
-    </ThemeProvider>
+    </AppearanceProvider>
   </StrictMode>,
 );

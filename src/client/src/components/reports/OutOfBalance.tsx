@@ -78,7 +78,7 @@ export default function OutOfBalance() {
   if (!data || data.totalCount === 0) {
     return (
       <div className="rounded-lg border p-6 text-center">
-        <h2 className="text-lg font-semibold">All Balanced</h2>
+        <h2 className="card-title">All Balanced</h2>
         <p className="mt-2 text-muted-foreground">
           All receipts are balanced. No discrepancies found.
         </p>
@@ -90,14 +90,14 @@ export default function OutOfBalance() {
     <div className="space-y-4">
       <div className="flex gap-6 rounded-lg border p-4">
         <div>
-          <p className="text-sm text-muted-foreground">
+          <p className="card-sub">
             Out-of-Balance Receipts
           </p>
-          <p className="text-2xl font-bold">{data.totalCount}</p>
+          <p className="money-med">{data.totalCount}</p>
         </div>
         <div>
-          <p className="text-sm text-muted-foreground">Total Discrepancy</p>
-          <p className="text-2xl font-bold">
+          <p className="card-sub">Total Discrepancy</p>
+          <p className="money-med">
             {formatCurrency(Number(data.totalDiscrepancy ?? 0))}
           </p>
         </div>
@@ -135,27 +135,29 @@ export default function OutOfBalance() {
             >
               <TableCell>{item.date}</TableCell>
               <TableCell>{item.location}</TableCell>
-              <TableCell className="text-right">
+              <TableCell className="text-right money">
                 {formatCurrency(Number(item.itemSubtotal ?? 0))}
               </TableCell>
-              <TableCell className="text-right">
+              <TableCell className="text-right money">
                 {formatCurrency(Number(item.taxAmount ?? 0))}
               </TableCell>
-              <TableCell className="text-right">
+              <TableCell className="text-right money">
                 {formatCurrency(Number(item.adjustmentTotal ?? 0))}
               </TableCell>
-              <TableCell className="text-right">
+              <TableCell className="text-right money">
                 {formatCurrency(Number(item.expectedTotal ?? 0))}
               </TableCell>
-              <TableCell className="text-right">
+              <TableCell className="text-right money">
                 {formatCurrency(Number(item.transactionTotal ?? 0))}
               </TableCell>
               <TableCell
-                className={`text-right font-medium ${
-                  Number(item.difference ?? 0) < 0
-                    ? "text-red-600 dark:text-red-400"
-                    : "text-amber-600 dark:text-amber-400"
-                }`}
+                className="text-right font-medium money"
+                style={{
+                  color:
+                    Number(item.difference ?? 0) < 0
+                      ? "var(--neg-ink)"
+                      : "var(--warn-ink)",
+                }}
               >
                 {formatCurrency(Number(item.difference ?? 0))}
               </TableCell>

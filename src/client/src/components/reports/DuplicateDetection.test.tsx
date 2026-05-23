@@ -121,9 +121,9 @@ describe("DuplicateDetection", () => {
     setupMock();
     renderWithQueryClient(<DuplicateDetection />);
     const total25 = screen.getByText("$25.50");
-    expect(total25.className).toContain("text-amber-600");
+    expect(total25.getAttribute("style")).toContain("var(--warn-ink)");
     const total30 = screen.getByText("$30.00");
-    expect(total30.className).toContain("text-amber-600");
+    expect(total30.getAttribute("style")).toContain("var(--warn-ink)");
   });
 
   it("shows 'Total differs' badges when totals differ", () => {

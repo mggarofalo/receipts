@@ -12,7 +12,7 @@ export interface CommandContext {
   navigate: NavigateFunction;
   close: () => void;
   currentPath: string;
-  setTheme: (theme: "light" | "dark" | "system") => void;
+  setPalette: (palette: "graphite" | "paper") => void;
   logout: () => Promise<void>;
   openShortcutsHelp: () => void;
   syncYnab: () => void;

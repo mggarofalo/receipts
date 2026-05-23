@@ -26,6 +26,7 @@ import {
 import { usePurgeTrash } from "@/hooks/useTrash";
 import { truncateId } from "@/lib/audit-utils";
 import { Button } from "@/components/ui/button";
+import { PageHead } from "@/components/primitives";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Tooltip,
@@ -277,59 +278,64 @@ function RecycleBin() {
 
   if (isLoading) {
     return (
-      <div className="space-y-4">
-        <h1 className="text-2xl font-semibold">Recycle Bin</h1>
+      <>
+        <PageHead title="Trash" sub="Loading…" />
         <div className="space-y-2">
           {Array.from({ length: 5 }).map((_, i) => (
             <Skeleton key={i} className="h-12 w-full" />
           ))}
         </div>
-      </div>
+      </>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Recycle Bin</h1>
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button
-              variant="destructive"
-              size="sm"
-              disabled={allItems.length === 0 || purgeTrash.isPending}
-            >
-              {purgeTrash.isPending ? (
-                <Spinner size="sm" />
-              ) : (
-                <Trash2 className="size-4" />
-              )}
-              {purgeTrash.isPending ? "Emptying..." : "Empty Trash"}
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Empty Trash?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This will permanently delete{" "}
-                <strong>
-                  {allItems.length} {allItems.length === 1 ? "item" : "items"}
-                </strong>
-                . This action cannot be undone.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
+    <>
+      <PageHead
+        title="Trash"
+        sub={`${allItems.length} ${allItems.length === 1 ? "item" : "items"}`}
+        actions={
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
                 variant="destructive"
-                onClick={() => purgeTrash.mutate()}
+                size="sm"
+                disabled={allItems.length === 0 || purgeTrash.isPending}
               >
-                Empty Trash
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </div>
+                {purgeTrash.isPending ? (
+                  <Spinner size="sm" />
+                ) : (
+                  <Trash2 className="size-4" />
+                )}
+                {purgeTrash.isPending ? "Emptying…" : "Empty trash"}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Empty trash?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will permanently delete{" "}
+                  <strong>
+                    {allItems.length}{" "}
+                    {allItems.length === 1 ? "item" : "items"}
+                  </strong>
+                  . This action cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  variant="destructive"
+                  onClick={() => purgeTrash.mutate()}
+                >
+                  Empty trash
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        }
+      />
+      <div className="space-y-4">
 
       <Tabs defaultValue="all">
         <TabsList>
@@ -357,6 +363,7 @@ function RecycleBin() {
         ))}
       </Tabs>
     </div>
+    </>
   );
 }
 

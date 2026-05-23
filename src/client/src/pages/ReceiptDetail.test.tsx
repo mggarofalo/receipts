@@ -2,10 +2,17 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route } from "react-router";
 import { mockQueryResult, mockMutationResult } from "@/test/mock-hooks";
+import "@/test/setup-combobox-polyfills";
 import ReceiptDetail from "./ReceiptDetail";
 
 vi.mock("@/hooks/usePageTitle", () => ({
   usePageTitle: vi.fn(),
+}));
+
+vi.mock("@/hooks/useAdjustments", () => ({
+  useCreateAdjustment: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useUpdateAdjustment: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useDeleteAdjustments: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
 }));
 
 vi.mock("@/hooks/useTrips", () => ({
@@ -26,6 +33,11 @@ vi.mock("@/hooks/useReceipts", () => ({
 vi.mock("@/hooks/useEnumMetadata", () => ({
   useEnumMetadata: vi.fn(() => ({
     adjustmentTypeLabels: { Coupon: "Coupon", Discount: "Discount" },
+    adjustmentTypes: [
+      { value: "coupon", label: "Coupon" },
+      { value: "discount", label: "Discount" },
+      { value: "other", label: "Other" },
+    ],
   })),
 }));
 
@@ -130,7 +142,7 @@ describe("ReceiptDetail", () => {
   it("renders the page heading when id is present", () => {
     renderWithRoutes("/receipts/some-uuid");
     expect(
-      screen.getByRole("heading", { name: /receipt details/i }),
+      screen.getByRole("heading", { name: /receipt/i }),
     ).toBeInTheDocument();
   });
 
@@ -197,9 +209,7 @@ describe("ReceiptDetail", () => {
     );
 
     renderWithRoutes("/receipts/bad-id");
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      /no receipt found for this id/i,
-    );
+    expect(screen.getByRole("alert")).toHaveTextContent(/receipt not found/i);
   });
 
   it("renders transactions card when trip has transactions", async () => {
@@ -302,7 +312,7 @@ describe("ReceiptDetail", () => {
 
     renderWithRoutes("/receipts/r1");
     expect(
-      screen.getByRole("button", { name: /edit receipt/i }),
+      screen.getByRole("button", { name: /^edit$/i }),
     ).toBeInTheDocument();
   });
 
@@ -323,8 +333,8 @@ describe("ReceiptDetail", () => {
     );
 
     renderWithRoutes("/receipts/r1");
-    await user.click(screen.getByRole("button", { name: /edit receipt/i }));
-    expect(screen.getByText("Edit Receipt")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /^edit$/i }));
+    expect(screen.getByText(/edit receipt/i)).toBeInTheDocument();
     expect(screen.getByTestId("receipt-header-form")).toBeInTheDocument();
   });
 
@@ -347,5 +357,53 @@ describe("ReceiptDetail", () => {
 
     renderWithRoutes("/receipts/r1");
     expect(useUpdateReceipt).toHaveBeenCalled();
+  });
+
+  it("creates a balancing adjustment from the reconcile sheet", async () => {
+    const user = userEvent.setup();
+    const { useTripByReceiptId } = await import("@/hooks/useTrips");
+    vi.mocked(useTripByReceiptId).mockReturnValue(
+      mockQueryResult({
+        data: {
+          ...MOCK_TRIP,
+          // expectedTotal 55.25 vs transactions 80.00 → imbalanced
+          transactions: [
+            {
+              transaction: { id: "t1", amount: 80, date: "2024-01-15" },
+              account: { accountCode: "1", name: "Checking", isActive: true },
+            },
+          ],
+        },
+        isLoading: false,
+        isError: false,
+      }),
+    );
+
+    const createMutate = vi.fn();
+    const { useCreateAdjustment } = await import("@/hooks/useAdjustments");
+    vi.mocked(useCreateAdjustment).mockReturnValue(
+      mockMutationResult({ mutate: createMutate, isPending: false }),
+    );
+
+    renderWithRoutes("/receipts/r1");
+
+    // The imbalance surfaces a Reconcile entry point.
+    await user.click(screen.getByRole("button", { name: /reconcile/i }));
+    // Pick an adjustment type, then create the balancing adjustment.
+    await user.click(
+      screen.getByRole("combobox", { name: /adjustment type/i }),
+    );
+    await user.click(await screen.findByRole("option", { name: "Coupon" }));
+    await user.click(
+      screen.getByRole("button", { name: /create adjustment/i }),
+    );
+
+    expect(createMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        receiptId: "r1",
+        body: expect.objectContaining({ type: "coupon", amount: 24.75 }),
+      }),
+      expect.anything(),
+    );
   });
 });

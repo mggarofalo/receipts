@@ -84,7 +84,7 @@ export default function SpendingByNormalizedDescription() {
           />
         </div>
         <div className="rounded-lg border p-6 text-center">
-          <h2 className="text-lg font-semibold">No Data</h2>
+          <h2 className="card-title">No Data</h2>
           <p className="mt-2 text-muted-foreground">
             No spending data found for the selected date range.
           </p>
@@ -98,12 +98,12 @@ export default function SpendingByNormalizedDescription() {
       <div className="flex items-center justify-between">
         <div className="flex gap-6">
           <div>
-            <p className="text-sm text-muted-foreground">Descriptions</p>
-            <p className="text-2xl font-bold">{sorted.length}</p>
+            <p className="card-sub">Descriptions</p>
+            <p className="money-med">{sorted.length}</p>
           </div>
           <div>
-            <p className="text-sm text-muted-foreground">Total Spending</p>
-            <p className="text-2xl font-bold">{formatCurrency(grandTotal)}</p>
+            <p className="card-sub">Total Spending</p>
+            <p className="money-med">{formatCurrency(grandTotal)}</p>
           </div>
         </div>
         <DateRangeSelector
@@ -138,8 +138,8 @@ export default function SpendingByNormalizedDescription() {
               <TableCell className="font-medium">
                 {item.canonicalName}
               </TableCell>
-              <TableCell className="text-right">{item.itemCount}</TableCell>
-              <TableCell className="text-right">
+              <TableCell className="text-right money">{item.itemCount}</TableCell>
+              <TableCell className="text-right money">
                 {formatCurrency(Number(item.totalAmount ?? 0))}
               </TableCell>
             </TableRow>

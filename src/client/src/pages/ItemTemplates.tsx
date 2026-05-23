@@ -24,6 +24,7 @@ import { NoResults } from "@/components/NoResults";
 import { Pagination } from "@/components/Pagination";
 import { formatCurrency } from "@/lib/format";
 import { Button } from "@/components/ui/button";
+import { Icon, PageHead } from "@/components/primitives";
 import {
   Dialog,
   DialogContent,
@@ -144,25 +145,41 @@ function ItemTemplates() {
   }
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-semibold tracking-tight">Item Templates</h1>
-      <div className="flex items-center justify-between">
-        <FuzzySearchInput
-          aria-label="Search item templates"
-          value={search}
-          onChange={setSearch}
-          placeholder="Search item templates..."
-          resultCount={filteredResults.length}
-          totalCount={totalCount}
-          className="max-w-sm"
-        />
-        <div className="flex gap-2">
-          {selected.size > 0 && (
-            <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
-              Delete ({selected.size})
-            </Button>
-          )}
-          <Button onClick={() => setCreateOpen(true)}>New Template</Button>
+    <>
+      <PageHead
+        title="Item templates"
+        sub={`${serverTotal} total`}
+        actions={
+          <>
+            {selected.size > 0 && (
+              <button
+                type="button"
+                className="btn danger"
+                onClick={() => setDeleteOpen(true)}
+              >
+                <Icon.Trash /> Delete ({selected.size})
+              </button>
+            )}
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => setCreateOpen(true)}
+            >
+              <Icon.Plus /> New template
+            </button>
+          </>
+        }
+      />
+      <div className="filter-strip">
+        <div style={{ flex: 1, minWidth: 240 }}>
+          <FuzzySearchInput
+            aria-label="Search item templates"
+            value={search}
+            onChange={setSearch}
+            placeholder="Search templates…"
+            resultCount={filteredResults.length}
+            totalCount={totalCount}
+          />
         </div>
       </div>
 
@@ -400,7 +417,7 @@ function ItemTemplates() {
           </div>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 }
 

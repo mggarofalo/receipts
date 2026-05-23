@@ -1,45 +1,33 @@
-import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import type { LucideIcon } from "lucide-react";
 
 interface StatCardProps {
   title: string;
   value: string;
   subtitle?: string;
-  icon: LucideIcon;
   loading?: boolean;
   className?: string;
 }
 
+/**
+ * KPI card that matches the design system's `.kpi` block — mono uppercase
+ * label, a large serif value, a faint mono sub-line, and reserved space at
+ * the bottom-right for a sparkline if a caller wants to render one.
+ */
 export function StatCard({
   title,
   value,
   subtitle,
-  icon: Icon,
   loading,
   className,
 }: StatCardProps) {
   return (
-    <Card className={cn("py-4", className)}>
-      <CardContent className="flex items-center gap-4">
-        <div className="rounded-lg bg-primary/10 p-2.5">
-          <Icon className="h-5 w-5 text-primary" aria-hidden="true" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm text-muted-foreground">{title}</p>
-          {loading ? (
-            <Skeleton className="h-7 w-24 mt-1" />
-          ) : (
-            <p className="text-2xl font-bold tracking-tight truncate">
-              {value}
-            </p>
-          )}
-          {subtitle && !loading && (
-            <p className="text-xs text-muted-foreground truncate">{subtitle}</p>
-          )}
-        </div>
-      </CardContent>
-    </Card>
+    <div className={cn("kpi", className)}>
+      <div className="label">{title}</div>
+      <div className="val money-big num">
+        {loading ? <Skeleton className="h-10 w-32 mt-1" /> : value}
+      </div>
+      {subtitle && !loading && <div className="sub">{subtitle}</div>}
+    </div>
   );
 }

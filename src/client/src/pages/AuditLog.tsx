@@ -2,6 +2,7 @@ import { useState, useCallback, useMemo } from "react";
 import { format } from "date-fns";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { useRecentAuditLogs } from "@/hooks/useAudit";
+import { useUsers } from "@/hooks/useUsers";
 import { useServerPagination } from "@/hooks/useServerPagination";
 import { useServerSort } from "@/hooks/useServerSort";
 import type { AuditLog as AuditLogEntry } from "@/lib/audit-utils";
@@ -10,6 +11,7 @@ import { AuditLogTable } from "@/components/AuditLogTable";
 import { Pagination } from "@/components/Pagination";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Icon, PageHead } from "@/components/primitives";
 import { Calendar } from "@/components/ui/calendar";
 import {
   Popover,
@@ -219,19 +221,34 @@ function AuditLog() {
 
   const logs = (data ?? []) as AuditLogEntry[];
 
+  // Resolve changed-by user ids to a friendly label (email) for the table.
+  // The audit page is admin-only, so the user list is available here.
+  const { data: users } = useUsers(0, 200);
+  const userLabels = useMemo(() => {
+    const labels: Record<string, string> = {};
+    for (const u of users ?? []) {
+      if (u.id) labels[u.id] = u.email ?? u.id;
+    }
+    return labels;
+  }, [users]);
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Audit Log</h1>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => exportToCsv(logs)}
-          disabled={logs.length === 0}
-        >
-          Export CSV
-        </Button>
-      </div>
+    <>
+      <PageHead
+        title="Audit log"
+        sub={`${logs.length} ${logs.length === 1 ? "entry" : "entries"}`}
+        actions={
+          <button
+            type="button"
+            className="btn"
+            onClick={() => exportToCsv(logs)}
+            disabled={logs.length === 0}
+          >
+            <Icon.Upload /> Export CSV
+          </button>
+        }
+      />
+      <div className="space-y-4">
 
       <div className="flex items-center gap-3 flex-wrap">
         <Input
@@ -277,6 +294,7 @@ function AuditLog() {
         sortDirection={sortDirection}
         onToggleSort={toggleSort}
         entityTypeLabels={entityTypeLabels}
+        userLabels={userLabels}
       />
 
       <Pagination
@@ -288,6 +306,7 @@ function AuditLog() {
         onPageSizeChange={pagination.setPageSize}
       />
     </div>
+    </>
   );
 }
 

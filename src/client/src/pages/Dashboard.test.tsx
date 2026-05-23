@@ -1,9 +1,17 @@
 import { screen } from "@testing-library/react";
-import { renderWithProviders } from "@/test/test-utils";
+import { renderWithQueryClient } from "@/test/test-utils";
 import Dashboard from "./Dashboard";
 
 vi.mock("@/hooks/usePageTitle", () => ({
   usePageTitle: vi.fn(),
+}));
+
+vi.mock("@/hooks/useReceipts", () => ({
+  useReceipts: vi.fn(() => ({
+    data: [],
+    total: 0,
+    isLoading: false,
+  })),
 }));
 
 vi.mock("@/components/dashboard/DateRangeSelector", () => ({
@@ -32,19 +40,19 @@ vi.mock("@/components/dashboard/SpendingByStoreWidget", () => ({
 
 describe("Dashboard", () => {
   it("renders the page heading", () => {
-    renderWithProviders(<Dashboard />);
+    renderWithQueryClient(<Dashboard />);
     expect(
       screen.getByRole("heading", { name: /dashboard/i }),
     ).toBeInTheDocument();
   });
 
   it("renders the date range selector", () => {
-    renderWithProviders(<Dashboard />);
+    renderWithQueryClient(<Dashboard />);
     expect(screen.getByTestId("date-range-selector")).toBeInTheDocument();
   });
 
   it("renders all widget sections", () => {
-    renderWithProviders(<Dashboard />);
+    renderWithQueryClient(<Dashboard />);
     expect(screen.getByTestId("summary-stats")).toBeInTheDocument();
     expect(screen.getByTestId("spending-over-time")).toBeInTheDocument();
     expect(screen.getByTestId("spending-by-category")).toBeInTheDocument();
@@ -54,7 +62,7 @@ describe("Dashboard", () => {
 
   it("calls usePageTitle with Dashboard", async () => {
     const { usePageTitle } = await import("@/hooks/usePageTitle");
-    renderWithProviders(<Dashboard />);
+    renderWithQueryClient(<Dashboard />);
     expect(usePageTitle).toHaveBeenCalledWith("Dashboard");
   });
 });

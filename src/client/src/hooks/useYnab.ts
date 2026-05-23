@@ -585,7 +585,17 @@ export type ReceiptYnabSplitComparisonResponse = {
   transactionComparisons: TransactionSplitComparisonDto[];
 };
 
-export function useYnabSplitComparison(receiptId: string | undefined) {
+/**
+ * Fetches the YNAB split comparison for a receipt.
+ *
+ * `enabled` should be set to whether YNAB is configured: the endpoint is
+ * guarded by `[RequireYnabConfigured]` and returns 503 when YNAB is not set
+ * up, so callers must not fire this query unless a connection exists.
+ */
+export function useYnabSplitComparison(
+  receiptId: string | undefined,
+  enabled = true,
+) {
   return useQuery({
     queryKey: ["ynab", "split-comparison", receiptId],
     queryFn: async (): Promise<ReceiptYnabSplitComparisonResponse> => {
@@ -598,7 +608,7 @@ export function useYnabSplitComparison(receiptId: string | undefined) {
       if (error) throw error;
       return data as unknown as ReceiptYnabSplitComparisonResponse;
     },
-    enabled: !!receiptId,
+    enabled: !!receiptId && enabled,
     retry: false,
   });
 }

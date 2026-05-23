@@ -8,12 +8,6 @@ import { usePageTitle } from "@/hooks/usePageTitle";
 import { isTimeoutError } from "@/lib/api-client";
 import { SubmitButton } from "@/components/ui/submit-button";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-} from "@/components/ui/card";
-import {
   Form,
   FormControl,
   FormField,
@@ -83,84 +77,76 @@ function ChangePassword() {
   }
 
   return (
-    <Card className="w-full max-w-md">
-      <CardHeader className="text-center">
-        <h1 className="text-2xl font-semibold leading-none tracking-tight">
-          Change Password
-        </h1>
-        <CardDescription>
-          You must change your password before continuing
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        {error && (
-          <Alert variant="destructive" className="mb-4">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <FormField
-              control={form.control}
-              name="currentPassword"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel required>Current Password</FormLabel>
-                  <FormControl>
-                    <PasswordInput
-                      placeholder="Enter your current password"
-                      autoComplete="current-password"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="newPassword"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel required>New Password</FormLabel>
-                  <FormControl>
-                    <PasswordInput
-                      placeholder="At least 8 characters"
-                      autoComplete="new-password"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="confirmPassword"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel required>Confirm New Password</FormLabel>
-                  <FormControl>
-                    <PasswordInput
-                      placeholder="Re-enter your new password"
-                      autoComplete="new-password"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <SubmitButton
-              isSubmitting={form.formState.isSubmitting}
-              label="Change Password"
-              loadingLabel="Changing password..."
-              className="w-full"
-            />
-          </form>
-        </Form>
-      </CardContent>
-    </Card>
+    <div className="auth-card">
+      <h1 className="auth-title">Change password</h1>
+      <p className="auth-sub">Required before continuing</p>
+      {error && (
+        <Alert variant="destructive" className="mb-4">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="auth-form">
+          <FormField
+            control={form.control}
+            name="currentPassword"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel required>Current password</FormLabel>
+                <FormControl>
+                  <PasswordInput
+                    placeholder="Enter your current password"
+                    autoComplete="current-password"
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="newPassword"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel required>New password</FormLabel>
+                <FormControl>
+                  <PasswordInput
+                    placeholder="At least 8 characters"
+                    autoComplete="new-password"
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="confirmPassword"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel required>Confirm new password</FormLabel>
+                <FormControl>
+                  <PasswordInput
+                    placeholder="Re-enter your new password"
+                    autoComplete="new-password"
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <SubmitButton
+            isSubmitting={form.formState.isSubmitting}
+            label="Change password"
+            loadingLabel="Changing password…"
+            className="w-full"
+          />
+        </form>
+      </Form>
+    </div>
   );
 }
 

@@ -42,6 +42,7 @@ import {
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import { PageHead } from "@/components/primitives";
 import { Badge } from "@/components/ui/badge";
 
 const UNMAPPED_VALUE = "__unmapped__";
@@ -203,13 +204,12 @@ export default function YnabSettings() {
   const categoryMappingLoading = ynabCatsLoading || receiptCatsLoading || categoryMappingsLoading;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">YNAB Settings</h1>
-        <p className="text-muted-foreground">
-          Configure your YNAB integration for transaction sync.
-        </p>
-      </div>
+    <>
+      <PageHead
+        title="YNAB"
+        sub="Configure your YNAB integration for transaction sync"
+      />
+      <div className="space-y-6">
 
       <Card>
         <CardHeader>
@@ -257,15 +257,9 @@ export default function YnabSettings() {
         </CardContent>
       </Card>
 
-      {notConfigured && (
-        <Alert variant="destructive">
-          <AlertDescription>
-            YNAB is not configured. Set the <code>YNAB_PAT</code> environment
-            variable with your YNAB personal access token to enable the
-            integration.
-          </AlertDescription>
-        </Alert>
-      )}
+      {/* The Connection Status card above is the single source of the
+          "not configured" message — no separate banner is rendered, and the
+          mapping cards below are hidden entirely until a PAT is set. */}
 
       {hasStaleMappings && (
         <Alert>
@@ -291,6 +285,8 @@ export default function YnabSettings() {
         </Alert>
       )}
 
+      {!notConfigured && (
+        <>
       <Card>
         <CardHeader>
           <CardTitle>Budget Selection</CardTitle>
@@ -304,10 +300,6 @@ export default function YnabSettings() {
               <Spinner className="h-4 w-4" />
               <span className="text-sm text-muted-foreground">Loading budgets...</span>
             </div>
-          ) : notConfigured ? (
-            <p className="text-sm text-muted-foreground">
-              Configure YNAB to see available budgets.
-            </p>
           ) : (
             <Select
               value={selectedBudgetId ?? ""}
@@ -342,11 +334,9 @@ export default function YnabSettings() {
               <Spinner className="h-4 w-4" />
               <span className="text-sm text-muted-foreground">Loading accounts...</span>
             </div>
-          ) : notConfigured || !selectedBudgetId ? (
+          ) : !selectedBudgetId ? (
             <p className="text-sm text-muted-foreground">
-              {notConfigured
-                ? "Configure YNAB to map accounts."
-                : "Select a budget above to map accounts."}
+              Select a budget above to map accounts.
             </p>
           ) : !receiptsAccounts || receiptsAccounts.length === 0 ? (
             <p className="text-sm text-muted-foreground">
@@ -430,11 +420,9 @@ export default function YnabSettings() {
                 Loading categories...
               </span>
             </div>
-          ) : notConfigured || !selectedBudgetId ? (
+          ) : !selectedBudgetId ? (
             <p className="text-sm text-muted-foreground">
-              {notConfigured
-                ? "Configure YNAB to map categories."
-                : "Select a budget above to map categories."}
+              Select a budget above to map categories.
             </p>
           ) : receiptCategories.length === 0 ? (
             <p className="text-sm text-muted-foreground">
@@ -503,7 +491,9 @@ export default function YnabSettings() {
         </CardContent>
       </Card>
 
-      {!notConfigured && selectedBudgetId && <YnabBulkSyncCard />}
+      {selectedBudgetId && <YnabBulkSyncCard />}
+        </>
+      )}
 
       {ynabReady && rateLimitStatus && (
         <Card>
@@ -560,5 +550,6 @@ export default function YnabSettings() {
         </Card>
       )}
     </div>
+    </>
   );
 }

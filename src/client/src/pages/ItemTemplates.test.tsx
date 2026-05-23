@@ -151,7 +151,7 @@ describe("ItemTemplates", () => {
   it("renders the search input", () => {
     renderWithProviders(<ItemTemplates />);
     expect(
-      screen.getByPlaceholderText(/search item templates/i),
+      screen.getByPlaceholderText(/search templates/i),
     ).toBeInTheDocument();
   });
 

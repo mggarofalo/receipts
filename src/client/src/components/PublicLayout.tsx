@@ -3,16 +3,15 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 
 export function PublicLayout() {
   return (
-    <div className="min-h-screen flex flex-col">
-      <header className="border-b">
-        <div className="container mx-auto flex h-14 items-center justify-between px-4">
-          <Link to="/" className="font-semibold text-lg">
-            Receipts
-          </Link>
-          <ThemeToggle />
-        </div>
+    <div className="auth-shell">
+      <header className="auth-topbar">
+        <Link to="/" className="brand">
+          <div className="mark">R</div>
+          <div className="name">Receipts</div>
+        </Link>
+        <ThemeToggle />
       </header>
-      <main className="flex-1 flex items-center justify-center p-4">
+      <main className="auth-main">
         <Outlet />
       </main>
     </div>

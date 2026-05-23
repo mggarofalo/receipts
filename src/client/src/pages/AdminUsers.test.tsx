@@ -64,14 +64,14 @@ describe("AdminUsers", () => {
   it("renders the page heading", () => {
     renderWithProviders(<AdminUsers />);
     expect(
-      screen.getByRole("heading", { name: /user management/i }),
+      screen.getByRole("heading", { name: /^users$/i }),
     ).toBeInTheDocument();
   });
 
   it("renders the Create User button", () => {
     renderWithProviders(<AdminUsers />);
     expect(
-      screen.getByRole("button", { name: /create user/i }),
+      screen.getByRole("button", { name: /new user/i }),
     ).toBeInTheDocument();
   });
 
@@ -126,7 +126,7 @@ describe("AdminUsers", () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     renderWithProviders(<AdminUsers />);
 
-    await user.click(screen.getByRole("button", { name: /create user/i }));
+    await user.click(screen.getByRole("button", { name: /new user/i }));
 
     expect(
       screen.getByText(/create a new user account/i),
@@ -471,12 +471,12 @@ describe("AdminUsers", () => {
     } as unknown as ReturnType<typeof useCreateUser>);
 
     renderWithProviders(<AdminUsers />);
-    await user.click(screen.getByRole("button", { name: /create user/i }));
+    await user.click(screen.getByRole("button", { name: /new user/i }));
 
     await user.type(screen.getByPlaceholderText("name@example.com"), "new@example.com");
     await user.type(screen.getByPlaceholderText("At least 8 characters"), "password123");
 
-    const submitButtons = screen.getAllByRole("button", { name: /create user/i });
+    const submitButtons = screen.getAllByRole("button", { name: /new user/i });
     const dialogSubmit = submitButtons.find((btn) => btn.closest("[role='dialog']") !== null);
     await user.click(dialogSubmit!);
 
@@ -666,9 +666,9 @@ describe("AdminUsers", () => {
       window.dispatchEvent(new Event("shortcut:new-item"));
     });
 
-    await screen.findByRole("heading", { name: /create user/i });
+    await screen.findByRole("heading", { name: /new user/i });
     expect(
-      screen.getByRole("heading", { name: /create user/i }),
+      screen.getByRole("heading", { name: /new user/i }),
     ).toBeInTheDocument();
   });
 
@@ -677,9 +677,9 @@ describe("AdminUsers", () => {
       route: { pathname: "/admin/users", state: { openNew: true } },
     });
 
-    await screen.findByRole("heading", { name: /create user/i });
+    await screen.findByRole("heading", { name: /new user/i });
     expect(
-      screen.getByRole("heading", { name: /create user/i }),
+      screen.getByRole("heading", { name: /new user/i }),
     ).toBeInTheDocument();
   });
 });

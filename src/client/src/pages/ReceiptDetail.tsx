@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { useParams, Navigate } from "react-router";
+import { Link, useParams, Navigate } from "react-router";
 import { useTripByReceiptId } from "@/hooks/useTrips";
 import { useUpdateReceipt } from "@/hooks/useReceipts";
+import { useCreateAdjustment } from "@/hooks/useAdjustments";
 import { useReceiptYnabSyncStatuses } from "@/hooks/useYnab";
 import { usePageTitle } from "@/hooks/usePageTitle";
-import { useEnumMetadata } from "@/hooks/useEnumMetadata";
 import {
   parseProblemDetails,
   extractFieldErrors,
@@ -13,12 +13,11 @@ import { ValidationWarnings } from "@/components/ValidationWarnings";
 import { BalanceSummaryCard } from "@/components/BalanceSummaryCard";
 import { ReceiptItemsCard } from "@/components/ReceiptItemsCard";
 import { ReceiptTransactionsCard } from "@/components/ReceiptTransactionsCard";
+import { AdjustmentsCard } from "@/components/AdjustmentsCard";
 import {
   ReceiptHeaderForm,
   type ReceiptHeaderFormValues,
 } from "@/components/ReceiptHeaderForm";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -32,36 +31,28 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableFooter,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { ChangeHistory } from "@/components/ChangeHistory";
 import { YnabMemoSyncCard } from "@/components/YnabMemoSyncCard";
 import { CardSkeleton } from "@/components/ui/card-skeleton";
-import { formatCurrency } from "@/lib/format";
 import { YnabPushButton } from "@/components/YnabPushButton";
 import { YnabSplitComparisonCard } from "@/components/YnabSplitComparisonCard";
-import { Pencil } from "lucide-react";
+import { ReconcileSheet } from "@/components/ReconcileSheet";
+import { Icon, PageHead, YnabChip } from "@/components/primitives";
 
 function ReceiptDetail() {
   usePageTitle("Receipt Detail");
   const { id } = useParams<{ id: string }>();
-  const { adjustmentTypeLabels } = useEnumMetadata();
 
   const { data: trip, isLoading, isError } = useTripByReceiptId(id ?? null);
   const updateReceipt = useUpdateReceipt();
+  const createAdjustment = useCreateAdjustment();
   const { statusMap: ynabStatusMap } = useReceiptYnabSyncStatuses(
     id ? [id] : [],
   );
   const persistedYnabStatus = id ? ynabStatusMap.get(id) : undefined;
 
   const [editOpen, setEditOpen] = useState(false);
+  const [reconcileOpen, setReconcileOpen] = useState(false);
   const [serverErrors, setServerErrors] = useState<Record<string, string>>({});
 
   if (!id) {
@@ -70,8 +61,7 @@ function ReceiptDetail() {
 
   const transactionsTotal =
     trip?.transactions?.reduce(
-      (sum: number, ta) =>
-        sum + Number(ta.transaction.amount ?? 0),
+      (sum: number, ta) => sum + Number(ta.transaction.amount ?? 0),
       0,
     ) ?? 0;
 
@@ -109,15 +99,62 @@ function ReceiptDetail() {
     );
   }
 
+  // Reconcile is offered only for a total mismatch — its single action is to
+  // add a balancing adjustment. Validation warnings still surface in the
+  // banner, but they are not something the reconcile sheet can resolve.
+  const transactionsImbalanced =
+    trip != null &&
+    trip.transactions.length > 0 &&
+    Math.abs(expectedTotal - transactionsTotal) >= 0.005;
+
+  const yChip: "synced" | "pending" | "error" | "none" =
+    persistedYnabStatus === "Synced"
+      ? "synced"
+      : persistedYnabStatus === "Pending"
+        ? "pending"
+        : persistedYnabStatus === "Failed"
+          ? "error"
+          : "none";
+
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Receipt Details</h1>
+    <>
+      <PageHead
+        title={trip?.receipt?.receipt?.location ?? "Receipt"}
+        sub={
+          trip
+            ? `${trip.receipt.receipt.date} · REC-${id.slice(0, 8).toUpperCase()}`
+            : "Loading…"
+        }
+        actions={
+          trip && (
+            <>
+              <Link to="/receipts" className="btn">
+                ← All receipts
+              </Link>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  setServerErrors({});
+                  setEditOpen(true);
+                }}
+              >
+                <Icon.Edit /> Edit
+              </button>
+              <YnabChip status={yChip} />
+            </>
+          )
+        }
+      />
 
       {isLoading && (
-        <div role="status" aria-live="polite" aria-busy="true" className="space-y-4">
-          <span className="sr-only">Loading receipt details...</span>
-          {/* silent=true prevents each CardSkeleton from adding its own live region,
-              avoiding three back-to-back "Loading…" announcements */}
+        <div
+          role="status"
+          aria-live="polite"
+          aria-busy="true"
+          style={{ display: "flex", flexDirection: "column", gap: 14 }}
+        >
+          <span className="sr-only">Loading receipt details…</span>
           <CardSkeleton lines={1} silent />
           <CardSkeleton lines={3} silent />
           <CardSkeleton lines={3} silent />
@@ -125,15 +162,50 @@ function ReceiptDetail() {
       )}
 
       {isError && (
-        <div role="alert" className="py-12 text-center text-muted-foreground">
-          No receipt found for this ID.
+        <div className="empty" role="alert">
+          <div className="icon-frame">
+            <Icon.AlertTriangle />
+          </div>
+          <h3>Receipt not found</h3>
+          <p>No receipt matches this ID. It may have been deleted.</p>
+          <div className="actions">
+            <Link to="/receipts" className="btn primary">
+              Back to receipts
+            </Link>
+          </div>
         </div>
       )}
 
       {trip && (
-        <>
-          {allWarnings.length > 0 && (
-            <ValidationWarnings warnings={allWarnings} />
+        <div
+          style={{ display: "flex", flexDirection: "column", gap: 14 }}
+        >
+          {(allWarnings.length > 0 || transactionsImbalanced) && (
+            <div
+              className="warn-banner"
+              role="status"
+              aria-live="polite"
+            >
+              <Icon.AlertTriangle className="ico" aria-hidden="true" />
+              <div style={{ flex: 1 }}>
+                {allWarnings.length > 0 ? (
+                  <ValidationWarnings warnings={allWarnings} />
+                ) : (
+                  <div>
+                    Receipt total doesn’t match the linked transactions.
+                  </div>
+                )}
+              </div>
+              {transactionsImbalanced && (
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setReconcileOpen(true)}
+                >
+                  Reconcile
+                </button>
+              )}
+            </div>
           )}
 
           <BalanceSummaryCard
@@ -144,32 +216,6 @@ function ReceiptDetail() {
             transactionsTotal={transactionsTotal}
             showBalance={trip.transactions.length > 0}
           />
-
-          {/* Receipt Info */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>Receipt</CardTitle>
-                  <CardDescription>
-                    {trip.receipt.receipt.location} &mdash;{" "}
-                    {trip.receipt.receipt.date}
-                  </CardDescription>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Edit receipt"
-                  onClick={() => {
-                    setServerErrors({});
-                    setEditOpen(true);
-                  }}
-                >
-                  <Pencil className="h-4 w-4" />
-                </Button>
-              </div>
-            </CardHeader>
-          </Card>
 
           <ReceiptItemsCard
             receiptId={id}
@@ -187,65 +233,17 @@ function ReceiptDetail() {
             location={trip.receipt.receipt.location}
           />
 
-          {/* Adjustments Table (read-only) */}
-          <Card>
-            <CardHeader>
-              <CardTitle>
-                Adjustments ({trip.receipt.adjustments.length})
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {trip.receipt.adjustments.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No adjustments for this receipt.
-                </p>
-              ) : (
-                <div className="rounded-md border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Description</TableHead>
-                        <TableHead className="text-right">Amount</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {trip.receipt.adjustments.map(
-                        (adj) => (
-                          <TableRow key={adj.id}>
-                            <TableCell>
-                              <Badge variant="outline">
-                                {adjustmentTypeLabels[adj.type] ?? adj.type}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-muted-foreground">
-                              {adj.description ?? "\u2014"}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              {formatCurrency(Number(adj.amount ?? 0))}
-                            </TableCell>
-                          </TableRow>
-                        ),
-                      )}
-                    </TableBody>
-                    <TableFooter>
-                      <TableRow>
-                        <TableCell
-                          colSpan={2}
-                          className="text-right font-medium"
-                        >
-                          Adjustment Total
-                        </TableCell>
-                        <TableCell className="text-right font-bold">
-                          {formatCurrency(adjustmentTotal)}
-                        </TableCell>
-                      </TableRow>
-                    </TableFooter>
-                  </Table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <AdjustmentsCard
+            receiptId={id}
+            adjustments={trip.receipt.adjustments.map((adj) => ({
+              id: adj.id,
+              receiptId: id,
+              type: adj.type,
+              amount: Number(adj.amount ?? 0),
+              description: adj.description ?? null,
+            }))}
+            adjustmentTotal={adjustmentTotal}
+          />
 
           <ReceiptTransactionsCard
             receiptId={id}
@@ -268,12 +266,11 @@ function ReceiptDetail() {
 
           <YnabMemoSyncCard receiptId={id} />
 
-          {/* YNAB Push */}
           <Card>
             <CardHeader>
-              <CardTitle>YNAB Sync</CardTitle>
+              <CardTitle>YNAB sync</CardTitle>
               <CardDescription>
-                Push this receipt's transactions to YNAB with category splits.
+                Push this receipt’s transactions to YNAB with category splits.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -289,18 +286,34 @@ function ReceiptDetail() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Change History</CardTitle>
+              <CardTitle>Change history</CardTitle>
             </CardHeader>
             <CardContent>
               <ChangeHistory entityType="Receipt" entityId={id} />
             </CardContent>
           </Card>
 
-          {/* Edit Receipt Dialog */}
+          <ReconcileSheet
+            open={reconcileOpen}
+            onClose={() => setReconcileOpen(false)}
+            isSubmitting={createAdjustment.isPending}
+            receiptId={id}
+            receiptLabel={trip.receipt.receipt.location}
+            receiptDate={trip.receipt.receipt.date}
+            receiptTotal={expectedTotal}
+            transactionsTotal={transactionsTotal}
+            onCreateAdjustment={(adjustment) => {
+              createAdjustment.mutate(
+                { receiptId: id, body: adjustment },
+                { onSuccess: () => setReconcileOpen(false) },
+              );
+            }}
+          />
+
           <Dialog open={editOpen} onOpenChange={setEditOpen}>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Edit Receipt</DialogTitle>
+                <DialogTitle>Edit receipt</DialogTitle>
               </DialogHeader>
               <ReceiptHeaderForm
                 defaultValues={{
@@ -315,9 +328,9 @@ function ReceiptDetail() {
               />
             </DialogContent>
           </Dialog>
-        </>
+        </div>
       )}
-    </div>
+    </>
   );
 }
 

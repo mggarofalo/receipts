@@ -26,29 +26,25 @@ import { getMatchIndices } from "@/lib/search-highlight";
 import { SortableTableHead } from "@/components/SortableTableHead";
 import { NoResults } from "@/components/NoResults";
 import { Pagination } from "@/components/Pagination";
-import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { TableSkeleton } from "@/components/ui/table-skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { formatCurrency } from "@/lib/format";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Info, Pencil } from "lucide-react";
+import { Info } from "lucide-react";
 import { useReceiptYnabSyncStatuses } from "@/hooks/useYnab";
-import { YnabSyncBadge } from "@/components/YnabSyncBadge";
+import {
+  Checkbox,
+  Icon,
+  PageHead,
+  YnabChip,
+  type YnabStatus,
+} from "@/components/primitives";
 
 interface ReceiptResponse {
   id: string;
@@ -58,14 +54,12 @@ interface ReceiptResponse {
 }
 
 const SEARCH_CONFIG: FuseSearchConfig<ReceiptResponse> = {
-  keys: [
-    { name: "location", weight: 1.5 },
-  ],
+  keys: [{ name: "location", weight: 1.5 }],
 };
 
 const FILTER_FIELDS: FilterField[] = [
   { type: "dateRange", key: "date", label: "Date" },
-  { type: "numberRange", key: "taxAmount", label: "Tax Amount" },
+  { type: "numberRange", key: "taxAmount", label: "Tax amount" },
 ];
 
 const FILTER_DEFS: FilterDefinition[] = [
@@ -75,12 +69,46 @@ const FILTER_DEFS: FilterDefinition[] = [
 
 const HIGHLIGHT_PARAMS = ["highlight", "accountId", "cardId"] as const;
 
+function syncStatusToChip(
+  status: string | undefined | null,
+): YnabStatus {
+  switch (status) {
+    case "Synced":
+    case "AlreadySynced":
+      return "synced";
+    case "Pending":
+      return "pending";
+    case "Failed":
+    case "Error":
+      return "error";
+    default:
+      return "none";
+  }
+}
+
 function Receipts() {
   usePageTitle("Receipts");
-  const { params: linkParams, clearParams: clearLinkParams } = useEntityLinkParams(HIGHLIGHT_PARAMS);
-  const { sortBy, sortDirection, toggleSort } = useServerSort({ defaultSortBy: "date", defaultSortDirection: "desc" });
-  const { offset, limit, currentPage, pageSize, totalPages, setPage, setPageSize, resetPage } = useServerPagination({ sortBy, sortDirection });
-  const { data: receiptsData, total: serverTotal, isLoading } = useReceipts(
+  const { params: linkParams, clearParams: clearLinkParams } =
+    useEntityLinkParams(HIGHLIGHT_PARAMS);
+  const { sortBy, sortDirection, toggleSort } = useServerSort({
+    defaultSortBy: "date",
+    defaultSortDirection: "desc",
+  });
+  const {
+    offset,
+    limit,
+    currentPage,
+    pageSize,
+    totalPages,
+    setPage,
+    setPageSize,
+    resetPage,
+  } = useServerPagination({ sortBy, sortDirection });
+  const {
+    data: receiptsData,
+    total: serverTotal,
+    isLoading,
+  } = useReceipts(
     offset,
     limit,
     sortBy,
@@ -108,10 +136,13 @@ function Receipts() {
     return () => window.removeEventListener("shortcut:new-item", onNewItem);
   }, []);
 
-  const handleSort = useCallback((column: string) => {
-    toggleSort(column);
-    resetPage();
-  }, [toggleSort, resetPage]);
+  const handleSort = useCallback(
+    (column: string) => {
+      toggleSort(column);
+      resetPage();
+    },
+    [toggleSort, resetPage],
+  );
 
   const data = (receiptsData as ReceiptResponse[] | undefined) ?? [];
 
@@ -141,7 +172,9 @@ function Receipts() {
   }, [results]);
 
   const highlightMissing =
-    linkParams.highlight && data.length > 0 && !data.some((r) => r.id === linkParams.highlight);
+    linkParams.highlight &&
+    data.length > 0 &&
+    !data.some((r) => r.id === linkParams.highlight);
 
   function toggleSelect(id: string) {
     setSelected((prev) => {
@@ -160,100 +193,117 @@ function Receipts() {
     }
   }
 
-  const { focusedId, setFocusedIndex, tableRef, containerProps, getRowProps } = useListKeyboardNav({
-    items: filteredResults,
-    getId: (r) => r.id,
-    listId: "receipts",
-    enabled: !anyDialogOpen,
-    onOpen: (r) => setEditReceipt(r),
-    onDelete: () => setDeleteOpen(true),
-    onSelectAll: () =>
-      setSelected(new Set(filteredResults.map((r) => r.id))),
-    onDeselectAll: () => setSelected(new Set()),
-    onToggleSelect: (r) => toggleSelect(r.id),
-    selected,
-  });
-
-  if (isLoading) {
-    return <TableSkeleton columns={6} />;
-  }
+  const { focusedId, setFocusedIndex, tableRef, containerProps, getRowProps } =
+    useListKeyboardNav({
+      items: filteredResults,
+      getId: (r) => r.id,
+      listId: "receipts",
+      enabled: !anyDialogOpen,
+      onOpen: (r) => setEditReceipt(r),
+      onDelete: () => setDeleteOpen(true),
+      onSelectAll: () =>
+        setSelected(new Set(filteredResults.map((r) => r.id))),
+      onDeselectAll: () => setSelected(new Set()),
+      onToggleSelect: (r) => toggleSelect(r.id),
+      selected,
+    });
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-semibold tracking-tight">Receipts</h1>
-      <div className="flex items-center justify-between">
-        <FuzzySearchInput
-          aria-label="Search receipts"
-          value={search}
-          onChange={setSearch}
-          placeholder="Search receipts..."
-          resultCount={filteredResults.length}
-          totalCount={totalCount}
-          className="max-w-sm"
-        />
-        <div className="flex gap-2">
-          {selected.size > 0 && (
-            <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
-              Delete ({selected.size})
-            </Button>
-          )}
-          <Button variant="outline" asChild>
-            <Link to="/receipts/new">New Receipt</Link>
-          </Button>
-          <Button onClick={() => setCreateOpen(true)}>Quick Add</Button>
-        </div>
-      </div>
-
-      <FilterPanel
-        fields={FILTER_FIELDS}
-        values={filterValues}
-        onChange={setFilterValues}
-        savedFilters={savedFilters}
-        onSaveFilter={(name) =>
-          saveFilter({
-            id: generateId(),
-            name,
-            entityType: "receipts",
-            values: filterValues,
-            createdAt: new Date().toISOString(),
-          })
-        }
-        onDeleteFilter={removeFilter}
-        onLoadFilter={(preset) =>
-          setFilterValues(preset.values as FilterValues)
+    <>
+      <PageHead
+        title="Receipts"
+        sub={`${serverTotal} total · ${filteredResults.length} shown`}
+        actions={
+          <>
+            {selected.size > 0 && (
+              <button
+                type="button"
+                className="btn danger"
+                onClick={() => setDeleteOpen(true)}
+              >
+                <Icon.Trash /> Delete ({selected.size})
+              </button>
+            )}
+            <button
+              type="button"
+              className="btn"
+              onClick={() => setCreateOpen(true)}
+            >
+              <Icon.Plus /> Quick add
+            </button>
+            <Link to="/receipts/new" className="btn primary">
+              <Icon.Plus /> New receipt
+            </Link>
+          </>
         }
       />
 
+      <div className="filter-strip">
+        <div style={{ flex: 1, minWidth: 240 }}>
+          <FuzzySearchInput
+            aria-label="Search receipts"
+            value={search}
+            onChange={setSearch}
+            placeholder="Search receipts…"
+            resultCount={filteredResults.length}
+            totalCount={totalCount}
+          />
+        </div>
+        <FilterPanel
+          fields={FILTER_FIELDS}
+          values={filterValues}
+          onChange={setFilterValues}
+          savedFilters={savedFilters}
+          onSaveFilter={(name) =>
+            saveFilter({
+              id: generateId(),
+              name,
+              entityType: "receipts",
+              values: filterValues,
+              createdAt: new Date().toISOString(),
+            })
+          }
+          onDeleteFilter={removeFilter}
+          onLoadFilter={(preset) =>
+            setFilterValues(preset.values as FilterValues)
+          }
+        />
+      </div>
+
       {(linkParams.accountId || linkParams.cardId) && (
-        <Alert>
+        <Alert style={{ marginBottom: 14 }}>
           <Info className="h-4 w-4" />
           <AlertDescription className="flex items-center justify-between gap-4">
             <span>
               Filtered to receipts with transactions on the selected{" "}
               {linkParams.cardId ? "card" : "account"}.
             </span>
-            <Button
-              variant="ghost"
-              size="sm"
+            <button
+              type="button"
+              className="btn xs ghost"
               onClick={() => {
                 clearLinkParams();
                 resetPage();
               }}
             >
               Clear filter
-            </Button>
+            </button>
           </AlertDescription>
         </Alert>
       )}
 
       {highlightMissing && (
-        <Alert>
+        <Alert style={{ marginBottom: 14 }}>
           <Info className="h-4 w-4" />
-          <AlertDescription>The highlighted item is not on this page.</AlertDescription>
+          <AlertDescription>
+            The highlighted item is not on this page.
+          </AlertDescription>
         </Alert>
       )}
 
-      {filteredResults.length === 0 ? (
+      {isLoading ? (
+        <TableSkeleton columns={6} />
+      ) : filteredResults.length === 0 ? (
         search ? (
           <NoResults
             searchTerm={search}
@@ -262,8 +312,17 @@ function Receipts() {
             entityName="receipts"
           />
         ) : (
-          <div role="status" className="py-12 text-center text-muted-foreground">
-            No receipts yet. Create one to get started.
+          <div className="empty">
+            <div className="icon-frame">
+              <Icon.Inbox />
+            </div>
+            <h3>No receipts yet</h3>
+            <p>Add your first receipt to start tracking spend.</p>
+            <div className="actions">
+              <Link to="/receipts/new" className="btn primary">
+                <Icon.Plus /> New receipt
+              </Link>
+            </div>
           </div>
         )
       ) : (
@@ -276,82 +335,160 @@ function Receipts() {
             onPageChange={(page) => setPage(page, serverTotal)}
             onPageSizeChange={setPageSize}
           />
-          <div className="rounded-md border" ref={tableRef} {...containerProps}>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-12">
+          <div
+            className="card"
+            style={{ padding: 0, overflow: "hidden" }}
+            ref={tableRef}
+            {...containerProps}
+          >
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th style={{ width: 36 }}>
                     <Checkbox
                       aria-label="Select all rows"
-                      checked={
+                      on={
                         selected.size === filteredResults.length &&
                         filteredResults.length > 0
                       }
-                      onCheckedChange={toggleAll}
+                      onClick={toggleAll}
                     />
-                  </TableHead>
-                  <SortableTableHead column="location" label="Location" currentSortBy={sortBy} currentSortDirection={sortDirection} onToggleSort={handleSort} />
-                  <SortableTableHead column="date" label="Date" currentSortBy={sortBy} currentSortDirection={sortDirection} onToggleSort={handleSort} />
-                  <SortableTableHead column="taxAmount" label="Tax Amount" currentSortBy={sortBy} currentSortDirection={sortDirection} onToggleSort={handleSort} className="text-right" />
-                  <TableHead>YNAB</TableHead>
-                  <TableHead>Detail</TableHead>
-                  <TableHead className="w-24">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+                  </th>
+                  <SortableTableHead
+                    column="location"
+                    label="Location"
+                    currentSortBy={sortBy}
+                    currentSortDirection={sortDirection}
+                    onToggleSort={handleSort}
+                  />
+                  <SortableTableHead
+                    column="date"
+                    label="Date"
+                    currentSortBy={sortBy}
+                    currentSortDirection={sortDirection}
+                    onToggleSort={handleSort}
+                  />
+                  <SortableTableHead
+                    column="taxAmount"
+                    label="Tax"
+                    currentSortBy={sortBy}
+                    currentSortDirection={sortDirection}
+                    onToggleSort={handleSort}
+                    className="num-h"
+                  />
+                  <th style={{ width: 90 }}>YNAB</th>
+                  <th style={{ width: 60 }} />
+                </tr>
+              </thead>
+              <tbody>
                 {filteredResults.map((receipt, index) => {
                   const result = matchMap.get(receipt.id);
                   const matches = result?.matches;
+                  const isFocused = focusedId === receipt.id;
+                  const isSelected = selected.has(receipt.id);
+                  const isHighlighted =
+                    linkParams.highlight === receipt.id;
+                  const rowClass = [
+                    isFocused ? "focused" : "",
+                    isSelected ? "selected" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ");
                   return (
-                    <TableRow
+                    <tr
                       key={receipt.id}
                       {...getRowProps(receipt.id)}
-                      className={`cursor-pointer ${focusedId === receipt.id ? "bg-accent" : ""} ${linkParams.highlight === receipt.id ? "ring-2 ring-primary" : ""}`}
+                      className={rowClass}
+                      style={
+                        isHighlighted
+                          ? {
+                              boxShadow:
+                                "inset 0 0 0 2px var(--accent), inset 2px 0 0 var(--accent)",
+                            }
+                          : undefined
+                      }
                       onClick={(e) => {
-                        if ((e.target as HTMLElement).closest("button, input, a, [role='button']")) return;
+                        if (
+                          (e.target as HTMLElement).closest(
+                            "button, input, a, [role='button'], [role='checkbox']",
+                          )
+                        )
+                          return;
                         setFocusedIndex(index);
                       }}
                     >
-                      <TableCell>
+                      <td onClick={(e) => e.stopPropagation()}>
                         <Checkbox
                           aria-label={`Select ${receipt.location}`}
-                          checked={selected.has(receipt.id)}
-                          onCheckedChange={() => toggleSelect(receipt.id)}
+                          on={isSelected}
+                          onClick={() => toggleSelect(receipt.id)}
                         />
-                      </TableCell>
-                      <TableCell>
-                        <SearchHighlight
-                          text={receipt.location}
-                          indices={getMatchIndices(matches, "location")}
-                        />
-                      </TableCell>
-                      <TableCell>{receipt.date}</TableCell>
-                      <TableCell className="text-right">
-                        {formatCurrency(receipt.taxAmount)}
-                      </TableCell>
-                      <TableCell>
-                        <YnabSyncBadge status={syncStatusMap.get(receipt.id)} />
-                      </TableCell>
-                      <TableCell>
-                        <Link to={`/receipts/${receipt.id}`} className="text-sm text-primary hover:underline">
-                          View
-                        </Link>
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          aria-label="Edit"
-                          onClick={() => setEditReceipt(receipt)}
+                      </td>
+                      <td>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                          }}
                         >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
+                          <span style={{ fontWeight: 500 }}>
+                            <SearchHighlight
+                              text={receipt.location}
+                              indices={getMatchIndices(matches, "location")}
+                            />
+                          </span>
+                          <span
+                            className="num"
+                            style={{
+                              color: "var(--mute-2)",
+                              fontSize: 11,
+                            }}
+                          >
+                            {receipt.id.slice(0, 8)}
+                          </span>
+                        </div>
+                      </td>
+                      <td
+                        className="num"
+                        style={{ color: "var(--mute)", fontSize: 12 }}
+                      >
+                        {receipt.date}
+                      </td>
+                      <td className="money">
+                        {formatCurrency(receipt.taxAmount)}
+                      </td>
+                      <td>
+                        <YnabChip
+                          status={syncStatusToChip(
+                            syncStatusMap.get(receipt.id),
+                          )}
+                        />
+                      </td>
+                      <td onClick={(e) => e.stopPropagation()}>
+                        <div className="row-actions">
+                          <Link
+                            to={`/receipts/${receipt.id}`}
+                            className="icon-btn"
+                            aria-label="View"
+                          >
+                            <Icon.Arrow />
+                          </Link>
+                          <button
+                            type="button"
+                            className="icon-btn"
+                            aria-label="Edit"
+                            onClick={() => setEditReceipt(receipt)}
+                          >
+                            <Icon.Edit />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
                   );
                 })}
-              </TableBody>
-            </Table>
+              </tbody>
+            </table>
           </div>
           <Pagination
             currentPage={currentPage}
@@ -367,17 +504,16 @@ function Receipts() {
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Create Receipt</DialogTitle>
+            <DialogTitle>Create receipt</DialogTitle>
           </DialogHeader>
           <ReceiptForm
             mode="create"
             isSubmitting={createReceipt.isPending}
             onCancel={() => setCreateOpen(false)}
             onSubmit={(values) => {
-              createReceipt.mutate(
-                values,
-                { onSuccess: () => setCreateOpen(false) },
-              );
+              createReceipt.mutate(values, {
+                onSuccess: () => setCreateOpen(false),
+              });
             }}
           />
         </DialogContent>
@@ -389,7 +525,7 @@ function Receipts() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Edit Receipt</DialogTitle>
+            <DialogTitle>Edit receipt</DialogTitle>
           </DialogHeader>
           {editReceipt && (
             <ReceiptForm
@@ -403,10 +539,7 @@ function Receipts() {
               onCancel={() => setEditReceipt(null)}
               onSubmit={(values) => {
                 updateReceipt.mutate(
-                  {
-                    id: editReceipt.id,
-                    ...values,
-                  },
+                  { id: editReceipt.id, ...values },
                   { onSuccess: () => setEditReceipt(null) },
                 );
               }}
@@ -418,18 +551,30 @@ function Receipts() {
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete Receipts</DialogTitle>
+            <DialogTitle>Delete receipts</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">
+          <p style={{ fontSize: 13, color: "var(--mute)" }}>
             Are you sure you want to delete {selected.size} receipt(s)? This
-            action can be undone by restoring.
+            action can be undone by restoring from the trash.
           </p>
-          <div className="flex justify-end gap-2 pt-4">
-            <Button variant="outline" onClick={() => setDeleteOpen(false)}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "flex-end",
+              gap: 8,
+              paddingTop: 12,
+            }}
+          >
+            <button
+              type="button"
+              className="btn"
+              onClick={() => setDeleteOpen(false)}
+            >
               Cancel
-            </Button>
-            <Button
-              variant="destructive"
+            </button>
+            <button
+              type="button"
+              className="btn danger"
               disabled={deleteReceipts.isPending}
               onClick={() => {
                 const ids = [...selected];
@@ -439,12 +584,12 @@ function Receipts() {
               }}
             >
               {deleteReceipts.isPending && <Spinner size="sm" />}
-              {deleteReceipts.isPending ? "Deleting..." : "Delete"}
-            </Button>
+              {deleteReceipts.isPending ? "Deleting…" : "Delete"}
+            </button>
           </div>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 }
 

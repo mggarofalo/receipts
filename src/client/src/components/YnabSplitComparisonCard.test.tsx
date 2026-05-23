@@ -3,17 +3,61 @@ import { renderWithProviders } from "@/test/test-utils";
 import { mockQueryResult } from "@/test/mock-hooks";
 import { YnabSplitComparisonCard } from "./YnabSplitComparisonCard";
 
+const configuredStatus = () =>
+  mockQueryResult({ isConfigured: true, isConnected: true, isLoading: false });
+
 vi.mock("@/hooks/useYnab", () => ({
+  useYnabConnectionStatus: vi.fn(() =>
+    mockQueryResult({ isConfigured: true, isConnected: true, isLoading: false }),
+  ),
   useYnabSplitComparison: vi.fn(() => mockQueryResult()),
 }));
 
 beforeEach(async () => {
   vi.clearAllMocks();
   const ynab = await import("@/hooks/useYnab");
+  vi.mocked(ynab.useYnabConnectionStatus).mockReturnValue(configuredStatus());
   vi.mocked(ynab.useYnabSplitComparison).mockReturnValue(mockQueryResult());
 });
 
 describe("YnabSplitComparisonCard", () => {
+  it("renders nothing when YNAB is not configured", async () => {
+    const ynab = await import("@/hooks/useYnab");
+    vi.mocked(ynab.useYnabConnectionStatus).mockReturnValue(
+      mockQueryResult({
+        isConfigured: false,
+        isConnected: false,
+        isLoading: false,
+      }),
+    );
+
+    const { container } = renderWithProviders(
+      <YnabSplitComparisonCard receiptId="r1" />,
+    );
+
+    expect(container).toBeEmptyDOMElement();
+    expect(
+      screen.queryByText("YNAB Split Comparison"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders nothing while the connection status is still loading", async () => {
+    const ynab = await import("@/hooks/useYnab");
+    vi.mocked(ynab.useYnabConnectionStatus).mockReturnValue(
+      mockQueryResult({
+        isConfigured: false,
+        isConnected: false,
+        isLoading: true,
+      }),
+    );
+
+    const { container } = renderWithProviders(
+      <YnabSplitComparisonCard receiptId="r1" />,
+    );
+
+    expect(container).toBeEmptyDOMElement();
+  });
+
   it("renders a loading skeleton while the query is pending", async () => {
     const ynab = await import("@/hooks/useYnab");
     vi.mocked(ynab.useYnabSplitComparison).mockReturnValue(

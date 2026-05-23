@@ -109,7 +109,7 @@ export default function SpendingByLocation() {
           />
         </div>
         <div className="rounded-lg border p-6 text-center">
-          <h2 className="text-lg font-semibold">No Data</h2>
+          <h2 className="card-title">No Data</h2>
           <p className="mt-2 text-muted-foreground">
             No spending data found for the selected date range.
           </p>
@@ -123,12 +123,12 @@ export default function SpendingByLocation() {
       <div className="flex items-center justify-between">
         <div className="flex gap-6">
           <div>
-            <p className="text-sm text-muted-foreground">Locations</p>
-            <p className="text-2xl font-bold">{data.totalCount}</p>
+            <p className="card-sub">Locations</p>
+            <p className="money-med">{data.totalCount}</p>
           </div>
           <div>
-            <p className="text-sm text-muted-foreground">Total Spending</p>
-            <p className="text-2xl font-bold">
+            <p className="card-sub">Total Spending</p>
+            <p className="money-med">
               {formatCurrency(Number(data.grandTotal ?? 0))}
             </p>
           </div>
@@ -184,11 +184,11 @@ export default function SpendingByLocation() {
           {data.items.map((item) => (
             <TableRow key={item.location}>
               <TableCell>{item.location}</TableCell>
-              <TableCell className="text-right">{item.visits}</TableCell>
-              <TableCell className="text-right">
+              <TableCell className="text-right money">{item.visits}</TableCell>
+              <TableCell className="text-right money">
                 {formatCurrency(Number(item.total ?? 0))}
               </TableCell>
-              <TableCell className="text-right">
+              <TableCell className="text-right money">
                 {formatCurrency(Number(item.averagePerVisit ?? 0))}
               </TableCell>
             </TableRow>

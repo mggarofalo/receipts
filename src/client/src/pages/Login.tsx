@@ -8,12 +8,6 @@ import { usePageTitle } from "@/hooks/usePageTitle";
 import { isTimeoutError, isNetworkError } from "@/lib/api-client";
 import { SubmitButton } from "@/components/ui/submit-button";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-} from "@/components/ui/card";
-import {
   Form,
   FormControl,
   FormField,
@@ -66,66 +60,60 @@ function Login() {
   }
 
   return (
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <h1 className="text-2xl font-semibold leading-none tracking-tight">Sign In</h1>
-          <CardDescription>
-            Enter your credentials to access your account
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {error && (
-            <Alert variant="destructive" className="mb-4">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-              <FormField
-                control={form.control}
-                name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel required>Email</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="email"
-                        placeholder="name@example.com"
-                        autoComplete="email"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel required>Password</FormLabel>
-                    <FormControl>
-                      <PasswordInput
-                        placeholder="Enter your password"
-                        autoComplete="current-password"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <SubmitButton
-                isSubmitting={form.formState.isSubmitting}
-                label="Sign In"
-                loadingLabel="Signing in..."
-                className="w-full"
-              />
-            </form>
-          </Form>
-        </CardContent>
-      </Card>
+    <div className="auth-card">
+      <h1 className="auth-title">Sign in</h1>
+      <p className="auth-sub">Welcome back</p>
+      {error && (
+        <Alert variant="destructive" className="mb-4">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="auth-form">
+          <FormField
+            control={form.control}
+            name="email"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel required>Email</FormLabel>
+                <FormControl>
+                  <Input
+                    type="email"
+                    placeholder="name@example.com"
+                    autoComplete="email"
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="password"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel required>Password</FormLabel>
+                <FormControl>
+                  <PasswordInput
+                    placeholder="Enter your password"
+                    autoComplete="current-password"
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <SubmitButton
+            isSubmitting={form.formState.isSubmitting}
+            label="Sign in"
+            loadingLabel="Signing in…"
+            className="w-full"
+          />
+        </form>
+      </Form>
+    </div>
   );
 }
 

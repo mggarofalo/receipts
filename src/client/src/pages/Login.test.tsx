@@ -38,7 +38,7 @@ describe("Login", () => {
   it("renders the description text", () => {
     renderWithProviders(<Login />);
     expect(
-      screen.getByText(/enter your credentials/i),
+      screen.getByText(/welcome back/i),
     ).toBeInTheDocument();
   });
 

@@ -35,11 +35,25 @@ interface AuditLogTableProps {
   sortDirection?: "asc" | "desc";
   onToggleSort?: (column: string) => void;
   entityTypeLabels?: Record<string, string>;
+  /** Maps a changed-by user id to a friendly label (e.g. email). */
+  userLabels?: Record<string, string>;
 }
 
-function AuditRow({ log, entityTypeLabels }: { log: AuditLog; entityTypeLabels: Record<string, string> }) {
+function AuditRow({
+  log,
+  entityTypeLabels,
+  userLabels,
+}: {
+  log: AuditLog;
+  entityTypeLabels: Record<string, string>;
+  userLabels: Record<string, string>;
+}) {
   const changes = parseChanges(log.changesJson);
   const hasChanges = changes.length > 0;
+  // A friendly name when we can resolve the user id; otherwise the raw id.
+  const userLabel = log.changedByUserId
+    ? userLabels[log.changedByUserId]
+    : undefined;
 
   return (
     <Collapsible asChild>
@@ -68,8 +82,14 @@ function AuditRow({ log, entityTypeLabels }: { log: AuditLog; entityTypeLabels: 
             {log.changedByUserId ? (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <span className="font-mono text-xs cursor-default">
-                    {truncateId(log.changedByUserId)}
+                  <span
+                    className={
+                      userLabel
+                        ? "text-xs cursor-default"
+                        : "font-mono text-xs cursor-default"
+                    }
+                  >
+                    {userLabel ?? truncateId(log.changedByUserId)}
                   </span>
                 </TooltipTrigger>
                 <TooltipContent>{log.changedByUserId}</TooltipContent>
@@ -84,7 +104,10 @@ function AuditRow({ log, entityTypeLabels }: { log: AuditLog; entityTypeLabels: 
                 <TooltipContent>{log.changedByApiKeyId}</TooltipContent>
               </Tooltip>
             ) : (
-              <span className="text-muted-foreground">—</span>
+              // No user and no API key → not an HTTP-request write. These are
+              // background-pipeline / seed writes; label them so they read as
+              // intentional system activity rather than a capture failure.
+              <span className="text-muted-foreground italic">System</span>
             )}
           </TableCell>
           <TableCell className="text-center">
@@ -129,6 +152,7 @@ export function AuditLogTable({
   sortDirection = "desc",
   onToggleSort,
   entityTypeLabels = EMPTY_LABELS,
+  userLabels = EMPTY_LABELS,
 }: AuditLogTableProps) {
   if (isLoading) {
     return (
@@ -198,7 +222,12 @@ export function AuditLogTable({
         </TableHeader>
         <TableBody>
           {logs.map((log) => (
-            <AuditRow key={log.id} log={log} entityTypeLabels={entityTypeLabels} />
+            <AuditRow
+              key={log.id}
+              log={log}
+              entityTypeLabels={entityTypeLabels}
+              userLabels={userLabels}
+            />
           ))}
         </TableBody>
       </Table>

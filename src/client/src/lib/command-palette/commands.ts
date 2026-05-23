@@ -22,7 +22,6 @@ import {
   Shield,
   Sparkles,
   Sun,
-  SunMoon,
   Tag,
   Tags,
   Trash2,
@@ -326,36 +325,25 @@ export const COMMANDS: Command[] = [
     },
   },
   {
-    id: "pref:theme-light",
-    label: "Light Theme",
-    group: "preferences",
-    icon: Sun,
-    keywords: ["appearance", "color", "mode"],
-    run: (ctx) => {
-      ctx.close();
-      ctx.setTheme("light");
-    },
-  },
-  {
-    id: "pref:theme-dark",
-    label: "Dark Theme",
+    id: "pref:palette-graphite",
+    label: "Graphite Palette",
     group: "preferences",
     icon: Moon,
-    keywords: ["appearance", "color", "mode"],
+    keywords: ["appearance", "color", "theme", "dark", "mode"],
     run: (ctx) => {
       ctx.close();
-      ctx.setTheme("dark");
+      ctx.setPalette("graphite");
     },
   },
   {
-    id: "pref:theme-system",
-    label: "System Theme",
+    id: "pref:palette-paper",
+    label: "Paper Palette",
     group: "preferences",
-    icon: SunMoon,
-    keywords: ["appearance", "color", "mode"],
+    icon: Sun,
+    keywords: ["appearance", "color", "theme", "light", "mode"],
     run: (ctx) => {
       ctx.close();
-      ctx.setTheme("system");
+      ctx.setPalette("paper");
     },
   },
   {

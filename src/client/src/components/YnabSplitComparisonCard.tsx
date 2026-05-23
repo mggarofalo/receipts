@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { Link } from "react-router";
 import {
+  useYnabConnectionStatus,
   useYnabSplitComparison,
   type SplitLineDto,
   type TransactionSplitComparisonDto,
@@ -41,7 +42,15 @@ function formatMilliunits(milliunits: number): string {
 export function YnabSplitComparisonCard({
   receiptId,
 }: YnabSplitComparisonCardProps) {
-  const { data, isLoading, error } = useYnabSplitComparison(receiptId);
+  // The split-comparison endpoint is YNAB-gated (503 when YNAB is not set up).
+  // Only query — and only render the card — once we know YNAB is configured;
+  // otherwise the card would surface a spurious 503 on every receipt detail.
+  const { isConfigured, isLoading: connectionLoading } =
+    useYnabConnectionStatus();
+  const { data, isLoading, error } = useYnabSplitComparison(
+    receiptId,
+    isConfigured,
+  );
 
   // Derived values — memoized so downstream render stays stable regardless of
   // which branch we render. Safe because we only derive from `data`.
@@ -66,6 +75,11 @@ export function YnabSplitComparisonCard({
       data?.transactionComparisons.some((tc) => tc.matches === false) ?? false,
     [data],
   );
+
+  // No YNAB integration → the comparison is meaningless. Render nothing rather
+  // than a 503 error card. (All hooks above run unconditionally to keep order
+  // stable.)
+  if (connectionLoading || !isConfigured) return null;
 
   return (
     <Card>

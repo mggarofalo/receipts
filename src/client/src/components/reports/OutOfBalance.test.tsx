@@ -130,20 +130,20 @@ describe("OutOfBalance", () => {
     expect(mockNavigate).toHaveBeenCalledWith("/receipts/id-1");
   });
 
-  it("applies red color to negative difference", () => {
+  it("applies negative-token color to negative difference", () => {
     setupMock();
     renderWithQueryClient(<OutOfBalance />);
-    // -$4.00 should have red styling
+    // -$4.00 should have the negative design-token color
     const negativeDiff = screen.getByText("-$4.00");
-    expect(negativeDiff.className).toContain("text-red-600");
+    expect(negativeDiff.getAttribute("style")).toContain("var(--neg-ink)");
   });
 
-  it("applies amber color to positive difference", () => {
+  it("applies warn-token color to positive difference", () => {
     setupMock();
     renderWithQueryClient(<OutOfBalance />);
-    // $3.00 should have amber styling
+    // $3.00 should have the warn design-token color
     const positiveDiff = screen.getByText("$3.00");
-    expect(positiveDiff.className).toContain("text-amber-600");
+    expect(positiveDiff.getAttribute("style")).toContain("var(--warn-ink)");
   });
 
   it("toggles sort direction on clicking sortable column", async () => {
