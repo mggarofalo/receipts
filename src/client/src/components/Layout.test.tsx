@@ -195,9 +195,7 @@ describe("Layout", () => {
   it("opens the More sheet from the mobile tabbar", async () => {
     const user = userEvent.setup();
     renderLayout();
-    await user.click(
-      screen.getByRole("button", { name: /more navigation/i }),
-    );
+    await user.click(screen.getByRole("button", { name: /^more$/i }));
     await waitFor(() => {
       const dialog = screen.getByRole("dialog");
       expect(within(dialog).getByText("Workspace")).toBeInTheDocument();
