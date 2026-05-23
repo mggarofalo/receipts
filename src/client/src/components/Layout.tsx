@@ -86,6 +86,7 @@ const NAV: readonly NavSection[] = [
   {
     title: "Account",
     items: [
+      { to: "/settings", label: "Settings", icon: Icon.Settings },
       { to: "/security", label: "Security", icon: Icon.Settings },
       { to: "/api-keys", label: "API Keys", icon: Icon.Command },
     ],

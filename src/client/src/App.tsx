@@ -22,6 +22,7 @@ import RecycleBin from "@/pages/RecycleBin";
 import BackupRestore from "@/pages/BackupRestore";
 import NewReceipt from "@/pages/new-receipt/NewReceiptPage";
 import YnabSettings from "@/pages/settings/YnabSettings";
+import Settings from "@/pages/Settings";
 import NotFound from "@/pages/NotFound";
 import ServerError from "@/pages/ServerError";
 import Unauthorized from "@/pages/Unauthorized";
@@ -56,6 +57,7 @@ export const routeConfig = [
           { path: "/receipts/:id", element: <ReceiptDetail /> },
           { path: "/api-keys", element: <ApiKeys /> },
           { path: "/security", element: <SecurityLog /> },
+          { path: "/settings", element: <Settings /> },
           { path: "/settings/ynab", element: <YnabSettings /> },
           {
             path: "/audit",
