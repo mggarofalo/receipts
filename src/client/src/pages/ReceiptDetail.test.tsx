@@ -144,6 +144,24 @@ const MOCK_TRIP = {
 };
 
 describe("ReceiptDetail", () => {
+  // Reset every per-test override on the @/hooks/useYnab module back to its
+  // default before each test. Without this, a test that calls
+  // `vi.mocked(useYnabConnectionStatus).mockReturnValue(...)` leaks that
+  // state into the rest of the file and silently corrupts later assertions.
+  beforeEach(async () => {
+    const { useYnabConnectionStatus, useReceiptYnabSyncStatuses } =
+      await import("@/hooks/useYnab");
+    vi.mocked(useYnabConnectionStatus).mockReturnValue({
+      isConfigured: true,
+      isConnected: true,
+      isLoading: false,
+    } as ReturnType<typeof useYnabConnectionStatus>);
+    vi.mocked(useReceiptYnabSyncStatuses).mockReturnValue({
+      statusMap: new Map(),
+      isLoading: false,
+    } as ReturnType<typeof useReceiptYnabSyncStatuses>);
+  });
+
   it("renders the page heading when id is present", () => {
     renderWithRoutes("/receipts/some-uuid");
     expect(
@@ -364,15 +382,8 @@ describe("ReceiptDetail", () => {
         isError: false,
       }),
     );
-    // Reset the connection-status mock — the previous test set it to
-    // isConfigured: false and vi.mock state persists across tests in
-    // this file (no beforeEach reset).
-    const { useYnabConnectionStatus } = await import("@/hooks/useYnab");
-    vi.mocked(useYnabConnectionStatus).mockReturnValue({
-      isConfigured: true,
-      isConnected: true,
-      isLoading: false,
-    } as ReturnType<typeof useYnabConnectionStatus>);
+    // The describe-level beforeEach already resets useYnabConnectionStatus
+    // to the configured default, so no inline override is needed here.
 
     renderWithRoutes("/receipts/r1");
     expect(screen.getByText(/^YNAB sync$/)).toBeInTheDocument();
