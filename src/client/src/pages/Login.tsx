@@ -6,6 +6,7 @@ import { z } from "zod";
 import { useAuth } from "@/hooks/useAuth";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { isTimeoutError, isNetworkError } from "@/lib/api-client";
+import { consumeLoginFlash } from "@/lib/server-error-bus";
 import { SubmitButton } from "@/components/ui/submit-button";
 import {
   Form,
@@ -30,6 +31,13 @@ function Login() {
   usePageTitle("Sign In");
   const { user, mustResetPassword, login } = useAuth();
   const [error, setError] = useState<string | null>(null);
+  // Session-scoped notice surfaced when the api-client middleware bounces
+  // the user here after a failed token refresh (RECEIPTS-740). Lazy
+  // initializer so the consume-on-read happens exactly once on mount;
+  // putting it in useEffect would re-render and re-consume (and the
+  // consume side-effect inside useState is fine because StrictMode runs
+  // the initializer once per state slot in production).
+  const [flash] = useState<string | null>(() => consumeLoginFlash());
 
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
@@ -63,6 +71,11 @@ function Login() {
     <div className="auth-card">
       <h1 className="auth-title">Sign in</h1>
       <p className="auth-sub">Welcome back</p>
+      {flash && !error && (
+        <Alert className="mb-4">
+          <AlertDescription>{flash}</AlertDescription>
+        </Alert>
+      )}
       {error && (
         <Alert variant="destructive" className="mb-4">
           <AlertDescription>{error}</AlertDescription>

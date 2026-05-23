@@ -10,6 +10,10 @@ import {
   notifyPasswordChangeRequired,
 } from "@/lib/auth";
 import { getConnectionId } from "@/lib/signalr-connection";
+import {
+  notifyServerError,
+  setLoginFlash,
+} from "@/lib/server-error-bus";
 
 const baseUrl = import.meta.env.VITE_API_URL ?? "";
 const API_TIMEOUT_MS = 30_000;
@@ -95,6 +99,9 @@ const authMiddleware: Middleware = {
     const refreshed = await refreshPromise;
     if (!refreshed) {
       clearTokens();
+      // Surface a session-scoped flash on /login so the user sees *why*
+      // they're back there rather than wondering. RECEIPTS-740.
+      setLoginFlash("Your session expired. Please sign in again.");
       window.location.href = "/login";
       return response;
     }
@@ -125,7 +132,21 @@ const signalRConnectionMiddleware: Middleware = {
   },
 };
 
+// Surfaces 5xx responses to the React shell so it can navigate to the
+// dedicated /error/500 page on the first occurrence of a session, then
+// fall back to toasts (RECEIPTS-740). The "first vs subsequent" decision
+// lives in the subscriber (RootLayout) — this middleware only publishes.
+const serverErrorMiddleware: Middleware = {
+  async onResponse({ response }) {
+    if (response.status >= 500 && response.status < 600) {
+      notifyServerError(response.status);
+    }
+    return response;
+  },
+};
+
 client.use(authMiddleware);
 client.use(signalRConnectionMiddleware);
+client.use(serverErrorMiddleware);
 
 export default client;

@@ -23,6 +23,8 @@ import BackupRestore from "@/pages/BackupRestore";
 import NewReceipt from "@/pages/new-receipt/NewReceiptPage";
 import YnabSettings from "@/pages/settings/YnabSettings";
 import NotFound from "@/pages/NotFound";
+import ServerError from "@/pages/ServerError";
+import Unauthorized from "@/pages/Unauthorized";
 
 export const routeConfig = [
   {
@@ -89,6 +91,12 @@ export const routeConfig = [
           },
         ],
       },
+      // Error routes live outside the authenticated Layout so the page
+      // shell isn't required for them to render. NotFound stays as the
+      // catch-all; 500 and 401 are reachable directly via /error/500 and
+      // /unauthorized.
+      { path: "/error/500", element: <ServerError /> },
+      { path: "/unauthorized", element: <Unauthorized /> },
       { path: "*", element: <NotFound /> },
     ],
   },
