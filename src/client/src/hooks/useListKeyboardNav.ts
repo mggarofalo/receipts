@@ -12,6 +12,12 @@ export interface UseListKeyboardNavOptions<T> {
   onSelectAll?: () => void;
   onDeselectAll?: () => void;
   onToggleSelect?: (item: T) => void;
+  /**
+   * Called when the user presses `/` (Vim/Gmail-style search activation).
+   * The page is responsible for focusing whatever input it considers
+   * the list's search field.
+   */
+  onFocusSearch?: () => void;
   selected?: Set<string>;
 }
 
@@ -25,6 +31,7 @@ export function useListKeyboardNav<T>({
   onSelectAll,
   onDeselectAll,
   onToggleSelect,
+  onFocusSearch,
   selected,
 }: UseListKeyboardNavOptions<T>) {
   const [focusedIndex, setFocusedIndex] = useState(-1);
@@ -89,7 +96,7 @@ export function useListKeyboardNav<T>({
     [focusedIndex, items, onOpen],
   );
 
-  // Space — toggle selection on focused item
+  // Space — toggle selection on focused item (standard a11y idiom).
   useHotkeys(
     "Space",
     () => {
@@ -103,6 +110,40 @@ export function useListKeyboardNav<T>({
       preventDefault: true,
     },
     [focusedIndex, items, onToggleSelect],
+  );
+
+  // x — toggle selection on focused item (Gmail/Vim "select message" idiom).
+  // Registered as a separate hotkey from Space so tests that target one or
+  // the other key can interrogate them independently.
+  useHotkeys(
+    "x",
+    () => {
+      if (focusedIndex >= 0 && focusedIndex < items.length && onToggleSelect) {
+        onToggleSelect(items[focusedIndex]);
+      }
+    },
+    {
+      enabled: enabled && !!onToggleSelect && focusedIndex >= 0,
+      enableOnFormTags: false,
+      preventDefault: true,
+    },
+    [focusedIndex, items, onToggleSelect],
+  );
+
+  // / — focus the list's search input (Vim/Gmail idiom). The page wires
+  // the actual focus call via onFocusSearch since useListKeyboardNav does
+  // not know about page-specific search components.
+  useHotkeys(
+    "/",
+    () => {
+      onFocusSearch?.();
+    },
+    {
+      enabled: enabled && !!onFocusSearch,
+      enableOnFormTags: false,
+      preventDefault: true,
+    },
+    [onFocusSearch],
   );
 
   // Delete — trigger delete action

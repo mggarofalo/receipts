@@ -205,6 +205,16 @@ function Receipts() {
         setSelected(new Set(filteredResults.map((r) => r.id))),
       onDeselectAll: () => setSelected(new Set()),
       onToggleSelect: (r) => toggleSelect(r.id),
+      onFocusSearch: () => {
+        // Search lives outside useListKeyboardNav's scope — focus it by id.
+        // Using getElementById (vs. a ref) keeps the hook agnostic about
+        // the input component and lets it work with any input on the page.
+        const input = document.getElementById("receipts-search");
+        if (input instanceof HTMLInputElement) {
+          input.focus();
+          input.select();
+        }
+      },
       selected,
     });
 
@@ -241,6 +251,7 @@ function Receipts() {
       <div className="filter-strip">
         <div style={{ flex: 1, minWidth: 240 }}>
           <FuzzySearchInput
+            id="receipts-search"
             aria-label="Search receipts"
             value={search}
             onChange={setSearch}

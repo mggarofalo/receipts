@@ -448,6 +448,102 @@ describe("useListKeyboardNav", () => {
     });
   });
 
+  describe("x hotkey (Gmail-style select toggle)", () => {
+    it("calls onToggleSelect with the focused item", () => {
+      const onToggleSelect = vi.fn();
+
+      const { result } = renderHook(() =>
+        useListKeyboardNav({
+          items,
+          getId: (item) => item.id,
+          onToggleSelect,
+        }),
+      );
+
+      act(() => {
+        result.current.setFocusedIndex(1);
+      });
+
+      act(() => {
+        hotkeysMap.get("x")?.();
+      });
+
+      expect(onToggleSelect).toHaveBeenCalledWith(items[1]);
+    });
+
+    it("is not registered when focusedIndex is -1", () => {
+      const onToggleSelect = vi.fn();
+      renderHook(() =>
+        useListKeyboardNav({
+          items,
+          getId: (item) => item.id,
+          onToggleSelect,
+        }),
+      );
+      expect(hotkeysMap.has("x")).toBe(false);
+    });
+
+    it("is not registered when onToggleSelect is not provided", () => {
+      const { result } = renderHook(() =>
+        useListKeyboardNav({
+          items,
+          getId: (item) => item.id,
+        }),
+      );
+      act(() => {
+        result.current.setFocusedIndex(0);
+      });
+      expect(hotkeysMap.has("x")).toBe(false);
+    });
+  });
+
+  describe("/ hotkey (focus search)", () => {
+    it("calls onFocusSearch", () => {
+      const onFocusSearch = vi.fn();
+
+      renderHook(() =>
+        useListKeyboardNav({
+          items,
+          getId: (item) => item.id,
+          onFocusSearch,
+        }),
+      );
+
+      act(() => {
+        hotkeysMap.get("/")?.();
+      });
+
+      expect(onFocusSearch).toHaveBeenCalledOnce();
+    });
+
+    it("is not registered when onFocusSearch is not provided", () => {
+      renderHook(() =>
+        useListKeyboardNav({
+          items,
+          getId: (item) => item.id,
+        }),
+      );
+      expect(hotkeysMap.has("/")).toBe(false);
+    });
+
+    it("does not depend on focusedIndex", () => {
+      // / focuses the search bar regardless of whether a row is focused.
+      const onFocusSearch = vi.fn();
+      renderHook(() =>
+        useListKeyboardNav({
+          items,
+          getId: (item) => item.id,
+          onFocusSearch,
+        }),
+      );
+      // No setFocusedIndex call — focus is still -1.
+      act(() => {
+        hotkeysMap.get("/")?.();
+      });
+      expect(onFocusSearch).toHaveBeenCalledOnce();
+    });
+  });
+
   describe("Delete hotkey", () => {
     it("calls onDelete when items are selected", () => {
       const onDelete = vi.fn();
