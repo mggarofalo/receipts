@@ -14,8 +14,10 @@ import { useSignalR } from "@/hooks/useSignalR";
 import type { SignalRConnectionState } from "@/hooks/useSignalR";
 import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
 import { useKeyboardShortcut } from "@/hooks/useKeyboardShortcut";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { ShortcutsHelp } from "@/components/ShortcutsHelp";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
+import { MobileTabbar } from "@/components/MobileTabbar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -98,12 +100,6 @@ const NAV: readonly NavSection[] = [
   },
 ];
 
-const MOBILE_TABS = [
-  { to: "/", label: "Home", icon: Icon.Dashboard },
-  { to: "/receipts", label: "List", icon: Icon.Receipt },
-  { to: "/reports", label: "Reports", icon: Icon.Chart },
-] as const;
-
 const CONNECTION: Record<
   SignalRConnectionState,
   { className: string; label: string }
@@ -129,6 +125,7 @@ export function Layout() {
   const navigation = useNavigation();
   const location = useLocation();
   const { connectionState } = useSignalR(!!user);
+  const isMobile = useIsMobile();
   const [searchOpen, setSearchOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   useGlobalShortcuts();
@@ -213,16 +210,16 @@ export function Layout() {
 
       <div className="main">
         <div className="topbar">
-          <button
-            type="button"
-            className="icon-btn"
-            aria-label="Open navigation menu"
-            onClick={() => setMobileOpen(true)}
-            style={{ display: "none" }}
-            data-mobile-only
-          >
-            <Icon.Sliders />
-          </button>
+          {isMobile && (
+            <button
+              type="button"
+              className="icon-btn"
+              aria-label="Open navigation menu"
+              onClick={() => setMobileOpen(true)}
+            >
+              <Icon.Sliders />
+            </button>
+          )}
           <div className="crumbs">
             <Breadcrumbs />
           </div>
@@ -329,35 +326,7 @@ export function Layout() {
           </div>
         </main>
 
-        <nav className="mobile-tabbar" aria-label="Mobile navigation">
-          {MOBILE_TABS.map((tab) => {
-            const TabIcon = tab.icon;
-            const active =
-              tab.to === "/"
-                ? location.pathname === "/"
-                : location.pathname.startsWith(tab.to);
-            return (
-              <NavLink
-                key={tab.to}
-                to={tab.to}
-                className={cn(active && "on")}
-                aria-current={active ? "page" : undefined}
-                end={tab.to === "/"}
-              >
-                <TabIcon />
-                {tab.label}
-              </NavLink>
-            );
-          })}
-          <button
-            type="button"
-            onClick={() => setMobileOpen(true)}
-            aria-label="More navigation"
-          >
-            <Icon.Sliders />
-            More
-          </button>
-        </nav>
+        <MobileTabbar onOpenMore={() => setMobileOpen(true)} />
       </div>
 
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
