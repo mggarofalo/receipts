@@ -159,4 +159,17 @@ describe("Login", () => {
 
     expect(await screen.findByText(/unable to reach the server/i)).toBeInTheDocument();
   });
+
+  it("surfaces a login-flash message from sessionStorage (RECEIPTS-740)", () => {
+    window.sessionStorage.setItem(
+      "receipts:login-flash",
+      "Your session expired. Please sign in again.",
+    );
+    renderWithProviders(<Login />);
+    expect(
+      screen.getByText(/your session expired/i),
+    ).toBeInTheDocument();
+    // Flash should be consumed on read so reload doesn't re-show it.
+    expect(window.sessionStorage.getItem("receipts:login-flash")).toBeNull();
+  });
 });
