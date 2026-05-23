@@ -7,9 +7,9 @@ import {
 import { AppearanceContext } from "./appearance-context";
 
 /**
- * Owns the four appearance preferences and keeps `<html>` data-attributes
- * plus localStorage in sync. Initial state matches what the anti-FOUC
- * script in index.html already applied before first paint.
+ * Owns the appearance preferences (palette + density) and keeps `<html>`
+ * data-attributes plus localStorage in sync. Initial state matches what
+ * the anti-FOUC script in index.html already applied before first paint.
  */
 export function AppearanceProvider({ children }: { children: ReactNode }) {
   const [appearance, setAppearance] = useState<Appearance>(readAppearance);
@@ -27,8 +27,6 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
       ...appearance,
       setPalette: (v: Appearance["palette"]) => update("palette", v),
       setDensity: (v: Appearance["density"]) => update("density", v),
-      setPaper: (v: Appearance["paper"]) => update("paper", v),
-      setMotion: (v: Appearance["motion"]) => update("motion", v),
     }),
     [appearance, update],
   );

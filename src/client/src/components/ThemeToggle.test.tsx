@@ -16,7 +16,7 @@ describe("ThemeToggle", () => {
     expect(screen.getByText("Appearance settings")).toBeInTheDocument();
   });
 
-  it("opens the appearance menu with all preference groups", async () => {
+  it("opens the appearance menu with palette and density groups", async () => {
     const user = userEvent.setup();
     renderWithProviders(<ThemeToggle />);
 
@@ -24,8 +24,10 @@ describe("ThemeToggle", () => {
 
     expect(screen.getByText("Palette")).toBeInTheDocument();
     expect(screen.getByText("Density")).toBeInTheDocument();
-    expect(screen.getByText("Paper intensity")).toBeInTheDocument();
-    expect(screen.getByText("Motion")).toBeInTheDocument();
+    // Paper intensity and motion were removed — the design ships at
+    // "soft" / "subtle" and there is nothing left to configure.
+    expect(screen.queryByText("Paper intensity")).not.toBeInTheDocument();
+    expect(screen.queryByText("Motion")).not.toBeInTheDocument();
   });
 
   it("applies the palette to <html> and localStorage when selected", async () => {

@@ -254,21 +254,6 @@ html[data-density="spacious"] .money-big {
   font-size: 56px;
 }
 
-/* ── Paper intensity modifier ───────────────────────────────────────── */
-/* `none` drops the paper tint and the serif display hits;
-   `soft` (default) keeps them. */
-html[data-paper="none"] {
-  --paper-tint: transparent;
-}
-html[data-paper="none"] .page-title,
-html[data-paper="none"] .card-title,
-html[data-paper="none"] .money-big,
-html[data-paper="none"] .money-med {
-  font-family: var(--sans);
-  font-weight: 600;
-  letter-spacing: -0.02em;
-}
-
 /* ── Primitive components ───────────────────────────────────────────── */
 .page-head {
   display: flex;
@@ -420,15 +405,6 @@ html[data-paper="none"] .money-med {
   display: flex;
   gap: 8px;
   justify-content: center;
-}
-
-/* ── Motion modifier ────────────────────────────────────────────────── */
-html[data-motion="none"] *,
-html[data-motion="none"] *::before,
-html[data-motion="none"] *::after {
-  transition: none !important;
-  animation: none !important;
-  scroll-behavior: auto !important;
 }
 
 @layer base {

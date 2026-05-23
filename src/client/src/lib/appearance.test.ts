@@ -4,12 +4,7 @@ import { applySetting, readAppearance, DEFAULT_APPEARANCE } from "./appearance";
 describe("appearance", () => {
   beforeEach(() => {
     localStorage.clear();
-    for (const attr of [
-      "data-palette",
-      "data-density",
-      "data-paper",
-      "data-motion",
-    ]) {
+    for (const attr of ["data-palette", "data-density"]) {
       document.documentElement.removeAttribute(attr);
     }
   });
@@ -22,15 +17,15 @@ describe("appearance", () => {
     it("reads persisted values", () => {
       localStorage.setItem("appearance.palette", "paper");
       localStorage.setItem("appearance.density", "compact");
-      expect(readAppearance()).toMatchObject({
+      expect(readAppearance()).toEqual({
         palette: "paper",
         density: "compact",
       });
     });
 
     it("falls back to the default for an invalid persisted value", () => {
-      localStorage.setItem("appearance.motion", "bogus");
-      expect(readAppearance().motion).toBe(DEFAULT_APPEARANCE.motion);
+      localStorage.setItem("appearance.density", "bogus");
+      expect(readAppearance().density).toBe(DEFAULT_APPEARANCE.density);
     });
   });
 
@@ -45,13 +40,10 @@ describe("appearance", () => {
 
     it("maps each setting to its own attribute and key", () => {
       applySetting("density", "spacious");
-      applySetting("paper", "none");
-      applySetting("motion", "none");
       expect(document.documentElement.getAttribute("data-density")).toBe(
         "spacious",
       );
-      expect(document.documentElement.getAttribute("data-paper")).toBe("none");
-      expect(document.documentElement.getAttribute("data-motion")).toBe("none");
+      expect(localStorage.getItem("appearance.density")).toBe("spacious");
     });
   });
 });

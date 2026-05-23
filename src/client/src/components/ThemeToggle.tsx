@@ -12,21 +12,12 @@ import {
 import { useAppearance } from "@/hooks/useAppearance";
 
 /**
- * Topbar appearance control. Exposes the four design-system preferences
- * (palette, density, paper intensity, motion) until the full
- * Settings → Appearance panel ships in a later phase.
+ * Topbar appearance control. Exposes the two design-system preferences
+ * (palette + density). Paper intensity and motion are no longer
+ * user-configurable — the design ships at the "soft" / "subtle" values.
  */
 export function ThemeToggle() {
-  const {
-    palette,
-    density,
-    paper,
-    motion,
-    setPalette,
-    setDensity,
-    setPaper,
-    setMotion,
-  } = useAppearance();
+  const { palette, density, setPalette, setDensity } = useAppearance();
 
   return (
     <DropdownMenu>
@@ -61,26 +52,6 @@ export function ThemeToggle() {
           <DropdownMenuRadioItem value="spacious">
             Spacious
           </DropdownMenuRadioItem>
-        </DropdownMenuRadioGroup>
-
-        <DropdownMenuSeparator />
-        <DropdownMenuLabel>Paper intensity</DropdownMenuLabel>
-        <DropdownMenuRadioGroup
-          value={paper}
-          onValueChange={(v) => setPaper(v as typeof paper)}
-        >
-          <DropdownMenuRadioItem value="soft">Soft</DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="none">None</DropdownMenuRadioItem>
-        </DropdownMenuRadioGroup>
-
-        <DropdownMenuSeparator />
-        <DropdownMenuLabel>Motion</DropdownMenuLabel>
-        <DropdownMenuRadioGroup
-          value={motion}
-          onValueChange={(v) => setMotion(v as typeof motion)}
-        >
-          <DropdownMenuRadioItem value="subtle">Subtle</DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="none">None</DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>
