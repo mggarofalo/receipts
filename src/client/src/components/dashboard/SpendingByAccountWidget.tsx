@@ -34,6 +34,12 @@ export function SpendingByAccountWidget({
     [data?.items],
   );
 
+  const top = chartData[0];
+  const summary =
+    chartData.length === 0
+      ? null
+      : `Top account ${top.name} at ${formatCurrency(top.value)} across ${chartData.length} ${chartData.length === 1 ? "account" : "accounts"}.`;
+
   return (
     <ChartCard
       title="Spending by Account"
@@ -41,11 +47,19 @@ export function SpendingByAccountWidget({
       empty={chartData.length === 0 && !isLoading}
       className={className}
     >
-      <BarChart
-        data={chartData}
-        layout="horizontal"
-        formatValue={formatCurrency}
-      />
+      {(titleId) => (
+        <>
+          {summary && (
+            <p className="sr-only">{summary}</p>
+          )}
+          <BarChart
+            data={chartData}
+            layout="horizontal"
+            formatValue={formatCurrency}
+            aria-labelledby={titleId}
+          />
+        </>
+      )}
     </ChartCard>
   );
 }

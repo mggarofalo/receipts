@@ -54,6 +54,12 @@ export function SpendingByCategoryWidget({
     [chartData],
   );
 
+  const top = chartData[0];
+  const summary =
+    chartData.length === 0
+      ? null
+      : `Total spending ${formatCurrency(totalSpent)} across ${chartData.length} ${chartData.length === 1 ? "category" : "categories"}. Top: ${top.name} at ${formatCurrency(top.value)}.`;
+
   return (
     <ChartCard
       title="Spending by Category"
@@ -61,11 +67,17 @@ export function SpendingByCategoryWidget({
       empty={chartData.length === 0 && !isLoading}
       className={className}
     >
-      <DonutChart
-        data={chartData}
-        centerLabel={formatCurrency(totalSpent)}
-        formatValue={formatCurrency}
-      />
+      {(titleId) => (
+        <>
+          {summary && <p className="sr-only">{summary}</p>}
+          <DonutChart
+            data={chartData}
+            centerLabel={formatCurrency(totalSpent)}
+            formatValue={formatCurrency}
+            aria-labelledby={titleId}
+          />
+        </>
+      )}
     </ChartCard>
   );
 }

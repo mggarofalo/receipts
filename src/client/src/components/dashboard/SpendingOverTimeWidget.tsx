@@ -152,11 +152,28 @@ export function SpendingOverTimeWidget({
         </div>
       }
     >
-      <AreaTimeChart
-        data={chartData}
-        trendlineData={trendlineData}
-        formatValue={formatCurrency}
-      />
+      {(titleId) => {
+        const totals = chartData.reduce((sum, b) => sum + b.amount, 0);
+        const peak = chartData.reduce<typeof chartData[number] | null>(
+          (best, b) => (best == null || b.amount > best.amount ? b : best),
+          null,
+        );
+        const summary =
+          chartData.length === 0
+            ? null
+            : `${chartData.length} ${chartData.length === 1 ? "period" : "periods"}, total ${formatCurrency(totals)}. Peak: ${peak?.period ?? ""} at ${formatCurrency(peak?.amount ?? 0)}.`;
+        return (
+          <>
+            {summary && <p className="sr-only">{summary}</p>}
+            <AreaTimeChart
+              data={chartData}
+              trendlineData={trendlineData}
+              formatValue={formatCurrency}
+              aria-labelledby={titleId}
+            />
+          </>
+        );
+      }}
     </ChartCard>
   );
 }
