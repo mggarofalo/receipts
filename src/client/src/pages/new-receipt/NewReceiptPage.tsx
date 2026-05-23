@@ -37,7 +37,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { PageHead } from "@/components/primitives";
 
 const headerSchema = z.object({
   location: z
@@ -202,8 +201,8 @@ export default function NewReceiptPage() {
   ]);
 
   return (
-    <div className="space-y-6 mx-auto max-w-6xl">
-      <PageHead title="New receipt" sub="Manual entry" />
+    <div className="space-y-6">
+      <h1 className="text-3xl font-bold tracking-tight">New Receipt</h1>
 
       {/* aria-live region: announced to screen readers when validation fails */}
       <div
@@ -216,17 +215,17 @@ export default function NewReceiptPage() {
       </div>
 
       {/* Upper container: receipt metadata + transactions (left), balance panel (right) */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_minmax(300px,360px)]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(300px,360px)]">
         {/* Upper-left — receipt metadata and transactions */}
         <div className="space-y-6 min-w-0">
           {/* Receipt Header */}
           <Form {...form}>
-            <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-4">
+            <div className="flex flex-wrap gap-4">
               <FormField
                 control={form.control}
                 name="location"
                 render={({ field }) => (
-                  <FormItem className="min-w-0">
+                  <FormItem className="min-w-[220px] flex-1">
                     <FormLabel required>Location</FormLabel>
                     <FormControl>
                       <Combobox
@@ -250,7 +249,7 @@ export default function NewReceiptPage() {
                 control={form.control}
                 name="date"
                 render={({ field }) => (
-                  <FormItem className="min-w-0">
+                  <FormItem className="min-w-[170px] flex-1">
                     <FormLabel required>Date</FormLabel>
                     <FormControl>
                       <DateInput
@@ -268,7 +267,7 @@ export default function NewReceiptPage() {
                 control={form.control}
                 name="taxAmount"
                 render={({ field }) => (
-                  <FormItem className="min-w-0">
+                  <FormItem className="min-w-[150px] flex-1">
                     <FormLabel>Tax Amount</FormLabel>
                     <FormControl>
                       <CurrencyInput {...field} />
@@ -306,9 +305,8 @@ export default function NewReceiptPage() {
 
       {/* Sticky action bar — keeps the balance status and Submit/Cancel
           reachable while scrolling the full-width line-item table. The upper
-          Balance panel scrolls out of view once the line items grow tall.
-          On narrow viewports it sits above the fixed mobile tab bar (60px). */}
-      <div className="sticky bottom-0 z-10 max-[900px]:bottom-[60px] border-t bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+          Balance panel scrolls out of view once the line items grow tall. */}
+      <div className="sticky bottom-0 z-10 -mx-4 border-t bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-sm">
             <span className="text-muted-foreground">Balance</span>

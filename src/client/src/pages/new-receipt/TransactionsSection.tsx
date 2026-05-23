@@ -176,13 +176,13 @@ export function TransactionsSection({
           <form
             ref={formRef}
             onSubmit={form.handleSubmit(handleAdd)}
-            className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_1fr_auto_auto_auto] sm:items-end"
+            className="flex flex-wrap items-end gap-4"
           >
             <FormField
               control={form.control}
               name="cardId"
               render={({ field }) => (
-                <FormItem>
+                <FormItem className="min-w-[160px] flex-1">
                   <FormLabel required>Card</FormLabel>
                   <FormControl>
                     <Combobox
@@ -205,7 +205,7 @@ export function TransactionsSection({
               control={form.control}
               name="accountId"
               render={({ field }) => (
-                <FormItem>
+                <FormItem className="min-w-[160px] flex-1">
                   <FormLabel required>Account</FormLabel>
                   <FormControl>
                     <Combobox
@@ -227,7 +227,7 @@ export function TransactionsSection({
               control={form.control}
               name="amount"
               render={({ field }) => (
-                <FormItem>
+                <FormItem className="min-w-[120px] flex-1">
                   <FormLabel required>Amount</FormLabel>
                   <FormControl>
                     <CurrencyInput {...field} />
@@ -241,7 +241,7 @@ export function TransactionsSection({
               control={form.control}
               name="date"
               render={({ field }) => (
-                <FormItem>
+                <FormItem className="min-w-[160px] flex-1">
                   <FormLabel required>Date</FormLabel>
                   <FormControl>
                     <DateInput aria-required="true" {...field} />
@@ -251,7 +251,7 @@ export function TransactionsSection({
               )}
             />
 
-            <Button type="submit" variant="secondary" size="sm" className="sm:mb-0.5">
+            <Button type="submit" variant="secondary" size="sm" className="mb-0.5 shrink-0">
               <Plus className="mr-1 h-4 w-4" />
               Add
             </Button>
