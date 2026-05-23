@@ -153,6 +153,28 @@ describe("CommandPalette", () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
+  // Closes the RECEIPTS-593 DoD item: "open palette, type 'new receipt',
+  // press Enter — lands on /receipts/new". This exercises the full keyboard
+  // path (typing + Enter) rather than clicking, since that's what the user
+  // contract specifies.
+  it("typing 'new receipt' and pressing Enter navigates to /receipts/new", async () => {
+    const user = userEvent.setup();
+    const onOpenChange = vi.fn();
+    renderWithQueryClient(
+      <CommandPalette open={true} onOpenChange={onOpenChange} />,
+    );
+
+    const input = screen.getByPlaceholderText(/type a command or search/i);
+    await user.type(input, "new receipt");
+
+    // cmdk highlights the first matching row by default; pressing Enter
+    // activates it.
+    await user.keyboard("{Enter}");
+
+    expect(navigateMock).toHaveBeenCalledWith("/receipts/new");
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
   it("does not render entity groups when query is empty", async () => {
     const { useAccounts } = await import("@/hooks/useAccounts");
     vi.mocked(useAccounts).mockReturnValue(
