@@ -10,6 +10,7 @@ import {
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { useFuzzySearch } from "@/hooks/useFuzzySearch";
 import { useSavedFilters } from "@/hooks/useSavedFilters";
+import { usePersistedFilters } from "@/hooks/usePersistedFilters";
 import { useServerPagination } from "@/hooks/useServerPagination";
 import { useServerSort } from "@/hooks/useServerSort";
 import { useListKeyboardNav } from "@/hooks/useListKeyboardNav";
@@ -129,7 +130,9 @@ function Receipts() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editReceipt, setEditReceipt] = useState<ReceiptResponse | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [filterValues, setFilterValues] = useState<FilterValues>({});
+  // Filter state persists to localStorage so reload / fresh-tab returns the
+  // user to their last-applied filter set (RECEIPTS-736).
+  const [filterValues, setFilterValues] = usePersistedFilters("receipts");
 
   const anyDialogOpen = createOpen || editReceipt !== null || deleteOpen;
 
