@@ -19,6 +19,11 @@ vi.mock("@/hooks/useYnab", () => ({
     selectedBudgetId: "budget-1",
     isLoading: false,
   })),
+  useYnabConnectionStatus: vi.fn(() => ({
+    isConfigured: true,
+    isConnected: true,
+    isLoading: false,
+  })),
 }));
 
 beforeEach(async () => {
@@ -35,6 +40,11 @@ beforeEach(async () => {
     selectedBudgetId: "budget-1",
     isLoading: false,
   } as ReturnType<typeof ynab.useSelectedYnabBudget>);
+  vi.mocked(ynab.useYnabConnectionStatus).mockReturnValue({
+    isConfigured: true,
+    isConnected: true,
+    isLoading: false,
+  } as ReturnType<typeof ynab.useYnabConnectionStatus>);
 });
 
 describe("YnabMemoSyncCard", () => {
@@ -53,6 +63,34 @@ describe("YnabMemoSyncCard", () => {
     } as ReturnType<typeof ynab.useSelectedYnabBudget>);
 
     const { container } = renderWithProviders(<YnabMemoSyncCard receiptId="r1" />);
+    expect(container.firstChild).toBeNull();
+  });
+
+  it("returns null when YNAB is not configured (no PAT) — RECEIPTS-731", async () => {
+    const ynab = await import("@/hooks/useYnab");
+    vi.mocked(ynab.useYnabConnectionStatus).mockReturnValue({
+      isConfigured: false,
+      isConnected: false,
+      isLoading: false,
+    } as ReturnType<typeof ynab.useYnabConnectionStatus>);
+
+    const { container } = renderWithProviders(
+      <YnabMemoSyncCard receiptId="r1" />,
+    );
+    expect(container.firstChild).toBeNull();
+  });
+
+  it("returns null while the connection status is still loading", async () => {
+    const ynab = await import("@/hooks/useYnab");
+    vi.mocked(ynab.useYnabConnectionStatus).mockReturnValue({
+      isConfigured: false,
+      isConnected: false,
+      isLoading: true,
+    } as ReturnType<typeof ynab.useYnabConnectionStatus>);
+
+    const { container } = renderWithProviders(
+      <YnabMemoSyncCard receiptId="r1" />,
+    );
     expect(container.firstChild).toBeNull();
   });
 
