@@ -3,6 +3,7 @@ import {
   useSyncYnabMemos,
   useResolveYnabMemoSync,
   useMemoSyncSummary,
+  useYnabConnectionStatus,
   type YnabMemoSyncResult,
   type YnabTransactionCandidateDto,
 } from "@/hooks/useYnab";
@@ -87,6 +88,11 @@ function formatMilliunits(amount: number): string {
 }
 
 export function YnabMemoSyncCard({ receiptId }: YnabMemoSyncCardProps) {
+  // YNAB-gated: when YNAB isn't configured this card's actions can't do
+  // anything, so render nothing rather than dead controls. Mirrors
+  // YnabSplitComparisonCard's pattern (RECEIPTS-731).
+  const { isConfigured, isLoading: connectionLoading } =
+    useYnabConnectionStatus();
   const { selectedBudgetId } = useSelectedYnabBudget();
   const syncMemos = useSyncYnabMemos();
   const resolveSync = useResolveYnabMemoSync();
@@ -97,7 +103,8 @@ export function YnabMemoSyncCard({ receiptId }: YnabMemoSyncCardProps) {
   } | null>(null);
   const summary = useMemoSyncSummary(results);
 
-  if (!selectedBudgetId) {
+  // Hooks above run unconditionally to keep order stable; the gate is below.
+  if (connectionLoading || !isConfigured || !selectedBudgetId) {
     return null;
   }
 

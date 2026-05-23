@@ -3,7 +3,10 @@ import { Link, useParams, Navigate } from "react-router";
 import { useTripByReceiptId } from "@/hooks/useTrips";
 import { useUpdateReceipt } from "@/hooks/useReceipts";
 import { useCreateAdjustment } from "@/hooks/useAdjustments";
-import { useReceiptYnabSyncStatuses } from "@/hooks/useYnab";
+import {
+  useReceiptYnabSyncStatuses,
+  useYnabConnectionStatus,
+} from "@/hooks/useYnab";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import {
   parseProblemDetails,
@@ -50,6 +53,13 @@ function ReceiptDetail() {
     id ? [id] : [],
   );
   const persistedYnabStatus = id ? ynabStatusMap.get(id) : undefined;
+  // YNAB-gated rendering — when no PAT is configured, the YNAB push and chip
+  // surfaces can't do anything useful (RECEIPTS-731). The split-comparison
+  // and memo-sync cards self-gate; the push Card and PageHead chip below
+  // share this signal.
+  const { isConfigured: ynabConfigured, isLoading: ynabConnectionLoading } =
+    useYnabConnectionStatus();
+  const ynabReady = !ynabConnectionLoading && ynabConfigured;
 
   const [editOpen, setEditOpen] = useState(false);
   const [reconcileOpen, setReconcileOpen] = useState(false);
@@ -141,7 +151,7 @@ function ReceiptDetail() {
               >
                 <Icon.Edit /> Edit
               </button>
-              <YnabChip status={yChip} />
+              {ynabReady && <YnabChip status={yChip} />}
             </>
           )
         }
@@ -266,21 +276,24 @@ function ReceiptDetail() {
 
           <YnabMemoSyncCard receiptId={id} />
 
-          <Card>
-            <CardHeader>
-              <CardTitle>YNAB sync</CardTitle>
-              <CardDescription>
-                Push this receipt’s transactions to YNAB with category splits.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <YnabPushButton
-                receiptId={id}
-                hasTransactions={trip.transactions.length > 0}
-                persistedSyncStatus={persistedYnabStatus}
-              />
-            </CardContent>
-          </Card>
+          {ynabReady && (
+            <Card>
+              <CardHeader>
+                <CardTitle>YNAB sync</CardTitle>
+                <CardDescription>
+                  Push this receipt’s transactions to YNAB with category
+                  splits.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <YnabPushButton
+                  receiptId={id}
+                  hasTransactions={trip.transactions.length > 0}
+                  persistedSyncStatus={persistedYnabStatus}
+                />
+              </CardContent>
+            </Card>
+          )}
 
           <YnabSplitComparisonCard receiptId={id} />
 

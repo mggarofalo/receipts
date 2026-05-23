@@ -82,6 +82,11 @@ vi.mock("@/hooks/useYnab", () => ({
     statusMap: new Map(),
     isLoading: false,
   })),
+  useYnabConnectionStatus: vi.fn(() => ({
+    isConfigured: true,
+    isConnected: true,
+    isLoading: false,
+  })),
 }));
 
 vi.mock("@/components/YnabPushButton", () => ({
@@ -314,6 +319,64 @@ describe("ReceiptDetail", () => {
     expect(
       screen.getByRole("button", { name: /^edit$/i }),
     ).toBeInTheDocument();
+  });
+
+  it("hides the YNAB push card and PageHead chip when YNAB is unconfigured (RECEIPTS-731)", async () => {
+    const { useTripByReceiptId } = await import("@/hooks/useTrips");
+    vi.mocked(useTripByReceiptId).mockReturnValue(
+      mockQueryResult({
+        data: MOCK_TRIP,
+        isLoading: false,
+        isError: false,
+      }),
+    );
+    const { useYnabConnectionStatus, useReceiptYnabSyncStatuses } =
+      await import("@/hooks/useYnab");
+    vi.mocked(useYnabConnectionStatus).mockReturnValue({
+      isConfigured: false,
+      isConnected: false,
+      isLoading: false,
+    } as ReturnType<typeof useYnabConnectionStatus>);
+    // Force a real sync status so YnabChip would otherwise render — without
+    // this the chip self-renders null on "none" and the assertion below
+    // would be vacuous, hiding any regression to the new gate.
+    vi.mocked(useReceiptYnabSyncStatuses).mockReturnValue({
+      statusMap: new Map([["r1", "Synced"]]),
+      isLoading: false,
+    } as ReturnType<typeof useReceiptYnabSyncStatuses>);
+
+    renderWithRoutes("/receipts/r1");
+    // "YNAB sync" card header should not render
+    expect(screen.queryByText(/^YNAB sync$/)).not.toBeInTheDocument();
+    // Push button is mocked, so verify the mocked test-id is absent
+    expect(screen.queryByTestId("ynab-push-button")).not.toBeInTheDocument();
+    // YnabChip with status="synced" would render aria-label="YNAB: synced".
+    // The gate must prevent it from rendering.
+    expect(screen.queryByLabelText(/YNAB: synced/)).not.toBeInTheDocument();
+  });
+
+  it("renders the YNAB push card when YNAB is configured", async () => {
+    const { useTripByReceiptId } = await import("@/hooks/useTrips");
+    vi.mocked(useTripByReceiptId).mockReturnValue(
+      mockQueryResult({
+        data: MOCK_TRIP,
+        isLoading: false,
+        isError: false,
+      }),
+    );
+    // Reset the connection-status mock — the previous test set it to
+    // isConfigured: false and vi.mock state persists across tests in
+    // this file (no beforeEach reset).
+    const { useYnabConnectionStatus } = await import("@/hooks/useYnab");
+    vi.mocked(useYnabConnectionStatus).mockReturnValue({
+      isConfigured: true,
+      isConnected: true,
+      isLoading: false,
+    } as ReturnType<typeof useYnabConnectionStatus>);
+
+    renderWithRoutes("/receipts/r1");
+    expect(screen.getByText(/^YNAB sync$/)).toBeInTheDocument();
+    expect(screen.getByTestId("ynab-push-button")).toBeInTheDocument();
   });
 
   it("opens edit dialog when edit button is clicked", async () => {
