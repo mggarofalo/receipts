@@ -4852,6 +4852,51 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/YnabRateLimitStatusResponse"
+  /api/ynab/status:
+    get:
+      operationId: GetYnabStatus
+      tags: [YNAB]
+      summary: Get aggregated YNAB integration status
+      description: >
+        Returns the YNAB integration health snapshot used by the /ynab status
+        page. Aggregates connection state, selected budget, rolling sync
+        counts (24h / 7d / 30d), last success/failure timestamps, and the
+        current rate-limit window.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Status snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/YnabStatusResponse"
+  /api/ynab/events:
+    get:
+      operationId: GetYnabSyncEvents
+      tags: [YNAB]
+      summary: List YNAB sync events
+      description: >
+        Returns a paginated list of YNAB sync events (one row per push attempt),
+        ordered most-recent-first. Optionally filter by outcome.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Offset"
+        - $ref: "#/components/parameters/Limit"
+        - name: outcome
+          in: query
+          required: false
+          description: Filter by sync outcome
+          schema:
+            $ref: "#/components/schemas/YnabSyncEventOutcome"
+      responses:
+        "200":
+          description: Paginated events
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/YnabSyncEventsResponse"
   /api/ynab/receipt-sync-statuses:
     get:
       operationId: GetReceiptYnabSyncStatuses
@@ -7674,6 +7719,110 @@ components:
 
     YnabSyncType:
       enum: [memoUpdate, transactionPush]
+
+    YnabSyncEventOutcome:
+      enum: [pending, synced, failed]
+      description: Outcome of a single YNAB sync attempt.
+
+    YnabSyncEventEventType:
+      enum: [memoUpdate, transactionPush]
+      description: Which YNAB sync operation produced this event.
+
+    YnabSyncEventResponse:
+      type: object
+      required: [id, occurredAt, eventType, outcome]
+      properties:
+        id:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        eventType:
+          $ref: "#/components/schemas/YnabSyncEventEventType"
+        outcome:
+          $ref: "#/components/schemas/YnabSyncEventOutcome"
+        localTransactionId:
+          type:
+            - "null"
+            - string
+          format: uuid
+        receiptId:
+          type:
+            - "null"
+            - string
+          format: uuid
+        ynabBudgetId:
+          type:
+            - "null"
+            - string
+        ynabTransactionId:
+          type:
+            - "null"
+            - string
+        errorMessage:
+          type:
+            - "null"
+            - string
+
+    YnabSyncEventsResponse:
+      type: object
+      required: [data, totalCount]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/YnabSyncEventResponse"
+        totalCount:
+          type: integer
+          format: int32
+
+    YnabStatusResponse:
+      type: object
+      required:
+        [
+          isConfigured,
+          isConnected,
+          pushes24h, successes24h, failures24h,
+          pushes7d, successes7d, failures7d,
+          pushes30d, successes30d, failures30d,
+          rateLimit
+        ]
+      properties:
+        isConfigured:
+          type: boolean
+          description: Whether a YNAB personal-access token is configured.
+        isConnected:
+          type: boolean
+          description: Whether the most recent connectivity probe (GetBudgets) succeeded.
+        selectedBudgetId:
+          type:
+            - "null"
+            - string
+          description: Currently selected YNAB budget ID, or null if none selected.
+        lastSuccessUtc:
+          type:
+            - "null"
+            - string
+          format: date-time
+          description: Timestamp of the most recent successful sync event, or null.
+        lastFailureUtc:
+          type:
+            - "null"
+            - string
+          format: date-time
+          description: Timestamp of the most recent failed sync event, or null.
+        pushes24h: { type: integer, format: int32 }
+        successes24h: { type: integer, format: int32 }
+        failures24h: { type: integer, format: int32 }
+        pushes7d: { type: integer, format: int32 }
+        successes7d: { type: integer, format: int32 }
+        failures7d: { type: integer, format: int32 }
+        pushes30d: { type: integer, format: int32 }
+        successes30d: { type: integer, format: int32 }
+        failures30d: { type: integer, format: int32 }
+        rateLimit:
+          $ref: "#/components/schemas/YnabRateLimitStatusResponse"
 
   headers:
     X-Resource-Id:

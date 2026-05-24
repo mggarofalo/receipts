@@ -803,3 +803,100 @@ export function useYnabRateLimitStatus(enabled = true) {
     [query],
   );
 }
+
+// ── Status page (RECEIPTS-737) ──────────────────────────────────────────
+// Inline shapes mirror api.d.ts; the generated discriminated union is too
+// wide for property access through components["schemas"], same trick as
+// elsewhere in this file.
+
+type YnabSyncEventOutcomeValue = "pending" | "synced" | "failed";
+
+export type YnabSyncEvent = {
+  id: string;
+  occurredAt: string;
+  eventType: "memoUpdate" | "transactionPush";
+  outcome: YnabSyncEventOutcomeValue;
+  localTransactionId?: string | null;
+  receiptId?: string | null;
+  ynabBudgetId?: string | null;
+  ynabTransactionId?: string | null;
+  errorMessage?: string | null;
+};
+
+export type YnabSyncEventsResponse = {
+  data: YnabSyncEvent[];
+  totalCount: number;
+};
+
+export type YnabStatusResponse = {
+  isConfigured: boolean;
+  isConnected: boolean;
+  selectedBudgetId?: string | null;
+  lastSuccessUtc?: string | null;
+  lastFailureUtc?: string | null;
+  pushes24h: number;
+  successes24h: number;
+  failures24h: number;
+  pushes7d: number;
+  successes7d: number;
+  failures7d: number;
+  pushes30d: number;
+  successes30d: number;
+  failures30d: number;
+  rateLimit: YnabRateLimitStatusResponse;
+};
+
+export function useYnabStatus() {
+  const query = useQuery({
+    queryKey: ["ynab", "status"],
+    queryFn: async () => {
+      const { data, error } = await client.GET(
+        "/api/ynab/status" as never,
+        {} as never,
+      );
+      if (error) throw error;
+      return data as unknown as YnabStatusResponse;
+    },
+    // Health snapshot refetches on a moderate cadence; the rolling-window
+    // counts won't change unless a push happens, and pushes invalidate the
+    // key via the mutation hooks.
+    refetchInterval: 60_000,
+  });
+  return useMemo(
+    () => ({ ...query, status: query.data ?? null }),
+    [query],
+  );
+}
+
+export function useYnabSyncEvents(
+  offset = 0,
+  limit = 25,
+  outcome?: YnabSyncEventOutcomeValue,
+) {
+  const query = useQuery({
+    queryKey: ["ynab", "events", offset, limit, outcome ?? "all"],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      params.set("offset", String(offset));
+      params.set("limit", String(limit));
+      if (outcome) params.set("outcome", outcome);
+      const { data, error } = await client.GET(
+        `/api/ynab/events?${params.toString()}` as never,
+        {} as never,
+      );
+      if (error) throw error;
+      return data as unknown as YnabSyncEventsResponse;
+    },
+    // Keep the previous page visible while paginating to avoid the spinner
+    // flash; the event log doesn't change underneath the user mid-paginate.
+    placeholderData: (prev) => prev,
+  });
+  return useMemo(
+    () => ({
+      ...query,
+      events: query.data?.data ?? [],
+      totalCount: query.data?.totalCount ?? 0,
+    }),
+    [query],
+  );
+}

@@ -2357,6 +2357,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/ynab/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get aggregated YNAB integration status
+         * @description Returns the YNAB integration health snapshot used by the /ynab status page. Aggregates connection state, selected budget, rolling sync counts (24h / 7d / 30d), last success/failure timestamps, and the current rate-limit window.
+         */
+        get: operations["GetYnabStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ynab/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List YNAB sync events
+         * @description Returns a paginated list of YNAB sync events (one row per push attempt), ordered most-recent-first. Optionally filter by outcome.
+         */
+        get: operations["GetYnabSyncEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/ynab/receipt-sync-statuses": {
         parameters: {
             query?: never;
@@ -3795,6 +3835,73 @@ export interface components {
         YnabMemoSyncOutcome: "synced" | "alreadySynced" | "noMatch" | "ambiguous" | "currencySkipped" | "reconciledSkipped" | "failed";
         /** @enum {unknown} */
         YnabSyncType: "memoUpdate" | "transactionPush";
+        /**
+         * @description Outcome of a single YNAB sync attempt.
+         * @enum {unknown}
+         */
+        YnabSyncEventOutcome: "pending" | "synced" | "failed";
+        /**
+         * @description Which YNAB sync operation produced this event.
+         * @enum {unknown}
+         */
+        YnabSyncEventEventType: "memoUpdate" | "transactionPush";
+        YnabSyncEventResponse: {
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            occurredAt: string;
+            eventType: components["schemas"]["YnabSyncEventEventType"];
+            outcome: components["schemas"]["YnabSyncEventOutcome"];
+            /** Format: uuid */
+            localTransactionId?: null | string;
+            /** Format: uuid */
+            receiptId?: null | string;
+            ynabBudgetId?: null | string;
+            ynabTransactionId?: null | string;
+            errorMessage?: null | string;
+        };
+        YnabSyncEventsResponse: {
+            data: components["schemas"]["YnabSyncEventResponse"][];
+            /** Format: int32 */
+            totalCount: number;
+        };
+        YnabStatusResponse: {
+            /** @description Whether a YNAB personal-access token is configured. */
+            isConfigured: boolean;
+            /** @description Whether the most recent connectivity probe (GetBudgets) succeeded. */
+            isConnected: boolean;
+            /** @description Currently selected YNAB budget ID, or null if none selected. */
+            selectedBudgetId?: null | string;
+            /**
+             * Format: date-time
+             * @description Timestamp of the most recent successful sync event, or null.
+             */
+            lastSuccessUtc?: null | string;
+            /**
+             * Format: date-time
+             * @description Timestamp of the most recent failed sync event, or null.
+             */
+            lastFailureUtc?: null | string;
+            /** Format: int32 */
+            pushes24h: number;
+            /** Format: int32 */
+            successes24h: number;
+            /** Format: int32 */
+            failures24h: number;
+            /** Format: int32 */
+            pushes7d: number;
+            /** Format: int32 */
+            successes7d: number;
+            /** Format: int32 */
+            failures7d: number;
+            /** Format: int32 */
+            pushes30d: number;
+            /** Format: int32 */
+            successes30d: number;
+            /** Format: int32 */
+            failures30d: number;
+            rateLimit: components["schemas"]["YnabRateLimitStatusResponse"];
+        };
     };
     responses: never;
     parameters: {
@@ -8850,6 +8957,51 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["YnabRateLimitStatusResponse"];
+                };
+            };
+        };
+    };
+    GetYnabStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Status snapshot */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["YnabStatusResponse"];
+                };
+            };
+        };
+    };
+    GetYnabSyncEvents: {
+        parameters: {
+            query?: {
+                offset?: components["parameters"]["Offset"];
+                limit?: components["parameters"]["Limit"];
+                /** @description Filter by sync outcome */
+                outcome?: components["schemas"]["YnabSyncEventOutcome"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Paginated events */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["YnabSyncEventsResponse"];
                 };
             };
         };
