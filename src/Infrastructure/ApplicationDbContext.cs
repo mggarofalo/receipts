@@ -69,6 +69,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 	public virtual DbSet<YnabAccountMappingEntity> YnabAccountMappings { get; set; } = null!;
 	public virtual DbSet<YnabCategoryMappingEntity> YnabCategoryMappings { get; set; } = null!;
 	public virtual DbSet<YnabServerKnowledgeEntity> YnabServerKnowledge { get; set; } = null!;
+	public virtual DbSet<YnabSyncEventEntity> YnabSyncEvents { get; set; } = null!;
 
 	protected override void OnModelCreating(ModelBuilder modelBuilder)
 	{

@@ -22,6 +22,7 @@ public class PushYnabTransactionsCommandHandlerTests
 	private readonly Mock<IYnabSyncRecordService> _syncRecordServiceMock = new();
 	private readonly Mock<IYnabApiClient> _ynabApiClientMock = new();
 	private readonly Mock<IYnabSplitCalculator> _splitCalculatorMock = new();
+	private readonly Mock<IYnabSyncEventService> _syncEventServiceMock = new();
 	private readonly PushYnabTransactionsCommandHandler _handler;
 
 	private readonly Guid _receiptId = Guid.NewGuid();
@@ -42,7 +43,8 @@ public class PushYnabTransactionsCommandHandlerTests
 			_budgetSelectionServiceMock.Object,
 			_syncRecordServiceMock.Object,
 			_ynabApiClientMock.Object,
-			_splitCalculatorMock.Object);
+			_splitCalculatorMock.Object,
+			_syncEventServiceMock.Object);
 	}
 
 	private void SetupHappyPath()

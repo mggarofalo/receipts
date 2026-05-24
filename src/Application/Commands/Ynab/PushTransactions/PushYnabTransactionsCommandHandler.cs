@@ -18,7 +18,8 @@ public class PushYnabTransactionsCommandHandler(
 	IYnabBudgetSelectionService budgetSelectionService,
 	IYnabSyncRecordService syncRecordService,
 	IYnabApiClient ynabApiClient,
-	IYnabSplitCalculator splitCalculator) : IRequestHandler<PushYnabTransactionsCommand, PushYnabTransactionsResult>
+	IYnabSplitCalculator splitCalculator,
+	IYnabSyncEventService syncEventService) : IRequestHandler<PushYnabTransactionsCommand, PushYnabTransactionsResult>
 {
 	public async ValueTask<PushYnabTransactionsResult> Handle(PushYnabTransactionsCommand request, CancellationToken cancellationToken)
 	{
@@ -218,6 +219,16 @@ public class PushYnabTransactionsCommandHandler(
 					await syncRecordService.UpdateStatusAsync(
 						syncRecord!.Id, YnabSyncStatus.Synced, recoveredId, null, cancellationToken);
 
+					await syncEventService.RecordAsync(
+						YnabSyncType.TransactionPush,
+						YnabSyncStatus.Synced,
+						localTx.Id,
+						request.ReceiptId,
+						budgetId,
+						recoveredId,
+						errorMessage: null,
+						cancellationToken);
+
 					pushedTransactions.Add(new PushedTransactionInfo(
 						localTx.Id,
 						recoveredId,
@@ -242,9 +253,31 @@ public class PushYnabTransactionsCommandHandler(
 						txSplit.TotalMilliunits,
 						txSplit.SubTransactions.Count));
 
+					// Still record a Synced event — the push itself succeeded against YNAB.
+					// The sync-record write failure is a local bookkeeping miss, not a YNAB-side issue.
+					await syncEventService.RecordAsync(
+						YnabSyncType.TransactionPush,
+						YnabSyncStatus.Synced,
+						localTx.Id,
+						request.ReceiptId,
+						budgetId,
+						ynabResponse.TransactionId,
+						errorMessage: $"Sync record update failed: {statusEx.Message}",
+						cancellationToken);
+
 					return new PushYnabTransactionsResult(true, pushedTransactions,
 						Error: $"YNAB transaction created but sync record update failed for transaction {localTx.Id}: {statusEx.Message}");
 				}
+
+				await syncEventService.RecordAsync(
+					YnabSyncType.TransactionPush,
+					YnabSyncStatus.Synced,
+					localTx.Id,
+					request.ReceiptId,
+					budgetId,
+					ynabResponse.TransactionId,
+					errorMessage: null,
+					cancellationToken);
 
 				pushedTransactions.Add(new PushedTransactionInfo(
 					localTx.Id,
@@ -260,6 +293,16 @@ public class PushYnabTransactionsCommandHandler(
 					await syncRecordService.UpdateStatusAsync(
 						syncRecord.Id, YnabSyncStatus.Failed, null, ex.Message, cancellationToken);
 				}
+
+				await syncEventService.RecordAsync(
+					YnabSyncType.TransactionPush,
+					YnabSyncStatus.Failed,
+					localTx.Id,
+					request.ReceiptId,
+					budgetId,
+					ynabTransactionId: null,
+					errorMessage: ex.Message,
+					cancellationToken);
 
 				return new PushYnabTransactionsResult(false, pushedTransactions,
 					Error: $"Failed to push YNAB transaction for local transaction {localTx.Id}: {ex.Message}");

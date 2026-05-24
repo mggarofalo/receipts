@@ -325,4 +325,57 @@ public partial class YnabMapper
 			OldestRequestAt = source.OldestRequestAt,
 		};
 	}
+
+	[MapperIgnoreTarget(nameof(YnabSyncEventResponse.AdditionalProperties))]
+	public YnabSyncEventResponse ToSyncEventResponse(YnabSyncEventDto source)
+	{
+		return new YnabSyncEventResponse
+		{
+			Id = source.Id,
+			OccurredAt = source.OccurredAt,
+			// Generated enum names follow NSwag's schema-name convention
+			// (YnabSyncEventEventType, YnabSyncEventOutcome) regardless of which
+			// response/request the property belongs to.
+			EventType = Enum.Parse<API.Generated.Dtos.YnabSyncEventEventType>(source.EventType.ToString()),
+			Outcome = Enum.Parse<API.Generated.Dtos.YnabSyncEventOutcome>(source.Outcome.ToString()),
+			LocalTransactionId = source.LocalTransactionId,
+			ReceiptId = source.ReceiptId,
+			YnabBudgetId = source.YnabBudgetId,
+			YnabTransactionId = source.YnabTransactionId,
+			ErrorMessage = source.ErrorMessage,
+		};
+	}
+
+	[MapperIgnoreTarget(nameof(YnabSyncEventsResponse.AdditionalProperties))]
+	public YnabSyncEventsResponse ToSyncEventsResponse(YnabSyncEventsPage source)
+	{
+		return new YnabSyncEventsResponse
+		{
+			Data = source.Events.Select(ToSyncEventResponse).ToList(),
+			TotalCount = source.TotalCount,
+		};
+	}
+
+	[MapperIgnoreTarget(nameof(YnabStatusResponse.AdditionalProperties))]
+	public YnabStatusResponse ToStatusResponse(YnabStatusResult source)
+	{
+		return new YnabStatusResponse
+		{
+			IsConfigured = source.IsConfigured,
+			IsConnected = source.IsConnected,
+			SelectedBudgetId = source.SelectedBudgetId,
+			LastSuccessUtc = source.LastSuccessUtc,
+			LastFailureUtc = source.LastFailureUtc,
+			Pushes24h = source.Pushes24h,
+			Successes24h = source.Successes24h,
+			Failures24h = source.Failures24h,
+			Pushes7d = source.Pushes7d,
+			Successes7d = source.Successes7d,
+			Failures7d = source.Failures7d,
+			Pushes30d = source.Pushes30d,
+			Successes30d = source.Successes30d,
+			Failures30d = source.Failures30d,
+			RateLimit = ToRateLimitStatusResponse(source.RateLimit),
+		};
+	}
 }

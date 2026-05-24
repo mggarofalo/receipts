@@ -450,6 +450,37 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 		return TypedResults.Ok(mapper.ToRateLimitStatusResponse(status));
 	}
 
+	[HttpGet("status")]
+	[EndpointSummary("Get aggregated YNAB integration status")]
+	[EndpointDescription("Returns the health snapshot used by the /ynab status page: connection state, selected budget, rolling sync counts (24h / 7d / 30d), last success/failure timestamps, and the current rate-limit window.")]
+	public async Task<Ok<YnabStatusResponse>> GetStatus(CancellationToken cancellationToken)
+	{
+		YnabStatusResult status = await mediator.Send(new GetYnabStatusQuery(), cancellationToken);
+		return TypedResults.Ok(mapper.ToStatusResponse(status));
+	}
+
+	[HttpGet("events")]
+	[EndpointSummary("List YNAB sync events")]
+	[EndpointDescription("Returns a paginated list of YNAB sync events (one row per push attempt), ordered most-recent-first. Optionally filter by outcome.")]
+	public async Task<Ok<YnabSyncEventsResponse>> GetSyncEvents(
+		[FromQuery] int? offset,
+		[FromQuery] int? limit,
+		[FromQuery] string? outcome,
+		CancellationToken cancellationToken)
+	{
+		// Map the lowercase OpenAPI enum back to the Common enum. Unknown values
+		// fall through as null (no filter) — guards against typos in the query
+		// string. Offset/limit defaults mirror the OpenAPI parameters.
+		YnabSyncStatus? parsedOutcome = outcome is null
+			? null
+			: Enum.TryParse<YnabSyncStatus>(outcome, ignoreCase: true, out YnabSyncStatus parsed) ? parsed : null;
+
+		YnabSyncEventsPage page = await mediator.Send(
+			new GetYnabSyncEventsQuery(offset ?? 0, Math.Clamp(limit ?? 50, 1, 100), parsedOutcome),
+			cancellationToken);
+		return TypedResults.Ok(mapper.ToSyncEventsResponse(page));
+	}
+
 	[HttpGet("receipt-sync-statuses")]
 	[EndpointSummary("Get YNAB sync statuses for receipts")]
 	[EndpointDescription("Returns the aggregate YNAB sync status for each receipt, joining through transactions to sync records.")]
