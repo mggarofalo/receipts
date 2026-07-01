@@ -127,7 +127,9 @@ public class YnabSyncEventService(
 		int count7d = await pushes.CountAsync(e => e.OccurredAt >= since7d, cancellationToken);
 		int count30d = await pushes.CountAsync(e => e.OccurredAt >= since30d, cancellationToken);
 		int success30d = await pushes.CountAsync(e => e.OccurredAt >= since30d && e.Success, cancellationToken);
-		int failure30d = count30d - success30d;
+		// Two non-atomic counts: a concurrent insert between them could make success30d exceed
+		// count30d. Clamp so the derived failure count can never surface as negative to the client.
+		int failure30d = Math.Max(0, count30d - success30d);
 
 		return new YnabStatus(
 			isConfigured,
