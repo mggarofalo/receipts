@@ -108,7 +108,7 @@ public class ItemTemplateSimilarityService(
 			        t."DefaultUnitPrice" AS default_unit_price,
 			        t."DefaultItemCode" AS default_item_code,
 			        'ItemTemplate' AS entity_type
-			    FROM "ItemTemplates" t
+			    FROM "library"."ItemTemplates" t
 			    WHERE t."DeletedAt" IS NULL
 			      AND similarity(t."Name", {0}) >= {1}
 			),
@@ -123,7 +123,7 @@ public class ItemTemplateSimilarityService(
 			        ri."UnitPrice" AS default_unit_price,
 			        ri."ReceiptItemCode" AS default_item_code,
 			        'ReceiptItem' AS entity_type
-			    FROM "ReceiptItems" ri
+			    FROM "receipts"."ReceiptItems" ri
 			    WHERE ri."DeletedAt" IS NULL
 			      AND similarity(ri."Description", {0}) >= {1}
 			    ORDER BY ri."Description", similarity(ri."Description", {0}) DESC
@@ -149,7 +149,7 @@ public class ItemTemplateSimilarityService(
 			    c.default_unit_price,
 			    c.default_item_code
 			FROM combined c
-			LEFT JOIN "ItemEmbeddings" e
+			LEFT JOIN "matching"."ItemEmbeddings" e
 			    ON e."EntityType" = c.entity_type AND e."EntityId" = c.entity_id
 			ORDER BY combined_score DESC
 			LIMIT {3}
@@ -175,7 +175,7 @@ public class ItemTemplateSimilarityService(
 			        "DefaultSubcategory" AS default_subcategory,
 			        "DefaultUnitPrice" AS default_unit_price,
 			        "DefaultItemCode" AS default_item_code
-			    FROM "ItemTemplates"
+			    FROM "library"."ItemTemplates"
 			    WHERE "DeletedAt" IS NULL
 			      AND similarity("Name", {0}) >= {1}
 			),
@@ -190,7 +190,7 @@ public class ItemTemplateSimilarityService(
 			        "Subcategory" AS default_subcategory,
 			        "UnitPrice" AS default_unit_price,
 			        "ReceiptItemCode" AS default_item_code
-			    FROM "ReceiptItems"
+			    FROM "receipts"."ReceiptItems"
 			    WHERE "DeletedAt" IS NULL
 			      AND similarity("Description", {0}) >= {1}
 			    ORDER BY "Description", similarity("Description", {0}) DESC

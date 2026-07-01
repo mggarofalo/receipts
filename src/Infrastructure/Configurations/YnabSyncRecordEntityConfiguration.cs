@@ -8,6 +8,8 @@ public class YnabSyncRecordEntityConfiguration : IEntityTypeConfiguration<YnabSy
 {
 	public void Configure(EntityTypeBuilder<YnabSyncRecordEntity> builder)
 	{
+		builder.ToTable("YnabSyncRecords", "ynab");
+
 		builder.HasKey(e => e.Id);
 
 		builder.Property(e => e.Id)

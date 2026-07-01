@@ -8,6 +8,8 @@ public class YnabServerKnowledgeEntityConfiguration : IEntityTypeConfiguration<Y
 {
 	public void Configure(EntityTypeBuilder<YnabServerKnowledgeEntity> builder)
 	{
+		builder.ToTable("YnabServerKnowledge", "ynab");
+
 		builder.HasKey(e => e.BudgetId);
 
 		builder.Property(e => e.BudgetId)

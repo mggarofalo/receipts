@@ -8,7 +8,7 @@ public class DistinctDescriptionEntityConfiguration : IEntityTypeConfiguration<D
 {
 	public void Configure(EntityTypeBuilder<DistinctDescriptionEntity> builder)
 	{
-		builder.ToTable("DistinctDescriptions");
+		builder.ToTable("DistinctDescriptions", "matching");
 
 		builder.HasKey(e => e.Description);
 

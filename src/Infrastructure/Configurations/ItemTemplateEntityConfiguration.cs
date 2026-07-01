@@ -9,7 +9,7 @@ public class ItemTemplateEntityConfiguration : IEntityTypeConfiguration<ItemTemp
 {
 	public void Configure(EntityTypeBuilder<ItemTemplateEntity> builder)
 	{
-		builder.ToTable("ItemTemplates", t => t.HasCheckConstraint(
+		builder.ToTable("ItemTemplates", "library", t => t.HasCheckConstraint(
 			"CK_ItemTemplates_Money_Consistency",
 			"((\"DefaultUnitPrice\" IS NULL AND \"DefaultUnitPriceCurrency\" IS NULL) OR (\"DefaultUnitPrice\" IS NOT NULL AND \"DefaultUnitPriceCurrency\" IS NOT NULL))"));
 

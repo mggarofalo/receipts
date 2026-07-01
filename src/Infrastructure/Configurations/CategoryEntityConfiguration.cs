@@ -8,6 +8,8 @@ public class CategoryEntityConfiguration : IEntityTypeConfiguration<CategoryEnti
 {
 	public void Configure(EntityTypeBuilder<CategoryEntity> builder)
 	{
+		builder.ToTable("Categories", "library");
+
 		builder.HasKey(e => e.Id);
 
 		builder.Property(e => e.Id)

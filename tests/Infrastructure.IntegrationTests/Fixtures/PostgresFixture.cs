@@ -17,7 +17,25 @@ public class PostgresFixture : IAsyncLifetime
 	{
 		await _container.StartAsync();
 
-		NpgsqlDataSourceBuilder dataSourceBuilder = new(ConnectionString);
+		// RECEIPTS-746: tables live in bounded-context schemas (receipts, library, matching,
+		// ynab, audit, identity), not public. Set a search_path spanning every schema so the
+		// hand-written raw SQL in tests resolves unqualified table names regardless of which
+		// schema a table currently occupies. This matters most for MigrationSafetyTests, which
+		// deliberately roll the DB back to a pre-746 state (tables still in public) and forward
+		// again — the same table name must resolve in public before the move and in its schema
+		// after. EF's own queries are always schema-qualified, so this only affects test SQL.
+		//
+		// public MUST come first: EF scaffolds the schema move as unqualified
+		// `ALTER TABLE "Foo" SET SCHEMA <schema>`, and the historical migrations replayed by
+		// MigrationSafetyTests use unqualified raw SQL — both assume public is the working
+		// schema. Keeping public first makes that DDL deterministic while still resolving the
+		// moved tables (a table exists in exactly one schema, so lookup falls through to it).
+		NpgsqlConnectionStringBuilder connectionStringBuilder = new(ConnectionString)
+		{
+			SearchPath = "public,receipts,library,matching,ynab,audit,identity",
+		};
+
+		NpgsqlDataSourceBuilder dataSourceBuilder = new(connectionStringBuilder.ConnectionString);
 		dataSourceBuilder.UseVector();
 		_dataSource = dataSourceBuilder.Build();
 

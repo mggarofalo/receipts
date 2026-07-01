@@ -8,6 +8,8 @@ public class YnabCategoryMappingEntityConfiguration : IEntityTypeConfiguration<Y
 {
 	public void Configure(EntityTypeBuilder<YnabCategoryMappingEntity> builder)
 	{
+		builder.ToTable("YnabCategoryMappings", "ynab");
+
 		builder.HasKey(e => e.Id);
 
 		builder.Property(e => e.Id)

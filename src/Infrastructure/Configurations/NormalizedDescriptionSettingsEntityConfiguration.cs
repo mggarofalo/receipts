@@ -23,7 +23,7 @@ public class NormalizedDescriptionSettingsEntityConfiguration : IEntityTypeConfi
 
 	public void Configure(EntityTypeBuilder<NormalizedDescriptionSettingsEntity> builder)
 	{
-		builder.ToTable("NormalizedDescriptionSettings");
+		builder.ToTable("NormalizedDescriptionSettings", "matching");
 
 		builder.HasKey(e => e.Id);
 

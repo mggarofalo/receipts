@@ -159,19 +159,19 @@ public class ItemSimilarityEdgeRefresher : BackgroundService
 			"""
 			SELECT set_limit({0});
 
-			INSERT INTO "ItemSimilarityEdges" ("DescA", "DescB", "Score", "ComputedAt")
+			INSERT INTO "matching"."ItemSimilarityEdges" ("DescA", "DescB", "Score", "ComputedAt")
 			SELECT a."Description", b."Description",
 				   similarity(a."Description", b."Description"),
 				   NOW()
-			FROM "DistinctDescriptions" a
-			JOIN "DistinctDescriptions" b
+			FROM "matching"."DistinctDescriptions" a
+			JOIN "matching"."DistinctDescriptions" b
 			  ON a."Description" < b."Description"
 			 AND a."Description" % b."Description"
 			WHERE a."ProcessedAt" IS NULL OR b."ProcessedAt" IS NULL
 			ON CONFLICT ("DescA", "DescB") DO UPDATE
 				SET "Score" = EXCLUDED."Score", "ComputedAt" = EXCLUDED."ComputedAt";
 
-			UPDATE "DistinctDescriptions" SET "ProcessedAt" = NOW() WHERE "ProcessedAt" IS NULL;
+			UPDATE "matching"."DistinctDescriptions" SET "ProcessedAt" = NOW() WHERE "ProcessedAt" IS NULL;
 			""";
 
 		await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);

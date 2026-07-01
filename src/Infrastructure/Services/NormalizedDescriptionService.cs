@@ -562,7 +562,7 @@ public class NormalizedDescriptionService(
 		string sql = """
 			SELECT "Id" AS entity_id,
 			       (1.0 - ("Embedding" <=> {0}::vector)) AS similarity
-			FROM "NormalizedDescriptions"
+			FROM "matching"."NormalizedDescriptions"
 			WHERE "Embedding" IS NOT NULL
 			ORDER BY "Embedding" <=> {0}::vector
 			LIMIT 1
@@ -599,7 +599,7 @@ public class NormalizedDescriptionService(
 		string sql = """
 			SELECT "Id" AS entity_id,
 			       (1.0 - ("Embedding" <=> {0}::vector)) AS similarity
-			FROM "NormalizedDescriptions"
+			FROM "matching"."NormalizedDescriptions"
 			WHERE "Embedding" IS NOT NULL
 			ORDER BY "Embedding" <=> {0}::vector
 			LIMIT {1}
