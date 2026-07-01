@@ -321,5 +321,11 @@ public partial class OrganizeTablesIntoSchemas : Migration
 			name: "Accounts",
 			schema: "library",
 			newName: "Accounts");
+
+		// The six schemas created by Up() are intentionally left in place. Dropping them
+		// here fails during the partial rollback/replay that MigrationSafetyTests exercise
+		// (DROP SCHEMA ... RESTRICT reports lingering dependents mid-rollback), and the
+		// schemas are harmless when empty — Up()'s EnsureSchema keeps re-apply idempotent.
+		// Symmetric teardown is tracked separately (RECEIPTS-749).
 	}
 }
