@@ -5,6 +5,7 @@ using Application.Utilities;
 using Common;
 using Domain.Aggregates;
 using Mediator;
+using Microsoft.Extensions.Logging;
 
 namespace Application.Commands.Ynab.PushTransactions;
 
@@ -18,7 +19,10 @@ public class PushYnabTransactionsCommandHandler(
 	IYnabBudgetSelectionService budgetSelectionService,
 	IYnabSyncRecordService syncRecordService,
 	IYnabApiClient ynabApiClient,
-	IYnabSplitCalculator splitCalculator) : IRequestHandler<PushYnabTransactionsCommand, PushYnabTransactionsResult>
+	IYnabSplitCalculator splitCalculator,
+	IYnabSyncEventService ynabSyncEventService,
+	IYnabResponseContext ynabResponseContext,
+	ILogger<PushYnabTransactionsCommandHandler> logger) : IRequestHandler<PushYnabTransactionsCommand, PushYnabTransactionsResult>
 {
 	public async ValueTask<PushYnabTransactionsResult> Handle(PushYnabTransactionsCommand request, CancellationToken cancellationToken)
 	{
@@ -224,8 +228,11 @@ public class PushYnabTransactionsCommandHandler(
 						txSplit.TotalMilliunits,
 						txSplit.SubTransactions.Count));
 
+					await LogPushEventAsync(request.ReceiptId, localTx.Id, success: true, errorMessage: null, cancellationToken);
 					continue;
 				}
+
+				await LogPushEventAsync(request.ReceiptId, localTx.Id, success: true, errorMessage: null, cancellationToken);
 
 				// Update sync record to Synced — separate error handling (Bug 6)
 				try
@@ -261,11 +268,36 @@ public class PushYnabTransactionsCommandHandler(
 						syncRecord.Id, YnabSyncStatus.Failed, null, ex.Message, cancellationToken);
 				}
 
+				await LogPushEventAsync(request.ReceiptId, localTx.Id, success: false, ex.Message, cancellationToken);
+
 				return new PushYnabTransactionsResult(false, pushedTransactions,
 					Error: $"Failed to push YNAB transaction for local transaction {localTx.Id}: {ex.Message}");
 			}
 		}
 
 		return new PushYnabTransactionsResult(true, pushedTransactions);
+	}
+
+	// RECEIPTS-737: append one YnabSyncEvent per push attempt. Best-effort — a logging failure
+	// must never fail the push itself, so swallow and warn. httpStatus/requestId come from the
+	// transport-layer response context captured on the CreateTransaction call.
+	private async Task LogPushEventAsync(Guid receiptId, Guid transactionId, bool success, string? errorMessage, CancellationToken cancellationToken)
+	{
+		try
+		{
+			await ynabSyncEventService.WriteAsync(
+				YnabSyncEventType.Push,
+				success,
+				receiptId,
+				transactionId,
+				ynabResponseContext.LastStatusCode,
+				errorMessage,
+				ynabResponseContext.LastRequestId,
+				cancellationToken);
+		}
+		catch (Exception ex)
+		{
+			logger.LogWarning(ex, "Failed to write YnabSyncEvent for receipt {ReceiptId} transaction {TransactionId}", receiptId, transactionId);
+		}
 	}
 }

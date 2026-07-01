@@ -1,5 +1,6 @@
 using API.Generated.Dtos;
 using Application.Commands.Ynab.PushTransactions;
+using Application.Models;
 using Application.Models.Ynab;
 using Riok.Mapperly.Abstractions;
 using AppYnabMemoSyncOutcome = Application.Models.Ynab.YnabMemoSyncOutcome;
@@ -323,6 +324,52 @@ public partial class YnabMapper
 			RequestsUsed = source.RequestsUsed,
 			WindowResetAt = source.WindowResetAt,
 			OldestRequestAt = source.OldestRequestAt,
+		};
+	}
+
+	[MapperIgnoreTarget(nameof(YnabStatusResponse.AdditionalProperties))]
+	public YnabStatusResponse ToStatusResponse(YnabStatus source)
+	{
+		return new YnabStatusResponse
+		{
+			IsConfigured = source.IsConfigured,
+			LastValidatedAt = source.LastValidatedAt,
+			LastPushSuccessAt = source.LastPushSuccessAt,
+			LastPushFailureAt = source.LastPushFailureAt,
+			PushCountLast24h = source.PushCountLast24h,
+			PushCountLast7d = source.PushCountLast7d,
+			PushCountLast30d = source.PushCountLast30d,
+			PushSuccessLast30d = source.PushSuccessLast30d,
+			PushFailureLast30d = source.PushFailureLast30d,
+		};
+	}
+
+	[MapperIgnoreTarget(nameof(YnabSyncEventResponse.AdditionalProperties))]
+	public YnabSyncEventResponse ToSyncEventResponse(YnabSyncEventDto source)
+	{
+		return new YnabSyncEventResponse
+		{
+			Id = source.Id,
+			OccurredAt = source.OccurredAt,
+			EventType = source.EventType,
+			ReceiptId = source.ReceiptId,
+			TransactionId = source.TransactionId,
+			HttpStatus = source.HttpStatus,
+			Success = source.Success,
+			ErrorMessage = source.ErrorMessage,
+			RequestId = source.RequestId,
+		};
+	}
+
+	[MapperIgnoreTarget(nameof(YnabSyncEventListResponse.AdditionalProperties))]
+	public YnabSyncEventListResponse ToSyncEventListResponse(PagedResult<YnabSyncEventDto> source)
+	{
+		return new YnabSyncEventListResponse
+		{
+			Data = source.Data.Select(ToSyncEventResponse).ToList(),
+			Total = source.Total,
+			Offset = source.Offset,
+			Limit = source.Limit,
 		};
 	}
 }

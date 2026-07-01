@@ -22,6 +22,8 @@ public class PushYnabTransactionsCommandHandlerTests
 	private readonly Mock<IYnabSyncRecordService> _syncRecordServiceMock = new();
 	private readonly Mock<IYnabApiClient> _ynabApiClientMock = new();
 	private readonly Mock<IYnabSplitCalculator> _splitCalculatorMock = new();
+	private readonly Mock<IYnabSyncEventService> _ynabSyncEventServiceMock = new();
+	private readonly Mock<IYnabResponseContext> _ynabResponseContextMock = new();
 	private readonly PushYnabTransactionsCommandHandler _handler;
 
 	private readonly Guid _receiptId = Guid.NewGuid();
@@ -42,7 +44,10 @@ public class PushYnabTransactionsCommandHandlerTests
 			_budgetSelectionServiceMock.Object,
 			_syncRecordServiceMock.Object,
 			_ynabApiClientMock.Object,
-			_splitCalculatorMock.Object);
+			_splitCalculatorMock.Object,
+			_ynabSyncEventServiceMock.Object,
+			_ynabResponseContextMock.Object,
+			Mock.Of<Microsoft.Extensions.Logging.ILogger<PushYnabTransactionsCommandHandler>>());
 	}
 
 	private void SetupHappyPath()
@@ -116,6 +121,44 @@ public class PushYnabTransactionsCommandHandlerTests
 		result.PushedTransactions[0].YnabTransactionId.Should().Be("ynab-tx-1");
 		result.PushedTransactions[0].Milliunits.Should().Be(-11000);
 		result.Error.Should().BeNull();
+	}
+
+	[Fact]
+	public async Task Handle_HappyPath_WritesPushSuccessEvent()
+	{
+		SetupHappyPath();
+
+		await _handler.Handle(new PushYnabTransactionsCommand(_receiptId), CancellationToken.None);
+
+		_ynabSyncEventServiceMock.Verify(s => s.WriteAsync(
+			YnabSyncEventType.Push,
+			true,
+			_receiptId,
+			_transactionId,
+			It.IsAny<int?>(),
+			It.IsAny<string?>(),
+			It.IsAny<string?>(),
+			It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	[Fact]
+	public async Task Handle_PushFails_WritesPushFailureEvent()
+	{
+		SetupHappyPath();
+		_ynabApiClientMock.Setup(s => s.CreateTransactionAsync(_budgetId, It.IsAny<YnabCreateTransactionRequest>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new InvalidOperationException("boom"));
+
+		await _handler.Handle(new PushYnabTransactionsCommand(_receiptId), CancellationToken.None);
+
+		_ynabSyncEventServiceMock.Verify(s => s.WriteAsync(
+			YnabSyncEventType.Push,
+			false,
+			_receiptId,
+			_transactionId,
+			It.IsAny<int?>(),
+			It.IsAny<string?>(),
+			It.IsAny<string?>(),
+			It.IsAny<CancellationToken>()), Times.Once);
 	}
 
 	[Fact]

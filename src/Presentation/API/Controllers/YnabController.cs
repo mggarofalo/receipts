@@ -9,6 +9,7 @@ using Application.Commands.Ynab.SelectBudget;
 using Application.Commands.Ynab.StaleMappings;
 using Application.Exceptions;
 using Application.Interfaces.Services;
+using Application.Models;
 using Application.Models.Ynab;
 using Application.Queries.Core.Ynab;
 using Asp.Versioning;
@@ -35,6 +36,65 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 	{
 		YnabConnectionStatus status = await mediator.Send(new GetYnabConnectionStatusQuery(), cancellationToken);
 		return TypedResults.Ok(mapper.ToConnectionStatusResponse(status));
+	}
+
+	[HttpGet("status")]
+	[EndpointSummary("Get YNAB integration status and sync stats")]
+	[EndpointDescription("Returns an aggregate health snapshot: configured flag, last validated/push timestamps, and push counts by window. Derived from the sync-event log; performs no live YNAB call.")]
+	public async Task<Ok<YnabStatusResponse>> GetStatus(CancellationToken cancellationToken)
+	{
+		YnabStatus status = await mediator.Send(new GetYnabStatusQuery(), cancellationToken);
+		return TypedResults.Ok(mapper.ToStatusResponse(status));
+	}
+
+	[HttpGet("events")]
+	[EndpointSummary("Get recent YNAB sync events with optional filtering")]
+	[EndpointDescription("Paginated, filterable feed of YNAB push and validate attempts, most recent first.")]
+	public async Task<Results<Ok<YnabSyncEventListResponse>, BadRequest<string>>> GetEvents(
+		[FromQuery] int offset = 0,
+		[FromQuery] int limit = 50,
+		[FromQuery] string? sortBy = null,
+		[FromQuery] string? sortDirection = null,
+		[FromQuery] string? outcome = null,
+		[FromQuery] DateTimeOffset? dateFrom = null,
+		[FromQuery] DateTimeOffset? dateTo = null,
+		CancellationToken cancellationToken = default)
+	{
+		if (offset < 0)
+		{
+			return TypedResults.BadRequest("offset must be non-negative");
+		}
+
+		if (limit <= 0 || limit > 500)
+		{
+			return TypedResults.BadRequest("limit must be between 1 and 500");
+		}
+
+		if (!SortableColumns.IsValidDirection(sortDirection))
+		{
+			return TypedResults.BadRequest($"Invalid sortDirection '{sortDirection}'. Allowed: asc, desc");
+		}
+
+		bool? success;
+		switch (outcome?.ToLowerInvariant())
+		{
+			case null or "":
+				success = null;
+				break;
+			case "success":
+				success = true;
+				break;
+			case "failure":
+				success = false;
+				break;
+			default:
+				return TypedResults.BadRequest("outcome must be 'success' or 'failure'");
+		}
+
+		SortParams sort = new(sortBy, sortDirection);
+		PagedResult<YnabSyncEventDto> result = await mediator.Send(
+			new GetYnabSyncEventsQuery(offset, limit, sort, success, dateFrom, dateTo), cancellationToken);
+		return TypedResults.Ok(mapper.ToSyncEventListResponse(result));
 	}
 
 	[HttpGet("budgets")]
