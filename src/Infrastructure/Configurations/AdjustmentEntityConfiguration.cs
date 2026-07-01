@@ -8,6 +8,8 @@ public class AdjustmentEntityConfiguration : IEntityTypeConfiguration<Adjustment
 {
 	public void Configure(EntityTypeBuilder<AdjustmentEntity> builder)
 	{
+		builder.ToTable("Adjustments", "receipts");
+
 		builder.HasKey(e => e.Id);
 
 		builder.Property(e => e.Id)

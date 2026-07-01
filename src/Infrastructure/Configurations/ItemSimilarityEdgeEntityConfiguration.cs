@@ -8,7 +8,7 @@ public class ItemSimilarityEdgeEntityConfiguration : IEntityTypeConfiguration<It
 {
 	public void Configure(EntityTypeBuilder<ItemSimilarityEdgeEntity> builder)
 	{
-		builder.ToTable("ItemSimilarityEdges", t => t.HasCheckConstraint(
+		builder.ToTable("ItemSimilarityEdges", "matching", t => t.HasCheckConstraint(
 			"CK_ItemSimilarityEdges_CanonicalOrder",
 			"\"DescA\" < \"DescB\""));
 

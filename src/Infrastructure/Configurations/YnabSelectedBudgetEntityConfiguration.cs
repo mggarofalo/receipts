@@ -8,6 +8,8 @@ public class YnabSelectedBudgetEntityConfiguration : IEntityTypeConfiguration<Yn
 {
 	public void Configure(EntityTypeBuilder<YnabSelectedBudgetEntity> builder)
 	{
+		builder.ToTable("YnabSelectedBudgets", "ynab");
+
 		builder.HasKey(e => e.Id);
 
 		builder.Property(e => e.BudgetId)

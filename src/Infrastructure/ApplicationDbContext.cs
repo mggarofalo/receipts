@@ -5,6 +5,7 @@ using Infrastructure.Entities;
 using Infrastructure.Entities.Audit;
 using Infrastructure.Entities.Core;
 using Infrastructure.Interfaces;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -73,6 +74,18 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 	protected override void OnModelCreating(ModelBuilder modelBuilder)
 	{
 		base.OnModelCreating(modelBuilder);
+
+		// RECEIPTS-746: place the seven ASP.NET Identity tables in the `identity` schema.
+		// These have no IEntityTypeConfiguration class — base.OnModelCreating maps them — so the
+		// schema override lives here. Table names are unchanged; only the schema moves.
+		modelBuilder.Entity<ApplicationUser>().ToTable("AspNetUsers", "identity");
+		modelBuilder.Entity<IdentityRole>().ToTable("AspNetRoles", "identity");
+		modelBuilder.Entity<IdentityUserRole<string>>().ToTable("AspNetUserRoles", "identity");
+		modelBuilder.Entity<IdentityUserClaim<string>>().ToTable("AspNetUserClaims", "identity");
+		modelBuilder.Entity<IdentityUserLogin<string>>().ToTable("AspNetUserLogins", "identity");
+		modelBuilder.Entity<IdentityUserToken<string>>().ToTable("AspNetUserTokens", "identity");
+		modelBuilder.Entity<IdentityRoleClaim<string>>().ToTable("AspNetRoleClaims", "identity");
+
 		PrepareEntityTypesInModelBuilder(modelBuilder, Database.ProviderName);
 		modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
 
@@ -181,9 +194,9 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 			// becomes a no-op.
 			int rowsInserted = await Database.ExecuteSqlRawAsync(
 				"""
-				INSERT INTO "DistinctDescriptions" ("Description", "ProcessedAt")
+				INSERT INTO "matching"."DistinctDescriptions" ("Description", "ProcessedAt")
 				SELECT {0}, NULL
-				WHERE EXISTS (SELECT 1 FROM "ReceiptItems" WHERE "Description" = {0} AND "DeletedAt" IS NULL)
+				WHERE EXISTS (SELECT 1 FROM "receipts"."ReceiptItems" WHERE "Description" = {0} AND "DeletedAt" IS NULL)
 				ON CONFLICT ("Description") DO NOTHING;
 				""",
 				[desc],
@@ -191,9 +204,9 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 
 			int rowsDeleted = await Database.ExecuteSqlRawAsync(
 				"""
-				DELETE FROM "DistinctDescriptions"
+				DELETE FROM "matching"."DistinctDescriptions"
 				WHERE "Description" = {0}
-				  AND NOT EXISTS (SELECT 1 FROM "ReceiptItems" WHERE "Description" = {0} AND "DeletedAt" IS NULL);
+				  AND NOT EXISTS (SELECT 1 FROM "receipts"."ReceiptItems" WHERE "Description" = {0} AND "DeletedAt" IS NULL);
 				""",
 				[desc],
 				cancellationToken);

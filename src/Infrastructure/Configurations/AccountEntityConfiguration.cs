@@ -8,6 +8,8 @@ public class AccountEntityConfiguration : IEntityTypeConfiguration<AccountEntity
 {
 	public void Configure(EntityTypeBuilder<AccountEntity> builder)
 	{
+		builder.ToTable("Accounts", "library");
+
 		builder.HasKey(e => e.Id);
 
 		builder.Property(e => e.Id)

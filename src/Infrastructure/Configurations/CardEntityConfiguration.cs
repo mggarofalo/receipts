@@ -8,6 +8,8 @@ public class CardEntityConfiguration : IEntityTypeConfiguration<CardEntity>
 {
 	public void Configure(EntityTypeBuilder<CardEntity> builder)
 	{
+		builder.ToTable("Cards", "library");
+
 		builder.HasKey(e => e.Id);
 
 		builder.Property(e => e.Id)

@@ -8,6 +8,8 @@ public class AuthAuditLogEntityConfiguration : IEntityTypeConfiguration<AuthAudi
 {
 	public void Configure(EntityTypeBuilder<AuthAuditLogEntity> builder)
 	{
+		builder.ToTable("AuthAuditLogs", "audit");
+
 		builder.HasKey(e => e.Id);
 
 		builder.Property(e => e.Id)

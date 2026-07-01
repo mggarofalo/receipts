@@ -8,7 +8,7 @@ public class ItemEmbeddingEntityConfiguration : IEntityTypeConfiguration<ItemEmb
 {
 	public void Configure(EntityTypeBuilder<ItemEmbeddingEntity> builder)
 	{
-		builder.ToTable("ItemEmbeddings");
+		builder.ToTable("ItemEmbeddings", "matching");
 
 		builder.HasKey(e => e.Id);
 

@@ -8,6 +8,8 @@ public class SubcategoryEntityConfiguration : IEntityTypeConfiguration<Subcatego
 {
 	public void Configure(EntityTypeBuilder<SubcategoryEntity> builder)
 	{
+		builder.ToTable("Subcategories", "library");
+
 		builder.HasKey(e => e.Id);
 
 		builder.Property(e => e.Id)

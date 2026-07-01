@@ -8,6 +8,8 @@ public class YnabAccountMappingEntityConfiguration : IEntityTypeConfiguration<Yn
 {
 	public void Configure(EntityTypeBuilder<YnabAccountMappingEntity> builder)
 	{
+		builder.ToTable("YnabAccountMappings", "ynab");
+
 		builder.HasKey(e => e.Id);
 
 		builder.Property(e => e.Id)

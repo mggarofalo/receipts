@@ -10,7 +10,7 @@ public class NormalizedDescriptionEntityConfiguration : IEntityTypeConfiguration
 {
 	public void Configure(EntityTypeBuilder<NormalizedDescriptionEntity> builder)
 	{
-		builder.ToTable("NormalizedDescriptions");
+		builder.ToTable("NormalizedDescriptions", "matching");
 
 		builder.HasKey(e => e.Id);
 

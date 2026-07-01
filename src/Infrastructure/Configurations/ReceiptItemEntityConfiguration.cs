@@ -8,6 +8,8 @@ public class ReceiptItemEntityConfiguration : IEntityTypeConfiguration<ReceiptIt
 {
 	public void Configure(EntityTypeBuilder<ReceiptItemEntity> builder)
 	{
+		builder.ToTable("ReceiptItems", "receipts");
+
 		builder.HasKey(e => e.Id);
 
 		builder.Property(e => e.Id)

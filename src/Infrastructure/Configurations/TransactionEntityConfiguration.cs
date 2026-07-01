@@ -8,6 +8,8 @@ public class TransactionEntityConfiguration : IEntityTypeConfiguration<Transacti
 {
 	public void Configure(EntityTypeBuilder<TransactionEntity> builder)
 	{
+		builder.ToTable("Transactions", "receipts");
+
 		builder.HasKey(e => e.Id);
 
 		builder.Property(e => e.Id)
