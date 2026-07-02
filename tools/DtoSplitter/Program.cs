@@ -1,8 +1,8 @@
-using Microsoft.CodeAnalysis.CSharp;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 if (args.Length < 1)
 {
@@ -46,16 +46,26 @@ static int Check(string[] args)
 		return 1;
 	}
 
-	string? existingHash = ReadHashFromFile(existingFiles[0]);
-
-	if (existingHash == specHash)
+	// Every generated file embeds the spec hash it was produced from. Require
+	// ALL of them to match the current spec — not just the first. A single stale
+	// or orphaned file (a type removed from the spec, or a leftover monolithic
+	// Dtos.g.cs that carries no hash line) forces a full regeneration, which
+	// clears the directory and rewrites the exact current set. Reading only
+	// existingFiles[0] previously let orphaned old-spec files linger and break
+	// local builds (RECEIPTS-748).
+	foreach (string file in existingFiles)
 	{
-		Console.WriteLine("DTOs up-to-date.");
-		return 0;
+		string? fileHash = ReadHashFromFile(file);
+		if (fileHash != specHash)
+		{
+			string name = Path.GetFileName(file);
+			Console.WriteLine($"Generated file '{name}' is stale ({fileHash?[..8] ?? "no-hash"}... -> {specHash[..8]}...). Regeneration needed.");
+			return 1;
+		}
 	}
 
-	Console.WriteLine($"Spec hash changed ({existingHash?[..8] ?? "none"}... -> {specHash[..8]}...). Regeneration needed.");
-	return 1;
+	Console.WriteLine("DTOs up-to-date.");
+	return 0;
 }
 
 static int Split(string[] args)

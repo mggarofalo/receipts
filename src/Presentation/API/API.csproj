@@ -46,6 +46,17 @@
     <ProjectReference Include="..\..\Receipts.ServiceDefaults\Receipts.ServiceDefaults.csproj" />
   </ItemGroup>
 
+  <!-- Generated DTOs are produced by the GenerateDtos target below, which re-adds
+       them to <Compile>. Exclude them from the SDK's evaluation-time default glob
+       so a file left over from a previous spec can never enter the compile list as
+       a phantom item (CS2001: source file could not be found) before regeneration
+       cleans the directory. This makes local builds behave like CI, where Generated/
+       starts empty and the target is the single source of these compile items.
+       (RECEIPTS-748) -->
+  <ItemGroup>
+    <Compile Remove="Generated\**\*.cs" />
+  </ItemGroup>
+
   <PropertyGroup>
     <_DtoSplitterProject>$(MSBuildProjectDirectory)\..\..\..\tools\DtoSplitter\DtoSplitter.csproj</_DtoSplitterProject>
     <_DtoSplitterExe>$(MSBuildProjectDirectory)\..\..\..\tools\DtoSplitter\bin\Release\net10.0\DtoSplitter</_DtoSplitterExe>
