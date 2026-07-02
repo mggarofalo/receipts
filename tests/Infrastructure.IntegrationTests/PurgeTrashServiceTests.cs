@@ -23,6 +23,14 @@ public class PurgeTrashServiceTests(PostgresFixture fixture)
 
 		// Parents (needed for FK-valid child inserts)
 		AccountEntity account = AccountEntityGenerator.Generate();
+		// Transactions default their CardId to the Account's Id
+		// (TransactionEntityGenerator sets CardId = accountId when no explicit
+		// cardId is given). Since RECEIPTS-574 enforced FK_Transactions_Cards_CardId,
+		// that Card must exist — seed one whose Id mirrors the 1:1 Account:Card
+		// backfill so the transaction inserts below satisfy the FK.
+		CardEntity card = CardEntityGenerator.Generate();
+		card.Id = account.Id;
+		card.AccountId = account.Id;
 		ReceiptEntity activeReceipt = ReceiptEntityGenerator.Generate();
 		ReceiptEntity deletedReceipt = ReceiptEntityGenerator.Generate();
 		deletedReceipt.DeletedAt = deletedAt;
@@ -69,6 +77,7 @@ public class PurgeTrashServiceTests(PostgresFixture fixture)
 		await using (ApplicationDbContext setup = fixture.CreateDbContext())
 		{
 			setup.Accounts.Add(account);
+			setup.Cards.Add(card);
 			setup.Receipts.AddRange(activeReceipt, deletedReceipt);
 			setup.Categories.AddRange(activeCategory, deletedCategory);
 			await setup.SaveChangesAsync();
