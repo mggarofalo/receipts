@@ -35,7 +35,7 @@ public class YnabApiClientFindByImportIdTests
 			.Build();
 
 		Mock<ILogger<YnabApiClient>> logger = new();
-		return new YnabApiClient(httpClient, cache, configuration, rateLimitTracker, logger.Object);
+		return new YnabApiClient(httpClient, cache, configuration, rateLimitTracker, new YnabResponseContext(), logger.Object);
 	}
 
 	private static HttpMessageHandler CreateHandler(HttpStatusCode statusCode, string content)

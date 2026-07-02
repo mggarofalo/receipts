@@ -8,6 +8,7 @@ using Application.Commands.Ynab.SelectBudget;
 using Application.Commands.Ynab.StaleMappings;
 using Application.Exceptions;
 using Application.Interfaces.Services;
+using Application.Models;
 using Application.Models.Ynab;
 using Application.Queries.Core.Ynab;
 using FluentAssertions;
@@ -64,6 +65,49 @@ public class YnabControllerTests
 		response.IsConfigured.Should().BeTrue();
 		response.IsConnected.Should().BeTrue();
 		response.LastSuccessfulSyncUtc.Should().NotBeNull();
+	}
+
+	[Fact]
+	public async Task GetStatus_ReturnsMappedStats()
+	{
+		_mediatorMock.Setup(m => m.Send(It.IsAny<GetYnabStatusQuery>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new YnabStatus(true, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, null, 1, 2, 3, 3, 0));
+
+		Ok<YnabStatusResponse> result = await _controller.GetStatus(CancellationToken.None);
+
+		result.Value!.IsConfigured.Should().BeTrue();
+		result.Value.PushCountLast30d.Should().Be(3);
+		result.Value.PushSuccessLast30d.Should().Be(3);
+	}
+
+	[Fact]
+	public async Task GetEvents_ReturnsMappedList()
+	{
+		PagedResult<YnabSyncEventDto> paged = new(
+			[new YnabSyncEventDto(Guid.NewGuid(), DateTimeOffset.UtcNow, "Push", null, null, 201, true, null, null)],
+			1, 0, 50);
+		_mediatorMock.Setup(m => m.Send(It.IsAny<GetYnabSyncEventsQuery>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(paged);
+
+		Results<Ok<YnabSyncEventListResponse>, BadRequest<string>> result =
+			await _controller.GetEvents(cancellationToken: CancellationToken.None);
+
+		Ok<YnabSyncEventListResponse> ok = result.Result.Should().BeOfType<Ok<YnabSyncEventListResponse>>().Subject;
+		ok.Value!.Total.Should().Be(1);
+		ok.Value.Data.Should().HaveCount(1);
+	}
+
+	[Theory]
+	[InlineData(-1, 50, null)]
+	[InlineData(0, 0, null)]
+	[InlineData(0, 501, null)]
+	[InlineData(0, 50, "bogus")]
+	public async Task GetEvents_ReturnsBadRequest_ForInvalidArguments(int offset, int limit, string? outcome)
+	{
+		Results<Ok<YnabSyncEventListResponse>, BadRequest<string>> result =
+			await _controller.GetEvents(offset: offset, limit: limit, outcome: outcome, cancellationToken: CancellationToken.None);
+
+		result.Result.Should().BeOfType<BadRequest<string>>();
 	}
 
 	[Fact]

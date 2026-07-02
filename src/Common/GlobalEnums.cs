@@ -43,3 +43,9 @@ public enum YnabSyncStatus
 	Synced,
 	Failed
 }
+
+public enum YnabSyncEventType
+{
+	Push,
+	Validate
+}

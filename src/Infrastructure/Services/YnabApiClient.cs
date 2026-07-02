@@ -18,6 +18,7 @@ public class YnabApiClient(
 	IMemoryCache memoryCache,
 	IConfiguration configuration,
 	IYnabRateLimitTracker rateLimitTracker,
+	IYnabResponseContext responseContext,
 	ILogger<YnabApiClient> logger) : IYnabApiClient
 {
 	private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
@@ -279,6 +280,7 @@ public class YnabApiClient(
 
 		using HttpResponseMessage response = await httpClient.SendAsync(request, cancellationToken);
 		rateLimitTracker.RecordRequest();
+		CaptureResponseMetadata(response);
 		await EnsureSuccessAsync(response, cancellationToken);
 
 		T result = await response.Content.ReadFromJsonAsync<T>(JsonOptions, cancellationToken)
@@ -295,6 +297,7 @@ public class YnabApiClient(
 
 		using HttpResponseMessage response = await httpClient.SendAsync(request, cancellationToken);
 		rateLimitTracker.RecordRequest();
+		CaptureResponseMetadata(response);
 		await EnsureSuccessAsync(response, cancellationToken);
 
 		TResponse result = await response.Content.ReadFromJsonAsync<TResponse>(JsonOptions, cancellationToken)
@@ -311,7 +314,30 @@ public class YnabApiClient(
 
 		using HttpResponseMessage response = await httpClient.SendAsync(request, cancellationToken);
 		rateLimitTracker.RecordRequest();
+		CaptureResponseMetadata(response);
 		await EnsureSuccessAsync(response, cancellationToken);
+	}
+
+	// Parse YNAB's X-Rate-Limit ("used/limit") into the tracker and record status + request id
+	// (when present) for the current request scope, so callers can attach them to a YnabSyncEvent.
+	private void CaptureResponseMetadata(HttpResponseMessage response)
+	{
+		if (response.Headers.TryGetValues("X-Rate-Limit", out IEnumerable<string>? rateLimitValues))
+		{
+			string[]? parts = rateLimitValues.FirstOrDefault()?.Split('/', 2);
+			if (parts is { Length: 2 }
+				&& int.TryParse(parts[0], out int used)
+				&& int.TryParse(parts[1], out int limit))
+			{
+				rateLimitTracker.RecordServerRateLimit(used, limit);
+			}
+		}
+
+		string? requestId = response.Headers.TryGetValues("X-Request-Id", out IEnumerable<string>? requestIdValues)
+			? requestIdValues.FirstOrDefault()
+			: null;
+
+		responseContext.Record((int)response.StatusCode, requestId);
 	}
 
 	private void ApplyAuth(HttpRequestMessage request)

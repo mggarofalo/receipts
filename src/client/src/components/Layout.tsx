@@ -81,6 +81,7 @@ const NAV: readonly NavSection[] = [
       { to: "/subcategories", label: "Subcategories", icon: Icon.Tag },
       { to: "/item-templates", label: "Templates", icon: Icon.Sparkle },
       { to: "/settings/ynab", label: "YNAB", icon: Icon.Link },
+      { to: "/ynab", label: "YNAB Status", icon: Icon.Chart },
     ],
   },
   {

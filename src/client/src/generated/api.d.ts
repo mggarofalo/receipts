@@ -1953,6 +1953,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/ynab/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get YNAB integration status and sync stats
+         * @description Returns an aggregate health snapshot for the YNAB status page — whether YNAB is configured, when it was last validated, last push success/failure timestamps, and push counts by window. Derived from the sync-event log; does not perform a live YNAB call.
+         */
+        get: operations["GetYnabStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ynab/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get recent YNAB sync events with optional filtering
+         * @description Paginated, filterable feed of YNAB push and validate attempts, most recent first.
+         */
+        get: operations["GetYnabSyncEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/ynab/budgets": {
         parameters: {
             query?: never;
@@ -3539,6 +3579,61 @@ export interface components {
              * @description The timestamp of the last successful YNAB sync operation, or null if no syncs have completed.
              */
             lastSuccessfulSyncUtc?: string | null;
+        };
+        YnabStatusResponse: {
+            /** @description Whether the YNAB personal access token is set. */
+            isConfigured: boolean;
+            /**
+             * Format: date-time
+             * @description Timestamp of the last successful connection validation, or null.
+             */
+            lastValidatedAt?: string | null;
+            /**
+             * Format: date-time
+             * @description Timestamp of the last successful push, or null.
+             */
+            lastPushSuccessAt?: string | null;
+            /**
+             * Format: date-time
+             * @description Timestamp of the last failed push, or null.
+             */
+            lastPushFailureAt?: string | null;
+            /** Format: int32 */
+            pushCountLast24h: number;
+            /** Format: int32 */
+            pushCountLast7d: number;
+            /** Format: int32 */
+            pushCountLast30d: number;
+            /** Format: int32 */
+            pushSuccessLast30d: number;
+            /** Format: int32 */
+            pushFailureLast30d: number;
+        };
+        YnabSyncEventResponse: {
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            occurredAt: string;
+            /** @description The kind of attempt (Push or Validate). */
+            eventType: string;
+            /** Format: uuid */
+            receiptId?: string | null;
+            /** Format: uuid */
+            transactionId?: string | null;
+            /** Format: int32 */
+            httpStatus?: number | null;
+            success: boolean;
+            errorMessage?: string | null;
+            requestId?: string | null;
+        };
+        YnabSyncEventListResponse: {
+            data: components["schemas"]["YnabSyncEventResponse"][];
+            /** Format: int32 */
+            total: number;
+            /** Format: int32 */
+            offset: number;
+            /** Format: int32 */
+            limit: number;
         };
         YnabBudgetSettingsResponse: {
             selectedBudgetId?: string | null;
@@ -8185,6 +8280,67 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["YnabConnectionStatusResponse"];
+                };
+            };
+        };
+    };
+    GetYnabStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["YnabStatusResponse"];
+                };
+            };
+        };
+    };
+    GetYnabSyncEvents: {
+        parameters: {
+            query?: {
+                offset?: components["parameters"]["Offset"];
+                limit?: components["parameters"]["Limit"];
+                /** @description Column name to sort by. Allowed values depend on the entity type. */
+                sortBy?: components["parameters"]["SortBy"];
+                sortDirection?: components["parameters"]["SortDirection"];
+                /** @description Filter by outcome (success or failure). */
+                outcome?: "success" | "failure";
+                /** @description Filter events from this date (inclusive). */
+                dateFrom?: string;
+                /** @description Filter events up to this date (inclusive, end of day). */
+                dateTo?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["YnabSyncEventListResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
                 };
             };
         };

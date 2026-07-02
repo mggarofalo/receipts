@@ -164,7 +164,15 @@ public static class InfrastructureService
 			.AddScoped<IYnabCategoryMappingService, YnabCategoryMappingService>()
 			.AddScoped<IYnabMemoSyncService, YnabMemoSyncService>()
 			.AddScoped<IYnabServerKnowledgeRepository, YnabServerKnowledgeRepository>()
+			.AddScoped<IYnabResponseContext, YnabResponseContext>()
 			.AddSingleton<IYnabSplitCalculator, YnabSplitCalculator>();
+
+		// Append-only YNAB sync-event log (RECEIPTS-737). TimeProvider is optional in DI, so fall
+		// back to the system clock like YnabRateLimitTracker does.
+		services.AddScoped<IYnabSyncEventService>(sp => new YnabSyncEventService(
+			sp.GetRequiredService<IDbContextFactory<ApplicationDbContext>>(),
+			sp.GetRequiredService<ICurrentUserAccessor>(),
+			sp.GetService<TimeProvider>() ?? TimeProvider.System));
 
 		services.AddMemoryCache();
 

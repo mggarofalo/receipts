@@ -4328,6 +4328,70 @@ paths:
               schema:
                 $ref: "#/components/schemas/YnabConnectionStatusResponse"
 
+  /api/ynab/status:
+    get:
+      operationId: GetYnabStatus
+      tags: [YNAB]
+      summary: Get YNAB integration status and sync stats
+      description: Returns an aggregate health snapshot for the YNAB status page — whether YNAB is configured, when it was last validated, last push success/failure timestamps, and push counts by window. Derived from the sync-event log; does not perform a live YNAB call.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/YnabStatusResponse"
+
+  /api/ynab/events:
+    get:
+      operationId: GetYnabSyncEvents
+      tags: [YNAB]
+      summary: Get recent YNAB sync events with optional filtering
+      description: Paginated, filterable feed of YNAB push and validate attempts, most recent first.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Offset"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/SortBy"
+        - $ref: "#/components/parameters/SortDirection"
+        - name: outcome
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [success, failure]
+          description: Filter by outcome (success or failure).
+        - name: dateFrom
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Filter events from this date (inclusive).
+        - name: dateTo
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Filter events up to this date (inclusive, end of day).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/YnabSyncEventListResponse"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                type: string
+
   /api/ynab/budgets:
     get:
       operationId: GetYnabBudgets
@@ -7114,6 +7178,104 @@ components:
             - "null"
           format: date-time
           description: The timestamp of the last successful YNAB sync operation, or null if no syncs have completed.
+
+    YnabStatusResponse:
+      type: object
+      required: [isConfigured, pushCountLast24h, pushCountLast7d, pushCountLast30d, pushSuccessLast30d, pushFailureLast30d]
+      properties:
+        isConfigured:
+          type: boolean
+          description: Whether the YNAB personal access token is set.
+        lastValidatedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+          description: Timestamp of the last successful connection validation, or null.
+        lastPushSuccessAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+          description: Timestamp of the last successful push, or null.
+        lastPushFailureAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+          description: Timestamp of the last failed push, or null.
+        pushCountLast24h:
+          type: integer
+          format: int32
+        pushCountLast7d:
+          type: integer
+          format: int32
+        pushCountLast30d:
+          type: integer
+          format: int32
+        pushSuccessLast30d:
+          type: integer
+          format: int32
+        pushFailureLast30d:
+          type: integer
+          format: int32
+
+    YnabSyncEventResponse:
+      type: object
+      required: [id, occurredAt, eventType, success]
+      properties:
+        id:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        eventType:
+          type: string
+          description: The kind of attempt (Push or Validate).
+        receiptId:
+          type:
+            - string
+            - "null"
+          format: uuid
+        transactionId:
+          type:
+            - string
+            - "null"
+          format: uuid
+        httpStatus:
+          type:
+            - integer
+            - "null"
+          format: int32
+        success:
+          type: boolean
+        errorMessage:
+          type:
+            - string
+            - "null"
+        requestId:
+          type:
+            - string
+            - "null"
+
+    YnabSyncEventListResponse:
+      type: object
+      required: [data, total, offset, limit]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/YnabSyncEventResponse"
+        total:
+          type: integer
+          format: int32
+        offset:
+          type: integer
+          format: int32
+        limit:
+          type: integer
+          format: int32
 
     YnabBudgetSettingsResponse:
       type: object

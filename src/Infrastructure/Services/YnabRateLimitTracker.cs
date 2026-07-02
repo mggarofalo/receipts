@@ -11,6 +11,12 @@ public class YnabRateLimitTracker : IYnabRateLimitTracker
 	private readonly YnabClientOptions _options;
 	private readonly TimeProvider _timeProvider;
 
+	// Latest authoritative counts parsed from YNAB's X-Rate-Limit header. Preferred over the
+	// in-process estimate while still within the rate-limit window.
+	private int? _serverUsed;
+	private int? _serverLimit;
+	private DateTimeOffset? _serverObservedAt;
+
 	public YnabRateLimitTracker(YnabClientOptions options, TimeProvider timeProvider)
 	{
 		_options = options;
@@ -26,14 +32,29 @@ public class YnabRateLimitTracker : IYnabRateLimitTracker
 		}
 	}
 
+	public void RecordServerRateLimit(int used, int limit)
+	{
+		if (limit <= 0)
+		{
+			return;
+		}
+
+		lock (_lock)
+		{
+			_serverUsed = Math.Max(0, used);
+			_serverLimit = limit;
+			_serverObservedAt = _timeProvider.GetUtcNow();
+		}
+	}
+
 	public YnabRateLimitStatus GetStatus()
 	{
 		lock (_lock)
 		{
 			PruneExpired();
 
-			int requestsUsed = _requestTimestamps.Count;
-			int remaining = Math.Max(0, _options.RateLimitMaxRequests - requestsUsed);
+			(int requestsUsed, int max) = EffectiveUsage();
+			int remaining = Math.Max(0, max - requestsUsed);
 
 			DateTimeOffset? windowResetAt = null;
 			DateTimeOffset? oldestRequestAt = null;
@@ -46,7 +67,7 @@ public class YnabRateLimitTracker : IYnabRateLimitTracker
 
 			return new YnabRateLimitStatus(
 				remaining,
-				_options.RateLimitMaxRequests,
+				max,
 				requestsUsed,
 				windowResetAt,
 				oldestRequestAt);
@@ -58,9 +79,24 @@ public class YnabRateLimitTracker : IYnabRateLimitTracker
 		lock (_lock)
 		{
 			PruneExpired();
-			int requestsUsed = _requestTimestamps.Count;
-			return requestsUsed + count <= _options.RateLimitMaxRequests;
+			(int requestsUsed, int max) = EffectiveUsage();
+			return requestsUsed + count <= max;
 		}
+	}
+
+	// Effective (used, max): prefers YNAB's authoritative X-Rate-Limit snapshot while it is still
+	// within the rate-limit window, otherwise the in-process sliding-window estimate. So GetStatus
+	// and CanMakeRequests always agree on remaining capacity. Must be called under _lock.
+	private (int Used, int Max) EffectiveUsage()
+	{
+		bool serverFresh = _serverObservedAt is { } observed
+			&& _serverUsed is { } serverUsed
+			&& _serverLimit is { } serverLimit
+			&& observed >= _timeProvider.GetUtcNow().AddSeconds(-_options.RateLimitWindowSeconds);
+
+		return serverFresh
+			? (_serverUsed!.Value, _serverLimit!.Value)
+			: (_requestTimestamps.Count, _options.RateLimitMaxRequests);
 	}
 
 	private void PruneExpired()

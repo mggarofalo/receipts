@@ -16,7 +16,12 @@ public class GetYnabConnectionStatusQueryHandlerTests
 	{
 		_ynabClientMock = new Mock<IYnabApiClient>();
 		_syncRecordServiceMock = new Mock<IYnabSyncRecordService>();
-		_handler = new GetYnabConnectionStatusQueryHandler(_ynabClientMock.Object, _syncRecordServiceMock.Object);
+		_handler = new GetYnabConnectionStatusQueryHandler(
+			_ynabClientMock.Object,
+			_syncRecordServiceMock.Object,
+			Mock.Of<Application.Interfaces.Services.IYnabSyncEventService>(),
+			Mock.Of<Application.Interfaces.Services.IYnabResponseContext>(),
+			Mock.Of<Microsoft.Extensions.Logging.ILogger<GetYnabConnectionStatusQueryHandler>>());
 	}
 
 	[Fact]

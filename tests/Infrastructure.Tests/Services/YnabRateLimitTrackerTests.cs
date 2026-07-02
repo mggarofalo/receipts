@@ -232,4 +232,41 @@ public class YnabRateLimitTrackerTests
 		YnabRateLimitStatus status = tracker.GetStatus();
 		status.RequestsUsed.Should().Be(threadCount * requestsPerThread);
 	}
+
+	[Fact]
+	public void RecordServerRateLimit_MakesGetStatusAndCanMakeRequestsUseServerCounts()
+	{
+		// Arrange — in-process sees only 1 request, but YNAB reports 195/200 used
+		// (e.g. another consumer of the same PAT).
+		(YnabRateLimitTracker tracker, _) = CreateTracker();
+		tracker.RecordRequest();
+
+		// Act
+		tracker.RecordServerRateLimit(used: 195, limit: 200);
+		YnabRateLimitStatus status = tracker.GetStatus();
+
+		// Assert — server-authoritative counts win, and CanMakeRequests agrees with GetStatus
+		// (the two were a split-brain before the RECEIPTS-737 fix).
+		status.RequestsUsed.Should().Be(195);
+		status.RemainingRequests.Should().Be(5);
+		tracker.CanMakeRequests(5).Should().BeTrue();
+		tracker.CanMakeRequests(6).Should().BeFalse();
+	}
+
+	[Fact]
+	public void RecordServerRateLimit_StaleSnapshot_FallsBackToInProcessEstimate()
+	{
+		// Arrange
+		(YnabRateLimitTracker tracker, FakeTimeProvider time) = CreateTracker(windowSeconds: 3600);
+		tracker.RecordServerRateLimit(used: 195, limit: 200);
+
+		// Act — advance past the window so the server snapshot is stale.
+		time.Advance(TimeSpan.FromSeconds(3601));
+		YnabRateLimitStatus status = tracker.GetStatus();
+
+		// Assert — falls back to the in-process estimate (no live requests → full quota).
+		status.RequestsUsed.Should().Be(0);
+		status.RemainingRequests.Should().Be(200);
+		tracker.CanMakeRequests(200).Should().BeTrue();
+	}
 }

@@ -25,7 +25,7 @@ public class YnabApiClientSubTransactionsTests
 			.Build();
 
 		Mock<ILogger<YnabApiClient>> logger = new();
-		return new YnabApiClient(httpClient, cache, configuration, rateLimitTracker.Object, logger.Object);
+		return new YnabApiClient(httpClient, cache, configuration, rateLimitTracker.Object, new YnabResponseContext(), logger.Object);
 	}
 
 	private static HttpMessageHandler CreateHandler(string json)

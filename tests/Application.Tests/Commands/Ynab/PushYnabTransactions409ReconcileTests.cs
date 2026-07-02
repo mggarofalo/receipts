@@ -44,7 +44,10 @@ public class PushYnabTransactions409ReconcileTests
 			_budgetSelectionServiceMock.Object,
 			_syncRecordServiceMock.Object,
 			_ynabApiClientMock.Object,
-			_splitCalculatorMock.Object);
+			_splitCalculatorMock.Object,
+			Mock.Of<Application.Interfaces.Services.IYnabSyncEventService>(),
+			Mock.Of<Application.Interfaces.Services.IYnabResponseContext>(),
+			Mock.Of<Microsoft.Extensions.Logging.ILogger<PushYnabTransactionsCommandHandler>>());
 	}
 
 	private void SetupHappyPath()
