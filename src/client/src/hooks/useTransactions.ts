@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useStableQuery } from "@/hooks/useStableQuery";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import client from "@/lib/api-client";
 import { toast } from "sonner";
@@ -14,7 +15,8 @@ export function useTransactions(offset = 0, limit = 50, sortBy?: string | null, 
       return data;
     },
   });
-  return useMemo(() => ({ ...query, data: query.data?.data, total: query.data?.total ?? 0 }), [query]);
+  const base = useStableQuery(query);
+  return useMemo(() => ({ ...base, data: query.data?.data, total: query.data?.total ?? 0 }), [base, query.data]);
 }
 
 export function useTransaction(id: string | null) {
@@ -43,7 +45,8 @@ export function useTransactionsByReceiptId(receiptId: string | null, offset = 0,
       return data;
     },
   });
-  return useMemo(() => ({ ...query, data: query.data?.data, total: query.data?.total ?? 0 }), [query]);
+  const base = useStableQuery(query);
+  return useMemo(() => ({ ...base, data: query.data?.data, total: query.data?.total ?? 0 }), [base, query.data]);
 }
 
 export function useCreateTransaction() {
@@ -174,7 +177,8 @@ export function useDeletedTransactions(offset = 0, limit = 50, sortBy?: string |
       return data;
     },
   });
-  return useMemo(() => ({ ...query, data: query.data?.data, total: query.data?.total ?? 0 }), [query]);
+  const base = useStableQuery(query);
+  return useMemo(() => ({ ...base, data: query.data?.data, total: query.data?.total ?? 0 }), [base, query.data]);
 }
 
 export function useRestoreTransaction() {

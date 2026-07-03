@@ -154,38 +154,41 @@ function AuditLog() {
     defaultSortDirection: "desc",
   });
   const pagination = useServerPagination({ sortBy, sortDirection });
+  // `resetPage` is stable (useServerPagination memoizes it); depend on it
+  // directly so these handlers don't churn when other pagination state changes.
+  const { resetPage } = pagination;
 
   // Reset pagination when filters change
   const handleEntityTypeChange = useCallback(
     (value: string) => {
       setEntityTypeFilter(value);
-      pagination.resetPage();
+      resetPage();
     },
-    [pagination],
+    [resetPage],
   );
 
   const handleActionChange = useCallback(
     (value: string) => {
       setActionFilter(value);
-      pagination.resetPage();
+      resetPage();
     },
-    [pagination],
+    [resetPage],
   );
 
   const handleDateFromChange = useCallback(
     (d: Date | undefined) => {
       setDateFrom(d);
-      pagination.resetPage();
+      resetPage();
     },
-    [pagination],
+    [resetPage],
   );
 
   const handleDateToChange = useCallback(
     (d: Date | undefined) => {
       setDateTo(d);
-      pagination.resetPage();
+      resetPage();
     },
-    [pagination],
+    [resetPage],
   );
 
   const entityTypeOptions = useMemo(
@@ -257,7 +260,7 @@ function AuditLog() {
           value={search}
           onChange={(e) => {
             setSearch(e.target.value);
-            pagination.resetPage();
+            resetPage();
           }}
           className="max-w-xs"
         />

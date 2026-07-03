@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useStableQuery } from "@/hooks/useStableQuery";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import client from "@/lib/api-client";
 import { toast } from "sonner";
@@ -31,14 +32,15 @@ export function useYnabConnectionStatus() {
       return data as unknown as YnabConnectionStatusResponse;
     },
   });
+  const base = useStableQuery(query);
   return useMemo(
     () => ({
-      ...query,
+      ...base,
       isConfigured: query.data?.isConfigured ?? false,
       isConnected: query.data?.isConnected ?? false,
       lastSuccessfulSyncUtc: query.data?.lastSuccessfulSyncUtc ?? null,
     }),
-    [query],
+    [base, query.data],
   );
 }
 
@@ -52,9 +54,10 @@ export function useYnabBudgets() {
     },
     retry: false,
   });
+  const base = useStableQuery(query);
   return useMemo(
-    () => ({ ...query, budgets: query.data?.data ?? [] }),
-    [query],
+    () => ({ ...base, budgets: query.data?.data ?? [] }),
+    [base, query.data],
   );
 }
 
@@ -67,12 +70,13 @@ export function useSelectedYnabBudget() {
       return data;
     },
   });
+  const base = useStableQuery(query);
   return useMemo(
     () => ({
-      ...query,
+      ...base,
       selectedBudgetId: query.data?.selectedBudgetId ?? null,
     }),
-    [query],
+    [base, query.data],
   );
 }
 
@@ -106,9 +110,10 @@ export function useYnabAccounts(enabled = true) {
     retry: false,
     enabled,
   });
+  const base = useStableQuery(query);
   return useMemo(
-    () => ({ ...query, accounts: query.data?.data ?? [] }),
-    [query],
+    () => ({ ...base, accounts: query.data?.data ?? [] }),
+    [base, query.data],
   );
 }
 
@@ -122,9 +127,10 @@ export function useYnabAccountMappings(enabled = true) {
     },
     enabled,
   });
+  const base = useStableQuery(query);
   return useMemo(
-    () => ({ ...query, mappings: query.data?.data ?? [] }),
-    [query],
+    () => ({ ...base, mappings: query.data?.data ?? [] }),
+    [base, query.data],
   );
 }
 
@@ -219,9 +225,10 @@ export function useYnabCategories(enabled = true) {
     retry: false,
     enabled,
   });
+  const base = useStableQuery(query);
   return useMemo(
-    () => ({ ...query, categories: query.data?.data ?? [] }),
-    [query],
+    () => ({ ...base, categories: query.data?.data ?? [] }),
+    [base, query.data],
   );
 }
 
@@ -237,9 +244,10 @@ export function useDistinctReceiptItemCategories(enabled = true) {
     },
     enabled,
   });
+  const base = useStableQuery(query);
   return useMemo(
-    () => ({ ...query, categories: query.data?.categories ?? [] }),
-    [query],
+    () => ({ ...base, categories: query.data?.categories ?? [] }),
+    [base, query.data],
   );
 }
 
@@ -255,9 +263,10 @@ export function useYnabCategoryMappings(enabled = true) {
     },
     enabled,
   });
+  const base = useStableQuery(query);
   return useMemo(
-    () => ({ ...query, mappings: query.data?.data ?? [] }),
-    [query],
+    () => ({ ...base, mappings: query.data?.data ?? [] }),
+    [base, query.data],
   );
 }
 
@@ -273,12 +282,13 @@ export function useUnmappedCategories(enabled = true) {
     },
     enabled,
   });
+  const base = useStableQuery(query);
   return useMemo(
     () => ({
-      ...query,
+      ...base,
       unmappedCategories: query.data?.unmappedCategories ?? [],
     }),
-    [query],
+    [base, query.data],
   );
 }
 
@@ -351,16 +361,17 @@ export function useStaleMappings(enabled = true) {
     },
     enabled,
   });
+  const base = useStableQuery(query);
   return useMemo(
     () => ({
-      ...query,
+      ...base,
       staleAccountMappingCount: query.data?.staleAccountMappingCount ?? 0,
       staleCategoryMappingCount: query.data?.staleCategoryMappingCount ?? 0,
       hasStaleMappings:
         (query.data?.staleAccountMappingCount ?? 0) > 0 ||
         (query.data?.staleCategoryMappingCount ?? 0) > 0,
     }),
-    [query],
+    [base, query.data],
   );
 }
 
@@ -703,14 +714,15 @@ export function useAllReceiptIds(enabled = true) {
     queryFn: fetchAllReceiptIds,
     enabled,
   });
+  const base = useStableQuery(query);
   return useMemo(
     () => ({
-      ...query,
+      ...base,
       receiptIds: query.data?.ids ?? [],
       totalReceipts: query.data?.total ?? 0,
       isTruncated: (query.data?.total ?? 0) > (query.data?.ids.length ?? 0),
     }),
-    [query],
+    [base, query.data],
   );
 }
 
@@ -743,13 +755,14 @@ export function useReceiptYnabSyncStatuses(receiptIds: string[]) {
     retry: false,
     staleTime: 30_000,
   });
+  const base = useStableQuery(query);
   return useMemo(() => {
     const statusMap = new Map<string, ReceiptYnabSyncStatusValue>();
     for (const item of query.data?.data ?? []) {
       statusMap.set(item.receiptId, item.syncStatus);
     }
-    return { ...query, statusMap };
-  }, [query]);
+    return { ...base, statusMap };
+  }, [base, query.data]);
 }
 
 export function useYnabSyncStatus(transactionId: string | null) {
@@ -795,11 +808,12 @@ export function useYnabRateLimitStatus(enabled = true) {
     enabled,
     refetchInterval: 30_000,
   });
+  const base = useStableQuery(query);
   return useMemo(
     () => ({
-      ...query,
+      ...base,
       rateLimitStatus: query.data ?? null,
     }),
-    [query],
+    [base, query.data],
   );
 }
