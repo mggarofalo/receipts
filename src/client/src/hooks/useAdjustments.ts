@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useStableQuery } from "@/hooks/useStableQuery";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import client from "@/lib/api-client";
 import { toast } from "sonner";
@@ -14,7 +15,8 @@ export function useAdjustments(offset = 0, limit = 50, sortBy?: string | null, s
       return data;
     },
   });
-  return useMemo(() => ({ ...query, data: query.data?.data, total: query.data?.total ?? 0 }), [query]);
+  const base = useStableQuery(query);
+  return useMemo(() => ({ ...base, data: query.data?.data, total: query.data?.total ?? 0 }), [base, query.data]);
 }
 
 export function useAdjustment(id: string | null) {
@@ -43,7 +45,8 @@ export function useAdjustmentsByReceiptId(receiptId: string | null, offset = 0, 
       return data;
     },
   });
-  return useMemo(() => ({ ...query, data: query.data?.data, total: query.data?.total ?? 0 }), [query]);
+  const base = useStableQuery(query);
+  return useMemo(() => ({ ...base, data: query.data?.data, total: query.data?.total ?? 0 }), [base, query.data]);
 }
 
 export function useCreateAdjustment() {
@@ -160,7 +163,8 @@ export function useDeletedAdjustments(offset = 0, limit = 50, sortBy?: string | 
       return data;
     },
   });
-  return useMemo(() => ({ ...query, data: query.data?.data, total: query.data?.total ?? 0 }), [query]);
+  const base = useStableQuery(query);
+  return useMemo(() => ({ ...base, data: query.data?.data, total: query.data?.total ?? 0 }), [base, query.data]);
 }
 
 export function useRestoreAdjustment() {

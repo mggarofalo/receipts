@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useStableQuery } from "@/hooks/useStableQuery";
 import { useQuery } from "@tanstack/react-query";
 import client from "@/lib/api-client";
 
@@ -74,12 +75,13 @@ export function useYnabEvents(filters: YnabEventFilters = {}) {
     },
   });
 
+  const base = useStableQuery(query);
   return useMemo(
     () => ({
-      ...query,
+      ...base,
       data: query.data?.data ?? [],
       total: Number(query.data?.total ?? 0),
     }),
-    [query],
+    [base, query.data],
   );
 }

@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useStableQuery } from "@/hooks/useStableQuery";
 import { useQuery } from "@tanstack/react-query";
 import client from "@/lib/api-client";
 
@@ -25,7 +26,8 @@ export function useMyAuthAuditLog(
       return data;
     },
   });
-  return useMemo(() => ({ ...query, data: query.data?.data, total: Number(query.data?.total ?? 0) }), [query]);
+  const base = useStableQuery(query);
+  return useMemo(() => ({ ...base, data: query.data?.data, total: Number(query.data?.total ?? 0) }), [base, query.data]);
 }
 
 export function useRecentAuthAuditLogs(
@@ -51,7 +53,8 @@ export function useRecentAuthAuditLogs(
       return data;
     },
   });
-  return useMemo(() => ({ ...query, data: query.data?.data, total: Number(query.data?.total ?? 0) }), [query]);
+  const base = useStableQuery(query);
+  return useMemo(() => ({ ...base, data: query.data?.data, total: Number(query.data?.total ?? 0) }), [base, query.data]);
 }
 
 export function useFailedAuthAttempts(
@@ -77,5 +80,6 @@ export function useFailedAuthAttempts(
       return data;
     },
   });
-  return useMemo(() => ({ ...query, data: query.data?.data, total: Number(query.data?.total ?? 0) }), [query]);
+  const base = useStableQuery(query);
+  return useMemo(() => ({ ...base, data: query.data?.data, total: Number(query.data?.total ?? 0) }), [base, query.data]);
 }
