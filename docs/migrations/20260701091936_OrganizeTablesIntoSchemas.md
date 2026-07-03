@@ -56,8 +56,18 @@ Notes:
 
 ## Rollback notes
 
-`Down` moves every table back to `public` via the reverse `ALTER TABLE … SET SCHEMA public`. It
-is symmetric and data-safe.
+`Down` is symmetric and data-safe. For every table it emits the reverse
+`ALTER TABLE "<schema>"."<table>" SET SCHEMA public`, then drops the six now-empty
+bounded-context schemas (`DROP SCHEMA <name>`), returning the database to its exact
+pre-migration state. `Up`'s `EnsureSchema` keeps re-application idempotent.
+
+> **RECEIPTS-749:** the symmetric teardown was completed here. As originally scaffolded, the
+> `Down` `RenameTable` operations specified no `newSchema`, so they generated no SQL — the tables
+> were never moved back to `public` and the schemas were left in place. `Down` now sets
+> `newSchema: "public"` on each move and drops the emptied schemas. `MigrationSafetyTests` rolls
+> the database back past this migration, so it verifies the teardown succeeds; its
+> null-`CardId` assertion queries the row with unqualified raw SQL because, mid-rollback, the
+> tables legitimately live in `public` rather than their `receipts`/etc. schemas.
 
 **Important:** the schema-qualification of the runtime raw SQL lives in application code, not in
 the migration. Rolling the database back with `Down` alone is not sufficient — you must also revert
@@ -69,9 +79,9 @@ those tables. Roll back code and database together.
 - Applied by the Testcontainers integration suite
   (`tests/Infrastructure.IntegrationTests`, `Category=Integration`), which migrates a real
   PostgreSQL instance to HEAD and exercises repositories, Identity, and the similarity/embedding
-  raw SQL against the reorganized schema: **36 of 37 pass**. The one failure,
-  `PurgeTrashServiceTests`, is pre-existing and unrelated (confirmed on `main`) — tracked in
-  RECEIPTS-747.
+  raw SQL against the reorganized schema: **37 of 37 pass** (including `MigrationSafetyTests`,
+  which exercises the symmetric `Down`). The previously-failing `PurgeTrashServiceTests` was a
+  pre-existing, unrelated FK-seed bug, fixed under RECEIPTS-747.
 - CI does **not** run integration tests (`dotnet test --filter "Category!=Integration"`), so this
   migration's schema move is validated by the local Testcontainers run above, not by CI.
 - Test fixture `PostgresFixture` sets a `search_path` spanning all schemas (with `public` first) so

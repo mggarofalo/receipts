@@ -180,152 +180,185 @@ public partial class OrganizeTablesIntoSchemas : Migration
 		migrationBuilder.RenameTable(
 			name: "YnabSyncRecords",
 			schema: "ynab",
-			newName: "YnabSyncRecords");
+			newName: "YnabSyncRecords",
+			newSchema: "public");
 
 		migrationBuilder.RenameTable(
 			name: "YnabServerKnowledge",
 			schema: "ynab",
-			newName: "YnabServerKnowledge");
+			newName: "YnabServerKnowledge",
+			newSchema: "public");
 
 		migrationBuilder.RenameTable(
 			name: "YnabSelectedBudgets",
 			schema: "ynab",
-			newName: "YnabSelectedBudgets");
+			newName: "YnabSelectedBudgets",
+			newSchema: "public");
 
 		migrationBuilder.RenameTable(
 			name: "YnabCategoryMappings",
 			schema: "ynab",
-			newName: "YnabCategoryMappings");
+			newName: "YnabCategoryMappings",
+			newSchema: "public");
 
 		migrationBuilder.RenameTable(
 			name: "YnabAccountMappings",
 			schema: "ynab",
-			newName: "YnabAccountMappings");
+			newName: "YnabAccountMappings",
+			newSchema: "public");
 
 		migrationBuilder.RenameTable(
 			name: "Transactions",
 			schema: "receipts",
-			newName: "Transactions");
+			newName: "Transactions",
+			newSchema: "public");
 
 		migrationBuilder.RenameTable(
 			name: "Subcategories",
 			schema: "library",
-			newName: "Subcategories");
+			newName: "Subcategories",
+			newSchema: "public");
 
 		migrationBuilder.RenameTable(
 			name: "Receipts",
 			schema: "receipts",
-			newName: "Receipts");
+			newName: "Receipts",
+			newSchema: "public");
 
 		migrationBuilder.RenameTable(
 			name: "ReceiptItems",
 			schema: "receipts",
-			newName: "ReceiptItems");
+			newName: "ReceiptItems",
+			newSchema: "public");
 
 		migrationBuilder.RenameTable(
 			name: "NormalizedDescriptionSettings",
 			schema: "matching",
-			newName: "NormalizedDescriptionSettings");
+			newName: "NormalizedDescriptionSettings",
+			newSchema: "public");
 
 		migrationBuilder.RenameTable(
 			name: "NormalizedDescriptions",
 			schema: "matching",
-			newName: "NormalizedDescriptions");
+			newName: "NormalizedDescriptions",
+			newSchema: "public");
 
 		migrationBuilder.RenameTable(
 			name: "ItemTemplates",
 			schema: "library",
-			newName: "ItemTemplates");
+			newName: "ItemTemplates",
+			newSchema: "public");
 
 		migrationBuilder.RenameTable(
 			name: "ItemSimilarityEdges",
 			schema: "matching",
-			newName: "ItemSimilarityEdges");
+			newName: "ItemSimilarityEdges",
+			newSchema: "public");
 
 		migrationBuilder.RenameTable(
 			name: "ItemEmbeddings",
 			schema: "matching",
-			newName: "ItemEmbeddings");
+			newName: "ItemEmbeddings",
+			newSchema: "public");
 
 		migrationBuilder.RenameTable(
 			name: "DistinctDescriptions",
 			schema: "matching",
-			newName: "DistinctDescriptions");
+			newName: "DistinctDescriptions",
+			newSchema: "public");
 
 		migrationBuilder.RenameTable(
 			name: "Categories",
 			schema: "library",
-			newName: "Categories");
+			newName: "Categories",
+			newSchema: "public");
 
 		migrationBuilder.RenameTable(
 			name: "Cards",
 			schema: "library",
-			newName: "Cards");
+			newName: "Cards",
+			newSchema: "public");
 
 		migrationBuilder.RenameTable(
 			name: "AuthAuditLogs",
 			schema: "audit",
-			newName: "AuthAuditLogs");
+			newName: "AuthAuditLogs",
+			newSchema: "public");
 
 		migrationBuilder.RenameTable(
 			name: "AuditLogs",
 			schema: "audit",
-			newName: "AuditLogs");
+			newName: "AuditLogs",
+			newSchema: "public");
 
 		migrationBuilder.RenameTable(
 			name: "AspNetUserTokens",
 			schema: "identity",
-			newName: "AspNetUserTokens");
+			newName: "AspNetUserTokens",
+			newSchema: "public");
 
 		migrationBuilder.RenameTable(
 			name: "AspNetUsers",
 			schema: "identity",
-			newName: "AspNetUsers");
+			newName: "AspNetUsers",
+			newSchema: "public");
 
 		migrationBuilder.RenameTable(
 			name: "AspNetUserRoles",
 			schema: "identity",
-			newName: "AspNetUserRoles");
+			newName: "AspNetUserRoles",
+			newSchema: "public");
 
 		migrationBuilder.RenameTable(
 			name: "AspNetUserLogins",
 			schema: "identity",
-			newName: "AspNetUserLogins");
+			newName: "AspNetUserLogins",
+			newSchema: "public");
 
 		migrationBuilder.RenameTable(
 			name: "AspNetUserClaims",
 			schema: "identity",
-			newName: "AspNetUserClaims");
+			newName: "AspNetUserClaims",
+			newSchema: "public");
 
 		migrationBuilder.RenameTable(
 			name: "AspNetRoles",
 			schema: "identity",
-			newName: "AspNetRoles");
+			newName: "AspNetRoles",
+			newSchema: "public");
 
 		migrationBuilder.RenameTable(
 			name: "AspNetRoleClaims",
 			schema: "identity",
-			newName: "AspNetRoleClaims");
+			newName: "AspNetRoleClaims",
+			newSchema: "public");
 
 		migrationBuilder.RenameTable(
 			name: "ApiKeys",
 			schema: "identity",
-			newName: "ApiKeys");
+			newName: "ApiKeys",
+			newSchema: "public");
 
 		migrationBuilder.RenameTable(
 			name: "Adjustments",
 			schema: "receipts",
-			newName: "Adjustments");
+			newName: "Adjustments",
+			newSchema: "public");
 
 		migrationBuilder.RenameTable(
 			name: "Accounts",
 			schema: "library",
-			newName: "Accounts");
+			newName: "Accounts",
+			newSchema: "public");
 
-		// The six schemas created by Up() are intentionally left in place. Dropping them
-		// here fails during the partial rollback/replay that MigrationSafetyTests exercise
-		// (DROP SCHEMA ... RESTRICT reports lingering dependents mid-rollback), and the
-		// schemas are harmless when empty — Up()'s EnsureSchema keeps re-apply idempotent.
-		// Symmetric teardown is tracked separately (RECEIPTS-749).
+		// Every table has been moved back to public above, so the six bounded-context
+		// schemas Up() created are now empty and can be dropped — restoring the exact
+		// pre-migration state (symmetric teardown, RECEIPTS-749).
+		migrationBuilder.DropSchema(name: "ynab");
+		migrationBuilder.DropSchema(name: "matching");
+		migrationBuilder.DropSchema(name: "audit");
+		migrationBuilder.DropSchema(name: "identity");
+		migrationBuilder.DropSchema(name: "receipts");
+		migrationBuilder.DropSchema(name: "library");
 	}
 }

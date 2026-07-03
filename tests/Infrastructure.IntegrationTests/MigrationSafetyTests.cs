@@ -1,3 +1,4 @@
+using System.Data.Common;
 using FluentAssertions;
 using Infrastructure.IntegrationTests.Fixtures;
 using Microsoft.EntityFrameworkCore;
@@ -52,11 +53,29 @@ public class MigrationSafetyTests(PostgresFixture fixture)
 			.Subject.First();
 		ex.MessageText.Should().Contain("cannot promote Transactions.CardId to NOT NULL");
 
-		// The row should still exist in its original nullable state.
-		long nullCardIdCount = await context.Transactions
-			.IgnoreQueryFilters()
-			.LongCountAsync(t => t.Id == txId);
-		nullCardIdCount.Should().Be(1);
+		// The row should still exist in its original nullable state. Query with raw
+		// SQL against the unqualified table name (resolved via search_path to public):
+		// the forward migration aborted at the 574 guard, before RECEIPTS-746 re-applied,
+		// so the tables are still in `public` — not the `receipts` schema the EF model
+		// maps `context.Transactions` to. (RECEIPTS-746's Down now correctly returns the
+		// tables to public, which is what makes the schema-qualified query miss them here.)
+		await context.Database.OpenConnectionAsync();
+		try
+		{
+			await using DbCommand countCmd = context.Database.GetDbConnection().CreateCommand();
+			countCmd.CommandText = """SELECT COUNT(*) FROM "Transactions" WHERE "Id" = @id""";
+			DbParameter idParam = countCmd.CreateParameter();
+			idParam.ParameterName = "id";
+			idParam.Value = txId;
+			countCmd.Parameters.Add(idParam);
+
+			long nullCardIdCount = (long)(await countCmd.ExecuteScalarAsync())!;
+			nullCardIdCount.Should().Be(1);
+		}
+		finally
+		{
+			await context.Database.CloseConnectionAsync();
+		}
 
 		// Clean up: delete the offending row so later tests (which share the fixture)
 		// are not blocked, then reapply the migration to leave the fixture in its
