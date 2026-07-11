@@ -82,6 +82,12 @@ jobs:
 
       - name: Build with warnings-as-errors
         run: dotnet build Receipts.slnx --no-restore -p:TreatWarningsAsErrors=true
+        env:
+          # GenerateOpenApiDocuments boots the host to extract the OpenAPI spec at build
+          # time. Since Jwt:Key is no longer committed in appsettings.json (RECEIPTS-760),
+          # supply a non-secret placeholder so AuthConfiguration's fail-fast guard doesn't
+          # block the build. The real key is required at runtime via Docker secrets/Aspire.
+          Jwt__Key: build-time-spec-extraction-only-not-for-runtime
 
       - name: Test
         run: >-
