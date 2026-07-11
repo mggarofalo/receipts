@@ -287,6 +287,144 @@ public class ImageProcessingServiceTests
 		});
 	}
 
+	[Fact]
+	public async Task PreprocessAsync_ExceedsMegapixelCap_RejectsBeforeAllocation()
+	{
+		// Decompression-bomb guard: a 5000x5000 solid-color PNG is only a few KB compressed but
+		// decodes to 25 megapixels — over the 24 MP cap. Each dimension is under the per-dimension
+		// limit (8000), so this specifically exercises the total-megapixel guard. It must be
+		// rejected at the header-inspection step, BEFORE Image.Load and before ApplyAdaptiveThreshold
+		// allocates its ~200 MB integral array. If the guard failed, this call would allocate
+		// hundreds of MB and run for a long time rather than throwing promptly.
+		byte[] bomb = CreateSolidPng(5000, 5000);
+
+		Func<Task> act = () => _service.PreprocessAsync(bomb, "image/png", CancellationToken.None);
+
+		(await act.Should().ThrowAsync<InvalidOperationException>())
+			.Which.Message.Should().Contain("exceeds the maximum allowed")
+			.And.Contain("pixels");
+	}
+
+	[Fact]
+	public async Task PreprocessAsync_ExceedsPerDimensionCap_Rejects()
+	{
+		// A very wide but low-total-pixel image (8001 x 100 = 0.8 MP) is under the megapixel cap
+		// but over the per-dimension cap, so the per-dimension guard must reject it.
+		byte[] wide = CreateSolidPng(8001, 100);
+
+		Func<Task> act = () => _service.PreprocessAsync(wide, "image/png", CancellationToken.None);
+
+		(await act.Should().ThrowAsync<InvalidOperationException>())
+			.Which.Message.Should().Contain("dimensions").And.Contain("exceed the maximum allowed");
+	}
+
+	[Fact]
+	public async Task PreprocessAsync_ForgedHeaderDeclaring10000Squared_IsRejectedFromHeaderAlone()
+	{
+		// The original vulnerability: a 10000x10000 image (~100 MP, tens of KB on disk) passed the
+		// old "> 10000" per-dimension check and then allocated a ~800 MB integral array. Here we
+		// feed a PNG whose IHDR *declares* 10000x10000 but which carries no pixel data at all. It is
+		// rejected purely from the header via Image.Identify — proving the guard fires before any
+		// Image.Load / decode / large allocation ever happens (there is nothing decodable to load).
+		byte[] forged = CreateForgedPngDeclaringDimensions(10000, 10000);
+
+		Func<Task> act = () => _service.PreprocessAsync(forged, "image/png", CancellationToken.None);
+
+		await act.Should().ThrowAsync<InvalidOperationException>()
+			.WithMessage("*exceed*maximum allowed*");
+	}
+
+	[Fact]
+	public async Task PreprocessAsync_NormalMultiHundredKilopixelImage_StillProcesses()
+	{
+		// A legitimate downscaled receipt photo (well under the caps) must still process normally.
+		byte[] imageBytes = CreateTestPng(1200, 900);
+
+		ImageProcessingResult result = await _service.PreprocessAsync(imageBytes, "image/png", CancellationToken.None);
+
+		result.ProcessedBytes.Should().NotBeNullOrEmpty();
+		result.Width.Should().BeGreaterThan(0);
+		result.Height.Should().BeGreaterThan(0);
+	}
+
+	private static byte[] CreateSolidPng(int width, int height)
+	{
+		// Solid color so PNG compression keeps the encoded file tiny regardless of dimensions —
+		// this is exactly the decompression-bomb shape we defend against.
+		using Image<L8> image = new(width, height, new L8(200));
+		using MemoryStream ms = new();
+		image.Save(ms, new PngEncoder());
+		return ms.ToArray();
+	}
+
+	// Builds a minimal, structurally valid PNG whose IHDR declares the given dimensions but which
+	// contains no image data. Image.Identify reports the declared dimensions from the header alone,
+	// so this lets us assert the dimension guard rejects abusive sizes without allocating any large
+	// pixel buffer in the test.
+	private static byte[] CreateForgedPngDeclaringDimensions(int width, int height)
+	{
+		using MemoryStream ms = new();
+		ms.Write([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]); // PNG signature
+
+		byte[] ihdr = new byte[13];
+		WriteBigEndianInt32(ihdr, 0, width);
+		WriteBigEndianInt32(ihdr, 4, height);
+		ihdr[8] = 8;  // bit depth
+		ihdr[9] = 0;  // color type: grayscale
+		ihdr[10] = 0; // compression method
+		ihdr[11] = 0; // filter method
+		ihdr[12] = 0; // interlace method
+		WritePngChunk(ms, "IHDR", ihdr);
+		WritePngChunk(ms, "IEND", []);
+
+		return ms.ToArray();
+	}
+
+	private static void WriteBigEndianInt32(byte[] buffer, int offset, int value)
+	{
+		buffer[offset] = (byte)((value >> 24) & 0xFF);
+		buffer[offset + 1] = (byte)((value >> 16) & 0xFF);
+		buffer[offset + 2] = (byte)((value >> 8) & 0xFF);
+		buffer[offset + 3] = (byte)(value & 0xFF);
+	}
+
+	private static void WritePngChunk(Stream stream, string type, byte[] data)
+	{
+		byte[] length = new byte[4];
+		WriteBigEndianInt32(length, 0, data.Length);
+		stream.Write(length);
+
+		byte[] typeBytes = System.Text.Encoding.ASCII.GetBytes(type);
+		stream.Write(typeBytes);
+		stream.Write(data);
+
+		uint crc = Crc32(typeBytes, data);
+		byte[] crcBytes = new byte[4];
+		WriteBigEndianInt32(crcBytes, 0, (int)crc);
+		stream.Write(crcBytes);
+	}
+
+	private static uint Crc32(byte[] typeBytes, byte[] data)
+	{
+		uint crc = 0xFFFFFFFF;
+		crc = Crc32Update(crc, typeBytes);
+		crc = Crc32Update(crc, data);
+		return crc ^ 0xFFFFFFFF;
+	}
+
+	private static uint Crc32Update(uint crc, byte[] bytes)
+	{
+		foreach (byte b in bytes)
+		{
+			crc ^= b;
+			for (int i = 0; i < 8; i++)
+			{
+				crc = (crc & 1) != 0 ? (crc >> 1) ^ 0xEDB88320 : crc >> 1;
+			}
+		}
+		return crc;
+	}
+
 	private static byte[] CreateTestJpeg(int width, int height)
 	{
 		using Image<L8> image = new(width, height);
