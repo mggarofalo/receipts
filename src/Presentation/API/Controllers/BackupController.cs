@@ -28,7 +28,7 @@ public class BackupController(
 
 	[HttpPost("export")]
 	[EndpointSummary("Export database to a portable SQLite file")]
-	[EndpointDescription("Generates a SQLite database containing all domain data (accounts, categories, receipts, items, transactions, adjustments, item templates). Admin-only. Soft-deleted records are excluded.")]
+	[EndpointDescription("Generates a SQLite database containing all domain data (accounts, categories, receipts, items, transactions, adjustments, item templates), YNAB configuration (budget selection and account/category mappings and sync records), and normalized descriptions. Receipt image file paths are included, but the image binaries themselves are stored outside the database and must be backed up separately. User accounts and authentication settings are excluded. Admin-only. Soft-deleted records are excluded.")]
 	public async Task<Results<FileStreamHttpResult, StatusCodeHttpResult>> Export(CancellationToken cancellationToken)
 	{
 		string? filePath = null;
@@ -65,7 +65,7 @@ public class BackupController(
 	[HttpPost("import")]
 	[RequestSizeLimit(100 * 1024 * 1024)]
 	[EndpointSummary("Import data from a SQLite backup file")]
-	[EndpointDescription("Accepts a SQLite database file exported by the backup endpoint, reads all entity tables, and upserts each row into the current database. Requires the Admin role.")]
+	[EndpointDescription("Accepts a SQLite database file exported by the backup endpoint, reads all entity tables, and upserts each row into the current database. Backups from older export versions are accepted; tables and columns they lack are treated as absent. Requires the Admin role.")]
 	public async Task<Results<Ok<BackupImportResponse>, BadRequest<string>>> ImportBackup(
 		IFormFile? file)
 	{
