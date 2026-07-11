@@ -132,6 +132,8 @@ public class CardsController(IMediator mediator, CardMapper mapper, ILogger<Card
 			return TypedResults.BadRequest($"Account {model.AccountId} does not exist.");
 		}
 
+		// Route id is authoritative; ignore any mismatched body id (RECEIPTS-793).
+		model.Id = id;
 		UpdateCardCommand command = new([mapper.ToDomain(model)]);
 		bool result = await mediator.Send(command, cancellationToken);
 

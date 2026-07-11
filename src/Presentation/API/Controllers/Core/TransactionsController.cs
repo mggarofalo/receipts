@@ -176,6 +176,8 @@ public class TransactionsController(IMediator mediator, TransactionMapper mapper
 	[EndpointSummary("Update a single transaction")]
 	public async Task<Results<NoContent, NotFound>> UpdateTransaction([FromBody] UpdateTransactionRequest model, [FromRoute] Guid id, CancellationToken cancellationToken = default)
 	{
+		// Route id is authoritative; ignore any mismatched body id (RECEIPTS-793).
+		model.Id = id;
 		Transaction transaction = mapper.ToDomain(model);
 		transaction.AccountId = model.AccountId;
 		UpdateTransactionCommand command = new([transaction]);

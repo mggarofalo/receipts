@@ -151,6 +151,8 @@ public class CategoriesController(IMediator mediator, CategoryMapper mapper, ILo
 	[EndpointSummary("Update a single category")]
 	public async Task<Results<NoContent, NotFound>> UpdateCategory([FromRoute] Guid id, [FromBody] UpdateCategoryRequest model, CancellationToken cancellationToken = default)
 	{
+		// Route id is authoritative; ignore any mismatched body id (RECEIPTS-793).
+		model.Id = id;
 		UpdateCategoryCommand command = new([mapper.ToDomain(model)]);
 		bool result = await mediator.Send(command, cancellationToken);
 

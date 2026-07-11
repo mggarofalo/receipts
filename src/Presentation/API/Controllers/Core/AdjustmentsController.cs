@@ -153,6 +153,9 @@ public class AdjustmentsController(IMediator mediator, AdjustmentMapper mapper, 
 	[EndpointSummary("Update a single adjustment")]
 	public async Task<Results<NoContent, NotFound>> UpdateAdjustment([FromBody] UpdateAdjustmentRequest model, [FromRoute] Guid id, CancellationToken cancellationToken = default)
 	{
+		// Route id is authoritative; ignore any mismatched body id so a PUT can never
+		// silently update a resource other than the one the URL names (RECEIPTS-793).
+		model.Id = id;
 		UpdateAdjustmentCommand command = new([mapper.ToDomain(model)]);
 		bool result = await mediator.Send(command, cancellationToken);
 
