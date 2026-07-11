@@ -1,4 +1,6 @@
 using System.Linq.Expressions;
+using System.Security.Cryptography;
+using System.Text;
 using Application.Interfaces.Services;
 using Application.Models;
 using Infrastructure.Entities;
@@ -62,9 +64,22 @@ public class UserService(ApplicationDbContext dbContext) : IUserService
 
 	public async Task<string?> FindUserIdByRefreshTokenAsync(string refreshToken, CancellationToken cancellationToken = default)
 	{
+		if (string.IsNullOrEmpty(refreshToken))
+		{
+			return null;
+		}
+
+		// Refresh tokens are stored hashed, so hash the incoming plaintext and compare hash-to-hash.
+		string tokenHash = HashRefreshToken(refreshToken);
 		return await dbContext.Users
-			.Where(u => u.RefreshToken == refreshToken)
+			.Where(u => u.RefreshToken == tokenHash)
 			.Select(u => u.Id)
 			.FirstOrDefaultAsync(cancellationToken);
+	}
+
+	public string HashRefreshToken(string refreshToken)
+	{
+		byte[] bytes = SHA256.HashData(Encoding.UTF8.GetBytes(refreshToken));
+		return Convert.ToHexString(bytes).ToLowerInvariant();
 	}
 }

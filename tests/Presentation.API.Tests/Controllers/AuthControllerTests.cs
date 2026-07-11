@@ -38,6 +38,9 @@ public class AuthControllerTests
 
 		_tokenServiceMock = new Mock<ITokenService>();
 		_userServiceMock = new Mock<IUserService>();
+		// Refresh tokens are persisted hashed. Model the hash deterministically so tests can assert the
+		// stored value differs from the plaintext returned to the client.
+		_userServiceMock.Setup(s => s.HashRefreshToken(It.IsAny<string>())).Returns<string>(t => "hashed:" + t);
 		_authAuditServiceMock = new Mock<IAuthAuditService>();
 		Mock<ILogger<AuthController>> loggerMock = ControllerTestHelpers.GetLoggerMock<AuthController>();
 
@@ -136,6 +139,29 @@ public class AuthControllerTests
 		errorResult.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
 		errorResult.Value!.Error.Should().Be(OAuthErrorResponseError.Invalid_grant);
 		errorResult.Value!.Error_description.Should().Be("Account is disabled");
+	}
+
+	[Fact]
+	public async Task Login_StoresHashedRefreshToken_NotPlaintext()
+	{
+		// Arrange
+		ApplicationUser user = CreateTestUser();
+		_userManagerMock.Setup(m => m.FindByEmailAsync("test@example.com")).ReturnsAsync(user);
+		_userManagerMock.Setup(m => m.CheckPasswordAsync(user, "password")).ReturnsAsync(true);
+		_userManagerMock.Setup(m => m.IsLockedOutAsync(user)).ReturnsAsync(false);
+		_userManagerMock.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "User" });
+		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
+		_tokenServiceMock.Setup(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false)).Returns("access-token");
+		_tokenServiceMock.Setup(t => t.GenerateRefreshToken()).Returns("plaintext-refresh");
+
+		// Act
+		Results<Ok<TokenResponse>, JsonHttpResult<OAuthErrorResponse>> result = await _controller.Login(new LoginRequest { Email = "test@example.com", Password = "password" });
+
+		// Assert — the client receives the plaintext token, but only the hash is persisted.
+		Ok<TokenResponse> okResult = Assert.IsType<Ok<TokenResponse>>(result.Result);
+		okResult.Value!.RefreshToken.Should().Be("plaintext-refresh");
+		user.RefreshToken.Should().Be("hashed:plaintext-refresh");
+		user.RefreshToken.Should().NotBe("plaintext-refresh");
 	}
 
 	// ── Refresh ──────────────────────────────────────────────

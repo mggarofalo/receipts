@@ -55,7 +55,9 @@ public class AuthController(
 		string accessToken = tokenService.GenerateAccessToken(user.Id, user.Email!, roles, user.MustResetPassword);
 		string refreshToken = tokenService.GenerateRefreshToken();
 
-		user.RefreshToken = refreshToken;
+		// Persist only the hash of the refresh token; the plaintext is returned to the client below and
+		// never stored, so a leaked database/backup cannot yield a usable token.
+		user.RefreshToken = userService.HashRefreshToken(refreshToken);
 		user.RefreshTokenExpiresAt = DateTimeOffset.UtcNow.AddDays(30);
 		user.LastLoginAt = DateTimeOffset.UtcNow;
 		await userManager.UpdateAsync(user);
@@ -93,7 +95,7 @@ public class AuthController(
 		string accessToken = tokenService.GenerateAccessToken(user.Id, user.Email!, roles, user.MustResetPassword);
 		string newRefreshToken = tokenService.GenerateRefreshToken();
 
-		user.RefreshToken = newRefreshToken;
+		user.RefreshToken = userService.HashRefreshToken(newRefreshToken);
 		user.RefreshTokenExpiresAt = DateTimeOffset.UtcNow.AddDays(30);
 		await userManager.UpdateAsync(user);
 
@@ -167,7 +169,7 @@ public class AuthController(
 		string accessToken = tokenService.GenerateAccessToken(user.Id, user.Email!, roles, false);
 		string refreshToken = tokenService.GenerateRefreshToken();
 
-		user.RefreshToken = refreshToken;
+		user.RefreshToken = userService.HashRefreshToken(refreshToken);
 		user.RefreshTokenExpiresAt = DateTimeOffset.UtcNow.AddDays(30);
 		await userManager.UpdateAsync(user);
 
