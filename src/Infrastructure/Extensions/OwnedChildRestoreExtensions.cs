@@ -47,5 +47,20 @@ public static class OwnedChildRestoreExtensions
 			item.DeletedByApiKeyId = null;
 			item.CascadeDeletedByParentId = null;
 		}
+
+		// Recurse: a restored child may itself own grandchildren that were
+		// cascade-soft-deleted BY it (tagged with the child's own Id, not this parentId).
+		// Restoring the child must revive those too — the exact inverse of the multi-level
+		// cascade in ApplicationDbContext.HandleSoftDelete, which walks the same map.
+		// Only entities that appear as a parent in the owned-children map have children;
+		// others (e.g. ReceiptItem, Adjustment) simply have no map entry and are skipped.
+		if (items.Count > 0 && OwnedChildrenMapProvider.Map.TryGetValue(typeof(TChild), out OwnedChildrenMapProvider.ParentEntry? childAsParent))
+		{
+			foreach (TChild item in items)
+			{
+				Guid childId = (Guid)childAsParent.IdProperty.GetValue(item)!;
+				await context.RestoreOwnedChildrenAsync<TChild>(childId, cancellationToken);
+			}
+		}
 	}
 }

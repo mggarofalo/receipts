@@ -154,6 +154,15 @@ public class TransactionRepository(IDbContextFactory<ApplicationDbContext> conte
 			.Where(e => ids.Contains(e.Id))
 			.ToListAsync(cancellationToken);
 
+		// Load owned YnabSyncRecords into the change tracker so the cascade soft-delete
+		// fires (they carry a LocalTransactionId FK to Transactions). Without this a
+		// synced transaction's active sync record lingers after the transaction is
+		// soft-deleted and later blocks Empty Trash on the NO ACTION FK. See RECEIPTS-755.
+		await context.YnabSyncRecords
+			.IgnoreAutoIncludes()
+			.Where(s => ids.Contains(s.LocalTransactionId))
+			.LoadAsync(cancellationToken);
+
 		context.Transactions.RemoveRange(entities);
 		await context.SaveChangesAsync(cancellationToken);
 	}
@@ -186,6 +195,14 @@ public class TransactionRepository(IDbContextFactory<ApplicationDbContext> conte
 		entity.DeletedByUserId = null;
 		entity.DeletedByApiKeyId = null;
 		entity.CascadeDeletedByParentId = null;
+
+		// Symmetric with DeleteAsync: revive the YnabSyncRecords this transaction
+		// cascade-soft-deleted (tagged CascadeDeletedByParentId == transaction id), so a
+		// delete -> restore round-trip does not leave a live transaction with dead sync
+		// history. Only cascade-deleted children are restored; independently soft-deleted
+		// sync records stay deleted. See RECEIPTS-755.
+		await context.RestoreOwnedChildrenAsync<TransactionEntity>(id, cancellationToken);
+
 		await context.SaveChangesAsync(cancellationToken);
 		return true;
 	}

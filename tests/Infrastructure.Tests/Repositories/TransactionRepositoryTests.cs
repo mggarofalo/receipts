@@ -207,6 +207,145 @@ public class TransactionRepositoryTests
 	}
 
 	[Fact]
+	public async Task DeleteAsync_SyncedTransaction_CascadeSoftDeletesActiveYnabSyncRecord()
+	{
+		// RECEIPTS-755 regression: deleting a synced transaction must cascade
+		// soft-delete its ACTIVE YnabSyncRecord so no orphaned active record lingers
+		// to later block Empty Trash on the NO ACTION LocalTransactionId FK.
+		// Arrange — a transaction with an active sync record (the state after a YNAB push).
+		(ReceiptEntity receipt, AccountEntity account) = await CreateParentEntitiesAsync();
+		TransactionEntity transaction = TransactionEntityGenerator.Generate(receipt.Id, account.Id);
+		YnabSyncRecordEntity syncRecord = YnabSyncRecordEntityGenerator.Generate(localTransactionId: transaction.Id);
+
+		using (ApplicationDbContext context = _contextFactory.CreateDbContext())
+		{
+			await context.Transactions.AddAsync(transaction);
+			await context.YnabSyncRecords.AddAsync(syncRecord);
+			await context.SaveChangesAsync(CancellationToken.None);
+		}
+
+		TransactionRepository repository = new(_contextFactory);
+
+		// Act — the repository must load the sync record so HandleSoftDelete cascades to it.
+		await repository.DeleteAsync([transaction.Id], CancellationToken.None);
+
+		// Assert — no active sync record survives; it was cascade soft-deleted and
+		// tagged with the parent transaction id.
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		(await verify.YnabSyncRecords.AnyAsync()).Should().BeFalse("the active sync record must not linger after its transaction is deleted");
+
+		YnabSyncRecordEntity deletedRecord = await verify.YnabSyncRecords
+			.IgnoreQueryFilters()
+			.SingleAsync(s => s.Id == syncRecord.Id);
+		deletedRecord.DeletedAt.Should().NotBeNull();
+		deletedRecord.CascadeDeletedByParentId.Should().Be(transaction.Id);
+
+		_contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task DeleteThenRestore_SyncedTransaction_RevivesAllCascadeSoftDeletedYnabSyncRecords()
+	{
+		// RECEIPTS-755 restore symmetry: the unique index is per (LocalTransactionId, SyncType),
+		// so one transaction can carry several active sync records. Deleting the transaction must
+		// cascade-soft-delete ALL of them, and restoring it must revive every one — otherwise a
+		// live transaction ends up with dead sync history.
+		// Arrange — one transaction with TWO active sync records of different SyncType.
+		(ReceiptEntity receipt, AccountEntity account) = await CreateParentEntitiesAsync();
+		TransactionEntity transaction = TransactionEntityGenerator.Generate(receipt.Id, account.Id);
+		YnabSyncRecordEntity pushRecord = YnabSyncRecordEntityGenerator.Generate(localTransactionId: transaction.Id);
+		YnabSyncRecordEntity memoRecord = YnabSyncRecordEntityGenerator.Generate(localTransactionId: transaction.Id, syncType: Common.YnabSyncType.MemoUpdate);
+
+		using (ApplicationDbContext context = _contextFactory.CreateDbContext())
+		{
+			await context.Transactions.AddAsync(transaction);
+			await context.YnabSyncRecords.AddRangeAsync(pushRecord, memoRecord);
+			await context.SaveChangesAsync(CancellationToken.None);
+		}
+
+		TransactionRepository repository = new(_contextFactory);
+
+		// Act — delete the transaction; both sync records cascade-soft-delete.
+		await repository.DeleteAsync([transaction.Id], CancellationToken.None);
+
+		using (ApplicationDbContext afterDelete = _contextFactory.CreateDbContext())
+		{
+			(await afterDelete.YnabSyncRecords.AnyAsync()).Should().BeFalse("both sync records should be soft-deleted with their transaction");
+			List<YnabSyncRecordEntity> deleted = await afterDelete.YnabSyncRecords.IgnoreQueryFilters().ToListAsync();
+			deleted.Should().HaveCount(2);
+			deleted.Should().AllSatisfy(r =>
+			{
+				r.DeletedAt.Should().NotBeNull();
+				r.CascadeDeletedByParentId.Should().Be(transaction.Id);
+			});
+		}
+
+		// Act — restore the transaction; both sync records must come back active.
+		bool restored = await repository.RestoreAsync(transaction.Id, CancellationToken.None);
+
+		// Assert
+		restored.Should().BeTrue();
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		(await verify.Transactions.AnyAsync(t => t.Id == transaction.Id)).Should().BeTrue();
+
+		List<YnabSyncRecordEntity> activeRecords = await verify.YnabSyncRecords.ToListAsync();
+		activeRecords.Should().HaveCount(2, "both cascade-soft-deleted sync records must be revived on restore");
+		activeRecords.Should().AllSatisfy(r =>
+		{
+			r.DeletedAt.Should().BeNull();
+			r.CascadeDeletedByParentId.Should().BeNull();
+		});
+		activeRecords.Select(r => r.Id).Should().BeEquivalentTo([pushRecord.Id, memoRecord.Id]);
+
+		_contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task RestoreAsync_SyncedTransaction_DoesNotReviveIndependentlySoftDeletedSyncRecord()
+	{
+		// Restore must be the exact inverse of the cascade delete: only sync records
+		// cascade-soft-deleted BY the transaction (CascadeDeletedByParentId == tx id) are
+		// revived. A sync record the user soft-deleted independently beforehand stays deleted.
+		(ReceiptEntity receipt, AccountEntity account) = await CreateParentEntitiesAsync();
+		TransactionEntity transaction = TransactionEntityGenerator.Generate(receipt.Id, account.Id);
+		YnabSyncRecordEntity cascadeRecord = YnabSyncRecordEntityGenerator.Generate(localTransactionId: transaction.Id);
+		YnabSyncRecordEntity independentRecord = YnabSyncRecordEntityGenerator.Generate(localTransactionId: transaction.Id, syncType: Common.YnabSyncType.MemoUpdate);
+
+		using (ApplicationDbContext context = _contextFactory.CreateDbContext())
+		{
+			await context.Transactions.AddAsync(transaction);
+			await context.YnabSyncRecords.AddRangeAsync(cascadeRecord, independentRecord);
+			await context.SaveChangesAsync(CancellationToken.None);
+		}
+
+		// Independently soft-delete one sync record BEFORE the transaction is deleted.
+		using (ApplicationDbContext context = _contextFactory.CreateDbContext())
+		{
+			YnabSyncRecordEntity toDelete = await context.YnabSyncRecords.FirstAsync(r => r.Id == independentRecord.Id);
+			context.YnabSyncRecords.Remove(toDelete);
+			await context.SaveChangesAsync(CancellationToken.None);
+		}
+
+		TransactionRepository repository = new(_contextFactory);
+
+		// Act — delete (cascades only the still-active cascadeRecord) then restore.
+		await repository.DeleteAsync([transaction.Id], CancellationToken.None);
+		await repository.RestoreAsync(transaction.Id, CancellationToken.None);
+
+		// Assert — cascadeRecord revived; independentRecord stays soft-deleted.
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+
+		YnabSyncRecordEntity revived = await verify.YnabSyncRecords.IgnoreQueryFilters().SingleAsync(r => r.Id == cascadeRecord.Id);
+		revived.DeletedAt.Should().BeNull();
+		revived.CascadeDeletedByParentId.Should().BeNull();
+
+		YnabSyncRecordEntity stillDeleted = await verify.YnabSyncRecords.IgnoreQueryFilters().SingleAsync(r => r.Id == independentRecord.Id);
+		stillDeleted.DeletedAt.Should().NotBeNull("an independently soft-deleted sync record must not be revived by restoring the transaction");
+
+		_contextFactory.ResetDatabase();
+	}
+
+	[Fact]
 	public async Task ExistsAsync_ExistingId_ReturnsTrue()
 	{
 		// Arrange

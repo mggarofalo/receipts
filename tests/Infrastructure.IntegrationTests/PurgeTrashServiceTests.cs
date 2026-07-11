@@ -132,4 +132,63 @@ public class PurgeTrashServiceTests(PostgresFixture fixture)
 		(await verify.YnabSyncRecords.IgnoreQueryFilters().AnyAsync(e => e.Id == deletedSync.Id)).Should().BeFalse();
 		(await verify.YnabSyncRecords.IgnoreQueryFilters().AnyAsync(e => e.Id == activeSync.Id)).Should().BeTrue();
 	}
+
+	[Fact]
+	public async Task PurgeAllDeletedAsync_SoftDeletedTransactionWithActiveSyncRecord_PurgesBothWithoutFkViolation()
+	{
+		// RECEIPTS-755 regression against a real PostgreSQL instance where the
+		// YnabSyncRecords -> Transactions FK is enforced as NO ACTION.
+		//
+		// Scenario: a synced transaction was soft-deleted while its YnabSyncRecord
+		// stayed ACTIVE (DeletedAt IS NULL) — the orphan that broke Empty Trash.
+		// Purging the soft-deleted transaction while an active sync record still
+		// references it would throw a 23503 FK violation and roll the entire purge
+		// back, permanently deadlocking Empty Trash for every trash item. The purge
+		// must instead delete the orphaned active sync record first, in FK order.
+		DateTimeOffset deletedAt = DateTimeOffset.UtcNow;
+
+		AccountEntity account = AccountEntityGenerator.Generate();
+		CardEntity card = CardEntityGenerator.Generate();
+		card.Id = account.Id;
+		card.AccountId = account.Id;
+		ReceiptEntity receipt = ReceiptEntityGenerator.Generate();
+
+		TransactionEntity deletedTransaction = TransactionEntityGenerator.Generate(receipt.Id, account.Id);
+		deletedTransaction.DeletedAt = deletedAt;
+
+		// The orphaned ACTIVE sync record pointing at the soft-deleted transaction.
+		YnabSyncRecordEntity orphanedActiveSync = YnabSyncRecordEntityGenerator.Generate(localTransactionId: deletedTransaction.Id);
+
+		await using (ApplicationDbContext setup = fixture.CreateDbContext())
+		{
+			setup.Accounts.Add(account);
+			setup.Cards.Add(card);
+			setup.Receipts.Add(receipt);
+			await setup.SaveChangesAsync();
+
+			setup.Transactions.Add(deletedTransaction);
+			await setup.SaveChangesAsync();
+
+			setup.YnabSyncRecords.Add(orphanedActiveSync);
+			await setup.SaveChangesAsync();
+		}
+
+		// Act — must not throw an FK violation.
+		await using (ApplicationDbContext act = fixture.CreateDbContext())
+		{
+			TrashService service = new(act);
+			Func<Task> purge = async () => await service.PurgeAllDeletedAsync(CancellationToken.None);
+			await purge.Should().NotThrowAsync();
+		}
+
+		// Assert — the soft-deleted transaction and its orphaned active sync record are
+		// both gone; the active parent rows survive.
+		await using ApplicationDbContext verify = fixture.CreateDbContext();
+
+		(await verify.Transactions.IgnoreQueryFilters().AnyAsync(e => e.Id == deletedTransaction.Id)).Should().BeFalse();
+		(await verify.YnabSyncRecords.IgnoreQueryFilters().AnyAsync(e => e.Id == orphanedActiveSync.Id))
+			.Should().BeFalse("no orphaned active sync record may survive the purge");
+		(await verify.Accounts.IgnoreQueryFilters().AnyAsync(e => e.Id == account.Id)).Should().BeTrue();
+		(await verify.Receipts.IgnoreQueryFilters().AnyAsync(e => e.Id == receipt.Id)).Should().BeTrue();
+	}
 }
