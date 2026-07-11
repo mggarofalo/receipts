@@ -1,3 +1,4 @@
+using Application.Interfaces.Services;
 using Infrastructure;
 using Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
@@ -31,6 +32,15 @@ builder.Services.AddDbContextFactory<ApplicationDbContext>(options =>
 	options.ConfigureWarnings(w => w.Log(
 		(RelationalEventId.PendingModelChangesWarning, LogLevel.Warning)));
 });
+
+// This tool registers the EF factory directly (no RegisterInfrastructureServices), so it must also
+// register the accessor that the factory-built ApplicationDbContext now requires (RECEIPTS-753). The
+// 3-param ctor carries [ActivatorUtilitiesConstructor]; without this, factory.CreateDbContextAsync()
+// throws "Unable to resolve service for type 'ICurrentUserAccessor'", which under docker-entrypoint.sh
+// (set -e) would abort container boot before the API starts. Migrations need no user attribution, so the
+// null accessor is correct. (IDescriptionChangeSignal stays unregistered — the ctor parameter is optional
+// and migrations never call SaveChangesAsync.)
+builder.Services.AddSingleton<ICurrentUserAccessor, NullCurrentUserAccessor>();
 
 IHost host = builder.Build();
 try

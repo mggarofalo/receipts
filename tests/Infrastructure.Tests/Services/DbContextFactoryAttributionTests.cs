@@ -137,4 +137,71 @@ public class DbContextFactoryAttributionTests
 		ServiceDescriptor dbContext = services.Last(d => d.ServiceType == typeof(ApplicationDbContext));
 		dbContext.Lifetime.Should().Be(ServiceLifetime.Scoped);
 	}
+
+	[Fact]
+	public async Task FactoryWithAccessorButNoSignal_LikeDbMigrator_SavesWithNullAttribution()
+	{
+		// Replicates DbMigrator's DI exactly: the EF factory + the null-attribution accessor, but NO
+		// IDescriptionChangeSignal registered. The 3-param ctor's signal parameter is optional, so
+		// ActivatorUtilities must fall back to its default (null) rather than throwing. If this regressed,
+		// every entry point that registers the factory directly without the signal (DbMigrator, run under
+		// docker-entrypoint.sh's `set -e` before the API starts) would abort container boot. RECEIPTS-753.
+		ServiceCollection services = new();
+		services.AddDbContextFactory<ApplicationDbContext>(o => o.UseInMemoryDatabase("migrator_" + Guid.NewGuid()));
+		services.AddSingleton<ICurrentUserAccessor, NullCurrentUserAccessor>();
+		// NOTE: intentionally NO IDescriptionChangeSignal registration — matches DbMigrator.
+
+		await using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions
+		{
+			ValidateScopes = true,
+			ValidateOnBuild = true,
+		});
+
+		IDbContextFactory<ApplicationDbContext> factory =
+			provider.GetRequiredService<IDbContextFactory<ApplicationDbContext>>();
+
+		ItemTemplateEntity entity = ItemTemplateEntityGenerator.Generate();
+		await using (ApplicationDbContext context = factory.CreateDbContext())
+		{
+			await context.ItemTemplates.AddAsync(entity);
+			await context.SaveChangesAsync();
+		}
+
+		// A null accessor and unregistered signal must not throw on the soft-delete/audit write path.
+		await using (ApplicationDbContext context = factory.CreateDbContext())
+		{
+			ItemTemplateEntity template = await context.ItemTemplates.FirstAsync(t => t.Id == entity.Id);
+			context.ItemTemplates.Remove(template);
+			await context.SaveChangesAsync();
+		}
+
+		await using (ApplicationDbContext context = factory.CreateDbContext())
+		{
+			ItemTemplateEntity deleted = await context.ItemTemplates
+				.IgnoreQueryFilters()
+				.FirstAsync(t => t.Id == entity.Id);
+			deleted.DeletedAt.Should().NotBeNull();
+			deleted.DeletedByUserId.Should().BeNull();
+		}
+	}
+
+	[Fact]
+	public void FactoryWithoutAccessorRegistration_CreateDbContext_Throws()
+	{
+		// Documents the blast radius of moving [ActivatorUtilitiesConstructor] to the 3-param ctor: a
+		// container that registers the factory but NOT ICurrentUserAccessor can no longer build a context.
+		// This is the exact break DbMigrator hit — every entry point that registers the factory directly
+		// must also register the accessor. RECEIPTS-753.
+		ServiceCollection services = new();
+		services.AddDbContextFactory<ApplicationDbContext>(o => o.UseInMemoryDatabase("noaccessor_" + Guid.NewGuid()));
+
+		using ServiceProvider provider = services.BuildServiceProvider();
+		IDbContextFactory<ApplicationDbContext> factory =
+			provider.GetRequiredService<IDbContextFactory<ApplicationDbContext>>();
+
+		Action createWithoutAccessor = () => factory.CreateDbContext();
+
+		createWithoutAccessor.Should().Throw<InvalidOperationException>()
+			.WithMessage("*ICurrentUserAccessor*");
+	}
 }
