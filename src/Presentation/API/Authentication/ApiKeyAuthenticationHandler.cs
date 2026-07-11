@@ -47,6 +47,22 @@ public class ApiKeyAuthenticationHandler(
 			return AuthenticateResult.Fail("Invalid API key.");
 		}
 
+		// Re-check the owning account's persisted state on every request. A valid key
+		// must not authenticate for a user who has been deleted, deactivated, or locked
+		// out since the key was issued (RECEIPTS-757).
+		ApplicationUser? user = await userManager.FindByIdAsync(validationResult.UserId);
+		if (user is null)
+		{
+			await LogApiKeyUsageAsync(validationResult, null, false, "API key owner account no longer exists");
+			return AuthenticateResult.Fail("API key owner account not found.");
+		}
+
+		if (await userManager.IsLockedOutAsync(user))
+		{
+			await LogApiKeyUsageAsync(validationResult, user.Email, false, "API key owner account is disabled or locked out");
+			return AuthenticateResult.Fail("API key owner account is disabled.");
+		}
+
 		List<Claim> claims =
 		[
 			new Claim(ClaimTypes.NameIdentifier, validationResult.UserId),
@@ -54,25 +70,28 @@ public class ApiKeyAuthenticationHandler(
 			new Claim("BypassRateLimit", validationResult.BypassRateLimit.ToString().ToLowerInvariant()),
 		];
 
-		ApplicationUser? user = await userManager.FindByIdAsync(validationResult.UserId);
-		if (user is not null)
+		if (user.Email is not null)
 		{
-			if (user.Email is not null)
-			{
-				claims.Add(new Claim(ClaimTypes.Email, user.Email));
-			}
+			claims.Add(new Claim(ClaimTypes.Email, user.Email));
+		}
 
-			IList<string> roles = await userManager.GetRolesAsync(user);
-			foreach (string role in roles)
-			{
-				claims.Add(new Claim(ClaimTypes.Role, role));
-			}
+		IList<string> roles = await userManager.GetRolesAsync(user);
+		foreach (string role in roles)
+		{
+			claims.Add(new Claim(ClaimTypes.Role, role));
 		}
 
 		ClaimsIdentity identity = new(claims, Scheme.Name);
 		ClaimsPrincipal principal = new(identity);
 		AuthenticationTicket ticket = new(principal, Scheme.Name);
 
+		await LogApiKeyUsageAsync(validationResult, user.Email, true, null);
+
+		return AuthenticateResult.Success(ticket);
+	}
+
+	private async Task LogApiKeyUsageAsync(ApiKeyValidationResult validationResult, string? email, bool success, string? failureReason)
+	{
 		try
 		{
 			await authAuditService.LogAsync(new AuthAuditEntryDto(
@@ -80,9 +99,9 @@ public class ApiKeyAuthenticationHandler(
 				nameof(AuthEventType.ApiKeyUsed),
 				validationResult.UserId,
 				validationResult.KeyId,
-				user?.Email,
-				true,
-				null,
+				email,
+				success,
+				failureReason,
 				Context.Connection.RemoteIpAddress?.ToString(),
 				Request.Headers.UserAgent.ToString(),
 				DateTimeOffset.UtcNow,
@@ -92,7 +111,5 @@ public class ApiKeyAuthenticationHandler(
 		{
 			Logger.LogError(ex, "Failed to log API key usage audit event");
 		}
-
-		return AuthenticateResult.Success(ticket);
 	}
 }

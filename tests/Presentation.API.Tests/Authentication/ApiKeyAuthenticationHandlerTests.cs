@@ -95,6 +95,8 @@ public class ApiKeyAuthenticationHandlerTests
 			.ReturnsAsync(new ApiKeyValidationResult(userId, keyId, false));
 		_userManagerMock.Setup(u => u.FindByIdAsync(userId))
 			.ReturnsAsync(user);
+		_userManagerMock.Setup(u => u.IsLockedOutAsync(user))
+			.ReturnsAsync(false);
 		_userManagerMock.Setup(u => u.GetRolesAsync(user))
 			.ReturnsAsync(new List<string> { "Admin" });
 
@@ -119,6 +121,7 @@ public class ApiKeyAuthenticationHandlerTests
 		// Arrange
 		string userId = Guid.NewGuid().ToString();
 		Guid keyId = Guid.NewGuid();
+		ApplicationUser user = new() { Id = userId, Email = "bypass@example.com" };
 
 		DefaultHttpContext context = new();
 		context.Request.Headers["X-API-Key"] = "valid-key";
@@ -126,7 +129,11 @@ public class ApiKeyAuthenticationHandlerTests
 		_apiKeyServiceMock.Setup(s => s.GetUserIdByApiKeyAsync("valid-key", It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new ApiKeyValidationResult(userId, keyId, true));
 		_userManagerMock.Setup(u => u.FindByIdAsync(userId))
-			.ReturnsAsync((ApplicationUser?)null);
+			.ReturnsAsync(user);
+		_userManagerMock.Setup(u => u.IsLockedOutAsync(user))
+			.ReturnsAsync(false);
+		_userManagerMock.Setup(u => u.GetRolesAsync(user))
+			.ReturnsAsync(new List<string>());
 
 		ApiKeyAuthenticationHandler handler = await CreateHandlerAsync(context);
 
@@ -153,6 +160,8 @@ public class ApiKeyAuthenticationHandlerTests
 			.ReturnsAsync(new ApiKeyValidationResult(userId, keyId, false));
 		_userManagerMock.Setup(u => u.FindByIdAsync(userId))
 			.ReturnsAsync(user);
+		_userManagerMock.Setup(u => u.IsLockedOutAsync(user))
+			.ReturnsAsync(false);
 		_userManagerMock.Setup(u => u.GetRolesAsync(user))
 			.ReturnsAsync(new List<string>());
 
@@ -167,9 +176,9 @@ public class ApiKeyAuthenticationHandlerTests
 	}
 
 	[Fact]
-	public async Task HandleAuthenticateAsync_OnlyHasNameIdentifierAndApiKeyClaims_WhenUserNotFound()
+	public async Task HandleAuthenticateAsync_ReturnsFail_WhenUserNotFound()
 	{
-		// Arrange
+		// Arrange — a key whose owning account has been deleted must no longer authenticate.
 		string userId = Guid.NewGuid().ToString();
 		Guid keyId = Guid.NewGuid();
 
@@ -187,12 +196,73 @@ public class ApiKeyAuthenticationHandlerTests
 		AuthenticateResult result = await handler.AuthenticateAsync();
 
 		// Assert
-		result.Succeeded.Should().BeTrue();
-		ClaimsPrincipal principal = result.Principal!;
-		principal.FindFirst(ClaimTypes.NameIdentifier)!.Value.Should().Be(userId);
-		principal.FindFirst("ApiKeyId")!.Value.Should().Be(keyId.ToString());
-		principal.FindFirst(ClaimTypes.Email).Should().BeNull();
-		principal.FindFirst(ClaimTypes.Role).Should().BeNull();
+		result.Succeeded.Should().BeFalse();
+		result.Principal.Should().BeNull();
+	}
+
+	[Fact]
+	public async Task HandleAuthenticateAsync_ReturnsFail_WhenUserLockedOut()
+	{
+		// Arrange — deactivation is implemented as Identity lockout, so a locked-out
+		// (deactivated) owner's key must be rejected (RECEIPTS-757).
+		string userId = Guid.NewGuid().ToString();
+		Guid keyId = Guid.NewGuid();
+		ApplicationUser user = new() { Id = userId, Email = "locked@example.com" };
+
+		DefaultHttpContext context = new();
+		context.Request.Headers["X-API-Key"] = "valid-key";
+
+		_apiKeyServiceMock.Setup(s => s.GetUserIdByApiKeyAsync("valid-key", It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new ApiKeyValidationResult(userId, keyId, false));
+		_userManagerMock.Setup(u => u.FindByIdAsync(userId))
+			.ReturnsAsync(user);
+		_userManagerMock.Setup(u => u.IsLockedOutAsync(user))
+			.ReturnsAsync(true);
+
+		ApiKeyAuthenticationHandler handler = await CreateHandlerAsync(context);
+
+		// Act
+		AuthenticateResult result = await handler.AuthenticateAsync();
+
+		// Assert
+		result.Succeeded.Should().BeFalse();
+		result.Principal.Should().BeNull();
+		// Roles must never be granted for a rejected key.
+		_userManagerMock.Verify(u => u.GetRolesAsync(It.IsAny<ApplicationUser>()), Times.Never);
+	}
+
+	[Fact]
+	public async Task HandleAuthenticateAsync_LogsFailureAuditEvent_WhenUserLockedOut()
+	{
+		// Arrange
+		string userId = Guid.NewGuid().ToString();
+		Guid keyId = Guid.NewGuid();
+		ApplicationUser user = new() { Id = userId, Email = "locked@example.com" };
+
+		DefaultHttpContext context = new();
+		context.Request.Headers["X-API-Key"] = "valid-key";
+
+		_apiKeyServiceMock.Setup(s => s.GetUserIdByApiKeyAsync("valid-key", It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new ApiKeyValidationResult(userId, keyId, false));
+		_userManagerMock.Setup(u => u.FindByIdAsync(userId))
+			.ReturnsAsync(user);
+		_userManagerMock.Setup(u => u.IsLockedOutAsync(user))
+			.ReturnsAsync(true);
+
+		ApiKeyAuthenticationHandler handler = await CreateHandlerAsync(context);
+
+		// Act
+		await handler.AuthenticateAsync();
+
+		// Assert
+		_authAuditServiceMock.Verify(a => a.LogAsync(
+			It.Is<AuthAuditEntryDto>(e =>
+				e.UserId == userId
+				&& e.ApiKeyId == keyId
+				&& e.EventType == "ApiKeyUsed"
+				&& !e.Success
+				&& e.FailureReason != null),
+			It.IsAny<CancellationToken>()), Times.Once);
 	}
 
 	[Fact]
@@ -201,6 +271,7 @@ public class ApiKeyAuthenticationHandlerTests
 		// Arrange
 		string userId = Guid.NewGuid().ToString();
 		Guid keyId = Guid.NewGuid();
+		ApplicationUser user = new() { Id = userId, Email = "test@example.com" };
 
 		DefaultHttpContext context = new();
 		context.Request.Headers["X-API-Key"] = "valid-key";
@@ -208,7 +279,11 @@ public class ApiKeyAuthenticationHandlerTests
 		_apiKeyServiceMock.Setup(s => s.GetUserIdByApiKeyAsync("valid-key", It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new ApiKeyValidationResult(userId, keyId, false));
 		_userManagerMock.Setup(u => u.FindByIdAsync(userId))
-			.ReturnsAsync((ApplicationUser?)null);
+			.ReturnsAsync(user);
+		_userManagerMock.Setup(u => u.IsLockedOutAsync(user))
+			.ReturnsAsync(false);
+		_userManagerMock.Setup(u => u.GetRolesAsync(user))
+			.ReturnsAsync(new List<string>());
 
 		ApiKeyAuthenticationHandler handler = await CreateHandlerAsync(context);
 
@@ -231,6 +306,7 @@ public class ApiKeyAuthenticationHandlerTests
 		// Arrange
 		string userId = Guid.NewGuid().ToString();
 		Guid keyId = Guid.NewGuid();
+		ApplicationUser user = new() { Id = userId, Email = "test@example.com" };
 
 		DefaultHttpContext context = new();
 		context.Request.Headers["X-API-Key"] = "valid-key";
@@ -238,7 +314,11 @@ public class ApiKeyAuthenticationHandlerTests
 		_apiKeyServiceMock.Setup(s => s.GetUserIdByApiKeyAsync("valid-key", It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new ApiKeyValidationResult(userId, keyId, false));
 		_userManagerMock.Setup(u => u.FindByIdAsync(userId))
-			.ReturnsAsync((ApplicationUser?)null);
+			.ReturnsAsync(user);
+		_userManagerMock.Setup(u => u.IsLockedOutAsync(user))
+			.ReturnsAsync(false);
+		_userManagerMock.Setup(u => u.GetRolesAsync(user))
+			.ReturnsAsync(new List<string>());
 		_authAuditServiceMock.Setup(a => a.LogAsync(It.IsAny<AuthAuditEntryDto>(), It.IsAny<CancellationToken>()))
 			.ThrowsAsync(new InvalidOperationException("DB connection failed"));
 
