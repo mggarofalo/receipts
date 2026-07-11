@@ -207,8 +207,10 @@ function RecycleBin() {
     categories.isLoading ||
     subcategories.isLoading;
 
-  // If ANY of the deleted-entity queries failed, surface an error state rather
-  // than rendering a misleading "No deleted items found" (RECEIPTS-784).
+  // If a deleted-entity query failed, we only want the full-page error state
+  // when there's genuinely nothing to show — otherwise a background-refetch
+  // blip on one of the six queries would blank a bin that still has data from
+  // the other five (RECEIPTS-784). The no-data gate is applied at the return.
   const isError =
     receipts.isError ||
     receiptItems.isError ||
@@ -318,7 +320,7 @@ function RecycleBin() {
     return map;
   }, [allItems]);
 
-  if (isError) {
+  if (isError && allItems.length === 0) {
     return (
       <>
         <PageHead title="Trash" sub="Couldn't load" />

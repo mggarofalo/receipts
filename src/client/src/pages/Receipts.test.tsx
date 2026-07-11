@@ -575,6 +575,45 @@ describe("Receipts", () => {
     expect(refetch).toHaveBeenCalled();
   });
 
+  // RECEIPTS-784 (regression guard): a background refetch that errors while
+  // rows are already cached must NOT blank the list with the ErrorState — the
+  // data stays on screen (the global toast surfaces the transient failure).
+  it("keeps the list visible when a background refetch fails but data is cached", async () => {
+    const items = [
+      mockReceiptResponse({ id: "1", location: "Walmart", date: "2024-01-15", taxAmount: 5.25 }),
+      mockReceiptResponse({ id: "2", location: "Target", date: "2024-01-20", taxAmount: 3.5 }),
+    ];
+
+    const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
+    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
+      search: "",
+      setSearch: vi.fn(),
+      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
+      totalCount: items.length,
+      isSearching: false,
+      clearSearch: vi.fn(),
+    }));
+
+    const { useReceipts } = await import("@/hooks/useReceipts");
+    vi.mocked(useReceipts).mockReturnValue(
+      mockQueryResult({
+        data: items,
+        total: items.length,
+        isLoading: false,
+        // Refetch-after-success failure: error is set but cached rows remain.
+        isError: true,
+        isRefetching: true,
+        refetch: vi.fn(),
+      }),
+    );
+
+    renderWithProviders(<Receipts />);
+
+    expect(screen.getByText("Walmart")).toBeInTheDocument();
+    expect(screen.getByText("Target")).toBeInTheDocument();
+    expect(screen.queryByText(/couldn't load receipts/i)).not.toBeInTheDocument();
+  });
+
   // RECEIPTS-783: after a partial bulk YNAB push, only the succeeded receipts
   // are deselected — failed ones stay selected so the user can retry.
   it("keeps failed receipts selected after a partial bulk YNAB push", async () => {

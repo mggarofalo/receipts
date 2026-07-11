@@ -315,8 +315,11 @@ function Receipts() {
         </Alert>
       )}
 
-      {isError ? (
-        // A failed query must not masquerade as an empty list (RECEIPTS-784).
+      {isError && data.length === 0 ? (
+        // A *failed initial load* (error with no cached rows) must not
+        // masquerade as an empty list (RECEIPTS-784). A background-refetch
+        // error while rows are already on screen keeps the data visible —
+        // the global handler still toasts the failure.
         <ErrorState
           title="Couldn't load receipts"
           message="Something went wrong loading your receipts. Check your connection and try again."

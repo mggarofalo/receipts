@@ -393,4 +393,44 @@ describe("RecycleBin", () => {
     await user.click(screen.getByRole("button", { name: /try again/i }));
     expect(refetch).toHaveBeenCalled();
   });
+
+  // RECEIPTS-784 (regression guard): a background-refetch error on ONE of the
+  // six queries while data is present must NOT blank the whole bin.
+  it("keeps deleted items visible when one query's refetch fails but data is present", async () => {
+    const { useDeletedReceipts } = await import("@/hooks/useReceipts");
+    const { useDeletedReceiptItems } = await import("@/hooks/useReceiptItems");
+    const { useDeletedTransactions } = await import("@/hooks/useTransactions");
+    const { useDeletedItemTemplates } = await import("@/hooks/useItemTemplates");
+    const { useDeletedCategories } = await import("@/hooks/useCategories");
+    const { useDeletedSubcategories } = await import("@/hooks/useSubcategories");
+
+    // Receipts query still holds a cached row but its background refetch errored.
+    vi.mocked(useDeletedReceipts).mockReturnValue(mockQueryResult({
+      data: [{ id: "r1", location: "Store", date: "2026-01-01" }],
+      total: 1,
+      isLoading: false,
+      isError: true,
+      isRefetching: true,
+      refetch: vi.fn(),
+    }));
+    for (const hook of [
+      useDeletedReceiptItems,
+      useDeletedTransactions,
+      useDeletedItemTemplates,
+      useDeletedCategories,
+      useDeletedSubcategories,
+    ]) {
+      vi.mocked(hook).mockReturnValue(
+        mockQueryResult({ data: [], total: 0, isLoading: false }),
+      );
+    }
+
+    renderWithProviders(<RecycleBin />);
+
+    // The bin still renders the cached row, not the full-page error state.
+    expect(screen.getByText("Store - 2026-01-01")).toBeInTheDocument();
+    expect(
+      screen.queryByText(/couldn't load the recycle bin/i),
+    ).not.toBeInTheDocument();
+  });
 });
