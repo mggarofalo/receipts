@@ -16,7 +16,7 @@ public class ReceiptItemEntityConfiguration : IEntityTypeConfiguration<ReceiptIt
 			.IsRequired()
 			.ValueGeneratedOnAdd();
 
-		// RECEIPTS-770: ApplicationDbContext.PrepareEntityTypesInModelBuilder maps EVERY decimal
+		// RECEIPTS-765: ApplicationDbContext.PrepareEntityTypesInModelBuilder maps EVERY decimal
 		// property to the money type decimal(18,2). That is wrong for Quantity and UnitPrice:
 		//   - Quantity is a count/weight, not money. Postgres silently rounds fractional
 		//     quantities (e.g. 2.5 kg, 1.125 dozen) to scale 2 on insert.

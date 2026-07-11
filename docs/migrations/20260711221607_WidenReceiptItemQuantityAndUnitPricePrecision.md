@@ -1,4 +1,4 @@
-# Migration: WidenReceiptItemQuantityAndUnitPricePrecision (RECEIPTS-770)
+# Migration: WidenReceiptItemQuantityAndUnitPricePrecision (RECEIPTS-765)
 
 **Migration id:** `20260711221607_WidenReceiptItemQuantityAndUnitPricePrecision`
 **Date:** 2026-07-11
@@ -29,7 +29,7 @@ backfill or data migration is required.
 `Down` narrows both columns back to `numeric(18,2)` — the exact inverse of `Up`. Note this is
 lossy *by nature* of narrowing scale: any `Quantity`/`UnitPrice` value that was written with 3-4
 fractional digits after this migration applied would be rounded to 2 places on rollback. That is
-the correct symmetric restore of the prior type; pair a rollback with reverting the RECEIPTS-770
+the correct symmetric restore of the prior type; pair a rollback with reverting the RECEIPTS-765
 code change so the model and schema stay in sync.
 
 ## Related code

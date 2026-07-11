@@ -130,7 +130,7 @@ public class ColumnTypeMappingTests(PostgresFixture fixture)
 	[Fact]
 	public async Task ReceiptItemEntity_FractionalQuantityAndSubCentUnitPrice_RoundTripWithoutTruncation()
 	{
-		// RECEIPTS-770: Quantity and UnitPrice were mapped to the money type decimal(18,2),
+		// RECEIPTS-765: Quantity and UnitPrice were mapped to the money type decimal(18,2),
 		// which silently rounds fractional quantities and sub-cent unit prices on insert.
 		// With numeric(18,4) they must round-trip exactly. The chosen values have scale > 2,
 		// so under the old (18,2) mapping this assertion would fail (rounded to 2 places).
