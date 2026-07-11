@@ -24,6 +24,13 @@ public class AuthController(
 	IAuthAuditService authAuditService,
 	ILogger<AuthController> logger) : ControllerBase
 {
+	// A throwaway user and a precomputed, valid PHC-format hash whose PBKDF2 work factor matches a
+	// freshly-hashed password from the default hasher. Verifying a supplied password against this runs
+	// the full PBKDF2 cost, so the unknown-email login path is not measurably faster than a real one.
+	private static readonly ApplicationUser DummyUser = new();
+	private static readonly string DummyPasswordHash =
+		new PasswordHasher<ApplicationUser>().HashPassword(DummyUser, "timing-safe-dummy-password-value");
+
 	[HttpPost("login")]
 	[AllowAnonymous]
 	[EndpointSummary("Login with email and password")]
@@ -33,6 +40,10 @@ public class AuthController(
 		ApplicationUser? user = await userManager.FindByEmailAsync(request.Email);
 		if (user is null)
 		{
+			// User-enumeration defense: when the email is unknown, run a real PBKDF2 verification against a
+			// throwaway hash so this path costs about the same as a wrong-password path. Without it the
+			// missing-user branch returns measurably faster and leaks which emails are registered.
+			VerifyDummyPassword(request.Password);
 			await LogAuthEventAsync(nameof(AuthEventType.LoginFailed), null, request.Email, false, "Invalid credentials");
 			return InvalidCredentialsResponse();
 		}
@@ -294,6 +305,11 @@ public class AuthController(
 
 		return TypedResults.Ok();
 	}
+
+	// Runs a full PBKDF2 verification against a throwaway hash purely to equalize timing on the
+	// unknown-user path. The result is intentionally discarded.
+	private void VerifyDummyPassword(string password) =>
+		_ = userManager.PasswordHasher.VerifyHashedPassword(DummyUser, DummyPasswordHash, password);
 
 	// Identical generic response for the unknown-email and wrong-password paths so neither timing nor
 	// wording reveals which one failed (user-enumeration defense).

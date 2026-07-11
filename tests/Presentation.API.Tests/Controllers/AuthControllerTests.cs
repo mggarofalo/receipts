@@ -17,6 +17,7 @@ namespace Presentation.API.Tests.Controllers;
 public class AuthControllerTests
 {
 	private readonly Mock<UserManager<ApplicationUser>> _userManagerMock;
+	private readonly Mock<IPasswordHasher<ApplicationUser>> _passwordHasherMock;
 	private readonly Mock<ITokenService> _tokenServiceMock;
 	private readonly Mock<IUserService> _userServiceMock;
 	private readonly Mock<IAuthAuditService> _authAuditServiceMock;
@@ -25,10 +26,11 @@ public class AuthControllerTests
 	public AuthControllerTests()
 	{
 		Mock<IUserStore<ApplicationUser>> userStoreMock = new();
+		_passwordHasherMock = new Mock<IPasswordHasher<ApplicationUser>>();
 		_userManagerMock = new Mock<UserManager<ApplicationUser>>(
 			userStoreMock.Object,
 			new Mock<IOptions<IdentityOptions>>().Object,
-			new Mock<IPasswordHasher<ApplicationUser>>().Object,
+			_passwordHasherMock.Object,
 			Array.Empty<IUserValidator<ApplicationUser>>(),
 			Array.Empty<IPasswordValidator<ApplicationUser>>(),
 			new Mock<ILookupNormalizer>().Object,
@@ -117,6 +119,26 @@ public class AuthControllerTests
 		Results<Ok<TokenResponse>, JsonHttpResult<OAuthErrorResponse>> result = await _controller.Login(new LoginRequest { Email = "test@example.com", Password = "wrong" });
 
 		// Assert
+		JsonHttpResult<OAuthErrorResponse> errorResult = Assert.IsType<JsonHttpResult<OAuthErrorResponse>>(result.Result);
+		errorResult.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+		errorResult.Value!.Error.Should().Be(OAuthErrorResponseError.Invalid_grant);
+		errorResult.Value!.Error_description.Should().Be("Invalid email or password");
+	}
+
+	[Fact]
+	public async Task Login_UnknownEmail_PerformsDummyHash_AndReturnsGenericError()
+	{
+		// Arrange — no user with this email.
+		_userManagerMock.Setup(m => m.FindByEmailAsync("ghost@example.com")).ReturnsAsync((ApplicationUser?)null);
+
+		// Act
+		Results<Ok<TokenResponse>, JsonHttpResult<OAuthErrorResponse>> result = await _controller.Login(new LoginRequest { Email = "ghost@example.com", Password = "whatever" });
+
+		// Assert — a password verification still runs (timing-safe), and the response is the same generic
+		// error the wrong-password path returns, so neither timing nor wording reveals the email is unknown.
+		_passwordHasherMock.Verify(
+			h => h.VerifyHashedPassword(It.IsAny<ApplicationUser>(), It.IsAny<string>(), "whatever"),
+			Times.Once);
 		JsonHttpResult<OAuthErrorResponse> errorResult = Assert.IsType<JsonHttpResult<OAuthErrorResponse>>(result.Result);
 		errorResult.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
 		errorResult.Value!.Error.Should().Be(OAuthErrorResponseError.Invalid_grant);
