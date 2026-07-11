@@ -170,6 +170,8 @@ public class ReceiptItemsController(IMediator mediator, ReceiptItemMapper mapper
 	[EndpointSummary("Update a single receipt item")]
 	public async Task<Results<NoContent, NotFound>> UpdateReceiptItem([FromBody] UpdateReceiptItemRequest model, [FromRoute] Guid id, CancellationToken cancellationToken = default)
 	{
+		// Route id is authoritative; ignore any mismatched body id (RECEIPTS-793).
+		model.Id = id;
 		UpdateReceiptItemCommand command = new([mapper.ToDomain(model)]);
 		bool result = await mediator.Send(command, cancellationToken);
 

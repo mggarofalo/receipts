@@ -29,7 +29,7 @@ public class AdjustmentRepository(IDbContextFactory<ApplicationDbContext> contex
 			.IgnoreAutoIncludes()
 			.Where(a => a.ReceiptId == receiptId)
 			.AsNoTracking()
-			.ApplySort(sort, AllowedSortColumns, e => e.Type)
+			.ApplySort(sort, AllowedSortColumns, e => e.Type, e => e.Id)
 			.Skip(offset)
 			.Take(limit)
 			.Select(a => new AdjustmentEntity
@@ -58,7 +58,7 @@ public class AdjustmentRepository(IDbContextFactory<ApplicationDbContext> contex
 		return await context.Adjustments
 			.IgnoreAutoIncludes()
 			.AsNoTracking()
-			.ApplySort(sort, AllowedSortColumns, e => e.Type)
+			.ApplySort(sort, AllowedSortColumns, e => e.Type, e => e.Id)
 			.Skip(offset)
 			.Take(limit)
 			.Select(a => new AdjustmentEntity
@@ -81,7 +81,7 @@ public class AdjustmentRepository(IDbContextFactory<ApplicationDbContext> contex
 			.Where(a => a.CascadeDeletedByParentId == null)
 			.IgnoreAutoIncludes()
 			.AsNoTracking()
-			.ApplySort(sort, AllowedSortColumns, e => e.Type)
+			.ApplySort(sort, AllowedSortColumns, e => e.Type, e => e.Id)
 			.Select(a => new AdjustmentEntity
 			{
 				Id = a.Id,

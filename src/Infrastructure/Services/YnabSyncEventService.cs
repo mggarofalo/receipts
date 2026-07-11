@@ -84,7 +84,7 @@ public class YnabSyncEventService(
 		int total = await query.CountAsync(cancellationToken);
 
 		List<YnabSyncEventDto> data = await query
-			.ApplySort(sort, AllowedSortColumns, DefaultSort, defaultDescending: true)
+			.ApplySort(sort, AllowedSortColumns, DefaultSort, e => e.Id, defaultDescending: true)
 			.Skip(offset)
 			.Take(limit)
 			.Select(e => ToDto(e))

@@ -173,9 +173,10 @@ public class UpdateTransactionCommandHandlerTests
 	}
 
 	[Fact]
-	public async Task Handle_TransactionNotFound_ThrowsInvalidOperationException()
+	public async Task Handle_TransactionNotFound_ReturnsFalseAndNeverPersists()
 	{
-		// Arrange
+		// Arrange — the update target is missing/soft-deleted, so the endpoint must 404
+		// (handler returns false) rather than 500 (RECEIPTS-761).
 		Guid txId = Guid.NewGuid();
 		_transactionService.Setup(s => s.GetByIdAsync(txId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync((Domain.Core.Transaction?)null);
@@ -186,10 +187,12 @@ public class UpdateTransactionCommandHandlerTests
 		UpdateTransactionCommand command = new(updated);
 
 		// Act
-		Func<Task> act = async () => await handler.Handle(command, CancellationToken.None);
+		bool result = await handler.Handle(command, CancellationToken.None);
 
 		// Assert
-		await act.Should().ThrowAsync<InvalidOperationException>();
+		result.Should().BeFalse();
+		_transactionService.Verify(s => s.UpdateAsync(
+			It.IsAny<List<Domain.Core.Transaction>>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
 	}
 
 	[Fact]

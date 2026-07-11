@@ -26,7 +26,7 @@ public class UserService(ApplicationDbContext dbContext) : IUserService
 		int totalCount = await dbContext.Users.CountAsync(cancellationToken);
 
 		List<ApplicationUser> users = await dbContext.Users
-			.ApplySort(sort, AllowedSortColumns, u => u.Email!)
+			.ApplySort(sort, AllowedSortColumns, u => u.Email!, u => u.Id)
 			.Skip(offset)
 			.Take(limit)
 			.ToListAsync(cancellationToken);

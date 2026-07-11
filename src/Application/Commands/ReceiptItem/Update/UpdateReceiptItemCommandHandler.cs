@@ -7,8 +7,11 @@ public class UpdateReceiptItemCommandHandler(IReceiptItemService receiptitemServ
 {
 	public async ValueTask<bool> Handle(UpdateReceiptItemCommand request, CancellationToken cancellationToken)
 	{
-		Domain.Core.ReceiptItem existingItem = await receiptitemService.GetByIdAsync(request.ReceiptItems[0].Id, cancellationToken)
-			?? throw new InvalidOperationException("Receipt item not found");
+		Domain.Core.ReceiptItem? existingItem = await receiptitemService.GetByIdAsync(request.ReceiptItems[0].Id, cancellationToken);
+		if (existingItem is null)
+		{
+			return false;
+		}
 
 		await receiptitemService.UpdateAsync([.. request.ReceiptItems], existingItem.ReceiptId, cancellationToken);
 		return true;

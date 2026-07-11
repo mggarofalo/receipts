@@ -372,6 +372,31 @@ public class AdjustmentsControllerTests
 	}
 
 	[Fact]
+	public async Task UpdateAdjustment_RouteIdIsAuthoritative_WhenBodyIdMismatches()
+	{
+		// Arrange — RECEIPTS-793: the URL names resource A but the body carries a different
+		// id B. The route id must win so the PUT can't silently overwrite the wrong resource.
+		Guid routeId = Guid.NewGuid();
+		UpdateAdjustmentRequest controllerInput = AdjustmentDtoGenerator.GenerateUpdateRequest();
+		controllerInput.Id = Guid.NewGuid(); // body id B, distinct from the route id A
+
+		_mediatorMock.Setup(m => m.Send(
+			It.IsAny<UpdateAdjustmentCommand>(),
+			It.IsAny<CancellationToken>()))
+			.ReturnsAsync(true);
+
+		// Act
+		Results<NoContent, NotFound> result = await _controller.UpdateAdjustment(controllerInput, routeId);
+
+		// Assert — the dispatched command targets the route id, and the notification names it too
+		Assert.IsType<NoContent>(result.Result);
+		_mediatorMock.Verify(m => m.Send(
+			It.Is<UpdateAdjustmentCommand>(c => c.Adjustments[0].Id == routeId),
+			It.IsAny<CancellationToken>()), Times.Once);
+		_notifierMock.Verify(n => n.NotifyUpdated("adjustment", routeId), Times.Once);
+	}
+
+	[Fact]
 	public async Task UpdateAdjustment_ThrowsException_WhenMediatorFails()
 	{
 		// Arrange

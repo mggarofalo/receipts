@@ -142,6 +142,8 @@ public class ItemTemplatesController(IMediator mediator, ItemTemplateMapper mapp
 	[EndpointSummary("Update a single item template")]
 	public async Task<Results<NoContent, NotFound>> UpdateItemTemplate([FromRoute] Guid id, [FromBody] UpdateItemTemplateRequest model, CancellationToken cancellationToken = default)
 	{
+		// Route id is authoritative; ignore any mismatched body id (RECEIPTS-793).
+		model.Id = id;
 		UpdateItemTemplateCommand command = new([mapper.ToDomain(model)]);
 		bool result = await mediator.Send(command, cancellationToken);
 

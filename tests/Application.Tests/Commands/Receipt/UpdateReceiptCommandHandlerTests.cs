@@ -16,6 +16,10 @@ public class UpdateReceiptCommandHandlerTests
 		List<Domain.Core.Receipt> input = ReceiptGenerator.GenerateList(2);
 
 		mockService.Setup(r => r
+			.ExistsAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(true);
+
+		mockService.Setup(r => r
 			.UpdateAsync(It.IsAny<List<Domain.Core.Receipt>>(), It.IsAny<CancellationToken>()))
 			.Returns(Task.CompletedTask);
 
@@ -23,5 +27,25 @@ public class UpdateReceiptCommandHandlerTests
 		bool result = await handler.Handle(command, CancellationToken.None);
 
 		Assert.True(result);
+	}
+
+	[Fact]
+	public async Task UpdateReceiptCommandHandler_WithMissingReceipt_ReturnsFalseAndNeverPersists()
+	{
+		Mock<IReceiptService> mockService = new();
+		UpdateReceiptCommandHandler handler = new(mockService.Object);
+
+		List<Domain.Core.Receipt> input = ReceiptGenerator.GenerateList(1);
+
+		// A soft-deleted/missing target is hidden by the query filter, so ExistsAsync is false.
+		mockService.Setup(r => r
+			.ExistsAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(false);
+
+		UpdateReceiptCommand command = new(input);
+		bool result = await handler.Handle(command, CancellationToken.None);
+
+		Assert.False(result);
+		mockService.Verify(r => r.UpdateAsync(It.IsAny<List<Domain.Core.Receipt>>(), It.IsAny<CancellationToken>()), Times.Never);
 	}
 }

@@ -213,6 +213,8 @@ public class ReceiptsController(
 	[EndpointSummary("Update a single receipt")]
 	public async Task<Results<NoContent, NotFound>> UpdateReceipt([FromRoute] Guid id, [FromBody] UpdateReceiptRequest model, CancellationToken cancellationToken = default)
 	{
+		// Route id is authoritative; ignore any mismatched body id (RECEIPTS-793).
+		model.Id = id;
 		UpdateReceiptCommand command = new([mapper.ToDomain(model)]);
 		bool result = await mediator.Send(command, cancellationToken);
 

@@ -30,7 +30,7 @@ public class CategoryRepository(IDbContextFactory<ApplicationDbContext> contextF
 		}
 
 		return await query
-			.ApplySort(sort, AllowedSortColumns, e => e.Name)
+			.ApplySort(sort, AllowedSortColumns, e => e.Name, e => e.Id)
 			.Skip(offset)
 			.Take(limit)
 			.ToListAsync(cancellationToken);
@@ -42,7 +42,7 @@ public class CategoryRepository(IDbContextFactory<ApplicationDbContext> contextF
 		return await context.Categories
 			.OnlyDeleted()
 			.AsNoTracking()
-			.ApplySort(sort, AllowedSortColumns, e => e.Name)
+			.ApplySort(sort, AllowedSortColumns, e => e.Name, e => e.Id)
 			.Select(c => new CategoryEntity
 			{
 				Id = c.Id,

@@ -128,6 +128,8 @@ public class AccountsController(IMediator mediator, AccountMapper mapper, CardMa
 	[EndpointSummary("Update a single account")]
 	public async Task<Results<NoContent, NotFound>> UpdateAccount([FromRoute] Guid id, [FromBody] UpdateAccountRequest model)
 	{
+		// Route id is authoritative; ignore any mismatched body id (RECEIPTS-793).
+		model.Id = id;
 		UpdateAccountCommand command = new([mapper.ToDomain(model)]);
 		bool result = await mediator.Send(command, HttpContext.RequestAborted);
 

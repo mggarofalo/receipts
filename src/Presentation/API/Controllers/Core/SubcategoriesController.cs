@@ -166,6 +166,8 @@ public class SubcategoriesController(IMediator mediator, SubcategoryMapper mappe
 	[EndpointSummary("Update a single subcategory")]
 	public async Task<Results<NoContent, NotFound>> UpdateSubcategory([FromRoute] Guid id, [FromBody] UpdateSubcategoryRequest model, CancellationToken cancellationToken = default)
 	{
+		// Route id is authoritative; ignore any mismatched body id (RECEIPTS-793).
+		model.Id = id;
 		UpdateSubcategoryCommand command = new([mapper.ToDomain(model)]);
 		bool result = await mediator.Send(command, cancellationToken);
 
