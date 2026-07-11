@@ -62,8 +62,10 @@ function BackupRestore() {
       });
 
       if (!res.ok) {
-        if (res.status === 400) throw new Error("Invalid or corrupt backup file.");
-        if (res.status === 403) throw new Error("You do not have permission to import backups.");
+        if (res.status === 400)
+          throw new Error("Invalid or corrupt backup file.");
+        if (res.status === 403)
+          throw new Error("You do not have permission to import backups.");
         throw new Error(`Import failed (${res.status}).`);
       }
 
@@ -108,127 +110,131 @@ function BackupRestore() {
         sub="Export or import a portable SQLite backup of your data"
       />
       <div className="space-y-6">
+        <div className="grid gap-6 md:grid-cols-2">
+          {/* Export Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Download className="h-5 w-5" />
+                Export Backup
+              </CardTitle>
+              <CardDescription>
+                Download a SQLite backup of your database. It can be used to
+                restore your data on another instance. Note that receipt image
+                files are stored outside the database and are not included
+                &mdash; only their file paths are.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button
+                onClick={() => exportMutation.mutate()}
+                disabled={exportMutation.isPending}
+                className="w-full"
+              >
+                {exportMutation.isPending && <Spinner size="sm" />}
+                {exportMutation.isPending ? "Exporting..." : "Export Backup"}
+              </Button>
+            </CardContent>
+          </Card>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        {/* Export Card */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Download className="h-5 w-5" />
-              Export Backup
-            </CardTitle>
-            <CardDescription>
-              Download a complete SQLite backup of all your data. This file can
-              be used to restore your data on another instance or recover from
-              data loss.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button
-              onClick={() => exportMutation.mutate()}
-              disabled={exportMutation.isPending}
-              className="w-full"
-            >
-              {exportMutation.isPending && <Spinner size="sm" />}
-              {exportMutation.isPending ? "Exporting..." : "Export Backup"}
-            </Button>
-          </CardContent>
-        </Card>
+          {/* Import Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Upload className="h-5 w-5" />
+                Import Backup
+              </CardTitle>
+              <CardDescription>
+                Upload a previously exported SQLite backup file. Existing
+                records will be updated and new records will be added.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <label htmlFor="backup-file" className="sr-only">
+                  Select backup file
+                </label>
+                <input
+                  ref={fileInputRef}
+                  id="backup-file"
+                  type="file"
+                  accept=".sqlite,.db"
+                  onChange={handleFileChange}
+                  className="block w-full text-sm text-muted-foreground file:mr-4 file:rounded-md file:border-0 file:bg-primary file:px-4 file:py-2 file:text-sm file:font-medium file:text-primary-foreground hover:file:bg-primary/90 file:cursor-pointer"
+                />
+                {selectedFile && (
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Selected: {selectedFile.name} (
+                    {formatFileSize(selectedFile.size)})
+                  </p>
+                )}
+              </div>
+              <Button
+                onClick={handleImportClick}
+                disabled={!selectedFile || importMutation.isPending}
+                variant="outline"
+                className="w-full"
+              >
+                {importMutation.isPending && <Spinner size="sm" />}
+                {importMutation.isPending ? "Importing..." : "Import Backup"}
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
 
-        {/* Import Card */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Upload className="h-5 w-5" />
-              Import Backup
-            </CardTitle>
-            <CardDescription>
-              Upload a previously exported SQLite backup file. Existing records
-              will be updated and new records will be added.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <label htmlFor="backup-file" className="sr-only">
-                Select backup file
-              </label>
-              <input
-                ref={fileInputRef}
-                id="backup-file"
-                type="file"
-                accept=".sqlite,.db"
-                onChange={handleFileChange}
-                className="block w-full text-sm text-muted-foreground file:mr-4 file:rounded-md file:border-0 file:bg-primary file:px-4 file:py-2 file:text-sm file:font-medium file:text-primary-foreground hover:file:bg-primary/90 file:cursor-pointer"
-              />
-              {selectedFile && (
-                <p className="mt-2 text-sm text-muted-foreground">
-                  Selected: {selectedFile.name} ({formatFileSize(selectedFile.size)})
-                </p>
-              )}
-            </div>
-            <Button
-              onClick={handleImportClick}
-              disabled={!selectedFile || importMutation.isPending}
-              variant="outline"
-              className="w-full"
-            >
-              {importMutation.isPending && <Spinner size="sm" />}
-              {importMutation.isPending ? "Importing..." : "Import Backup"}
-            </Button>
-          </CardContent>
-        </Card>
+        <Alert>
+          <DatabaseBackup className="h-4 w-4" />
+          <AlertDescription>
+            Backups include your receipts, transactions, accounts, categories,
+            item templates, adjustments, YNAB configuration, and normalized
+            descriptions. Receipt image files are stored outside the database:
+            their paths are backed up, but the image files themselves must be
+            backed up separately. User accounts and authentication settings are
+            excluded for security reasons.
+          </AlertDescription>
+        </Alert>
+
+        {/* Import Confirmation Dialog */}
+        <AlertDialog
+          open={confirmImportOpen}
+          onOpenChange={(open) => {
+            if (!importMutation.isPending) setConfirmImportOpen(open);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-yellow-500" />
+                Confirm Import
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                Importing a backup will update existing records and add new
+                ones. This action may modify your current data.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            {selectedFile && (
+              <p className="text-sm text-muted-foreground">
+                File: {selectedFile.name} ({formatFileSize(selectedFile.size)})
+              </p>
+            )}
+            <AlertDialogFooter>
+              <AlertDialogCancel
+                onClick={() => setConfirmImportOpen(false)}
+                disabled={importMutation.isPending}
+              >
+                Cancel
+              </AlertDialogCancel>
+              <Button
+                onClick={handleConfirmImport}
+                disabled={importMutation.isPending}
+              >
+                {importMutation.isPending && <Spinner size="sm" />}
+                {importMutation.isPending ? "Importing..." : "Confirm Import"}
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
-
-      <Alert>
-        <DatabaseBackup className="h-4 w-4" />
-        <AlertDescription>
-          Backups include all receipts, transactions, accounts, categories, and
-          related data. User accounts and authentication settings are not
-          included in backups for security reasons.
-        </AlertDescription>
-      </Alert>
-
-      {/* Import Confirmation Dialog */}
-      <AlertDialog
-        open={confirmImportOpen}
-        onOpenChange={(open) => {
-          if (!importMutation.isPending) setConfirmImportOpen(open);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-yellow-500" />
-              Confirm Import
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              Importing a backup will update existing records and add new ones.
-              This action may modify your current data.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          {selectedFile && (
-            <p className="text-sm text-muted-foreground">
-              File: {selectedFile.name} ({formatFileSize(selectedFile.size)})
-            </p>
-          )}
-          <AlertDialogFooter>
-            <AlertDialogCancel
-              onClick={() => setConfirmImportOpen(false)}
-              disabled={importMutation.isPending}
-            >
-              Cancel
-            </AlertDialogCancel>
-            <Button
-              onClick={handleConfirmImport}
-              disabled={importMutation.isPending}
-            >
-              {importMutation.isPending && <Spinner size="sm" />}
-              {importMutation.isPending ? "Importing..." : "Confirm Import"}
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
     </>
   );
 }

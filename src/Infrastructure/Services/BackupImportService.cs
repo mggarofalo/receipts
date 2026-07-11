@@ -1,6 +1,8 @@
+using System.Globalization;
 using Application.Interfaces.Services;
 using Application.Models;
 using Common;
+using Domain.NormalizedDescriptions;
 using Infrastructure.Entities.Core;
 using Infrastructure.Interfaces;
 using Microsoft.Data.Sqlite;
@@ -73,10 +75,21 @@ public class BackupImportService(
 			(int categoriesCreated, int categoriesUpdated) = await UpsertCategoriesAsync(context, sqlite, cancellationToken);
 			(int subcategoriesCreated, int subcategoriesUpdated) = await UpsertSubcategoriesAsync(context, sqlite, cancellationToken);
 			(int itemTemplatesCreated, int itemTemplatesUpdated) = await UpsertItemTemplatesAsync(context, sqlite, cancellationToken);
-			(int receiptsCreated, int receiptsUpdated) = await UpsertReceiptsAsync(context, sqlite, cancellationToken);
+			(int receiptsCreated, int receiptsUpdated) = await UpsertReceiptsAsync(context, sqlite, exportVersion, cancellationToken);
 			(int receiptItemsCreated, int receiptItemsUpdated) = await UpsertReceiptItemsAsync(context, sqlite, cancellationToken);
 			(int transactionsCreated, int transactionsUpdated) = await UpsertTransactionsAsync(context, sqlite, exportVersion, cancellationToken);
 			(int adjustmentsCreated, int adjustmentsUpdated) = await UpsertAdjustmentsAsync(context, sqlite, cancellationToken);
+
+			// v4 tables. Each method is gated on export_version >= 4, so older backups (v1-3)
+			// skip them entirely and restore with these tables treated as absent. YnabAccountMappings
+			// reference Accounts and YnabSyncRecords reference Transactions — both already imported
+			// above — so the FK import order is satisfied.
+			(int ynabSelectedBudgetsCreated, int ynabSelectedBudgetsUpdated) = await UpsertYnabSelectedBudgetsAsync(context, sqlite, exportVersion, cancellationToken);
+			(int ynabAccountMappingsCreated, int ynabAccountMappingsUpdated) = await UpsertYnabAccountMappingsAsync(context, sqlite, exportVersion, cancellationToken);
+			(int ynabCategoryMappingsCreated, int ynabCategoryMappingsUpdated) = await UpsertYnabCategoryMappingsAsync(context, sqlite, exportVersion, cancellationToken);
+			(int ynabSyncRecordsCreated, int ynabSyncRecordsUpdated) = await UpsertYnabSyncRecordsAsync(context, sqlite, exportVersion, cancellationToken);
+			(int normalizedDescriptionsCreated, int normalizedDescriptionsUpdated) = await UpsertNormalizedDescriptionsAsync(context, sqlite, exportVersion, cancellationToken);
+			(int normalizedDescriptionSettingsCreated, int normalizedDescriptionSettingsUpdated) = await UpsertNormalizedDescriptionSettingsAsync(context, sqlite, exportVersion, cancellationToken);
 
 			await transaction.CommitAsync(cancellationToken);
 
@@ -89,7 +102,13 @@ public class BackupImportService(
 				receiptsCreated, receiptsUpdated,
 				receiptItemsCreated, receiptItemsUpdated,
 				transactionsCreated, transactionsUpdated,
-				adjustmentsCreated, adjustmentsUpdated);
+				adjustmentsCreated, adjustmentsUpdated,
+				ynabSelectedBudgetsCreated, ynabSelectedBudgetsUpdated,
+				ynabAccountMappingsCreated, ynabAccountMappingsUpdated,
+				ynabCategoryMappingsCreated, ynabCategoryMappingsUpdated,
+				ynabSyncRecordsCreated, ynabSyncRecordsUpdated,
+				normalizedDescriptionsCreated, normalizedDescriptionsUpdated,
+				normalizedDescriptionSettingsCreated, normalizedDescriptionSettingsUpdated);
 
 			logger.LogInformation(
 				"Backup import complete: {TotalCreated} created, {TotalUpdated} updated",
@@ -488,25 +507,34 @@ public class BackupImportService(
 	}
 
 	private static async Task<(int Created, int Updated)> UpsertReceiptsAsync(
-		ApplicationDbContext context, SqliteConnection sqlite, CancellationToken cancellationToken)
+		ApplicationDbContext context, SqliteConnection sqlite, int exportVersion, CancellationToken cancellationToken)
 	{
 		if (!TableExists(sqlite, "receipts"))
 		{
 			return (0, 0);
 		}
 
+		// v4 adds the image-path columns. Older backups (<4) never carried them, so we neither
+		// read them nor touch a receipt's existing paths on update — preserving pre-v4 behaviour.
+		bool hasImagePaths = exportVersion >= 4;
+		string selectColumns = hasImagePaths
+			? "id, location, date, tax_amount, tax_amount_currency, original_image_path, processed_image_path"
+			: "id, location, date, tax_amount, tax_amount_currency";
+
 		int created = 0, updated = 0;
 		await using SqliteCommand cmd = sqlite.CreateCommand();
-		cmd.CommandText = "SELECT id, location, date, tax_amount, tax_amount_currency FROM receipts";
+		cmd.CommandText = $"SELECT {selectColumns} FROM receipts";
 		await using SqliteDataReader reader = await cmd.ExecuteReaderAsync(cancellationToken);
 
 		while (await reader.ReadAsync(cancellationToken))
 		{
 			Guid id = Guid.Parse(reader.GetString(0));
 			string location = reader.GetString(1);
-			DateOnly date = DateOnly.Parse(reader.GetString(2));
+			DateOnly date = DateOnly.Parse(reader.GetString(2), CultureInfo.InvariantCulture);
 			decimal taxAmount = reader.GetDecimal(3);
 			Currency taxAmountCurrency = Enum.Parse<Currency>(reader.GetString(4));
+			string? originalImagePath = hasImagePaths && !reader.IsDBNull(5) ? reader.GetString(5) : null;
+			string? processedImagePath = hasImagePaths && !reader.IsDBNull(6) ? reader.GetString(6) : null;
 
 			ReceiptEntity? existing = await context.Receipts
 				.IgnoreQueryFilters()
@@ -517,6 +545,13 @@ public class BackupImportService(
 				existing.Date = date;
 				existing.TaxAmount = taxAmount;
 				existing.TaxAmountCurrency = taxAmountCurrency;
+				// Only overwrite image paths when the backup actually carried them (v4+); a v1-3
+				// restore must not null out paths already present on the existing receipt.
+				if (hasImagePaths)
+				{
+					existing.OriginalImagePath = originalImagePath;
+					existing.ProcessedImagePath = processedImagePath;
+				}
 				ClearSoftDelete(existing);
 				updated++;
 			}
@@ -529,6 +564,8 @@ public class BackupImportService(
 					Date = date,
 					TaxAmount = taxAmount,
 					TaxAmountCurrency = taxAmountCurrency,
+					OriginalImagePath = originalImagePath,
+					ProcessedImagePath = processedImagePath,
 				});
 				created++;
 			}
@@ -640,7 +677,7 @@ public class BackupImportService(
 			Guid cardId = Guid.Parse(reader.GetString(2));
 			decimal amount = reader.GetDecimal(3);
 			Currency amountCurrency = Enum.Parse<Currency>(reader.GetString(4));
-			DateOnly date = DateOnly.Parse(reader.GetString(5));
+			DateOnly date = DateOnly.Parse(reader.GetString(5), CultureInfo.InvariantCulture);
 
 			// Fall back to cardId when the Card is missing from the lookup (shouldn't happen
 			// in practice — Cards are upserted before Transactions — but defensive).
@@ -727,6 +764,333 @@ public class BackupImportService(
 					Amount = amount,
 					AmountCurrency = amountCurrency,
 					Description = description,
+				});
+				created++;
+			}
+		}
+
+		await context.SaveChangesAsync(cancellationToken);
+		return (created, updated);
+	}
+
+	// Parses an ISO-8601 round-trip timestamp written by the exporter, culture-independently.
+	private static DateTimeOffset ParseTimestamp(string value) =>
+		DateTimeOffset.Parse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
+
+	// v4 tables. Each returns (0, 0) when export_version < 4 or when the table is absent, so a
+	// v1-3 backup restores with these treated as empty and never throws.
+	private static async Task<(int Created, int Updated)> UpsertYnabSelectedBudgetsAsync(
+		ApplicationDbContext context, SqliteConnection sqlite, int exportVersion, CancellationToken cancellationToken)
+	{
+		if (exportVersion < 4 || !TableExists(sqlite, "ynab_selected_budgets"))
+		{
+			return (0, 0);
+		}
+
+		int created = 0, updated = 0;
+		await using SqliteCommand cmd = sqlite.CreateCommand();
+		cmd.CommandText = "SELECT id, budget_id, updated_at FROM ynab_selected_budgets";
+		await using SqliteDataReader reader = await cmd.ExecuteReaderAsync(cancellationToken);
+
+		while (await reader.ReadAsync(cancellationToken))
+		{
+			Guid id = Guid.Parse(reader.GetString(0));
+			string budgetId = reader.GetString(1);
+			DateTimeOffset updatedAt = ParseTimestamp(reader.GetString(2));
+
+			YnabSelectedBudgetEntity? existing = await context.YnabSelectedBudgets.FindAsync([id], cancellationToken);
+			if (existing is not null)
+			{
+				existing.BudgetId = budgetId;
+				existing.UpdatedAt = updatedAt;
+				updated++;
+			}
+			else
+			{
+				context.YnabSelectedBudgets.Add(new YnabSelectedBudgetEntity
+				{
+					Id = id,
+					BudgetId = budgetId,
+					UpdatedAt = updatedAt,
+				});
+				created++;
+			}
+		}
+
+		await context.SaveChangesAsync(cancellationToken);
+		return (created, updated);
+	}
+
+	// FK: ReceiptsAccountId → Accounts.Id. Accounts are upserted before this method runs.
+	private static async Task<(int Created, int Updated)> UpsertYnabAccountMappingsAsync(
+		ApplicationDbContext context, SqliteConnection sqlite, int exportVersion, CancellationToken cancellationToken)
+	{
+		if (exportVersion < 4 || !TableExists(sqlite, "ynab_account_mappings"))
+		{
+			return (0, 0);
+		}
+
+		int created = 0, updated = 0;
+		await using SqliteCommand cmd = sqlite.CreateCommand();
+		cmd.CommandText = "SELECT id, receipts_account_id, ynab_account_id, ynab_account_name, ynab_budget_id, created_at, updated_at FROM ynab_account_mappings";
+		await using SqliteDataReader reader = await cmd.ExecuteReaderAsync(cancellationToken);
+
+		while (await reader.ReadAsync(cancellationToken))
+		{
+			Guid id = Guid.Parse(reader.GetString(0));
+			Guid receiptsAccountId = Guid.Parse(reader.GetString(1));
+			string ynabAccountId = reader.GetString(2);
+			string ynabAccountName = reader.GetString(3);
+			string ynabBudgetId = reader.GetString(4);
+			DateTimeOffset createdAt = ParseTimestamp(reader.GetString(5));
+			DateTimeOffset updatedAt = ParseTimestamp(reader.GetString(6));
+
+			YnabAccountMappingEntity? existing = await context.YnabAccountMappings.FindAsync([id], cancellationToken);
+			if (existing is not null)
+			{
+				existing.ReceiptsAccountId = receiptsAccountId;
+				existing.YnabAccountId = ynabAccountId;
+				existing.YnabAccountName = ynabAccountName;
+				existing.YnabBudgetId = ynabBudgetId;
+				existing.CreatedAt = createdAt;
+				existing.UpdatedAt = updatedAt;
+				updated++;
+			}
+			else
+			{
+				context.YnabAccountMappings.Add(new YnabAccountMappingEntity
+				{
+					Id = id,
+					ReceiptsAccountId = receiptsAccountId,
+					YnabAccountId = ynabAccountId,
+					YnabAccountName = ynabAccountName,
+					YnabBudgetId = ynabBudgetId,
+					CreatedAt = createdAt,
+					UpdatedAt = updatedAt,
+				});
+				created++;
+			}
+		}
+
+		await context.SaveChangesAsync(cancellationToken);
+		return (created, updated);
+	}
+
+	private static async Task<(int Created, int Updated)> UpsertYnabCategoryMappingsAsync(
+		ApplicationDbContext context, SqliteConnection sqlite, int exportVersion, CancellationToken cancellationToken)
+	{
+		if (exportVersion < 4 || !TableExists(sqlite, "ynab_category_mappings"))
+		{
+			return (0, 0);
+		}
+
+		int created = 0, updated = 0;
+		await using SqliteCommand cmd = sqlite.CreateCommand();
+		cmd.CommandText = "SELECT id, receipts_category, ynab_category_id, ynab_category_name, ynab_category_group_name, ynab_budget_id, created_at, updated_at FROM ynab_category_mappings";
+		await using SqliteDataReader reader = await cmd.ExecuteReaderAsync(cancellationToken);
+
+		while (await reader.ReadAsync(cancellationToken))
+		{
+			Guid id = Guid.Parse(reader.GetString(0));
+			string receiptsCategory = reader.GetString(1);
+			string ynabCategoryId = reader.GetString(2);
+			string ynabCategoryName = reader.GetString(3);
+			string ynabCategoryGroupName = reader.GetString(4);
+			string ynabBudgetId = reader.GetString(5);
+			DateTimeOffset createdAt = ParseTimestamp(reader.GetString(6));
+			DateTimeOffset updatedAt = ParseTimestamp(reader.GetString(7));
+
+			YnabCategoryMappingEntity? existing = await context.YnabCategoryMappings.FindAsync([id], cancellationToken);
+			if (existing is not null)
+			{
+				existing.ReceiptsCategory = receiptsCategory;
+				existing.YnabCategoryId = ynabCategoryId;
+				existing.YnabCategoryName = ynabCategoryName;
+				existing.YnabCategoryGroupName = ynabCategoryGroupName;
+				existing.YnabBudgetId = ynabBudgetId;
+				existing.CreatedAt = createdAt;
+				existing.UpdatedAt = updatedAt;
+				updated++;
+			}
+			else
+			{
+				context.YnabCategoryMappings.Add(new YnabCategoryMappingEntity
+				{
+					Id = id,
+					ReceiptsCategory = receiptsCategory,
+					YnabCategoryId = ynabCategoryId,
+					YnabCategoryName = ynabCategoryName,
+					YnabCategoryGroupName = ynabCategoryGroupName,
+					YnabBudgetId = ynabBudgetId,
+					CreatedAt = createdAt,
+					UpdatedAt = updatedAt,
+				});
+				created++;
+			}
+		}
+
+		await context.SaveChangesAsync(cancellationToken);
+		return (created, updated);
+	}
+
+	// FK: LocalTransactionId → Transactions.Id. Transactions are upserted before this method
+	// runs. YnabSyncRecords are soft-deletable, so lookups ignore the query filter and updates
+	// clear the soft-delete markers, mirroring the other soft-deletable upserts.
+	private static async Task<(int Created, int Updated)> UpsertYnabSyncRecordsAsync(
+		ApplicationDbContext context, SqliteConnection sqlite, int exportVersion, CancellationToken cancellationToken)
+	{
+		if (exportVersion < 4 || !TableExists(sqlite, "ynab_sync_records"))
+		{
+			return (0, 0);
+		}
+
+		int created = 0, updated = 0;
+		await using SqliteCommand cmd = sqlite.CreateCommand();
+		cmd.CommandText = "SELECT id, local_transaction_id, ynab_transaction_id, ynab_budget_id, ynab_account_id, sync_type, sync_status, synced_at_utc, last_error, created_at, updated_at FROM ynab_sync_records";
+		await using SqliteDataReader reader = await cmd.ExecuteReaderAsync(cancellationToken);
+
+		while (await reader.ReadAsync(cancellationToken))
+		{
+			Guid id = Guid.Parse(reader.GetString(0));
+			Guid localTransactionId = Guid.Parse(reader.GetString(1));
+			string? ynabTransactionId = reader.IsDBNull(2) ? null : reader.GetString(2);
+			string ynabBudgetId = reader.GetString(3);
+			string? ynabAccountId = reader.IsDBNull(4) ? null : reader.GetString(4);
+			YnabSyncType syncType = Enum.Parse<YnabSyncType>(reader.GetString(5));
+			YnabSyncStatus syncStatus = Enum.Parse<YnabSyncStatus>(reader.GetString(6));
+			DateTimeOffset? syncedAtUtc = reader.IsDBNull(7) ? null : ParseTimestamp(reader.GetString(7));
+			string? lastError = reader.IsDBNull(8) ? null : reader.GetString(8);
+			DateTimeOffset createdAt = ParseTimestamp(reader.GetString(9));
+			DateTimeOffset updatedAt = ParseTimestamp(reader.GetString(10));
+
+			YnabSyncRecordEntity? existing = await context.YnabSyncRecords
+				.IgnoreQueryFilters()
+				.FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
+			if (existing is not null)
+			{
+				existing.LocalTransactionId = localTransactionId;
+				existing.YnabTransactionId = ynabTransactionId;
+				existing.YnabBudgetId = ynabBudgetId;
+				existing.YnabAccountId = ynabAccountId;
+				existing.SyncType = syncType;
+				existing.SyncStatus = syncStatus;
+				existing.SyncedAtUtc = syncedAtUtc;
+				existing.LastError = lastError;
+				existing.CreatedAt = createdAt;
+				existing.UpdatedAt = updatedAt;
+				ClearSoftDelete(existing);
+				updated++;
+			}
+			else
+			{
+				context.YnabSyncRecords.Add(new YnabSyncRecordEntity
+				{
+					Id = id,
+					LocalTransactionId = localTransactionId,
+					YnabTransactionId = ynabTransactionId,
+					YnabBudgetId = ynabBudgetId,
+					YnabAccountId = ynabAccountId,
+					SyncType = syncType,
+					SyncStatus = syncStatus,
+					SyncedAtUtc = syncedAtUtc,
+					LastError = lastError,
+					CreatedAt = createdAt,
+					UpdatedAt = updatedAt,
+				});
+				created++;
+			}
+		}
+
+		await context.SaveChangesAsync(cancellationToken);
+		return (created, updated);
+	}
+
+	// The embedding vector is intentionally not restored (see BackupService for rationale): new
+	// rows are created with a null embedding and repopulated by the embedding pipeline, and the
+	// embedding on an existing row is left untouched so a restore never destroys a valid vector.
+	private static async Task<(int Created, int Updated)> UpsertNormalizedDescriptionsAsync(
+		ApplicationDbContext context, SqliteConnection sqlite, int exportVersion, CancellationToken cancellationToken)
+	{
+		if (exportVersion < 4 || !TableExists(sqlite, "normalized_descriptions"))
+		{
+			return (0, 0);
+		}
+
+		int created = 0, updated = 0;
+		await using SqliteCommand cmd = sqlite.CreateCommand();
+		cmd.CommandText = "SELECT id, canonical_name, status, created_at FROM normalized_descriptions";
+		await using SqliteDataReader reader = await cmd.ExecuteReaderAsync(cancellationToken);
+
+		while (await reader.ReadAsync(cancellationToken))
+		{
+			Guid id = Guid.Parse(reader.GetString(0));
+			string canonicalName = reader.GetString(1);
+			NormalizedDescriptionStatus status = Enum.Parse<NormalizedDescriptionStatus>(reader.GetString(2));
+			DateTimeOffset createdAt = ParseTimestamp(reader.GetString(3));
+
+			NormalizedDescriptionEntity? existing = await context.NormalizedDescriptions.FindAsync([id], cancellationToken);
+			if (existing is not null)
+			{
+				existing.CanonicalName = canonicalName;
+				existing.Status = status;
+				existing.CreatedAt = createdAt;
+				updated++;
+			}
+			else
+			{
+				context.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
+				{
+					Id = id,
+					CanonicalName = canonicalName,
+					Status = status,
+					CreatedAt = createdAt,
+				});
+				created++;
+			}
+		}
+
+		await context.SaveChangesAsync(cancellationToken);
+		return (created, updated);
+	}
+
+	// Singleton settings row (thresholds). No FK, so order is flexible. Thresholds are parsed
+	// with InvariantCulture to match the culture-safe export.
+	private static async Task<(int Created, int Updated)> UpsertNormalizedDescriptionSettingsAsync(
+		ApplicationDbContext context, SqliteConnection sqlite, int exportVersion, CancellationToken cancellationToken)
+	{
+		if (exportVersion < 4 || !TableExists(sqlite, "normalized_description_settings"))
+		{
+			return (0, 0);
+		}
+
+		int created = 0, updated = 0;
+		await using SqliteCommand cmd = sqlite.CreateCommand();
+		cmd.CommandText = "SELECT id, auto_accept_threshold, pending_review_threshold, updated_at FROM normalized_description_settings";
+		await using SqliteDataReader reader = await cmd.ExecuteReaderAsync(cancellationToken);
+
+		while (await reader.ReadAsync(cancellationToken))
+		{
+			Guid id = Guid.Parse(reader.GetString(0));
+			double autoAcceptThreshold = double.Parse(reader.GetString(1), CultureInfo.InvariantCulture);
+			double pendingReviewThreshold = double.Parse(reader.GetString(2), CultureInfo.InvariantCulture);
+			DateTimeOffset updatedAt = ParseTimestamp(reader.GetString(3));
+
+			NormalizedDescriptionSettingsEntity? existing = await context.NormalizedDescriptionSettings.FindAsync([id], cancellationToken);
+			if (existing is not null)
+			{
+				existing.AutoAcceptThreshold = autoAcceptThreshold;
+				existing.PendingReviewThreshold = pendingReviewThreshold;
+				existing.UpdatedAt = updatedAt;
+				updated++;
+			}
+			else
+			{
+				context.NormalizedDescriptionSettings.Add(new NormalizedDescriptionSettingsEntity
+				{
+					Id = id,
+					AutoAcceptThreshold = autoAcceptThreshold,
+					PendingReviewThreshold = pendingReviewThreshold,
+					UpdatedAt = updatedAt,
 				});
 				created++;
 			}

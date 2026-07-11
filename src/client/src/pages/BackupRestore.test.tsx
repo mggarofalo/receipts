@@ -7,8 +7,7 @@ vi.mock("@/hooks/usePageTitle", () => ({
 }));
 
 vi.mock("@tanstack/react-query", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("@tanstack/react-query")>();
+  const actual = await importOriginal<typeof import("@tanstack/react-query")>();
   return {
     ...actual,
     useMutation: vi.fn(() => ({
@@ -46,17 +45,21 @@ describe("BackupRestore", () => {
   it("renders the Export Backup card", () => {
     renderWithQueryClient(<BackupRestore />);
     expect(
-      screen.getByText(/export backup/i, { selector: "[data-slot='card-title']" }),
+      screen.getByText(/export backup/i, {
+        selector: "[data-slot='card-title']",
+      }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/download a complete sqlite backup/i),
+      screen.getByText(/download a sqlite backup of your database/i),
     ).toBeInTheDocument();
   });
 
   it("renders the Import Backup card", () => {
     renderWithQueryClient(<BackupRestore />);
     expect(
-      screen.getByText(/import backup/i, { selector: "[data-slot='card-title']" }),
+      screen.getByText(/import backup/i, {
+        selector: "[data-slot='card-title']",
+      }),
     ).toBeInTheDocument();
     expect(
       screen.getByText(/upload a previously exported sqlite backup/i),
@@ -84,7 +87,7 @@ describe("BackupRestore", () => {
   it("renders the info alert about what backups include", () => {
     renderWithQueryClient(<BackupRestore />);
     expect(
-      screen.getByText(/backups include all receipts/i),
+      screen.getByText(/backups include your receipts/i),
     ).toBeInTheDocument();
   });
 
@@ -92,7 +95,9 @@ describe("BackupRestore", () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     renderWithQueryClient(<BackupRestore />);
 
-    const fileInput = document.getElementById("backup-file") as HTMLInputElement;
+    const fileInput = document.getElementById(
+      "backup-file",
+    ) as HTMLInputElement;
     const testFile = new File(["test"], "backup.sqlite", {
       type: "application/octet-stream",
     });
@@ -106,28 +111,32 @@ describe("BackupRestore", () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     renderWithQueryClient(<BackupRestore />);
 
-    const fileInput = document.getElementById("backup-file") as HTMLInputElement;
+    const fileInput = document.getElementById(
+      "backup-file",
+    ) as HTMLInputElement;
     const testFile = new File(["test-data"], "my-backup.sqlite", {
       type: "application/octet-stream",
     });
     await user.upload(fileInput, testFile);
 
-    expect(screen.getByText(/selected: my-backup\.sqlite/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/selected: my-backup\.sqlite/i),
+    ).toBeInTheDocument();
   });
 
   it("opens confirmation dialog when Import Backup is clicked", async () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     renderWithQueryClient(<BackupRestore />);
 
-    const fileInput = document.getElementById("backup-file") as HTMLInputElement;
+    const fileInput = document.getElementById(
+      "backup-file",
+    ) as HTMLInputElement;
     const testFile = new File(["test"], "backup.sqlite", {
       type: "application/octet-stream",
     });
     await user.upload(fileInput, testFile);
 
-    await user.click(
-      screen.getByRole("button", { name: /import backup/i }),
-    );
+    await user.click(screen.getByRole("button", { name: /import backup/i }));
 
     expect(
       screen.getByRole("heading", { name: /confirm import/i }),
@@ -141,15 +150,15 @@ describe("BackupRestore", () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     renderWithQueryClient(<BackupRestore />);
 
-    const fileInput = document.getElementById("backup-file") as HTMLInputElement;
+    const fileInput = document.getElementById(
+      "backup-file",
+    ) as HTMLInputElement;
     const testFile = new File(["test"], "backup.sqlite", {
       type: "application/octet-stream",
     });
     await user.upload(fileInput, testFile);
 
-    await user.click(
-      screen.getByRole("button", { name: /import backup/i }),
-    );
+    await user.click(screen.getByRole("button", { name: /import backup/i }));
 
     expect(screen.getByRole("alertdialog")).toBeInTheDocument();
   });
@@ -158,15 +167,15 @@ describe("BackupRestore", () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     renderWithQueryClient(<BackupRestore />);
 
-    const fileInput = document.getElementById("backup-file") as HTMLInputElement;
+    const fileInput = document.getElementById(
+      "backup-file",
+    ) as HTMLInputElement;
     const testFile = new File(["test"], "backup.sqlite", {
       type: "application/octet-stream",
     });
     await user.upload(fileInput, testFile);
 
-    await user.click(
-      screen.getByRole("button", { name: /import backup/i }),
-    );
+    await user.click(screen.getByRole("button", { name: /import backup/i }));
 
     expect(screen.getByRole("alertdialog")).toBeInTheDocument();
 
@@ -189,21 +198,19 @@ describe("BackupRestore", () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     renderWithQueryClient(<BackupRestore />);
 
-    const fileInput = document.getElementById("backup-file") as HTMLInputElement;
+    const fileInput = document.getElementById(
+      "backup-file",
+    ) as HTMLInputElement;
     const testFile = new File(["test"], "backup.sqlite", {
       type: "application/octet-stream",
     });
     await user.upload(fileInput, testFile);
 
-    await user.click(
-      screen.getByRole("button", { name: /import backup/i }),
-    );
+    await user.click(screen.getByRole("button", { name: /import backup/i }));
 
     expect(screen.getByRole("alertdialog")).toBeInTheDocument();
 
-    await user.click(
-      screen.getByRole("button", { name: /confirm import/i }),
-    );
+    await user.click(screen.getByRole("button", { name: /confirm import/i }));
 
     expect(mockMutate).toHaveBeenCalled();
   });
@@ -212,15 +219,15 @@ describe("BackupRestore", () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     renderWithQueryClient(<BackupRestore />);
 
-    const fileInput = document.getElementById("backup-file") as HTMLInputElement;
+    const fileInput = document.getElementById(
+      "backup-file",
+    ) as HTMLInputElement;
     const testFile = new File(["test"], "backup.sqlite", {
       type: "application/octet-stream",
     });
     await user.upload(fileInput, testFile);
 
-    await user.click(
-      screen.getByRole("button", { name: /import backup/i }),
-    );
+    await user.click(screen.getByRole("button", { name: /import backup/i }));
 
     expect(
       screen.getByRole("heading", { name: /confirm import/i }),
@@ -247,19 +254,17 @@ describe("BackupRestore", () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     renderWithQueryClient(<BackupRestore />);
 
-    const fileInput = document.getElementById("backup-file") as HTMLInputElement;
+    const fileInput = document.getElementById(
+      "backup-file",
+    ) as HTMLInputElement;
     const testFile = new File(["test"], "backup.sqlite", {
       type: "application/octet-stream",
     });
     await user.upload(fileInput, testFile);
 
-    await user.click(
-      screen.getByRole("button", { name: /import backup/i }),
-    );
+    await user.click(screen.getByRole("button", { name: /import backup/i }));
 
-    await user.click(
-      screen.getByRole("button", { name: /confirm import/i }),
-    );
+    await user.click(screen.getByRole("button", { name: /confirm import/i }));
 
     // The import mutation is the second useMutation call
     expect(mockMutate).toHaveBeenCalled();
@@ -277,9 +282,7 @@ describe("BackupRestore", () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     renderWithQueryClient(<BackupRestore />);
 
-    await user.click(
-      screen.getByRole("button", { name: /export backup/i }),
-    );
+    await user.click(screen.getByRole("button", { name: /export backup/i }));
 
     expect(mockMutate).toHaveBeenCalled();
   });
@@ -339,9 +342,7 @@ describe("BackupRestore", () => {
     })) as unknown as typeof useMutation);
 
     renderWithQueryClient(<BackupRestore />);
-    await user.click(
-      screen.getByRole("button", { name: /export backup/i }),
-    );
+    await user.click(screen.getByRole("button", { name: /export backup/i }));
 
     await vi.waitFor(() => {
       expect(showSuccess).toHaveBeenCalledWith("Backup exported successfully.");
@@ -365,9 +366,7 @@ describe("BackupRestore", () => {
     })) as unknown as typeof useMutation);
 
     renderWithQueryClient(<BackupRestore />);
-    await user.click(
-      screen.getByRole("button", { name: /export backup/i }),
-    );
+    await user.click(screen.getByRole("button", { name: /export backup/i }));
 
     await vi.waitFor(() => {
       expect(showError).toHaveBeenCalledWith("Export failed (500).");
@@ -405,18 +404,16 @@ describe("BackupRestore", () => {
 
     renderWithQueryClient(<BackupRestore />);
 
-    const fileInput = document.getElementById("backup-file") as HTMLInputElement;
+    const fileInput = document.getElementById(
+      "backup-file",
+    ) as HTMLInputElement;
     const testFile = new File(["test"], "backup.sqlite", {
       type: "application/octet-stream",
     });
     await user.upload(fileInput, testFile);
 
-    await user.click(
-      screen.getByRole("button", { name: /import backup/i }),
-    );
-    await user.click(
-      screen.getByRole("button", { name: /confirm import/i }),
-    );
+    await user.click(screen.getByRole("button", { name: /import backup/i }));
+    await user.click(screen.getByRole("button", { name: /confirm import/i }));
 
     await vi.waitFor(() => {
       expect(showSuccess).toHaveBeenCalledWith(
@@ -456,23 +453,19 @@ describe("BackupRestore", () => {
 
     renderWithQueryClient(<BackupRestore />);
 
-    const fileInput = document.getElementById("backup-file") as HTMLInputElement;
+    const fileInput = document.getElementById(
+      "backup-file",
+    ) as HTMLInputElement;
     const testFile = new File(["test"], "backup.sqlite", {
       type: "application/octet-stream",
     });
     await user.upload(fileInput, testFile);
 
-    await user.click(
-      screen.getByRole("button", { name: /import backup/i }),
-    );
-    await user.click(
-      screen.getByRole("button", { name: /confirm import/i }),
-    );
+    await user.click(screen.getByRole("button", { name: /import backup/i }));
+    await user.click(screen.getByRole("button", { name: /confirm import/i }));
 
     await vi.waitFor(() => {
-      expect(showError).toHaveBeenCalledWith(
-        "Invalid or corrupt backup file.",
-      );
+      expect(showError).toHaveBeenCalledWith("Invalid or corrupt backup file.");
     });
   });
 
@@ -480,15 +473,15 @@ describe("BackupRestore", () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     renderWithQueryClient(<BackupRestore />);
 
-    const fileInput = document.getElementById("backup-file") as HTMLInputElement;
+    const fileInput = document.getElementById(
+      "backup-file",
+    ) as HTMLInputElement;
     const testFile = new File(["test-data-content"], "my-backup.sqlite", {
       type: "application/octet-stream",
     });
     await user.upload(fileInput, testFile);
 
-    await user.click(
-      screen.getByRole("button", { name: /import backup/i }),
-    );
+    await user.click(screen.getByRole("button", { name: /import backup/i }));
 
     expect(screen.getByText(/file: my-backup\.sqlite/i)).toBeInTheDocument();
   });
@@ -497,15 +490,15 @@ describe("BackupRestore", () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     renderWithQueryClient(<BackupRestore />);
 
-    const fileInput = document.getElementById("backup-file") as HTMLInputElement;
+    const fileInput = document.getElementById(
+      "backup-file",
+    ) as HTMLInputElement;
     const testFile = new File(["test"], "backup.sqlite", {
       type: "application/octet-stream",
     });
     await user.upload(fileInput, testFile);
 
-    await user.click(
-      screen.getByRole("button", { name: /import backup/i }),
-    );
+    await user.click(screen.getByRole("button", { name: /import backup/i }));
 
     expect(
       screen.getByRole("heading", { name: /confirm import/i }),
@@ -522,7 +515,9 @@ describe("BackupRestore", () => {
 
   it("accepts .sqlite files in the file input", () => {
     renderWithQueryClient(<BackupRestore />);
-    const fileInput = document.getElementById("backup-file") as HTMLInputElement;
+    const fileInput = document.getElementById(
+      "backup-file",
+    ) as HTMLInputElement;
     expect(fileInput.accept).toBe(".sqlite,.db");
   });
 
@@ -554,25 +549,23 @@ describe("BackupRestore", () => {
 
     const { rerender } = renderWithQueryClient(<BackupRestore />);
 
-    const fileInput = document.getElementById("backup-file") as HTMLInputElement;
+    const fileInput = document.getElementById(
+      "backup-file",
+    ) as HTMLInputElement;
     const testFile = new File(["test"], "backup.sqlite", {
       type: "application/octet-stream",
     });
     await user.upload(fileInput, testFile);
 
     // Open the confirmation dialog
-    await user.click(
-      screen.getByRole("button", { name: /import backup/i }),
-    );
+    await user.click(screen.getByRole("button", { name: /import backup/i }));
 
     expect(
       screen.getByRole("heading", { name: /confirm import/i }),
     ).toBeInTheDocument();
 
     // Click Confirm Import (this triggers mutate, setting importPending = true)
-    await user.click(
-      screen.getByRole("button", { name: /confirm import/i }),
-    );
+    await user.click(screen.getByRole("button", { name: /confirm import/i }));
 
     // Re-render to pick up the pending state change
     // Reset mock call count for the re-render
