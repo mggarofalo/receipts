@@ -287,6 +287,33 @@ public class ReceiptRepositoryTests
 	}
 
 	[Fact]
+	public async Task ExistsAsync_SoftDeletedId_ReturnsFalse()
+	{
+		// Arrange — a soft-deleted receipt must read as absent so child-create paths reject it
+		// with 404 instead of orphaning children under a trashed receipt (RECEIPTS-763).
+		ReceiptEntity entity = ReceiptEntityGenerator.Generate();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			await seed.Receipts.AddAsync(entity);
+			await seed.SaveChangesAsync(CancellationToken.None);
+
+			// Remove() on a soft-deletable entity is intercepted as a soft delete (sets DeletedAt).
+			seed.Receipts.Remove(entity);
+			await seed.SaveChangesAsync(CancellationToken.None);
+		}
+
+		ReceiptRepository repository = new(_contextFactory);
+
+		// Act
+		bool result = await repository.ExistsAsync(entity.Id, CancellationToken.None);
+
+		// Assert
+		Assert.False(result);
+
+		_contextFactory.ResetDatabase();
+	}
+
+	[Fact]
 	public async Task GetCountAsync_ReturnsCorrectCount()
 	{
 		// Arrange

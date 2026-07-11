@@ -6,6 +6,7 @@ using Infrastructure.Entities.Core;
 using Infrastructure.Interfaces.Repositories;
 using Infrastructure.Mapping;
 using Infrastructure.Services;
+using Microsoft.EntityFrameworkCore;
 using Moq;
 using SampleData.Domain.Core;
 using SampleData.Entities;
@@ -24,7 +25,23 @@ public class TransactionServiceTests
 		_mockRepository = new Mock<ITransactionRepository>();
 		_mapper = new TransactionMapper();
 		_accountMapper = new AccountMapper();
-		_service = new TransactionService(_mockRepository.Object, _mapper, _accountMapper);
+
+		// The balance-validation methods (CreateWithBalanceValidationAsync / UpdateWith...) require
+		// a DbContext factory and the child-entity mappers, but every test in this class exercises
+		// the repository-delegating members only, so the factory is never invoked. The DB-level
+		// balance-validation behaviour (row lock, existence guard, serialization) is covered against
+		// real PostgreSQL in Infrastructure.IntegrationTests.TransactionBalanceValidationTests —
+		// InMemory cannot model the row lock and running that path here crashed the test host under
+		// coverage on CI (RECEIPTS-764).
+		Mock<IDbContextFactory<ApplicationDbContext>> contextFactory = new();
+		_service = new TransactionService(
+			_mockRepository.Object,
+			_mapper,
+			_accountMapper,
+			contextFactory.Object,
+			new ReceiptMapper(),
+			new ReceiptItemMapper(),
+			new AdjustmentMapper());
 	}
 
 	[Fact]
