@@ -7,6 +7,15 @@ public class UpdateCardCommandHandler(ICardService cardService) : IRequestHandle
 {
 	public async ValueTask<bool> Handle(UpdateCardCommand request, CancellationToken cancellationToken)
 	{
+		foreach (Domain.Core.Card card in request.Cards)
+		{
+			bool exists = await cardService.ExistsAsync(card.Id, cancellationToken);
+			if (!exists)
+			{
+				return false;
+			}
+		}
+
 		await cardService.UpdateAsync([.. request.Cards], cancellationToken);
 		return true;
 	}

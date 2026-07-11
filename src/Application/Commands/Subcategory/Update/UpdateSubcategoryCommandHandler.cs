@@ -7,6 +7,15 @@ public class UpdateSubcategoryCommandHandler(ISubcategoryService subcategoryServ
 {
 	public async ValueTask<bool> Handle(UpdateSubcategoryCommand request, CancellationToken cancellationToken)
 	{
+		foreach (Domain.Core.Subcategory subcategory in request.Subcategories)
+		{
+			bool exists = await subcategoryService.ExistsAsync(subcategory.Id, cancellationToken);
+			if (!exists)
+			{
+				return false;
+			}
+		}
+
 		await subcategoryService.UpdateAsync([.. request.Subcategories], cancellationToken);
 		return true;
 	}

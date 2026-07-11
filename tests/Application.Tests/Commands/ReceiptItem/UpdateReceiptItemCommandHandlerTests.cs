@@ -30,4 +30,23 @@ public class UpdateReceiptItemCommandHandlerTests
 
 		Assert.True(result);
 	}
+
+	[Fact]
+	public async Task UpdateReceiptItemCommandHandler_WithMissingItem_ReturnsFalseAndNeverPersists()
+	{
+		Mock<IReceiptItemService> mockService = new();
+		UpdateReceiptItemCommandHandler handler = new(mockService.Object);
+
+		List<Domain.Core.ReceiptItem> input = ReceiptItemGenerator.GenerateList(1);
+
+		// A soft-deleted/missing target yields null from GetByIdAsync → 404 (RECEIPTS-761).
+		mockService.Setup(r => r.GetByIdAsync(input[0].Id, It.IsAny<CancellationToken>()))
+			.ReturnsAsync((Domain.Core.ReceiptItem?)null);
+
+		UpdateReceiptItemCommand command = new(input);
+		bool result = await handler.Handle(command, CancellationToken.None);
+
+		Assert.False(result);
+		mockService.Verify(r => r.UpdateAsync(It.IsAny<List<Domain.Core.ReceiptItem>>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+	}
 }

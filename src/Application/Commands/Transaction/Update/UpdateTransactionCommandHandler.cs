@@ -14,8 +14,11 @@ public class UpdateTransactionCommandHandler(
 {
 	public async ValueTask<bool> Handle(UpdateTransactionCommand request, CancellationToken cancellationToken)
 	{
-		Domain.Core.Transaction existingTransaction = await transactionService.GetByIdAsync(request.Transactions[0].Id, cancellationToken)
-			?? throw new InvalidOperationException("Transaction not found");
+		Domain.Core.Transaction? existingTransaction = await transactionService.GetByIdAsync(request.Transactions[0].Id, cancellationToken);
+		if (existingTransaction is null)
+		{
+			return false;
+		}
 
 		Guid receiptId = existingTransaction.ReceiptId;
 
