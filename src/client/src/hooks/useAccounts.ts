@@ -4,9 +4,11 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import client from "@/lib/api-client";
 import { toast } from "sonner";
 
-export function useAccounts(offset = 0, limit = 50, sortBy?: string | null, sortDirection?: string | null, isActive?: boolean | null) {
+export function useAccounts(offset = 0, limit = 50, sortBy?: string | null, sortDirection?: string | null, isActive?: boolean | null, options: { enabled?: boolean } = {}) {
+  const { enabled = true } = options;
   const query = useQuery({
     queryKey: ["accounts", "list", offset, limit, sortBy, sortDirection, isActive],
+    enabled,
     queryFn: async () => {
       const { data, error } = await client.GET("/api/accounts", {
         params: { query: { offset, limit, sortBy: sortBy ?? undefined, sortDirection: (sortDirection ?? undefined) as "asc" | "desc" | undefined, isActive: isActive ?? undefined } },

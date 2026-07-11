@@ -4,10 +4,12 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import client from "@/lib/api-client";
 import { toast } from "sonner";
 
-export function useReceiptItems(offset = 0, limit = 50, sortBy?: string | null, sortDirection?: string | null, q?: string | null) {
+export function useReceiptItems(offset = 0, limit = 50, sortBy?: string | null, sortDirection?: string | null, q?: string | null, options: { enabled?: boolean } = {}) {
+  const { enabled = true } = options;
   const trimmedQ = q?.trim() || undefined;
   const query = useQuery({
     queryKey: ["receipt-items", "list", offset, limit, sortBy, sortDirection, trimmedQ],
+    enabled,
     queryFn: async () => {
       const { data, error } = await client.GET("/api/receipt-items", {
         params: { query: { offset, limit, sortBy: sortBy ?? undefined, sortDirection: (sortDirection ?? undefined) as "asc" | "desc" | undefined, q: trimmedQ } },

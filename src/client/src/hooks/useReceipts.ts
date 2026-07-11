@@ -12,10 +12,13 @@ export function useReceipts(
   accountId?: string | null,
   cardId?: string | null,
   q?: string | null,
+  options: { enabled?: boolean } = {},
 ) {
+  const { enabled = true } = options;
   const trimmedQ = q?.trim() || undefined;
   const query = useQuery({
     queryKey: ["receipts", "list", offset, limit, sortBy, sortDirection, accountId, cardId, trimmedQ],
+    enabled,
     queryFn: async () => {
       const { data, error } = await client.GET("/api/receipts", {
         params: {

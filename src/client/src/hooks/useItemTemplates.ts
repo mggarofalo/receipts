@@ -4,9 +4,11 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import client from "@/lib/api-client";
 import { toast } from "sonner";
 
-export function useItemTemplates(offset = 0, limit = 50, sortBy?: string | null, sortDirection?: string | null) {
+export function useItemTemplates(offset = 0, limit = 50, sortBy?: string | null, sortDirection?: string | null, options: { enabled?: boolean } = {}) {
+  const { enabled = true } = options;
   const query = useQuery({
     queryKey: ["itemTemplates", "list", offset, limit, sortBy, sortDirection],
+    enabled,
     queryFn: async () => {
       const { data, error } = await client.GET("/api/item-templates", {
         params: { query: { offset, limit, sortBy: sortBy ?? undefined, sortDirection: (sortDirection ?? undefined) as "asc" | "desc" | undefined } },
