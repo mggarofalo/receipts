@@ -186,7 +186,7 @@ describe("useItemTemplates", () => {
 
   // --- Branch coverage: error callbacks ---
 
-  it("create mutation shows error toast on failure", async () => {
+  it("create mutation does not toast on failure (surfaced by the global handler)", async () => {
     (client.POST as Mock).mockResolvedValue({ error: { message: "Server error" } });
 
     const { result } = renderHook(() => useCreateItemTemplate(), {
@@ -196,10 +196,10 @@ describe("useItemTemplates", () => {
     result.current.mutate({ name: "Template", description: null });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(toast.error).toHaveBeenCalledWith("Failed to create item template");
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
-  it("update mutation shows error toast on failure", async () => {
+  it("update mutation does not toast on failure (surfaced by the global handler)", async () => {
     (client.PUT as Mock).mockResolvedValue({ error: { message: "Server error" } });
 
     const { result } = renderHook(() => useUpdateItemTemplate(), {
@@ -209,10 +209,10 @@ describe("useItemTemplates", () => {
     result.current.mutate({ id: "1", name: "Template", description: null });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(toast.error).toHaveBeenCalledWith("Failed to update item template");
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
-  it("delete mutation shows error toast and rolls back cache on failure", async () => {
+  it("delete mutation rolls back cache on failure (error surfaced by the global handler)", async () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false, gcTime: 0 } },
     });
@@ -240,7 +240,7 @@ describe("useItemTemplates", () => {
     result.current.mutate(["1"]);
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(toast.error).toHaveBeenCalledWith("Failed to delete item template(s)");
+    expect(toast.error).not.toHaveBeenCalled();
 
     // Verify rollback restored the original data (not just the optimistic update from onMutate)
     expect(setQueryDataSpy).toHaveBeenCalledWith(cacheKey, cacheValue);
@@ -269,7 +269,7 @@ describe("useItemTemplates", () => {
     expect(toast.success).toHaveBeenCalledWith("Item template(s) deleted");
   });
 
-  it("restore mutation shows error toast on failure", async () => {
+  it("restore mutation does not toast on failure (surfaced by the global handler)", async () => {
     (client.POST as Mock).mockResolvedValue({ error: { message: "Server error" } });
 
     const { result } = renderHook(() => useRestoreItemTemplate(), {
@@ -279,7 +279,7 @@ describe("useItemTemplates", () => {
     result.current.mutate("1");
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(toast.error).toHaveBeenCalledWith("Failed to restore item template");
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
   it("list query throws on API error", async () => {
@@ -358,7 +358,7 @@ describe("useItemTemplates", () => {
     );
   });
 
-  it("hide mutation shows error toast on failure", async () => {
+  it("hide mutation does not toast on failure (surfaced by the global handler)", async () => {
     (client.DELETE as Mock).mockResolvedValue({ error: { message: "Server error" } });
 
     const { result } = renderHook(() => useHideItemTemplate(), {
@@ -368,7 +368,7 @@ describe("useItemTemplates", () => {
     result.current.mutate("template-1");
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(toast.error).toHaveBeenCalledWith("Failed to hide item template");
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
   it("hide mutation rolls back cache on failure", async () => {
@@ -399,7 +399,7 @@ describe("useItemTemplates", () => {
     result.current.mutate("template-1");
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(toast.error).toHaveBeenCalledWith("Failed to hide item template");
+    expect(toast.error).not.toHaveBeenCalled();
     expect(setQueryDataSpy).toHaveBeenCalledWith(cacheKey, cacheValue);
   });
 

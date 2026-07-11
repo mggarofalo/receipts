@@ -4,6 +4,7 @@ import { z } from "zod/v4";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useFormShortcuts } from "@/hooks/useFormShortcuts";
 import { useLocationHistory } from "@/hooks/useLocationHistory";
+import { isFutureDate } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { Combobox } from "@/components/ui/combobox";
@@ -23,7 +24,10 @@ const receiptSchema = z.object({
     .string()
     .min(1, "Location is required")
     .max(200, "Location must be 200 characters or fewer"),
-  date: z.string().min(1, "Date is required"),
+  date: z
+    .string()
+    .min(1, "Date is required")
+    .refine((v) => !isFutureDate(v), "Date cannot be in the future"),
   taxAmount: z.number().min(0, "Tax amount must be non-negative"),
 });
 

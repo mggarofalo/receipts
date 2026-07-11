@@ -152,7 +152,7 @@ describe("useCreateAccount", () => {
     expect(toast.success).toHaveBeenCalledWith("Account created");
   });
 
-  it("toasts error on failure", async () => {
+  it("does not toast on failure (surfaced by the global handler)", async () => {
     (client.POST as Mock).mockResolvedValue({ data: undefined, error: { message: "boom" } });
 
     const { result } = renderHook(() => useCreateAccount(), {
@@ -162,7 +162,7 @@ describe("useCreateAccount", () => {
     await expect(
       result.current.mutateAsync({ name: "Apple Card", isActive: true }),
     ).rejects.toBeDefined();
-    expect(toast.error).toHaveBeenCalledWith("Failed to create account");
+    expect(toast.error).not.toHaveBeenCalled();
   });
 });
 

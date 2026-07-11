@@ -78,9 +78,6 @@ export function useCreateReceiptItem() {
       queryClient.invalidateQueries({ queryKey: ["receipt-items"] });
       toast.success("Receipt item created");
     },
-    onError: () => {
-      toast.error("Failed to create receipt item");
-    },
   });
 }
 
@@ -111,9 +108,6 @@ export function useCreateReceiptItemsBatch() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["receipt-items"] });
     },
-    onError: () => {
-      toast.error("Failed to create receipt items");
-    },
   });
 }
 
@@ -143,9 +137,6 @@ export function useUpdateReceiptItem() {
       queryClient.invalidateQueries({ queryKey: ["receipt-items"] });
       toast.success("Receipt item updated");
     },
-    onError: () => {
-      toast.error("Failed to update receipt item");
-    },
   });
 }
 
@@ -174,7 +165,6 @@ export function useDeleteReceiptItems() {
       for (const [key, data] of context?.previous ?? []) {
         queryClient.setQueryData(key, data);
       }
-      toast.error("Failed to delete receipt item(s)");
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["receipt-items"] });
@@ -214,9 +204,6 @@ export function useRestoreReceiptItem() {
       queryClient.invalidateQueries({ queryKey: ["receipt-items"] });
       queryClient.invalidateQueries({ queryKey: ["receipt-items", "deleted"] });
       toast.success("Receipt item restored");
-    },
-    onError: () => {
-      toast.error("Failed to restore receipt item");
     },
   });
 }

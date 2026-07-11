@@ -71,9 +71,6 @@ export function useCreateTransaction() {
       queryClient.invalidateQueries({ queryKey: ["trips"] });
       toast.success("Transaction created");
     },
-    onError: () => {
-      toast.error("Failed to create transaction");
-    },
   });
 }
 
@@ -97,9 +94,6 @@ export function useCreateTransactionsBatch() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
     },
-    onError: () => {
-      toast.error("Failed to create transactions");
-    },
   });
 }
 
@@ -121,9 +115,6 @@ export function useUpdateTransaction() {
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       queryClient.invalidateQueries({ queryKey: ["trips"] });
       toast.success("Transaction updated");
-    },
-    onError: () => {
-      toast.error("Failed to update transaction");
     },
   });
 }
@@ -153,7 +144,6 @@ export function useDeleteTransactions() {
       for (const [key, data] of context?.previous ?? []) {
         queryClient.setQueryData(key, data);
       }
-      toast.error("Failed to delete transaction(s)");
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
@@ -195,9 +185,6 @@ export function useRestoreTransaction() {
       queryClient.invalidateQueries({ queryKey: ["transactions", "deleted"] });
       queryClient.invalidateQueries({ queryKey: ["trips"] });
       toast.success("Transaction restored");
-    },
-    onError: () => {
-      toast.error("Failed to restore transaction");
     },
   });
 }

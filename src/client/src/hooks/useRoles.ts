@@ -35,9 +35,6 @@ export function useAssignRole() {
       queryClient.invalidateQueries({ queryKey: ["userRoles", userId] });
       toast.success(`Role "${role}" assigned`);
     },
-    onError: (_error, { role }) => {
-      toast.error(`Failed to assign role "${role}"`);
-    },
   });
 }
 
@@ -54,9 +51,6 @@ export function useRemoveRole() {
     onSuccess: (_data, { userId, role }) => {
       queryClient.invalidateQueries({ queryKey: ["userRoles", userId] });
       toast.success(`Role "${role}" removed`);
-    },
-    onError: (_error, { role }) => {
-      toast.error(`Failed to remove role "${role}"`);
     },
   });
 }

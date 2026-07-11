@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   parseProblemDetails,
   extractFieldErrors,
+  extractErrorMessage,
   type ProblemDetailsError,
 } from "./problem-details";
 
@@ -95,5 +96,49 @@ describe("extractFieldErrors", () => {
 
     const result = extractFieldErrors(problem);
     expect(result).toEqual({ type: "Required" });
+  });
+});
+
+describe("extractErrorMessage", () => {
+  it("returns undefined for non-ProblemDetails errors", () => {
+    expect(extractErrorMessage(null)).toBeUndefined();
+    expect(extractErrorMessage({ message: "boom" })).toBeUndefined();
+    expect(extractErrorMessage("boom")).toBeUndefined();
+  });
+
+  it("prefers detail over field errors and title", () => {
+    expect(
+      extractErrorMessage({
+        status: 400,
+        title: "Bad Request",
+        detail: "Date cannot be in the future",
+        errors: { Date: ["ignored"] },
+      }),
+    ).toBe("Date cannot be in the future");
+  });
+
+  it("falls back to the first field error when detail is absent", () => {
+    expect(
+      extractErrorMessage({
+        status: 400,
+        title: "One or more validation errors occurred.",
+        errors: { Date: ["Date cannot be in the future"] },
+      }),
+    ).toBe("Date cannot be in the future");
+  });
+
+  it("uses a specific title when there is no detail or field error", () => {
+    expect(extractErrorMessage({ status: 409, title: "Conflict" })).toBe(
+      "Conflict",
+    );
+  });
+
+  it("ignores the generic ASP.NET validation title", () => {
+    expect(
+      extractErrorMessage({
+        status: 400,
+        title: "One or more validation errors occurred.",
+      }),
+    ).toBeUndefined();
   });
 });

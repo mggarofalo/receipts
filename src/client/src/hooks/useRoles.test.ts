@@ -112,6 +112,6 @@ describe("useRemoveRole", () => {
 
     await waitFor(() => expect(result.current.isError).toBe(true));
 
-    expect(toast.error).toHaveBeenCalledWith('Failed to remove role "Admin"');
+    expect(toast.error).not.toHaveBeenCalled();
   });
 });

@@ -71,9 +71,6 @@ export function useRenameItemSimilarityGroup() {
         `Renamed ${variables.itemIds.length} items to "${variables.newDescription}"`,
       );
     },
-    onError: () => {
-      toast.error("Failed to rename items");
-    },
   });
 }
 
@@ -91,9 +88,6 @@ export function useRefreshItemSimilarity() {
       toast.success(
         "Refresh requested — report will update in about a minute.",
       );
-    },
-    onError: () => {
-      toast.error("Failed to request refresh.");
     },
   });
 }

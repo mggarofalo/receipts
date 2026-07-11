@@ -7,10 +7,8 @@ import {
   QueryClient,
   QueryClientProvider,
 } from "@tanstack/react-query";
-import { toast } from "sonner";
-import { showApiError, showNetworkError } from "@/lib/toast";
-import { isTimeoutError } from "@/lib/api-client";
 import { sentryCreateBrowserRouter } from "@/lib/sentry";
+import { handleGlobalError } from "@/lib/global-error-handler";
 import { AppearanceProvider } from "@/contexts/AppearanceContext";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/contexts/AuthContext";
@@ -19,28 +17,6 @@ import { routeConfig } from "./App.tsx";
 import "./index.css";
 
 const router = sentryCreateBrowserRouter(routeConfig);
-
-function handleGlobalError(error: unknown) {
-  if (isTimeoutError(error)) {
-    toast.error("Request timed out. Please try again.");
-    return;
-  }
-
-  if (
-    error &&
-    typeof error === "object" &&
-    "status" in error &&
-    typeof (error as Record<string, unknown>).status === "number"
-  ) {
-    showApiError((error as Record<string, unknown>).status as number);
-    return;
-  }
-
-  if (error instanceof TypeError && error.message === "Failed to fetch") {
-    showNetworkError();
-    return;
-  }
-}
 
 const queryClient = new QueryClient({
   defaultOptions: {

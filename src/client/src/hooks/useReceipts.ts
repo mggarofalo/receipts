@@ -69,9 +69,6 @@ export function useCreateReceipt() {
       queryClient.invalidateQueries({ queryKey: ["receipts"] });
       toast.success("Receipt created");
     },
-    onError: () => {
-      toast.error("Failed to create receipt");
-    },
   });
 }
 
@@ -95,9 +92,6 @@ export function useUpdateReceipt() {
       queryClient.invalidateQueries({ queryKey: ["receipts"] });
       queryClient.invalidateQueries({ queryKey: ["trips"] });
       toast.success("Receipt updated");
-    },
-    onError: () => {
-      toast.error("Failed to update receipt");
     },
   });
 }
@@ -125,7 +119,6 @@ export function useDeleteReceipts() {
       for (const [key, data] of context?.previous ?? []) {
         queryClient.setQueryData(key, data);
       }
-      toast.error("Failed to delete receipt(s)");
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["receipts"] });
@@ -206,9 +199,6 @@ export function useRestoreReceipt() {
       queryClient.invalidateQueries({ queryKey: ["receipts"] });
       queryClient.invalidateQueries({ queryKey: ["receipts", "deleted"] });
       toast.success("Receipt restored");
-    },
-    onError: () => {
-      toast.error("Failed to restore receipt");
     },
   });
 }

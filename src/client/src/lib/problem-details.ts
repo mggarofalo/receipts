@@ -51,3 +51,33 @@ export function extractFieldErrors(
 
   return result;
 }
+
+// ASP.NET emits this generic title for any ValidationProblemDetails; the
+// useful, actionable text lives in `errors` (field messages), so we prefer a
+// field message over this boilerplate title.
+const GENERIC_VALIDATION_TITLE = "One or more validation errors occurred.";
+
+/**
+ * Derives the single most actionable human-readable message from an error
+ * thrown by openapi-fetch (which throws the ProblemDetails response body).
+ *
+ * Priority: `detail` (specific 4xx/409 messages like "Date cannot be in the
+ * future" or "A card named X already exists") → first field-level validation
+ * error → `title`. Returns undefined when the error isn't ProblemDetails-shaped
+ * so callers can fall back to a status-based default. RECEIPTS-782.
+ */
+export function extractErrorMessage(error: unknown): string | undefined {
+  const problem = parseProblemDetails(error);
+  if (!problem) return undefined;
+
+  const detail = problem.detail?.trim();
+  if (detail) return detail;
+
+  const firstFieldError = Object.values(extractFieldErrors(problem))[0];
+  if (firstFieldError) return firstFieldError;
+
+  const title = problem.title?.trim();
+  if (title && title !== GENERIC_VALIDATION_TITLE) return title;
+
+  return undefined;
+}

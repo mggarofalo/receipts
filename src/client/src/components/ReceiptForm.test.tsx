@@ -100,6 +100,31 @@ describe("ReceiptForm", () => {
     expect(defaultProps.onSubmit).not.toHaveBeenCalled();
   });
 
+  // RECEIPTS-782: catch the server's "Date cannot be in the future" rejection
+  // on the client so the user gets inline feedback before submitting.
+  it("rejects a future date with an inline error and does not submit", async () => {
+    const user = userEvent.setup();
+    render(<ReceiptForm {...defaultProps} />);
+
+    await user.click(screen.getByRole("combobox"));
+    const searchInput = screen.getByPlaceholderText("Search locations...");
+    await user.type(searchInput, "Target");
+    await user.click(screen.getByText(/Use "Target"/));
+
+    const futureYear = new Date().getFullYear() + 1;
+    await user.type(screen.getByLabelText(/^Date/), `${futureYear}-01-15`);
+    await user.click(
+      screen.getByRole("button", { name: /create receipt/i }),
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Date cannot be in the future"),
+      ).toBeInTheDocument();
+    });
+    expect(defaultProps.onSubmit).not.toHaveBeenCalled();
+  });
+
   it("calls onCancel when cancel button is clicked", async () => {
     const user = userEvent.setup();
     render(<ReceiptForm {...defaultProps} />);

@@ -94,7 +94,10 @@ export function useCreateCategory() {
       toast.success("Category created");
     },
     onError: (err) => {
-      toast.error(typeof err === "string" ? err : "Failed to create category");
+      // A string error carries a specific, already-formatted message; anything
+      // else falls through to the global handler (which surfaces the server's
+      // ProblemDetails detail, e.g. a duplicate-name message).
+      if (typeof err === "string") toast.error(err);
     },
   });
 }
@@ -117,9 +120,6 @@ export function useUpdateCategory() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["categories"] });
       toast.success("Category updated");
-    },
-    onError: () => {
-      toast.error("Failed to update category");
     },
   });
 }
@@ -153,9 +153,8 @@ export function useDeleteCategory() {
       const err = error as { conflict?: boolean; message?: string };
       if (err.conflict) {
         toast.error(err.message ?? "Cannot delete — dependencies reference this category");
-      } else {
-        toast.error("Failed to delete category");
       }
+      // Non-conflict failures fall through to the global error handler.
     },
   });
 }
@@ -188,9 +187,6 @@ export function useRestoreCategory() {
       queryClient.invalidateQueries({ queryKey: ["categories"] });
       queryClient.invalidateQueries({ queryKey: ["categories", "deleted"] });
       toast.success("Category restored");
-    },
-    onError: () => {
-      toast.error("Failed to restore category");
     },
   });
 }
