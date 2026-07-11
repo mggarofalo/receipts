@@ -1125,6 +1125,149 @@ public class ReportServiceTests
 		contextFactory.ResetDatabase();
 	}
 
+	// ── Deterministic pagination when the primary sort key ties (RECEIPTS-791 follow-up) ──
+	// Mirrors the ApplySort determinism tests (RECEIPTS-768): when every row shares the primary
+	// sort value, only the unique-key tiebreaker gives a stable total order, so walking the pages
+	// must cover every row exactly once (no gap, no duplicate) in a repeatable order.
+
+	[Fact]
+	public async Task GetUncategorizedItemsAsync_TiedTotal_PaginatesWithoutGapsOrDuplicates()
+	{
+		// Arrange — five uncategorized items that all TIE on the primary sort key (TotalAmount).
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid receiptId = Guid.NewGuid();
+
+		List<Guid> seededIds = [];
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			context.Receipts.Add(
+				new ReceiptEntity { Id = receiptId, Location = "Store", Date = new DateOnly(2025, 3, 1), TaxAmount = 0m });
+
+			for (int i = 0; i < 5; i++)
+			{
+				Guid id = Guid.NewGuid();
+				seededIds.Add(id);
+				context.ReceiptItems.Add(new ReceiptItemEntity
+				{
+					Id = id,
+					ReceiptId = receiptId,
+					Description = $"Item {i}",
+					Quantity = 1,
+					UnitPrice = 5m,
+					TotalAmount = 5m, // identical => primary sort ties for every row
+					Category = "Uncategorized",
+				});
+			}
+
+			await context.SaveChangesAsync();
+		}
+
+		ReportService service = new(contextFactory);
+
+		// Act — walk every page (size 2) with a tied primary sort.
+		List<Guid> pagedIds = [];
+		for (int page = 1; page <= 3; page++)
+		{
+			UncategorizedItemsResult result =
+				await service.GetUncategorizedItemsAsync("total", "desc", page, 2, CancellationToken.None);
+			result.TotalCount.Should().Be(5);
+			pagedIds.AddRange(result.Items.Select(i => i.Id));
+		}
+
+		// Assert — every row appears exactly once, ordered by the ascending-Id tiebreaker.
+		pagedIds.Should().HaveCount(5);
+		pagedIds.Should().OnlyHaveUniqueItems();
+		pagedIds.Should().Equal(seededIds.OrderBy(id => id));
+
+		contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task GetOutOfBalanceAsync_TiedDateAndDifference_PaginatesWithoutGapsOrDuplicates()
+	{
+		// Arrange — five receipts identical in Date AND out-of-balance Difference, so both primary
+		// sort keys tie and only the unique receipt-Id tiebreaker orders them.
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid accountId = Guid.NewGuid();
+		DateOnly sameDate = new(2025, 3, 1);
+
+		List<Guid> seededIds = [];
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			for (int i = 0; i < 5; i++)
+			{
+				Guid receiptId = Guid.NewGuid();
+				seededIds.Add(receiptId);
+				// expected total = 0, transaction = 50 => difference = -50 for every receipt.
+				context.Receipts.Add(
+					new ReceiptEntity { Id = receiptId, Location = $"Store {i}", Date = sameDate, TaxAmount = 0m });
+				context.Transactions.Add(
+					new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, AccountId = accountId, Amount = 50m, Date = sameDate });
+			}
+
+			await context.SaveChangesAsync();
+		}
+
+		ReportService service = new(contextFactory);
+
+		// Act — walk every page (size 2) with the default tied date sort.
+		List<Guid> pagedIds = [];
+		for (int page = 1; page <= 3; page++)
+		{
+			OutOfBalanceResult result =
+				await service.GetOutOfBalanceAsync("date", "asc", page, 2, CancellationToken.None);
+			result.TotalCount.Should().Be(5);
+			pagedIds.AddRange(result.Items.Select(i => i.ReceiptId));
+		}
+
+		// Assert — every receipt appears exactly once, ordered by the ascending receipt-Id tiebreaker.
+		pagedIds.Should().HaveCount(5);
+		pagedIds.Should().OnlyHaveUniqueItems();
+		pagedIds.Should().Equal(seededIds.OrderBy(id => id));
+
+		contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task GetSpendingByLocationAsync_TiedTotal_PaginatesWithoutGapsOrDuplicates()
+	{
+		// Arrange — five distinct locations, each a single visit of the SAME total, so the "total"
+		// measure ties for every group and only the unique Location tiebreaker orders them.
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid accountId = Guid.NewGuid();
+		List<string> locations = ["Alpha", "Bravo", "Charlie", "Delta", "Echo"];
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			DateOnly date = new(2025, 1, 1);
+			foreach (string loc in locations)
+			{
+				AddReceiptWithTransaction(context, loc, date, accountId, 10m);
+			}
+
+			await context.SaveChangesAsync();
+		}
+
+		ReportService service = new(contextFactory);
+
+		// Act — walk every page (size 2) with a tied total-desc sort.
+		List<string> pagedLocations = [];
+		for (int page = 1; page <= 3; page++)
+		{
+			SpendingByLocationResult result =
+				await service.GetSpendingByLocationAsync(null, null, "total", "desc", page, 2, CancellationToken.None);
+			result.TotalCount.Should().Be(5);
+			pagedLocations.AddRange(result.Items.Select(i => i.Location));
+		}
+
+		// Assert — every location appears exactly once, ordered by the ascending Location tiebreaker.
+		pagedLocations.Should().HaveCount(5);
+		pagedLocations.Should().OnlyHaveUniqueItems();
+		pagedLocations.Should().Equal(locations.OrderBy(l => l));
+
+		contextFactory.ResetDatabase();
+	}
+
 	private static void AddReceiptWithTransaction(
 		ApplicationDbContext context, string location, DateOnly date, Guid accountId, decimal amount)
 	{

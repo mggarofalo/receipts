@@ -65,6 +65,12 @@ public partial class ReportService(IDbContextFactory<ApplicationDbContext> conte
 			_ => baseQuery.OrderBy(x => x.Date), // default: date asc
 		};
 
+		// Deterministic total order (RECEIPTS-791 follow-up): the primary keys above (Difference,
+		// Date) are non-unique, so append the unique receipt Id ascending as a tiebreaker regardless
+		// of primary direction. Without it, offset pagination over tied rows can skip or repeat a row
+		// between page requests — the same determinism fix RECEIPTS-768 applied to the repositories.
+		sortedQuery = sortedQuery.ThenBy(x => x.Id);
+
 		// Skip/Take BEFORE materializing — the database paginates, only one page crosses the wire.
 		List<OutOfBalanceItem> pagedItems = await sortedQuery
 			.Skip((page - 1) * pageSize)
@@ -140,6 +146,12 @@ public partial class ReportService(IDbContextFactory<ApplicationDbContext> conte
 			("total", "asc") => baseQuery.OrderBy(x => x.Total),
 			_ => baseQuery.OrderByDescending(x => x.Total), // default: total desc
 		};
+
+		// Deterministic total order (RECEIPTS-791 follow-up): the query GROUPs BY location, so the
+		// Location value is unique per row — the two location sorts are already a total order. The
+		// measure sorts (visits/total/averagepervisit) are non-unique, so append the unique group key
+		// (Location) ascending as a tiebreaker to keep offset pagination stable across page requests.
+		sortedQuery = sortedQuery.ThenBy(x => x.Location);
 
 		// Skip/Take BEFORE materializing — only the requested page is fetched.
 		List<SpendingByLocationItem> pagedItems = await sortedQuery
@@ -818,6 +830,12 @@ public partial class ReportService(IDbContextFactory<ApplicationDbContext> conte
 			("description", "desc") => baseQuery.OrderByDescending(x => x.Description),
 			_ => baseQuery.OrderBy(x => x.Description),
 		};
+
+		// Deterministic total order (RECEIPTS-791 follow-up): the primary keys above (TotalAmount,
+		// ReceiptItemCode, Description) are non-unique, so append the unique receipt-item Id ascending
+		// as a tiebreaker regardless of primary direction, keeping offset pagination stable across
+		// page requests.
+		sortedQuery = sortedQuery.ThenBy(x => x.Id);
 
 		// Skip/Take BEFORE materializing — only the requested page is fetched.
 		List<UncategorizedItemRecord> pagedItems = await sortedQuery
