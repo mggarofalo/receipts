@@ -311,4 +311,55 @@ public class AccountRepositoryTests
 
 		_contextFactory.ResetDatabase();
 	}
+
+	[Fact]
+	public async Task GetTransactionCountByAccountIdAsync_CountsActiveAndSoftDeletedTransactions()
+	{
+		// RECEIPTS-754: the delete guard must see soft-deleted (trashed) transactions too,
+		// so this count ignores the global soft-delete query filter.
+		// Arrange
+		using ApplicationDbContext context = _contextFactory.CreateDbContext();
+		AccountEntity account = AccountEntityGenerator.Generate();
+		AccountEntity otherAccount = AccountEntityGenerator.Generate();
+
+		TransactionEntity activeTx = TransactionEntityGenerator.Generate(accountId: account.Id);
+		TransactionEntity softDeletedTx = TransactionEntityGenerator.Generate(accountId: account.Id);
+		softDeletedTx.DeletedAt = DateTimeOffset.UtcNow;
+		TransactionEntity txOnOtherAccount = TransactionEntityGenerator.Generate(accountId: otherAccount.Id);
+
+		await context.Accounts.AddRangeAsync(account, otherAccount);
+		await context.Transactions.AddRangeAsync(activeTx, softDeletedTx, txOnOtherAccount);
+		await context.SaveChangesAsync(CancellationToken.None);
+
+		AccountRepository repository = new(_contextFactory);
+
+		// Act
+		int count = await repository.GetTransactionCountByAccountIdAsync(account.Id, CancellationToken.None);
+
+		// Assert: both the active and the soft-deleted transaction on this account are counted,
+		// but the transaction on the other account is not.
+		count.Should().Be(2);
+
+		_contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task GetTransactionCountByAccountIdAsync_ReturnsZero_WhenNoTransactionsReferenceAccount()
+	{
+		// Arrange
+		using ApplicationDbContext context = _contextFactory.CreateDbContext();
+		AccountEntity account = AccountEntityGenerator.Generate();
+		await context.Accounts.AddAsync(account);
+		await context.SaveChangesAsync(CancellationToken.None);
+
+		AccountRepository repository = new(_contextFactory);
+
+		// Act
+		int count = await repository.GetTransactionCountByAccountIdAsync(account.Id, CancellationToken.None);
+
+		// Assert
+		count.Should().Be(0);
+
+		_contextFactory.ResetDatabase();
+	}
 }

@@ -19,17 +19,21 @@ public class TransactionEntityConfiguration : IEntityTypeConfiguration<Transacti
 		builder.Navigation(e => e.Receipt)
 			.AutoInclude();
 
+		// RECEIPTS-754: AccountId is NOT NULL. Restrict (not Cascade) on delete —
+		// hard-deleting an Account must NOT silently cascade-destroy its transactions.
+		// The DeleteAccount guard rejects the delete while any transaction (active or
+		// soft-deleted) still references the account; merges repoint transactions first.
 		builder.HasOne(e => e.Account)
 			.WithMany()
 			.HasForeignKey(e => e.AccountId)
-			.OnDelete(DeleteBehavior.Cascade);
+			.OnDelete(DeleteBehavior.Restrict);
 
 		builder.Navigation(e => e.Account)
 			.AutoInclude();
 
 		// RECEIPTS-574: CardId is NOT NULL end-to-end. Restrict (not Cascade) on delete —
 		// hard-deleting a Card must not silently destroy transactions; soft-delete is the
-		// normal flow. Dropping AccountId is still a later phase.
+		// normal flow.
 		builder.HasOne(e => e.Card)
 			.WithMany()
 			.HasForeignKey(e => e.CardId)

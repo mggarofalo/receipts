@@ -112,4 +112,15 @@ public class AccountRepository(IDbContextFactory<ApplicationDbContext> contextFa
 		return await context.Cards
 			.CountAsync(c => c.AccountId == accountId, cancellationToken);
 	}
+
+	public async Task<int> GetTransactionCountByAccountIdAsync(Guid accountId, CancellationToken cancellationToken)
+	{
+		using ApplicationDbContext context = contextFactory.CreateDbContext();
+		// IgnoreQueryFilters() so soft-deleted (trashed) transactions count too — the
+		// Transactions.AccountId FK is Restrict, and a hard account delete would fail (or,
+		// worse, historically cascade-destroy) rows the soft-delete filter would hide.
+		return await context.Transactions
+			.IgnoreQueryFilters()
+			.CountAsync(t => t.AccountId == accountId, cancellationToken);
+	}
 }

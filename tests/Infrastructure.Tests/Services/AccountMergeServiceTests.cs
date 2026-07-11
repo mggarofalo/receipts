@@ -182,6 +182,64 @@ public class AccountMergeServiceTests : IDisposable
 	}
 
 	[Fact]
+	public async Task MergeCardsAsync_MovesSoftDeletedTransactions_AndDoesNotLoseThem()
+	{
+		// RECEIPTS-756: soft-deleted (trashed) transactions on a source account must be
+		// repointed to the target during a merge. Before the fix the Phase-1 repoint passed
+		// through the soft-delete query filter, leaving trashed rows behind for the Phase-2
+		// account delete to cascade-destroy. They must survive and follow their card.
+		AccountEntity target = AccountEntityGenerator.Generate();
+		AccountEntity source = AccountEntityGenerator.Generate();
+
+		CardEntity cardOnSource = CardEntityGenerator.Generate();
+		cardOnSource.AccountId = source.Id;
+		CardEntity cardOnTarget = CardEntityGenerator.Generate();
+		cardOnTarget.AccountId = target.Id;
+
+		TransactionEntity activeTx = TransactionEntityGenerator.Generate(accountId: source.Id);
+		TransactionEntity softDeletedTx = TransactionEntityGenerator.Generate(accountId: source.Id);
+		softDeletedTx.DeletedAt = DateTimeOffset.UtcNow;
+
+		using (ApplicationDbContext seed = CreateContext())
+		{
+			seed.Accounts.AddRange(target, source);
+			seed.Cards.AddRange(cardOnSource, cardOnTarget);
+			seed.Transactions.AddRange(activeTx, softDeletedTx);
+			await seed.SaveChangesAsync();
+		}
+
+		MergeCardsResult result = await _service.MergeCardsAsync(
+			target.Id,
+			[cardOnSource.Id, cardOnTarget.Id],
+			null,
+			CancellationToken.None);
+
+		result.Success.Should().BeTrue();
+		result.Conflicts.Should().BeNull();
+
+		using ApplicationDbContext assert = CreateContext();
+
+		// IgnoreQueryFilters reveals the soft-deleted row; IgnoreAutoIncludes avoids the
+		// InMemory provider dropping rows whose auto-included Receipt is absent from the seed.
+		List<TransactionEntity> allTransactions = await assert.Transactions
+			.IgnoreQueryFilters()
+			.IgnoreAutoIncludes()
+			.AsNoTracking()
+			.ToListAsync();
+
+		// Nothing was lost: both transactions still exist and both now belong to the target.
+		allTransactions.Should().HaveCount(2);
+		allTransactions.Should().OnlyContain(t => t.AccountId == target.Id);
+
+		// The soft-deleted transaction is still soft-deleted — merely repointed, not resurrected.
+		allTransactions.Single(t => t.Id == softDeletedTx.Id).DeletedAt.Should().NotBeNull();
+
+		// The orphaned source account was deleted (Phase 2 succeeded).
+		List<AccountEntity> remainingAccounts = await assert.Accounts.AsNoTracking().ToListAsync();
+		remainingAccounts.Select(a => a.Id).Should().BeEquivalentTo([target.Id]);
+	}
+
+	[Fact]
 	public async Task MergeCardsAsync_WithSingleMappingOnSource_MovesMappingToTarget()
 	{
 		AccountEntity target = AccountEntityGenerator.Generate();

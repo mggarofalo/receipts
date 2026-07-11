@@ -210,4 +210,20 @@ public class AccountServiceTests
 		// Assert
 		Assert.Equal(expected, actual);
 	}
+
+	[Fact]
+	public async Task GetTransactionCountByAccountIdAsync_DelegatesToRepositoryAndReturnsCount()
+	{
+		// Arrange
+		Guid accountId = Guid.NewGuid();
+		int expected = 4;
+		_mockRepository.Setup(r => r.GetTransactionCountByAccountIdAsync(accountId, It.IsAny<CancellationToken>())).ReturnsAsync(expected);
+
+		// Act
+		int actual = await _service.GetTransactionCountByAccountIdAsync(accountId, CancellationToken.None);
+
+		// Assert
+		Assert.Equal(expected, actual);
+		_mockRepository.Verify(r => r.GetTransactionCountByAccountIdAsync(accountId, It.IsAny<CancellationToken>()), Times.Once);
+	}
 }
