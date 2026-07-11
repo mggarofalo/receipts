@@ -3,6 +3,7 @@ using System.Security.Claims;
 using API.Authentication;
 using API.Hubs;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace API.Services;
 
@@ -10,22 +11,26 @@ public sealed class EntityChangeNotifier : IEntityChangeNotifier, IDisposable
 {
 	private readonly IHubContext<EntityHub, IEntityHubClient> _hubContext;
 	private readonly IHttpContextAccessor _httpContextAccessor;
+	private readonly ILogger<EntityChangeNotifier> _logger;
 	private readonly ConcurrentDictionary<(string EntityType, string ChangeType, string? UserId, string? AuthMethod, string? ConnectionId), NotificationBucket> _pending = new();
 	private readonly Timer _flushTimer;
 	private readonly TimeSpan _flushInterval;
 	private int _disposed;
 
-	public EntityChangeNotifier(IHubContext<EntityHub, IEntityHubClient> hubContext, IHttpContextAccessor httpContextAccessor)
-		: this(hubContext, httpContextAccessor, TimeSpan.FromSeconds(1))
+	public EntityChangeNotifier(IHubContext<EntityHub, IEntityHubClient> hubContext, IHttpContextAccessor httpContextAccessor, ILogger<EntityChangeNotifier> logger)
+		: this(hubContext, httpContextAccessor, TimeSpan.FromSeconds(1), logger)
 	{
 	}
 
-	internal EntityChangeNotifier(IHubContext<EntityHub, IEntityHubClient> hubContext, IHttpContextAccessor httpContextAccessor, TimeSpan flushInterval)
+	internal EntityChangeNotifier(IHubContext<EntityHub, IEntityHubClient> hubContext, IHttpContextAccessor httpContextAccessor, TimeSpan flushInterval, ILogger<EntityChangeNotifier>? logger = null)
 	{
 		_hubContext = hubContext;
 		_httpContextAccessor = httpContextAccessor;
+		_logger = logger ?? NullLogger<EntityChangeNotifier>.Instance;
 		_flushInterval = flushInterval;
-		_flushTimer = new Timer(_ => _ = FlushAsync(), null, _flushInterval, _flushInterval);
+		// Route the timer through TimerFlushAsync so a throw can never fault the callback or
+		// surface as an unobserved task exception — the timer must keep firing (RECEIPTS-794).
+		_flushTimer = new Timer(static state => _ = ((EntityChangeNotifier)state!).TimerFlushAsync(), this, _flushInterval, _flushInterval);
 	}
 
 	public Task NotifyCreated(string entityType, Guid id)
@@ -97,9 +102,24 @@ public sealed class EntityChangeNotifier : IEntityChangeNotifier, IDisposable
 		return new NotificationOrigin(userId, authMethod, connectionId);
 	}
 
+	private async Task TimerFlushAsync()
+	{
+		try
+		{
+			await FlushAsync();
+		}
+		catch (Exception ex)
+		{
+			// FlushAsync already handles per-send failures; this is a last-resort guard so an
+			// unexpected throw can never fault the timer callback or become an unobserved
+			// exception. The timer keeps firing on its interval regardless.
+			_logger.LogError(ex, "Unexpected error in entity-change notifier flush timer.");
+		}
+	}
+
 	internal async Task FlushAsync()
 	{
-		// Snapshot and remove all pending buckets atomically per key
+		// Snapshot and remove all pending buckets atomically per key.
 		List<(string EntityType, string ChangeType, string? UserId, string? AuthMethod, string? ConnectionId, int Count)> toSend = [];
 		foreach (var key in _pending.Keys)
 		{
@@ -109,11 +129,48 @@ public sealed class EntityChangeNotifier : IEntityChangeNotifier, IDisposable
 			}
 		}
 
-		foreach (var (entityType, changeType, userId, authMethod, connectionId, count) in toSend)
+		for (int i = 0; i < toSend.Count; i++)
 		{
-			await _hubContext.Clients.All.EntityChanged(
-				new EntityChangeNotification(entityType, changeType, null, count, userId, authMethod, connectionId));
+			var (entityType, changeType, userId, authMethod, connectionId, count) = toSend[i];
+			try
+			{
+				await _hubContext.Clients.All.EntityChanged(
+					new EntityChangeNotification(entityType, changeType, null, count, userId, authMethod, connectionId));
+			}
+			catch (Exception ex)
+			{
+				// A hub/transport failure mid-flush must not permanently drop notifications we
+				// already dequeued. Re-enqueue this bucket and every one not yet sent so the
+				// next timer tick (or Dispose) retries them, then log and stop (RECEIPTS-794).
+				int requeued = 0;
+				for (int j = i; j < toSend.Count; j++)
+				{
+					Requeue(toSend[j]);
+					requeued++;
+				}
+
+				_logger.LogError(
+					ex,
+					"Failed to flush entity-change notifications; re-enqueued {Requeued} batch(es) for retry.",
+					requeued);
+				return;
+			}
 		}
+	}
+
+	private void Requeue((string EntityType, string ChangeType, string? UserId, string? AuthMethod, string? ConnectionId, int Count) item)
+	{
+		var key = (item.EntityType, item.ChangeType, item.UserId, item.AuthMethod, item.ConnectionId);
+		_pending.AddOrUpdate(
+			key,
+			_ => new NotificationBucket(item.Count),
+			(_, existing) =>
+			{
+				// A fresh bucket may have accumulated for this key since we dequeued; merge the
+				// un-sent count into it so nothing is lost and nothing is double-counted.
+				existing.Add(item.Count);
+				return existing;
+			});
 	}
 
 	public void Dispose()
@@ -121,7 +178,8 @@ public sealed class EntityChangeNotifier : IEntityChangeNotifier, IDisposable
 		if (Interlocked.Exchange(ref _disposed, 1) == 0)
 		{
 			_flushTimer.Dispose();
-			// Fire one last flush synchronously to drain pending notifications
+			// Fire one last flush synchronously to drain pending notifications. FlushAsync
+			// swallows and logs its own send failures, so this cannot throw during teardown.
 			FlushAsync().GetAwaiter().GetResult();
 		}
 	}
@@ -138,12 +196,19 @@ public sealed class EntityChangeNotifier : IEntityChangeNotifier, IDisposable
 			_count = 1;
 		}
 
-		public int Count => _count;
+		public NotificationBucket(int initialCount)
+		{
+			_count = initialCount;
+		}
+
+		public int Count => Volatile.Read(ref _count);
 
 		public void Add(Guid? id)
 		{
 			_ = id;
 			Interlocked.Increment(ref _count);
 		}
+
+		public void Add(int delta) => Interlocked.Add(ref _count, delta);
 	}
 }
