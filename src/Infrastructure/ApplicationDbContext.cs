@@ -244,95 +244,174 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 
 	private void HandleSoftDelete()
 	{
-		List<EntityEntry<ISoftDeletable>> entries = ChangeTracker
-			.Entries<ISoftDeletable>()
-			.Where(e => e.State == EntityState.Deleted)
-			.ToList();
-
-		if (entries.Count == 0)
+		// Discover the cascade from a SINGLE snapshot of the change tracker.
+		// Previously CollectOwnedChildren re-enumerated ChangeTracker.Entries() for every
+		// (deleted parent × owned-child type) pair, and — with auto-detect on — each of those
+		// enumerations triggered a full DetectChanges pass over every tracked property. That is
+		// O(parents × childTypes × trackedEntities). Here we DetectChanges() once (which also
+		// lets EF mark cascade-deleted children as Deleted), disable auto-detect for the
+		// duration so the reads below are cheap, bucket the tracker once, and drive the cascade
+		// from dictionary lookups. The flag is restored in the finally so base.SaveChangesAsync
+		// still runs its normal DetectChanges.
+		bool autoDetectChanges = ChangeTracker.AutoDetectChangesEnabled;
+		ChangeTracker.DetectChanges();
+		ChangeTracker.AutoDetectChangesEnabled = false;
+		try
 		{
-			return;
-		}
-
-		// Snapshot entities that were already soft-deleted before this save.
-		// EF Core cascade-delete marks ALL tracked children as Deleted — even
-		// those that were independently soft-deleted earlier. We must not tag
-		// those with CascadeDeletedByParentId.
-		HashSet<ISoftDeletable> alreadySoftDeleted = new(
-			entries
-				.Where(e => e.Entity.DeletedAt is not null)
-				.Select(e => e.Entity));
-
-		// Identify cascade targets BEFORE changing any states, so the
-		// collection does not depend on the iteration order of entries.
-		List<(ISoftDeletable Target, Guid ParentId)> cascadeTargets = [];
-
-		foreach (EntityEntry<ISoftDeletable> entry in entries)
-		{
-			Type parentType = entry.Entity.GetType();
-			if (OwnedChildrenMapProvider.Map.TryGetValue(parentType, out OwnedChildrenMapProvider.ParentEntry? parentEntry))
-			{
-				Guid parentId = (Guid)parentEntry.IdProperty.GetValue(entry.Entity)!;
-				CollectOwnedChildren(parentId, parentEntry.Children, cascadeTargets);
-			}
-		}
-
-		HashSet<ISoftDeletable> cascadeSet = new(cascadeTargets.Select(t => t.Target));
-
-		// Soft-delete all directly-deleted entries.
-		foreach (EntityEntry<ISoftDeletable> entry in entries)
-		{
-			// Cascade targets are handled below.
-			if (cascadeSet.Contains(entry.Entity))
-			{
-				continue;
-			}
-
-			entry.State = EntityState.Modified;
-			entry.Entity.DeletedAt = DateTimeOffset.UtcNow;
-			entry.Entity.DeletedByUserId = _currentUserAccessor?.UserId;
-			entry.Entity.DeletedByApiKeyId = _currentUserAccessor?.ApiKeyId;
-		}
-
-		// Soft-delete cascade targets and tag them with the parent ID.
-		foreach ((ISoftDeletable target, Guid parentId) in cascadeTargets)
-		{
-			// Skip children that were independently soft-deleted before this save.
-			if (alreadySoftDeleted.Contains(target))
-			{
-				Entry(target).State = EntityState.Modified;
-				continue;
-			}
-
-			target.DeletedAt = DateTimeOffset.UtcNow;
-			target.DeletedByUserId = _currentUserAccessor?.UserId;
-			target.DeletedByApiKeyId = _currentUserAccessor?.ApiKeyId;
-			target.CascadeDeletedByParentId = parentId;
-			Entry(target).State = EntityState.Modified;
-		}
-	}
-
-	private void CollectOwnedChildren(
-		Guid parentId,
-		List<OwnedChildrenMapProvider.OwnedChildEntry> children,
-		List<(ISoftDeletable Target, Guid ParentId)> targets)
-	{
-		foreach (OwnedChildrenMapProvider.OwnedChildEntry child in children)
-		{
+			// Single enumeration: bucket every non-detached entry by runtime type and collect
+			// the directly-/cascade-deleted soft-deletables (in tracker order, preserving the
+			// exact ordering the old nested scan produced).
+			List<EntityEntry> deletedSoftDeletables = [];
+			Dictionary<Type, List<EntityEntry>> entriesByType = [];
 			foreach (EntityEntry entry in ChangeTracker.Entries())
 			{
-				if (entry.Entity.GetType() != child.ChildType || entry.State == EntityState.Detached)
+				if (entry.State == EntityState.Detached)
 				{
 					continue;
 				}
 
-				Guid fkValue = (Guid)child.FkProperty.GetValue(entry.Entity)!;
-				if (fkValue == parentId && entry.Entity is ISoftDeletable softDeletable)
+				Type type = entry.Entity.GetType();
+				if (!entriesByType.TryGetValue(type, out List<EntityEntry>? bucket))
 				{
-					targets.Add((softDeletable, parentId));
+					bucket = [];
+					entriesByType[type] = bucket;
+				}
+				bucket.Add(entry);
+
+				if (entry.State == EntityState.Deleted && entry.Entity is ISoftDeletable)
+				{
+					deletedSoftDeletables.Add(entry);
 				}
 			}
+
+			if (deletedSoftDeletables.Count == 0)
+			{
+				return;
+			}
+
+			// Snapshot entities that were already soft-deleted before this save.
+			// EF Core cascade-delete marks ALL tracked children as Deleted — even
+			// those that were independently soft-deleted earlier. We must not tag
+			// those with CascadeDeletedByParentId.
+			HashSet<ISoftDeletable> alreadySoftDeleted = new(
+				deletedSoftDeletables
+					.Select(e => (ISoftDeletable)e.Entity)
+					.Where(e => e.DeletedAt is not null));
+
+			// Build a per-owned-child FK index over the single snapshot: for each owned-child
+			// relationship, group its tracked entries by FK value. The cascade then resolves
+			// each parent's children with two dictionary lookups instead of a full re-scan.
+			Dictionary<OwnedChildrenMapProvider.OwnedChildEntry, Dictionary<Guid, List<ISoftDeletable>>> childFkIndex =
+				BuildOwnedChildFkIndex(entriesByType);
+
+			// Identify cascade targets BEFORE changing any states, so the
+			// collection does not depend on the iteration order of entries.
+			List<(ISoftDeletable Target, Guid ParentId)> cascadeTargets = [];
+
+			foreach (EntityEntry entry in deletedSoftDeletables)
+			{
+				Type parentType = entry.Entity.GetType();
+				if (OwnedChildrenMapProvider.Map.TryGetValue(parentType, out OwnedChildrenMapProvider.ParentEntry? parentEntry))
+				{
+					Guid parentId = (Guid)parentEntry.IdProperty.GetValue(entry.Entity)!;
+					foreach (OwnedChildrenMapProvider.OwnedChildEntry child in parentEntry.Children)
+					{
+						if (childFkIndex.TryGetValue(child, out Dictionary<Guid, List<ISoftDeletable>>? byFk)
+							&& byFk.TryGetValue(parentId, out List<ISoftDeletable>? matches))
+						{
+							foreach (ISoftDeletable match in matches)
+							{
+								cascadeTargets.Add((match, parentId));
+							}
+						}
+					}
+				}
+			}
+
+			HashSet<ISoftDeletable> cascadeSet = new(cascadeTargets.Select(t => t.Target));
+
+			// Soft-delete all directly-deleted entries.
+			foreach (EntityEntry entry in deletedSoftDeletables)
+			{
+				ISoftDeletable entity = (ISoftDeletable)entry.Entity;
+
+				// Cascade targets are handled below.
+				if (cascadeSet.Contains(entity))
+				{
+					continue;
+				}
+
+				entry.State = EntityState.Modified;
+				entity.DeletedAt = DateTimeOffset.UtcNow;
+				entity.DeletedByUserId = _currentUserAccessor?.UserId;
+				entity.DeletedByApiKeyId = _currentUserAccessor?.ApiKeyId;
+			}
+
+			// Soft-delete cascade targets and tag them with the parent ID.
+			foreach ((ISoftDeletable target, Guid parentId) in cascadeTargets)
+			{
+				// Skip children that were independently soft-deleted before this save.
+				if (alreadySoftDeleted.Contains(target))
+				{
+					Entry(target).State = EntityState.Modified;
+					continue;
+				}
+
+				target.DeletedAt = DateTimeOffset.UtcNow;
+				target.DeletedByUserId = _currentUserAccessor?.UserId;
+				target.DeletedByApiKeyId = _currentUserAccessor?.ApiKeyId;
+				target.CascadeDeletedByParentId = parentId;
+				Entry(target).State = EntityState.Modified;
+			}
 		}
+		finally
+		{
+			ChangeTracker.AutoDetectChangesEnabled = autoDetectChanges;
+		}
+	}
+
+	/// <summary>
+	/// Groups the tracked entries of every owned-child relationship by FK value, from a single
+	/// pre-bucketed snapshot of the change tracker. Keyed by <see cref="OwnedChildrenMapProvider.OwnedChildEntry"/>
+	/// so a child type owned by multiple parents (via distinct FK columns) is indexed per relationship.
+	/// Only <see cref="ISoftDeletable"/> entries are indexed — matching the original cascade filter.
+	/// </summary>
+	private static Dictionary<OwnedChildrenMapProvider.OwnedChildEntry, Dictionary<Guid, List<ISoftDeletable>>> BuildOwnedChildFkIndex(
+		Dictionary<Type, List<EntityEntry>> entriesByType)
+	{
+		Dictionary<OwnedChildrenMapProvider.OwnedChildEntry, Dictionary<Guid, List<ISoftDeletable>>> index = [];
+
+		foreach (OwnedChildrenMapProvider.ParentEntry parentEntry in OwnedChildrenMapProvider.Map.Values)
+		{
+			foreach (OwnedChildrenMapProvider.OwnedChildEntry child in parentEntry.Children)
+			{
+				if (index.ContainsKey(child) || !entriesByType.TryGetValue(child.ChildType, out List<EntityEntry>? bucket))
+				{
+					continue;
+				}
+
+				Dictionary<Guid, List<ISoftDeletable>> byFk = [];
+				foreach (EntityEntry entry in bucket)
+				{
+					if (entry.Entity is not ISoftDeletable softDeletable)
+					{
+						continue;
+					}
+
+					Guid fkValue = (Guid)child.FkProperty.GetValue(entry.Entity)!;
+					if (!byFk.TryGetValue(fkValue, out List<ISoftDeletable>? matches))
+					{
+						matches = [];
+						byFk[fkValue] = matches;
+					}
+					matches.Add(softDeletable);
+				}
+
+				index[child] = byFk;
+			}
+		}
+
+		return index;
 	}
 
 	private List<AuditEntry> CollectAuditEntries()
