@@ -31,25 +31,40 @@ public class AuthController(
 	public async Task<Results<Ok<TokenResponse>, JsonHttpResult<OAuthErrorResponse>>> Login([FromBody] LoginRequest request)
 	{
 		ApplicationUser? user = await userManager.FindByEmailAsync(request.Email);
-		if (user is null || !await userManager.CheckPasswordAsync(user, request.Password))
+		if (user is null)
 		{
-			await LogAuthEventAsync(nameof(AuthEventType.LoginFailed), user?.Id, request.Email, false, "Invalid credentials");
-			return TypedResults.Json(new OAuthErrorResponse
-			{
-				Error = OAuthErrorResponseError.Invalid_grant,
-				Error_description = "Invalid email or password",
-			}, statusCode: StatusCodes.Status401Unauthorized);
+			await LogAuthEventAsync(nameof(AuthEventType.LoginFailed), null, request.Email, false, "Invalid credentials");
+			return InvalidCredentialsResponse();
 		}
 
+		// Reject a locked-out account BEFORE verifying the password. A locked account (whether tripped by
+		// failed-login lockout or disabled by an admin via LockoutEnd) gets a clear 401 — never a 500 —
+		// and repeated attempts during the window don't spend time hashing.
 		if (await userManager.IsLockedOutAsync(user))
 		{
-			await LogAuthEventAsync(nameof(AuthEventType.LoginFailed), user.Id, request.Email, false, "Account disabled");
-			return TypedResults.Json(new OAuthErrorResponse
-			{
-				Error = OAuthErrorResponseError.Invalid_grant,
-				Error_description = "Account is disabled",
-			}, statusCode: StatusCodes.Status401Unauthorized);
+			await LogAuthEventAsync(nameof(AuthEventType.LoginFailed), user.Id, request.Email, false, "Account locked");
+			return AccountLockedResponse();
 		}
+
+		if (!await userManager.CheckPasswordAsync(user, request.Password))
+		{
+			// CheckPasswordAsync only verifies the hash — it never touches AccessFailedCount. Increment it
+			// so password brute force actually trips the lockout after MaxFailedAccessAttempts.
+			await userManager.AccessFailedAsync(user);
+
+			// If this failure just crossed the threshold, say so plainly instead of a bare "invalid".
+			if (await userManager.IsLockedOutAsync(user))
+			{
+				await LogAuthEventAsync(nameof(AuthEventType.LoginFailed), user.Id, request.Email, false, "Account locked");
+				return AccountLockedResponse();
+			}
+
+			await LogAuthEventAsync(nameof(AuthEventType.LoginFailed), user.Id, request.Email, false, "Invalid credentials");
+			return InvalidCredentialsResponse();
+		}
+
+		// Correct password — clear any accumulated failed-attempt count.
+		await userManager.ResetAccessFailedCountAsync(user);
 
 		IList<string> roles = await userManager.GetRolesAsync(user);
 		string accessToken = tokenService.GenerateAccessToken(user.Id, user.Email!, roles, user.MustResetPassword);
@@ -67,11 +82,7 @@ public class AuthController(
 			// The session (refresh token) was not persisted — e.g. a concurrency-stamp mismatch. Fail
 			// closed with a generic 401 rather than handing back a token the database never stored.
 			await LogAuthEventAsync(nameof(AuthEventType.LoginFailed), user.Id, request.Email, false, "Failed to persist session");
-			return TypedResults.Json(new OAuthErrorResponse
-			{
-				Error = OAuthErrorResponseError.Invalid_grant,
-				Error_description = "Invalid email or password",
-			}, statusCode: StatusCodes.Status401Unauthorized);
+			return InvalidCredentialsResponse();
 		}
 
 		await LogAuthEventAsync(nameof(AuthEventType.Login), user.Id, user.Email, true);
@@ -283,6 +294,24 @@ public class AuthController(
 
 		return TypedResults.Ok();
 	}
+
+	// Identical generic response for the unknown-email and wrong-password paths so neither timing nor
+	// wording reveals which one failed (user-enumeration defense).
+	private static JsonHttpResult<OAuthErrorResponse> InvalidCredentialsResponse() =>
+		TypedResults.Json(new OAuthErrorResponse
+		{
+			Error = OAuthErrorResponseError.Invalid_grant,
+			Error_description = "Invalid email or password",
+		}, statusCode: StatusCodes.Status401Unauthorized);
+
+	// Distinct, clear response for a locked/disabled account (covers both failed-login lockout and
+	// admin disable). Still a 401 so the OAuth error contract and client handling are unchanged.
+	private static JsonHttpResult<OAuthErrorResponse> AccountLockedResponse() =>
+		TypedResults.Json(new OAuthErrorResponse
+		{
+			Error = OAuthErrorResponseError.Invalid_grant,
+			Error_description = "Account is locked. Try again later or contact an administrator.",
+		}, statusCode: StatusCodes.Status401Unauthorized);
 
 	private async Task LogAuthEventAsync(string eventType, string? userId, string? username, bool success, string? failureReason = null)
 	{

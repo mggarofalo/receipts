@@ -104,7 +104,16 @@ public static class InfrastructureService
 		services.TryAddSingleton<ICurrentUserAccessor, NullCurrentUserAccessor>();
 
 		services
-			.AddIdentityCore<ApplicationUser>()
+			.AddIdentityCore<ApplicationUser>(options =>
+			{
+				// Account-lockout policy (RECEIPTS auth-hardening). AllowedForNewUsers makes CreateAsync
+				// stamp LockoutEnabled=true so the failed-login counter can actually engage; the login
+				// endpoint increments it via AccessFailedAsync and locks the account for the timespan
+				// below once MaxFailedAccessAttempts consecutive failures are reached.
+				options.Lockout.AllowedForNewUsers = true;
+				options.Lockout.MaxFailedAccessAttempts = 5;
+				options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
+			})
 			.AddRoles<IdentityRole>()
 			.AddEntityFrameworkStores<ApplicationDbContext>();
 

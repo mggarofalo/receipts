@@ -126,10 +126,9 @@ public class AuthControllerTests
 	[Fact]
 	public async Task Login_LockedOut_ReturnsOAuthErrorResponse()
 	{
-		// Arrange
+		// Arrange — a locked/disabled account is rejected before the password is even checked.
 		ApplicationUser user = CreateTestUser();
 		_userManagerMock.Setup(m => m.FindByEmailAsync("test@example.com")).ReturnsAsync(user);
-		_userManagerMock.Setup(m => m.CheckPasswordAsync(user, "password")).ReturnsAsync(true);
 		_userManagerMock.Setup(m => m.IsLockedOutAsync(user)).ReturnsAsync(true);
 
 		// Act
@@ -139,7 +138,73 @@ public class AuthControllerTests
 		JsonHttpResult<OAuthErrorResponse> errorResult = Assert.IsType<JsonHttpResult<OAuthErrorResponse>>(result.Result);
 		errorResult.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
 		errorResult.Value!.Error.Should().Be(OAuthErrorResponseError.Invalid_grant);
-		errorResult.Value!.Error_description.Should().Be("Account is disabled");
+		errorResult.Value!.Error_description.Should().Be("Account is locked. Try again later or contact an administrator.");
+		// The password is never verified for a locked account.
+		_userManagerMock.Verify(m => m.CheckPasswordAsync(It.IsAny<ApplicationUser>(), It.IsAny<string>()), Times.Never);
+	}
+
+	[Fact]
+	public async Task Login_WrongPassword_IncrementsAccessFailedCount()
+	{
+		// Arrange
+		ApplicationUser user = CreateTestUser();
+		_userManagerMock.Setup(m => m.FindByEmailAsync("test@example.com")).ReturnsAsync(user);
+		_userManagerMock.Setup(m => m.IsLockedOutAsync(user)).ReturnsAsync(false);
+		_userManagerMock.Setup(m => m.CheckPasswordAsync(user, "wrong")).ReturnsAsync(false);
+		_userManagerMock.Setup(m => m.AccessFailedAsync(user)).ReturnsAsync(IdentityResult.Success);
+
+		// Act
+		Results<Ok<TokenResponse>, JsonHttpResult<OAuthErrorResponse>> result = await _controller.Login(new LoginRequest { Email = "test@example.com", Password = "wrong" });
+
+		// Assert — generic error, and the failed-attempt counter was incremented (this is what engages lockout).
+		JsonHttpResult<OAuthErrorResponse> errorResult = Assert.IsType<JsonHttpResult<OAuthErrorResponse>>(result.Result);
+		errorResult.Value!.Error_description.Should().Be("Invalid email or password");
+		_userManagerMock.Verify(m => m.AccessFailedAsync(user), Times.Once);
+	}
+
+	[Fact]
+	public async Task Login_WrongPassword_WhenThresholdReached_ReturnsLocked()
+	{
+		// Arrange — the account is not locked before this attempt, but AccessFailedAsync trips the lockout.
+		ApplicationUser user = CreateTestUser();
+		_userManagerMock.Setup(m => m.FindByEmailAsync("test@example.com")).ReturnsAsync(user);
+		_userManagerMock.SetupSequence(m => m.IsLockedOutAsync(user))
+			.ReturnsAsync(false)  // pre-check before verifying the password
+			.ReturnsAsync(true);  // post-check after AccessFailedAsync crosses the threshold
+		_userManagerMock.Setup(m => m.CheckPasswordAsync(user, "wrong")).ReturnsAsync(false);
+		_userManagerMock.Setup(m => m.AccessFailedAsync(user)).ReturnsAsync(IdentityResult.Success);
+
+		// Act
+		Results<Ok<TokenResponse>, JsonHttpResult<OAuthErrorResponse>> result = await _controller.Login(new LoginRequest { Email = "test@example.com", Password = "wrong" });
+
+		// Assert
+		JsonHttpResult<OAuthErrorResponse> errorResult = Assert.IsType<JsonHttpResult<OAuthErrorResponse>>(result.Result);
+		errorResult.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+		errorResult.Value!.Error_description.Should().Be("Account is locked. Try again later or contact an administrator.");
+		_userManagerMock.Verify(m => m.AccessFailedAsync(user), Times.Once);
+	}
+
+	[Fact]
+	public async Task Login_Success_ResetsAccessFailedCount()
+	{
+		// Arrange
+		ApplicationUser user = CreateTestUser();
+		_userManagerMock.Setup(m => m.FindByEmailAsync("test@example.com")).ReturnsAsync(user);
+		_userManagerMock.Setup(m => m.IsLockedOutAsync(user)).ReturnsAsync(false);
+		_userManagerMock.Setup(m => m.CheckPasswordAsync(user, "password")).ReturnsAsync(true);
+		_userManagerMock.Setup(m => m.ResetAccessFailedCountAsync(user)).ReturnsAsync(IdentityResult.Success);
+		_userManagerMock.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "User" });
+		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
+		_tokenServiceMock.Setup(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false)).Returns("access-token");
+		_tokenServiceMock.Setup(t => t.GenerateRefreshToken()).Returns("refresh-token");
+
+		// Act
+		Results<Ok<TokenResponse>, JsonHttpResult<OAuthErrorResponse>> result = await _controller.Login(new LoginRequest { Email = "test@example.com", Password = "password" });
+
+		// Assert
+		Assert.IsType<Ok<TokenResponse>>(result.Result);
+		_userManagerMock.Verify(m => m.ResetAccessFailedCountAsync(user), Times.Once);
+		_userManagerMock.Verify(m => m.AccessFailedAsync(It.IsAny<ApplicationUser>()), Times.Never);
 	}
 
 	[Fact]
