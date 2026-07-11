@@ -72,14 +72,27 @@ public class ApiKeyService(IDbContextFactory<ApplicationDbContext> dbContextFact
 		return keys.Count;
 	}
 
+	// How recently LastUsedAt must have been stamped before a request skips re-stamping it.
+	// This throttles the auth-path write: within one window we do at most one UPDATE per key,
+	// which turns a per-request write into an occasional one under sustained traffic.
+	private static readonly TimeSpan LastUsedThrottle = TimeSpan.FromMinutes(1);
+
 	public async Task<ApiKeyValidationResult?> GetUserIdByApiKeyAsync(string rawKey, CancellationToken cancellationToken = default)
 	{
 		string keyHash = HashKey(rawKey);
+		DateTimeOffset now = DateTimeOffset.UtcNow;
 
 		await using ApplicationDbContext context = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+		// Validation is unchanged (RECEIPTS-757): the key must exist, not be revoked, and not be
+		// expired. AsNoTracking because we no longer mutate-and-save this entity — LastUsedAt is
+		// stamped below with a targeted UPDATE. The per-request account-state check that rejects
+		// deactivated/locked-out users lives in ApiKeyAuthenticationHandler and is untouched;
+		// this method deliberately does NOT cache the result, so that check runs every request.
 		ApiKeyEntity? key = await context.ApiKeys
+			.AsNoTracking()
 			.FirstOrDefaultAsync(
-				k => k.KeyHash == keyHash && !k.IsRevoked && (k.ExpiresAt == null || k.ExpiresAt > DateTimeOffset.UtcNow),
+				k => k.KeyHash == keyHash && !k.IsRevoked && (k.ExpiresAt == null || k.ExpiresAt > now),
 				cancellationToken);
 
 		if (key is null)
@@ -87,8 +100,35 @@ public class ApiKeyService(IDbContextFactory<ApplicationDbContext> dbContextFact
 			return null;
 		}
 
-		key.LastUsedAt = DateTimeOffset.UtcNow;
-		await context.SaveChangesAsync(cancellationToken);
+		// Stamp LastUsedAt cheaply. The throttle predicate makes the write a no-op when LastUsedAt
+		// was set within the last minute, so sustained traffic on one key writes at most once per
+		// window. Either way NO AuditLogs row is written: ApiKeyEntity is excluded from auditing
+		// (see ApplicationDbContext.CollectAuditEntries) — a LastUsedAt bump is telemetry, not audit.
+		DateTimeOffset throttleThreshold = now - LastUsedThrottle;
+
+		if (context.Database.IsRelational())
+		{
+			// Production path: one targeted UPDATE that bypasses the change tracker entirely —
+			// no load-modify-full-SaveChanges, no snapshot, no audit interceptor. The throttle lives
+			// in the WHERE clause, so it is atomic and race-safe under concurrent requests.
+			await context.ApiKeys
+				.Where(k => k.Id == key.Id && (k.LastUsedAt == null || k.LastUsedAt < throttleThreshold))
+				.ExecuteUpdateAsync(s => s.SetProperty(k => k.LastUsedAt, now), cancellationToken);
+		}
+		else if (key.LastUsedAt == null || key.LastUsedAt < throttleThreshold)
+		{
+			// The InMemory provider (unit tests) does not support ExecuteUpdate. Fall back to a
+			// tracked update behind the same throttle; the audit exclusion above still keeps this
+			// out of AuditLogs. Never taken against PostgreSQL in production.
+			ApiKeyEntity? tracked = await context.ApiKeys
+				.FirstOrDefaultAsync(k => k.Id == key.Id, cancellationToken);
+			if (tracked is not null)
+			{
+				tracked.LastUsedAt = now;
+				await context.SaveChangesAsync(cancellationToken);
+			}
+		}
+
 		return new ApiKeyValidationResult(key.UserId, key.Id, key.BypassRateLimit);
 	}
 
