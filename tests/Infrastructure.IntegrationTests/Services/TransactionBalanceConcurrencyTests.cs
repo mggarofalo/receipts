@@ -54,7 +54,11 @@ public class TransactionBalanceConcurrencyTests(PostgresFixture fixture)
 			CardEntity card = CardEntityGenerator.Generate();
 			card.AccountId = account.Id;
 
+			// Keep the item internally consistent (TotalAmount == Quantity * UnitPrice); the
+			// ReceiptItem domain constructor enforces this when the service maps it back.
 			ReceiptItemEntity item = ReceiptItemEntityGenerator.Generate(receipt.Id);
+			item.Quantity = 1m;
+			item.UnitPrice = 50m;
 			item.TotalAmount = 50m;
 
 			setup.Receipts.Add(receipt);
