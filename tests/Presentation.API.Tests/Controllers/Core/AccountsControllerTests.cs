@@ -391,6 +391,8 @@ public class AccountsControllerTests
 
 		_accountServiceMock.Setup(s => s.GetCardCountByAccountIdAsync(id, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(0);
+		_accountServiceMock.Setup(s => s.GetTransactionCountByAccountIdAsync(id, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(0);
 
 		_mediatorMock.Setup(m => m.Send(
 			It.Is<DeleteAccountCommand>(c => c.Id == id),
@@ -411,6 +413,8 @@ public class AccountsControllerTests
 		Guid id = Guid.NewGuid();
 
 		_accountServiceMock.Setup(s => s.GetCardCountByAccountIdAsync(id, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(0);
+		_accountServiceMock.Setup(s => s.GetTransactionCountByAccountIdAsync(id, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(0);
 
 		_mediatorMock.Setup(m => m.Send(
@@ -442,12 +446,38 @@ public class AccountsControllerTests
 	}
 
 	[Fact]
+	public async Task DeleteAccount_ReturnsConflict_WhenTransactionsExist_EvenWithNoCards()
+	{
+		// RECEIPTS-754: transactions can outlive the card that created them, so an account
+		// with zero cards can still own transactions. Deleting it must not cascade-destroy
+		// them — the guard rejects the delete with 409 and never reaches the delete command.
+		// Arrange
+		Guid id = Guid.NewGuid();
+
+		_accountServiceMock.Setup(s => s.GetCardCountByAccountIdAsync(id, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(0);
+		_accountServiceMock.Setup(s => s.GetTransactionCountByAccountIdAsync(id, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(7);
+
+		// Act
+		Results<NoContent, NotFound, Conflict<object>> result = await _controller.DeleteAccount(id);
+
+		// Assert
+		Assert.IsType<Conflict<object>>(result.Result);
+		_mediatorMock.Verify(
+			m => m.Send(It.IsAny<DeleteAccountCommand>(), It.IsAny<CancellationToken>()),
+			Times.Never);
+	}
+
+	[Fact]
 	public async Task DeleteAccount_ThrowsException_WhenMediatorFails()
 	{
 		// Arrange
 		Guid id = Guid.NewGuid();
 
 		_accountServiceMock.Setup(s => s.GetCardCountByAccountIdAsync(id, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(0);
+		_accountServiceMock.Setup(s => s.GetTransactionCountByAccountIdAsync(id, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(0);
 
 		_mediatorMock.Setup(m => m.Send(

@@ -4,6 +4,7 @@ using Application.Models.Merge;
 using Infrastructure.Entities.Audit;
 using Infrastructure.Entities.Core;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Infrastructure.Services;
 
@@ -72,11 +73,19 @@ public class AccountMergeService(
 				: mappings[0].ReceiptsAccountId;
 		}
 
-		// Phase 1: repoint dependents + repoint/replace mapping + write audit. No account deletes yet.
+		// Phases 1 and 2 run inside ONE transaction so a Phase-2 failure (e.g. the Restrict
+		// AccountId FK rejecting an account delete) rolls back the Phase-1 repointing —
+		// there is no half-applied merge.
 		int movedTransactionCount;
 		using (ApplicationDbContext context = contextFactory.CreateDbContext())
 		{
+			await using IDbContextTransaction dbTransaction = await context.Database.BeginTransactionAsync(cancellationToken);
+
+			// Phase 1: repoint dependents + repoint/replace mapping + write audit. No account deletes yet.
+			// IgnoreQueryFilters so soft-deleted (trashed) transactions repoint too — otherwise the
+			// Phase-2 account delete would strand them and (pre-fix) cascade-destroy them.
 			List<TransactionEntity> transactionsToMove = await context.Transactions
+				.IgnoreQueryFilters()
 				.IgnoreAutoIncludes()
 				.Where(t => sourceAccountIds.Contains(t.AccountId))
 				.ToListAsync(cancellationToken);
@@ -153,16 +162,17 @@ public class AccountMergeService(
 
 			context.AuditLogs.AddRange(mergeEntries);
 			await context.SaveChangesAsync(cancellationToken);
-		}
 
-		// Phase 2: delete now-orphaned source accounts in a fresh context.
-		using (ApplicationDbContext deleteContext = contextFactory.CreateDbContext())
-		{
-			List<AccountEntity> orphanedAccounts = await deleteContext.Accounts
+			// Phase 2: delete the now-orphaned source accounts in the SAME context/transaction.
+			// With Transactions.AccountId now Restrict, this DELETE succeeds only because every
+			// transaction (active and soft-deleted) was repointed to the target above.
+			List<AccountEntity> orphanedAccounts = await context.Accounts
 				.Where(a => sourceAccountIds.Contains(a.Id))
 				.ToListAsync(cancellationToken);
-			deleteContext.Accounts.RemoveRange(orphanedAccounts);
-			await deleteContext.SaveChangesAsync(cancellationToken);
+			context.Accounts.RemoveRange(orphanedAccounts);
+			await context.SaveChangesAsync(cancellationToken);
+
+			await dbTransaction.CommitAsync(cancellationToken);
 		}
 
 		return new MergeCardsResult(true, null);

@@ -14,4 +14,5 @@ public interface IAccountRepository
 	Task<int> GetCountAsync(CancellationToken cancellationToken, bool? isActive = null);
 	Task DeleteAsync(Guid id, CancellationToken cancellationToken);
 	Task<int> GetCardCountByAccountIdAsync(Guid accountId, CancellationToken cancellationToken);
+	Task<int> GetTransactionCountByAccountIdAsync(Guid accountId, CancellationToken cancellationToken);
 }

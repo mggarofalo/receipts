@@ -161,7 +161,7 @@ public class AccountsController(IMediator mediator, AccountMapper mapper, CardMa
 	[HttpDelete(RouteDelete)]
 	[Authorize(Policy = "RequireAdmin")]
 	[EndpointSummary("Hard-delete an account")]
-	[EndpointDescription("Permanently deletes an account. Requires the Admin role. Returns 409 Conflict if cards reference this account.")]
+	[EndpointDescription("Permanently deletes an account. Requires the Admin role. Returns 409 Conflict if any card or transaction (including soft-deleted) references this account.")]
 	public async Task<Results<NoContent, NotFound, Conflict<object>>> DeleteAccount([FromRoute] Guid id)
 	{
 		int cardCount = await accountService.GetCardCountByAccountIdAsync(id, HttpContext.RequestAborted);
@@ -169,6 +169,18 @@ public class AccountsController(IMediator mediator, AccountMapper mapper, CardMa
 		{
 			logger.LogWarning("Account {Id} cannot be deleted — {Count} cards reference it", id, cardCount);
 			return TypedResults.Conflict<object>(new { message = $"Cannot delete — {cardCount} card(s) reference this account", cardCount });
+		}
+
+		// RECEIPTS-754: transactions can outlive the card that created them (a card may be
+		// moved to another account), so the card guard alone is not enough. With the
+		// Transactions.AccountId FK now Restrict, deleting an account that still owns
+		// transactions would fail at the database; reject it up front with a 409 instead.
+		// IgnoreQueryFilters (in the repository) counts soft-deleted transactions too.
+		int transactionCount = await accountService.GetTransactionCountByAccountIdAsync(id, HttpContext.RequestAborted);
+		if (transactionCount > 0)
+		{
+			logger.LogWarning("Account {Id} cannot be deleted — {Count} transactions reference it", id, transactionCount);
+			return TypedResults.Conflict<object>(new { message = $"Cannot delete — {transactionCount} transaction(s) reference this account", transactionCount });
 		}
 
 		DeleteAccountCommand command = new(id);
