@@ -26,6 +26,7 @@ import { SearchHighlight } from "@/components/SearchHighlight";
 import { getMatchIndices } from "@/lib/search-highlight";
 import { SortableTableHead } from "@/components/SortableTableHead";
 import { NoResults } from "@/components/NoResults";
+import { ErrorState } from "@/components/ErrorState";
 import { Pagination } from "@/components/Pagination";
 import {
   Dialog,
@@ -35,7 +36,7 @@ import {
 } from "@/components/ui/dialog";
 import { TableSkeleton } from "@/components/ui/table-skeleton";
 import { Spinner } from "@/components/ui/spinner";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatDate } from "@/lib/format";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Info } from "lucide-react";
 import {
@@ -113,6 +114,9 @@ function Receipts() {
     data: receiptsData,
     total: serverTotal,
     isLoading,
+    isError,
+    isRefetching,
+    refetch,
   } = useReceipts(
     offset,
     limit,
@@ -311,7 +315,15 @@ function Receipts() {
         </Alert>
       )}
 
-      {isLoading ? (
+      {isError ? (
+        // A failed query must not masquerade as an empty list (RECEIPTS-784).
+        <ErrorState
+          title="Couldn't load receipts"
+          message="Something went wrong loading your receipts. Check your connection and try again."
+          onRetry={() => void refetch()}
+          isRetrying={isRefetching}
+        />
+      ) : isLoading ? (
         <TableSkeleton columns={6} />
       ) : filteredResults.length === 0 ? (
         // Three-way split: search vs. filters vs. genuinely empty. The
@@ -483,7 +495,7 @@ function Receipts() {
                         className="num"
                         style={{ color: "var(--mute)", fontSize: 12 }}
                       >
-                        {receipt.date}
+                        {formatDate(receipt.date)}
                       </td>
                       <td className="money">
                         {formatCurrency(receipt.taxAmount)}
@@ -536,7 +548,20 @@ function Receipts() {
             onDelete={() => setDeleteOpen(true)}
             onPushToYnab={() => {
               bulkPushYnab.mutate(Array.from(selected), {
-                onSuccess: () => setSelected(new Set()),
+                onSuccess: (data) => {
+                  // Only clear the receipts that actually pushed; keep the
+                  // failed ones selected so the user can retry. RECEIPTS-783.
+                  const succeededIds = new Set(
+                    (data?.results ?? [])
+                      .filter((r) => r.result.success)
+                      .map((r) => r.receiptId),
+                  );
+                  setSelected((prev) => {
+                    const next = new Set(prev);
+                    for (const id of succeededIds) next.delete(id);
+                    return next;
+                  });
+                },
               });
             }}
             isPushingToYnab={bulkPushYnab.isPending}

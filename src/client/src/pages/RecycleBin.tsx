@@ -1,6 +1,7 @@
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { Trash2 } from "lucide-react";
 import { useListKeyboardNav } from "@/hooks/useListKeyboardNav";
+import { ErrorState } from "@/components/ErrorState";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { useDeletedReceipts, useRestoreReceipt } from "@/hooks/useReceipts";
 import {
@@ -206,6 +207,40 @@ function RecycleBin() {
     categories.isLoading ||
     subcategories.isLoading;
 
+  // If ANY of the deleted-entity queries failed, surface an error state rather
+  // than rendering a misleading "No deleted items found" (RECEIPTS-784).
+  const isError =
+    receipts.isError ||
+    receiptItems.isError ||
+    transactions.isError ||
+    itemTemplates.isError ||
+    categories.isError ||
+    subcategories.isError;
+
+  const isRefetching =
+    receipts.isRefetching ||
+    receiptItems.isRefetching ||
+    transactions.isRefetching ||
+    itemTemplates.isRefetching ||
+    categories.isRefetching ||
+    subcategories.isRefetching;
+
+  const refetchAll = useCallback(() => {
+    void receipts.refetch();
+    void receiptItems.refetch();
+    void transactions.refetch();
+    void itemTemplates.refetch();
+    void categories.refetch();
+    void subcategories.refetch();
+  }, [
+    receipts,
+    receiptItems,
+    transactions,
+    itemTemplates,
+    categories,
+    subcategories,
+  ]);
+
   const allItems = useMemo(() => {
     const items: DeletedItem[] = [];
 
@@ -282,6 +317,20 @@ function RecycleBin() {
     }
     return map;
   }, [allItems]);
+
+  if (isError) {
+    return (
+      <>
+        <PageHead title="Trash" sub="Couldn't load" />
+        <ErrorState
+          title="Couldn't load the recycle bin"
+          message="Something went wrong loading deleted items. Check your connection and try again."
+          onRetry={refetchAll}
+          isRetrying={isRefetching}
+        />
+      </>
+    );
+  }
 
   if (isLoading) {
     return (

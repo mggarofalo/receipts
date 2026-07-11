@@ -548,4 +548,86 @@ describe("Receipts", () => {
       screen.getByRole("heading", { name: /create receipt/i }),
     ).toBeInTheDocument();
   });
+
+  // RECEIPTS-784: a failed query must render an error state (with retry), not
+  // the "No receipts yet" empty state.
+  it("renders an ErrorState with a working Retry button when the query fails", async () => {
+    const user = (await import("@testing-library/user-event")).default.setup();
+    const refetch = vi.fn();
+    const { useReceipts } = await import("@/hooks/useReceipts");
+    vi.mocked(useReceipts).mockReturnValue(
+      mockQueryResult({
+        data: [],
+        total: 0,
+        isLoading: false,
+        isError: true,
+        isRefetching: false,
+        refetch,
+      }),
+    );
+
+    renderWithProviders(<Receipts />);
+
+    expect(screen.getByText(/couldn't load receipts/i)).toBeInTheDocument();
+    expect(screen.queryByText(/no receipts yet/i)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /try again/i }));
+    expect(refetch).toHaveBeenCalled();
+  });
+
+  // RECEIPTS-783: after a partial bulk YNAB push, only the succeeded receipts
+  // are deselected — failed ones stay selected so the user can retry.
+  it("keeps failed receipts selected after a partial bulk YNAB push", async () => {
+    const user = (await import("@testing-library/user-event")).default.setup();
+    const items = [
+      mockReceiptResponse({ id: "1", location: "Walmart", date: "2024-01-15", taxAmount: 5.25 }),
+      mockReceiptResponse({ id: "2", location: "Target", date: "2024-01-20", taxAmount: 3.5 }),
+    ];
+
+    const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
+    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
+      search: "",
+      setSearch: vi.fn(),
+      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
+      totalCount: items.length,
+      isSearching: false,
+      clearSearch: vi.fn(),
+    }));
+
+    const { useReceipts } = await import("@/hooks/useReceipts");
+    vi.mocked(useReceipts).mockReturnValue(mockQueryResult({
+      data: items,
+      total: items.length,
+      isLoading: false,
+    }));
+
+    const bulkMutate = vi.fn(
+      (_ids: string[], opts?: { onSuccess?: (data: unknown) => void }) => {
+        opts?.onSuccess?.({
+          results: [
+            { receiptId: "1", result: { success: true, pushedTransactions: [] } },
+            { receiptId: "2", result: { success: false, pushedTransactions: [], error: "nope" } },
+          ],
+        });
+      },
+    );
+    const { useBulkPushYnabTransactions } = await import("@/hooks/useYnab");
+    vi.mocked(useBulkPushYnabTransactions).mockReturnValue(
+      mockMutationResult({ mutate: bulkMutate, isPending: false }),
+    );
+
+    renderWithProviders(<Receipts />);
+
+    await user.click(screen.getByLabelText("Select all rows"));
+    const bar = await screen.findByRole("region", { name: "Bulk actions" });
+    expect(bar).toHaveTextContent(/2.*receipts selected/);
+
+    await user.click(screen.getByRole("button", { name: /push to ynab/i }));
+
+    expect(bulkMutate).toHaveBeenCalledWith(["1", "2"], expect.any(Object));
+    // r1 pushed (cleared); r2 failed (still selected) → "1 of 2 receipt selected".
+    expect(
+      screen.getByRole("region", { name: "Bulk actions" }),
+    ).toHaveTextContent(/1 of 2 receipt selected/);
+  });
 });

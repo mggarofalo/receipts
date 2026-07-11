@@ -345,4 +345,52 @@ describe("RecycleBin", () => {
     renderWithProviders(<RecycleBin />);
     expect(screen.getByText(/emptying/i)).toBeInTheDocument();
   });
+
+  // RECEIPTS-784: a failed deleted-items query must show an error state with a
+  // Retry, not the misleading "No deleted items found" empty state.
+  it("renders an ErrorState with a working Retry when a query fails", async () => {
+    const user = (await import("@testing-library/user-event")).default.setup();
+    const refetch = vi.fn();
+
+    const { useDeletedReceipts } = await import("@/hooks/useReceipts");
+    const { useDeletedReceiptItems } = await import("@/hooks/useReceiptItems");
+    const { useDeletedTransactions } = await import("@/hooks/useTransactions");
+    const { useDeletedItemTemplates } = await import("@/hooks/useItemTemplates");
+    const { useDeletedCategories } = await import("@/hooks/useCategories");
+    const { useDeletedSubcategories } = await import("@/hooks/useSubcategories");
+
+    // The receipts query fails; the rest succeed. All must expose refetch since
+    // Retry re-runs every deleted-entity query.
+    vi.mocked(useDeletedReceipts).mockReturnValue(mockQueryResult({
+      data: undefined,
+      total: 0,
+      isLoading: false,
+      isError: true,
+      isRefetching: false,
+      refetch,
+    }));
+    for (const hook of [
+      useDeletedReceiptItems,
+      useDeletedTransactions,
+      useDeletedItemTemplates,
+      useDeletedCategories,
+      useDeletedSubcategories,
+    ]) {
+      vi.mocked(hook).mockReturnValue(
+        mockQueryResult({ data: [], total: 0, isLoading: false }),
+      );
+    }
+
+    renderWithProviders(<RecycleBin />);
+
+    expect(
+      screen.getByText(/couldn't load the recycle bin/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/no deleted items found/i),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /try again/i }));
+    expect(refetch).toHaveBeenCalled();
+  });
 });
