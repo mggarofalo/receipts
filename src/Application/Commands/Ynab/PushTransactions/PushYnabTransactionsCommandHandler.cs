@@ -135,9 +135,36 @@ public class PushYnabTransactionsCommandHandler(
 			return new PushYnabTransactionsResult(false, [], Error: ex.Message);
 		}
 
-		// 8. Create YNAB transactions and track sync
-		List<PushedTransactionInfo> pushedTransactions = [];
+		// 8. Assign a stable import_id to EVERY split up front — including already-synced ones
+		// (RECEIPTS-752). YNAB import_ids disambiguate transactions sharing amount+date via an
+		// occurrence counter. If the counter only advanced for the splits actually pushed, a
+		// retry (where a synced sibling is skipped) would recompute occurrence 1 for a still-
+		// unsynced transaction with the same amount+date, colliding with the sibling's already-
+		// consumed import_id. YNAB would 409 and recovery would bind both local transactions to
+		// the sibling's single YNAB transaction, silently dropping the second amount. Counting
+		// every split here keeps occurrence numbering deterministic across retries.
 		Dictionary<(long Milliunits, DateOnly Date), int> importIdOccurrences = [];
+		Dictionary<Guid, string> importIdByTransactionId = [];
+		foreach (YnabTransactionSplit txSplit in splitResult.TransactionSplits)
+		{
+			Domain.Core.Transaction localTx = transactions.First(t => t.Id == txSplit.LocalTransactionId);
+			(long Milliunits, DateOnly Date) importIdKey = (txSplit.TotalMilliunits, localTx.Date);
+			int occurrence = importIdOccurrences.TryGetValue(importIdKey, out int current) ? current + 1 : 1;
+			importIdOccurrences[importIdKey] = occurrence;
+			importIdByTransactionId[txSplit.LocalTransactionId] = YnabImportId.Generate(
+				txSplit.TotalMilliunits, localTx.Date, request.ReceiptId, occurrence);
+		}
+
+		// Track YNAB transaction ids already bound to a sync record for this receipt so recovery
+		// can never double-bind two local transactions to one YNAB transaction (RECEIPTS-752).
+		// Seed with the ids of already-synced siblings preserved from a prior push.
+		HashSet<string> boundYnabTransactionIds = existingSyncRecords.Values
+			.Where(r => r.SyncStatus == YnabSyncStatus.Synced && r.YnabTransactionId is not null)
+			.Select(r => r.YnabTransactionId!)
+			.ToHashSet();
+
+		// 9. Create YNAB transactions and track sync
+		List<PushedTransactionInfo> pushedTransactions = [];
 
 		foreach (YnabTransactionSplit txSplit in splitResult.TransactionSplits)
 		{
@@ -153,11 +180,9 @@ public class PushYnabTransactionsCommandHandler(
 
 			string ynabAccountId = accountToYnabId[localTx.AccountId];
 
-			// Compute import_id for deduplication (includes receipt prefix to avoid cross-receipt collision)
-			(long Milliunits, DateOnly Date) importIdKey = (txSplit.TotalMilliunits, localTx.Date);
-			int occurrence = importIdOccurrences.TryGetValue(importIdKey, out int current) ? current + 1 : 1;
-			importIdOccurrences[importIdKey] = occurrence;
-			string importId = YnabImportId.Generate(txSplit.TotalMilliunits, localTx.Date, request.ReceiptId, occurrence);
+			// import_id was assigned deterministically in the first pass above so occurrence
+			// numbering stays stable across retries.
+			string importId = importIdByTransactionId[txSplit.LocalTransactionId];
 
 			YnabSyncRecordDto? syncRecord = null;
 			try
@@ -219,6 +244,23 @@ public class PushYnabTransactionsCommandHandler(
 						throw;
 					}
 
+					// Reject a recovered id already bound to another local transaction's sync
+					// record for this receipt: binding it here would point two local transactions
+					// at one YNAB transaction and silently drop this amount (RECEIPTS-752). Fail
+					// loudly instead of reporting a false success. Add returns false if present.
+					if (!boundYnabTransactionIds.Add(recoveredId))
+					{
+						string dupError = $"YNAB transaction '{recoveredId}' is already bound to another sync record " +
+							$"for this receipt; refusing to double-bind local transaction {localTx.Id}.";
+
+						await syncRecordService.UpdateStatusAsync(
+							syncRecord!.Id, YnabSyncStatus.Failed, null, dupError, cancellationToken);
+
+						await LogPushEventAsync(request.ReceiptId, localTx.Id, success: false, dupError, cancellationToken);
+
+						return new PushYnabTransactionsResult(false, pushedTransactions, Error: dupError);
+					}
+
 					await syncRecordService.UpdateStatusAsync(
 						syncRecord!.Id, YnabSyncStatus.Synced, recoveredId, null, cancellationToken);
 
@@ -231,6 +273,10 @@ public class PushYnabTransactionsCommandHandler(
 					await LogPushEventAsync(request.ReceiptId, localTx.Id, success: true, errorMessage: null, cancellationToken);
 					continue;
 				}
+
+				// Record the freshly created YNAB id so a later split in this push cannot
+				// recover-bind onto it (RECEIPTS-752 double-bind guard).
+				boundYnabTransactionIds.Add(ynabResponse.TransactionId);
 
 				await LogPushEventAsync(request.ReceiptId, localTx.Id, success: true, errorMessage: null, cancellationToken);
 
