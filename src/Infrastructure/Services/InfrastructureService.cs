@@ -96,26 +96,25 @@ public static class InfrastructureService
 		}
 
 		// Fallback ICurrentUserAccessor for when no HTTP context is available (tests, background services).
-		// The API layer registers the real implementation before this, so TryAdd is a no-op in production.
-		services.TryAddScoped<ICurrentUserAccessor, NullCurrentUserAccessor>();
+		// The API layer registers the real implementation (also a singleton) before this, so TryAdd is a
+		// no-op in production. Registered as a SINGLETON (RECEIPTS-753) so the singleton IDbContextFactory
+		// can resolve it from the root provider without a captive-dependency violation. NullCurrentUserAccessor
+		// is stateless, and the real CurrentUserAccessor reads IHttpContextAccessor lazily on each property
+		// access, so a singleton lifetime still observes the current request correctly.
+		services.TryAddSingleton<ICurrentUserAccessor, NullCurrentUserAccessor>();
 
 		services
 			.AddIdentityCore<ApplicationUser>()
 			.AddRoles<IdentityRole>()
 			.AddEntityFrameworkStores<ApplicationDbContext>();
 
-		// Override the factory's scoped ApplicationDbContext registration to use 2-param constructor.
-		// AddDbContextFactory auto-registers a scoped context that delegates to the singleton factory,
-		// which uses root provider and can't resolve scoped ICurrentUserAccessor.
-		// AddEntityFrameworkStores also re-registers the scoped context, so this MUST come after it.
-		services.AddScoped(sp =>
-		{
-			DbContextOptions<ApplicationDbContext> options =
-				sp.GetRequiredService<DbContextOptions<ApplicationDbContext>>();
-			ICurrentUserAccessor accessor = sp.GetRequiredService<ICurrentUserAccessor>();
-			IDescriptionChangeSignal? signal = sp.GetService<IDescriptionChangeSignal>();
-			return new ApplicationDbContext(options, accessor, signal);
-		});
+		// Identity's EF stores resolve ApplicationDbContext as a scoped service. Route that scoped context
+		// through the factory so it is built via the same 3-param constructor path as every repository
+		// (ICurrentUserAccessor + IDescriptionChangeSignal injected). The factory now carries the
+		// [ActivatorUtilitiesConstructor] on the 3-param ctor and both dependencies are singletons, so this
+		// is correct and has no captive dependency. AddEntityFrameworkStores also registers a scoped context,
+		// so this MUST come after it to win (RECEIPTS-753).
+		services.AddScoped(sp => sp.GetRequiredService<IDbContextFactory<ApplicationDbContext>>().CreateDbContext());
 
 		services
 			.AddScoped<IReceiptService, ReceiptService>()
