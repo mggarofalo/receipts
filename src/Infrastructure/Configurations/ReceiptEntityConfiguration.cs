@@ -22,6 +22,14 @@ public class ReceiptEntityConfiguration : IEntityTypeConfiguration<ReceiptEntity
 		builder.Property(e => e.ProcessedImagePath)
 			.HasMaxLength(1024);
 
+		// RECEIPTS-787: the default receipt list sorts by Date desc with offset pagination and
+		// every DashboardService/report method filters Date within a range — all under the
+		// DeletedAt IS NULL soft-delete filter. Without this the Receipts table has only its PK,
+		// forcing a full scan + sort. A filtered index on Date (partial to active rows) serves the
+		// date-range, date-sort, and soft-delete predicate shapes in one small, hot index.
+		builder.HasIndex(e => e.Date)
+			.HasFilter("\"DeletedAt\" IS NULL");
+
 		builder.HasQueryFilter(e => e.DeletedAt == null);
 	}
 }

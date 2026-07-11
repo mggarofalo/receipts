@@ -337,7 +337,13 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 
 	private List<AuditEntry> CollectAuditEntries()
 	{
-		HashSet<Type> excludedTypes = [typeof(AuditLogEntity), typeof(AuthAuditLogEntity), typeof(SeedHistoryEntry), typeof(YnabSyncRecordEntity), typeof(YnabSelectedBudgetEntity), typeof(YnabAccountMappingEntity), typeof(YnabCategoryMappingEntity), typeof(YnabServerKnowledgeEntity), typeof(YnabSyncEventEntity), typeof(DistinctDescriptionEntity), typeof(ItemSimilarityEdgeEntity)];
+		// ApiKeyEntity is excluded because the auth hot path stamps LastUsedAt on every
+		// authenticated request (RECEIPTS-769). A LastUsedAt bump is telemetry, not an
+		// audit-worthy mutation, and auditing it would grow AuditLogs unbounded — one row
+		// per API request. The service stamps LastUsedAt via ExecuteUpdate (which bypasses
+		// the change tracker and this interceptor entirely); this exclusion is belt-and-braces
+		// so any future tracked write to an ApiKey (create/revoke) also stays out of the log.
+		HashSet<Type> excludedTypes = [typeof(AuditLogEntity), typeof(AuthAuditLogEntity), typeof(SeedHistoryEntry), typeof(YnabSyncRecordEntity), typeof(YnabSelectedBudgetEntity), typeof(YnabAccountMappingEntity), typeof(YnabCategoryMappingEntity), typeof(YnabServerKnowledgeEntity), typeof(YnabSyncEventEntity), typeof(DistinctDescriptionEntity), typeof(ItemSimilarityEdgeEntity), typeof(ApiKeyEntity)];
 		List<AuditEntry> auditEntries = [];
 		DateTimeOffset now = DateTimeOffset.UtcNow;
 
