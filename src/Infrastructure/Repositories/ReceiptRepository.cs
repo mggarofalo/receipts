@@ -229,6 +229,9 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 		entity.DeletedByApiKeyId = null;
 		entity.CascadeDeletedByParentId = null;
 
+		// Restores cascade-soft-deleted children recursively: the receipt's transactions
+		// and, in turn, the YnabSyncRecords those transactions cascade-soft-deleted
+		// (tagged with the transaction id). Mirrors the two-level cascade delete. RECEIPTS-755
 		await context.RestoreOwnedChildrenAsync<ReceiptEntity>(id, cancellationToken);
 
 		await context.SaveChangesAsync(cancellationToken);

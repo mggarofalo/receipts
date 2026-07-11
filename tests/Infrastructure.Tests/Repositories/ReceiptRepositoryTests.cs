@@ -204,6 +204,49 @@ public class ReceiptRepositoryTests
 	}
 
 	[Fact]
+	public async Task DeleteThenRestore_ReceiptWithSyncedTransaction_RevivesYnabSyncRecord()
+	{
+		// RECEIPTS-755 restore symmetry across two levels: restoring a receipt revives its
+		// transactions AND the YnabSyncRecords those transactions cascade-soft-deleted (which
+		// are tagged with the transaction id, not the receipt id).
+		ReceiptEntity receipt = ReceiptEntityGenerator.Generate();
+		AccountEntity account = AccountEntityGenerator.Generate();
+		CardEntity card = CardEntityGenerator.Generate();
+		card.AccountId = account.Id;
+		card.Id = account.Id;
+		TransactionEntity transaction = TransactionEntityGenerator.Generate(receipt.Id, account.Id);
+		YnabSyncRecordEntity syncRecord = YnabSyncRecordEntityGenerator.Generate(localTransactionId: transaction.Id);
+
+		using (ApplicationDbContext context = _contextFactory.CreateDbContext())
+		{
+			await context.Receipts.AddAsync(receipt);
+			await context.Accounts.AddAsync(account);
+			await context.Cards.AddAsync(card);
+			await context.Transactions.AddAsync(transaction);
+			await context.YnabSyncRecords.AddAsync(syncRecord);
+			await context.SaveChangesAsync(CancellationToken.None);
+		}
+
+		ReceiptRepository repository = new(_contextFactory);
+
+		// Act — delete then restore the receipt.
+		await repository.DeleteAsync([receipt.Id], CancellationToken.None);
+		bool restored = await repository.RestoreAsync(receipt.Id, CancellationToken.None);
+
+		// Assert — receipt, transaction, and sync record all active again.
+		restored.Should().BeTrue();
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		(await verify.Receipts.AnyAsync(r => r.Id == receipt.Id)).Should().BeTrue();
+		(await verify.Transactions.AnyAsync(t => t.Id == transaction.Id)).Should().BeTrue();
+
+		YnabSyncRecordEntity revived = await verify.YnabSyncRecords.IgnoreQueryFilters().SingleAsync(s => s.Id == syncRecord.Id);
+		revived.DeletedAt.Should().BeNull("restoring the receipt must revive its transaction's cascade-soft-deleted sync record");
+		revived.CascadeDeletedByParentId.Should().BeNull();
+
+		_contextFactory.ResetDatabase();
+	}
+
+	[Fact]
 	public async Task ExistsAsync_ExistingId_ReturnsTrue()
 	{
 		// Arrange

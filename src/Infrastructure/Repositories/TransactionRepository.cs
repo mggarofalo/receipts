@@ -195,6 +195,14 @@ public class TransactionRepository(IDbContextFactory<ApplicationDbContext> conte
 		entity.DeletedByUserId = null;
 		entity.DeletedByApiKeyId = null;
 		entity.CascadeDeletedByParentId = null;
+
+		// Symmetric with DeleteAsync: revive the YnabSyncRecords this transaction
+		// cascade-soft-deleted (tagged CascadeDeletedByParentId == transaction id), so a
+		// delete -> restore round-trip does not leave a live transaction with dead sync
+		// history. Only cascade-deleted children are restored; independently soft-deleted
+		// sync records stay deleted. See RECEIPTS-755.
+		await context.RestoreOwnedChildrenAsync<TransactionEntity>(id, cancellationToken);
+
 		await context.SaveChangesAsync(cancellationToken);
 		return true;
 	}
