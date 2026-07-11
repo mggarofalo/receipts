@@ -15,6 +15,7 @@ function renderSortableHead(props: {
   currentSortDirection?: "asc" | "desc";
   onToggleSort?: (column: string) => void;
   className?: string;
+  align?: "left" | "right";
 }) {
   const defaults = {
     column: "name",
@@ -134,6 +135,20 @@ describe("SortableTableHead", () => {
       await user.tab();
       const button = screen.getByRole("button", { name: /name/i });
       expect(button).toHaveFocus();
+    });
+  });
+
+  describe("alignment", () => {
+    it("left-aligns the button content by default", () => {
+      renderSortableHead({ label: "Name" });
+      const button = screen.getByRole("button", { name: /name/i });
+      expect(button.className).not.toContain("justify-end");
+    });
+
+    it("right-aligns the button content when align is 'right'", () => {
+      renderSortableHead({ label: "Amount", align: "right" });
+      const button = screen.getByRole("button", { name: /amount/i });
+      expect(button.className).toContain("justify-end");
     });
   });
 

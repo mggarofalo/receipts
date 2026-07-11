@@ -109,11 +109,15 @@ function DeletedItemsTable({
   focusedKey,
   tableRef,
   onRowClick,
+  containerProps,
+  getRowProps,
 }: {
   items: DeletedItem[];
   focusedKey?: string | null;
   tableRef?: React.RefObject<HTMLDivElement | null>;
   onRowClick?: (index: number) => void;
+  containerProps?: React.HTMLAttributes<HTMLDivElement>;
+  getRowProps?: (itemId: string) => React.ComponentProps<"tr">;
 }) {
   if (items.length === 0) {
     return (
@@ -124,7 +128,7 @@ function DeletedItemsTable({
   }
 
   return (
-    <div className="rounded-md border" ref={tableRef}>
+    <div className="rounded-md border" ref={tableRef} {...containerProps}>
       <Table>
         <TableHeader>
           <TableRow>
@@ -135,47 +139,49 @@ function DeletedItemsTable({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {items.map((item, index) => (
-            <TableRow
-              key={`${item.entityType}:${item.id}`}
-              className={`${onRowClick ? "cursor-pointer" : ""} ${
-                focusedKey === `${item.entityType}:${item.id}`
-                  ? "bg-accent"
-                  : ""
-              }`}
-              onClick={(e) => {
-                if (!onRowClick) return;
-                if (
-                  (e.target as HTMLElement).closest(
-                    "button, input, a, [role='button']",
+          {items.map((item, index) => {
+            const itemKey = `${item.entityType}:${item.id}`;
+            return (
+              <TableRow
+                key={itemKey}
+                {...(getRowProps ? getRowProps(itemKey) : {})}
+                className={`${onRowClick ? "cursor-pointer" : ""} ${
+                  focusedKey === itemKey ? "bg-accent" : ""
+                }`}
+                onClick={(e) => {
+                  if (!onRowClick) return;
+                  if (
+                    (e.target as HTMLElement).closest(
+                      "button, input, a, [role='button']",
+                    )
                   )
-                )
-                  return;
-                onRowClick(index);
-              }}
-            >
-              <TableCell>{item.entityTypeLabel}</TableCell>
-              <TableCell>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="font-mono text-xs cursor-default">
-                      {truncateId(item.id)}
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent>{item.id}</TooltipContent>
-                </Tooltip>
-              </TableCell>
-              <TableCell className="text-sm text-muted-foreground">
-                {item.label}
-              </TableCell>
-              <TableCell>
-                <RestoreButton
-                  entityType={item.entityType}
-                  entityId={item.id}
-                />
-              </TableCell>
-            </TableRow>
-          ))}
+                    return;
+                  onRowClick(index);
+                }}
+              >
+                <TableCell>{item.entityTypeLabel}</TableCell>
+                <TableCell>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="font-mono text-xs cursor-default">
+                        {truncateId(item.id)}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>{item.id}</TooltipContent>
+                  </Tooltip>
+                </TableCell>
+                <TableCell className="text-sm text-muted-foreground">
+                  {item.label}
+                </TableCell>
+                <TableCell>
+                  <RestoreButton
+                    entityType={item.entityType}
+                    entityId={item.id}
+                  />
+                </TableCell>
+              </TableRow>
+            );
+          })}
         </TableBody>
       </Table>
     </div>
@@ -262,9 +268,10 @@ function RecycleBin() {
     subcategories.data,
   ]);
 
-  const { focusedId, setFocusedIndex, tableRef } = useListKeyboardNav({
+  const { focusedId, setFocusedIndex, tableRef, containerProps, getRowProps } = useListKeyboardNav({
     items: allItems,
     getId: (item) => `${item.entityType}:${item.id}`,
+    listId: "recycle-bin",
     enabled: !isLoading,
   });
 
@@ -353,6 +360,8 @@ function RecycleBin() {
             focusedKey={focusedId}
             tableRef={tableRef}
             onRowClick={setFocusedIndex}
+            containerProps={containerProps}
+            getRowProps={getRowProps}
           />
         </TabsContent>
 

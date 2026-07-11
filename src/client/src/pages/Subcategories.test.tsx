@@ -269,6 +269,37 @@ describe("Subcategories", () => {
     expect(within(goodsHeader).getByText("(1)")).toBeInTheDocument();
   });
 
+  it("category header exposes a focusable, labeled toggle button with aria-expanded", async () => {
+    await setupWithData();
+    renderWithProviders(<Subcategories />);
+
+    const foodHeader = screen.getByTestId("category-header-c1");
+    const toggle = within(foodHeader).getByRole("button", {
+      name: /expand food/i,
+    });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("expanding a category via keyboard updates aria-expanded and label", async () => {
+    const user = (await import("@testing-library/user-event")).default.setup();
+    await setupWithData();
+    renderWithProviders(<Subcategories />);
+
+    const foodHeader = screen.getByTestId("category-header-c1");
+    const toggle = within(foodHeader).getByRole("button", {
+      name: /expand food/i,
+    });
+
+    toggle.focus();
+    expect(toggle).toHaveFocus();
+    await user.keyboard("{Enter}");
+
+    expect(screen.getByText("Dairy")).toBeInTheDocument();
+    expect(
+      within(foodHeader).getByRole("button", { name: /collapse food/i }),
+    ).toHaveAttribute("aria-expanded", "true");
+  });
+
   it("opens create dialog when New Subcategory button is clicked", async () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     renderWithProviders(<Subcategories />);

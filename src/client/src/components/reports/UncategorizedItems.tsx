@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
+import { SortableTableHead } from "@/components/SortableTableHead";
 import client from "@/lib/api-client";
 import { toast } from "sonner";
 
@@ -135,19 +136,15 @@ export default function UncategorizedItems() {
     },
   });
 
-  function handleSort(column: SortColumn) {
-    if (sortBy === column) {
+  function handleSort(column: string) {
+    const nextColumn = column as SortColumn;
+    if (sortBy === nextColumn) {
       setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
     } else {
-      setSortBy(column);
+      setSortBy(nextColumn);
       setSortDirection("asc");
     }
     setPage(1);
-  }
-
-  function sortIndicator(column: SortColumn) {
-    if (sortBy !== column) return null;
-    return sortDirection === "asc" ? " \u2191" : " \u2193";
   }
 
   function handleReceiptClick(e: React.MouseEvent, receiptId: string) {
@@ -296,25 +293,10 @@ export default function UncategorizedItems() {
                 aria-label="Select all items on this page"
               />
             </TableHead>
-            <TableHead
-              className="cursor-pointer select-none"
-              onClick={() => handleSort("description")}
-            >
-              Description{sortIndicator("description")}
-            </TableHead>
-            <TableHead
-              className="cursor-pointer select-none"
-              onClick={() => handleSort("itemCode")}
-            >
-              Item Code{sortIndicator("itemCode")}
-            </TableHead>
+            <SortableTableHead column="description" label="Description" currentSortBy={sortBy} currentSortDirection={sortDirection} onToggleSort={handleSort} />
+            <SortableTableHead column="itemCode" label="Item Code" currentSortBy={sortBy} currentSortDirection={sortDirection} onToggleSort={handleSort} />
             <TableHead>Receipt</TableHead>
-            <TableHead
-              className="cursor-pointer select-none text-right"
-              onClick={() => handleSort("total")}
-            >
-              Total{sortIndicator("total")}
-            </TableHead>
+            <SortableTableHead column="total" label="Total" currentSortBy={sortBy} currentSortDirection={sortDirection} onToggleSort={handleSort} className="text-right" align="right" />
             <TableHead>Subcategory</TableHead>
           </TableRow>
         </TableHeader>

@@ -375,21 +375,35 @@ function Subcategories() {
                     <Fragment key={categoryId}>
                       <TableRow
                         className="cursor-pointer bg-muted/50 hover:bg-muted"
-                        onClick={() => toggleCategory(categoryId)}
+                        onClick={(e) => {
+                          if (
+                            (e.target as HTMLElement).closest(
+                              "button, input, a, [role='button']",
+                            )
+                          )
+                            return;
+                          toggleCategory(categoryId);
+                        }}
                         data-testid={`category-header-${categoryId}`}
                       >
                         <TableCell colSpan={5}>
-                          <div className="flex items-center gap-2 font-medium">
+                          <button
+                            type="button"
+                            className="flex w-full items-center gap-2 font-medium text-left cursor-pointer"
+                            onClick={() => toggleCategory(categoryId)}
+                            aria-expanded={isExpanded}
+                            aria-label={`${isExpanded ? "Collapse" : "Expand"} ${categoryName}`}
+                          >
                             {isExpanded ? (
-                              <ChevronDown className="h-4 w-4" />
+                              <ChevronDown className="h-4 w-4" aria-hidden="true" />
                             ) : (
-                              <ChevronRight className="h-4 w-4" />
+                              <ChevronRight className="h-4 w-4" aria-hidden="true" />
                             )}
                             {categoryName}
                             <span className="ml-1 text-xs text-muted-foreground">
                               ({items.length})
                             </span>
-                          </div>
+                          </button>
                         </TableCell>
                       </TableRow>
                       {isExpanded &&

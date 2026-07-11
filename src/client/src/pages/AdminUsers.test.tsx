@@ -610,6 +610,33 @@ describe("AdminUsers", () => {
     expect(mockSetFocusedIndex).toHaveBeenCalledWith(0);
   });
 
+  it("exposes grid role and row id so keyboard focus is announced to assistive tech", async () => {
+    const { useUsers } = await import("@/hooks/useUsers");
+    vi.mocked(useUsers).mockReturnValue(mockQueryResult({
+      data: [
+        {
+          id: "1",
+          email: "grid@example.com",
+          firstName: "Grid",
+          lastName: "Row",
+          roles: ["User"],
+          isDisabled: false,
+          createdAt: "2024-01-01",
+          lastLoginAt: null,
+        },
+      ],
+      total: 1,
+      isLoading: false,
+    }));
+
+    renderWithProviders(<AdminUsers />);
+
+    expect(screen.getByRole("grid")).toBeInTheDocument();
+    const row = screen.getByText("grid@example.com").closest("tr")!;
+    expect(row).toHaveAttribute("id", "list-row-1");
+    expect(row).toHaveAttribute("role", "row");
+  });
+
   it("shows just first name when last name is null", async () => {
     const { useUsers } = await import("@/hooks/useUsers");
     vi.mocked(useUsers).mockReturnValue(mockQueryResult({

@@ -180,9 +180,10 @@ function ApiKeys() {
     }
   }
 
-  const { focusedId, setFocusedIndex, tableRef } = useListKeyboardNav({
+  const { focusedId, setFocusedIndex, tableRef, containerProps, getRowProps } = useListKeyboardNav({
     items: apiKeys as { id: string }[],
     getId: (k) => k.id,
+    listId: "api-keys",
     enabled: !anyDialogOpen && apiKeys.length > 0,
   });
 
@@ -219,7 +220,7 @@ function ApiKeys() {
               No API keys yet. Create one to get started.
             </p>
           ) : (
-            <div ref={tableRef}>
+            <div ref={tableRef} {...containerProps}>
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -237,6 +238,7 @@ function ApiKeys() {
                     return (
                       <TableRow
                         key={key.id}
+                        {...getRowProps(key.id)}
                         className={`cursor-pointer ${focusedId === key.id ? "bg-accent" : ""}`}
                         onClick={(e) => {
                           if (

@@ -8,6 +8,8 @@ interface SortableTableHeadProps {
   currentSortDirection: "asc" | "desc";
   onToggleSort: (column: string) => void;
   className?: string;
+  /** Aligns the label/icon within the header button. Defaults to "left". */
+  align?: "left" | "right";
 }
 
 export function SortableTableHead({
@@ -17,6 +19,7 @@ export function SortableTableHead({
   currentSortDirection,
   onToggleSort,
   className,
+  align = "left",
 }: SortableTableHeadProps) {
   const isActive = currentSortBy === column;
 
@@ -33,7 +36,7 @@ export function SortableTableHead({
     >
       <button
         type="button"
-        className="inline-flex items-center gap-1 cursor-pointer hover:text-foreground w-full h-full"
+        className={`inline-flex items-center gap-1 cursor-pointer hover:text-foreground w-full h-full ${align === "right" ? "justify-end" : ""}`}
         onClick={() => onToggleSort(column)}
       >
         {label}
