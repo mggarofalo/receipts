@@ -1,4 +1,5 @@
 using Application.Interfaces.Services;
+using Application.Models;
 using Domain.Aggregates;
 using FluentValidation;
 using FluentValidation.Results;
@@ -6,11 +7,8 @@ using Mediator;
 
 namespace Application.Commands.Transaction.Update;
 
-public class UpdateTransactionCommandHandler(
-	ITransactionService transactionService,
-	IReceiptService receiptService,
-	IReceiptItemService receiptItemService,
-	IAdjustmentService adjustmentService) : IRequestHandler<UpdateTransactionCommand, bool>
+public class UpdateTransactionCommandHandler(ITransactionService transactionService)
+	: IRequestHandler<UpdateTransactionCommand, bool>
 {
 	public async ValueTask<bool> Handle(UpdateTransactionCommand request, CancellationToken cancellationToken)
 	{
@@ -22,34 +20,37 @@ public class UpdateTransactionCommandHandler(
 
 		Guid receiptId = existingTransaction.ReceiptId;
 
-		Task<Domain.Core.Receipt?> receiptTask = receiptService.GetByIdAsync(receiptId, cancellationToken);
-		Task<Models.PagedResult<Domain.Core.ReceiptItem>> itemsTask = receiptItemService.GetByReceiptIdAsync(receiptId, 0, int.MaxValue, Models.SortParams.Default, cancellationToken);
-		Task<Models.PagedResult<Domain.Core.Adjustment>> adjustmentsTask = adjustmentService.GetByReceiptIdAsync(receiptId, 0, int.MaxValue, Models.SortParams.Default, cancellationToken);
-		Task<Models.PagedResult<Domain.Core.Transaction>> existingTransactionsTask = transactionService.GetByReceiptIdAsync(receiptId, 0, int.MaxValue, Models.SortParams.Default, cancellationToken);
+		// Balance validation (RECEIPTS-764) runs inside the service's row-locked transaction so
+		// the read-validate-write sequence is serialized per receipt at the DB level.
+		await transactionService.UpdateWithBalanceValidationAsync(
+			[.. request.Transactions],
+			receiptId,
+			state => Validate(state, request.Transactions),
+			cancellationToken);
 
-		await Task.WhenAll(receiptTask, itemsTask, adjustmentsTask, existingTransactionsTask);
+		return true;
+	}
 
-		Domain.Core.Receipt receipt = receiptTask.Result
-			?? throw new InvalidOperationException("Receipt not found");
-
-		HashSet<Guid> receiptTransactionIds = [.. existingTransactionsTask.Result.Data.Select(t => t.Id)];
-		if (!request.Transactions.All(t => receiptTransactionIds.Contains(t.Id)))
+	private static void Validate(ReceiptBalanceState state, IReadOnlyList<Domain.Core.Transaction> incoming)
+	{
+		HashSet<Guid> receiptTransactionIds = [.. state.ExistingTransactions.Select(t => t.Id)];
+		if (!incoming.All(t => receiptTransactionIds.Contains(t.Id)))
 		{
 			throw new InvalidOperationException("All transactions in the batch must belong to the same receipt.");
 		}
 
 		ReceiptWithItems receiptWithItems = new()
 		{
-			Receipt = receipt,
-			Items = itemsTask.Result.Data,
-			Adjustments = adjustmentsTask.Result.Data
+			Receipt = state.Receipt,
+			Items = [.. state.Items],
+			Adjustments = [.. state.Adjustments]
 		};
 
-		HashSet<Guid> updatedIds = [.. request.Transactions.Select(t => t.Id)];
-		decimal unchangedTotal = existingTransactionsTask.Result.Data
+		HashSet<Guid> updatedIds = [.. incoming.Select(t => t.Id)];
+		decimal unchangedTotal = state.ExistingTransactions
 			.Where(t => !updatedIds.Contains(t.Id))
 			.Sum(t => t.Amount.Amount);
-		decimal updatedTotal = request.Transactions.Sum(t => t.Amount.Amount);
+		decimal updatedTotal = incoming.Sum(t => t.Amount.Amount);
 		decimal proposedTotal = unchangedTotal + updatedTotal;
 
 		if (Math.Abs(proposedTotal - receiptWithItems.ExpectedTotal.Amount) > 0.01m)
@@ -61,8 +62,5 @@ public class UpdateTransactionCommandHandler(
 						receiptWithItems.ExpectedTotal.Amount, proposedTotal))
 			]);
 		}
-
-		await transactionService.UpdateAsync([.. request.Transactions], receiptId, cancellationToken);
-		return true;
 	}
 }

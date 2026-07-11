@@ -1,4 +1,5 @@
 using Application.Interfaces.Services;
+using Application.Models;
 using Domain.Aggregates;
 using FluentValidation;
 using FluentValidation.Results;
@@ -6,33 +7,32 @@ using Mediator;
 
 namespace Application.Commands.Transaction.Create;
 
-public class CreateTransactionCommandHandler(
-	ITransactionService transactionService,
-	IReceiptService receiptService,
-	IReceiptItemService receiptItemService,
-	IAdjustmentService adjustmentService) : IRequestHandler<CreateTransactionCommand, List<Domain.Core.Transaction>>
+public class CreateTransactionCommandHandler(ITransactionService transactionService)
+	: IRequestHandler<CreateTransactionCommand, List<Domain.Core.Transaction>>
 {
 	public async ValueTask<List<Domain.Core.Transaction>> Handle(CreateTransactionCommand request, CancellationToken cancellationToken)
 	{
-		Task<Domain.Core.Receipt?> receiptTask = receiptService.GetByIdAsync(request.ReceiptId, cancellationToken);
-		Task<Models.PagedResult<Domain.Core.ReceiptItem>> itemsTask = receiptItemService.GetByReceiptIdAsync(request.ReceiptId, 0, int.MaxValue, Models.SortParams.Default, cancellationToken);
-		Task<Models.PagedResult<Domain.Core.Adjustment>> adjustmentsTask = adjustmentService.GetByReceiptIdAsync(request.ReceiptId, 0, int.MaxValue, Models.SortParams.Default, cancellationToken);
-		Task<Models.PagedResult<Domain.Core.Transaction>> existingTransactionsTask = transactionService.GetByReceiptIdAsync(request.ReceiptId, 0, int.MaxValue, Models.SortParams.Default, cancellationToken);
+		// The receipt existence / soft-delete guard (RECEIPTS-763) and the balance-equation
+		// validation (RECEIPTS-764) both run inside a single row-locked transaction owned by the
+		// service, so the read-validate-write sequence is serialized per receipt at the DB level.
+		return await transactionService.CreateWithBalanceValidationAsync(
+			[.. request.Transactions],
+			request.ReceiptId,
+			state => Validate(state, request.Transactions),
+			cancellationToken);
+	}
 
-		await Task.WhenAll(receiptTask, itemsTask, adjustmentsTask, existingTransactionsTask);
-
-		Domain.Core.Receipt receipt = receiptTask.Result
-			?? throw new InvalidOperationException("Receipt not found");
-
+	private static void Validate(ReceiptBalanceState state, IReadOnlyList<Domain.Core.Transaction> incoming)
+	{
 		ReceiptWithItems receiptWithItems = new()
 		{
-			Receipt = receipt,
-			Items = itemsTask.Result.Data,
-			Adjustments = adjustmentsTask.Result.Data
+			Receipt = state.Receipt,
+			Items = [.. state.Items],
+			Adjustments = [.. state.Adjustments]
 		};
 
-		decimal existingTotal = existingTransactionsTask.Result.Data.Sum(t => t.Amount.Amount);
-		decimal newTotal = request.Transactions.Sum(t => t.Amount.Amount);
+		decimal existingTotal = state.ExistingTransactions.Sum(t => t.Amount.Amount);
+		decimal newTotal = incoming.Sum(t => t.Amount.Amount);
 		decimal proposedTotal = existingTotal + newTotal;
 
 		if (Math.Abs(proposedTotal - receiptWithItems.ExpectedTotal.Amount) > 0.01m)
@@ -44,7 +44,5 @@ public class CreateTransactionCommandHandler(
 						receiptWithItems.ExpectedTotal.Amount, proposedTotal))
 			]);
 		}
-
-		return await transactionService.CreateAsync([.. request.Transactions], request.ReceiptId, cancellationToken);
 	}
 }
