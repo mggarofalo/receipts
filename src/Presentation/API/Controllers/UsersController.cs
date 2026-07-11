@@ -163,16 +163,12 @@ public class UsersController(
 		user.FirstName = request.FirstName;
 		user.LastName = request.LastName;
 
-		if (request.IsDisabled)
-		{
-			user.LockoutEnabled = true;
-			user.LockoutEnd = DateTimeOffset.MaxValue;
-		}
-		else
-		{
-			user.LockoutEnabled = false;
-			user.LockoutEnd = null;
-		}
+		// Disabled/enabled is signalled by LockoutEnd (MaxValue = disabled, null = enabled), never by
+		// LockoutEnabled. LockoutEnabled must stay true so failed-login lockout keeps working — setting it
+		// false here would permanently disable brute-force protection for the user, since IsLockedOutAsync
+		// short-circuits to false when LockoutEnabled is false (RECEIPTS-776).
+		user.LockoutEnabled = true;
+		user.LockoutEnd = request.IsDisabled ? DateTimeOffset.MaxValue : null;
 
 		IdentityResult updateResult = await userManager.UpdateAsync(user);
 		if (!updateResult.Succeeded)

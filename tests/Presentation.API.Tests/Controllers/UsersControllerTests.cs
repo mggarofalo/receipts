@@ -248,6 +248,54 @@ public class UsersControllerTests
 	}
 
 	[Fact]
+	public async Task UpdateUser_KeepsLockoutEnabledTrue_WhenEnabling_SoFailedLoginLockoutStillWorks()
+	{
+		SetupUserClaims("admin-1");
+		ApplicationUser user = CreateTestUser("user-123");
+		// Previously disabled: enabling must NOT turn off the lockout machinery.
+		user.LockoutEnabled = true;
+		user.LockoutEnd = DateTimeOffset.MaxValue;
+		_userManagerMock.Setup(m => m.FindByIdAsync("user-123")).ReturnsAsync(user);
+		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
+		_userManagerMock.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "User" });
+		_userManagerMock.Setup(m => m.RemoveFromRolesAsync(user, It.IsAny<IEnumerable<string>>())).ReturnsAsync(IdentityResult.Success);
+		_userManagerMock.Setup(m => m.AddToRoleAsync(user, "User")).ReturnsAsync(IdentityResult.Success);
+
+		Results<NoContent, NotFound, BadRequest<string>, BadRequest<IEnumerable<string>>> result = await _controller.UpdateUser(
+			"user-123",
+			new UpdateUserRequest { Email = "a@b.com", FirstName = "A", LastName = "B", Role = "User", IsDisabled = false });
+
+		Assert.IsType<NoContent>(result.Result);
+		// LockoutEnabled stays true, so AccessFailedAsync/IsLockedOutAsync can still lock this account on
+		// failed logins. Enable is signalled purely by clearing LockoutEnd.
+		user.LockoutEnabled.Should().BeTrue();
+		user.LockoutEnd.Should().BeNull();
+		// IsDisabled invariant: an enabled user (LockoutEnd null) reads as not disabled.
+		(user.LockoutEnabled && user.LockoutEnd > DateTimeOffset.UtcNow).Should().BeFalse();
+	}
+
+	[Fact]
+	public async Task UpdateUser_Disable_SetsLockoutEndToMaxValue_AndKeepsLockoutEnabled()
+	{
+		SetupUserClaims("admin-1");
+		ApplicationUser user = CreateTestUser("user-123");
+		_userManagerMock.Setup(m => m.FindByIdAsync("user-123")).ReturnsAsync(user);
+		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
+		_userManagerMock.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "User" });
+		_userManagerMock.Setup(m => m.RemoveFromRolesAsync(user, It.IsAny<IEnumerable<string>>())).ReturnsAsync(IdentityResult.Success);
+		_userManagerMock.Setup(m => m.AddToRoleAsync(user, "User")).ReturnsAsync(IdentityResult.Success);
+
+		await _controller.UpdateUser(
+			"user-123",
+			new UpdateUserRequest { Email = "a@b.com", FirstName = "A", LastName = "B", Role = "User", IsDisabled = true });
+
+		user.LockoutEnabled.Should().BeTrue();
+		user.LockoutEnd.Should().Be(DateTimeOffset.MaxValue);
+		// IsDisabled invariant: a disabled user (LockoutEnd = MaxValue) reads as disabled.
+		(user.LockoutEnabled && user.LockoutEnd > DateTimeOffset.UtcNow).Should().BeTrue();
+	}
+
+	[Fact]
 	public async Task UpdateUser_ReturnsNotFound_WhenUserDoesNotExist()
 	{
 		SetupUserClaims("admin-1");
