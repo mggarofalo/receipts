@@ -284,6 +284,91 @@ public class SoftDeleteTests(PostgresFixture fixture)
 	}
 
 	[Fact]
+	public async Task SoftDelete_Receipt_CascadesToAllOwnedChildrenAndGrandchildren_InOneSave()
+	{
+		// Regression for the de-quadratic soft-delete cascade rewrite (the cascade is the
+		// correctness path RECEIPTS-755 depends on): deleting a single receipt that owns multiple
+		// children of every owned type — plus a grandchild owned by one of those children
+		// (Transaction -> YnabSyncRecord) — must still soft-delete the entire graph in one save
+		// and stamp each cascade target with its DIRECT parent id.
+		Guid receiptId;
+		Guid[] itemIds;
+		Guid transactionId;
+		Guid adjustmentId;
+		Guid syncRecordId;
+		{
+			await using ApplicationDbContext setupContext = fixture.CreateDbContext();
+			ReceiptEntity receipt = ReceiptEntityGenerator.Generate();
+			AccountEntity account = AccountEntityGenerator.Generate();
+			CardEntity card = CardEntityGenerator.Generate();
+			card.AccountId = account.Id;
+			setupContext.Receipts.Add(receipt);
+			setupContext.Accounts.Add(account);
+			setupContext.Cards.Add(card);
+			await setupContext.SaveChangesAsync();
+
+			ReceiptItemEntity item1 = ReceiptItemEntityGenerator.Generate(receipt.Id);
+			ReceiptItemEntity item2 = ReceiptItemEntityGenerator.Generate(receipt.Id);
+			TransactionEntity transaction = TransactionEntityGenerator.Generate(receipt.Id, account.Id, card.Id);
+			AdjustmentEntity adjustment = AdjustmentEntityGenerator.Generate();
+			adjustment.ReceiptId = receipt.Id;
+			setupContext.ReceiptItems.AddRange(item1, item2);
+			setupContext.Transactions.Add(transaction);
+			setupContext.Adjustments.Add(adjustment);
+			await setupContext.SaveChangesAsync();
+
+			YnabSyncRecordEntity syncRecord = YnabSyncRecordEntityGenerator.Generate(localTransactionId: transaction.Id);
+			setupContext.YnabSyncRecords.Add(syncRecord);
+			await setupContext.SaveChangesAsync();
+
+			receiptId = receipt.Id;
+			itemIds = [item1.Id, item2.Id];
+			transactionId = transaction.Id;
+			adjustmentId = adjustment.Id;
+			syncRecordId = syncRecord.Id;
+		}
+
+		// Act — load the whole owned graph into the tracker, then remove only the receipt.
+		{
+			await using ApplicationDbContext deleteContext = fixture.CreateDbContext();
+			ReceiptEntity receiptToDelete = await deleteContext.Receipts.FirstAsync(r => r.Id == receiptId);
+			await deleteContext.ReceiptItems.IgnoreAutoIncludes().Where(i => i.ReceiptId == receiptId).LoadAsync();
+			await deleteContext.Adjustments.IgnoreAutoIncludes().Where(a => a.ReceiptId == receiptId).LoadAsync();
+			await deleteContext.Transactions.IgnoreAutoIncludes().Where(t => t.ReceiptId == receiptId).LoadAsync();
+			await deleteContext.YnabSyncRecords.IgnoreAutoIncludes().Where(s => s.LocalTransactionId == transactionId).LoadAsync();
+			deleteContext.Receipts.Remove(receiptToDelete);
+			await deleteContext.SaveChangesAsync();
+		}
+
+		// Assert — every child and the grandchild is soft-deleted, stamped with its DIRECT parent.
+		await using ApplicationDbContext readContext = fixture.CreateDbContext();
+
+		foreach (Guid itemId in itemIds)
+		{
+			ReceiptItemEntity? item = await readContext.ReceiptItems.IgnoreQueryFilters().FirstOrDefaultAsync(i => i.Id == itemId);
+			item.Should().NotBeNull();
+			item!.DeletedAt.Should().NotBeNull();
+			item.CascadeDeletedByParentId.Should().Be(receiptId);
+		}
+
+		AdjustmentEntity? adj = await readContext.Adjustments.IgnoreQueryFilters().FirstOrDefaultAsync(a => a.Id == adjustmentId);
+		adj.Should().NotBeNull();
+		adj!.DeletedAt.Should().NotBeNull();
+		adj.CascadeDeletedByParentId.Should().Be(receiptId);
+
+		TransactionEntity? tx = await readContext.Transactions.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == transactionId);
+		tx.Should().NotBeNull();
+		tx!.DeletedAt.Should().NotBeNull();
+		tx.CascadeDeletedByParentId.Should().Be(receiptId);
+
+		// Grandchild: owned by the Transaction, so its parent stamp is the transaction id.
+		YnabSyncRecordEntity? sync = await readContext.YnabSyncRecords.IgnoreQueryFilters().FirstOrDefaultAsync(s => s.Id == syncRecordId);
+		sync.Should().NotBeNull();
+		sync!.DeletedAt.Should().NotBeNull();
+		sync.CascadeDeletedByParentId.Should().Be(transactionId);
+	}
+
+	[Fact]
 	public async Task SoftDelete_YnabSyncRecord_AllowsReCreationAfterSoftDelete()
 	{
 		// Arrange — this test validates the filtered unique index on (LocalTransactionId, SyncType)

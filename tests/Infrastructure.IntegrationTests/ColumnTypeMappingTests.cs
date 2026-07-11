@@ -128,6 +128,37 @@ public class ColumnTypeMappingTests(PostgresFixture fixture)
 	}
 
 	[Fact]
+	public async Task ReceiptItemEntity_FractionalQuantityAndSubCentUnitPrice_RoundTripWithoutTruncation()
+	{
+		// RECEIPTS-765: Quantity and UnitPrice were mapped to the money type decimal(18,2),
+		// which silently rounds fractional quantities and sub-cent unit prices on insert.
+		// With numeric(18,4) they must round-trip exactly. The chosen values have scale > 2,
+		// so under the old (18,2) mapping this assertion would fail (rounded to 2 places).
+		await using ApplicationDbContext context = fixture.CreateDbContext();
+		ReceiptEntity receipt = ReceiptEntityGenerator.Generate();
+		context.Receipts.Add(receipt);
+		await context.SaveChangesAsync();
+
+		ReceiptItemEntity item = ReceiptItemEntityGenerator.Generate(receipt.Id);
+		item.Quantity = 1.125m;    // scale 3 — a fractional quantity (e.g. 1.125 kg)
+		item.UnitPrice = 3.4599m;  // scale 4 — a sub-cent unit price (e.g. fuel per gallon)
+		item.TotalAmount = 3.89m;  // money stays scale 2
+
+		// Act
+		context.ReceiptItems.Add(item);
+		await context.SaveChangesAsync();
+
+		// Assert — read on a fresh context so the values come back from Postgres, not the tracker
+		await using ApplicationDbContext readContext = fixture.CreateDbContext();
+		ReceiptItemEntity? loaded = await readContext.ReceiptItems.FirstOrDefaultAsync(i => i.Id == item.Id);
+
+		loaded.Should().NotBeNull();
+		loaded!.Quantity.Should().Be(1.125m, "numeric(18,4) must preserve a fractional quantity without rounding to scale 2");
+		loaded.UnitPrice.Should().Be(3.4599m, "numeric(18,4) must preserve a sub-cent unit price without rounding to scale 2");
+		loaded.TotalAmount.Should().Be(3.89m, "TotalAmount remains money at decimal(18,2)");
+	}
+
+	[Fact]
 	public async Task AdjustmentEntity_RoundTrips_WithEnumToStringConversion()
 	{
 		// Arrange — AdjustmentType enum stored as text

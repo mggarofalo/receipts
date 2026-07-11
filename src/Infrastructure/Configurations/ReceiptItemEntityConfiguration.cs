@@ -16,6 +16,21 @@ public class ReceiptItemEntityConfiguration : IEntityTypeConfiguration<ReceiptIt
 			.IsRequired()
 			.ValueGeneratedOnAdd();
 
+		// RECEIPTS-765: ApplicationDbContext.PrepareEntityTypesInModelBuilder maps EVERY decimal
+		// property to the money type decimal(18,2). That is wrong for Quantity and UnitPrice:
+		//   - Quantity is a count/weight, not money. Postgres silently rounds fractional
+		//     quantities (e.g. 2.5 kg, 1.125 dozen) to scale 2 on insert.
+		//   - UnitPrice legitimately needs sub-cent precision (e.g. fuel at 3.459/gal, or
+		//     per-gram produce). Rounding it to scale 2 corrupts the value on insert.
+		// TotalAmount stays decimal(18,2): it is the reconciled money amount that must land on
+		// whole cents. This configuration runs AFTER PrepareEntityTypesInModelBuilder, so these
+		// explicit overrides win. Widening scale 2 -> 4 is non-lossy for existing data.
+		builder.Property(e => e.Quantity)
+			.HasColumnType("decimal(18,4)");
+
+		builder.Property(e => e.UnitPrice)
+			.HasColumnType("decimal(18,4)");
+
 		builder.Navigation(e => e.Receipt)
 			.AutoInclude();
 
