@@ -16,8 +16,18 @@ public class ImageProcessingService(ILogger<ImageProcessingService> logger) : II
 	private const double DeskewMaxAngle = 10.0;
 	private const double DeskewStepDegrees = 0.5;
 	private const double DeskewMinAngle = 0.5;
-	private const int MaxPixelWidth = 10_000;
-	private const int MaxPixelHeight = 10_000;
+	// Per-dimension caps (defense in depth). Lowered from 10_000 so a square image at the
+	// per-dimension limit no longer slips past into the megapixel guard on its own.
+	private const int MaxPixelWidth = 8_000;
+	private const int MaxPixelHeight = 8_000;
+
+	// PRIMARY guard against decompression bombs: a solid-color 10000x10000 PNG is only tens of
+	// KB compressed but decodes to 100 megapixels, and ApplyAdaptiveThreshold then allocates a
+	// long[height+1, width+1] integral array (~800 MB for 10000x10000) and spins billions of
+	// iterations. Cap the TOTAL decoded pixel count (width * height) and reject before any decode
+	// or allocation. 24 MP comfortably covers legitimate receipt photos (a 12 MP phone camera is
+	// ~4032x3024 = 12.2 MP) while rejecting abusive dimensions.
+	private const long MaxImagePixels = 24_000_000;
 
 	// 256 MB upper bound for ImageSharp memory allocations
 	private const int MemoryBudgetMegabytes = 256;
@@ -61,12 +71,26 @@ public class ImageProcessingService(ILogger<ImageProcessingService> logger) : II
 				"The uploaded file is not a supported image format. Only JPEG and PNG are accepted.");
 		}
 
-		// Check image dimensions before full decode to reject oversized images cheaply
-		ImageInfo info = Image.Identify(imageBytes);
+		// Check image dimensions BEFORE full decode to reject oversized images cheaply.
+		// Image.Identify only reads the header (no full-frame allocation), so these guards run
+		// before Image.Load and before ApplyAdaptiveThreshold's integral-array allocation.
+		DecoderOptions identifyOptions = new() { Configuration = BoundedConfiguration };
+		ImageInfo info = Image.Identify(identifyOptions, imageBytes);
+
 		if (info.Width > MaxPixelWidth || info.Height > MaxPixelHeight)
 		{
 			throw new InvalidOperationException(
 				$"Image dimensions ({info.Width}x{info.Height}) exceed the maximum allowed ({MaxPixelWidth}x{MaxPixelHeight}).");
+		}
+
+		// Cap total decoded pixel count (width * height) to prevent decompression-bomb DoS,
+		// where a tiny compressed file decodes to a huge pixel buffer. Use long arithmetic so
+		// the multiplication cannot overflow for large declared dimensions.
+		long totalPixels = (long)info.Width * info.Height;
+		if (totalPixels > MaxImagePixels)
+		{
+			throw new InvalidOperationException(
+				$"Image resolution ({info.Width}x{info.Height} = {totalPixels:N0} pixels) exceeds the maximum allowed ({MaxImagePixels:N0} pixels).");
 		}
 
 		DecoderOptions decoderOptions = new()
