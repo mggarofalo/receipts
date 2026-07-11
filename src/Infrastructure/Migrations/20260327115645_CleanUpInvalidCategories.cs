@@ -27,11 +27,15 @@ public partial class CleanUpInvalidCategories : Migration
 	/// <inheritdoc />
 	protected override void Up(MigrationBuilder migrationBuilder)
 	{
-		// 1. Insert the "Uncategorized" seed category (EF Core HasData).
-		migrationBuilder.InsertData(
-			table: "Categories",
-			columns: ["Id", "Description", "Name"],
-			values: [new Guid("f0e7a123-9b56-4d3a-8c1e-2a5b7d9f4e6c"), "Default category for items without a valid category", "Uncategorized"]);
+		// 1. Insert the "Uncategorized" seed category. Guarded with ON CONFLICT DO NOTHING so
+		//    the migration is replayable: re-running Up after a Down (which intentionally keeps
+		//    the seed row), or applying it to a database that already contains an "Uncategorized"
+		//    category (by PK or by the unique Name index), no-ops instead of throwing a unique
+		//    violation (RECEIPTS-788). A bare INSERT would fail in both cases.
+		migrationBuilder.Sql(
+			"INSERT INTO \"Categories\" (\"Id\", \"Description\", \"Name\")" +
+			" VALUES ('f0e7a123-9b56-4d3a-8c1e-2a5b7d9f4e6c', 'Default category for items without a valid category', 'Uncategorized')" +
+			" ON CONFLICT DO NOTHING;");
 
 		string validList = string.Join(", ", Array.ConvertAll(ValidCategoryNames, n => $"'{n.Replace("'", "''")}'"));
 
