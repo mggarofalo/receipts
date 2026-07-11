@@ -60,7 +60,19 @@ public class AuthController(
 		user.RefreshToken = userService.HashRefreshToken(refreshToken);
 		user.RefreshTokenExpiresAt = DateTimeOffset.UtcNow.AddDays(30);
 		user.LastLoginAt = DateTimeOffset.UtcNow;
-		await userManager.UpdateAsync(user);
+
+		IdentityResult updateResult = await userManager.UpdateAsync(user);
+		if (!updateResult.Succeeded)
+		{
+			// The session (refresh token) was not persisted — e.g. a concurrency-stamp mismatch. Fail
+			// closed with a generic 401 rather than handing back a token the database never stored.
+			await LogAuthEventAsync(nameof(AuthEventType.LoginFailed), user.Id, request.Email, false, "Failed to persist session");
+			return TypedResults.Json(new OAuthErrorResponse
+			{
+				Error = OAuthErrorResponseError.Invalid_grant,
+				Error_description = "Invalid email or password",
+			}, statusCode: StatusCodes.Status401Unauthorized);
+		}
 
 		await LogAuthEventAsync(nameof(AuthEventType.Login), user.Id, user.Email, true);
 
@@ -97,7 +109,15 @@ public class AuthController(
 
 		user.RefreshToken = userService.HashRefreshToken(newRefreshToken);
 		user.RefreshTokenExpiresAt = DateTimeOffset.UtcNow.AddDays(30);
-		await userManager.UpdateAsync(user);
+
+		IdentityResult updateResult = await userManager.UpdateAsync(user);
+		if (!updateResult.Succeeded)
+		{
+			// Two refresh requests raced: the stored ConcurrencyStamp changed under us, so this rotation
+			// was NOT persisted. Returning the new token would hand back one the database never saved.
+			// Fail closed (invalid_grant) so the loser retries with a fresh, valid token.
+			return TypedResults.Unauthorized();
+		}
 
 		return TypedResults.Ok(new TokenResponse
 		{
@@ -171,7 +191,14 @@ public class AuthController(
 
 		user.RefreshToken = userService.HashRefreshToken(refreshToken);
 		user.RefreshTokenExpiresAt = DateTimeOffset.UtcNow.AddDays(30);
-		await userManager.UpdateAsync(user);
+
+		IdentityResult sessionUpdateResult = await userManager.UpdateAsync(user);
+		if (!sessionUpdateResult.Succeeded)
+		{
+			// The password change itself already persisted; only the new session failed to save (e.g. a
+			// concurrency-stamp mismatch). Fail closed so the caller re-authenticates with the new password.
+			return TypedResults.Unauthorized();
+		}
 
 		await LogAuthEventAsync(nameof(AuthEventType.PasswordChanged), user.Id, user.Email, true);
 

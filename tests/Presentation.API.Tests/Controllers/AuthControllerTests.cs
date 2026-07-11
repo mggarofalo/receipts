@@ -90,6 +90,7 @@ public class AuthControllerTests
 		_userManagerMock.Setup(m => m.CheckPasswordAsync(user, "password")).ReturnsAsync(true);
 		_userManagerMock.Setup(m => m.IsLockedOutAsync(user)).ReturnsAsync(false);
 		_userManagerMock.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "Admin", "User" });
+		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
 		_tokenServiceMock.Setup(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false)).Returns("access-token");
 		_tokenServiceMock.Setup(t => t.GenerateRefreshToken()).Returns("refresh-token");
 
@@ -174,6 +175,7 @@ public class AuthControllerTests
 		_userServiceMock.Setup(s => s.FindUserIdByRefreshTokenAsync("valid-refresh-token", It.IsAny<CancellationToken>())).ReturnsAsync(user.Id);
 		_userManagerMock.Setup(m => m.FindByIdAsync(user.Id)).ReturnsAsync(user);
 		_userManagerMock.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "User" });
+		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
 		_tokenServiceMock.Setup(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false)).Returns("new-access-token");
 		_tokenServiceMock.Setup(t => t.GenerateRefreshToken()).Returns("new-refresh-token");
 
@@ -187,6 +189,26 @@ public class AuthControllerTests
 		response.Scope.Should().Be("User");
 	}
 
+	[Fact]
+	public async Task RefreshToken_ConcurrencyFailure_ReturnsUnauthorized()
+	{
+		// Arrange — two refresh requests race; this one loses the ConcurrencyStamp check on UpdateAsync.
+		ApplicationUser user = CreateTestUser();
+		_userServiceMock.Setup(s => s.FindUserIdByRefreshTokenAsync("valid-refresh-token", It.IsAny<CancellationToken>())).ReturnsAsync(user.Id);
+		_userManagerMock.Setup(m => m.FindByIdAsync(user.Id)).ReturnsAsync(user);
+		_userManagerMock.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "User" });
+		_tokenServiceMock.Setup(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false)).Returns("new-access-token");
+		_tokenServiceMock.Setup(t => t.GenerateRefreshToken()).Returns("new-refresh-token");
+		_userManagerMock.Setup(m => m.UpdateAsync(user))
+			.ReturnsAsync(IdentityResult.Failed(new IdentityError { Code = "ConcurrencyFailure", Description = "Optimistic concurrency failure." }));
+
+		// Act
+		Results<Ok<TokenResponse>, UnauthorizedHttpResult> result = await _controller.RefreshToken(new RefreshTokenRequest { RefreshToken = "valid-refresh-token" }, CancellationToken.None);
+
+		// Assert — the caller must NOT receive a token that was never persisted.
+		Assert.IsType<UnauthorizedHttpResult>(result.Result);
+	}
+
 	// ── ChangePassword ───────────────────────────────────────
 
 	[Fact]
@@ -198,6 +220,7 @@ public class AuthControllerTests
 		_userManagerMock.Setup(m => m.FindByIdAsync(user.Id)).ReturnsAsync(user);
 		_userManagerMock.Setup(m => m.ChangePasswordAsync(user, "old", "new")).ReturnsAsync(IdentityResult.Success);
 		_userManagerMock.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "Admin" });
+		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
 		_tokenServiceMock.Setup(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false)).Returns("access-token");
 		_tokenServiceMock.Setup(t => t.GenerateRefreshToken()).Returns("refresh-token");
 
