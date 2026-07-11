@@ -462,6 +462,30 @@ describe("ApiKeys", () => {
     expect(mockSetFocusedIndex).toHaveBeenCalledWith(0);
   });
 
+  it("exposes grid role and row id so keyboard focus is announced to assistive tech", async () => {
+    const { useQuery } = await import("@tanstack/react-query");
+    vi.mocked(useQuery).mockReturnValue(mockQueryResult({
+      data: [
+        {
+          id: "key-1",
+          name: "Grid Row Key",
+          createdAt: "2024-01-01T00:00:00Z",
+          lastUsedAt: null,
+          expiresAt: null,
+          isRevoked: false,
+        },
+      ],
+      isLoading: false,
+    }));
+
+    renderWithQueryClient(<ApiKeys />);
+
+    expect(screen.getByRole("grid")).toBeInTheDocument();
+    const row = screen.getByText("Grid Row Key").closest("tr")!;
+    expect(row).toHaveAttribute("id", "list-row-key-1");
+    expect(row).toHaveAttribute("role", "row");
+  });
+
   it("shows error toast when clipboard copy fails", async () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const { useMutation } = await import("@tanstack/react-query");

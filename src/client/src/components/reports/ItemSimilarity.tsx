@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SortableTableHead } from "@/components/SortableTableHead";
 import {
   Dialog,
   DialogContent,
@@ -84,19 +85,15 @@ export default function ItemSimilarity() {
   const refreshMutation = useRefreshItemSimilarity();
   const { isAdmin } = usePermission();
 
-  function handleSort(column: SortColumn) {
-    if (sortBy === column) {
+  function handleSort(column: string) {
+    const nextColumn = column as SortColumn;
+    if (sortBy === nextColumn) {
       setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
     } else {
-      setSortBy(column);
-      setSortDirection(column === "canonicalName" ? "asc" : "desc");
+      setSortBy(nextColumn);
+      setSortDirection(nextColumn === "canonicalName" ? "asc" : "desc");
     }
     setPage(1);
-  }
-
-  function sortIndicator(column: SortColumn) {
-    if (sortBy !== column) return null;
-    return sortDirection === "asc" ? " \u2191" : " \u2193";
   }
 
   function handleRenameClick(group: {
@@ -208,25 +205,10 @@ export default function ItemSimilarity() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead
-                  className="cursor-pointer select-none"
-                  onClick={() => handleSort("canonicalName")}
-                >
-                  Canonical Name{sortIndicator("canonicalName")}
-                </TableHead>
+                <SortableTableHead column="canonicalName" label="Canonical Name" currentSortBy={sortBy} currentSortDirection={sortDirection} onToggleSort={handleSort} />
                 <TableHead>Variants</TableHead>
-                <TableHead
-                  className="cursor-pointer select-none text-right"
-                  onClick={() => handleSort("occurrences")}
-                >
-                  Occurrences{sortIndicator("occurrences")}
-                </TableHead>
-                <TableHead
-                  className="cursor-pointer select-none text-right"
-                  onClick={() => handleSort("maxSimilarity")}
-                >
-                  Max Similarity{sortIndicator("maxSimilarity")}
-                </TableHead>
+                <SortableTableHead column="occurrences" label="Occurrences" currentSortBy={sortBy} currentSortDirection={sortDirection} onToggleSort={handleSort} className="text-right" align="right" />
+                <SortableTableHead column="maxSimilarity" label="Max Similarity" currentSortBy={sortBy} currentSortDirection={sortDirection} onToggleSort={handleSort} className="text-right" align="right" />
                 <TableHead className="text-right">Action</TableHead>
               </TableRow>
             </TableHeader>

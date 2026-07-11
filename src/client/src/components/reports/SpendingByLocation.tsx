@@ -12,12 +12,12 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SortableTableHead } from "@/components/SortableTableHead";
 
 type SortColumn = "location" | "visits" | "total" | "averagePerVisit";
 type SortDirection = "asc" | "desc";
@@ -53,19 +53,15 @@ export default function SpendingByLocation() {
     setPage(1);
   }, []);
 
-  function handleSort(column: SortColumn) {
-    if (sortBy === column) {
+  function handleSort(column: string) {
+    const nextColumn = column as SortColumn;
+    if (sortBy === nextColumn) {
       setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
     } else {
-      setSortBy(column);
-      setSortDirection(column === "location" ? "asc" : "desc");
+      setSortBy(nextColumn);
+      setSortDirection(nextColumn === "location" ? "asc" : "desc");
     }
     setPage(1);
-  }
-
-  function sortIndicator(column: SortColumn) {
-    if (sortBy !== column) return null;
-    return sortDirection === "asc" ? " \u2191" : " \u2193";
   }
 
   const chartData = useMemo(
@@ -154,30 +150,10 @@ export default function SpendingByLocation() {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead
-              className="cursor-pointer select-none"
-              onClick={() => handleSort("location")}
-            >
-              Location{sortIndicator("location")}
-            </TableHead>
-            <TableHead
-              className="cursor-pointer select-none text-right"
-              onClick={() => handleSort("visits")}
-            >
-              Visits{sortIndicator("visits")}
-            </TableHead>
-            <TableHead
-              className="cursor-pointer select-none text-right"
-              onClick={() => handleSort("total")}
-            >
-              Total{sortIndicator("total")}
-            </TableHead>
-            <TableHead
-              className="cursor-pointer select-none text-right"
-              onClick={() => handleSort("averagePerVisit")}
-            >
-              Avg/Visit{sortIndicator("averagePerVisit")}
-            </TableHead>
+            <SortableTableHead column="location" label="Location" currentSortBy={sortBy} currentSortDirection={sortDirection} onToggleSort={handleSort} />
+            <SortableTableHead column="visits" label="Visits" currentSortBy={sortBy} currentSortDirection={sortDirection} onToggleSort={handleSort} className="text-right" align="right" />
+            <SortableTableHead column="total" label="Total" currentSortBy={sortBy} currentSortDirection={sortDirection} onToggleSort={handleSort} className="text-right" align="right" />
+            <SortableTableHead column="averagePerVisit" label="Avg/Visit" currentSortBy={sortBy} currentSortDirection={sortDirection} onToggleSort={handleSort} className="text-right" align="right" />
           </TableRow>
         </TableHeader>
         <TableBody>

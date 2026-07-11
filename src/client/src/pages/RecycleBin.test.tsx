@@ -315,6 +315,22 @@ describe("RecycleBin", () => {
     expect(row?.className).toContain("bg-accent");
   });
 
+  it("exposes grid role and row id so keyboard focus is announced to assistive tech", async () => {
+    const { useDeletedReceipts } = await import("@/hooks/useReceipts");
+    vi.mocked(useDeletedReceipts).mockReturnValue(mockQueryResult({
+      data: [{ id: "r1", location: "Grid Store", date: "2026-01-01" }],
+      total: 1,
+      isLoading: false,
+    }));
+
+    renderWithProviders(<RecycleBin />);
+
+    expect(screen.getByRole("grid")).toBeInTheDocument();
+    const row = screen.getByText("Grid Store - 2026-01-01").closest("tr")!;
+    expect(row).toHaveAttribute("id", "list-row-Receipt:r1");
+    expect(row).toHaveAttribute("role", "row");
+  });
+
   it("shows Emptying state when purge is pending", async () => {
     const { usePurgeTrash } = await import("@/hooks/useTrash");
     vi.mocked(usePurgeTrash).mockReturnValue(mockMutationResult({ isPending: true }));

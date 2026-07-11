@@ -163,10 +163,7 @@ describe("UncategorizedItems", () => {
     setupMock();
     renderWithQueryClient(<UncategorizedItems />);
 
-    const descHeader = screen
-      .getByText(/Description/)
-      .closest("th")!;
-    await user.click(descHeader);
+    await user.click(screen.getByRole("button", { name: /description/i }));
 
     expect(mockHook).toHaveBeenLastCalledWith(
       expect.objectContaining({ sortBy: "description", sortDirection: "desc" }),
@@ -178,10 +175,7 @@ describe("UncategorizedItems", () => {
     setupMock();
     renderWithQueryClient(<UncategorizedItems />);
 
-    const totalHeader = screen
-      .getByText(/Total/)
-      .closest("th")!;
-    await user.click(totalHeader);
+    await user.click(screen.getByRole("button", { name: /total/i }));
 
     expect(mockHook).toHaveBeenLastCalledWith(
       expect.objectContaining({

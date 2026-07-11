@@ -132,9 +132,10 @@ function AdminUsers() {
   const items = usersData ?? [];
 
   const listItems = items.map((u) => ({ id: u.id }));
-  const { focusedId, setFocusedIndex, tableRef } = useListKeyboardNav({
+  const { focusedId, setFocusedIndex, tableRef, containerProps, getRowProps } = useListKeyboardNav({
     items: listItems,
     getId: (u) => u.id,
+    listId: "admin-users",
     enabled: listItems.length > 0,
   });
 
@@ -254,7 +255,7 @@ function AdminUsers() {
             onPageChange={(page) => setPage(page, serverTotal)}
             onPageSizeChange={setPageSize}
           />
-          <div className="rounded-md border" ref={tableRef}>
+          <div className="rounded-md border" ref={tableRef} {...containerProps}>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -277,6 +278,7 @@ function AdminUsers() {
                   return (
                     <TableRow
                       key={user.id}
+                      {...getRowProps(user.id)}
                       className={`cursor-pointer ${focusedId === user.id ? "bg-accent" : ""}`}
                       onClick={(e) => {
                         if (

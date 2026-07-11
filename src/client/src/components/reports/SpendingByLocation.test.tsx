@@ -150,10 +150,7 @@ describe("SpendingByLocation", () => {
 
     // Initially sorted by total desc — find it within the table
     const table = screen.getByRole("table");
-    const totalHeader = within(table)
-      .getByText(/^Total/)
-      .closest("th")!;
-    await user.click(totalHeader);
+    await user.click(within(table).getByRole("button", { name: /^total/i }));
 
     // Should have called hook with total asc (toggled from desc)
     expect(mockHook).toHaveBeenLastCalledWith(
@@ -166,10 +163,7 @@ describe("SpendingByLocation", () => {
     setupMock();
     renderWithQueryClient(<SpendingByLocation />);
 
-    const visitsHeader = screen
-      .getByText(/Visits/)
-      .closest("th")!;
-    await user.click(visitsHeader);
+    await user.click(screen.getByRole("button", { name: /visits/i }));
 
     expect(mockHook).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -185,10 +179,7 @@ describe("SpendingByLocation", () => {
     renderWithQueryClient(<SpendingByLocation />);
 
     const table = screen.getByRole("table");
-    const locationHeader = within(table)
-      .getByText(/^Location$/)
-      .closest("th")!;
-    await user.click(locationHeader);
+    await user.click(within(table).getByRole("button", { name: /^location$/i }));
 
     expect(mockHook).toHaveBeenLastCalledWith(
       expect.objectContaining({

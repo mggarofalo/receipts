@@ -61,9 +61,25 @@ describe("PasswordInput", () => {
     expect(input.className).toContain("custom-class");
   });
 
-  it("toggle button has tabIndex -1 to keep focus on input", () => {
+  it("toggle button is in natural tab order so keyboard users can reach it", () => {
     render(<PasswordInput />);
     const toggleButton = screen.getByLabelText("Show password");
-    expect(toggleButton).toHaveAttribute("tabindex", "-1");
+    expect(toggleButton).not.toHaveAttribute("tabindex", "-1");
+  });
+
+  it("toggle button is reachable and activatable via keyboard", async () => {
+    const user = userEvent.setup();
+    render(<PasswordInput placeholder="Enter password" />);
+
+    const input = screen.getByPlaceholderText("Enter password");
+
+    await user.tab(); // password input
+    expect(input).toHaveFocus();
+    await user.tab(); // toggle button
+    expect(screen.getByLabelText("Show password")).toHaveFocus();
+
+    await user.keyboard("{Enter}");
+    expect(input).toHaveAttribute("type", "text");
+    expect(screen.getByLabelText("Hide password")).toHaveFocus();
   });
 });

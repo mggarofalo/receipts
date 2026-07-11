@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SortableTableHead } from "@/components/SortableTableHead";
 
 type SortColumn = "date" | "difference";
 type SortDirection = "asc" | "desc";
@@ -35,22 +36,23 @@ export default function OutOfBalance() {
 
   const { data, isLoading, isError } = useOutOfBalanceReport(params);
 
-  function handleSort(column: SortColumn) {
-    if (sortBy === column) {
+  function handleSort(column: string) {
+    const nextColumn = column as SortColumn;
+    if (sortBy === nextColumn) {
       setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
     } else {
-      setSortBy(column);
+      setSortBy(nextColumn);
       setSortDirection("asc");
     }
     setPage(1);
   }
 
-  function sortIndicator(column: SortColumn) {
-    if (sortBy !== column) return null;
-    return sortDirection === "asc" ? " \u2191" : " \u2193";
+  function handleRowClick(receiptId: string) {
+    navigate(`/receipts/${receiptId}`);
   }
 
-  function handleRowClick(receiptId: string) {
+  function handleViewClick(e: React.MouseEvent, receiptId: string) {
+    e.stopPropagation();
     navigate(`/receipts/${receiptId}`);
   }
 
@@ -106,24 +108,15 @@ export default function OutOfBalance() {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead
-              className="cursor-pointer select-none"
-              onClick={() => handleSort("date")}
-            >
-              Date{sortIndicator("date")}
-            </TableHead>
+            <SortableTableHead column="date" label="Date" currentSortBy={sortBy} currentSortDirection={sortDirection} onToggleSort={handleSort} />
             <TableHead>Location</TableHead>
             <TableHead className="text-right">Item Total</TableHead>
             <TableHead className="text-right">Tax</TableHead>
             <TableHead className="text-right">Adjustments</TableHead>
             <TableHead className="text-right">Expected Total</TableHead>
             <TableHead className="text-right">Actual Total</TableHead>
-            <TableHead
-              className="cursor-pointer select-none text-right"
-              onClick={() => handleSort("difference")}
-            >
-              Difference{sortIndicator("difference")}
-            </TableHead>
+            <SortableTableHead column="difference" label="Difference" currentSortBy={sortBy} currentSortDirection={sortDirection} onToggleSort={handleSort} className="text-right" align="right" />
+            <TableHead className="w-16">View</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -160,6 +153,15 @@ export default function OutOfBalance() {
                 }}
               >
                 {formatCurrency(Number(item.difference ?? 0))}
+              </TableCell>
+              <TableCell>
+                <button
+                  type="button"
+                  className="text-primary underline-offset-4 hover:underline"
+                  onClick={(e) => handleViewClick(e, item.receiptId)}
+                >
+                  View
+                </button>
               </TableCell>
             </TableRow>
           ))}

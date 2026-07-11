@@ -152,10 +152,7 @@ describe("OutOfBalance", () => {
     renderWithQueryClient(<OutOfBalance />);
 
     // Initially sorted by date asc
-    const dateHeader = screen
-      .getByText(/Date/)
-      .closest("th")!;
-    await user.click(dateHeader);
+    await user.click(screen.getByRole("button", { name: /date/i }));
 
     // Should have called hook with date desc
     expect(mockHook).toHaveBeenLastCalledWith(
@@ -168,10 +165,7 @@ describe("OutOfBalance", () => {
     setupMock();
     renderWithQueryClient(<OutOfBalance />);
 
-    const diffHeader = screen
-      .getByText(/Difference/)
-      .closest("th")!;
-    await user.click(diffHeader);
+    await user.click(screen.getByRole("button", { name: /difference/i }));
 
     expect(mockHook).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -179,6 +173,36 @@ describe("OutOfBalance", () => {
         sortDirection: "asc",
       }),
     );
+  });
+
+  it("sets aria-sort on the active sort column header", () => {
+    setupMock();
+    renderWithQueryClient(<OutOfBalance />);
+
+    const dateHeader = screen.getByRole("button", { name: /date/i }).closest("th")!;
+    expect(dateHeader).toHaveAttribute("aria-sort", "ascending");
+  });
+
+  it("navigates to receipt on View click", async () => {
+    const user = userEvent.setup();
+    setupMock();
+    renderWithQueryClient(<OutOfBalance />);
+
+    const viewButtons = screen.getAllByRole("button", { name: "View" });
+    await user.click(viewButtons[0]);
+    expect(mockNavigate).toHaveBeenCalledWith("/receipts/id-1");
+  });
+
+  it("View button is keyboard focusable", async () => {
+    const user = userEvent.setup();
+    setupMock();
+    renderWithQueryClient(<OutOfBalance />);
+
+    const viewButtons = screen.getAllByRole("button", { name: "View" });
+    viewButtons[0].focus();
+    expect(viewButtons[0]).toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(mockNavigate).toHaveBeenCalledWith("/receipts/id-1");
   });
 
   it("does not show pagination when only one page", () => {
