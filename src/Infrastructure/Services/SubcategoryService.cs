@@ -95,7 +95,28 @@ public class SubcategoryService(ISubcategoryRepository repository, SubcategoryMa
 
 	public async Task<bool> RestoreAsync(Guid id, CancellationToken cancellationToken)
 	{
-		return await repository.RestoreAsync(id, cancellationToken);
+		// The unique index on (CategoryId, Name) is filtered to DeletedAt IS NULL, so a name
+		// freed by soft-delete can be reused by a new active subcategory. Pre-check for that
+		// collision and surface a clean 409 (via DuplicateEntityException →
+		// GlobalExceptionHandlerMiddleware) instead of the raw unique-violation 500 that would
+		// otherwise block restore forever (RECEIPTS-772).
+		string? conflictingName = await repository.GetRestoreConflictNameAsync(id, cancellationToken);
+		if (conflictingName is not null)
+		{
+			throw new DuplicateEntityException(
+				$"Cannot restore this subcategory because an active subcategory named '{conflictingName}' already exists in this category.");
+		}
+
+		try
+		{
+			return await repository.RestoreAsync(id, cancellationToken);
+		}
+		catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+		{
+			// Lost a race: an active row with the same natural key appeared between the
+			// pre-check and SaveChanges. Still map to 409 rather than letting a 500 escape.
+			throw new DuplicateEntityException("A subcategory with this name already exists in this category.", ex);
+		}
 	}
 
 	public async Task<int> GetReceiptItemCountBySubcategoryNameAsync(string subcategoryName, CancellationToken cancellationToken)

@@ -15,4 +15,5 @@ public interface IItemTemplateRepository
 	Task<bool> ExistsAsync(Guid id, CancellationToken cancellationToken);
 	Task<int> GetCountAsync(CancellationToken cancellationToken);
 	Task<bool> RestoreAsync(Guid id, CancellationToken cancellationToken);
+	Task<string?> GetRestoreConflictNameAsync(Guid id, CancellationToken cancellationToken);
 }

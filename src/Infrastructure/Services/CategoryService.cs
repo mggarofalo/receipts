@@ -79,7 +79,28 @@ public class CategoryService(ICategoryRepository repository, CategoryMapper mapp
 
 	public async Task<bool> RestoreAsync(Guid id, CancellationToken cancellationToken)
 	{
-		return await repository.RestoreAsync(id, cancellationToken);
+		// The unique index on Name is filtered to DeletedAt IS NULL, so a name freed by
+		// soft-delete can be reused by a new active category. Pre-check for that collision and
+		// surface a clean 409 (via DuplicateEntityException → GlobalExceptionHandlerMiddleware)
+		// instead of the raw unique-violation 500 that would otherwise block restore forever
+		// (RECEIPTS-772).
+		string? conflictingName = await repository.GetRestoreConflictNameAsync(id, cancellationToken);
+		if (conflictingName is not null)
+		{
+			throw new DuplicateEntityException(
+				$"Cannot restore this category because an active category named '{conflictingName}' already exists.");
+		}
+
+		try
+		{
+			return await repository.RestoreAsync(id, cancellationToken);
+		}
+		catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+		{
+			// Lost a race: an active row with the same name appeared between the pre-check and
+			// SaveChanges. Still map to 409 rather than letting a 500 escape.
+			throw new DuplicateEntityException("A category with this name already exists.", ex);
+		}
 	}
 
 	public async Task<int> GetSubcategoryCountAsync(Guid categoryId, CancellationToken cancellationToken)

@@ -144,6 +144,30 @@ public class CategoryRepository(IDbContextFactory<ApplicationDbContext> contextF
 		return true;
 	}
 
+	public async Task<string?> GetRestoreConflictNameAsync(Guid id, CancellationToken cancellationToken)
+	{
+		using ApplicationDbContext context = contextFactory.CreateDbContext();
+
+		// The soft-deleted row the caller intends to restore.
+		CategoryEntity? deleted = await context.Categories
+			.IncludeDeleted()
+			.FirstOrDefaultAsync(e => e.Id == id && e.DeletedAt != null, cancellationToken);
+
+		if (deleted is null)
+		{
+			// Nothing to restore (absent or already active) — no conflict to report.
+			return null;
+		}
+
+		// context.Categories is filtered to active rows (DeletedAt == null). A match means an
+		// active category already owns this name, so restoring would violate the filtered
+		// unique index on Name. Return the colliding name so the caller can surface a 409.
+		bool conflict = await context.Categories
+			.AnyAsync(e => e.Name == deleted.Name, cancellationToken);
+
+		return conflict ? deleted.Name : null;
+	}
+
 	public async Task<int> GetSubcategoryCountAsync(Guid categoryId, CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
