@@ -28,7 +28,7 @@ public class TransactionRepository(IDbContextFactory<ApplicationDbContext> conte
 			.IgnoreAutoIncludes()
 			.Where(t => t.ReceiptId == receiptId)
 			.AsNoTracking()
-			.ApplySort(sort, AllowedSortColumns, e => e.Date, defaultDescending: true)
+			.ApplySort(sort, AllowedSortColumns, e => e.Date, e => e.Id, defaultDescending: true)
 			.Skip(offset)
 			.Take(limit)
 			.Select(t => new TransactionEntity
@@ -70,7 +70,7 @@ public class TransactionRepository(IDbContextFactory<ApplicationDbContext> conte
 		return await context.Transactions
 			.IgnoreAutoIncludes()
 			.AsNoTracking()
-			.ApplySort(sort, AllowedSortColumns, e => e.Date, defaultDescending: true)
+			.ApplySort(sort, AllowedSortColumns, e => e.Date, e => e.Id, defaultDescending: true)
 			.Skip(offset)
 			.Take(limit)
 			.Select(t => new TransactionEntity
@@ -94,7 +94,7 @@ public class TransactionRepository(IDbContextFactory<ApplicationDbContext> conte
 			.Where(t => t.CascadeDeletedByParentId == null)
 			.IgnoreAutoIncludes()
 			.AsNoTracking()
-			.ApplySort(sort, AllowedSortColumns, e => e.Date, defaultDescending: true)
+			.ApplySort(sort, AllowedSortColumns, e => e.Date, e => e.Id, defaultDescending: true)
 			.Select(t => new TransactionEntity
 			{
 				Id = t.Id,

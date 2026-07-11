@@ -30,7 +30,7 @@ public class SubcategoryRepository(IDbContextFactory<ApplicationDbContext> conte
 		}
 
 		return await query
-			.ApplySort(sort, AllowedSortColumns, e => e.Name)
+			.ApplySort(sort, AllowedSortColumns, e => e.Name, e => e.Id)
 			.Skip(offset)
 			.Take(limit)
 			.ToListAsync(cancellationToken);
@@ -42,7 +42,7 @@ public class SubcategoryRepository(IDbContextFactory<ApplicationDbContext> conte
 		return await context.Subcategories
 			.OnlyDeleted()
 			.AsNoTracking()
-			.ApplySort(sort, AllowedSortColumns, e => e.Name)
+			.ApplySort(sort, AllowedSortColumns, e => e.Name, e => e.Id)
 			.Select(s => new SubcategoryEntity
 			{
 				Id = s.Id,
@@ -77,7 +77,7 @@ public class SubcategoryRepository(IDbContextFactory<ApplicationDbContext> conte
 
 		return await query
 			.AsNoTracking()
-			.ApplySort(sort, AllowedSortColumns, e => e.Name)
+			.ApplySort(sort, AllowedSortColumns, e => e.Name, e => e.Id)
 			.Skip(offset)
 			.Take(limit)
 			.ToListAsync(cancellationToken);

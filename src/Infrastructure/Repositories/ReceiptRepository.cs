@@ -31,7 +31,7 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 		IQueryable<ReceiptEntity> query = ApplyTransactionFilters(context, context.Receipts.AsNoTracking(), accountId, cardId);
 		query = ApplySearchFilter(query, q);
 		return await query
-			.ApplySort(sort, AllowedSortColumns, e => e.Date, defaultDescending: true)
+			.ApplySort(sort, AllowedSortColumns, e => e.Date, e => e.Id, defaultDescending: true)
 			.Skip(offset)
 			.Take(limit)
 			.Select(r => new ReceiptEntity
@@ -84,7 +84,7 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 		return await context.Receipts
 			.OnlyDeleted()
 			.AsNoTracking()
-			.ApplySort(sort, AllowedSortColumns, e => e.Date, defaultDescending: true)
+			.ApplySort(sort, AllowedSortColumns, e => e.Date, e => e.Id, defaultDescending: true)
 			.Select(r => new ReceiptEntity
 			{
 				Id = r.Id,

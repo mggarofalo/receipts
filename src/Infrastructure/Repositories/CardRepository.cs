@@ -55,7 +55,7 @@ public class CardRepository(IDbContextFactory<ApplicationDbContext> contextFacto
 		}
 
 		return await query
-			.ApplySort(sort, AllowedSortColumns, e => e.Name)
+			.ApplySort(sort, AllowedSortColumns, e => e.Name, e => e.Id)
 			.Skip(offset)
 			.Take(limit)
 			.Select(a => new CardEntity

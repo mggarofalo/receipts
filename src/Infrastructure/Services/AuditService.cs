@@ -29,7 +29,7 @@ public class AuditService(IDbContextFactory<ApplicationDbContext> contextFactory
 		int total = await query.CountAsync(cancellationToken);
 
 		List<AuditLogDto> data = await query
-			.ApplySort(sort, AllowedSortColumns, DefaultSort, defaultDescending: true)
+			.ApplySort(sort, AllowedSortColumns, DefaultSort, a => a.Id, defaultDescending: true)
 			.Skip(offset)
 			.Take(limit)
 			.Select(a => ToDto(a))
@@ -74,7 +74,7 @@ public class AuditService(IDbContextFactory<ApplicationDbContext> contextFactory
 		int total = await query.CountAsync(cancellationToken);
 
 		List<AuditLogDto> data = await query
-			.ApplySort(sort, AllowedSortColumns, DefaultSort, defaultDescending: true)
+			.ApplySort(sort, AllowedSortColumns, DefaultSort, a => a.Id, defaultDescending: true)
 			.Skip(offset)
 			.Take(limit)
 			.Select(a => ToDto(a))
@@ -93,7 +93,7 @@ public class AuditService(IDbContextFactory<ApplicationDbContext> contextFactory
 		int total = await query.CountAsync(cancellationToken);
 
 		List<AuditLogDto> data = await query
-			.ApplySort(sort, AllowedSortColumns, DefaultSort, defaultDescending: true)
+			.ApplySort(sort, AllowedSortColumns, DefaultSort, a => a.Id, defaultDescending: true)
 			.Skip(offset)
 			.Take(limit)
 			.Select(a => ToDto(a))
@@ -112,7 +112,7 @@ public class AuditService(IDbContextFactory<ApplicationDbContext> contextFactory
 		int total = await query.CountAsync(cancellationToken);
 
 		List<AuditLogDto> data = await query
-			.ApplySort(sort, AllowedSortColumns, DefaultSort, defaultDescending: true)
+			.ApplySort(sort, AllowedSortColumns, DefaultSort, a => a.Id, defaultDescending: true)
 			.Skip(offset)
 			.Take(limit)
 			.Select(a => ToDto(a))

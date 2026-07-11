@@ -25,7 +25,7 @@ public class ItemTemplateRepository(IDbContextFactory<ApplicationDbContext> cont
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		return await context.ItemTemplates
 			.AsNoTracking()
-			.ApplySort(sort, AllowedSortColumns, e => e.Name)
+			.ApplySort(sort, AllowedSortColumns, e => e.Name, e => e.Id)
 			.Skip(offset)
 			.Take(limit)
 			.ToListAsync(cancellationToken);
@@ -37,7 +37,7 @@ public class ItemTemplateRepository(IDbContextFactory<ApplicationDbContext> cont
 		return await context.ItemTemplates
 			.OnlyDeleted()
 			.AsNoTracking()
-			.ApplySort(sort, AllowedSortColumns, e => e.Name)
+			.ApplySort(sort, AllowedSortColumns, e => e.Name, e => e.Id)
 			.Skip(offset)
 			.Take(limit)
 			.ToListAsync(cancellationToken);

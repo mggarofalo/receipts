@@ -32,7 +32,7 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 			.IgnoreAutoIncludes()
 			.Where(ri => ri.ReceiptId == receiptId)
 			.AsNoTracking()
-			.ApplySort(sort, AllowedSortColumns, e => e.Description)
+			.ApplySort(sort, AllowedSortColumns, e => e.Description, e => e.Id)
 			.Skip(offset)
 			.Take(limit)
 			.Select(ri => new ReceiptItemEntity
@@ -71,7 +71,7 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 			.AsNoTracking();
 		query = ApplySearchFilter(query, q);
 		return await query
-			.ApplySort(sort, AllowedSortColumns, e => e.Description)
+			.ApplySort(sort, AllowedSortColumns, e => e.Description, e => e.Id)
 			.Skip(offset)
 			.Take(limit)
 			.Select(ri => new ReceiptItemEntity
@@ -114,7 +114,7 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 			.Where(ri => ri.CascadeDeletedByParentId == null)
 			.IgnoreAutoIncludes()
 			.AsNoTracking()
-			.ApplySort(sort, AllowedSortColumns, e => e.Description)
+			.ApplySort(sort, AllowedSortColumns, e => e.Description, e => e.Id)
 			.Select(ri => new ReceiptItemEntity
 			{
 				Id = ri.Id,

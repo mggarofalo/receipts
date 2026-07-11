@@ -52,7 +52,7 @@ public class AuthAuditService(IDbContextFactory<ApplicationDbContext> contextFac
 		int total = await query.CountAsync(cancellationToken);
 
 		List<AuthAuditEntryDto> data = await query
-			.ApplySort(sort, AllowedSortColumns, DefaultSort, defaultDescending: true)
+			.ApplySort(sort, AllowedSortColumns, DefaultSort, a => a.Id, defaultDescending: true)
 			.Skip(offset)
 			.Take(limit)
 			.Select(a => ToDto(a))
@@ -70,7 +70,7 @@ public class AuthAuditService(IDbContextFactory<ApplicationDbContext> contextFac
 		int total = await query.CountAsync(cancellationToken);
 
 		List<AuthAuditEntryDto> data = await query
-			.ApplySort(sort, AllowedSortColumns, DefaultSort, defaultDescending: true)
+			.ApplySort(sort, AllowedSortColumns, DefaultSort, a => a.Id, defaultDescending: true)
 			.Skip(offset)
 			.Take(limit)
 			.Select(a => ToDto(a))
@@ -89,7 +89,7 @@ public class AuthAuditService(IDbContextFactory<ApplicationDbContext> contextFac
 		int total = await query.CountAsync(cancellationToken);
 
 		List<AuthAuditEntryDto> data = await query
-			.ApplySort(sort, AllowedSortColumns, DefaultSort, defaultDescending: true)
+			.ApplySort(sort, AllowedSortColumns, DefaultSort, a => a.Id, defaultDescending: true)
 			.Skip(offset)
 			.Take(limit)
 			.Select(a => ToDto(a))
