@@ -13,7 +13,7 @@ vi.mock("@/lib/api-client", () => ({
 }));
 
 vi.mock("sonner", () => ({
-  toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
+  toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() },
 }));
 
 import client from "@/lib/api-client";
@@ -160,7 +160,7 @@ describe("useYnab", () => {
     expect(toast.success).toHaveBeenCalledWith("YNAB budget selected");
   });
 
-  it("useSelectYnabBudget shows error toast on failure", async () => {
+  it("useSelectYnabBudget does not toast on failure (surfaced by the global handler)", async () => {
     (client.PUT as Mock).mockResolvedValue({ error: "Failed" });
 
     const { result } = renderHook(() => useSelectYnabBudget(), {
@@ -170,7 +170,7 @@ describe("useYnab", () => {
     await expect(result.current.mutateAsync("budget-123")).rejects.toThrow();
 
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith("Failed to select YNAB budget");
+      expect(toast.error).not.toHaveBeenCalled();
     });
   });
 
@@ -281,7 +281,7 @@ describe("useYnab", () => {
     expect(toast.success).toHaveBeenCalledWith("Account mapping removed");
   });
 
-  it("useCreateYnabAccountMapping shows error toast on failure", async () => {
+  it("useCreateYnabAccountMapping does not toast on failure (surfaced by the global handler)", async () => {
     (client.POST as Mock).mockResolvedValue({ error: "Failed" });
 
     const { result } = renderHook(() => useCreateYnabAccountMapping(), {
@@ -298,7 +298,7 @@ describe("useYnab", () => {
     ).rejects.toThrow();
 
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith("Failed to create account mapping");
+      expect(toast.error).not.toHaveBeenCalled();
     });
   });
 
@@ -442,7 +442,7 @@ describe("useYnab", () => {
     expect(toast.success).toHaveBeenCalledWith("Category mapping deleted");
   });
 
-  it("useCreateYnabCategoryMapping shows error toast on failure", async () => {
+  it("useCreateYnabCategoryMapping does not toast on failure (surfaced by the global handler)", async () => {
     (client.POST as Mock).mockResolvedValue({ error: "Conflict" });
 
     const { result } = renderHook(() => useCreateYnabCategoryMapping(), {
@@ -460,7 +460,7 @@ describe("useYnab", () => {
     ).rejects.toThrow();
 
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith("Failed to create category mapping");
+      expect(toast.error).not.toHaveBeenCalled();
     });
   });
 
@@ -501,7 +501,7 @@ describe("useYnab", () => {
     expect(toast.info).toHaveBeenCalledWith("No transactions were synced");
   });
 
-  it("useSyncYnabMemos shows error toast on failure", async () => {
+  it("useSyncYnabMemos does not toast on failure (surfaced by the global handler)", async () => {
     (client.POST as Mock).mockResolvedValue({ error: "Server error" });
 
     const { result } = renderHook(() => useSyncYnabMemos(), {
@@ -511,7 +511,7 @@ describe("useYnab", () => {
     await expect(result.current.mutateAsync("r-1")).rejects.toThrow();
 
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith("Failed to sync YNAB memos");
+      expect(toast.error).not.toHaveBeenCalled();
     });
   });
 
@@ -536,7 +536,7 @@ describe("useYnab", () => {
     expect(toast.success).toHaveBeenCalledWith("Synced 2 transaction memo(s) to YNAB");
   });
 
-  it("useSyncYnabMemosBulk shows error toast on failure", async () => {
+  it("useSyncYnabMemosBulk does not toast on failure (surfaced by the global handler)", async () => {
     (client.POST as Mock).mockResolvedValue({ error: "Server error" });
 
     const { result } = renderHook(() => useSyncYnabMemosBulk(), {
@@ -546,7 +546,7 @@ describe("useYnab", () => {
     await expect(result.current.mutateAsync(["r-1"])).rejects.toThrow();
 
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith("Failed to bulk sync YNAB memos");
+      expect(toast.error).not.toHaveBeenCalled();
     });
   });
 
@@ -574,7 +574,7 @@ describe("useYnab", () => {
     expect(toast.success).toHaveBeenCalledWith("YNAB memo sync resolved");
   });
 
-  it("useResolveYnabMemoSync shows error toast on failure", async () => {
+  it("useResolveYnabMemoSync does not toast on failure (surfaced by the global handler)", async () => {
     (client.POST as Mock).mockResolvedValue({ error: "Server error" });
 
     const { result } = renderHook(() => useResolveYnabMemoSync(), {
@@ -589,7 +589,7 @@ describe("useYnab", () => {
     ).rejects.toThrow();
 
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith("Failed to resolve YNAB memo sync");
+      expect(toast.error).not.toHaveBeenCalled();
     });
   });
 
@@ -681,7 +681,7 @@ describe("useYnab", () => {
     );
   });
 
-  it("usePushYnabTransactions shows error toast on failure response", async () => {
+  it("usePushYnabTransactions does not toast on failure (surfaced by the global handler) response", async () => {
     const pushResult = {
       success: false,
       pushedTransactions: [],
@@ -702,7 +702,7 @@ describe("useYnab", () => {
     expect(toast.error).toHaveBeenCalledWith("Unmapped categories found.");
   });
 
-  it("usePushYnabTransactions shows error toast on network failure", async () => {
+  it("usePushYnabTransactions does not toast on network failure (surfaced by the global handler)", async () => {
     (client.POST as Mock).mockResolvedValue({
       error: "Network error",
     });
@@ -714,13 +714,11 @@ describe("useYnab", () => {
     await expect(result.current.mutateAsync("receipt-123")).rejects.toThrow();
 
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith(
-        "Failed to push transactions to YNAB",
-      );
+      expect(toast.error).not.toHaveBeenCalled();
     });
   });
 
-  it("useBulkPushYnabTransactions calls POST and shows success toast", async () => {
+  it("useBulkPushYnabTransactions warns (not success) on partial success and lists unmapped categories", async () => {
     const bulkResult = {
       results: [
         {
@@ -729,7 +727,12 @@ describe("useYnab", () => {
         },
         {
           receiptId: "r2",
-          result: { success: false, pushedTransactions: [], error: "Not found" },
+          result: {
+            success: false,
+            pushedTransactions: [],
+            error: "Unmapped categories",
+            unmappedCategories: ["Gas", "Dining"],
+          },
         },
       ],
     };
@@ -750,9 +753,76 @@ describe("useYnab", () => {
         body: { receiptIds: ["r1", "r2"] },
       },
     );
-    expect(toast.success).toHaveBeenCalledWith(
-      "Pushed 1/2 receipt(s) to YNAB",
+    // Partial success must NOT read as a plain success (RECEIPTS-783).
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(toast.warning).toHaveBeenCalledWith(
+      "Pushed 1/2 receipt(s); 1 failed. Unmapped categories: Gas, Dining. Map them in YNAB Settings.",
     );
+  });
+
+  it("useBulkPushYnabTransactions shows an error toast when every receipt fails", async () => {
+    const bulkResult = {
+      results: [
+        {
+          receiptId: "r1",
+          result: {
+            success: false,
+            pushedTransactions: [],
+            error: "Unmapped categories",
+            unmappedCategories: ["Gas"],
+          },
+        },
+        {
+          receiptId: "r2",
+          result: {
+            success: false,
+            pushedTransactions: [],
+            error: "Unmapped categories",
+            unmappedCategories: ["Gas", "Fuel"],
+          },
+        },
+      ],
+    };
+    (client.POST as Mock).mockResolvedValue({
+      data: bulkResult,
+      error: undefined,
+    });
+
+    const { result } = renderHook(() => useBulkPushYnabTransactions(), {
+      wrapper: createWrapper(),
+    });
+
+    await result.current.mutateAsync(["r1", "r2"]);
+
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(toast.warning).not.toHaveBeenCalled();
+    // Distinct unmapped categories aggregated across all failed receipts.
+    expect(toast.error).toHaveBeenCalledWith(
+      "Failed to push 2 receipt(s) to YNAB. Unmapped categories: Gas, Fuel. Map them in YNAB Settings.",
+    );
+  });
+
+  it("useBulkPushYnabTransactions shows a success toast when every receipt succeeds", async () => {
+    const bulkResult = {
+      results: [
+        { receiptId: "r1", result: { success: true, pushedTransactions: [], error: null } },
+        { receiptId: "r2", result: { success: true, pushedTransactions: [], error: null } },
+      ],
+    };
+    (client.POST as Mock).mockResolvedValue({
+      data: bulkResult,
+      error: undefined,
+    });
+
+    const { result } = renderHook(() => useBulkPushYnabTransactions(), {
+      wrapper: createWrapper(),
+    });
+
+    await result.current.mutateAsync(["r1", "r2"]);
+
+    expect(toast.success).toHaveBeenCalledWith("Pushed 2/2 receipt(s) to YNAB");
+    expect(toast.warning).not.toHaveBeenCalled();
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
   it("useAllReceiptIds returns receipt IDs from a single page", async () => {
@@ -960,7 +1030,7 @@ describe("useYnab", () => {
     expect(toast.success).toHaveBeenCalledWith("Cleared 5 stale mapping(s)");
   });
 
-  it("useClearStaleMappings shows error toast on failure", async () => {
+  it("useClearStaleMappings does not toast on failure (surfaced by the global handler)", async () => {
     (client.DELETE as Mock).mockResolvedValue({
       data: undefined,
       error: "Server error",
@@ -971,9 +1041,7 @@ describe("useYnab", () => {
     });
 
     await expect(result.current.mutateAsync()).rejects.toBeDefined();
-    expect(toast.error).toHaveBeenCalledWith(
-      "Failed to clear stale mappings",
-    );
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
   it("useYnabRateLimitStatus returns rate limit data on success", async () => {
