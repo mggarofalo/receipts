@@ -1,8 +1,79 @@
+import { format as formatDateFns, parse, isValid } from "date-fns";
+
 export function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
   }).format(amount);
+}
+
+const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Parses a date value into a Date anchored in the LOCAL timezone.
+ *
+ * A bare `yyyy-MM-dd` string (how the API serializes `DateOnly`) fed to
+ * `new Date(...)` is parsed as UTC midnight, which formats to the *previous*
+ * day in every negative-UTC-offset timezone (all of the US). Parsing it with
+ * date-fns `parse(value, "yyyy-MM-dd", ...)` instead anchors it to local
+ * midnight so the calendar date is preserved everywhere (RECEIPTS-788).
+ *
+ * Full ISO datetimes (with a time component) still go through `new Date(...)`.
+ * Returns null when the value is empty or cannot be parsed.
+ */
+export function parseDateValue(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  if (DATE_ONLY_PATTERN.test(value)) {
+    const parsed = parse(value, "yyyy-MM-dd", new Date());
+    return isValid(parsed) ? parsed : null;
+  }
+  const fallback = new Date(value);
+  return isValid(fallback) ? fallback : null;
+}
+
+/**
+ * Formats a receipt/transaction date for display, timezone-safe for the
+ * date-only strings the API returns. Falls back to the raw value when the
+ * input can't be parsed and to an em dash when it's empty. Use this (or
+ * `formatShortDate`) for ALL receipt-date display so the list, dashboard, and
+ * widgets always agree on the calendar day (RECEIPTS-788).
+ */
+export function formatDate(
+  value: string | null | undefined,
+  pattern = "MMM d, yyyy",
+): string {
+  if (!value) return "—";
+  const parsed = parseDateValue(value);
+  return parsed ? formatDateFns(parsed, pattern) : value;
+}
+
+/** Short "MMM d" variant of {@link formatDate}, e.g. "Jan 15". */
+export function formatShortDate(value: string | null | undefined): string {
+  return formatDate(value, "MMM d");
+}
+
+/**
+ * True when `value` is a calendar date strictly after today (local time).
+ *
+ * Used to catch the server's "Date cannot be in the future" rejection on the
+ * client so users get inline feedback before submitting (RECEIPTS-782).
+ * Compares date-parts only, so "today" is never considered in the future.
+ */
+export function isFutureDate(value: string | null | undefined): boolean {
+  const parsed = parseDateValue(value);
+  if (!parsed) return false;
+  const now = new Date();
+  const todayStart = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+  ).getTime();
+  const valueStart = new Date(
+    parsed.getFullYear(),
+    parsed.getMonth(),
+    parsed.getDate(),
+  ).getTime();
+  return valueStart > todayStart;
 }
 
 export function formatDecimal(value: number, decimals = 2): string {
