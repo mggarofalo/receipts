@@ -156,6 +156,18 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 		await context.Transactions.IgnoreAutoIncludes().Where(t => ids.Contains(t.ReceiptId)).LoadAsync(cancellationToken);
 		await context.Adjustments.IgnoreAutoIncludes().Where(a => ids.Contains(a.ReceiptId)).LoadAsync(cancellationToken);
 
+		// Also load the YnabSyncRecords owned by those transactions so the two-level
+		// cascade (Receipt -> Transaction -> YnabSyncRecord) soft-deletes them in
+		// FK-correct order. Otherwise a synced transaction's active sync record lingers
+		// and later blocks Empty Trash on the NO ACTION FK. See RECEIPTS-755.
+		await context.YnabSyncRecords
+			.IgnoreAutoIncludes()
+			.Where(s => context.Transactions
+				.Where(t => ids.Contains(t.ReceiptId))
+				.Select(t => t.Id)
+				.Contains(s.LocalTransactionId))
+			.LoadAsync(cancellationToken);
+
 		context.Receipts.RemoveRange(entities);
 		await context.SaveChangesAsync(cancellationToken);
 	}

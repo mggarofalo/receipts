@@ -154,6 +154,15 @@ public class TransactionRepository(IDbContextFactory<ApplicationDbContext> conte
 			.Where(e => ids.Contains(e.Id))
 			.ToListAsync(cancellationToken);
 
+		// Load owned YnabSyncRecords into the change tracker so the cascade soft-delete
+		// fires (they carry a LocalTransactionId FK to Transactions). Without this a
+		// synced transaction's active sync record lingers after the transaction is
+		// soft-deleted and later blocks Empty Trash on the NO ACTION FK. See RECEIPTS-755.
+		await context.YnabSyncRecords
+			.IgnoreAutoIncludes()
+			.Where(s => ids.Contains(s.LocalTransactionId))
+			.LoadAsync(cancellationToken);
+
 		context.Transactions.RemoveRange(entities);
 		await context.SaveChangesAsync(cancellationToken);
 	}

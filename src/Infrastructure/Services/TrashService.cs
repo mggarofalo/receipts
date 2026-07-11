@@ -10,9 +10,18 @@ public class TrashService(ApplicationDbContext context) : ITrashService
 		await using Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction = await context.Database.BeginTransactionAsync(cancellationToken);
 
 		// Delete in FK dependency order (children first)
+		// Delete both soft-deleted sync records AND active sync records whose parent
+		// Transaction is about to be purged. The YnabSyncRecords -> Transactions FK is
+		// ClientCascade (DB-level NO ACTION), so an orphaned ACTIVE sync record pointing
+		// at a soft-deleted transaction would block the Transactions delete below with an
+		// FK violation — permanently breaking Empty Trash for every item. Purging it here
+		// first keeps the operation FK-safe even for historical orphans. See RECEIPTS-755.
 		await context.YnabSyncRecords
 			.IgnoreQueryFilters()
-			.Where(e => e.DeletedAt != null)
+			.Where(s => s.DeletedAt != null
+				|| context.Transactions
+					.IgnoreQueryFilters()
+					.Any(t => t.Id == s.LocalTransactionId && t.DeletedAt != null))
 			.ExecuteDeleteAsync(cancellationToken);
 
 		await context.Adjustments

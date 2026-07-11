@@ -207,6 +207,43 @@ public class TransactionRepositoryTests
 	}
 
 	[Fact]
+	public async Task DeleteAsync_SyncedTransaction_CascadeSoftDeletesActiveYnabSyncRecord()
+	{
+		// RECEIPTS-755 regression: deleting a synced transaction must cascade
+		// soft-delete its ACTIVE YnabSyncRecord so no orphaned active record lingers
+		// to later block Empty Trash on the NO ACTION LocalTransactionId FK.
+		// Arrange — a transaction with an active sync record (the state after a YNAB push).
+		(ReceiptEntity receipt, AccountEntity account) = await CreateParentEntitiesAsync();
+		TransactionEntity transaction = TransactionEntityGenerator.Generate(receipt.Id, account.Id);
+		YnabSyncRecordEntity syncRecord = YnabSyncRecordEntityGenerator.Generate(localTransactionId: transaction.Id);
+
+		using (ApplicationDbContext context = _contextFactory.CreateDbContext())
+		{
+			await context.Transactions.AddAsync(transaction);
+			await context.YnabSyncRecords.AddAsync(syncRecord);
+			await context.SaveChangesAsync(CancellationToken.None);
+		}
+
+		TransactionRepository repository = new(_contextFactory);
+
+		// Act — the repository must load the sync record so HandleSoftDelete cascades to it.
+		await repository.DeleteAsync([transaction.Id], CancellationToken.None);
+
+		// Assert — no active sync record survives; it was cascade soft-deleted and
+		// tagged with the parent transaction id.
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		(await verify.YnabSyncRecords.AnyAsync()).Should().BeFalse("the active sync record must not linger after its transaction is deleted");
+
+		YnabSyncRecordEntity deletedRecord = await verify.YnabSyncRecords
+			.IgnoreQueryFilters()
+			.SingleAsync(s => s.Id == syncRecord.Id);
+		deletedRecord.DeletedAt.Should().NotBeNull();
+		deletedRecord.CascadeDeletedByParentId.Should().Be(transaction.Id);
+
+		_contextFactory.ResetDatabase();
+	}
+
+	[Fact]
 	public async Task ExistsAsync_ExistingId_ReturnsTrue()
 	{
 		// Arrange

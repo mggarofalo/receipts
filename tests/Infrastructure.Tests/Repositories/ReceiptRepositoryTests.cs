@@ -161,6 +161,49 @@ public class ReceiptRepositoryTests
 	}
 
 	[Fact]
+	public async Task DeleteAsync_ReceiptWithSyncedTransaction_CascadeSoftDeletesYnabSyncRecord()
+	{
+		// RECEIPTS-755 regression: deleting a receipt must cascade two levels
+		// (Receipt -> Transaction -> YnabSyncRecord) so a synced transaction's ACTIVE
+		// sync record does not linger and later block Empty Trash on the NO ACTION FK.
+		// Arrange — receipt -> transaction -> active sync record.
+		ReceiptEntity receipt = ReceiptEntityGenerator.Generate();
+		AccountEntity account = AccountEntityGenerator.Generate();
+		CardEntity card = CardEntityGenerator.Generate();
+		card.AccountId = account.Id;
+		card.Id = account.Id;
+		TransactionEntity transaction = TransactionEntityGenerator.Generate(receipt.Id, account.Id);
+		YnabSyncRecordEntity syncRecord = YnabSyncRecordEntityGenerator.Generate(localTransactionId: transaction.Id);
+
+		using (ApplicationDbContext context = _contextFactory.CreateDbContext())
+		{
+			await context.Receipts.AddAsync(receipt);
+			await context.Accounts.AddAsync(account);
+			await context.Cards.AddAsync(card);
+			await context.Transactions.AddAsync(transaction);
+			await context.YnabSyncRecords.AddAsync(syncRecord);
+			await context.SaveChangesAsync(CancellationToken.None);
+		}
+
+		ReceiptRepository repository = new(_contextFactory);
+
+		// Act — deleting the receipt must reach the transaction's sync record.
+		await repository.DeleteAsync([receipt.Id], CancellationToken.None);
+
+		// Assert — no active sync record survives; it was cascade soft-deleted.
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		(await verify.YnabSyncRecords.AnyAsync()).Should().BeFalse("the active sync record must not linger after its receipt is deleted");
+
+		YnabSyncRecordEntity deletedRecord = await verify.YnabSyncRecords
+			.IgnoreQueryFilters()
+			.SingleAsync(s => s.Id == syncRecord.Id);
+		deletedRecord.DeletedAt.Should().NotBeNull();
+		deletedRecord.CascadeDeletedByParentId.Should().Be(transaction.Id);
+
+		_contextFactory.ResetDatabase();
+	}
+
+	[Fact]
 	public async Task ExistsAsync_ExistingId_ReturnsTrue()
 	{
 		// Arrange
