@@ -24,6 +24,17 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 	private readonly ICurrentUserAccessor? _currentUserAccessor;
 	private readonly IDescriptionChangeSignal? _descriptionChangeSignal;
 
+	// [ActivatorUtilitiesConstructor] so the (singleton) IDbContextFactory injects the current-user
+	// accessor and the description-change signal when it builds a context via ActivatorUtilities.
+	// Both dependencies are singletons, so resolving them from the factory's root provider is legal
+	// (no captive dependency). Before RECEIPTS-753 this attribute sat on the options-only ctor below,
+	// which left both fields null on every factory-created context (the primary write path).
+	// [ActivatorUtilitiesConstructor] so the (singleton) IDbContextFactory injects the current-user
+	// accessor and the description-change signal when it builds a context via ActivatorUtilities.
+	// Both dependencies are singletons, so resolving them from the factory's root provider is legal
+	// (no captive dependency). Before RECEIPTS-753 this attribute sat on the options-only ctor below,
+	// which left both fields null on every factory-created context (the primary write path).
+	[ActivatorUtilitiesConstructor]
 	public ApplicationDbContext(
 		DbContextOptions<ApplicationDbContext> options,
 		ICurrentUserAccessor currentUserAccessor,
@@ -34,7 +45,8 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 		_descriptionChangeSignal = descriptionChangeSignal;
 	}
 
-	[ActivatorUtilitiesConstructor]
+	// Options-only ctor retained for design-time tooling (migrations) and tests that intentionally
+	// exercise the null-accessor path. No longer the ActivatorUtilities default.
 	public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
 		: base(options)
 	{

@@ -12,7 +12,11 @@ public static class ProgramService
 	{
 		services.AddControllers();
 		services.AddHttpContextAccessor();
-		services.AddScoped<ICurrentUserAccessor, CurrentUserAccessor>();
+		// Singleton (RECEIPTS-753): CurrentUserAccessor is a stateless lazy facade over
+		// IHttpContextAccessor — it reads HttpContext?.User on each property access and captures nothing
+		// at construction. A singleton lifetime lets the singleton IDbContextFactory inject it into
+		// factory-created contexts without a captive dependency, while still observing the current request.
+		services.AddSingleton<ICurrentUserAccessor, CurrentUserAccessor>();
 
 		services
 			.AddSingleton<API.Mapping.Core.AccountMapper>()
