@@ -163,27 +163,48 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 		HashSet<string> touched = [];
 		foreach (EntityEntry<ReceiptItemEntity> entry in ChangeTracker.Entries<ReceiptItemEntity>())
 		{
-			if (entry.State is not (EntityState.Added or EntityState.Modified or EntityState.Deleted))
+			switch (entry.State)
 			{
-				continue;
-			}
+				case EntityState.Added:
+				case EntityState.Deleted:
+					// A brand-new active item, or an item leaving the tracker outright, changes
+					// the active-item membership for its current description.
+					AddIfPresent(touched, entry.Entity.Description);
+					break;
 
-			string? current = entry.Entity.Description;
-			if (!string.IsNullOrEmpty(current))
-			{
-				touched.Add(current);
-			}
+				case EntityState.Modified:
+					// Only reconcile a Modified item when it can actually affect the active-item
+					// set for some description: either the Description text changed, or the item's
+					// active state flipped (soft-delete / restore — DeletedAt gained or lost a
+					// value). A metadata-only edit (e.g. Quantity/UnitPrice) leaves membership
+					// unchanged, so reconciling it would be a pair of wasted round trips.
+					string? originalDescription = entry.OriginalValues[nameof(ReceiptItemEntity.Description)] as string;
+					string? currentDescription = entry.Entity.Description;
+					bool descriptionChanged = !string.Equals(originalDescription, currentDescription, StringComparison.Ordinal);
 
-			if (entry.State == EntityState.Modified)
-			{
-				string? original = entry.OriginalValues[nameof(ReceiptItemEntity.Description)] as string;
-				if (!string.IsNullOrEmpty(original))
-				{
-					touched.Add(original);
-				}
+					DateTimeOffset? originalDeletedAt = entry.OriginalValues[nameof(ReceiptItemEntity.DeletedAt)] as DateTimeOffset?;
+					bool activeStateChanged = (originalDeletedAt is null) != (entry.Entity.DeletedAt is null);
+
+					if (descriptionChanged || activeStateChanged)
+					{
+						AddIfPresent(touched, currentDescription);
+						AddIfPresent(touched, originalDescription);
+					}
+					break;
+
+				default:
+					break;
 			}
 		}
 		return touched;
+
+		static void AddIfPresent(HashSet<string> set, string? value)
+		{
+			if (!string.IsNullOrEmpty(value))
+			{
+				set.Add(value);
+			}
+		}
 	}
 
 	private async Task ReconcileDistinctDescriptionsAsync(HashSet<string> descriptions, CancellationToken cancellationToken)
@@ -194,43 +215,41 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 			return;
 		}
 
-		// Use raw SQL for both insert and delete so the reconciliation is atomic per description
-		// and idempotent under concurrent saves. An EF check-then-write pattern here would race
-		// on the PK (two concurrent adds of the same new description → second INSERT hits 23505).
-		bool signalDirty = false;
-		foreach (string desc in descriptions)
-		{
-			// INSERT when there is at least one active ReceiptItem with this description.
-			// DELETE when there are no active ReceiptItems (descriptive cascade wipes any edges).
-			// The NOT EXISTS guard on DELETE makes it race-safe: if a concurrent insert is adding
-			// a receipt item with this description, the subquery will find it and the DELETE
-			// becomes a no-op.
-			int rowsInserted = await Database.ExecuteSqlRawAsync(
-				"""
-				INSERT INTO "matching"."DistinctDescriptions" ("Description", "ProcessedAt")
-				SELECT {0}, NULL
-				WHERE EXISTS (SELECT 1 FROM "receipts"."ReceiptItems" WHERE "Description" = {0} AND "DeletedAt" IS NULL)
-				ON CONFLICT ("Description") DO NOTHING;
-				""",
-				[desc],
-				cancellationToken);
+		// Reconcile the ENTIRE touched set in two set-based round trips (one INSERT, one DELETE)
+		// instead of a pair of round trips per description. Raw SQL keeps the reconciliation
+		// atomic and idempotent under concurrent saves: the INSERT's ON CONFLICT DO NOTHING and
+		// the DELETE's NOT EXISTS guard both race-safely converge on the invariant "a
+		// DistinctDescriptions row exists iff an active ReceiptItem with that description exists".
+		// The touched descriptions are passed as a single text[] parameter and expanded with
+		// unnest / = ANY, so the number of round trips is constant regardless of set size.
+		string[] descriptionArray = [.. descriptions];
 
-			int rowsDeleted = await Database.ExecuteSqlRawAsync(
-				"""
-				DELETE FROM "matching"."DistinctDescriptions"
-				WHERE "Description" = {0}
-				  AND NOT EXISTS (SELECT 1 FROM "receipts"."ReceiptItems" WHERE "Description" = {0} AND "DeletedAt" IS NULL);
-				""",
-				[desc],
-				cancellationToken);
+		// INSERT a row for every touched description that still has at least one active
+		// ReceiptItem. ON CONFLICT keeps it idempotent (and race-safe on the PK).
+		int rowsInserted = await Database.ExecuteSqlRawAsync(
+			"""
+			INSERT INTO "matching"."DistinctDescriptions" ("Description", "ProcessedAt")
+			SELECT d, NULL
+			FROM unnest({0}::text[]) AS d
+			WHERE EXISTS (SELECT 1 FROM "receipts"."ReceiptItems" AS ri WHERE ri."Description" = d AND ri."DeletedAt" IS NULL)
+			ON CONFLICT ("Description") DO NOTHING;
+			""",
+			[descriptionArray],
+			cancellationToken);
 
-			if (rowsInserted > 0 || rowsDeleted > 0)
-			{
-				signalDirty = true;
-			}
-		}
+		// DELETE any touched description that no longer has an active ReceiptItem. The NOT EXISTS
+		// guard makes it race-safe: a concurrent insert of a receipt item with that description
+		// leaves the subquery non-empty, so the DELETE becomes a no-op for that row.
+		int rowsDeleted = await Database.ExecuteSqlRawAsync(
+			"""
+			DELETE FROM "matching"."DistinctDescriptions" AS dd
+			WHERE dd."Description" = ANY({0}::text[])
+			  AND NOT EXISTS (SELECT 1 FROM "receipts"."ReceiptItems" AS ri WHERE ri."Description" = dd."Description" AND ri."DeletedAt" IS NULL);
+			""",
+			[descriptionArray],
+			cancellationToken);
 
-		if (signalDirty)
+		if (rowsInserted > 0 || rowsDeleted > 0)
 		{
 			_descriptionChangeSignal?.NotifyDirty();
 		}
