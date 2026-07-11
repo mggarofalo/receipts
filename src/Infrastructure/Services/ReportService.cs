@@ -49,22 +49,24 @@ public partial class ReportService(IDbContextFactory<ApplicationDbContext> conte
 							Difference = difference
 						};
 
-		// Get total count and total discrepancy before pagination
-		// Materialize the filtered set once so both aggregations happen in a single enumeration.
-		var allItems = await baseQuery.ToListAsync(cancellationToken);
-		int totalCount = allItems.Count;
-		decimal totalDiscrepancy = allItems.Sum(x => Math.Abs(x.Difference));
+		// Count and total-discrepancy are computed in SQL over the filtered set (COUNT / SUM(ABS)),
+		// not by materializing every out-of-balance row into memory (RECEIPTS-791).
+		int totalCount = await baseQuery.CountAsync(cancellationToken);
+		decimal totalDiscrepancy = totalCount == 0
+			? 0m
+			: await baseQuery.SumAsync(x => Math.Abs(x.Difference), cancellationToken);
 
-		// Apply sorting in memory (the data set is bounded by "out of balance" receipts, typically small)
-		var sorted = (sortBy.ToLowerInvariant(), sortDirection.ToLowerInvariant()) switch
+		// Sort in SQL: every sort key is a plain/computed column EF can translate to ORDER BY.
+		var sortedQuery = (sortBy.ToLowerInvariant(), sortDirection.ToLowerInvariant()) switch
 		{
-			("difference", "asc") => allItems.OrderBy(x => x.Difference).AsEnumerable(),
-			("difference", "desc") => allItems.OrderByDescending(x => x.Difference).AsEnumerable(),
-			("date", "desc") => allItems.OrderByDescending(x => x.Date).AsEnumerable(),
-			_ => allItems.OrderBy(x => x.Date).AsEnumerable(), // default: date asc
+			("difference", "asc") => baseQuery.OrderBy(x => x.Difference),
+			("difference", "desc") => baseQuery.OrderByDescending(x => x.Difference),
+			("date", "desc") => baseQuery.OrderByDescending(x => x.Date),
+			_ => baseQuery.OrderBy(x => x.Date), // default: date asc
 		};
 
-		List<OutOfBalanceItem> pagedItems = sorted
+		// Skip/Take BEFORE materializing — the database paginates, only one page crosses the wire.
+		List<OutOfBalanceItem> pagedItems = await sortedQuery
 			.Skip((page - 1) * pageSize)
 			.Take(pageSize)
 			.Select(x => new OutOfBalanceItem(
@@ -77,7 +79,7 @@ public partial class ReportService(IDbContextFactory<ApplicationDbContext> conte
 				x.ExpectedTotal,
 				x.TransactionTotal,
 				x.Difference))
-			.ToList();
+			.ToListAsync(cancellationToken);
 
 		return new OutOfBalanceResult(pagedItems, totalCount, totalDiscrepancy);
 	}
@@ -118,23 +120,29 @@ public partial class ReportService(IDbContextFactory<ApplicationDbContext> conte
 							Total = g.Sum(x => x.TransactionTotal),
 						};
 
-		var allItems = await baseQuery.ToListAsync(cancellationToken);
-		int totalCount = allItems.Count;
-		decimal grandTotal = allItems.Sum(x => x.Total);
+		// Count (number of location groups) and grand total are aggregated in SQL over the grouped
+		// query, not by pulling every group into memory (RECEIPTS-791).
+		int totalCount = await baseQuery.CountAsync(cancellationToken);
+		decimal grandTotal = totalCount == 0
+			? 0m
+			: await baseQuery.SumAsync(x => x.Total, cancellationToken);
 
-		var sorted = (sortBy.ToLowerInvariant(), sortDirection.ToLowerInvariant()) switch
+		// Sort in SQL: every sort key (including the average = Total / Visits expression) is
+		// EF-translatable to ORDER BY. Visits is a group COUNT and therefore always >= 1.
+		var sortedQuery = (sortBy.ToLowerInvariant(), sortDirection.ToLowerInvariant()) switch
 		{
-			("location", "asc") => allItems.OrderBy(x => x.Location).AsEnumerable(),
-			("location", "desc") => allItems.OrderByDescending(x => x.Location).AsEnumerable(),
-			("visits", "asc") => allItems.OrderBy(x => x.Visits).AsEnumerable(),
-			("visits", "desc") => allItems.OrderByDescending(x => x.Visits).AsEnumerable(),
-			("averagepervisit", "asc") => allItems.OrderBy(x => x.Visits > 0 ? x.Total / x.Visits : 0).AsEnumerable(),
-			("averagepervisit", "desc") => allItems.OrderByDescending(x => x.Visits > 0 ? x.Total / x.Visits : 0).AsEnumerable(),
-			("total", "asc") => allItems.OrderBy(x => x.Total).AsEnumerable(),
-			_ => allItems.OrderByDescending(x => x.Total).AsEnumerable(), // default: total desc
+			("location", "asc") => baseQuery.OrderBy(x => x.Location),
+			("location", "desc") => baseQuery.OrderByDescending(x => x.Location),
+			("visits", "asc") => baseQuery.OrderBy(x => x.Visits),
+			("visits", "desc") => baseQuery.OrderByDescending(x => x.Visits),
+			("averagepervisit", "asc") => baseQuery.OrderBy(x => x.Visits > 0 ? x.Total / x.Visits : 0),
+			("averagepervisit", "desc") => baseQuery.OrderByDescending(x => x.Visits > 0 ? x.Total / x.Visits : 0),
+			("total", "asc") => baseQuery.OrderBy(x => x.Total),
+			_ => baseQuery.OrderByDescending(x => x.Total), // default: total desc
 		};
 
-		List<SpendingByLocationItem> pagedItems = sorted
+		// Skip/Take BEFORE materializing — only the requested page is fetched.
+		List<SpendingByLocationItem> pagedItems = await sortedQuery
 			.Skip((page - 1) * pageSize)
 			.Take(pageSize)
 			.Select(x => new SpendingByLocationItem(
@@ -142,7 +150,7 @@ public partial class ReportService(IDbContextFactory<ApplicationDbContext> conte
 				x.Visits,
 				x.Total,
 				x.Visits > 0 ? Math.Round(x.Total / x.Visits, 2, MidpointRounding.AwayFromZero) : 0m))
-			.ToList();
+			.ToListAsync(cancellationToken);
 
 		return new SpendingByLocationResult(pagedItems, totalCount, grandTotal);
 	}
@@ -796,20 +804,23 @@ public partial class ReportService(IDbContextFactory<ApplicationDbContext> conte
 							ri.Subcategory
 						};
 
-		var allItems = await baseQuery.ToListAsync(cancellationToken);
-		int totalCount = allItems.Count;
+		// Count in SQL over the filtered set instead of materializing every uncategorized item
+		// just to read its length (RECEIPTS-791).
+		int totalCount = await baseQuery.CountAsync(cancellationToken);
 
-		var sorted = (sortBy.ToLowerInvariant(), sortDirection.ToLowerInvariant()) switch
+		// Sort in SQL: all keys are plain columns (ReceiptItemCode uses COALESCE for its null case).
+		var sortedQuery = (sortBy.ToLowerInvariant(), sortDirection.ToLowerInvariant()) switch
 		{
-			("total", "asc") => allItems.OrderBy(x => x.TotalAmount).AsEnumerable(),
-			("total", "desc") => allItems.OrderByDescending(x => x.TotalAmount).AsEnumerable(),
-			("itemcode", "asc") => allItems.OrderBy(x => x.ReceiptItemCode ?? string.Empty).AsEnumerable(),
-			("itemcode", "desc") => allItems.OrderByDescending(x => x.ReceiptItemCode ?? string.Empty).AsEnumerable(),
-			("description", "desc") => allItems.OrderByDescending(x => x.Description).AsEnumerable(),
-			_ => allItems.OrderBy(x => x.Description).AsEnumerable(),
+			("total", "asc") => baseQuery.OrderBy(x => x.TotalAmount),
+			("total", "desc") => baseQuery.OrderByDescending(x => x.TotalAmount),
+			("itemcode", "asc") => baseQuery.OrderBy(x => x.ReceiptItemCode ?? string.Empty),
+			("itemcode", "desc") => baseQuery.OrderByDescending(x => x.ReceiptItemCode ?? string.Empty),
+			("description", "desc") => baseQuery.OrderByDescending(x => x.Description),
+			_ => baseQuery.OrderBy(x => x.Description),
 		};
 
-		List<UncategorizedItemRecord> pagedItems = sorted
+		// Skip/Take BEFORE materializing — only the requested page is fetched.
+		List<UncategorizedItemRecord> pagedItems = await sortedQuery
 			.Skip((page - 1) * pageSize)
 			.Take(pageSize)
 			.Select(x => new UncategorizedItemRecord(
@@ -822,7 +833,7 @@ public partial class ReportService(IDbContextFactory<ApplicationDbContext> conte
 				x.TotalAmount,
 				x.Category,
 				x.Subcategory))
-			.ToList();
+			.ToListAsync(cancellationToken);
 
 		return new UncategorizedItemsResult(pagedItems, totalCount);
 	}

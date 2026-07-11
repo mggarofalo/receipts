@@ -994,4 +994,144 @@ public class ReportServiceTests
 
 		contextFactory.ResetDatabase();
 	}
+
+	// ── GetUncategorizedItemsAsync (RECEIPTS-791: paginate/count/sort in SQL) ─────────
+	// These assert the Count + Skip/Take + ORDER-BY semantics are preserved after moving the
+	// work off the client and into the query. They run against the InMemory provider, which
+	// evaluates LINQ in-process, so they prove the query LOGIC — not that the expressions
+	// translate to SQL. True SQL-translation proof requires an integration test on PostgreSQL.
+
+	[Fact]
+	public async Task GetUncategorizedItemsAsync_CountsPaginatesAndSortsByDescription()
+	{
+		// Arrange
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid receiptId = Guid.NewGuid();
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			context.Receipts.Add(
+				new ReceiptEntity { Id = receiptId, Location = "Store", Date = new DateOnly(2025, 3, 1), TaxAmount = 0m });
+
+			context.ReceiptItems.AddRange(
+				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Cabbage", Quantity = 1, UnitPrice = 3m, TotalAmount = 3m, Category = "Uncategorized" },
+				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Apple", Quantity = 1, UnitPrice = 1m, TotalAmount = 1m, Category = "Uncategorized" },
+				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Bread", Quantity = 1, UnitPrice = 2m, TotalAmount = 2m, Category = "Uncategorized" },
+				// Categorized — excluded by the Category == "Uncategorized" filter.
+				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Milk", Quantity = 1, UnitPrice = 4m, TotalAmount = 4m, Category = "Dairy" },
+				// Soft-deleted uncategorized — excluded by the DeletedAt == null filter.
+				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Ghost", Quantity = 1, UnitPrice = 9m, TotalAmount = 9m, Category = "Uncategorized", DeletedAt = DateTimeOffset.UtcNow });
+
+			await context.SaveChangesAsync();
+		}
+
+		ReportService service = new(contextFactory);
+
+		// Act — page 1 of 2, default sort (description asc).
+		UncategorizedItemsResult page1 = await service.GetUncategorizedItemsAsync("description", "asc", 1, 2, CancellationToken.None);
+
+		// Assert — count reflects only the 3 active uncategorized items; the page holds the first
+		// two by description ascending (Apple, Bread).
+		page1.TotalCount.Should().Be(3);
+		page1.Items.Should().HaveCount(2);
+		page1.Items.Select(i => i.Description).Should().ContainInOrder("Apple", "Bread");
+
+		// Act — page 2 carries the remaining item.
+		UncategorizedItemsResult page2 = await service.GetUncategorizedItemsAsync("description", "asc", 2, 2, CancellationToken.None);
+
+		// Assert
+		page2.TotalCount.Should().Be(3);
+		page2.Items.Should().ContainSingle();
+		page2.Items[0].Description.Should().Be("Cabbage");
+
+		contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task GetUncategorizedItemsAsync_SortsByTotalDescending()
+	{
+		// Arrange
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid receiptId = Guid.NewGuid();
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			context.Receipts.Add(
+				new ReceiptEntity { Id = receiptId, Location = "Store", Date = new DateOnly(2025, 3, 1), TaxAmount = 0m });
+
+			context.ReceiptItems.AddRange(
+				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Low", Quantity = 1, UnitPrice = 1m, TotalAmount = 1m, Category = "Uncategorized" },
+				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "High", Quantity = 1, UnitPrice = 9m, TotalAmount = 9m, Category = "Uncategorized" },
+				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Mid", Quantity = 1, UnitPrice = 5m, TotalAmount = 5m, Category = "Uncategorized" });
+
+			await context.SaveChangesAsync();
+		}
+
+		ReportService service = new(contextFactory);
+
+		// Act
+		UncategorizedItemsResult result = await service.GetUncategorizedItemsAsync("total", "desc", 1, 50, CancellationToken.None);
+
+		// Assert — ordered by TotalAmount descending.
+		result.TotalCount.Should().Be(3);
+		result.Items.Select(i => i.TotalAmount).Should().ContainInOrder(9m, 5m, 1m);
+
+		contextFactory.ResetDatabase();
+	}
+
+	// ── GetSpendingByLocationAsync (RECEIPTS-791: aggregate/count/paginate in SQL) ────
+
+	[Fact]
+	public async Task GetSpendingByLocationAsync_AggregatesCountsPaginatesAndSortsByTotal()
+	{
+		// Arrange
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid accountId = Guid.NewGuid();
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			// Store A: two visits totaling 30; Store B: one visit of 20; Store C: one visit of 10.
+			AddReceiptWithTransaction(context, "Store A", new DateOnly(2025, 1, 1), accountId, 10m);
+			AddReceiptWithTransaction(context, "Store A", new DateOnly(2025, 1, 2), accountId, 20m);
+			AddReceiptWithTransaction(context, "Store B", new DateOnly(2025, 1, 3), accountId, 20m);
+			AddReceiptWithTransaction(context, "Store C", new DateOnly(2025, 1, 4), accountId, 10m);
+
+			await context.SaveChangesAsync();
+		}
+
+		ReportService service = new(contextFactory);
+
+		// Act — default sort (total desc), page 1 of 2.
+		SpendingByLocationResult page1 = await service.GetSpendingByLocationAsync(null, null, "total", "desc", 1, 2, CancellationToken.None);
+
+		// Assert — 3 location groups; grand total sums every transaction (60); the page holds the
+		// two highest-total locations in order, with Store A's two visits aggregated.
+		page1.TotalCount.Should().Be(3);
+		page1.GrandTotal.Should().Be(60m);
+		page1.Items.Should().HaveCount(2);
+		page1.Items.Select(i => i.Location).Should().ContainInOrder("Store A", "Store B");
+		page1.Items[0].Total.Should().Be(30m);
+		page1.Items[0].Visits.Should().Be(2);
+		page1.Items[0].AveragePerVisit.Should().Be(15m);
+
+		// Act — page 2 carries the lowest-total location.
+		SpendingByLocationResult page2 = await service.GetSpendingByLocationAsync(null, null, "total", "desc", 2, 2, CancellationToken.None);
+
+		// Assert
+		page2.TotalCount.Should().Be(3);
+		page2.Items.Should().ContainSingle();
+		page2.Items[0].Location.Should().Be("Store C");
+
+		contextFactory.ResetDatabase();
+	}
+
+	private static void AddReceiptWithTransaction(
+		ApplicationDbContext context, string location, DateOnly date, Guid accountId, decimal amount)
+	{
+		Guid receiptId = Guid.NewGuid();
+		context.Receipts.Add(
+			new ReceiptEntity { Id = receiptId, Location = location, Date = date, TaxAmount = 0m });
+		context.Transactions.Add(
+			new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, AccountId = accountId, Amount = amount, Date = date });
+	}
 }
