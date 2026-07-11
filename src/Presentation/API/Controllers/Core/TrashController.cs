@@ -17,6 +17,7 @@ public class TrashController(IMediator mediator, ILogger<TrashController> logger
 {
 	[HttpPost("purge")]
 	[EndpointSummary("Permanently delete all soft-deleted items")]
+	[Authorize(Policy = "RequireAdmin")]
 	public async Task<NoContent> PurgeTrash(CancellationToken cancellationToken = default)
 	{
 		logger.LogWarning("PurgeTrash called — permanently deleting all soft-deleted items");
