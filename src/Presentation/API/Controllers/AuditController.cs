@@ -12,7 +12,7 @@ namespace API.Controllers;
 [ApiController]
 [Route("api/audit")]
 [Produces("application/json")]
-[Authorize]
+[Authorize(Policy = "RequireAdmin")]
 public class AuditController(IAuditService auditService) : ControllerBase
 {
 	[HttpGet("")]

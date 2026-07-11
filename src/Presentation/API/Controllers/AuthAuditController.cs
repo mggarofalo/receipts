@@ -56,6 +56,7 @@ public class AuthAuditController(IAuthAuditService authAuditService) : Controlle
 	}
 
 	[HttpGet("recent")]
+	[Authorize(Policy = "RequireAdmin")]
 	public async Task<Results<Ok<GeneratedDtos.AuthAuditListResponse>, BadRequest<string>>> GetRecent(
 		[FromQuery] int offset = 0,
 		[FromQuery] int limit = 50,
@@ -89,6 +90,7 @@ public class AuthAuditController(IAuthAuditService authAuditService) : Controlle
 	}
 
 	[HttpGet("failed")]
+	[Authorize(Policy = "RequireAdmin")]
 	public async Task<Results<Ok<GeneratedDtos.AuthAuditListResponse>, BadRequest<string>>> GetFailed(
 		[FromQuery] int offset = 0,
 		[FromQuery] int limit = 50,
