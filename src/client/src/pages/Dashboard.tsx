@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import { format, subMonths } from "date-fns";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { useReceipts } from "@/hooks/useReceipts";
+import { formatShortDate } from "@/lib/format";
 import type { DateRange } from "@/hooks/useDashboard";
 import { PageHead, Icon } from "@/components/primitives";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -29,12 +30,6 @@ function formatMoney(value: number | string | null | undefined): string {
   }).format(n);
 }
 
-function formatShortDate(value: string | null | undefined): string {
-  if (!value) return "—";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
 
 function Dashboard() {
   usePageTitle("Dashboard");

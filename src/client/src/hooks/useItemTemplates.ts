@@ -54,9 +54,6 @@ export function useCreateItemTemplate() {
       queryClient.invalidateQueries({ queryKey: ["itemTemplates"] });
       toast.success("Item template created");
     },
-    onError: () => {
-      toast.error("Failed to create item template");
-    },
   });
 }
 
@@ -81,9 +78,6 @@ export function useUpdateItemTemplate() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["itemTemplates"] });
       toast.success("Item template updated");
-    },
-    onError: () => {
-      toast.error("Failed to update item template");
     },
   });
 }
@@ -113,7 +107,6 @@ export function useDeleteItemTemplates() {
       for (const [key, data] of context?.previous ?? []) {
         queryClient.setQueryData(key, data);
       }
-      toast.error("Failed to delete item template(s)");
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["itemTemplates"] });
@@ -152,7 +145,6 @@ export function useHideItemTemplate() {
       for (const [key, data] of context?.previous ?? []) {
         queryClient.setQueryData(key, data);
       }
-      toast.error("Failed to hide item template");
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["itemTemplates"] });
@@ -196,9 +188,6 @@ export function useRestoreItemTemplate() {
         queryKey: ["itemTemplates", "deleted"],
       });
       toast.success("Item template restored");
-    },
-    onError: () => {
-      toast.error("Failed to restore item template");
     },
   });
 }

@@ -74,9 +74,6 @@ export function useCreateAccount() {
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       toast.success("Account created");
     },
-    onError: () => {
-      toast.error("Failed to create account");
-    },
   });
 }
 
@@ -97,9 +94,6 @@ export function useUpdateAccount() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       toast.success("Account updated");
-    },
-    onError: () => {
-      toast.error("Failed to update account");
     },
   });
 }
@@ -132,9 +126,8 @@ export function useDeleteAccount() {
       const err = error as { conflict?: boolean; message?: string; cardCount?: number };
       if (err.conflict) {
         toast.error(err.message ?? "Cannot delete — cards reference this account");
-      } else {
-        toast.error("Failed to delete account");
       }
+      // Non-conflict failures fall through to the global error handler.
     },
   });
 }

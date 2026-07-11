@@ -179,7 +179,7 @@ describe("useCards", () => {
     });
   });
 
-  it("delete mutation shows generic error toast on non-409 failure", async () => {
+  it("delete mutation does not toast on non-409 failure (surfaced by the global handler)", async () => {
     (client.DELETE as Mock).mockResolvedValue({
       error: { message: "Server error" },
       response: { status: 500 },
@@ -192,7 +192,7 @@ describe("useCards", () => {
     await expect(result.current.mutateAsync("1")).rejects.toThrow();
 
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith("Failed to delete card");
+      expect(toast.error).not.toHaveBeenCalled();
     });
   });
 
@@ -241,7 +241,7 @@ describe("useCards", () => {
     });
   });
 
-  it("merge mutation shows generic error toast on non-409 failure", async () => {
+  it("merge mutation does not toast on non-409 failure (surfaced by the global handler)", async () => {
     (client.POST as Mock).mockResolvedValue({
       error: { message: "boom" },
       response: { status: 500 },
@@ -256,7 +256,7 @@ describe("useCards", () => {
     ).rejects.toThrow();
 
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith("Failed to merge cards");
+      expect(toast.error).not.toHaveBeenCalled();
     });
   });
 

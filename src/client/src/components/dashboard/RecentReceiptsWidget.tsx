@@ -1,8 +1,8 @@
 import { useMemo } from "react";
-import { format } from "date-fns";
 import { Link } from "react-router";
 import { ChartCard } from "@/components/charts";
 import { useReceipts } from "@/hooks/useReceipts";
+import { formatDate } from "@/lib/format";
 
 interface RecentReceiptsWidgetProps {
   className?: string;
@@ -49,7 +49,7 @@ export function RecentReceiptsWidget({ className }: RecentReceiptsWidgetProps) {
                   {receipt.location}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {format(new Date(receipt.date), "MMM d, yyyy")}
+                  {formatDate(receipt.date)}
                 </p>
               </div>
               <span className="ml-4 text-xs text-muted-foreground tabular-nums">

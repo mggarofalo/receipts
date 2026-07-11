@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useEffect, useRef, useId } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useBlocker } from "react-router";
 import { useForm } from "react-hook-form";
 import { z } from "zod/v4";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -17,7 +17,7 @@ import { DateInput } from "@/components/ui/date-input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, isFutureDate } from "@/lib/format";
 import {
   Form,
   FormControl,
@@ -43,7 +43,10 @@ const headerSchema = z.object({
     .string()
     .min(1, "Location is required")
     .max(200, "Location must be 200 characters or fewer"),
-  date: z.string().min(1, "Date is required"),
+  date: z
+    .string()
+    .min(1, "Date is required")
+    .refine((v) => !isFutureDate(v), "Date cannot be in the future"),
   taxAmount: z.number().min(0, "Tax amount must be non-negative"),
 });
 
@@ -113,6 +116,52 @@ export default function NewReceiptPage() {
     transactions.length > 0 ||
     items.length > 0;
 
+  // Tracks a successful save (so we don't block the post-save redirect) and an
+  // in-flight discard decision (so the dialog's close handler doesn't cancel a
+  // navigation we deliberately let through). RECEIPTS-785.
+  const hasSavedRef = useRef(false);
+  const proceedingRef = useRef(false);
+  const discardingRef = useRef(false);
+
+  // Intercept in-app navigation (sidebar links, the g>r chord, browser
+  // back/forward) whenever there's unsaved data, so a long manual entry isn't
+  // silently destroyed. Inert when the form is empty or after a successful save.
+  const blocker = useBlocker(
+    useCallback(
+      ({
+        currentLocation,
+        nextLocation,
+      }: {
+        currentLocation: { pathname: string };
+        nextLocation: { pathname: string };
+      }) =>
+        hasData &&
+        !hasSavedRef.current &&
+        !discardingRef.current &&
+        currentLocation.pathname !== nextLocation.pathname,
+      [hasData],
+    ),
+  );
+
+  // Surface the existing discard dialog when the blocker trips.
+  useEffect(() => {
+    if (blocker.state === "blocked") {
+      setShowDiscard(true);
+    }
+  }, [blocker.state]);
+
+  // Warn on hard exits the in-app blocker can't see: refresh, tab/window close,
+  // and full-page browser navigation.
+  useEffect(() => {
+    if (!hasData) return;
+    function onBeforeUnload(e: BeforeUnloadEvent) {
+      e.preventDefault();
+      e.returnValue = "";
+    }
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [hasData]);
+
   const handleCancel = useCallback(() => {
     if (hasData) {
       setShowDiscard(true);
@@ -123,8 +172,29 @@ export default function NewReceiptPage() {
 
   const handleDiscard = useCallback(() => {
     setShowDiscard(false);
-    navigate("/receipts");
-  }, [navigate]);
+    if (blocker.state === "blocked") {
+      // A real navigation is pending (sidebar link, back button) — let it go.
+      proceedingRef.current = true;
+      blocker.proceed();
+    } else {
+      // Dialog was opened by the Cancel button; navigate past the blocker.
+      discardingRef.current = true;
+      navigate("/receipts");
+    }
+  }, [blocker, navigate]);
+
+  const handleDiscardDialogOpenChange = useCallback(
+    (open: boolean) => {
+      setShowDiscard(open);
+      // Closing without choosing "Discard" (Continue editing, Escape) means the
+      // user is staying — release any pending navigation block.
+      if (!open && !proceedingRef.current && blocker.state === "blocked") {
+        blocker.reset();
+      }
+      if (!open) proceedingRef.current = false;
+    },
+    [blocker],
+  );
 
   const handleSubmit = useCallback(async () => {
     // Validate header form first
@@ -183,6 +253,9 @@ export default function NewReceiptPage() {
 
       const receiptId = (result as { receipt: { id: string } }).receipt.id;
 
+      // Mark saved BEFORE navigating so the unsaved-work blocker lets the
+      // success redirect through (RECEIPTS-785).
+      hasSavedRef.current = true;
       toast.success("Receipt created successfully!");
       navigate(`/receipts/${receiptId}`);
     } catch {
@@ -332,7 +405,7 @@ export default function NewReceiptPage() {
         </div>
       </div>
 
-      <AlertDialog open={showDiscard} onOpenChange={setShowDiscard}>
+      <AlertDialog open={showDiscard} onOpenChange={handleDiscardDialogOpenChange}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Discard receipt?</AlertDialogTitle>

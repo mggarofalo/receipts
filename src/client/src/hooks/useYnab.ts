@@ -93,9 +93,6 @@ export function useSelectYnabBudget() {
       queryClient.invalidateQueries({ queryKey: ["ynab"] });
       toast.success("YNAB budget selected");
     },
-    onError: () => {
-      toast.error("Failed to select YNAB budget");
-    },
   });
 }
 
@@ -154,9 +151,6 @@ export function useCreateYnabAccountMapping() {
       queryClient.invalidateQueries({ queryKey: ["ynab", "account-mappings"] });
       toast.success("Account mapping created");
     },
-    onError: () => {
-      toast.error("Failed to create account mapping");
-    },
   });
 }
 
@@ -186,9 +180,6 @@ export function useUpdateYnabAccountMapping() {
       queryClient.invalidateQueries({ queryKey: ["ynab", "account-mappings"] });
       toast.success("Account mapping updated");
     },
-    onError: () => {
-      toast.error("Failed to update account mapping");
-    },
   });
 }
 
@@ -207,9 +198,6 @@ export function useDeleteYnabAccountMapping() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["ynab", "account-mappings"] });
       toast.success("Account mapping removed");
-    },
-    onError: () => {
-      toast.error("Failed to remove account mapping");
     },
   });
 }
@@ -313,9 +301,6 @@ export function useCreateYnabCategoryMapping() {
       queryClient.invalidateQueries({ queryKey: ["ynab", "category-mappings"] });
       toast.success("Category mapping created");
     },
-    onError: () => {
-      toast.error("Failed to create category mapping");
-    },
   });
 }
 
@@ -341,9 +326,6 @@ export function useUpdateYnabCategoryMapping() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["ynab", "category-mappings"] });
       toast.success("Category mapping updated");
-    },
-    onError: () => {
-      toast.error("Failed to update category mapping");
     },
   });
 }
@@ -398,9 +380,6 @@ export function useClearStaleMappings() {
         (data?.deletedCategoryMappings ?? 0);
       toast.success(`Cleared ${total} stale mapping(s)`);
     },
-    onError: () => {
-      toast.error("Failed to clear stale mappings");
-    },
   });
 }
 
@@ -417,9 +396,6 @@ export function useDeleteYnabCategoryMapping() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["ynab", "category-mappings"] });
       toast.success("Category mapping deleted");
-    },
-    onError: () => {
-      toast.error("Failed to delete category mapping");
     },
   });
 }
@@ -498,9 +474,6 @@ export function useSyncYnabMemos() {
         toast.info("No transactions were synced");
       }
     },
-    onError: () => {
-      toast.error("Failed to sync YNAB memos");
-    },
   });
 }
 
@@ -521,9 +494,6 @@ export function useSyncYnabMemosBulk() {
         (r) => r.outcome === "Synced",
       ).length;
       toast.success(`Synced ${synced ?? 0} transaction memo(s) to YNAB`);
-    },
-    onError: () => {
-      toast.error("Failed to bulk sync YNAB memos");
     },
   });
 }
@@ -546,9 +516,6 @@ export function useResolveYnabMemoSync() {
       queryClient.invalidateQueries({ queryKey: ["ynab", "sync-status"] });
       queryClient.invalidateQueries({ queryKey: ["ynab", "receipt-sync-statuses"] });
       toast.success("YNAB memo sync resolved");
-    },
-    onError: () => {
-      toast.error("Failed to resolve YNAB memo sync");
     },
   });
 }
@@ -647,9 +614,6 @@ export function usePushYnabTransactions() {
         toast.error(data?.error ?? "Failed to push transactions to YNAB");
       }
     },
-    onError: () => {
-      toast.error("Failed to push transactions to YNAB");
-    },
   });
 }
 
@@ -667,13 +631,37 @@ export function useBulkPushYnabTransactions() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["ynab", "sync-status"] });
       queryClient.invalidateQueries({ queryKey: ["ynab", "receipt-sync-statuses"] });
-      const total = data?.results?.length ?? 0;
-      const succeeded =
-        data?.results?.filter((r) => r.result.success).length ?? 0;
-      toast.success(`Pushed ${succeeded}/${total} receipt(s) to YNAB`);
-    },
-    onError: () => {
-      toast.error("Failed to bulk push transactions to YNAB");
+
+      const results = data?.results ?? [];
+      const total = results.length;
+      if (total === 0) return;
+
+      const succeeded = results.filter((r) => r.result.success).length;
+      const failed = total - succeeded;
+
+      // Aggregate the distinct unmapped categories the server reported across
+      // the failed receipts so the user knows exactly what to map (the same
+      // detail the single-receipt push button surfaces). RECEIPTS-783.
+      const unmapped = Array.from(
+        new Set(results.flatMap((r) => r.result.unmappedCategories ?? [])),
+      );
+      const unmappedSuffix = unmapped.length
+        ? ` Unmapped categories: ${unmapped.join(", ")}. Map them in YNAB Settings.`
+        : "";
+
+      if (succeeded === 0) {
+        // Every receipt failed — this is an error, not a success.
+        toast.error(
+          `Failed to push ${failed} receipt(s) to YNAB.${unmappedSuffix}`,
+        );
+      } else if (failed > 0) {
+        // Partial success — warn and name what needs attention.
+        toast.warning(
+          `Pushed ${succeeded}/${total} receipt(s); ${failed} failed.${unmappedSuffix}`,
+        );
+      } else {
+        toast.success(`Pushed ${succeeded}/${total} receipt(s) to YNAB`);
+      }
     },
   });
 }

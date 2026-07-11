@@ -62,7 +62,7 @@ describe("usePurgeTrash", () => {
 
     await waitFor(() => expect(result.current.isError).toBe(true));
 
-    expect(toast.error).toHaveBeenCalledWith("Failed to empty trash");
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
   it("invalidates all deleted query keys on success", async () => {

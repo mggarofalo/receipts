@@ -52,9 +52,6 @@ export function useCreateCard() {
       queryClient.invalidateQueries({ queryKey: ["cards"] });
       toast.success("Card created");
     },
-    onError: () => {
-      toast.error("Failed to create card");
-    },
   });
 }
 
@@ -77,9 +74,6 @@ export function useUpdateCard() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["cards"] });
       toast.success("Card updated");
-    },
-    onError: () => {
-      toast.error("Failed to update card");
     },
   });
 }
@@ -112,9 +106,8 @@ export function useDeleteCard() {
       const err = error as { conflict?: boolean; message?: string; transactionCount?: number };
       if (err.conflict) {
         toast.error(err.message ?? "Cannot delete — transactions reference this card");
-      } else {
-        toast.error("Failed to delete card");
       }
+      // Non-conflict failures fall through to the global error handler.
     },
   });
 }
@@ -174,7 +167,7 @@ export function useMergeCards() {
         // Caller handles conflict via onError or by inspecting mutation state.
         return;
       }
-      toast.error("Failed to merge cards");
+      // Non-conflict failures fall through to the global error handler.
     },
   });
 }

@@ -76,9 +76,6 @@ export function useCreateAdjustment() {
       queryClient.invalidateQueries({ queryKey: ["trips"] });
       toast.success("Adjustment created");
     },
-    onError: () => {
-      toast.error("Failed to create adjustment");
-    },
   });
 }
 
@@ -106,9 +103,6 @@ export function useUpdateAdjustment() {
       queryClient.invalidateQueries({ queryKey: ["receipts-with-items"] });
       queryClient.invalidateQueries({ queryKey: ["trips"] });
       toast.success("Adjustment updated");
-    },
-    onError: () => {
-      toast.error("Failed to update adjustment");
     },
   });
 }
@@ -138,7 +132,6 @@ export function useDeleteAdjustments() {
       for (const [key, data] of context?.previous ?? []) {
         queryClient.setQueryData(key, data);
       }
-      toast.error("Failed to delete adjustment(s)");
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["adjustments"] });
@@ -182,9 +175,6 @@ export function useRestoreAdjustment() {
       queryClient.invalidateQueries({ queryKey: ["receipts-with-items"] });
       queryClient.invalidateQueries({ queryKey: ["trips"] });
       toast.success("Adjustment restored");
-    },
-    onError: () => {
-      toast.error("Failed to restore adjustment");
     },
   });
 }

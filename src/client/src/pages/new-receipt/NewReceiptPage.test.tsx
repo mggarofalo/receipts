@@ -27,11 +27,35 @@ vi.mock("@/hooks/useLocationHistory", () => ({
 }));
 
 const mockNavigate = vi.fn();
+
+type BlockerLike = {
+  state: "unblocked" | "blocked" | "proceeding";
+  proceed: ReturnType<typeof vi.fn>;
+  reset: ReturnType<typeof vi.fn>;
+};
+const mockBlocker: BlockerLike = {
+  state: "unblocked",
+  proceed: vi.fn(),
+  reset: vi.fn(),
+};
+type ShouldBlock = (args: {
+  currentLocation: { pathname: string };
+  nextLocation: { pathname: string };
+}) => boolean;
+let capturedShouldBlock: ShouldBlock | undefined;
+
 vi.mock("react-router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router")>();
   return {
     ...actual,
     useNavigate: vi.fn(() => mockNavigate),
+    // MemoryRouter (used by the test wrapper) is not a data router, so the real
+    // useBlocker would throw. Capture the predicate so tests can exercise the
+    // "has unsaved data" gate directly, and return a controllable blocker.
+    useBlocker: (shouldBlock: ShouldBlock) => {
+      capturedShouldBlock = shouldBlock;
+      return mockBlocker;
+    },
   };
 });
 
@@ -116,6 +140,8 @@ vi.mock("./BalanceSidebar", () => ({
 describe("NewReceiptPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockBlocker.state = "unblocked";
+    capturedShouldBlock = undefined;
     mockCreateCompleteReceiptAsync.mockResolvedValue({
       receipt: { id: "receipt-123" },
       transactions: [],
@@ -410,5 +436,85 @@ describe("NewReceiptPage", () => {
       expect(liveRegion).not.toBeNull();
       expect(liveRegion?.textContent?.trim()).toBeTruthy();
     });
+  });
+
+  // RECEIPTS-785 — unsaved-work guard (useBlocker + discard dialog).
+  it("blocks in-app navigation when there is unsaved data (but not same-path)", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<NewReceiptPage />);
+
+    // Enter data via the (mocked) transactions section.
+    await user.click(screen.getAllByText("Add Transaction")[0]);
+
+    expect(capturedShouldBlock).toBeDefined();
+    // Navigating away from /receipts/new is blocked...
+    expect(
+      capturedShouldBlock!({
+        currentLocation: { pathname: "/receipts/new" },
+        nextLocation: { pathname: "/dashboard" },
+      }),
+    ).toBe(true);
+    // ...but a same-path navigation is not.
+    expect(
+      capturedShouldBlock!({
+        currentLocation: { pathname: "/receipts/new" },
+        nextLocation: { pathname: "/receipts/new" },
+      }),
+    ).toBe(false);
+  });
+
+  it("does not block navigation when the form is empty", () => {
+    renderWithProviders(<NewReceiptPage />);
+    expect(capturedShouldBlock).toBeDefined();
+    expect(
+      capturedShouldBlock!({
+        currentLocation: { pathname: "/receipts/new" },
+        nextLocation: { pathname: "/dashboard" },
+      }),
+    ).toBe(false);
+  });
+
+  it("stops blocking after a successful save", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<NewReceiptPage />);
+
+    // Fill header + add a transaction and an item so the submit succeeds.
+    const combobox = screen.getByRole("combobox");
+    await user.click(combobox);
+    const walmart = await screen.findByText("Walmart");
+    await user.click(walmart);
+    const dateInput = screen.getByPlaceholderText("MM/DD/YYYY");
+    await user.click(dateInput);
+    await user.type(dateInput, "01/15/2024");
+    await user.click(screen.getAllByText("Add Transaction")[0]);
+    await user.click(screen.getAllByText("Add Item")[0]);
+
+    await user.click(screen.getAllByText("Submit Receipt")[0]);
+    await vi.waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith("/receipts/receipt-123");
+    });
+
+    // The guard must not block the post-save redirect.
+    expect(
+      capturedShouldBlock!({
+        currentLocation: { pathname: "/receipts/new" },
+        nextLocation: { pathname: "/receipts/receipt-123" },
+      }),
+    ).toBe(false);
+  });
+
+  it("opens the discard dialog when the blocker reports a blocked navigation", () => {
+    mockBlocker.state = "blocked";
+    renderWithProviders(<NewReceiptPage />);
+    expect(screen.getByText("Discard receipt?")).toBeInTheDocument();
+  });
+
+  it("proceeds the blocked navigation when Discard is confirmed", async () => {
+    const user = userEvent.setup();
+    mockBlocker.state = "blocked";
+    renderWithProviders(<NewReceiptPage />);
+
+    await user.click(screen.getByText("Discard"));
+    expect(mockBlocker.proceed).toHaveBeenCalled();
   });
 });

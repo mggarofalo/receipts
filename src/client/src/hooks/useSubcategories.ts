@@ -114,9 +114,9 @@ export function useCreateSubcategory() {
       toast.success("Subcategory created");
     },
     onError: (err) => {
-      toast.error(
-        typeof err === "string" ? err : "Failed to create subcategory",
-      );
+      // A string error carries a specific, already-formatted message; anything
+      // else falls through to the global handler (server ProblemDetails detail).
+      if (typeof err === "string") toast.error(err);
     },
   });
 }
@@ -140,9 +140,6 @@ export function useUpdateSubcategory() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["subcategories"] });
       toast.success("Subcategory updated");
-    },
-    onError: () => {
-      toast.error("Failed to update subcategory");
     },
   });
 }
@@ -187,9 +184,8 @@ export function useDeleteSubcategory() {
       }
       if (err.conflict) {
         toast.error(err.message ?? "Cannot delete — receipt items reference this subcategory");
-      } else {
-        toast.error("Failed to delete subcategory");
       }
+      // Non-conflict failures fall through to the global error handler.
     },
   });
 }
@@ -222,9 +218,6 @@ export function useRestoreSubcategory() {
       queryClient.invalidateQueries({ queryKey: ["subcategories"] });
       queryClient.invalidateQueries({ queryKey: ["subcategories", "deleted"] });
       toast.success("Subcategory restored");
-    },
-    onError: () => {
-      toast.error("Failed to restore subcategory");
     },
   });
 }

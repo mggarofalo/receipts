@@ -171,7 +171,7 @@ describe("useReceipts", () => {
 
   // --- Branch coverage: error callbacks ---
 
-  it("create mutation shows error toast on failure", async () => {
+  it("create mutation does not toast on failure (surfaced by the global handler)", async () => {
     (client.POST as Mock).mockResolvedValue({ error: { message: "Server error" } });
 
     const { result } = renderHook(() => useCreateReceipt(), {
@@ -181,10 +181,10 @@ describe("useReceipts", () => {
     result.current.mutate({ location: "Store", date: "2025-01-01", taxAmount: 1.0 });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(toast.error).toHaveBeenCalledWith("Failed to create receipt");
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
-  it("update mutation shows error toast on failure", async () => {
+  it("update mutation does not toast on failure (surfaced by the global handler)", async () => {
     (client.PUT as Mock).mockResolvedValue({ error: { message: "Server error" } });
 
     const { result } = renderHook(() => useUpdateReceipt(), {
@@ -194,10 +194,10 @@ describe("useReceipts", () => {
     result.current.mutate({ id: "1", location: "Store", date: "2025-01-01", taxAmount: 1.0 });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(toast.error).toHaveBeenCalledWith("Failed to update receipt");
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
-  it("delete mutation shows error toast and rolls back cache on failure", async () => {
+  it("delete mutation rolls back cache on failure (error surfaced by the global handler)", async () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false, gcTime: 0 } },
     });
@@ -225,7 +225,7 @@ describe("useReceipts", () => {
     result.current.mutate(["1"]);
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(toast.error).toHaveBeenCalledWith("Failed to delete receipt(s)");
+    expect(toast.error).not.toHaveBeenCalled();
 
     // Verify rollback restored the original data (not just the optimistic update from onMutate)
     expect(setQueryDataSpy).toHaveBeenCalledWith(cacheKey, cacheValue);
@@ -254,7 +254,7 @@ describe("useReceipts", () => {
     expect(toast.success).toHaveBeenCalledWith("Receipt(s) deleted");
   });
 
-  it("restore mutation shows error toast on failure", async () => {
+  it("restore mutation does not toast on failure (surfaced by the global handler)", async () => {
     (client.POST as Mock).mockResolvedValue({ error: { message: "Server error" } });
 
     const { result } = renderHook(() => useRestoreReceipt(), {
@@ -264,7 +264,7 @@ describe("useReceipts", () => {
     result.current.mutate("1");
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(toast.error).toHaveBeenCalledWith("Failed to restore receipt");
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
   it("list query throws on API error", async () => {

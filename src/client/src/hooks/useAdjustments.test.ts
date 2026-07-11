@@ -182,7 +182,7 @@ describe("useAdjustments", () => {
 
   // --- Branch coverage: error callbacks ---
 
-  it("create mutation shows error toast on failure", async () => {
+  it("create mutation does not toast on failure (surfaced by the global handler)", async () => {
     (client.POST as Mock).mockResolvedValue({ error: { message: "Server error" } });
 
     const { result } = renderHook(() => useCreateAdjustment(), {
@@ -192,10 +192,10 @@ describe("useAdjustments", () => {
     result.current.mutate({ receiptId: "r-1", body: { type: "discount", amount: 5.0 } });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(toast.error).toHaveBeenCalledWith("Failed to create adjustment");
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
-  it("update mutation shows error toast on failure", async () => {
+  it("update mutation does not toast on failure (surfaced by the global handler)", async () => {
     (client.PUT as Mock).mockResolvedValue({ error: { message: "Server error" } });
 
     const { result } = renderHook(() => useUpdateAdjustment(), {
@@ -205,10 +205,10 @@ describe("useAdjustments", () => {
     result.current.mutate({ body: { id: "1", type: "discount", amount: 5.0 } });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(toast.error).toHaveBeenCalledWith("Failed to update adjustment");
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
-  it("delete mutation shows error toast and rolls back cache on failure", async () => {
+  it("delete mutation rolls back cache on failure (error surfaced by the global handler)", async () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false, gcTime: 0 } },
     });
@@ -236,7 +236,7 @@ describe("useAdjustments", () => {
     result.current.mutate(["1"]);
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(toast.error).toHaveBeenCalledWith("Failed to delete adjustment(s)");
+    expect(toast.error).not.toHaveBeenCalled();
 
     // Verify rollback restored the original data (not just the optimistic update from onMutate)
     expect(setQueryDataSpy).toHaveBeenCalledWith(cacheKey, cacheValue);
@@ -265,7 +265,7 @@ describe("useAdjustments", () => {
     expect(toast.success).toHaveBeenCalledWith("Adjustment(s) deleted");
   });
 
-  it("restore mutation shows error toast on failure", async () => {
+  it("restore mutation does not toast on failure (surfaced by the global handler)", async () => {
     (client.POST as Mock).mockResolvedValue({ error: { message: "Server error" } });
 
     const { result } = renderHook(() => useRestoreAdjustment(), {
@@ -275,7 +275,7 @@ describe("useAdjustments", () => {
     result.current.mutate("1");
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(toast.error).toHaveBeenCalledWith("Failed to restore adjustment");
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
   it("list query throws on API error", async () => {

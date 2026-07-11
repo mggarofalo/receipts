@@ -63,9 +63,6 @@ export function useCreateUser() {
       queryClient.invalidateQueries({ queryKey: ["users"] });
       toast.success("User created");
     },
-    onError: () => {
-      toast.error("Failed to create user");
-    },
   });
 }
 
@@ -99,9 +96,6 @@ export function useUpdateUser(currentUserId?: string) {
         attemptTokenRefresh();
       }
     },
-    onError: () => {
-      toast.error("Failed to update user");
-    },
   });
 }
 
@@ -117,9 +111,6 @@ export function useDeleteUser() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["users"] });
       toast.success("User deactivated");
-    },
-    onError: () => {
-      toast.error("Failed to deactivate user");
     },
   });
 }
@@ -146,9 +137,6 @@ export function useResetUserPassword() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["users"] });
       toast.success("Password reset successfully");
-    },
-    onError: () => {
-      toast.error("Failed to reset password");
     },
   });
 }

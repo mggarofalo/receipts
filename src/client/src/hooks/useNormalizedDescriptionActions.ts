@@ -36,9 +36,6 @@ export function useMergeMutation() {
         toast.success("Merge completed");
       }
     },
-    onError: () => {
-      toast.error("Failed to merge normalized descriptions");
-    },
   });
 }
 
@@ -66,9 +63,6 @@ export function useSplitMutation() {
       queryClient.invalidateQueries({ queryKey: ["normalized-descriptions"] });
       queryClient.invalidateQueries({ queryKey: ["receipt-items"] });
       toast.success("Receipt item split into a new normalized description");
-    },
-    onError: () => {
-      toast.error("Failed to split normalized description");
     },
   });
 }
@@ -99,9 +93,6 @@ export function useUpdateStatusMutation() {
           ? "Approved as active"
           : "Moved to pending review",
       );
-    },
-    onError: () => {
-      toast.error("Failed to update status");
     },
   });
 }

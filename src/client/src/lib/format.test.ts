@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { formatCurrency, formatDecimal, parseCurrencyInput, camelToTitle, capitalize, evaluateMathExpression } from "./format";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { formatCurrency, formatDecimal, parseCurrencyInput, camelToTitle, capitalize, evaluateMathExpression, formatDate, formatShortDate, parseDateValue } from "./format";
 
 describe("formatCurrency", () => {
   it("formats a positive number as USD", () => {
@@ -181,6 +181,63 @@ describe("evaluateMathExpression", () => {
 
   it("handles multiplication with decimals", () => {
     expect(evaluateMathExpression("4.50*3")).toBeCloseTo(13.5);
+  });
+});
+
+// RECEIPTS-788: date-only strings ('yyyy-MM-dd') must format to the same
+// calendar day in every timezone. The old `new Date("2024-01-15")` parsed the
+// value as UTC midnight, which formatted to Jan 14 in negative-UTC-offset
+// zones (all of the US). These run under America/New_York (UTC-5) to prove the
+// off-by-one is gone.
+describe("formatDate / formatShortDate (timezone-safe date-only)", () => {
+  const originalTz = process.env.TZ;
+  beforeAll(() => {
+    process.env.TZ = "America/New_York";
+  });
+  afterAll(() => {
+    process.env.TZ = originalTz;
+  });
+
+  it("formatDate keeps the calendar day in a negative-UTC-offset timezone", () => {
+    expect(formatDate("2024-01-15")).toBe("Jan 15, 2024");
+  });
+
+  it("formatDate does NOT shift a day earlier (the old new Date() bug)", () => {
+    // `new Date("2024-01-15")` in America/New_York would render Jan 14.
+    expect(formatDate("2024-01-15")).not.toContain("14");
+  });
+
+  it("formatShortDate returns MMM d for a date-only string", () => {
+    expect(formatShortDate("2024-01-15")).toBe("Jan 15");
+  });
+
+  it("formatDate accepts a custom pattern", () => {
+    expect(formatDate("2024-12-31", "yyyy-MM-dd")).toBe("2024-12-31");
+  });
+
+  it("formatDate returns an em dash for empty/nullish input", () => {
+    expect(formatDate(null)).toBe("—");
+    expect(formatDate(undefined)).toBe("—");
+    expect(formatDate("")).toBe("—");
+  });
+
+  it("formatDate returns the raw value when it can't be parsed", () => {
+    expect(formatDate("not-a-date")).toBe("not-a-date");
+  });
+
+  it("parseDateValue anchors a date-only string to local midnight", () => {
+    const d = parseDateValue("2024-01-15");
+    expect(d).not.toBeNull();
+    expect(d?.getFullYear()).toBe(2024);
+    expect(d?.getMonth()).toBe(0);
+    expect(d?.getDate()).toBe(15);
+    expect(d?.getHours()).toBe(0);
+  });
+
+  it("parseDateValue still handles full ISO datetimes", () => {
+    const d = parseDateValue("2024-01-15T18:30:00Z");
+    expect(d).not.toBeNull();
+    expect(Number.isNaN(d?.getTime())).toBe(false);
   });
 });
 

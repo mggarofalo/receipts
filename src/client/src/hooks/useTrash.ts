@@ -20,8 +20,5 @@ export function usePurgeTrash() {
       });
       toast.success("Trash emptied successfully");
     },
-    onError: () => {
-      toast.error("Failed to empty trash");
-    },
   });
 }

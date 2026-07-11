@@ -40,9 +40,6 @@ export function useUpdateSettingsMutation() {
       });
       toast.success("Settings saved");
     },
-    onError: () => {
-      toast.error("Failed to save settings");
-    },
   });
 }
 
@@ -75,9 +72,6 @@ export function useTestMatchMutation() {
       if (error) throw error;
       return data;
     },
-    onError: () => {
-      toast.error("Failed to test description");
-    },
   });
 }
 
@@ -98,9 +92,6 @@ export function usePreviewImpactMutation() {
       );
       if (error) throw error;
       return data;
-    },
-    onError: () => {
-      toast.error("Failed to preview impact");
     },
   });
 }

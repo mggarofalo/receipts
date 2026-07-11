@@ -183,7 +183,7 @@ describe("useTransactions", () => {
 
   // --- Branch coverage: error callbacks ---
 
-  it("create mutation shows error toast on failure", async () => {
+  it("create mutation does not toast on failure (surfaced by the global handler)", async () => {
     (client.POST as Mock).mockResolvedValue({ error: { message: "Server error" } });
 
     const { result } = renderHook(() => useCreateTransaction(), {
@@ -193,10 +193,10 @@ describe("useTransactions", () => {
     result.current.mutate({ receiptId: "r-1", body: { amount: 100, date: "2025-01-01", accountId: "acc-1", cardId: "card-1" } });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(toast.error).toHaveBeenCalledWith("Failed to create transaction");
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
-  it("batch create mutation shows error toast on failure", async () => {
+  it("batch create mutation does not toast on failure (surfaced by the global handler)", async () => {
     (client.POST as Mock).mockResolvedValue({ error: { message: "Server error" } });
 
     const { result } = renderHook(() => useCreateTransactionsBatch(), {
@@ -206,7 +206,7 @@ describe("useTransactions", () => {
     result.current.mutate({ receiptId: "r-1", body: [{ amount: 100, date: "2025-01-01", accountId: "acc-1", cardId: "card-1" }] });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(toast.error).toHaveBeenCalledWith("Failed to create transactions");
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
   it("batch create mutation invalidates cache on success", async () => {
@@ -231,7 +231,7 @@ describe("useTransactions", () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["transactions"] });
   });
 
-  it("update mutation shows error toast on failure", async () => {
+  it("update mutation does not toast on failure (surfaced by the global handler)", async () => {
     (client.PUT as Mock).mockResolvedValue({ error: { message: "Server error" } });
 
     const { result } = renderHook(() => useUpdateTransaction(), {
@@ -241,10 +241,10 @@ describe("useTransactions", () => {
     result.current.mutate({ body: { id: "1", amount: 100, date: "2025-01-01", accountId: "acc-1", cardId: "card-1" } });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(toast.error).toHaveBeenCalledWith("Failed to update transaction");
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
-  it("delete mutation shows error toast and rolls back cache on failure", async () => {
+  it("delete mutation rolls back cache on failure (error surfaced by the global handler)", async () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false, gcTime: 0 } },
     });
@@ -272,7 +272,7 @@ describe("useTransactions", () => {
     result.current.mutate(["1"]);
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(toast.error).toHaveBeenCalledWith("Failed to delete transaction(s)");
+    expect(toast.error).not.toHaveBeenCalled();
 
     // Verify rollback restored the original data (not just the optimistic update from onMutate)
     expect(setQueryDataSpy).toHaveBeenCalledWith(cacheKey, cacheValue);
@@ -301,7 +301,7 @@ describe("useTransactions", () => {
     expect(toast.success).toHaveBeenCalledWith("Transaction(s) deleted");
   });
 
-  it("restore mutation shows error toast on failure", async () => {
+  it("restore mutation does not toast on failure (surfaced by the global handler)", async () => {
     (client.POST as Mock).mockResolvedValue({ error: { message: "Server error" } });
 
     const { result } = renderHook(() => useRestoreTransaction(), {
@@ -311,7 +311,7 @@ describe("useTransactions", () => {
     result.current.mutate("1");
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(toast.error).toHaveBeenCalledWith("Failed to restore transaction");
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
   it("list query throws on API error", async () => {
