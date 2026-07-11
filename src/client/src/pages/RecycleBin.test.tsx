@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import { renderWithProviders } from "@/test/test-utils";
 import { mockQueryResult, mockMutationResult } from "@/test/mock-hooks";
 import RecycleBin from "./RecycleBin";
@@ -172,6 +172,72 @@ describe("RecycleBin", () => {
     await user.click(restoreButtons[0]);
 
     expect(mockMutate).toHaveBeenCalledWith("t1");
+  });
+
+  it("calls restoreCategory.mutate when Restore is clicked on a category (hoisted mutation map)", async () => {
+    const user = (await import("@testing-library/user-event")).default.setup();
+    const mockMutate = vi.fn();
+    const { useDeletedCategories, useRestoreCategory } = await import("@/hooks/useCategories");
+    vi.mocked(useDeletedCategories).mockReturnValue(mockQueryResult({
+      data: [{ id: "c1", name: "Groceries" }],
+      total: 1,
+      isLoading: false,
+    }));
+    vi.mocked(useRestoreCategory).mockReturnValue(mockMutationResult({ mutate: mockMutate }));
+
+    renderWithProviders(<RecycleBin />);
+    // Scope to the category's own row rather than assuming button ordinal
+    // position — other entity types' mocks retain data from earlier tests in
+    // this file (they're only reset when a test explicitly overrides them),
+    // so the "All" tab can contain more than just this one row.
+    const row = screen.getByText("Groceries").closest("tr") as HTMLElement;
+    await user.click(within(row).getByRole("button", { name: /restore/i }));
+
+    expect(mockMutate).toHaveBeenCalledWith("c1");
+  });
+
+  it("calls restoreReceiptItem.mutate when Restore is clicked on a receipt item", async () => {
+    const user = (await import("@testing-library/user-event")).default.setup();
+    const mockMutate = vi.fn();
+    const { useDeletedReceiptItems, useRestoreReceiptItem } = await import("@/hooks/useReceiptItems");
+    vi.mocked(useDeletedReceiptItems).mockReturnValue(mockQueryResult({
+      data: [{ id: "ri1", description: "Widget", receiptItemCode: "W-001" }],
+      total: 1,
+      isLoading: false,
+    }));
+    vi.mocked(useRestoreReceiptItem).mockReturnValue(mockMutationResult({ mutate: mockMutate }));
+
+    renderWithProviders(<RecycleBin />);
+    const row = screen.getByText("Widget (W-001)").closest("tr") as HTMLElement;
+    await user.click(within(row).getByRole("button", { name: /restore/i }));
+
+    expect(mockMutate).toHaveBeenCalledWith("ri1");
+  });
+
+  it("shows the pending state only on the row whose entity type mutation is pending", async () => {
+    const { useDeletedReceipts } = await import("@/hooks/useReceipts");
+    const { useDeletedTransactions, useRestoreTransaction } = await import("@/hooks/useTransactions");
+    vi.mocked(useDeletedReceipts).mockReturnValue(mockQueryResult({
+      data: [{ id: "r1", location: "Store", date: "2026-01-01" }],
+      total: 1,
+      isLoading: false,
+    }));
+    vi.mocked(useDeletedTransactions).mockReturnValue(mockQueryResult({
+      data: [{ id: "t1", amount: 10, date: "2026-01-02" }],
+      total: 1,
+      isLoading: false,
+    }));
+    // Only the Transaction restore mutation is pending — resolved once in
+    // RecycleBin and threaded down via the entityType -> mutation map, so
+    // the Receipt row (a different mutation instance) must stay unaffected.
+    vi.mocked(useRestoreTransaction).mockReturnValue(mockMutationResult({ isPending: true }));
+
+    renderWithProviders(<RecycleBin />);
+
+    const receiptRow = screen.getByText("Store - 2026-01-01").closest("tr") as HTMLElement;
+    const transactionRow = screen.getByText("$10.00 - 2026-01-02").closest("tr") as HTMLElement;
+    expect(within(transactionRow).getByText("Restoring...")).toBeInTheDocument();
+    expect(within(receiptRow).getByRole("button", { name: /^restore$/i })).toBeInTheDocument();
   });
 
   it("calls purgeTrash.mutate when Empty Trash is confirmed", async () => {

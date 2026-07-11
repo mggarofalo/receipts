@@ -6,9 +6,11 @@ import { toast } from "sonner";
 
 // Note: Cards are hard-delete entities (no soft-delete/restore).
 
-export function useCards(offset = 0, limit = 50, sortBy?: string | null, sortDirection?: string | null, isActive?: boolean | null) {
+export function useCards(offset = 0, limit = 50, sortBy?: string | null, sortDirection?: string | null, isActive?: boolean | null, options: { enabled?: boolean } = {}) {
+  const { enabled = true } = options;
   const query = useQuery({
     queryKey: ["cards", "list", offset, limit, sortBy, sortDirection, isActive],
+    enabled,
     queryFn: async () => {
       const { data, error } = await client.GET("/api/cards", {
         params: { query: { offset, limit, sortBy: sortBy ?? undefined, sortDirection: (sortDirection ?? undefined) as "asc" | "desc" | undefined, isActive: isActive ?? undefined } },

@@ -63,33 +63,21 @@ interface DeletedItem {
   label: string;
 }
 
+interface RestoreMutation {
+  mutate: (id: string) => void;
+  isPending: boolean;
+}
+
+/** entityType -> resolved restore mutation, built once in RecycleBin and threaded down to rows. */
+type RestoreMutationMap = Record<string, RestoreMutation>;
+
 function RestoreButton({
-  entityType,
   entityId,
+  mutation,
 }: {
-  entityType: string;
   entityId: string;
+  mutation?: RestoreMutation;
 }) {
-  const restoreReceipt = useRestoreReceipt();
-  const restoreReceiptItem = useRestoreReceiptItem();
-  const restoreTransaction = useRestoreTransaction();
-  const restoreItemTemplate = useRestoreItemTemplate();
-  const restoreCategory = useRestoreCategory();
-  const restoreSubcategory = useRestoreSubcategory();
-
-  const mutations: Record<
-    string,
-    { mutate: (id: string) => void; isPending: boolean }
-  > = {
-    Receipt: restoreReceipt,
-    ReceiptItem: restoreReceiptItem,
-    Transaction: restoreTransaction,
-    ItemTemplate: restoreItemTemplate,
-    Category: restoreCategory,
-    Subcategory: restoreSubcategory,
-  };
-
-  const mutation = mutations[entityType];
   if (!mutation) return null;
 
   return (
@@ -107,6 +95,7 @@ function RestoreButton({
 
 function DeletedItemsTable({
   items,
+  restoreMutations,
   focusedKey,
   tableRef,
   onRowClick,
@@ -114,6 +103,7 @@ function DeletedItemsTable({
   getRowProps,
 }: {
   items: DeletedItem[];
+  restoreMutations: RestoreMutationMap;
   focusedKey?: string | null;
   tableRef?: React.RefObject<HTMLDivElement | null>;
   onRowClick?: (index: number) => void;
@@ -176,8 +166,8 @@ function DeletedItemsTable({
                 </TableCell>
                 <TableCell>
                   <RestoreButton
-                    entityType={item.entityType}
                     entityId={item.id}
+                    mutation={restoreMutations[item.entityType]}
                   />
                 </TableCell>
               </TableRow>
@@ -198,6 +188,43 @@ function RecycleBin() {
   const categories = useDeletedCategories();
   const subcategories = useDeletedSubcategories();
   const purgeTrash = usePurgeTrash();
+
+  // Hoisted once here (not per row) — each of these mutation hooks registers
+  // its own MutationObserver on the shared query cache, so instantiating them
+  // per row (hundreds of times on the "All" tab) multiplied observer count
+  // for no benefit. Resolve them into a single entityType -> mutation map and
+  // pass the map down so each row only touches its one mutation.
+  const restoreReceipt = useRestoreReceipt();
+  const restoreReceiptItem = useRestoreReceiptItem();
+  const restoreTransaction = useRestoreTransaction();
+  const restoreItemTemplate = useRestoreItemTemplate();
+  const restoreCategory = useRestoreCategory();
+  const restoreSubcategory = useRestoreSubcategory();
+
+  const restoreMutations = useMemo<RestoreMutationMap>(
+    () => ({
+      Receipt: { mutate: restoreReceipt.mutate, isPending: restoreReceipt.isPending },
+      ReceiptItem: { mutate: restoreReceiptItem.mutate, isPending: restoreReceiptItem.isPending },
+      Transaction: { mutate: restoreTransaction.mutate, isPending: restoreTransaction.isPending },
+      ItemTemplate: { mutate: restoreItemTemplate.mutate, isPending: restoreItemTemplate.isPending },
+      Category: { mutate: restoreCategory.mutate, isPending: restoreCategory.isPending },
+      Subcategory: { mutate: restoreSubcategory.mutate, isPending: restoreSubcategory.isPending },
+    }),
+    [
+      restoreReceipt.mutate,
+      restoreReceipt.isPending,
+      restoreReceiptItem.mutate,
+      restoreReceiptItem.isPending,
+      restoreTransaction.mutate,
+      restoreTransaction.isPending,
+      restoreItemTemplate.mutate,
+      restoreItemTemplate.isPending,
+      restoreCategory.mutate,
+      restoreCategory.isPending,
+      restoreSubcategory.mutate,
+      restoreSubcategory.isPending,
+    ],
+  );
 
   const isLoading =
     receipts.isLoading ||
@@ -408,6 +435,7 @@ function RecycleBin() {
         <TabsContent value="all">
           <DeletedItemsTable
             items={allItems}
+            restoreMutations={restoreMutations}
             focusedKey={focusedId}
             tableRef={tableRef}
             onRowClick={setFocusedIndex}
@@ -418,7 +446,7 @@ function RecycleBin() {
 
         {Object.entries(byType).map(([type, items]) => (
           <TabsContent key={type} value={type}>
-            <DeletedItemsTable items={items} />
+            <DeletedItemsTable items={items} restoreMutations={restoreMutations} />
           </TabsContent>
         ))}
       </Tabs>

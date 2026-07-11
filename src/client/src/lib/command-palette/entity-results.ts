@@ -71,14 +71,20 @@ export function useEntityResults({
 }): EntityResultGroup[] {
   const debouncedQuery = useDebouncedValue(query, 200);
   const entitySearch = debouncedQuery.trim() || undefined;
-  const accounts = useAccounts(0, SMALL_LIMIT);
-  const cards = useCards(0, SMALL_LIMIT);
-  const categories = useCategories(0, SMALL_LIMIT);
-  const subcategories = useSubcategories(0, SMALL_LIMIT);
-  const itemTemplates = useItemTemplates(0, SMALL_LIMIT);
-  const receipts = useReceipts(0, LARGE_LIMIT, null, null, null, null, entitySearch);
-  const receiptItems = useReceiptItems(0, LARGE_LIMIT, null, null, entitySearch);
-  const users = useUsers(0, SMALL_LIMIT, undefined, undefined, { enabled: isAdmin });
+  // Nothing renders until the user types (CommandPalette only shows entity
+  // groups once `query` is non-empty), so mounting these on palette open
+  // would fire 7-8 list queries the UI never displays. Gate on the raw
+  // (non-debounced) input so the fetch starts on the very first keystroke
+  // rather than waiting out the debounce window.
+  const hasQuery = query.trim().length > 0;
+  const accounts = useAccounts(0, SMALL_LIMIT, undefined, undefined, undefined, { enabled: hasQuery });
+  const cards = useCards(0, SMALL_LIMIT, undefined, undefined, undefined, { enabled: hasQuery });
+  const categories = useCategories(0, SMALL_LIMIT, undefined, undefined, undefined, { enabled: hasQuery });
+  const subcategories = useSubcategories(0, SMALL_LIMIT, undefined, undefined, undefined, { enabled: hasQuery });
+  const itemTemplates = useItemTemplates(0, SMALL_LIMIT, undefined, undefined, { enabled: hasQuery });
+  const receipts = useReceipts(0, LARGE_LIMIT, null, null, null, null, entitySearch, { enabled: hasQuery });
+  const receiptItems = useReceiptItems(0, LARGE_LIMIT, null, null, entitySearch, { enabled: hasQuery });
+  const users = useUsers(0, SMALL_LIMIT, undefined, undefined, { enabled: isAdmin && hasQuery });
 
   return useMemo<EntityResultGroup[]>(() => {
     const groups: EntityResultGroup[] = [];

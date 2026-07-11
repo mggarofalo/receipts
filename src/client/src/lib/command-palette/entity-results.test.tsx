@@ -114,9 +114,21 @@ describe("useEntityResults", () => {
     );
   });
 
-  it("passes enabled=true to useUsers when admin", async () => {
+  it("passes enabled=false to useUsers when admin but query is empty", async () => {
     const { useUsers } = await import("@/hooks/useUsers");
     renderHook(() => useEntityResults({ isAdmin: true }));
+    expect(vi.mocked(useUsers)).toHaveBeenCalledWith(
+      0,
+      expect.any(Number),
+      undefined,
+      undefined,
+      { enabled: false },
+    );
+  });
+
+  it("passes enabled=true to useUsers when admin and query is non-empty", async () => {
+    const { useUsers } = await import("@/hooks/useUsers");
+    renderHook(() => useEntityResults({ isAdmin: true, query: "bob" }));
     expect(vi.mocked(useUsers)).toHaveBeenCalledWith(
       0,
       expect.any(Number),
@@ -154,6 +166,7 @@ describe("useEntityResults", () => {
       null,
       null,
       undefined,
+      { enabled: false },
     );
     expect(vi.mocked(useReceiptItems)).toHaveBeenCalledWith(
       0,
@@ -161,6 +174,7 @@ describe("useEntityResults", () => {
       null,
       null,
       undefined,
+      { enabled: false },
     );
   });
 
@@ -182,10 +196,58 @@ describe("useEntityResults", () => {
 
       const receiptsCalls = vi.mocked(useReceipts).mock.calls;
       const receiptItemsCalls = vi.mocked(useReceiptItems).mock.calls;
-      expect(receiptsCalls.at(-1)).toEqual([0, expect.any(Number), null, null, null, null, "Walmart"]);
-      expect(receiptItemsCalls.at(-1)).toEqual([0, expect.any(Number), null, null, "Walmart"]);
+      expect(receiptsCalls.at(-1)).toEqual([0, expect.any(Number), null, null, null, null, "Walmart", { enabled: true }]);
+      expect(receiptItemsCalls.at(-1)).toEqual([0, expect.any(Number), null, null, "Walmart", { enabled: true }]);
     } finally {
       vi.useRealTimers();
+    }
+  });
+
+  it("does not enable any entity hook when the palette input is empty", async () => {
+    const { useAccounts } = await import("@/hooks/useAccounts");
+    const { useCards } = await import("@/hooks/useCards");
+    const { useCategories } = await import("@/hooks/useCategories");
+    const { useSubcategories } = await import("@/hooks/useSubcategories");
+    const { useItemTemplates } = await import("@/hooks/useItemTemplates");
+    const { useReceipts } = await import("@/hooks/useReceipts");
+    const { useReceiptItems } = await import("@/hooks/useReceiptItems");
+    const { useUsers } = await import("@/hooks/useUsers");
+
+    renderHook(() => useEntityResults({ isAdmin: true, query: "" }));
+
+    for (const mock of [
+      useAccounts,
+      useCards,
+      useCategories,
+      useSubcategories,
+      useItemTemplates,
+      useReceipts,
+      useReceiptItems,
+      useUsers,
+    ]) {
+      const lastCall = vi.mocked(mock).mock.calls.at(-1);
+      expect(lastCall?.at(-1)).toEqual({ enabled: false });
+    }
+  });
+
+  it("enables the reference-list entity hooks once the palette input is non-empty", async () => {
+    const { useAccounts } = await import("@/hooks/useAccounts");
+    const { useCards } = await import("@/hooks/useCards");
+    const { useCategories } = await import("@/hooks/useCategories");
+    const { useSubcategories } = await import("@/hooks/useSubcategories");
+    const { useItemTemplates } = await import("@/hooks/useItemTemplates");
+
+    renderHook(() => useEntityResults({ isAdmin: false, query: "wal" }));
+
+    for (const mock of [
+      useAccounts,
+      useCards,
+      useCategories,
+      useSubcategories,
+      useItemTemplates,
+    ]) {
+      const lastCall = vi.mocked(mock).mock.calls.at(-1);
+      expect(lastCall?.at(-1)).toEqual({ enabled: true });
     }
   });
 });
