@@ -28,17 +28,19 @@ public record BackupImportResult(
 	int YnabSyncRecordsCreated = 0,
 	int YnabSyncRecordsUpdated = 0,
 	int NormalizedDescriptionsCreated = 0,
-	int NormalizedDescriptionsUpdated = 0)
+	int NormalizedDescriptionsUpdated = 0,
+	int NormalizedDescriptionSettingsCreated = 0,
+	int NormalizedDescriptionSettingsUpdated = 0)
 {
 	public int TotalCreated => AccountsCreated + CardsCreated + CategoriesCreated + SubcategoriesCreated +
 		ItemTemplatesCreated + ReceiptsCreated + ReceiptItemsCreated +
 		TransactionsCreated + AdjustmentsCreated +
 		YnabSelectedBudgetsCreated + YnabAccountMappingsCreated + YnabCategoryMappingsCreated +
-		YnabSyncRecordsCreated + NormalizedDescriptionsCreated;
+		YnabSyncRecordsCreated + NormalizedDescriptionsCreated + NormalizedDescriptionSettingsCreated;
 
 	public int TotalUpdated => AccountsUpdated + CardsUpdated + CategoriesUpdated + SubcategoriesUpdated +
 		ItemTemplatesUpdated + ReceiptsUpdated + ReceiptItemsUpdated +
 		TransactionsUpdated + AdjustmentsUpdated +
 		YnabSelectedBudgetsUpdated + YnabAccountMappingsUpdated + YnabCategoryMappingsUpdated +
-		YnabSyncRecordsUpdated + NormalizedDescriptionsUpdated;
+		YnabSyncRecordsUpdated + NormalizedDescriptionsUpdated + NormalizedDescriptionSettingsUpdated;
 }

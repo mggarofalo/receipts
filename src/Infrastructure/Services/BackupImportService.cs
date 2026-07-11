@@ -89,6 +89,7 @@ public class BackupImportService(
 			(int ynabCategoryMappingsCreated, int ynabCategoryMappingsUpdated) = await UpsertYnabCategoryMappingsAsync(context, sqlite, exportVersion, cancellationToken);
 			(int ynabSyncRecordsCreated, int ynabSyncRecordsUpdated) = await UpsertYnabSyncRecordsAsync(context, sqlite, exportVersion, cancellationToken);
 			(int normalizedDescriptionsCreated, int normalizedDescriptionsUpdated) = await UpsertNormalizedDescriptionsAsync(context, sqlite, exportVersion, cancellationToken);
+			(int normalizedDescriptionSettingsCreated, int normalizedDescriptionSettingsUpdated) = await UpsertNormalizedDescriptionSettingsAsync(context, sqlite, exportVersion, cancellationToken);
 
 			await transaction.CommitAsync(cancellationToken);
 
@@ -106,7 +107,8 @@ public class BackupImportService(
 				ynabAccountMappingsCreated, ynabAccountMappingsUpdated,
 				ynabCategoryMappingsCreated, ynabCategoryMappingsUpdated,
 				ynabSyncRecordsCreated, ynabSyncRecordsUpdated,
-				normalizedDescriptionsCreated, normalizedDescriptionsUpdated);
+				normalizedDescriptionsCreated, normalizedDescriptionsUpdated,
+				normalizedDescriptionSettingsCreated, normalizedDescriptionSettingsUpdated);
 
 			logger.LogInformation(
 				"Backup import complete: {TotalCreated} created, {TotalUpdated} updated",
@@ -1042,6 +1044,53 @@ public class BackupImportService(
 					CanonicalName = canonicalName,
 					Status = status,
 					CreatedAt = createdAt,
+				});
+				created++;
+			}
+		}
+
+		await context.SaveChangesAsync(cancellationToken);
+		return (created, updated);
+	}
+
+	// Singleton settings row (thresholds). No FK, so order is flexible. Thresholds are parsed
+	// with InvariantCulture to match the culture-safe export.
+	private static async Task<(int Created, int Updated)> UpsertNormalizedDescriptionSettingsAsync(
+		ApplicationDbContext context, SqliteConnection sqlite, int exportVersion, CancellationToken cancellationToken)
+	{
+		if (exportVersion < 4 || !TableExists(sqlite, "normalized_description_settings"))
+		{
+			return (0, 0);
+		}
+
+		int created = 0, updated = 0;
+		await using SqliteCommand cmd = sqlite.CreateCommand();
+		cmd.CommandText = "SELECT id, auto_accept_threshold, pending_review_threshold, updated_at FROM normalized_description_settings";
+		await using SqliteDataReader reader = await cmd.ExecuteReaderAsync(cancellationToken);
+
+		while (await reader.ReadAsync(cancellationToken))
+		{
+			Guid id = Guid.Parse(reader.GetString(0));
+			double autoAcceptThreshold = double.Parse(reader.GetString(1), CultureInfo.InvariantCulture);
+			double pendingReviewThreshold = double.Parse(reader.GetString(2), CultureInfo.InvariantCulture);
+			DateTimeOffset updatedAt = ParseTimestamp(reader.GetString(3));
+
+			NormalizedDescriptionSettingsEntity? existing = await context.NormalizedDescriptionSettings.FindAsync([id], cancellationToken);
+			if (existing is not null)
+			{
+				existing.AutoAcceptThreshold = autoAcceptThreshold;
+				existing.PendingReviewThreshold = pendingReviewThreshold;
+				existing.UpdatedAt = updatedAt;
+				updated++;
+			}
+			else
+			{
+				context.NormalizedDescriptionSettings.Add(new NormalizedDescriptionSettingsEntity
+				{
+					Id = id,
+					AutoAcceptThreshold = autoAcceptThreshold,
+					PendingReviewThreshold = pendingReviewThreshold,
+					UpdatedAt = updatedAt,
 				});
 				created++;
 			}

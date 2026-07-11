@@ -41,6 +41,7 @@ public class BackupService(
 			await ExportYnabCategoryMappingsAsync(source, sqlite, cancellationToken);
 			await ExportYnabSyncRecordsAsync(source, sqlite, cancellationToken);
 			await ExportNormalizedDescriptionsAsync(source, sqlite, cancellationToken);
+			await ExportNormalizedDescriptionSettingsAsync(source, sqlite, cancellationToken);
 			await WriteMetadataAsync(sqlite, cancellationToken);
 
 			await transaction.CommitAsync(cancellationToken);
@@ -219,6 +220,14 @@ public class BackupService(
 				canonical_name TEXT NOT NULL,
 				status TEXT NOT NULL,
 				created_at TEXT NOT NULL
+			)
+			""",
+			"""
+			CREATE TABLE normalized_description_settings (
+				id TEXT NOT NULL PRIMARY KEY,
+				auto_accept_threshold TEXT NOT NULL,
+				pending_review_threshold TEXT NOT NULL,
+				updated_at TEXT NOT NULL
 			)
 			""",
 		];
@@ -557,6 +566,29 @@ public class BackupService(
 			cmd.Parameters.AddWithValue("$canonicalName", description.CanonicalName);
 			cmd.Parameters.AddWithValue("$status", description.Status.ToString());
 			cmd.Parameters.AddWithValue("$createdAt", description.CreatedAt.ToString("O"));
+			await cmd.ExecuteNonQueryAsync(cancellationToken);
+		}
+	}
+
+	// Singleton settings row holding non-regenerable user thresholds. Doubles are written with
+	// InvariantCulture for the same reason decimals are (RECEIPTS-771) — a comma-decimal host
+	// must not corrupt the values.
+	private static async Task ExportNormalizedDescriptionSettingsAsync(ApplicationDbContext source, SqliteConnection sqlite, CancellationToken cancellationToken)
+	{
+		List<NormalizedDescriptionSettingsEntity> settings = await source.NormalizedDescriptionSettings.AsNoTracking().ToListAsync(cancellationToken);
+
+		const string sql = """
+			INSERT INTO normalized_description_settings (id, auto_accept_threshold, pending_review_threshold, updated_at)
+			VALUES ($id, $autoAccept, $pendingReview, $updatedAt)
+			""";
+		foreach (NormalizedDescriptionSettingsEntity setting in settings)
+		{
+			await using SqliteCommand cmd = sqlite.CreateCommand();
+			cmd.CommandText = sql;
+			cmd.Parameters.AddWithValue("$id", setting.Id.ToString());
+			cmd.Parameters.AddWithValue("$autoAccept", setting.AutoAcceptThreshold.ToString(CultureInfo.InvariantCulture));
+			cmd.Parameters.AddWithValue("$pendingReview", setting.PendingReviewThreshold.ToString(CultureInfo.InvariantCulture));
+			cmd.Parameters.AddWithValue("$updatedAt", setting.UpdatedAt.ToString("O"));
 			await cmd.ExecuteNonQueryAsync(cancellationToken);
 		}
 	}

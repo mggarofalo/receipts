@@ -175,6 +175,7 @@ public class BackupRoundTripFidelityTests : IDisposable
 		Guid catMapId = Guid.NewGuid();
 		Guid syncId = Guid.NewGuid();
 		Guid normId = Guid.NewGuid();
+		Guid settingsId = Guid.NewGuid();
 		DateTimeOffset ts = new(2026, 1, 2, 3, 4, 5, TimeSpan.Zero);
 
 		await using (ApplicationDbContext ctx = Source())
@@ -244,6 +245,13 @@ public class BackupRoundTripFidelityTests : IDisposable
 				Status = NormalizedDescriptionStatus.PendingReview,
 				CreatedAt = ts,
 			});
+			ctx.NormalizedDescriptionSettings.Add(new NormalizedDescriptionSettingsEntity
+			{
+				Id = settingsId,
+				AutoAcceptThreshold = 0.87,
+				PendingReviewThreshold = 0.62,
+				UpdatedAt = ts,
+			});
 			await ctx.SaveChangesAsync();
 		}
 
@@ -254,6 +262,7 @@ public class BackupRoundTripFidelityTests : IDisposable
 		result.YnabCategoryMappingsCreated.Should().Be(1);
 		result.YnabSyncRecordsCreated.Should().Be(1);
 		result.NormalizedDescriptionsCreated.Should().Be(1);
+		result.NormalizedDescriptionSettingsCreated.Should().Be(1);
 
 		await using ApplicationDbContext assert = Target();
 
@@ -290,6 +299,11 @@ public class BackupRoundTripFidelityTests : IDisposable
 		norm.Status.Should().Be(NormalizedDescriptionStatus.PendingReview);
 		norm.CreatedAt.Should().Be(ts);
 		norm.Embedding.Should().BeNull("embeddings are regenerated after restore, not carried in the backup");
+
+		NormalizedDescriptionSettingsEntity settings = (await assert.NormalizedDescriptionSettings.FindAsync(settingsId))!;
+		settings.AutoAcceptThreshold.Should().Be(0.87);
+		settings.PendingReviewThreshold.Should().Be(0.62);
+		settings.UpdatedAt.Should().Be(ts);
 	}
 
 	// RECEIPTS-770/789 backward compatibility: a v3-style backup (no v4 tables, no image-path
@@ -319,6 +333,44 @@ public class BackupRoundTripFidelityTests : IDisposable
 		receipt.ProcessedImagePath.Should().BeNull();
 		(await assert.YnabSelectedBudgets.CountAsync()).Should().Be(0);
 		(await assert.NormalizedDescriptions.CountAsync()).Should().Be(0);
+	}
+
+	// RECEIPTS-789 regression guard: importing a v3 backup (no image-path columns) over an
+	// EXISTING receipt must update the row but must NOT null out its already-present image paths.
+	[Fact]
+	public async Task Import_LegacyV3Backup_DoesNotNullExistingReceiptImagePaths()
+	{
+		Guid accountId = Guid.NewGuid();
+		Guid receiptId = Guid.NewGuid();
+
+		// Seed the target DB with a receipt (same Id) that already has non-null image paths.
+		await using (ApplicationDbContext seed = Target())
+		{
+			seed.Receipts.Add(new ReceiptEntity
+			{
+				Id = receiptId,
+				Location = "Original Store",
+				Date = new DateOnly(2020, 1, 1),
+				TaxAmount = 9.99m,
+				TaxAmountCurrency = Currency.USD,
+				OriginalImagePath = "receipts/orig/keep-me.jpg",
+				ProcessedImagePath = "receipts/proc/keep-me.png",
+			});
+			await seed.SaveChangesAsync();
+		}
+
+		// v3 backup contains the same receipt Id (no image-path columns) → hits the UPDATE path.
+		string path = CreateV3Backup(accountId, receiptId);
+		await using FileStream stream = File.OpenRead(path);
+		BackupImportResult result = await _importService.ImportFromSqliteAsync(stream, CancellationToken.None);
+
+		result.ReceiptsUpdated.Should().Be(1, "the receipt already exists, so import must take the update path");
+
+		await using ApplicationDbContext assert = Target();
+		ReceiptEntity receipt = (await assert.Receipts.FindAsync(receiptId))!;
+		receipt.Location.Should().Be("Legacy Store", "the v3 import must still update the row");
+		receipt.OriginalImagePath.Should().Be("receipts/orig/keep-me.jpg", "a v3 restore must not null out existing image paths");
+		receipt.ProcessedImagePath.Should().Be("receipts/proc/keep-me.png");
 	}
 
 	private string CreateV3Backup(Guid accountId, Guid receiptId)
