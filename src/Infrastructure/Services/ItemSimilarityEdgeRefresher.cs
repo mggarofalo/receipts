@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Threading.Channels;
 using Application.Interfaces.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -10,7 +11,7 @@ namespace Infrastructure.Services;
 public class ItemSimilarityEdgeRefresher : BackgroundService
 {
 	private readonly IServiceScopeFactory _scopeFactory;
-	private readonly IDescriptionChangeSignal _signal;
+	private readonly ChannelReader<bool> _signalReader;
 	private readonly ILogger<ItemSimilarityEdgeRefresher> _logger;
 	private readonly TimeProvider _timeProvider;
 
@@ -41,7 +42,9 @@ public class ItemSimilarityEdgeRefresher : BackgroundService
 		TimeProvider? timeProvider = null)
 	{
 		_scopeFactory = scopeFactory;
-		_signal = signal;
+		// Subscribe once for this refresher's own wake-up channel so a signal is never stolen
+		// by the other consumer (NormalizedDescriptionResolutionService) — RECEIPTS-790.
+		_signalReader = signal.Subscribe();
 		_logger = logger;
 		_timeProvider = timeProvider ?? TimeProvider.System;
 	}
@@ -76,7 +79,7 @@ public class ItemSimilarityEdgeRefresher : BackgroundService
 				waitCts.CancelAfter(MaxIdleInterval);
 				try
 				{
-					await _signal.Reader.ReadAsync(waitCts.Token);
+					await _signalReader.ReadAsync(waitCts.Token);
 				}
 				catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
 				{
@@ -98,7 +101,7 @@ public class ItemSimilarityEdgeRefresher : BackgroundService
 			}
 
 			// Drain any additional dirty signals that arrived during the debounce window.
-			while (_signal.Reader.TryRead(out _))
+			while (_signalReader.TryRead(out _))
 			{
 			}
 
