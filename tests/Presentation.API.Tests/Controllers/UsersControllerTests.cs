@@ -20,6 +20,7 @@ public class UsersControllerTests
 	private readonly Mock<UserManager<ApplicationUser>> _userManagerMock;
 	private readonly Mock<IUserService> _userServiceMock;
 	private readonly Mock<IAuthAuditService> _authAuditServiceMock;
+	private readonly Mock<IApiKeyService> _apiKeyServiceMock;
 	private readonly Mock<ILogger<UsersController>> _loggerMock;
 	private readonly UsersController _controller;
 
@@ -39,12 +40,14 @@ public class UsersControllerTests
 
 		_userServiceMock = new Mock<IUserService>();
 		_authAuditServiceMock = new Mock<IAuthAuditService>();
+		_apiKeyServiceMock = new Mock<IApiKeyService>();
 		_loggerMock = ControllerTestHelpers.GetLoggerMock<UsersController>();
 
 		_controller = new UsersController(
 			_userServiceMock.Object,
 			_userManagerMock.Object,
 			_authAuditServiceMock.Object,
+			_apiKeyServiceMock.Object,
 			_loggerMock.Object);
 
 		_controller.ControllerContext = new ControllerContext
@@ -209,6 +212,42 @@ public class UsersControllerTests
 	}
 
 	[Fact]
+	public async Task UpdateUser_RevokesAllApiKeys_WhenDisabling()
+	{
+		SetupUserClaims("admin-1");
+		ApplicationUser user = CreateTestUser("user-123");
+		_userManagerMock.Setup(m => m.FindByIdAsync("user-123")).ReturnsAsync(user);
+		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
+		_userManagerMock.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "User" });
+		_userManagerMock.Setup(m => m.RemoveFromRolesAsync(user, It.IsAny<IEnumerable<string>>())).ReturnsAsync(IdentityResult.Success);
+		_userManagerMock.Setup(m => m.AddToRoleAsync(user, "User")).ReturnsAsync(IdentityResult.Success);
+
+		await _controller.UpdateUser(
+			"user-123",
+			new UpdateUserRequest { Email = "a@b.com", FirstName = "A", LastName = "B", Role = "User", IsDisabled = true });
+
+		_apiKeyServiceMock.Verify(s => s.RevokeAllForUserAsync("user-123", It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	[Fact]
+	public async Task UpdateUser_DoesNotRevokeApiKeys_WhenNotDisabling()
+	{
+		SetupUserClaims("admin-1");
+		ApplicationUser user = CreateTestUser("user-123");
+		_userManagerMock.Setup(m => m.FindByIdAsync("user-123")).ReturnsAsync(user);
+		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
+		_userManagerMock.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "User" });
+		_userManagerMock.Setup(m => m.RemoveFromRolesAsync(user, It.IsAny<IEnumerable<string>>())).ReturnsAsync(IdentityResult.Success);
+		_userManagerMock.Setup(m => m.AddToRoleAsync(user, "User")).ReturnsAsync(IdentityResult.Success);
+
+		await _controller.UpdateUser(
+			"user-123",
+			new UpdateUserRequest { Email = "a@b.com", FirstName = "A", LastName = "B", Role = "User", IsDisabled = false });
+
+		_apiKeyServiceMock.Verify(s => s.RevokeAllForUserAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+	}
+
+	[Fact]
 	public async Task UpdateUser_ReturnsNotFound_WhenUserDoesNotExist()
 	{
 		SetupUserClaims("admin-1");
@@ -305,6 +344,19 @@ public class UsersControllerTests
 	}
 
 	[Fact]
+	public async Task DeactivateUser_RevokesAllApiKeys_WhenSuccessful()
+	{
+		SetupUserClaims("admin-1");
+		ApplicationUser user = CreateTestUser("user-123");
+		_userManagerMock.Setup(m => m.FindByIdAsync("user-123")).ReturnsAsync(user);
+		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
+
+		await _controller.DeactivateUser("user-123");
+
+		_apiKeyServiceMock.Verify(s => s.RevokeAllForUserAsync("user-123", It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	[Fact]
 	public async Task DeactivateUser_ReturnsBadRequest_WhenSelfDeactivate()
 	{
 		SetupUserClaims("user-123");
@@ -342,6 +394,20 @@ public class UsersControllerTests
 			new AdminResetPasswordRequest { NewPassword = "NewPassword1!" });
 
 		Assert.IsType<NoContent>(result.Result);
+	}
+
+	[Fact]
+	public async Task AdminResetPassword_RevokesAllApiKeys_WhenSuccessful()
+	{
+		ApplicationUser user = CreateTestUser();
+		_userManagerMock.Setup(m => m.FindByIdAsync(user.Id)).ReturnsAsync(user);
+		_userManagerMock.Setup(m => m.RemovePasswordAsync(user)).ReturnsAsync(IdentityResult.Success);
+		_userManagerMock.Setup(m => m.AddPasswordAsync(user, "NewPassword1!")).ReturnsAsync(IdentityResult.Success);
+		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
+
+		await _controller.AdminResetPassword(user.Id, new AdminResetPasswordRequest { NewPassword = "NewPassword1!" });
+
+		_apiKeyServiceMock.Verify(s => s.RevokeAllForUserAsync(user.Id, It.IsAny<CancellationToken>()), Times.Once);
 	}
 
 	[Fact]

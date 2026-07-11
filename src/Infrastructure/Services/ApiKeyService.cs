@@ -51,6 +51,27 @@ public class ApiKeyService(IDbContextFactory<ApplicationDbContext> dbContextFact
 		await context.SaveChangesAsync(cancellationToken);
 	}
 
+	public async Task<int> RevokeAllForUserAsync(string userId, CancellationToken cancellationToken = default)
+	{
+		await using ApplicationDbContext context = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+		List<ApiKeyEntity> keys = await context.ApiKeys
+			.Where(k => k.UserId == userId && !k.IsRevoked)
+			.ToListAsync(cancellationToken);
+
+		if (keys.Count == 0)
+		{
+			return 0;
+		}
+
+		foreach (ApiKeyEntity key in keys)
+		{
+			key.IsRevoked = true;
+		}
+
+		await context.SaveChangesAsync(cancellationToken);
+		return keys.Count;
+	}
+
 	public async Task<ApiKeyValidationResult?> GetUserIdByApiKeyAsync(string rawKey, CancellationToken cancellationToken = default)
 	{
 		string keyHash = HashKey(rawKey);

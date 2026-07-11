@@ -21,6 +21,7 @@ public class UsersController(
 	IUserService userService,
 	UserManager<ApplicationUser> userManager,
 	IAuthAuditService authAuditService,
+	IApiKeyService apiKeyService,
 	ILogger<UsersController> logger) : ControllerBase
 {
 	[HttpGet]
@@ -179,6 +180,13 @@ public class UsersController(
 			return TypedResults.BadRequest(updateResult.Errors.Select(e => e.Description));
 		}
 
+		if (request.IsDisabled)
+		{
+			// Disabling an account must also cut off any pre-existing API keys, otherwise
+			// they keep authenticating with the user's roles indefinitely (RECEIPTS-757).
+			await apiKeyService.RevokeAllForUserAsync(user.Id);
+		}
+
 		IList<string> roles = await userManager.GetRolesAsync(user);
 		if (roles.Count > 0)
 		{
@@ -216,6 +224,9 @@ public class UsersController(
 		user.RefreshTokenExpiresAt = null;
 		await userManager.UpdateAsync(user);
 
+		// Revoke API keys so a deactivated user cannot keep authenticating via a stale key.
+		await apiKeyService.RevokeAllForUserAsync(user.Id);
+
 		await LogAuthEventAsync(nameof(AuthEventType.AccountDisabled), user.Id, user.Email);
 
 		return TypedResults.NoContent();
@@ -242,6 +253,10 @@ public class UsersController(
 		user.RefreshToken = null;
 		user.RefreshTokenExpiresAt = null;
 		await userManager.UpdateAsync(user);
+
+		// Force-resetting a password invalidates the old credential; revoke API keys too so
+		// they cannot be used to bypass the reset (defense in depth, RECEIPTS-757).
+		await apiKeyService.RevokeAllForUserAsync(user.Id);
 
 		await LogAuthEventAsync(nameof(AuthEventType.PasswordChanged), user.Id, user.Email);
 
