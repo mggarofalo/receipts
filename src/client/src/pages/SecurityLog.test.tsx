@@ -121,4 +121,54 @@ describe("SecurityLog", () => {
       screen.queryByRole("tab", { name: /failed logins/i }),
     ).not.toBeInTheDocument();
   });
+
+  it("passes enabled=false to the admin-only audit hooks when not admin (no 403 storm)", async () => {
+    const { usePermission } = await import("@/hooks/usePermission");
+    vi.mocked(usePermission).mockReturnValue(mockQueryResult({
+      isAdmin: () => false,
+    }));
+    const { useRecentAuthAuditLogs, useFailedAuthAttempts } = await import(
+      "@/hooks/useAuthAudit"
+    );
+
+    renderWithProviders(<SecurityLog />);
+
+    expect(vi.mocked(useRecentAuthAuditLogs)).toHaveBeenCalledWith(
+      0,
+      50,
+      "timestamp",
+      "desc",
+      { enabled: false },
+    );
+    expect(vi.mocked(useFailedAuthAttempts)).toHaveBeenCalledWith(
+      0,
+      50,
+      "timestamp",
+      "desc",
+      { enabled: false },
+    );
+  });
+
+  it("passes enabled=true to the admin-only audit hooks when admin", async () => {
+    const { useRecentAuthAuditLogs, useFailedAuthAttempts } = await import(
+      "@/hooks/useAuthAudit"
+    );
+
+    renderWithProviders(<SecurityLog />);
+
+    expect(vi.mocked(useRecentAuthAuditLogs)).toHaveBeenCalledWith(
+      0,
+      50,
+      "timestamp",
+      "desc",
+      { enabled: true },
+    );
+    expect(vi.mocked(useFailedAuthAttempts)).toHaveBeenCalledWith(
+      0,
+      50,
+      "timestamp",
+      "desc",
+      { enabled: true },
+    );
+  });
 });

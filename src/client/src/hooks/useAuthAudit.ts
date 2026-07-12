@@ -35,9 +35,12 @@ export function useRecentAuthAuditLogs(
   limit = 50,
   sortBy?: string | null,
   sortDirection?: string | null,
+  options: { enabled?: boolean } = {},
 ) {
+  const { enabled = true } = options;
   const query = useQuery({
     queryKey: ["auth-audit", "recent", offset, limit, sortBy, sortDirection],
+    enabled,
     queryFn: async () => {
       const { data, error } = await client.GET("/api/auth/audit/recent", {
         params: {
@@ -62,9 +65,12 @@ export function useFailedAuthAttempts(
   limit = 50,
   sortBy?: string | null,
   sortDirection?: string | null,
+  options: { enabled?: boolean } = {},
 ) {
+  const { enabled = true } = options;
   const query = useQuery({
     queryKey: ["auth-audit", "failed", offset, limit, sortBy, sortDirection],
+    enabled,
     queryFn: async () => {
       const { data, error } = await client.GET("/api/auth/audit/failed", {
         params: {

@@ -127,6 +127,16 @@ describe("useRecentAuthAuditLogs", () => {
       },
     });
   });
+
+  it("does not fetch when enabled is false", () => {
+    const { result } = renderHook(
+      () => useRecentAuthAuditLogs(0, 50, undefined, undefined, { enabled: false }),
+      { wrapper: createWrapper() },
+    );
+
+    expect(result.current.fetchStatus).toBe("idle");
+    expect(client.GET).not.toHaveBeenCalled();
+  });
 });
 
 describe("useFailedAuthAttempts", () => {
@@ -197,5 +207,15 @@ describe("useFailedAuthAttempts", () => {
         },
       },
     });
+  });
+
+  it("does not fetch when enabled is false", () => {
+    const { result } = renderHook(
+      () => useFailedAuthAttempts(0, 50, undefined, undefined, { enabled: false }),
+      { wrapper: createWrapper() },
+    );
+
+    expect(result.current.fetchStatus).toBe("idle");
+    expect(client.GET).not.toHaveBeenCalled();
   });
 });
