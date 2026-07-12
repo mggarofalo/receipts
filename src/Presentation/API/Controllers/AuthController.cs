@@ -168,6 +168,13 @@ public class AuthController(
 		ApplicationUser? user = await userManager.FindByIdAsync(userId);
 		if (user is not null)
 		{
+			// Clear the refresh token so the session cannot be renewed. We intentionally do NOT rotate the
+			// security stamp on logout: the stamp is global to the user, so rotating it would invalidate
+			// access tokens on every device and turn a single-device logout into a global sign-out. The
+			// already-issued access token is therefore best-effort here — it stays valid until it expires
+			// (<= 1h), and the cleared refresh token prevents renewal past that. Immediate stamp rotation is
+			// reserved for deactivate/disable/password-reset, where killing all sessions at once is intended
+			// (RECEIPTS-800).
 			user.RefreshToken = null;
 			user.RefreshTokenExpiresAt = null;
 			await userManager.UpdateAsync(user);
@@ -300,6 +307,11 @@ public class AuthController(
 			ApplicationUser? user = await userManager.FindByIdAsync(userId);
 			if (user is not null)
 			{
+				// Revoking the refresh token stops renewal but intentionally does NOT rotate the security
+				// stamp: the stamp is global to the user, so rotating it would sign the user out of every
+				// device. The already-issued access token is best-effort here — valid until it expires
+				// (<= 1h), with renewal blocked by the cleared refresh token. Immediate, all-session
+				// invalidation is reserved for deactivate/disable/password-reset (RECEIPTS-800).
 				user.RefreshToken = null;
 				user.RefreshTokenExpiresAt = null;
 				await userManager.UpdateAsync(user);
