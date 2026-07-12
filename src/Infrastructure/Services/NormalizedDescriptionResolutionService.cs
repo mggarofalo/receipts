@@ -1,3 +1,4 @@
+using System.Threading.Channels;
 using Application.Interfaces.Services;
 using Application.Models.NormalizedDescriptions;
 using Domain.NormalizedDescriptions;
@@ -16,9 +17,10 @@ namespace Infrastructure.Services;
 // NormalizedDescriptionService.GetOrCreateAsync exactly once and its (Id, MatchScore) is
 // written onto every row in the group.
 //
-// Signal-driven via IDescriptionChangeSignal — the same channel that dirties
+// Signal-driven via IDescriptionChangeSignal — the same broadcast that dirties
 // ItemSimilarityEdgeRefresher also hints that new ReceiptItems may need normalization.
-// Both consumers are idempotent, so reusing the signal is safe.
+// Both consumers are idempotent. This service Subscribe()s once for its OWN wake-up channel
+// so a signal can never be "stolen" by the other consumer (RECEIPTS-790).
 //
 // Errors are logged and the cycle retries next tick — we never surface exceptions past the
 // hosted-service boundary because a resolver crash would otherwise cascade into the host
@@ -32,6 +34,10 @@ public class NormalizedDescriptionResolutionService(
 	internal const int MinDescriptionLength = 2;
 	internal static readonly TimeSpan Interval = TimeSpan.FromSeconds(30);
 	internal static readonly TimeSpan InitialDelay = TimeSpan.FromSeconds(10);
+
+	// Subscribed at construction (before any NotifyDirty this instance should react to) so a
+	// wake-up fired during startup is buffered rather than lost.
+	private readonly ChannelReader<bool> _signalReader = signal.Subscribe();
 
 	protected override async Task ExecuteAsync(CancellationToken stoppingToken)
 	{
@@ -65,7 +71,7 @@ public class NormalizedDescriptionResolutionService(
 
 			// Drain any dirty signals that arrived while we were processing. We only care
 			// that at least one signal exists to wake us early; excess reads are harmless.
-			while (signal.Reader.TryRead(out _))
+			while (_signalReader.TryRead(out _))
 			{
 			}
 
@@ -78,7 +84,7 @@ public class NormalizedDescriptionResolutionService(
 				waitCts.CancelAfter(Interval);
 				try
 				{
-					await signal.Reader.ReadAsync(waitCts.Token);
+					await _signalReader.ReadAsync(waitCts.Token);
 				}
 				catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
 				{

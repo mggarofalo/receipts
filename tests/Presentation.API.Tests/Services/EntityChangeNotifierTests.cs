@@ -5,6 +5,7 @@ using API.Services;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Logging;
 using Moq;
 
 namespace Presentation.API.Tests.Services;
@@ -325,6 +326,111 @@ public class EntityChangeNotifierTests : IDisposable
 				n.UserId == null &&
 				n.AuthMethod == null)),
 			Times.Once);
+	}
+
+	// RECEIPTS-794: a send failure mid-flush must be logged and must NOT permanently drop
+	// notifications that were already dequeued.
+	private static (Mock<IHubContext<EntityHub, IEntityHubClient>> HubContext, List<EntityChangeNotification> Delivered) BuildFailableHub(Func<bool> shouldFail)
+	{
+		List<EntityChangeNotification> delivered = [];
+		var clientMock = new Mock<IEntityHubClient>();
+		clientMock
+			.Setup(c => c.EntityChanged(It.IsAny<EntityChangeNotification>()))
+			.Returns((EntityChangeNotification n) =>
+			{
+				if (shouldFail())
+				{
+					return Task.FromException(new InvalidOperationException("hub transport failure"));
+				}
+
+				delivered.Add(n);
+				return Task.CompletedTask;
+			});
+
+		Mock<IHubClients<IEntityHubClient>> hubClientsMock = new();
+		hubClientsMock.Setup(c => c.All).Returns(clientMock.Object);
+		Mock<IHubContext<EntityHub, IEntityHubClient>> hubContextMock = new();
+		hubContextMock.Setup(h => h.Clients).Returns(hubClientsMock.Object);
+
+		return (hubContextMock, delivered);
+	}
+
+	private EntityChangeNotifier CreateNotifier(Mock<IHubContext<EntityHub, IEntityHubClient>> hubContext, Mock<ILogger<EntityChangeNotifier>> logger)
+	{
+		// Very long flush interval so the timer never fires; tests drive FlushAsync directly.
+		return new EntityChangeNotifier(hubContext.Object, _httpContextAccessorMock.Object, TimeSpan.FromHours(1), logger.Object);
+	}
+
+	[Fact]
+	public async Task FlushAsync_WhenSendThrows_LogsErrorAndDoesNotThrow()
+	{
+		// Arrange
+		bool fail = true;
+		var (hubContext, _) = BuildFailableHub(() => fail);
+		var loggerMock = new Mock<ILogger<EntityChangeNotifier>>();
+		using EntityChangeNotifier notifier = CreateNotifier(hubContext, loggerMock);
+		await notifier.NotifyCreated("receipt", Guid.NewGuid());
+
+		// Act — the hub throws while sending; FlushAsync must swallow and log, not propagate.
+		Func<Task> act = notifier.FlushAsync;
+
+		// Assert
+		await act.Should().NotThrowAsync();
+		loggerMock.Verify(
+			x => x.Log(
+				LogLevel.Error,
+				It.IsAny<EventId>(),
+				It.IsAny<It.IsAnyType>(),
+				It.IsAny<Exception>(),
+				It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+			Times.AtLeastOnce);
+	}
+
+	[Fact]
+	public async Task FlushAsync_WhenSendThrows_RequeuesSoNotificationIsDeliveredOnRetry()
+	{
+		// Arrange
+		bool fail = true;
+		var (hubContext, delivered) = BuildFailableHub(() => fail);
+		var loggerMock = new Mock<ILogger<EntityChangeNotifier>>();
+		using EntityChangeNotifier notifier = CreateNotifier(hubContext, loggerMock);
+		await notifier.NotifyCreated("receipt", Guid.NewGuid());
+
+		// Act — first flush fails (nothing delivered), then the hub recovers and we flush again.
+		await notifier.FlushAsync();
+		delivered.Should().BeEmpty("the send failed, so nothing was delivered yet");
+
+		fail = false;
+		await notifier.FlushAsync();
+
+		// Assert — the notification was re-enqueued on failure and delivered on the retry,
+		// with its original aggregated count, rather than being permanently dropped.
+		delivered.Should().ContainSingle();
+		delivered[0].EntityType.Should().Be("receipt");
+		delivered[0].ChangeType.Should().Be("created");
+		delivered[0].Count.Should().Be(1);
+	}
+
+	[Fact]
+	public async Task FlushAsync_WhenSendThrows_PreservesNotYetAttemptedBuckets()
+	{
+		// Arrange — two distinct pending notifications; the first send throws.
+		bool fail = true;
+		var (hubContext, delivered) = BuildFailableHub(() => fail);
+		var loggerMock = new Mock<ILogger<EntityChangeNotifier>>();
+		using EntityChangeNotifier notifier = CreateNotifier(hubContext, loggerMock);
+		await notifier.NotifyCreated("receipt", Guid.NewGuid());
+		await notifier.NotifyDeleted("category", Guid.NewGuid());
+
+		// Act — failing flush must re-enqueue BOTH the failed bucket and the one never attempted.
+		await notifier.FlushAsync();
+		fail = false;
+		await notifier.FlushAsync();
+
+		// Assert — both notifications survive and are delivered on retry.
+		delivered.Should().HaveCount(2);
+		delivered.Should().ContainSingle(n => n.EntityType == "receipt" && n.ChangeType == "created");
+		delivered.Should().ContainSingle(n => n.EntityType == "category" && n.ChangeType == "deleted");
 	}
 
 	[Fact]

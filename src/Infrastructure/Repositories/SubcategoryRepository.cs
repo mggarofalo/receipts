@@ -170,6 +170,30 @@ public class SubcategoryRepository(IDbContextFactory<ApplicationDbContext> conte
 		return true;
 	}
 
+	public async Task<string?> GetRestoreConflictNameAsync(Guid id, CancellationToken cancellationToken)
+	{
+		using ApplicationDbContext context = contextFactory.CreateDbContext();
+
+		// The soft-deleted row the caller intends to restore.
+		SubcategoryEntity? deleted = await context.Subcategories
+			.IncludeDeleted()
+			.FirstOrDefaultAsync(e => e.Id == id && e.DeletedAt != null, cancellationToken);
+
+		if (deleted is null)
+		{
+			// Nothing to restore (absent or already active) — no conflict to report.
+			return null;
+		}
+
+		// context.Subcategories is filtered to active rows (DeletedAt == null). A match on the
+		// natural key (CategoryId, Name) means an active subcategory already occupies it, so
+		// restoring would violate the filtered unique index. Return the colliding name.
+		bool conflict = await context.Subcategories
+			.AnyAsync(e => e.CategoryId == deleted.CategoryId && e.Name == deleted.Name, cancellationToken);
+
+		return conflict ? deleted.Name : null;
+	}
+
 	public async Task<int> GetReceiptItemCountBySubcategoryNameAsync(string subcategoryName, CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();

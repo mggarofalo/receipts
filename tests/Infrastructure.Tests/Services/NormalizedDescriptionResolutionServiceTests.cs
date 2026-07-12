@@ -1,3 +1,4 @@
+using System.Threading.Channels;
 using Application.Interfaces.Services;
 using Application.Models.NormalizedDescriptions;
 using Domain.NormalizedDescriptions;
@@ -29,6 +30,10 @@ public class NormalizedDescriptionResolutionServiceTests
 		_embeddingServiceMock = new Mock<IEmbeddingService>();
 		_normalizedServiceMock = new Mock<INormalizedDescriptionService>();
 		_signalMock = new Mock<IDescriptionChangeSignal>();
+		// The service Subscribe()s once at construction for its own wake-up reader.
+		_signalMock
+			.Setup(s => s.Subscribe())
+			.Returns(Channel.CreateBounded<bool>(1).Reader);
 		_loggerMock = new Mock<ILogger<NormalizedDescriptionResolutionService>>();
 		_scopeFactoryMock = new Mock<IServiceScopeFactory>();
 		_scopeMock = new Mock<IServiceScope>();
