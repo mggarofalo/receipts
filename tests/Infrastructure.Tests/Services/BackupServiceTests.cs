@@ -340,6 +340,38 @@ public class BackupServiceTests : IDisposable
 		tables.Should().Contain("adjustments");
 	}
 
+	[Fact]
+	public async Task CreateSchemaAsync_DoesNotCreateExcludedLogOrCursorTables()
+	{
+		// Documents the deliberate exclusions (RECEIPTS-802): append-only audit/history logs
+		// and the re-fetchable YNAB delta cursor are intentionally NOT part of the backup schema.
+		// Arrange
+		string path = Path.GetTempFileName();
+		_tempFiles.Add(path);
+
+		await using SqliteConnection conn = new($"Data Source={path}");
+		await conn.OpenAsync();
+
+		// Act
+		await BackupService.CreateSchemaAsync(conn, CancellationToken.None);
+
+		// Assert
+		await using SqliteCommand cmd = conn.CreateCommand();
+		cmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table'";
+		await using SqliteDataReader reader = await cmd.ExecuteReaderAsync();
+
+		List<string> tables = [];
+		while (await reader.ReadAsync())
+		{
+			tables.Add(reader.GetString(0));
+		}
+
+		tables.Should().NotContain("audit_logs");
+		tables.Should().NotContain("auth_audit_logs");
+		tables.Should().NotContain("ynab_sync_events");
+		tables.Should().NotContain("ynab_server_knowledge");
+	}
+
 	public void Dispose()
 	{
 		foreach (string path in _tempFiles)

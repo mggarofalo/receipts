@@ -26,6 +26,25 @@ public class BackupService(
 
 		try
 		{
+			// The set of exported tables is defined by the CreateSchemaAsync DDL below and the
+			// Export* calls that follow. The following tables are DELIBERATELY EXCLUDED from the
+			// backup (an intentional decision, not an oversight -- see RECEIPTS-802):
+			//
+			//   - AuditLogs / AuthAuditLogs: append-only audit/history logs. A backup captures
+			//     restorable *state*, not the activity trail that produced it. Re-importing
+			//     historical log rows into a target instance would misrepresent when actions
+			//     actually occurred there, so the audit trail is left to each instance.
+			//   - YnabSyncEvents: the YNAB sync activity log -- the SAME class of data as the audit
+			//     logs above (an append-only history of push attempts, not state). NOTE: this is
+			//     distinct from YnabSyncRecords (the current per-transaction sync *state*), which
+			//     IS exported below via ExportYnabSyncRecordsAsync.
+			//   - YnabServerKnowledge: the YNAB delta-sync cursor. It is re-fetchable from YNAB on
+			//     the next sync (regenerable derived data, like the embedding vectors also omitted),
+			//     so restoring a stale cursor would only risk a bad delta window.
+			//   - ASP.NET Identity users and authentication settings: excluded for security.
+			//
+			// Excluding all log/audit and regenerable-cursor tables is the consistent choice: a
+			// backup restores your data, not the history of how it got there.
 			await CreateSchemaAsync(sqlite, cancellationToken);
 			await ExportAccountsAsync(source, sqlite, cancellationToken);
 			await ExportCardsAsync(source, sqlite, cancellationToken);

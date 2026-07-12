@@ -4,18 +4,40 @@ The application supports portable SQLite backups for disaster recovery, migratio
 
 ## What gets backed up
 
-All domain entities are included in the export:
+The export (current format `export_version = 4`) includes your domain data plus YNAB
+configuration/state and normalized-description settings:
 
 - Accounts
+- Cards
 - Categories
 - Subcategories
 - Item Templates
-- Receipts
+- Receipts (including image file **paths** — see below)
 - Receipt Items
 - Transactions
 - Adjustments
+- YNAB configuration and state: selected budget, account mappings, category mappings, and
+  sync records (current per-transaction sync state)
+- Normalized descriptions and their settings
 
 Soft-deleted records are **excluded** from exports.
+
+Receipt image **binaries** are stored outside the database and are **not** included — only
+their file paths are backed up. Back the image files up separately.
+
+### Deliberately excluded from backup
+
+The following tables are intentionally left out of the backup. This is a conscious decision
+(RECEIPTS-802), not an oversight — a backup is meant to restore your **data and state**, not
+the history of how it got there or values a service can regenerate:
+
+| Table | Why it is excluded |
+| --- | --- |
+| `AuditLogs`, `AuthAuditLogs` | Append-only audit/activity logs. Re-importing historical log rows onto another instance would misrepresent when actions actually occurred there. |
+| `YnabSyncEvents` | The YNAB sync activity log — the same class of data as the audit logs (an append-only history of push attempts, **not** state). Distinct from `YnabSyncRecords`, the current sync state, which **is** included above. |
+| `YnabServerKnowledge` | The YNAB delta-sync cursor. It is re-fetchable from YNAB on the next sync (regenerable derived data, like the omitted embedding vectors), so restoring a stale value would only risk a bad delta window. |
+| Normalized-description embedding vectors | Large, regenerable derived data whose dimension is a build-time constant; repopulated by the embedding pipeline after restore. |
+| ASP.NET Identity users and authentication settings | Excluded for security reasons. |
 
 ## REST API
 

@@ -28,7 +28,7 @@ public class BackupController(
 
 	[HttpPost("export")]
 	[EndpointSummary("Export database to a portable SQLite file")]
-	[EndpointDescription("Generates a SQLite database containing all domain data (accounts, categories, receipts, items, transactions, adjustments, item templates), YNAB configuration (budget selection and account/category mappings and sync records), and normalized descriptions. Receipt image file paths are included, but the image binaries themselves are stored outside the database and must be backed up separately. User accounts and authentication settings are excluded. Admin-only. Soft-deleted records are excluded.")]
+	[EndpointDescription("Generates a SQLite database containing all domain data (accounts, categories, receipts, items, transactions, adjustments, item templates), YNAB configuration (budget selection and account/category mappings and current sync records), and normalized descriptions. Receipt image file paths are included, but the image binaries themselves are stored outside the database and must be backed up separately. User accounts and authentication settings are excluded. Audit logs (AuditLogs/AuthAuditLogs), the YNAB sync history (YnabSyncEvents), and the re-fetchable YNAB delta cursor (YnabServerKnowledge) are deliberately excluded as activity history or regenerable data rather than restorable state. Admin-only. Soft-deleted records are excluded.")]
 	public async Task<Results<FileStreamHttpResult, StatusCodeHttpResult>> Export(CancellationToken cancellationToken)
 	{
 		string? filePath = null;
