@@ -58,6 +58,12 @@ public static class AuthConfiguration
 
 						return Task.CompletedTask;
 					},
+					// Re-validate the token against the user's live state on every request. A JWT is
+					// otherwise trusted until it expires, so an access token issued before a user was
+					// deactivated or had their password reset would keep working. Rotating the user's
+					// security stamp (see UsersController / AuthController) makes this fail closed
+					// immediately (RECEIPTS-800).
+					OnTokenValidated = JwtSecurityStampValidator.RevalidateAsync,
 					OnAuthenticationFailed = context =>
 					{
 						ILoggerFactory loggerFactory = context.HttpContext.RequestServices

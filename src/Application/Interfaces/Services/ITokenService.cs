@@ -11,7 +11,7 @@ public record TokenIntrospectionResult(
 
 public interface ITokenService
 {
-	string GenerateAccessToken(string userId, string email, IList<string> roles, bool mustResetPassword);
+	string GenerateAccessToken(string userId, string email, IList<string> roles, bool mustResetPassword, string securityStamp);
 	string GenerateRefreshToken();
 	TokenIntrospectionResult IntrospectAccessToken(string token);
 }

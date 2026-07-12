@@ -11,7 +11,7 @@ namespace Infrastructure.Services;
 
 public class TokenService(IConfiguration configuration) : ITokenService
 {
-	public string GenerateAccessToken(string userId, string email, IList<string> roles, bool mustResetPassword)
+	public string GenerateAccessToken(string userId, string email, IList<string> roles, bool mustResetPassword, string securityStamp)
 	{
 		string key = configuration[ConfigurationVariables.JwtKey] ?? "build-time-placeholder-key-32-chars!!";
 		string issuer = configuration[ConfigurationVariables.JwtIssuer] ?? "receipts-api";
@@ -25,6 +25,9 @@ public class TokenService(IConfiguration configuration) : ITokenService
 			new Claim(ClaimTypes.NameIdentifier, userId),
 			new Claim(ClaimTypes.Email, email),
 			new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+			// Bakes the user's current security stamp into the token so every request can re-check it
+			// against the live value and reject sessions that outlived a deactivation or password reset.
+			new Claim(AuthClaimTypes.SecurityStamp, securityStamp),
 			.. roles.Select(r => new Claim(ClaimTypes.Role, r)),
 		];
 

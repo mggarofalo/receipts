@@ -230,6 +230,44 @@ public class UsersControllerTests
 	}
 
 	[Fact]
+	public async Task UpdateUser_RotatesSecurityStamp_WhenDisabling()
+	{
+		SetupUserClaims("admin-1");
+		ApplicationUser user = CreateTestUser("user-123");
+		_userManagerMock.Setup(m => m.FindByIdAsync("user-123")).ReturnsAsync(user);
+		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
+		_userManagerMock.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "User" });
+		_userManagerMock.Setup(m => m.RemoveFromRolesAsync(user, It.IsAny<IEnumerable<string>>())).ReturnsAsync(IdentityResult.Success);
+		_userManagerMock.Setup(m => m.AddToRoleAsync(user, "User")).ReturnsAsync(IdentityResult.Success);
+		_userManagerMock.Setup(m => m.UpdateSecurityStampAsync(user)).ReturnsAsync(IdentityResult.Success);
+
+		await _controller.UpdateUser(
+			"user-123",
+			new UpdateUserRequest { Email = "a@b.com", FirstName = "A", LastName = "B", Role = "User", IsDisabled = true });
+
+		// Rotating the stamp kills any JWT access token issued before the disable (RECEIPTS-800).
+		_userManagerMock.Verify(m => m.UpdateSecurityStampAsync(user), Times.Once);
+	}
+
+	[Fact]
+	public async Task UpdateUser_DoesNotRotateSecurityStamp_WhenNotDisabling()
+	{
+		SetupUserClaims("admin-1");
+		ApplicationUser user = CreateTestUser("user-123");
+		_userManagerMock.Setup(m => m.FindByIdAsync("user-123")).ReturnsAsync(user);
+		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
+		_userManagerMock.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "User" });
+		_userManagerMock.Setup(m => m.RemoveFromRolesAsync(user, It.IsAny<IEnumerable<string>>())).ReturnsAsync(IdentityResult.Success);
+		_userManagerMock.Setup(m => m.AddToRoleAsync(user, "User")).ReturnsAsync(IdentityResult.Success);
+
+		await _controller.UpdateUser(
+			"user-123",
+			new UpdateUserRequest { Email = "a@b.com", FirstName = "A", LastName = "B", Role = "User", IsDisabled = false });
+
+		_userManagerMock.Verify(m => m.UpdateSecurityStampAsync(It.IsAny<ApplicationUser>()), Times.Never);
+	}
+
+	[Fact]
 	public async Task UpdateUser_DoesNotRevokeApiKeys_WhenNotDisabling()
 	{
 		SetupUserClaims("admin-1");
@@ -405,6 +443,21 @@ public class UsersControllerTests
 	}
 
 	[Fact]
+	public async Task DeactivateUser_RotatesSecurityStamp_WhenSuccessful()
+	{
+		SetupUserClaims("admin-1");
+		ApplicationUser user = CreateTestUser("user-123");
+		_userManagerMock.Setup(m => m.FindByIdAsync("user-123")).ReturnsAsync(user);
+		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
+		_userManagerMock.Setup(m => m.UpdateSecurityStampAsync(user)).ReturnsAsync(IdentityResult.Success);
+
+		await _controller.DeactivateUser("user-123");
+
+		// Clearing the refresh token only stops renewal; rotating the stamp kills the live access token too.
+		_userManagerMock.Verify(m => m.UpdateSecurityStampAsync(user), Times.Once);
+	}
+
+	[Fact]
 	public async Task DeactivateUser_ReturnsBadRequest_WhenSelfDeactivate()
 	{
 		SetupUserClaims("user-123");
@@ -456,6 +509,22 @@ public class UsersControllerTests
 		await _controller.AdminResetPassword(user.Id, new AdminResetPasswordRequest { NewPassword = "NewPassword1!" });
 
 		_apiKeyServiceMock.Verify(s => s.RevokeAllForUserAsync(user.Id, It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	[Fact]
+	public async Task AdminResetPassword_RotatesSecurityStamp_WhenSuccessful()
+	{
+		ApplicationUser user = CreateTestUser();
+		_userManagerMock.Setup(m => m.FindByIdAsync(user.Id)).ReturnsAsync(user);
+		_userManagerMock.Setup(m => m.RemovePasswordAsync(user)).ReturnsAsync(IdentityResult.Success);
+		_userManagerMock.Setup(m => m.AddPasswordAsync(user, "NewPassword1!")).ReturnsAsync(IdentityResult.Success);
+		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
+		_userManagerMock.Setup(m => m.UpdateSecurityStampAsync(user)).ReturnsAsync(IdentityResult.Success);
+
+		await _controller.AdminResetPassword(user.Id, new AdminResetPasswordRequest { NewPassword = "NewPassword1!" });
+
+		// Access tokens minted under the old password must die immediately (RECEIPTS-800).
+		_userManagerMock.Verify(m => m.UpdateSecurityStampAsync(user), Times.Once);
 	}
 
 	[Fact]
