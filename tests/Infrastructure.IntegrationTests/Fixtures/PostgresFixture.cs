@@ -52,7 +52,12 @@ public class PostgresFixture : IAsyncLifetime
 		await reloadConnection.ReloadTypesAsync();
 	}
 
-	public ApplicationDbContext CreateDbContext()
+	public ApplicationDbContext CreateDbContext() => new(CreateOptions());
+
+	// Exposes the same Npgsql/pgvector options CreateDbContext() builds, so a test can construct a
+	// custom ApplicationDbContext subclass (e.g. one that injects a mid-transaction failure) against
+	// the fixture's already-type-reloaded data source without standing up a second connection pool.
+	public DbContextOptions<ApplicationDbContext> CreateOptions()
 	{
 		if (_dataSource is null)
 		{
@@ -62,7 +67,7 @@ public class PostgresFixture : IAsyncLifetime
 		DbContextOptionsBuilder<ApplicationDbContext> builder = new();
 		builder.UseNpgsql(_dataSource, b => b.UseVector());
 
-		return new ApplicationDbContext(builder.Options);
+		return builder.Options;
 	}
 
 	public async Task DisposeAsync()

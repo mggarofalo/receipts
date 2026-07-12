@@ -1,4 +1,5 @@
 using Application.Commands.Transaction.Create;
+using Application.Commands.Transaction.Update;
 using Application.Models;
 using Domain;
 using Domain.Core;
@@ -201,6 +202,66 @@ public class TransactionBalanceValidationTests(PostgresFixture fixture)
 
 		persisted.Should().ContainSingle("the receipt must never be over-allocated");
 		persisted.Sum(t => t.Amount).Should().Be(50m);
+	}
+
+	[Fact]
+	public async Task ConcurrentUpdates_ForSameReceipt_SerializeSoOnlyOneSucceeds()
+	{
+		// RECEIPTS-805: the per-receipt FOR UPDATE lock must serialize the UPDATE balance-validation
+		// path exactly as it does the CREATE path above. Seed a $50 receipt with two $10 transactions
+		// (currently unbalanced at $20). Two concurrent updates each raise a DIFFERENT transaction to
+		// $40: against the pre-state each looks balanced ($40 + the other's stale $10 == $50), but
+		// applying BOTH would total $80. The row lock forces the loser to re-read the winner's
+		// committed write and be rejected by the balance equation. Without the lock, both would read
+		// the stale $10 pre-state and commit, over-allocating the receipt — so this asserts the lock,
+		// not just the happy path. (Amounts are non-zero because the Money domain type forbids zero.)
+		(Guid receiptId, Guid accountId, Guid cardId) = await SeedReceiptAsync(itemTotal: 50m);
+
+		Guid tx1Id = Guid.NewGuid();
+		Guid tx2Id = Guid.NewGuid();
+		await SeedTransactionsAsync(receiptId, accountId, cardId, amount: 10m, tx1Id, tx2Id);
+
+		UpdateTransactionCommandHandler handler = new(BuildService());
+		UpdateTransactionCommand CommandFor(Guid txId) => new([Tx(cardId, 40m, accountId, txId)]);
+
+		// Both requests are in flight before either commits, so they contend on the receipt row lock.
+		Task<Exception?> first = CaptureAsync(handler.Handle(CommandFor(tx1Id), CancellationToken.None).AsTask());
+		Task<Exception?> second = CaptureAsync(handler.Handle(CommandFor(tx2Id), CancellationToken.None).AsTask());
+		Exception?[] outcomes = await Task.WhenAll(first, second);
+
+		outcomes.Count(e => e is null).Should().Be(1, "exactly one concurrent update may satisfy the $50 balance");
+		outcomes.Count(e => e is ValidationException).Should().Be(1, "the losing update must be rejected by the balance equation, not a server error");
+
+		await using ApplicationDbContext verify = fixture.CreateDbContext();
+		List<TransactionEntity> persisted = await verify.Transactions
+			.IgnoreAutoIncludes()
+			.Where(t => t.ReceiptId == receiptId)
+			.ToListAsync();
+
+		persisted.Should().HaveCount(2);
+		persisted.Sum(t => t.Amount).Should().Be(50m, "the receipt must stay balanced at exactly $50 — never over-allocated to $80");
+		persisted.Count(t => t.Amount == 40m).Should().Be(1, "only the winning update may raise its transaction to $40");
+		persisted.Count(t => t.Amount == 10m).Should().Be(1, "the loser's transaction keeps its pre-update $10 value");
+	}
+
+	private async Task SeedTransactionsAsync(Guid receiptId, Guid accountId, Guid cardId, decimal amount, Guid tx1Id, Guid tx2Id)
+	{
+		await using ApplicationDbContext setup = fixture.CreateDbContext();
+		setup.Transactions.AddRange(
+			SeedTransaction(tx1Id, receiptId, accountId, cardId, amount),
+			SeedTransaction(tx2Id, receiptId, accountId, cardId, amount));
+		await setup.SaveChangesAsync();
+
+		static TransactionEntity SeedTransaction(Guid id, Guid receiptId, Guid accountId, Guid cardId, decimal amount) => new()
+		{
+			Id = id,
+			ReceiptId = receiptId,
+			AccountId = accountId,
+			CardId = cardId,
+			Amount = amount,
+			AmountCurrency = Common.Currency.USD,
+			Date = DateOnly.FromDateTime(DateTime.Now),
+		};
 	}
 
 	private static async Task<Exception?> CaptureAsync(Task task)
