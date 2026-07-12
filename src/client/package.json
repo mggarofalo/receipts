@@ -17,8 +17,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:integration": "vitest run --config vitest.integration.config.ts",
-    "test:visual": "playwright test",
-    "test:visual:update": "playwright test --update-snapshots",
+    "test:visual": "playwright test --grep-invert \"Color-vision-deficiency\"",
+    "test:visual:update": "playwright test --grep-invert \"Color-vision-deficiency\" --update-snapshots",
+    "audit:cvd": "playwright test cvd-audit.spec.ts --project=desktop-chromium",
     "coverage": "vitest run --coverage"
   },
   "dependencies": {
