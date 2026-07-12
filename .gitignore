@@ -331,3 +331,11 @@ src/client/coverage/
 # (also fetched in Dockerfile during image build).
 src/Infrastructure/Models/BgeLargeEnV15/model.onnx
 src/Infrastructure/Models/BgeLargeEnV15/vocab.txt
+
+# Playwright + visual regression
+src/client/test-results/
+src/client/playwright-report/
+src/client/playwright/.cache/
+
+# Stray test artifacts (Infrastructure embedding calibration)
+calibration-results.md
