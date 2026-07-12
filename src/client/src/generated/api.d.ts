@@ -1924,7 +1924,7 @@ export interface paths {
         put?: never;
         /**
          * Export database to a portable SQLite file
-         * @description Generates a SQLite database containing all domain data (accounts, categories, receipts, items, transactions, adjustments, item templates). Admin-only. Soft-deleted records are excluded.
+         * @description Generates a SQLite database containing all domain data (accounts, categories, receipts, items, transactions, adjustments, item templates), YNAB configuration and current sync records, and normalized descriptions. Receipt image file paths are included, but the image binaries are stored outside the database and must be backed up separately. User accounts and authentication settings are excluded. Audit logs, the YNAB sync history (YnabSyncEvents), and the re-fetchable YNAB delta cursor (YnabServerKnowledge) are deliberately excluded as activity history or regenerable data rather than restorable state. Admin-only. Soft-deleted records are excluded.
          */
         post: operations["ExportBackup"];
         delete?: never;

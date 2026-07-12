@@ -190,7 +190,9 @@ function BackupRestore() {
             descriptions. Receipt image files are stored outside the database:
             their paths are backed up, but the image files themselves must be
             backed up separately. User accounts and authentication settings are
-            excluded for security reasons.
+            excluded for security reasons. Audit logs and YNAB sync history are
+            not included either &mdash; a backup restores your data, not the
+            record of past activity.
           </AlertDescription>
         </Alert>
 
