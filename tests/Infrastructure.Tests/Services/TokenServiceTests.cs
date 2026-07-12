@@ -2,6 +2,7 @@ using Application.Interfaces.Services;
 using FluentAssertions;
 using Infrastructure.Services;
 using Microsoft.Extensions.Configuration;
+using Microsoft.IdentityModel.JsonWebTokens;
 
 namespace Infrastructure.Tests.Services;
 
@@ -29,7 +30,7 @@ public class TokenServiceTests
 	public void IntrospectAccessToken_ValidToken_ReturnsActive()
 	{
 		// Arrange
-		string token = _tokenService.GenerateAccessToken("user-123", "test@example.com", new List<string> { "Admin" }, false);
+		string token = _tokenService.GenerateAccessToken("user-123", "test@example.com", new List<string> { "Admin" }, false, "stamp-abc");
 
 		// Act
 		TokenIntrospectionResult result = _tokenService.IntrospectAccessToken(token);
@@ -72,7 +73,7 @@ public class TokenServiceTests
 			.AddInMemoryCollection(otherConfig)
 			.Build();
 		TokenService otherService = new(otherConfiguration);
-		string token = otherService.GenerateAccessToken("user-123", "test@example.com", new List<string> { "Admin" }, false);
+		string token = otherService.GenerateAccessToken("user-123", "test@example.com", new List<string> { "Admin" }, false, "stamp-abc");
 
 		// Act
 		TokenIntrospectionResult result = _tokenService.IntrospectAccessToken(token);
@@ -85,7 +86,7 @@ public class TokenServiceTests
 	public void IntrospectAccessToken_MultipleRoles_ReturnsSpaceSeparatedScope()
 	{
 		// Arrange
-		string token = _tokenService.GenerateAccessToken("user-123", "test@example.com", new List<string> { "Admin", "User" }, false);
+		string token = _tokenService.GenerateAccessToken("user-123", "test@example.com", new List<string> { "Admin", "User" }, false, "stamp-abc");
 
 		// Act
 		TokenIntrospectionResult result = _tokenService.IntrospectAccessToken(token);
@@ -93,5 +94,17 @@ public class TokenServiceTests
 		// Assert
 		result.Active.Should().BeTrue();
 		result.Scope.Should().Be("Admin User");
+	}
+
+	[Fact]
+	public void GenerateAccessToken_EmbedsSecurityStampClaim()
+	{
+		// Arrange & Act
+		string token = _tokenService.GenerateAccessToken("user-123", "test@example.com", new List<string> { "Admin" }, false, "stamp-xyz-789");
+
+		// Assert — the token carries the security_stamp claim so per-request revalidation can compare it
+		// against the user's live stamp (RECEIPTS-800).
+		JsonWebToken jwt = new JsonWebTokenHandler().ReadJsonWebToken(token);
+		jwt.GetClaim("security_stamp").Value.Should().Be("stamp-xyz-789");
 	}
 }

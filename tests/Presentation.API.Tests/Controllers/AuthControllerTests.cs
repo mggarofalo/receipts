@@ -78,6 +78,9 @@ public class AuthControllerTests
 			RefreshTokenExpiresAt = DateTimeOffset.UtcNow.AddDays(30),
 			MustResetPassword = false,
 			CreatedAt = DateTimeOffset.UtcNow,
+			// Non-null so the token-issuing paths embed this stamp directly instead of taking the
+			// backfill branch (which would call UpdateSecurityStampAsync for legacy null-stamp accounts).
+			SecurityStamp = "stamp-1",
 		};
 	}
 
@@ -93,7 +96,7 @@ public class AuthControllerTests
 		_userManagerMock.Setup(m => m.IsLockedOutAsync(user)).ReturnsAsync(false);
 		_userManagerMock.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "Admin", "User" });
 		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
-		_tokenServiceMock.Setup(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false)).Returns("access-token");
+		_tokenServiceMock.Setup(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false, It.IsAny<string>())).Returns("access-token");
 		_tokenServiceMock.Setup(t => t.GenerateRefreshToken()).Returns("refresh-token");
 
 		// Act
@@ -217,7 +220,7 @@ public class AuthControllerTests
 		_userManagerMock.Setup(m => m.ResetAccessFailedCountAsync(user)).ReturnsAsync(IdentityResult.Success);
 		_userManagerMock.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "User" });
 		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
-		_tokenServiceMock.Setup(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false)).Returns("access-token");
+		_tokenServiceMock.Setup(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false, It.IsAny<string>())).Returns("access-token");
 		_tokenServiceMock.Setup(t => t.GenerateRefreshToken()).Returns("refresh-token");
 
 		// Act
@@ -239,7 +242,7 @@ public class AuthControllerTests
 		_userManagerMock.Setup(m => m.IsLockedOutAsync(user)).ReturnsAsync(false);
 		_userManagerMock.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "User" });
 		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
-		_tokenServiceMock.Setup(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false)).Returns("access-token");
+		_tokenServiceMock.Setup(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false, It.IsAny<string>())).Returns("access-token");
 		_tokenServiceMock.Setup(t => t.GenerateRefreshToken()).Returns("plaintext-refresh");
 
 		// Act
@@ -250,6 +253,51 @@ public class AuthControllerTests
 		okResult.Value!.RefreshToken.Should().Be("plaintext-refresh");
 		user.RefreshToken.Should().Be("hashed:plaintext-refresh");
 		user.RefreshToken.Should().NotBe("plaintext-refresh");
+	}
+
+	[Fact]
+	public async Task Login_ThreadsSecurityStampIntoAccessToken_WithoutRotating()
+	{
+		// Arrange — the account already has a security stamp.
+		ApplicationUser user = CreateTestUser(); // SecurityStamp = "stamp-1"
+		_userManagerMock.Setup(m => m.FindByEmailAsync("test@example.com")).ReturnsAsync(user);
+		_userManagerMock.Setup(m => m.CheckPasswordAsync(user, "password")).ReturnsAsync(true);
+		_userManagerMock.Setup(m => m.IsLockedOutAsync(user)).ReturnsAsync(false);
+		_userManagerMock.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "User" });
+		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
+		_tokenServiceMock.Setup(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false, "stamp-1")).Returns("access-token");
+		_tokenServiceMock.Setup(t => t.GenerateRefreshToken()).Returns("refresh-token");
+
+		// Act
+		Results<Ok<TokenResponse>, JsonHttpResult<OAuthErrorResponse>> result = await _controller.Login(new LoginRequest { Email = "test@example.com", Password = "password" });
+
+		// Assert — the live stamp is baked into the token, and it is NOT needlessly rotated.
+		Assert.IsType<Ok<TokenResponse>>(result.Result);
+		_tokenServiceMock.Verify(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false, "stamp-1"), Times.Once);
+		_userManagerMock.Verify(m => m.UpdateSecurityStampAsync(It.IsAny<ApplicationUser>()), Times.Never);
+	}
+
+	[Fact]
+	public async Task Login_BackfillsSecurityStamp_WhenUserStampIsNull()
+	{
+		// Arrange — a legacy account created before security stamps were populated has a null stamp.
+		ApplicationUser user = CreateTestUser();
+		user.SecurityStamp = null;
+		_userManagerMock.Setup(m => m.FindByEmailAsync("test@example.com")).ReturnsAsync(user);
+		_userManagerMock.Setup(m => m.CheckPasswordAsync(user, "password")).ReturnsAsync(true);
+		_userManagerMock.Setup(m => m.IsLockedOutAsync(user)).ReturnsAsync(false);
+		_userManagerMock.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "User" });
+		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
+		_userManagerMock.Setup(m => m.UpdateSecurityStampAsync(user)).ReturnsAsync(IdentityResult.Success);
+		_tokenServiceMock.Setup(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false, It.IsAny<string>())).Returns("access-token");
+		_tokenServiceMock.Setup(t => t.GenerateRefreshToken()).Returns("refresh-token");
+
+		// Act
+		Results<Ok<TokenResponse>, JsonHttpResult<OAuthErrorResponse>> result = await _controller.Login(new LoginRequest { Email = "test@example.com", Password = "password" });
+
+		// Assert — the stamp is generated so the emitted claim is never empty.
+		Assert.IsType<Ok<TokenResponse>>(result.Result);
+		_userManagerMock.Verify(m => m.UpdateSecurityStampAsync(user), Times.Once);
 	}
 
 	// ── Refresh ──────────────────────────────────────────────
@@ -263,7 +311,7 @@ public class AuthControllerTests
 		_userManagerMock.Setup(m => m.FindByIdAsync(user.Id)).ReturnsAsync(user);
 		_userManagerMock.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "User" });
 		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
-		_tokenServiceMock.Setup(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false)).Returns("new-access-token");
+		_tokenServiceMock.Setup(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false, It.IsAny<string>())).Returns("new-access-token");
 		_tokenServiceMock.Setup(t => t.GenerateRefreshToken()).Returns("new-refresh-token");
 
 		// Act
@@ -284,7 +332,7 @@ public class AuthControllerTests
 		_userServiceMock.Setup(s => s.FindUserIdByRefreshTokenAsync("valid-refresh-token", It.IsAny<CancellationToken>())).ReturnsAsync(user.Id);
 		_userManagerMock.Setup(m => m.FindByIdAsync(user.Id)).ReturnsAsync(user);
 		_userManagerMock.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "User" });
-		_tokenServiceMock.Setup(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false)).Returns("new-access-token");
+		_tokenServiceMock.Setup(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false, It.IsAny<string>())).Returns("new-access-token");
 		_tokenServiceMock.Setup(t => t.GenerateRefreshToken()).Returns("new-refresh-token");
 		_userManagerMock.Setup(m => m.UpdateAsync(user))
 			.ReturnsAsync(IdentityResult.Failed(new IdentityError { Code = "ConcurrencyFailure", Description = "Optimistic concurrency failure." }));
@@ -308,7 +356,7 @@ public class AuthControllerTests
 		_userManagerMock.Setup(m => m.ChangePasswordAsync(user, "old", "new")).ReturnsAsync(IdentityResult.Success);
 		_userManagerMock.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "Admin" });
 		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
-		_tokenServiceMock.Setup(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false)).Returns("access-token");
+		_tokenServiceMock.Setup(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false, It.IsAny<string>())).Returns("access-token");
 		_tokenServiceMock.Setup(t => t.GenerateRefreshToken()).Returns("refresh-token");
 
 		// Act

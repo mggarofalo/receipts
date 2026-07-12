@@ -18,7 +18,7 @@ public class TokenServiceBranchTests
 		TokenService service = new(configuration);
 
 		// Act — should not throw, falls back to defaults
-		string token = service.GenerateAccessToken("user-1", "a@b.com", new List<string> { "User" }, false);
+		string token = service.GenerateAccessToken("user-1", "a@b.com", new List<string> { "User" }, false, "stamp-1");
 
 		// Assert — token is generated with fallback issuer/audience
 		token.Should().NotBeNullOrEmpty();
@@ -40,7 +40,7 @@ public class TokenServiceBranchTests
 			.Build();
 		TokenService service = new(configuration);
 
-		string token = service.GenerateAccessToken("user-2", "b@c.com", new List<string> { "Admin" }, false);
+		string token = service.GenerateAccessToken("user-2", "b@c.com", new List<string> { "Admin" }, false, "stamp-2");
 
 		// Act
 		TokenIntrospectionResult result = service.IntrospectAccessToken(token);
@@ -66,7 +66,7 @@ public class TokenServiceBranchTests
 		TokenService service = new(configuration);
 
 		// Act
-		string token = service.GenerateAccessToken("user-3", "c@d.com", new List<string> { "User" }, true);
+		string token = service.GenerateAccessToken("user-3", "c@d.com", new List<string> { "User" }, true, "stamp-3");
 
 		// Assert — token is valid and contains the claim
 		TokenIntrospectionResult result = service.IntrospectAccessToken(token);
@@ -89,7 +89,7 @@ public class TokenServiceBranchTests
 		TokenService service = new(configuration);
 
 		// Act
-		string token = service.GenerateAccessToken("user-4", "d@e.com", new List<string> { "User" }, false);
+		string token = service.GenerateAccessToken("user-4", "d@e.com", new List<string> { "User" }, false, "stamp-4");
 
 		// Assert
 		TokenIntrospectionResult result = service.IntrospectAccessToken(token);
@@ -117,7 +117,7 @@ public class TokenServiceBranchTests
 			.Build();
 		TokenService defaultService = new(defaultConfiguration);
 
-		string token = explicitService.GenerateAccessToken("user-5", "e@f.com", new List<string> { "User" }, false);
+		string token = explicitService.GenerateAccessToken("user-5", "e@f.com", new List<string> { "User" }, false, "stamp-5");
 
 		// Act — introspect with different (default) key
 		TokenIntrospectionResult result = defaultService.IntrospectAccessToken(token);

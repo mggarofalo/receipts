@@ -78,7 +78,8 @@ public class AuthController(
 		await userManager.ResetAccessFailedCountAsync(user);
 
 		IList<string> roles = await userManager.GetRolesAsync(user);
-		string accessToken = tokenService.GenerateAccessToken(user.Id, user.Email!, roles, user.MustResetPassword);
+		string securityStamp = await EnsureSecurityStampAsync(user);
+		string accessToken = tokenService.GenerateAccessToken(user.Id, user.Email!, roles, user.MustResetPassword, securityStamp);
 		string refreshToken = tokenService.GenerateRefreshToken();
 
 		// Persist only the hash of the refresh token; the plaintext is returned to the client below and
@@ -126,7 +127,8 @@ public class AuthController(
 		}
 
 		IList<string> roles = await userManager.GetRolesAsync(user);
-		string accessToken = tokenService.GenerateAccessToken(user.Id, user.Email!, roles, user.MustResetPassword);
+		string securityStamp = await EnsureSecurityStampAsync(user);
+		string accessToken = tokenService.GenerateAccessToken(user.Id, user.Email!, roles, user.MustResetPassword, securityStamp);
 		string newRefreshToken = tokenService.GenerateRefreshToken();
 
 		user.RefreshToken = userService.HashRefreshToken(newRefreshToken);
@@ -207,8 +209,11 @@ public class AuthController(
 
 		user.MustResetPassword = false;
 
+		// ChangePasswordAsync already rotated the security stamp, invalidating every access token issued
+		// before this call. The new token below carries the fresh stamp so this session keeps working.
 		IList<string> roles = await userManager.GetRolesAsync(user);
-		string accessToken = tokenService.GenerateAccessToken(user.Id, user.Email!, roles, false);
+		string securityStamp = await EnsureSecurityStampAsync(user);
+		string accessToken = tokenService.GenerateAccessToken(user.Id, user.Email!, roles, false, securityStamp);
 		string refreshToken = tokenService.GenerateRefreshToken();
 
 		user.RefreshToken = userService.HashRefreshToken(refreshToken);
@@ -304,6 +309,20 @@ public class AuthController(
 		}
 
 		return TypedResults.Ok();
+	}
+
+	// Returns the security stamp to bake into the access token. Accounts created before per-request
+	// stamp revalidation shipped may have a null stamp; generate one so the claim is never empty
+	// (an empty/absent stamp claim is rejected on every request). UpdateSecurityStampAsync mutates and
+	// persists user.SecurityStamp in place, so the fresh value is available without a reload.
+	private async Task<string> EnsureSecurityStampAsync(ApplicationUser user)
+	{
+		if (string.IsNullOrEmpty(user.SecurityStamp))
+		{
+			await userManager.UpdateSecurityStampAsync(user);
+		}
+
+		return user.SecurityStamp!;
 	}
 
 	// Runs a full PBKDF2 verification against a throwaway hash purely to equalize timing on the

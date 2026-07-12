@@ -181,6 +181,10 @@ public class UsersController(
 			// Disabling an account must also cut off any pre-existing API keys, otherwise
 			// they keep authenticating with the user's roles indefinitely (RECEIPTS-757).
 			await apiKeyService.RevokeAllForUserAsync(user.Id);
+
+			// Rotate the security stamp so any JWT access token issued before this disable fails
+			// per-request revalidation immediately, instead of surviving until it expires (RECEIPTS-800).
+			await userManager.UpdateSecurityStampAsync(user);
 		}
 
 		IList<string> roles = await userManager.GetRolesAsync(user);
@@ -220,6 +224,11 @@ public class UsersController(
 		user.RefreshTokenExpiresAt = null;
 		await userManager.UpdateAsync(user);
 
+		// Rotate the security stamp so any JWT access token issued before deactivation fails per-request
+		// revalidation immediately. Clearing the refresh token alone only stops renewal; without this the
+		// existing access token would keep working until it expires (RECEIPTS-800).
+		await userManager.UpdateSecurityStampAsync(user);
+
 		// Revoke API keys so a deactivated user cannot keep authenticating via a stale key.
 		await apiKeyService.RevokeAllForUserAsync(user.Id);
 
@@ -249,6 +258,11 @@ public class UsersController(
 		user.RefreshToken = null;
 		user.RefreshTokenExpiresAt = null;
 		await userManager.UpdateAsync(user);
+
+		// Rotate the security stamp so JWT access tokens minted under the old password fail per-request
+		// revalidation immediately (explicit and independent of Identity's internal stamp rotation on
+		// password change, RECEIPTS-800).
+		await userManager.UpdateSecurityStampAsync(user);
 
 		// Force-resetting a password invalidates the old credential; revoke API keys too so
 		// they cannot be used to bypass the reset (defense in depth, RECEIPTS-757).
