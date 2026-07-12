@@ -30,8 +30,8 @@ function SecurityLog() {
   const { resetPage: resetFailedPage } = failedPagination;
 
   const myLogs = useMyAuthAuditLog(myPagination.offset, myPagination.limit, sortBy, sortDirection);
-  const recentLogs = useRecentAuthAuditLogs(recentPagination.offset, recentPagination.limit, sortBy, sortDirection);
-  const failedLogs = useFailedAuthAttempts(failedPagination.offset, failedPagination.limit, sortBy, sortDirection);
+  const recentLogs = useRecentAuthAuditLogs(recentPagination.offset, recentPagination.limit, sortBy, sortDirection, { enabled: isAdmin() });
+  const failedLogs = useFailedAuthAttempts(failedPagination.offset, failedPagination.limit, sortBy, sortDirection, { enabled: isAdmin() });
 
   const handleSort = useCallback((column: string) => {
     toggleSort(column);
