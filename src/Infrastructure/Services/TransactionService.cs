@@ -164,6 +164,12 @@ public class TransactionService(
 	// receipt block on the row lock, so the second sees the first's committed write and can
 	// reject an over-allocation. Providers without row locks / transactions (InMemory in unit
 	// tests) degrade to a plain read-validate-write in a single context.
+	//
+	// RECEIPTS-805: this lock serializes the balance invariant ONLY against concurrent TRANSACTION
+	// writes (this create/update path). Concurrent edits to a receipt's items, adjustments, or tax
+	// take no receipt-level lock, so a transaction write racing such an edit can still momentarily
+	// leave the receipt out of balance. Extending the FOR UPDATE guard to cover child/adjustment/tax
+	// edits is deferred — that wider scope is a known, accepted limitation, not an oversight here.
 	private async Task<T> ExecuteBalanceGuardedAsync<T>(
 		Guid receiptId,
 		Action<ReceiptBalanceState> validate,
