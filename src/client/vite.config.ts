@@ -41,7 +41,9 @@ export default defineConfig({
     environment: "jsdom",
     pool: "threads",
     setupFiles: ["./src/test/setup.ts"],
-    include: ["src/**/*.test.{ts,tsx}"],
+    // eslint-rules/ lives outside src (it's plain JS consumed by the flat
+    // config, not app code) but its RuleTester specs still run with the suite.
+    include: ["src/**/*.test.{ts,tsx}", "eslint-rules/**/*.test.js"],
     exclude: ["src/**/*.integration.test.{ts,tsx}"],
     coverage: {
       provider: "v8",
