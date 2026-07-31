@@ -23,6 +23,35 @@ export const FIXTURE_USER = {
   roles: ["User"],
 };
 
+const base64Url = (obj: unknown): string =>
+  Buffer.from(JSON.stringify(obj))
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+
+/**
+ * A structurally valid (unsigned) JWT.
+ *
+ * The client never verifies the signature — `parseJwtPayload` in
+ * src/lib/auth.ts splits on "." and base64-decodes the payload — but it does
+ * require three parts and a decodable body. An opaque placeholder string
+ * decodes to null, which the auth context reads as "signed out" and bounces
+ * every authenticated route to /login, so the token has to look real.
+ */
+export const FIXTURE_JWT = [
+  base64Url({ alg: "none", typ: "JWT" }),
+  base64Url({
+    sub: FIXTURE_USER.id,
+    email: FIXTURE_USER.email,
+    role: FIXTURE_USER.roles,
+    must_reset_password: false,
+    // Far-future so nothing treats the session as expired.
+    exp: 4102444800,
+  }),
+  "fixture-signature",
+].join(".");
+
 type RouteOverride = (route: Route) => Promise<unknown> | unknown;
 
 export interface ApiMockOptions {
@@ -48,7 +77,9 @@ export async function installApiMocks(page: Page, opts: ApiMockOptions = {}): Pr
   // Auth + user — checked at app boot
   await page.route("**/api/auth/me", (route) => route.fulfill(json(FIXTURE_USER)));
   await page.route("**/api/auth/login", (route) =>
-    route.fulfill(json({ accessToken: "fake-jwt", refreshToken: "fake-refresh", user: FIXTURE_USER })),
+    route.fulfill(
+      json({ accessToken: FIXTURE_JWT, refreshToken: "fixture-refresh", user: FIXTURE_USER }),
+    ),
   );
 
   // Reference data — empty lists keep layout predictable
@@ -127,10 +158,13 @@ export async function installApiMocks(page: Page, opts: ApiMockOptions = {}): Pr
  * navigating to the first page. Storage keys must match src/lib/auth.ts.
  */
 export async function signInAsFixtureUser(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    // The token is opaque to the client; the API mock returns FIXTURE_USER
-    // when /api/auth/me is called with any bearer token.
-    localStorage.setItem("receipts_access_token", "fake-jwt");
-    localStorage.setItem("receipts_refresh_token", "fake-refresh");
-  });
+  // The token has to be passed in: addInitScript serialises the function and
+  // sends it to the browser, so module-scope values aren't in its closure.
+  await page.addInitScript(
+    ([access, refresh]: [string, string]) => {
+      localStorage.setItem("receipts_access_token", access);
+      localStorage.setItem("receipts_refresh_token", refresh);
+    },
+    [FIXTURE_JWT, "fixture-refresh"] as [string, string],
+  );
 }
