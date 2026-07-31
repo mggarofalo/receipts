@@ -71,7 +71,10 @@ function Settings() {
         onValueChange={handleTabChange}
         className="w-full"
       >
-        <TabsList>
+        {/* Five triggers measure ~453px, so the strip overflowed a 375px
+            viewport and dragged the whole page into horizontal scroll.
+            Wrapping keeps every tab reachable without a scroll affordance. */}
+        <TabsList className="h-auto flex-wrap">
           {visibleTabs.map((tab) => (
             <TabsTrigger key={tab.value} value={tab.value}>
               {tab.label}

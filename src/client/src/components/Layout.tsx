@@ -235,10 +235,9 @@ export function Layout() {
           >
             <Icon.Search />
             <span>Search or jump to…</span>
-            <span
-              style={{ marginLeft: "auto", display: "flex", gap: 3 }}
-              aria-hidden
-            >
+            {/* Classed rather than inline-styled so the mobile breakpoint can
+                hide it — an inline `display: flex` outranks the stylesheet. */}
+            <span className="search-btn-kbd" aria-hidden>
               <Kbd>⌘</Kbd>
               <Kbd>K</Kbd>
             </span>
