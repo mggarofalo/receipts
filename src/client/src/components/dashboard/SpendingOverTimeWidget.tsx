@@ -112,8 +112,13 @@ export function SpendingOverTimeWidget({
       empty={chartData.length === 0 && !isLoading}
       className={className}
       action={
-        <div className="flex items-center gap-2">
-          <div className="flex gap-1">
+        // Wrap: CardAction sits in an `auto` grid track that can't shrink below
+        // min-content, so a non-wrapping row (~345px) overflowed the card and
+        // pushed horizontal page scroll at mobile widths.
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {/* Also wraps: the four granularity buttons alone measure ~385px,
+              wider than a 375px viewport. */}
+          <div className="flex flex-wrap justify-end gap-1">
             {granularityOptions.map(({ value, label }) => (
               <Button
                 key={value}

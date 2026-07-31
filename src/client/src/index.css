@@ -418,6 +418,17 @@ html[data-density="spacious"] .money-big {
   }
 }
 
+/* Tailwind's .sr-only hides via `width: 1px; overflow: hidden`, but the table
+   layout algorithm treats that width as a floor and grows to fit content, so a
+   <table class="sr-only"> escapes the clip and widens the document (the chart
+   data tables pushed real horizontal page scroll at 375px). `table-layout:
+   fixed` makes the declared width authoritative. Kept as CSS rather than
+   wrapping each table in a div so the elements stay exposed to assistive tech
+   as tables. */
+table.sr-only {
+  table-layout: fixed;
+}
+
 /* ── Focus rings & selection ────────────────────────────────────────── */
 :focus-visible {
   outline: 2px solid var(--accent);
@@ -665,6 +676,18 @@ body {
   width: 14px;
   height: 14px;
   opacity: 0.7;
+}
+/* The label — below 900px the button is `flex: 1; min-width: 0`, so without
+   nowrap the text wrapped onto 3-4 lines and stretched the topbar to ~94px. */
+.search-btn > span:first-of-type {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.search-btn-kbd {
+  margin-left: auto;
+  display: flex;
+  gap: 3px;
 }
 .icon-btn {
   width: 32px;
@@ -1082,6 +1105,9 @@ body {
   overflow: hidden;
   box-shadow: var(--shadow-1);
   min-width: 0;
+  /* Query container for .val — see the font-size note there. Safe because the
+     grid (minmax(0, 1fr)) sizes the card, not its contents. */
+  container-type: inline-size;
 }
 .kpi .label {
   font-family: var(--mono);
@@ -1096,7 +1122,10 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: clamp(26px, 3.4vw, 48px);
+  /* cqi, not vw: the viewport includes the 236px sidebar, so 3.4vw sized the
+     text for space the card doesn't have and clipped values like "$2,177.09"
+     to "$2,177…" at 1280px. cqi tracks the card's own width. */
+  font-size: clamp(24px, 18cqi, 48px);
 }
 .kpi .sub {
   margin-top: 6px;
@@ -1545,9 +1574,20 @@ body {
   .topbar {
     padding: 10px 14px;
   }
+  /* Icon-only: the topbar also carries the menu, theme and account buttons,
+     which left the trigger ~105px — enough to ellipsize the label down to a
+     meaningless sliver. The ⌘K hint is moot without a keyboard anyway. */
   .search-btn {
     min-width: 0;
-    flex: 1;
+    flex: 0 0 auto;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    gap: 0;
+    justify-content: center;
+  }
+  .search-btn > span {
+    display: none;
   }
   .crumbs {
     display: none;
@@ -1565,7 +1605,9 @@ body {
     grid-template-columns: 1fr 1fr;
     gap: 8px;
   }
-  .kpi .money-big,
+  /* .kpi .val is deliberately not pinned here — a flat 32px clipped
+     "$2,177.09" in the ~132px card of the 2-up grid above. Its container-
+     relative clamp handles this breakpoint. */
   .money-big {
     font-size: 32px;
   }
