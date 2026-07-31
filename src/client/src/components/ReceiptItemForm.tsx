@@ -611,12 +611,13 @@ export function ReceiptItemForm({
           )}
         />
 
-        <div className="grid grid-cols-2 gap-4">
+        {/* flex-wrap + per-field min-w so fields wrap instead of colliding. */}
+        <div className="flex flex-wrap gap-4">
           <FormField
             control={form.control}
             name="category"
             render={({ field }) => (
-              <FormItem>
+              <FormItem className="min-w-[200px] flex-1">
                 <FormLabel required>Category</FormLabel>
                 <FormControl>
                   <Combobox
@@ -636,7 +637,7 @@ export function ReceiptItemForm({
             control={form.control}
             name="subcategory"
             render={({ field }) => (
-              <FormItem>
+              <FormItem className="min-w-[200px] flex-1">
                 <FormLabel required>Subcategory</FormLabel>
                 <FormControl>
                   <Combobox
@@ -655,12 +656,12 @@ export function ReceiptItemForm({
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="flex flex-wrap gap-4">
           <FormField
             control={form.control}
             name="quantity"
             render={({ field }) => (
-              <FormItem>
+              <FormItem className="min-w-[110px] flex-1">
                 <FormLabel>Quantity</FormLabel>
                 <FormControl>
                   <Input
@@ -680,7 +681,7 @@ export function ReceiptItemForm({
             control={form.control}
             name="unitPrice"
             render={({ field }) => (
-              <FormItem>
+              <FormItem className="min-w-[150px] flex-1">
                 <FormLabel>Unit Price</FormLabel>
                 <FormControl>
                   <CurrencyInput {...field} />

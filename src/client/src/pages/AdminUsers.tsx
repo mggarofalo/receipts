@@ -379,12 +379,15 @@ function AdminUsers() {
               onSubmit={createForm.handleSubmit(onCreateSubmit)}
               className="space-y-4"
             >
-              <div className="grid grid-cols-2 gap-4">
+              {/* flex-wrap + per-field min-w: fields keep their gap and a
+                  usable width, and drop to the next row instead of being
+                  crushed together when the dialog is narrow. */}
+              <div className="flex flex-wrap gap-4">
                 <FormField
                   control={createForm.control}
                   name="firstName"
                   render={({ field }) => (
-                    <FormItem>
+                    <FormItem className="min-w-[180px] flex-1">
                       <FormLabel>First Name</FormLabel>
                       <FormControl>
                         <Input placeholder="John" {...field} />
@@ -397,7 +400,7 @@ function AdminUsers() {
                   control={createForm.control}
                   name="lastName"
                   render={({ field }) => (
-                    <FormItem>
+                    <FormItem className="min-w-[180px] flex-1">
                       <FormLabel>Last Name</FormLabel>
                       <FormControl>
                         <Input placeholder="Doe" {...field} />
@@ -489,12 +492,15 @@ function AdminUsers() {
               onSubmit={editForm.handleSubmit(onEditSubmit)}
               className="space-y-4"
             >
-              <div className="grid grid-cols-2 gap-4">
+              {/* flex-wrap + per-field min-w: fields keep their gap and a
+                  usable width, and drop to the next row instead of being
+                  crushed together when the dialog is narrow. */}
+              <div className="flex flex-wrap gap-4">
                 <FormField
                   control={editForm.control}
                   name="firstName"
                   render={({ field }) => (
-                    <FormItem>
+                    <FormItem className="min-w-[180px] flex-1">
                       <FormLabel>First Name</FormLabel>
                       <FormControl>
                         <Input placeholder="John" {...field} />
@@ -507,7 +513,7 @@ function AdminUsers() {
                   control={editForm.control}
                   name="lastName"
                   render={({ field }) => (
-                    <FormItem>
+                    <FormItem className="min-w-[180px] flex-1">
                       <FormLabel>Last Name</FormLabel>
                       <FormControl>
                         <Input placeholder="Doe" {...field} />
