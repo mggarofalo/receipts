@@ -459,12 +459,13 @@ export function LineItemsSection({ items, onChange, location }: LineItemsSection
             onSubmit={form.handleSubmit(handleAdd)}
             className="space-y-4"
           >
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            {/* Row 1: Item Code, Description, Category */}
+            <div className="flex flex-wrap gap-4">
               <FormField
                 control={form.control}
                 name="receiptItemCode"
                 render={({ field }) => (
-                  <FormItem>
+                  <FormItem className="min-w-[180px] flex-1">
                     <FormLabel>Item Code</FormLabel>
                     <Popover
                       open={isItemCodeSuggestionsOpen}
@@ -565,7 +566,7 @@ export function LineItemsSection({ items, onChange, location }: LineItemsSection
                 control={form.control}
                 name="description"
                 render={({ field }) => (
-                  <FormItem>
+                  <FormItem className="min-w-[200px] flex-[2]">
                     <FormLabel required>Description</FormLabel>
                     <Popover
                       open={isSuggestionsOpen}
@@ -667,7 +668,7 @@ export function LineItemsSection({ items, onChange, location }: LineItemsSection
                 control={form.control}
                 name="category"
                 render={({ field }) => (
-                  <FormItem>
+                  <FormItem className="min-w-[200px] flex-1">
                     <FormLabel required>Category</FormLabel>
                     <FormControl>
                       <Combobox
@@ -709,12 +710,12 @@ export function LineItemsSection({ items, onChange, location }: LineItemsSection
             </div>
 
             {/* Row 2: Subcategory, Quantity, Unit Price, Add Item */}
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-[1fr_auto_auto_auto] sm:items-end">
+            <div className="flex flex-wrap items-end gap-4">
               <FormField
                 control={form.control}
                 name="subcategory"
                 render={({ field }) => (
-                  <FormItem>
+                  <FormItem className="min-w-[200px] flex-1">
                     <FormLabel>Subcategory (optional)</FormLabel>
                     <FormControl>
                       <Combobox
@@ -744,11 +745,11 @@ export function LineItemsSection({ items, onChange, location }: LineItemsSection
                 control={form.control}
                 name="quantity"
                 render={({ field }) => (
-                  <FormItem>
+                  <FormItem className="min-w-[110px]">
                     <FormLabel required>Qty</FormLabel>
                     <FormControl>
                       <DecimalInput
-                        className="w-20"
+                        className="w-full"
                         name={field.name}
                         value={field.value}
                         onChange={field.onChange}
@@ -764,7 +765,7 @@ export function LineItemsSection({ items, onChange, location }: LineItemsSection
                 control={form.control}
                 name="unitPrice"
                 render={({ field }) => (
-                  <FormItem>
+                  <FormItem className="min-w-[150px]">
                     <FormLabel required>Unit Price</FormLabel>
                     <FormControl>
                       <CurrencyInput {...field} />
@@ -774,7 +775,7 @@ export function LineItemsSection({ items, onChange, location }: LineItemsSection
                 )}
               />
 
-              <div className="flex justify-end sm:mb-0.5">
+              <div className="mb-0.5 flex justify-end">
                 <Button type="submit" variant="secondary" size="sm">
                   <Plus className="mr-1 h-4 w-4" />
                   Add Item

@@ -127,12 +127,14 @@ export function ItemTemplateForm({
           )}
         />
 
-        <div className="grid grid-cols-2 gap-4">
+        {/* flex-wrap + per-field min-w: the comboboxes keep a readable width
+            and wrap to a second row rather than colliding. */}
+        <div className="flex flex-wrap gap-4">
           <FormField
             control={form.control}
             name="defaultCategory"
             render={({ field }) => (
-              <FormItem>
+              <FormItem className="min-w-[200px] flex-1">
                 <FormLabel>Default Category (optional)</FormLabel>
                 <FormControl>
                   <Combobox
@@ -152,7 +154,7 @@ export function ItemTemplateForm({
             control={form.control}
             name="defaultSubcategory"
             render={({ field }) => (
-              <FormItem>
+              <FormItem className="min-w-[200px] flex-1">
                 <FormLabel>Default Subcategory (optional)</FormLabel>
                 <FormControl>
                   <Combobox

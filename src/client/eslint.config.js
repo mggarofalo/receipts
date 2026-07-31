@@ -7,6 +7,7 @@ import jsxA11y from "eslint-plugin-jsx-a11y";
 import tseslint from "typescript-eslint";
 import eslintConfigPrettier from "eslint-config-prettier";
 import { defineConfig, globalIgnores } from "eslint/config";
+import fieldRowLayout from "./eslint-rules/field-row-layout.js";
 
 export default defineConfig([
   globalIgnores(["dist", "src/generated"]),
@@ -24,12 +25,18 @@ export default defineConfig([
       ecmaVersion: 2020,
       globals: globals.browser,
     },
+    plugins: {
+      // Repo-local rules live in ./eslint-rules.
+      local: { rules: { "field-row-layout": fieldRowLayout } },
+    },
     rules: {
       "@typescript-eslint/no-unused-vars": [
         "error",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
       "react-hook-stability/require-stable-hook-returns": "error",
+      // Field rows must wrap rather than shrink, so inputs can't overlap.
+      "local/field-row-layout": "error",
     },
   },
   {

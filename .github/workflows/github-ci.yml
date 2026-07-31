@@ -299,6 +299,34 @@ jobs:
       - name: Check formatting
         run: dotnet format Receipts.slnx --no-restore --verify-no-changes
 
+  frontend-lint:
+    name: Frontend Lint
+    needs: [pr-title]
+    if: ${{ !cancelled() && (needs.pr-title.result == 'success' || needs.pr-title.result == 'skipped') && github.event.action != 'labeled' && github.event.action != 'unlabeled' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: src/client/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: src/client
+
+      # Enforces the repo-local rules in src/client/eslint-rules/ — notably
+      # local/field-row-layout, which blocks the grid-based field rows that
+      # let inputs overlap. The pre-commit hook runs the same check, but a
+      # --no-verify commit would otherwise reach main unchallenged.
+      - name: Lint client
+        run: npm run lint
+        working-directory: src/client
+
   security:
     name: Vulnerability Scan
     needs: [pr-title]

@@ -75,7 +75,10 @@ const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps>(
             aria-busy={loading || undefined}
             disabled={disabled}
             className={cn(
-              "h-9 w-full justify-between font-normal",
+              // min-w-0 so the trigger can shrink to its container and let the
+              // truncate below do its job, instead of forcing its min-content
+              // width on whatever row it sits in.
+              "h-9 w-full min-w-0 justify-between font-normal",
               !selected && !value && "text-muted-foreground",
               className,
             )}
