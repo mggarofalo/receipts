@@ -1,5 +1,16 @@
 <!-- https://learn.microsoft.com/en-us/nuget/consume-packages/Central-Package-Management -->
 <Project>
+  <PropertyGroup>
+    <!--
+      Lets a PackageVersion below govern a package we only pull in transitively,
+      without every affected project needing a direct PackageReference to force
+      it (the RECEIPTS-680 approach). Three of the advisories fixed in
+      RECEIPTS-828 reach a dozen projects apiece, so the per-project workaround
+      does not scale.
+    -->
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageVersion Include="Asp.Versioning.Mvc" Version="8.1.1" />
     <PackageVersion Include="Asp.Versioning.Mvc.ApiExplorer" Version="8.1.1" />
@@ -56,8 +67,24 @@
     <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.3" />
     <!-- Pinned for security: GHSA-37gx-xxp4-5rgx, GHSA-w3x6-4m5h-cxqf (RECEIPTS-680). Forced
          into Infrastructure.csproj via a direct PackageReference so CPM resolves the patched
-         transitive. -->
-    <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.6" />
+         transitive. Bumped again for GHSA-cvvh-rhrc-wg4q, GHSA-23rf-6693-g89p, GHSA-8q5v-6pqq-x66h,
+         GHSA-g8r8-53c2-pm3f and GHSA-mmjf-rqrv-855v, all patched in 10.0.10 (RECEIPTS-828). -->
+    <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.10" />
+
+    <!--
+      Transitive security pins (RECEIPTS-828). None of these is referenced
+      directly; they arrive via EF Core's SQLite provider, ASP.NET Core's
+      OpenAPI package and Aspire respectively, and are held here by
+      CentralPackageTransitivePinningEnabled above. Each patch stays within the
+      package's current major line, so none is a breaking upgrade. Drop a pin
+      once the parent dependency ships a patched version on its own.
+        SQLitePCLRaw.lib.e_sqlite3 → GHSA-2m69-gcr7-jv3q (vulnerable <= 2.1.11)
+        Microsoft.OpenApi         → GHSA-v5pm-xwqc-g5wc (patched in 2.7.5)
+        MessagePack               → GHSA-hv8m-jj95-wg3x (patched in 2.5.301)
+    -->
+    <PackageVersion Include="SQLitePCLRaw.lib.e_sqlite3" Version="2.1.12" />
+    <PackageVersion Include="Microsoft.OpenApi" Version="2.7.5" />
+    <PackageVersion Include="MessagePack" Version="2.5.301" />
     <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageVersion Include="Serilog.Extensions.Logging" Version="10.0.0" />
     <PackageVersion Include="Serilog.Sinks.Console" Version="6.1.1" />
