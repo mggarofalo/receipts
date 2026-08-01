@@ -53,6 +53,9 @@ Notes:
   > `NpgsqlMigrationsHistoryExtensions.UsePublicMigrationsHistory()`, applied at every `UseNpgsql` site.
   > Regression coverage: `MigrationsHistorySchemaTests` (its own container, role named `receipts`, default
   > `search_path`) and `InfrastructureServiceTests.RegisterInfrastructureServices_DatabaseConfigured_PinsMigrationsHistoryToPublicSchema`.
+  > `DatabaseSchemaConventionTests` adds two repo-wide guards that run in both the pre-commit hook and CI:
+  > every `UseNpgsql` call site must pin the history table, and no schema in the EF model may be named after
+  > a `POSTGRES_USER` in `docker-compose.yml` (beyond the known, mitigated `receipts`).
   >
   > **Naming a schema after the database role is the trap.** Any future schema that matches the deployed
   > role name silently changes `current_schema()` for every connection.

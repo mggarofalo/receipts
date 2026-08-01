@@ -90,7 +90,7 @@ public static class InfrastructureService
 		{
 			services.AddDbContextFactory<ApplicationDbContext>(options =>
 			{
-				options.UseNpgsql();
+				options.UseNpgsql(b => b.UsePublicMigrationsHistory());
 				options.ConfigureWarnings(w => w.Log(
 					(RelationalEventId.PendingModelChangesWarning, LogLevel.Warning)));
 			});
