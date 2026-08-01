@@ -33,8 +33,29 @@ semantics. Several tables the issue named do not exist (e.g. `ReceiptImages`, `Y
 Notes:
 - The issue's proposed `backup` schema is dropped — backups are separate SQLite files
   (`BackupService`), not PostgreSQL tables.
-- `__EFMigrationsHistory` stays in `public`: no global `HasDefaultSchema` is set, so EF keeps
-  finding its history table where it already is. `__SeedHistory` stays alongside it as infra meta.
+- `__EFMigrationsHistory` stays in `public`. `__SeedHistory` stays alongside it as infra meta.
+
+  > **RECEIPTS-830 correction.** This note originally read "no global `HasDefaultSchema` is set, so EF
+  > keeps finding its history table where it already is." That was wrong, and it took production down.
+  > Leaving the history table unqualified makes EF emit it as a bare `"__EFMigrationsHistory"`, and a bare
+  > name is resolved against `search_path` — which PostgreSQL defaults to `"$user", public`. The deployed
+  > role is named `receipts` (`POSTGRES_USER=receipts`), so the moment *this migration* created a schema
+  > named `receipts`, `"$user"` began resolving and `current_schema()` flipped from `public` to `receipts`.
+  >
+  > Reads and writes survived that (an unqualified name falls through the path to `public`), but EF Core 9+
+  > issues `CREATE TABLE IF NOT EXISTS "__EFMigrationsHistory"` unconditionally before taking the migration
+  > lock — and both the create and its existence check are schema-*local*. So the next container start after
+  > this migration created an empty second history table in the `receipts` schema, read it back as "no
+  > migrations applied", and replayed from `20240829023650_Create` against a fully populated database:
+  > `42P07: relation "Receipts" already exists`, on a restart loop.
+  >
+  > The history table is now pinned with an explicit `public` schema via
+  > `NpgsqlMigrationsHistoryExtensions.UsePublicMigrationsHistory()`, applied at every `UseNpgsql` site.
+  > Regression coverage: `MigrationsHistorySchemaTests` (its own container, role named `receipts`, default
+  > `search_path`) and `InfrastructureServiceTests.RegisterInfrastructureServices_DatabaseConfigured_PinsMigrationsHistoryToPublicSchema`.
+  >
+  > **Naming a schema after the database role is the trap.** Any future schema that matches the deployed
+  > role name silently changes `current_schema()` for every connection.
 
 ## Code changes that accompany the migration
 
@@ -88,3 +109,7 @@ those tables. Roll back code and database together.
   the tests' hand-written raw SQL resolves table names regardless of which schema a table currently
   occupies — necessary because `MigrationSafetyTests` roll the database back to a pre-746 state
   (tables in `public`) and forward again within a single test.
+- **Why this suite missed RECEIPTS-830:** the fixture masked the bug twice over — it pins `public` first
+  on the `search_path`, and it connects as the default Testcontainers role, which does not collide with
+  any schema name. Production does neither. `MigrationsHistorySchemaTests` therefore stands up its own
+  container with the role named `receipts` and no `search_path` override.

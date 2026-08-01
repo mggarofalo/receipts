@@ -5,6 +5,8 @@ using FluentAssertions;
 using Infrastructure.Mapping;
 using Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -269,6 +271,31 @@ public class InfrastructureServiceTests
 		serviceProvider.GetService<IDatabaseMigratorService>().Should().NotBeNull();
 		serviceProvider.GetService<CardMapper>().Should().NotBeNull();
 		serviceProvider.GetService<ReceiptMapper>().Should().NotBeNull();
+	}
+
+	// RECEIPTS-830: the history table must carry an explicit `public` schema. Left unqualified, EF's
+	// unconditional CREATE TABLE IF NOT EXISTS resolves to current_schema(), which is the `receipts`
+	// schema whenever the connecting role is also named `receipts` (PostgreSQL's default search_path is
+	// "$user", public). That creates an empty shadow history table and replays every migration against a
+	// populated database.
+	[Fact]
+	public void RegisterInfrastructureServices_DatabaseConfigured_PinsMigrationsHistoryToPublicSchema()
+	{
+		// Arrange
+		ServiceCollection services = new();
+		services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
+		IConfiguration configuration = BuildPostgresConfiguration();
+
+		// Act
+		services.RegisterInfrastructureServices(configuration);
+		ServiceProvider serviceProvider = services.BuildServiceProvider();
+		DbContextOptions<ApplicationDbContext> options =
+			serviceProvider.GetRequiredService<DbContextOptions<ApplicationDbContext>>();
+
+		// Assert
+		RelationalOptionsExtension extension = RelationalOptionsExtension.Extract(options);
+		extension.MigrationsHistoryTableSchema.Should().Be("public");
+		extension.MigrationsHistoryTableName.Should().Be(HistoryRepository.DefaultTableName);
 	}
 
 	[Fact]

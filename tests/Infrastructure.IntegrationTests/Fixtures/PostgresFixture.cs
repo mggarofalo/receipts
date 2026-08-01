@@ -65,7 +65,11 @@ public class PostgresFixture : IAsyncLifetime
 		}
 
 		DbContextOptionsBuilder<ApplicationDbContext> builder = new();
-		builder.UseNpgsql(_dataSource, b => b.UseVector());
+		builder.UseNpgsql(_dataSource, b =>
+		{
+			b.UseVector();
+			b.UsePublicMigrationsHistory();
+		});
 
 		return builder.Options;
 	}
