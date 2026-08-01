@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { render } from "@testing-library/react";
@@ -51,7 +51,20 @@ const defaultShortcuts: ShortcutsContextValue = {
   setHelpOpen: vi.fn(),
 };
 
-function renderLayout(authOverrides?: Partial<AuthContextValue>) {
+// Layout mounts useLastRoutePersistence, which redirects "/" to the last route
+// stored in localStorage. Without a reset, one test's route leaks into the next.
+beforeEach(() => {
+  localStorage.clear();
+});
+
+const adminUser = {
+  userId: "admin-id",
+  email: "admin@test.com",
+  roles: ["Admin"],
+  mustResetPassword: false,
+};
+
+function renderLayout(authOverrides?: Partial<AuthContextValue>, route = "/") {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
@@ -62,10 +75,14 @@ function renderLayout(authOverrides?: Partial<AuthContextValue>) {
       {
         path: "/",
         element: <Layout />,
-        children: [{ index: true, element: <div>Home Page Content</div> }],
+        children: [
+          { index: true, element: <div>Home Page Content</div> },
+          // Splat so any pathname under test renders without route-specific setup.
+          { path: "*", element: <div>Page Content</div> },
+        ],
       },
     ],
-    { initialEntries: ["/"] },
+    { initialEntries: [route] },
   );
 
   return render(
@@ -93,14 +110,7 @@ describe("Layout", () => {
   });
 
   it("shows user email in the topbar", () => {
-    renderLayout({
-      user: {
-        userId: "admin-id",
-        email: "admin@test.com",
-        roles: ["Admin"],
-        mustResetPassword: false,
-      },
-    });
+    renderLayout({ user: adminUser });
     expect(screen.getByText("admin@test.com")).toBeInTheDocument();
   });
 
@@ -136,14 +146,7 @@ describe("Layout", () => {
     const { unmount } = renderLayout();
     expect(screen.queryByText("Admin")).not.toBeInTheDocument();
     unmount();
-    renderLayout({
-      user: {
-        userId: "admin-id",
-        email: "admin@test.com",
-        roles: ["Admin"],
-        mustResetPassword: false,
-      },
-    });
+    renderLayout({ user: adminUser });
     expect(screen.getByText("Admin")).toBeInTheDocument();
   });
 
@@ -163,9 +166,7 @@ describe("Layout", () => {
   it("opens the user dropdown and exposes API Keys + Logout", async () => {
     const user = userEvent.setup();
     renderLayout();
-    await user.click(
-      screen.getByRole("button", { name: /user menu for/i }),
-    );
+    await user.click(screen.getByRole("button", { name: /user menu for/i }));
     await waitFor(() => {
       expect(
         screen.getByRole("menuitem", { name: "API Keys" }),
@@ -180,9 +181,7 @@ describe("Layout", () => {
     const user = userEvent.setup();
     const logoutMock = vi.fn().mockResolvedValue(undefined);
     renderLayout({ logout: logoutMock });
-    await user.click(
-      screen.getByRole("button", { name: /user menu for/i }),
-    );
+    await user.click(screen.getByRole("button", { name: /user menu for/i }));
     await waitFor(() =>
       expect(
         screen.getByRole("menuitem", { name: "Logout" }),
@@ -200,5 +199,110 @@ describe("Layout", () => {
       const dialog = screen.getByRole("dialog");
       expect(within(dialog).getByText("Workspace")).toBeInTheDocument();
     });
+  });
+});
+
+/** hrefs of every link inside `container` carrying aria-current="page". */
+function currentHrefsWithin(container: HTMLElement): string[] {
+  return within(container)
+    .getAllByRole("link")
+    .filter((link) => link.getAttribute("aria-current") === "page")
+    .map((link) => link.getAttribute("href") ?? "");
+}
+
+function sidebar(): HTMLElement {
+  return screen.getByRole("navigation", { name: /^primary$/i });
+}
+
+async function openMobileDrawer(): Promise<HTMLElement> {
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: /^more$/i }));
+  return await screen.findByRole("dialog");
+}
+
+describe("Layout active nav resolution", () => {
+  // RECEIPTS-833: /settings/ynab matched both YNAB (exact) and Settings
+  // (prefix), so two nav entries claimed aria-current="page" at once.
+  const cases: ReadonlyArray<[route: string, expectedHref: string]> = [
+    ["/", "/"],
+    ["/receipts", "/receipts"],
+    ["/receipts/new", "/receipts"],
+    ["/receipts/8f0c1d2e-3a4b-5c6d-7e8f-9a0b1c2d3e4f", "/receipts"],
+    ["/settings", "/settings"],
+    ["/settings/ynab", "/settings/ynab"],
+    ["/ynab", "/ynab"],
+    ["/reports", "/reports"],
+    ["/accounts", "/accounts"],
+    ["/item-templates", "/item-templates"],
+    ["/security", "/security"],
+    ["/api-keys", "/api-keys"],
+  ];
+
+  it.each(cases)(
+    "highlights exactly one sidebar item on %s",
+    (route, expectedHref) => {
+      renderLayout(undefined, route);
+      expect(currentHrefsWithin(sidebar())).toEqual([expectedHref]);
+    },
+  );
+
+  it.each(cases)(
+    "highlights exactly one mobile drawer item on %s",
+    async (route, expectedHref) => {
+      renderLayout(undefined, route);
+      const drawer = await openMobileDrawer();
+      expect(currentHrefsWithin(drawer)).toEqual([expectedHref]);
+    },
+  );
+
+  it("keeps the sidebar and the mobile drawer in agreement", async () => {
+    renderLayout(undefined, "/settings/ynab");
+    const desktop = currentHrefsWithin(sidebar());
+    const drawer = await openMobileDrawer();
+    expect(currentHrefsWithin(drawer)).toEqual(desktop);
+  });
+
+  it("does not mark Settings current on the YNAB settings route", () => {
+    renderLayout(undefined, "/settings/ynab");
+    const settings = within(sidebar())
+      .getAllByRole("link")
+      .find((link) => link.getAttribute("href") === "/settings");
+    expect(settings).toBeDefined();
+    expect(settings).not.toHaveAttribute("aria-current");
+    expect(settings).not.toHaveClass("active");
+  });
+
+  it("marks Dashboard current only on the exact root route", () => {
+    renderLayout(undefined, "/reports");
+    const dashboard = within(sidebar())
+      .getAllByRole("link")
+      .find((link) => link.getAttribute("href") === "/");
+    expect(dashboard).toBeDefined();
+    expect(dashboard).not.toHaveAttribute("aria-current");
+  });
+
+  it("highlights exactly one item on an admin-only route", () => {
+    renderLayout({ user: adminUser }, "/admin/users");
+    expect(currentHrefsWithin(sidebar())).toEqual(["/admin/users"]);
+  });
+
+  it("highlights nothing on a route with no nav entry", () => {
+    renderLayout(undefined, "/change-password");
+    expect(currentHrefsWithin(sidebar())).toEqual([]);
+  });
+
+  it("does not let a nav path prefix-match an unrelated sibling route", () => {
+    // "/receipts" must not claim "/receipts-archive" — the match needs a
+    // segment boundary, not a bare string prefix.
+    renderLayout(undefined, "/receipts-archive");
+    expect(currentHrefsWithin(sidebar())).toEqual([]);
+  });
+
+  it("applies the active class to the resolved item", () => {
+    renderLayout(undefined, "/settings/ynab");
+    const ynab = within(sidebar())
+      .getAllByRole("link")
+      .find((link) => link.getAttribute("href") === "/settings/ynab");
+    expect(ynab).toHaveClass("active");
   });
 });
