@@ -1,11 +1,21 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { format, subMonths } from "date-fns";
 import { renderWithQueryClient } from "@/test/test-utils";
 import SpendingByLocation from "./SpendingByLocation";
 
 vi.mock("@/hooks/useSpendingByLocationReport", () => ({
   useSpendingByLocationReport: vi.fn(),
 }));
+
+vi.mock("@/lib/api-client", () => ({
+  default: { GET: vi.fn() },
+}));
+
+vi.mock("@/lib/export-csv", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/export-csv")>();
+  return { ...actual, downloadCsv: vi.fn() };
+});
 
 vi.mock("@/components/dashboard/DateRangeSelector", () => ({
   DateRangeSelector: ({
@@ -42,7 +52,11 @@ vi.mock("@/components/charts", () => ({
 }));
 
 import { useSpendingByLocationReport } from "@/hooks/useSpendingByLocationReport";
+import client from "@/lib/api-client";
+import { downloadCsv } from "@/lib/export-csv";
 const mockHook = vi.mocked(useSpendingByLocationReport);
+const mockClient = vi.mocked(client);
+const mockDownloadCsv = vi.mocked(downloadCsv);
 
 const mockItems = [
   {
@@ -225,6 +239,78 @@ describe("SpendingByLocation", () => {
     setupMock();
     renderWithQueryClient(<SpendingByLocation />);
     expect(screen.getByTestId("date-range-selector")).toBeInTheDocument();
+  });
+
+  it("exports the full filtered dataset across pages as csv", async () => {
+    const user = userEvent.setup();
+    setupMock();
+
+    mockClient.GET.mockImplementation((async (
+      _path: string,
+      options: { params: { query: { page: number } } },
+    ) => {
+      const page = options.params.query.page;
+      const count = page === 1 ? 100 : 50;
+      const items = Array.from({ length: count }, (_, i) => ({
+        location: `Store ${(page - 1) * 100 + i}`,
+        visits: 1,
+        total: 10,
+        averagePerVisit: 10,
+      }));
+      return {
+        data: { totalCount: 150, grandTotal: 1500, items },
+        error: undefined,
+        response: {} as Response,
+      };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    }) as any);
+
+    renderWithQueryClient(<SpendingByLocation />);
+
+    await user.click(screen.getByRole("button", { name: "Export CSV" }));
+    await waitFor(() => expect(mockDownloadCsv).toHaveBeenCalledTimes(1));
+
+    const expectedStart = format(subMonths(new Date(), 1), "yyyy-MM-dd");
+    const expectedEnd = format(new Date(), "yyyy-MM-dd");
+
+    // Fetches every page with the current filters at the max page size.
+    expect(mockClient.GET).toHaveBeenCalledTimes(2);
+    expect(mockClient.GET).toHaveBeenNthCalledWith(
+      1,
+      "/api/reports/spending-by-location",
+      {
+        params: {
+          query: {
+            startDate: expectedStart,
+            endDate: expectedEnd,
+            sortBy: "total",
+            sortDirection: "desc",
+            page: 1,
+            pageSize: 100,
+          },
+        },
+      },
+    );
+    expect(mockClient.GET).toHaveBeenNthCalledWith(
+      2,
+      "/api/reports/spending-by-location",
+      {
+        params: {
+          query: expect.objectContaining({ page: 2, pageSize: 100 }),
+        },
+      },
+    );
+
+    const [filename, csv] = mockDownloadCsv.mock.calls[0];
+    expect(filename).toBe(
+      `spending-by-location_${expectedStart}_${expectedEnd}.csv`,
+    );
+    const lines = csv.split("\r\n");
+    expect(lines[0]).toBe("Location,Visits,Total,Average Per Visit");
+    expect(lines[1]).toBe("Store 0,1,10,10");
+    expect(lines[150]).toBe("Store 149,1,10,10");
+    // Header + 150 rows + trailing empty line from the final CRLF.
+    expect(lines).toHaveLength(152);
   });
 
   it("resets page on date range change", async () => {

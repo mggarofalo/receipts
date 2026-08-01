@@ -7,6 +7,9 @@ import {
 } from "@/hooks/useUncategorizedItemsReport";
 import { useAllCategories } from "@/hooks/useCategories";
 import { useAllSubcategoriesByCategoryId } from "@/hooks/useSubcategories";
+import { useCsvExport } from "@/hooks/useCsvExport";
+import { csvFilename } from "@/lib/export-csv";
+import { fetchAllReportPages } from "@/lib/fetch-all-report-pages";
 import { formatCurrency } from "@/lib/format";
 import {
   Table,
@@ -58,7 +61,56 @@ export default function UncategorizedItems() {
   };
 
   const { data, isLoading, isError } = useUncategorizedItemsReport(params);
+  const { exportCsv, isExporting } = useCsvExport();
   const { data: categories, isLoading: categoriesLoading } = useAllCategories(true);
+
+  function handleExport() {
+    exportCsv({
+      filename: csvFilename("uncategorized-items"),
+      headers: [
+        "Description",
+        "Item Code",
+        "Quantity",
+        "Unit Price",
+        "Total",
+        "Subcategory",
+        "Receipt ID",
+      ],
+      rows: async () => {
+        const items = await fetchAllReportPages(
+          async (exportPage, exportPageSize) => {
+            const { data: pageData, error } = await client.GET(
+              "/api/reports/uncategorized-items",
+              {
+                params: {
+                  query: {
+                    sortBy,
+                    sortDirection,
+                    page: exportPage,
+                    pageSize: exportPageSize,
+                  },
+                },
+              },
+            );
+            if (error) throw error;
+            return {
+              items: pageData?.items ?? [],
+              totalCount: Number(pageData?.totalCount ?? 0),
+            };
+          },
+        );
+        return items.map((item) => [
+          item.description,
+          item.receiptItemCode,
+          item.quantity,
+          item.unitPrice,
+          item.totalAmount,
+          item.subcategory,
+          item.receiptId,
+        ]);
+      },
+    });
+  }
 
   const categoryOptions: ComboboxOption[] = useMemo(
     () =>
@@ -238,11 +290,20 @@ export default function UncategorizedItems() {
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-6 rounded-lg border p-4">
+      <div className="flex items-center gap-6 rounded-lg border p-4">
         <div>
           <p className="card-sub">Uncategorized Items</p>
           <p className="money-med">{data.totalCount}</p>
         </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="ml-auto"
+          disabled={isExporting}
+          onClick={handleExport}
+        >
+          {isExporting ? "Exporting..." : "Export CSV"}
+        </Button>
       </div>
 
       {selectedIds.size > 0 && (

@@ -1,6 +1,8 @@
 import { useCallback, useMemo, useState } from "react";
 import { format, subMonths } from "date-fns";
 import { useSpendingByNormalizedDescription } from "@/hooks/useSpendingByNormalizedDescription";
+import { useCsvExport } from "@/hooks/useCsvExport";
+import { csvFilename } from "@/lib/export-csv";
 import { formatCurrency } from "@/lib/format";
 import { DateRangeSelector } from "@/components/dashboard/DateRangeSelector";
 import type { DateRange } from "@/hooks/useDashboard";
@@ -13,6 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
 function getDefaultRange(): DateRange {
@@ -53,6 +56,21 @@ export default function SpendingByNormalizedDescription() {
       })),
     [sorted],
   );
+
+  const { exportCsv, isExporting } = useCsvExport();
+
+  function handleExport() {
+    exportCsv({
+      filename: csvFilename("spending-by-normalized-description", dateRange),
+      headers: ["Canonical Name", "Item Count", "Total Amount", "Currency"],
+      rows: sorted.map((item) => [
+        item.canonicalName,
+        item.itemCount,
+        item.totalAmount,
+        item.currency,
+      ]),
+    });
+  }
 
   if (isLoading) {
     return (
@@ -106,10 +124,20 @@ export default function SpendingByNormalizedDescription() {
             <p className="money-med">{formatCurrency(grandTotal)}</p>
           </div>
         </div>
-        <DateRangeSelector
-          value={dateRange}
-          onChange={handleDateRangeChange}
-        />
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={isExporting}
+            onClick={handleExport}
+          >
+            {isExporting ? "Exporting..." : "Export CSV"}
+          </Button>
+          <DateRangeSelector
+            value={dateRange}
+            onChange={handleDateRangeChange}
+          />
+        </div>
       </div>
 
       <ChartCard

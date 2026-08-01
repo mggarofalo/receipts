@@ -1,5 +1,6 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { format } from "date-fns";
 import { renderWithQueryClient } from "@/test/test-utils";
 import OutOfBalance from "./OutOfBalance";
 
@@ -13,8 +14,21 @@ vi.mock("@/hooks/useOutOfBalanceReport", () => ({
   useOutOfBalanceReport: vi.fn(),
 }));
 
+vi.mock("@/lib/api-client", () => ({
+  default: { GET: vi.fn() },
+}));
+
+vi.mock("@/lib/export-csv", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/export-csv")>();
+  return { ...actual, downloadCsv: vi.fn() };
+});
+
 import { useOutOfBalanceReport } from "@/hooks/useOutOfBalanceReport";
+import client from "@/lib/api-client";
+import { downloadCsv } from "@/lib/export-csv";
 const mockHook = vi.mocked(useOutOfBalanceReport);
+const mockClient = vi.mocked(client);
+const mockDownloadCsv = vi.mocked(downloadCsv);
 
 const mockItems = [
   {
@@ -240,6 +254,46 @@ describe("OutOfBalance", () => {
     // $10.00 item subtotal for Store A
     expect(screen.getByText("Store A").closest("tr")).toHaveTextContent(
       "$10.00",
+    );
+  });
+
+  it("exports the report as csv with the current sort", async () => {
+    const user = userEvent.setup();
+    setupMock();
+    mockClient.GET.mockResolvedValue({
+      data: { totalCount: 2, totalDiscrepancy: 7, items: mockItems },
+      error: undefined,
+      response: {} as Response,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    renderWithQueryClient(<OutOfBalance />);
+
+    await user.click(screen.getByRole("button", { name: "Export CSV" }));
+    await waitFor(() => expect(mockDownloadCsv).toHaveBeenCalledTimes(1));
+
+    expect(mockClient.GET).toHaveBeenCalledWith(
+      "/api/reports/out-of-balance",
+      {
+        params: {
+          query: {
+            sortBy: "date",
+            sortDirection: "asc",
+            page: 1,
+            pageSize: 100,
+          },
+        },
+      },
+    );
+
+    const [filename, csv] = mockDownloadCsv.mock.calls[0];
+    expect(filename).toBe(
+      `out-of-balance_${format(new Date(), "yyyy-MM-dd")}.csv`,
+    );
+    expect(csv).toBe(
+      "Date,Location,Item Subtotal,Tax,Adjustments,Expected Total,Actual Total,Difference,Receipt ID\r\n" +
+        "2025-03-01,Store A,10,1,0,11,15,-4,id-1\r\n" +
+        "2025-03-02,Store B,20,2,1,23,20,3,id-2\r\n",
     );
   });
 });

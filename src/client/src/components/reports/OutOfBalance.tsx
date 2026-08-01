@@ -4,6 +4,10 @@ import {
   useOutOfBalanceReport,
   type OutOfBalanceParams,
 } from "@/hooks/useOutOfBalanceReport";
+import { useCsvExport } from "@/hooks/useCsvExport";
+import client from "@/lib/api-client";
+import { csvFilename } from "@/lib/export-csv";
+import { fetchAllReportPages } from "@/lib/fetch-all-report-pages";
 import { formatCurrency } from "@/lib/format";
 import {
   Table,
@@ -35,6 +39,59 @@ export default function OutOfBalance() {
   };
 
   const { data, isLoading, isError } = useOutOfBalanceReport(params);
+  const { exportCsv, isExporting } = useCsvExport();
+
+  function handleExport() {
+    exportCsv({
+      filename: csvFilename("out-of-balance"),
+      headers: [
+        "Date",
+        "Location",
+        "Item Subtotal",
+        "Tax",
+        "Adjustments",
+        "Expected Total",
+        "Actual Total",
+        "Difference",
+        "Receipt ID",
+      ],
+      rows: async () => {
+        const items = await fetchAllReportPages(
+          async (exportPage, exportPageSize) => {
+            const { data: pageData, error } = await client.GET(
+              "/api/reports/out-of-balance",
+              {
+                params: {
+                  query: {
+                    sortBy,
+                    sortDirection,
+                    page: exportPage,
+                    pageSize: exportPageSize,
+                  },
+                },
+              },
+            );
+            if (error) throw error;
+            return {
+              items: pageData?.items ?? [],
+              totalCount: Number(pageData?.totalCount ?? 0),
+            };
+          },
+        );
+        return items.map((item) => [
+          item.date,
+          item.location,
+          item.itemSubtotal,
+          item.taxAmount,
+          item.adjustmentTotal,
+          item.expectedTotal,
+          item.transactionTotal,
+          item.difference,
+          item.receiptId,
+        ]);
+      },
+    });
+  }
 
   function handleSort(column: string) {
     const nextColumn = column as SortColumn;
@@ -90,7 +147,7 @@ export default function OutOfBalance() {
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-6 rounded-lg border p-4">
+      <div className="flex items-center gap-6 rounded-lg border p-4">
         <div>
           <p className="card-sub">
             Out-of-Balance Receipts
@@ -103,6 +160,15 @@ export default function OutOfBalance() {
             {formatCurrency(Number(data.totalDiscrepancy ?? 0))}
           </p>
         </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="ml-auto"
+          disabled={isExporting}
+          onClick={handleExport}
+        >
+          {isExporting ? "Exporting..." : "Export CSV"}
+        </Button>
       </div>
 
       <Table>
