@@ -13,6 +13,7 @@ import {
   useCategoryRecommendations,
 } from "@/hooks/useSimilarItems";
 import { useReceiptItemSuggestions } from "@/hooks/useReceiptItemSuggestions";
+import { usePromoteToTemplate } from "@/hooks/usePromoteToTemplate";
 import { formatCurrency } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -48,7 +49,16 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, Trash2, Loader2, Sparkles, Pencil, Check, X } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  Loader2,
+  Sparkles,
+  Pencil,
+  Check,
+  X,
+  BookmarkPlus,
+} from "lucide-react";
 
 const itemSchema = z.object({
   receiptItemCode: z.string().optional().default(""),
@@ -272,6 +282,37 @@ export function LineItemsSection({ items, onChange, location }: LineItemsSection
       setShowSuggestions(false);
     },
     [form],
+  );
+
+  const promoteToTemplate = usePromoteToTemplate();
+  const { mutate: promote, isPending: isPromoting } = promoteToTemplate;
+
+  const promoteSuggestion = useCallback(
+    (suggestion: NonNullable<typeof similarItems>[number]) => {
+      if (isPromoting) return;
+      promote({
+        name: suggestion.name,
+        defaultCategory: suggestion.defaultCategory,
+        defaultSubcategory: suggestion.defaultSubcategory,
+        defaultUnitPrice: suggestion.defaultUnitPrice,
+        defaultItemCode: suggestion.defaultItemCode,
+      });
+    },
+    [promote, isPromoting],
+  );
+
+  const promoteLineItem = useCallback(
+    (item: ReceiptLineItem) => {
+      if (isPromoting) return;
+      promote({
+        name: item.description,
+        defaultCategory: item.category,
+        defaultSubcategory: item.subcategory,
+        defaultUnitPrice: item.unitPrice,
+        defaultItemCode: item.receiptItemCode,
+      });
+    },
+    [promote, isPromoting],
   );
 
   const applyCategoryRec = useCallback(
@@ -651,6 +692,40 @@ export function LineItemsSection({ items, onChange, location }: LineItemsSection
                                     <span className="text-[10px] text-muted-foreground">
                                       {Math.round(Number(item.combinedScore ?? 0) * 100)}%
                                     </span>
+                                    {item.source === "history" ? (
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-6 w-6 shrink-0"
+                                        aria-label={`Save "${item.name}" as template`}
+                                        onPointerDown={(e) => {
+                                          // Keep the press from stealing focus
+                                          // or registering on the cmdk item.
+                                          e.preventDefault();
+                                          e.stopPropagation();
+                                        }}
+                                        onClick={(e) => {
+                                          // Must not select the suggestion or
+                                          // close the popover.
+                                          e.preventDefault();
+                                          e.stopPropagation();
+                                          promoteSuggestion(item);
+                                        }}
+                                      >
+                                        <BookmarkPlus
+                                          className="h-3.5 w-3.5"
+                                          aria-hidden="true"
+                                        />
+                                      </Button>
+                                    ) : (
+                                      // Placeholder keeps badge/score columns
+                                      // aligned across rows (no layout shift).
+                                      <span
+                                        className="h-6 w-6 shrink-0"
+                                        aria-hidden="true"
+                                      />
+                                    )}
                                   </div>
                                 </div>
                               </CommandItem>
@@ -922,6 +997,14 @@ export function LineItemsSection({ items, onChange, location }: LineItemsSection
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => promoteLineItem(item)}
+                          aria-label="Save as template"
+                        >
+                          <BookmarkPlus className="h-4 w-4" />
+                        </Button>
                         <Button
                           variant="ghost"
                           size="icon"

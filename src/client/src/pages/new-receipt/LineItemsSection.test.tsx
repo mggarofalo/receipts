@@ -3,6 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "@/test/test-utils";
 import { mockQueryResult, mockMutationResult } from "@/test/mock-hooks";
 import "@/test/setup-combobox-polyfills";
+import { useSimilarItems } from "@/hooks/useSimilarItems";
+import { usePromoteToTemplate } from "@/hooks/usePromoteToTemplate";
 import { LineItemsSection, type ReceiptLineItem } from "./LineItemsSection";
 
 vi.mock("@/hooks/useCategories", () => ({
@@ -51,6 +53,10 @@ vi.mock("@/hooks/useReceiptItemSuggestions", () => ({
       isSuccess: false,
     }),
   ),
+}));
+
+vi.mock("@/hooks/usePromoteToTemplate", () => ({
+  usePromoteToTemplate: vi.fn(() => mockMutationResult()),
 }));
 
 describe("LineItemsSection", () => {
@@ -355,5 +361,156 @@ describe("LineItemsSection", () => {
     // Should still be in edit mode (save rejected)
     expect(screen.getByLabelText("Edit description")).toBeInTheDocument();
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  // --- Save-as-template promotion tests ---
+
+  describe("promote to template", () => {
+    const historySuggestion = {
+      name: "Milk (gallon)",
+      similarity: 0.9,
+      semanticSimilarity: null,
+      combinedScore: 0.9,
+      source: "history" as const,
+      defaultCategory: "Food",
+      defaultSubcategory: "Dairy",
+      defaultUnitPrice: 3.5,
+      defaultItemCode: "MILK-GAL",
+    };
+    const templateSuggestion = {
+      name: "Milk chocolate",
+      similarity: 0.8,
+      semanticSimilarity: null,
+      combinedScore: 0.8,
+      source: "template" as const,
+      defaultCategory: "Food",
+      defaultSubcategory: null,
+      defaultUnitPrice: null,
+      defaultItemCode: null,
+    };
+
+    function mockSuggestions() {
+      vi.mocked(useSimilarItems).mockReturnValue(
+        mockQueryResult({
+          data: [historySuggestion, templateSuggestion],
+          isFetching: false,
+          isSuccess: true,
+        }),
+      );
+    }
+
+    function mockPromote() {
+      const mutate = vi.fn();
+      vi.mocked(usePromoteToTemplate).mockReturnValue(
+        mockMutationResult({ mutate }),
+      );
+      return mutate;
+    }
+
+    it("promotes a history suggestion without selecting it or closing the popover", async () => {
+      const user = userEvent.setup();
+      mockSuggestions();
+      const mutate = mockPromote();
+      renderWithProviders(<LineItemsSection {...defaultProps} />);
+
+      const input = screen.getByPlaceholderText("Item description");
+      await user.type(input, "mi");
+
+      const promoteButton = await screen.findByRole("button", {
+        name: 'Save "Milk (gallon)" as template',
+      });
+      await user.click(promoteButton);
+
+      expect(mutate).toHaveBeenCalledWith({
+        name: "Milk (gallon)",
+        defaultCategory: "Food",
+        defaultSubcategory: "Dairy",
+        defaultUnitPrice: 3.5,
+        defaultItemCode: "MILK-GAL",
+      });
+      // The click must not apply the suggestion to the form...
+      expect(input).toHaveValue("mi");
+      // ...and must not close the popover.
+      expect(
+        screen.getByRole("option", { name: /milk \(gallon\)/i }),
+      ).toBeInTheDocument();
+    });
+
+    it("does not render a promote button on template-source suggestions", async () => {
+      const user = userEvent.setup();
+      mockSuggestions();
+      mockPromote();
+      renderWithProviders(<LineItemsSection {...defaultProps} />);
+
+      await user.type(screen.getByPlaceholderText("Item description"), "mi");
+
+      await screen.findByRole("button", {
+        name: 'Save "Milk (gallon)" as template',
+      });
+      expect(
+        screen.queryByRole("button", {
+          name: 'Save "Milk chocolate" as template',
+        }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("promotes an entered line item from the table row action", async () => {
+      const user = userEvent.setup();
+      const mutate = mockPromote();
+      const items: ReceiptLineItem[] = [
+        {
+          id: "1",
+          receiptItemCode: "MILK-GAL",
+          description: "Milk (gallon)",
+          quantity: 2,
+          unitPrice: 3.5,
+          category: "Food",
+          subcategory: "Dairy",
+        },
+      ];
+      renderWithProviders(
+        <LineItemsSection {...defaultProps} items={items} />,
+      );
+
+      await user.click(
+        screen.getByRole("button", { name: "Save as template" }),
+      );
+
+      expect(mutate).toHaveBeenCalledWith({
+        name: "Milk (gallon)",
+        defaultCategory: "Food",
+        defaultSubcategory: "Dairy",
+        defaultUnitPrice: 3.5,
+        defaultItemCode: "MILK-GAL",
+      });
+    });
+
+    it("does not fire another promote while one is pending", async () => {
+      const user = userEvent.setup();
+      const mutate = vi.fn();
+      vi.mocked(usePromoteToTemplate).mockReturnValue(
+        mockMutationResult({ mutate, isPending: true, status: "pending" }),
+      );
+      const items: ReceiptLineItem[] = [
+        {
+          id: "1",
+          receiptItemCode: "",
+          description: "Milk",
+          quantity: 1,
+          unitPrice: 3.5,
+          category: "Food",
+          subcategory: "",
+        },
+      ];
+      renderWithProviders(
+        <LineItemsSection {...defaultProps} items={items} />,
+      );
+
+      await user.click(
+        screen.getByRole("button", { name: "Save as template" }),
+      );
+
+      expect(mutate).not.toHaveBeenCalled();
+    });
   });
 });
