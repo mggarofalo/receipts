@@ -18,8 +18,16 @@ jobs:
       - id: set-matrix
         # arch_suffix is the short architecture name used for platform-specific tags
         # (e.g., "amd64", "arm64"). Derived from the platform string.
+        #
+        # Each platform builds on a runner of its own architecture. Pointing both
+        # at ubuntu-latest meant arm64 was cross-built under QEMU, translating
+        # every instruction at runtime: 33:15 against amd64's 6:24 on v0.9.0.
+        # This build is close to the worst case for emulation because it is
+        # CPU-bound compilation rather than I/O -- a `dotnet publish` with
+        # PublishReadyToRun (crossgen is especially punishing under QEMU) plus a
+        # Vite production build. arm64 hosted runners are free for public repos.
         run: |
-          echo 'matrix={"include":[{"platform":"linux/amd64","runner":"ubuntu-latest","platform_pair":"linux-amd64","arch_suffix":"amd64"},{"platform":"linux/arm64","runner":"ubuntu-latest","platform_pair":"linux-arm64","arch_suffix":"arm64"}]}' >> "$GITHUB_OUTPUT"
+          echo 'matrix={"include":[{"platform":"linux/amd64","runner":"ubuntu-latest","platform_pair":"linux-amd64","arch_suffix":"amd64"},{"platform":"linux/arm64","runner":"ubuntu-24.04-arm","platform_pair":"linux-arm64","arch_suffix":"arm64"}]}' >> "$GITHUB_OUTPUT"
 
   build:
     name: Build (${{ matrix.platform_pair }})
@@ -36,9 +44,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
-
+      # No QEMU: every matrix entry now pairs its platform with a runner of the
+      # same architecture, so each job builds natively. Restore the
+      # docker/setup-qemu-action step here if a platform is ever added without a
+      # matching native runner.
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
