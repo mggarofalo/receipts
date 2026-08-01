@@ -28,6 +28,7 @@ builder.Services.AddDbContextFactory<ApplicationDbContext>(options =>
 		string? assemblyName = typeof(ApplicationDbContext).Assembly.FullName;
 		b.MigrationsAssembly(assemblyName);
 		b.UseVector();
+		b.UsePublicMigrationsHistory();
 	});
 	options.ConfigureWarnings(w => w.Log(
 		(RelationalEventId.PendingModelChangesWarning, LogLevel.Warning)));

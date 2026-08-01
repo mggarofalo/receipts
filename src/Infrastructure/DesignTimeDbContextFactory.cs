@@ -24,7 +24,11 @@ public class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<Applicatio
 		NpgsqlDataSource dataSource = dataSourceBuilder.Build();
 
 		DbContextOptionsBuilder<ApplicationDbContext> builder = new();
-		builder.UseNpgsql(dataSource, b => b.UseVector());
+		builder.UseNpgsql(dataSource, b =>
+		{
+			b.UseVector();
+			b.UsePublicMigrationsHistory();
+		});
 		return new ApplicationDbContext(builder.Options);
 	}
 }
