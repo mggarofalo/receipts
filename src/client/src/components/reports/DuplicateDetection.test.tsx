@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { format } from "date-fns";
 import { renderWithQueryClient } from "@/test/test-utils";
-import { mockMutationResult } from "@/test/mock-hooks";
+import { mockMutationResult, mockQueryResult } from "@/test/mock-hooks";
 import DuplicateDetection from "./DuplicateDetection";
 
 const mockNavigate = vi.fn();
@@ -13,6 +13,12 @@ vi.mock("react-router", async () => {
 
 vi.mock("@/hooks/useDuplicateDetectionReport", () => ({
   useDuplicateDetectionReport: vi.fn(),
+}));
+
+vi.mock("@/hooks/useDuplicateAcceptance", () => ({
+  useAcceptedDuplicates: vi.fn(),
+  useAcceptDuplicateGroup: vi.fn(),
+  useUnacceptDuplicateGroup: vi.fn(),
 }));
 
 vi.mock("@/hooks/useReceipts", () => ({
@@ -26,12 +32,22 @@ vi.mock("@/lib/export-csv", async (importOriginal) => {
 
 import { useDuplicateDetectionReport } from "@/hooks/useDuplicateDetectionReport";
 import { downloadCsv } from "@/lib/export-csv";
+import {
+  useAcceptedDuplicates,
+  useAcceptDuplicateGroup,
+  useUnacceptDuplicateGroup,
+} from "@/hooks/useDuplicateAcceptance";
+
 const mockHook = vi.mocked(useDuplicateDetectionReport);
 const mockDownloadCsv = vi.mocked(downloadCsv);
+const mockAcceptedHook = vi.mocked(useAcceptedDuplicates);
+const mockAcceptHook = vi.mocked(useAcceptDuplicateGroup);
+const mockUnacceptHook = vi.mocked(useUnacceptDuplicateGroup);
 
 const mockGroups = [
   {
     matchKey: "2025-03-01 @ Store A",
+    isAccepted: false,
     receipts: [
       {
         receiptId: "id-1",
@@ -44,6 +60,26 @@ const mockGroups = [
         location: "Store A",
         date: "2025-03-01",
         transactionTotal: 30.0,
+      },
+    ],
+  },
+];
+
+const mockAcceptedGroups = [
+  {
+    acceptedAt: "2025-04-05T10:00:00Z",
+    receipts: [
+      {
+        receiptId: "id-3",
+        location: "Store B",
+        date: "2025-04-02",
+        transactionTotal: 12.34,
+      },
+      {
+        receiptId: "id-4",
+        location: "Store B",
+        date: "2025-04-02",
+        transactionTotal: 12.34,
       },
     ],
   },
@@ -63,9 +99,43 @@ function setupMock(overrides: Record<string, unknown> = {}) {
   } as any);
 }
 
+/** Default acceptance-hook wiring: no accepted groups, idle mutations. */
+function setupAcceptance(overrides: Record<string, unknown> = {}) {
+  mockAcceptedHook.mockReturnValue(
+    mockQueryResult({
+      data: { groupCount: 0, groups: [] },
+      isLoading: false,
+      isError: false,
+      isSuccess: true,
+      isPending: false,
+      status: "success",
+      ...overrides,
+    }),
+  );
+}
+
+function setupMutations() {
+  const acceptMutate = vi.fn();
+  const unacceptMutate = vi.fn();
+  mockAcceptHook.mockReturnValue(mockMutationResult({ mutate: acceptMutate }));
+  mockUnacceptHook.mockReturnValue(
+    mockMutationResult({ mutate: unacceptMutate }),
+  );
+  return { acceptMutate, unacceptMutate };
+}
+
+/** Scopes queries to the "Accepted Groups" section. */
+function acceptedSection() {
+  const section = screen.getByText("Accepted Groups").closest("section");
+  if (!section) throw new Error("Accepted Groups section not found");
+  return within(section);
+}
+
 describe("DuplicateDetection", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    setupAcceptance();
+    setupMutations();
   });
 
   it("shows loading skeleton", () => {
@@ -244,6 +314,318 @@ describe("DuplicateDetection", () => {
 
     // Initially DateAndLocation mode, no Total Tolerance control
     expect(screen.queryByText("Total Tolerance")).not.toBeInTheDocument();
+  });
+
+  describe("show-accepted toggle", () => {
+    it("renders the 'Show accepted groups' switch unchecked", () => {
+      setupMock();
+      renderWithQueryClient(<DuplicateDetection />);
+
+      expect(screen.getByText("Show accepted groups")).toBeInTheDocument();
+      const switchEl = screen.getByRole("switch", {
+        name: /show accepted groups/i,
+      });
+      expect(switchEl).toHaveAttribute("data-state", "unchecked");
+    });
+
+    it("omits includeAccepted until the switch is toggled on", () => {
+      setupMock();
+      renderWithQueryClient(<DuplicateDetection />);
+
+      expect(mockHook).toHaveBeenLastCalledWith({
+        matchOn: "dateAndLocation",
+        locationTolerance: "exact",
+        totalTolerance: 0,
+        includeAccepted: undefined,
+      });
+    });
+
+    it("requests includeAccepted when the switch is toggled on", async () => {
+      const user = userEvent.setup();
+      setupMock();
+      renderWithQueryClient(<DuplicateDetection />);
+
+      await user.click(
+        screen.getByRole("switch", { name: /show accepted groups/i }),
+      );
+
+      expect(mockHook).toHaveBeenLastCalledWith(
+        expect.objectContaining({ includeAccepted: true }),
+      );
+      expect(
+        screen.getByRole("switch", { name: /show accepted groups/i }),
+      ).toHaveAttribute("data-state", "checked");
+    });
+
+    it("drops includeAccepted again when the switch is toggled off", async () => {
+      const user = userEvent.setup();
+      setupMock();
+      renderWithQueryClient(<DuplicateDetection />);
+
+      const switchEl = screen.getByRole("switch", {
+        name: /show accepted groups/i,
+      });
+      await user.click(switchEl);
+      await user.click(switchEl);
+
+      expect(mockHook).toHaveBeenLastCalledWith(
+        expect.objectContaining({ includeAccepted: undefined }),
+      );
+    });
+  });
+
+  describe("per-group acceptance", () => {
+    it("shows 'Not duplicates' for a group that is not accepted", () => {
+      setupMock();
+      renderWithQueryClient(<DuplicateDetection />);
+
+      expect(
+        screen.getByRole("button", { name: "Not duplicates" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Report again" }),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByText("Accepted")).not.toBeInTheDocument();
+    });
+
+    it("accepts the group's receipt ids on 'Not duplicates' click", async () => {
+      const user = userEvent.setup();
+      const { acceptMutate } = setupMutations();
+      setupMock();
+      renderWithQueryClient(<DuplicateDetection />);
+
+      await user.click(screen.getByRole("button", { name: "Not duplicates" }));
+
+      expect(acceptMutate).toHaveBeenCalledWith(["id-1", "id-2"]);
+    });
+
+    it("shows the Accepted badge and 'Report again' for an accepted group", () => {
+      setupMock({
+        data: {
+          groupCount: 1,
+          totalDuplicateReceipts: 2,
+          groups: [{ ...mockGroups[0], isAccepted: true }],
+        },
+      });
+      renderWithQueryClient(<DuplicateDetection />);
+
+      expect(screen.getByText("Accepted")).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Report again" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Not duplicates" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("unaccepts the group's receipt ids on 'Report again' click", async () => {
+      const user = userEvent.setup();
+      const { unacceptMutate } = setupMutations();
+      setupMock({
+        data: {
+          groupCount: 1,
+          totalDuplicateReceipts: 2,
+          groups: [{ ...mockGroups[0], isAccepted: true }],
+        },
+      });
+      renderWithQueryClient(<DuplicateDetection />);
+
+      await user.click(screen.getByRole("button", { name: "Report again" }));
+
+      expect(unacceptMutate).toHaveBeenCalledWith(["id-1", "id-2"]);
+    });
+
+    it("disables the accept button of the group whose mutation is in flight", () => {
+      setupMock();
+      mockAcceptHook.mockReturnValue(
+        mockMutationResult({ isPending: true, variables: ["id-1", "id-2"] }),
+      );
+      renderWithQueryClient(<DuplicateDetection />);
+
+      expect(
+        screen.getByRole("button", { name: "Not duplicates" }),
+      ).toBeDisabled();
+    });
+
+    it("leaves other groups' accept buttons enabled while one is in flight", () => {
+      setupMock({
+        data: {
+          groupCount: 2,
+          totalDuplicateReceipts: 4,
+          groups: [
+            ...mockGroups,
+            {
+              matchKey: "2025-05-09 @ Store C",
+              isAccepted: false,
+              receipts: [
+                {
+                  receiptId: "id-9",
+                  location: "Store C",
+                  date: "2025-05-09",
+                  transactionTotal: 8,
+                },
+                {
+                  receiptId: "id-10",
+                  location: "Store C",
+                  date: "2025-05-09",
+                  transactionTotal: 8,
+                },
+              ],
+            },
+          ],
+        },
+      });
+      // Only the first group is being accepted.
+      mockAcceptHook.mockReturnValue(
+        mockMutationResult({ isPending: true, variables: ["id-1", "id-2"] }),
+      );
+      renderWithQueryClient(<DuplicateDetection />);
+
+      const buttons = screen.getAllByRole("button", { name: "Not duplicates" });
+      expect(buttons).toHaveLength(2);
+      expect(buttons[0]).toBeDisabled();
+      expect(buttons[1]).toBeEnabled();
+    });
+  });
+
+  describe("accepted groups section", () => {
+    it("renders the section heading and description", () => {
+      setupMock();
+      renderWithQueryClient(<DuplicateDetection />);
+
+      expect(screen.getByText("Accepted Groups")).toBeInTheDocument();
+      expect(
+        acceptedSection().getByText(/hidden from the report above/i),
+      ).toBeInTheDocument();
+    });
+
+    it("shows the empty state when nothing has been accepted", () => {
+      setupMock();
+      renderWithQueryClient(<DuplicateDetection />);
+
+      expect(
+        acceptedSection().getByText("No groups have been accepted yet."),
+      ).toBeInTheDocument();
+    });
+
+    it("renders a row per accepted group", () => {
+      setupMock();
+      setupAcceptance({
+        data: { groupCount: 1, groups: mockAcceptedGroups },
+      });
+      renderWithQueryClient(<DuplicateDetection />);
+
+      const section = acceptedSection();
+      expect(section.getByText("2 receipts")).toBeInTheDocument();
+      expect(section.getAllByText(/Store B/)).toHaveLength(2);
+      expect(section.getAllByText(/\$12\.34/)).toHaveLength(2);
+      expect(
+        section.queryByText("No groups have been accepted yet."),
+      ).not.toBeInTheDocument();
+    });
+
+    it("unaccepts the group's receipt ids on Undo click", async () => {
+      const user = userEvent.setup();
+      const { unacceptMutate } = setupMutations();
+      setupMock();
+      setupAcceptance({
+        data: { groupCount: 1, groups: mockAcceptedGroups },
+      });
+      renderWithQueryClient(<DuplicateDetection />);
+
+      await user.click(acceptedSection().getByRole("button", { name: "Undo" }));
+
+      expect(unacceptMutate).toHaveBeenCalledWith(["id-3", "id-4"]);
+    });
+
+    it("disables Undo for the group whose unaccept is in flight", () => {
+      setupMock();
+      setupAcceptance({
+        data: { groupCount: 1, groups: mockAcceptedGroups },
+      });
+      mockUnacceptHook.mockReturnValue(
+        mockMutationResult({ isPending: true, variables: ["id-3", "id-4"] }),
+      );
+      renderWithQueryClient(<DuplicateDetection />);
+
+      expect(
+        acceptedSection().getByRole("button", { name: "Undo" }),
+      ).toBeDisabled();
+    });
+
+    it("leaves Undo enabled when a different group's unaccept is in flight", () => {
+      setupMock();
+      setupAcceptance({
+        data: { groupCount: 1, groups: mockAcceptedGroups },
+      });
+      mockUnacceptHook.mockReturnValue(
+        mockMutationResult({ isPending: true, variables: ["id-1", "id-2"] }),
+      );
+      renderWithQueryClient(<DuplicateDetection />);
+
+      expect(
+        acceptedSection().getByRole("button", { name: "Undo" }),
+      ).toBeEnabled();
+    });
+
+    it("shows a skeleton while accepted groups load", () => {
+      setupMock();
+      setupAcceptance({
+        data: undefined,
+        isLoading: true,
+        isPending: true,
+        isSuccess: false,
+        status: "pending",
+      });
+      renderWithQueryClient(<DuplicateDetection />);
+
+      const section = screen.getByText("Accepted Groups").closest("section");
+      expect(
+        section?.querySelectorAll("[data-slot='skeleton']").length,
+      ).toBeGreaterThan(0);
+      expect(
+        screen.queryByText("No groups have been accepted yet."),
+      ).not.toBeInTheDocument();
+    });
+
+    it("shows an error message when accepted groups fail to load", () => {
+      setupMock();
+      setupAcceptance({
+        data: undefined,
+        isError: true,
+        isSuccess: false,
+        error: new Error("boom"),
+        status: "error",
+      });
+      renderWithQueryClient(<DuplicateDetection />);
+
+      expect(
+        acceptedSection().getByText("Failed to load accepted groups."),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText("No groups have been accepted yet."),
+      ).not.toBeInTheDocument();
+    });
+
+    it("is not rendered while the duplicate report itself is loading", () => {
+      setupMock({ isLoading: true, data: undefined });
+      renderWithQueryClient(<DuplicateDetection />);
+
+      expect(screen.queryByText("Accepted Groups")).not.toBeInTheDocument();
+    });
+
+    it("still renders when the duplicate report is empty", () => {
+      setupMock({
+        data: { groupCount: 0, totalDuplicateReceipts: 0, groups: [] },
+      });
+      setupAcceptance({
+        data: { groupCount: 1, groups: mockAcceptedGroups },
+      });
+      renderWithQueryClient(<DuplicateDetection />);
+
+      expect(screen.getByText("No Duplicates Found")).toBeInTheDocument();
+      expect(acceptedSection().getByText("2 receipts")).toBeInTheDocument();
+    });
   });
 
   it("reads matchOn and tolerances from the URL on load", () => {

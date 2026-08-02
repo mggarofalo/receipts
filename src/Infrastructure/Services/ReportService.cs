@@ -297,6 +297,7 @@ public partial class ReportService(IDbContextFactory<ApplicationDbContext> conte
 		string matchOn,
 		string locationTolerance,
 		decimal totalTolerance,
+		bool includeAccepted,
 		CancellationToken cancellationToken)
 	{
 		await using ApplicationDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
@@ -346,9 +347,302 @@ public partial class ReportService(IDbContextFactory<ApplicationDbContext> conte
 				(key, seed) => $"{key.Date:yyyy-MM-dd} @ {seed.Location} — ${seed.TransactionTotal:F2}")
 		};
 
-		int totalDuplicateReceipts = groups.Sum(g => g.Receipts.Count);
-		return new DuplicateDetectionResult(groups, groups.Count, totalDuplicateReceipts);
+		// Suppression is applied AFTER clustering, on receipt identities, so it is unaffected by the
+		// tolerance / normalization settings that shaped the clusters above (RECEIPTS-834).
+		HashSet<(Guid A, Guid B)> acceptedPairs = await LoadAcceptedPairsAsync(context, cancellationToken);
+
+		List<DuplicateGroup> visibleGroups = [];
+		foreach (DuplicateGroup group in groups)
+		{
+			bool isAccepted = IsFullyAccepted(group.Receipts.Select(r => r.ReceiptId), acceptedPairs);
+			if (isAccepted && !includeAccepted)
+			{
+				continue;
+			}
+
+			visibleGroups.Add(group with { IsAccepted = isAccepted });
+		}
+
+		int totalDuplicateReceipts = visibleGroups.Sum(g => g.Receipts.Count);
+		return new DuplicateDetectionResult(visibleGroups, visibleGroups.Count, totalDuplicateReceipts);
 	}
+
+	public async Task<int> AcceptDuplicateGroupAsync(
+		List<Guid> receiptIds,
+		CancellationToken cancellationToken)
+	{
+		List<Guid> distinctIds = [.. receiptIds.Distinct()];
+		if (distinctIds.Count < 2)
+		{
+			return 0;
+		}
+
+		await using ApplicationDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
+
+		HashSet<Guid> existingReceipts = [.. await context.Receipts
+			.AsNoTracking()
+			.Where(r => distinctIds.Contains(r.Id) && r.DeletedAt == null)
+			.Select(r => r.Id)
+			.ToListAsync(cancellationToken)];
+
+		List<Guid> missing = [.. distinctIds.Where(id => !existingReceipts.Contains(id))];
+		if (missing.Count > 0)
+		{
+			throw new KeyNotFoundException(
+				$"Receipt(s) not found: {string.Join(", ", missing)}");
+		}
+
+		List<(Guid A, Guid B)> pairs = [.. CanonicalPairs(distinctIds)];
+		HashSet<Guid> idSet = [.. distinctIds];
+
+		// IgnoreQueryFilters so a previously un-accepted (soft-deleted) pair is restored instead of
+		// colliding with the tombstone the filtered unique index still allows alongside a new row.
+		List<AcceptedDuplicatePairEntity> known = await context.AcceptedDuplicatePairs
+			.IgnoreQueryFilters()
+			.Where(p => idSet.Contains(p.ReceiptIdA) && idSet.Contains(p.ReceiptIdB))
+			.ToListAsync(cancellationToken);
+
+		Dictionary<(Guid, Guid), AcceptedDuplicatePairEntity> activeByPair = known
+			.Where(p => p.DeletedAt == null)
+			.ToDictionary(p => (p.ReceiptIdA, p.ReceiptIdB));
+
+		Dictionary<(Guid, Guid), AcceptedDuplicatePairEntity> tombstoneByPair = known
+			.Where(p => p.DeletedAt != null)
+			.GroupBy(p => (p.ReceiptIdA, p.ReceiptIdB))
+			.ToDictionary(g => g.Key, g => g.OrderByDescending(p => p.DeletedAt).First());
+
+		DateTimeOffset now = DateTimeOffset.UtcNow;
+		int accepted = 0;
+
+		foreach ((Guid a, Guid b) in pairs)
+		{
+			if (activeByPair.ContainsKey((a, b)))
+			{
+				continue;
+			}
+
+			if (tombstoneByPair.TryGetValue((a, b), out AcceptedDuplicatePairEntity? tombstone))
+			{
+				tombstone.DeletedAt = null;
+				tombstone.DeletedByUserId = null;
+				tombstone.DeletedByApiKeyId = null;
+				tombstone.CascadeDeletedByParentId = null;
+				tombstone.AcceptedAt = now;
+			}
+			else
+			{
+				context.AcceptedDuplicatePairs.Add(new AcceptedDuplicatePairEntity
+				{
+					Id = Guid.NewGuid(),
+					ReceiptIdA = a,
+					ReceiptIdB = b,
+					AcceptedAt = now
+				});
+			}
+
+			accepted++;
+		}
+
+		if (accepted > 0)
+		{
+			await context.SaveChangesAsync(cancellationToken);
+		}
+
+		return accepted;
+	}
+
+	public async Task<int> UnacceptDuplicateGroupAsync(
+		List<Guid> receiptIds,
+		CancellationToken cancellationToken)
+	{
+		HashSet<Guid> idSet = [.. receiptIds];
+		if (idSet.Count < 2)
+		{
+			return 0;
+		}
+
+		await using ApplicationDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
+
+		List<AcceptedDuplicatePairEntity> toRemove = await context.AcceptedDuplicatePairs
+			.Where(p => idSet.Contains(p.ReceiptIdA) && idSet.Contains(p.ReceiptIdB))
+			.ToListAsync(cancellationToken);
+
+		if (toRemove.Count == 0)
+		{
+			return 0;
+		}
+
+		// RemoveRange is converted to a soft delete by ApplicationDbContext.HandleSoftDelete, which
+		// also stamps the deleting user and emits the audit-log entry.
+		context.AcceptedDuplicatePairs.RemoveRange(toRemove);
+		await context.SaveChangesAsync(cancellationToken);
+
+		return toRemove.Count;
+	}
+
+	public async Task<AcceptedDuplicatesResult> GetAcceptedDuplicatesAsync(CancellationToken cancellationToken)
+	{
+		await using ApplicationDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
+
+		var pairRows = await context.AcceptedDuplicatePairs
+			.AsNoTracking()
+			.Select(p => new { p.ReceiptIdA, p.ReceiptIdB, p.AcceptedAt })
+			.ToListAsync(cancellationToken);
+
+		List<AcceptedPairSnapshot> pairs = [.. pairRows
+			.Select(p => new AcceptedPairSnapshot(p.ReceiptIdA, p.ReceiptIdB, p.AcceptedAt))];
+
+		if (pairs.Count == 0)
+		{
+			return new AcceptedDuplicatesResult([], 0);
+		}
+
+		// Connected components of the acceptance graph. Two acceptances that share a receipt merge
+		// into one displayed group — a deliberate simplification of the pairwise model.
+		Dictionary<Guid, Guid> parent = [];
+		foreach (AcceptedPairSnapshot pair in pairs)
+		{
+			Union(parent, pair.ReceiptIdA, pair.ReceiptIdB);
+		}
+
+		Dictionary<Guid, List<Guid>> componentMembers = [];
+		Dictionary<Guid, DateTimeOffset> componentAcceptedAt = [];
+		foreach (AcceptedPairSnapshot pair in pairs)
+		{
+			Guid root = Find(parent, pair.ReceiptIdA);
+
+			if (!componentMembers.TryGetValue(root, out List<Guid>? members))
+			{
+				members = [];
+				componentMembers[root] = members;
+			}
+
+			if (!members.Contains(pair.ReceiptIdA))
+			{
+				members.Add(pair.ReceiptIdA);
+			}
+
+			if (!members.Contains(pair.ReceiptIdB))
+			{
+				members.Add(pair.ReceiptIdB);
+			}
+
+			// The component is stamped with its most recent acceptance.
+			if (!componentAcceptedAt.TryGetValue(root, out DateTimeOffset acceptedAt) || pair.AcceptedAt > acceptedAt)
+			{
+				componentAcceptedAt[root] = pair.AcceptedAt;
+			}
+		}
+
+		HashSet<Guid> allMembers = [.. componentMembers.Values.SelectMany(m => m)];
+
+		Dictionary<Guid, DuplicateReceiptSummary> summaries = await (
+			from r in context.Receipts.AsNoTracking()
+			where r.DeletedAt == null && allMembers.Contains(r.Id)
+			let transactionTotal = context.Transactions
+				.Where(t => t.ReceiptId == r.Id && t.DeletedAt == null)
+				.Sum(t => (decimal?)t.Amount) ?? 0m
+			select new DuplicateReceiptSummary(r.Id, r.Location, r.Date, transactionTotal))
+			.ToDictionaryAsync(s => s.ReceiptId, cancellationToken);
+
+		List<AcceptedDuplicateGroup> groups = [];
+		foreach ((Guid root, List<Guid> members) in componentMembers)
+		{
+			// Members whose receipt is soft-deleted or purged are dropped: there is nothing to show
+			// and nothing left to warn about. A component with fewer than two surviving receipts can
+			// never produce a duplicate warning, so it is not listed either. Restoring the receipt
+			// brings both the group and its (still-stored) acceptance back.
+			List<DuplicateReceiptSummary> receipts = [.. members
+				.Where(summaries.ContainsKey)
+				.Select(id => summaries[id])
+				.OrderBy(r => r.Date)
+				.ThenBy(r => r.Location, StringComparer.Ordinal)];
+
+			if (receipts.Count < 2)
+			{
+				continue;
+			}
+
+			groups.Add(new AcceptedDuplicateGroup(receipts, componentAcceptedAt[root]));
+		}
+
+		groups = [.. groups.OrderByDescending(g => g.AcceptedAt)];
+		return new AcceptedDuplicatesResult(groups, groups.Count);
+	}
+
+	private static async Task<HashSet<(Guid A, Guid B)>> LoadAcceptedPairsAsync(
+		ApplicationDbContext context,
+		CancellationToken cancellationToken)
+	{
+		var rows = await context.AcceptedDuplicatePairs
+			.AsNoTracking()
+			.Select(p => new { p.ReceiptIdA, p.ReceiptIdB })
+			.ToListAsync(cancellationToken);
+
+		return [.. rows.Select(r => (r.ReceiptIdA, r.ReceiptIdB))];
+	}
+
+	/// <summary>
+	/// True when EVERY unordered pair within the group has been accepted. Requiring the full pair set
+	/// is what makes a group that gains a new member resurface: the newcomer's pairs are undismissed.
+	/// </summary>
+	private static bool IsFullyAccepted(IEnumerable<Guid> receiptIds, HashSet<(Guid A, Guid B)> acceptedPairs)
+	{
+		if (acceptedPairs.Count == 0)
+		{
+			return false;
+		}
+
+		List<Guid> ids = [.. receiptIds.Distinct()];
+		if (ids.Count < 2)
+		{
+			return false;
+		}
+
+		return CanonicalPairs(ids).All(acceptedPairs.Contains);
+	}
+
+	/// <summary>Every unordered pair of the supplied IDs, each ordered so A &lt; B.</summary>
+	private static IEnumerable<(Guid A, Guid B)> CanonicalPairs(List<Guid> ids)
+	{
+		for (int i = 0; i < ids.Count; i++)
+		{
+			for (int j = i + 1; j < ids.Count; j++)
+			{
+				yield return ids[i].CompareTo(ids[j]) < 0 ? (ids[i], ids[j]) : (ids[j], ids[i]);
+			}
+		}
+	}
+
+	private static Guid Find(Dictionary<Guid, Guid> parent, Guid id)
+	{
+		if (!parent.TryGetValue(id, out Guid value))
+		{
+			parent[id] = id;
+			return id;
+		}
+
+		if (value == id)
+		{
+			return id;
+		}
+
+		Guid root = Find(parent, value);
+		parent[id] = root;
+		return root;
+	}
+
+	private static void Union(Dictionary<Guid, Guid> parent, Guid left, Guid right)
+	{
+		Guid leftRoot = Find(parent, left);
+		Guid rightRoot = Find(parent, right);
+		if (leftRoot != rightRoot)
+		{
+			parent[rightRoot] = leftRoot;
+		}
+	}
+
+	private sealed record AcceptedPairSnapshot(Guid ReceiptIdA, Guid ReceiptIdB, DateTimeOffset AcceptedAt);
 
 	private static List<DuplicateGroup> ClusterByTotal<TKey>(
 		IEnumerable<IGrouping<TKey, ReceiptSnapshot>> groupedReceipts,

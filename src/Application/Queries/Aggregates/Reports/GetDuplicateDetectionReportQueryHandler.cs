@@ -13,6 +13,7 @@ public class GetDuplicateDetectionReportQueryHandler(IReportService reportServic
 			request.MatchOn,
 			request.LocationTolerance,
 			request.TotalTolerance,
+			request.IncludeAccepted,
 			cancellationToken);
 	}
 }

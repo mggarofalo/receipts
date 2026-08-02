@@ -11,6 +11,12 @@ vi.mock("@/lib/api-client", () => ({
 import client from "@/lib/api-client";
 const mockClient = vi.mocked(client);
 
+const emptyReport = {
+  groupCount: 0,
+  totalDuplicateReceipts: 0,
+  groups: [],
+};
+
 describe("useDuplicateDetectionReport", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -23,6 +29,7 @@ describe("useDuplicateDetectionReport", () => {
       groups: [
         {
           matchKey: "2025-03-01 @ Store A",
+          isAccepted: false,
           receipts: [
             {
               receiptId: "id-1",
@@ -59,19 +66,15 @@ describe("useDuplicateDetectionReport", () => {
           matchOn: undefined,
           locationTolerance: undefined,
           totalTolerance: undefined,
+          includeAccepted: undefined,
         },
       },
     });
   });
 
   it("passes custom parameters", async () => {
-    const mockData = {
-      groupCount: 0,
-      totalDuplicateReceipts: 0,
-      groups: [],
-    };
     mockClient.GET.mockResolvedValue({
-      data: mockData,
+      data: emptyReport,
       error: undefined,
       response: {} as Response,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -94,6 +97,77 @@ describe("useDuplicateDetectionReport", () => {
           matchOn: "dateAndTotal",
           locationTolerance: "normalized",
           totalTolerance: 0.05,
+          includeAccepted: undefined,
+        },
+      },
+    });
+  });
+
+  it("forwards includeAccepted in the query string", async () => {
+    mockClient.GET.mockResolvedValue({
+      data: emptyReport,
+      error: undefined,
+      response: {} as Response,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    const { result } = renderHook(
+      () =>
+        useDuplicateDetectionReport({
+          matchOn: "dateAndLocation",
+          locationTolerance: "exact",
+          totalTolerance: 0,
+          includeAccepted: true,
+        }),
+      { wrapper: createQueryWrapper() },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(mockClient.GET).toHaveBeenCalledWith("/api/reports/duplicates", {
+      params: {
+        query: {
+          matchOn: "dateAndLocation",
+          locationTolerance: "exact",
+          totalTolerance: 0,
+          includeAccepted: true,
+        },
+      },
+    });
+  });
+
+  it("caches includeAccepted variants separately", async () => {
+    mockClient.GET.mockResolvedValue({
+      data: emptyReport,
+      error: undefined,
+      response: {} as Response,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    // One wrapper => one QueryClient shared across rerenders, so a second
+    // fetch can only happen if the query key actually changed.
+    const wrapper = createQueryWrapper();
+    const { result, rerender } = renderHook(
+      ({ includeAccepted }: { includeAccepted?: boolean }) =>
+        useDuplicateDetectionReport({
+          matchOn: "dateAndLocation",
+          includeAccepted,
+        }),
+      { wrapper, initialProps: {} as { includeAccepted?: boolean } },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(mockClient.GET).toHaveBeenCalledTimes(1);
+
+    rerender({ includeAccepted: true });
+
+    await waitFor(() => expect(mockClient.GET).toHaveBeenCalledTimes(2));
+    expect(mockClient.GET).toHaveBeenLastCalledWith("/api/reports/duplicates", {
+      params: {
+        query: {
+          matchOn: "dateAndLocation",
+          locationTolerance: undefined,
+          totalTolerance: undefined,
+          includeAccepted: true,
         },
       },
     });

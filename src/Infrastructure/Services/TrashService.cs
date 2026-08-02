@@ -24,6 +24,15 @@ public class TrashService(ApplicationDbContext context) : ITrashService
 					.Any(t => t.Id == s.LocalTransactionId && t.DeletedAt != null))
 			.ExecuteDeleteAsync(cancellationToken);
 
+		// Un-accepted duplicate pairs (RECEIPTS-834). These are soft-deleted so the un-accept shows up
+		// in the audit log, but they are pure annotations — nothing surfaces them in the recycle bin,
+		// so without this step the tombstones would accumulate forever. Purged before Receipts because
+		// the pair rows are FK children of Receipts.
+		await context.AcceptedDuplicatePairs
+			.IgnoreQueryFilters()
+			.Where(e => e.DeletedAt != null)
+			.ExecuteDeleteAsync(cancellationToken);
+
 		await context.Adjustments
 			.IgnoreQueryFilters()
 			.Where(e => e.DeletedAt != null)

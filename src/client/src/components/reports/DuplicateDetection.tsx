@@ -7,12 +7,18 @@ import {
   type TotalTolerance,
   type DuplicateDetectionParams,
 } from "@/hooks/useDuplicateDetectionReport";
+import {
+  useAcceptedDuplicates,
+  useAcceptDuplicateGroup,
+  useUnacceptDuplicateGroup,
+} from "@/hooks/useDuplicateAcceptance";
 import { useDeleteReceipts } from "@/hooks/useReceipts";
 import { useCsvExport } from "@/hooks/useCsvExport";
 import { useReportSearchParams } from "@/hooks/useReportSearchParams";
 import { csvFilename } from "@/lib/export-csv";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatDate } from "@/lib/format";
 import {
+  parseBoolParam,
   parseEnumParam,
   parseNumberEnumParam,
 } from "@/lib/report-params";
@@ -44,6 +50,25 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+
+interface DuplicateReceiptView {
+  receiptId: string;
+  location: string;
+  date: string;
+  transactionTotal: number;
+}
+
+/**
+ * Stable identity for a group: its sorted receipt IDs. Used for React keys and for matching a
+ * group against the in-flight mutation. Deliberately NOT `matchKey` — that is a display string
+ * derived from the current tolerance settings, so two clusters whose seed totals differ by less
+ * than half a cent render the same label and would collide as keys (RECEIPTS-834).
+ */
+function groupKey(receiptIds: readonly string[] | undefined): string | null {
+  if (!receiptIds || receiptIds.length === 0) return null;
+  return [...receiptIds].sort().join("|");
+}
 
 const MATCH_ON_VALUES = [
   "dateAndLocation",
@@ -57,6 +82,7 @@ interface DuplicateDetectionUrlParams {
   matchOn: MatchOn;
   locationTolerance: LocationTolerance;
   totalTolerance: TotalTolerance;
+  includeAccepted: boolean;
 }
 
 function parseDuplicateDetectionParams(
@@ -78,6 +104,7 @@ function parseDuplicateDetectionParams(
       TOTAL_TOLERANCE_VALUES,
       0,
     ),
+    includeAccepted: parseBoolParam(searchParams.get("includeAccepted"), false),
   };
 }
 
@@ -86,7 +113,8 @@ export default function DuplicateDetection() {
   const [urlParams, updateParams] = useReportSearchParams(
     parseDuplicateDetectionParams,
   );
-  const { matchOn, locationTolerance, totalTolerance } = urlParams;
+  const { matchOn, locationTolerance, totalTolerance, includeAccepted } =
+    urlParams;
   const [deleteTarget, setDeleteTarget] = useState<{
     id: string;
     location: string;
@@ -96,9 +124,13 @@ export default function DuplicateDetection() {
     matchOn,
     locationTolerance,
     totalTolerance,
+    includeAccepted: includeAccepted || undefined,
   };
 
   const { data, isLoading, isError } = useDuplicateDetectionReport(params);
+  const accepted = useAcceptedDuplicates();
+  const acceptGroup = useAcceptDuplicateGroup();
+  const unacceptGroup = useUnacceptDuplicateGroup();
   const deleteReceipts = useDeleteReceipts();
   const { exportCsv, isExporting } = useCsvExport();
 
@@ -122,6 +154,18 @@ export default function DuplicateDetection() {
     matchOn === "dateAndLocation" || matchOn === "dateAndLocationAndTotal";
   const showTotalTolerance =
     matchOn === "dateAndTotal" || matchOn === "dateAndLocationAndTotal";
+
+  const acceptedGroups = accepted.data?.groups ?? [];
+
+  // Scope the in-flight disable to the group actually being mutated. Both mutation hooks are
+  // instantiated once for the whole component, so a bare `isPending` would grey out every group's
+  // button at once. `variables` holds the receipt IDs the running mutation was called with.
+  const pendingAcceptKey = acceptGroup.isPending
+    ? groupKey(acceptGroup.variables)
+    : null;
+  const pendingUnacceptKey = unacceptGroup.isPending
+    ? groupKey(unacceptGroup.variables)
+    : null;
 
   function handleDelete() {
     if (!deleteTarget) return;
@@ -210,6 +254,17 @@ export default function DuplicateDetection() {
             </Select>
           </div>
         )}
+
+        <div className="flex items-center gap-2 pb-1">
+          <Switch
+            id="include-accepted-switch"
+            checked={includeAccepted}
+            onCheckedChange={(checked) =>
+              updateParams({ includeAccepted: checked || null })
+            }
+          />
+          <Label htmlFor="include-accepted-switch">Show accepted groups</Label>
+        </div>
       </div>
 
       {!data || data.groupCount === 0 ? (
@@ -247,104 +302,149 @@ export default function DuplicateDetection() {
           </div>
 
           <div className="space-y-6">
-            {data.groups.map((group) => (
-              <Card key={group.matchKey}>
-                <CardHeader>
-                  <CardTitle className="text-base">{group.matchKey}</CardTitle>
-                  <CardDescription>
-                    {group.receipts.length} receipts in this group
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {group.receipts.map((receipt, index) => {
-                      const others = group.receipts.filter(
-                        (_, i) => i !== index,
-                      );
-                      const locationDiffers = others.some(
-                        (o) => o.location !== receipt.location,
-                      );
-                      const totalDiffers = others.some(
-                        (o) => o.transactionTotal !== receipt.transactionTotal,
-                      );
+            {data.groups.map((group) => {
+              const receiptIds = group.receipts.map((r) => r.receiptId);
+              const key = groupKey(receiptIds);
+              return (
+                <Card key={key}>
+                  <CardHeader>
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0 space-y-1">
+                        <CardTitle className="text-base">
+                          {group.matchKey}
+                        </CardTitle>
+                        <CardDescription>
+                          {group.receipts.length} receipts in this group
+                        </CardDescription>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {group.isAccepted && (
+                          <Badge variant="secondary">Accepted</Badge>
+                        )}
+                        {group.isAccepted ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={pendingUnacceptKey === key}
+                            onClick={() => unacceptGroup.mutate(receiptIds)}
+                          >
+                            Report again
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={pendingAcceptKey === key}
+                            onClick={() => acceptGroup.mutate(receiptIds)}
+                          >
+                            Not duplicates
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {group.receipts.map((receipt, index) => {
+                        const others = group.receipts.filter(
+                          (_, i) => i !== index,
+                        );
+                        const locationDiffers = others.some(
+                          (o) => o.location !== receipt.location,
+                        );
+                        const totalDiffers = others.some(
+                          (o) =>
+                            o.transactionTotal !== receipt.transactionTotal,
+                        );
 
-                      return (
-                        <div
-                          key={receipt.receiptId}
-                          className="rounded-md border p-3 space-y-2"
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="space-y-1 min-w-0">
-                              <p
-                                className="text-sm font-medium truncate"
-                                style={
-                                  locationDiffers
-                                    ? { color: "var(--warn-ink)" }
-                                    : undefined
+                        return (
+                          <div
+                            key={receipt.receiptId}
+                            className="rounded-md border p-3 space-y-2"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="space-y-1 min-w-0">
+                                <p
+                                  className="text-sm font-medium truncate"
+                                  style={
+                                    locationDiffers
+                                      ? { color: "var(--warn-ink)" }
+                                      : undefined
+                                  }
+                                >
+                                  {receipt.location}
+                                </p>
+                                <p className="text-sm text-muted-foreground">
+                                  {receipt.date}
+                                </p>
+                                <p
+                                  className="text-sm font-medium"
+                                  style={
+                                    totalDiffers
+                                      ? { color: "var(--warn-ink)" }
+                                      : undefined
+                                  }
+                                >
+                                  {formatCurrency(
+                                    Number(receipt.transactionTotal ?? 0),
+                                  )}
+                                </p>
+                              </div>
+                              <div className="flex flex-col gap-1">
+                                {locationDiffers && (
+                                  <Badge variant="outline" className="text-xs">
+                                    Location differs
+                                  </Badge>
+                                )}
+                                {totalDiffers && (
+                                  <Badge variant="outline" className="text-xs">
+                                    Total differs
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() =>
+                                  navigate(`/receipts/${receipt.receiptId}`)
                                 }
                               >
-                                {receipt.location}
-                              </p>
-                              <p className="text-sm text-muted-foreground">
-                                {receipt.date}
-                              </p>
-                              <p
-                                className="text-sm font-medium"
-                                style={
-                                  totalDiffers
-                                    ? { color: "var(--warn-ink)" }
-                                    : undefined
+                                View
+                              </Button>
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() =>
+                                  setDeleteTarget({
+                                    id: receipt.receiptId,
+                                    location: receipt.location,
+                                  })
                                 }
                               >
-                                {formatCurrency(Number(receipt.transactionTotal ?? 0))}
-                              </p>
-                            </div>
-                            <div className="flex flex-col gap-1">
-                              {locationDiffers && (
-                                <Badge variant="outline" className="text-xs">
-                                  Location differs
-                                </Badge>
-                              )}
-                              {totalDiffers && (
-                                <Badge variant="outline" className="text-xs">
-                                  Total differs
-                                </Badge>
-                              )}
+                                Delete
+                              </Button>
                             </div>
                           </div>
-                          <div className="flex gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() =>
-                                navigate(`/receipts/${receipt.receiptId}`)
-                              }
-                            >
-                              View
-                            </Button>
-                            <Button
-                              variant="destructive"
-                              size="sm"
-                              onClick={() =>
-                                setDeleteTarget({
-                                  id: receipt.receiptId,
-                                  location: receipt.location,
-                                })
-                              }
-                            >
-                              Delete
-                            </Button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         </>
       )}
+
+      <AcceptedDuplicatesSection
+        groups={acceptedGroups}
+        isLoading={accepted.isLoading}
+        isError={accepted.isError}
+        pendingUndoKey={pendingUnacceptKey}
+        onUndo={(receiptIds) => unacceptGroup.mutate(receiptIds)}
+      />
 
       <AlertDialog
         open={deleteTarget !== null}
@@ -367,5 +467,86 @@ export default function DuplicateDetection() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+interface AcceptedDuplicatesSectionProps {
+  groups: { receipts: DuplicateReceiptView[]; acceptedAt: string }[];
+  isLoading: boolean;
+  isError: boolean;
+  /** Identity of the group whose undo is in flight, or null when none is. */
+  pendingUndoKey: string | null;
+  onUndo: (receiptIds: string[]) => void;
+}
+
+function AcceptedDuplicatesSection({
+  groups,
+  isLoading,
+  isError,
+  pendingUndoKey,
+  onUndo,
+}: AcceptedDuplicatesSectionProps) {
+  return (
+    <section className="space-y-3 rounded-lg border p-4">
+      <div>
+        <h2 className="card-title">Accepted Groups</h2>
+        <p className="text-sm text-muted-foreground">
+          Groups you marked as genuinely separate receipts. They are hidden from
+          the report above until you undo them.
+        </p>
+      </div>
+
+      {isLoading && <Skeleton className="h-16 w-full rounded-lg" />}
+
+      {!isLoading && isError && (
+        <p className="text-destructive">Failed to load accepted groups.</p>
+      )}
+
+      {!isLoading && !isError && groups.length === 0 && (
+        <p className="text-muted-foreground">
+          No groups have been accepted yet.
+        </p>
+      )}
+
+      {!isLoading && !isError && groups.length > 0 && (
+        <ul className="space-y-3">
+          {groups.map((group) => {
+            const receiptIds = group.receipts.map((r) => r.receiptId);
+            const key = groupKey(receiptIds);
+            return (
+              <li
+                key={key}
+                className="flex flex-wrap items-start justify-between gap-3 rounded-md border p-3"
+              >
+                <div className="min-w-0 space-y-1">
+                  <p className="text-sm font-medium">
+                    {group.receipts.length} receipts
+                  </p>
+                  <ul className="text-sm text-muted-foreground">
+                    {group.receipts.map((receipt) => (
+                      <li key={receipt.receiptId} className="truncate">
+                        {receipt.date} — {receipt.location} —{" "}
+                        {formatCurrency(Number(receipt.transactionTotal ?? 0))}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-xs text-muted-foreground">
+                    Accepted {formatDate(group.acceptedAt)}
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={pendingUndoKey === key}
+                  onClick={() => onUndo(receiptIds)}
+                >
+                  Undo
+                </Button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
   );
 }

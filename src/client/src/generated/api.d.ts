@@ -1693,6 +1693,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/reports/duplicates/accepted": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List accepted duplicate groups
+         * @description Returns the receipt groups a user has accepted as genuinely separate purchases. Groups are the connected components of the accepted-pair graph, hydrated with the receipts that are still active.
+         */
+        get: operations["GetAcceptedDuplicates"];
+        put?: never;
+        /**
+         * Accept a duplicate group as not-a-duplicate
+         * @description Records every unordered pair of the supplied receipts as "not a duplicate" so the group stops being reported. Idempotent — re-accepting an already-accepted group is a no-op.
+         */
+        post: operations["AcceptDuplicateGroup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reports/duplicates/accepted/remove": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Undo a duplicate-group acceptance
+         * @description Removes the "not a duplicate" assertion between every pair of the supplied receipts, so the group is reported again.
+         */
+        post: operations["UnacceptDuplicateGroup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/reports/category-trends": {
         parameters: {
             query?: never;
@@ -2465,9 +2509,11 @@ export interface components {
             groups: components["schemas"]["DuplicateGroup"][];
         };
         DuplicateGroup: {
-            /** @description Human-readable description of what these receipts have in common. */
+            /** @description Human-readable description of what these receipts have in common. Display only — it is derived from the current tolerance settings and is not a stable identity. */
             matchKey: string;
             receipts: components["schemas"]["DuplicateReceipt"][];
+            /** @description True when every pair of receipts in this group has been accepted as "not a duplicate". Only ever true when includeAccepted was requested. */
+            isAccepted: boolean;
         };
         DuplicateReceipt: {
             /** Format: uuid */
@@ -2477,6 +2523,37 @@ export interface components {
             date: string;
             /** Format: double */
             transactionTotal: number;
+        };
+        AcceptedDuplicatesResponse: {
+            /** Format: int32 */
+            groupCount: number;
+            groups: components["schemas"]["AcceptedDuplicateGroup"][];
+        };
+        AcceptedDuplicateGroup: {
+            receipts: components["schemas"]["DuplicateReceipt"][];
+            /**
+             * Format: date-time
+             * @description When the most recent pair in this group was accepted.
+             */
+            acceptedAt: string;
+        };
+        AcceptDuplicateGroupRequest: {
+            /** @description The receipts in the group. At least two distinct IDs are required. */
+            receiptIds: string[];
+        };
+        AcceptDuplicateGroupResponse: {
+            /**
+             * Format: int32
+             * @description Number of receipt pairs newly recorded as not-a-duplicate. Zero when the group was already fully accepted.
+             */
+            acceptedPairCount: number;
+        };
+        UnacceptDuplicateGroupResponse: {
+            /**
+             * Format: int32
+             * @description Number of accepted receipt pairs removed.
+             */
+            removedPairCount: number;
         };
         CategoryTrendsResponse: {
             /** @description Ordered list of category names. The amounts array in each bucket parallels this list. */
@@ -7769,6 +7846,8 @@ export interface operations {
                 locationTolerance?: "exact" | "normalized";
                 /** @description Maximum difference between transaction totals to still consider them matching. Default 0 (exact match). */
                 totalTolerance?: number;
+                /** @description When true, groups previously accepted as "not a duplicate" are included and flagged with isAccepted. Default false (accepted groups are omitted). */
+                includeAccepted?: boolean;
             };
             header?: never;
             path?: never;
@@ -7783,6 +7862,101 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DuplicatesResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                };
+            };
+        };
+    };
+    GetAcceptedDuplicates: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcceptedDuplicatesResponse"];
+                };
+            };
+        };
+    };
+    AcceptDuplicateGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcceptDuplicateGroupRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcceptDuplicateGroupResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                };
+            };
+            /** @description One or more receipts were not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                };
+            };
+        };
+    };
+    UnacceptDuplicateGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcceptDuplicateGroupRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnacceptDuplicateGroupResponse"];
                 };
             };
             /** @description Bad Request */

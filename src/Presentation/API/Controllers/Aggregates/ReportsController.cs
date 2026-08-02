@@ -234,6 +234,7 @@ public class ReportsController(IMediator mediator) : ControllerBase
 		[FromQuery] string? matchOn,
 		[FromQuery] string? locationTolerance,
 		[FromQuery] double? totalTolerance,
+		[FromQuery] bool? includeAccepted,
 		CancellationToken cancellationToken)
 	{
 		string match = matchOn ?? "dateAndLocation";
@@ -257,7 +258,7 @@ public class ReportsController(IMediator mediator) : ControllerBase
 			return TypedResults.BadRequest("totalTolerance must be >= 0");
 		}
 
-		GetDuplicateDetectionReportQuery query = new(match, locTol, totTol);
+		GetDuplicateDetectionReportQuery query = new(match, locTol, totTol, includeAccepted ?? false);
 		AppReports.DuplicateDetectionResult result = await mediator.Send(query, cancellationToken);
 
 		return TypedResults.Ok(new DuplicatesResponse
@@ -267,16 +268,100 @@ public class ReportsController(IMediator mediator) : ControllerBase
 			Groups = result.Groups.Select(g => new DuplicateGroup
 			{
 				MatchKey = g.MatchKey,
-				Receipts = g.Receipts.Select(r => new DuplicateReceipt
-				{
-					ReceiptId = r.ReceiptId,
-					Location = r.Location,
-					Date = r.Date,
-					TransactionTotal = (double)r.TransactionTotal
-				}).ToList()
+				IsAccepted = g.IsAccepted,
+				Receipts = g.Receipts.Select(ToDuplicateReceipt).ToList()
 			}).ToList()
 		});
 	}
+
+	[HttpGet("duplicates/accepted")]
+	[EndpointSummary("List accepted duplicate groups")]
+	[EndpointDescription("Returns the receipt groups a user has accepted as genuinely separate purchases.")]
+	public async Task<Ok<AcceptedDuplicatesResponse>> GetAcceptedDuplicates(CancellationToken cancellationToken)
+	{
+		AppReports.AcceptedDuplicatesResult result = await mediator.Send(new GetAcceptedDuplicatesQuery(), cancellationToken);
+
+		return TypedResults.Ok(new AcceptedDuplicatesResponse
+		{
+			GroupCount = result.GroupCount,
+			Groups = result.Groups.Select(g => new AcceptedDuplicateGroup
+			{
+				AcceptedAt = g.AcceptedAt,
+				Receipts = g.Receipts.Select(ToDuplicateReceipt).ToList()
+			}).ToList()
+		});
+	}
+
+	[HttpPost("duplicates/accepted")]
+	[EndpointSummary("Accept a duplicate group as not-a-duplicate")]
+	[EndpointDescription("Records every pair of the supplied receipts as \"not a duplicate\" so the group stops being reported. Idempotent.")]
+	public async Task<Results<Ok<AcceptDuplicateGroupResponse>, BadRequest<string>, NotFound<string>>> AcceptDuplicateGroup(
+		[FromBody] AcceptDuplicateGroupRequest request,
+		CancellationToken cancellationToken)
+	{
+		if (!TryNormalizeReceiptIds(request.ReceiptIds, out List<Guid> receiptIds, out string? error))
+		{
+			return TypedResults.BadRequest(error);
+		}
+
+		try
+		{
+			int acceptedPairCount = await mediator.Send(new AcceptDuplicateGroupCommand(receiptIds), cancellationToken);
+			return TypedResults.Ok(new AcceptDuplicateGroupResponse { AcceptedPairCount = acceptedPairCount });
+		}
+		catch (KeyNotFoundException ex)
+		{
+			return TypedResults.NotFound(ex.Message);
+		}
+	}
+
+	[HttpPost("duplicates/accepted/remove")]
+	[EndpointSummary("Undo a duplicate-group acceptance")]
+	[EndpointDescription("Removes the \"not a duplicate\" assertion between every pair of the supplied receipts, so the group is reported again.")]
+	public async Task<Results<Ok<UnacceptDuplicateGroupResponse>, BadRequest<string>>> UnacceptDuplicateGroup(
+		[FromBody] AcceptDuplicateGroupRequest request,
+		CancellationToken cancellationToken)
+	{
+		if (!TryNormalizeReceiptIds(request.ReceiptIds, out List<Guid> receiptIds, out string? error))
+		{
+			return TypedResults.BadRequest(error);
+		}
+
+		int removedPairCount = await mediator.Send(new UnacceptDuplicateGroupCommand(receiptIds), cancellationToken);
+		return TypedResults.Ok(new UnacceptDuplicateGroupResponse { RemovedPairCount = removedPairCount });
+	}
+
+	private static bool TryNormalizeReceiptIds(
+		ICollection<Guid>? rawIds,
+		out List<Guid> receiptIds,
+		out string? error)
+	{
+		receiptIds = rawIds is null ? [] : [.. rawIds.Distinct()];
+
+		if (receiptIds.Count < 2)
+		{
+			error = "receiptIds must contain at least 2 distinct receipt IDs";
+			return false;
+		}
+
+		if (receiptIds.Contains(Guid.Empty))
+		{
+			error = "receiptIds must not contain an empty GUID";
+			return false;
+		}
+
+		error = null;
+		return true;
+	}
+
+	private static DuplicateReceipt ToDuplicateReceipt(AppReports.DuplicateReceiptSummary summary) =>
+		new()
+		{
+			ReceiptId = summary.ReceiptId,
+			Location = summary.Location,
+			Date = summary.Date,
+			TransactionTotal = (double)summary.TransactionTotal
+		};
 
 	[HttpGet("category-trends")]
 	[EndpointSummary("Get category spending trends over time")]

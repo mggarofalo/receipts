@@ -14,6 +14,8 @@ export interface DuplicateDetectionParams {
   matchOn?: MatchOn;
   locationTolerance?: LocationTolerance;
   totalTolerance?: TotalTolerance;
+  /** Include groups already accepted as "not a duplicate". Defaults to false server-side. */
+  includeAccepted?: boolean;
 }
 
 export function useDuplicateDetectionReport(
@@ -26,6 +28,7 @@ export function useDuplicateDetectionReport(
       params.matchOn,
       params.locationTolerance,
       params.totalTolerance,
+      params.includeAccepted,
     ],
     placeholderData: keepPreviousData,
     queryFn: async () => {
@@ -35,6 +38,7 @@ export function useDuplicateDetectionReport(
             matchOn: params.matchOn,
             locationTolerance: params.locationTolerance,
             totalTolerance: params.totalTolerance,
+            includeAccepted: params.includeAccepted,
           },
         },
       });
