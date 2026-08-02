@@ -436,6 +436,50 @@ describe("LineItemsSection", () => {
       ).toBeInTheDocument();
     });
 
+    it("promotes the highlighted history suggestion with Shift+Enter without applying it", async () => {
+      const user = userEvent.setup();
+      mockSuggestions();
+      const mutate = mockPromote();
+      renderWithProviders(<LineItemsSection {...defaultProps} />);
+
+      const input = screen.getByPlaceholderText("Item description");
+      await user.type(input, "mi");
+      await screen.findByRole("option", { name: /milk \(gallon\)/i });
+
+      // The first result (the history suggestion) is highlighted by default.
+      await user.keyboard("{Shift>}{Enter}{/Shift}");
+
+      expect(mutate).toHaveBeenCalledWith({
+        name: "Milk (gallon)",
+        defaultCategory: "Food",
+        defaultSubcategory: "Dairy",
+        defaultUnitPrice: 3.5,
+        defaultItemCode: "MILK-GAL",
+      });
+      // Shift+Enter must not apply the suggestion to the form...
+      expect(input).toHaveValue("mi");
+      // ...and must not close the popover.
+      expect(
+        screen.getByRole("option", { name: /milk \(gallon\)/i }),
+      ).toBeInTheDocument();
+    });
+
+    it("plain Enter still applies (does not promote) a highlighted history suggestion", async () => {
+      const user = userEvent.setup();
+      mockSuggestions();
+      const mutate = mockPromote();
+      renderWithProviders(<LineItemsSection {...defaultProps} />);
+
+      const input = screen.getByPlaceholderText("Item description");
+      await user.type(input, "mi");
+      await screen.findByRole("option", { name: /milk \(gallon\)/i });
+
+      await user.keyboard("{Enter}");
+
+      expect(mutate).not.toHaveBeenCalled();
+      expect(input).toHaveValue("Milk (gallon)");
+    });
+
     it("does not render a promote button on template-source suggestions", async () => {
       const user = userEvent.setup();
       mockSuggestions();

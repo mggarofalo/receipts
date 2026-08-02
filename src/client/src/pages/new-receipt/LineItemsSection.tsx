@@ -349,11 +349,24 @@ export function LineItemsSection({ items, onChange, location }: LineItemsSection
         if (suggestion) {
           // Prevent the form from submitting — Enter picks the suggestion.
           e.preventDefault();
-          applySuggestion(suggestion);
+          // Shift+Enter saves a highlighted history suggestion as a
+          // template instead of applying it, mirroring the pointer-only
+          // "Save as template" button for keyboard/screen-reader users.
+          if (e.shiftKey && suggestion.source === "history") {
+            promoteSuggestion(suggestion);
+          } else {
+            applySuggestion(suggestion);
+          }
         }
       }
     },
-    [isSuggestionsOpen, similarItems, descriptionActiveIndex, applySuggestion],
+    [
+      isSuggestionsOpen,
+      similarItems,
+      descriptionActiveIndex,
+      applySuggestion,
+      promoteSuggestion,
+    ],
   );
 
   const handleAdd = useCallback(
@@ -623,6 +636,7 @@ export function LineItemsSection({ items, onChange, location }: LineItemsSection
                               aria-autocomplete="list"
                               aria-expanded={isSuggestionsOpen}
                               aria-controls={suggestionsListId}
+                              aria-describedby="description-shortcuts-hint"
                               autoComplete="off"
                               {...field}
                               onChange={(e) => {
@@ -632,6 +646,11 @@ export function LineItemsSection({ items, onChange, location }: LineItemsSection
                               onFocus={() => setShowSuggestions(true)}
                               onKeyDown={handleDescriptionKeyDown}
                             />
+                            <span id="description-shortcuts-hint" className="sr-only">
+                              When a suggestion from your history is
+                              highlighted, press Shift+Enter to save it as a
+                              template.
+                            </span>
                             {isFetchingSimilar && description.length >= 2 && (
                               <>
                                 <Loader2 className="absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" aria-hidden="true" />
