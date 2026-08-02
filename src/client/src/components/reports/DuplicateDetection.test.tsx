@@ -553,6 +553,24 @@ describe("DuplicateDetection", () => {
       ).toBeDisabled();
     });
 
+    it("leaves Undo enabled for a group with no receipts while nothing is pending", () => {
+      // A group with no surviving receipts has no identity, so groupKey returns null — the same
+      // value the "nothing is pending" sentinel uses. The two must not compare equal, or the
+      // button would sit permanently disabled at idle.
+      setupMock();
+      setupAcceptance({
+        data: {
+          groupCount: 1,
+          groups: [{ acceptedAt: "2025-04-05T10:00:00Z", receipts: [] }],
+        },
+      });
+      renderWithQueryClient(<DuplicateDetection />);
+
+      expect(
+        acceptedSection().getByRole("button", { name: "Undo" }),
+      ).toBeEnabled();
+    });
+
     it("leaves Undo enabled when a different group's unaccept is in flight", () => {
       setupMock();
       setupAcceptance({

@@ -70,6 +70,15 @@ function groupKey(receiptIds: readonly string[] | undefined): string | null {
   return [...receiptIds].sort().join("|");
 }
 
+/**
+ * True when `key` identifies the group whose mutation is in flight. Both arguments can be null —
+ * `pendingKey` when nothing is pending, `key` when a group somehow arrived with no receipts — and
+ * null must never match null, or an identity-less group would sit permanently disabled at idle.
+ */
+function isPendingGroup(pendingKey: string | null, key: string | null): boolean {
+  return key !== null && pendingKey === key;
+}
+
 const MATCH_ON_VALUES = [
   "dateAndLocation",
   "dateAndTotal",
@@ -325,7 +334,7 @@ export default function DuplicateDetection() {
                           <Button
                             variant="outline"
                             size="sm"
-                            disabled={pendingUnacceptKey === key}
+                            disabled={isPendingGroup(pendingUnacceptKey, key)}
                             onClick={() => unacceptGroup.mutate(receiptIds)}
                           >
                             Report again
@@ -334,7 +343,7 @@ export default function DuplicateDetection() {
                           <Button
                             variant="outline"
                             size="sm"
-                            disabled={pendingAcceptKey === key}
+                            disabled={isPendingGroup(pendingAcceptKey, key)}
                             onClick={() => acceptGroup.mutate(receiptIds)}
                           >
                             Not duplicates
@@ -537,7 +546,7 @@ function AcceptedDuplicatesSection({
                 <Button
                   variant="outline"
                   size="sm"
-                  disabled={pendingUndoKey === key}
+                  disabled={isPendingGroup(pendingUndoKey, key)}
                   onClick={() => onUndo(receiptIds)}
                 >
                   Undo

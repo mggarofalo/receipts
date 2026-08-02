@@ -1,3 +1,4 @@
+import { useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import client from "@/lib/api-client";
@@ -21,12 +22,17 @@ export function useAcceptedDuplicates() {
   });
 }
 
+/**
+ * Both mutations refresh the same two caches. Memoized because functions returned from a custom
+ * hook must be referentially stable (docs/react/custom-hooks.md) — an unstable reference that
+ * later reaches a dependency array is how render loops start.
+ */
 function useInvalidateDuplicates() {
   const queryClient = useQueryClient();
-  return () => {
+  return useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["reports", "duplicates"] });
     queryClient.invalidateQueries({ queryKey: ACCEPTED_DUPLICATES_QUERY_KEY });
-  };
+  }, [queryClient]);
 }
 
 /** Accept a group: record every pair of its receipts as "not a duplicate". */
