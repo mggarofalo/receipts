@@ -13,7 +13,7 @@ using Pgvector;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260802104658_AddAcceptedDuplicatePairs")]
+    [Migration("20260802185339_AddAcceptedDuplicatePairs")]
     partial class AddAcceptedDuplicatePairs
     {
         /// <inheritdoc />
@@ -508,32 +508,6 @@ namespace Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("ItemEmbeddings", "matching");
-                });
-
-            modelBuilder.Entity("Infrastructure.Entities.Core.ItemSimilarityEdgeEntity", b =>
-                {
-                    b.Property<string>("DescA")
-                        .HasColumnType("text");
-
-                    b.Property<string>("DescB")
-                        .HasColumnType("text");
-
-                    b.Property<DateTimeOffset>("ComputedAt")
-                        .HasColumnType("timestamptz");
-
-                    b.Property<double>("Score")
-                        .HasColumnType("double precision");
-
-                    b.HasKey("DescA", "DescB");
-
-                    b.HasIndex("DescB");
-
-                    b.HasIndex("Score");
-
-                    b.ToTable("ItemSimilarityEdges", "matching", t =>
-                        {
-                            t.HasCheckConstraint("CK_ItemSimilarityEdges_CanonicalOrder", "\"DescA\" < \"DescB\"");
-                        });
                 });
 
             modelBuilder.Entity("Infrastructure.Entities.Core.ItemTemplateEntity", b =>
@@ -1399,21 +1373,6 @@ namespace Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("ParentAccount");
-                });
-
-            modelBuilder.Entity("Infrastructure.Entities.Core.ItemSimilarityEdgeEntity", b =>
-                {
-                    b.HasOne("Infrastructure.Entities.Core.DistinctDescriptionEntity", null)
-                        .WithMany()
-                        .HasForeignKey("DescA")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Infrastructure.Entities.Core.DistinctDescriptionEntity", null)
-                        .WithMany()
-                        .HasForeignKey("DescB")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
                 });
 
             modelBuilder.Entity("Infrastructure.Entities.Core.ReceiptItemEntity", b =>
