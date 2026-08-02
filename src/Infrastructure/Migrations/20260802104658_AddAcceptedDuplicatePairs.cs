@@ -46,6 +46,12 @@ public partial class AddAcceptedDuplicatePairs : Migration
 			});
 
 		migrationBuilder.CreateIndex(
+			name: "IX_AcceptedDuplicatePairs_ReceiptIdA",
+			schema: "receipts",
+			table: "AcceptedDuplicatePairs",
+			column: "ReceiptIdA");
+
+		migrationBuilder.CreateIndex(
 			name: "IX_AcceptedDuplicatePairs_ReceiptIdA_ReceiptIdB",
 			schema: "receipts",
 			table: "AcceptedDuplicatePairs",

@@ -276,6 +276,8 @@ namespace Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ReceiptIdA");
+
                     b.HasIndex("ReceiptIdB");
 
                     b.HasIndex("ReceiptIdA", "ReceiptIdB")

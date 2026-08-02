@@ -13,7 +13,7 @@ using Pgvector;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260801190134_AddAcceptedDuplicatePairs")]
+    [Migration("20260802104658_AddAcceptedDuplicatePairs")]
     partial class AddAcceptedDuplicatePairs
     {
         /// <inheritdoc />
@@ -278,6 +278,8 @@ namespace Infrastructure.Migrations
                         .HasColumnType("uuid");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ReceiptIdA");
 
                     b.HasIndex("ReceiptIdB");
 

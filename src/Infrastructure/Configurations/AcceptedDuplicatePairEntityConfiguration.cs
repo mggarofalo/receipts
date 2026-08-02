@@ -29,6 +29,13 @@ public class AcceptedDuplicatePairEntityConfiguration : IEntityTypeConfiguration
 			.IsUnique()
 			.HasFilter("\"DeletedAt\" IS NULL");
 
+		// EF indexes ReceiptIdB for its FK automatically, but ReceiptIdA is left covered only by the
+		// filtered composite index above. Postgres's referential-integrity probe carries no
+		// "DeletedAt IS NULL" predicate, so it cannot use a partial index and falls back to a
+		// sequential scan on every cascade check — which PurgeAllDeletedAsync pays once per purged
+		// receipt. This unfiltered index is what the FK actually uses.
+		builder.HasIndex(e => e.ReceiptIdA);
+
 		// Cascade on BOTH ends: a permanently purged receipt can never be flagged again, so its
 		// acceptances are dead weight. Soft-deleting a receipt does NOT reach here (the repository
 		// converts deletes to soft deletes and this entity is not an IOwnedBy child), which is what
