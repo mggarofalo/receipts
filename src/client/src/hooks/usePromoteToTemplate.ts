@@ -53,7 +53,7 @@ export function usePromoteToTemplate() {
           name,
           defaultCategory: input.defaultCategory || null,
           defaultSubcategory: input.defaultSubcategory || null,
-          defaultUnitPrice: input.defaultUnitPrice ?? null,
+          defaultUnitPrice: input.defaultUnitPrice || null,
           defaultItemCode: input.defaultItemCode || null,
         },
       });

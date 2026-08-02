@@ -151,7 +151,10 @@ describe("usePromoteToTemplate", () => {
     expect(result.current.data).toEqual({ created: true, name: "Milk" });
   });
 
-  it("normalizes empty strings to null in the create body and keeps a zero unit price", async () => {
+  it("normalizes empty strings and a zero unit price to null in the create body", async () => {
+    // The backend rejects DefaultUnitPrice === 0 (it must be positive when present),
+    // so a $0 line item or history suggestion promotes with no default price rather
+    // than failing the request.
     (client.GET as Mock).mockResolvedValue({ data: [], error: undefined });
     (client.POST as Mock).mockResolvedValue({
       data: { id: "11111111-1111-1111-1111-111111111111", name: "Bread" },
@@ -176,7 +179,7 @@ describe("usePromoteToTemplate", () => {
         name: "Bread",
         defaultCategory: "Food",
         defaultSubcategory: null,
-        defaultUnitPrice: 0,
+        defaultUnitPrice: null,
         defaultItemCode: null,
       },
     });
