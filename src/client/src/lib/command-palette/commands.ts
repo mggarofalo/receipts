@@ -59,13 +59,38 @@ function goTo(path: string) {
   };
 }
 
-export const REPORT_COMMANDS: Array<{ slug: string; name: string }> = [
-  { slug: "out-of-balance", name: "Out of Balance" },
-  { slug: "item-cost-over-time", name: "Item Cost Over Time" },
-  { slug: "spending-by-location", name: "Spending by Location" },
-  { slug: "category-trends", name: "Category Trends" },
-  { slug: "duplicate-detection", name: "Duplicate Detection" },
-  { slug: "uncategorized-items", name: "Uncategorized Items" },
+/**
+ * One entry per report on the reports hub, in hub order (Spending first, then
+ * Data Quality). Keep in sync with `REPORT_GROUPS` in `pages/Reports.tsx`.
+ */
+export const REPORT_COMMANDS: Array<{
+  slug: string;
+  name: string;
+  icon: Command["icon"];
+}> = [
+  { slug: "spending-by-location", name: "Spending by Location", icon: Search },
+  {
+    slug: "spending-by-normalized-description",
+    name: "Spending by Normalized Description",
+    icon: Tags,
+  },
+  { slug: "category-trends", name: "Category Trends", icon: BarChart3 },
+  {
+    slug: "item-cost-over-time",
+    name: "Item Cost Over Time",
+    icon: TrendingUp,
+  },
+  { slug: "out-of-balance", name: "Out of Balance", icon: RotateCcw },
+  {
+    slug: "duplicate-detection",
+    name: "Duplicate Detection",
+    icon: ScanSearch,
+  },
+  {
+    slug: "uncategorized-items",
+    name: "Uncategorized Items",
+    icon: FolderTree,
+  },
 ];
 
 export const COMMANDS: Command[] = [
@@ -202,7 +227,7 @@ export const COMMANDS: Command[] = [
     label: "Go to Reports",
     group: "navigate",
     icon: ChartColumn,
-    keywords: ["analytics", "charts"],
+    keywords: ["analytics", "charts", "hub", "all reports"],
     run: goTo("/reports"),
   },
   {
@@ -376,18 +401,7 @@ export const COMMANDS: Command[] = [
     id: `report:${report.slug}`,
     label: `Open "${report.name}" Report`,
     group: "reports",
-    icon:
-      report.slug === "duplicate-detection"
-        ? ScanSearch
-        : report.slug === "item-cost-over-time"
-          ? TrendingUp
-          : report.slug === "uncategorized-items"
-            ? FolderTree
-            : report.slug === "spending-by-location"
-              ? Search
-              : report.slug === "out-of-balance"
-                ? RotateCcw
-                : BarChart3,
+    icon: report.icon,
     keywords: ["report", "analytics", "chart"],
     run: goTo(`/reports?report=${report.slug}`),
   })),
