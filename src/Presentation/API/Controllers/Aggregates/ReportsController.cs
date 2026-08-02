@@ -295,18 +295,14 @@ public class ReportsController(IMediator mediator) : ControllerBase
 	[HttpPost("duplicates/accepted")]
 	[EndpointSummary("Accept a duplicate group as not-a-duplicate")]
 	[EndpointDescription("Records every pair of the supplied receipts as \"not a duplicate\" so the group stops being reported. Idempotent.")]
-	public async Task<Results<Ok<AcceptDuplicateGroupResponse>, BadRequest<string>, NotFound<string>>> AcceptDuplicateGroup(
+	public async Task<Results<Ok<AcceptDuplicateGroupResponse>, NotFound<string>>> AcceptDuplicateGroup(
 		[FromBody] AcceptDuplicateGroupRequest request,
 		CancellationToken cancellationToken)
 	{
-		if (!TryNormalizeReceiptIds(request.ReceiptIds, out List<Guid> receiptIds, out string? error))
-		{
-			return TypedResults.BadRequest(error);
-		}
-
 		try
 		{
-			int acceptedPairCount = await mediator.Send(new AcceptDuplicateGroupCommand(receiptIds), cancellationToken);
+			int acceptedPairCount = await mediator.Send(
+				new AcceptDuplicateGroupCommand(DistinctReceiptIds(request)), cancellationToken);
 			return TypedResults.Ok(new AcceptDuplicateGroupResponse { AcceptedPairCount = acceptedPairCount });
 		}
 		catch (KeyNotFoundException ex)
@@ -317,42 +313,24 @@ public class ReportsController(IMediator mediator) : ControllerBase
 
 	[HttpPost("duplicates/accepted/remove")]
 	[EndpointSummary("Undo a duplicate-group acceptance")]
-	[EndpointDescription("Removes the \"not a duplicate\" assertion between every pair of the supplied receipts, so the group is reported again.")]
-	public async Task<Results<Ok<UnacceptDuplicateGroupResponse>, BadRequest<string>>> UnacceptDuplicateGroup(
+	[EndpointDescription("Removes the \"not a duplicate\" assertion across the whole accepted group the supplied receipts belong to, so it is reported again.")]
+	public async Task<Ok<UnacceptDuplicateGroupResponse>> UnacceptDuplicateGroup(
 		[FromBody] AcceptDuplicateGroupRequest request,
 		CancellationToken cancellationToken)
 	{
-		if (!TryNormalizeReceiptIds(request.ReceiptIds, out List<Guid> receiptIds, out string? error))
-		{
-			return TypedResults.BadRequest(error);
-		}
-
-		int removedPairCount = await mediator.Send(new UnacceptDuplicateGroupCommand(receiptIds), cancellationToken);
+		int removedPairCount = await mediator.Send(
+			new UnacceptDuplicateGroupCommand(DistinctReceiptIds(request)), cancellationToken);
 		return TypedResults.Ok(new UnacceptDuplicateGroupResponse { RemovedPairCount = removedPairCount });
 	}
 
-	private static bool TryNormalizeReceiptIds(
-		ICollection<Guid>? rawIds,
-		out List<Guid> receiptIds,
-		out string? error)
-	{
-		receiptIds = rawIds is null ? [] : [.. rawIds.Distinct()];
-
-		if (receiptIds.Count < 2)
-		{
-			error = "receiptIds must contain at least 2 distinct receipt IDs";
-			return false;
-		}
-
-		if (receiptIds.Contains(Guid.Empty))
-		{
-			error = "receiptIds must not contain an empty GUID";
-			return false;
-		}
-
-		error = null;
-		return true;
-	}
+	/// <summary>
+	/// Shape normalization only. Bounds and per-element checks live in
+	/// <c>AcceptDuplicateGroupRequestValidator</c>, which the global FluentValidation action filter
+	/// runs before this method — so a request that reaches here already satisfies them, and every
+	/// rejection returns one ValidationProblemDetails shape instead of two different 400 bodies.
+	/// </summary>
+	private static List<Guid> DistinctReceiptIds(AcceptDuplicateGroupRequest request) =>
+		[.. request.ReceiptIds.Distinct()];
 
 	private static DuplicateReceipt ToDuplicateReceipt(AppReports.DuplicateReceiptSummary summary) =>
 		new()

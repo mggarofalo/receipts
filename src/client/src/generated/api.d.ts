@@ -1728,7 +1728,7 @@ export interface paths {
         put?: never;
         /**
          * Undo a duplicate-group acceptance
-         * @description Removes the "not a duplicate" assertion between every pair of the supplied receipts, so the group is reported again.
+         * @description Removes the "not a duplicate" assertion across the whole accepted group the supplied receipts belong to. The server expands the request to the connected component of the accepted-pair graph, so an acceptance whose group renders short — because a member has since been deleted — is still fully undone.
          */
         post: operations["UnacceptDuplicateGroup"];
         delete?: never;
@@ -2538,7 +2538,7 @@ export interface components {
             acceptedAt: string;
         };
         AcceptDuplicateGroupRequest: {
-            /** @description The receipts in the group. At least two distinct IDs are required. */
+            /** @description The receipts in the group. At least two distinct IDs, and at most 100 — accepting expands to one stored row per pair, so the list is bounded the same way bulk YNAB pushes are. */
             receiptIds: string[];
         };
         AcceptDuplicateGroupResponse: {
@@ -7917,15 +7917,6 @@ export interface operations {
                     "application/json": components["schemas"]["AcceptDuplicateGroupResponse"];
                 };
             };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": string;
-                };
-            };
             /** @description One or more receipts were not found */
             404: {
                 headers: {
@@ -7957,15 +7948,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UnacceptDuplicateGroupResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": string;
                 };
             };
         };

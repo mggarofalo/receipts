@@ -3855,12 +3855,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AcceptDuplicateGroupResponse"
-        "400":
-          description: Bad Request
-          content:
-            application/json:
-              schema:
-                type: string
         "404":
           description: One or more receipts were not found
           content:
@@ -3873,7 +3867,11 @@ paths:
       operationId: UnacceptDuplicateGroup
       tags: [Reports]
       summary: Undo a duplicate-group acceptance
-      description: Removes the "not a duplicate" assertion between every pair of the supplied receipts, so the group is reported again.
+      description: >
+        Removes the "not a duplicate" assertion across the whole accepted group the supplied
+        receipts belong to. The server expands the request to the connected component of the
+        accepted-pair graph, so an acceptance whose group renders short — because a member has since
+        been deleted — is still fully undone.
       security:
         - BearerAuth: []
         - ApiKey: []
@@ -3890,12 +3888,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UnacceptDuplicateGroupResponse"
-        "400":
-          description: Bad Request
-          content:
-            application/json:
-              schema:
-                type: string
 
   /api/reports/category-trends:
     get:
@@ -5161,10 +5153,11 @@ components:
         receiptIds:
           type: array
           minItems: 2
+          maxItems: 100
           items:
             type: string
             format: uuid
-          description: The receipts in the group. At least two distinct IDs are required.
+          description: The receipts in the group. At least two distinct IDs, and at most 100 — accepting expands to one stored row per pair, so the list is bounded the same way bulk YNAB pushes are.
 
     AcceptDuplicateGroupResponse:
       type: object

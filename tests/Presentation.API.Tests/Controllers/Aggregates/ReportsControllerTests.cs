@@ -883,7 +883,7 @@ public class ReportsControllerTests
 			.ReturnsAsync(1);
 
 		// Act
-		Results<Ok<AcceptDuplicateGroupResponse>, BadRequest<string>, NotFound<string>> result =
+		Results<Ok<AcceptDuplicateGroupResponse>, NotFound<string>> result =
 			await _controller.AcceptDuplicateGroup(request, CancellationToken.None);
 
 		// Assert
@@ -909,7 +909,7 @@ public class ReportsControllerTests
 			.ReturnsAsync(1);
 
 		// Act
-		Results<Ok<AcceptDuplicateGroupResponse>, BadRequest<string>, NotFound<string>> result =
+		Results<Ok<AcceptDuplicateGroupResponse>, NotFound<string>> result =
 			await _controller.AcceptDuplicateGroup(request, CancellationToken.None);
 
 		// Assert
@@ -917,58 +917,6 @@ public class ReportsControllerTests
 		_mediatorMock.Verify(m => m.Send(
 			It.Is<AcceptDuplicateGroupCommand>(c => c.ReceiptIds.Count == 2),
 			It.IsAny<CancellationToken>()), Times.Once);
-	}
-
-	[Fact]
-	public async Task AcceptDuplicateGroup_ReturnsBadRequest_WhenFewerThanTwoIds()
-	{
-		// Arrange
-		AcceptDuplicateGroupRequest request = new() { ReceiptIds = [Guid.NewGuid()] };
-
-		// Act
-		Results<Ok<AcceptDuplicateGroupResponse>, BadRequest<string>, NotFound<string>> result =
-			await _controller.AcceptDuplicateGroup(request, CancellationToken.None);
-
-		// Assert
-		BadRequest<string> badResult = Assert.IsType<BadRequest<string>>(result.Result);
-		badResult.Value.Should().Be("receiptIds must contain at least 2 distinct receipt IDs");
-		_mediatorMock.Verify(m => m.Send(
-			It.IsAny<AcceptDuplicateGroupCommand>(), It.IsAny<CancellationToken>()), Times.Never);
-	}
-
-	[Fact]
-	public async Task AcceptDuplicateGroup_ReturnsBadRequest_WhenSameIdRepeated()
-	{
-		// Arrange — two entries, but only one distinct receipt.
-		Guid receiptId = Guid.NewGuid();
-		AcceptDuplicateGroupRequest request = new() { ReceiptIds = [receiptId, receiptId] };
-
-		// Act
-		Results<Ok<AcceptDuplicateGroupResponse>, BadRequest<string>, NotFound<string>> result =
-			await _controller.AcceptDuplicateGroup(request, CancellationToken.None);
-
-		// Assert
-		BadRequest<string> badResult = Assert.IsType<BadRequest<string>>(result.Result);
-		badResult.Value.Should().Be("receiptIds must contain at least 2 distinct receipt IDs");
-		_mediatorMock.Verify(m => m.Send(
-			It.IsAny<AcceptDuplicateGroupCommand>(), It.IsAny<CancellationToken>()), Times.Never);
-	}
-
-	[Fact]
-	public async Task AcceptDuplicateGroup_ReturnsBadRequest_WhenReceiptIdsContainEmptyGuid()
-	{
-		// Arrange
-		AcceptDuplicateGroupRequest request = new() { ReceiptIds = [Guid.NewGuid(), Guid.Empty] };
-
-		// Act
-		Results<Ok<AcceptDuplicateGroupResponse>, BadRequest<string>, NotFound<string>> result =
-			await _controller.AcceptDuplicateGroup(request, CancellationToken.None);
-
-		// Assert
-		BadRequest<string> badResult = Assert.IsType<BadRequest<string>>(result.Result);
-		badResult.Value.Should().Be("receiptIds must not contain an empty GUID");
-		_mediatorMock.Verify(m => m.Send(
-			It.IsAny<AcceptDuplicateGroupCommand>(), It.IsAny<CancellationToken>()), Times.Never);
 	}
 
 	[Fact]
@@ -985,7 +933,7 @@ public class ReportsControllerTests
 			.ThrowsAsync(new KeyNotFoundException($"Receipt(s) not found: {missing}"));
 
 		// Act
-		Results<Ok<AcceptDuplicateGroupResponse>, BadRequest<string>, NotFound<string>> result =
+		Results<Ok<AcceptDuplicateGroupResponse>, NotFound<string>> result =
 			await _controller.AcceptDuplicateGroup(request, CancellationToken.None);
 
 		// Assert
@@ -1007,12 +955,11 @@ public class ReportsControllerTests
 			.ReturnsAsync(1);
 
 		// Act
-		Results<Ok<UnacceptDuplicateGroupResponse>, BadRequest<string>> result =
+		Ok<UnacceptDuplicateGroupResponse> result =
 			await _controller.UnacceptDuplicateGroup(request, CancellationToken.None);
 
 		// Assert
-		Ok<UnacceptDuplicateGroupResponse> okResult = Assert.IsType<Ok<UnacceptDuplicateGroupResponse>>(result.Result);
-		okResult.Value!.RemovedPairCount.Should().Be(1);
+		result.Value!.RemovedPairCount.Should().Be(1);
 		_mediatorMock.Verify(m => m.Send(
 			It.Is<UnacceptDuplicateGroupCommand>(c =>
 				c.ReceiptIds.Count == 2 && c.ReceiptIds.Contains(receiptA) && c.ReceiptIds.Contains(receiptB)),
@@ -1033,49 +980,14 @@ public class ReportsControllerTests
 			.ReturnsAsync(1);
 
 		// Act
-		Results<Ok<UnacceptDuplicateGroupResponse>, BadRequest<string>> result =
+		Ok<UnacceptDuplicateGroupResponse> result =
 			await _controller.UnacceptDuplicateGroup(request, CancellationToken.None);
 
 		// Assert
-		Assert.IsType<Ok<UnacceptDuplicateGroupResponse>>(result.Result);
+		result.Value.Should().NotBeNull();
 		_mediatorMock.Verify(m => m.Send(
 			It.Is<UnacceptDuplicateGroupCommand>(c => c.ReceiptIds.Count == 2),
 			It.IsAny<CancellationToken>()), Times.Once);
-	}
-
-	[Fact]
-	public async Task UnacceptDuplicateGroup_ReturnsBadRequest_WhenFewerThanTwoDistinctIds()
-	{
-		// Arrange
-		Guid receiptId = Guid.NewGuid();
-		AcceptDuplicateGroupRequest request = new() { ReceiptIds = [receiptId, receiptId] };
-
-		// Act
-		Results<Ok<UnacceptDuplicateGroupResponse>, BadRequest<string>> result =
-			await _controller.UnacceptDuplicateGroup(request, CancellationToken.None);
-
-		// Assert
-		BadRequest<string> badResult = Assert.IsType<BadRequest<string>>(result.Result);
-		badResult.Value.Should().Be("receiptIds must contain at least 2 distinct receipt IDs");
-		_mediatorMock.Verify(m => m.Send(
-			It.IsAny<UnacceptDuplicateGroupCommand>(), It.IsAny<CancellationToken>()), Times.Never);
-	}
-
-	[Fact]
-	public async Task UnacceptDuplicateGroup_ReturnsBadRequest_WhenReceiptIdsContainEmptyGuid()
-	{
-		// Arrange
-		AcceptDuplicateGroupRequest request = new() { ReceiptIds = [Guid.NewGuid(), Guid.Empty] };
-
-		// Act
-		Results<Ok<UnacceptDuplicateGroupResponse>, BadRequest<string>> result =
-			await _controller.UnacceptDuplicateGroup(request, CancellationToken.None);
-
-		// Assert
-		BadRequest<string> badResult = Assert.IsType<BadRequest<string>>(result.Result);
-		badResult.Value.Should().Be("receiptIds must not contain an empty GUID");
-		_mediatorMock.Verify(m => m.Send(
-			It.IsAny<UnacceptDuplicateGroupCommand>(), It.IsAny<CancellationToken>()), Times.Never);
 	}
 
 	// ── GetSpendingByNormalizedDescription ─────────────────
