@@ -108,7 +108,7 @@ describe("SpendingByNormalizedDescription", () => {
     await user.click(screen.getByRole("button", { name: "Export CSV" }));
     await waitFor(() => expect(mockDownloadCsv).toHaveBeenCalledTimes(1));
 
-    const expectedStart = format(subMonths(new Date(), 1), "yyyy-MM-dd");
+    const expectedStart = format(subMonths(new Date(), 12), "yyyy-MM-dd");
     const expectedEnd = format(new Date(), "yyyy-MM-dd");
     const [filename, csv] = mockDownloadCsv.mock.calls[0];
     expect(filename).toBe(
@@ -119,5 +119,44 @@ describe("SpendingByNormalizedDescription", () => {
         "Bananas,5,40,USD\r\n" +
         "Apples,3,12.5,USD\r\n",
     );
+  });
+
+  it("reads the date range from the URL on load", () => {
+    setupMock();
+    renderWithQueryClient(<SpendingByNormalizedDescription />, {
+      route: "/?startDate=2023-01-01&endDate=2023-06-30",
+    });
+
+    expect(mockHook).toHaveBeenLastCalledWith({
+      from: "2023-01-01",
+      to: "2023-06-30",
+    });
+  });
+
+  it("treats the 'all' sentinel as an open-ended range", () => {
+    setupMock();
+    renderWithQueryClient(<SpendingByNormalizedDescription />, {
+      route: "/?startDate=all",
+    });
+
+    expect(mockHook).toHaveBeenLastCalledWith({
+      from: undefined,
+      to: undefined,
+    });
+  });
+
+  it("falls back to the default range for malformed URL params instead of crashing", () => {
+    setupMock();
+    renderWithQueryClient(<SpendingByNormalizedDescription />, {
+      route: "/?startDate=not-a-date&endDate=2023-06-30",
+    });
+
+    expect(screen.getByRole("table")).toBeInTheDocument();
+    const expectedStart = format(subMonths(new Date(), 12), "yyyy-MM-dd");
+    const expectedEnd = format(new Date(), "yyyy-MM-dd");
+    expect(mockHook).toHaveBeenLastCalledWith({
+      from: expectedStart,
+      to: expectedEnd,
+    });
   });
 });

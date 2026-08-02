@@ -1,9 +1,10 @@
-import { useCallback, useMemo, useState } from "react";
-import { format, subMonths } from "date-fns";
+import { useCallback, useMemo } from "react";
 import { useSpendingByNormalizedDescription } from "@/hooks/useSpendingByNormalizedDescription";
 import { useCsvExport } from "@/hooks/useCsvExport";
+import { useReportSearchParams } from "@/hooks/useReportSearchParams";
 import { csvFilename } from "@/lib/export-csv";
 import { formatCurrency } from "@/lib/format";
+import { parseDateRangeParam, serializeDateRangeParam } from "@/lib/report-params";
 import { DateRangeSelector } from "@/components/dashboard/DateRangeSelector";
 import type { DateRange } from "@/hooks/useDashboard";
 import { ChartCard, BarChart } from "@/components/charts";
@@ -18,20 +19,28 @@ import {
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
-function getDefaultRange(): DateRange {
-  const now = new Date();
-  return {
-    startDate: format(subMonths(now, 1), "yyyy-MM-dd"),
-    endDate: format(now, "yyyy-MM-dd"),
-  };
+interface SpendingByNormalizedDescriptionUrlParams {
+  dateRange: DateRange;
+}
+
+function parseSpendingByNormalizedDescriptionParams(
+  searchParams: URLSearchParams,
+): SpendingByNormalizedDescriptionUrlParams {
+  return { dateRange: parseDateRangeParam(searchParams) };
 }
 
 export default function SpendingByNormalizedDescription() {
-  const [dateRange, setDateRange] = useState<DateRange>(getDefaultRange);
+  const [urlParams, updateParams] = useReportSearchParams(
+    parseSpendingByNormalizedDescriptionParams,
+  );
+  const { dateRange } = urlParams;
 
-  const handleDateRangeChange = useCallback((range: DateRange) => {
-    setDateRange(range);
-  }, []);
+  const handleDateRangeChange = useCallback(
+    (range: DateRange) => {
+      updateParams(serializeDateRangeParam(range));
+    },
+    [updateParams],
+  );
 
   const { data, isLoading, isError } = useSpendingByNormalizedDescription({
     from: dateRange.startDate,

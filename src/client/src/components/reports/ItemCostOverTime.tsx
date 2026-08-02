@@ -5,6 +5,7 @@ import {
   useItemCostOverTime,
 } from "@/hooks/useItemCostOverTime";
 import type { DateRange } from "@/hooks/useDashboard";
+import { useReportSearchParams } from "@/hooks/useReportSearchParams";
 import { DateRangeSelector } from "@/components/dashboard/DateRangeSelector";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,10 +30,22 @@ import {
 } from "@/components/ui/select";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { computeRollingAverage } from "@/lib/rolling-average";
+import {
+  parseBoolParam,
+  parseDateRangeParam,
+  parseEnumParam,
+  parseSelectedItemParam,
+  serializeDateRangeParam,
+  serializeSelectedItemParam,
+  type SelectedItemUrlValue,
+} from "@/lib/report-params";
 import { ChevronsUpDown } from "lucide-react";
 
 type Granularity = "exact" | "monthly" | "yearly";
 type WindowSize = "3" | "6" | "12";
+
+const GRANULARITIES = ["exact", "monthly", "yearly"] as const;
+const WINDOW_SIZES = ["3", "6", "12"] as const;
 
 const granularityOptions: { value: Granularity; label: string }[] = [
   { value: "exact", label: "Each purchase" },
@@ -55,23 +68,53 @@ function formatCurrency(value: number): string {
   }).format(value);
 }
 
-interface SelectedItem {
-  description: string;
-  category: string;
+type SelectedItem = SelectedItemUrlValue;
+
+interface ItemCostOverTimeUrlParams {
+  selectedItem: SelectedItem | null;
+  categoryOnly: boolean;
+  dateRange: DateRange;
+  granularity: Granularity;
+  showTrendline: boolean;
+  windowSize: WindowSize;
+}
+
+function parseItemCostOverTimeParams(
+  searchParams: URLSearchParams,
+): ItemCostOverTimeUrlParams {
+  const { selectedItem, categoryOnly } = parseSelectedItemParam(searchParams);
+  return {
+    selectedItem,
+    categoryOnly,
+    dateRange: parseDateRangeParam(searchParams),
+    granularity: parseEnumParam(
+      searchParams.get("granularity"),
+      GRANULARITIES,
+      "exact",
+    ),
+    showTrendline: parseBoolParam(searchParams.get("trendline"), false),
+    windowSize: parseEnumParam(
+      searchParams.get("windowSize"),
+      WINDOW_SIZES,
+      "3",
+    ),
+  };
 }
 
 export default function ItemCostOverTime() {
   const [open, setOpen] = useState(false);
   const [searchInput, setSearchInput] = useState("");
-  const [categoryOnly, setCategoryOnly] = useState(false);
-  const [selectedItem, setSelectedItem] = useState<SelectedItem | null>(null);
-  const [dateRange, setDateRange] = useState<DateRange>({
-    startDate: undefined,
-    endDate: undefined,
-  });
-  const [granularity, setGranularity] = useState<Granularity>("exact");
-  const [showTrendline, setShowTrendline] = useState(false);
-  const [windowSize, setWindowSize] = useState<WindowSize>("3");
+  const [urlParams, updateParams] = useReportSearchParams(
+    parseItemCostOverTimeParams,
+  );
+  const {
+    selectedItem,
+    categoryOnly,
+    dateRange,
+    granularity,
+    showTrendline,
+    windowSize,
+  } = urlParams;
 
   const debouncedSearch = useDebouncedValue(searchInput, 300);
 
@@ -116,34 +159,48 @@ export default function ItemCostOverTime() {
 
   const handleSelect = useCallback(
     (description: string, category: string) => {
-      setSelectedItem({ description, category });
+      updateParams(
+        serializeSelectedItemParam({ description, category }, categoryOnly),
+      );
       setOpen(false);
       setSearchInput("");
     },
-    [],
+    [categoryOnly, updateParams],
   );
 
   const handleCategoryToggle = useCallback(() => {
-    setCategoryOnly((prev) => !prev);
-    setSelectedItem(null);
+    updateParams({
+      categoryOnly: categoryOnly ? undefined : "true",
+      item: undefined,
+      category: undefined,
+    });
     setSearchInput("");
-  }, []);
+  }, [categoryOnly, updateParams]);
 
-  const handleGranularity = useCallback((g: Granularity) => {
-    setGranularity(g);
-  }, []);
+  const handleGranularity = useCallback(
+    (g: Granularity) => {
+      updateParams({ granularity: g });
+    },
+    [updateParams],
+  );
 
   const handleToggleTrendline = useCallback(() => {
-    setShowTrendline((prev) => !prev);
-  }, []);
+    updateParams({ trendline: showTrendline ? undefined : "true" });
+  }, [showTrendline, updateParams]);
 
-  const handleWindowSizeChange = useCallback((value: string) => {
-    setWindowSize(value as WindowSize);
-  }, []);
+  const handleWindowSizeChange = useCallback(
+    (value: string) => {
+      updateParams({ windowSize: value });
+    },
+    [updateParams],
+  );
 
-  const handleDateRangeChange = useCallback((range: DateRange) => {
-    setDateRange(range);
-  }, []);
+  const handleDateRangeChange = useCallback(
+    (range: DateRange) => {
+      updateParams(serializeDateRangeParam(range));
+    },
+    [updateParams],
+  );
 
   const displayLabel = selectedItem
     ? categoryOnly

@@ -270,7 +270,7 @@ describe("SpendingByLocation", () => {
     await user.click(screen.getByRole("button", { name: "Export CSV" }));
     await waitFor(() => expect(mockDownloadCsv).toHaveBeenCalledTimes(1));
 
-    const expectedStart = format(subMonths(new Date(), 1), "yyyy-MM-dd");
+    const expectedStart = format(subMonths(new Date(), 12), "yyyy-MM-dd");
     const expectedEnd = format(new Date(), "yyyy-MM-dd");
 
     // Fetches every page with the current filters at the max page size.
@@ -337,6 +337,41 @@ describe("SpendingByLocation", () => {
     // Should reset to page 1
     expect(mockHook).toHaveBeenLastCalledWith(
       expect.objectContaining({ page: 1 }),
+    );
+  });
+
+  it("reads date range, sort, and page from the URL on load", () => {
+    setupMock();
+    renderWithQueryClient(<SpendingByLocation />, {
+      route:
+        "/?startDate=2023-01-01&endDate=2023-06-30&sortBy=visits&sortDirection=asc&page=2",
+    });
+
+    expect(mockHook).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        startDate: "2023-01-01",
+        endDate: "2023-06-30",
+        sortBy: "visits",
+        sortDirection: "asc",
+        page: 2,
+      }),
+    );
+  });
+
+  it("falls back to defaults for malformed URL params instead of crashing", () => {
+    setupMock();
+    renderWithQueryClient(<SpendingByLocation />, {
+      route:
+        "/?startDate=garbage&endDate=garbage&sortBy=nonsense&sortDirection=up&page=-5",
+    });
+
+    expect(screen.getByRole("table")).toBeInTheDocument();
+    expect(mockHook).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        sortBy: "total",
+        sortDirection: "desc",
+        page: 1,
+      }),
     );
   });
 });

@@ -1,14 +1,15 @@
-import { useState } from "react";
 import { useNavigate } from "react-router";
 import {
   useOutOfBalanceReport,
   type OutOfBalanceParams,
 } from "@/hooks/useOutOfBalanceReport";
 import { useCsvExport } from "@/hooks/useCsvExport";
+import { useReportSearchParams } from "@/hooks/useReportSearchParams";
 import client from "@/lib/api-client";
 import { csvFilename } from "@/lib/export-csv";
 import { fetchAllReportPages } from "@/lib/fetch-all-report-pages";
 import { formatCurrency } from "@/lib/format";
+import { parseEnumParam, parsePositiveIntParam } from "@/lib/report-params";
 import {
   Table,
   TableBody,
@@ -24,11 +25,35 @@ import { SortableTableHead } from "@/components/SortableTableHead";
 type SortColumn = "date" | "difference";
 type SortDirection = "asc" | "desc";
 
+const SORT_COLUMNS = ["date", "difference"] as const;
+const SORT_DIRECTIONS = ["asc", "desc"] as const;
+
+interface OutOfBalanceUrlParams {
+  sortBy: SortColumn;
+  sortDirection: SortDirection;
+  page: number;
+}
+
+function parseOutOfBalanceParams(
+  searchParams: URLSearchParams,
+): OutOfBalanceUrlParams {
+  return {
+    sortBy: parseEnumParam(searchParams.get("sortBy"), SORT_COLUMNS, "date"),
+    sortDirection: parseEnumParam(
+      searchParams.get("sortDirection"),
+      SORT_DIRECTIONS,
+      "asc",
+    ),
+    page: parsePositiveIntParam(searchParams.get("page"), 1),
+  };
+}
+
 export default function OutOfBalance() {
   const navigate = useNavigate();
-  const [sortBy, setSortBy] = useState<SortColumn>("date");
-  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
-  const [page, setPage] = useState(1);
+  const [urlParams, updateParams] = useReportSearchParams(
+    parseOutOfBalanceParams,
+  );
+  const { sortBy, sortDirection, page } = urlParams;
   const pageSize = 50;
 
   const params: OutOfBalanceParams = {
@@ -96,12 +121,13 @@ export default function OutOfBalance() {
   function handleSort(column: string) {
     const nextColumn = column as SortColumn;
     if (sortBy === nextColumn) {
-      setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
+      updateParams({
+        sortDirection: sortDirection === "asc" ? "desc" : "asc",
+        page: 1,
+      });
     } else {
-      setSortBy(nextColumn);
-      setSortDirection("asc");
+      updateParams({ sortBy: nextColumn, sortDirection: "asc", page: 1 });
     }
-    setPage(1);
   }
 
   function handleRowClick(receiptId: string) {
@@ -244,7 +270,7 @@ export default function OutOfBalance() {
               variant="outline"
               size="sm"
               disabled={page <= 1}
-              onClick={() => setPage((p) => p - 1)}
+              onClick={() => updateParams({ page: page - 1 })}
             >
               Previous
             </Button>
@@ -252,7 +278,7 @@ export default function OutOfBalance() {
               variant="outline"
               size="sm"
               disabled={page >= totalPages}
-              onClick={() => setPage((p) => p + 1)}
+              onClick={() => updateParams({ page: page + 1 })}
             >
               Next
             </Button>

@@ -245,4 +245,44 @@ describe("DuplicateDetection", () => {
     // Initially DateAndLocation mode, no Total Tolerance control
     expect(screen.queryByText("Total Tolerance")).not.toBeInTheDocument();
   });
+
+  it("reads matchOn and tolerances from the URL on load", () => {
+    setupMock({
+      data: { groupCount: 0, totalDuplicateReceipts: 0, groups: [] },
+    });
+    renderWithQueryClient(<DuplicateDetection />, {
+      route:
+        "/?matchOn=dateAndLocationAndTotal&locationTolerance=normalized&totalTolerance=0.5",
+    });
+
+    expect(mockHook).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        matchOn: "dateAndLocationAndTotal",
+        locationTolerance: "normalized",
+        totalTolerance: 0.5,
+      }),
+    );
+    // Both tolerance controls should be visible for the combined match mode.
+    expect(screen.getByText("Location Matching")).toBeInTheDocument();
+    expect(screen.getByText("Total Tolerance")).toBeInTheDocument();
+  });
+
+  it("falls back to defaults for malformed URL params instead of crashing", () => {
+    setupMock({
+      data: { groupCount: 0, totalDuplicateReceipts: 0, groups: [] },
+    });
+    renderWithQueryClient(<DuplicateDetection />, {
+      route:
+        "/?matchOn=bogus&locationTolerance=bogus&totalTolerance=bogus",
+    });
+
+    expect(screen.getByText("Match On")).toBeInTheDocument();
+    expect(mockHook).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        matchOn: "dateAndLocation",
+        locationTolerance: "exact",
+        totalTolerance: 0,
+      }),
+    );
+  });
 });

@@ -1,14 +1,20 @@
-import { useState, useCallback, useMemo } from "react";
-import { format, subMonths } from "date-fns";
+import { useCallback, useMemo } from "react";
 import {
   useSpendingByLocationReport,
   type SpendingByLocationParams,
 } from "@/hooks/useSpendingByLocationReport";
 import { useCsvExport } from "@/hooks/useCsvExport";
+import { useReportSearchParams } from "@/hooks/useReportSearchParams";
 import client from "@/lib/api-client";
 import { csvFilename } from "@/lib/export-csv";
 import { fetchAllReportPages } from "@/lib/fetch-all-report-pages";
 import { formatCurrency } from "@/lib/format";
+import {
+  parseDateRangeParam,
+  parseEnumParam,
+  parsePositiveIntParam,
+  serializeDateRangeParam,
+} from "@/lib/report-params";
 import { ChartCard, BarChart } from "@/components/charts";
 import { DateRangeSelector } from "@/components/dashboard/DateRangeSelector";
 import type { DateRange } from "@/hooks/useDashboard";
@@ -26,19 +32,36 @@ import { SortableTableHead } from "@/components/SortableTableHead";
 type SortColumn = "location" | "visits" | "total" | "averagePerVisit";
 type SortDirection = "asc" | "desc";
 
-function getDefaultRange(): DateRange {
-  const now = new Date();
+const SORT_COLUMNS = ["location", "visits", "total", "averagePerVisit"] as const;
+const SORT_DIRECTIONS = ["asc", "desc"] as const;
+
+interface SpendingByLocationUrlParams {
+  dateRange: DateRange;
+  sortBy: SortColumn;
+  sortDirection: SortDirection;
+  page: number;
+}
+
+function parseSpendingByLocationParams(
+  searchParams: URLSearchParams,
+): SpendingByLocationUrlParams {
   return {
-    startDate: format(subMonths(now, 1), "yyyy-MM-dd"),
-    endDate: format(now, "yyyy-MM-dd"),
+    dateRange: parseDateRangeParam(searchParams),
+    sortBy: parseEnumParam(searchParams.get("sortBy"), SORT_COLUMNS, "total"),
+    sortDirection: parseEnumParam(
+      searchParams.get("sortDirection"),
+      SORT_DIRECTIONS,
+      "desc",
+    ),
+    page: parsePositiveIntParam(searchParams.get("page"), 1),
   };
 }
 
 export default function SpendingByLocation() {
-  const [dateRange, setDateRange] = useState<DateRange>(getDefaultRange);
-  const [sortBy, setSortBy] = useState<SortColumn>("total");
-  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
-  const [page, setPage] = useState(1);
+  const [urlParams, updateParams] = useReportSearchParams(
+    parseSpendingByLocationParams,
+  );
+  const { dateRange, sortBy, sortDirection, page } = urlParams;
   const pageSize = 50;
 
   const params: SpendingByLocationParams = {
@@ -53,10 +76,12 @@ export default function SpendingByLocation() {
   const { data, isLoading, isError } = useSpendingByLocationReport(params);
   const { exportCsv, isExporting } = useCsvExport();
 
-  const handleDateRangeChange = useCallback((range: DateRange) => {
-    setDateRange(range);
-    setPage(1);
-  }, []);
+  const handleDateRangeChange = useCallback(
+    (range: DateRange) => {
+      updateParams({ ...serializeDateRangeParam(range), page: 1 });
+    },
+    [updateParams],
+  );
 
   function handleExport() {
     exportCsv({
@@ -100,12 +125,17 @@ export default function SpendingByLocation() {
   function handleSort(column: string) {
     const nextColumn = column as SortColumn;
     if (sortBy === nextColumn) {
-      setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
+      updateParams({
+        sortDirection: sortDirection === "asc" ? "desc" : "asc",
+        page: 1,
+      });
     } else {
-      setSortBy(nextColumn);
-      setSortDirection(nextColumn === "location" ? "asc" : "desc");
+      updateParams({
+        sortBy: nextColumn,
+        sortDirection: nextColumn === "location" ? "asc" : "desc",
+        page: 1,
+      });
     }
-    setPage(1);
   }
 
   const chartData = useMemo(
@@ -236,7 +266,7 @@ export default function SpendingByLocation() {
               variant="outline"
               size="sm"
               disabled={page <= 1}
-              onClick={() => setPage((p) => p - 1)}
+              onClick={() => updateParams({ page: page - 1 })}
             >
               Previous
             </Button>
@@ -244,7 +274,7 @@ export default function SpendingByLocation() {
               variant="outline"
               size="sm"
               disabled={page >= totalPages}
-              onClick={() => setPage((p) => p + 1)}
+              onClick={() => updateParams({ page: page + 1 })}
             >
               Next
             </Button>

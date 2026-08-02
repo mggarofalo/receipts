@@ -1,11 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
-import {
-  format,
-  subMonths,
-  startOfMonth,
-  startOfQuarter,
-  startOfYear,
-} from "date-fns";
+import { useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -16,97 +9,12 @@ import {
 } from "@/components/ui/select";
 import type { DateRange } from "@/hooks/useDashboard";
 import { useDashboardEarliestReceiptYear } from "@/hooks/useDashboard";
-
-export type PresetKey =
-  | "1M"
-  | "3M"
-  | "12M"
-  | "60M"
-  | "MTD"
-  | "QTD"
-  | "YTD"
-  | "all"
-  | "year";
-
-interface Preset {
-  label: string;
-  getRange: (selectedYear?: number) => DateRange;
-}
-
-const presets: Record<PresetKey, Preset> = {
-  "1M": {
-    label: "1M",
-    getRange: () => ({
-      startDate: format(subMonths(new Date(), 1), "yyyy-MM-dd"),
-      endDate: format(new Date(), "yyyy-MM-dd"),
-    }),
-  },
-  "3M": {
-    label: "3M",
-    getRange: () => ({
-      startDate: format(subMonths(new Date(), 3), "yyyy-MM-dd"),
-      endDate: format(new Date(), "yyyy-MM-dd"),
-    }),
-  },
-  "12M": {
-    label: "1Y",
-    getRange: () => ({
-      startDate: format(subMonths(new Date(), 12), "yyyy-MM-dd"),
-      endDate: format(new Date(), "yyyy-MM-dd"),
-    }),
-  },
-  "60M": {
-    label: "5Y",
-    getRange: () => ({
-      startDate: format(subMonths(new Date(), 60), "yyyy-MM-dd"),
-      endDate: format(new Date(), "yyyy-MM-dd"),
-    }),
-  },
-  MTD: {
-    label: "MTD",
-    getRange: () => ({
-      startDate: format(startOfMonth(new Date()), "yyyy-MM-dd"),
-      endDate: format(new Date(), "yyyy-MM-dd"),
-    }),
-  },
-  QTD: {
-    label: "QTD",
-    getRange: () => ({
-      startDate: format(startOfQuarter(new Date()), "yyyy-MM-dd"),
-      endDate: format(new Date(), "yyyy-MM-dd"),
-    }),
-  },
-  YTD: {
-    label: "YTD",
-    getRange: () => ({
-      startDate: format(startOfYear(new Date()), "yyyy-MM-dd"),
-      endDate: format(new Date(), "yyyy-MM-dd"),
-    }),
-  },
-  all: {
-    label: "All",
-    getRange: () => ({
-      startDate: undefined,
-      endDate: undefined,
-    }),
-  },
-  year: {
-    label: "Year",
-    getRange: (selectedYear?: number) => {
-      const y = selectedYear ?? new Date().getFullYear();
-      return {
-        startDate: `${y}-01-01`,
-        endDate: `${y}-12-31`,
-      };
-    },
-  },
-};
-
-const presetGroups: { label: string; keys: PresetKey[] }[] = [
-  { label: "Trailing", keys: ["1M", "3M", "12M", "60M"] },
-  { label: "To Date", keys: ["MTD", "QTD", "YTD"] },
-  { label: "", keys: ["all"] },
-];
+import {
+  presets,
+  presetGroups,
+  matchPreset,
+  type PresetKey,
+} from "./date-range-presets";
 
 interface DateRangeSelectorProps {
   value: DateRange;
@@ -114,10 +22,6 @@ interface DateRangeSelectorProps {
 }
 
 export function DateRangeSelector({ value, onChange }: DateRangeSelectorProps) {
-  const [activePreset, setActivePreset] = useState<PresetKey>("1M");
-  const [selectedYear, setSelectedYear] = useState<number>(
-    new Date().getFullYear(),
-  );
   const { data: earliestYearData } = useDashboardEarliestReceiptYear();
 
   const availableYears = useMemo(() => {
@@ -130,40 +34,40 @@ export function DateRangeSelector({ value, onChange }: DateRangeSelectorProps) {
     return years;
   }, [earliestYearData?.year]);
 
+  const matched = useMemo(() => matchPreset(value), [value]);
+  const activePreset = matched.preset;
+  const displayedYear = matched.year ?? new Date().getFullYear();
+
   const handlePreset = useCallback(
     (key: PresetKey) => {
-      setActivePreset(key);
-      if (key === "year") {
-        onChange(presets.year.getRange(selectedYear));
-      } else {
-        onChange(presets[key].getRange());
-      }
+      onChange(
+        key === "year"
+          ? presets.year.getRange(displayedYear)
+          : presets[key].getRange(),
+      );
     },
-    [onChange, selectedYear],
+    [onChange, displayedYear],
   );
 
   const handleYearChange = useCallback(
     (yearStr: string) => {
-      const year = Number(yearStr);
-      setSelectedYear(year);
-      setActivePreset("year");
-      onChange(presets.year.getRange(year));
+      onChange(presets.year.getRange(Number(yearStr)));
     },
     [onChange],
   );
 
   const displayLabel = useMemo(() => {
     if (activePreset === "year") {
-      return String(selectedYear);
+      return String(displayedYear);
     }
-    if (activePreset in presets) {
+    if (activePreset) {
       return presets[activePreset].label;
     }
     if (value.startDate && value.endDate) {
       return `${value.startDate} - ${value.endDate}`;
     }
     return "Select range";
-  }, [activePreset, selectedYear, value.startDate, value.endDate]);
+  }, [activePreset, displayedYear, value.startDate, value.endDate]);
 
   const handleSelectChange = useCallback(
     (val: string) => {
@@ -172,11 +76,19 @@ export function DateRangeSelector({ value, onChange }: DateRangeSelectorProps) {
     [handlePreset],
   );
 
+  // Radix's Select.Value falls back to its `placeholder` (ignoring the
+  // explicit `displayLabel` children below) whenever the owning Select's
+  // `value` is the empty string — it treats that as "nothing selected".
+  // For a custom, non-matching range there's no real PresetKey to hand it,
+  // so a non-empty sentinel that matches no rendered SelectItem is used
+  // purely to keep Radix in "something is selected, show my children" mode.
+  const narrowSelectValue = activePreset ?? "custom";
+
   return (
     <div className="flex items-center gap-2">
       {/* Dropdown for narrow screens */}
       <div className="sm:hidden">
-        <Select value={activePreset} onValueChange={handleSelectChange}>
+        <Select value={narrowSelectValue} onValueChange={handleSelectChange}>
           <SelectTrigger size="sm">
             <SelectValue>{displayLabel}</SelectValue>
           </SelectTrigger>
@@ -215,7 +127,7 @@ export function DateRangeSelector({ value, onChange }: DateRangeSelectorProps) {
 
       {/* Year dropdown */}
       <Select
-        value={activePreset === "year" ? String(selectedYear) : ""}
+        value={activePreset === "year" ? String(displayedYear) : ""}
         onValueChange={handleYearChange}
       >
         <SelectTrigger

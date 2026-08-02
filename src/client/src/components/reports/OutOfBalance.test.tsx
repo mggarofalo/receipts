@@ -296,4 +296,43 @@ describe("OutOfBalance", () => {
         "2025-03-02,Store B,20,2,1,23,20,3,id-2\r\n",
     );
   });
+
+  it("reads sort and page from the URL on load", () => {
+    setupMock();
+    renderWithQueryClient(<OutOfBalance />, {
+      route: "/?sortBy=difference&sortDirection=desc&page=3",
+    });
+
+    expect(mockHook).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        sortBy: "difference",
+        sortDirection: "desc",
+        page: 3,
+      }),
+    );
+  });
+
+  it("falls back to defaults for malformed URL params instead of crashing", () => {
+    setupMock();
+    renderWithQueryClient(<OutOfBalance />, {
+      route: "/?sortBy=nonsense&sortDirection=up&page=abc",
+    });
+
+    expect(screen.getByRole("table")).toBeInTheDocument();
+    expect(mockHook).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sortBy: "date", sortDirection: "asc", page: 1 }),
+    );
+  });
+
+  it("falls back to defaults for out-of-range page numbers instead of crashing", () => {
+    setupMock();
+    renderWithQueryClient(<OutOfBalance />, {
+      route: "/?page=-1",
+    });
+
+    expect(screen.getByRole("table")).toBeInTheDocument();
+    expect(mockHook).toHaveBeenLastCalledWith(
+      expect.objectContaining({ page: 1 }),
+    );
+  });
 });

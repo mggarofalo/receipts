@@ -9,8 +9,13 @@ import {
 } from "@/hooks/useDuplicateDetectionReport";
 import { useDeleteReceipts } from "@/hooks/useReceipts";
 import { useCsvExport } from "@/hooks/useCsvExport";
+import { useReportSearchParams } from "@/hooks/useReportSearchParams";
 import { csvFilename } from "@/lib/export-csv";
 import { formatCurrency } from "@/lib/format";
+import {
+  parseEnumParam,
+  parseNumberEnumParam,
+} from "@/lib/report-params";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import {
@@ -40,12 +45,48 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 
+const MATCH_ON_VALUES = [
+  "dateAndLocation",
+  "dateAndTotal",
+  "dateAndLocationAndTotal",
+] as const;
+const LOCATION_TOLERANCE_VALUES = ["exact", "normalized"] as const;
+const TOTAL_TOLERANCE_VALUES = [0, 0.01, 0.05, 0.1, 0.5, 1] as const;
+
+interface DuplicateDetectionUrlParams {
+  matchOn: MatchOn;
+  locationTolerance: LocationTolerance;
+  totalTolerance: TotalTolerance;
+}
+
+function parseDuplicateDetectionParams(
+  searchParams: URLSearchParams,
+): DuplicateDetectionUrlParams {
+  return {
+    matchOn: parseEnumParam(
+      searchParams.get("matchOn"),
+      MATCH_ON_VALUES,
+      "dateAndLocation",
+    ),
+    locationTolerance: parseEnumParam(
+      searchParams.get("locationTolerance"),
+      LOCATION_TOLERANCE_VALUES,
+      "exact",
+    ),
+    totalTolerance: parseNumberEnumParam(
+      searchParams.get("totalTolerance"),
+      TOTAL_TOLERANCE_VALUES,
+      0,
+    ),
+  };
+}
+
 export default function DuplicateDetection() {
   const navigate = useNavigate();
-  const [matchOn, setMatchOn] = useState<MatchOn>("dateAndLocation");
-  const [locationTolerance, setLocationTolerance] =
-    useState<LocationTolerance>("exact");
-  const [totalTolerance, setTotalTolerance] = useState<TotalTolerance>(0);
+  const [urlParams, updateParams] = useReportSearchParams(
+    parseDuplicateDetectionParams,
+  );
+  const { matchOn, locationTolerance, totalTolerance } = urlParams;
   const [deleteTarget, setDeleteTarget] = useState<{
     id: string;
     location: string;
@@ -115,7 +156,7 @@ export default function DuplicateDetection() {
           <Label htmlFor="match-on-select">Match On</Label>
           <Select
             value={matchOn}
-            onValueChange={(v) => setMatchOn(v as MatchOn)}
+            onValueChange={(v) => updateParams({ matchOn: v })}
           >
             <SelectTrigger id="match-on-select" className="w-[200px]">
               <SelectValue />
@@ -135,9 +176,7 @@ export default function DuplicateDetection() {
             <Label htmlFor="location-tolerance-select">Location Matching</Label>
             <Select
               value={locationTolerance}
-              onValueChange={(v) =>
-                setLocationTolerance(v as LocationTolerance)
-              }
+              onValueChange={(v) => updateParams({ locationTolerance: v })}
             >
               <SelectTrigger id="location-tolerance-select" className="w-[160px]">
                 <SelectValue />
@@ -155,9 +194,7 @@ export default function DuplicateDetection() {
             <Label htmlFor="total-tolerance-select">Total Tolerance</Label>
             <Select
               value={String(totalTolerance)}
-              onValueChange={(v) =>
-                setTotalTolerance(Number(v) as TotalTolerance)
-              }
+              onValueChange={(v) => updateParams({ totalTolerance: v })}
             >
               <SelectTrigger id="total-tolerance-select" className="w-[140px]">
                 <SelectValue />
