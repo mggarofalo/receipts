@@ -92,7 +92,7 @@ describe("usePromoteToTemplate", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     expect(client.GET).toHaveBeenCalledWith("/api/item-templates/similar", {
-      params: { query: { q: "Milk", limit: 5, threshold: 0.3 } },
+      params: { query: { q: "Milk", limit: 20, threshold: 0.3 } },
     });
     expect(client.POST).toHaveBeenCalledWith("/api/item-templates", {
       body: {
@@ -287,7 +287,7 @@ describe("usePromoteToTemplate", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(client.GET).toHaveBeenCalledWith("/api/item-templates/similar", {
-      params: { query: { q: "Milk", limit: 5, threshold: 0.3 } },
+      params: { query: { q: "Milk", limit: 20, threshold: 0.3 } },
     });
     expect(client.POST).toHaveBeenCalledWith(
       "/api/item-templates",
