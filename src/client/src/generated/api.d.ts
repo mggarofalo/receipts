@@ -1728,7 +1728,7 @@ export interface paths {
         put?: never;
         /**
          * Undo a duplicate-group acceptance
-         * @description Removes the "not a duplicate" assertion across the whole accepted group the supplied receipts belong to. The server expands the request to the connected component of the accepted-pair graph, so an acceptance whose group renders short — because a member has since been deleted — is still fully undone.
+         * @description Removes the "not a duplicate" assertion between every pair of the supplied receipts, and only those pairs — the server does not expand the request. The caller must therefore submit every member of the group it wants undone: send the group's memberReceiptIds from GET /api/reports/duplicates/accepted, not the receipts it displayed, or the pairs touching a member whose receipt was deleted are left stored with no way to reach them again. To un-accept just one reported cluster instead, send that cluster's receipts.
          */
         post: operations["UnacceptDuplicateGroup"];
         delete?: never;
@@ -2542,6 +2542,10 @@ export interface components {
         };
         AcceptDuplicateGroupRequest: {
             /** @description The receipts in the group. At least two distinct IDs, and at most 100 — accepting expands to one stored row per pair, so the list is bounded the same way bulk YNAB pushes are. */
+            receiptIds: string[];
+        };
+        UnacceptDuplicateGroupRequest: {
+            /** @description Every receipt whose mutual acceptances should be removed. At least two distinct IDs. Deliberately has no upper bound, unlike AcceptDuplicateGroupRequest: accepting stores one row per pair and is quadratic, whereas un-accepting is a single DELETE that is linear in the input and cannot create rows. An accepted group can exceed 100 members without any single accept call doing so, because groups are connected components that merge when an acceptance bridges two of them — capping this would make such a group impossible to undo. */
             receiptIds: string[];
         };
         AcceptDuplicateGroupResponse: {
@@ -7940,7 +7944,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["AcceptDuplicateGroupRequest"];
+                "application/json": components["schemas"]["UnacceptDuplicateGroupRequest"];
             };
         };
         responses: {

@@ -947,7 +947,7 @@ public class ReportsControllerTests
 		// Arrange
 		Guid receiptA = Guid.NewGuid();
 		Guid receiptB = Guid.NewGuid();
-		AcceptDuplicateGroupRequest request = new() { ReceiptIds = [receiptA, receiptB] };
+		UnacceptDuplicateGroupRequest request = new() { ReceiptIds = [receiptA, receiptB] };
 
 		_mediatorMock.Setup(m => m.Send(
 			It.IsAny<UnacceptDuplicateGroupCommand>(),
@@ -972,7 +972,7 @@ public class ReportsControllerTests
 		// Arrange
 		Guid receiptA = Guid.NewGuid();
 		Guid receiptB = Guid.NewGuid();
-		AcceptDuplicateGroupRequest request = new() { ReceiptIds = [receiptA, receiptB, receiptB] };
+		UnacceptDuplicateGroupRequest request = new() { ReceiptIds = [receiptA, receiptB, receiptB] };
 
 		_mediatorMock.Setup(m => m.Send(
 			It.IsAny<UnacceptDuplicateGroupCommand>(),

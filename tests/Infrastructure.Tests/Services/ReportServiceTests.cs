@@ -2297,6 +2297,125 @@ public class ReportServiceTests
 		contextFactory.ResetDatabase();
 	}
 
+	[Fact]
+	public async Task GetAcceptedDuplicatesAsync_ComponentLargerThanTheAcceptCap_IsFullyUndoable()
+	{
+		// Arrange — accepted groups are connected components, and components merge whenever an
+		// acceptance bridges two of them. So a group can grow past the 100-ID accept cap without any
+		// single accept call approaching it. Chaining 101 two-receipt accepts is the shortest way to
+		// build such a component; the reachable-in-the-UI version is two 51-receipt clusters under
+		// matchOn=dateAndLocation joined by one straddling 2-receipt cluster under dateAndTotal.
+		//
+		// Undo posts every member, so while both endpoints shared the accept validator this group was
+		// permanently un-undoable. This test pins that the service side has no such limit.
+		const int memberCount = 102;
+
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid accountId = Guid.NewGuid();
+		DateOnly date = new(2025, 6, 1);
+
+		List<Guid> receiptIds = [.. Enumerable.Range(0, memberCount).Select(_ => Guid.NewGuid())];
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			foreach (Guid receiptId in receiptIds)
+			{
+				SeedReceipt(context, receiptId, "Store A", date, accountId, 10.00m);
+			}
+
+			await context.SaveChangesAsync();
+		}
+
+		ReportService service = new(contextFactory);
+
+		// Chain the accepts so every consecutive pair shares a receipt — one component, 101 pairs.
+		for (int i = 0; i < memberCount - 1; i++)
+		{
+			await service.AcceptDuplicateGroupAsync(
+				[receiptIds[i], receiptIds[i + 1]], CancellationToken.None);
+		}
+
+		// Act
+		AcceptedDuplicatesResult accepted = await service.GetAcceptedDuplicatesAsync(CancellationToken.None);
+
+		// Assert — one component holding every receipt.
+		accepted.Groups.Should().ContainSingle();
+		accepted.Groups[0].MemberReceiptIds.Should().HaveCount(memberCount);
+		accepted.Groups[0].MemberReceiptIds.Should().BeEquivalentTo(receiptIds);
+
+		// Undoing with the full member set clears every pair.
+		int removed = await service.UnacceptDuplicateGroupAsync(
+			accepted.Groups[0].MemberReceiptIds, CancellationToken.None);
+		removed.Should().Be(memberCount - 1);
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			(await context.AcceptedDuplicatePairs.CountAsync()).Should().Be(0);
+		}
+
+		contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task GetAcceptedDuplicatesAsync_LargeComponentWithSoftDeletedMembers_StrandsNothing()
+	{
+		// Arrange — the worst corner. In a component bigger than the accept cap, soft-delete two
+		// members so the DISPLAYED list is exactly at the cap while the member set is over it. The
+		// report filters soft-deleted receipts out of its snapshot, so "Report again" can never name
+		// them; undo was the only path to those pairs, and the shared cap closed it. That left the
+		// pairs touching a deleted member reachable by no client-producible set at all.
+		const int memberCount = 102;
+
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid accountId = Guid.NewGuid();
+		DateOnly date = new(2025, 6, 1);
+
+		List<Guid> receiptIds = [.. Enumerable.Range(0, memberCount).Select(_ => Guid.NewGuid())];
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			foreach (Guid receiptId in receiptIds)
+			{
+				SeedReceipt(context, receiptId, "Store A", date, accountId, 10.00m);
+			}
+
+			await context.SaveChangesAsync();
+		}
+
+		ReportService service = new(contextFactory);
+
+		for (int i = 0; i < memberCount - 1; i++)
+		{
+			await service.AcceptDuplicateGroupAsync(
+				[receiptIds[i], receiptIds[i + 1]], CancellationToken.None);
+		}
+
+		await SoftDeleteReceiptAsync(contextFactory, receiptIds[0]);
+		await SoftDeleteReceiptAsync(contextFactory, receiptIds[^1]);
+
+		// Act
+		AcceptedDuplicatesResult accepted = await service.GetAcceptedDuplicatesAsync(CancellationToken.None);
+
+		// Assert — display sits at the accept cap, the member set is over it.
+		accepted.Groups.Should().ContainSingle();
+		accepted.Groups[0].Receipts.Should().HaveCount(memberCount - 2, "the two deleted receipts do not render");
+		accepted.Groups[0].MemberReceiptIds.Should().HaveCount(memberCount, "but undo still needs them");
+
+		int removed = await service.UnacceptDuplicateGroupAsync(
+			accepted.Groups[0].MemberReceiptIds, CancellationToken.None);
+		removed.Should().Be(memberCount - 1);
+
+		// Nothing stranded — including the pairs that touch the soft-deleted members.
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			(await context.AcceptedDuplicatePairs.CountAsync()).Should().Be(0);
+			(await context.AcceptedDuplicatePairs.IgnoreQueryFilters()
+				.CountAsync(p => p.DeletedAt == null)).Should().Be(0);
+		}
+
+		contextFactory.ResetDatabase();
+	}
+
 	private static void SeedReceipt(
 		ApplicationDbContext context, Guid receiptId, string location, DateOnly date, Guid accountId, decimal amount)
 	{

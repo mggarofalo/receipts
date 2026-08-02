@@ -3868,10 +3868,12 @@ paths:
       tags: [Reports]
       summary: Undo a duplicate-group acceptance
       description: >
-        Removes the "not a duplicate" assertion across the whole accepted group the supplied
-        receipts belong to. The server expands the request to the connected component of the
-        accepted-pair graph, so an acceptance whose group renders short — because a member has since
-        been deleted — is still fully undone.
+        Removes the "not a duplicate" assertion between every pair of the supplied receipts, and
+        only those pairs — the server does not expand the request. The caller must therefore submit
+        every member of the group it wants undone: send the group's memberReceiptIds from
+        GET /api/reports/duplicates/accepted, not the receipts it displayed, or the pairs touching a
+        member whose receipt was deleted are left stored with no way to reach them again. To un-accept
+        just one reported cluster instead, send that cluster's receipts.
       security:
         - BearerAuth: []
         - ApiKey: []
@@ -3880,7 +3882,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/AcceptDuplicateGroupRequest"
+              $ref: "#/components/schemas/UnacceptDuplicateGroupRequest"
       responses:
         "200":
           description: OK
@@ -5168,6 +5170,24 @@ components:
             type: string
             format: uuid
           description: The receipts in the group. At least two distinct IDs, and at most 100 — accepting expands to one stored row per pair, so the list is bounded the same way bulk YNAB pushes are.
+
+    UnacceptDuplicateGroupRequest:
+      type: object
+      required: [receiptIds]
+      properties:
+        receiptIds:
+          type: array
+          minItems: 2
+          items:
+            type: string
+            format: uuid
+          description: >
+            Every receipt whose mutual acceptances should be removed. At least two distinct IDs.
+            Deliberately has no upper bound, unlike AcceptDuplicateGroupRequest: accepting stores one
+            row per pair and is quadratic, whereas un-accepting is a single DELETE that is linear in
+            the input and cannot create rows. An accepted group can exceed 100 members without any
+            single accept call doing so, because groups are connected components that merge when an
+            acceptance bridges two of them — capping this would make such a group impossible to undo.
 
     AcceptDuplicateGroupResponse:
       type: object

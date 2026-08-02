@@ -315,13 +315,17 @@ public class ReportsController(IMediator mediator) : ControllerBase
 
 	[HttpPost("duplicates/accepted/remove")]
 	[EndpointSummary("Undo a duplicate-group acceptance")]
-	[EndpointDescription("Removes the \"not a duplicate\" assertion across the whole accepted group the supplied receipts belong to, so it is reported again.")]
+	[EndpointDescription("Removes the \"not a duplicate\" assertion between every pair of the supplied receipts, and only those pairs. Send a group's memberReceiptIds to undo it whole, or a cluster's receipts to un-accept just that cluster.")]
 	public async Task<Ok<UnacceptDuplicateGroupResponse>> UnacceptDuplicateGroup(
-		[FromBody] AcceptDuplicateGroupRequest request,
+		[FromBody] UnacceptDuplicateGroupRequest request,
 		CancellationToken cancellationToken)
 	{
+		// Bound to its OWN request type, not AcceptDuplicateGroupRequest. Sharing one contract meant
+		// sharing the accept validator's 100-ID cap, which made any accepted group larger than that
+		// impossible to undo — and groups grow past it by component merging, without any single
+		// accept call exceeding the cap.
 		int removedPairCount = await mediator.Send(
-			new UnacceptDuplicateGroupCommand(DistinctReceiptIds(request)), cancellationToken);
+			new UnacceptDuplicateGroupCommand([.. request.ReceiptIds.Distinct()]), cancellationToken);
 		return TypedResults.Ok(new UnacceptDuplicateGroupResponse { RemovedPairCount = removedPairCount });
 	}
 
