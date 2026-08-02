@@ -324,10 +324,13 @@ public class AcceptedDuplicatePairTests(PostgresFixture fixture)
 	#region SQL translation
 
 	[Fact]
-	public async Task UnacceptDuplicateGroupAsync_ComponentExpansion_TranslatesToSql()
+	public async Task UndoWithASoftDeletedMember_ClearsEveryPair_ViaTheReportedMemberSet()
 	{
-		// The closure loop queries with `closure.Contains(A) || closure.Contains(B)`. InMemory would
-		// happily client-evaluate that; a real provider has to translate it.
+		// End-to-end for the orphan-pair bug against a real provider. The listing drops the deleted
+		// receipt from its display list but still reports it in MemberReceiptIds; submitting that set
+		// clears every pair, including the two touching the receipt the client can no longer render.
+		// Both queries here (the member-set hydration and the strict two-sided IN predicate) have to
+		// translate to SQL — InMemory would client-evaluate either without complaint.
 		Guid accountId = Guid.NewGuid();
 		Guid cardId = Guid.NewGuid();
 		List<Guid> ids = await SeedReceiptsAsync(accountId, cardId, count: 3);
@@ -336,7 +339,7 @@ public class AcceptedDuplicatePairTests(PostgresFixture fixture)
 		ReportService service = new(new FixtureDbContextFactory(fixture));
 		await service.AcceptDuplicateGroupAsync(ids, CancellationToken.None);
 
-		// Soft-delete the third receipt so the client could only ever submit the first two.
+		// Soft-delete the third receipt so it can no longer be displayed.
 		await using (ApplicationDbContext deleteContext = fixture.CreateDbContext())
 		{
 			ReceiptEntity receipt = await deleteContext.Receipts.SingleAsync(r => r.Id == ids[2]);
@@ -345,13 +348,53 @@ public class AcceptedDuplicatePairTests(PostgresFixture fixture)
 		}
 
 		// Act
-		int removed = await service.UnacceptDuplicateGroupAsync([ids[0], ids[1]], CancellationToken.None);
+		AcceptedDuplicatesResult accepted = await service.GetAcceptedDuplicatesAsync(CancellationToken.None);
+		accepted.Groups.Should().ContainSingle();
+		accepted.Groups[0].Receipts.Should().HaveCount(2, "the deleted receipt is not displayed");
+		accepted.Groups[0].MemberReceiptIds.Should().BeEquivalentTo(ids, "but undo still needs it");
 
-		// Assert — all three pairs cleared, not just the submitted one.
+		int removed = await service.UnacceptDuplicateGroupAsync(
+			accepted.Groups[0].MemberReceiptIds, CancellationToken.None);
+
+		// Assert — all three pairs cleared, orphans included.
 		removed.Should().Be(3);
 
 		await using ApplicationDbContext context = fixture.CreateDbContext();
 		(await context.AcceptedDuplicatePairs.CountAsync()).Should().Be(0);
+	}
+
+	[Fact]
+	public async Task UnacceptDuplicateGroupAsync_ClusterSubset_LeavesNeighbouringAcceptancesIntact()
+	{
+		// "Report again" acts on a report cluster, which can be a strict subset of the acceptance
+		// component. Against a real provider: accept {A,B} and {C,D}, then accept all four (as a wider
+		// tolerance would cluster them), then un-accept just {A,B}. The {C,D} acceptance must survive.
+		Guid accountId = Guid.NewGuid();
+		Guid cardId = Guid.NewGuid();
+		List<Guid> ids = await SeedReceiptsAsync(accountId, cardId, count: 4);
+		ids.Sort();
+		(Guid a, Guid b, Guid c, Guid d) = (ids[0], ids[1], ids[2], ids[3]);
+
+		ReportService service = new(new FixtureDbContextFactory(fixture));
+		await service.AcceptDuplicateGroupAsync([a, b], CancellationToken.None);
+		await service.AcceptDuplicateGroupAsync([c, d], CancellationToken.None);
+		await service.AcceptDuplicateGroupAsync([a, b, c, d], CancellationToken.None);
+
+		await using (ApplicationDbContext seeded = fixture.CreateDbContext())
+		{
+			(await seeded.AcceptedDuplicatePairs.CountAsync()).Should().Be(6);
+		}
+
+		// Act
+		int removed = await service.UnacceptDuplicateGroupAsync([a, b], CancellationToken.None);
+
+		// Assert
+		removed.Should().Be(1);
+
+		await using ApplicationDbContext context = fixture.CreateDbContext();
+		(await context.AcceptedDuplicatePairs.CountAsync()).Should().Be(5);
+		(await context.AcceptedDuplicatePairs.AnyAsync(p => p.ReceiptIdA == c && p.ReceiptIdB == d))
+			.Should().BeTrue("the untouched {C,D} acceptance must survive");
 	}
 
 	[Fact]
@@ -396,6 +439,96 @@ public class AcceptedDuplicatePairTests(PostgresFixture fixture)
 		result.GroupCount.Should().Be(1);
 		result.Groups[0].Receipts.Select(r => r.ReceiptId).Should().BeEquivalentTo([lower, higher]);
 		result.Groups[0].Receipts.Should().OnlyContain(r => r.TransactionTotal == 10.00m);
+	}
+
+	#endregion
+
+	#region Concurrency
+
+	[Fact]
+	public async Task AcceptDuplicateGroupAsync_RacingDifferentMemberOrders_DoesNotDeadlock()
+	{
+		// ON CONFLICT DO NOTHING absorbs a duplicate insert, but it does NOT absorb a deadlock. Two
+		// transactions inserting the same pairs in opposite orders take the same index-key locks in
+		// opposite orders, and Postgres kills one with 40P01.
+		//
+		// That is reachable without adversarial input: GetDuplicatesAsync returns a group's members in
+		// different orders depending on matchOn, because ClusterByTotal walks its remaining list
+		// backwards — dateAndLocation yields [r0,r1,r2] where dateAndLocationAndTotal yields
+		// [r0,r2,r1]. Sorting the pairs before insert gives every caller one global lock order.
+		//
+		// Reviewers measured the unsorted version deadlocking 26/30 rounds at 3 receipts and 38/40 at
+		// 4. Twelve rounds at 4 receipts is therefore a decisive signal without being slow.
+		Guid accountId = Guid.NewGuid();
+		Guid cardId = Guid.NewGuid();
+		List<Guid> ids = await SeedReceiptsAsync(accountId, cardId, count: 4);
+
+		ReportService service = new(new FixtureDbContextFactory(fixture));
+
+		List<Guid> forward = [.. ids];
+		List<Guid> reversed = [.. ids];
+		reversed.Reverse();
+
+		List<Exception> failures = [];
+
+		for (int round = 0; round < 12; round++)
+		{
+			await ClearPairsAsync();
+
+			Task<int> first = Task.Run(() => RunAsync(forward));
+			Task<int> second = Task.Run(() => RunAsync(reversed));
+
+			try
+			{
+				await Task.WhenAll(first, second);
+			}
+			catch (Exception ex)
+			{
+				failures.Add(ex);
+			}
+		}
+
+		failures.Should().BeEmpty(
+			"concurrent accepts of the same group in opposite member orders must not deadlock");
+
+		async Task<int> RunAsync(List<Guid> order)
+		{
+			ReportService scoped = new(new FixtureDbContextFactory(fixture));
+			return await scoped.AcceptDuplicateGroupAsync(order, CancellationToken.None);
+		}
+
+		async Task ClearPairsAsync()
+		{
+			await using ApplicationDbContext context = fixture.CreateDbContext();
+			await context.Database.ExecuteSqlRawAsync("""DELETE FROM "AcceptedDuplicatePairs";""");
+		}
+	}
+
+	[Fact]
+	public async Task AcceptDuplicateGroupAsync_RacingDifferentMemberOrders_ConvergesOnTheSamePairSet()
+	{
+		// Whichever transaction wins, the end state is the full pair set exactly once.
+		Guid accountId = Guid.NewGuid();
+		Guid cardId = Guid.NewGuid();
+		List<Guid> ids = await SeedReceiptsAsync(accountId, cardId, count: 4);
+
+		List<Guid> reversed = [.. ids];
+		reversed.Reverse();
+
+		Task<int> first = Task.Run(() =>
+			new ReportService(new FixtureDbContextFactory(fixture))
+				.AcceptDuplicateGroupAsync(ids, CancellationToken.None));
+		Task<int> second = Task.Run(() =>
+			new ReportService(new FixtureDbContextFactory(fixture))
+				.AcceptDuplicateGroupAsync(reversed, CancellationToken.None));
+
+		int[] accepted = await Task.WhenAll(first, second);
+
+		// C(4,2) = 6 pairs total, split however the race went, but never double-counted.
+		accepted.Sum().Should().Be(6);
+
+		await using ApplicationDbContext context = fixture.CreateDbContext();
+		(await context.AcceptedDuplicatePairs.CountAsync()).Should().Be(6);
 	}
 
 	#endregion

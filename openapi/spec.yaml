@@ -5135,12 +5135,22 @@ components:
 
     AcceptedDuplicateGroup:
       type: object
-      required: [receipts, acceptedAt]
+      required: [receipts, memberReceiptIds, acceptedAt]
       properties:
         receipts:
           type: array
           items:
             $ref: "#/components/schemas/DuplicateReceipt"
+          description: The members that still exist, for display. Members whose receipt was deleted are omitted.
+        memberReceiptIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: >
+            Every member of the group, including any omitted from receipts because the receipt was
+            deleted. Undo must submit this list rather than the displayed receipts, or the pairs
+            touching a deleted member are left stored with no way to reach them again.
         acceptedAt:
           type: string
           format: date-time

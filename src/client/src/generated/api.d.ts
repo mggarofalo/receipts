@@ -2530,7 +2530,10 @@ export interface components {
             groups: components["schemas"]["AcceptedDuplicateGroup"][];
         };
         AcceptedDuplicateGroup: {
+            /** @description The members that still exist, for display. Members whose receipt was deleted are omitted. */
             receipts: components["schemas"]["DuplicateReceipt"][];
+            /** @description Every member of the group, including any omitted from receipts because the receipt was deleted. Undo must submit this list rather than the displayed receipts, or the pairs touching a deleted member are left stored with no way to reach them again. */
+            memberReceiptIds: string[];
             /**
              * Format: date-time
              * @description When the most recent pair in this group was accepted.

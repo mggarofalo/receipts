@@ -52,7 +52,7 @@ public class GetAcceptedDuplicatesQueryHandlerTests
 			[
 				new DuplicateReceiptSummary(receiptA, "Store A", date, 42.99m),
 				new DuplicateReceiptSummary(receiptB, "Store A", date, 42.99m),
-			], acceptedAt),
+			], [receiptA, receiptB], acceptedAt),
 		], 1);
 
 		_reportServiceMock.Setup(s => s.GetAcceptedDuplicatesAsync(It.IsAny<CancellationToken>()))

@@ -823,7 +823,7 @@ public class ReportsControllerTests
 			[
 				new AppReports.DuplicateReceiptSummary(receiptA, "Test Store", date, 42.99m),
 				new AppReports.DuplicateReceiptSummary(receiptB, "Test Store", date, 42.99m),
-			], acceptedAt),
+			], [receiptA, receiptB], acceptedAt),
 		], 1);
 
 		_mediatorMock.Setup(m => m.Send(

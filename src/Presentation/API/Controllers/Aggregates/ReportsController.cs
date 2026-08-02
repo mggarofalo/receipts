@@ -1,4 +1,5 @@
 using API.Generated.Dtos;
+using Application.Commands.Reports;
 using Application.Queries.Aggregates.Reports;
 using Asp.Versioning;
 using Mediator;
@@ -287,7 +288,8 @@ public class ReportsController(IMediator mediator) : ControllerBase
 			Groups = result.Groups.Select(g => new AcceptedDuplicateGroup
 			{
 				AcceptedAt = g.AcceptedAt,
-				Receipts = g.Receipts.Select(ToDuplicateReceipt).ToList()
+				Receipts = g.Receipts.Select(ToDuplicateReceipt).ToList(),
+				MemberReceiptIds = g.MemberReceiptIds
 			}).ToList()
 		});
 	}

@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using Application.Interfaces.Services;
 using Application.Models.Reports;
 using Common;
+using Infrastructure.Entities.Core;
 using Microsoft.EntityFrameworkCore;
 
 namespace Infrastructure.Services;
@@ -434,10 +435,18 @@ public partial class ReportService(IDbContextFactory<ApplicationDbContext> conte
 	/// request including its unrelated pairs), and an unaccept committing between the read and the
 	/// write makes the accept report success while leaving the pair un-accepted.
 	///
-	/// ON CONFLICT DO NOTHING collapses both into a no-op, and the affected-row count is the number
-	/// genuinely accepted. The conflict target repeats the unique index's predicate so Postgres can
-	/// infer the partial index. A tombstone does not conflict — it is outside the partial index — so
-	/// re-accepting after an un-accept inserts a fresh row and leaves the un-accept in history.
+	/// ON CONFLICT DO NOTHING collapses a duplicate INSERT into a no-op, and the affected-row count is
+	/// the number genuinely accepted. The conflict target repeats the unique index's predicate so
+	/// Postgres can infer the partial index. A tombstone does not conflict — it is outside the partial
+	/// index — so re-accepting after an un-accept inserts a fresh row and leaves the un-accept in
+	/// history.
+	///
+	/// ON CONFLICT does NOT, however, collapse a deadlock. Two transactions inserting the same pairs
+	/// in opposite orders take the same index-key locks in opposite orders and one dies with 40P01.
+	/// That is reachable without adversarial input, because GetDuplicatesAsync returns a group's
+	/// members in different orders per matchOn — ClusterByTotal walks its remaining list backwards, so
+	/// dateAndLocation yields [r0,r1,r2] where dateAndLocationAndTotal yields [r0,r2,r1]. Sorting the
+	/// pairs here gives every caller the same global lock order, which is what actually prevents it.
 	/// </summary>
 	private static async Task<int> InsertPairsIgnoringConflictsAsync(
 		ApplicationDbContext context,
@@ -445,9 +454,11 @@ public partial class ReportService(IDbContextFactory<ApplicationDbContext> conte
 		DateTimeOffset acceptedAt,
 		CancellationToken cancellationToken)
 	{
-		Guid[] ids = [.. pairs.Select(_ => Guid.NewGuid())];
-		Guid[] aIds = [.. pairs.Select(p => p.A)];
-		Guid[] bIds = [.. pairs.Select(p => p.B)];
+		List<(Guid A, Guid B)> ordered = [.. pairs.OrderBy(p => p.A).ThenBy(p => p.B)];
+
+		Guid[] ids = [.. ordered.Select(_ => Guid.NewGuid())];
+		Guid[] aIds = [.. ordered.Select(p => p.A)];
+		Guid[] bIds = [.. ordered.Select(p => p.B)];
 
 		return await context.Database.ExecuteSqlRawAsync(
 			"""
@@ -509,46 +520,32 @@ public partial class ReportService(IDbContextFactory<ApplicationDbContext> conte
 		List<Guid> receiptIds,
 		CancellationToken cancellationToken)
 	{
-		HashSet<Guid> closure = [.. receiptIds];
-		if (closure.Count < 2)
+		HashSet<Guid> idSet = [.. receiptIds];
+		if (idSet.Count < 2)
 		{
 			return 0;
 		}
 
 		await using ApplicationDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
 
-		// Undo has to clear the whole connected component, not just the pairs among the IDs the client
-		// happened to send. GetAcceptedDuplicatesAsync hydrates only receipts that still exist, so an
-		// accepted group with a soft-deleted member renders SHORT: accept {A,B,C}, soft-delete C, and
-		// the UI can only ever submit {A,B}. Removing just (A,B) strands (A,C) and (B,C) — the group
-		// then shows in the report AND the accepted list at once, and no client-producible set can
-		// reach the orphans again, so Undo is dead permanently.
+		// Remove exactly the pairs among the submitted receipts — nothing wider.
 		//
-		// Expanding to the component cannot touch a genuinely separate acceptance: the closure only
-		// grows through pairs that already share a receipt with it, and acceptances sharing a receipt
-		// are exactly what GetAcceptedDuplicatesAsync already merges into the single group the user
-		// clicked Undo on. An acceptance sharing no receipt with the submitted set is unreachable.
-		List<AcceptedDuplicatePairEntity> toRemove;
-		while (true)
-		{
-			toRemove = await context.AcceptedDuplicatePairs
-				.Where(p => closure.Contains(p.ReceiptIdA) || closure.Contains(p.ReceiptIdB))
-				.ToListAsync(cancellationToken);
-
-			int sizeBeforeExpansion = closure.Count;
-			foreach (AcceptedDuplicatePairEntity pair in toRemove)
-			{
-				closure.Add(pair.ReceiptIdA);
-				closure.Add(pair.ReceiptIdB);
-			}
-
-			// Fixpoint: every pair touching the closure now has BOTH ends inside it. Terminates because
-			// the closure only ever grows and is bounded by the number of receipts.
-			if (closure.Count == sizeBeforeExpansion)
-			{
-				break;
-			}
-		}
+		// An earlier revision expanded to the connected component of the acceptance graph, to fix undo
+		// stranding pairs when a group had a soft-deleted member. That over-corrected. The undo button
+		// in the accepted-groups list acts on a whole acceptance, but "Report again" in the report acts
+		// on a REPORT CLUSTER, and a cluster can be a strict subset of the component: accept {A,B} and
+		// {C,D} at tolerance 0, widen tolerance so all four cluster together, accept that, then narrow
+		// tolerance again — clicking "Report again" on {A,B} would expand to the component and silently
+		// destroy the untouched {C,D} acceptance. Every value in that sequence is a dropdown option.
+		//
+		// The stranding bug is fixed at its actual source instead: GetAcceptedDuplicatesAsync now
+		// reports each group's COMPLETE member set (including soft-deleted receipts) alongside the
+		// subset it displays, so the client can submit every member and undo removes every pair. Here,
+		// "remove what was asked for and nothing else" is both correct and the only safe rule, because
+		// this method cannot tell a full acceptance from a cluster-shaped slice of one.
+		List<AcceptedDuplicatePairEntity> toRemove = await context.AcceptedDuplicatePairs
+			.Where(p => idSet.Contains(p.ReceiptIdA) && idSet.Contains(p.ReceiptIdB))
+			.ToListAsync(cancellationToken);
 
 		if (toRemove.Count == 0)
 		{
@@ -630,10 +627,10 @@ public partial class ReportService(IDbContextFactory<ApplicationDbContext> conte
 		List<AcceptedDuplicateGroup> groups = [];
 		foreach ((Guid root, List<Guid> members) in componentMembers)
 		{
-			// Members whose receipt is soft-deleted or purged are dropped: there is nothing to show
-			// and nothing left to warn about. A component with fewer than two surviving receipts can
-			// never produce a duplicate warning, so it is not listed either. Restoring the receipt
-			// brings both the group and its (still-stored) acceptance back.
+			// Members whose receipt is soft-deleted or purged are dropped from the DISPLAY list: there
+			// is nothing to show and nothing left to warn about. A component with fewer than two
+			// surviving receipts can never produce a duplicate warning, so it is not listed either.
+			// Restoring the receipt brings both the group and its (still-stored) acceptance back.
 			List<DuplicateReceiptSummary> receipts = [.. members
 				.Where(summaries.ContainsKey)
 				.Select(id => summaries[id])
@@ -645,7 +642,10 @@ public partial class ReportService(IDbContextFactory<ApplicationDbContext> conte
 				continue;
 			}
 
-			groups.Add(new AcceptedDuplicateGroup(receipts, componentAcceptedAt[root]));
+			// The COMPLETE member set goes out alongside it. Undo submits this, so every pair in the
+			// component is removed even when some members no longer render — that is what stops the
+			// pairs touching a deleted member being stranded with no way to reach them.
+			groups.Add(new AcceptedDuplicateGroup(receipts, [.. members], componentAcceptedAt[root]));
 		}
 
 		groups = [.. groups.OrderByDescending(g => g.AcceptedAt)];

@@ -1679,6 +1679,38 @@ public class ReportServiceTests
 	}
 
 	[Fact]
+	public async Task AcceptDuplicateGroupAsync_ManyMissingReceipts_TruncatesTheNotFoundMessage()
+	{
+		// Arrange — the message is returned verbatim as a 404 body AND logged, so an unbounded join
+		// over every unmatched GUID turns a bad request into a multi-megabyte response and log line.
+		// A reviewer measured 50,000 GUIDs producing a 1.9 MB message.
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid accountId = Guid.NewGuid();
+		Guid receiptA = Guid.NewGuid();
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			SeedReceipt(context, receiptA, "Store A", new DateOnly(2025, 6, 1), accountId, 10.00m);
+			await context.SaveChangesAsync();
+		}
+
+		ReportService service = new(contextFactory);
+		List<Guid> ghosts = [.. Enumerable.Range(0, 25).Select(_ => Guid.NewGuid())];
+
+		// Act
+		Func<Task> act = () => service.AcceptDuplicateGroupAsync([receiptA, .. ghosts], CancellationToken.None);
+
+		// Assert — 10 enumerated, the rest collapsed into a count.
+		KeyNotFoundException thrown = (await act.Should().ThrowAsync<KeyNotFoundException>()).Which;
+		thrown.Message.Should().Contain("(+15 more)");
+
+		int enumerated = ghosts.Count(id => thrown.Message.Contains(id.ToString(), StringComparison.Ordinal));
+		enumerated.Should().Be(10, "only the first 10 missing IDs are echoed back");
+
+		contextFactory.ResetDatabase();
+	}
+
+	[Fact]
 	public async Task AcceptDuplicateGroupAsync_ThrowsKeyNotFound_WhenReceiptIsSoftDeleted()
 	{
 		// Arrange
@@ -2052,12 +2084,12 @@ public class ReportServiceTests
 	}
 
 	[Fact]
-	public async Task UnacceptDuplicateGroupAsync_WithSoftDeletedMember_ClearsTheWholeComponent()
+	public async Task GetAcceptedDuplicatesAsync_ReportsEveryMember_EvenWhenOneIsSoftDeleted()
 	{
-		// Arrange — accept {A,B,C}, then soft-delete C. GetAcceptedDuplicatesAsync hydrates only
-		// surviving receipts, so the UI can never submit anything but {A,B}. If unaccept trusted that
-		// list, (A,C) and (B,C) would be stranded with no client-producible set able to reach them —
-		// the group would show in the report AND the accepted list at once, with Undo dead forever.
+		// Arrange — accept {A,B,C}, then soft-delete C. The displayed list drops C, so a client that
+		// submitted only what it could render would strand (A,C) and (B,C) with no producible set able
+		// to reach them, leaving Undo permanently dead. MemberReceiptIds is what prevents that: it
+		// carries every member so the client can always submit the complete set.
 		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
 		Guid accountId = Guid.NewGuid();
 		DateOnly date = new(2025, 6, 1);
@@ -2080,10 +2112,19 @@ public class ReportServiceTests
 
 		await SoftDeleteReceiptAsync(contextFactory, receiptC);
 
-		// Act — submit only what the UI could render.
-		int removed = await service.UnacceptDuplicateGroupAsync([receiptA, receiptB], CancellationToken.None);
+		// Act
+		AcceptedDuplicatesResult accepted = await service.GetAcceptedDuplicatesAsync(CancellationToken.None);
 
-		// Assert — all three pairs are gone, not just (A,B).
+		// Assert — C is absent from the display list but present in the member list.
+		accepted.Groups.Should().ContainSingle();
+		accepted.Groups[0].Receipts.Select(r => r.ReceiptId)
+			.Should().BeEquivalentTo([receiptA, receiptB], "the deleted receipt has nothing to display");
+		accepted.Groups[0].MemberReceiptIds
+			.Should().BeEquivalentTo([receiptA, receiptB, receiptC], "undo needs every member");
+
+		// Submitting that member list clears the whole acceptance, orphans included.
+		int removed = await service.UnacceptDuplicateGroupAsync(
+			accepted.Groups[0].MemberReceiptIds, CancellationToken.None);
 		removed.Should().Be(3);
 
 		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
@@ -2101,12 +2142,79 @@ public class ReportServiceTests
 	}
 
 	[Fact]
+	public async Task UnacceptDuplicateGroupAsync_ClusterSubsetOfAWiderAcceptance_LeavesNeighbouringPairsIntact()
+	{
+		// Arrange — the regression that killed component expansion.
+		//
+		// "Report again" in the report acts on a CLUSTER, which can be a strict subset of the
+		// acceptance component. Accept {A,B} and {C,D} at tolerance 0; widen tolerance so all four
+		// cluster together and accept that too; narrow tolerance again and the report shows {A,B} and
+		// {C,D} separately. Clicking "Report again" on {A,B} must not touch the {C,D} acceptance.
+		// Expanding to the connected component destroyed it. Every tolerance here is a dropdown value.
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid accountId = Guid.NewGuid();
+		DateOnly date = new(2025, 6, 1);
+
+		Guid receiptA = Guid.NewGuid();
+		Guid receiptB = Guid.NewGuid();
+		Guid receiptC = Guid.NewGuid();
+		Guid receiptD = Guid.NewGuid();
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			SeedReceipt(context, receiptA, "Store A", date, accountId, 10.00m);
+			SeedReceipt(context, receiptB, "Store A", date, accountId, 10.00m);
+			SeedReceipt(context, receiptC, "Store A", date, accountId, 10.50m);
+			SeedReceipt(context, receiptD, "Store A", date, accountId, 10.50m);
+			await context.SaveChangesAsync();
+		}
+
+		ReportService service = new(contextFactory);
+
+		// Tolerance 0 clusters {A,B} and {C,D}; accept both.
+		await service.AcceptDuplicateGroupAsync([receiptA, receiptB], CancellationToken.None);
+		await service.AcceptDuplicateGroupAsync([receiptC, receiptD], CancellationToken.None);
+
+		// Tolerance 1.00 clusters all four; accept that too. The graph is now fully connected.
+		await service.AcceptDuplicateGroupAsync(
+			[receiptA, receiptB, receiptC, receiptD], CancellationToken.None);
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			(await context.AcceptedDuplicatePairs.CountAsync()).Should().Be(6);
+		}
+
+		// Act — back at tolerance 0, "Report again" on the {A,B} cluster only.
+		int removed = await service.UnacceptDuplicateGroupAsync([receiptA, receiptB], CancellationToken.None);
+
+		// Assert — only (A,B) went. The user's separate {C,D} acceptance survives.
+		removed.Should().Be(1);
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			bool cdStillAccepted = await context.AcceptedDuplicatePairs.AnyAsync(p =>
+				(p.ReceiptIdA == receiptC && p.ReceiptIdB == receiptD)
+				|| (p.ReceiptIdA == receiptD && p.ReceiptIdB == receiptC));
+			cdStillAccepted.Should().BeTrue("un-accepting {A,B} must not destroy the {C,D} acceptance");
+
+			(await context.AcceptedDuplicatePairs.CountAsync()).Should().Be(5);
+		}
+
+		// {A,B} is reported again; {C,D} stays suppressed.
+		DuplicateDetectionResult result = await service.GetDuplicatesAsync(
+			"dateAndTotal", "exact", 0m, includeAccepted: false, CancellationToken.None);
+		result.Groups.Should().ContainSingle();
+		result.Groups[0].Receipts.Select(r => r.ReceiptId).Should().BeEquivalentTo([receiptA, receiptB]);
+
+		contextFactory.ResetDatabase();
+	}
+
+	[Fact]
 	public async Task UnacceptDuplicateGroupAsync_LeavesAcceptancesThatShareNoReceipt_Untouched()
 	{
-		// Arrange — this pins the predicate. Unaccept expands to the connected component, so it must
-		// reach pairs sharing a receipt with the request and NOTHING else. Widening the match from
-		// "both ends inside the closure" to "either end" would destroy every acceptance involving A
-		// or B with any unrelated receipt; this test fails if that happens.
+		// Arrange — this pins the predicate. Unaccept removes exactly the pairs whose BOTH ends were
+		// submitted. Widening the match to "either end" would destroy every acceptance involving A or
+		// B with any unrelated receipt; this test fails if that happens.
 		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
 		Guid accountId = Guid.NewGuid();
 
@@ -2154,8 +2262,8 @@ public class ReportServiceTests
 	[Fact]
 	public async Task UnacceptDuplicateGroupAsync_DoesNotReachAnUnrelatedAcceptanceSharingOneReceipt_WhenNotSubmitted()
 	{
-		// Arrange — B is in {A,B}; C and D are a separate acceptance. Unaccepting {A,B} must not
-		// travel to {C,D}, because they share no receipt with the closure.
+		// Arrange — {A,B} and {C,D} are separate acceptances. Unaccepting {A,B} must leave {C,D}
+		// alone, and the accepted-groups listing must still report it.
 		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
 		Guid accountId = Guid.NewGuid();
 		DateOnly date = new(2025, 6, 1);
