@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, type RefObject } from "react";
 import { ChevronDown } from "lucide-react";
 import type { components } from "@/generated/api";
 import { useTemplateHistoryCandidates } from "@/hooks/useTemplateHistoryCandidates";
@@ -32,12 +32,23 @@ function readCollapsed(): boolean {
   return localStorage.getItem(COLLAPSED_STORAGE_KEY) === "true";
 }
 
+interface TemplateHistorySuggestionsProps {
+  /**
+   * Focus target used when creating the last remaining candidate: the section
+   * unmounts itself once the list is empty, so the trigger button that would
+   * normally receive focus after a create is gone by the time focus would land.
+   */
+  fallbackFocusRef?: RefObject<HTMLElement | null>;
+}
+
 /**
  * "Suggested from your history": recurring receipt-item descriptions that have no
  * item template yet, each creatable in one click. Renders nothing at all when there
  * are no candidates, so the Item Templates page is unchanged for a clean history.
  */
-export function TemplateHistorySuggestions() {
+export function TemplateHistorySuggestions({
+  fallbackFocusRef,
+}: TemplateHistorySuggestionsProps) {
   const [limit, setLimit] = useState(PAGE_SIZE);
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -53,12 +64,21 @@ export function TemplateHistorySuggestions() {
     setLimit((current) => current + PAGE_SIZE);
   }, []);
 
+  const candidates = (data as HistoryCandidate[] | undefined) ?? [];
+
   const handleCreate = useCallback(
     (candidate: HistoryCandidate) => {
       // The buttons stay focusable while a create is in flight (aria-disabled,
       // not disabled, so focus is never yanked out of the table) — so guard the
       // duplicate submit here instead.
       if (isPending) return;
+
+      // If this is the only remaining candidate, the successful create makes
+      // the list empty and the whole section — including the trigger button —
+      // unmounts. Focusing the about-to-vanish trigger would just lose focus
+      // to the document body, so fall back to a target the page guarantees
+      // stays mounted.
+      const isLastCandidate = candidates.length === 1;
 
       createTemplate(
         {
@@ -73,14 +93,18 @@ export function TemplateHistorySuggestions() {
           // The created row disappears on refetch, taking the pressed button
           // with it. Park focus on the section trigger so keyboard users are not
           // dumped back at the top of the document.
-          onSuccess: () => triggerRef.current?.focus(),
+          onSuccess: () => {
+            if (isLastCandidate) {
+              fallbackFocusRef?.current?.focus();
+            } else {
+              triggerRef.current?.focus();
+            }
+          },
         },
       );
     },
-    [createTemplate, isPending],
+    [createTemplate, isPending, candidates.length, fallbackFocusRef],
   );
-
-  const candidates = (data as HistoryCandidate[] | undefined) ?? [];
 
   // Nothing to suggest (or nothing loaded yet) — render no section at all rather
   // than an empty shell the user has to look past.

@@ -725,6 +725,54 @@ describe("ItemTemplates — suggested from your history", () => {
     );
   });
 
+  it("focuses the section trigger after creating, when other candidates remain", async () => {
+    const user = (await import("@testing-library/user-event")).default.setup();
+    const mockMutate = vi.fn();
+    const { useCreateItemTemplate } = await import("@/hooks/useItemTemplates");
+    vi.mocked(useCreateItemTemplate).mockReturnValue(mockMutationResult({
+      mutate: mockMutate,
+      isPending: false,
+    }));
+    await mockCandidates();
+
+    renderWithProviders(<ItemTemplates />);
+    await user.click(
+      screen.getByRole("button", { name: "Create template for Orange Juice" }),
+    );
+
+    const onSuccess = mockMutate.mock.calls[0][1].onSuccess;
+    onSuccess();
+
+    expect(
+      screen.getByRole("button", { name: /suggested from your history/i }),
+    ).toHaveFocus();
+  });
+
+  it("focuses the New template button after creating the last remaining candidate", async () => {
+    const user = (await import("@testing-library/user-event")).default.setup();
+    const mockMutate = vi.fn();
+    const { useCreateItemTemplate } = await import("@/hooks/useItemTemplates");
+    vi.mocked(useCreateItemTemplate).mockReturnValue(mockMutationResult({
+      mutate: mockMutate,
+      isPending: false,
+    }));
+    // isLastCandidate is captured at click time from the currently-rendered
+    // candidate list, not re-derived when onSuccess later fires — so a
+    // single-candidate list at click time is sufficient to exercise this path,
+    // without needing to actually simulate the section unmounting.
+    await mockCandidates({ data: [candidates[0]], total: 1 });
+
+    renderWithProviders(<ItemTemplates />);
+    await user.click(
+      screen.getByRole("button", { name: "Create template for Orange Juice" }),
+    );
+
+    const onSuccess = mockMutate.mock.calls[0][1].onSuccess;
+    onSuccess();
+
+    expect(screen.getByRole("button", { name: /new template/i })).toHaveFocus();
+  });
+
   it("keeps create buttons focusable but inert while a create is in flight", async () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const mockMutate = vi.fn();

@@ -5972,12 +5972,12 @@ components:
           type:
             - string
             - "null"
-          description: Most frequently used category for this description
+          description: Category from this description's most frequent (category, subcategory) combination
         suggestedSubcategory:
           type:
             - string
             - "null"
-          description: Subcategory paired with the most frequently used category
+          description: Subcategory from this description's most frequent (category, subcategory) combination
         suggestedUnitPrice:
           type:
             - number

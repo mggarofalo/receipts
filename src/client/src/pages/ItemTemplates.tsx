@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef } from "react";
 import {
   useItemTemplates,
   useCreateItemTemplate,
@@ -78,6 +78,7 @@ function ItemTemplates() {
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [createOpen, setCreateOpen] = useState(false);
+  const newTemplateButtonRef = useRef<HTMLButtonElement>(null);
   const [editTemplate, setEditTemplate] = useState<ItemTemplateResponse | null>(
     null,
   );
@@ -162,6 +163,7 @@ function ItemTemplates() {
               </button>
             )}
             <button
+              ref={newTemplateButtonRef}
               type="button"
               className="btn primary"
               onClick={() => setCreateOpen(true)}
@@ -184,7 +186,7 @@ function ItemTemplates() {
         </div>
       </div>
 
-      <TemplateHistorySuggestions />
+      <TemplateHistorySuggestions fallbackFocusRef={newTemplateButtonRef} />
 
       {filteredResults.length === 0 ? (
         search ? (

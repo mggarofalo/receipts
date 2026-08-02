@@ -2943,9 +2943,9 @@ export interface components {
              * @description Date of the most recent receipt containing this description
              */
             lastPurchasedAt: string;
-            /** @description Most frequently used category for this description */
+            /** @description Category from this description's most frequent (category, subcategory) combination */
             suggestedCategory?: string | null;
-            /** @description Subcategory paired with the most frequently used category */
+            /** @description Subcategory from this description's most frequent (category, subcategory) combination */
             suggestedSubcategory?: string | null;
             /**
              * Format: double

@@ -15,10 +15,10 @@ public class ItemTemplateHistoryCandidate
 	/// <summary>Date of the most recent receipt containing this description.</summary>
 	public DateOnly LastPurchasedAt { get; set; }
 
-	/// <summary>Most frequently used category for this description.</summary>
+	/// <summary>Category from this description's most frequent (category, subcategory) combination.</summary>
 	public string? SuggestedCategory { get; set; }
 
-	/// <summary>Subcategory paired with the most frequently used category.</summary>
+	/// <summary>Subcategory from this description's most frequent (category, subcategory) combination.</summary>
 	public string? SuggestedSubcategory { get; set; }
 
 	/// <summary>Unit price from the most recent receipt containing this description.</summary>
