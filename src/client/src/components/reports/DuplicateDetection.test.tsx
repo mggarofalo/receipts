@@ -70,14 +70,15 @@ const mockGroups = [
 // reader; the aria-label folds in the group's date and location to disambiguate. Asserting the
 // FULL name is what pins that — a regex on the visible words would pass even if the aria-label
 // were dropped.
-const ACCEPT_GROUP_A = "Mark Mar 1 at Store A as not duplicates";
-const REPORT_AGAIN_GROUP_A = "Report Mar 1 at Store A again";
-const ACCEPT_GROUP_C = "Mark May 9 at Store C as not duplicates";
-const UNDO_ACCEPTED_GROUP_B = "Undo acceptance of Apr 2 at Store B";
+const ACCEPT_GROUP_A = "Mark Mar 1, 2025 at Store A as not duplicates";
+const REPORT_AGAIN_GROUP_A = "Report Mar 1, 2025 at Store A again";
+const ACCEPT_GROUP_C = "Mark May 9, 2025 at Store C as not duplicates";
+const UNDO_ACCEPTED_GROUP_B = "Undo acceptance of Apr 2, 2025 at Store B";
 
 const mockAcceptedGroups = [
   {
     acceptedAt: "2025-04-05T10:00:00Z",
+    memberReceiptIds: ["id-3", "id-4"],
     receipts: [
       {
         receiptId: "id-3",
@@ -496,6 +497,20 @@ describe("DuplicateDetection", () => {
       ).toBeDisabled();
     });
 
+    it("does not reorder the caller's array when deriving a group key", () => {
+      // groupKey copies before sorting because .sort() mutates in place. Without the copy it would
+      // reorder React Query's stored mutation variables — the very array the mutation was called
+      // with — behind the caller's back. Drop the [...] spread and this fails.
+      const variables = ["id-2", "id-1"];
+      setupMock();
+      mockAcceptHook.mockReturnValue(
+        mockMutationResult({ isPending: true, variables }),
+      );
+      renderWithQueryClient(<DuplicateDetection />);
+
+      expect(variables).toEqual(["id-2", "id-1"]);
+    });
+
     it("leaves other groups' accept buttons enabled while one is in flight", () => {
       setupMock({
         data: {
@@ -589,6 +604,33 @@ describe("DuplicateDetection", () => {
       expect(unacceptMutate).toHaveBeenCalledWith(["id-3", "id-4"]);
     });
 
+    it("undoes with every member, including ones whose receipt was deleted", async () => {
+      // The server drops deleted receipts from the display list but still reports them in
+      // memberReceiptIds. Undo must submit the member list — submitting only the two rendered
+      // receipts would leave the pairs touching id-9 stored with nothing able to reach them.
+      const user = userEvent.setup();
+      const { unacceptMutate } = setupMutations();
+      setupMock();
+      setupAcceptance({
+        data: {
+          groupCount: 1,
+          groups: [
+            {
+              ...mockAcceptedGroups[0],
+              memberReceiptIds: ["id-3", "id-4", "id-9"],
+            },
+          ],
+        },
+      });
+      renderWithQueryClient(<DuplicateDetection />);
+
+      await user.click(
+        acceptedSection().getByRole("button", { name: UNDO_ACCEPTED_GROUP_B }),
+      );
+
+      expect(unacceptMutate).toHaveBeenCalledWith(["id-3", "id-4", "id-9"]);
+    });
+
     it("disables Undo for the group whose unaccept is in flight", () => {
       setupMock();
       setupAcceptance({
@@ -612,7 +654,13 @@ describe("DuplicateDetection", () => {
       setupAcceptance({
         data: {
           groupCount: 1,
-          groups: [{ acceptedAt: "2025-04-05T10:00:00Z", receipts: [] }],
+          groups: [
+            {
+              acceptedAt: "2025-04-05T10:00:00Z",
+              memberReceiptIds: [],
+              receipts: [],
+            },
+          ],
         },
       });
       renderWithQueryClient(<DuplicateDetection />);

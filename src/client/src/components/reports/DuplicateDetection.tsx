@@ -493,7 +493,12 @@ export default function DuplicateDetection() {
 }
 
 interface AcceptedDuplicatesSectionProps {
-  groups: { receipts: DuplicateReceiptView[]; acceptedAt: string }[];
+  groups: {
+    receipts: DuplicateReceiptView[];
+    /** Every member, including ones whose receipt was deleted and so are not in `receipts`. */
+    memberReceiptIds: string[];
+    acceptedAt: string;
+  }[];
   isLoading: boolean;
   isError: boolean;
   /** Identity of the group whose undo is in flight, or null when none is. */
@@ -533,7 +538,10 @@ function AcceptedDuplicatesSection({
       {!isLoading && !isError && groups.length > 0 && (
         <ul className="space-y-3">
           {groups.map((group) => {
-            const receiptIds = group.receipts.map((r) => r.receiptId);
+            // Undo submits the COMPLETE member set, not the displayed subset. A group with a
+            // soft-deleted member renders short, and un-accepting only the survivors would leave
+            // the pairs touching that member stored with nothing able to reach them again.
+            const receiptIds = group.memberReceiptIds;
             const key = groupKey(receiptIds);
             return (
               <li
