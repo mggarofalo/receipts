@@ -210,6 +210,14 @@ function currentHrefsWithin(container: HTMLElement): string[] {
     .map((link) => link.getAttribute("href") ?? "");
 }
 
+/** hrefs of every link inside `container` carrying the `active` highlight class. */
+function activeHrefsWithin(container: HTMLElement): string[] {
+  return within(container)
+    .getAllByRole("link")
+    .filter((link) => link.classList.contains("active"))
+    .map((link) => link.getAttribute("href") ?? "");
+}
+
 function sidebar(): HTMLElement {
   return screen.getByRole("navigation", { name: /^primary$/i });
 }
@@ -236,6 +244,12 @@ describe("Layout active nav resolution", () => {
     ["/item-templates", "/item-templates"],
     ["/security", "/security"],
     ["/api-keys", "/api-keys"],
+    // React Router compiles route paths case-insensitively unless a route opts
+    // into `caseSensitive`, and none of ours do — so these URLs render a real
+    // page and must still highlight. NavLink used to case-fold for us; when the
+    // resolution moved in-house that was briefly lost, highlighting nothing.
+    ["/RECEIPTS", "/receipts"],
+    ["/Settings/YNAB", "/settings/ynab"],
   ];
 
   it.each(cases)(
@@ -252,6 +266,9 @@ describe("Layout active nav resolution", () => {
       renderLayout(undefined, route);
       const drawer = await openMobileDrawer();
       expect(currentHrefsWithin(drawer)).toEqual([expectedHref]);
+      // Assert the visible highlight too, not just the semantics: the drawer
+      // could lose its `active` class entirely while aria-current still passed.
+      expect(activeHrefsWithin(drawer)).toEqual([expectedHref]);
     },
   );
 
@@ -274,11 +291,16 @@ describe("Layout active nav resolution", () => {
 
   it("marks Dashboard current only on the exact root route", () => {
     renderLayout(undefined, "/reports");
+    // Match on the label, not on href="/" — the brand link is also href="/",
+    // sits inside the Primary nav ahead of the items, and never receives
+    // aria-current under any implementation, so selecting by href alone makes
+    // this assertion unconditionally true.
     const dashboard = within(sidebar())
       .getAllByRole("link")
-      .find((link) => link.getAttribute("href") === "/");
+      .find((link) => link.textContent?.includes("Dashboard"));
     expect(dashboard).toBeDefined();
     expect(dashboard).not.toHaveAttribute("aria-current");
+    expect(dashboard).not.toHaveClass("active");
   });
 
   it("highlights exactly one item on an admin-only route", () => {

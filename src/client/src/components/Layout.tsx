@@ -6,7 +6,7 @@ import {
   useNavigation,
   useLocation,
 } from "react-router";
-import { Icon, Kbd, type IconComponent } from "@/components/primitives";
+import { Icon, Kbd } from "@/components/primitives";
 import { useAuth } from "@/hooks/useAuth";
 import { usePermission } from "@/hooks/usePermission";
 import { useSignalR } from "@/hooks/useSignalR";
@@ -35,6 +35,7 @@ import {
 import { CommandPalette } from "@/components/CommandPalette";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { cn } from "@/lib/utils";
+import { resolveActiveNavItem, type NavSection } from "@/lib/nav-active";
 
 const appVersion = __APP_VERSION__;
 const commitHash = __COMMIT_HASH__;
@@ -42,19 +43,9 @@ const showVersion = appVersion !== "dev" && commitHash !== "local";
 const shortHash = commitHash.slice(0, 7);
 const commitUrl = `https://github.com/mggarofalo/Receipts/commit/${commitHash}`;
 
-interface NavItem {
-  to: string;
-  label: string;
-  icon: IconComponent;
-  kbd?: string;
-  aliases?: readonly string[];
-  admin?: boolean;
-}
-
-interface NavSection {
-  title: string;
-  items: readonly NavItem[];
-}
+// Nav shape and active-item resolution live in @/lib/nav-active so the matching
+// rules can be unit-tested directly against synthetic navs — the real NAV cannot
+// falsify most-specific-wins, the tie-break, or the alias penalty on its own.
 
 const NAV: readonly NavSection[] = [
   {
@@ -111,66 +102,6 @@ const CONNECTION: Record<
   disconnected: { className: "conn neg", label: "Offline" },
 };
 
-/**
- * How strongly `item` claims `pathname`. `0` means "no claim"; higher wins.
- *
- * Scoring is `matchedLength * 4` so a longer (more specific) path always beats
- * a shorter one, `+ 2` for an exact match so `/settings` beats a hypothetical
- * prefix-only rival of the same length, and `- 1` for alias matches so an
- * item's own `to` wins a tie against another item's alias.
- */
-function matchStrength(pathname: string, item: NavItem): number {
-  // Dashboard is the root: exact-only, or it would prefix-claim every route.
-  if (item.to === "/") return pathname === "/" ? 1 : 0;
-
-  let best = 0;
-  const consider = (candidate: string, isAlias: boolean) => {
-    // Normalise a trailing slash so "/receipts/" scores like "/receipts".
-    const base = candidate.endsWith("/") ? candidate.slice(0, -1) : candidate;
-    if (base === "") return;
-
-    let strength: number;
-    if (pathname === base) strength = base.length * 4 + 2;
-    else if (pathname.startsWith(base + "/")) strength = base.length * 4;
-    else return;
-
-    if (isAlias) strength -= 1;
-    if (strength > best) best = strength;
-  };
-
-  consider(item.to, false);
-  for (const alias of item.aliases ?? []) consider(alias, true);
-  return best;
-}
-
-/**
- * Resolves the single nav item that owns `pathname`, returning its `to` (unique
- * across NAV) or `null` when nothing matches.
- *
- * Resolution must happen across the whole nav rather than per item: evaluated in
- * isolation, `/settings/ynab` satisfies both YNAB (exact) and Settings (prefix),
- * which lit up two sidebar entries and emitted two `aria-current="page"`
- * elements — an accessibility defect, not just a cosmetic one (RECEIPTS-833).
- * Ties resolve to the first-declared item so the result is stable.
- */
-function resolveActiveNavPath(
-  pathname: string,
-  sections: readonly NavSection[],
-): string | null {
-  let bestPath: string | null = null;
-  let bestStrength = 0;
-  for (const section of sections) {
-    for (const item of section.items) {
-      const strength = matchStrength(pathname, item);
-      if (strength > bestStrength) {
-        bestStrength = strength;
-        bestPath = item.to;
-      }
-    }
-  }
-  return bestPath;
-}
-
 export function Layout() {
   const { user, logout } = useAuth();
   const { isAdmin } = usePermission();
@@ -198,8 +129,8 @@ export function Layout() {
 
   // Resolved once per route change and shared by the sidebar and the mobile
   // drawer so the two shells can never disagree about what is current.
-  const activePath = useMemo(
-    () => resolveActiveNavPath(location.pathname, sections),
+  const activeItem = useMemo(
+    () => resolveActiveNavItem(location.pathname, sections),
     [location.pathname, sections],
   );
 
@@ -228,11 +159,11 @@ export function Layout() {
             <div className="nav-section">{section.title}</div>
             {section.items.map((item) => {
               const IconComp = item.icon;
-              const active = item.to === activePath;
+              const active = item === activeItem;
               // Plain Link (not NavLink) — NavLink derives its own `active`
               // class and `aria-current` from per-item prefix matching, which
               // would re-introduce the double highlight regardless of what we
-              // pass. The single winner from resolveActiveNavPath drives both.
+              // pass. The single winner from resolveActiveNavItem drives both.
               return (
                 <Link
                   key={item.to}
@@ -425,7 +356,7 @@ export function Layout() {
                   const IconComp = item.icon;
                   // Same single-winner resolution as the desktop sidebar — see
                   // the comment there for why this is a Link and not a NavLink.
-                  const active = item.to === activePath;
+                  const active = item === activeItem;
                   return (
                     <Link
                       key={item.to}
