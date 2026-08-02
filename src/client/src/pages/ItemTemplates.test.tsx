@@ -29,6 +29,14 @@ vi.mock("@/hooks/useItemTemplates", () => ({
   useHideItemTemplate: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
 }));
 
+vi.mock("@/hooks/useTemplateHistoryCandidates", () => ({
+  useTemplateHistoryCandidates: vi.fn(() => ({
+    data: [],
+    total: 0,
+    isLoading: false,
+  })),
+}));
+
 vi.mock("@/hooks/usePermission", () => ({
   usePermission: vi.fn(() => ({
     roles: ["Admin"],
@@ -582,5 +590,232 @@ describe("ItemTemplates", () => {
     expect(mockMutate).toHaveBeenCalledWith("1", expect.objectContaining({
       onSuccess: expect.any(Function),
     }));
+  });
+});
+
+describe("ItemTemplates — suggested from your history", () => {
+  const candidates = [
+    {
+      name: "Orange Juice",
+      occurrenceCount: 6,
+      lastPurchasedAt: "2026-05-14",
+      suggestedCategory: "Groceries",
+      suggestedSubcategory: "Beverages",
+      suggestedUnitPrice: 5.29,
+      suggestedItemCode: "OJ-100",
+    },
+    {
+      name: "Paper Towels",
+      occurrenceCount: 4,
+      lastPurchasedAt: "2026-04-02",
+      suggestedCategory: null,
+      suggestedSubcategory: null,
+      suggestedUnitPrice: null,
+      suggestedItemCode: null,
+    },
+  ];
+
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  async function mockCandidates(
+    overrides: Record<string, unknown> = {},
+  ) {
+    const { useTemplateHistoryCandidates } = await import(
+      "@/hooks/useTemplateHistoryCandidates"
+    );
+    vi.mocked(useTemplateHistoryCandidates).mockReturnValue(
+      mockQueryResult({
+        data: candidates,
+        total: candidates.length,
+        isLoading: false,
+        ...overrides,
+      }),
+    );
+  }
+
+  it("renders a candidate row with its suggested fields", async () => {
+    await mockCandidates();
+
+    renderWithProviders(<ItemTemplates />);
+
+    expect(
+      screen.getByRole("heading", { name: /suggested from your history/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Orange Juice")).toBeInTheDocument();
+    expect(screen.getByText("seen 6 times")).toBeInTheDocument();
+    expect(screen.getByText("Beverages")).toBeInTheDocument();
+    expect(screen.getByText("$5.29")).toBeInTheDocument();
+  });
+
+  it("is hidden entirely when there are no candidates", async () => {
+    await mockCandidates({ data: [], total: 0 });
+
+    renderWithProviders(<ItemTemplates />);
+
+    expect(
+      screen.queryByRole("heading", { name: /suggested from your history/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("is hidden while candidates are loading", async () => {
+    await mockCandidates({ data: undefined, total: 0, isLoading: true });
+
+    renderWithProviders(<ItemTemplates />);
+
+    expect(
+      screen.queryByRole("heading", { name: /suggested from your history/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("creates a template in one click using the suggested fields", async () => {
+    const user = (await import("@testing-library/user-event")).default.setup();
+    const mockMutate = vi.fn();
+    const { useCreateItemTemplate } = await import("@/hooks/useItemTemplates");
+    vi.mocked(useCreateItemTemplate).mockReturnValue(mockMutationResult({
+      mutate: mockMutate,
+      isPending: false,
+    }));
+    await mockCandidates();
+
+    renderWithProviders(<ItemTemplates />);
+    await user.click(
+      screen.getByRole("button", { name: "Create template for Orange Juice" }),
+    );
+
+    expect(mockMutate).toHaveBeenCalledWith(
+      {
+        name: "Orange Juice",
+        description: null,
+        defaultCategory: "Groceries",
+        defaultSubcategory: "Beverages",
+        defaultUnitPrice: 5.29,
+        defaultItemCode: "OJ-100",
+      },
+      expect.objectContaining({ onSuccess: expect.any(Function) }),
+    );
+  });
+
+  it("sends nulls for candidates with no suggestions", async () => {
+    const user = (await import("@testing-library/user-event")).default.setup();
+    const mockMutate = vi.fn();
+    const { useCreateItemTemplate } = await import("@/hooks/useItemTemplates");
+    vi.mocked(useCreateItemTemplate).mockReturnValue(mockMutationResult({
+      mutate: mockMutate,
+      isPending: false,
+    }));
+    await mockCandidates();
+
+    renderWithProviders(<ItemTemplates />);
+    await user.click(
+      screen.getByRole("button", { name: "Create template for Paper Towels" }),
+    );
+
+    expect(mockMutate).toHaveBeenCalledWith(
+      {
+        name: "Paper Towels",
+        description: null,
+        defaultCategory: null,
+        defaultSubcategory: null,
+        defaultUnitPrice: null,
+        defaultItemCode: null,
+      },
+      expect.objectContaining({ onSuccess: expect.any(Function) }),
+    );
+  });
+
+  it("keeps create buttons focusable but inert while a create is in flight", async () => {
+    const user = (await import("@testing-library/user-event")).default.setup();
+    const mockMutate = vi.fn();
+    const { useCreateItemTemplate } = await import("@/hooks/useItemTemplates");
+    vi.mocked(useCreateItemTemplate).mockReturnValue(mockMutationResult({
+      mutate: mockMutate,
+      isPending: true,
+      variables: { name: "Orange Juice" },
+    }));
+    await mockCandidates();
+
+    renderWithProviders(<ItemTemplates />);
+    const button = screen.getByRole("button", {
+      name: "Create template for Orange Juice",
+    });
+
+    // aria-disabled rather than disabled: a disabled element is blurred by the
+    // browser, which would throw keyboard focus back to the document body.
+    expect(button).toHaveAttribute("aria-disabled", "true");
+    expect(button).toHaveAttribute("aria-busy", "true");
+    expect(button).not.toBeDisabled();
+
+    await user.click(button);
+    expect(mockMutate).not.toHaveBeenCalled();
+  });
+
+  it("persists the collapsed state to localStorage when toggled", async () => {
+    const user = (await import("@testing-library/user-event")).default.setup();
+    await mockCandidates();
+
+    renderWithProviders(<ItemTemplates />);
+    expect(screen.getByText("Orange Juice")).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", { name: /suggested from your history/i }),
+    );
+
+    await vi.waitFor(() => {
+      expect(screen.queryByText("Orange Juice")).not.toBeInTheDocument();
+    });
+    expect(
+      localStorage.getItem("item-templates-history-suggestions-collapsed"),
+    ).toBe("true");
+  });
+
+  it("starts collapsed when localStorage says so", async () => {
+    localStorage.setItem("item-templates-history-suggestions-collapsed", "true");
+    await mockCandidates();
+
+    renderWithProviders(<ItemTemplates />);
+
+    expect(
+      screen.getByRole("heading", { name: /suggested from your history/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Orange Juice")).not.toBeInTheDocument();
+  });
+
+  it("offers Show more only when more candidates exist than are displayed", async () => {
+    await mockCandidates({ total: 12 });
+
+    renderWithProviders(<ItemTemplates />);
+
+    expect(
+      screen.getByRole("button", { name: /show more suggestions/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("does not offer Show more when every candidate is displayed", async () => {
+    await mockCandidates();
+
+    renderWithProviders(<ItemTemplates />);
+
+    expect(
+      screen.queryByRole("button", { name: /show more suggestions/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("requests a larger page when Show more is clicked", async () => {
+    const user = (await import("@testing-library/user-event")).default.setup();
+    await mockCandidates({ total: 12 });
+    const { useTemplateHistoryCandidates } = await import(
+      "@/hooks/useTemplateHistoryCandidates"
+    );
+
+    renderWithProviders(<ItemTemplates />);
+    expect(useTemplateHistoryCandidates).toHaveBeenLastCalledWith(0, 10);
+
+    await user.click(
+      screen.getByRole("button", { name: /show more suggestions/i }),
+    );
+
+    expect(useTemplateHistoryCandidates).toHaveBeenLastCalledWith(0, 20);
   });
 });

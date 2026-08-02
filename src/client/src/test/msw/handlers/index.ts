@@ -7,8 +7,10 @@ import { receiptItemHandlers } from "./receipt-items";
 import { transactionHandlers } from "./transactions";
 import { tripHandlers } from "./trips";
 import { metadataHandlers } from "./metadata";
+import { itemTemplateHistoryCandidateHandlers } from "./item-template-history-candidates";
 
 export const handlers = [
+  ...itemTemplateHistoryCandidateHandlers,
   ...authHandlers,
   ...cardHandlers,
   ...categoryHandlers,

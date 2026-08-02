@@ -16,6 +16,7 @@ import { useServerSort } from "@/hooks/useServerSort";
 import { useListKeyboardNav } from "@/hooks/useListKeyboardNav";
 import type { FuseSearchConfig } from "@/lib/search";
 import { ItemTemplateForm } from "@/components/ItemTemplateForm";
+import { TemplateHistorySuggestions } from "@/components/TemplateHistorySuggestions";
 import { FuzzySearchInput } from "@/components/FuzzySearchInput";
 import { SearchHighlight } from "@/components/SearchHighlight";
 import { getMatchIndices } from "@/lib/search-highlight";
@@ -182,6 +183,8 @@ function ItemTemplates() {
           />
         </div>
       </div>
+
+      <TemplateHistorySuggestions />
 
       {filteredResults.length === 0 ? (
         search ? (
