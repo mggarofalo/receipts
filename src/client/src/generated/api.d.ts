@@ -1573,6 +1573,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/reports/health-summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get data-quality health summary
+         * @description Returns headline counts for the data-quality reports so the reports hub can show at a glance whether anything needs attention: out-of-balance receipts, duplicate receipt groups (matched on date + location), and uncategorized receipt items. Backed by COUNT queries only — no report rows are returned.
+         */
+        get: operations["GetReportsHealthSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/reports/out-of-balance": {
         parameters: {
             query?: never;
@@ -2361,6 +2381,23 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        ReportsHealthSummaryResponse: {
+            /**
+             * Format: int32
+             * @description Receipts whose item subtotal + tax + adjustments does not equal the transaction total.
+             */
+            outOfBalanceCount: number;
+            /**
+             * Format: int32
+             * @description Groups of two or more receipts sharing the same date and location.
+             */
+            duplicateGroupCount: number;
+            /**
+             * Format: int32
+             * @description Receipt items still filed under the "Uncategorized" category.
+             */
+            uncategorizedItemCount: number;
+        };
         OutOfBalanceResponse: {
             /** Format: int32 */
             totalCount: number;
@@ -7544,6 +7581,26 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    GetReportsHealthSummary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportsHealthSummaryResponse"];
+                };
             };
         };
     };

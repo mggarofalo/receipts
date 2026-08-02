@@ -58,4 +58,6 @@ public interface IReportService
 		DateTimeOffset? from,
 		DateTimeOffset? to,
 		CancellationToken cancellationToken);
+
+	Task<ReportsHealthSummaryResult> GetHealthSummaryAsync(CancellationToken cancellationToken);
 }

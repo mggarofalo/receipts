@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route } from "react-router";
 import { renderWithProviders } from "@/test/test-utils";
-import Reports, { REPORTS, DEFAULT_REPORT } from "./Reports";
+import Reports, { REPORTS, REPORT_GROUPS } from "./Reports";
 
 // jsdom polyfills required by Radix UI Select (used for the report picker).
 beforeAll(() => {
@@ -23,6 +23,11 @@ beforeAll(() => {
 
 vi.mock("@/hooks/usePageTitle", () => ({
   usePageTitle: vi.fn(),
+}));
+
+const mockHealthSummary = vi.fn();
+vi.mock("@/hooks/useReportsHealthSummary", () => ({
+  useReportsHealthSummary: () => mockHealthSummary(),
 }));
 
 vi.mock("@/components/reports/OutOfBalance", () => ({
@@ -67,11 +72,22 @@ vi.mock("@/components/reports/SpendingByNormalizedDescription", () => ({
   ),
 }));
 
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockHealthSummary.mockReturnValue({
+    data: {
+      outOfBalanceCount: 3,
+      duplicateGroupCount: 1,
+      uncategorizedItemCount: 0,
+    },
+  });
+});
+
 describe("Reports", () => {
   it("renders the page heading", () => {
     renderWithProviders(<Reports />, { route: "/reports" });
     expect(
-      screen.getByRole("heading", { name: /reports/i }),
+      screen.getByRole("heading", { level: 1, name: /reports/i }),
     ).toBeInTheDocument();
   });
 
@@ -80,65 +96,237 @@ describe("Reports", () => {
     expect(screen.getByRole("combobox")).toBeInTheDocument();
   });
 
-  it("defaults to the first report when no query param", async () => {
-    renderWithProviders(<Reports />, { route: "/reports" });
-    expect(
-      await screen.findByTestId("report-out-of-balance"),
-    ).toBeInTheDocument();
-  });
+  describe("hub landing", () => {
+    it("shows the hub instead of a report when no query param is present", () => {
+      renderWithProviders(<Reports />, { route: "/reports" });
 
-  it("selects the report specified by query param", async () => {
-    renderWithProviders(<Reports />, {
-      route: "/reports?report=item-cost-over-time",
+      expect(screen.queryByTestId("report-out-of-balance")).toBeNull();
+      expect(
+        screen.getByRole("heading", { level: 2, name: "Spending" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("heading", { level: 2, name: "Data Quality" }),
+      ).toBeInTheDocument();
     });
-    expect(
-      await screen.findByTestId("report-item-cost-over-time"),
-    ).toBeInTheDocument();
-  });
 
-  it("falls back to default report for invalid query param", async () => {
-    renderWithProviders(<Reports />, {
-      route: "/reports?report=nonexistent",
+    it("renders a card link for every report", () => {
+      renderWithProviders(<Reports />, { route: "/reports" });
+
+      for (const report of REPORTS) {
+        const link = screen.getByRole("link", {
+          name: new RegExp(report.name, "i"),
+        });
+        expect(link).toHaveAttribute("href", `/reports?report=${report.slug}`);
+      }
     });
-    expect(
-      await screen.findByTestId("report-out-of-balance"),
-    ).toBeInTheDocument();
-  });
 
-  it("renders a different report when query param changes", async () => {
-    renderWithProviders(<Reports />, {
-      route: "/reports?report=category-trends",
+    it("shows a one-line description on each card", () => {
+      renderWithProviders(<Reports />, { route: "/reports" });
+
+      for (const report of REPORTS) {
+        expect(screen.getByText(report.description)).toBeInTheDocument();
+      }
     });
-    expect(
-      await screen.findByTestId("report-category-trends"),
-    ).toBeInTheDocument();
-  });
 
-  it("calls usePageTitle with the active report name", async () => {
-    const { usePageTitle } = await import("@/hooks/usePageTitle");
-    renderWithProviders(<Reports />, {
-      route: "/reports?report=duplicate-detection",
+    it("badges data-quality reports with their live counts", () => {
+      renderWithProviders(<Reports />, { route: "/reports" });
+
+      expect(screen.getByText("3 out-of-balance receipts")).toBeInTheDocument();
+      expect(screen.getByText("1 duplicate group")).toBeInTheDocument();
     });
-    expect(usePageTitle).toHaveBeenCalledWith(
-      "Reports - Duplicate Detection",
-    );
+
+    it("shows 'All clear' when a data-quality count is zero", () => {
+      renderWithProviders(<Reports />, { route: "/reports" });
+      expect(screen.getByText("All clear")).toBeInTheDocument();
+    });
+
+    it("omits badges while the health summary is unavailable", () => {
+      mockHealthSummary.mockReturnValue({ data: undefined });
+      renderWithProviders(<Reports />, { route: "/reports" });
+
+      expect(screen.queryByText("All clear")).toBeNull();
+      expect(screen.queryByText(/out-of-balance receipts/)).toBeNull();
+    });
+
+    it("opens a report when its card is clicked", async () => {
+      renderWithProviders(<Reports />, { route: "/reports" });
+
+      await userEvent.click(
+        screen.getByRole("link", { name: /category trends/i }),
+      );
+
+      expect(
+        await screen.findByTestId("report-category-trends"),
+      ).toBeInTheDocument();
+    });
   });
 
-  it("exports REPORTS config with correct number of reports", () => {
-    expect(REPORTS).toHaveLength(7);
+  describe("deep links", () => {
+    it("selects the report specified by query param", async () => {
+      renderWithProviders(<Reports />, {
+        route: "/reports?report=item-cost-over-time",
+      });
+      expect(
+        await screen.findByTestId("report-item-cost-over-time"),
+      ).toBeInTheDocument();
+    });
+
+    it("renders a different report when query param changes", async () => {
+      renderWithProviders(<Reports />, {
+        route: "/reports?report=category-trends",
+      });
+      expect(
+        await screen.findByTestId("report-category-trends"),
+      ).toBeInTheDocument();
+    });
+
+    it("falls back to the hub for an invalid query param", () => {
+      renderWithProviders(<Reports />, { route: "/reports?report=nonexistent" });
+
+      expect(screen.queryByTestId("report-out-of-balance")).toBeNull();
+      expect(
+        screen.getByRole("heading", { level: 2, name: "Spending" }),
+      ).toBeInTheDocument();
+    });
+
+    it("returns to the hub via the All reports button", async () => {
+      renderWithProviders(<Reports />, {
+        route: "/reports?report=out-of-balance",
+      });
+      expect(
+        await screen.findByTestId("report-out-of-balance"),
+      ).toBeInTheDocument();
+
+      await userEvent.click(screen.getByRole("button", { name: /all reports/i }));
+
+      expect(screen.queryByTestId("report-out-of-balance")).toBeNull();
+      expect(
+        screen.getByRole("heading", { level: 2, name: "Data Quality" }),
+      ).toBeInTheDocument();
+    });
+
+    it("hides the All reports button on the hub", () => {
+      renderWithProviders(<Reports />, { route: "/reports" });
+      expect(screen.queryByRole("button", { name: /all reports/i })).toBeNull();
+    });
   });
 
-  it("exports DEFAULT_REPORT as out-of-balance", () => {
-    expect(DEFAULT_REPORT).toBe("out-of-balance");
+  describe("grouped picker", () => {
+    it("renders a section header per group", async () => {
+      renderWithProviders(<Reports />, { route: "/reports" });
+      await userEvent.click(screen.getByRole("combobox"));
+
+      expect(screen.getByRole("group", { name: "Spending" })).toBeInTheDocument();
+      expect(
+        screen.getByRole("group", { name: "Data Quality" }),
+      ).toBeInTheDocument();
+    });
+
+    it("lists every report as an option", async () => {
+      renderWithProviders(<Reports />, { route: "/reports" });
+      await userEvent.click(screen.getByRole("combobox"));
+
+      for (const report of REPORTS) {
+        expect(
+          screen.getByRole("option", { name: new RegExp(report.name, "i") }),
+        ).toBeInTheDocument();
+      }
+    });
+
+    it("surfaces non-zero data-quality counts in the picker", async () => {
+      renderWithProviders(<Reports />, { route: "/reports" });
+      await userEvent.click(screen.getByRole("combobox"));
+
+      const option = screen.getByRole("option", { name: /out of balance/i });
+      expect(option).toHaveTextContent("3");
+      expect(option).toHaveAccessibleName(/3 out-of-balance receipts/);
+    });
+
+    it("omits a picker badge when the count is zero", async () => {
+      renderWithProviders(<Reports />, { route: "/reports" });
+      await userEvent.click(screen.getByRole("combobox"));
+
+      const option = screen.getByRole("option", {
+        name: /uncategorized items/i,
+      });
+      expect(option).toHaveAccessibleName("Uncategorized Items");
+    });
+
+    it("navigates to the chosen report", async () => {
+      renderWithProviders(<Reports />, { route: "/reports" });
+      await userEvent.click(screen.getByRole("combobox"));
+      await userEvent.click(
+        screen.getByRole("option", { name: /duplicate detection/i }),
+      );
+
+      expect(
+        await screen.findByTestId("report-duplicate-detection"),
+      ).toBeInTheDocument();
+    });
+
+    it("no longer lists Normalized Descriptions among the reports", async () => {
+      renderWithProviders(<Reports />, { route: "/reports" });
+      await userEvent.click(screen.getByRole("combobox"));
+
+      expect(
+        screen.queryByRole("option", { name: /^normalized descriptions/i }),
+      ).not.toBeInTheDocument();
+    });
   });
 
-  it("no longer lists Normalized Descriptions among the reports", async () => {
-    renderWithProviders(<Reports />, { route: "/reports" });
-    const trigger = screen.getByRole("combobox");
-    await userEvent.click(trigger);
-    expect(
-      screen.queryByRole("option", { name: /normalized descriptions/i }),
-    ).not.toBeInTheDocument();
+  describe("page title", () => {
+    it("uses the plain page name on the hub", async () => {
+      const { usePageTitle } = await import("@/hooks/usePageTitle");
+      renderWithProviders(<Reports />, { route: "/reports" });
+      expect(usePageTitle).toHaveBeenCalledWith("Reports");
+    });
+
+    it("appends the active report name", async () => {
+      const { usePageTitle } = await import("@/hooks/usePageTitle");
+      renderWithProviders(<Reports />, {
+        route: "/reports?report=duplicate-detection",
+      });
+      expect(usePageTitle).toHaveBeenCalledWith("Reports - Duplicate Detection");
+    });
+  });
+
+  describe("config", () => {
+    it("exports REPORTS config with correct number of reports", () => {
+      expect(REPORTS).toHaveLength(7);
+    });
+
+    it("groups reports into Spending and Data Quality", () => {
+      expect(REPORT_GROUPS.map((g) => g.label)).toEqual([
+        "Spending",
+        "Data Quality",
+      ]);
+      expect(REPORT_GROUPS[0].reports.map((r) => r.slug)).toEqual([
+        "spending-by-location",
+        "spending-by-normalized-description",
+        "category-trends",
+        "item-cost-over-time",
+      ]);
+      expect(REPORT_GROUPS[1].reports.map((r) => r.slug)).toEqual([
+        "out-of-balance",
+        "duplicate-detection",
+        "uncategorized-items",
+      ]);
+    });
+
+    it("gives every report a one-line description", () => {
+      for (const report of REPORTS) {
+        expect(report.description.length).toBeGreaterThan(0);
+      }
+    });
+
+    it("attaches a health metric to every data-quality report only", () => {
+      for (const report of REPORT_GROUPS[0].reports) {
+        expect(report.metric).toBeUndefined();
+      }
+      for (const report of REPORT_GROUPS[1].reports) {
+        expect(report.metric).toBeDefined();
+      }
+    });
   });
 
   it("redirects the legacy normalized-descriptions report link to the admin route", () => {

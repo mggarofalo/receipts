@@ -3506,6 +3506,27 @@ paths:
   # Reports
   # ──────────────────────────────────────────────
 
+  /api/reports/health-summary:
+    get:
+      operationId: GetReportsHealthSummary
+      tags: [Reports]
+      summary: Get data-quality health summary
+      description: >
+        Returns headline counts for the data-quality reports so the reports hub can
+        show at a glance whether anything needs attention: out-of-balance receipts,
+        duplicate receipt groups (matched on date + location), and uncategorized
+        receipt items. Backed by COUNT queries only — no report rows are returned.
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReportsHealthSummaryResponse"
+
   /api/reports/out-of-balance:
     get:
       operationId: GetOutOfBalanceReport
@@ -4840,6 +4861,23 @@ paths:
 components:
   schemas:
     # ── Reports ───────────────────────────────────
+
+    ReportsHealthSummaryResponse:
+      type: object
+      required: [outOfBalanceCount, duplicateGroupCount, uncategorizedItemCount]
+      properties:
+        outOfBalanceCount:
+          type: integer
+          format: int32
+          description: Receipts whose item subtotal + tax + adjustments does not equal the transaction total.
+        duplicateGroupCount:
+          type: integer
+          format: int32
+          description: Groups of two or more receipts sharing the same date and location.
+        uncategorizedItemCount:
+          type: integer
+          format: int32
+          description: Receipt items still filed under the "Uncategorized" category.
 
     OutOfBalanceResponse:
       type: object
