@@ -13,12 +13,14 @@ import {
 } from "@/hooks/useNormalizedDescriptionSettings";
 import { useReceiptItems } from "@/hooks/useReceiptItems";
 import { usePermission } from "@/hooks/usePermission";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { formatDecimal } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageHead } from "@/components/primitives";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Table,
@@ -65,32 +67,39 @@ type ReceiptItem = {
 type TabKey = "review" | "registry" | "settings";
 
 export default function NormalizedDescriptions() {
+  usePageTitle("Normalized Descriptions");
   const { isAdmin } = usePermission();
   const [tab, setTab] = useState<TabKey>("review");
 
   return (
-    <Tabs
-      value={tab}
-      onValueChange={(v) => setTab(v as TabKey)}
-      className="space-y-4"
-    >
-      <TabsList>
-        <TabsTrigger value="review">Review Queue</TabsTrigger>
-        <TabsTrigger value="registry">Registry</TabsTrigger>
-        {isAdmin() && <TabsTrigger value="settings">Settings</TabsTrigger>}
-      </TabsList>
-      <TabsContent value="review">
-        <ReviewQueueTab />
-      </TabsContent>
-      <TabsContent value="registry">
-        <RegistryTab />
-      </TabsContent>
-      {isAdmin() && (
-        <TabsContent value="settings">
-          <SettingsTab />
+    <>
+      <PageHead
+        title="Normalized Descriptions"
+        sub="Review, merge, and configure canonical item descriptions"
+      />
+      <Tabs
+        value={tab}
+        onValueChange={(v) => setTab(v as TabKey)}
+        className="space-y-4"
+      >
+        <TabsList>
+          <TabsTrigger value="review">Review Queue</TabsTrigger>
+          <TabsTrigger value="registry">Registry</TabsTrigger>
+          {isAdmin() && <TabsTrigger value="settings">Settings</TabsTrigger>}
+        </TabsList>
+        <TabsContent value="review">
+          <ReviewQueueTab />
         </TabsContent>
-      )}
-    </Tabs>
+        <TabsContent value="registry">
+          <RegistryTab />
+        </TabsContent>
+        {isAdmin() && (
+          <TabsContent value="settings">
+            <SettingsTab />
+          </TabsContent>
+        )}
+      </Tabs>
+    </>
   );
 }
 

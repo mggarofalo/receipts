@@ -4,6 +4,10 @@ import { renderWithQueryClient } from "@/test/test-utils";
 import { mockMutationResult, mockQueryResult } from "@/test/mock-hooks";
 import NormalizedDescriptions from "./NormalizedDescriptions";
 
+vi.mock("@/hooks/usePageTitle", () => ({
+  usePageTitle: vi.fn(),
+}));
+
 vi.mock("@/hooks/useNormalizedDescriptions", () => ({
   useNormalizedDescriptions: vi.fn(),
   useNormalizedDescription: vi.fn(),
@@ -154,6 +158,13 @@ describe("NormalizedDescriptions review queue", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     wireDefaults();
+  });
+
+  it("renders the page heading", () => {
+    renderWithQueryClient(<NormalizedDescriptions />);
+    expect(
+      screen.getByRole("heading", { name: /normalized descriptions/i }),
+    ).toBeInTheDocument();
   });
 
   it("renders pending-review rows by default", async () => {

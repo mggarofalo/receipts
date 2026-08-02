@@ -11,6 +11,7 @@ import {
   Key,
   KeyRound,
   LayoutList,
+  ListChecks,
   LogOut,
   Moon,
   Package,
@@ -307,6 +308,15 @@ export const COMMANDS: Command[] = [
     keywords: ["export", "import", "admin"],
     requiresAdmin: true,
     run: goTo("/admin/backup"),
+  },
+  {
+    id: "nav:normalized-descriptions",
+    label: "Go to Normalized Descriptions",
+    group: "navigate",
+    icon: ListChecks,
+    keywords: ["items", "canonical", "merge", "admin"],
+    requiresAdmin: true,
+    run: goTo("/admin/normalized-descriptions"),
   },
 
   // ---- Preferences ----

@@ -42,6 +42,7 @@ describe("command registry", () => {
       "nav:audit",
       "nav:trash",
       "nav:backup",
+      "nav:normalized-descriptions",
       "create:receipt",
       "create:account",
       "create:card",
@@ -68,6 +69,7 @@ describe("command registry", () => {
         "nav:audit",
         "nav:trash",
         "nav:backup",
+        "nav:normalized-descriptions",
         "create:user",
         "action:backup-export",
         "action:trash-empty",
@@ -114,6 +116,16 @@ describe("command registry", () => {
     cmd.run(ctx);
     expect(ctx.close).toHaveBeenCalled();
     expect(ctx.navigate).toHaveBeenCalledWith("/accounts");
+  });
+
+  it("nav:normalized-descriptions navigates to the admin route and closes", () => {
+    const ctx = makeCtx();
+    const cmd = COMMANDS.find((c) => c.id === "nav:normalized-descriptions")!;
+    cmd.run(ctx);
+    expect(ctx.close).toHaveBeenCalled();
+    expect(ctx.navigate).toHaveBeenCalledWith(
+      "/admin/normalized-descriptions",
+    );
   });
 
   it("palette commands call setPalette with expected values", () => {

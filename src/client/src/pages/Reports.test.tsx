@@ -1,5 +1,6 @@
-import { screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter, Routes, Route } from "react-router";
 import { renderWithProviders } from "@/test/test-utils";
 import Reports, { REPORTS, DEFAULT_REPORT } from "./Reports";
 
@@ -66,32 +67,7 @@ vi.mock("@/components/reports/SpendingByNormalizedDescription", () => ({
   ),
 }));
 
-vi.mock("@/components/reports/NormalizedDescriptions", () => ({
-  default: () => (
-    <div data-testid="report-normalized-descriptions">
-      Normalized Descriptions
-    </div>
-  ),
-}));
-
-vi.mock("@/hooks/usePermission", () => ({
-  usePermission: vi.fn(() => ({
-    roles: ["User"],
-    hasRole: (role: string) => role === "User",
-    isAdmin: () => false,
-  })),
-}));
-
 describe("Reports", () => {
-  beforeEach(async () => {
-    const { usePermission } = await import("@/hooks/usePermission");
-    vi.mocked(usePermission).mockReturnValue({
-      roles: ["User"],
-      hasRole: (role: string) => role === "User",
-      isAdmin: () => false,
-    });
-  });
-
   it("renders the page heading", () => {
     renderWithProviders(<Reports />, { route: "/reports" });
     expect(
@@ -149,14 +125,14 @@ describe("Reports", () => {
   });
 
   it("exports REPORTS config with correct number of reports", () => {
-    expect(REPORTS).toHaveLength(8);
+    expect(REPORTS).toHaveLength(7);
   });
 
   it("exports DEFAULT_REPORT as out-of-balance", () => {
     expect(DEFAULT_REPORT).toBe("out-of-balance");
   });
 
-  it("hides admin-only reports for non-admin users", async () => {
+  it("no longer lists Normalized Descriptions among the reports", async () => {
     renderWithProviders(<Reports />, { route: "/reports" });
     const trigger = screen.getByRole("combobox");
     await userEvent.click(trigger);
@@ -165,27 +141,28 @@ describe("Reports", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("shows admin-only reports for admin users", async () => {
-    const { usePermission } = await import("@/hooks/usePermission");
-    vi.mocked(usePermission).mockReturnValue({
-      roles: ["Admin"],
-      hasRole: (role: string) => role === "Admin",
-      isAdmin: () => true,
-    });
-    renderWithProviders(<Reports />, { route: "/reports" });
-    const trigger = screen.getByRole("combobox");
-    await userEvent.click(trigger);
+  it("redirects the legacy normalized-descriptions report link to the admin route", () => {
+    // Rendered under real Routes (unlike renderWithProviders' bare
+    // MemoryRouter) so the <Navigate> actually swaps the matched route
+    // instead of leaving Reports mounted with a now-empty ?report param.
+    render(
+      <MemoryRouter
+        initialEntries={["/reports?report=normalized-descriptions"]}
+      >
+        <Routes>
+          <Route path="/reports" element={<Reports />} />
+          <Route
+            path="/admin/normalized-descriptions"
+            element={<div data-testid="admin-normalized-descriptions" />}
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
     expect(
-      screen.getByRole("option", { name: /normalized descriptions/i }),
+      screen.getByTestId("admin-normalized-descriptions"),
     ).toBeInTheDocument();
-  });
-
-  it("falls back to default when admin-only slug is used by non-admin", async () => {
-    renderWithProviders(<Reports />, {
-      route: "/reports?report=normalized-descriptions",
-    });
     expect(
-      await screen.findByTestId("report-out-of-balance"),
-    ).toBeInTheDocument();
+      screen.queryByRole("heading", { name: /reports/i }),
+    ).not.toBeInTheDocument();
   });
 });

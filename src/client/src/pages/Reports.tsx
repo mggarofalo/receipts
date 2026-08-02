@@ -1,7 +1,6 @@
 import { lazy, Suspense, useCallback, useMemo } from "react";
-import { useSearchParams } from "react-router";
+import { Navigate, useSearchParams } from "react-router";
 import { usePageTitle } from "@/hooks/usePageTitle";
-import { usePermission } from "@/hooks/usePermission";
 import {
   Select,
   SelectContent,
@@ -12,11 +11,15 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHead } from "@/components/primitives";
 
+// Old links to the retired "Normalized Descriptions" report (moved to
+// /admin/normalized-descriptions in RECEIPTS-837) still point at this slug —
+// redirect them instead of silently falling back to the default report.
+const NORMALIZED_DESCRIPTIONS_REDIRECT = "/admin/normalized-descriptions";
+
 interface ReportConfig {
   slug: string;
   name: string;
   component: React.LazyExoticComponent<React.ComponentType>;
-  adminOnly?: boolean;
 }
 
 const REPORTS: ReportConfig[] = [
@@ -57,12 +60,6 @@ const REPORTS: ReportConfig[] = [
     name: "Uncategorized Items",
     component: lazy(() => import("@/components/reports/UncategorizedItems")),
   },
-  {
-    slug: "normalized-descriptions",
-    name: "Normalized Descriptions",
-    component: lazy(() => import("@/components/reports/NormalizedDescriptions")),
-    adminOnly: true,
-  },
 ];
 
 const DEFAULT_REPORT = REPORTS[0].slug;
@@ -73,25 +70,16 @@ function ReportFallback() {
 
 function Reports() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const { isAdmin } = usePermission();
 
-  const availableReports = useMemo(
-    () => REPORTS.filter((r) => !r.adminOnly || isAdmin()),
-    [isAdmin],
-  );
-  const validSlugs = useMemo(
-    () => new Set(availableReports.map((r) => r.slug)),
-    [availableReports],
-  );
+  const validSlugs = useMemo(() => new Set(REPORTS.map((r) => r.slug)), []);
 
   const rawReport = searchParams.get("report");
   const activeSlug =
     rawReport && validSlugs.has(rawReport) ? rawReport : DEFAULT_REPORT;
 
   const activeReport = useMemo(
-    () =>
-      availableReports.find((r) => r.slug === activeSlug) ?? availableReports[0],
-    [activeSlug, availableReports],
+    () => REPORTS.find((r) => r.slug === activeSlug) ?? REPORTS[0],
+    [activeSlug],
   );
 
   usePageTitle(`Reports - ${activeReport.name}`);
@@ -102,6 +90,10 @@ function Reports() {
     },
     [setSearchParams],
   );
+
+  if (rawReport === "normalized-descriptions") {
+    return <Navigate to={NORMALIZED_DESCRIPTIONS_REDIRECT} replace />;
+  }
 
   return (
     <>
@@ -114,7 +106,7 @@ function Reports() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {availableReports.map((report) => (
+              {REPORTS.map((report) => (
                 <SelectItem key={report.slug} value={report.slug}>
                   {report.name}
                 </SelectItem>

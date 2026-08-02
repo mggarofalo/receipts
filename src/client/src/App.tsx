@@ -20,6 +20,7 @@ import AuditLog from "@/pages/AuditLog";
 import SecurityLog from "@/pages/SecurityLog";
 import RecycleBin from "@/pages/RecycleBin";
 import BackupRestore from "@/pages/BackupRestore";
+import NormalizedDescriptions from "@/pages/NormalizedDescriptions";
 import NewReceipt from "@/pages/new-receipt/NewReceiptPage";
 import YnabSettings from "@/pages/settings/YnabSettings";
 import Ynab from "@/pages/Ynab";
@@ -90,6 +91,14 @@ export const routeConfig = [
             element: (
               <AdminRoute>
                 <BackupRestore />
+              </AdminRoute>
+            ),
+          },
+          {
+            path: "/admin/normalized-descriptions",
+            element: (
+              <AdminRoute>
+                <NormalizedDescriptions />
               </AdminRoute>
             ),
           },
