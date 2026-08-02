@@ -39,6 +39,34 @@ describe("toCsv", () => {
   it("handles an empty row set", () => {
     expect(toCsv(["a"], [])).toBe("a\r\n");
   });
+
+  it.each([
+    ["=cmd|' /C calc'!A1", "'=cmd|' /C calc'!A1"],
+    ["+1+1", "'+1+1"],
+    ["-1+1", "'-1+1"],
+    ["@SUM(A1:A2)", "'@SUM(A1:A2)"],
+  ])(
+    "neutralizes formula-triggering string fields like %j",
+    (input, expected) => {
+      const csv = toCsv(["name"], [[input]]);
+      expect(csv).toBe(`name\r\n${expected}\r\n`);
+    },
+  );
+
+  it("does not prefix numeric fields even when negative", () => {
+    const csv = toCsv(["total"], [[-5]]);
+    expect(csv).toBe("total\r\n-5\r\n");
+  });
+
+  it("quotes a neutralized formula field that also contains a comma", () => {
+    const csv = toCsv(["name"], [["=A1, B1"]]);
+    expect(csv).toBe('name\r\n"\'=A1, B1"\r\n');
+  });
+
+  it("leaves ordinary text starting with other characters untouched", () => {
+    const csv = toCsv(["name"], [["Main St"]]);
+    expect(csv).toBe("name\r\nMain St\r\n");
+  });
 });
 
 describe("csvFilename", () => {

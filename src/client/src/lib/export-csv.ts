@@ -6,9 +6,21 @@ export type CsvValue = string | number | boolean | null | undefined;
 /** UTF-8 byte-order mark so Excel detects the encoding correctly. */
 export const CSV_BOM = "\uFEFF";
 
+/**
+ * Leading characters that spreadsheet apps (Excel, Sheets) interpret as the
+ * start of a formula. Untrusted text fields (locations, descriptions, etc.)
+ * are neutralized to prevent CSV/formula injection (CWE-1236, OWASP).
+ */
+const FORMULA_TRIGGER_PATTERN = /^[=+\-@\t\r]/;
+
 function escapeField(value: CsvValue): string {
   if (value === null || value === undefined) return "";
-  const text = String(value);
+  let text = String(value);
+  // Only string-typed values come from free-text user input; numbers (e.g.
+  // negative totals) are never at risk and must render without a prefix.
+  if (typeof value === "string" && FORMULA_TRIGGER_PATTERN.test(text)) {
+    text = `'${text}`;
+  }
   if (/[",\r\n]/.test(text)) {
     return `"${text.replaceAll('"', '""')}"`;
   }
