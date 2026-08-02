@@ -12,7 +12,7 @@ namespace Presentation.API.Tests;
 [Trait("Category", "Integration")]
 public class HealthEndpointTests
 {
-	private const string ItemSimilarityCheckName = "item_similarity_refresher";
+	private const string BackgroundCheckName = "background_worker";
 
 	[Fact]
 	public async Task HealthEndpoint_InProduction_ReturnsHealthy_WithStatusOnlyBody()
@@ -67,7 +67,7 @@ public class HealthEndpointTests
 		HttpClient client = host.GetTestClient();
 
 		// The aliveness endpoint only evaluates checks tagged "live" (the default "self" check),
-		// so it should succeed regardless of the state of the "background"-tagged check.
+		// so it should succeed regardless of the state of any "background"-tagged check.
 		HttpResponseMessage response = await client.GetAsync("/alive");
 
 		response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -76,8 +76,8 @@ public class HealthEndpointTests
 	[Fact]
 	public async Task HealthEndpoint_InProduction_IncludesBackgroundTaggedCheck()
 	{
-		// Regression guard: the "background"-tagged item-similarity check must flow through
-		// to /health so ops has a machine-readable signal for the refresher state.
+		// Regression guard: "background"-tagged checks must flow through to /health so ops
+		// has a machine-readable signal for background-worker state.
 		using IHost host = CreateHost(Environments.Production, healthyCheck: false);
 		await host.StartAsync();
 		HttpClient client = host.GetTestClient();
@@ -103,7 +103,7 @@ public class HealthEndpointTests
 				() => HealthCheckResult.Healthy(),
 				["live"])
 			.AddCheck(
-				ItemSimilarityCheckName,
+				BackgroundCheckName,
 				() => healthyCheck ? HealthCheckResult.Healthy() : HealthCheckResult.Unhealthy("forced"),
 				["background"]);
 

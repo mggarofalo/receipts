@@ -3,12 +3,11 @@ using Application.Interfaces.Services;
 
 namespace Infrastructure.Services;
 
-// Fan-out implementation of IDescriptionChangeSignal. Previously a single shared capacity-1
-// channel meant the two consumers (NormalizedDescriptionResolutionService and
-// ItemSimilarityEdgeRefresher) competed for one wake-up token — whichever read first stole
-// it, so the other could miss a signal (including a manual refresh) and stall until its own
-// safety timer. Now every consumer Subscribe()s once and gets its OWN capacity-1 channel, and
-// NotifyDirty writes to all of them, so a single signal reaches both (RECEIPTS-790).
+// Fan-out implementation of IDescriptionChangeSignal. A single shared capacity-1 channel would
+// mean multiple consumers competing for one wake-up token — whichever read first would steal
+// it, so the others could miss a signal and stall until their own safety timer. Instead every
+// consumer Subscribe()s once and gets its OWN capacity-1 channel, and NotifyDirty writes to all
+// of them, so a single signal reaches every consumer (RECEIPTS-790).
 public class DescriptionChangeSignal : IDescriptionChangeSignal
 {
 	private readonly object _gate = new();

@@ -1,5 +1,4 @@
 using API.Generated.Dtos;
-using Application.Commands.Reports;
 using Application.Queries.Aggregates.Reports;
 using Asp.Versioning;
 using Mediator;
@@ -134,104 +133,6 @@ public class ReportsController(IMediator mediator) : ControllerBase
 				Total = (double)i.Total,
 				AveragePerVisit = (double)i.AveragePerVisit
 			}).ToList()
-		});
-	}
-
-	[HttpGet("item-similarity")]
-	[EndpointSummary("Get item similarity clusters")]
-	[EndpointDescription("Returns groups of receipt items with similar descriptions using trigram matching.")]
-	public async Task<Results<Ok<ItemSimilarityResponse>, BadRequest<string>>> GetItemSimilarity(
-		[FromQuery] double? threshold,
-		[FromQuery] string? sortBy,
-		[FromQuery] string? sortDirection,
-		[FromQuery] int? page,
-		[FromQuery] int? pageSize,
-		CancellationToken cancellationToken)
-	{
-		double th = threshold ?? 0.7;
-		string sort = sortBy ?? "occurrences";
-		string direction = sortDirection ?? "desc";
-		int pg = page ?? 1;
-		int ps = pageSize ?? 50;
-
-		if (th < 0.3 || th > 0.95)
-		{
-			return TypedResults.BadRequest("threshold must be between 0.3 and 0.95");
-		}
-
-		string[] validSortColumns = ["canonicalName", "occurrences", "maxSimilarity"];
-		if (!validSortColumns.Contains(sort, StringComparer.OrdinalIgnoreCase))
-		{
-			return TypedResults.BadRequest($"Invalid sortBy '{sort}'. Allowed: canonicalName, occurrences, maxSimilarity");
-		}
-
-		string[] validDirections = ["asc", "desc"];
-		if (!validDirections.Contains(direction.ToLowerInvariant()))
-		{
-			return TypedResults.BadRequest($"Invalid sortDirection '{direction}'. Allowed: asc, desc");
-		}
-
-		if (pg < 1)
-		{
-			return TypedResults.BadRequest("page must be at least 1");
-		}
-
-		if (ps < 1 || ps > 100)
-		{
-			return TypedResults.BadRequest("pageSize must be between 1 and 100");
-		}
-
-		GetItemSimilarityReportQuery query = new(th, sort, direction, pg, ps);
-		AppReports.ItemSimilarityResult result = await mediator.Send(query, cancellationToken);
-
-		return TypedResults.Ok(new ItemSimilarityResponse
-		{
-			TotalCount = result.TotalCount,
-			Groups = result.Groups.Select(g => new ItemSimilarityGroup
-			{
-				CanonicalName = g.CanonicalName,
-				Variants = g.Variants,
-				ItemIds = g.ItemIds,
-				Occurrences = g.Occurrences,
-				MaxSimilarity = g.MaxSimilarity
-			}).ToList(),
-			ComputedAt = result.ComputedAt
-		});
-	}
-
-	[HttpPost("item-similarity/refresh")]
-	[Authorize(Policy = "RequireAdmin")]
-	[EndpointSummary("Request an out-of-band refresh of the item-similarity edge set")]
-	[EndpointDescription("Admin-only. Signals the background refresher to recompute edges at its next opportunity (after the debounce window). Returns immediately.")]
-	public async Task<Accepted<RefreshItemSimilarityResponse>> RefreshItemSimilarity(CancellationToken cancellationToken)
-	{
-		await mediator.Send(new RefreshItemSimilarityCommand(), cancellationToken);
-		return TypedResults.Accepted((string?)null, new RefreshItemSimilarityResponse { Accepted = true });
-	}
-
-	[HttpPost("item-similarity/rename")]
-	[EndpointSummary("Rename all items in a similarity group")]
-	[EndpointDescription("Updates the description of all specified receipt items to the given canonical name.")]
-	public async Task<Results<Ok<ItemSimilarityRenameResponse>, BadRequest<string>>> RenameItemSimilarityGroup(
-		[FromBody] ItemSimilarityRenameRequest request,
-		CancellationToken cancellationToken)
-	{
-		if (request.ItemIds.Count == 0)
-		{
-			return TypedResults.BadRequest("itemIds must not be empty");
-		}
-
-		if (string.IsNullOrWhiteSpace(request.NewDescription))
-		{
-			return TypedResults.BadRequest("newDescription must not be empty");
-		}
-
-		RenameItemSimilarityGroupCommand command = new(request.ItemIds.ToList(), request.NewDescription);
-		int updatedCount = await mediator.Send(command, cancellationToken);
-
-		return TypedResults.Ok(new ItemSimilarityRenameResponse
-		{
-			UpdatedCount = updatedCount
 		});
 	}
 

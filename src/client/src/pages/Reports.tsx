@@ -26,11 +26,6 @@ const REPORTS: ReportConfig[] = [
     component: lazy(() => import("@/components/reports/OutOfBalance")),
   },
   {
-    slug: "item-similarity",
-    name: "Item Similarity",
-    component: lazy(() => import("@/components/reports/ItemSimilarity")),
-  },
-  {
     slug: "item-cost-over-time",
     name: "Item Cost Over Time",
     component: lazy(() => import("@/components/reports/ItemCostOverTime")),
