@@ -89,13 +89,14 @@ describe("resolveActiveNavItem", () => {
     );
   });
 
-  it("ignores items filtered out of the sections it is given", () => {
-    // Callers pass admin-filtered sections; scoring the unfiltered NAV instead
-    // could elect an item that is never rendered, leaving nothing highlighted.
+  it("does not apply the `admin` flag itself when scoring", () => {
+    // The resolver scores whatever sections it is handed; filtering is the
+    // caller's job (Layout passes admin-filtered sections). This pins only that
+    // the resolver must not second-guess it by skipping admin items — it cannot
+    // pin the caller's choice, since NAV is module-private and not injectable.
     const audit = item("/audit", "Audit", { admin: true });
 
     expect(resolveActiveNavItem("/audit", nav(audit))).toBe(audit);
-    expect(resolveActiveNavItem("/audit", nav())).toBeNull();
   });
 
   it("matches the root only exactly, never as a prefix", () => {

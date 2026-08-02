@@ -17,13 +17,17 @@ export interface NavSection {
 /**
  * How strongly `item` claims `pathname`. `0` means "no claim"; higher wins.
  *
- * Scoring is `matchedLength * 4` so a longer (more specific) path always beats a
- * shorter one. The `+ 2` exact bonus and `- 1` alias penalty are tie-guards: two
- * bases that both match the same pathname and have equal length must be the same
- * string, and any length difference already moves the score by at least 4, so
- * neither adjustment can flip a length ordering. They only decide between two
- * items declaring the *same* base — one as its `to`, another as an alias — where
- * the item's own `to` should win.
+ * Scoring is `matchedLength * 2` so a longer (more specific) path always beats a
+ * shorter one; the `- 1` alias penalty then breaks the only tie that can actually
+ * occur. Two bases that both match the same pathname and have equal length must
+ * be the identical string, so the sole way to tie is two items declaring the same
+ * base — one as its `to`, the other as an alias — and there the item's own `to`
+ * should win. A length difference already moves the score by at least 2, so the
+ * penalty can never flip a length ordering.
+ *
+ * (An exact-match bonus was tried here and removed: an exact match's base *is* the
+ * whole pathname, so it is strictly longer than any prefix match's base and
+ * already wins on length. The bonus could never discriminate.)
  *
  * Matching is case-insensitive. React Router compiles route paths with the `i`
  * flag unless a route sets `caseSensitive`, and none of ours do, so `/RECEIPTS`
@@ -41,10 +45,9 @@ export function matchStrength(pathname: string, item: NavItem): number {
     const base = lowered.endsWith("/") ? lowered.slice(0, -1) : lowered;
     if (base === "") return;
 
-    let strength: number;
-    if (path === base) strength = base.length * 4 + 2;
-    else if (path.startsWith(base + "/")) strength = base.length * 4;
-    else return;
+    if (path !== base && !path.startsWith(base + "/")) return;
+
+    let strength = base.length * 2;
 
     if (isAlias) strength -= 1;
     if (strength > best) best = strength;
