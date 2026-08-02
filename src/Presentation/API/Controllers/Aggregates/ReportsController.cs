@@ -16,6 +16,22 @@ namespace API.Controllers.Aggregates;
 [Authorize]
 public class ReportsController(IMediator mediator) : ControllerBase
 {
+	[HttpGet("health-summary")]
+	[EndpointSummary("Get data-quality health summary")]
+	[EndpointDescription("Returns headline counts for the data-quality reports so the reports hub can show at a glance whether anything needs attention: out-of-balance receipts, duplicate receipt groups (matched on date + location), and uncategorized receipt items. Backed by COUNT queries only — no report rows are returned.")]
+	public async Task<Ok<ReportsHealthSummaryResponse>> GetHealthSummary(CancellationToken cancellationToken)
+	{
+		GetReportsHealthSummaryQuery query = new();
+		AppReports.ReportsHealthSummaryResult result = await mediator.Send(query, cancellationToken);
+
+		return TypedResults.Ok(new ReportsHealthSummaryResponse
+		{
+			OutOfBalanceCount = result.OutOfBalanceCount,
+			DuplicateGroupCount = result.DuplicateGroupCount,
+			UncategorizedItemCount = result.UncategorizedItemCount
+		});
+	}
+
 	[HttpGet("out-of-balance")]
 	[EndpointSummary("Get out-of-balance receipts report")]
 	[EndpointDescription("Returns all receipts where item subtotal + tax + adjustments does not equal the transaction total.")]

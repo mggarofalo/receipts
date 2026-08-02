@@ -655,4 +655,50 @@ public partial class ReportService(IDbContextFactory<ApplicationDbContext> conte
 
 		return new UncategorizedItemsResult(pagedItems, totalCount);
 	}
+
+	public async Task<ReportsHealthSummaryResult> GetHealthSummaryAsync(CancellationToken cancellationToken)
+	{
+		await using ApplicationDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
+
+		// Every count below is a SQL COUNT over a filtered/grouped set — no report rows are
+		// materialized. The reports hub polls this on every visit, so it must stay cheap
+		// (RECEIPTS-839).
+
+		// Mirrors the GetOutOfBalanceAsync predicate: expected (items + tax + adjustments)
+		// != recorded transaction total.
+		int outOfBalanceCount = await (from r in context.Receipts.AsNoTracking()
+									   where r.DeletedAt == null
+									   let itemSubtotal = context.ReceiptItems
+										   .Where(ri => ri.ReceiptId == r.Id && ri.DeletedAt == null)
+										   .Sum(ri => (decimal?)ri.TotalAmount) ?? 0m
+									   let adjustmentTotal = context.Adjustments
+										   .Where(a => a.ReceiptId == r.Id && a.DeletedAt == null)
+										   .Sum(a => (decimal?)a.Amount) ?? 0m
+									   let transactionTotal = context.Transactions
+										   .Where(t => t.ReceiptId == r.Id && t.DeletedAt == null)
+										   .Sum(t => (decimal?)t.Amount) ?? 0m
+									   where itemSubtotal + r.TaxAmount + adjustmentTotal != transactionTotal
+									   select r.Id)
+			.CountAsync(cancellationToken);
+
+		// Matches the duplicate-detection report's default mode (matchOn=dateAndLocation,
+		// locationTolerance=exact), which is the only variant expressible as a single GROUP
+		// BY ... HAVING. The tolerance-based modes need in-memory clustering and are far too
+		// expensive for a badge count.
+		int duplicateGroupCount = await context.Receipts.AsNoTracking()
+			.Where(r => r.DeletedAt == null)
+			.GroupBy(r => new { r.Date, r.Location })
+			.Where(g => g.Count() > 1)
+			.Select(g => g.Key)
+			.CountAsync(cancellationToken);
+
+		int uncategorizedItemCount = await context.ReceiptItems.AsNoTracking()
+			.Where(ri => ri.DeletedAt == null && ri.Category == "Uncategorized")
+			.CountAsync(cancellationToken);
+
+		return new ReportsHealthSummaryResult(
+			outOfBalanceCount,
+			duplicateGroupCount,
+			uncategorizedItemCount);
+	}
 }
