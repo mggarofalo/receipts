@@ -37,6 +37,19 @@ describe("useBreadcrumbs", () => {
     ]);
   });
 
+  it("handles nested known route like /admin/normalized-descriptions without falling back to an intermediate /admin segment", () => {
+    const { result } = renderHook(() => useBreadcrumbs(), {
+      wrapper: createWrapper("/admin/normalized-descriptions"),
+    });
+    expect(result.current).toEqual([
+      { label: "Home", path: "/" },
+      {
+        label: "Normalized Descriptions",
+        path: "/admin/normalized-descriptions",
+      },
+    ]);
+  });
+
   it("builds segments for unknown paths with title casing", () => {
     const { result } = renderHook(() => useBreadcrumbs(), {
       wrapper: createWrapper("/foo/bar"),

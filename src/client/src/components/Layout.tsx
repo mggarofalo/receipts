@@ -99,6 +99,12 @@ const NAV: readonly NavSection[] = [
       { to: "/audit", label: "Audit", icon: Icon.Clock, admin: true },
       { to: "/trash", label: "Trash", icon: Icon.Trash, admin: true },
       { to: "/admin/backup", label: "Backup", icon: Icon.Upload, admin: true },
+      {
+        to: "/admin/normalized-descriptions",
+        label: "Normalized Descriptions",
+        icon: Icon.Tag,
+        admin: true,
+      },
     ],
   },
 ];
