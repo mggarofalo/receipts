@@ -73,7 +73,6 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 	public virtual DbSet<NormalizedDescriptionEntity> NormalizedDescriptions { get; set; } = null!;
 	public virtual DbSet<NormalizedDescriptionSettingsEntity> NormalizedDescriptionSettings { get; set; } = null!;
 	public virtual DbSet<DistinctDescriptionEntity> DistinctDescriptions { get; set; } = null!;
-	public virtual DbSet<ItemSimilarityEdgeEntity> ItemSimilarityEdges { get; set; } = null!;
 	public virtual DbSet<AuditLogEntity> AuditLogs { get; set; } = null!;
 	public virtual DbSet<AuthAuditLogEntity> AuthAuditLogs { get; set; } = null!;
 	public virtual DbSet<SeedHistoryEntry> SeedHistory { get; set; } = null!;
@@ -441,7 +440,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 		// per API request. The service stamps LastUsedAt via ExecuteUpdate (which bypasses
 		// the change tracker and this interceptor entirely); this exclusion is belt-and-braces
 		// so any future tracked write to an ApiKey (create/revoke) also stays out of the log.
-		HashSet<Type> excludedTypes = [typeof(AuditLogEntity), typeof(AuthAuditLogEntity), typeof(SeedHistoryEntry), typeof(YnabSyncRecordEntity), typeof(YnabSelectedBudgetEntity), typeof(YnabAccountMappingEntity), typeof(YnabCategoryMappingEntity), typeof(YnabServerKnowledgeEntity), typeof(YnabSyncEventEntity), typeof(DistinctDescriptionEntity), typeof(ItemSimilarityEdgeEntity), typeof(ApiKeyEntity)];
+		HashSet<Type> excludedTypes = [typeof(AuditLogEntity), typeof(AuthAuditLogEntity), typeof(SeedHistoryEntry), typeof(YnabSyncRecordEntity), typeof(YnabSelectedBudgetEntity), typeof(YnabAccountMappingEntity), typeof(YnabCategoryMappingEntity), typeof(YnabServerKnowledgeEntity), typeof(YnabSyncEventEntity), typeof(DistinctDescriptionEntity), typeof(ApiKeyEntity)];
 		List<AuditEntry> auditEntries = [];
 		DateTimeOffset now = DateTimeOffset.UtcNow;
 

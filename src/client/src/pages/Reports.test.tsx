@@ -28,12 +28,6 @@ vi.mock("@/components/reports/OutOfBalance", () => ({
   default: () => <div data-testid="report-out-of-balance">Out of Balance</div>,
 }));
 
-vi.mock("@/components/reports/ItemSimilarity", () => ({
-  default: () => (
-    <div data-testid="report-item-similarity">Item Similarity</div>
-  ),
-}));
-
 vi.mock("@/components/reports/ItemCostOverTime", () => ({
   default: () => (
     <div data-testid="report-item-cost-over-time">Item Cost Over Time</div>
@@ -119,10 +113,10 @@ describe("Reports", () => {
 
   it("selects the report specified by query param", async () => {
     renderWithProviders(<Reports />, {
-      route: "/reports?report=item-similarity",
+      route: "/reports?report=item-cost-over-time",
     });
     expect(
-      await screen.findByTestId("report-item-similarity"),
+      await screen.findByTestId("report-item-cost-over-time"),
     ).toBeInTheDocument();
   });
 
@@ -155,7 +149,7 @@ describe("Reports", () => {
   });
 
   it("exports REPORTS config with correct number of reports", () => {
-    expect(REPORTS).toHaveLength(9);
+    expect(REPORTS).toHaveLength(8);
   });
 
   it("exports DEFAULT_REPORT as out-of-balance", () => {

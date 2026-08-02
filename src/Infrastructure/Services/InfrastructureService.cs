@@ -13,7 +13,6 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -236,22 +235,10 @@ public static class InfrastructureService
 		services.TryAddSingleton(TimeProvider.System);
 
 		services.AddSingleton<IDescriptionChangeSignal, DescriptionChangeSignal>();
-		// Register the refresher as a singleton so both the hosted service and the
-		// ItemSimilarityRefresherHealthCheck see the same instance (and therefore the
-		// same consecutive-failure / last-success state).
-		services.AddSingleton<ItemSimilarityEdgeRefresher>();
-		services.AddHostedService(sp => sp.GetRequiredService<ItemSimilarityEdgeRefresher>());
 
 		// Resolver for RECEIPTS-578 — scans unresolved ReceiptItems, groups by description,
 		// and links each to a NormalizedDescription via NormalizedDescriptionService.
 		services.AddHostedService<NormalizedDescriptionResolutionService>();
-
-		services.AddHealthChecks()
-			.AddCheck<ItemSimilarityRefresherHealthCheck>(
-				"item_similarity_refresher",
-				failureStatus: HealthStatus.Unhealthy,
-				// Tagged "background" (not "ready") so stale edges don't gate traffic.
-				tags: ["background"]);
 
 		services
 			.AddSingleton<AccountMapper>()

@@ -20,7 +20,6 @@ import {
   ScrollText,
   Search,
   Shield,
-  Sparkles,
   Sun,
   Tag,
   Tags,
@@ -61,7 +60,6 @@ function goTo(path: string) {
 
 export const REPORT_COMMANDS: Array<{ slug: string; name: string }> = [
   { slug: "out-of-balance", name: "Out of Balance" },
-  { slug: "item-similarity", name: "Item Similarity" },
   { slug: "item-cost-over-time", name: "Item Cost Over Time" },
   { slug: "spending-by-location", name: "Spending by Location" },
   { slug: "category-trends", name: "Category Trends" },
@@ -371,17 +369,15 @@ export const COMMANDS: Command[] = [
     icon:
       report.slug === "duplicate-detection"
         ? ScanSearch
-        : report.slug === "item-similarity"
-          ? Sparkles
-          : report.slug === "item-cost-over-time"
-            ? TrendingUp
-            : report.slug === "uncategorized-items"
-              ? FolderTree
-              : report.slug === "spending-by-location"
-                ? Search
-                : report.slug === "out-of-balance"
-                  ? RotateCcw
-                  : BarChart3,
+        : report.slug === "item-cost-over-time"
+          ? TrendingUp
+          : report.slug === "uncategorized-items"
+            ? FolderTree
+            : report.slug === "spending-by-location"
+              ? Search
+              : report.slug === "out-of-balance"
+                ? RotateCcw
+                : BarChart3,
     keywords: ["report", "analytics", "chart"],
     run: goTo(`/reports?report=${report.slug}`),
   })),

@@ -17,10 +17,10 @@ namespace Infrastructure.Services;
 // NormalizedDescriptionService.GetOrCreateAsync exactly once and its (Id, MatchScore) is
 // written onto every row in the group.
 //
-// Signal-driven via IDescriptionChangeSignal — the same broadcast that dirties
-// ItemSimilarityEdgeRefresher also hints that new ReceiptItems may need normalization.
-// Both consumers are idempotent. This service Subscribe()s once for its OWN wake-up channel
-// so a signal can never be "stolen" by the other consumer (RECEIPTS-790).
+// Signal-driven via IDescriptionChangeSignal — a description-change broadcast hints that new
+// ReceiptItems may need normalization. Consumers are idempotent. This service Subscribe()s once
+// for its OWN wake-up channel so a signal can never be "stolen" by another consumer
+// (RECEIPTS-790).
 //
 // Errors are logged and the cycle retries next tick — we never surface exceptions past the
 // hosted-service boundary because a resolver crash would otherwise cascade into the host
