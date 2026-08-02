@@ -65,6 +65,16 @@ const mockGroups = [
   },
 ];
 
+// Exact accessible names, not just the visible label. Every group renders a button reading
+// "Not duplicates" / "Report again" / "Undo", so the visible text alone is ambiguous to a screen
+// reader; the aria-label folds in the group's date and location to disambiguate. Asserting the
+// FULL name is what pins that — a regex on the visible words would pass even if the aria-label
+// were dropped.
+const ACCEPT_GROUP_A = "Mark Mar 1 at Store A as not duplicates";
+const REPORT_AGAIN_GROUP_A = "Report Mar 1 at Store A again";
+const ACCEPT_GROUP_C = "Mark May 9 at Store C as not duplicates";
+const UNDO_ACCEPTED_GROUP_B = "Undo acceptance of Apr 2 at Store B";
+
 const mockAcceptedGroups = [
   {
     acceptedAt: "2025-04-05T10:00:00Z",
@@ -151,6 +161,28 @@ describe("DuplicateDetection", () => {
     expect(
       screen.getByText(/failed to load duplicate detection report/i),
     ).toBeInTheDocument();
+  });
+
+  it("still shows and allows undoing accepted groups when the report fails", async () => {
+    // The accepted list is served by a separate query and is the only place to undo an acceptance.
+    // Bailing out of the whole component on a report error left a user whose report happened to
+    // fail unable to see or reverse anything they had already accepted.
+    const user = userEvent.setup();
+    const { unacceptMutate } = setupMutations();
+    setupMock({ isError: true, data: undefined });
+    setupAcceptance({ data: { groupCount: 1, groups: mockAcceptedGroups } });
+    renderWithQueryClient(<DuplicateDetection />);
+
+    expect(
+      screen.getByText(/failed to load duplicate detection report/i),
+    ).toBeInTheDocument();
+
+    const undo = acceptedSection().getByRole("button", {
+      name: UNDO_ACCEPTED_GROUP_B,
+    });
+    await user.click(undo);
+
+    expect(unacceptMutate).toHaveBeenCalledWith(["id-3", "id-4"]);
   });
 
   it("shows empty state when no duplicates found", () => {
@@ -380,10 +412,10 @@ describe("DuplicateDetection", () => {
       renderWithQueryClient(<DuplicateDetection />);
 
       expect(
-        screen.getByRole("button", { name: "Not duplicates" }),
+        screen.getByRole("button", { name: ACCEPT_GROUP_A }),
       ).toBeInTheDocument();
       expect(
-        screen.queryByRole("button", { name: "Report again" }),
+        screen.queryByRole("button", { name: REPORT_AGAIN_GROUP_A }),
       ).not.toBeInTheDocument();
       expect(screen.queryByText("Accepted")).not.toBeInTheDocument();
     });
@@ -394,7 +426,7 @@ describe("DuplicateDetection", () => {
       setupMock();
       renderWithQueryClient(<DuplicateDetection />);
 
-      await user.click(screen.getByRole("button", { name: "Not duplicates" }));
+      await user.click(screen.getByRole("button", { name: ACCEPT_GROUP_A }));
 
       expect(acceptMutate).toHaveBeenCalledWith(["id-1", "id-2"]);
     });
@@ -411,10 +443,10 @@ describe("DuplicateDetection", () => {
 
       expect(screen.getByText("Accepted")).toBeInTheDocument();
       expect(
-        screen.getByRole("button", { name: "Report again" }),
+        screen.getByRole("button", { name: REPORT_AGAIN_GROUP_A }),
       ).toBeInTheDocument();
       expect(
-        screen.queryByRole("button", { name: "Not duplicates" }),
+        screen.queryByRole("button", { name: ACCEPT_GROUP_A }),
       ).not.toBeInTheDocument();
     });
 
@@ -430,7 +462,7 @@ describe("DuplicateDetection", () => {
       });
       renderWithQueryClient(<DuplicateDetection />);
 
-      await user.click(screen.getByRole("button", { name: "Report again" }));
+      await user.click(screen.getByRole("button", { name: REPORT_AGAIN_GROUP_A }));
 
       expect(unacceptMutate).toHaveBeenCalledWith(["id-1", "id-2"]);
     });
@@ -443,7 +475,24 @@ describe("DuplicateDetection", () => {
       renderWithQueryClient(<DuplicateDetection />);
 
       expect(
-        screen.getByRole("button", { name: "Not duplicates" }),
+        screen.getByRole("button", { name: ACCEPT_GROUP_A }),
+      ).toBeDisabled();
+    });
+
+    it("matches the in-flight group regardless of receipt-id order", () => {
+      // groupKey sorts before joining, so the identity of a group does not depend on the order the
+      // server happened to return its receipts in. Without the sort, the key built from the rendered
+      // group ("id-1|id-2") would not match the key built from the mutation's variables
+      // ("id-2|id-1"), and the button would never show as pending. Drop the .sort() and this fails.
+      setupMock();
+      mockAcceptHook.mockReturnValue(
+        // Reversed relative to the order the group renders in.
+        mockMutationResult({ isPending: true, variables: ["id-2", "id-1"] }),
+      );
+      renderWithQueryClient(<DuplicateDetection />);
+
+      expect(
+        screen.getByRole("button", { name: ACCEPT_GROUP_A }),
       ).toBeDisabled();
     });
 
@@ -481,10 +530,12 @@ describe("DuplicateDetection", () => {
       );
       renderWithQueryClient(<DuplicateDetection />);
 
-      const buttons = screen.getAllByRole("button", { name: "Not duplicates" });
-      expect(buttons).toHaveLength(2);
-      expect(buttons[0]).toBeDisabled();
-      expect(buttons[1]).toBeEnabled();
+      // Each group's button carries its own accessible name, so they are addressable individually
+      // — which is the whole point of the aria-label. Only the in-flight group is disabled.
+      expect(
+        screen.getByRole("button", { name: ACCEPT_GROUP_A }),
+      ).toBeDisabled();
+      expect(screen.getByRole("button", { name: ACCEPT_GROUP_C })).toBeEnabled();
     });
   });
 
@@ -533,7 +584,7 @@ describe("DuplicateDetection", () => {
       });
       renderWithQueryClient(<DuplicateDetection />);
 
-      await user.click(acceptedSection().getByRole("button", { name: "Undo" }));
+      await user.click(acceptedSection().getByRole("button", { name: UNDO_ACCEPTED_GROUP_B }));
 
       expect(unacceptMutate).toHaveBeenCalledWith(["id-3", "id-4"]);
     });
@@ -549,7 +600,7 @@ describe("DuplicateDetection", () => {
       renderWithQueryClient(<DuplicateDetection />);
 
       expect(
-        acceptedSection().getByRole("button", { name: "Undo" }),
+        acceptedSection().getByRole("button", { name: UNDO_ACCEPTED_GROUP_B }),
       ).toBeDisabled();
     });
 
@@ -566,8 +617,11 @@ describe("DuplicateDetection", () => {
       });
       renderWithQueryClient(<DuplicateDetection />);
 
+      // With no receipts there is nothing to name the group by, so describeGroup falls back.
       expect(
-        acceptedSection().getByRole("button", { name: "Undo" }),
+        acceptedSection().getByRole("button", {
+          name: "Undo acceptance of this group",
+        }),
       ).toBeEnabled();
     });
 
@@ -582,7 +636,7 @@ describe("DuplicateDetection", () => {
       renderWithQueryClient(<DuplicateDetection />);
 
       expect(
-        acceptedSection().getByRole("button", { name: "Undo" }),
+        acceptedSection().getByRole("button", { name: UNDO_ACCEPTED_GROUP_B }),
       ).toBeEnabled();
     });
 

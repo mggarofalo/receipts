@@ -79,6 +79,18 @@ function isPendingGroup(pendingKey: string | null, key: string | null): boolean 
   return key !== null && pendingKey === key;
 }
 
+/**
+ * Human-readable name for a group, used to disambiguate the accessible names of the per-group
+ * buttons. Without it every group repeats the same "Undo" / "Not duplicates" label, which a screen
+ * reader surfaces as a list of identical controls (WCAG 2.4.6, 4.1.2).
+ */
+function describeGroup(receipts: readonly DuplicateReceiptView[]): string {
+  const first = receipts[0];
+  return first
+    ? `${formatDate(first.date)} at ${first.location}`
+    : "this group";
+}
+
 const MATCH_ON_VALUES = [
   "dateAndLocation",
   "dateAndTotal",
@@ -192,16 +204,9 @@ export default function DuplicateDetection() {
     );
   }
 
-  if (isError) {
-    return (
-      <div className="rounded-lg border border-destructive p-6 text-center">
-        <p className="text-destructive">
-          Failed to load duplicate detection report.
-        </p>
-      </div>
-    );
-  }
-
+  // A failed report is NOT an early return. The accepted-groups section is served by a separate
+  // query, and it is the only place to undo an acceptance — bailing out here left a user whose
+  // report happened to fail unable to see or reverse anything they had already accepted.
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-4 rounded-lg border p-4">
@@ -276,7 +281,13 @@ export default function DuplicateDetection() {
         </div>
       </div>
 
-      {!data || data.groupCount === 0 ? (
+      {isError ? (
+        <div className="rounded-lg border border-destructive p-6 text-center">
+          <p className="text-destructive">
+            Failed to load duplicate detection report.
+          </p>
+        </div>
+      ) : !data || data.groupCount === 0 ? (
         <div className="rounded-lg border p-6 text-center">
           <h2 className="card-title">No Duplicates Found</h2>
           <p className="mt-2 text-muted-foreground">
@@ -334,6 +345,7 @@ export default function DuplicateDetection() {
                           <Button
                             variant="outline"
                             size="sm"
+                            aria-label={`Report ${describeGroup(group.receipts)} again`}
                             disabled={isPendingGroup(pendingUnacceptKey, key)}
                             onClick={() => unacceptGroup.mutate(receiptIds)}
                           >
@@ -343,6 +355,7 @@ export default function DuplicateDetection() {
                           <Button
                             variant="outline"
                             size="sm"
+                            aria-label={`Mark ${describeGroup(group.receipts)} as not duplicates`}
                             disabled={isPendingGroup(pendingAcceptKey, key)}
                             onClick={() => acceptGroup.mutate(receiptIds)}
                           >
@@ -384,7 +397,7 @@ export default function DuplicateDetection() {
                                   {receipt.location}
                                 </p>
                                 <p className="text-sm text-muted-foreground">
-                                  {receipt.date}
+                                  {formatDate(receipt.date)}
                                 </p>
                                 <p
                                   className="text-sm font-medium"
@@ -534,7 +547,7 @@ function AcceptedDuplicatesSection({
                   <ul className="text-sm text-muted-foreground">
                     {group.receipts.map((receipt) => (
                       <li key={receipt.receiptId} className="truncate">
-                        {receipt.date} — {receipt.location} —{" "}
+                        {formatDate(receipt.date)} — {receipt.location} —{" "}
                         {formatCurrency(Number(receipt.transactionTotal ?? 0))}
                       </li>
                     ))}
@@ -546,6 +559,7 @@ function AcceptedDuplicatesSection({
                 <Button
                   variant="outline"
                   size="sm"
+                  aria-label={`Undo acceptance of ${describeGroup(group.receipts)}`}
                   disabled={isPendingGroup(pendingUndoKey, key)}
                   onClick={() => onUndo(receiptIds)}
                 >
