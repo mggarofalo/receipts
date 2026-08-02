@@ -35,18 +35,24 @@ export function usePromoteToTemplate() {
     ): Promise<PromoteToTemplateResult> => {
       const name = input.name.trim();
 
-      const { data: similar, error: similarError } = await client.GET(
-        "/api/item-templates/similar",
-        { params: { query: { q: name, limit: 5, threshold: 0.3 } } },
-      );
-      if (similarError) throw similarError;
+      // The /similar endpoint enforces a 2-character minimum on the query,
+      // but template names themselves have no such minimum. Skip the
+      // duplicate check for short names rather than let a validation error
+      // block creation entirely.
+      if (name.length >= 2) {
+        const { data: similar, error: similarError } = await client.GET(
+          "/api/item-templates/similar",
+          { params: { query: { q: name, limit: 5, threshold: 0.3 } } },
+        );
+        if (similarError) throw similarError;
 
-      const isDuplicate = (similar ?? []).some(
-        (item) =>
-          item.source === "template" &&
-          item.name.toLowerCase() === name.toLowerCase(),
-      );
-      if (isDuplicate) return { created: false, name };
+        const isDuplicate = (similar ?? []).some(
+          (item) =>
+            item.source === "template" &&
+            item.name.toLowerCase() === name.toLowerCase(),
+        );
+        if (isDuplicate) return { created: false, name };
+      }
 
       const { error } = await client.POST("/api/item-templates", {
         body: {

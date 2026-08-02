@@ -512,5 +512,46 @@ describe("LineItemsSection", () => {
 
       expect(mutate).not.toHaveBeenCalled();
     });
+
+    it("disables the line-item promote button while a promotion is pending", () => {
+      vi.mocked(usePromoteToTemplate).mockReturnValue(
+        mockMutationResult({ mutate: vi.fn(), isPending: true, status: "pending" }),
+      );
+      const items: ReceiptLineItem[] = [
+        {
+          id: "1",
+          receiptItemCode: "",
+          description: "Milk",
+          quantity: 1,
+          unitPrice: 3.5,
+          category: "Food",
+          subcategory: "",
+        },
+      ];
+      renderWithProviders(
+        <LineItemsSection {...defaultProps} items={items} />,
+      );
+
+      expect(
+        screen.getByRole("button", { name: "Save as template" }),
+      ).toBeDisabled();
+    });
+
+    it("disables the popover promote button while a promotion is pending", async () => {
+      const user = userEvent.setup();
+      mockSuggestions();
+      vi.mocked(usePromoteToTemplate).mockReturnValue(
+        mockMutationResult({ mutate: vi.fn(), isPending: true, status: "pending" }),
+      );
+      renderWithProviders(<LineItemsSection {...defaultProps} />);
+
+      await user.type(screen.getByPlaceholderText("Item description"), "mi");
+
+      expect(
+        await screen.findByRole("button", {
+          name: 'Save "Milk (gallon)" as template',
+        }),
+      ).toBeDisabled();
+    });
   });
 });

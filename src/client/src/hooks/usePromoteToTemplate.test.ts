@@ -296,4 +296,28 @@ describe("usePromoteToTemplate", () => {
       }),
     );
   });
+
+  it("skips the duplicate check and creates directly when the name is shorter than 2 characters", async () => {
+    // GET /api/item-templates/similar enforces a 2-character minimum on the
+    // query and would error on a 1-character name; template names have no
+    // such minimum, so short names must bypass the duplicate check.
+    (client.POST as Mock).mockResolvedValue({
+      data: { id: "11111111-1111-1111-1111-111111111111", name: "A" },
+      error: undefined,
+    });
+
+    const { result } = renderHook(() => usePromoteToTemplate(), {
+      wrapper: createWrapper(),
+    });
+
+    result.current.mutate({ name: "A" });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(client.GET).not.toHaveBeenCalled();
+    expect(client.POST).toHaveBeenCalledWith(
+      "/api/item-templates",
+      expect.objectContaining({ body: expect.objectContaining({ name: "A" }) }),
+    );
+    expect(result.current.data).toEqual({ created: true, name: "A" });
+  });
 });

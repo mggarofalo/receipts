@@ -699,6 +699,7 @@ export function LineItemsSection({ items, onChange, location }: LineItemsSection
                                         size="icon"
                                         className="h-6 w-6 shrink-0"
                                         aria-label={`Save "${item.name}" as template`}
+                                        disabled={isPromoting}
                                         onPointerDown={(e) => {
                                           // Keep the press from stealing focus
                                           // or registering on the cmdk item.
@@ -1001,6 +1002,7 @@ export function LineItemsSection({ items, onChange, location }: LineItemsSection
                           variant="ghost"
                           size="icon"
                           onClick={() => promoteLineItem(item)}
+                          disabled={isPromoting}
                           aria-label="Save as template"
                         >
                           <BookmarkPlus className="h-4 w-4" />
