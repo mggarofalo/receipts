@@ -453,6 +453,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/item-templates/history-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get suggested item templates from receipt history
+         * @description Returns recurring receipt-item descriptions that do not yet have a matching
+         *     item template, together with defaults suggested from purchase history
+         *     (category/subcategory, unit price, item code). Ordered by occurrence count
+         *     descending, then name ascending.
+         */
+        get: operations["GetItemTemplateHistoryCandidates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/item-templates/category-suggestions": {
         parameters: {
             query?: never;
@@ -2907,6 +2930,40 @@ export interface components {
             defaultUnitPrice?: number | null;
             defaultItemCode?: string | null;
         };
+        ItemTemplateHistoryCandidateResponse: {
+            /** @description Description text as it appeared on the most recent receipt */
+            name: string;
+            /**
+             * Format: int32
+             * @description Number of receipt items sharing this description (case-insensitive)
+             */
+            occurrenceCount: number;
+            /**
+             * Format: date
+             * @description Date of the most recent receipt containing this description
+             */
+            lastPurchasedAt: string;
+            /** @description Most frequently used category for this description */
+            suggestedCategory?: string | null;
+            /** @description Subcategory paired with the most frequently used category */
+            suggestedSubcategory?: string | null;
+            /**
+             * Format: double
+             * @description Unit price from the most recent receipt containing this description
+             */
+            suggestedUnitPrice?: number | null;
+            /** @description Most frequently used non-null item code for this description */
+            suggestedItemCode?: string | null;
+        };
+        ItemTemplateHistoryCandidateListResponse: {
+            data: components["schemas"]["ItemTemplateHistoryCandidateResponse"][];
+            /** Format: int32 */
+            total: number;
+            /** Format: int32 */
+            offset: number;
+            /** Format: int32 */
+            limit: number;
+        };
         CategoryRecommendationResponse: {
             category: string;
             subcategory?: string | null;
@@ -5267,6 +5324,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SimilarItemResponse"][];
+                };
+            };
+        };
+    };
+    GetItemTemplateHistoryCandidates: {
+        parameters: {
+            query?: {
+                offset?: components["parameters"]["Offset"];
+                limit?: components["parameters"]["Limit"];
+                /** @description Minimum number of receipt-item occurrences required for a candidate */
+                minCount?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemTemplateHistoryCandidateListResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
                 };
             };
         };
