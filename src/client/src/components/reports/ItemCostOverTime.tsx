@@ -288,11 +288,7 @@ export default function ItemCostOverTime() {
           </Button>
         </div>
 
-        <DateRangeSelector
-          value={dateRange}
-          onChange={handleDateRangeChange}
-          initialPreset="12M"
-        />
+        <DateRangeSelector value={dateRange} onChange={handleDateRangeChange} />
       </div>
 
       {selectedItem && (

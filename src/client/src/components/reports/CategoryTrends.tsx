@@ -136,11 +136,7 @@ export default function CategoryTrends() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <DateRangeSelector
-          value={dateRange}
-          onChange={handleDateRangeChange}
-          initialPreset="12M"
-        />
+        <DateRangeSelector value={dateRange} onChange={handleDateRangeChange} />
       </div>
 
       <ChartCard

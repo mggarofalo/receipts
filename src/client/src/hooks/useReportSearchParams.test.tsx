@@ -79,20 +79,32 @@ describe("useReportSearchParams", () => {
     expect(result.current[0].foo).toBe("default-foo");
   });
 
-  it("stringifies numeric and boolean patch values", () => {
+  it("stringifies numeric and boolean patch values", async () => {
+    const user = userEvent.setup();
+
     function Harness() {
       const [, update] = useReportSearchParams(parseTestValues);
       const [searchParams] = useSearchParams();
       return (
         <div>
           <span data-testid="raw-count">{searchParams.get("count")}</span>
-          <button onClick={() => update({ count: 7 })}>update</button>
+          <span data-testid="raw-flag">{searchParams.get("flag")}</span>
+          <button
+            onClick={() => update({ count: 7, flag: true })}
+          >
+            update
+          </button>
         </div>
       );
     }
 
     render(<Harness />, { wrapper: createWrapper() });
     expect(screen.getByTestId("raw-count")).toBeEmptyDOMElement();
+
+    await user.click(screen.getByRole("button", { name: "update" }));
+
+    expect(screen.getByTestId("raw-count")).toHaveTextContent("7");
+    expect(screen.getByTestId("raw-flag")).toHaveTextContent("true");
   });
 
   it("preserves unrelated search params (e.g. the report slug) across an update", async () => {
@@ -142,7 +154,7 @@ describe("useReportSearchParams", () => {
     expect(screen.getByTestId("nav-type")).toHaveTextContent("REPLACE");
   });
 
-  it("returns a referentially stable update function across renders", () => {
+  it("returns a referentially stable update function across renders with no URL change", () => {
     const { result, rerender } = renderHook(
       () => useReportSearchParams(parseTestValues),
       { wrapper: createWrapper("/?foo=bar") },
@@ -150,5 +162,26 @@ describe("useReportSearchParams", () => {
     const firstUpdate = result.current[1];
     rerender();
     expect(result.current[1]).toBe(firstUpdate);
+  });
+
+  it("update's identity changes after a call that changes the URL (react-router's setSearchParams contract)", () => {
+    // useReportSearchParams wraps setSearchParams in useCallback, but
+    // react-router's own setSearchParams re-derives its identity from the
+    // current searchParams — so `update` is only stable while the URL is
+    // unchanged, not across an update() call that changes it. No consumer
+    // in this codebase depends on `update` staying stable across a URL
+    // change (no Effect lists it as a dependency), but this test pins the
+    // actual contract so a future caller doesn't assume more than it gets.
+    const { result } = renderHook(
+      () => useReportSearchParams(parseTestValues),
+      { wrapper: createWrapper("/?foo=bar") },
+    );
+    const firstUpdate = result.current[1];
+
+    act(() => {
+      result.current[1]({ foo: "baz" });
+    });
+
+    expect(result.current[1]).not.toBe(firstUpdate);
   });
 });

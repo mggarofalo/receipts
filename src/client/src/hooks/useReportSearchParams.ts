@@ -22,6 +22,14 @@ export type ReportParamPatch = Record<
  * the report picker's own navigation and full page loads create new
  * entries. Pass `null`/`undefined` for a key to remove it (reverting that
  * field to whatever `parse` treats as its default).
+ *
+ * `update`'s reference is stable ONLY while the URL search string doesn't
+ * change (it's `useCallback`-wrapped, but its one dependency — react-router's
+ * `setSearchParams` — re-derives its own identity from the current
+ * `searchParams`). Calling `update()` therefore gives `update` a new
+ * identity on the next render. Nothing in this codebase depends on `update`
+ * staying stable across a URL change (no Effect lists it as a dependency),
+ * but don't build one without accounting for this.
  */
 export function useReportSearchParams<T>(
   parse: (params: URLSearchParams) => T,

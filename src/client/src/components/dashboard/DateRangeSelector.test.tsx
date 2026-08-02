@@ -1,8 +1,21 @@
 import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { format, subMonths } from "date-fns";
 import { renderWithProviders } from "@/test/test-utils";
 import { DateRangeSelector } from "./DateRangeSelector";
+import { matchPreset } from "./date-range-presets";
 import type { DateRange } from "@/hooks/useDashboard";
+
+const ALL_PRESET_BUTTON_LABELS = [
+  "1M",
+  "3M",
+  "1Y",
+  "5Y",
+  "MTD",
+  "QTD",
+  "YTD",
+  "All",
+];
 
 vi.mock("@/hooks/useDashboard", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/hooks/useDashboard")>();
@@ -100,33 +113,124 @@ describe("DateRangeSelector", () => {
     );
   });
 
-  it("defaults to the 1M preset highlighted when initialPreset is not passed", () => {
+  it("highlights the preset button matching the current value (RECEIPTS-840)", () => {
+    const onChange = vi.fn();
+    const oneYearRange: DateRange = {
+      startDate: format(subMonths(new Date(), 12), "yyyy-MM-dd"),
+      endDate: format(new Date(), "yyyy-MM-dd"),
+    };
+    renderWithProviders(
+      <DateRangeSelector value={oneYearRange} onChange={onChange} />,
+    );
+    expect(screen.getByRole("button", { name: "1Y" })).toHaveAttribute(
+      "data-variant",
+      "default",
+    );
+    expect(screen.getByRole("button", { name: "1M" })).toHaveAttribute(
+      "data-variant",
+      "outline",
+    );
+  });
+
+  it("highlights All when the value has no dates", () => {
+    const onChange = vi.fn();
+    renderWithProviders(
+      <DateRangeSelector
+        value={{ startDate: undefined, endDate: undefined }}
+        onChange={onChange}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "All" })).toHaveAttribute(
+      "data-variant",
+      "default",
+    );
+  });
+
+  it("highlights no preset and shows the literal range for a custom, non-matching value", () => {
     const onChange = vi.fn();
     renderWithProviders(
       <DateRangeSelector value={defaultRange} onChange={onChange} />,
     );
-    expect(
-      screen.getByRole("button", { name: "1M" }),
-    ).toHaveAttribute("data-variant", "default");
-    expect(
-      screen.getByRole("button", { name: "1Y" }),
-    ).toHaveAttribute("data-variant", "outline");
+    for (const label of ALL_PRESET_BUTTON_LABELS) {
+      expect(screen.getByRole("button", { name: label })).toHaveAttribute(
+        "data-variant",
+        "outline",
+      );
+    }
+    expect(screen.getByText("2024-01-01 - 2024-01-31")).toBeInTheDocument();
   });
 
-  it("highlights the preset passed via initialPreset (RECEIPTS-840)", () => {
+  it("re-syncs the highlighted preset when the value prop changes externally", () => {
+    // Regression guard: activePreset used to be seeded once from a static
+    // initialPreset prop and never resynced, so a value change originating
+    // outside this component (URL search params, browser back/forward, a
+    // shared link) left the highlighted preset lying about the applied
+    // range. See PR #639 code review.
     const onChange = vi.fn();
-    renderWithProviders(
+    const { rerender } = renderWithProviders(
       <DateRangeSelector
-        value={defaultRange}
+        value={{ startDate: undefined, endDate: undefined }}
         onChange={onChange}
-        initialPreset="12M"
       />,
     );
+    expect(screen.getByRole("button", { name: "All" })).toHaveAttribute(
+      "data-variant",
+      "default",
+    );
+
+    const oneYearRange: DateRange = {
+      startDate: format(subMonths(new Date(), 12), "yyyy-MM-dd"),
+      endDate: format(new Date(), "yyyy-MM-dd"),
+    };
+    rerender(<DateRangeSelector value={oneYearRange} onChange={onChange} />);
+
+    expect(screen.getByRole("button", { name: "1Y" })).toHaveAttribute(
+      "data-variant",
+      "default",
+    );
+    expect(screen.getByRole("button", { name: "All" })).toHaveAttribute(
+      "data-variant",
+      "outline",
+    );
+  });
+});
+
+describe("matchPreset", () => {
+  it("matches an open-ended range to 'all'", () => {
     expect(
-      screen.getByRole("button", { name: "1Y" }),
-    ).toHaveAttribute("data-variant", "default");
+      matchPreset({ startDate: undefined, endDate: undefined }),
+    ).toEqual({ preset: "all", year: null });
+  });
+
+  it("matches a relative preset's current computed range", () => {
+    const range: DateRange = {
+      startDate: format(subMonths(new Date(), 3), "yyyy-MM-dd"),
+      endDate: format(new Date(), "yyyy-MM-dd"),
+    };
+    expect(matchPreset(range)).toEqual({ preset: "3M", year: null });
+  });
+
+  it("matches a full-calendar-year range to 'year'", () => {
     expect(
-      screen.getByRole("button", { name: "1M" }),
-    ).toHaveAttribute("data-variant", "outline");
+      matchPreset({ startDate: "2021-01-01", endDate: "2021-12-31" }),
+    ).toEqual({ preset: "year", year: 2021 });
+  });
+
+  it("does not match a partial year range", () => {
+    expect(
+      matchPreset({ startDate: "2021-01-01", endDate: "2021-06-30" }),
+    ).toEqual({ preset: null, year: null });
+  });
+
+  it("returns null for a range that matches no preset", () => {
+    expect(
+      matchPreset({ startDate: "2024-01-01", endDate: "2024-01-31" }),
+    ).toEqual({ preset: null, year: null });
+  });
+
+  it("returns null when only one side of the range is set (malformed)", () => {
+    expect(
+      matchPreset({ startDate: "2024-01-01", endDate: undefined }),
+    ).toEqual({ preset: null, year: null });
   });
 });

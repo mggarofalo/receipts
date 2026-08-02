@@ -108,7 +108,6 @@ export default function SpendingByNormalizedDescription() {
           <DateRangeSelector
             value={dateRange}
             onChange={handleDateRangeChange}
-            initialPreset="12M"
           />
         </div>
         <div className="rounded-lg border p-6 text-center">
@@ -146,7 +145,6 @@ export default function SpendingByNormalizedDescription() {
           <DateRangeSelector
             value={dateRange}
             onChange={handleDateRangeChange}
-            initialPreset="12M"
           />
         </div>
       </div>
