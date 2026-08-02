@@ -8,9 +8,11 @@ import {
 import { useAllCategories } from "@/hooks/useCategories";
 import { useAllSubcategoriesByCategoryId } from "@/hooks/useSubcategories";
 import { useCsvExport } from "@/hooks/useCsvExport";
+import { useReportSearchParams } from "@/hooks/useReportSearchParams";
 import { csvFilename } from "@/lib/export-csv";
 import { fetchAllReportPages } from "@/lib/fetch-all-report-pages";
 import { formatCurrency } from "@/lib/format";
+import { parseEnumParam, parsePositiveIntParam } from "@/lib/report-params";
 import {
   Table,
   TableBody,
@@ -30,6 +32,33 @@ import { toast } from "sonner";
 type SortColumn = "description" | "total" | "itemCode";
 type SortDirection = "asc" | "desc";
 
+const SORT_COLUMNS = ["description", "total", "itemCode"] as const;
+const SORT_DIRECTIONS = ["asc", "desc"] as const;
+
+interface UncategorizedItemsUrlParams {
+  sortBy: SortColumn;
+  sortDirection: SortDirection;
+  page: number;
+}
+
+function parseUncategorizedItemsParams(
+  searchParams: URLSearchParams,
+): UncategorizedItemsUrlParams {
+  return {
+    sortBy: parseEnumParam(
+      searchParams.get("sortBy"),
+      SORT_COLUMNS,
+      "description",
+    ),
+    sortDirection: parseEnumParam(
+      searchParams.get("sortDirection"),
+      SORT_DIRECTIONS,
+      "asc",
+    ),
+    page: parsePositiveIntParam(searchParams.get("page"), 1),
+  };
+}
+
 interface UncategorizedItemData {
   id: string;
   receiptId: string;
@@ -45,9 +74,10 @@ interface UncategorizedItemData {
 export default function UncategorizedItems() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [sortBy, setSortBy] = useState<SortColumn>("description");
-  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
-  const [page, setPage] = useState(1);
+  const [urlParams, updateParams] = useReportSearchParams(
+    parseUncategorizedItemsParams,
+  );
+  const { sortBy, sortDirection, page } = urlParams;
   const pageSize = 50;
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectedCategory, setSelectedCategory] = useState("");
@@ -191,12 +221,13 @@ export default function UncategorizedItems() {
   function handleSort(column: string) {
     const nextColumn = column as SortColumn;
     if (sortBy === nextColumn) {
-      setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
+      updateParams({
+        sortDirection: sortDirection === "asc" ? "desc" : "asc",
+        page: 1,
+      });
     } else {
-      setSortBy(nextColumn);
-      setSortDirection("asc");
+      updateParams({ sortBy: nextColumn, sortDirection: "asc", page: 1 });
     }
-    setPage(1);
   }
 
   function handleReceiptClick(e: React.MouseEvent, receiptId: string) {
@@ -403,7 +434,7 @@ export default function UncategorizedItems() {
               variant="outline"
               size="sm"
               disabled={page <= 1}
-              onClick={() => setPage((p) => p - 1)}
+              onClick={() => updateParams({ page: page - 1 })}
             >
               Previous
             </Button>
@@ -411,7 +442,7 @@ export default function UncategorizedItems() {
               variant="outline"
               size="sm"
               disabled={page >= totalPages}
-              onClick={() => setPage((p) => p + 1)}
+              onClick={() => updateParams({ page: page + 1 })}
             >
               Next
             </Button>

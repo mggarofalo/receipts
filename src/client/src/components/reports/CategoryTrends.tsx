@@ -1,9 +1,16 @@
-import { useState, useCallback, useMemo } from "react";
-import { differenceInDays, format, parseISO, subMonths } from "date-fns";
+import { useCallback, useMemo } from "react";
+import { differenceInDays, parseISO } from "date-fns";
 import { ChartCard, StackedAreaChart } from "@/components/charts";
 import { DateRangeSelector } from "@/components/dashboard/DateRangeSelector";
 import type { DateRange } from "@/hooks/useDashboard";
 import { useCategoryTrendsReport } from "@/hooks/useCategoryTrendsReport";
+import { useReportSearchParams } from "@/hooks/useReportSearchParams";
+import {
+  parseDateRangeParam,
+  parseEnumParam,
+  parseNumberEnumParam,
+  serializeDateRangeParam,
+} from "@/lib/report-params";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -15,13 +22,7 @@ import {
 
 type Granularity = "daily" | "monthly" | "quarterly" | "yearly";
 
-function getDefaultRange(): DateRange {
-  const now = new Date();
-  return {
-    startDate: format(subMonths(now, 1), "yyyy-MM-dd"),
-    endDate: format(now, "yyyy-MM-dd"),
-  };
-}
+const GRANULARITIES = ["daily", "monthly", "quarterly", "yearly"] as const;
 
 const granularityOptions: { value: Granularity; label: string }[] = [
   { value: "daily", label: "Day" },
@@ -30,7 +31,7 @@ const granularityOptions: { value: Granularity; label: string }[] = [
   { value: "yearly", label: "Year" },
 ];
 
-const topNOptions = [3, 5, 7, 10, 15];
+const topNOptions = [3, 5, 7, 10, 15] as const;
 
 function getAutoGranularity(dateRange: DateRange): Granularity {
   if (!dateRange.startDate || !dateRange.endDate) {
@@ -45,6 +46,31 @@ function getAutoGranularity(dateRange: DateRange): Granularity {
   return "yearly";
 }
 
+interface CategoryTrendsUrlParams {
+  dateRange: DateRange;
+  /** `null` means "auto" — derive from the date range (see {@link getAutoGranularity}). */
+  granularityOverride: Granularity | null;
+  topN: number;
+}
+
+const GRANULARITY_OR_AUTO = [...GRANULARITIES, "auto"] as const;
+
+function parseCategoryTrendsParams(
+  searchParams: URLSearchParams,
+): CategoryTrendsUrlParams {
+  const granularity = parseEnumParam(
+    searchParams.get("granularity"),
+    GRANULARITY_OR_AUTO,
+    "auto",
+  );
+
+  return {
+    dateRange: parseDateRangeParam(searchParams),
+    granularityOverride: granularity === "auto" ? null : granularity,
+    topN: parseNumberEnumParam(searchParams.get("topN"), topNOptions, 5),
+  };
+}
+
 function formatCompactCurrency(value: number): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -55,10 +81,10 @@ function formatCompactCurrency(value: number): string {
 }
 
 export default function CategoryTrends() {
-  const [dateRange, setDateRange] = useState<DateRange>(getDefaultRange);
-  const [granularityOverride, setGranularityOverride] =
-    useState<Granularity | null>(null);
-  const [topN, setTopN] = useState(5);
+  const [urlParams, updateParams] = useReportSearchParams(
+    parseCategoryTrendsParams,
+  );
+  const { dateRange, granularityOverride, topN } = urlParams;
 
   const autoGranularity = useMemo(
     () => getAutoGranularity(dateRange),
@@ -73,18 +99,29 @@ export default function CategoryTrends() {
     topN,
   });
 
-  const handleGranularity = useCallback((g: Granularity) => {
-    setGranularityOverride(g);
-  }, []);
+  const handleGranularity = useCallback(
+    (g: Granularity) => {
+      updateParams({ granularity: g });
+    },
+    [updateParams],
+  );
 
-  const handleTopNChange = useCallback((value: string) => {
-    setTopN(Number(value));
-  }, []);
+  const handleTopNChange = useCallback(
+    (value: string) => {
+      updateParams({ topN: Number(value) });
+    },
+    [updateParams],
+  );
 
-  const handleDateRangeChange = useCallback((range: DateRange) => {
-    setDateRange(range);
-    setGranularityOverride(null);
-  }, []);
+  const handleDateRangeChange = useCallback(
+    (range: DateRange) => {
+      updateParams({
+        ...serializeDateRangeParam(range),
+        granularity: undefined,
+      });
+    },
+    [updateParams],
+  );
 
   const categories = useMemo(() => data?.categories ?? [], [data?.categories]);
   const buckets = useMemo(
@@ -102,6 +139,7 @@ export default function CategoryTrends() {
         <DateRangeSelector
           value={dateRange}
           onChange={handleDateRangeChange}
+          initialPreset="12M"
         />
       </div>
 

@@ -99,4 +99,34 @@ describe("DateRangeSelector", () => {
       }),
     );
   });
+
+  it("defaults to the 1M preset highlighted when initialPreset is not passed", () => {
+    const onChange = vi.fn();
+    renderWithProviders(
+      <DateRangeSelector value={defaultRange} onChange={onChange} />,
+    );
+    expect(
+      screen.getByRole("button", { name: "1M" }),
+    ).toHaveAttribute("data-variant", "default");
+    expect(
+      screen.getByRole("button", { name: "1Y" }),
+    ).toHaveAttribute("data-variant", "outline");
+  });
+
+  it("highlights the preset passed via initialPreset (RECEIPTS-840)", () => {
+    const onChange = vi.fn();
+    renderWithProviders(
+      <DateRangeSelector
+        value={defaultRange}
+        onChange={onChange}
+        initialPreset="12M"
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: "1Y" }),
+    ).toHaveAttribute("data-variant", "default");
+    expect(
+      screen.getByRole("button", { name: "1M" }),
+    ).toHaveAttribute("data-variant", "outline");
+  });
 });

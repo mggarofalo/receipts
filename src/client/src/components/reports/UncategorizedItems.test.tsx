@@ -318,4 +318,35 @@ describe("UncategorizedItems", () => {
         "Bananas,,1,2,2,Fruit,receipt-2\r\n",
     );
   });
+
+  it("reads sort and page from the URL on load", () => {
+    setupMock();
+    renderWithQueryClient(<UncategorizedItems />, {
+      route: "/?sortBy=total&sortDirection=desc&page=2",
+    });
+
+    expect(mockHook).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        sortBy: "total",
+        sortDirection: "desc",
+        page: 2,
+      }),
+    );
+  });
+
+  it("falls back to defaults for malformed URL params instead of crashing", () => {
+    setupMock();
+    renderWithQueryClient(<UncategorizedItems />, {
+      route: "/?sortBy=nonsense&sortDirection=up&page=0",
+    });
+
+    expect(screen.getByRole("table")).toBeInTheDocument();
+    expect(mockHook).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        sortBy: "description",
+        sortDirection: "asc",
+        page: 1,
+      }),
+    );
+  });
 });

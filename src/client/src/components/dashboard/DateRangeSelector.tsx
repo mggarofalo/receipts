@@ -111,10 +111,22 @@ const presetGroups: { label: string; keys: PresetKey[] }[] = [
 interface DateRangeSelectorProps {
   value: DateRange;
   onChange: (range: DateRange) => void;
+  /**
+   * Preset highlighted on first render. Defaults to "1M" to match the
+   * dashboard's historical default range. Callers that seed `value` with a
+   * different default (e.g. reports using the shared 12-month default from
+   * `lib/report-params`) should pass the matching preset key so the
+   * highlighted button doesn't lie about which range is actually applied.
+   */
+  initialPreset?: PresetKey;
 }
 
-export function DateRangeSelector({ value, onChange }: DateRangeSelectorProps) {
-  const [activePreset, setActivePreset] = useState<PresetKey>("1M");
+export function DateRangeSelector({
+  value,
+  onChange,
+  initialPreset = "1M",
+}: DateRangeSelectorProps) {
+  const [activePreset, setActivePreset] = useState<PresetKey>(initialPreset);
   const [selectedYear, setSelectedYear] = useState<number>(
     new Date().getFullYear(),
   );

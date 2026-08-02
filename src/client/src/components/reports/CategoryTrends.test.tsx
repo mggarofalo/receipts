@@ -67,7 +67,7 @@ describe("CategoryTrends", () => {
     vi.clearAllMocks();
   });
 
-  it("initializes with a 1-month default date range (regression guard for RECEIPTS-558)", () => {
+  it("initializes with the shared 12-month default date range (RECEIPTS-840)", () => {
     setupMock();
     renderWithQueryClient(<CategoryTrends />);
 
@@ -78,12 +78,12 @@ describe("CategoryTrends", () => {
     expect(params?.endDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
-  it("derives daily granularity from the 1-month default range", () => {
+  it("derives monthly granularity from the 12-month default range", () => {
     setupMock();
     renderWithQueryClient(<CategoryTrends />);
 
     expect(mockHook).toHaveBeenLastCalledWith(
-      expect.objectContaining({ granularity: "daily" }),
+      expect.objectContaining({ granularity: "monthly" }),
     );
   });
 
@@ -148,6 +148,34 @@ describe("CategoryTrends", () => {
 
     expect(mockHook).toHaveBeenLastCalledWith(
       expect.objectContaining({ granularity: "quarterly" }),
+    );
+  });
+
+  it("reads date range, granularity, and topN from the URL on load", () => {
+    setupMock();
+    renderWithQueryClient(<CategoryTrends />, {
+      route: "/?startDate=2022-01-01&endDate=2022-06-30&granularity=quarterly&topN=10",
+    });
+
+    expect(mockHook).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        startDate: "2022-01-01",
+        endDate: "2022-06-30",
+        granularity: "quarterly",
+        topN: 10,
+      }),
+    );
+  });
+
+  it("falls back to defaults for malformed URL params instead of crashing", () => {
+    setupMock();
+    renderWithQueryClient(<CategoryTrends />, {
+      route: "/?startDate=not-a-date&endDate=also-not-a-date&granularity=bogus&topN=999",
+    });
+
+    expect(screen.getByText("Category Trends")).toBeInTheDocument();
+    expect(mockHook).toHaveBeenLastCalledWith(
+      expect.objectContaining({ granularity: "monthly", topN: 5 }),
     );
   });
 });
