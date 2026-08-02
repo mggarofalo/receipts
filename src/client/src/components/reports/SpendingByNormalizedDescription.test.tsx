@@ -1,4 +1,6 @@
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { format, subMonths } from "date-fns";
 import { renderWithQueryClient } from "@/test/test-utils";
 import SpendingByNormalizedDescription from "./SpendingByNormalizedDescription";
 
@@ -17,8 +19,15 @@ vi.mock("@/components/charts", () => ({
   BarChart: () => <div data-testid="bar-chart" />,
 }));
 
+vi.mock("@/lib/export-csv", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/export-csv")>();
+  return { ...actual, downloadCsv: vi.fn() };
+});
+
 import { useSpendingByNormalizedDescription } from "@/hooks/useSpendingByNormalizedDescription";
+import { downloadCsv } from "@/lib/export-csv";
 const mockHook = vi.mocked(useSpendingByNormalizedDescription);
+const mockDownloadCsv = vi.mocked(downloadCsv);
 
 const sampleItems = [
   {
@@ -89,5 +98,26 @@ describe("SpendingByNormalizedDescription", () => {
     setupMock();
     renderWithQueryClient(<SpendingByNormalizedDescription />);
     expect(screen.getByText("$52.50")).toBeInTheDocument();
+  });
+
+  it("exports the sorted dataset as csv with the date range in the filename", async () => {
+    const user = userEvent.setup();
+    setupMock();
+    renderWithQueryClient(<SpendingByNormalizedDescription />);
+
+    await user.click(screen.getByRole("button", { name: "Export CSV" }));
+    await waitFor(() => expect(mockDownloadCsv).toHaveBeenCalledTimes(1));
+
+    const expectedStart = format(subMonths(new Date(), 1), "yyyy-MM-dd");
+    const expectedEnd = format(new Date(), "yyyy-MM-dd");
+    const [filename, csv] = mockDownloadCsv.mock.calls[0];
+    expect(filename).toBe(
+      `spending-by-normalized-description_${expectedStart}_${expectedEnd}.csv`,
+    );
+    expect(csv).toBe(
+      "Canonical Name,Item Count,Total Amount,Currency\r\n" +
+        "Bananas,5,40,USD\r\n" +
+        "Apples,3,12.5,USD\r\n",
+    );
   });
 });

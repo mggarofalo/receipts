@@ -1,5 +1,6 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { format } from "date-fns";
 import { renderWithQueryClient } from "@/test/test-utils";
 import { mockMutationResult } from "@/test/mock-hooks";
 import DuplicateDetection from "./DuplicateDetection";
@@ -18,8 +19,15 @@ vi.mock("@/hooks/useReceipts", () => ({
   useDeleteReceipts: vi.fn(() => mockMutationResult()),
 }));
 
+vi.mock("@/lib/export-csv", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/export-csv")>();
+  return { ...actual, downloadCsv: vi.fn() };
+});
+
 import { useDuplicateDetectionReport } from "@/hooks/useDuplicateDetectionReport";
+import { downloadCsv } from "@/lib/export-csv";
 const mockHook = vi.mocked(useDuplicateDetectionReport);
+const mockDownloadCsv = vi.mocked(downloadCsv);
 
 const mockGroups = [
   {
@@ -177,6 +185,34 @@ describe("DuplicateDetection", () => {
     await user.click(confirmButton);
 
     expect(mockMutate).toHaveBeenCalledWith(["id-1"], expect.any(Object));
+  });
+
+  it("exports flattened duplicate groups as csv", async () => {
+    const user = userEvent.setup();
+    setupMock();
+    renderWithQueryClient(<DuplicateDetection />);
+
+    await user.click(screen.getByRole("button", { name: "Export CSV" }));
+    await waitFor(() => expect(mockDownloadCsv).toHaveBeenCalledTimes(1));
+
+    const [filename, csv] = mockDownloadCsv.mock.calls[0];
+    const today = format(new Date(), "yyyy-MM-dd");
+    expect(filename).toBe(`duplicate-detection_${today}.csv`);
+    expect(csv).toBe(
+      "Match Key,Location,Date,Transaction Total,Receipt ID\r\n" +
+        "2025-03-01 @ Store A,Store A,2025-03-01,25.5,id-1\r\n" +
+        "2025-03-01 @ Store A,Store A,2025-03-01,30,id-2\r\n",
+    );
+  });
+
+  it("does not show the export button when no duplicates exist", () => {
+    setupMock({
+      data: { groupCount: 0, totalDuplicateReceipts: 0, groups: [] },
+    });
+    renderWithQueryClient(<DuplicateDetection />);
+    expect(
+      screen.queryByRole("button", { name: "Export CSV" }),
+    ).not.toBeInTheDocument();
   });
 
   it("renders parameter controls", () => {

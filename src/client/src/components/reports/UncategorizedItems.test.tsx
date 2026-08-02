@@ -1,5 +1,6 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { format } from "date-fns";
 import { renderWithQueryClient } from "@/test/test-utils";
 import UncategorizedItems from "./UncategorizedItems";
 
@@ -30,8 +31,21 @@ vi.mock("@/hooks/useSubcategories", () => ({
   }),
 }));
 
+vi.mock("@/lib/api-client", () => ({
+  default: { GET: vi.fn(), PUT: vi.fn() },
+}));
+
+vi.mock("@/lib/export-csv", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/export-csv")>();
+  return { ...actual, downloadCsv: vi.fn() };
+});
+
 import { useUncategorizedItemsReport } from "@/hooks/useUncategorizedItemsReport";
+import client from "@/lib/api-client";
+import { downloadCsv } from "@/lib/export-csv";
 const mockHook = vi.mocked(useUncategorizedItemsReport);
+const mockClient = vi.mocked(client);
+const mockDownloadCsv = vi.mocked(downloadCsv);
 
 const mockItems = [
   {
@@ -263,5 +277,45 @@ describe("UncategorizedItems", () => {
 
     // The category combobox should be present but "Uncategorized" should not be an option
     expect(screen.getByText("Select category...")).toBeInTheDocument();
+  });
+
+  it("exports the report as csv with the current sort", async () => {
+    const user = userEvent.setup();
+    setupMock();
+    mockClient.GET.mockResolvedValue({
+      data: { totalCount: 2, items: mockItems },
+      error: undefined,
+      response: {} as Response,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    renderWithQueryClient(<UncategorizedItems />);
+
+    await user.click(screen.getByRole("button", { name: "Export CSV" }));
+    await waitFor(() => expect(mockDownloadCsv).toHaveBeenCalledTimes(1));
+
+    expect(mockClient.GET).toHaveBeenCalledWith(
+      "/api/reports/uncategorized-items",
+      {
+        params: {
+          query: {
+            sortBy: "description",
+            sortDirection: "asc",
+            page: 1,
+            pageSize: 100,
+          },
+        },
+      },
+    );
+
+    const [filename, csv] = mockDownloadCsv.mock.calls[0];
+    expect(filename).toBe(
+      `uncategorized-items_${format(new Date(), "yyyy-MM-dd")}.csv`,
+    );
+    expect(csv).toBe(
+      "Description,Item Code,Quantity,Unit Price,Total,Subcategory,Receipt ID\r\n" +
+        "Apples,ABC,2,1.5,3,,receipt-1\r\n" +
+        "Bananas,,1,2,2,Fruit,receipt-2\r\n",
+    );
   });
 });

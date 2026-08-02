@@ -8,6 +8,8 @@ import {
   type DuplicateDetectionParams,
 } from "@/hooks/useDuplicateDetectionReport";
 import { useDeleteReceipts } from "@/hooks/useReceipts";
+import { useCsvExport } from "@/hooks/useCsvExport";
+import { csvFilename } from "@/lib/export-csv";
 import { formatCurrency } from "@/lib/format";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -57,6 +59,23 @@ export default function DuplicateDetection() {
 
   const { data, isLoading, isError } = useDuplicateDetectionReport(params);
   const deleteReceipts = useDeleteReceipts();
+  const { exportCsv, isExporting } = useCsvExport();
+
+  function handleExport() {
+    exportCsv({
+      filename: csvFilename("duplicate-detection"),
+      headers: ["Match Key", "Location", "Date", "Transaction Total", "Receipt ID"],
+      rows: (data?.groups ?? []).flatMap((group) =>
+        group.receipts.map((receipt) => [
+          group.matchKey,
+          receipt.location,
+          receipt.date,
+          receipt.transactionTotal,
+          receipt.receiptId,
+        ]),
+      ),
+    });
+  }
 
   const showLocationTolerance =
     matchOn === "dateAndLocation" || matchOn === "dateAndLocationAndTotal";
@@ -166,7 +185,7 @@ export default function DuplicateDetection() {
         </div>
       ) : (
         <>
-          <div className="flex gap-6 rounded-lg border p-4">
+          <div className="flex items-center gap-6 rounded-lg border p-4">
             <div>
               <p className="card-sub">Duplicate Groups</p>
               <p className="money-med">{data.groupCount}</p>
@@ -179,6 +198,15 @@ export default function DuplicateDetection() {
                 {data.totalDuplicateReceipts}
               </p>
             </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="ml-auto"
+              disabled={isExporting}
+              onClick={handleExport}
+            >
+              {isExporting ? "Exporting..." : "Export CSV"}
+            </Button>
           </div>
 
           <div className="space-y-6">

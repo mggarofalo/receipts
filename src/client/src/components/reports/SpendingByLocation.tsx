@@ -4,6 +4,10 @@ import {
   useSpendingByLocationReport,
   type SpendingByLocationParams,
 } from "@/hooks/useSpendingByLocationReport";
+import { useCsvExport } from "@/hooks/useCsvExport";
+import client from "@/lib/api-client";
+import { csvFilename } from "@/lib/export-csv";
+import { fetchAllReportPages } from "@/lib/fetch-all-report-pages";
 import { formatCurrency } from "@/lib/format";
 import { ChartCard, BarChart } from "@/components/charts";
 import { DateRangeSelector } from "@/components/dashboard/DateRangeSelector";
@@ -47,11 +51,51 @@ export default function SpendingByLocation() {
   };
 
   const { data, isLoading, isError } = useSpendingByLocationReport(params);
+  const { exportCsv, isExporting } = useCsvExport();
 
   const handleDateRangeChange = useCallback((range: DateRange) => {
     setDateRange(range);
     setPage(1);
   }, []);
+
+  function handleExport() {
+    exportCsv({
+      filename: csvFilename("spending-by-location", dateRange),
+      headers: ["Location", "Visits", "Total", "Average Per Visit"],
+      rows: async () => {
+        const items = await fetchAllReportPages(
+          async (exportPage, exportPageSize) => {
+            const { data: pageData, error } = await client.GET(
+              "/api/reports/spending-by-location",
+              {
+                params: {
+                  query: {
+                    startDate: dateRange.startDate,
+                    endDate: dateRange.endDate,
+                    sortBy,
+                    sortDirection,
+                    page: exportPage,
+                    pageSize: exportPageSize,
+                  },
+                },
+              },
+            );
+            if (error) throw error;
+            return {
+              items: pageData?.items ?? [],
+              totalCount: Number(pageData?.totalCount ?? 0),
+            };
+          },
+        );
+        return items.map((item) => [
+          item.location,
+          item.visits,
+          item.total,
+          item.averagePerVisit,
+        ]);
+      },
+    });
+  }
 
   function handleSort(column: string) {
     const nextColumn = column as SortColumn;
@@ -129,10 +173,20 @@ export default function SpendingByLocation() {
             </p>
           </div>
         </div>
-        <DateRangeSelector
-          value={dateRange}
-          onChange={handleDateRangeChange}
-        />
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={isExporting}
+            onClick={handleExport}
+          >
+            {isExporting ? "Exporting..." : "Export CSV"}
+          </Button>
+          <DateRangeSelector
+            value={dateRange}
+            onChange={handleDateRangeChange}
+          />
+        </div>
       </div>
 
       <ChartCard
