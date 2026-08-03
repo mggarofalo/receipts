@@ -18,8 +18,10 @@ export function useReceipts(
   const trimmedQ = q?.trim() || undefined;
   // Exact-match location filter, distinct from `q`'s substring search. Set by
   // report drill-downs (RECEIPTS-841) so the list shows exactly the receipts
-  // the aggregate row counted.
-  const trimmedLocation = location?.trim() || undefined;
+  // the aggregate row counted. Passed through verbatim — NOT trimmed like `q` —
+  // because the server matches it byte-for-byte against the same raw Location
+  // value the report grouped on, whitespace included.
+  const exactLocation = location || undefined;
   const query = useQuery({
     queryKey: [
       "receipts",
@@ -31,7 +33,7 @@ export function useReceipts(
       accountId,
       cardId,
       trimmedQ,
-      trimmedLocation,
+      exactLocation,
     ],
     enabled,
     queryFn: async () => {
@@ -45,7 +47,7 @@ export function useReceipts(
             accountId: accountId ?? undefined,
             cardId: cardId ?? undefined,
             q: trimmedQ,
-            location: trimmedLocation,
+            location: exactLocation,
           },
         },
       });

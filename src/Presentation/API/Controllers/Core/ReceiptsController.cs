@@ -85,7 +85,12 @@ public class ReceiptsController(
 		}
 
 		string? normalizedQ = string.IsNullOrWhiteSpace(q) ? null : q.Trim();
-		string? normalizedLocation = string.IsNullOrWhiteSpace(location) ? null : location.Trim();
+		// Deliberately NOT trimmed, unlike q: `location` is an exact-match drill-down key that has to
+		// reproduce the Spending by Location report's raw GROUP BY value, and a receipt whose Location
+		// carries leading/trailing whitespace is its own bucket in that report (nothing in the write
+		// path trims Location). Trimming here would make those rows undrillable. See
+		// ReceiptRepository.ApplyLocationFilter.
+		string? normalizedLocation = string.IsNullOrEmpty(location) ? null : location;
 		SortParams sort = new(sortBy, sortDirection);
 		GetAllReceiptsQuery query = new(offset, limit, sort, accountId, cardId, normalizedQ, normalizedLocation);
 		PagedResult<Receipt> result = await mediator.Send(query, cancellationToken);

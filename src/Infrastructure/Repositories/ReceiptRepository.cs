@@ -57,20 +57,26 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 		return query.Where(r => EF.Functions.ILike(r.Location, pattern, LikeEscapeCharacter));
 	}
 
-	// Exact (case-insensitive) location match, as opposed to ApplySearchFilter's substring match.
-	// Drill-downs from the Spending by Location report (RECEIPTS-841) must land on exactly the rows
-	// the aggregate counted — a substring match would pull in "Target Optical" when the report row
-	// said "Target". The pattern is escaped and carries no wildcards, so ILIKE degenerates to a
-	// case-insensitive equality test.
+	// Literal equality on Location, as opposed to ApplySearchFilter's case-insensitive substring
+	// match. Drill-downs from the Spending by Location report (RECEIPTS-841) must return exactly the
+	// rows the aggregate counted, and that report groups on the raw Location column
+	// (`group ... by (r.Location ?? "")`), which Postgres compares byte-for-byte. So this filter has
+	// to be byte-for-byte too:
+	//   - Not ILIKE/case-insensitive. "Walmart" and "walmart" are two separate report rows with
+	//     separate visit counts; a case-insensitive filter would return the union of both and
+	//     contradict the count the user just clicked on.
+	//   - Not trimmed. "Target " (trailing space) is its own report bucket, so trimming the incoming
+	//     value here would make that row's drill-down match nothing.
+	// A plain equality also indexes better than ILIKE. Callers must therefore pass Location through
+	// verbatim — see ReceiptsController.GetAllReceipts.
 	private static IQueryable<ReceiptEntity> ApplyLocationFilter(IQueryable<ReceiptEntity> query, string? location)
 	{
-		if (string.IsNullOrWhiteSpace(location))
+		if (string.IsNullOrEmpty(location))
 		{
 			return query;
 		}
 
-		string pattern = EscapeLikePattern(location.Trim());
-		return query.Where(r => EF.Functions.ILike(r.Location, pattern, LikeEscapeCharacter));
+		return query.Where(r => r.Location == location);
 	}
 
 	// MUST be passed to every EF.Functions.ILike call alongside an escaped pattern. The two-argument

@@ -8,11 +8,14 @@ using SampleData.Entities;
 
 namespace Infrastructure.IntegrationTests.Repositories;
 
-// Postgres-only coverage for RECEIPTS-841: ReceiptRepository.ApplyLocationFilter uses
-// EF.Functions.ILike with an escaped, wildcard-free pattern. The InMemory provider used by the
-// unit test suite does not implement EF.Functions.ILike at all, so it cannot prove this filter's
-// SQL translation, its case-insensitivity, or that '%'/'_' in the location are escaped rather than
-// treated as LIKE wildcards. Only a real Postgres connection can catch a regression here.
+// Postgres-only coverage for RECEIPTS-841: ReceiptRepository.ApplyLocationFilter matches Location
+// with a plain equality (`r.Location == location`), not a LIKE/ILIKE pattern, so drill-downs from
+// the Spending by Location report land on exactly the rows the aggregate counted — that report
+// groups on the raw Location column, which Postgres compares byte-for-byte (case-sensitive,
+// whitespace-sensitive, and with no wildcard semantics for '%'/'_'). Only a real Postgres
+// connection can prove that a plain `==` actually translates into a byte-for-byte comparison under
+// the database's real collation, rather than some provider-level case-folding or trimming that
+// would silently reintroduce the mismatch this filter exists to prevent.
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 public class ReceiptRepositoryLocationFilterTests(PostgresFixture fixture)
@@ -46,49 +49,76 @@ public class ReceiptRepositoryLocationFilterTests(PostgresFixture fixture)
 	}
 
 	[Fact]
-	public async Task GetAllAsync_LocationFilter_IsCaseInsensitive()
+	public async Task GetAllAsync_LocationFilter_IsCaseSensitive()
 	{
-		// Arrange
+		// Arrange — the Spending by Location report groups on the raw Location column, so "Walmart"
+		// and "walmart" are two separate report rows with separate visit counts. A case-insensitive
+		// drill-down filter would return the union of both and contradict the count the user clicked.
 		await ResetTablesAsync();
 
-		Guid receiptId = Guid.NewGuid();
+		Guid titleCase = Guid.NewGuid();
+		Guid lowerCase = Guid.NewGuid();
 
 		await using (ApplicationDbContext seed = fixture.CreateDbContext())
 		{
-			AddReceipt(seed, receiptId, "Target");
+			AddReceipt(seed, titleCase, "Walmart");
+			AddReceipt(seed, lowerCase, "walmart");
 			await seed.SaveChangesAsync();
 		}
 
 		ReceiptRepository repository = new(new FixtureDbContextFactory(fixture));
 
 		// Act
-		List<ReceiptEntity> lower = await repository.GetAllAsync(
-			0, 50, SortParams.Default, accountId: null, cardId: null, q: null, location: "target", CancellationToken.None);
-		List<ReceiptEntity> upper = await repository.GetAllAsync(
-			0, 50, SortParams.Default, accountId: null, cardId: null, q: null, location: "TARGET", CancellationToken.None);
+		List<ReceiptEntity> result = await repository.GetAllAsync(
+			0, 50, SortParams.Default, accountId: null, cardId: null, q: null, location: "Walmart", CancellationToken.None);
 
 		// Assert
-		lower.Should().ContainSingle().Which.Id.Should().Be(receiptId);
-		upper.Should().ContainSingle().Which.Id.Should().Be(receiptId);
+		result.Should().ContainSingle();
+		result[0].Id.Should().Be(titleCase);
+	}
+
+	[Fact]
+	public async Task GetAllAsync_LocationFilter_TrailingWhitespace_IsSignificant()
+	{
+		// Arrange — "Target " (trailing space) is its own bucket in the Spending by Location report
+		// because nothing in the write path trims Location. The drill-down filter must not trim
+		// either: filtering for "Target " must land only on the padded receipt, and filtering for
+		// "Target" must land only on the unpadded one. Regression guard for RECEIPTS-841 BUG-002.
+		await ResetTablesAsync();
+
+		Guid padded = Guid.NewGuid();
+		Guid unpadded = Guid.NewGuid();
+
+		await using (ApplicationDbContext seed = fixture.CreateDbContext())
+		{
+			AddReceipt(seed, padded, "Target ");
+			AddReceipt(seed, unpadded, "Target");
+			await seed.SaveChangesAsync();
+		}
+
+		ReceiptRepository repository = new(new FixtureDbContextFactory(fixture));
+
+		// Act
+		List<ReceiptEntity> paddedResult = await repository.GetAllAsync(
+			0, 50, SortParams.Default, accountId: null, cardId: null, q: null, location: "Target ", CancellationToken.None);
+		List<ReceiptEntity> unpaddedResult = await repository.GetAllAsync(
+			0, 50, SortParams.Default, accountId: null, cardId: null, q: null, location: "Target", CancellationToken.None);
+
+		// Assert
+		paddedResult.Should().ContainSingle();
+		paddedResult[0].Id.Should().Be(padded);
+
+		unpaddedResult.Should().ContainSingle();
+		unpaddedResult[0].Id.Should().Be(unpadded);
 	}
 
 	[Fact]
 	public async Task GetAllAsync_LocationFilter_TreatsPercentSignLiterally_NotAsWildcard()
 	{
-		// Arrange — if '%' were left unescaped, ILIKE '50% Off' would also match "50XYZ Off"
-		// (% means "any sequence, including none" in LIKE/ILIKE).
-		//
-		// KNOWN PRODUCTION BUG (found while writing this test, RECEIPTS-841): this currently FAILS.
-		// EF.Functions.ILike(matchExpression, pattern) — the 2-argument overload used by
-		// ReceiptRepository.ApplyLocationFilter/ApplySearchFilter — makes Npgsql's EF Core provider
-		// emit `ILIKE <pattern> ESCAPE ''`. An empty ESCAPE string disables backslash-escape
-		// processing entirely, so EscapeLikePattern's `\%`/`\_` never neutralize anything: '%' and
-		// '_' in the search text still act as SQL wildcards. Confirmed via EF SQL logging — the
-		// generated command for this test is:
-		//   ... WHERE r."Location" ILIKE '50\% Off' ESCAPE ''
-		// which (because ESCAPE '' disables escaping) requires a LITERAL backslash in the data to
-		// match, so it matches neither seeded row. Fix: use the 3-argument overload
-		// EF.Functions.ILike(matchExpression, pattern, "\\") to make Npgsql emit `ESCAPE '\'`.
+		// Arrange — ApplyLocationFilter is a plain equality (`r.Location == location`), not a
+		// LIKE/ILIKE pattern match, so '%' carries no special meaning: a location containing a
+		// literal '%' must match only the receipt with that exact string, never a receipt whose
+		// location happens to share the same prefix as if '%' were a wildcard.
 		await ResetTablesAsync();
 
 		Guid literalMatch = Guid.NewGuid();
@@ -115,12 +145,9 @@ public class ReceiptRepositoryLocationFilterTests(PostgresFixture fixture)
 	[Fact]
 	public async Task GetAllAsync_LocationFilter_TreatsUnderscoreLiterally_NotAsWildcard()
 	{
-		// Arrange — if '_' were left unescaped, ILIKE 'Aisle_5' would also match "AisleX5"
-		// (_ means "exactly one arbitrary character" in LIKE/ILIKE).
-		//
-		// KNOWN PRODUCTION BUG — see the identical note on
-		// GetAllAsync_LocationFilter_TreatsPercentSignLiterally_NotAsWildcard above. This currently
-		// FAILS for the same reason (EF.Functions.ILike's 2-arg overload emits `ESCAPE ''`).
+		// Arrange — same rationale as GetAllAsync_LocationFilter_TreatsPercentSignLiterally_NotAsWildcard
+		// above: ApplyLocationFilter is a plain equality, not a LIKE/ILIKE pattern match, so '_'
+		// carries no special meaning and must be matched literally.
 		await ResetTablesAsync();
 
 		Guid literalMatch = Guid.NewGuid();

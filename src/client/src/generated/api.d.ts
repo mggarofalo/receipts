@@ -5647,7 +5647,7 @@ export interface operations {
                 cardId?: string;
                 /** @description Case-insensitive substring filter applied to the receipt Location column. Whitespace-only values are ignored. */
                 q?: string;
-                /** @description Case-insensitive exact-match filter on the receipt Location column. Unlike `q` (substring), this matches the whole value, so drilling in from an aggregate report returns exactly the rows the aggregate counted. Whitespace-only values are ignored. Combines with `q` as an AND. */
+                /** @description Exact-match filter on the receipt Location column. Unlike `q`, which is a case-insensitive substring search, this is a literal byte-for-byte equality test: case-sensitive and not trimmed. It exists so a drill-down from the Spending by Location report returns exactly the rows that report's row counted, and that report groups on the raw Location value — so "Walmart" and "walmart" are distinct filters, as are "Target" and "Target ". Empty values are ignored. Combines with `q` as an AND. */
                 location?: string;
             };
             header?: never;
