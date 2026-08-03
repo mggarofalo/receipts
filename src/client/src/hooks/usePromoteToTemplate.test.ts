@@ -1,0 +1,353 @@
+import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
+import { renderHook, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { createElement, type ReactNode } from "react";
+
+vi.mock("@/lib/api-client", () => ({
+  default: {
+    GET: vi.fn(),
+    POST: vi.fn(),
+    PUT: vi.fn(),
+    DELETE: vi.fn(),
+  },
+}));
+
+vi.mock("sonner", () => ({
+  toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
+}));
+
+import client from "@/lib/api-client";
+import { toast } from "sonner";
+import { usePromoteToTemplate } from "./usePromoteToTemplate";
+
+function createWrapper(queryClient?: QueryClient) {
+  const qc =
+    queryClient ??
+    new QueryClient({
+      defaultOptions: {
+        queries: { retry: false, gcTime: 0 },
+        mutations: { retry: false },
+      },
+    });
+  return function Wrapper({ children }: { children: ReactNode }) {
+    return createElement(QueryClientProvider, { client: qc }, children);
+  };
+}
+
+// Real API shape: /api/item-templates/similar returns a bare array of
+// SimilarItemResponse objects (not a paginated envelope).
+function similarItem(
+  overrides: Partial<{
+    name: string;
+    similarity: number;
+    combinedScore: number;
+    source: "template" | "history";
+    defaultCategory: string | null;
+    defaultSubcategory: string | null;
+    defaultUnitPrice: number | null;
+    defaultItemCode: string | null;
+  }> = {},
+) {
+  return {
+    name: "Milk",
+    similarity: 1,
+    semanticSimilarity: null,
+    combinedScore: 1,
+    source: "history" as const,
+    defaultCategory: null,
+    defaultSubcategory: null,
+    defaultUnitPrice: null,
+    defaultItemCode: null,
+    ...overrides,
+  };
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
+describe("usePromoteToTemplate", () => {
+  it("creates a template when no duplicate template exists", async () => {
+    (client.GET as Mock).mockResolvedValue({
+      data: [similarItem({ name: "Milk", source: "history" })],
+      error: undefined,
+    });
+    (client.POST as Mock).mockResolvedValue({
+      data: { id: "11111111-1111-1111-1111-111111111111", name: "Milk" },
+      error: undefined,
+    });
+
+    const { result } = renderHook(() => usePromoteToTemplate(), {
+      wrapper: createWrapper(),
+    });
+
+    result.current.mutate({
+      name: "Milk",
+      defaultCategory: "Food",
+      defaultSubcategory: "Dairy",
+      defaultUnitPrice: 3.5,
+      defaultItemCode: "MILK-GAL",
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(client.GET).toHaveBeenCalledWith("/api/item-templates/similar", {
+      params: { query: { q: "Milk", limit: 20, threshold: 0.3 } },
+    });
+    expect(client.POST).toHaveBeenCalledWith("/api/item-templates", {
+      body: {
+        name: "Milk",
+        defaultCategory: "Food",
+        defaultSubcategory: "Dairy",
+        defaultUnitPrice: 3.5,
+        defaultItemCode: "MILK-GAL",
+      },
+    });
+    expect(result.current.data).toEqual({ created: true, name: "Milk" });
+    expect(toast.success).toHaveBeenCalledWith('Saved "Milk" as a template');
+    expect(toast.info).not.toHaveBeenCalled();
+  });
+
+  it("skips creation and shows an info toast when a template with the same name exists (case-insensitive)", async () => {
+    (client.GET as Mock).mockResolvedValue({
+      data: [similarItem({ name: "MILK", source: "template" })],
+      error: undefined,
+    });
+
+    const { result } = renderHook(() => usePromoteToTemplate(), {
+      wrapper: createWrapper(),
+    });
+
+    result.current.mutate({ name: "milk" });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(client.POST).not.toHaveBeenCalled();
+    expect(result.current.data).toEqual({ created: false, name: "milk" });
+    expect(toast.info).toHaveBeenCalledWith(
+      'A template named "milk" already exists',
+    );
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it("does not treat a history result with the same name as a duplicate", async () => {
+    (client.GET as Mock).mockResolvedValue({
+      data: [similarItem({ name: "milk", source: "history" })],
+      error: undefined,
+    });
+    (client.POST as Mock).mockResolvedValue({
+      data: { id: "11111111-1111-1111-1111-111111111111", name: "Milk" },
+      error: undefined,
+    });
+
+    const { result } = renderHook(() => usePromoteToTemplate(), {
+      wrapper: createWrapper(),
+    });
+
+    result.current.mutate({ name: "Milk" });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(client.POST).toHaveBeenCalledTimes(1);
+    expect(result.current.data).toEqual({ created: true, name: "Milk" });
+  });
+
+  it("normalizes empty strings and a zero unit price to null in the create body", async () => {
+    // The backend rejects DefaultUnitPrice === 0 (it must be positive when present),
+    // so a $0 line item or history suggestion promotes with no default price rather
+    // than failing the request.
+    (client.GET as Mock).mockResolvedValue({ data: [], error: undefined });
+    (client.POST as Mock).mockResolvedValue({
+      data: { id: "11111111-1111-1111-1111-111111111111", name: "Bread" },
+      error: undefined,
+    });
+
+    const { result } = renderHook(() => usePromoteToTemplate(), {
+      wrapper: createWrapper(),
+    });
+
+    result.current.mutate({
+      name: "Bread",
+      defaultCategory: "Food",
+      defaultSubcategory: "",
+      defaultUnitPrice: 0,
+      defaultItemCode: "",
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(client.POST).toHaveBeenCalledWith("/api/item-templates", {
+      body: {
+        name: "Bread",
+        defaultCategory: "Food",
+        defaultSubcategory: null,
+        defaultUnitPrice: null,
+        defaultItemCode: null,
+      },
+    });
+  });
+
+  it("normalizes a negative unit price to null in the create body", async () => {
+    // History rows can carry a negative price that was never validated on the
+    // way in (e.g. backup/legacy imports); the backend rejects a non-positive
+    // DefaultUnitPrice outright, so treat it the same as "no default" rather
+    // than fail the request.
+    (client.GET as Mock).mockResolvedValue({ data: [], error: undefined });
+    (client.POST as Mock).mockResolvedValue({
+      data: { id: "11111111-1111-1111-1111-111111111111", name: "Bread" },
+      error: undefined,
+    });
+
+    const { result } = renderHook(() => usePromoteToTemplate(), {
+      wrapper: createWrapper(),
+    });
+
+    result.current.mutate({ name: "Bread", defaultUnitPrice: -1.5 });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(client.POST).toHaveBeenCalledWith(
+      "/api/item-templates",
+      expect.objectContaining({
+        body: expect.objectContaining({ defaultUnitPrice: null }),
+      }),
+    );
+  });
+
+  it("invalidates the itemTemplates cache after creating, but not similarItems", async () => {
+    // similarItems is deliberately left alone: invalidating it would force an
+    // immediate refetch while the new template still has no embedding, which
+    // can rank it low enough to drop off a small result window entirely (the
+    // suggestion vanishes instead of its badge flipping to Template).
+    (client.GET as Mock).mockResolvedValue({ data: [], error: undefined });
+    (client.POST as Mock).mockResolvedValue({
+      data: { id: "11111111-1111-1111-1111-111111111111", name: "Milk" },
+      error: undefined,
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false, gcTime: 0 },
+        mutations: { retry: false },
+      },
+    });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    const { result } = renderHook(() => usePromoteToTemplate(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    result.current.mutate({ name: "Milk" });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["itemTemplates"],
+    });
+    expect(invalidateSpy).not.toHaveBeenCalledWith({
+      queryKey: ["similarItems"],
+    });
+  });
+
+  it("does not invalidate caches when the duplicate guard skips creation", async () => {
+    (client.GET as Mock).mockResolvedValue({
+      data: [similarItem({ name: "Milk", source: "template" })],
+      error: undefined,
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false, gcTime: 0 },
+        mutations: { retry: false },
+      },
+    });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    const { result } = renderHook(() => usePromoteToTemplate(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    result.current.mutate({ name: "Milk" });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(invalidateSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not toast locally when the create request fails, leaving it to the global handler", async () => {
+    (client.GET as Mock).mockResolvedValue({ data: [], error: undefined });
+    (client.POST as Mock).mockResolvedValue({
+      data: undefined,
+      error: { message: "Internal Server Error" },
+    });
+
+    const { result } = renderHook(() => usePromoteToTemplate(), {
+      wrapper: createWrapper(),
+    });
+
+    result.current.mutate({ name: "Milk" });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it("errors without creating when the duplicate check fails", async () => {
+    (client.GET as Mock).mockResolvedValue({
+      data: undefined,
+      error: { message: "Internal Server Error" },
+    });
+
+    const { result } = renderHook(() => usePromoteToTemplate(), {
+      wrapper: createWrapper(),
+    });
+
+    result.current.mutate({ name: "Milk" });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(client.POST).not.toHaveBeenCalled();
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("trims the name before checking for duplicates and creating", async () => {
+    (client.GET as Mock).mockResolvedValue({ data: [], error: undefined });
+    (client.POST as Mock).mockResolvedValue({
+      data: { id: "11111111-1111-1111-1111-111111111111", name: "Milk" },
+      error: undefined,
+    });
+
+    const { result } = renderHook(() => usePromoteToTemplate(), {
+      wrapper: createWrapper(),
+    });
+
+    result.current.mutate({ name: "  Milk  " });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(client.GET).toHaveBeenCalledWith("/api/item-templates/similar", {
+      params: { query: { q: "Milk", limit: 20, threshold: 0.3 } },
+    });
+    expect(client.POST).toHaveBeenCalledWith(
+      "/api/item-templates",
+      expect.objectContaining({
+        body: expect.objectContaining({ name: "Milk" }),
+      }),
+    );
+  });
+
+  it("skips the duplicate check and creates directly when the name is shorter than 2 characters", async () => {
+    // GET /api/item-templates/similar enforces a 2-character minimum on the
+    // query and would error on a 1-character name; template names have no
+    // such minimum, so short names must bypass the duplicate check.
+    (client.POST as Mock).mockResolvedValue({
+      data: { id: "11111111-1111-1111-1111-111111111111", name: "A" },
+      error: undefined,
+    });
+
+    const { result } = renderHook(() => usePromoteToTemplate(), {
+      wrapper: createWrapper(),
+    });
+
+    result.current.mutate({ name: "A" });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(client.GET).not.toHaveBeenCalled();
+    expect(client.POST).toHaveBeenCalledWith(
+      "/api/item-templates",
+      expect.objectContaining({ body: expect.objectContaining({ name: "A" }) }),
+    );
+    expect(result.current.data).toEqual({ created: true, name: "A" });
+  });
+});

@@ -13,6 +13,7 @@ import {
   useCategoryRecommendations,
 } from "@/hooks/useSimilarItems";
 import { useReceiptItemSuggestions } from "@/hooks/useReceiptItemSuggestions";
+import { usePromoteToTemplate } from "@/hooks/usePromoteToTemplate";
 import { formatCurrency } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -48,7 +49,16 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, Trash2, Loader2, Sparkles, Pencil, Check, X } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  Loader2,
+  Sparkles,
+  Pencil,
+  Check,
+  X,
+  BookmarkPlus,
+} from "lucide-react";
 
 const itemSchema = z.object({
   receiptItemCode: z.string().optional().default(""),
@@ -77,7 +87,11 @@ interface LineItemsSectionProps {
   location?: string | null;
 }
 
-export function LineItemsSection({ items, onChange, location }: LineItemsSectionProps) {
+export function LineItemsSection({
+  items,
+  onChange,
+  location,
+}: LineItemsSectionProps) {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const suggestionsListId = "new-receipt-suggestions-list";
   // Index of the keyboard-highlighted row in the description lookup.
@@ -86,9 +100,9 @@ export function LineItemsSection({ items, onChange, location }: LineItemsSection
 
   const categoryOptions = useMemo(
     () =>
-      (
-        (categories as { id: string; name: string }[] | undefined) ?? []
-      ).map((c) => ({ value: c.name, label: c.name })),
+      ((categories as { id: string; name: string }[] | undefined) ?? []).map(
+        (c) => ({ value: c.name, label: c.name }),
+      ),
     [categories],
   );
 
@@ -117,19 +131,23 @@ export function LineItemsSection({ items, onChange, location }: LineItemsSection
   // Index of the keyboard-highlighted row in the item code lookup.
   const [itemCodeActiveIndex, setItemCodeActiveIndex] = useState(0);
 
-  const { data: itemCodeSuggestions, isFetching: isFetchingItemCodeSuggestions } =
-    useReceiptItemSuggestions(itemCode ?? "", location, {
-      enabled: showItemCodeSuggestions && (itemCode ?? "").length >= 1,
-    });
+  const {
+    data: itemCodeSuggestions,
+    isFetching: isFetchingItemCodeSuggestions,
+  } = useReceiptItemSuggestions(itemCode ?? "", location, {
+    enabled: showItemCodeSuggestions && (itemCode ?? "").length >= 1,
+  });
 
-  const hasItemCodeResults = itemCodeSuggestions && itemCodeSuggestions.length > 0;
+  const hasItemCodeResults =
+    itemCodeSuggestions && itemCodeSuggestions.length > 0;
   const hasNoItemCodeResultsMessage =
     (itemCode ?? "").length >= 1 &&
     !isFetchingItemCodeSuggestions &&
     itemCodeSuggestions &&
     itemCodeSuggestions.length === 0;
   const isItemCodeSuggestionsOpen =
-    showItemCodeSuggestions && (hasItemCodeResults || hasNoItemCodeResultsMessage);
+    showItemCodeSuggestions &&
+    (hasItemCodeResults || hasNoItemCodeResultsMessage);
 
   const applyItemCodeSuggestion = useCallback(
     (suggestion: NonNullable<typeof itemCodeSuggestions>[number]) => {
@@ -185,8 +203,10 @@ export function LineItemsSection({ items, onChange, location }: LineItemsSection
     ],
   );
 
-  const { data: similarItems, isFetching: isFetchingSimilar } =
-    useSimilarItems(description, { enabled: showSuggestions });
+  const { data: similarItems, isFetching: isFetchingSimilar } = useSimilarItems(
+    description,
+    { enabled: showSuggestions },
+  );
 
   const hasResults = similarItems && similarItems.length > 0;
   const hasNoResultsMessage =
@@ -203,9 +223,9 @@ export function LineItemsSection({ items, onChange, location }: LineItemsSection
 
   const selectedCategoryObj = useMemo(
     () =>
-      (
-        (categories as { id: string; name: string }[] | undefined) ?? []
-      ).find((c) => c.name === selectedCategory),
+      ((categories as { id: string; name: string }[] | undefined) ?? []).find(
+        (c) => c.name === selectedCategory,
+      ),
     [categories, selectedCategory],
   );
 
@@ -218,9 +238,9 @@ export function LineItemsSection({ items, onChange, location }: LineItemsSection
 
   const subcategoryOptions = useMemo(
     () =>
-      (
-        (subcategories as { id: string; name: string }[] | undefined) ?? []
-      ).map((s) => ({ value: s.name, label: s.name })),
+      ((subcategories as { id: string; name: string }[] | undefined) ?? []).map(
+        (s) => ({ value: s.name, label: s.name }),
+      ),
     [subcategories],
   );
 
@@ -274,6 +294,37 @@ export function LineItemsSection({ items, onChange, location }: LineItemsSection
     [form],
   );
 
+  const promoteToTemplate = usePromoteToTemplate();
+  const { mutate: promote, isPending: isPromoting } = promoteToTemplate;
+
+  const promoteSuggestion = useCallback(
+    (suggestion: NonNullable<typeof similarItems>[number]) => {
+      if (isPromoting) return;
+      promote({
+        name: suggestion.name,
+        defaultCategory: suggestion.defaultCategory,
+        defaultSubcategory: suggestion.defaultSubcategory,
+        defaultUnitPrice: suggestion.defaultUnitPrice,
+        defaultItemCode: suggestion.defaultItemCode,
+      });
+    },
+    [promote, isPromoting],
+  );
+
+  const promoteLineItem = useCallback(
+    (item: ReceiptLineItem) => {
+      if (isPromoting) return;
+      promote({
+        name: item.description,
+        defaultCategory: item.category,
+        defaultSubcategory: item.subcategory,
+        defaultUnitPrice: item.unitPrice,
+        defaultItemCode: item.receiptItemCode,
+      });
+    },
+    [promote, isPromoting],
+  );
+
   const applyCategoryRec = useCallback(
     (rec: NonNullable<typeof categoryRecs>[number]) => {
       form.setValue("category", rec.category);
@@ -308,11 +359,24 @@ export function LineItemsSection({ items, onChange, location }: LineItemsSection
         if (suggestion) {
           // Prevent the form from submitting — Enter picks the suggestion.
           e.preventDefault();
-          applySuggestion(suggestion);
+          // Shift+Enter saves a highlighted history suggestion as a
+          // template instead of applying it, mirroring the pointer-only
+          // "Save as template" button for keyboard/screen-reader users.
+          if (e.shiftKey && suggestion.source.toLowerCase() === "history") {
+            promoteSuggestion(suggestion);
+          } else {
+            applySuggestion(suggestion);
+          }
         }
       }
     },
-    [isSuggestionsOpen, similarItems, descriptionActiveIndex, applySuggestion],
+    [
+      isSuggestionsOpen,
+      similarItems,
+      descriptionActiveIndex,
+      applySuggestion,
+      promoteSuggestion,
+    ],
   );
 
   const handleAdd = useCallback(
@@ -368,9 +432,9 @@ export function LineItemsSection({ items, onChange, location }: LineItemsSection
   // Subcategory options for the row currently being edited.
   const editCategoryObj = useMemo(
     () =>
-      (
-        (categories as { id: string; name: string }[] | undefined) ?? []
-      ).find((c) => c.name === editDraft.category),
+      ((categories as { id: string; name: string }[] | undefined) ?? []).find(
+        (c) => c.name === editDraft.category,
+      ),
     [categories, editDraft.category],
   );
 
@@ -407,7 +471,8 @@ export function LineItemsSection({ items, onChange, location }: LineItemsSection
     if (!editDraft.description.trim()) return;
     if (!editDraft.category.trim()) return;
     if (!Number.isFinite(editDraft.quantity) || editDraft.quantity <= 0) return;
-    if (!Number.isFinite(editDraft.unitPrice) || editDraft.unitPrice < 0) return;
+    if (!Number.isFinite(editDraft.unitPrice) || editDraft.unitPrice < 0)
+      return;
 
     onChange(
       items.map((item) =>
@@ -455,10 +520,7 @@ export function LineItemsSection({ items, onChange, location }: LineItemsSection
       </CardHeader>
       <CardContent className="space-y-4">
         <Form {...form}>
-          <form
-            onSubmit={form.handleSubmit(handleAdd)}
-            className="space-y-4"
-          >
+          <form onSubmit={form.handleSubmit(handleAdd)} className="space-y-4">
             {/* Row 1: Item Code, Description, Category */}
             <div className="flex flex-wrap gap-4">
               <FormField
@@ -496,12 +558,18 @@ export function LineItemsSection({ items, onChange, location }: LineItemsSection
                               onFocus={() => setShowItemCodeSuggestions(true)}
                               onKeyDown={handleItemCodeKeyDown}
                             />
-                            {isFetchingItemCodeSuggestions && (itemCode ?? "").length >= 1 && (
-                              <>
-                                <Loader2 className="absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" aria-hidden="true" />
-                                <span className="sr-only" role="status">Loading suggestions...</span>
-                              </>
-                            )}
+                            {isFetchingItemCodeSuggestions &&
+                              (itemCode ?? "").length >= 1 && (
+                                <>
+                                  <Loader2
+                                    className="absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground"
+                                    aria-hidden="true"
+                                  />
+                                  <span className="sr-only" role="status">
+                                    Loading suggestions...
+                                  </span>
+                                </>
+                              )}
                           </div>
                         </FormControl>
                       </PopoverAnchor>
@@ -509,7 +577,9 @@ export function LineItemsSection({ items, onChange, location }: LineItemsSection
                         className="w-[--radix-popover-trigger-width] p-0"
                         align="start"
                         onOpenAutoFocus={(e) => e.preventDefault()}
-                        onInteractOutside={() => setShowItemCodeSuggestions(false)}
+                        onInteractOutside={() =>
+                          setShowItemCodeSuggestions(false)
+                        }
                       >
                         <Command
                           shouldFilter={false}
@@ -525,7 +595,9 @@ export function LineItemsSection({ items, onChange, location }: LineItemsSection
                               <CommandItem
                                 key={`${suggestion.itemCode}-${suggestion.matchType}`}
                                 value={`idx-${index}`}
-                                onSelect={() => applyItemCodeSuggestion(suggestion)}
+                                onSelect={() =>
+                                  applyItemCodeSuggestion(suggestion)
+                                }
                               >
                                 <div className="flex w-full items-center justify-between">
                                   <div className="flex flex-col gap-0.5">
@@ -582,6 +654,7 @@ export function LineItemsSection({ items, onChange, location }: LineItemsSection
                               aria-autocomplete="list"
                               aria-expanded={isSuggestionsOpen}
                               aria-controls={suggestionsListId}
+                              aria-describedby="description-shortcuts-hint"
                               autoComplete="off"
                               {...field}
                               onChange={(e) => {
@@ -591,10 +664,23 @@ export function LineItemsSection({ items, onChange, location }: LineItemsSection
                               onFocus={() => setShowSuggestions(true)}
                               onKeyDown={handleDescriptionKeyDown}
                             />
+                            <span
+                              id="description-shortcuts-hint"
+                              className="sr-only"
+                            >
+                              When a suggestion from your history is
+                              highlighted, press Shift+Enter to save it as a
+                              template.
+                            </span>
                             {isFetchingSimilar && description.length >= 2 && (
                               <>
-                                <Loader2 className="absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" aria-hidden="true" />
-                                <span className="sr-only" role="status">Loading suggestions...</span>
+                                <Loader2
+                                  className="absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground"
+                                  aria-hidden="true"
+                                />
+                                <span className="sr-only" role="status">
+                                  Loading suggestions...
+                                </span>
                               </>
                             )}
                           </div>
@@ -644,13 +730,51 @@ export function LineItemsSection({ items, onChange, location }: LineItemsSection
                                       variant="outline"
                                       className="text-[10px] px-1.5 py-0"
                                     >
-                                      {item.source === "template"
+                                      {item.source.toLowerCase() === "template"
                                         ? "Template"
                                         : "History"}
                                     </Badge>
                                     <span className="text-[10px] text-muted-foreground">
-                                      {Math.round(Number(item.combinedScore ?? 0) * 100)}%
+                                      {Math.round(
+                                        Number(item.combinedScore ?? 0) * 100,
+                                      )}
+                                      %
                                     </span>
+                                    {item.source.toLowerCase() === "history" ? (
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-6 w-6 shrink-0"
+                                        aria-label={`Save "${item.name}" as template`}
+                                        disabled={isPromoting}
+                                        onPointerDown={(e) => {
+                                          // Keep the press from stealing focus
+                                          // or registering on the cmdk item.
+                                          e.preventDefault();
+                                          e.stopPropagation();
+                                        }}
+                                        onClick={(e) => {
+                                          // Must not select the suggestion or
+                                          // close the popover.
+                                          e.preventDefault();
+                                          e.stopPropagation();
+                                          promoteSuggestion(item);
+                                        }}
+                                      >
+                                        <BookmarkPlus
+                                          className="h-3.5 w-3.5"
+                                          aria-hidden="true"
+                                        />
+                                      </Button>
+                                    ) : (
+                                      // Placeholder keeps badge/score columns
+                                      // aligned across rows (no layout shift).
+                                      <span
+                                        className="h-6 w-6 shrink-0"
+                                        aria-hidden="true"
+                                      />
+                                    )}
                                   </div>
                                 </div>
                               </CommandItem>
@@ -687,8 +811,15 @@ export function LineItemsSection({ items, onChange, location }: LineItemsSection
                     {categoryRecs &&
                       categoryRecs.length > 0 &&
                       !selectedCategory && (
-                        <div className="flex flex-wrap gap-1 pt-1" role="group" aria-label="Suggested categories">
-                          <Sparkles className="h-3 w-3 text-muted-foreground mt-1" aria-hidden="true" />
+                        <div
+                          className="flex flex-wrap gap-1 pt-1"
+                          role="group"
+                          aria-label="Suggested categories"
+                        >
+                          <Sparkles
+                            className="h-3 w-3 text-muted-foreground mt-1"
+                            aria-hidden="true"
+                          />
                           {categoryRecs.map((rec) => (
                             <button
                               key={`${rec.category}-${rec.subcategory ?? ""}`}
@@ -706,7 +837,6 @@ export function LineItemsSection({ items, onChange, location }: LineItemsSection
                   </FormItem>
                 )}
               />
-
             </div>
 
             {/* Row 2: Subcategory, Quantity, Unit Price, Add Item */}
@@ -922,6 +1052,15 @@ export function LineItemsSection({ items, onChange, location }: LineItemsSection
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => promoteLineItem(item)}
+                          disabled={isPromoting}
+                          aria-label="Save as template"
+                        >
+                          <BookmarkPlus className="h-4 w-4" />
+                        </Button>
                         <Button
                           variant="ghost"
                           size="icon"
