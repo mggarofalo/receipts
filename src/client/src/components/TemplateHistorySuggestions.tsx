@@ -42,6 +42,13 @@ interface TemplateHistorySuggestionsProps {
    * normally receive focus after a create is gone by the time focus would land.
    */
   fallbackFocusRef?: RefObject<HTMLElement | null>;
+  /**
+   * The page's own search term. Without this, typing in the page search box
+   * visibly filters the templates table below while this section keeps
+   * showing its full, unrelated list — including candidates that coincidentally
+   * match the term, which reads as broken rather than merely unfiltered.
+   */
+  searchTerm?: string;
 }
 
 /**
@@ -51,6 +58,7 @@ interface TemplateHistorySuggestionsProps {
  */
 export function TemplateHistorySuggestions({
   fallbackFocusRef,
+  searchTerm,
 }: TemplateHistorySuggestionsProps) {
   const [limit, setLimit] = useState(PAGE_SIZE);
   const [collapsed, setCollapsed] = useState(readCollapsed);
@@ -75,6 +83,14 @@ export function TemplateHistorySuggestions({
   }, []);
 
   const candidates = (data as HistoryCandidate[] | undefined) ?? [];
+
+  const normalizedSearch = searchTerm?.trim().toLowerCase() ?? "";
+  // Only filters candidates already loaded on this page — "Show more" still
+  // pages through the unfiltered set, so a match further back requires
+  // loading more before it can appear here.
+  const visibleCandidates = normalizedSearch
+    ? candidates.filter((c) => c.name.toLowerCase().includes(normalizedSearch))
+    : candidates;
 
   const handleCreate = useCallback(
     (candidate: HistoryCandidate) => {
@@ -156,8 +172,9 @@ export function TemplateHistorySuggestions({
             </CollapsibleTrigger>
           </h2>
           <span id={COUNT_ID} className="text-sm text-muted-foreground">
-            {total} recurring {total === 1 ? "item" : "items"} without a
-            template
+            {normalizedSearch
+              ? `${visibleCandidates.length} matching ${visibleCandidates.length === 1 ? "item" : "items"}`
+              : `${total} recurring ${total === 1 ? "item" : "items"} without a template`}
           </span>
         </div>
 
@@ -172,6 +189,10 @@ export function TemplateHistorySuggestions({
               >
                 Try again
               </button>
+            </div>
+          ) : normalizedSearch && visibleCandidates.length === 0 ? (
+            <div className="rounded-md border p-4 text-sm text-muted-foreground">
+              No loaded suggestions match &quot;{searchTerm}&quot;.
             </div>
           ) : (
             <>
@@ -189,7 +210,7 @@ export function TemplateHistorySuggestions({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {candidates.map((candidate) => (
+                    {visibleCandidates.map((candidate) => (
                       <TableRow key={candidate.name}>
                         <TableCell>{candidate.name}</TableCell>
                         <TableCell className="text-muted-foreground">
@@ -236,13 +257,15 @@ export function TemplateHistorySuggestions({
                 </Table>
               </div>
 
-              {candidates.length < total && limit < MAX_LIMIT && (
-                <div className="flex justify-center py-3">
-                  <Button variant="ghost" size="sm" onClick={handleShowMore}>
-                    Show more suggestions
-                  </Button>
-                </div>
-              )}
+              {!normalizedSearch &&
+                candidates.length < total &&
+                limit < MAX_LIMIT && (
+                  <div className="flex justify-center py-3">
+                    <Button variant="ghost" size="sm" onClick={handleShowMore}>
+                      Show more suggestions
+                    </Button>
+                  </div>
+                )}
             </>
           )}
         </CollapsibleContent>

@@ -828,8 +828,21 @@ describe("ItemTemplates — suggested from your history", () => {
     },
   ];
 
-  beforeEach(() => {
+  beforeEach(async () => {
     localStorage.clear();
+    // Several tests below override this to simulate a page-search term;
+    // reset it so that override never leaks into a later test in this file.
+    const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: [],
+        totalCount: 0,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
   });
 
   async function mockCandidates(overrides: Record<string, unknown> = {}) {
@@ -857,6 +870,76 @@ describe("ItemTemplates — suggested from your history", () => {
     expect(screen.getByText("seen 6 times")).toBeInTheDocument();
     expect(screen.getByText("Beverages")).toBeInTheDocument();
     expect(screen.getByText("$5.29")).toBeInTheDocument();
+  });
+
+  it("filters to candidates matching the page's search box", async () => {
+    const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "juice",
+        setSearch: vi.fn(),
+        results: [],
+        totalCount: 0,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
+    await mockCandidates();
+
+    renderWithProviders(<ItemTemplates />);
+
+    expect(screen.getByText("Orange Juice")).toBeInTheDocument();
+    expect(screen.queryByText("Paper Towels")).not.toBeInTheDocument();
+    expect(screen.getByText("1 matching item")).toBeInTheDocument();
+  });
+
+  it("shows a no-match message when the search matches no loaded candidate", async () => {
+    const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "nonexistent item",
+        setSearch: vi.fn(),
+        results: [],
+        totalCount: 0,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
+    await mockCandidates();
+
+    renderWithProviders(<ItemTemplates />);
+
+    expect(
+      screen.getByText(/No loaded suggestions match/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Orange Juice")).not.toBeInTheDocument();
+    // The section itself (and its heading) stays visible -- only the table
+    // collapses to the no-match message, since this is a deliberate response
+    // to the user's own search rather than "no data at all".
+    expect(
+      screen.getByRole("heading", { name: /suggested from your history/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("hides Show more suggestions while a search term is active", async () => {
+    const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "juice",
+        setSearch: vi.fn(),
+        results: [],
+        totalCount: 0,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
+    await mockCandidates({ total: 50 });
+
+    renderWithProviders(<ItemTemplates />);
+
+    expect(
+      screen.queryByRole("button", { name: /show more suggestions/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("is hidden entirely when there are no candidates", async () => {
