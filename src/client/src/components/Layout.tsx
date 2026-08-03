@@ -1,13 +1,12 @@
 import { useCallback, useState, useMemo } from "react";
 import {
   Link,
-  NavLink,
   Outlet,
   useNavigate,
   useNavigation,
   useLocation,
 } from "react-router";
-import { Icon, Kbd, type IconComponent } from "@/components/primitives";
+import { Icon, Kbd } from "@/components/primitives";
 import { useAuth } from "@/hooks/useAuth";
 import { usePermission } from "@/hooks/usePermission";
 import { useSignalR } from "@/hooks/useSignalR";
@@ -36,6 +35,7 @@ import {
 import { CommandPalette } from "@/components/CommandPalette";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { cn } from "@/lib/utils";
+import { resolveActiveNavItem, type NavSection } from "@/lib/nav-active";
 
 const appVersion = __APP_VERSION__;
 const commitHash = __COMMIT_HASH__;
@@ -43,19 +43,9 @@ const showVersion = appVersion !== "dev" && commitHash !== "local";
 const shortHash = commitHash.slice(0, 7);
 const commitUrl = `https://github.com/mggarofalo/Receipts/commit/${commitHash}`;
 
-interface NavItem {
-  to: string;
-  label: string;
-  icon: IconComponent;
-  kbd?: string;
-  aliases?: readonly string[];
-  admin?: boolean;
-}
-
-interface NavSection {
-  title: string;
-  items: readonly NavItem[];
-}
+// Nav shape and active-item resolution live in @/lib/nav-active so the matching
+// rules can be unit-tested directly against synthetic navs — the real NAV cannot
+// falsify most-specific-wins, the tie-break, or the alias penalty on its own.
 
 const NAV: readonly NavSection[] = [
   {
@@ -118,15 +108,6 @@ const CONNECTION: Record<
   disconnected: { className: "conn neg", label: "Offline" },
 };
 
-function isLinkActive(pathname: string, item: NavItem): boolean {
-  if (item.to === "/") return pathname === "/";
-  if (pathname === item.to) return true;
-  if (pathname.startsWith(item.to + "/")) return true;
-  return (item.aliases ?? []).some(
-    (alias) => pathname === alias || pathname.startsWith(alias),
-  );
-}
-
 export function Layout() {
   const { user, logout } = useAuth();
   const { isAdmin } = usePermission();
@@ -150,6 +131,13 @@ export function Layout() {
         items: section.items.filter((item) => !item.admin || admin),
       })).filter((section) => section.items.length > 0),
     [admin],
+  );
+
+  // Resolved once per route change and shared by the sidebar and the mobile
+  // drawer so the two shells can never disagree about what is current.
+  const activeItem = useMemo(
+    () => resolveActiveNavItem(location.pathname, sections),
+    [location.pathname, sections],
   );
 
   const handleLogout = useCallback(async () => {
@@ -177,19 +165,22 @@ export function Layout() {
             <div className="nav-section">{section.title}</div>
             {section.items.map((item) => {
               const IconComp = item.icon;
-              const active = isLinkActive(location.pathname, item);
+              const active = item === activeItem;
+              // Plain Link (not NavLink) — NavLink derives its own `active`
+              // class and `aria-current` from per-item prefix matching, which
+              // would re-introduce the double highlight regardless of what we
+              // pass. The single winner from resolveActiveNavItem drives both.
               return (
-                <NavLink
+                <Link
                   key={item.to}
                   to={item.to}
                   className={cn("nav-item", active && "active")}
                   aria-current={active ? "page" : undefined}
-                  end={item.to === "/"}
                 >
                   <IconComp />
                   {item.label}
                   {item.kbd && <span className="kbd">{item.kbd}</span>}
-                </NavLink>
+                </Link>
               );
             })}
           </div>
@@ -283,7 +274,9 @@ export function Layout() {
                   Change password
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleLogout}>Logout</DropdownMenuItem>
+                <DropdownMenuItem onClick={handleLogout}>
+                  Logout
+                </DropdownMenuItem>
                 {showVersion && (
                   <>
                     <DropdownMenuSeparator />
@@ -342,7 +335,10 @@ export function Layout() {
         <SheetContent side="left" className="w-72">
           <SheetHeader>
             <SheetTitle>
-              <span className="brand" style={{ border: 0, margin: 0, padding: 0 }}>
+              <span
+                className="brand"
+                style={{ border: 0, margin: 0, padding: 0 }}
+              >
                 <span className="mark">R</span>
                 <span className="name">Receipts</span>
               </span>
@@ -364,25 +360,32 @@ export function Layout() {
                 <div className="nav-section">{section.title}</div>
                 {section.items.map((item) => {
                   const IconComp = item.icon;
-                  const active = isLinkActive(location.pathname, item);
+                  // Same single-winner resolution as the desktop sidebar — see
+                  // the comment there for why this is a Link and not a NavLink.
+                  const active = item === activeItem;
                   return (
-                    <NavLink
+                    <Link
                       key={item.to}
                       to={item.to}
                       onClick={() => setMobileOpen(false)}
                       className={cn("nav-item", active && "active")}
                       aria-current={active ? "page" : undefined}
-                      end={item.to === "/"}
                     >
                       <IconComp />
                       {item.label}
-                    </NavLink>
+                    </Link>
                   );
                 })}
               </div>
             ))}
           </div>
-          <div className="sidebar-foot" style={{ borderTop: "1px dashed var(--line)", padding: "12px 16px" }}>
+          <div
+            className="sidebar-foot"
+            style={{
+              borderTop: "1px dashed var(--line)",
+              padding: "12px 16px",
+            }}
+          >
             <span className={conn.className}>
               <span className="dot" />
               {conn.label}
