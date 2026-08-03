@@ -70,6 +70,16 @@ export default defineConfig({
     },
   },
   server: {
+    // Bind the IPv4 loopback literal rather than Vite's default `localhost`. On
+    // Windows that hostname resolves to ::1 only, so Aspire's DCP proxy — which
+    // dials the target over IPv4 — connects to nothing and holds the request open
+    // forever. Without this, http://localhost:5173 hangs and the app is reachable
+    // only on the dynamic port Aspire passes to Vite via --port (RECEIPTS-882).
+    //
+    // Deliberately NOT `true`/`0.0.0.0`: those also fix the mismatch but publish the
+    // dev server — and the /api and /hubs proxies below, which forward to the backend
+    // with TLS validation off — to every host on the LAN.
+    host: "127.0.0.1",
     proxy: {
       "/api": {
         target: process.env.services__api__https__0 ?? process.env.services__api__http__0 ?? "https://localhost:5001",

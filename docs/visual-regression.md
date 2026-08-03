@@ -24,8 +24,12 @@ npm run test:visual:update
 ```
 
 The dev server (`npm run dev`) is started automatically by Playwright's
-`webServer` block. If port 5173 is already in use, kill the existing
-process first.
+`webServer` block on port 5173.
+
+If Aspire is already running, it serves the same client on 5173 and Playwright
+reuses it (`reuseExistingServer` is on outside CI) — no need to stop Aspire
+first. Otherwise, if something unrelated holds 5173, kill it before running the
+suite.
 
 ## Where baselines live
 

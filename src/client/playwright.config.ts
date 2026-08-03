@@ -26,8 +26,12 @@ export default defineConfig({
   },
   // Local dev: Vite at default port. CI gets the same via the webServer
   // block — Playwright boots the dev server on demand.
+  //
+  // 127.0.0.1, not localhost: the dev server binds the IPv4 loopback (see
+  // vite.config.ts), while `localhost` resolves to ::1 first on Windows. Naming
+  // the literal avoids a failed IPv6 connect on every startup poll.
   use: {
-    baseURL: "http://localhost:5173",
+    baseURL: "http://127.0.0.1:5173",
     viewport: { width: 1280, height: 720 },
     // Faster timeouts: tests should be deterministic so they shouldn't
     // wait long for anything.
@@ -46,7 +50,7 @@ export default defineConfig({
   ],
   webServer: {
     command: "npm run dev",
-    url: "http://localhost:5173",
+    url: "http://127.0.0.1:5173",
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,
   },
