@@ -96,7 +96,14 @@ export function TemplateHistorySuggestions({
           description: null,
           defaultCategory: candidate.suggestedCategory ?? null,
           defaultSubcategory: candidate.suggestedSubcategory ?? null,
-          defaultUnitPrice: candidate.suggestedUnitPrice ?? null,
+          // History rows can carry non-positive prices that were never
+          // validated on the way in (e.g. backup/legacy imports); the API
+          // rejects DefaultUnitPrice <= 0, so a candidate with one would be a
+          // one-click dead end that fails every time it's clicked.
+          defaultUnitPrice:
+            candidate.suggestedUnitPrice && candidate.suggestedUnitPrice > 0
+              ? candidate.suggestedUnitPrice
+              : null,
           defaultItemCode: candidate.suggestedItemCode ?? null,
         },
         {

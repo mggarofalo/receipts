@@ -90,8 +90,16 @@ vi.mock("@/hooks/useListKeyboardNav", () => ({
     focusedId: null,
     setFocusedIndex: vi.fn(),
     tableRef: { current: null },
-    containerProps: { role: "grid" as const, tabIndex: 0, "aria-label": "list", "aria-activedescendant": undefined },
-    getRowProps: (id: string) => ({ id: `list-row-${id}`, role: "row" as const }),
+    containerProps: {
+      role: "grid" as const,
+      tabIndex: 0,
+      "aria-label": "list",
+      "aria-activedescendant": undefined,
+    },
+    getRowProps: (id: string) => ({
+      id: `list-row-${id}`,
+      role: "row" as const,
+    }),
   })),
 }));
 
@@ -101,7 +109,11 @@ vi.mock("@/hooks/useCategories", () => ({
 }));
 
 vi.mock("@/hooks/useSubcategories", () => ({
-  useAllSubcategoriesByCategoryId: vi.fn(() => ({ data: [], total: 0, isLoading: false })),
+  useAllSubcategoriesByCategoryId: vi.fn(() => ({
+    data: [],
+    total: 0,
+    isLoading: false,
+  })),
 }));
 
 vi.mock("@/hooks/usePagination", () => ({
@@ -126,27 +138,31 @@ describe("ItemTemplates", () => {
 
   it("renders loading skeleton when data is loading", async () => {
     const { useItemTemplates } = await import("@/hooks/useItemTemplates");
-    vi.mocked(useItemTemplates).mockReturnValue(mockQueryResult({
-      data: undefined,
-      isLoading: true,
-    }));
+    vi.mocked(useItemTemplates).mockReturnValue(
+      mockQueryResult({
+        data: undefined,
+        isLoading: true,
+      }),
+    );
 
     const { container } = renderWithProviders(<ItemTemplates />);
-    expect(container.querySelector("[data-slot='skeleton']")).toBeInTheDocument();
+    expect(
+      container.querySelector("[data-slot='skeleton']"),
+    ).toBeInTheDocument();
   });
 
   it("renders empty state when no templates exist", async () => {
     const { useItemTemplates } = await import("@/hooks/useItemTemplates");
-    vi.mocked(useItemTemplates).mockReturnValue(mockQueryResult({
-      data: [],
-      total: 0,
-      isLoading: false,
-    }));
+    vi.mocked(useItemTemplates).mockReturnValue(
+      mockQueryResult({
+        data: [],
+        total: 0,
+        isLoading: false,
+      }),
+    );
 
     renderWithProviders(<ItemTemplates />);
-    expect(
-      screen.getByText(/no item templates yet/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/no item templates yet/i)).toBeInTheDocument();
   });
 
   it("renders the New Template button", () => {
@@ -165,25 +181,43 @@ describe("ItemTemplates", () => {
 
   it("renders table with item templates when data exists", async () => {
     const items = [
-      { id: "1", name: "Coffee", description: "Morning coffee", defaultCategory: "Food", defaultSubcategory: "Drinks", defaultUnitPrice: 4.50, defaultUnitPriceCurrency: "USD", defaultItemCode: "COF-001" },
+      {
+        id: "1",
+        name: "Coffee",
+        description: "Morning coffee",
+        defaultCategory: "Food",
+        defaultSubcategory: "Drinks",
+        defaultUnitPrice: 4.5,
+        defaultUnitPriceCurrency: "USD",
+        defaultItemCode: "COF-001",
+      },
     ];
 
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "",
-      setSearch: vi.fn(),
-      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
-      totalCount: items.length,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: items.map((item) => ({
+          item,
+          matches: [],
+          score: 0,
+          refIndex: 0,
+        })),
+        totalCount: items.length,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
 
     const { useItemTemplates } = await import("@/hooks/useItemTemplates");
-    vi.mocked(useItemTemplates).mockReturnValue(mockQueryResult({
-      data: items,
-      total: items.length,
-      isLoading: false,
-    }));
+    vi.mocked(useItemTemplates).mockReturnValue(
+      mockQueryResult({
+        data: items,
+        total: items.length,
+        isLoading: false,
+      }),
+    );
 
     renderWithProviders(<ItemTemplates />);
     expect(screen.getByText("Coffee")).toBeInTheDocument();
@@ -194,18 +228,34 @@ describe("ItemTemplates", () => {
   it("closes edit dialog when dismissed", async () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const items = [
-      { id: "1", name: "Coffee", description: "Morning coffee", defaultCategory: "Food", defaultSubcategory: "Drinks", defaultUnitPrice: 4.50, defaultUnitPriceCurrency: "USD", defaultItemCode: "COF-001" },
+      {
+        id: "1",
+        name: "Coffee",
+        description: "Morning coffee",
+        defaultCategory: "Food",
+        defaultSubcategory: "Drinks",
+        defaultUnitPrice: 4.5,
+        defaultUnitPriceCurrency: "USD",
+        defaultItemCode: "COF-001",
+      },
     ];
 
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "",
-      setSearch: vi.fn(),
-      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
-      totalCount: items.length,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: items.map((item) => ({
+          item,
+          matches: [],
+          score: 0,
+          refIndex: 0,
+        })),
+        totalCount: items.length,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
 
     const { usePagination } = await import("@/hooks/usePagination");
     vi.mocked(usePagination).mockReturnValue({
@@ -220,11 +270,15 @@ describe("ItemTemplates", () => {
 
     renderWithProviders(<ItemTemplates />);
     await user.click(screen.getByRole("button", { name: /edit/i }));
-    expect(screen.getByRole("heading", { name: /edit item template/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /edit item template/i }),
+    ).toBeInTheDocument();
 
     await user.keyboard("{Escape}");
     await vi.waitFor(() => {
-      expect(screen.queryByRole("heading", { name: /edit item template/i })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("heading", { name: /edit item template/i }),
+      ).not.toBeInTheDocument();
     });
   });
 
@@ -232,11 +286,15 @@ describe("ItemTemplates", () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     renderWithProviders(<ItemTemplates />);
     await user.click(screen.getByRole("button", { name: /new template/i }));
-    expect(screen.getByRole("heading", { name: /create item template/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /create item template/i }),
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /cancel/i }));
     await vi.waitFor(() => {
-      expect(screen.queryByRole("heading", { name: /create item template/i })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("heading", { name: /create item template/i }),
+      ).not.toBeInTheDocument();
     });
   });
 
@@ -254,25 +312,43 @@ describe("ItemTemplates", () => {
   it("opens edit dialog when Edit button is clicked", async () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const items = [
-      { id: "1", name: "Coffee", description: "Morning coffee", defaultCategory: "Food", defaultSubcategory: "Drinks", defaultUnitPrice: 4.50, defaultUnitPriceCurrency: "USD", defaultItemCode: "COF-001" },
+      {
+        id: "1",
+        name: "Coffee",
+        description: "Morning coffee",
+        defaultCategory: "Food",
+        defaultSubcategory: "Drinks",
+        defaultUnitPrice: 4.5,
+        defaultUnitPriceCurrency: "USD",
+        defaultItemCode: "COF-001",
+      },
     ];
 
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "",
-      setSearch: vi.fn(),
-      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
-      totalCount: items.length,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: items.map((item) => ({
+          item,
+          matches: [],
+          score: 0,
+          refIndex: 0,
+        })),
+        totalCount: items.length,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
 
     const { useItemTemplates } = await import("@/hooks/useItemTemplates");
-    vi.mocked(useItemTemplates).mockReturnValue(mockQueryResult({
-      data: items,
-      total: items.length,
-      isLoading: false,
-    }));
+    vi.mocked(useItemTemplates).mockReturnValue(
+      mockQueryResult({
+        data: items,
+        total: items.length,
+        isLoading: false,
+      }),
+    );
 
     renderWithProviders(<ItemTemplates />);
     await user.click(screen.getByRole("button", { name: /edit/i }));
@@ -285,56 +361,90 @@ describe("ItemTemplates", () => {
   it("toggles checkbox selection and shows delete button", async () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const items = [
-      { id: "1", name: "Coffee", description: "Morning coffee", defaultCategory: "Food", defaultSubcategory: "Drinks", defaultUnitPrice: 4.50, defaultUnitPriceCurrency: "USD", defaultItemCode: "COF-001" },
+      {
+        id: "1",
+        name: "Coffee",
+        description: "Morning coffee",
+        defaultCategory: "Food",
+        defaultSubcategory: "Drinks",
+        defaultUnitPrice: 4.5,
+        defaultUnitPriceCurrency: "USD",
+        defaultItemCode: "COF-001",
+      },
     ];
 
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "",
-      setSearch: vi.fn(),
-      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
-      totalCount: items.length,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: items.map((item) => ({
+          item,
+          matches: [],
+          score: 0,
+          refIndex: 0,
+        })),
+        totalCount: items.length,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
 
     const { useItemTemplates } = await import("@/hooks/useItemTemplates");
-    vi.mocked(useItemTemplates).mockReturnValue(mockQueryResult({
-      data: items,
-      total: items.length,
-      isLoading: false,
-    }));
+    vi.mocked(useItemTemplates).mockReturnValue(
+      mockQueryResult({
+        data: items,
+        total: items.length,
+        isLoading: false,
+      }),
+    );
 
     renderWithProviders(<ItemTemplates />);
     await user.click(screen.getByLabelText("Select Coffee"));
 
-    expect(
-      screen.getByRole("button", { name: /delete/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /delete/i })).toBeInTheDocument();
   });
 
   it("submits edit form and calls updateItemTemplate.mutate", async () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const mockMutate = vi.fn();
     const { useUpdateItemTemplate } = await import("@/hooks/useItemTemplates");
-    vi.mocked(useUpdateItemTemplate).mockReturnValue(mockMutationResult({
-      mutate: mockMutate,
-      isPending: false,
-    }));
+    vi.mocked(useUpdateItemTemplate).mockReturnValue(
+      mockMutationResult({
+        mutate: mockMutate,
+        isPending: false,
+      }),
+    );
 
     const items = [
-      { id: "1", name: "Coffee", description: "Morning coffee", defaultCategory: "Food", defaultSubcategory: "Drinks", defaultUnitPrice: 4.50, defaultUnitPriceCurrency: "USD", defaultItemCode: "COF-001" },
+      {
+        id: "1",
+        name: "Coffee",
+        description: "Morning coffee",
+        defaultCategory: "Food",
+        defaultSubcategory: "Drinks",
+        defaultUnitPrice: 4.5,
+        defaultUnitPriceCurrency: "USD",
+        defaultItemCode: "COF-001",
+      },
     ];
 
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "",
-      setSearch: vi.fn(),
-      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
-      totalCount: items.length,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: items.map((item) => ({
+          item,
+          matches: [],
+          score: 0,
+          refIndex: 0,
+        })),
+        totalCount: items.length,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
 
     const { usePagination } = await import("@/hooks/usePagination");
     vi.mocked(usePagination).mockReturnValue({
@@ -364,10 +474,12 @@ describe("ItemTemplates", () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const mockMutate = vi.fn();
     const { useCreateItemTemplate } = await import("@/hooks/useItemTemplates");
-    vi.mocked(useCreateItemTemplate).mockReturnValue(mockMutationResult({
-      mutate: mockMutate,
-      isPending: false,
-    }));
+    vi.mocked(useCreateItemTemplate).mockReturnValue(
+      mockMutationResult({
+        mutate: mockMutate,
+        isPending: false,
+      }),
+    );
 
     renderWithProviders(<ItemTemplates />);
     await user.click(screen.getByRole("button", { name: /new template/i }));
@@ -382,20 +494,35 @@ describe("ItemTemplates", () => {
 
   it("renders NoResults when search returns no matches", async () => {
     const { useItemTemplates } = await import("@/hooks/useItemTemplates");
-    vi.mocked(useItemTemplates).mockReturnValue(mockQueryResult({
-      data: [{ id: "1", name: "Coffee", description: "Morning coffee", defaultCategory: "Food", defaultSubcategory: "Drinks", defaultUnitPrice: 4.50, defaultUnitPriceCurrency: "USD", defaultItemCode: "COF-001" }],
-      isLoading: false,
-    }));
+    vi.mocked(useItemTemplates).mockReturnValue(
+      mockQueryResult({
+        data: [
+          {
+            id: "1",
+            name: "Coffee",
+            description: "Morning coffee",
+            defaultCategory: "Food",
+            defaultSubcategory: "Drinks",
+            defaultUnitPrice: 4.5,
+            defaultUnitPriceCurrency: "USD",
+            defaultItemCode: "COF-001",
+          },
+        ],
+        isLoading: false,
+      }),
+    );
 
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "xyz",
-      setSearch: vi.fn(),
-      results: [],
-      totalCount: 0,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "xyz",
+        setSearch: vi.fn(),
+        results: [],
+        totalCount: 0,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
 
     renderWithProviders(<ItemTemplates />);
     expect(screen.getByText(/try fewer keywords/i)).toBeInTheDocument();
@@ -405,31 +532,51 @@ describe("ItemTemplates", () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const mockMutate = vi.fn();
     const { useDeleteItemTemplates } = await import("@/hooks/useItemTemplates");
-    vi.mocked(useDeleteItemTemplates).mockReturnValue(mockMutationResult({
-      mutate: mockMutate,
-      isPending: false,
-    }));
+    vi.mocked(useDeleteItemTemplates).mockReturnValue(
+      mockMutationResult({
+        mutate: mockMutate,
+        isPending: false,
+      }),
+    );
 
     const items = [
-      { id: "1", name: "Coffee", description: "Morning coffee", defaultCategory: "Food", defaultSubcategory: "Drinks", defaultUnitPrice: 4.50, defaultUnitPriceCurrency: "USD", defaultItemCode: "COF-001" },
+      {
+        id: "1",
+        name: "Coffee",
+        description: "Morning coffee",
+        defaultCategory: "Food",
+        defaultSubcategory: "Drinks",
+        defaultUnitPrice: 4.5,
+        defaultUnitPriceCurrency: "USD",
+        defaultItemCode: "COF-001",
+      },
     ];
 
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "",
-      setSearch: vi.fn(),
-      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
-      totalCount: items.length,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: items.map((item) => ({
+          item,
+          matches: [],
+          score: 0,
+          refIndex: 0,
+        })),
+        totalCount: items.length,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
 
     const { useItemTemplates } = await import("@/hooks/useItemTemplates");
-    vi.mocked(useItemTemplates).mockReturnValue(mockQueryResult({
-      data: items,
-      total: items.length,
-      isLoading: false,
-    }));
+    vi.mocked(useItemTemplates).mockReturnValue(
+      mockQueryResult({
+        data: items,
+        total: items.length,
+        isLoading: false,
+      }),
+    );
 
     renderWithProviders(<ItemTemplates />);
     await user.click(screen.getByLabelText("Select Coffee"));
@@ -476,25 +623,43 @@ describe("ItemTemplates", () => {
   it("shows Hide button in edit modal when user is admin", async () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const items = [
-      { id: "1", name: "Coffee", description: "Morning coffee", defaultCategory: "Food", defaultSubcategory: "Drinks", defaultUnitPrice: 4.50, defaultUnitPriceCurrency: "USD", defaultItemCode: "COF-001" },
+      {
+        id: "1",
+        name: "Coffee",
+        description: "Morning coffee",
+        defaultCategory: "Food",
+        defaultSubcategory: "Drinks",
+        defaultUnitPrice: 4.5,
+        defaultUnitPriceCurrency: "USD",
+        defaultItemCode: "COF-001",
+      },
     ];
 
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "",
-      setSearch: vi.fn(),
-      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
-      totalCount: items.length,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: items.map((item) => ({
+          item,
+          matches: [],
+          score: 0,
+          refIndex: 0,
+        })),
+        totalCount: items.length,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
 
     const { useItemTemplates } = await import("@/hooks/useItemTemplates");
-    vi.mocked(useItemTemplates).mockReturnValue(mockQueryResult({
-      data: items,
-      total: items.length,
-      isLoading: false,
-    }));
+    vi.mocked(useItemTemplates).mockReturnValue(
+      mockQueryResult({
+        data: items,
+        total: items.length,
+        isLoading: false,
+      }),
+    );
 
     const { usePermission } = await import("@/hooks/usePermission");
     vi.mocked(usePermission).mockReturnValue({
@@ -506,32 +671,52 @@ describe("ItemTemplates", () => {
     renderWithProviders(<ItemTemplates />);
     await user.click(screen.getByRole("button", { name: /edit/i }));
 
-    expect(screen.getByRole("heading", { name: /edit item template/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /edit item template/i }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^hide$/i })).toBeInTheDocument();
   });
 
   it("does not show Hide button in edit modal when user is not admin", async () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const items = [
-      { id: "1", name: "Coffee", description: "Morning coffee", defaultCategory: "Food", defaultSubcategory: "Drinks", defaultUnitPrice: 4.50, defaultUnitPriceCurrency: "USD", defaultItemCode: "COF-001" },
+      {
+        id: "1",
+        name: "Coffee",
+        description: "Morning coffee",
+        defaultCategory: "Food",
+        defaultSubcategory: "Drinks",
+        defaultUnitPrice: 4.5,
+        defaultUnitPriceCurrency: "USD",
+        defaultItemCode: "COF-001",
+      },
     ];
 
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "",
-      setSearch: vi.fn(),
-      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
-      totalCount: items.length,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: items.map((item) => ({
+          item,
+          matches: [],
+          score: 0,
+          refIndex: 0,
+        })),
+        totalCount: items.length,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
 
     const { useItemTemplates } = await import("@/hooks/useItemTemplates");
-    vi.mocked(useItemTemplates).mockReturnValue(mockQueryResult({
-      data: items,
-      total: items.length,
-      isLoading: false,
-    }));
+    vi.mocked(useItemTemplates).mockReturnValue(
+      mockQueryResult({
+        data: items,
+        total: items.length,
+        isLoading: false,
+      }),
+    );
 
     const { usePermission } = await import("@/hooks/usePermission");
     vi.mocked(usePermission).mockReturnValue({
@@ -543,8 +728,12 @@ describe("ItemTemplates", () => {
     renderWithProviders(<ItemTemplates />);
     await user.click(screen.getByRole("button", { name: /edit/i }));
 
-    expect(screen.getByRole("heading", { name: /edit item template/i })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /^hide$/i })).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /edit item template/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^hide$/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("calls hideItemTemplate.mutate when Hide button is clicked", async () => {
@@ -552,29 +741,50 @@ describe("ItemTemplates", () => {
     const mockMutate = vi.fn();
 
     const items = [
-      { id: "1", name: "Coffee", description: "Morning coffee", defaultCategory: "Food", defaultSubcategory: "Drinks", defaultUnitPrice: 4.50, defaultUnitPriceCurrency: "USD", defaultItemCode: "COF-001" },
+      {
+        id: "1",
+        name: "Coffee",
+        description: "Morning coffee",
+        defaultCategory: "Food",
+        defaultSubcategory: "Drinks",
+        defaultUnitPrice: 4.5,
+        defaultUnitPriceCurrency: "USD",
+        defaultItemCode: "COF-001",
+      },
     ];
 
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "",
-      setSearch: vi.fn(),
-      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
-      totalCount: items.length,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: items.map((item) => ({
+          item,
+          matches: [],
+          score: 0,
+          refIndex: 0,
+        })),
+        totalCount: items.length,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
 
-    const { useItemTemplates, useHideItemTemplate } = await import("@/hooks/useItemTemplates");
-    vi.mocked(useItemTemplates).mockReturnValue(mockQueryResult({
-      data: items,
-      total: items.length,
-      isLoading: false,
-    }));
-    vi.mocked(useHideItemTemplate).mockReturnValue(mockMutationResult({
-      mutate: mockMutate,
-      isPending: false,
-    }));
+    const { useItemTemplates, useHideItemTemplate } =
+      await import("@/hooks/useItemTemplates");
+    vi.mocked(useItemTemplates).mockReturnValue(
+      mockQueryResult({
+        data: items,
+        total: items.length,
+        isLoading: false,
+      }),
+    );
+    vi.mocked(useHideItemTemplate).mockReturnValue(
+      mockMutationResult({
+        mutate: mockMutate,
+        isPending: false,
+      }),
+    );
 
     const { usePermission } = await import("@/hooks/usePermission");
     vi.mocked(usePermission).mockReturnValue({
@@ -587,9 +797,12 @@ describe("ItemTemplates", () => {
     await user.click(screen.getByRole("button", { name: /edit/i }));
     await user.click(screen.getByRole("button", { name: /^hide$/i }));
 
-    expect(mockMutate).toHaveBeenCalledWith("1", expect.objectContaining({
-      onSuccess: expect.any(Function),
-    }));
+    expect(mockMutate).toHaveBeenCalledWith(
+      "1",
+      expect.objectContaining({
+        onSuccess: expect.any(Function),
+      }),
+    );
   });
 });
 
@@ -619,12 +832,9 @@ describe("ItemTemplates — suggested from your history", () => {
     localStorage.clear();
   });
 
-  async function mockCandidates(
-    overrides: Record<string, unknown> = {},
-  ) {
-    const { useTemplateHistoryCandidates } = await import(
-      "@/hooks/useTemplateHistoryCandidates"
-    );
+  async function mockCandidates(overrides: Record<string, unknown> = {}) {
+    const { useTemplateHistoryCandidates } =
+      await import("@/hooks/useTemplateHistoryCandidates");
     vi.mocked(useTemplateHistoryCandidates).mockReturnValue(
       mockQueryResult({
         data: candidates,
@@ -673,10 +883,12 @@ describe("ItemTemplates — suggested from your history", () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const mockMutate = vi.fn();
     const { useCreateItemTemplate } = await import("@/hooks/useItemTemplates");
-    vi.mocked(useCreateItemTemplate).mockReturnValue(mockMutationResult({
-      mutate: mockMutate,
-      isPending: false,
-    }));
+    vi.mocked(useCreateItemTemplate).mockReturnValue(
+      mockMutationResult({
+        mutate: mockMutate,
+        isPending: false,
+      }),
+    );
     await mockCandidates();
 
     renderWithProviders(<ItemTemplates />);
@@ -701,10 +913,12 @@ describe("ItemTemplates — suggested from your history", () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const mockMutate = vi.fn();
     const { useCreateItemTemplate } = await import("@/hooks/useItemTemplates");
-    vi.mocked(useCreateItemTemplate).mockReturnValue(mockMutationResult({
-      mutate: mockMutate,
-      isPending: false,
-    }));
+    vi.mocked(useCreateItemTemplate).mockReturnValue(
+      mockMutationResult({
+        mutate: mockMutate,
+        isPending: false,
+      }),
+    );
     await mockCandidates();
 
     renderWithProviders(<ItemTemplates />);
@@ -725,14 +939,52 @@ describe("ItemTemplates — suggested from your history", () => {
     );
   });
 
+  it("sends null instead of a non-positive suggested price", async () => {
+    const user = (await import("@testing-library/user-event")).default.setup();
+    const mockMutate = vi.fn();
+    const { useCreateItemTemplate } = await import("@/hooks/useItemTemplates");
+    vi.mocked(useCreateItemTemplate).mockReturnValue(
+      mockMutationResult({
+        mutate: mockMutate,
+        isPending: false,
+      }),
+    );
+    await mockCandidates({
+      data: [
+        {
+          name: "Legacy Import",
+          occurrenceCount: 3,
+          lastPurchasedAt: "2026-03-01",
+          suggestedCategory: null,
+          suggestedSubcategory: null,
+          suggestedUnitPrice: 0,
+          suggestedItemCode: null,
+        },
+      ],
+      total: 1,
+    });
+
+    renderWithProviders(<ItemTemplates />);
+    await user.click(
+      screen.getByRole("button", { name: "Create template for Legacy Import" }),
+    );
+
+    expect(mockMutate).toHaveBeenCalledWith(
+      expect.objectContaining({ defaultUnitPrice: null }),
+      expect.objectContaining({ onSuccess: expect.any(Function) }),
+    );
+  });
+
   it("focuses the section trigger after creating, when other candidates remain", async () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const mockMutate = vi.fn();
     const { useCreateItemTemplate } = await import("@/hooks/useItemTemplates");
-    vi.mocked(useCreateItemTemplate).mockReturnValue(mockMutationResult({
-      mutate: mockMutate,
-      isPending: false,
-    }));
+    vi.mocked(useCreateItemTemplate).mockReturnValue(
+      mockMutationResult({
+        mutate: mockMutate,
+        isPending: false,
+      }),
+    );
     await mockCandidates();
 
     renderWithProviders(<ItemTemplates />);
@@ -752,10 +1004,12 @@ describe("ItemTemplates — suggested from your history", () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const mockMutate = vi.fn();
     const { useCreateItemTemplate } = await import("@/hooks/useItemTemplates");
-    vi.mocked(useCreateItemTemplate).mockReturnValue(mockMutationResult({
-      mutate: mockMutate,
-      isPending: false,
-    }));
+    vi.mocked(useCreateItemTemplate).mockReturnValue(
+      mockMutationResult({
+        mutate: mockMutate,
+        isPending: false,
+      }),
+    );
     // isLastCandidate is captured at click time from the currently-rendered
     // candidate list, not re-derived when onSuccess later fires — so a
     // single-candidate list at click time is sufficient to exercise this path,
@@ -777,11 +1031,13 @@ describe("ItemTemplates — suggested from your history", () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const mockMutate = vi.fn();
     const { useCreateItemTemplate } = await import("@/hooks/useItemTemplates");
-    vi.mocked(useCreateItemTemplate).mockReturnValue(mockMutationResult({
-      mutate: mockMutate,
-      isPending: true,
-      variables: { name: "Orange Juice" },
-    }));
+    vi.mocked(useCreateItemTemplate).mockReturnValue(
+      mockMutationResult({
+        mutate: mockMutate,
+        isPending: true,
+        variables: { name: "Orange Juice" },
+      }),
+    );
     await mockCandidates();
 
     renderWithProviders(<ItemTemplates />);
@@ -819,7 +1075,10 @@ describe("ItemTemplates — suggested from your history", () => {
   });
 
   it("starts collapsed when localStorage says so", async () => {
-    localStorage.setItem("item-templates-history-suggestions-collapsed", "true");
+    localStorage.setItem(
+      "item-templates-history-suggestions-collapsed",
+      "true",
+    );
     await mockCandidates();
 
     renderWithProviders(<ItemTemplates />);
@@ -853,9 +1112,8 @@ describe("ItemTemplates — suggested from your history", () => {
   it("requests a larger page when Show more is clicked", async () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     await mockCandidates({ total: 12 });
-    const { useTemplateHistoryCandidates } = await import(
-      "@/hooks/useTemplateHistoryCandidates"
-    );
+    const { useTemplateHistoryCandidates } =
+      await import("@/hooks/useTemplateHistoryCandidates");
 
     renderWithProviders(<ItemTemplates />);
     expect(useTemplateHistoryCandidates).toHaveBeenLastCalledWith(0, 10);
@@ -873,9 +1131,8 @@ describe("ItemTemplates — suggested from your history", () => {
     // -- it hides itself once limit reaches the max, so 49 clicks (10 -> 500 in
     // steps of 10) is exactly as far as this can click through the UI.
     await mockCandidates({ total: 5000 });
-    const { useTemplateHistoryCandidates } = await import(
-      "@/hooks/useTemplateHistoryCandidates"
-    );
+    const { useTemplateHistoryCandidates } =
+      await import("@/hooks/useTemplateHistoryCandidates");
 
     renderWithProviders(<ItemTemplates />);
 
@@ -894,9 +1151,8 @@ describe("ItemTemplates — suggested from your history", () => {
   it("shows a retry option instead of silently disappearing when the candidates query errors", async () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const refetch = vi.fn();
-    const { useTemplateHistoryCandidates } = await import(
-      "@/hooks/useTemplateHistoryCandidates"
-    );
+    const { useTemplateHistoryCandidates } =
+      await import("@/hooks/useTemplateHistoryCandidates");
     vi.mocked(useTemplateHistoryCandidates).mockReturnValue(
       mockQueryResult({
         data: undefined,
