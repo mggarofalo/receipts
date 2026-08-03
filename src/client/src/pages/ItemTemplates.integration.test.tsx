@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { server } from "@/test/msw/server";
 import { itemTemplates } from "@/test/msw/fixtures/item-templates";
+import { itemTemplateHistoryCandidates } from "@/test/msw/fixtures/item-template-history-candidates";
 import { categories } from "@/test/msw/fixtures/categories";
 import { subcategories } from "@/test/msw/fixtures/subcategories";
 import { createListHandlers, createEnumMetadataHandler } from "@/test/msw/handler-factories";
@@ -276,6 +277,118 @@ describe("ItemTemplates (integration)", () => {
       expect(
         screen.getByRole("heading", { name: /create item template/i }),
       ).toBeInTheDocument();
+    });
+  });
+
+  describe("suggested from your history", () => {
+    it("fetches and renders history candidates from the API", async () => {
+      renderWithQueryClient(<ItemTemplates />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Orange Juice")).toBeInTheDocument();
+      });
+      expect(
+        screen.getByRole("heading", { name: /suggested from your history/i }),
+      ).toBeInTheDocument();
+      expect(screen.getByText("seen 6 times")).toBeInTheDocument();
+      expect(screen.getByText("Paper Towels")).toBeInTheDocument();
+    });
+
+    it("hides the section when the API returns no candidates", async () => {
+      server.use(
+        http.get("*/api/item-templates/history-candidates", () =>
+          HttpResponse.json({ data: [], total: 0, offset: 0, limit: 10 }),
+        ),
+      );
+
+      renderWithQueryClient(<ItemTemplates />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Whole Milk")).toBeInTheDocument();
+      });
+      expect(
+        screen.queryByRole("heading", { name: /suggested from your history/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("creates a template from a candidate and drops the row on refetch", async () => {
+      const user = userEvent.setup();
+      let capturedBody: Record<string, unknown> | null = null;
+      let remaining = [...itemTemplateHistoryCandidates];
+
+      server.use(
+        http.get("*/api/item-templates/history-candidates", () =>
+          HttpResponse.json({
+            data: remaining,
+            total: remaining.length,
+            offset: 0,
+            limit: 10,
+          }),
+        ),
+        http.post("*/api/item-templates", async ({ request }) => {
+          capturedBody = (await request.json()) as Record<string, unknown>;
+          // The server would no longer report a description that now has a template.
+          remaining = remaining.filter((c) => c.name !== capturedBody!.name);
+          return HttpResponse.json(
+            { id: "created-id", ...capturedBody },
+            { status: 201 },
+          );
+        }),
+      );
+
+      renderWithQueryClient(<ItemTemplates />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Orange Juice")).toBeInTheDocument();
+      });
+
+      await user.click(
+        screen.getByRole("button", { name: "Create template for Orange Juice" }),
+      );
+
+      await waitFor(() => {
+        expect(capturedBody).not.toBeNull();
+      });
+      expect(capturedBody).toMatchObject({
+        name: "Orange Juice",
+        defaultCategory: "Groceries",
+        defaultSubcategory: "Beverages",
+        defaultUnitPrice: 5.29,
+        defaultItemCode: "OJ-100",
+      });
+
+      // The create mutation invalidates the itemTemplates key, which the candidates
+      // query lives under, so the row disappears once the refetch lands.
+      await waitFor(() => {
+        expect(screen.queryByText("Orange Juice")).not.toBeInTheDocument();
+      });
+      expect(screen.getByText("Paper Towels")).toBeInTheDocument();
+    });
+
+    it("remembers the collapsed state across mounts", async () => {
+      const user = userEvent.setup();
+      const { unmount } = renderWithQueryClient(<ItemTemplates />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Orange Juice")).toBeInTheDocument();
+      });
+
+      await user.click(
+        screen.getByRole("button", { name: /suggested from your history/i }),
+      );
+      await waitFor(() => {
+        expect(screen.queryByText("Orange Juice")).not.toBeInTheDocument();
+      });
+
+      unmount();
+      renderWithQueryClient(<ItemTemplates />);
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole("heading", { name: /suggested from your history/i }),
+        ).toBeInTheDocument();
+      });
+      expect(screen.queryByText("Orange Juice")).not.toBeInTheDocument();
     });
   });
 });

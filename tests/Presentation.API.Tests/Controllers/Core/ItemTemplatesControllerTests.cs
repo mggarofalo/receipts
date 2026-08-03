@@ -8,6 +8,7 @@ using Application.Commands.ItemTemplate.Restore;
 using Application.Commands.ItemTemplate.Update;
 using Application.Models;
 using Application.Queries.Core.ItemTemplate;
+using Application.Queries.Core.ItemTemplate.GetHistoryCandidates;
 using Domain.Core;
 using FluentAssertions;
 using Mediator;
@@ -375,6 +376,144 @@ public class ItemTemplatesControllerTests
 			.ThrowsAsync(new Exception());
 
 		Func<Task> act = () => _controller.RestoreItemTemplate(id);
+
+		await act.Should().ThrowAsync<Exception>();
+	}
+
+	// ── GetItemTemplateHistoryCandidates ────────────────────
+
+	[Fact]
+	public async Task GetItemTemplateHistoryCandidates_ReturnsOkResult_WithMappedCandidates()
+	{
+		List<ItemTemplateHistoryCandidate> candidates =
+		[
+			new()
+			{
+				Name = "Whole Milk",
+				OccurrenceCount = 7,
+				LastPurchasedAt = new DateOnly(2026, 3, 4),
+				SuggestedCategory = "Groceries",
+				SuggestedSubcategory = "Dairy",
+				SuggestedUnitPrice = 3.99m,
+				SuggestedItemCode = "MILK-001",
+			},
+			new()
+			{
+				Name = "Sourdough Bread",
+				OccurrenceCount = 3,
+				LastPurchasedAt = new DateOnly(2026, 2, 1),
+				SuggestedCategory = null,
+				SuggestedSubcategory = null,
+				SuggestedUnitPrice = null,
+				SuggestedItemCode = null,
+			},
+		];
+
+		_mediatorMock.Setup(m => m.Send(
+			It.Is<GetItemTemplateHistoryCandidatesQuery>(q => q.Offset == 0 && q.Limit == 50 && q.MinCount == 2),
+			It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new PagedResult<ItemTemplateHistoryCandidate>(candidates, candidates.Count, 0, 50));
+
+		Results<Ok<ItemTemplateHistoryCandidateListResponse>, BadRequest<string>> rawResult =
+			await _controller.GetItemTemplateHistoryCandidates(0, 50, 2);
+
+		Ok<ItemTemplateHistoryCandidateListResponse> result = Assert.IsType<Ok<ItemTemplateHistoryCandidateListResponse>>(rawResult.Result);
+		ItemTemplateHistoryCandidateListResponse actualReturn = result.Value!;
+
+		actualReturn.Total.Should().Be(2);
+		actualReturn.Offset.Should().Be(0);
+		actualReturn.Limit.Should().Be(50);
+		actualReturn.Data.Should().HaveCount(2);
+
+		ItemTemplateHistoryCandidateResponse first = actualReturn.Data.First();
+		first.Name.Should().Be("Whole Milk");
+		first.OccurrenceCount.Should().Be(7);
+		first.LastPurchasedAt.Should().Be(new DateOnly(2026, 3, 4));
+		first.SuggestedCategory.Should().Be("Groceries");
+		first.SuggestedSubcategory.Should().Be("Dairy");
+		first.SuggestedUnitPrice.Should().Be(3.99);
+		first.SuggestedItemCode.Should().Be("MILK-001");
+
+		ItemTemplateHistoryCandidateResponse second = actualReturn.Data.Last();
+		second.SuggestedCategory.Should().BeNull();
+		second.SuggestedSubcategory.Should().BeNull();
+		second.SuggestedUnitPrice.Should().BeNull();
+		second.SuggestedItemCode.Should().BeNull();
+	}
+
+	[Fact]
+	public async Task GetItemTemplateHistoryCandidates_UsesDefaultParameters_WhenNoneSupplied()
+	{
+		_mediatorMock.Setup(m => m.Send(
+			It.IsAny<GetItemTemplateHistoryCandidatesQuery>(),
+			It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new PagedResult<ItemTemplateHistoryCandidate>([], 0, 0, 50));
+
+		await _controller.GetItemTemplateHistoryCandidates();
+
+		_mediatorMock.Verify(m => m.Send(
+			It.Is<GetItemTemplateHistoryCandidatesQuery>(q => q.Offset == 0 && q.Limit == 50 && q.MinCount == 2),
+			It.IsAny<CancellationToken>()),
+			Times.Once);
+	}
+
+	[Theory]
+	[InlineData(-1)]
+	[InlineData(-100)]
+	public async Task GetItemTemplateHistoryCandidates_ReturnsBadRequest_WhenOffsetIsNegative(int offset)
+	{
+		Results<Ok<ItemTemplateHistoryCandidateListResponse>, BadRequest<string>> result =
+			await _controller.GetItemTemplateHistoryCandidates(offset, 50, 2);
+
+		BadRequest<string> badRequestResult = Assert.IsType<BadRequest<string>>(result.Result);
+		badRequestResult.Value.Should().Be("offset must be >= 0");
+	}
+
+	[Theory]
+	[InlineData(0)]
+	[InlineData(-1)]
+	[InlineData(501)]
+	public async Task GetItemTemplateHistoryCandidates_ReturnsBadRequest_WhenLimitIsOutOfRange(int limit)
+	{
+		Results<Ok<ItemTemplateHistoryCandidateListResponse>, BadRequest<string>> result =
+			await _controller.GetItemTemplateHistoryCandidates(0, limit, 2);
+
+		BadRequest<string> badRequestResult = Assert.IsType<BadRequest<string>>(result.Result);
+		badRequestResult.Value.Should().Be("limit must be between 1 and 500");
+	}
+
+	[Theory]
+	[InlineData(0)]
+	[InlineData(-2)]
+	public async Task GetItemTemplateHistoryCandidates_ReturnsBadRequest_WhenMinCountIsBelowOne(int minCount)
+	{
+		Results<Ok<ItemTemplateHistoryCandidateListResponse>, BadRequest<string>> result =
+			await _controller.GetItemTemplateHistoryCandidates(0, 50, minCount);
+
+		BadRequest<string> badRequestResult = Assert.IsType<BadRequest<string>>(result.Result);
+		badRequestResult.Value.Should().Be("minCount must be >= 1");
+	}
+
+	[Fact]
+	public async Task GetItemTemplateHistoryCandidates_DoesNotCallMediator_WhenParametersAreInvalid()
+	{
+		await _controller.GetItemTemplateHistoryCandidates(-1, 50, 2);
+
+		_mediatorMock.Verify(m => m.Send(
+			It.IsAny<GetItemTemplateHistoryCandidatesQuery>(),
+			It.IsAny<CancellationToken>()),
+			Times.Never);
+	}
+
+	[Fact]
+	public async Task GetItemTemplateHistoryCandidates_ThrowsException_WhenMediatorFails()
+	{
+		_mediatorMock.Setup(m => m.Send(
+			It.IsAny<GetItemTemplateHistoryCandidatesQuery>(),
+			It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new Exception());
+
+		Func<Task> act = () => _controller.GetItemTemplateHistoryCandidates(0, 50, 2);
 
 		await act.Should().ThrowAsync<Exception>();
 	}

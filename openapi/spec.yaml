@@ -1258,6 +1258,52 @@ paths:
                 items:
                   $ref: "#/components/schemas/SimilarItemResponse"
 
+  /api/item-templates/history-candidates:
+    get:
+      operationId: GetItemTemplateHistoryCandidates
+      tags: [ItemTemplates]
+      summary: Get suggested item templates from receipt history
+      description: |
+        Returns recurring receipt-item descriptions that do not yet have a matching
+        item template, together with defaults suggested from purchase history
+        (category/subcategory, unit price, item code). Ordered by occurrence count
+        descending, then name ascending.
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      parameters:
+        - $ref: "#/components/parameters/Offset"
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 50
+        - name: minCount
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 2
+            minimum: 1
+          description: Minimum number of receipt-item occurrences required for a candidate
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemTemplateHistoryCandidateListResponse"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                type: string
+
   /api/item-templates/category-suggestions:
     get:
       operationId: GetCategorySuggestions
@@ -5989,6 +6035,61 @@ components:
           type:
             - string
             - "null"
+
+    ItemTemplateHistoryCandidateResponse:
+      type: object
+      required: [name, occurrenceCount, lastPurchasedAt]
+      properties:
+        name:
+          type: string
+          description: Description text as it appeared on the most recent receipt
+        occurrenceCount:
+          type: integer
+          format: int32
+          description: Number of receipt items sharing this description (case-insensitive)
+        lastPurchasedAt:
+          type: string
+          format: date
+          description: Date of the most recent receipt containing this description
+        suggestedCategory:
+          type:
+            - string
+            - "null"
+          description: Category from this description's most frequent (category, subcategory) combination
+        suggestedSubcategory:
+          type:
+            - string
+            - "null"
+          description: Subcategory from this description's most frequent (category, subcategory) combination
+        suggestedUnitPrice:
+          type:
+            - number
+            - "null"
+          format: double
+          description: Unit price from the most recent receipt containing this description
+        suggestedItemCode:
+          type:
+            - string
+            - "null"
+          description: Most frequently used non-null item code for this description
+
+    ItemTemplateHistoryCandidateListResponse:
+      type: object
+      required: [data, total, offset, limit]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ItemTemplateHistoryCandidateResponse"
+        total:
+          type: integer
+          format: int32
+        offset:
+          type: integer
+          format: int32
+        limit:
+          type: integer
+          format: int32
 
     CategoryRecommendationResponse:
       type: object

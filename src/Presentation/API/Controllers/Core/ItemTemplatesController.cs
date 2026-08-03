@@ -8,6 +8,7 @@ using Application.Commands.ItemTemplate.Update;
 using Application.Models;
 using Application.Queries.Core.ItemTemplate;
 using Application.Queries.Core.ItemTemplate.GetCategoryRecommendations;
+using Application.Queries.Core.ItemTemplate.GetHistoryCandidates;
 using Application.Queries.Core.ItemTemplate.GetSimilarItems;
 using Asp.Versioning;
 using Domain.Core;
@@ -34,6 +35,7 @@ public class ItemTemplatesController(IMediator mediator, ItemTemplateMapper mapp
 	public const string RouteRestore = "{id}/restore";
 	public const string RouteGetSimilar = "similar";
 	public const string RouteGetCategorySuggestions = "category-suggestions";
+	public const string RouteGetHistoryCandidates = "history-candidates";
 
 	[HttpGet(RouteGetById)]
 	[EndpointSummary("Get an item template by ID")]
@@ -215,6 +217,47 @@ public class ItemTemplatesController(IMediator mediator, ItemTemplateMapper mapp
 		})];
 
 		return TypedResults.Ok(response);
+	}
+
+	[HttpGet(RouteGetHistoryCandidates)]
+	[EndpointSummary("Get suggested item templates from receipt history")]
+	[EndpointDescription("Returns recurring receipt-item descriptions that do not yet have a matching item template, together with defaults suggested from purchase history.")]
+	public async Task<Results<Ok<ItemTemplateHistoryCandidateListResponse>, BadRequest<string>>> GetItemTemplateHistoryCandidates([FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] int minCount = 2, CancellationToken cancellationToken = default)
+	{
+		if (offset < 0)
+		{
+			return TypedResults.BadRequest("offset must be >= 0");
+		}
+
+		if (limit <= 0 || limit > 500)
+		{
+			return TypedResults.BadRequest("limit must be between 1 and 500");
+		}
+
+		if (minCount < 1)
+		{
+			return TypedResults.BadRequest("minCount must be >= 1");
+		}
+
+		GetItemTemplateHistoryCandidatesQuery query = new(offset, limit, minCount);
+		PagedResult<ItemTemplateHistoryCandidate> result = await mediator.Send(query, cancellationToken);
+
+		return TypedResults.Ok(new ItemTemplateHistoryCandidateListResponse
+		{
+			Data = [.. result.Data.Select(c => new ItemTemplateHistoryCandidateResponse
+			{
+				Name = c.Name,
+				OccurrenceCount = c.OccurrenceCount,
+				LastPurchasedAt = c.LastPurchasedAt,
+				SuggestedCategory = c.SuggestedCategory,
+				SuggestedSubcategory = c.SuggestedSubcategory,
+				SuggestedUnitPrice = c.SuggestedUnitPrice.HasValue ? (double)c.SuggestedUnitPrice.Value : null,
+				SuggestedItemCode = c.SuggestedItemCode,
+			})],
+			Total = result.Total,
+			Offset = result.Offset,
+			Limit = result.Limit,
+		});
 	}
 
 	[HttpGet(RouteGetCategorySuggestions)]

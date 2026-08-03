@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef } from "react";
 import {
   useItemTemplates,
   useCreateItemTemplate,
@@ -16,6 +16,7 @@ import { useServerSort } from "@/hooks/useServerSort";
 import { useListKeyboardNav } from "@/hooks/useListKeyboardNav";
 import type { FuseSearchConfig } from "@/lib/search";
 import { ItemTemplateForm } from "@/components/ItemTemplateForm";
+import { TemplateHistorySuggestions } from "@/components/TemplateHistorySuggestions";
 import { FuzzySearchInput } from "@/components/FuzzySearchInput";
 import { SearchHighlight } from "@/components/SearchHighlight";
 import { getMatchIndices } from "@/lib/search-highlight";
@@ -66,9 +67,25 @@ const SEARCH_CONFIG: FuseSearchConfig<ItemTemplateResponse> = {
 
 function ItemTemplates() {
   usePageTitle("Item Templates");
-  const { sortBy, sortDirection, toggleSort } = useServerSort({ defaultSortBy: "name", defaultSortDirection: "asc" });
-  const { offset, limit, currentPage, pageSize, totalPages, setPage, setPageSize, resetPage } = useServerPagination({ sortBy, sortDirection });
-  const { data: itemTemplatesData, total: serverTotal, isLoading } = useItemTemplates(offset, limit, sortBy, sortDirection);
+  const { sortBy, sortDirection, toggleSort } = useServerSort({
+    defaultSortBy: "name",
+    defaultSortDirection: "asc",
+  });
+  const {
+    offset,
+    limit,
+    currentPage,
+    pageSize,
+    totalPages,
+    setPage,
+    setPageSize,
+    resetPage,
+  } = useServerPagination({ sortBy, sortDirection });
+  const {
+    data: itemTemplatesData,
+    total: serverTotal,
+    isLoading,
+  } = useItemTemplates(offset, limit, sortBy, sortDirection);
   const createItemTemplate = useCreateItemTemplate();
   const updateItemTemplate = useUpdateItemTemplate();
   const deleteItemTemplates = useDeleteItemTemplates();
@@ -77,6 +94,7 @@ function ItemTemplates() {
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [createOpen, setCreateOpen] = useState(false);
+  const newTemplateButtonRef = useRef<HTMLButtonElement>(null);
   const [editTemplate, setEditTemplate] = useState<ItemTemplateResponse | null>(
     null,
   );
@@ -87,10 +105,13 @@ function ItemTemplates() {
   const openCreate = useCallback(() => setCreateOpen(true), []);
   useOpenNewItem(openCreate);
 
-  const handleSort = useCallback((column: string) => {
-    toggleSort(column);
-    resetPage();
-  }, [toggleSort, resetPage]);
+  const handleSort = useCallback(
+    (column: string) => {
+      toggleSort(column);
+      resetPage();
+    },
+    [toggleSort, resetPage],
+  );
 
   const data = (itemTemplatesData as ItemTemplateResponse[] | undefined) ?? [];
   useSavedFilters("itemTemplates");
@@ -127,18 +148,19 @@ function ItemTemplates() {
     }
   }
 
-  const { focusedId, setFocusedIndex, tableRef, containerProps, getRowProps } = useListKeyboardNav({
-    items: filteredResults,
-    getId: (a) => a.id,
-    listId: "item-templates",
-    enabled: !anyDialogOpen,
-    onOpen: (a) => setEditTemplate(a),
-    onDelete: () => setDeleteOpen(true),
-    onSelectAll: () => setSelected(new Set(filteredResults.map((a) => a.id))),
-    onDeselectAll: () => setSelected(new Set()),
-    onToggleSelect: (a) => toggleSelect(a.id),
-    selected,
-  });
+  const { focusedId, setFocusedIndex, tableRef, containerProps, getRowProps } =
+    useListKeyboardNav({
+      items: filteredResults,
+      getId: (a) => a.id,
+      listId: "item-templates",
+      enabled: !anyDialogOpen,
+      onOpen: (a) => setEditTemplate(a),
+      onDelete: () => setDeleteOpen(true),
+      onSelectAll: () => setSelected(new Set(filteredResults.map((a) => a.id))),
+      onDeselectAll: () => setSelected(new Set()),
+      onToggleSelect: (a) => toggleSelect(a.id),
+      selected,
+    });
 
   if (isLoading) {
     return <TableSkeleton columns={6} />;
@@ -161,6 +183,7 @@ function ItemTemplates() {
               </button>
             )}
             <button
+              ref={newTemplateButtonRef}
               type="button"
               className="btn primary"
               onClick={() => setCreateOpen(true)}
@@ -183,6 +206,11 @@ function ItemTemplates() {
         </div>
       </div>
 
+      <TemplateHistorySuggestions
+        fallbackFocusRef={newTemplateButtonRef}
+        searchTerm={search}
+      />
+
       {filteredResults.length === 0 ? (
         search ? (
           <NoResults
@@ -192,7 +220,10 @@ function ItemTemplates() {
             entityName="item templates"
           />
         ) : (
-          <div role="status" className="py-12 text-center text-muted-foreground">
+          <div
+            role="status"
+            className="py-12 text-center text-muted-foreground"
+          >
             No item templates yet. Create one to get started.
           </div>
         )
@@ -220,7 +251,13 @@ function ItemTemplates() {
                       onCheckedChange={toggleAll}
                     />
                   </TableHead>
-                  <SortableTableHead column="name" label="Name" currentSortBy={sortBy} currentSortDirection={sortDirection} onToggleSort={handleSort} />
+                  <SortableTableHead
+                    column="name"
+                    label="Name"
+                    currentSortBy={sortBy}
+                    currentSortDirection={sortDirection}
+                    onToggleSort={handleSort}
+                  />
                   <TableHead>Category</TableHead>
                   <TableHead>Subcategory</TableHead>
                   <TableHead>Unit Price</TableHead>
@@ -374,14 +411,16 @@ function ItemTemplates() {
                   { onSuccess: () => setEditTemplate(null) },
                 );
               }}
-              {...(isAdmin() ? {
-                onHide: () => {
-                  hideItemTemplate.mutate(editTemplate.id, {
-                    onSuccess: () => setEditTemplate(null),
-                  });
-                },
-                isHiding: hideItemTemplate.isPending,
-              } : {})}
+              {...(isAdmin()
+                ? {
+                    onHide: () => {
+                      hideItemTemplate.mutate(editTemplate.id, {
+                        onSuccess: () => setEditTemplate(null),
+                      });
+                    },
+                    isHiding: hideItemTemplate.isPending,
+                  }
+                : {})}
             />
           )}
         </DialogContent>

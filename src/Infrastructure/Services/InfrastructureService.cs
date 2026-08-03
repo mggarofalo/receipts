@@ -139,6 +139,7 @@ public static class InfrastructureService
 			.AddScoped<IBackupImportService, BackupImportService>()
 			.AddScoped<IItemTemplateService, ItemTemplateService>()
 			.AddScoped<IItemTemplateSimilarityService, ItemTemplateSimilarityService>()
+			.AddScoped<IItemTemplateHistoryCandidateService, ItemTemplateHistoryCandidateService>()
 			.AddScoped<INormalizedDescriptionService, NormalizedDescriptionService>()
 			.AddScoped<IReceiptRepository, ReceiptRepository>()
 			.AddScoped<IAccountRepository, AccountRepository>()
