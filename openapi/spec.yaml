@@ -3797,6 +3797,13 @@ paths:
             default: 0
             minimum: 0
           description: Maximum difference between transaction totals to still consider them matching. Default 0 (exact match).
+        - name: includeAccepted
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: When true, groups previously accepted as "not a duplicate" are included and flagged with isAccepted. Default false (accepted groups are omitted).
       responses:
         "200":
           description: OK
@@ -3810,6 +3817,79 @@ paths:
             application/json:
               schema:
                 type: string
+
+  /api/reports/duplicates/accepted:
+    get:
+      operationId: GetAcceptedDuplicates
+      tags: [Reports]
+      summary: List accepted duplicate groups
+      description: Returns the receipt groups a user has accepted as genuinely separate purchases. Groups are the connected components of the accepted-pair graph, hydrated with the receipts that are still active.
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AcceptedDuplicatesResponse"
+    post:
+      operationId: AcceptDuplicateGroup
+      tags: [Reports]
+      summary: Accept a duplicate group as not-a-duplicate
+      description: Records every unordered pair of the supplied receipts as "not a duplicate" so the group stops being reported. Idempotent — re-accepting an already-accepted group is a no-op.
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AcceptDuplicateGroupRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AcceptDuplicateGroupResponse"
+        "404":
+          description: One or more receipts were not found
+          content:
+            application/json:
+              schema:
+                type: string
+
+  /api/reports/duplicates/accepted/remove:
+    post:
+      operationId: UnacceptDuplicateGroup
+      tags: [Reports]
+      summary: Undo a duplicate-group acceptance
+      description: >
+        Removes the "not a duplicate" assertion between every pair of the supplied receipts, and
+        only those pairs — the server does not expand the request. The caller must therefore submit
+        every member of the group it wants undone: send the group's memberReceiptIds from
+        GET /api/reports/duplicates/accepted, not the receipts it displayed, or the pairs touching a
+        member whose receipt was deleted are left stored with no way to reach them again. To un-accept
+        just one reported cluster instead, send that cluster's receipts.
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UnacceptDuplicateGroupRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnacceptDuplicateGroupResponse"
 
   /api/reports/category-trends:
     get:
@@ -5014,15 +5094,18 @@ components:
 
     DuplicateGroup:
       type: object
-      required: [matchKey, receipts]
+      required: [matchKey, receipts, isAccepted]
       properties:
         matchKey:
           type: string
-          description: Human-readable description of what these receipts have in common.
+          description: Human-readable description of what these receipts have in common. Display only — it is derived from the current tolerance settings and is not a stable identity.
         receipts:
           type: array
           items:
             $ref: "#/components/schemas/DuplicateReceipt"
+        isAccepted:
+          type: boolean
+          description: True when every pair of receipts in this group has been accepted as "not a duplicate". Only ever true when includeAccepted was requested.
 
     DuplicateReceipt:
       type: object
@@ -5039,6 +5122,90 @@ components:
         transactionTotal:
           type: number
           format: double
+
+    AcceptedDuplicatesResponse:
+      type: object
+      required: [groupCount, groups]
+      properties:
+        groupCount:
+          type: integer
+          format: int32
+        groups:
+          type: array
+          items:
+            $ref: "#/components/schemas/AcceptedDuplicateGroup"
+
+    AcceptedDuplicateGroup:
+      type: object
+      required: [receipts, memberReceiptIds, acceptedAt]
+      properties:
+        receipts:
+          type: array
+          items:
+            $ref: "#/components/schemas/DuplicateReceipt"
+          description: The members that still exist, for display. Members whose receipt was deleted are omitted.
+        memberReceiptIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: >
+            Every member of the group, including any omitted from receipts because the receipt was
+            deleted. Undo must submit this list rather than the displayed receipts, or the pairs
+            touching a deleted member are left stored with no way to reach them again.
+        acceptedAt:
+          type: string
+          format: date-time
+          description: When the most recent pair in this group was accepted.
+
+    AcceptDuplicateGroupRequest:
+      type: object
+      required: [receiptIds]
+      properties:
+        receiptIds:
+          type: array
+          minItems: 2
+          maxItems: 100
+          items:
+            type: string
+            format: uuid
+          description: The receipts in the group. At least two distinct IDs, and at most 100 — accepting expands to one stored row per pair, so the list is bounded the same way bulk YNAB pushes are.
+
+    UnacceptDuplicateGroupRequest:
+      type: object
+      required: [receiptIds]
+      properties:
+        receiptIds:
+          type: array
+          minItems: 2
+          items:
+            type: string
+            format: uuid
+          description: >
+            Every receipt whose mutual acceptances should be removed. At least two distinct IDs.
+            Deliberately has no upper bound, unlike AcceptDuplicateGroupRequest: accepting stores one
+            row per pair and is quadratic, whereas un-accepting is a single DELETE that is linear in
+            the input and cannot create rows. An accepted group can exceed 100 members without any
+            single accept call doing so, because groups are connected components that merge when an
+            acceptance bridges two of them — capping this would make such a group impossible to undo.
+
+    AcceptDuplicateGroupResponse:
+      type: object
+      required: [acceptedPairCount]
+      properties:
+        acceptedPairCount:
+          type: integer
+          format: int32
+          description: Number of receipt pairs newly recorded as not-a-duplicate. Zero when the group was already fully accepted.
+
+    UnacceptDuplicateGroupResponse:
+      type: object
+      required: [removedPairCount]
+      properties:
+        removedPairCount:
+          type: integer
+          format: int32
+          description: Number of accepted receipt pairs removed.
 
     CategoryTrendsResponse:
       type: object

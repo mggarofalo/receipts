@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using Application.Interfaces.Services;
 using Application.Models.Reports;
 using Common;
+using Infrastructure.Entities.Core;
 using Microsoft.EntityFrameworkCore;
 
 namespace Infrastructure.Services;
@@ -297,6 +298,7 @@ public partial class ReportService(IDbContextFactory<ApplicationDbContext> conte
 		string matchOn,
 		string locationTolerance,
 		decimal totalTolerance,
+		bool includeAccepted,
 		CancellationToken cancellationToken)
 	{
 		await using ApplicationDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
@@ -346,9 +348,385 @@ public partial class ReportService(IDbContextFactory<ApplicationDbContext> conte
 				(key, seed) => $"{key.Date:yyyy-MM-dd} @ {seed.Location} — ${seed.TransactionTotal:F2}")
 		};
 
-		int totalDuplicateReceipts = groups.Sum(g => g.Receipts.Count);
-		return new DuplicateDetectionResult(groups, groups.Count, totalDuplicateReceipts);
+		// Suppression is applied AFTER clustering, on receipt identities, so it is unaffected by the
+		// tolerance / normalization settings that shaped the clusters above (RECEIPTS-834).
+		//
+		// Scoped to the receipts that actually landed in a group: an unpredicated read of the whole
+		// table made report cost scale with every acceptance in the database, and paid that cost even
+		// when clustering produced nothing. Only pairs whose BOTH ends are in a group can suppress
+		// one, so anything else is dead weight.
+		HashSet<Guid> clusteredReceiptIds = [.. groups.SelectMany(g => g.Receipts).Select(r => r.ReceiptId)];
+		HashSet<(Guid A, Guid B)> acceptedPairs = clusteredReceiptIds.Count == 0
+			? []
+			: await LoadAcceptedPairsAsync(context, clusteredReceiptIds, cancellationToken);
+
+		List<DuplicateGroup> visibleGroups = [];
+		foreach (DuplicateGroup group in groups)
+		{
+			bool isAccepted = IsFullyAccepted(group.Receipts.Select(r => r.ReceiptId), acceptedPairs);
+			if (isAccepted && !includeAccepted)
+			{
+				continue;
+			}
+
+			visibleGroups.Add(group with { IsAccepted = isAccepted });
+		}
+
+		int totalDuplicateReceipts = visibleGroups.Sum(g => g.Receipts.Count);
+		return new DuplicateDetectionResult(visibleGroups, visibleGroups.Count, totalDuplicateReceipts);
 	}
+
+	/// <summary>Number of missing receipt IDs echoed back in a not-found message before truncating.</summary>
+	private const int MaxReportedMissingIds = 10;
+
+	private const string PostgreSQLProvider = "Npgsql.EntityFrameworkCore.PostgreSQL";
+
+	public async Task<int> AcceptDuplicateGroupAsync(
+		List<Guid> receiptIds,
+		CancellationToken cancellationToken)
+	{
+		List<Guid> distinctIds = [.. receiptIds.Distinct()];
+		if (distinctIds.Count < 2)
+		{
+			return 0;
+		}
+
+		await using ApplicationDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
+
+		HashSet<Guid> existingReceipts = [.. await context.Receipts
+			.AsNoTracking()
+			.Where(r => distinctIds.Contains(r.Id) && r.DeletedAt == null)
+			.Select(r => r.Id)
+			.ToListAsync(cancellationToken)];
+
+		List<Guid> missing = [.. distinctIds.Where(id => !existingReceipts.Contains(id))];
+		if (missing.Count > 0)
+		{
+			throw new KeyNotFoundException(FormatMissingReceiptsMessage(missing));
+		}
+
+		List<(Guid A, Guid B)> pairs = [.. CanonicalPairs(distinctIds)];
+		DateTimeOffset now = DateTimeOffset.UtcNow;
+
+		return context.Database.ProviderName == PostgreSQLProvider
+			? await InsertPairsIgnoringConflictsAsync(context, pairs, now, cancellationToken)
+			: await InsertPairsTrackedAsync(context, pairs, now, cancellationToken);
+	}
+
+	/// <summary>
+	/// Truncates the echoed ID list. The caller returns this verbatim as a 404 body and logs it, so an
+	/// unbounded join over every unmatched GUID turns a bad request into a multi-megabyte response and
+	/// log line.
+	/// </summary>
+	private static string FormatMissingReceiptsMessage(List<Guid> missing)
+	{
+		string sample = string.Join(", ", missing.Take(MaxReportedMissingIds));
+		return missing.Count > MaxReportedMissingIds
+			? $"Receipt(s) not found: {sample} (+{missing.Count - MaxReportedMissingIds} more)"
+			: $"Receipt(s) not found: {sample}";
+	}
+
+	/// <summary>
+	/// Inserts every pair in one statement, letting the database decide which already exist.
+	///
+	/// The decision has to happen at write time, not read time. Reading the existing rows first and
+	/// skipping the ones that look present loses both ways under concurrency: two accepts racing on
+	/// the same pair both insert and one dies on the unique index (23505, rolling back the whole
+	/// request including its unrelated pairs), and an unaccept committing between the read and the
+	/// write makes the accept report success while leaving the pair un-accepted.
+	///
+	/// ON CONFLICT DO NOTHING collapses a duplicate INSERT into a no-op, and the affected-row count is
+	/// the number genuinely accepted. The conflict target repeats the unique index's predicate so
+	/// Postgres can infer the partial index. A tombstone does not conflict — it is outside the partial
+	/// index — so re-accepting after an un-accept inserts a fresh row and leaves the un-accept in
+	/// history.
+	///
+	/// ON CONFLICT does NOT, however, collapse a deadlock. Two transactions inserting the same pairs
+	/// in opposite orders take the same index-key locks in opposite orders and one dies with 40P01.
+	/// That is reachable without adversarial input, because GetDuplicatesAsync returns a group's
+	/// members in different orders per matchOn — ClusterByTotal walks its remaining list backwards, so
+	/// dateAndLocation yields [r0,r1,r2] where dateAndLocationAndTotal yields [r0,r2,r1]. Sorting the
+	/// pairs here gives every caller the same global lock order, which is what actually prevents it.
+	/// </summary>
+	private static async Task<int> InsertPairsIgnoringConflictsAsync(
+		ApplicationDbContext context,
+		List<(Guid A, Guid B)> pairs,
+		DateTimeOffset acceptedAt,
+		CancellationToken cancellationToken)
+	{
+		List<(Guid A, Guid B)> ordered = [.. pairs.OrderBy(p => p.A).ThenBy(p => p.B)];
+
+		Guid[] ids = [.. ordered.Select(_ => Guid.NewGuid())];
+		Guid[] aIds = [.. ordered.Select(p => p.A)];
+		Guid[] bIds = [.. ordered.Select(p => p.B)];
+
+		return await context.Database.ExecuteSqlRawAsync(
+			"""
+			INSERT INTO "receipts"."AcceptedDuplicatePairs" ("Id", "ReceiptIdA", "ReceiptIdB", "AcceptedAt")
+			SELECT id, a, b, {3}
+			FROM unnest({0}::uuid[], {1}::uuid[], {2}::uuid[]) AS t(id, a, b)
+			ON CONFLICT ("ReceiptIdA", "ReceiptIdB") WHERE "DeletedAt" IS NULL DO NOTHING;
+			""",
+			[ids, aIds, bIds, acceptedAt],
+			cancellationToken);
+	}
+
+	/// <summary>
+	/// Change-tracker fallback for providers without ON CONFLICT (the InMemory provider used by unit
+	/// tests). Idempotent for sequential callers, which is all a single-threaded test needs; it cannot
+	/// be made race-safe without the database constraint, so production never takes this path.
+	/// </summary>
+	private static async Task<int> InsertPairsTrackedAsync(
+		ApplicationDbContext context,
+		List<(Guid A, Guid B)> pairs,
+		DateTimeOffset acceptedAt,
+		CancellationToken cancellationToken)
+	{
+		HashSet<Guid> endpoints = [.. pairs.SelectMany(p => new[] { p.A, p.B })];
+
+		HashSet<(Guid, Guid)> alreadyActive = [.. (await context.AcceptedDuplicatePairs
+			.Where(p => endpoints.Contains(p.ReceiptIdA) && endpoints.Contains(p.ReceiptIdB))
+			.Select(p => new { p.ReceiptIdA, p.ReceiptIdB })
+			.ToListAsync(cancellationToken))
+			.Select(p => (p.ReceiptIdA, p.ReceiptIdB))];
+
+		int accepted = 0;
+		foreach ((Guid a, Guid b) in pairs)
+		{
+			if (alreadyActive.Contains((a, b)))
+			{
+				continue;
+			}
+
+			context.AcceptedDuplicatePairs.Add(new AcceptedDuplicatePairEntity
+			{
+				Id = Guid.NewGuid(),
+				ReceiptIdA = a,
+				ReceiptIdB = b,
+				AcceptedAt = acceptedAt
+			});
+			accepted++;
+		}
+
+		if (accepted > 0)
+		{
+			await context.SaveChangesAsync(cancellationToken);
+		}
+
+		return accepted;
+	}
+
+	public async Task<int> UnacceptDuplicateGroupAsync(
+		List<Guid> receiptIds,
+		CancellationToken cancellationToken)
+	{
+		HashSet<Guid> idSet = [.. receiptIds];
+		if (idSet.Count < 2)
+		{
+			return 0;
+		}
+
+		await using ApplicationDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
+
+		// Remove exactly the pairs among the submitted receipts — nothing wider.
+		//
+		// An earlier revision expanded to the connected component of the acceptance graph, to fix undo
+		// stranding pairs when a group had a soft-deleted member. That over-corrected. The undo button
+		// in the accepted-groups list acts on a whole acceptance, but "Report again" in the report acts
+		// on a REPORT CLUSTER, and a cluster can be a strict subset of the component: accept {A,B} and
+		// {C,D} at tolerance 0, widen tolerance so all four cluster together, accept that, then narrow
+		// tolerance again — clicking "Report again" on {A,B} would expand to the component and silently
+		// destroy the untouched {C,D} acceptance. Every value in that sequence is a dropdown option.
+		//
+		// The stranding bug is fixed at its actual source instead: GetAcceptedDuplicatesAsync now
+		// reports each group's COMPLETE member set (including soft-deleted receipts) alongside the
+		// subset it displays, so the client can submit every member and undo removes every pair. Here,
+		// "remove what was asked for and nothing else" is both correct and the only safe rule, because
+		// this method cannot tell a full acceptance from a cluster-shaped slice of one.
+		List<AcceptedDuplicatePairEntity> toRemove = await context.AcceptedDuplicatePairs
+			.Where(p => idSet.Contains(p.ReceiptIdA) && idSet.Contains(p.ReceiptIdB))
+			.ToListAsync(cancellationToken);
+
+		if (toRemove.Count == 0)
+		{
+			return 0;
+		}
+
+		// RemoveRange is converted to a soft delete by ApplicationDbContext.HandleSoftDelete.
+		context.AcceptedDuplicatePairs.RemoveRange(toRemove);
+		await context.SaveChangesAsync(cancellationToken);
+
+		return toRemove.Count;
+	}
+
+	public async Task<AcceptedDuplicatesResult> GetAcceptedDuplicatesAsync(CancellationToken cancellationToken)
+	{
+		await using ApplicationDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
+
+		var pairRows = await context.AcceptedDuplicatePairs
+			.AsNoTracking()
+			.Select(p => new { p.ReceiptIdA, p.ReceiptIdB, p.AcceptedAt })
+			.ToListAsync(cancellationToken);
+
+		List<AcceptedPairSnapshot> pairs = [.. pairRows
+			.Select(p => new AcceptedPairSnapshot(p.ReceiptIdA, p.ReceiptIdB, p.AcceptedAt))];
+
+		if (pairs.Count == 0)
+		{
+			return new AcceptedDuplicatesResult([], 0);
+		}
+
+		// Connected components of the acceptance graph. Two acceptances that share a receipt merge
+		// into one displayed group — a deliberate simplification of the pairwise model.
+		Dictionary<Guid, Guid> parent = [];
+		foreach (AcceptedPairSnapshot pair in pairs)
+		{
+			Union(parent, pair.ReceiptIdA, pair.ReceiptIdB);
+		}
+
+		Dictionary<Guid, List<Guid>> componentMembers = [];
+		Dictionary<Guid, DateTimeOffset> componentAcceptedAt = [];
+		foreach (AcceptedPairSnapshot pair in pairs)
+		{
+			Guid root = Find(parent, pair.ReceiptIdA);
+
+			if (!componentMembers.TryGetValue(root, out List<Guid>? members))
+			{
+				members = [];
+				componentMembers[root] = members;
+			}
+
+			if (!members.Contains(pair.ReceiptIdA))
+			{
+				members.Add(pair.ReceiptIdA);
+			}
+
+			if (!members.Contains(pair.ReceiptIdB))
+			{
+				members.Add(pair.ReceiptIdB);
+			}
+
+			// The component is stamped with its most recent acceptance.
+			if (!componentAcceptedAt.TryGetValue(root, out DateTimeOffset acceptedAt) || pair.AcceptedAt > acceptedAt)
+			{
+				componentAcceptedAt[root] = pair.AcceptedAt;
+			}
+		}
+
+		HashSet<Guid> allMembers = [.. componentMembers.Values.SelectMany(m => m)];
+
+		Dictionary<Guid, DuplicateReceiptSummary> summaries = await (
+			from r in context.Receipts.AsNoTracking()
+			where r.DeletedAt == null && allMembers.Contains(r.Id)
+			let transactionTotal = context.Transactions
+				.Where(t => t.ReceiptId == r.Id && t.DeletedAt == null)
+				.Sum(t => (decimal?)t.Amount) ?? 0m
+			select new DuplicateReceiptSummary(r.Id, r.Location, r.Date, transactionTotal))
+			.ToDictionaryAsync(s => s.ReceiptId, cancellationToken);
+
+		List<AcceptedDuplicateGroup> groups = [];
+		foreach ((Guid root, List<Guid> members) in componentMembers)
+		{
+			// Members whose receipt is soft-deleted or purged are dropped from the DISPLAY list: there
+			// is nothing to show and nothing left to warn about. A component with fewer than two
+			// surviving receipts can never produce a duplicate warning, so it is not listed either.
+			// Restoring the receipt brings both the group and its (still-stored) acceptance back.
+			List<DuplicateReceiptSummary> receipts = [.. members
+				.Where(summaries.ContainsKey)
+				.Select(id => summaries[id])
+				.OrderBy(r => r.Date)
+				.ThenBy(r => r.Location, StringComparer.Ordinal)];
+
+			if (receipts.Count < 2)
+			{
+				continue;
+			}
+
+			// The COMPLETE member set goes out alongside it. Undo submits this, so every pair in the
+			// component is removed even when some members no longer render — that is what stops the
+			// pairs touching a deleted member being stranded with no way to reach them.
+			groups.Add(new AcceptedDuplicateGroup(receipts, [.. members], componentAcceptedAt[root]));
+		}
+
+		groups = [.. groups.OrderByDescending(g => g.AcceptedAt)];
+		return new AcceptedDuplicatesResult(groups, groups.Count);
+	}
+
+	private static async Task<HashSet<(Guid A, Guid B)>> LoadAcceptedPairsAsync(
+		ApplicationDbContext context,
+		HashSet<Guid> receiptIds,
+		CancellationToken cancellationToken)
+	{
+		var rows = await context.AcceptedDuplicatePairs
+			.AsNoTracking()
+			.Where(p => receiptIds.Contains(p.ReceiptIdA) && receiptIds.Contains(p.ReceiptIdB))
+			.Select(p => new { p.ReceiptIdA, p.ReceiptIdB })
+			.ToListAsync(cancellationToken);
+
+		return [.. rows.Select(r => (r.ReceiptIdA, r.ReceiptIdB))];
+	}
+
+	/// <summary>
+	/// True when EVERY unordered pair within the group has been accepted. Requiring the full pair set
+	/// is what makes a group that gains a new member resurface: the newcomer's pairs are undismissed.
+	/// </summary>
+	private static bool IsFullyAccepted(IEnumerable<Guid> receiptIds, HashSet<(Guid A, Guid B)> acceptedPairs)
+	{
+		if (acceptedPairs.Count == 0)
+		{
+			return false;
+		}
+
+		List<Guid> ids = [.. receiptIds.Distinct()];
+		if (ids.Count < 2)
+		{
+			return false;
+		}
+
+		return CanonicalPairs(ids).All(acceptedPairs.Contains);
+	}
+
+	/// <summary>Every unordered pair of the supplied IDs, each ordered so A &lt; B.</summary>
+	private static IEnumerable<(Guid A, Guid B)> CanonicalPairs(List<Guid> ids)
+	{
+		for (int i = 0; i < ids.Count; i++)
+		{
+			for (int j = i + 1; j < ids.Count; j++)
+			{
+				yield return ids[i].CompareTo(ids[j]) < 0 ? (ids[i], ids[j]) : (ids[j], ids[i]);
+			}
+		}
+	}
+
+	private static Guid Find(Dictionary<Guid, Guid> parent, Guid id)
+	{
+		if (!parent.TryGetValue(id, out Guid value))
+		{
+			parent[id] = id;
+			return id;
+		}
+
+		if (value == id)
+		{
+			return id;
+		}
+
+		Guid root = Find(parent, value);
+		parent[id] = root;
+		return root;
+	}
+
+	private static void Union(Dictionary<Guid, Guid> parent, Guid left, Guid right)
+	{
+		Guid leftRoot = Find(parent, left);
+		Guid rightRoot = Find(parent, right);
+		if (leftRoot != rightRoot)
+		{
+			parent[rightRoot] = leftRoot;
+		}
+	}
+
+	private sealed record AcceptedPairSnapshot(Guid ReceiptIdA, Guid ReceiptIdB, DateTimeOffset AcceptedAt);
 
 	private static List<DuplicateGroup> ClusterByTotal<TKey>(
 		IEnumerable<IGrouping<TKey, ReceiptSnapshot>> groupedReceipts,

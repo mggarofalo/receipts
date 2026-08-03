@@ -1,4 +1,5 @@
 using API.Generated.Dtos;
+using Application.Commands.Reports;
 using Application.Queries.Aggregates.Reports;
 using Asp.Versioning;
 using Mediator;
@@ -234,6 +235,7 @@ public class ReportsController(IMediator mediator) : ControllerBase
 		[FromQuery] string? matchOn,
 		[FromQuery] string? locationTolerance,
 		[FromQuery] double? totalTolerance,
+		[FromQuery] bool? includeAccepted,
 		CancellationToken cancellationToken)
 	{
 		string match = matchOn ?? "dateAndLocation";
@@ -257,7 +259,7 @@ public class ReportsController(IMediator mediator) : ControllerBase
 			return TypedResults.BadRequest("totalTolerance must be >= 0");
 		}
 
-		GetDuplicateDetectionReportQuery query = new(match, locTol, totTol);
+		GetDuplicateDetectionReportQuery query = new(match, locTol, totTol, includeAccepted ?? false);
 		AppReports.DuplicateDetectionResult result = await mediator.Send(query, cancellationToken);
 
 		return TypedResults.Ok(new DuplicatesResponse
@@ -267,16 +269,83 @@ public class ReportsController(IMediator mediator) : ControllerBase
 			Groups = result.Groups.Select(g => new DuplicateGroup
 			{
 				MatchKey = g.MatchKey,
-				Receipts = g.Receipts.Select(r => new DuplicateReceipt
-				{
-					ReceiptId = r.ReceiptId,
-					Location = r.Location,
-					Date = r.Date,
-					TransactionTotal = (double)r.TransactionTotal
-				}).ToList()
+				IsAccepted = g.IsAccepted,
+				Receipts = g.Receipts.Select(ToDuplicateReceipt).ToList()
 			}).ToList()
 		});
 	}
+
+	[HttpGet("duplicates/accepted")]
+	[EndpointSummary("List accepted duplicate groups")]
+	[EndpointDescription("Returns the receipt groups a user has accepted as genuinely separate purchases.")]
+	public async Task<Ok<AcceptedDuplicatesResponse>> GetAcceptedDuplicates(CancellationToken cancellationToken)
+	{
+		AppReports.AcceptedDuplicatesResult result = await mediator.Send(new GetAcceptedDuplicatesQuery(), cancellationToken);
+
+		return TypedResults.Ok(new AcceptedDuplicatesResponse
+		{
+			GroupCount = result.GroupCount,
+			Groups = result.Groups.Select(g => new AcceptedDuplicateGroup
+			{
+				AcceptedAt = g.AcceptedAt,
+				Receipts = g.Receipts.Select(ToDuplicateReceipt).ToList(),
+				MemberReceiptIds = g.MemberReceiptIds
+			}).ToList()
+		});
+	}
+
+	[HttpPost("duplicates/accepted")]
+	[EndpointSummary("Accept a duplicate group as not-a-duplicate")]
+	[EndpointDescription("Records every pair of the supplied receipts as \"not a duplicate\" so the group stops being reported. Idempotent.")]
+	public async Task<Results<Ok<AcceptDuplicateGroupResponse>, NotFound<string>>> AcceptDuplicateGroup(
+		[FromBody] AcceptDuplicateGroupRequest request,
+		CancellationToken cancellationToken)
+	{
+		try
+		{
+			int acceptedPairCount = await mediator.Send(
+				new AcceptDuplicateGroupCommand(DistinctReceiptIds(request)), cancellationToken);
+			return TypedResults.Ok(new AcceptDuplicateGroupResponse { AcceptedPairCount = acceptedPairCount });
+		}
+		catch (KeyNotFoundException ex)
+		{
+			return TypedResults.NotFound(ex.Message);
+		}
+	}
+
+	[HttpPost("duplicates/accepted/remove")]
+	[EndpointSummary("Undo a duplicate-group acceptance")]
+	[EndpointDescription("Removes the \"not a duplicate\" assertion between every pair of the supplied receipts, and only those pairs. Send a group's memberReceiptIds to undo it whole, or a cluster's receipts to un-accept just that cluster.")]
+	public async Task<Ok<UnacceptDuplicateGroupResponse>> UnacceptDuplicateGroup(
+		[FromBody] UnacceptDuplicateGroupRequest request,
+		CancellationToken cancellationToken)
+	{
+		// Bound to its OWN request type, not AcceptDuplicateGroupRequest. Sharing one contract meant
+		// sharing the accept validator's 100-ID cap, which made any accepted group larger than that
+		// impossible to undo — and groups grow past it by component merging, without any single
+		// accept call exceeding the cap.
+		int removedPairCount = await mediator.Send(
+			new UnacceptDuplicateGroupCommand([.. request.ReceiptIds.Distinct()]), cancellationToken);
+		return TypedResults.Ok(new UnacceptDuplicateGroupResponse { RemovedPairCount = removedPairCount });
+	}
+
+	/// <summary>
+	/// Shape normalization only. Bounds and per-element checks live in
+	/// <c>AcceptDuplicateGroupRequestValidator</c>, which the global FluentValidation action filter
+	/// runs before this method — so a request that reaches here already satisfies them, and every
+	/// rejection returns one ValidationProblemDetails shape instead of two different 400 bodies.
+	/// </summary>
+	private static List<Guid> DistinctReceiptIds(AcceptDuplicateGroupRequest request) =>
+		[.. request.ReceiptIds.Distinct()];
+
+	private static DuplicateReceipt ToDuplicateReceipt(AppReports.DuplicateReceiptSummary summary) =>
+		new()
+		{
+			ReceiptId = summary.ReceiptId,
+			Location = summary.Location,
+			Date = summary.Date,
+			TransactionTotal = (double)summary.TransactionTotal
+		};
 
 	[HttpGet("category-trends")]
 	[EndpointSummary("Get category spending trends over time")]

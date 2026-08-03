@@ -1277,4 +1277,1160 @@ public class ReportServiceTests
 		context.Transactions.Add(
 			new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, AccountId = accountId, Amount = amount, Date = date });
 	}
+
+	// ── GetDuplicatesAsync + duplicate-group acceptance (RECEIPTS-834) ────────────────
+	// The InMemory provider enforces neither the canonical-order check constraint nor the
+	// filtered unique index, so these prove the SERVICE contract: which groups are computed,
+	// which are suppressed, and how the pairwise acceptance rows evolve across edits.
+
+	[Fact]
+	public async Task GetDuplicatesAsync_DateAndLocation_GroupsSameDaySameLocation_AndSkipsLoneReceipt()
+	{
+		// Arrange
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid accountId = Guid.NewGuid();
+		DateOnly date = new(2025, 5, 1);
+
+		Guid receiptA = Guid.NewGuid();
+		Guid receiptB = Guid.NewGuid();
+		Guid lone = Guid.NewGuid();
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			SeedReceipt(context, receiptA, "Store A", date, accountId, 10.00m);
+			SeedReceipt(context, receiptB, "Store A", date, accountId, 10.00m);
+			// Same day, different location — no partner, so no group.
+			SeedReceipt(context, lone, "Store B", date, accountId, 10.00m);
+			await context.SaveChangesAsync();
+		}
+
+		ReportService service = new(contextFactory);
+
+		// Act
+		DuplicateDetectionResult result = await service.GetDuplicatesAsync(
+			"dateAndLocation", "exact", 0m, includeAccepted: false, CancellationToken.None);
+
+		// Assert
+		result.Groups.Should().ContainSingle();
+		result.GroupCount.Should().Be(1);
+		result.TotalDuplicateReceipts.Should().Be(2);
+		result.Groups[0].MatchKey.Should().Be("2025-05-01 @ Store A");
+		result.Groups[0].IsAccepted.Should().BeFalse();
+		result.Groups[0].Receipts.Select(r => r.ReceiptId).Should()
+			.BeEquivalentTo(new[] { receiptA, receiptB });
+
+		contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task GetDuplicatesAsync_AcceptedGroup_IsSuppressed_AndStaysSuppressedOnRepeatCalls()
+	{
+		// Arrange
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid accountId = Guid.NewGuid();
+		DateOnly date = new(2025, 5, 1);
+
+		Guid receiptA = Guid.NewGuid();
+		Guid receiptB = Guid.NewGuid();
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			SeedReceipt(context, receiptA, "Store A", date, accountId, 10.00m);
+			SeedReceipt(context, receiptB, "Store A", date, accountId, 10.00m);
+			await context.SaveChangesAsync();
+		}
+
+		ReportService service = new(contextFactory);
+
+		// The group is reported before acceptance.
+		DuplicateDetectionResult before = await service.GetDuplicatesAsync(
+			"dateAndLocation", "exact", 0m, includeAccepted: false, CancellationToken.None);
+		before.Groups.Should().ContainSingle();
+
+		// Act
+		int acceptedPairs = await service.AcceptDuplicateGroupAsync([receiptA, receiptB], CancellationToken.None);
+
+		// Assert — gone from the default report, and it stays gone on a second call.
+		acceptedPairs.Should().Be(1);
+
+		DuplicateDetectionResult first = await service.GetDuplicatesAsync(
+			"dateAndLocation", "exact", 0m, includeAccepted: false, CancellationToken.None);
+		first.Groups.Should().BeEmpty();
+		first.GroupCount.Should().Be(0);
+		first.TotalDuplicateReceipts.Should().Be(0);
+
+		DuplicateDetectionResult second = await service.GetDuplicatesAsync(
+			"dateAndLocation", "exact", 0m, includeAccepted: false, CancellationToken.None);
+		second.Groups.Should().BeEmpty();
+
+		contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task GetDuplicatesAsync_IncludeAccepted_ReturnsAcceptedGroupFlagged_AndLeavesOthersUnflagged()
+	{
+		// Arrange — two independent groups; only the first is accepted.
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid accountId = Guid.NewGuid();
+		DateOnly acceptedDate = new(2025, 5, 1);
+		DateOnly openDate = new(2025, 6, 1);
+
+		Guid acceptedA = Guid.NewGuid();
+		Guid acceptedB = Guid.NewGuid();
+		Guid openA = Guid.NewGuid();
+		Guid openB = Guid.NewGuid();
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			SeedReceipt(context, acceptedA, "Store A", acceptedDate, accountId, 10.00m);
+			SeedReceipt(context, acceptedB, "Store A", acceptedDate, accountId, 10.00m);
+			SeedReceipt(context, openA, "Store B", openDate, accountId, 20.00m);
+			SeedReceipt(context, openB, "Store B", openDate, accountId, 20.00m);
+			await context.SaveChangesAsync();
+		}
+
+		ReportService service = new(contextFactory);
+		await service.AcceptDuplicateGroupAsync([acceptedA, acceptedB], CancellationToken.None);
+
+		// Act
+		DuplicateDetectionResult result = await service.GetDuplicatesAsync(
+			"dateAndLocation", "exact", 0m, includeAccepted: true, CancellationToken.None);
+
+		// Assert — both groups present, distinguished by the IsAccepted flag.
+		result.Groups.Should().HaveCount(2);
+		result.GroupCount.Should().Be(2);
+		result.TotalDuplicateReceipts.Should().Be(4);
+
+		DuplicateGroup accepted = result.Groups.Single(g => g.Receipts.Any(r => r.ReceiptId == acceptedA));
+		accepted.IsAccepted.Should().BeTrue();
+
+		DuplicateGroup open = result.Groups.Single(g => g.Receipts.Any(r => r.ReceiptId == openA));
+		open.IsAccepted.Should().BeFalse();
+
+		contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task GetDuplicatesAsync_AcceptanceSurvivesMatchOnAndToleranceChanges()
+	{
+		// Arrange — acceptance is keyed on receipt identity, never on the MatchKey, so changing
+		// matchOn / locationTolerance / totalTolerance must not resurrect the dismissal
+		// (RECEIPTS-834). Every mode below produces a DIFFERENT MatchKey for the same two receipts.
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid accountId = Guid.NewGuid();
+		DateOnly date = new(2025, 5, 1);
+
+		Guid receiptA = Guid.NewGuid();
+		Guid receiptB = Guid.NewGuid();
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			SeedReceipt(context, receiptA, "Store A", date, accountId, 10.00m);
+			SeedReceipt(context, receiptB, "Store A", date, accountId, 10.00m);
+			await context.SaveChangesAsync();
+		}
+
+		ReportService service = new(contextFactory);
+
+		(string MatchOn, string LocationTolerance, decimal TotalTolerance)[] settings =
+		[
+			("dateAndLocationAndTotal", "exact", 0m),
+			("dateAndLocation", "exact", 0m),
+			("dateAndTotal", "exact", 1m),
+			("dateAndLocationAndTotal", "normalized", 5m),
+		];
+
+		// Every setting combination clusters these two receipts BEFORE acceptance — otherwise the
+		// suppression assertions below would pass vacuously. Each produces a different MatchKey.
+		List<string> matchKeys = [];
+		foreach ((string matchOn, string locationTolerance, decimal totalTolerance) in settings)
+		{
+			DuplicateDetectionResult baseline = await service.GetDuplicatesAsync(
+				matchOn, locationTolerance, totalTolerance, includeAccepted: false, CancellationToken.None);
+			baseline.Groups.Should().ContainSingle();
+			matchKeys.Add(baseline.Groups[0].MatchKey);
+		}
+
+		matchKeys.Distinct().Should().HaveCountGreaterThan(1);
+
+		// Act — accept under the strictest settings only.
+		await service.AcceptDuplicateGroupAsync([receiptA, receiptB], CancellationToken.None);
+
+		// Assert — the same receipt set stays suppressed under every other setting combination.
+		foreach ((string matchOn, string locationTolerance, decimal totalTolerance) in settings)
+		{
+			DuplicateDetectionResult suppressed = await service.GetDuplicatesAsync(
+				matchOn, locationTolerance, totalTolerance, includeAccepted: false, CancellationToken.None);
+			suppressed.Groups.Should().BeEmpty($"{matchOn}/{locationTolerance}/{totalTolerance} must honour the acceptance");
+
+			DuplicateDetectionResult flagged = await service.GetDuplicatesAsync(
+				matchOn, locationTolerance, totalTolerance, includeAccepted: true, CancellationToken.None);
+			flagged.Groups.Should().ContainSingle();
+			flagged.Groups[0].IsAccepted.Should().BeTrue();
+			flagged.Groups[0].Receipts.Select(r => r.ReceiptId).Should()
+				.BeEquivalentTo(new[] { receiptA, receiptB });
+		}
+
+		contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task GetDuplicatesAsync_GroupThatGainsAMember_IsReportedAgain()
+	{
+		// Arrange — accept {A,B}, then a third receipt joins the same date+location key.
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid accountId = Guid.NewGuid();
+		DateOnly date = new(2025, 5, 1);
+
+		Guid receiptA = Guid.NewGuid();
+		Guid receiptB = Guid.NewGuid();
+		Guid receiptC = Guid.NewGuid();
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			SeedReceipt(context, receiptA, "Store A", date, accountId, 10.00m);
+			SeedReceipt(context, receiptB, "Store A", date, accountId, 10.00m);
+			await context.SaveChangesAsync();
+		}
+
+		ReportService service = new(contextFactory);
+		await service.AcceptDuplicateGroupAsync([receiptA, receiptB], CancellationToken.None);
+
+		// Act — the newcomer's pairs have never been reviewed, so the group resurfaces.
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			SeedReceipt(context, receiptC, "Store A", date, accountId, 10.00m);
+			await context.SaveChangesAsync();
+		}
+
+		DuplicateDetectionResult result = await service.GetDuplicatesAsync(
+			"dateAndLocation", "exact", 0m, includeAccepted: false, CancellationToken.None);
+
+		// Assert
+		result.Groups.Should().ContainSingle();
+		result.Groups[0].IsAccepted.Should().BeFalse();
+		result.Groups[0].Receipts.Select(r => r.ReceiptId).Should()
+			.BeEquivalentTo(new[] { receiptA, receiptB, receiptC });
+
+		contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task GetDuplicatesAsync_GroupThatLosesAMember_StaysSuppressed()
+	{
+		// Arrange — accept {A,B,C}, then soft-delete C. The remaining pair {A,B} is still fully
+		// accepted, so the shrunken group must stay quiet.
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid accountId = Guid.NewGuid();
+		DateOnly date = new(2025, 5, 1);
+
+		Guid receiptA = Guid.NewGuid();
+		Guid receiptB = Guid.NewGuid();
+		Guid receiptC = Guid.NewGuid();
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			SeedReceipt(context, receiptA, "Store A", date, accountId, 10.00m);
+			SeedReceipt(context, receiptB, "Store A", date, accountId, 10.00m);
+			SeedReceipt(context, receiptC, "Store A", date, accountId, 10.00m);
+			await context.SaveChangesAsync();
+		}
+
+		ReportService service = new(contextFactory);
+		int acceptedPairs = await service.AcceptDuplicateGroupAsync(
+			[receiptA, receiptB, receiptC], CancellationToken.None);
+		acceptedPairs.Should().Be(3);
+
+		// Act — soft-delete C (the context converts the remove into a soft delete).
+		await SoftDeleteReceiptAsync(contextFactory, receiptC);
+
+		DuplicateDetectionResult result = await service.GetDuplicatesAsync(
+			"dateAndLocation", "exact", 0m, includeAccepted: false, CancellationToken.None);
+
+		// Assert
+		result.Groups.Should().BeEmpty();
+
+		// And with includeAccepted the surviving pair is still flagged as accepted.
+		DuplicateDetectionResult withAccepted = await service.GetDuplicatesAsync(
+			"dateAndLocation", "exact", 0m, includeAccepted: true, CancellationToken.None);
+		withAccepted.Groups.Should().ContainSingle();
+		withAccepted.Groups[0].IsAccepted.Should().BeTrue();
+		withAccepted.Groups[0].Receipts.Select(r => r.ReceiptId).Should()
+			.BeEquivalentTo(new[] { receiptA, receiptB });
+
+		contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task GetDuplicatesAsync_SoftDeleteThenRestore_KeepsGroupSuppressed()
+	{
+		// Arrange — acceptance is NOT cascaded away when a member receipt is soft-deleted, so
+		// restoring that receipt must bring back a still-suppressed group.
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid accountId = Guid.NewGuid();
+		DateOnly date = new(2025, 5, 1);
+
+		Guid receiptA = Guid.NewGuid();
+		Guid receiptB = Guid.NewGuid();
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			SeedReceipt(context, receiptA, "Store A", date, accountId, 10.00m);
+			SeedReceipt(context, receiptB, "Store A", date, accountId, 10.00m);
+			await context.SaveChangesAsync();
+		}
+
+		ReportService service = new(contextFactory);
+		await service.AcceptDuplicateGroupAsync([receiptA, receiptB], CancellationToken.None);
+
+		// Act — soft-delete B: the group drops below two members and is not reported at all.
+		await SoftDeleteReceiptAsync(contextFactory, receiptB);
+
+		DuplicateDetectionResult whileDeleted = await service.GetDuplicatesAsync(
+			"dateAndLocation", "exact", 0m, includeAccepted: true, CancellationToken.None);
+		whileDeleted.Groups.Should().BeEmpty();
+
+		// Act — restore B.
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			ReceiptEntity restored = await context.Receipts
+				.IgnoreQueryFilters()
+				.SingleAsync(r => r.Id == receiptB);
+			restored.DeletedAt = null;
+			await context.SaveChangesAsync();
+		}
+
+		// Assert — the group reforms but is STILL accepted, so the default report stays clean.
+		DuplicateDetectionResult afterRestore = await service.GetDuplicatesAsync(
+			"dateAndLocation", "exact", 0m, includeAccepted: false, CancellationToken.None);
+		afterRestore.Groups.Should().BeEmpty();
+
+		DuplicateDetectionResult afterRestoreIncludingAccepted = await service.GetDuplicatesAsync(
+			"dateAndLocation", "exact", 0m, includeAccepted: true, CancellationToken.None);
+		afterRestoreIncludingAccepted.Groups.Should().ContainSingle();
+		afterRestoreIncludingAccepted.Groups[0].IsAccepted.Should().BeTrue();
+
+		contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task AcceptDuplicateGroupAsync_IsIdempotent()
+	{
+		// Arrange
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid accountId = Guid.NewGuid();
+		DateOnly date = new(2025, 5, 1);
+
+		Guid receiptA = Guid.NewGuid();
+		Guid receiptB = Guid.NewGuid();
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			SeedReceipt(context, receiptA, "Store A", date, accountId, 10.00m);
+			SeedReceipt(context, receiptB, "Store A", date, accountId, 10.00m);
+			await context.SaveChangesAsync();
+		}
+
+		ReportService service = new(contextFactory);
+
+		// Act
+		int firstCall = await service.AcceptDuplicateGroupAsync([receiptA, receiptB], CancellationToken.None);
+		int secondCall = await service.AcceptDuplicateGroupAsync([receiptA, receiptB], CancellationToken.None);
+
+		// Assert — the second call adds nothing and does not duplicate the stored pair.
+		firstCall.Should().Be(1);
+		secondCall.Should().Be(0);
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			(await context.AcceptedDuplicatePairs.CountAsync()).Should().Be(1);
+		}
+
+		contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task AcceptDuplicateGroupAsync_ThrowsKeyNotFound_WhenReceiptDoesNotExist()
+	{
+		// Arrange
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid accountId = Guid.NewGuid();
+		DateOnly date = new(2025, 5, 1);
+
+		Guid receiptA = Guid.NewGuid();
+		Guid ghost = Guid.NewGuid();
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			SeedReceipt(context, receiptA, "Store A", date, accountId, 10.00m);
+			await context.SaveChangesAsync();
+		}
+
+		ReportService service = new(contextFactory);
+
+		// Act
+		Func<Task> act = () => service.AcceptDuplicateGroupAsync([receiptA, ghost], CancellationToken.None);
+
+		// Assert
+		await act.Should().ThrowAsync<KeyNotFoundException>()
+			.WithMessage($"*{ghost}*");
+
+		contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task AcceptDuplicateGroupAsync_ManyMissingReceipts_TruncatesTheNotFoundMessage()
+	{
+		// Arrange — the message is returned verbatim as a 404 body AND logged, so an unbounded join
+		// over every unmatched GUID turns a bad request into a multi-megabyte response and log line.
+		// A reviewer measured 50,000 GUIDs producing a 1.9 MB message.
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid accountId = Guid.NewGuid();
+		Guid receiptA = Guid.NewGuid();
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			SeedReceipt(context, receiptA, "Store A", new DateOnly(2025, 6, 1), accountId, 10.00m);
+			await context.SaveChangesAsync();
+		}
+
+		ReportService service = new(contextFactory);
+		List<Guid> ghosts = [.. Enumerable.Range(0, 25).Select(_ => Guid.NewGuid())];
+
+		// Act
+		Func<Task> act = () => service.AcceptDuplicateGroupAsync([receiptA, .. ghosts], CancellationToken.None);
+
+		// Assert — 10 enumerated, the rest collapsed into a count.
+		KeyNotFoundException thrown = (await act.Should().ThrowAsync<KeyNotFoundException>()).Which;
+		thrown.Message.Should().Contain("(+15 more)");
+
+		int enumerated = ghosts.Count(id => thrown.Message.Contains(id.ToString(), StringComparison.Ordinal));
+		enumerated.Should().Be(10, "only the first 10 missing IDs are echoed back");
+
+		contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task AcceptDuplicateGroupAsync_ThrowsKeyNotFound_WhenReceiptIsSoftDeleted()
+	{
+		// Arrange
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid accountId = Guid.NewGuid();
+		DateOnly date = new(2025, 5, 1);
+
+		Guid receiptA = Guid.NewGuid();
+		Guid receiptB = Guid.NewGuid();
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			SeedReceipt(context, receiptA, "Store A", date, accountId, 10.00m);
+			SeedReceipt(context, receiptB, "Store A", date, accountId, 10.00m);
+			await context.SaveChangesAsync();
+		}
+
+		await SoftDeleteReceiptAsync(contextFactory, receiptB);
+
+		ReportService service = new(contextFactory);
+
+		// Act
+		Func<Task> act = () => service.AcceptDuplicateGroupAsync([receiptA, receiptB], CancellationToken.None);
+
+		// Assert
+		await act.Should().ThrowAsync<KeyNotFoundException>()
+			.WithMessage($"*{receiptB}*");
+
+		contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task AcceptDuplicateGroupAsync_ReturnsZero_WhenFewerThanTwoDistinctIds()
+	{
+		// Arrange
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid accountId = Guid.NewGuid();
+		DateOnly date = new(2025, 5, 1);
+
+		Guid receiptA = Guid.NewGuid();
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			SeedReceipt(context, receiptA, "Store A", date, accountId, 10.00m);
+			await context.SaveChangesAsync();
+		}
+
+		ReportService service = new(contextFactory);
+
+		// Act
+		int single = await service.AcceptDuplicateGroupAsync([receiptA], CancellationToken.None);
+		int none = await service.AcceptDuplicateGroupAsync([], CancellationToken.None);
+		int repeated = await service.AcceptDuplicateGroupAsync([receiptA, receiptA], CancellationToken.None);
+
+		// Assert — the id list collapses to fewer than two distinct receipts, so nothing is stored.
+		single.Should().Be(0);
+		none.Should().Be(0);
+		repeated.Should().Be(0);
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			(await context.AcceptedDuplicatePairs.CountAsync()).Should().Be(0);
+		}
+
+		contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task AcceptDuplicateGroupAsync_ThreeReceipts_StoresEveryUnorderedPairInCanonicalOrder()
+	{
+		// Arrange
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid accountId = Guid.NewGuid();
+		DateOnly date = new(2025, 5, 1);
+
+		Guid receiptA = Guid.NewGuid();
+		Guid receiptB = Guid.NewGuid();
+		Guid receiptC = Guid.NewGuid();
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			SeedReceipt(context, receiptA, "Store A", date, accountId, 10.00m);
+			SeedReceipt(context, receiptB, "Store A", date, accountId, 10.00m);
+			SeedReceipt(context, receiptC, "Store A", date, accountId, 10.00m);
+			await context.SaveChangesAsync();
+		}
+
+		ReportService service = new(contextFactory);
+
+		// Act
+		int accepted = await service.AcceptDuplicateGroupAsync(
+			[receiptA, receiptB, receiptC], CancellationToken.None);
+
+		// Assert — C(3,2) = 3 rows, each stored with the lower GUID in ReceiptIdA.
+		accepted.Should().Be(3);
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			List<AcceptedDuplicatePairEntity> pairs = await context.AcceptedDuplicatePairs.ToListAsync();
+			pairs.Should().HaveCount(3);
+			pairs.Should().OnlyContain(p => p.ReceiptIdA.CompareTo(p.ReceiptIdB) < 0);
+			pairs.Select(p => (p.ReceiptIdA, p.ReceiptIdB)).Should().OnlyHaveUniqueItems();
+		}
+
+		contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task UnacceptDuplicateGroupAsync_RemovesAcceptance_AndGroupIsReportedAgain()
+	{
+		// Arrange
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid accountId = Guid.NewGuid();
+		DateOnly date = new(2025, 5, 1);
+
+		Guid receiptA = Guid.NewGuid();
+		Guid receiptB = Guid.NewGuid();
+		Guid receiptC = Guid.NewGuid();
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			SeedReceipt(context, receiptA, "Store A", date, accountId, 10.00m);
+			SeedReceipt(context, receiptB, "Store A", date, accountId, 10.00m);
+			SeedReceipt(context, receiptC, "Store A", date, accountId, 10.00m);
+			await context.SaveChangesAsync();
+		}
+
+		ReportService service = new(contextFactory);
+		await service.AcceptDuplicateGroupAsync([receiptA, receiptB, receiptC], CancellationToken.None);
+
+		// Act
+		int removed = await service.UnacceptDuplicateGroupAsync(
+			[receiptA, receiptB, receiptC], CancellationToken.None);
+
+		// Assert — all three pairs removed and the group is visible again.
+		removed.Should().Be(3);
+
+		DuplicateDetectionResult result = await service.GetDuplicatesAsync(
+			"dateAndLocation", "exact", 0m, includeAccepted: false, CancellationToken.None);
+		result.Groups.Should().ContainSingle();
+		result.Groups[0].IsAccepted.Should().BeFalse();
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			// Soft-deleted, not hard-deleted: the tombstones survive for the audit trail.
+			(await context.AcceptedDuplicatePairs.CountAsync()).Should().Be(0);
+			(await context.AcceptedDuplicatePairs.IgnoreQueryFilters().CountAsync()).Should().Be(3);
+		}
+
+		contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task UnacceptDuplicateGroupAsync_ReturnsZero_WhenNothingWasAccepted()
+	{
+		// Arrange
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid accountId = Guid.NewGuid();
+		DateOnly date = new(2025, 5, 1);
+
+		Guid receiptA = Guid.NewGuid();
+		Guid receiptB = Guid.NewGuid();
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			SeedReceipt(context, receiptA, "Store A", date, accountId, 10.00m);
+			SeedReceipt(context, receiptB, "Store A", date, accountId, 10.00m);
+			await context.SaveChangesAsync();
+		}
+
+		ReportService service = new(contextFactory);
+
+		// Act
+		int removedWithNothingStored = await service.UnacceptDuplicateGroupAsync(
+			[receiptA, receiptB], CancellationToken.None);
+		int removedWithTooFewIds = await service.UnacceptDuplicateGroupAsync(
+			[receiptA, receiptA], CancellationToken.None);
+
+		// Assert
+		removedWithNothingStored.Should().Be(0);
+		removedWithTooFewIds.Should().Be(0);
+
+		contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task AcceptDuplicateGroupAsync_AfterUnaccept_LeavesExactlyOneActiveRow_AndKeepsTheTombstone()
+	{
+		// Arrange
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid accountId = Guid.NewGuid();
+		DateOnly date = new(2025, 5, 1);
+
+		Guid receiptA = Guid.NewGuid();
+		Guid receiptB = Guid.NewGuid();
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			SeedReceipt(context, receiptA, "Store A", date, accountId, 10.00m);
+			SeedReceipt(context, receiptB, "Store A", date, accountId, 10.00m);
+			await context.SaveChangesAsync();
+		}
+
+		ReportService service = new(contextFactory);
+
+		// Act — accept, un-accept, accept again.
+		await service.AcceptDuplicateGroupAsync([receiptA, receiptB], CancellationToken.None);
+		await service.UnacceptDuplicateGroupAsync([receiptA, receiptB], CancellationToken.None);
+		int reAccepted = await service.AcceptDuplicateGroupAsync([receiptA, receiptB], CancellationToken.None);
+
+		// Assert — exactly one ACTIVE row, which is what the filtered unique index guards. The
+		// un-accept's tombstone is deliberately left in place rather than resurrected: the partial
+		// index does not cover tombstones, so the Postgres ON CONFLICT path cannot see them, and
+		// keeping the row preserves the fact that the pair was once un-accepted.
+		reAccepted.Should().Be(1);
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			(await context.AcceptedDuplicatePairs.CountAsync()).Should().Be(1);
+			(await context.AcceptedDuplicatePairs.IgnoreQueryFilters().CountAsync()).Should().Be(2);
+
+			AcceptedDuplicatePairEntity active = await context.AcceptedDuplicatePairs.SingleAsync();
+			active.DeletedAt.Should().BeNull();
+			active.DeletedByUserId.Should().BeNull();
+			active.CascadeDeletedByParentId.Should().BeNull();
+		}
+
+		DuplicateDetectionResult result = await service.GetDuplicatesAsync(
+			"dateAndLocation", "exact", 0m, includeAccepted: false, CancellationToken.None);
+		result.Groups.Should().BeEmpty();
+
+		contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task GetAcceptedDuplicatesAsync_ReturnsAcceptedGroupWithHydratedReceipts()
+	{
+		// Arrange
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid accountId = Guid.NewGuid();
+		DateOnly earlier = new(2025, 5, 1);
+		DateOnly later = new(2025, 5, 2);
+
+		Guid receiptA = Guid.NewGuid();
+		Guid receiptB = Guid.NewGuid();
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			SeedReceipt(context, receiptA, "Store A", earlier, accountId, 12.34m);
+			SeedReceipt(context, receiptB, "Store B", later, accountId, 56.78m);
+			await context.SaveChangesAsync();
+		}
+
+		ReportService service = new(contextFactory);
+		DateTimeOffset beforeAccept = DateTimeOffset.UtcNow.AddSeconds(-1);
+		await service.AcceptDuplicateGroupAsync([receiptA, receiptB], CancellationToken.None);
+
+		// Act
+		AcceptedDuplicatesResult result = await service.GetAcceptedDuplicatesAsync(CancellationToken.None);
+
+		// Assert
+		result.Groups.Should().ContainSingle();
+		result.GroupCount.Should().Be(1);
+
+		AcceptedDuplicateGroup group = result.Groups[0];
+		group.AcceptedAt.Should().BeOnOrAfter(beforeAccept);
+		group.Receipts.Should().HaveCount(2);
+
+		// Ordered by date, so the earlier receipt comes first, fully hydrated.
+		group.Receipts[0].ReceiptId.Should().Be(receiptA);
+		group.Receipts[0].Location.Should().Be("Store A");
+		group.Receipts[0].Date.Should().Be(earlier);
+		group.Receipts[0].TransactionTotal.Should().Be(12.34m);
+		group.Receipts[1].ReceiptId.Should().Be(receiptB);
+		group.Receipts[1].TransactionTotal.Should().Be(56.78m);
+
+		contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task GetAcceptedDuplicatesAsync_ReturnsEmpty_WhenNothingAccepted()
+	{
+		// Arrange
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		ReportService service = new(contextFactory);
+
+		// Act
+		AcceptedDuplicatesResult result = await service.GetAcceptedDuplicatesAsync(CancellationToken.None);
+
+		// Assert
+		result.Groups.Should().BeEmpty();
+		result.GroupCount.Should().Be(0);
+
+		contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task GetAcceptedDuplicatesAsync_OmitsComponentWithFewerThanTwoActiveReceipts()
+	{
+		// Arrange — a two-receipt acceptance whose partner is soft-deleted can never produce a
+		// duplicate warning again, so it is not listed (the acceptance row itself is untouched).
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid accountId = Guid.NewGuid();
+		DateOnly date = new(2025, 5, 1);
+
+		Guid receiptA = Guid.NewGuid();
+		Guid receiptB = Guid.NewGuid();
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			SeedReceipt(context, receiptA, "Store A", date, accountId, 10.00m);
+			SeedReceipt(context, receiptB, "Store A", date, accountId, 10.00m);
+			await context.SaveChangesAsync();
+		}
+
+		ReportService service = new(contextFactory);
+		await service.AcceptDuplicateGroupAsync([receiptA, receiptB], CancellationToken.None);
+
+		// Act
+		await SoftDeleteReceiptAsync(contextFactory, receiptB);
+		AcceptedDuplicatesResult result = await service.GetAcceptedDuplicatesAsync(CancellationToken.None);
+
+		// Assert
+		result.Groups.Should().BeEmpty();
+		result.GroupCount.Should().Be(0);
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			// The acceptance survives the soft delete, which is what lets a restore stay quiet.
+			(await context.AcceptedDuplicatePairs.CountAsync()).Should().Be(1);
+		}
+
+		contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task GetAcceptedDuplicatesAsync_MergesAcceptancesSharingAReceiptIntoOneComponent()
+	{
+		// Arrange — {A,B} and {B,C} are separate acceptances that share B. The pairwise model
+		// surfaces them as ONE connected component; this is the documented tradeoff.
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid accountId = Guid.NewGuid();
+		DateOnly date = new(2025, 5, 1);
+
+		Guid receiptA = Guid.NewGuid();
+		Guid receiptB = Guid.NewGuid();
+		Guid receiptC = Guid.NewGuid();
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			SeedReceipt(context, receiptA, "Store A", date, accountId, 10.00m);
+			SeedReceipt(context, receiptB, "Store B", date, accountId, 20.00m);
+			SeedReceipt(context, receiptC, "Store C", date, accountId, 30.00m);
+			await context.SaveChangesAsync();
+		}
+
+		ReportService service = new(contextFactory);
+		await service.AcceptDuplicateGroupAsync([receiptA, receiptB], CancellationToken.None);
+		await service.AcceptDuplicateGroupAsync([receiptB, receiptC], CancellationToken.None);
+
+		// Act
+		AcceptedDuplicatesResult result = await service.GetAcceptedDuplicatesAsync(CancellationToken.None);
+
+		// Assert — one group holding all three receipts, even though {A,C} was never accepted.
+		result.Groups.Should().ContainSingle();
+		result.GroupCount.Should().Be(1);
+		result.Groups[0].Receipts.Select(r => r.ReceiptId).Should()
+			.BeEquivalentTo(new[] { receiptA, receiptB, receiptC });
+
+		contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task GetAcceptedDuplicatesAsync_ReportsEveryMember_EvenWhenOneIsSoftDeleted()
+	{
+		// Arrange — accept {A,B,C}, then soft-delete C. The displayed list drops C, so a client that
+		// submitted only what it could render would strand (A,C) and (B,C) with no producible set able
+		// to reach them, leaving Undo permanently dead. MemberReceiptIds is what prevents that: it
+		// carries every member so the client can always submit the complete set.
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid accountId = Guid.NewGuid();
+		DateOnly date = new(2025, 6, 1);
+
+		Guid receiptA = Guid.NewGuid();
+		Guid receiptB = Guid.NewGuid();
+		Guid receiptC = Guid.NewGuid();
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			SeedReceipt(context, receiptA, "Store A", date, accountId, 10.00m);
+			SeedReceipt(context, receiptB, "Store A", date, accountId, 10.00m);
+			SeedReceipt(context, receiptC, "Store A", date, accountId, 10.00m);
+			await context.SaveChangesAsync();
+		}
+
+		ReportService service = new(contextFactory);
+		(await service.AcceptDuplicateGroupAsync([receiptA, receiptB, receiptC], CancellationToken.None))
+			.Should().Be(3);
+
+		await SoftDeleteReceiptAsync(contextFactory, receiptC);
+
+		// Act
+		AcceptedDuplicatesResult accepted = await service.GetAcceptedDuplicatesAsync(CancellationToken.None);
+
+		// Assert — C is absent from the display list but present in the member list.
+		accepted.Groups.Should().ContainSingle();
+		accepted.Groups[0].Receipts.Select(r => r.ReceiptId)
+			.Should().BeEquivalentTo([receiptA, receiptB], "the deleted receipt has nothing to display");
+		accepted.Groups[0].MemberReceiptIds
+			.Should().BeEquivalentTo([receiptA, receiptB, receiptC], "undo needs every member");
+
+		// Submitting that member list clears the whole acceptance, orphans included.
+		int removed = await service.UnacceptDuplicateGroupAsync(
+			accepted.Groups[0].MemberReceiptIds, CancellationToken.None);
+		removed.Should().Be(3);
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			(await context.AcceptedDuplicatePairs.CountAsync()).Should().Be(0);
+		}
+
+		// And the surviving pair is genuinely reported again.
+		DuplicateDetectionResult result = await service.GetDuplicatesAsync(
+			"dateAndLocation", "exact", 0m, includeAccepted: false, CancellationToken.None);
+		result.Groups.Should().ContainSingle();
+		result.Groups[0].Receipts.Select(r => r.ReceiptId).Should().BeEquivalentTo([receiptA, receiptB]);
+
+		contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task UnacceptDuplicateGroupAsync_ClusterSubsetOfAWiderAcceptance_LeavesNeighbouringPairsIntact()
+	{
+		// Arrange — the regression that killed component expansion.
+		//
+		// "Report again" in the report acts on a CLUSTER, which can be a strict subset of the
+		// acceptance component. Accept {A,B} and {C,D} at tolerance 0; widen tolerance so all four
+		// cluster together and accept that too; narrow tolerance again and the report shows {A,B} and
+		// {C,D} separately. Clicking "Report again" on {A,B} must not touch the {C,D} acceptance.
+		// Expanding to the connected component destroyed it. Every tolerance here is a dropdown value.
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid accountId = Guid.NewGuid();
+		DateOnly date = new(2025, 6, 1);
+
+		Guid receiptA = Guid.NewGuid();
+		Guid receiptB = Guid.NewGuid();
+		Guid receiptC = Guid.NewGuid();
+		Guid receiptD = Guid.NewGuid();
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			SeedReceipt(context, receiptA, "Store A", date, accountId, 10.00m);
+			SeedReceipt(context, receiptB, "Store A", date, accountId, 10.00m);
+			SeedReceipt(context, receiptC, "Store A", date, accountId, 10.50m);
+			SeedReceipt(context, receiptD, "Store A", date, accountId, 10.50m);
+			await context.SaveChangesAsync();
+		}
+
+		ReportService service = new(contextFactory);
+
+		// Tolerance 0 clusters {A,B} and {C,D}; accept both.
+		await service.AcceptDuplicateGroupAsync([receiptA, receiptB], CancellationToken.None);
+		await service.AcceptDuplicateGroupAsync([receiptC, receiptD], CancellationToken.None);
+
+		// Tolerance 1.00 clusters all four; accept that too. The graph is now fully connected.
+		await service.AcceptDuplicateGroupAsync(
+			[receiptA, receiptB, receiptC, receiptD], CancellationToken.None);
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			(await context.AcceptedDuplicatePairs.CountAsync()).Should().Be(6);
+		}
+
+		// Act — back at tolerance 0, "Report again" on the {A,B} cluster only.
+		int removed = await service.UnacceptDuplicateGroupAsync([receiptA, receiptB], CancellationToken.None);
+
+		// Assert — only (A,B) went. The user's separate {C,D} acceptance survives.
+		removed.Should().Be(1);
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			bool cdStillAccepted = await context.AcceptedDuplicatePairs.AnyAsync(p =>
+				(p.ReceiptIdA == receiptC && p.ReceiptIdB == receiptD)
+				|| (p.ReceiptIdA == receiptD && p.ReceiptIdB == receiptC));
+			cdStillAccepted.Should().BeTrue("un-accepting {A,B} must not destroy the {C,D} acceptance");
+
+			(await context.AcceptedDuplicatePairs.CountAsync()).Should().Be(5);
+		}
+
+		// {A,B} is reported again; {C,D} stays suppressed.
+		DuplicateDetectionResult result = await service.GetDuplicatesAsync(
+			"dateAndTotal", "exact", 0m, includeAccepted: false, CancellationToken.None);
+		result.Groups.Should().ContainSingle();
+		result.Groups[0].Receipts.Select(r => r.ReceiptId).Should().BeEquivalentTo([receiptA, receiptB]);
+
+		contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task UnacceptDuplicateGroupAsync_LeavesAcceptancesThatShareNoReceipt_Untouched()
+	{
+		// Arrange — this pins the predicate. Unaccept removes exactly the pairs whose BOTH ends were
+		// submitted. Widening the match to "either end" would destroy every acceptance involving A or
+		// B with any unrelated receipt; this test fails if that happens.
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid accountId = Guid.NewGuid();
+
+		Guid receiptA = Guid.NewGuid();
+		Guid receiptB = Guid.NewGuid();
+		Guid receiptC = Guid.NewGuid();
+		Guid receiptD = Guid.NewGuid();
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			SeedReceipt(context, receiptA, "Store A", new DateOnly(2025, 6, 1), accountId, 10.00m);
+			SeedReceipt(context, receiptB, "Store A", new DateOnly(2025, 6, 1), accountId, 10.00m);
+			SeedReceipt(context, receiptC, "Store C", new DateOnly(2025, 7, 1), accountId, 20.00m);
+			SeedReceipt(context, receiptD, "Store C", new DateOnly(2025, 7, 1), accountId, 20.00m);
+			await context.SaveChangesAsync();
+		}
+
+		ReportService service = new(contextFactory);
+		await service.AcceptDuplicateGroupAsync([receiptA, receiptB], CancellationToken.None);
+		await service.AcceptDuplicateGroupAsync([receiptC, receiptD], CancellationToken.None);
+
+		// Act
+		int removed = await service.UnacceptDuplicateGroupAsync([receiptA, receiptB], CancellationToken.None);
+
+		// Assert — only (A,B) went; the disjoint {C,D} acceptance survives.
+		removed.Should().Be(1);
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			List<AcceptedDuplicatePairEntity> remaining = await context.AcceptedDuplicatePairs.ToListAsync();
+			remaining.Should().ContainSingle();
+			new[] { remaining[0].ReceiptIdA, remaining[0].ReceiptIdB }
+				.Should().BeEquivalentTo([receiptC, receiptD]);
+		}
+
+		// {C,D} is still suppressed, {A,B} is reported again.
+		DuplicateDetectionResult result = await service.GetDuplicatesAsync(
+			"dateAndLocation", "exact", 0m, includeAccepted: false, CancellationToken.None);
+		result.Groups.Should().ContainSingle();
+		result.Groups[0].Receipts.Select(r => r.ReceiptId).Should().BeEquivalentTo([receiptA, receiptB]);
+
+		contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task UnacceptDuplicateGroupAsync_DoesNotReachAnUnrelatedAcceptanceSharingOneReceipt_WhenNotSubmitted()
+	{
+		// Arrange — {A,B} and {C,D} are separate acceptances. Unaccepting {A,B} must leave {C,D}
+		// alone, and the accepted-groups listing must still report it.
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid accountId = Guid.NewGuid();
+		DateOnly date = new(2025, 6, 1);
+
+		Guid receiptA = Guid.NewGuid();
+		Guid receiptB = Guid.NewGuid();
+		Guid receiptC = Guid.NewGuid();
+		Guid receiptD = Guid.NewGuid();
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			SeedReceipt(context, receiptA, "Store A", date, accountId, 10.00m);
+			SeedReceipt(context, receiptB, "Store A", date, accountId, 10.00m);
+			SeedReceipt(context, receiptC, "Store D", date, accountId, 30.00m);
+			SeedReceipt(context, receiptD, "Store D", date, accountId, 30.00m);
+			await context.SaveChangesAsync();
+		}
+
+		ReportService service = new(contextFactory);
+		await service.AcceptDuplicateGroupAsync([receiptA, receiptB], CancellationToken.None);
+		await service.AcceptDuplicateGroupAsync([receiptC, receiptD], CancellationToken.None);
+
+		// Act
+		await service.UnacceptDuplicateGroupAsync([receiptA, receiptB], CancellationToken.None);
+
+		// Assert
+		AcceptedDuplicatesResult accepted = await service.GetAcceptedDuplicatesAsync(CancellationToken.None);
+		accepted.GroupCount.Should().Be(1);
+		accepted.Groups[0].Receipts.Select(r => r.ReceiptId).Should().BeEquivalentTo([receiptC, receiptD]);
+
+		contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task GetAcceptedDuplicatesAsync_ComponentLargerThanTheAcceptCap_IsFullyUndoable()
+	{
+		// Arrange — accepted groups are connected components, and components merge whenever an
+		// acceptance bridges two of them. So a group can grow past the 100-ID accept cap without any
+		// single accept call approaching it. Chaining 101 two-receipt accepts is the shortest way to
+		// build such a component; the reachable-in-the-UI version is two 51-receipt clusters under
+		// matchOn=dateAndLocation joined by one straddling 2-receipt cluster under dateAndTotal.
+		//
+		// Undo posts every member, so while both endpoints shared the accept validator this group was
+		// permanently un-undoable. This test pins that the service side has no such limit.
+		const int memberCount = 102;
+
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid accountId = Guid.NewGuid();
+		DateOnly date = new(2025, 6, 1);
+
+		List<Guid> receiptIds = [.. Enumerable.Range(0, memberCount).Select(_ => Guid.NewGuid())];
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			foreach (Guid receiptId in receiptIds)
+			{
+				SeedReceipt(context, receiptId, "Store A", date, accountId, 10.00m);
+			}
+
+			await context.SaveChangesAsync();
+		}
+
+		ReportService service = new(contextFactory);
+
+		// Chain the accepts so every consecutive pair shares a receipt — one component, 101 pairs.
+		for (int i = 0; i < memberCount - 1; i++)
+		{
+			await service.AcceptDuplicateGroupAsync(
+				[receiptIds[i], receiptIds[i + 1]], CancellationToken.None);
+		}
+
+		// Act
+		AcceptedDuplicatesResult accepted = await service.GetAcceptedDuplicatesAsync(CancellationToken.None);
+
+		// Assert — one component holding every receipt.
+		accepted.Groups.Should().ContainSingle();
+		accepted.Groups[0].MemberReceiptIds.Should().HaveCount(memberCount);
+		accepted.Groups[0].MemberReceiptIds.Should().BeEquivalentTo(receiptIds);
+
+		// Undoing with the full member set clears every pair.
+		int removed = await service.UnacceptDuplicateGroupAsync(
+			accepted.Groups[0].MemberReceiptIds, CancellationToken.None);
+		removed.Should().Be(memberCount - 1);
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			(await context.AcceptedDuplicatePairs.CountAsync()).Should().Be(0);
+		}
+
+		contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task GetAcceptedDuplicatesAsync_LargeComponentWithSoftDeletedMembers_StrandsNothing()
+	{
+		// Arrange — the worst corner. In a component bigger than the accept cap, soft-delete two
+		// members so the DISPLAYED list is exactly at the cap while the member set is over it. The
+		// report filters soft-deleted receipts out of its snapshot, so "Report again" can never name
+		// them; undo was the only path to those pairs, and the shared cap closed it. That left the
+		// pairs touching a deleted member reachable by no client-producible set at all.
+		const int memberCount = 102;
+
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid accountId = Guid.NewGuid();
+		DateOnly date = new(2025, 6, 1);
+
+		List<Guid> receiptIds = [.. Enumerable.Range(0, memberCount).Select(_ => Guid.NewGuid())];
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			foreach (Guid receiptId in receiptIds)
+			{
+				SeedReceipt(context, receiptId, "Store A", date, accountId, 10.00m);
+			}
+
+			await context.SaveChangesAsync();
+		}
+
+		ReportService service = new(contextFactory);
+
+		for (int i = 0; i < memberCount - 1; i++)
+		{
+			await service.AcceptDuplicateGroupAsync(
+				[receiptIds[i], receiptIds[i + 1]], CancellationToken.None);
+		}
+
+		await SoftDeleteReceiptAsync(contextFactory, receiptIds[0]);
+		await SoftDeleteReceiptAsync(contextFactory, receiptIds[^1]);
+
+		// Act
+		AcceptedDuplicatesResult accepted = await service.GetAcceptedDuplicatesAsync(CancellationToken.None);
+
+		// Assert — display sits at the accept cap, the member set is over it.
+		accepted.Groups.Should().ContainSingle();
+		accepted.Groups[0].Receipts.Should().HaveCount(memberCount - 2, "the two deleted receipts do not render");
+		accepted.Groups[0].MemberReceiptIds.Should().HaveCount(memberCount, "but undo still needs them");
+
+		int removed = await service.UnacceptDuplicateGroupAsync(
+			accepted.Groups[0].MemberReceiptIds, CancellationToken.None);
+		removed.Should().Be(memberCount - 1);
+
+		// Nothing stranded — including the pairs that touch the soft-deleted members.
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			(await context.AcceptedDuplicatePairs.CountAsync()).Should().Be(0);
+			(await context.AcceptedDuplicatePairs.IgnoreQueryFilters()
+				.CountAsync(p => p.DeletedAt == null)).Should().Be(0);
+		}
+
+		contextFactory.ResetDatabase();
+	}
+
+	private static void SeedReceipt(
+		ApplicationDbContext context, Guid receiptId, string location, DateOnly date, Guid accountId, decimal amount)
+	{
+		context.Receipts.Add(
+			new ReceiptEntity { Id = receiptId, Location = location, Date = date, TaxAmount = 0m });
+		context.Transactions.Add(
+			new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, AccountId = accountId, Amount = amount, Date = date });
+	}
+
+	private static async Task SoftDeleteReceiptAsync(
+		IDbContextFactory<ApplicationDbContext> contextFactory, Guid receiptId)
+	{
+		await using ApplicationDbContext context = contextFactory.CreateDbContext();
+		ReceiptEntity receipt = await context.Receipts.SingleAsync(r => r.Id == receiptId);
+		context.Receipts.Remove(receipt);
+		await context.SaveChangesAsync();
+	}
 }

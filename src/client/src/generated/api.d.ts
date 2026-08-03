@@ -1693,6 +1693,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/reports/duplicates/accepted": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List accepted duplicate groups
+         * @description Returns the receipt groups a user has accepted as genuinely separate purchases. Groups are the connected components of the accepted-pair graph, hydrated with the receipts that are still active.
+         */
+        get: operations["GetAcceptedDuplicates"];
+        put?: never;
+        /**
+         * Accept a duplicate group as not-a-duplicate
+         * @description Records every unordered pair of the supplied receipts as "not a duplicate" so the group stops being reported. Idempotent — re-accepting an already-accepted group is a no-op.
+         */
+        post: operations["AcceptDuplicateGroup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reports/duplicates/accepted/remove": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Undo a duplicate-group acceptance
+         * @description Removes the "not a duplicate" assertion between every pair of the supplied receipts, and only those pairs — the server does not expand the request. The caller must therefore submit every member of the group it wants undone: send the group's memberReceiptIds from GET /api/reports/duplicates/accepted, not the receipts it displayed, or the pairs touching a member whose receipt was deleted are left stored with no way to reach them again. To un-accept just one reported cluster instead, send that cluster's receipts.
+         */
+        post: operations["UnacceptDuplicateGroup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/reports/category-trends": {
         parameters: {
             query?: never;
@@ -2465,9 +2509,11 @@ export interface components {
             groups: components["schemas"]["DuplicateGroup"][];
         };
         DuplicateGroup: {
-            /** @description Human-readable description of what these receipts have in common. */
+            /** @description Human-readable description of what these receipts have in common. Display only — it is derived from the current tolerance settings and is not a stable identity. */
             matchKey: string;
             receipts: components["schemas"]["DuplicateReceipt"][];
+            /** @description True when every pair of receipts in this group has been accepted as "not a duplicate". Only ever true when includeAccepted was requested. */
+            isAccepted: boolean;
         };
         DuplicateReceipt: {
             /** Format: uuid */
@@ -2477,6 +2523,44 @@ export interface components {
             date: string;
             /** Format: double */
             transactionTotal: number;
+        };
+        AcceptedDuplicatesResponse: {
+            /** Format: int32 */
+            groupCount: number;
+            groups: components["schemas"]["AcceptedDuplicateGroup"][];
+        };
+        AcceptedDuplicateGroup: {
+            /** @description The members that still exist, for display. Members whose receipt was deleted are omitted. */
+            receipts: components["schemas"]["DuplicateReceipt"][];
+            /** @description Every member of the group, including any omitted from receipts because the receipt was deleted. Undo must submit this list rather than the displayed receipts, or the pairs touching a deleted member are left stored with no way to reach them again. */
+            memberReceiptIds: string[];
+            /**
+             * Format: date-time
+             * @description When the most recent pair in this group was accepted.
+             */
+            acceptedAt: string;
+        };
+        AcceptDuplicateGroupRequest: {
+            /** @description The receipts in the group. At least two distinct IDs, and at most 100 — accepting expands to one stored row per pair, so the list is bounded the same way bulk YNAB pushes are. */
+            receiptIds: string[];
+        };
+        UnacceptDuplicateGroupRequest: {
+            /** @description Every receipt whose mutual acceptances should be removed. At least two distinct IDs. Deliberately has no upper bound, unlike AcceptDuplicateGroupRequest: accepting stores one row per pair and is quadratic, whereas un-accepting is a single DELETE that is linear in the input and cannot create rows. An accepted group can exceed 100 members without any single accept call doing so, because groups are connected components that merge when an acceptance bridges two of them — capping this would make such a group impossible to undo. */
+            receiptIds: string[];
+        };
+        AcceptDuplicateGroupResponse: {
+            /**
+             * Format: int32
+             * @description Number of receipt pairs newly recorded as not-a-duplicate. Zero when the group was already fully accepted.
+             */
+            acceptedPairCount: number;
+        };
+        UnacceptDuplicateGroupResponse: {
+            /**
+             * Format: int32
+             * @description Number of accepted receipt pairs removed.
+             */
+            removedPairCount: number;
         };
         CategoryTrendsResponse: {
             /** @description Ordered list of category names. The amounts array in each bucket parallels this list. */
@@ -7769,6 +7853,8 @@ export interface operations {
                 locationTolerance?: "exact" | "normalized";
                 /** @description Maximum difference between transaction totals to still consider them matching. Default 0 (exact match). */
                 totalTolerance?: number;
+                /** @description When true, groups previously accepted as "not a duplicate" are included and flagged with isAccepted. Default false (accepted groups are omitted). */
+                includeAccepted?: boolean;
             };
             header?: never;
             path?: never;
@@ -7792,6 +7878,83 @@ export interface operations {
                 };
                 content: {
                     "application/json": string;
+                };
+            };
+        };
+    };
+    GetAcceptedDuplicates: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcceptedDuplicatesResponse"];
+                };
+            };
+        };
+    };
+    AcceptDuplicateGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcceptDuplicateGroupRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcceptDuplicateGroupResponse"];
+                };
+            };
+            /** @description One or more receipts were not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                };
+            };
+        };
+    };
+    UnacceptDuplicateGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UnacceptDuplicateGroupRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnacceptDuplicateGroupResponse"];
                 };
             };
         };

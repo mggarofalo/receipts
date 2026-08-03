@@ -73,6 +73,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 	public virtual DbSet<NormalizedDescriptionEntity> NormalizedDescriptions { get; set; } = null!;
 	public virtual DbSet<NormalizedDescriptionSettingsEntity> NormalizedDescriptionSettings { get; set; } = null!;
 	public virtual DbSet<DistinctDescriptionEntity> DistinctDescriptions { get; set; } = null!;
+	public virtual DbSet<AcceptedDuplicatePairEntity> AcceptedDuplicatePairs { get; set; } = null!;
 	public virtual DbSet<AuditLogEntity> AuditLogs { get; set; } = null!;
 	public virtual DbSet<AuthAuditLogEntity> AuthAuditLogs { get; set; } = null!;
 	public virtual DbSet<SeedHistoryEntry> SeedHistory { get; set; } = null!;
@@ -440,7 +441,12 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 		// per API request. The service stamps LastUsedAt via ExecuteUpdate (which bypasses
 		// the change tracker and this interceptor entirely); this exclusion is belt-and-braces
 		// so any future tracked write to an ApiKey (create/revoke) also stays out of the log.
-		HashSet<Type> excludedTypes = [typeof(AuditLogEntity), typeof(AuthAuditLogEntity), typeof(SeedHistoryEntry), typeof(YnabSyncRecordEntity), typeof(YnabSelectedBudgetEntity), typeof(YnabAccountMappingEntity), typeof(YnabCategoryMappingEntity), typeof(YnabServerKnowledgeEntity), typeof(YnabSyncEventEntity), typeof(DistinctDescriptionEntity), typeof(ApiKeyEntity)];
+		// AcceptedDuplicatePairEntity is excluded for the same reason as DistinctDescriptions and
+		// ItemSimilarityEdges (RECEIPTS-834): it is a derived relation table, not a user-facing domain
+		// record. One accept expands to C(n,2) rows, so auditing it would add thousands of log rows per
+		// click. It also keeps the two write paths consistent — the Postgres path inserts via raw
+		// ON CONFLICT SQL, which bypasses the change tracker and could never have been audited anyway.
+		HashSet<Type> excludedTypes = [typeof(AuditLogEntity), typeof(AuthAuditLogEntity), typeof(SeedHistoryEntry), typeof(YnabSyncRecordEntity), typeof(YnabSelectedBudgetEntity), typeof(YnabAccountMappingEntity), typeof(YnabCategoryMappingEntity), typeof(YnabServerKnowledgeEntity), typeof(YnabSyncEventEntity), typeof(DistinctDescriptionEntity), typeof(ApiKeyEntity), typeof(AcceptedDuplicatePairEntity)];
 		List<AuditEntry> auditEntries = [];
 		DateTimeOffset now = DateTimeOffset.UtcNow;
 

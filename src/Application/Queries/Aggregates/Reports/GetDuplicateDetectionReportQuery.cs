@@ -6,4 +6,5 @@ namespace Application.Queries.Aggregates.Reports;
 public record GetDuplicateDetectionReportQuery(
 	string MatchOn,
 	string LocationTolerance,
-	decimal TotalTolerance) : IQuery<DuplicateDetectionResult>;
+	decimal TotalTolerance,
+	bool IncludeAccepted = false) : IQuery<DuplicateDetectionResult>;

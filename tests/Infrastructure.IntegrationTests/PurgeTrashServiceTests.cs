@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using FluentAssertions;
 using Infrastructure.Entities.Core;
 using Infrastructure.IntegrationTests.Fixtures;
 using Infrastructure.Services;
@@ -14,11 +14,14 @@ public class PurgeTrashServiceTests(PostgresFixture fixture)
 	[Fact]
 	public async Task PurgeAllDeletedAsync_RemovesSoftDeletedRowsFromEverySoftDeletableTable_AndPreservesActiveRows()
 	{
-		// Arrange — for every ISoftDeletable entity, seed one deleted row and
-		// one active row. This guards against regression: if a new entity
-		// becomes soft-deletable and the purge doesn't learn about it, this
-		// test fails. It also catches the reverse case — a purge that
-		// incorrectly deletes active rows.
+		// Arrange — for every ISoftDeletable entity, seed one deleted row and one active row, then
+		// assert the purge removed exactly the deleted ones. It also catches the reverse case — a
+		// purge that incorrectly deletes active rows.
+		//
+		// The entity list below is hand-enumerated, so on its own it CANNOT notice a newly
+		// soft-deletable entity that the purge never learned about — it would simply keep passing.
+		// EverySoftDeletableEntity_IsCoveredByThisTest at the bottom of this file is the guard that
+		// makes that true: it reflects over the EF model and fails when this list falls behind.
 		DateTimeOffset deletedAt = DateTimeOffset.UtcNow;
 
 		// Parents (needed for FK-valid child inserts)
@@ -70,6 +73,29 @@ public class PurgeTrashServiceTests(PostgresFixture fixture)
 		ItemTemplateEntity deletedTemplate = ItemTemplateEntityGenerator.Generate();
 		deletedTemplate.DeletedAt = deletedAt;
 
+		// RECEIPTS-834. Both pairs point at active receipts; only the DeletedAt stamp differs, so this
+		// isolates the purge's own tombstone sweep from the Receipts FK cascade.
+		ReceiptEntity pairReceiptA = ReceiptEntityGenerator.Generate();
+		ReceiptEntity pairReceiptB = ReceiptEntityGenerator.Generate();
+		Guid pairLow = pairReceiptA.Id < pairReceiptB.Id ? pairReceiptA.Id : pairReceiptB.Id;
+		Guid pairHigh = pairReceiptA.Id < pairReceiptB.Id ? pairReceiptB.Id : pairReceiptA.Id;
+		AcceptedDuplicatePairEntity activeAcceptedPair = new()
+		{
+			Id = Guid.NewGuid(),
+			ReceiptIdA = pairLow,
+			ReceiptIdB = pairHigh,
+			AcceptedAt = DateTimeOffset.UtcNow,
+		};
+		AcceptedDuplicatePairEntity deletedAcceptedPair = new()
+		{
+			Id = Guid.NewGuid(),
+			ReceiptIdA = pairLow,
+			ReceiptIdB = activeReceipt.Id < pairLow ? pairLow : activeReceipt.Id,
+			AcceptedAt = DateTimeOffset.UtcNow,
+			DeletedAt = deletedAt,
+		};
+		deletedAcceptedPair.ReceiptIdA = activeReceipt.Id < pairLow ? activeReceipt.Id : pairLow;
+
 		YnabSyncRecordEntity activeSync = YnabSyncRecordEntityGenerator.Generate(localTransactionId: activeTransaction.Id);
 		YnabSyncRecordEntity deletedSync = YnabSyncRecordEntityGenerator.Generate(localTransactionId: activeTransaction.Id, syncType: Common.YnabSyncType.MemoUpdate);
 		deletedSync.DeletedAt = deletedAt;
@@ -78,7 +104,7 @@ public class PurgeTrashServiceTests(PostgresFixture fixture)
 		{
 			setup.Accounts.Add(account);
 			setup.Cards.Add(card);
-			setup.Receipts.AddRange(activeReceipt, deletedReceipt);
+			setup.Receipts.AddRange(activeReceipt, deletedReceipt, pairReceiptA, pairReceiptB);
 			setup.Categories.AddRange(activeCategory, deletedCategory);
 			await setup.SaveChangesAsync();
 
@@ -90,6 +116,7 @@ public class PurgeTrashServiceTests(PostgresFixture fixture)
 			await setup.SaveChangesAsync();
 
 			setup.YnabSyncRecords.AddRange(activeSync, deletedSync);
+			setup.AcceptedDuplicatePairs.AddRange(activeAcceptedPair, deletedAcceptedPair);
 			await setup.SaveChangesAsync();
 		}
 
@@ -128,6 +155,9 @@ public class PurgeTrashServiceTests(PostgresFixture fixture)
 
 		(await verify.ItemTemplates.IgnoreQueryFilters().AnyAsync(e => e.Id == deletedTemplate.Id)).Should().BeFalse();
 		(await verify.ItemTemplates.IgnoreQueryFilters().AnyAsync(e => e.Id == activeTemplate.Id)).Should().BeTrue();
+
+		(await verify.AcceptedDuplicatePairs.IgnoreQueryFilters().AnyAsync(e => e.Id == deletedAcceptedPair.Id)).Should().BeFalse();
+		(await verify.AcceptedDuplicatePairs.IgnoreQueryFilters().AnyAsync(e => e.Id == activeAcceptedPair.Id)).Should().BeTrue();
 
 		(await verify.YnabSyncRecords.IgnoreQueryFilters().AnyAsync(e => e.Id == deletedSync.Id)).Should().BeFalse();
 		(await verify.YnabSyncRecords.IgnoreQueryFilters().AnyAsync(e => e.Id == activeSync.Id)).Should().BeTrue();
