@@ -104,9 +104,7 @@ describe("LineItemsSection", () => {
         subcategory: "",
       },
     ];
-    renderWithProviders(
-      <LineItemsSection {...defaultProps} items={items} />,
-    );
+    renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
     expect(screen.getByText("Milk")).toBeInTheDocument();
     expect(screen.getByText("$3.50")).toBeInTheDocument();
     expect(screen.getByText("$7.00")).toBeInTheDocument(); // line total
@@ -134,9 +132,7 @@ describe("LineItemsSection", () => {
         subcategory: "",
       },
     ];
-    renderWithProviders(
-      <LineItemsSection {...defaultProps} items={items} />,
-    );
+    renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
     expect(screen.getByText("Subtotal: $11.00")).toBeInTheDocument();
   });
 
@@ -156,9 +152,7 @@ describe("LineItemsSection", () => {
         subcategory: "",
       },
     ];
-    renderWithProviders(
-      <LineItemsSection {...defaultProps} items={items} />,
-    );
+    renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
     expect(screen.getByText("Subtotal: $0.90")).toBeInTheDocument();
   });
 
@@ -176,9 +170,7 @@ describe("LineItemsSection", () => {
         subcategory: "",
       },
     ];
-    renderWithProviders(
-      <LineItemsSection items={items} onChange={onChange} />,
-    );
+    renderWithProviders(<LineItemsSection items={items} onChange={onChange} />);
 
     await user.click(screen.getByRole("button", { name: /remove/i }));
     expect(onChange).toHaveBeenCalledWith([]);
@@ -196,9 +188,7 @@ describe("LineItemsSection", () => {
         subcategory: "Cleaning",
       },
     ];
-    renderWithProviders(
-      <LineItemsSection {...defaultProps} items={items} />,
-    );
+    renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
     expect(screen.getByText("Household / Cleaning")).toBeInTheDocument();
   });
 
@@ -215,9 +205,7 @@ describe("LineItemsSection", () => {
         subcategory: "",
       },
     ];
-    renderWithProviders(
-      <LineItemsSection {...defaultProps} items={items} />,
-    );
+    renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
     const cell = screen.getByText(longDescription).closest("td");
     expect(cell).not.toBeNull();
     expect(cell).toHaveClass("whitespace-normal");
@@ -239,9 +227,7 @@ describe("LineItemsSection", () => {
         subcategory: "",
       },
     ];
-    renderWithProviders(
-      <LineItemsSection {...defaultProps} items={items} />,
-    );
+    renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
     expect(screen.getByRole("button", { name: /edit/i })).toBeInTheDocument();
   });
 
@@ -258,9 +244,7 @@ describe("LineItemsSection", () => {
         subcategory: "",
       },
     ];
-    renderWithProviders(
-      <LineItemsSection {...defaultProps} items={items} />,
-    );
+    renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
 
     await user.click(screen.getByRole("button", { name: /edit/i }));
 
@@ -285,9 +269,7 @@ describe("LineItemsSection", () => {
         subcategory: "",
       },
     ];
-    renderWithProviders(
-      <LineItemsSection items={items} onChange={onChange} />,
-    );
+    renderWithProviders(<LineItemsSection items={items} onChange={onChange} />);
 
     await user.click(screen.getByRole("button", { name: /edit/i }));
 
@@ -316,9 +298,7 @@ describe("LineItemsSection", () => {
         subcategory: "",
       },
     ];
-    renderWithProviders(
-      <LineItemsSection items={items} onChange={onChange} />,
-    );
+    renderWithProviders(<LineItemsSection items={items} onChange={onChange} />);
 
     await user.click(screen.getByRole("button", { name: /edit/i }));
 
@@ -347,9 +327,7 @@ describe("LineItemsSection", () => {
         subcategory: "",
       },
     ];
-    renderWithProviders(
-      <LineItemsSection items={items} onChange={onChange} />,
-    );
+    renderWithProviders(<LineItemsSection items={items} onChange={onChange} />);
 
     await user.click(screen.getByRole("button", { name: /edit/i }));
 
@@ -436,6 +414,36 @@ describe("LineItemsSection", () => {
       ).toBeInTheDocument();
     });
 
+    it("recognizes a history suggestion whose source the API sent PascalCase (real API behavior diverges from the lowercase-only generated type)", async () => {
+      const user = userEvent.setup();
+      vi.mocked(useSimilarItems).mockReturnValue(
+        mockQueryResult({
+          data: [
+            {
+              ...historySuggestion,
+              source: "History" as unknown as "history",
+            },
+          ],
+          isFetching: false,
+          isSuccess: true,
+        }),
+      );
+      const mutate = mockPromote();
+      renderWithProviders(<LineItemsSection {...defaultProps} />);
+
+      const input = screen.getByPlaceholderText("Item description");
+      await user.type(input, "mi");
+
+      const promoteButton = await screen.findByRole("button", {
+        name: 'Save "Milk (gallon)" as template',
+      });
+      await user.click(promoteButton);
+
+      expect(mutate).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "Milk (gallon)" }),
+      );
+    });
+
     it("promotes the highlighted history suggestion with Shift+Enter without applying it", async () => {
       const user = userEvent.setup();
       mockSuggestions();
@@ -512,9 +520,7 @@ describe("LineItemsSection", () => {
           subcategory: "Dairy",
         },
       ];
-      renderWithProviders(
-        <LineItemsSection {...defaultProps} items={items} />,
-      );
+      renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
 
       await user.click(
         screen.getByRole("button", { name: "Save as template" }),
@@ -546,9 +552,7 @@ describe("LineItemsSection", () => {
           subcategory: "",
         },
       ];
-      renderWithProviders(
-        <LineItemsSection {...defaultProps} items={items} />,
-      );
+      renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
 
       await user.click(
         screen.getByRole("button", { name: "Save as template" }),
@@ -559,7 +563,11 @@ describe("LineItemsSection", () => {
 
     it("disables the line-item promote button while a promotion is pending", () => {
       vi.mocked(usePromoteToTemplate).mockReturnValue(
-        mockMutationResult({ mutate: vi.fn(), isPending: true, status: "pending" }),
+        mockMutationResult({
+          mutate: vi.fn(),
+          isPending: true,
+          status: "pending",
+        }),
       );
       const items: ReceiptLineItem[] = [
         {
@@ -572,9 +580,7 @@ describe("LineItemsSection", () => {
           subcategory: "",
         },
       ];
-      renderWithProviders(
-        <LineItemsSection {...defaultProps} items={items} />,
-      );
+      renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
 
       expect(
         screen.getByRole("button", { name: "Save as template" }),
@@ -585,7 +591,11 @@ describe("LineItemsSection", () => {
       const user = userEvent.setup();
       mockSuggestions();
       vi.mocked(usePromoteToTemplate).mockReturnValue(
-        mockMutationResult({ mutate: vi.fn(), isPending: true, status: "pending" }),
+        mockMutationResult({
+          mutate: vi.fn(),
+          isPending: true,
+          status: "pending",
+        }),
       );
       renderWithProviders(<LineItemsSection {...defaultProps} />);
 
