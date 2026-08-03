@@ -32,6 +32,7 @@ public interface IReportService
 		DateOnly? startDate,
 		DateOnly? endDate,
 		string granularity,
+		string? normalizedDescription,
 		CancellationToken cancellationToken);
 
 	Task<DuplicateDetectionResult> GetDuplicatesAsync(
@@ -57,6 +58,10 @@ public interface IReportService
 	Task<SpendingByNormalizedDescriptionResult> GetSpendingByNormalizedDescriptionAsync(
 		DateTimeOffset? from,
 		DateTimeOffset? to,
+		string sortBy,
+		string sortDirection,
+		int page,
+		int pageSize,
 		CancellationToken cancellationToken);
 
 	Task<ReportsHealthSummaryResult> GetHealthSummaryAsync(CancellationToken cancellationToken);

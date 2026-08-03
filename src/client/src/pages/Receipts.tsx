@@ -73,7 +73,10 @@ const FILTER_DEFS: FilterDefinition[] = [
   { key: "taxAmount", type: "numberRange", field: "taxAmount" },
 ];
 
-const HIGHLIGHT_PARAMS = ["highlight", "accountId", "cardId"] as const;
+// `location` is the drill-down target from the Spending by Location report
+// (RECEIPTS-841): an exact-match server-side filter, not the fuzzy client-side
+// search box.
+const HIGHLIGHT_PARAMS = ["highlight", "accountId", "cardId", "location"] as const;
 
 function syncStatusToChip(
   status: string | undefined | null,
@@ -124,6 +127,8 @@ function Receipts() {
     sortDirection,
     linkParams.accountId,
     linkParams.cardId,
+    null,
+    { location: linkParams.location },
   );
   const createReceipt = useCreateReceipt();
   const updateReceipt = useUpdateReceipt();
@@ -284,13 +289,19 @@ function Receipts() {
         />
       </div>
 
-      {(linkParams.accountId || linkParams.cardId) && (
+      {(linkParams.accountId || linkParams.cardId || linkParams.location) && (
         <Alert style={{ marginBottom: 14 }}>
           <Info className="h-4 w-4" />
           <AlertDescription className="flex items-center justify-between gap-4">
             <span>
-              Filtered to receipts with transactions on the selected{" "}
-              {linkParams.cardId ? "card" : "account"}.
+              {linkParams.location ? (
+                <>Filtered to receipts at “{linkParams.location}”.</>
+              ) : (
+                <>
+                  Filtered to receipts with transactions on the selected{" "}
+                  {linkParams.cardId ? "card" : "account"}.
+                </>
+              )}
             </span>
             <button
               type="button"

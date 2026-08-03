@@ -650,6 +650,145 @@ public class ReportServiceTests
 		contextFactory.ResetDatabase();
 	}
 
+	// ── GetItemCostOverTimeAsync (RECEIPTS-841: normalizedDescription filter) ────────
+
+	[Fact]
+	public async Task GetItemCostOverTimeAsync_FiltersByNormalizedDescription_AcrossDifferentRawDescriptions()
+	{
+		// Arrange — two items with different raw descriptions ("2% Milk" vs "Skim Milk") share the
+		// same NormalizedDescriptionId, so filtering by canonical name must return both.
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+
+		Guid normalizedId = Guid.NewGuid();
+		Guid receipt1 = Guid.NewGuid();
+		Guid receipt2 = Guid.NewGuid();
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			context.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
+			{
+				Id = normalizedId,
+				CanonicalName = "Milk",
+				Status = Domain.NormalizedDescriptions.NormalizedDescriptionStatus.Active,
+				CreatedAt = DateTimeOffset.UtcNow,
+			});
+
+			context.Receipts.AddRange(
+				new ReceiptEntity { Id = receipt1, Location = "Store", Date = new DateOnly(2025, 1, 10), TaxAmount = 0m },
+				new ReceiptEntity { Id = receipt2, Location = "Store", Date = new DateOnly(2025, 2, 15), TaxAmount = 0m });
+
+			context.ReceiptItems.AddRange(
+				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receipt1, Description = "2% Milk", Quantity = 1, UnitPrice = 3.49m, TotalAmount = 3.49m, Category = "Dairy", NormalizedDescriptionId = normalizedId },
+				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receipt2, Description = "Skim Milk", Quantity = 1, UnitPrice = 3.29m, TotalAmount = 3.29m, Category = "Dairy", NormalizedDescriptionId = normalizedId });
+
+			await context.SaveChangesAsync();
+		}
+
+		ReportService service = new(contextFactory);
+
+		// Act
+		ItemCostOverTimeResult result = await service.GetItemCostOverTimeAsync(
+			description: null, category: null, startDate: null, endDate: null, granularity: "exact",
+			normalizedDescription: "Milk", CancellationToken.None);
+
+		// Assert — both raw descriptions are represented because they share the canonical name.
+		result.Buckets.Should().HaveCount(2);
+		result.Buckets.Select(b => b.Amount).Should().BeEquivalentTo([3.49m, 3.29m]);
+
+		contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task GetItemCostOverTimeAsync_NormalizedDescriptionFilter_ExcludesItemsWithNullFk()
+	{
+		// Arrange — an item with no NormalizedDescriptionId must never match a normalizedDescription
+		// filter (the LEFT JOIN carries a null CanonicalName for it, which can never equal a filter value).
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+
+		Guid normalizedId = Guid.NewGuid();
+		Guid receiptId = Guid.NewGuid();
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			context.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
+			{
+				Id = normalizedId,
+				CanonicalName = "Milk",
+				Status = Domain.NormalizedDescriptions.NormalizedDescriptionStatus.Active,
+				CreatedAt = DateTimeOffset.UtcNow,
+			});
+
+			context.Receipts.Add(
+				new ReceiptEntity { Id = receiptId, Location = "Store", Date = new DateOnly(2025, 1, 10), TaxAmount = 0m });
+
+			context.ReceiptItems.AddRange(
+				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Milk", Quantity = 1, UnitPrice = 3.49m, TotalAmount = 3.49m, Category = "Dairy", NormalizedDescriptionId = normalizedId },
+				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Milk (unlinked)", Quantity = 1, UnitPrice = 99.99m, TotalAmount = 99.99m, Category = "Dairy", NormalizedDescriptionId = null });
+
+			await context.SaveChangesAsync();
+		}
+
+		ReportService service = new(contextFactory);
+
+		// Act
+		ItemCostOverTimeResult result = await service.GetItemCostOverTimeAsync(
+			description: null, category: null, startDate: null, endDate: null, granularity: "exact",
+			normalizedDescription: "Milk", CancellationToken.None);
+
+		// Assert — only the linked item is included.
+		result.Buckets.Should().ContainSingle();
+		result.Buckets[0].Amount.Should().Be(3.49m);
+
+		contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task GetItemCostOverTimeAsync_DescriptionTakesPrecedenceOverNormalizedDescription()
+	{
+		// Arrange — an item matches `description` but belongs to a different normalized bucket than
+		// the one requested; another item matches only the normalizedDescription filter. Precedence
+		// (description > normalizedDescription > category) means only the description match returns.
+		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
+
+		Guid milkNormalizedId = Guid.NewGuid();
+		Guid receiptId = Guid.NewGuid();
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			context.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
+			{
+				Id = milkNormalizedId,
+				CanonicalName = "Milk",
+				Status = Domain.NormalizedDescriptions.NormalizedDescriptionStatus.Active,
+				CreatedAt = DateTimeOffset.UtcNow,
+			});
+
+			context.Receipts.Add(
+				new ReceiptEntity { Id = receiptId, Location = "Store", Date = new DateOnly(2025, 1, 10), TaxAmount = 0m });
+
+			context.ReceiptItems.AddRange(
+				// Matches `description` exactly, and is NOT linked to the "Milk" normalized bucket.
+				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Oat Milk", Quantity = 1, UnitPrice = 4.99m, TotalAmount = 4.99m, Category = "Dairy", NormalizedDescriptionId = null },
+				// Only matches the "Milk" normalizedDescription filter, not the description filter.
+				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "2% Milk", Quantity = 1, UnitPrice = 3.49m, TotalAmount = 3.49m, Category = "Dairy", NormalizedDescriptionId = milkNormalizedId });
+
+			await context.SaveChangesAsync();
+		}
+
+		ReportService service = new(contextFactory);
+
+		// Act — both description and normalizedDescription supplied; description must win.
+		ItemCostOverTimeResult result = await service.GetItemCostOverTimeAsync(
+			description: "Oat Milk", category: null, startDate: null, endDate: null, granularity: "exact",
+			normalizedDescription: "Milk", CancellationToken.None);
+
+		// Assert — only the description match is returned.
+		result.Buckets.Should().ContainSingle();
+		result.Buckets[0].Amount.Should().Be(4.99m);
+
+		contextFactory.ResetDatabase();
+	}
+
 	// ── GetSpendingByNormalizedDescriptionAsync ──────────────────────────────
 
 	[Fact]
@@ -723,12 +862,14 @@ public class ReportServiceTests
 
 		// Act
 		SpendingByNormalizedDescriptionResult result = await service
-			.GetSpendingByNormalizedDescriptionAsync(from: null, to: null, CancellationToken.None);
+			.GetSpendingByNormalizedDescriptionAsync(from: null, to: null, "totalAmount", "desc", 1, 50, CancellationToken.None);
 
 		// Assert
 		result.Items.Should().HaveCount(2);
 		result.FromDate.Should().BeNull();
 		result.ToDate.Should().BeNull();
+		result.TotalCount.Should().Be(2);
+		result.GrandTotal.Should().Be(11.50m);
 
 		SpendingByNormalizedDescriptionItem milkBucket = result.Items.Single(i => i.CanonicalName == "Organic Milk");
 		milkBucket.TotalAmount.Should().Be(9.50m);
@@ -818,7 +959,7 @@ public class ReportServiceTests
 
 		// Act
 		SpendingByNormalizedDescriptionResult result = await service
-			.GetSpendingByNormalizedDescriptionAsync(from, to, CancellationToken.None);
+			.GetSpendingByNormalizedDescriptionAsync(from, to, "totalAmount", "desc", 1, 50, CancellationToken.None);
 
 		// Assert — only the receipt in range contributed
 		result.Items.Should().ContainSingle();
@@ -826,6 +967,8 @@ public class ReportServiceTests
 		result.Items[0].ItemCount.Should().Be(1);
 		result.FromDate.Should().Be(from);
 		result.ToDate.Should().Be(to);
+		result.TotalCount.Should().Be(1);
+		result.GrandTotal.Should().Be(1.50m);
 
 		contextFactory.ResetDatabase();
 	}
@@ -912,7 +1055,7 @@ public class ReportServiceTests
 
 		// Act
 		SpendingByNormalizedDescriptionResult result = await service
-			.GetSpendingByNormalizedDescriptionAsync(null, null, CancellationToken.None);
+			.GetSpendingByNormalizedDescriptionAsync(null, null, "totalAmount", "desc", 1, 50, CancellationToken.None);
 
 		// Assert — only the live item on the live receipt survives
 		result.Items.Should().ContainSingle();
@@ -932,12 +1075,14 @@ public class ReportServiceTests
 
 		// Act
 		SpendingByNormalizedDescriptionResult result = await service
-			.GetSpendingByNormalizedDescriptionAsync(null, null, CancellationToken.None);
+			.GetSpendingByNormalizedDescriptionAsync(null, null, "totalAmount", "desc", 1, 50, CancellationToken.None);
 
 		// Assert
 		result.Items.Should().BeEmpty();
 		result.FromDate.Should().BeNull();
 		result.ToDate.Should().BeNull();
+		result.TotalCount.Should().Be(0);
+		result.GrandTotal.Should().Be(0m);
 
 		contextFactory.ResetDatabase();
 	}
@@ -983,7 +1128,7 @@ public class ReportServiceTests
 
 		// Act
 		SpendingByNormalizedDescriptionResult result = await service
-			.GetSpendingByNormalizedDescriptionAsync(null, null, CancellationToken.None);
+			.GetSpendingByNormalizedDescriptionAsync(null, null, "totalAmount", "desc", 1, 50, CancellationToken.None);
 
 		// Assert
 		result.Items.Should().ContainSingle();

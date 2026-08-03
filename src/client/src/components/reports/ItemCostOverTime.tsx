@@ -34,6 +34,7 @@ import {
   parseBoolParam,
   parseDateRangeParam,
   parseEnumParam,
+  parseNormalizedDescriptionParam,
   parseSelectedItemParam,
   serializeDateRangeParam,
   serializeSelectedItemParam,
@@ -72,6 +73,12 @@ type SelectedItem = SelectedItemUrlValue;
 
 interface ItemCostOverTimeUrlParams {
   selectedItem: SelectedItem | null;
+  /**
+   * Canonical name drilled in from Spending by Normalized Description
+   * (RECEIPTS-841). Mutually exclusive with `selectedItem` — picking an item
+   * from the search box or toggling category mode clears it.
+   */
+  normalizedDescription: string | null;
   categoryOnly: boolean;
   dateRange: DateRange;
   granularity: Granularity;
@@ -85,6 +92,7 @@ function parseItemCostOverTimeParams(
   const { selectedItem, categoryOnly } = parseSelectedItemParam(searchParams);
   return {
     selectedItem,
+    normalizedDescription: parseNormalizedDescriptionParam(searchParams),
     categoryOnly,
     dateRange: parseDateRangeParam(searchParams),
     granularity: parseEnumParam(
@@ -109,6 +117,7 @@ export default function ItemCostOverTime() {
   );
   const {
     selectedItem,
+    normalizedDescription,
     categoryOnly,
     dateRange,
     granularity,
@@ -124,17 +133,26 @@ export default function ItemCostOverTime() {
       categoryOnly,
     });
 
+  // A normalized-description drill-down replaces the item/category selection
+  // entirely: it spans every raw description linked to that canonical name, so
+  // sending `description` alongside it would narrow the series back down.
   const costParams = useMemo(
-    () => ({
-      description: categoryOnly ? undefined : selectedItem?.description,
-      category: categoryOnly
-        ? selectedItem?.category
-        : undefined,
-      startDate: dateRange.startDate,
-      endDate: dateRange.endDate,
-      granularity,
-    }),
-    [categoryOnly, selectedItem, dateRange, granularity],
+    () =>
+      normalizedDescription
+        ? {
+            normalizedDescription,
+            startDate: dateRange.startDate,
+            endDate: dateRange.endDate,
+            granularity,
+          }
+        : {
+            description: categoryOnly ? undefined : selectedItem?.description,
+            category: categoryOnly ? selectedItem?.category : undefined,
+            startDate: dateRange.startDate,
+            endDate: dateRange.endDate,
+            granularity,
+          },
+    [normalizedDescription, categoryOnly, selectedItem, dateRange, granularity],
   );
 
   const { data: costData, isLoading: isCostLoading } =
@@ -159,9 +177,11 @@ export default function ItemCostOverTime() {
 
   const handleSelect = useCallback(
     (description: string, category: string) => {
-      updateParams(
-        serializeSelectedItemParam({ description, category }, categoryOnly),
-      );
+      updateParams({
+        ...serializeSelectedItemParam({ description, category }, categoryOnly),
+        // A fresh pick supersedes any normalized-description drill-down.
+        normalized: undefined,
+      });
       setOpen(false);
       setSearchInput("");
     },
@@ -173,6 +193,7 @@ export default function ItemCostOverTime() {
       categoryOnly: categoryOnly ? undefined : "true",
       item: undefined,
       category: undefined,
+      normalized: undefined,
     });
     setSearchInput("");
   }, [categoryOnly, updateParams]);
@@ -202,13 +223,29 @@ export default function ItemCostOverTime() {
     [updateParams],
   );
 
-  const displayLabel = selectedItem
-    ? categoryOnly
-      ? selectedItem.category
-      : selectedItem.description
+  const displayLabel = normalizedDescription
+    ? normalizedDescription
+    : selectedItem
+      ? categoryOnly
+        ? selectedItem.category
+        : selectedItem.description
+      : categoryOnly
+        ? "Search categories..."
+        : "Search items...";
+
+  const hasSelection = Boolean(normalizedDescription || selectedItem);
+
+  const chartTitle = normalizedDescription
+    ? `Normalized: ${normalizedDescription}`
     : categoryOnly
-      ? "Search categories..."
-      : "Search items...";
+      ? `Category: ${selectedItem?.category ?? ""}`
+      : (selectedItem?.description ?? "");
+
+  const chartSubtitle = normalizedDescription
+    ? "Unit price over time across every item with this normalized description"
+    : categoryOnly
+      ? "Average unit price over time"
+      : `${selectedItem?.category ?? ""} — Unit price over time`;
 
   return (
     <div className="space-y-4">
@@ -291,18 +328,10 @@ export default function ItemCostOverTime() {
         <DateRangeSelector value={dateRange} onChange={handleDateRangeChange} />
       </div>
 
-      {selectedItem && (
+      {hasSelection && (
         <ChartCard
-          title={
-            categoryOnly
-              ? `Category: ${selectedItem.category}`
-              : selectedItem.description
-          }
-          subtitle={
-            categoryOnly
-              ? "Average unit price over time"
-              : `${selectedItem.category} — Unit price over time`
-          }
+          title={chartTitle}
+          subtitle={chartSubtitle}
           loading={isCostLoading}
           empty={chartData.length === 0 && !isCostLoading}
           emptyMessage="No purchase history found for the selected item"
@@ -361,7 +390,7 @@ export default function ItemCostOverTime() {
         </ChartCard>
       )}
 
-      {!selectedItem && (
+      {!hasSelection && (
         <div className="rounded-lg border p-6 text-center">
           <h2 className="card-title">Item Cost Over Time</h2>
           <p className="mt-2 text-muted-foreground">

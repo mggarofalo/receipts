@@ -1,4 +1,5 @@
 import { useCallback, useMemo } from "react";
+import { Link } from "react-router";
 import {
   useSpendingByLocationReport,
   type SpendingByLocationParams,
@@ -10,6 +11,7 @@ import { csvFilename } from "@/lib/export-csv";
 import { fetchAllReportPages } from "@/lib/fetch-all-report-pages";
 import { formatCurrency } from "@/lib/format";
 import {
+  buildLocationDrillDownHref,
   parseDateRangeParam,
   parseEnumParam,
   parsePositiveIntParam,
@@ -241,9 +243,23 @@ export default function SpendingByLocation() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {data.items.map((item) => (
+          {data.items.map((item) => {
+            const href = buildLocationDrillDownHref(item.location);
+            return (
             <TableRow key={item.location}>
-              <TableCell>{item.location}</TableCell>
+              <TableCell>
+                {href ? (
+                  <Link
+                    to={href}
+                    className="underline underline-offset-4 hover:text-primary"
+                    title={`View receipts at ${item.location}`}
+                  >
+                    {item.location}
+                  </Link>
+                ) : (
+                  item.location
+                )}
+              </TableCell>
               <TableCell className="text-right money">{item.visits}</TableCell>
               <TableCell className="text-right money">
                 {formatCurrency(Number(item.total ?? 0))}
@@ -252,7 +268,8 @@ export default function SpendingByLocation() {
                 {formatCurrency(Number(item.averagePerVisit ?? 0))}
               </TableCell>
             </TableRow>
-          ))}
+            );
+          })}
         </TableBody>
       </Table>
 

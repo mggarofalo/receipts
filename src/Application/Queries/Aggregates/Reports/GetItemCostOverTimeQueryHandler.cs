@@ -15,6 +15,7 @@ public class GetItemCostOverTimeQueryHandler(IReportService reportService)
 			request.StartDate,
 			request.EndDate,
 			request.Granularity,
+			request.NormalizedDescription,
 			cancellationToken);
 	}
 }

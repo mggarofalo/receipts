@@ -10,6 +10,11 @@ import {
   parseBoolParam,
   parseSelectedItemParam,
   serializeSelectedItemParam,
+  parseNormalizedDescriptionParam,
+  NOT_NORMALIZED_LABEL,
+  NO_LOCATION_LABEL,
+  buildLocationDrillDownHref,
+  buildItemCostDrillDownHref,
 } from "./report-params";
 
 function paramsFrom(query: string): URLSearchParams {
@@ -305,5 +310,108 @@ describe("serializeSelectedItemParam", () => {
         true,
       ),
     ).toEqual({ item: "Milk", category: "Dairy", categoryOnly: "true" });
+  });
+});
+
+describe("parseNormalizedDescriptionParam", () => {
+  it("returns the trimmed value when present", () => {
+    expect(
+      parseNormalizedDescriptionParam(paramsFrom("normalized=Organic+Milk")),
+    ).toBe("Organic Milk");
+  });
+
+  it("returns null when the param is missing", () => {
+    expect(parseNormalizedDescriptionParam(paramsFrom(""))).toBeNull();
+  });
+
+  it("returns null when the param is blank", () => {
+    expect(
+      parseNormalizedDescriptionParam(paramsFrom("normalized=")),
+    ).toBeNull();
+  });
+
+  it("returns null when the param is whitespace-only", () => {
+    expect(
+      parseNormalizedDescriptionParam(
+        new URLSearchParams({ normalized: "   " }),
+      ),
+    ).toBeNull();
+  });
+
+  it("trims surrounding whitespace from an otherwise valid value", () => {
+    expect(
+      parseNormalizedDescriptionParam(
+        new URLSearchParams({ normalized: "  Milk  " }),
+      ),
+    ).toBe("Milk");
+  });
+});
+
+describe("buildLocationDrillDownHref", () => {
+  it("builds a receipts URL with the location URL-encoded", () => {
+    expect(buildLocationDrillDownHref("Walmart")).toBe(
+      "/receipts?location=Walmart",
+    );
+  });
+
+  it("URL-encodes spaces", () => {
+    expect(buildLocationDrillDownHref("Costco Wholesale")).toBe(
+      "/receipts?location=Costco%20Wholesale",
+    );
+  });
+
+  it("URL-encodes &, ?, and # in the location", () => {
+    const location = "Ben & Jerry's? #1";
+    expect(buildLocationDrillDownHref(location)).toBe(
+      `/receipts?location=${encodeURIComponent(location)}`,
+    );
+  });
+
+  it("returns null for the synthetic (No Location) bucket", () => {
+    expect(buildLocationDrillDownHref(NO_LOCATION_LABEL)).toBeNull();
+  });
+
+  it("returns null for an empty location", () => {
+    expect(buildLocationDrillDownHref("")).toBeNull();
+  });
+});
+
+describe("buildItemCostDrillDownHref", () => {
+  const range = { startDate: "2023-01-01", endDate: "2023-06-30" };
+
+  it("builds the item-cost-over-time URL with the report slug, canonical name, and date range", () => {
+    expect(buildItemCostDrillDownHref("Organic Milk", range)).toBe(
+      "/reports?report=item-cost-over-time&normalized=Organic+Milk&startDate=2023-01-01&endDate=2023-06-30",
+    );
+  });
+
+  it("URL-encodes special characters in the canonical name", () => {
+    const canonicalName = "Ben & Jerry's #1";
+    const href = buildItemCostDrillDownHref(canonicalName, range);
+    expect(href).not.toBeNull();
+    const params = new URLSearchParams(href!.split("?")[1]);
+    expect(params.get("report")).toBe("item-cost-over-time");
+    expect(params.get("normalized")).toBe(canonicalName);
+    expect(params.get("startDate")).toBe("2023-01-01");
+    expect(params.get("endDate")).toBe("2023-06-30");
+  });
+
+  it("writes the 'all' sentinel for an open-ended range", () => {
+    expect(
+      buildItemCostDrillDownHref("Organic Milk", {
+        startDate: undefined,
+        endDate: undefined,
+      }),
+    ).toBe(
+      "/reports?report=item-cost-over-time&normalized=Organic+Milk&startDate=all",
+    );
+  });
+
+  it("returns null for the synthetic (Not Normalized) bucket", () => {
+    expect(buildItemCostDrillDownHref(NOT_NORMALIZED_LABEL, range)).toBeNull();
+  });
+
+  it("returns null for an empty canonical name", () => {
+    expect(buildItemCostDrillDownHref("", range)).toBeNull();
   });
 });

@@ -1719,6 +1719,12 @@ paths:
           description: Case-insensitive substring filter applied to the receipt Location column. Whitespace-only values are ignored.
           schema:
             type: string
+        - name: location
+          in: query
+          required: false
+          description: Case-insensitive exact-match filter on the receipt Location column. Unlike `q` (substring), this matches the whole value, so drilling in from an aggregate report returns exactly the rows the aggregate counted. Whitespace-only values are ignored. Combines with `q` as an AND.
+          schema:
+            type: string
       responses:
         "200":
           description: OK
@@ -3709,7 +3715,7 @@ paths:
       operationId: GetItemCostOverTime
       tags: [Reports]
       summary: Get item cost over time
-      description: Returns time-series cost data for a specific item description or category, optionally filtered by date range and bucketed by granularity.
+      description: Returns time-series cost data for a specific item description, normalized description, or category, optionally filtered by date range and bucketed by granularity.
       security:
         - BearerAuth: []
         - ApiKey: []
@@ -3719,13 +3725,19 @@ paths:
           required: false
           schema:
             type: string
-          description: Item description to filter by. Either description or category is required.
+          description: Item description to filter by. Exactly one of description, normalizedDescription, or category is required.
+        - name: normalizedDescription
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Normalized description canonical name to filter by. Matches every receipt item linked to that normalized description regardless of its raw description text, so it is the drill-down target from the Spending by Normalized Description report. Takes precedence over category; description takes precedence over both.
         - name: category
           in: query
           required: false
           schema:
             type: string
-          description: Item category to filter by. Either description or category is required.
+          description: Item category to filter by. Exactly one of description, normalizedDescription, or category is required.
         - name: startDate
           in: query
           required: false
@@ -3949,6 +3961,39 @@ paths:
             type: string
             format: date-time
           description: Inclusive upper bound on receipt date (ISO 8601 date-time string). Defaults to all time when omitted.
+        - name: sortBy
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [canonicalName, totalAmount, itemCount]
+            default: totalAmount
+          description: Column to sort by.
+        - name: sortDirection
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+          description: Sort direction.
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          description: Page number (1-based).
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+          description: Number of items per page.
       responses:
         "200":
           description: OK
@@ -5110,8 +5155,16 @@ components:
 
     SpendingByNormalizedDescriptionResponse:
       type: object
-      required: [items]
+      required: [totalCount, grandTotal, items]
       properties:
+        totalCount:
+          type: integer
+          format: int32
+          description: Total number of normalized-description buckets matching the filter, across all pages.
+        grandTotal:
+          type: number
+          format: double
+          description: Sum of totalAmount across every bucket matching the filter, across all pages. Denominator for each item's share of total.
         items:
           type: array
           items:

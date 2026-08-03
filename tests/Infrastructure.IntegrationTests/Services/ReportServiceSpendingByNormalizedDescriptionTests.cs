@@ -1,4 +1,5 @@
 using Application.Models.Reports;
+using Common;
 using Domain.NormalizedDescriptions;
 using FluentAssertions;
 using Infrastructure.Entities.Core;
@@ -9,6 +10,11 @@ using SampleData.Entities;
 
 namespace Infrastructure.IntegrationTests.Services;
 
+// Postgres-only coverage for RECEIPTS-841: GetSpendingByNormalizedDescriptionAsync now groups,
+// sorts, and paginates entirely in SQL (GROUP BY canonical-name-or-"(Not Normalized)", ORDER BY,
+// OFFSET/LIMIT) and runs a second page-scoped query for dominant-currency resolution. The InMemory
+// unit suite client-evaluates all of this, so it can never prove the LINQ actually translates —
+// only a real Postgres connection can catch a translation regression.
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 public class ReportServiceSpendingByNormalizedDescriptionTests(PostgresFixture fixture)
@@ -57,10 +63,12 @@ public class ReportServiceSpendingByNormalizedDescriptionTests(PostgresFixture f
 
 		// Act
 		SpendingByNormalizedDescriptionResult result = await service
-			.GetSpendingByNormalizedDescriptionAsync(from: null, to: null, CancellationToken.None);
+			.GetSpendingByNormalizedDescriptionAsync(from: null, to: null, "totalAmount", "desc", 1, 50, CancellationToken.None);
 
 		// Assert
 		result.Items.Should().HaveCount(2);
+		result.TotalCount.Should().Be(2);
+		result.GrandTotal.Should().Be(11.50m);
 
 		SpendingByNormalizedDescriptionItem milk = result.Items.Single(i => i.CanonicalName == "Organic Milk");
 		milk.TotalAmount.Should().Be(9.50m);
@@ -120,7 +128,7 @@ public class ReportServiceSpendingByNormalizedDescriptionTests(PostgresFixture f
 
 		// Act
 		SpendingByNormalizedDescriptionResult result = await service
-			.GetSpendingByNormalizedDescriptionAsync(from, to, CancellationToken.None);
+			.GetSpendingByNormalizedDescriptionAsync(from, to, "totalAmount", "desc", 1, 50, CancellationToken.None);
 
 		// Assert — only the receipt within the range contributed
 		result.Items.Should().ContainSingle();
@@ -129,6 +137,8 @@ public class ReportServiceSpendingByNormalizedDescriptionTests(PostgresFixture f
 		result.Items[0].ItemCount.Should().Be(1);
 		result.FromDate.Should().Be(from);
 		result.ToDate.Should().Be(to);
+		result.TotalCount.Should().Be(1);
+		result.GrandTotal.Should().Be(1.50m);
 	}
 
 	[Fact]
@@ -178,13 +188,328 @@ public class ReportServiceSpendingByNormalizedDescriptionTests(PostgresFixture f
 
 		// Act
 		SpendingByNormalizedDescriptionResult result = await service
-			.GetSpendingByNormalizedDescriptionAsync(null, null, CancellationToken.None);
+			.GetSpendingByNormalizedDescriptionAsync(null, null, "totalAmount", "desc", 1, 50, CancellationToken.None);
 
 		// Assert — only the live item on the live receipt counted
 		result.Items.Should().ContainSingle();
 		result.Items[0].CanonicalName.Should().Be("Eggs");
 		result.Items[0].TotalAmount.Should().Be(3.00m);
 		result.Items[0].ItemCount.Should().Be(1);
+	}
+
+	[Theory]
+	[InlineData("asc")]
+	[InlineData("desc")]
+	public async Task GetSpendingByNormalizedDescriptionAsync_SortsByCanonicalName_InSql(string direction)
+	{
+		// Arrange
+		await ResetTablesAsync();
+		await SeedThreeBucketsAsync();
+
+		ReportService service = new(new FixtureDbContextFactory(fixture));
+
+		// Act
+		SpendingByNormalizedDescriptionResult result = await service
+			.GetSpendingByNormalizedDescriptionAsync(null, null, "canonicalName", direction, 1, 50, CancellationToken.None);
+
+		// Assert
+		List<string> expected = direction == "asc"
+			? ["Apples", "Bananas", "Cherries"]
+			: ["Cherries", "Bananas", "Apples"];
+		result.Items.Select(i => i.CanonicalName).Should().Equal(expected);
+	}
+
+	[Theory]
+	[InlineData("asc")]
+	[InlineData("desc")]
+	public async Task GetSpendingByNormalizedDescriptionAsync_SortsByItemCount_InSql(string direction)
+	{
+		// Arrange — Apples: 1 item, Cherries: 2 items, Bananas: 3 items.
+		await ResetTablesAsync();
+		await SeedThreeBucketsAsync();
+
+		ReportService service = new(new FixtureDbContextFactory(fixture));
+
+		// Act
+		SpendingByNormalizedDescriptionResult result = await service
+			.GetSpendingByNormalizedDescriptionAsync(null, null, "itemCount", direction, 1, 50, CancellationToken.None);
+
+		// Assert
+		List<string> expected = direction == "asc"
+			? ["Apples", "Cherries", "Bananas"]
+			: ["Bananas", "Cherries", "Apples"];
+		result.Items.Select(i => i.CanonicalName).Should().Equal(expected);
+	}
+
+	[Fact]
+	public async Task GetSpendingByNormalizedDescriptionAsync_PaginatesInSql_WithNoGapsOrDuplicates_WhenTotalsTie()
+	{
+		// Arrange — five buckets that all tie on totalAmount, forcing the ThenBy(CanonicalName)
+		// tiebreaker to keep offset pagination stable and gap-free across page requests.
+		await ResetTablesAsync();
+
+		string[] names = ["Alpha", "Bravo", "Charlie", "Delta", "Echo"];
+
+		await using (ApplicationDbContext setup = fixture.CreateDbContext())
+		{
+			ReceiptEntity receipt = ReceiptEntityGenerator.Generate();
+			setup.Receipts.Add(receipt);
+
+			foreach (string name in names)
+			{
+				Guid normalizedId = Guid.NewGuid();
+				setup.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
+				{
+					Id = normalizedId,
+					CanonicalName = name,
+					Status = NormalizedDescriptionStatus.Active,
+					CreatedAt = DateTimeOffset.UtcNow,
+				});
+
+				ReceiptItemEntity item = ReceiptItemEntityGenerator.Generate(receipt.Id);
+				item.Description = name;
+				item.TotalAmount = 10.00m; // tie across every bucket
+				item.NormalizedDescriptionId = normalizedId;
+				setup.ReceiptItems.Add(item);
+			}
+
+			await setup.SaveChangesAsync();
+		}
+
+		ReportService service = new(new FixtureDbContextFactory(fixture));
+
+		// Act — page through with pageSize=2, collecting every row returned.
+		List<string> collected = [];
+		for (int page = 1; page <= 3; page++)
+		{
+			SpendingByNormalizedDescriptionResult pageResult = await service
+				.GetSpendingByNormalizedDescriptionAsync(null, null, "totalAmount", "desc", page, 2, CancellationToken.None);
+			collected.AddRange(pageResult.Items.Select(i => i.CanonicalName));
+			pageResult.TotalCount.Should().Be(5);
+		}
+
+		// Assert — every bucket appeared exactly once, in the deterministic tiebreak order
+		// (totalAmount desc is all-tied, so ThenBy(CanonicalName) ascending decides the order).
+		collected.Should().Equal(names);
+	}
+
+	[Fact]
+	public async Task GetSpendingByNormalizedDescriptionAsync_TotalCountAndGrandTotal_SpanAllBuckets_NotJustRequestedPage()
+	{
+		// Arrange
+		await ResetTablesAsync();
+
+		(string Name, decimal Total)[] buckets =
+		[
+			("Apples", 10.00m),
+			("Bananas", 20.00m),
+			("Cherries", 30.00m),
+			("Dates", 40.00m),
+			("Elderberries", 50.00m),
+		];
+
+		await using (ApplicationDbContext setup = fixture.CreateDbContext())
+		{
+			ReceiptEntity receipt = ReceiptEntityGenerator.Generate();
+			setup.Receipts.Add(receipt);
+
+			foreach ((string name, decimal total) in buckets)
+			{
+				Guid normalizedId = Guid.NewGuid();
+				setup.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
+				{
+					Id = normalizedId,
+					CanonicalName = name,
+					Status = NormalizedDescriptionStatus.Active,
+					CreatedAt = DateTimeOffset.UtcNow,
+				});
+
+				ReceiptItemEntity item = ReceiptItemEntityGenerator.Generate(receipt.Id);
+				item.Description = name;
+				item.TotalAmount = total;
+				item.NormalizedDescriptionId = normalizedId;
+				setup.ReceiptItems.Add(item);
+			}
+
+			await setup.SaveChangesAsync();
+		}
+
+		ReportService service = new(new FixtureDbContextFactory(fixture));
+		decimal expectedGrandTotal = buckets.Sum(b => b.Total);
+
+		// Act — request only a 2-row page out of 5 buckets.
+		SpendingByNormalizedDescriptionResult result = await service
+			.GetSpendingByNormalizedDescriptionAsync(null, null, "totalAmount", "desc", 1, 2, CancellationToken.None);
+
+		// Assert
+		result.Items.Should().HaveCount(2, "only the requested page should be materialized");
+		result.TotalCount.Should().Be(5, "TotalCount is the number of buckets, not the page size");
+		result.GrandTotal.Should().Be(expectedGrandTotal, "GrandTotal must span every bucket, not just the returned page");
+	}
+
+	[Fact]
+	public async Task GetSpendingByNormalizedDescriptionAsync_NotNormalizedBucket_AppearsAndPaginatesAlongsideRealNames()
+	{
+		// Arrange — one real canonical name plus a group of items with no NormalizedDescriptionId,
+		// which must bucket into the synthetic "(Not Normalized)" group via COALESCE and remain
+		// sortable/paginatable alongside real names rather than being dropped or NULL-ordered away.
+		await ResetTablesAsync();
+
+		Guid normalizedId = Guid.NewGuid();
+
+		await using (ApplicationDbContext setup = fixture.CreateDbContext())
+		{
+			ReceiptEntity receipt = ReceiptEntityGenerator.Generate();
+			setup.Receipts.Add(receipt);
+
+			setup.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
+			{
+				Id = normalizedId,
+				CanonicalName = "Apples",
+				Status = NormalizedDescriptionStatus.Active,
+				CreatedAt = DateTimeOffset.UtcNow,
+			});
+
+			ReceiptItemEntity normalizedItem = ReceiptItemEntityGenerator.Generate(receipt.Id);
+			normalizedItem.Description = "apples";
+			normalizedItem.TotalAmount = 5.00m;
+			normalizedItem.NormalizedDescriptionId = normalizedId;
+
+			ReceiptItemEntity unnormalizedItem1 = ReceiptItemEntityGenerator.Generate(receipt.Id);
+			unnormalizedItem1.Description = "mystery item 1";
+			unnormalizedItem1.TotalAmount = 3.00m;
+			unnormalizedItem1.NormalizedDescriptionId = null;
+
+			ReceiptItemEntity unnormalizedItem2 = ReceiptItemEntityGenerator.Generate(receipt.Id);
+			unnormalizedItem2.Description = "mystery item 2";
+			unnormalizedItem2.TotalAmount = 7.00m;
+			unnormalizedItem2.NormalizedDescriptionId = null;
+
+			setup.ReceiptItems.AddRange(normalizedItem, unnormalizedItem1, unnormalizedItem2);
+			await setup.SaveChangesAsync();
+		}
+
+		ReportService service = new(new FixtureDbContextFactory(fixture));
+
+		// Act — page size 1 forces the synthetic bucket through the same paginated ORDER BY as a
+		// real canonical name, proving it is not skipped or duplicated by the OFFSET/LIMIT.
+		List<string> collected = [];
+		int totalCount = 0;
+		for (int page = 1; page <= 2; page++)
+		{
+			SpendingByNormalizedDescriptionResult pageResult = await service
+				.GetSpendingByNormalizedDescriptionAsync(null, null, "totalAmount", "desc", page, 1, CancellationToken.None);
+			collected.AddRange(pageResult.Items.Select(i => i.CanonicalName));
+			totalCount = pageResult.TotalCount;
+		}
+
+		// Assert
+		totalCount.Should().Be(2);
+		collected.Should().BeEquivalentTo(["Apples", "(Not Normalized)"]);
+
+		SpendingByNormalizedDescriptionResult fullResult = await service
+			.GetSpendingByNormalizedDescriptionAsync(null, null, "totalAmount", "desc", 1, 50, CancellationToken.None);
+		SpendingByNormalizedDescriptionItem notNormalized = fullResult.Items.Single(i => i.CanonicalName == "(Not Normalized)");
+		notNormalized.TotalAmount.Should().Be(10.00m);
+		notNormalized.ItemCount.Should().Be(2);
+	}
+
+	[Fact]
+	public async Task GetSpendingByNormalizedDescriptionAsync_ResolvesDominantCurrency_ViaPageScopedQuery()
+	{
+		// Arrange — GetDominantCurrenciesAsync runs as a second, page-scoped query (see
+		// ReportService.GetDominantCurrenciesAsync). This proves that query translates and resolves
+		// correctly for a multi-item bucket. NOTE: Common.Currency currently defines only USD, so a
+		// true mixed-currency tie-break cannot be constructed against the real enum today — this
+		// exercises the resolution path (multiple items, one currency) rather than an actual tie.
+		await ResetTablesAsync();
+
+		Guid normalizedId = Guid.NewGuid();
+
+		await using (ApplicationDbContext setup = fixture.CreateDbContext())
+		{
+			ReceiptEntity receipt = ReceiptEntityGenerator.Generate();
+			setup.Receipts.Add(receipt);
+
+			setup.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
+			{
+				Id = normalizedId,
+				CanonicalName = "Coffee",
+				Status = NormalizedDescriptionStatus.Active,
+				CreatedAt = DateTimeOffset.UtcNow,
+			});
+
+			ReceiptItemEntity item1 = ReceiptItemEntityGenerator.Generate(receipt.Id);
+			item1.Description = "coffee";
+			item1.TotalAmount = 4.00m;
+			item1.TotalAmountCurrency = Currency.USD;
+			item1.NormalizedDescriptionId = normalizedId;
+
+			ReceiptItemEntity item2 = ReceiptItemEntityGenerator.Generate(receipt.Id);
+			item2.Description = "coffee";
+			item2.TotalAmount = 6.00m;
+			item2.TotalAmountCurrency = Currency.USD;
+			item2.NormalizedDescriptionId = normalizedId;
+
+			setup.ReceiptItems.AddRange(item1, item2);
+			await setup.SaveChangesAsync();
+		}
+
+		ReportService service = new(new FixtureDbContextFactory(fixture));
+
+		// Act
+		SpendingByNormalizedDescriptionResult result = await service
+			.GetSpendingByNormalizedDescriptionAsync(null, null, "totalAmount", "desc", 1, 50, CancellationToken.None);
+
+		// Assert
+		SpendingByNormalizedDescriptionItem coffee = result.Items.Single(i => i.CanonicalName == "Coffee");
+		coffee.Currency.Should().Be("USD");
+		coffee.TotalAmount.Should().Be(10.00m);
+		coffee.ItemCount.Should().Be(2);
+	}
+
+	// Seeds three canonical-name buckets with distinct item counts and totals for sort assertions:
+	// Apples (1 item, $30), Bananas (3 items, $10 total), Cherries (2 items, $20 total).
+	private async Task SeedThreeBucketsAsync()
+	{
+		await using ApplicationDbContext setup = fixture.CreateDbContext();
+		ReceiptEntity receipt = ReceiptEntityGenerator.Generate();
+		setup.Receipts.Add(receipt);
+
+		Guid applesId = Guid.NewGuid();
+		Guid bananasId = Guid.NewGuid();
+		Guid cherriesId = Guid.NewGuid();
+
+		setup.NormalizedDescriptions.AddRange(
+			new NormalizedDescriptionEntity { Id = applesId, CanonicalName = "Apples", Status = NormalizedDescriptionStatus.Active, CreatedAt = DateTimeOffset.UtcNow },
+			new NormalizedDescriptionEntity { Id = bananasId, CanonicalName = "Bananas", Status = NormalizedDescriptionStatus.Active, CreatedAt = DateTimeOffset.UtcNow },
+			new NormalizedDescriptionEntity { Id = cherriesId, CanonicalName = "Cherries", Status = NormalizedDescriptionStatus.Active, CreatedAt = DateTimeOffset.UtcNow });
+
+		ReceiptItemEntity apple = ReceiptItemEntityGenerator.Generate(receipt.Id);
+		apple.Description = "apple";
+		apple.TotalAmount = 30.00m;
+		apple.NormalizedDescriptionId = applesId;
+		setup.ReceiptItems.Add(apple);
+
+		for (int i = 0; i < 3; i++)
+		{
+			ReceiptItemEntity banana = ReceiptItemEntityGenerator.Generate(receipt.Id);
+			banana.Description = "banana";
+			banana.TotalAmount = 3.33m;
+			banana.NormalizedDescriptionId = bananasId;
+			setup.ReceiptItems.Add(banana);
+		}
+
+		for (int i = 0; i < 2; i++)
+		{
+			ReceiptItemEntity cherry = ReceiptItemEntityGenerator.Generate(receipt.Id);
+			cherry.Description = "cherry";
+			cherry.TotalAmount = 10.00m;
+			cherry.NormalizedDescriptionId = cherriesId;
+			setup.ReceiptItems.Add(cherry);
+		}
+
+		await setup.SaveChangesAsync();
 	}
 
 	private async Task ResetTablesAsync()

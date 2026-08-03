@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using Application.Interfaces.Services;
 using Application.Models.Reports;
 using Common;
+using Infrastructure.Entities.Core;
 using Microsoft.EntityFrameworkCore;
 
 namespace Infrastructure.Services;
@@ -216,23 +217,41 @@ public partial class ReportService(IDbContextFactory<ApplicationDbContext> conte
 		DateOnly? startDate,
 		DateOnly? endDate,
 		string granularity,
+		string? normalizedDescription,
 		CancellationToken cancellationToken)
 	{
 		await using ApplicationDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
 
-		var query = context.ReceiptItems
-			.AsNoTracking()
-			.Where(ri => ri.DeletedAt == null)
-			.Join(
-				context.Receipts.AsNoTracking().Where(r => r.DeletedAt == null),
-				ri => ri.ReceiptId,
-				r => r.Id,
-				(ri, r) => new { ri.Description, ri.Category, ri.TotalAmount, ri.Quantity, ri.UnitPrice, r.Date });
+		// The normalized-description filter needs the canonical name of the item's linked
+		// NormalizedDescription, so it is projected alongside the raw columns (LEFT JOIN — items
+		// without a normalized description carry null and simply never match).
+		var query = from ri in context.ReceiptItems.AsNoTracking().Where(ri => ri.DeletedAt == null)
+					join r in context.Receipts.AsNoTracking().Where(r => r.DeletedAt == null)
+						on ri.ReceiptId equals r.Id
+					join n in context.NormalizedDescriptions.AsNoTracking()
+						on ri.NormalizedDescriptionId equals n.Id into normalizedJoin
+					from n in normalizedJoin.DefaultIfEmpty()
+					select new
+					{
+						ri.Description,
+						ri.Category,
+						ri.TotalAmount,
+						ri.Quantity,
+						ri.UnitPrice,
+						r.Date,
+						CanonicalName = n.CanonicalName,
+					};
 
+		// Precedence mirrors the OpenAPI contract: description > normalizedDescription > category.
 		if (!string.IsNullOrEmpty(description))
 		{
 			string descLower = description.ToLower();
 			query = query.Where(x => x.Description.ToLower() == descLower);
+		}
+		else if (!string.IsNullOrEmpty(normalizedDescription))
+		{
+			string canonicalLower = normalizedDescription.ToLower();
+			query = query.Where(x => x.CanonicalName != null && x.CanonicalName.ToLower() == canonicalLower);
 		}
 		else if (!string.IsNullOrEmpty(category))
 		{
@@ -512,9 +531,20 @@ public partial class ReportService(IDbContextFactory<ApplicationDbContext> conte
 		return periods;
 	}
 
+	/// <summary>
+	/// Label for receipt items with no linked normalized description. Materialized into the
+	/// GROUP BY key via COALESCE so the synthetic bucket sorts and paginates alongside real
+	/// canonical names instead of being a NULL that Postgres orders at one end.
+	/// </summary>
+	private const string NotNormalizedLabel = "(Not Normalized)";
+
 	public async Task<SpendingByNormalizedDescriptionResult> GetSpendingByNormalizedDescriptionAsync(
 		DateTimeOffset? from,
 		DateTimeOffset? to,
+		string sortBy,
+		string sortDirection,
+		int page,
+		int pageSize,
 		CancellationToken cancellationToken)
 	{
 		await using ApplicationDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
@@ -537,56 +567,110 @@ public partial class ReportService(IDbContextFactory<ApplicationDbContext> conte
 			receiptsQuery = receiptsQuery.Where(r => r.Date <= toDate.Value);
 		}
 
-		// LEFT JOIN ReceiptItems -> NormalizedDescriptions (via nullable FK).
-		// Soft-deleted receipts already excluded above; exclude soft-deleted items here.
-		// The join via Receipt.Id enforces the date filter on the item side as well.
-		var joined = from ri in context.ReceiptItems.AsNoTracking().Where(ri => ri.DeletedAt == null)
-					 join r in receiptsQuery on ri.ReceiptId equals r.Id
-					 join n in context.NormalizedDescriptions.AsNoTracking() on ri.NormalizedDescriptionId equals n.Id into gj
-					 from n in gj.DefaultIfEmpty()
-					 select new
-					 {
-						 CanonicalName = n != null ? n.CanonicalName : null,
-						 ri.TotalAmount,
-						 ri.TotalAmountCurrency,
-						 r.Date,
-					 };
+		// LEFT JOIN ReceiptItems -> NormalizedDescriptions (via nullable FK), then GROUP BY the
+		// coalesced canonical name. Aggregation happens in SQL (RECEIPTS-841) — the previous
+		// implementation pulled every matching receipt item into memory before grouping, which
+		// cannot support server-side pagination.
+		var baseQuery = from ri in context.ReceiptItems.AsNoTracking().Where(ri => ri.DeletedAt == null)
+						join r in receiptsQuery on ri.ReceiptId equals r.Id
+						join n in context.NormalizedDescriptions.AsNoTracking() on ri.NormalizedDescriptionId equals n.Id into gj
+						from n in gj.DefaultIfEmpty()
+						group new { ri.TotalAmount, r.Date } by n.CanonicalName ?? NotNormalizedLabel into g
+						select new
+						{
+							CanonicalName = g.Key,
+							Total = g.Sum(x => x.TotalAmount),
+							ItemCount = g.Count(),
+							FirstSeen = g.Min(x => x.Date),
+							LastSeen = g.Max(x => x.Date),
+						};
 
-		var materialized = await joined.ToListAsync(cancellationToken);
+		// Count (number of buckets) and grand total are aggregated in SQL over the grouped query.
+		// GrandTotal is the denominator the client uses for each row's share-of-total, so it must
+		// span every bucket, not just the requested page.
+		int totalCount = await baseQuery.CountAsync(cancellationToken);
+		decimal grandTotal = totalCount == 0
+			? 0m
+			: await baseQuery.SumAsync(x => x.Total, cancellationToken);
 
-		// Group by the canonical name; NULL FK buckets into a synthetic "(Not Normalized)" group.
-		const string NotNormalizedLabel = "(Not Normalized)";
-		List<SpendingByNormalizedDescriptionItem> items = materialized
-			.GroupBy(x => x.CanonicalName ?? NotNormalizedLabel)
-			.Select(g =>
+		var sortedQuery = (sortBy.ToLowerInvariant(), sortDirection.ToLowerInvariant()) switch
+		{
+			("canonicalname", "asc") => baseQuery.OrderBy(x => x.CanonicalName),
+			("canonicalname", "desc") => baseQuery.OrderByDescending(x => x.CanonicalName),
+			("itemcount", "asc") => baseQuery.OrderBy(x => x.ItemCount),
+			("itemcount", "desc") => baseQuery.OrderByDescending(x => x.ItemCount),
+			("totalamount", "asc") => baseQuery.OrderBy(x => x.Total),
+			_ => baseQuery.OrderByDescending(x => x.Total), // default: totalAmount desc
+		};
+
+		// Deterministic total order (same rule as the other paginated reports): the GROUP BY key is
+		// unique per row, so appending it ascending turns the non-unique measure sorts into a total
+		// order and keeps offset pagination from skipping or repeating rows between page requests.
+		sortedQuery = sortedQuery.ThenBy(x => x.CanonicalName);
+
+		// Skip/Take BEFORE materializing — the database paginates, only one page crosses the wire.
+		var pagedGroups = await sortedQuery
+			.Skip((page - 1) * pageSize)
+			.Take(pageSize)
+			.ToListAsync(cancellationToken);
+
+		if (pagedGroups.Count == 0)
+		{
+			return new SpendingByNormalizedDescriptionResult([], totalCount, grandTotal, from, to);
+		}
+
+		Dictionary<string, string> dominantCurrencies = await GetDominantCurrenciesAsync(
+			context,
+			receiptsQuery,
+			[.. pagedGroups.Select(x => x.CanonicalName)],
+			cancellationToken);
+
+		List<SpendingByNormalizedDescriptionItem> items = [.. pagedGroups.Select(x =>
+			new SpendingByNormalizedDescriptionItem(
+				x.CanonicalName,
+				x.Total,
+				dominantCurrencies.TryGetValue(x.CanonicalName, out string? currency) ? currency : Currency.USD.ToString(),
+				x.ItemCount,
+				ToDateTimeOffset(x.FirstSeen),
+				ToDateTimeOffset(x.LastSeen)))];
+
+		return new SpendingByNormalizedDescriptionResult(items, totalCount, grandTotal, from, to);
+	}
+
+	/// <summary>
+	/// Resolves the dominant (most frequent) currency for each supplied bucket. Kept as a second,
+	/// page-scoped query because the mode of a column is not expressible in the same grouped SQL
+	/// statement — at most <c>pageSize</c> buckets are ever requested. Ties break on the
+	/// <see cref="Currency"/> enum ordering, matching the pre-pagination behaviour.
+	/// </summary>
+	private static async Task<Dictionary<string, string>> GetDominantCurrenciesAsync(
+		ApplicationDbContext context,
+		IQueryable<ReceiptEntity> receiptsQuery,
+		List<string> canonicalNames,
+		CancellationToken cancellationToken)
+	{
+		var currencyCounts = await (
+			from ri in context.ReceiptItems.AsNoTracking().Where(ri => ri.DeletedAt == null)
+			join r in receiptsQuery on ri.ReceiptId equals r.Id
+			join n in context.NormalizedDescriptions.AsNoTracking() on ri.NormalizedDescriptionId equals n.Id into gj
+			from n in gj.DefaultIfEmpty()
+			where canonicalNames.Contains(n.CanonicalName ?? NotNormalizedLabel)
+			group ri by new { CanonicalName = n.CanonicalName ?? NotNormalizedLabel, ri.TotalAmountCurrency } into cg
+			select new
 			{
-				decimal total = g.Sum(x => x.TotalAmount);
-				int count = g.Count();
-				DateOnly minDate = g.Min(x => x.Date);
-				DateOnly maxDate = g.Max(x => x.Date);
+				cg.Key.CanonicalName,
+				cg.Key.TotalAmountCurrency,
+				Count = cg.Count(),
+			}).ToListAsync(cancellationToken);
 
-				// Dominant currency: most common across the bucket. Ties broken by name asc
-				// (stable via Currency enum ordering). Empty groups fall back to USD.
-				string currency = g
-					.GroupBy(x => x.TotalAmountCurrency)
-					.OrderByDescending(cg => cg.Count())
-					.ThenBy(cg => cg.Key)
-					.Select(cg => cg.Key.ToString())
-					.FirstOrDefault() ?? Currency.USD.ToString();
-
-				return new SpendingByNormalizedDescriptionItem(
-					g.Key,
-					total,
-					currency,
-					count,
-					ToDateTimeOffset(minDate),
-					ToDateTimeOffset(maxDate));
-			})
-			.OrderByDescending(x => x.TotalAmount)
-			.ThenBy(x => x.CanonicalName)
-			.ToList();
-
-		return new SpendingByNormalizedDescriptionResult(items, from, to);
+		return currencyCounts
+			.GroupBy(x => x.CanonicalName)
+			.ToDictionary(
+				g => g.Key,
+				g => g.OrderByDescending(x => x.Count)
+					.ThenBy(x => x.TotalAmountCurrency)
+					.Select(x => x.TotalAmountCurrency.ToString())
+					.First());
 	}
 
 	private static DateTimeOffset ToDateTimeOffset(DateOnly date) =>

@@ -10,5 +10,7 @@ public record SpendingByNormalizedDescriptionItem(
 
 public record SpendingByNormalizedDescriptionResult(
 	List<SpendingByNormalizedDescriptionItem> Items,
+	int TotalCount,
+	decimal GrandTotal,
 	DateTimeOffset? FromDate,
 	DateTimeOffset? ToDate);

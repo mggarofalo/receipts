@@ -315,6 +315,33 @@ describe("useReceipts", () => {
     expect(call[1].params.query.q).toBeUndefined();
   });
 
+  it("list query passes trimmed location to the server when provided", async () => {
+    (client.GET as Mock).mockResolvedValue({ data: { data: [], total: 0, offset: 0, limit: 50 }, error: undefined });
+
+    const { result } = renderHook(
+      () => useReceipts(0, 50, null, null, null, null, null, { location: "  Target  " }),
+      { wrapper: createWrapper() },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(client.GET).toHaveBeenCalledWith("/api/receipts", {
+      params: { query: { offset: 0, limit: 50, location: "Target" } },
+    });
+  });
+
+  it("list query omits location when it is whitespace-only", async () => {
+    (client.GET as Mock).mockResolvedValue({ data: { data: [], total: 0, offset: 0, limit: 50 }, error: undefined });
+
+    const { result } = renderHook(
+      () => useReceipts(0, 50, null, null, null, null, null, { location: "   " }),
+      { wrapper: createWrapper() },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    const call = (client.GET as Mock).mock.calls[0];
+    expect(call[1].params.query.location).toBeUndefined();
+  });
+
   it("list query returns total of 0 when data is undefined", async () => {
     (client.GET as Mock).mockResolvedValue({ data: undefined, error: { message: "err" } });
 

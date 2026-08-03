@@ -237,6 +237,71 @@ public class ReceiptsControllerTests
 	}
 
 	[Fact]
+	public async Task GetAllReceipts_ForwardsTrimmedLocation_ToMediator()
+	{
+		// Arrange
+		List<Receipt> mediatorReturn = ReceiptGenerator.GenerateList(1);
+
+		_mediatorMock.Setup(m => m.Send(
+			It.Is<GetAllReceiptsQuery>(q => q.Location == "Target"),
+			It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new PagedResult<Receipt>(mediatorReturn, mediatorReturn.Count, 0, 50));
+
+		// Act
+		Results<Ok<ReceiptListResponse>, BadRequest<string>> result =
+			await _controller.GetAllReceipts(0, 50, null, null, null, null, null, "  Target  ");
+
+		// Assert
+		Assert.IsType<Ok<ReceiptListResponse>>(result.Result);
+		_mediatorMock.Verify(m => m.Send(
+			It.Is<GetAllReceiptsQuery>(q => q.Location == "Target"),
+			It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	[Theory]
+	[InlineData(null)]
+	[InlineData("")]
+	[InlineData("   ")]
+	public async Task GetAllReceipts_NormalizesBlankLocation_ToNull(string? location)
+	{
+		// Arrange
+		_mediatorMock.Setup(m => m.Send(
+			It.IsAny<GetAllReceiptsQuery>(),
+			It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new PagedResult<Receipt>([], 0, 0, 50));
+
+		// Act
+		await _controller.GetAllReceipts(0, 50, null, null, null, null, null, location);
+
+		// Assert
+		_mediatorMock.Verify(m => m.Send(
+			It.Is<GetAllReceiptsQuery>(query => query.Location == null),
+			It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	[Fact]
+	public async Task GetAllReceipts_CombinesLocationAndSearchQuery_ToMediator()
+	{
+		// Arrange
+		List<Receipt> mediatorReturn = ReceiptGenerator.GenerateList(1);
+
+		_mediatorMock.Setup(m => m.Send(
+			It.Is<GetAllReceiptsQuery>(q => q.Q == "Milk" && q.Location == "Target"),
+			It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new PagedResult<Receipt>(mediatorReturn, mediatorReturn.Count, 0, 50));
+
+		// Act
+		Results<Ok<ReceiptListResponse>, BadRequest<string>> result =
+			await _controller.GetAllReceipts(0, 50, null, null, null, null, "Milk", "Target");
+
+		// Assert
+		Assert.IsType<Ok<ReceiptListResponse>>(result.Result);
+		_mediatorMock.Verify(m => m.Send(
+			It.Is<GetAllReceiptsQuery>(q => q.Q == "Milk" && q.Location == "Target"),
+			It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	[Fact]
 	public async Task CreateReceipt_ReturnsOkResult_WithCreatedReceipt()
 	{
 		// Arrange

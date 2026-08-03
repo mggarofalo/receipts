@@ -189,3 +189,66 @@ export function serializeSelectedItemParam(
     categoryOnly: categoryOnly ? "true" : undefined,
   };
 }
+
+/**
+ * Parses the Item Cost Over Time normalized-description selector (`normalized`),
+ * the drill-down target from Spending by Normalized Description (RECEIPTS-841).
+ * Unlike `item`/`category` this is a single canonical name that stands alone,
+ * because a normalized description spans many raw descriptions and categories.
+ * Blank/whitespace-only values are treated as absent.
+ */
+export function parseNormalizedDescriptionParam(
+  searchParams: URLSearchParams,
+): string | null {
+  const value = searchParams.get("normalized");
+  if (value === null) return null;
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed;
+}
+
+/**
+ * Bucket label the Spending by Normalized Description report uses for receipt
+ * items that have no normalized description. It is a synthetic grouping, not a
+ * real canonical name, so it has no drill-down target.
+ */
+export const NOT_NORMALIZED_LABEL = "(Not Normalized)";
+
+/**
+ * Bucket label the Spending by Location report uses for receipts with an empty
+ * location. Like {@link NOT_NORMALIZED_LABEL} it is synthetic — there is no
+ * literal location string to filter the receipts list by — so it is excluded
+ * from drill-down linking.
+ */
+export const NO_LOCATION_LABEL = "(No Location)";
+
+/**
+ * Builds the receipts-list URL for a Spending by Location row, or `null` when
+ * the row is the synthetic "(No Location)" bucket, which has no filterable
+ * location value behind it.
+ */
+export function buildLocationDrillDownHref(location: string): string | null {
+  if (!location || location === NO_LOCATION_LABEL) return null;
+  return `/receipts?location=${encodeURIComponent(location)}`;
+}
+
+/**
+ * Builds the Item Cost Over Time URL for a Spending by Normalized Description
+ * row, carrying the current date range over so the destination report opens on
+ * the same window the user was looking at. Returns `null` for the synthetic
+ * "(Not Normalized)" bucket, which is not a real normalized description.
+ */
+export function buildItemCostDrillDownHref(
+  canonicalName: string,
+  range: DateRange,
+): string | null {
+  if (!canonicalName || canonicalName === NOT_NORMALIZED_LABEL) return null;
+
+  const params = new URLSearchParams({
+    report: "item-cost-over-time",
+    normalized: canonicalName,
+  });
+  for (const [key, value] of Object.entries(serializeDateRangeParam(range))) {
+    if (value !== undefined) params.set(key, value);
+  }
+  return `/reports?${params.toString()}`;
+}

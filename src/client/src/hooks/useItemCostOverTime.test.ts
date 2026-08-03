@@ -250,4 +250,45 @@ describe("useItemCostOverTime", () => {
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(result.current.error).toEqual(apiError);
   });
+
+  it("fetches cost data when only normalizedDescription is provided", async () => {
+    const mockData = { buckets: [{ period: "2025-01", amount: 2.5 }] };
+    mockClient.GET.mockResolvedValue({
+      data: mockData,
+      error: undefined,
+      response: {} as Response,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    const { result } = renderHook(
+      () => useItemCostOverTime({ normalizedDescription: "Organic Milk" }),
+      { wrapper: createQueryWrapper() },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual(mockData);
+    expect(mockClient.GET).toHaveBeenCalledWith(
+      "/api/reports/item-cost-over-time",
+      {
+        params: {
+          query: {
+            description: undefined,
+            category: undefined,
+            normalizedDescription: "Organic Milk",
+            startDate: undefined,
+            endDate: undefined,
+            granularity: undefined,
+          },
+        },
+      },
+    );
+  });
+
+  it("does not fetch when description, category, and normalizedDescription are all absent", () => {
+    renderHook(() => useItemCostOverTime({ normalizedDescription: undefined }), {
+      wrapper: createQueryWrapper(),
+    });
+
+    expect(mockClient.GET).not.toHaveBeenCalled();
+  });
 });
