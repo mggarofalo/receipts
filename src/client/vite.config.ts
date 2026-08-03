@@ -70,6 +70,12 @@ export default defineConfig({
     },
   },
   server: {
+    // Bind every interface, not just Vite's default `localhost`. On Windows that
+    // default resolves to ::1 only, so Aspire's DCP proxy — which dials the target
+    // over IPv4 — connects to nothing and holds the request open forever. Without
+    // this, http://localhost:5173 hangs and the app is reachable only on the
+    // dynamic port Aspire passes to Vite via --port (RECEIPTS-882).
+    host: true,
     proxy: {
       "/api": {
         target: process.env.services__api__https__0 ?? process.env.services__api__http__0 ?? "https://localhost:5001",

@@ -49,12 +49,20 @@ VS Code will automatically open the **Aspire Dashboard** in your browser.
 | Service | Default URL | Description |
 |---------|-------------|-------------|
 | Aspire Dashboard | http://localhost:15888 | Observability — logs, traces, metrics |
+| Frontend (Vite) | http://localhost:5173 | React client — **pinned**, see below |
 | API (HTTP) | http://localhost:5000 | REST API |
 | API (HTTPS) | https://localhost:5001 | REST API (HTTPS) |
 | API Docs (Scalar) | http://localhost:5000/scalar | Interactive API documentation |
 | PgAdmin | auto-assigned | PostgreSQL admin UI |
 
 > **Note:** Aspire assigns dynamic ports and the defaults above may differ. Check the **Aspire Dashboard → Resources** view for the actual URLs assigned to each service in your session.
+
+The frontend is the exception: `AppHost.cs` pins its endpoint to 5173 so tooling
+that hardcodes the port (Playwright's `webServer`, the QA skills) keeps working.
+The endpoint is plain HTTP — there is no dev certificate on it, so `https://localhost:5173`
+will fail the TLS handshake. Do not add a second endpoint to the frontend resource;
+`AddViteApp` already declares one, and a duplicate produces a proxy that accepts
+connections and then hangs forever (RECEIPTS-882, guarded by `tests/Receipts.AppHost.Tests`).
 
 ### Debug Configurations
 

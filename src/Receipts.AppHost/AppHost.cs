@@ -32,9 +32,13 @@ IResourceBuilder<ProjectResource> api = builder.AddProject<Projects.API>("api")
 	.WithReference(db)
 	.WaitForCompletion(seeder);
 
+// AddViteApp already creates the "http" endpoint and passes its target port to
+// Vite via --port. Pin the host port on that existing endpoint rather than adding
+// a second one: a separate endpoint gets its own DCP proxy with nothing listening
+// behind it, so requests to it hang forever (RECEIPTS-882).
 builder.AddViteApp("frontend", "../client")
 	.WithReference(api)
-	.WithHttpEndpoint(port: 5173, name: "vite", env: "PORT")
+	.WithEndpoint("http", endpoint => endpoint.Port = 5173)
 	.WithExternalHttpEndpoints();
 
 await builder.Build().RunAsync();
