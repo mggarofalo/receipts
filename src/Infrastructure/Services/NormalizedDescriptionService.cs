@@ -622,16 +622,33 @@ public class NormalizedDescriptionService(
 		}
 		catch (DbUpdateException)
 		{
-			// Another writer raced us to the unique functional index on lower(CanonicalName).
-			// Detach our losing insert, reload the winner, and return it.
+			// Two different constraints can land us here, and they need opposite responses.
 			context.Entry(entity).State = EntityState.Detached;
+
+			// 1. Another writer raced us to the unique functional index on lower(CanonicalName).
+			//    Reload the winner and return it.
 			NormalizedDescriptionEntity? winner = await FindExactCaseInsensitiveAsync(context, canonicalName, cancellationToken);
-			if (winner is null)
+			if (winner is not null)
+			{
+				return winner;
+			}
+
+			// 2. No name collision, so the other candidate is the self-FK added in RECEIPTS-873:
+			//    MergeAsync can delete our nearest neighbour in the window between the ANN search
+			//    and this insert, leaving NearestNeighbourId pointing at a row that no longer
+			//    exists. The near-miss is evidence, not essential data — dropping it degrades the
+			//    row to "no comparison recorded", which is exactly what ON DELETE SET NULL would
+			//    have produced a moment later anyway. Failing the whole resolution over a missing
+			//    citation would be the worse trade.
+			//
+			//    The retry passes no neighbour, so it can only reach the rethrow above — there is
+			//    no unbounded recursion here.
+			if (nearestNeighbourId is null)
 			{
 				throw;
 			}
 
-			return winner;
+			return await InsertAsync(context, canonicalName, status, embedding, cancellationToken);
 		}
 
 		return entity;
