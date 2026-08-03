@@ -185,7 +185,37 @@ describe("usePromoteToTemplate", () => {
     });
   });
 
-  it("invalidates the similarItems and itemTemplates caches after creating", async () => {
+  it("normalizes a negative unit price to null in the create body", async () => {
+    // History rows can carry a negative price that was never validated on the
+    // way in (e.g. backup/legacy imports); the backend rejects a non-positive
+    // DefaultUnitPrice outright, so treat it the same as "no default" rather
+    // than fail the request.
+    (client.GET as Mock).mockResolvedValue({ data: [], error: undefined });
+    (client.POST as Mock).mockResolvedValue({
+      data: { id: "11111111-1111-1111-1111-111111111111", name: "Bread" },
+      error: undefined,
+    });
+
+    const { result } = renderHook(() => usePromoteToTemplate(), {
+      wrapper: createWrapper(),
+    });
+
+    result.current.mutate({ name: "Bread", defaultUnitPrice: -1.5 });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(client.POST).toHaveBeenCalledWith(
+      "/api/item-templates",
+      expect.objectContaining({
+        body: expect.objectContaining({ defaultUnitPrice: null }),
+      }),
+    );
+  });
+
+  it("invalidates the itemTemplates cache after creating, but not similarItems", async () => {
+    // similarItems is deliberately left alone: invalidating it would force an
+    // immediate refetch while the new template still has no embedding, which
+    // can rank it low enough to drop off a small result window entirely (the
+    // suggestion vanishes instead of its badge flipping to Template).
     (client.GET as Mock).mockResolvedValue({ data: [], error: undefined });
     (client.POST as Mock).mockResolvedValue({
       data: { id: "11111111-1111-1111-1111-111111111111", name: "Milk" },
@@ -209,7 +239,7 @@ describe("usePromoteToTemplate", () => {
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ["itemTemplates"],
     });
-    expect(invalidateSpy).toHaveBeenCalledWith({
+    expect(invalidateSpy).not.toHaveBeenCalledWith({
       queryKey: ["similarItems"],
     });
   });
