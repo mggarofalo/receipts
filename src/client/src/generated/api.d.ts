@@ -5332,7 +5332,7 @@ export interface operations {
         parameters: {
             query?: {
                 offset?: components["parameters"]["Offset"];
-                limit?: components["parameters"]["Limit"];
+                limit?: number;
                 /** @description Minimum number of receipt-item occurrences required for a candidate */
                 minCount?: number;
             };
