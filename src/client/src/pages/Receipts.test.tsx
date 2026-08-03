@@ -614,6 +614,66 @@ describe("Receipts", () => {
     expect(screen.queryByText(/couldn't load receipts/i)).not.toBeInTheDocument();
   });
 
+  // RECEIPTS-841: drill-down from Spending by Location forwards an
+  // exact-match `location` filter to the receipts list.
+  it("forwards the location URL param to useReceipts and shows the filtered alert", async () => {
+    const { useReceipts } = await import("@/hooks/useReceipts");
+    const mockUseReceipts = vi.mocked(useReceipts);
+    mockUseReceipts.mockReturnValue(
+      mockQueryResult({ data: [], total: 0, isLoading: false }),
+    );
+
+    renderWithProviders(<Receipts />, { route: "/?location=Target" });
+
+    expect(mockUseReceipts).toHaveBeenLastCalledWith(
+      0,
+      25,
+      "date",
+      "desc",
+      undefined,
+      undefined,
+      null,
+      expect.objectContaining({ location: "Target" }),
+    );
+
+    const alert = screen.getByText(/Filtered to receipts at/i);
+    expect(alert.textContent).toContain("Target");
+  });
+
+  it("clears the location filter (and resets the page) when Clear filter is clicked", async () => {
+    const user = (await import("@testing-library/user-event")).default.setup();
+    const { useReceipts } = await import("@/hooks/useReceipts");
+    vi.mocked(useReceipts).mockReturnValue(
+      mockQueryResult({ data: [], total: 0, isLoading: false }),
+    );
+
+    const { useServerPagination } = await import("@/hooks/useServerPagination");
+    const resetPage = vi.fn();
+    vi.mocked(useServerPagination).mockReturnValue({
+      offset: 0,
+      limit: 25,
+      currentPage: 1,
+      pageSize: 25,
+      totalPages: vi.fn(() => 1),
+      setPage: vi.fn(),
+      setPageSize: vi.fn(),
+      resetPage,
+    });
+
+    renderWithProviders(<Receipts />, { route: "/?location=Target" });
+
+    expect(screen.getByText(/Filtered to receipts at/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /clear filter/i }));
+
+    expect(resetPage).toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(
+        screen.queryByText(/Filtered to receipts at/i),
+      ).not.toBeInTheDocument();
+    });
+  });
+
   // RECEIPTS-783: after a partial bulk YNAB push, only the succeeded receipts
   // are deselected — failed ones stay selected so the user can retry.
   it("keeps failed receipts selected after a partial bulk YNAB push", async () => {

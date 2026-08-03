@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithQueryClient } from "@/test/test-utils";
 import ItemCostOverTime from "./ItemCostOverTime";
@@ -247,5 +247,92 @@ describe("ItemCostOverTime", () => {
     expect(mockCostHook).toHaveBeenLastCalledWith(
       expect.objectContaining({ startDate: undefined, endDate: undefined }),
     );
+  });
+
+  // RECEIPTS-841: drill-down from Spending by Normalized Description.
+  describe("normalized-description drill-down", () => {
+    it("pre-selects the chart from a ?normalized= URL and queries by normalizedDescription only", () => {
+      setupMocks();
+      renderWithQueryClient(<ItemCostOverTime />, {
+        route: "/?normalized=Organic%20Milk",
+      });
+
+      expect(
+        screen.getByRole("heading", { name: "Normalized: Organic Milk" }),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("combobox")).toHaveTextContent("Organic Milk");
+
+      const lastCall = mockCostHook.mock.calls.at(-1)?.[0];
+      expect(lastCall).toMatchObject({
+        normalizedDescription: "Organic Milk",
+        granularity: "exact",
+      });
+      expect(lastCall).not.toHaveProperty("description");
+      expect(lastCall).not.toHaveProperty("category");
+    });
+
+    it("clears the normalized drill-down when picking an item from the search box", async () => {
+      const user = userEvent.setup();
+      setupMocks();
+      renderWithQueryClient(<ItemCostOverTime />, {
+        route: "/?normalized=Organic%20Milk",
+      });
+
+      expect(
+        screen.getByRole("heading", { name: "Normalized: Organic Milk" }),
+      ).toBeInTheDocument();
+
+      mockDescriptionsHook.mockReturnValue({
+        data: {
+          items: [{ description: "Milk", category: "Dairy", occurrences: 5 }],
+        },
+        isLoading: false,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any);
+
+      await user.click(screen.getByRole("combobox"));
+      await user.type(
+        screen.getByPlaceholderText("Type to search items..."),
+        "Mi",
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText("Milk")).toBeInTheDocument();
+      });
+      await user.click(screen.getByText("Milk"));
+
+      expect(
+        screen.queryByRole("heading", { name: /^normalized:/i }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("heading", { name: "Milk" }),
+      ).toBeInTheDocument();
+      const lastCall = mockCostHook.mock.calls.at(-1)?.[0];
+      expect(lastCall).toMatchObject({ description: "Milk", category: undefined });
+      expect(lastCall).not.toHaveProperty("normalizedDescription");
+    });
+
+    it("clears the normalized drill-down when toggling Category mode", async () => {
+      const user = userEvent.setup();
+      setupMocks();
+      renderWithQueryClient(<ItemCostOverTime />, {
+        route: "/?normalized=Organic%20Milk",
+      });
+
+      expect(
+        screen.getByRole("heading", { name: "Normalized: Organic Milk" }),
+      ).toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: "Category" }));
+
+      expect(
+        screen.queryByRole("heading", { name: /^normalized:/i }),
+      ).not.toBeInTheDocument();
+      expect(screen.getByText("Item Cost Over Time")).toBeInTheDocument();
+      // Neither an item nor a normalized description is selected any more.
+      const lastCall = mockCostHook.mock.calls.at(-1)?.[0];
+      expect(lastCall).not.toHaveProperty("normalizedDescription");
+      expect(lastCall).toMatchObject({ description: undefined, category: undefined });
+    });
   });
 });

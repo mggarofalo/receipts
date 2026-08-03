@@ -23,13 +23,14 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 	}
 
 	public Task<List<ReceiptEntity>> GetAllAsync(int offset, int limit, SortParams sort, CancellationToken cancellationToken)
-		=> GetAllAsync(offset, limit, sort, accountId: null, cardId: null, q: null, cancellationToken);
+		=> GetAllAsync(offset, limit, sort, accountId: null, cardId: null, q: null, location: null, cancellationToken);
 
-	public async Task<List<ReceiptEntity>> GetAllAsync(int offset, int limit, SortParams sort, Guid? accountId, Guid? cardId, string? q, CancellationToken cancellationToken)
+	public async Task<List<ReceiptEntity>> GetAllAsync(int offset, int limit, SortParams sort, Guid? accountId, Guid? cardId, string? q, string? location, CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		IQueryable<ReceiptEntity> query = ApplyTransactionFilters(context, context.Receipts.AsNoTracking(), accountId, cardId);
 		query = ApplySearchFilter(query, q);
+		query = ApplyLocationFilter(query, location);
 		return await query
 			.ApplySort(sort, AllowedSortColumns, e => e.Date, e => e.Id, defaultDescending: true)
 			.Skip(offset)
@@ -52,9 +53,41 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 			return query;
 		}
 
-		string pattern = "%" + q.Trim().Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
-		return query.Where(r => EF.Functions.ILike(r.Location, pattern));
+		string pattern = "%" + EscapeLikePattern(q.Trim()) + "%";
+		return query.Where(r => EF.Functions.ILike(r.Location, pattern, LikeEscapeCharacter));
 	}
+
+	// Literal equality on Location, as opposed to ApplySearchFilter's case-insensitive substring
+	// match. Drill-downs from the Spending by Location report (RECEIPTS-841) must return exactly the
+	// rows the aggregate counted, and that report groups on the raw Location column
+	// (`group ... by (r.Location ?? "")`), which Postgres compares byte-for-byte. So this filter has
+	// to be byte-for-byte too:
+	//   - Not ILIKE/case-insensitive. "Walmart" and "walmart" are two separate report rows with
+	//     separate visit counts; a case-insensitive filter would return the union of both and
+	//     contradict the count the user just clicked on.
+	//   - Not trimmed. "Target " (trailing space) is its own report bucket, so trimming the incoming
+	//     value here would make that row's drill-down match nothing.
+	// A plain equality also indexes better than ILIKE. Callers must therefore pass Location through
+	// verbatim — see ReceiptsController.GetAllReceipts.
+	private static IQueryable<ReceiptEntity> ApplyLocationFilter(IQueryable<ReceiptEntity> query, string? location)
+	{
+		if (string.IsNullOrEmpty(location))
+		{
+			return query;
+		}
+
+		return query.Where(r => r.Location == location);
+	}
+
+	// MUST be passed to every EF.Functions.ILike call alongside an escaped pattern. The two-argument
+	// overload makes Npgsql emit `ESCAPE ''`, which disables backslash escaping outright — the
+	// backslashes EscapeLikePattern inserts are then ignored and a literal '%' or '_' in user input
+	// still behaves as a SQL wildcard. The three-argument overload emits `ESCAPE '\'` and makes the
+	// escaping actually take effect.
+	private const string LikeEscapeCharacter = "\\";
+
+	private static string EscapeLikePattern(string value)
+		=> value.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
 
 	// Filter receipts down to those with at least one transaction matching the supplied
 	// accountId / cardId. Account filter matches transactions through Card.AccountId.
@@ -179,13 +212,14 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 	}
 
 	public Task<int> GetCountAsync(CancellationToken cancellationToken)
-		=> GetCountAsync(accountId: null, cardId: null, q: null, cancellationToken);
+		=> GetCountAsync(accountId: null, cardId: null, q: null, location: null, cancellationToken);
 
-	public async Task<int> GetCountAsync(Guid? accountId, Guid? cardId, string? q, CancellationToken cancellationToken)
+	public async Task<int> GetCountAsync(Guid? accountId, Guid? cardId, string? q, string? location, CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		IQueryable<ReceiptEntity> query = ApplyTransactionFilters(context, context.Receipts.AsNoTracking(), accountId, cardId);
 		query = ApplySearchFilter(query, q);
+		query = ApplyLocationFilter(query, location);
 		return await query.CountAsync(cancellationToken);
 	}
 
@@ -197,8 +231,8 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 
 		if (!string.IsNullOrWhiteSpace(query))
 		{
-			string pattern = query.Replace("%", "\\%").Replace("_", "\\_") + "%";
-			receipts = receipts.Where(r => EF.Functions.ILike(r.Location, pattern));
+			string pattern = EscapeLikePattern(query) + "%";
+			receipts = receipts.Where(r => EF.Functions.ILike(r.Location, pattern, LikeEscapeCharacter));
 		}
 
 		List<string> locations = await receipts

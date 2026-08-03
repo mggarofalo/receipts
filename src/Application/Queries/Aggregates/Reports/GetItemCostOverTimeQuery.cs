@@ -8,4 +8,5 @@ public record GetItemCostOverTimeQuery(
 	string? Category,
 	DateOnly? StartDate,
 	DateOnly? EndDate,
-	string Granularity) : IQuery<ItemCostOverTimeResult>;
+	string Granularity,
+	string? NormalizedDescription = null) : IQuery<ItemCostOverTimeResult>;

@@ -54,6 +54,7 @@ vi.mock("@/components/charts", () => ({
 import { useSpendingByLocationReport } from "@/hooks/useSpendingByLocationReport";
 import client from "@/lib/api-client";
 import { downloadCsv } from "@/lib/export-csv";
+import { NO_LOCATION_LABEL } from "@/lib/report-params";
 const mockHook = vi.mocked(useSpendingByLocationReport);
 const mockClient = vi.mocked(client);
 const mockDownloadCsv = vi.mocked(downloadCsv);
@@ -145,6 +146,35 @@ describe("SpendingByLocation", () => {
     renderWithQueryClient(<SpendingByLocation />);
     expect(screen.getByText("Store A")).toBeInTheDocument();
     expect(screen.getByText("Store B")).toBeInTheDocument();
+  });
+
+  it("links the location cell to the receipts drill-down", () => {
+    setupMock();
+    renderWithQueryClient(<SpendingByLocation />);
+    const link = screen.getByRole("link", { name: "Store A" });
+    expect(link).toHaveAttribute("href", "/receipts?location=Store%20A");
+  });
+
+  it("renders the (No Location) row as plain text with no link", () => {
+    setupMock({
+      data: {
+        totalCount: 1,
+        grandTotal: 10,
+        items: [
+          {
+            location: NO_LOCATION_LABEL,
+            visits: 1,
+            total: 10,
+            averagePerVisit: 10,
+          },
+        ],
+      },
+    });
+    renderWithQueryClient(<SpendingByLocation />);
+    expect(screen.getByText(NO_LOCATION_LABEL)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: NO_LOCATION_LABEL }),
+    ).not.toBeInTheDocument();
   });
 
   it("renders table headers", () => {

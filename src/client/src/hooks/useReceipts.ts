@@ -12,12 +12,29 @@ export function useReceipts(
   accountId?: string | null,
   cardId?: string | null,
   q?: string | null,
-  options: { enabled?: boolean } = {},
+  options: { enabled?: boolean; location?: string | null } = {},
 ) {
-  const { enabled = true } = options;
+  const { enabled = true, location } = options;
   const trimmedQ = q?.trim() || undefined;
+  // Exact-match location filter, distinct from `q`'s substring search. Set by
+  // report drill-downs (RECEIPTS-841) so the list shows exactly the receipts
+  // the aggregate row counted. Passed through verbatim — NOT trimmed like `q` —
+  // because the server matches it byte-for-byte against the same raw Location
+  // value the report grouped on, whitespace included.
+  const exactLocation = location || undefined;
   const query = useQuery({
-    queryKey: ["receipts", "list", offset, limit, sortBy, sortDirection, accountId, cardId, trimmedQ],
+    queryKey: [
+      "receipts",
+      "list",
+      offset,
+      limit,
+      sortBy,
+      sortDirection,
+      accountId,
+      cardId,
+      trimmedQ,
+      exactLocation,
+    ],
     enabled,
     queryFn: async () => {
       const { data, error } = await client.GET("/api/receipts", {
@@ -30,6 +47,7 @@ export function useReceipts(
             accountId: accountId ?? undefined,
             cardId: cardId ?? undefined,
             q: trimmedQ,
+            location: exactLocation,
           },
         },
       });

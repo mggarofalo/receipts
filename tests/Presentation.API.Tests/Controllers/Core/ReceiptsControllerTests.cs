@@ -237,6 +237,93 @@ public class ReceiptsControllerTests
 	}
 
 	[Fact]
+	public async Task GetAllReceipts_ForwardsLocation_Verbatim_NotTrimmed()
+	{
+		// Arrange — unlike q, location is an exact-match drill-down key that has to reproduce the
+		// Spending by Location report's raw GROUP BY value byte-for-byte, so it must NOT be trimmed.
+		// See ReceiptRepository.ApplyLocationFilter.
+		List<Receipt> mediatorReturn = ReceiptGenerator.GenerateList(1);
+
+		_mediatorMock.Setup(m => m.Send(
+			It.Is<GetAllReceiptsQuery>(q => q.Location == "  Target  "),
+			It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new PagedResult<Receipt>(mediatorReturn, mediatorReturn.Count, 0, 50));
+
+		// Act
+		Results<Ok<ReceiptListResponse>, BadRequest<string>> result =
+			await _controller.GetAllReceipts(0, 50, null, null, null, null, null, "  Target  ");
+
+		// Assert
+		Assert.IsType<Ok<ReceiptListResponse>>(result.Result);
+		_mediatorMock.Verify(m => m.Send(
+			It.Is<GetAllReceiptsQuery>(q => q.Location == "  Target  "),
+			It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	[Theory]
+	[InlineData(null)]
+	[InlineData("")]
+	public async Task GetAllReceipts_NormalizesEmptyLocation_ToNull(string? location)
+	{
+		// Arrange
+		_mediatorMock.Setup(m => m.Send(
+			It.IsAny<GetAllReceiptsQuery>(),
+			It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new PagedResult<Receipt>([], 0, 0, 50));
+
+		// Act
+		await _controller.GetAllReceipts(0, 50, null, null, null, null, null, location);
+
+		// Assert
+		_mediatorMock.Verify(m => m.Send(
+			It.Is<GetAllReceiptsQuery>(query => query.Location == null),
+			It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	[Fact]
+	public async Task GetAllReceipts_ForwardsWhitespaceOnlyLocation_AsRealFilterValue()
+	{
+		// Arrange — unlike q (which normalizes whitespace-only to null), a whitespace-only location
+		// is a real exact-match filter value: the controller now gates the null coercion on
+		// IsNullOrEmpty, not IsNullOrWhiteSpace, since a receipt whose Location the write path never
+		// trimmed could legitimately be all-whitespace.
+		_mediatorMock.Setup(m => m.Send(
+			It.IsAny<GetAllReceiptsQuery>(),
+			It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new PagedResult<Receipt>([], 0, 0, 50));
+
+		// Act
+		await _controller.GetAllReceipts(0, 50, null, null, null, null, null, "   ");
+
+		// Assert
+		_mediatorMock.Verify(m => m.Send(
+			It.Is<GetAllReceiptsQuery>(query => query.Location == "   "),
+			It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	[Fact]
+	public async Task GetAllReceipts_CombinesLocationAndSearchQuery_ToMediator()
+	{
+		// Arrange
+		List<Receipt> mediatorReturn = ReceiptGenerator.GenerateList(1);
+
+		_mediatorMock.Setup(m => m.Send(
+			It.Is<GetAllReceiptsQuery>(q => q.Q == "Milk" && q.Location == "Target"),
+			It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new PagedResult<Receipt>(mediatorReturn, mediatorReturn.Count, 0, 50));
+
+		// Act
+		Results<Ok<ReceiptListResponse>, BadRequest<string>> result =
+			await _controller.GetAllReceipts(0, 50, null, null, null, null, "Milk", "Target");
+
+		// Assert
+		Assert.IsType<Ok<ReceiptListResponse>>(result.Result);
+		_mediatorMock.Verify(m => m.Send(
+			It.Is<GetAllReceiptsQuery>(q => q.Q == "Milk" && q.Location == "Target"),
+			It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	[Fact]
 	public async Task CreateReceipt_ReturnsOkResult_WithCreatedReceipt()
 	{
 		// Arrange

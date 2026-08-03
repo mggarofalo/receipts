@@ -1662,7 +1662,7 @@ export interface paths {
         };
         /**
          * Get item cost over time
-         * @description Returns time-series cost data for a specific item description or category, optionally filtered by date range and bucketed by granularity.
+         * @description Returns time-series cost data for a specific item description, normalized description, or category, optionally filtered by date range and bucketed by granularity.
          */
         get: operations["GetItemCostOverTime"];
         put?: never;
@@ -2595,6 +2595,16 @@ export interface components {
             subcategory?: string | null;
         };
         SpendingByNormalizedDescriptionResponse: {
+            /**
+             * Format: int32
+             * @description Total number of normalized-description buckets matching the filter, across all pages.
+             */
+            totalCount: number;
+            /**
+             * Format: double
+             * @description Sum of totalAmount across every bucket matching the filter, across all pages. Denominator for each item's share of total.
+             */
+            grandTotal: number;
             items: components["schemas"]["SpendingByNormalizedDescriptionItem"][];
             /**
              * Format: date-time
@@ -5721,6 +5731,8 @@ export interface operations {
                 cardId?: string;
                 /** @description Case-insensitive substring filter applied to the receipt Location column. Whitespace-only values are ignored. */
                 q?: string;
+                /** @description Exact-match filter on the receipt Location column. Unlike `q`, which is a case-insensitive substring search, this is a literal byte-for-byte equality test: case-sensitive and not trimmed. It exists so a drill-down from the Spending by Location report returns exactly the rows that report's row counted, and that report groups on the raw Location value — so "Walmart" and "walmart" are distinct filters, as are "Target" and "Target ". Empty values are ignored. Combines with `q` as an AND. */
+                location?: string;
             };
             header?: never;
             path?: never;
@@ -7807,9 +7819,11 @@ export interface operations {
     GetItemCostOverTime: {
         parameters: {
             query?: {
-                /** @description Item description to filter by. Either description or category is required. */
+                /** @description Item description to filter by. Exactly one of description, normalizedDescription, or category is required. */
                 description?: string;
-                /** @description Item category to filter by. Either description or category is required. */
+                /** @description Normalized description canonical name to filter by. Matches every receipt item linked to that normalized description regardless of its raw description text, so it is the drill-down target from the Spending by Normalized Description report. Takes precedence over category; description takes precedence over both. */
+                normalizedDescription?: string;
+                /** @description Item category to filter by. Exactly one of description, normalizedDescription, or category is required. */
                 category?: string;
                 /** @description Start date (ISO date string). Defaults to no lower bound. */
                 startDate?: string;
@@ -8042,6 +8056,14 @@ export interface operations {
                 from?: string;
                 /** @description Inclusive upper bound on receipt date (ISO 8601 date-time string). Defaults to all time when omitted. */
                 to?: string;
+                /** @description Column to sort by. */
+                sortBy?: "canonicalName" | "totalAmount" | "itemCount";
+                /** @description Sort direction. */
+                sortDirection?: "asc" | "desc";
+                /** @description Page number (1-based). */
+                page?: number;
+                /** @description Number of items per page. */
+                pageSize?: number;
             };
             header?: never;
             path?: never;

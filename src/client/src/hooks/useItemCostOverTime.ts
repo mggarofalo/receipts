@@ -42,13 +42,17 @@ export function useItemDescriptions(params: ItemDescriptionsParams) {
 export interface ItemCostOverTimeParams {
   description?: string;
   category?: string;
+  /** Normalized description canonical name (RECEIPTS-841 drill-down target). */
+  normalizedDescription?: string;
   startDate?: string;
   endDate?: string;
   granularity?: "exact" | "monthly" | "yearly";
 }
 
 export function useItemCostOverTime(params: ItemCostOverTimeParams) {
-  const enabled = Boolean(params.description || params.category);
+  const enabled = Boolean(
+    params.description || params.category || params.normalizedDescription,
+  );
 
   return useQuery({
     queryKey: [
@@ -56,6 +60,7 @@ export function useItemCostOverTime(params: ItemCostOverTimeParams) {
       "item-cost-over-time",
       params.description,
       params.category,
+      params.normalizedDescription,
       params.startDate,
       params.endDate,
       params.granularity,
@@ -70,6 +75,7 @@ export function useItemCostOverTime(params: ItemCostOverTimeParams) {
             query: {
               description: params.description,
               category: params.category,
+              normalizedDescription: params.normalizedDescription,
               startDate: params.startDate,
               endDate: params.endDate,
               granularity: params.granularity,

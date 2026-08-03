@@ -5,4 +5,8 @@ namespace Application.Queries.Aggregates.Reports;
 
 public record GetSpendingByNormalizedDescriptionQuery(
 	DateTimeOffset? From,
-	DateTimeOffset? To) : IQuery<SpendingByNormalizedDescriptionResult>;
+	DateTimeOffset? To,
+	string SortBy,
+	string SortDirection,
+	int Page,
+	int PageSize) : IQuery<SpendingByNormalizedDescriptionResult>;

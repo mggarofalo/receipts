@@ -62,7 +62,7 @@ public class ReceiptsController(
 
 	[HttpGet(RouteGetAll)]
 	[EndpointSummary("Get all receipts")]
-	public async Task<Results<Ok<ReceiptListResponse>, BadRequest<string>>> GetAllReceipts([FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, [FromQuery] Guid? accountId = null, [FromQuery] Guid? cardId = null, [FromQuery] string? q = null, CancellationToken cancellationToken = default)
+	public async Task<Results<Ok<ReceiptListResponse>, BadRequest<string>>> GetAllReceipts([FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, [FromQuery] Guid? accountId = null, [FromQuery] Guid? cardId = null, [FromQuery] string? q = null, [FromQuery] string? location = null, CancellationToken cancellationToken = default)
 	{
 		if (offset < 0)
 		{
@@ -85,8 +85,14 @@ public class ReceiptsController(
 		}
 
 		string? normalizedQ = string.IsNullOrWhiteSpace(q) ? null : q.Trim();
+		// Deliberately NOT trimmed, unlike q: `location` is an exact-match drill-down key that has to
+		// reproduce the Spending by Location report's raw GROUP BY value, and a receipt whose Location
+		// carries leading/trailing whitespace is its own bucket in that report (nothing in the write
+		// path trims Location). Trimming here would make those rows undrillable. See
+		// ReceiptRepository.ApplyLocationFilter.
+		string? normalizedLocation = string.IsNullOrEmpty(location) ? null : location;
 		SortParams sort = new(sortBy, sortDirection);
-		GetAllReceiptsQuery query = new(offset, limit, sort, accountId, cardId, normalizedQ);
+		GetAllReceiptsQuery query = new(offset, limit, sort, accountId, cardId, normalizedQ, normalizedLocation);
 		PagedResult<Receipt> result = await mediator.Send(query, cancellationToken);
 
 		return TypedResults.Ok(new ReceiptListResponse

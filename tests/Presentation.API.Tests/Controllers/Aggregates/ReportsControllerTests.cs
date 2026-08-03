@@ -305,7 +305,7 @@ public class ReportsControllerTests
 
 		// Act
 		Results<Ok<ItemCostOverTimeResponse>, BadRequest<string>> result =
-			await _controller.GetItemCostOverTime("Milk", null, null, null, null, CancellationToken.None);
+			await _controller.GetItemCostOverTime("Milk", null, null, null, null, null, CancellationToken.None);
 
 		// Assert
 		Ok<ItemCostOverTimeResponse> okResult = Assert.IsType<Ok<ItemCostOverTimeResponse>>(result.Result);
@@ -328,7 +328,7 @@ public class ReportsControllerTests
 
 		// Act
 		Results<Ok<ItemCostOverTimeResponse>, BadRequest<string>> result =
-			await _controller.GetItemCostOverTime(null, "Dairy", null, null, "monthly", CancellationToken.None);
+			await _controller.GetItemCostOverTime(null, "Dairy", null, null, "monthly", null, CancellationToken.None);
 
 		// Assert
 		Assert.IsType<Ok<ItemCostOverTimeResponse>>(result.Result);
@@ -339,15 +339,59 @@ public class ReportsControllerTests
 	}
 
 	[Fact]
-	public async Task GetItemCostOverTime_ReturnsBadRequest_WhenNoDescriptionOrCategory()
+	public async Task GetItemCostOverTime_ReturnsBadRequest_WhenNoDescriptionCategoryOrNormalizedDescription()
 	{
 		// Act
 		Results<Ok<ItemCostOverTimeResponse>, BadRequest<string>> result =
-			await _controller.GetItemCostOverTime(null, null, null, null, null, CancellationToken.None);
+			await _controller.GetItemCostOverTime(null, null, null, null, null, null, CancellationToken.None);
 
 		// Assert
 		BadRequest<string> badResult = Assert.IsType<BadRequest<string>>(result.Result);
-		badResult.Value.Should().Contain("Either description or category is required");
+		badResult.Value.Should().Contain("One of description, normalizedDescription, or category is required");
+	}
+
+	[Fact]
+	public async Task GetItemCostOverTime_ReturnsOkResult_WithNormalizedDescriptionAlone()
+	{
+		// Arrange
+		AppReports.ItemCostOverTimeResult costResult = new(
+		[
+			new AppReports.ItemCostBucket("2025-01-15", 3.99m),
+		]);
+
+		_mediatorMock.Setup(m => m.Send(
+			It.Is<GetItemCostOverTimeQuery>(q =>
+				q.Description == null && q.Category == null && q.NormalizedDescription == "Milk"),
+			It.IsAny<CancellationToken>()))
+			.ReturnsAsync(costResult);
+
+		// Act
+		Results<Ok<ItemCostOverTimeResponse>, BadRequest<string>> result =
+			await _controller.GetItemCostOverTime(null, null, null, null, null, "Milk", CancellationToken.None);
+
+		// Assert
+		Ok<ItemCostOverTimeResponse> okResult = Assert.IsType<Ok<ItemCostOverTimeResponse>>(result.Result);
+		okResult.Value!.Buckets.Should().ContainSingle();
+	}
+
+	[Fact]
+	public async Task GetItemCostOverTime_ForwardsNormalizedDescriptionIntoQuery()
+	{
+		// Arrange
+		AppReports.ItemCostOverTimeResult costResult = new([]);
+
+		_mediatorMock.Setup(m => m.Send(
+			It.IsAny<GetItemCostOverTimeQuery>(),
+			It.IsAny<CancellationToken>()))
+			.ReturnsAsync(costResult);
+
+		// Act
+		await _controller.GetItemCostOverTime(null, null, null, null, null, "Organic Milk", CancellationToken.None);
+
+		// Assert
+		_mediatorMock.Verify(m => m.Send(
+			It.Is<GetItemCostOverTimeQuery>(q => q.NormalizedDescription == "Organic Milk"),
+			It.IsAny<CancellationToken>()), Times.Once);
 	}
 
 	[Fact]
@@ -355,7 +399,7 @@ public class ReportsControllerTests
 	{
 		// Act
 		Results<Ok<ItemCostOverTimeResponse>, BadRequest<string>> result =
-			await _controller.GetItemCostOverTime("Milk", null, null, null, "invalid", CancellationToken.None);
+			await _controller.GetItemCostOverTime("Milk", null, null, null, "invalid", null, CancellationToken.None);
 
 		// Assert
 		BadRequest<string> badResult = Assert.IsType<BadRequest<string>>(result.Result);
@@ -378,7 +422,7 @@ public class ReportsControllerTests
 
 		// Act
 		Results<Ok<ItemCostOverTimeResponse>, BadRequest<string>> result =
-			await _controller.GetItemCostOverTime("Milk", null, null, null, granularity, CancellationToken.None);
+			await _controller.GetItemCostOverTime("Milk", null, null, null, granularity, null, CancellationToken.None);
 
 		// Assert
 		Assert.IsType<Ok<ItemCostOverTimeResponse>>(result.Result);
@@ -389,7 +433,7 @@ public class ReportsControllerTests
 	{
 		// Act
 		Results<Ok<ItemCostOverTimeResponse>, BadRequest<string>> result =
-			await _controller.GetItemCostOverTime("Milk", null, new DateOnly(2025, 12, 31), new DateOnly(2025, 1, 1), null, CancellationToken.None);
+			await _controller.GetItemCostOverTime("Milk", null, new DateOnly(2025, 12, 31), new DateOnly(2025, 1, 1), null, null, CancellationToken.None);
 
 		// Assert
 		BadRequest<string> badResult = Assert.IsType<BadRequest<string>>(result.Result);
@@ -412,7 +456,7 @@ public class ReportsControllerTests
 
 		// Act
 		Results<Ok<ItemCostOverTimeResponse>, BadRequest<string>> result =
-			await _controller.GetItemCostOverTime("Milk", null, start, end, null, CancellationToken.None);
+			await _controller.GetItemCostOverTime("Milk", null, start, end, null, null, CancellationToken.None);
 
 		// Assert
 		Assert.IsType<Ok<ItemCostOverTimeResponse>>(result.Result);
@@ -996,7 +1040,7 @@ public class ReportsControllerTests
 	public async Task GetSpendingByNormalizedDescription_ReturnsOkResult_WithDefaultParameters()
 	{
 		// Arrange
-		AppReports.SpendingByNormalizedDescriptionResult reportResult = new([], null, null);
+		AppReports.SpendingByNormalizedDescriptionResult reportResult = new([], 0, 0m, null, null);
 
 		_mediatorMock.Setup(m => m.Send(
 			It.Is<GetSpendingByNormalizedDescriptionQuery>(q => q.From == null && q.To == null),
@@ -1005,7 +1049,7 @@ public class ReportsControllerTests
 
 		// Act
 		Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequest<string>> result =
-			await _controller.GetSpendingByNormalizedDescription(null, null, CancellationToken.None);
+			await _controller.GetSpendingByNormalizedDescription(null, null, null, null, null, null, CancellationToken.None);
 
 		// Assert
 		Ok<SpendingByNormalizedDescriptionResponse> okResult = Assert.IsType<Ok<SpendingByNormalizedDescriptionResponse>>(result.Result);
@@ -1015,12 +1059,133 @@ public class ReportsControllerTests
 	}
 
 	[Fact]
+	public async Task GetSpendingByNormalizedDescription_UsesDefaultSortAndPagination_WhenParamsOmitted()
+	{
+		// Arrange
+		AppReports.SpendingByNormalizedDescriptionResult reportResult = new([], 0, 0m, null, null);
+
+		_mediatorMock.Setup(m => m.Send(
+			It.Is<GetSpendingByNormalizedDescriptionQuery>(q =>
+				q.SortBy == "totalAmount" && q.SortDirection == "desc" && q.Page == 1 && q.PageSize == 50),
+			It.IsAny<CancellationToken>()))
+			.ReturnsAsync(reportResult);
+
+		// Act
+		Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequest<string>> result =
+			await _controller.GetSpendingByNormalizedDescription(null, null, null, null, null, null, CancellationToken.None);
+
+		// Assert
+		Assert.IsType<Ok<SpendingByNormalizedDescriptionResponse>>(result.Result);
+		_mediatorMock.Verify(m => m.Send(
+			It.Is<GetSpendingByNormalizedDescriptionQuery>(q =>
+				q.SortBy == "totalAmount" && q.SortDirection == "desc" && q.Page == 1 && q.PageSize == 50),
+			It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	[Fact]
+	public async Task GetSpendingByNormalizedDescription_PassesCustomSortAndPaginationToMediator()
+	{
+		// Arrange
+		AppReports.SpendingByNormalizedDescriptionResult reportResult = new([], 0, 0m, null, null);
+
+		_mediatorMock.Setup(m => m.Send(
+			It.Is<GetSpendingByNormalizedDescriptionQuery>(q =>
+				q.SortBy == "canonicalName" && q.SortDirection == "asc" && q.Page == 2 && q.PageSize == 10),
+			It.IsAny<CancellationToken>()))
+			.ReturnsAsync(reportResult);
+
+		// Act
+		Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequest<string>> result =
+			await _controller.GetSpendingByNormalizedDescription(null, null, "canonicalName", "asc", 2, 10, CancellationToken.None);
+
+		// Assert
+		Assert.IsType<Ok<SpendingByNormalizedDescriptionResponse>>(result.Result);
+		_mediatorMock.Verify(m => m.Send(
+			It.Is<GetSpendingByNormalizedDescriptionQuery>(q =>
+				q.SortBy == "canonicalName" && q.SortDirection == "asc" && q.Page == 2 && q.PageSize == 10),
+			It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	[Theory]
+	[InlineData("canonicalName")]
+	[InlineData("totalAmount")]
+	[InlineData("itemCount")]
+	public async Task GetSpendingByNormalizedDescription_AcceptsValidSortColumns(string sortBy)
+	{
+		// Arrange
+		AppReports.SpendingByNormalizedDescriptionResult reportResult = new([], 0, 0m, null, null);
+
+		_mediatorMock.Setup(m => m.Send(
+			It.IsAny<GetSpendingByNormalizedDescriptionQuery>(),
+			It.IsAny<CancellationToken>()))
+			.ReturnsAsync(reportResult);
+
+		// Act
+		Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequest<string>> result =
+			await _controller.GetSpendingByNormalizedDescription(null, null, sortBy, null, null, null, CancellationToken.None);
+
+		// Assert
+		Assert.IsType<Ok<SpendingByNormalizedDescriptionResponse>>(result.Result);
+	}
+
+	[Fact]
+	public async Task GetSpendingByNormalizedDescription_ReturnsBadRequest_WhenInvalidSortBy()
+	{
+		// Act
+		Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequest<string>> result =
+			await _controller.GetSpendingByNormalizedDescription(null, null, "invalid", null, null, null, CancellationToken.None);
+
+		// Assert
+		BadRequest<string> badResult = Assert.IsType<BadRequest<string>>(result.Result);
+		badResult.Value.Should().Contain("Invalid sortBy");
+	}
+
+	[Fact]
+	public async Task GetSpendingByNormalizedDescription_ReturnsBadRequest_WhenInvalidSortDirection()
+	{
+		// Act
+		Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequest<string>> result =
+			await _controller.GetSpendingByNormalizedDescription(null, null, null, "invalid", null, null, CancellationToken.None);
+
+		// Assert
+		BadRequest<string> badResult = Assert.IsType<BadRequest<string>>(result.Result);
+		badResult.Value.Should().Contain("Invalid sortDirection");
+	}
+
+	[Fact]
+	public async Task GetSpendingByNormalizedDescription_ReturnsBadRequest_WhenPageLessThanOne()
+	{
+		// Act
+		Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequest<string>> result =
+			await _controller.GetSpendingByNormalizedDescription(null, null, null, null, 0, null, CancellationToken.None);
+
+		// Assert
+		BadRequest<string> badResult = Assert.IsType<BadRequest<string>>(result.Result);
+		badResult.Value.Should().Be("page must be at least 1");
+	}
+
+	[Theory]
+	[InlineData(0)]
+	[InlineData(-1)]
+	[InlineData(101)]
+	public async Task GetSpendingByNormalizedDescription_ReturnsBadRequest_WhenPageSizeOutOfRange(int pageSize)
+	{
+		// Act
+		Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequest<string>> result =
+			await _controller.GetSpendingByNormalizedDescription(null, null, null, null, null, pageSize, CancellationToken.None);
+
+		// Assert
+		BadRequest<string> badResult = Assert.IsType<BadRequest<string>>(result.Result);
+		badResult.Value.Should().Be("pageSize must be between 1 and 100");
+	}
+
+	[Fact]
 	public async Task GetSpendingByNormalizedDescription_PassesDateRangeToMediator()
 	{
 		// Arrange
 		DateTimeOffset from = new(2025, 1, 1, 0, 0, 0, TimeSpan.Zero);
 		DateTimeOffset to = new(2025, 12, 31, 0, 0, 0, TimeSpan.Zero);
-		AppReports.SpendingByNormalizedDescriptionResult reportResult = new([], from, to);
+		AppReports.SpendingByNormalizedDescriptionResult reportResult = new([], 0, 0m, from, to);
 
 		_mediatorMock.Setup(m => m.Send(
 			It.Is<GetSpendingByNormalizedDescriptionQuery>(q => q.From == from && q.To == to),
@@ -1029,7 +1194,7 @@ public class ReportsControllerTests
 
 		// Act
 		Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequest<string>> result =
-			await _controller.GetSpendingByNormalizedDescription(from, to, CancellationToken.None);
+			await _controller.GetSpendingByNormalizedDescription(from, to, null, null, null, null, CancellationToken.None);
 
 		// Assert
 		Ok<SpendingByNormalizedDescriptionResponse> okResult = Assert.IsType<Ok<SpendingByNormalizedDescriptionResponse>>(result.Result);
@@ -1050,7 +1215,7 @@ public class ReportsControllerTests
 
 		// Act
 		Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequest<string>> result =
-			await _controller.GetSpendingByNormalizedDescription(from, to, CancellationToken.None);
+			await _controller.GetSpendingByNormalizedDescription(from, to, null, null, null, null, CancellationToken.None);
 
 		// Assert
 		BadRequest<string> badResult = Assert.IsType<BadRequest<string>>(result.Result);
@@ -1071,7 +1236,7 @@ public class ReportsControllerTests
 		[
 			new AppReports.SpendingByNormalizedDescriptionItem("Organic Milk", 42.50m, "USD", 5, firstSeen, lastSeen),
 			new AppReports.SpendingByNormalizedDescriptionItem("(Not Normalized)", 12.00m, "USD", 2, null, null),
-		], null, null);
+		], 2, 54.50m, null, null);
 
 		_mediatorMock.Setup(m => m.Send(
 			It.IsAny<GetSpendingByNormalizedDescriptionQuery>(),
@@ -1080,12 +1245,14 @@ public class ReportsControllerTests
 
 		// Act
 		Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequest<string>> result =
-			await _controller.GetSpendingByNormalizedDescription(null, null, CancellationToken.None);
+			await _controller.GetSpendingByNormalizedDescription(null, null, null, null, null, null, CancellationToken.None);
 
 		// Assert
 		Ok<SpendingByNormalizedDescriptionResponse> okResult = Assert.IsType<Ok<SpendingByNormalizedDescriptionResponse>>(result.Result);
 		SpendingByNormalizedDescriptionResponse response = okResult.Value!;
 		response.Items.Should().HaveCount(2);
+		response.TotalCount.Should().Be(2);
+		response.GrandTotal.Should().Be(54.50);
 
 		SpendingByNormalizedDescriptionItem first = response.Items.First(i => i.CanonicalName == "Organic Milk");
 		first.TotalAmount.Should().Be(42.50);
@@ -1106,7 +1273,7 @@ public class ReportsControllerTests
 	{
 		// Arrange
 		DateTimeOffset from = new(2025, 1, 1, 0, 0, 0, TimeSpan.Zero);
-		AppReports.SpendingByNormalizedDescriptionResult reportResult = new([], from, null);
+		AppReports.SpendingByNormalizedDescriptionResult reportResult = new([], 0, 0m, from, null);
 
 		_mediatorMock.Setup(m => m.Send(
 			It.Is<GetSpendingByNormalizedDescriptionQuery>(q => q.From == from && q.To == null),
@@ -1115,7 +1282,7 @@ public class ReportsControllerTests
 
 		// Act
 		Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequest<string>> result =
-			await _controller.GetSpendingByNormalizedDescription(from, null, CancellationToken.None);
+			await _controller.GetSpendingByNormalizedDescription(from, null, null, null, null, null, CancellationToken.None);
 
 		// Assert
 		Assert.IsType<Ok<SpendingByNormalizedDescriptionResponse>>(result.Result);
@@ -1126,7 +1293,7 @@ public class ReportsControllerTests
 	{
 		// Arrange
 		DateTimeOffset to = new(2025, 12, 31, 0, 0, 0, TimeSpan.Zero);
-		AppReports.SpendingByNormalizedDescriptionResult reportResult = new([], null, to);
+		AppReports.SpendingByNormalizedDescriptionResult reportResult = new([], 0, 0m, null, to);
 
 		_mediatorMock.Setup(m => m.Send(
 			It.Is<GetSpendingByNormalizedDescriptionQuery>(q => q.From == null && q.To == to),
@@ -1135,7 +1302,7 @@ public class ReportsControllerTests
 
 		// Act
 		Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequest<string>> result =
-			await _controller.GetSpendingByNormalizedDescription(null, to, CancellationToken.None);
+			await _controller.GetSpendingByNormalizedDescription(null, to, null, null, null, null, CancellationToken.None);
 
 		// Assert
 		Assert.IsType<Ok<SpendingByNormalizedDescriptionResponse>>(result.Result);

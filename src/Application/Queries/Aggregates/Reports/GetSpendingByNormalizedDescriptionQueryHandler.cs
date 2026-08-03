@@ -12,6 +12,10 @@ public class GetSpendingByNormalizedDescriptionQueryHandler(IReportService repor
 		return await reportService.GetSpendingByNormalizedDescriptionAsync(
 			request.From,
 			request.To,
+			request.SortBy,
+			request.SortDirection,
+			request.Page,
+			request.PageSize,
 			cancellationToken);
 	}
 }

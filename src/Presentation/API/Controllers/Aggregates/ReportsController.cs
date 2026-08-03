@@ -189,18 +189,19 @@ public class ReportsController(IMediator mediator) : ControllerBase
 
 	[HttpGet("item-cost-over-time")]
 	[EndpointSummary("Get item cost over time")]
-	[EndpointDescription("Returns time-series cost data for a specific item description or category.")]
+	[EndpointDescription("Returns time-series cost data for a specific item description, normalized description, or category.")]
 	public async Task<Results<Ok<ItemCostOverTimeResponse>, BadRequest<string>>> GetItemCostOverTime(
 		[FromQuery] string? description,
 		[FromQuery] string? category,
 		[FromQuery] DateOnly? startDate,
 		[FromQuery] DateOnly? endDate,
 		[FromQuery] string? granularity,
+		[FromQuery] string? normalizedDescription,
 		CancellationToken cancellationToken)
 	{
-		if (string.IsNullOrEmpty(description) && string.IsNullOrEmpty(category))
+		if (string.IsNullOrEmpty(description) && string.IsNullOrEmpty(category) && string.IsNullOrEmpty(normalizedDescription))
 		{
-			return TypedResults.BadRequest("Either description or category is required");
+			return TypedResults.BadRequest("One of description, normalizedDescription, or category is required");
 		}
 
 		string gran = granularity ?? "exact";
@@ -215,7 +216,7 @@ public class ReportsController(IMediator mediator) : ControllerBase
 			return TypedResults.BadRequest("startDate must be before or equal to endDate");
 		}
 
-		GetItemCostOverTimeQuery query = new(description, category, startDate, endDate, gran);
+		GetItemCostOverTimeQuery query = new(description, category, startDate, endDate, gran, normalizedDescription);
 		AppReports.ItemCostOverTimeResult result = await mediator.Send(query, cancellationToken);
 
 		return TypedResults.Ok(new ItemCostOverTimeResponse
@@ -456,18 +457,51 @@ public class ReportsController(IMediator mediator) : ControllerBase
 	public async Task<Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequest<string>>> GetSpendingByNormalizedDescription(
 		[FromQuery] DateTimeOffset? from,
 		[FromQuery] DateTimeOffset? to,
+		[FromQuery] string? sortBy,
+		[FromQuery] string? sortDirection,
+		[FromQuery] int? page,
+		[FromQuery] int? pageSize,
 		CancellationToken cancellationToken)
 	{
+		string sort = sortBy ?? "totalAmount";
+		string direction = sortDirection ?? "desc";
+		int pg = page ?? 1;
+		int ps = pageSize ?? 50;
+
+		string[] validSortColumns = ["canonicalname", "totalamount", "itemcount"];
+		if (!validSortColumns.Contains(sort.ToLowerInvariant()))
+		{
+			return TypedResults.BadRequest($"Invalid sortBy '{sort}'. Allowed: canonicalName, totalAmount, itemCount");
+		}
+
+		string[] validDirections = ["asc", "desc"];
+		if (!validDirections.Contains(direction.ToLowerInvariant()))
+		{
+			return TypedResults.BadRequest($"Invalid sortDirection '{direction}'. Allowed: asc, desc");
+		}
+
+		if (pg < 1)
+		{
+			return TypedResults.BadRequest("page must be at least 1");
+		}
+
+		if (ps < 1 || ps > 100)
+		{
+			return TypedResults.BadRequest("pageSize must be between 1 and 100");
+		}
+
 		if (from.HasValue && to.HasValue && from.Value > to.Value)
 		{
 			return TypedResults.BadRequest("from must be before or equal to to");
 		}
 
-		GetSpendingByNormalizedDescriptionQuery query = new(from, to);
+		GetSpendingByNormalizedDescriptionQuery query = new(from, to, sort, direction, pg, ps);
 		AppReports.SpendingByNormalizedDescriptionResult result = await mediator.Send(query, cancellationToken);
 
 		return TypedResults.Ok(new SpendingByNormalizedDescriptionResponse
 		{
+			TotalCount = result.TotalCount,
+			GrandTotal = (double)result.GrandTotal,
 			FromDate = result.FromDate,
 			ToDate = result.ToDate,
 			Items = result.Items.Select(i => new SpendingByNormalizedDescriptionItem
