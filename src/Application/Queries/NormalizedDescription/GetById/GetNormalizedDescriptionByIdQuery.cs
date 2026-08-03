@@ -1,8 +1,9 @@
 using Application.Interfaces;
+using Application.Models.NormalizedDescriptions;
 
 namespace Application.Queries.NormalizedDescription.GetById;
 
-public record GetNormalizedDescriptionByIdQuery : IQuery<Domain.NormalizedDescriptions.NormalizedDescription?>
+public record GetNormalizedDescriptionByIdQuery : IQuery<NormalizedDescriptionDetail?>
 {
 	public Guid Id { get; }
 	public const string IdCannotBeEmptyExceptionMessage = "NormalizedDescription Id cannot be empty.";

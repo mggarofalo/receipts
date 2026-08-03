@@ -292,10 +292,10 @@ public class NormalizedDescriptionsControllerTests
 	[Fact]
 	public async Task GetAllNormalizedDescriptions_NoFilter_ReturnsOkWithAllItems()
 	{
-		List<NormalizedDescription> items =
+		List<NormalizedDescriptionDetail> items =
 		[
-			new(Guid.NewGuid(), "coffee beans", DomainStatus.Active, new DateTimeOffset(2026, 4, 1, 0, 0, 0, TimeSpan.Zero)),
-			new(Guid.NewGuid(), "whole milk", DomainStatus.PendingReview, new DateTimeOffset(2026, 4, 2, 0, 0, 0, TimeSpan.Zero)),
+			new(new NormalizedDescription(Guid.NewGuid(), "coffee beans", DomainStatus.Active, new DateTimeOffset(2026, 4, 1, 0, 0, 0, TimeSpan.Zero)), LinkedItemCount: 7, NearestNeighbourName: null, ["COFFEE BEANS 1LB"]),
+			new(new NormalizedDescription(Guid.NewGuid(), "whole milk", DomainStatus.PendingReview, new DateTimeOffset(2026, 4, 2, 0, 0, 0, TimeSpan.Zero)), LinkedItemCount: 2, NearestNeighbourName: null, []),
 		];
 
 		_mediatorMock
@@ -348,11 +348,17 @@ public class NormalizedDescriptionsControllerTests
 	public async Task GetNormalizedDescriptionById_Found_ReturnsOkWithMappedResponse()
 	{
 		Guid id = Guid.NewGuid();
-		NormalizedDescription item = new(
-			id,
-			"cherry cola",
-			DomainStatus.PendingReview,
-			new DateTimeOffset(2026, 4, 19, 0, 0, 0, TimeSpan.Zero));
+		NormalizedDescriptionDetail item = new(
+			new NormalizedDescription(
+				id,
+				"cherry cola",
+				DomainStatus.PendingReview,
+				new DateTimeOffset(2026, 4, 19, 0, 0, 0, TimeSpan.Zero),
+				Guid.NewGuid(),
+				0.86),
+			LinkedItemCount: 3,
+			NearestNeighbourName: "cola",
+			["CHERRY COLA 12PK", "cherry cola 2L"]);
 
 		_mediatorMock
 			.Setup(m => m.Send(It.Is<GetNormalizedDescriptionByIdQuery>(q => q.Id == id), It.IsAny<CancellationToken>()))
@@ -365,7 +371,12 @@ public class NormalizedDescriptionsControllerTests
 		ok.Value!.Id.Should().Be(id);
 		ok.Value.CanonicalName.Should().Be("cherry cola");
 		ok.Value.Status.Should().Be(DtoStatus.PendingReview);
-		ok.Value.CreatedAt.Should().Be(item.CreatedAt);
+		ok.Value.CreatedAt.Should().Be(item.Description.CreatedAt);
+		// RECEIPTS-873 evidence must survive the mapping — this is the whole point of the row.
+		ok.Value.LinkedItemCount.Should().Be(3);
+		ok.Value.SampleRawDescriptions.Should().BeEquivalentTo(["CHERRY COLA 12PK", "cherry cola 2L"]);
+		ok.Value.NearestNeighbourName.Should().Be("cola");
+		ok.Value.NearestNeighbourSimilarity.Should().Be(0.86);
 	}
 
 	[Fact]
@@ -374,7 +385,7 @@ public class NormalizedDescriptionsControllerTests
 		Guid id = Guid.NewGuid();
 		_mediatorMock
 			.Setup(m => m.Send(It.Is<GetNormalizedDescriptionByIdQuery>(q => q.Id == id), It.IsAny<CancellationToken>()))
-			.ReturnsAsync((NormalizedDescription?)null);
+			.ReturnsAsync((NormalizedDescriptionDetail?)null);
 
 		Results<Ok<NormalizedDescriptionResponse>, NotFound, BadRequest<string>> result =
 			await _controller.GetNormalizedDescriptionById(id, CancellationToken.None);
@@ -465,11 +476,15 @@ public class NormalizedDescriptionsControllerTests
 		Guid newId = Guid.NewGuid();
 		SplitNormalizedDescriptionRequest request = new() { ReceiptItemId = receiptItemId };
 
-		NormalizedDescription created = new(
-			newId,
-			"reese cup",
-			DomainStatus.Active,
-			new DateTimeOffset(2026, 4, 19, 12, 0, 0, TimeSpan.Zero));
+		NormalizedDescriptionDetail created = new(
+			new NormalizedDescription(
+				newId,
+				"reese cup",
+				DomainStatus.Active,
+				new DateTimeOffset(2026, 4, 19, 12, 0, 0, TimeSpan.Zero)),
+			LinkedItemCount: 1,
+			NearestNeighbourName: null,
+			["REESE CUP KING"]);
 
 		_mediatorMock
 			.Setup(m => m.Send(
@@ -484,6 +499,7 @@ public class NormalizedDescriptionsControllerTests
 		ok.Value!.Id.Should().Be(newId);
 		ok.Value.CanonicalName.Should().Be("reese cup");
 		ok.Value.Status.Should().Be(DtoStatus.Active);
+		ok.Value.LinkedItemCount.Should().Be(1);
 	}
 
 	[Fact]
@@ -539,7 +555,7 @@ public class NormalizedDescriptionsControllerTests
 		Guid id = Guid.NewGuid();
 		UpdateNormalizedDescriptionStatusRequest request = new() { Status = DtoStatus.PendingReview };
 
-		NormalizedDescription existing = new(id, "whole milk", DomainStatus.Active, DateTimeOffset.UtcNow);
+		NormalizedDescriptionDetail existing = new(new NormalizedDescription(id, "whole milk", DomainStatus.Active, DateTimeOffset.UtcNow), LinkedItemCount: 0, NearestNeighbourName: null, []);
 		_mediatorMock
 			.Setup(m => m.Send(It.Is<GetNormalizedDescriptionByIdQuery>(q => q.Id == id), It.IsAny<CancellationToken>()))
 			.ReturnsAsync(existing);
@@ -564,7 +580,7 @@ public class NormalizedDescriptionsControllerTests
 		Guid id = Guid.NewGuid();
 		UpdateNormalizedDescriptionStatusRequest request = new() { Status = DtoStatus.Active };
 
-		NormalizedDescription existing = new(id, "whole milk", DomainStatus.PendingReview, DateTimeOffset.UtcNow);
+		NormalizedDescriptionDetail existing = new(new NormalizedDescription(id, "whole milk", DomainStatus.PendingReview, DateTimeOffset.UtcNow), LinkedItemCount: 0, NearestNeighbourName: null, []);
 		_mediatorMock
 			.Setup(m => m.Send(It.Is<GetNormalizedDescriptionByIdQuery>(q => q.Id == id), It.IsAny<CancellationToken>()))
 			.ReturnsAsync(existing);
@@ -588,7 +604,7 @@ public class NormalizedDescriptionsControllerTests
 
 		_mediatorMock
 			.Setup(m => m.Send(It.Is<GetNormalizedDescriptionByIdQuery>(q => q.Id == id), It.IsAny<CancellationToken>()))
-			.ReturnsAsync((NormalizedDescription?)null);
+			.ReturnsAsync((NormalizedDescriptionDetail?)null);
 
 		Results<NoContent, NotFound, BadRequest<string>> result =
 			await _controller.UpdateNormalizedDescriptionStatus(id, request, CancellationToken.None);

@@ -167,7 +167,8 @@ function ReviewQueueTab() {
         <TableHeader>
           <TableRow>
             <TableHead>Canonical Name</TableHead>
-            <TableHead>Status</TableHead>
+            <TableHead>Nearest Match</TableHead>
+            <TableHead className="text-right">Linked Items</TableHead>
             <TableHead>Created</TableHead>
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
@@ -175,9 +176,18 @@ function ReviewQueueTab() {
         <TableBody>
           {pending.map((row) => (
             <TableRow key={row.id}>
-              <TableCell className="font-medium">{row.canonicalName}</TableCell>
+              <TableCell className="font-medium">
+                {row.canonicalName}
+                <SampleRawDescriptions samples={row.sampleRawDescriptions} />
+              </TableCell>
               <TableCell>
-                <Badge variant="secondary">Pending Review</Badge>
+                <NearestMatch
+                  name={row.nearestNeighbourName}
+                  similarity={row.nearestNeighbourSimilarity}
+                />
+              </TableCell>
+              <TableCell className="text-right tabular-nums">
+                {row.linkedItemCount}
               </TableCell>
               <TableCell>
                 <span className="text-sm text-muted-foreground">
@@ -225,6 +235,62 @@ function ReviewQueueTab() {
         onClose={() => setSplitTarget(null)}
       />
     </div>
+  );
+}
+
+interface NearestMatchProps {
+  name: string | null | undefined;
+  similarity: number | null | undefined;
+}
+
+/**
+ * The evidence that explains why a row is sitting in the review queue at all (RECEIPTS-873).
+ *
+ * The absent case is deliberately distinguished from a zero score: a row with no recorded
+ * neighbour was never compared against anything, and rendering that as "0.00" would assert a
+ * near-miss that never happened. Guards are nullish, not falsy, so a genuine similarity of 0
+ * still prints as 0.00.
+ */
+function NearestMatch({ name, similarity }: NearestMatchProps) {
+  if (similarity == null) {
+    return (
+      <span className="text-sm text-muted-foreground">
+        No comparison recorded
+      </span>
+    );
+  }
+
+  // Merging the neighbour away nulls the FK (ON DELETE SET NULL) but leaves the score behind.
+  // The score is still a true record of what happened, so we show it rather than pretending
+  // no comparison was ever made.
+  if (name == null) {
+    return (
+      <span className="text-sm">
+        Nearly matched a since-removed entry at{" "}
+        <span className="tabular-nums">{formatDecimal(similarity, 2)}</span>
+      </span>
+    );
+  }
+
+  return (
+    <span className="text-sm">
+      Nearly matched <span className="font-medium">{name}</span> at{" "}
+      <span className="tabular-nums">{formatDecimal(similarity, 2)}</span>
+    </span>
+  );
+}
+
+/**
+ * The raw receipt text this canonical row actually covers — the difference between approving a
+ * name and approving a grouping.
+ */
+function SampleRawDescriptions({ samples }: { samples: string[] | undefined }) {
+  if (!samples || samples.length === 0) return null;
+
+  return (
+    <p className="mt-1 text-xs font-normal text-muted-foreground">
+      Seen as: {samples.join(", ")}
+    </p>
   );
 }
 

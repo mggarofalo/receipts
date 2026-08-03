@@ -57,18 +57,29 @@ import {
 import { useReceiptItems } from "@/hooks/useReceiptItems";
 import { usePermission } from "@/hooks/usePermission";
 
+// Fixtures carry the RECEIPTS-873 evidence fields because the real API always does. p-1 is the
+// fully-evidenced case; p-2 is the row that was never compared against anything, which is what
+// distinguishes "no comparison recorded" from a zero score.
 const pendingItems = [
   {
     id: "p-1",
     canonicalName: "Strawberry Preserves",
     status: "pendingReview" as const,
     createdAt: "2025-03-01T00:00:00Z",
+    linkedItemCount: 4,
+    sampleRawDescriptions: ["STRAWBERRY PRES", "STRWBRY PRESERVE"],
+    nearestNeighbourName: "Strawberry Jam",
+    nearestNeighbourSimilarity: 0.8642,
   },
   {
     id: "p-2",
     canonicalName: "Organic Milk",
     status: "pendingReview" as const,
     createdAt: "2025-03-02T00:00:00Z",
+    linkedItemCount: 0,
+    sampleRawDescriptions: [],
+    nearestNeighbourName: null,
+    nearestNeighbourSimilarity: null,
   },
 ];
 
@@ -78,12 +89,20 @@ const activeItems = [
     canonicalName: "Apples",
     status: "active" as const,
     createdAt: "2025-02-01T00:00:00Z",
+    linkedItemCount: 12,
+    sampleRawDescriptions: ["GALA APPLES"],
+    nearestNeighbourName: null,
+    nearestNeighbourSimilarity: null,
   },
   {
     id: "a-2",
     canonicalName: "Milk",
     status: "active" as const,
     createdAt: "2025-02-02T00:00:00Z",
+    linkedItemCount: 9,
+    sampleRawDescriptions: ["MILK 2% GAL"],
+    nearestNeighbourName: null,
+    nearestNeighbourSimilarity: null,
   },
 ];
 
@@ -173,6 +192,48 @@ describe("NormalizedDescriptions review queue", () => {
       await screen.findByText("Strawberry Preserves"),
     ).toBeInTheDocument();
     expect(screen.getByText("Organic Milk")).toBeInTheDocument();
+  });
+
+  it("shows the near-miss that caused the row to be flagged", async () => {
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Strawberry Preserves")).closest("tr");
+    expect(row).not.toBeNull();
+    expect(within(row!).getByText(/nearly matched/i)).toBeInTheDocument();
+    expect(within(row!).getByText("Strawberry Jam")).toBeInTheDocument();
+    expect(within(row!).getByText("0.86")).toBeInTheDocument();
+  });
+
+  it("renders 'no comparison recorded' instead of a zero score when no neighbour was recorded", async () => {
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Organic Milk")).closest("tr");
+    expect(row).not.toBeNull();
+    expect(
+      within(row!).getByText(/no comparison recorded/i),
+    ).toBeInTheDocument();
+    // The distinction is the whole point: an absent comparison must never read as a real
+    // near-miss that scored zero.
+    expect(within(row!).queryByText("0.00")).not.toBeInTheDocument();
+    expect(within(row!).queryByText(/nearly matched/i)).not.toBeInTheDocument();
+  });
+
+  it("shows how many receipt items each pending row would affect", async () => {
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Strawberry Preserves")).closest("tr");
+    expect(within(row!).getByText("4")).toBeInTheDocument();
+  });
+
+  it("shows sample raw descriptions so the reviewer sees what the row covers", async () => {
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Strawberry Preserves")).closest("tr");
+    expect(
+      within(row!).getByText(/STRAWBERRY PRES, STRWBRY PRESERVE/),
+    ).toBeInTheDocument();
+  });
+
+  it("omits the samples line entirely when no items are linked", async () => {
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Organic Milk")).closest("tr");
+    expect(within(row!).queryByText(/seen as:/i)).not.toBeInTheDocument();
   });
 
   it("shows empty state when queue is empty", () => {

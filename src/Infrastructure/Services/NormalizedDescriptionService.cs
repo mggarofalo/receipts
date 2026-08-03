@@ -29,6 +29,11 @@ public class NormalizedDescriptionService(
 	private const int MaxTopN = 20;
 	private const string PostgreSQL = "Npgsql.EntityFrameworkCore.PostgreSQL";
 
+	// How many distinct raw receipt-item descriptions to surface per canonical row. Enough for a
+	// reviewer to recognise what the entry actually covers without turning the queue into a dump
+	// of every line item.
+	internal const int MaxSampleRawDescriptions = 3;
+
 	public async Task<GetOrCreateResult> GetOrCreateAsync(string rawDescription, CancellationToken cancellationToken)
 	{
 		string normalized = (rawDescription ?? string.Empty).Trim();
@@ -84,7 +89,17 @@ public class NormalizedDescriptionService(
 
 			if (topSimilarity.Value >= pendingReview)
 			{
-				NormalizedDescriptionEntity pending = await InsertAsync(context, normalized, NormalizedDescriptionStatus.PendingReview, embeddingVector, cancellationToken);
+				// Persist the near-miss that caused the pending status (RECEIPTS-873). Previously
+				// only the score survived — on the ReceiptItem — so the API could not answer
+				// "what did this nearly match?" without recomputing embeddings.
+				NormalizedDescriptionEntity pending = await InsertAsync(
+					context,
+					normalized,
+					NormalizedDescriptionStatus.PendingReview,
+					embeddingVector,
+					cancellationToken,
+					nearestNeighbourId: topMatch.Id,
+					nearestNeighbourSimilarity: topSimilarity.Value);
 				return new GetOrCreateResult(mapper.ToDomain(pending), topSimilarity.Value);
 			}
 		}
@@ -93,28 +108,28 @@ public class NormalizedDescriptionService(
 		return new GetOrCreateResult(mapper.ToDomain(activeCreated), MatchScore: null);
 	}
 
-	public async Task<NormalizedDescription?> GetByIdAsync(Guid id, CancellationToken cancellationToken)
+	public async Task<NormalizedDescriptionDetail?> GetByIdAsync(Guid id, CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
-		NormalizedDescriptionEntity? entity = await context.NormalizedDescriptions
-			.AsNoTracking()
-			.FirstOrDefaultAsync(e => e.Id == id, cancellationToken);
-		return entity is null ? null : mapper.ToDomain(entity);
+		return await ProjectDetails(context)
+			.FirstOrDefaultAsync(d => d.Id == id, cancellationToken) is { } row
+			? row.ToDetail()
+			: null;
 	}
 
-	public async Task<List<NormalizedDescription>> GetAllAsync(NormalizedDescriptionStatus? filter, CancellationToken cancellationToken)
+	public async Task<List<NormalizedDescriptionDetail>> GetAllAsync(NormalizedDescriptionStatus? filter, CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
-		IQueryable<NormalizedDescriptionEntity> query = context.NormalizedDescriptions.AsNoTracking();
+		IQueryable<DetailRow> query = ProjectDetails(context);
 		if (filter.HasValue)
 		{
-			query = query.Where(e => e.Status == filter.Value);
+			query = query.Where(d => d.Status == filter.Value);
 		}
 
-		List<NormalizedDescriptionEntity> entities = await query
-			.OrderBy(e => e.CanonicalName)
+		List<DetailRow> rows = await query
+			.OrderBy(d => d.CanonicalName)
 			.ToListAsync(cancellationToken);
-		return [.. entities.Select(mapper.ToDomain)];
+		return [.. rows.Select(r => r.ToDetail())];
 	}
 
 	public async Task<int> MergeAsync(Guid keepId, Guid discardId, CancellationToken cancellationToken)
@@ -155,7 +170,7 @@ public class NormalizedDescriptionService(
 		return items.Count;
 	}
 
-	public async Task<NormalizedDescription> SplitAsync(Guid receiptItemId, CancellationToken cancellationToken)
+	public async Task<NormalizedDescriptionDetail> SplitAsync(Guid receiptItemId, CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 
@@ -197,7 +212,17 @@ public class NormalizedDescriptionService(
 		item.NormalizedDescriptionId = created.Id;
 		await context.SaveChangesAsync(cancellationToken);
 
-		return mapper.ToDomain(created);
+		// Re-read through the same projection the list endpoint uses so the caller gets a truthful
+		// LinkedItemCount for the row it just created, rather than a hardcoded 1 that would drift
+		// the moment Split's semantics change. One extra query on an admin-only action.
+		DetailRow? row = await ProjectDetails(context)
+			.FirstOrDefaultAsync(d => d.Id == created.Id, cancellationToken);
+
+		// The row was just committed in this same context, so a miss here means something deleted
+		// it out from under us mid-call. Fall back to the in-memory entity with the evidence we
+		// know first-hand rather than throwing.
+		return row?.ToDetail()
+			?? new NormalizedDescriptionDetail(mapper.ToDomain(created), LinkedItemCount: 1, NearestNeighbourName: null, [canonicalName]);
 	}
 
 	public async Task<bool> UpdateStatusAsync(Guid id, NormalizedDescriptionStatus status, CancellationToken cancellationToken)
@@ -485,6 +510,62 @@ public class NormalizedDescriptionService(
 		return entity;
 	}
 
+	// Single-query evidence projection shared by GetAllAsync / GetByIdAsync / SplitAsync
+	// (RECEIPTS-873). Three things happen here that a naive implementation would get wrong:
+	//
+	//  1. No N+1. LinkedItemCount and SampleRawDescriptions are correlated subqueries, which EF
+	//     translates to lateral joins on Npgsql — one round trip regardless of row count. The
+	//     existing IX_ReceiptItems_NormalizedDescriptionId index covers both.
+	//  2. Soft-deleted receipt items are excluded automatically: the ReceiptItemEntity query filter
+	//     applies inside subqueries, so a deleted item never inflates the count an admin sees.
+	//  3. Embedding is not selected. The old GetAllAsync materialized whole entities, dragging a
+	//     384-float vector per row across the wire for a list that never displays it.
+	//
+	// Samples are ordered before Take so the same rows produce the same samples across calls —
+	// an unordered LIMIT would let the displayed evidence shuffle between refreshes.
+	private static IQueryable<DetailRow> ProjectDetails(ApplicationDbContext context) =>
+		context.NormalizedDescriptions
+			.AsNoTracking()
+			.Select(e => new DetailRow
+			{
+				Id = e.Id,
+				CanonicalName = e.CanonicalName,
+				Status = e.Status,
+				CreatedAt = e.CreatedAt,
+				NearestNeighbourId = e.NearestNeighbourId,
+				NearestNeighbourSimilarity = e.NearestNeighbourSimilarity,
+				NearestNeighbourName = e.NearestNeighbour == null ? null : e.NearestNeighbour.CanonicalName,
+				LinkedItemCount = context.ReceiptItems.Count(r => r.NormalizedDescriptionId == e.Id),
+				SampleRawDescriptions = context.ReceiptItems
+					.Where(r => r.NormalizedDescriptionId == e.Id)
+					.Select(r => r.Description)
+					.Distinct()
+					.OrderBy(d => d)
+					.Take(MaxSampleRawDescriptions)
+					.ToList(),
+			});
+
+	// Flat shape so the projection stays translatable — EF cannot project into a type with a
+	// non-default constructor's worth of nested objects. ToDetail() rebuilds the domain model.
+	private sealed class DetailRow
+	{
+		public Guid Id { get; init; }
+		public string CanonicalName { get; init; } = string.Empty;
+		public NormalizedDescriptionStatus Status { get; init; }
+		public DateTimeOffset CreatedAt { get; init; }
+		public Guid? NearestNeighbourId { get; init; }
+		public double? NearestNeighbourSimilarity { get; init; }
+		public string? NearestNeighbourName { get; init; }
+		public int LinkedItemCount { get; init; }
+		public List<string> SampleRawDescriptions { get; init; } = [];
+
+		public NormalizedDescriptionDetail ToDetail() => new(
+			new NormalizedDescription(Id, CanonicalName, Status, CreatedAt, NearestNeighbourId, NearestNeighbourSimilarity),
+			LinkedItemCount,
+			NearestNeighbourName,
+			SampleRawDescriptions);
+	}
+
 	private static async Task<NormalizedDescriptionEntity?> FindExactCaseInsensitiveAsync(
 		ApplicationDbContext context, string canonicalName, CancellationToken cancellationToken)
 	{
@@ -503,12 +584,19 @@ public class NormalizedDescriptionService(
 		string canonicalName,
 		NormalizedDescriptionStatus status,
 		Vector? embedding,
-		CancellationToken cancellationToken)
+		CancellationToken cancellationToken,
+		Guid? nearestNeighbourId = null,
+		double? nearestNeighbourSimilarity = null)
 	{
 		// Double-check for a race: between the caller's exact-match lookup and this insert,
 		// another request may have created a row with the same canonical name. The DB has a
 		// unique functional index on lower(CanonicalName), so a second lookup inside this
 		// save path gives us a race-safe compromise without needing a distributed lock.
+		//
+		// Both race paths (here and in the DbUpdateException handler below) return the winning row
+		// untouched. We deliberately do not overwrite its near-miss evidence with ours: the winner
+		// recorded the neighbour it actually compared against, and clobbering that would replace a
+		// true observation with one made against a different candidate set.
 		NormalizedDescriptionEntity? preInsert = await FindExactCaseInsensitiveAsync(context, canonicalName, cancellationToken);
 		if (preInsert is not null)
 		{
@@ -523,6 +611,8 @@ public class NormalizedDescriptionService(
 			Embedding = embedding,
 			EmbeddingModelVersion = embedding is null ? null : OnnxEmbeddingService.ModelName,
 			CreatedAt = DateTimeOffset.UtcNow,
+			NearestNeighbourId = nearestNeighbourId,
+			NearestNeighbourSimilarity = nearestNeighbourSimilarity,
 		};
 
 		context.NormalizedDescriptions.Add(entity);
