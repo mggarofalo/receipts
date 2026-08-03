@@ -32,6 +32,35 @@ export function parseProblemDetails(
 }
 
 /**
+ * Normalises an openapi-fetch error body into a ProblemDetails-shaped object
+ * carrying an HTTP status.
+ *
+ * openapi-fetch hands back whatever the response body parsed to, and this API
+ * produces three different shapes for a failed request:
+ *
+ *   1. A ProblemDetails object — has `status`, handled everywhere already.
+ *   2. A bare JSON string, from `TypedResults.BadRequest("some reason")`.
+ *   3. `undefined`, when the response carried no body at all — which is what
+ *      ASP.NET sends for an authorization 403 or a bodiless `NotFound()`.
+ *
+ * Only shape 1 has a `status`, and `handleGlobalError` keys off `status` to
+ * decide whether to toast — so shapes 2 and 3 fail *silently* unless they are
+ * normalised here. Shape 3 is worse still: `undefined` is falsy, so a caller
+ * writing `if (error) throw error` treats a 403 or 404 as a success.
+ *
+ * Always pass the real `response.status`; it is authoritative even when the
+ * body claims otherwise.
+ */
+export function toApiError(status: number, body: unknown): ProblemDetailsError {
+  if (body && typeof body === "object") {
+    return { ...(body as ProblemDetailsError), status };
+  }
+
+  const detail = typeof body === "string" && body.trim() ? body.trim() : undefined;
+  return { status, detail };
+}
+
+/**
  * Extracts a flat map of field name -> first error message from ProblemDetails.
  * Field names are normalized to camelCase (e.g., "Amount" -> "amount").
  */

@@ -29,7 +29,7 @@ describe("useMergeMutation", () => {
     mockClient.POST.mockResolvedValue({
       data: { itemsRelinkedCount: 4 },
       error: undefined,
-      response: {} as Response,
+      response: { status: 200, ok: true } as Response,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
 
@@ -53,7 +53,7 @@ describe("useMergeMutation", () => {
     mockClient.POST.mockResolvedValue({
       data: undefined,
       error: { message: "nope" },
-      response: {} as Response,
+      response: { status: 500, ok: false } as Response,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
     const { result } = renderHook(() => useMergeMutation(), {
@@ -78,7 +78,7 @@ describe("useSplitMutation", () => {
         createdAt: "2025-01-01T00:00:00Z",
       },
       error: undefined,
-      response: {} as Response,
+      response: { status: 200, ok: true } as Response,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
 
@@ -102,7 +102,7 @@ describe("useSplitMutation", () => {
     mockClient.POST.mockResolvedValue({
       data: undefined,
       error: { message: "nope" },
-      response: {} as Response,
+      response: { status: 500, ok: false } as Response,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
     const { result } = renderHook(() => useSplitMutation(), {
@@ -122,7 +122,7 @@ describe("useUpdateStatusMutation", () => {
     mockClient.PATCH.mockResolvedValue({
       data: undefined,
       error: undefined,
-      response: {} as Response,
+      response: { status: 204, ok: true } as Response,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
 
@@ -146,7 +146,7 @@ describe("useUpdateStatusMutation", () => {
     mockClient.PATCH.mockResolvedValue({
       data: undefined,
       error: { message: "nope" },
-      response: {} as Response,
+      response: { status: 500, ok: false } as Response,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
     const { result } = renderHook(() => useUpdateStatusMutation(), {

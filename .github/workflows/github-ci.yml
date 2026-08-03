@@ -271,6 +271,56 @@ jobs:
             src/client/test-results
           retention-days: 7
 
+  e2e:
+    name: E2E (Playwright)
+    needs: [pr-title]
+    if: ${{ !cancelled() && (needs.pr-title.result == 'success' || needs.pr-title.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    # Unlike Visual Regression, this job is BLOCKING: it asserts behaviour
+    # (which requests fire, what the user is told) against a mocked API, so
+    # there is no cross-platform pixel jitter to tolerate. A failure here is
+    # a real regression.
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: src/client/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: src/client
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('src/client/package-lock.json') }}
+
+      - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+        working-directory: src/client
+
+      - name: Run E2E tests
+        run: npm run test:e2e
+        working-directory: src/client
+
+      - name: Upload report on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-e2e-report
+          path: |
+            src/client/playwright-report
+            src/client/test-results
+          retention-days: 7
+
   lint:
     name: Code Formatting
     needs: [pr-title]

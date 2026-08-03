@@ -6,7 +6,7 @@ import { test, expect } from "@playwright/test";
 //
 // New surfaces that need auth + API stubs should land in a separate spec
 // (e.g. authed-pages.spec.ts) that imports the fixtures helper from
-// ./fixtures/api-mocks.ts.
+// ../fixtures/api-mocks.ts.
 
 test.describe("Public pages", () => {
   test("login page", async ({ page }) => {
