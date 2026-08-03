@@ -246,6 +246,36 @@ public class ItemTemplateHistoryCandidateServiceTests(PostgresFixture fixture)
 	}
 
 	[Fact]
+	public async Task GetHistoryCandidatesAsync_PrefersARealCodeAndCategoryOverAMoreFrequentEmptyOne()
+	{
+		// Arrange — an empty string is not the same "no value" signal as a null column, and it
+		// must not out-vote a real value just by appearing more often. Category is non-nullable
+		// on ReceiptItemEntity (empty strings reach it only via legacy/imported data, since the
+		// domain layer rejects them for entered items), so it is seeded directly here rather than
+		// through the domain's own validation.
+		await ResetAsync();
+		ReceiptEntity receipt = Receipt(new DateOnly(2026, 2, 1));
+
+		await SeedAsync(
+			[receipt],
+			[
+				Item(receipt.Id, "Whole Milk", category: "", subcategory: null, itemCode: ""),
+				Item(receipt.Id, "Whole Milk", category: "", subcategory: null, itemCode: ""),
+				Item(receipt.Id, "Whole Milk", category: "", subcategory: null, itemCode: ""),
+				Item(receipt.Id, "Whole Milk", category: "Groceries", subcategory: "Dairy", itemCode: "MILK-001"),
+				Item(receipt.Id, "Whole Milk", category: "Groceries", subcategory: "Dairy", itemCode: "MILK-001"),
+			]);
+
+		// Act
+		ItemTemplateHistoryCandidate candidate = (await CreateService().GetHistoryCandidatesAsync(0, 50, 2, CancellationToken.None)).Data.Single();
+
+		// Assert — the real values win despite the empty ones having a higher raw count
+		candidate.SuggestedItemCode.Should().Be("MILK-001");
+		candidate.SuggestedCategory.Should().Be("Groceries");
+		candidate.SuggestedSubcategory.Should().Be("Dairy");
+	}
+
+	[Fact]
 	public async Task GetHistoryCandidatesAsync_OrdersByOccurrenceCountThenName()
 	{
 		// Arrange

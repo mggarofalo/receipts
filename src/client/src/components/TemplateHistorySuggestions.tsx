@@ -25,6 +25,9 @@ type HistoryCandidate =
 
 const COLLAPSED_STORAGE_KEY = "item-templates-history-suggestions-collapsed";
 const PAGE_SIZE = 10;
+// Matches the API's validated maximum (GetItemTemplateHistoryCandidatesQueryValidator).
+// Requesting past it returns 400, which would otherwise collapse the whole section.
+const MAX_LIMIT = 500;
 const HEADING_ID = "item-template-history-suggestions-heading";
 const COUNT_ID = "item-template-history-suggestions-count";
 
@@ -52,8 +55,15 @@ export function TemplateHistorySuggestions({
   const [limit, setLimit] = useState(PAGE_SIZE);
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const { data, total } = useTemplateHistoryCandidates(0, limit);
-  const { mutate: createTemplate, isPending, variables } = useCreateItemTemplate();
+  const { data, total, isError, refetch } = useTemplateHistoryCandidates(
+    0,
+    limit,
+  );
+  const {
+    mutate: createTemplate,
+    isPending,
+    variables,
+  } = useCreateItemTemplate();
 
   const handleOpenChange = useCallback((open: boolean) => {
     setCollapsed(!open);
@@ -61,7 +71,7 @@ export function TemplateHistorySuggestions({
   }, []);
 
   const handleShowMore = useCallback(() => {
-    setLimit((current) => current + PAGE_SIZE);
+    setLimit((current) => Math.min(current + PAGE_SIZE, MAX_LIMIT));
   }, []);
 
   const candidates = (data as HistoryCandidate[] | undefined) ?? [];
@@ -107,8 +117,12 @@ export function TemplateHistorySuggestions({
   );
 
   // Nothing to suggest (or nothing loaded yet) — render no section at all rather
-  // than an empty shell the user has to look past.
-  if (candidates.length === 0) {
+  // than an empty shell the user has to look past. A fetch error is NOT the same
+  // as "no candidates" and must not collapse to the same silent nothing: without
+  // this, any transient error here (or a "Show more" request that ever slipped
+  // past the MAX_LIMIT cap) would make the whole section vanish with no way to
+  // recover short of a full page reload.
+  if (candidates.length === 0 && !isError) {
     return null;
   }
 
@@ -135,76 +149,94 @@ export function TemplateHistorySuggestions({
             </CollapsibleTrigger>
           </h2>
           <span id={COUNT_ID} className="text-sm text-muted-foreground">
-            {total} recurring {total === 1 ? "item" : "items"} without a template
+            {total} recurring {total === 1 ? "item" : "items"} without a
+            template
           </span>
         </div>
 
         <CollapsibleContent>
-          <div className="rounded-md border">
-            <Table aria-labelledby={HEADING_ID}>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Item</TableHead>
-                  <TableHead>Occurrences</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Subcategory</TableHead>
-                  <TableHead>Unit Price</TableHead>
-                  <TableHead>Last purchased</TableHead>
-                  <TableHead className="w-40">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {candidates.map((candidate) => (
-                  <TableRow key={candidate.name}>
-                    <TableCell>{candidate.name}</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      seen {candidate.occurrenceCount} times
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {candidate.suggestedCategory ?? (
-                        <span className="italic">--</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {candidate.suggestedSubcategory ?? (
-                        <span className="italic">--</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {candidate.suggestedUnitPrice != null ? (
-                        formatCurrency(candidate.suggestedUnitPrice)
-                      ) : (
-                        <span className="italic">--</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {formatShortDate(candidate.lastPurchasedAt)}
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        aria-label={`Create template for ${candidate.name}`}
-                        aria-disabled={isPending}
-                        aria-busy={pendingName === candidate.name}
-                        onClick={() => handleCreate(candidate)}
-                      >
-                        {pendingName === candidate.name && <Spinner size="sm" />}
-                        Create template
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-
-          {candidates.length < total && (
-            <div className="flex justify-center py-3">
-              <Button variant="ghost" size="sm" onClick={handleShowMore}>
-                Show more suggestions
-              </Button>
+          {isError ? (
+            <div className="rounded-md border border-destructive/50 p-4 text-sm text-muted-foreground">
+              Couldn&apos;t load suggestions from your history.{" "}
+              <button
+                type="button"
+                className="underline underline-offset-2 hover:text-foreground"
+                onClick={() => refetch()}
+              >
+                Try again
+              </button>
             </div>
+          ) : (
+            <>
+              <div className="rounded-md border">
+                <Table aria-labelledby={HEADING_ID}>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Item</TableHead>
+                      <TableHead>Occurrences</TableHead>
+                      <TableHead>Category</TableHead>
+                      <TableHead>Subcategory</TableHead>
+                      <TableHead>Unit Price</TableHead>
+                      <TableHead>Last purchased</TableHead>
+                      <TableHead className="w-40">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {candidates.map((candidate) => (
+                      <TableRow key={candidate.name}>
+                        <TableCell>{candidate.name}</TableCell>
+                        <TableCell className="text-muted-foreground">
+                          seen {candidate.occurrenceCount} times
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {candidate.suggestedCategory ?? (
+                            <span className="italic">--</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {candidate.suggestedSubcategory ?? (
+                            <span className="italic">--</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {candidate.suggestedUnitPrice != null ? (
+                            formatCurrency(candidate.suggestedUnitPrice)
+                          ) : (
+                            <span className="italic">--</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {formatShortDate(candidate.lastPurchasedAt)}
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            aria-label={`Create template for ${candidate.name}`}
+                            aria-disabled={isPending}
+                            aria-busy={pendingName === candidate.name}
+                            onClick={() => handleCreate(candidate)}
+                          >
+                            {pendingName === candidate.name && (
+                              <Spinner size="sm" />
+                            )}
+                            Create template
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {candidates.length < total && limit < MAX_LIMIT && (
+                <div className="flex justify-center py-3">
+                  <Button variant="ghost" size="sm" onClick={handleShowMore}>
+                    Show more suggestions
+                  </Button>
+                </div>
+              )}
+            </>
           )}
         </CollapsibleContent>
       </Collapsible>

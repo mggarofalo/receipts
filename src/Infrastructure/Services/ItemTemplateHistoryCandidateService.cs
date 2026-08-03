@@ -87,6 +87,7 @@ public class ItemTemplateHistoryCandidateService(IDbContextFactory<ApplicationDb
 			category_counts AS (
 			    SELECT description_key, category, subcategory, COUNT(*) AS pair_count
 			    FROM active_items
+			    WHERE category <> ''
 			    GROUP BY description_key, category, subcategory
 			),
 			top_category AS (
@@ -98,7 +99,7 @@ public class ItemTemplateHistoryCandidateService(IDbContextFactory<ApplicationDb
 			item_code_counts AS (
 			    SELECT description_key, item_code, COUNT(*) AS code_count
 			    FROM active_items
-			    WHERE item_code IS NOT NULL
+			    WHERE item_code IS NOT NULL AND item_code <> ''
 			    GROUP BY description_key, item_code
 			),
 			top_item_code AS (

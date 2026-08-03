@@ -866,4 +866,57 @@ describe("ItemTemplates — suggested from your history", () => {
 
     expect(useTemplateHistoryCandidates).toHaveBeenLastCalledWith(0, 20);
   });
+
+  it("caps the requested limit at the API's max instead of growing unbounded", async () => {
+    const user = (await import("@testing-library/user-event")).default.setup();
+    // total: 5000 keeps "Show more" offered right up to (but not past) the cap
+    // -- it hides itself once limit reaches the max, so 49 clicks (10 -> 500 in
+    // steps of 10) is exactly as far as this can click through the UI.
+    await mockCandidates({ total: 5000 });
+    const { useTemplateHistoryCandidates } = await import(
+      "@/hooks/useTemplateHistoryCandidates"
+    );
+
+    renderWithProviders(<ItemTemplates />);
+
+    for (let i = 0; i < 49; i++) {
+      await user.click(
+        screen.getByRole("button", { name: /show more suggestions/i }),
+      );
+    }
+
+    expect(useTemplateHistoryCandidates).toHaveBeenLastCalledWith(0, 500);
+    expect(
+      screen.queryByRole("button", { name: /show more suggestions/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows a retry option instead of silently disappearing when the candidates query errors", async () => {
+    const user = (await import("@testing-library/user-event")).default.setup();
+    const refetch = vi.fn();
+    const { useTemplateHistoryCandidates } = await import(
+      "@/hooks/useTemplateHistoryCandidates"
+    );
+    vi.mocked(useTemplateHistoryCandidates).mockReturnValue(
+      mockQueryResult({
+        data: undefined,
+        total: 0,
+        isError: true,
+        isLoading: false,
+        refetch,
+      }),
+    );
+
+    renderWithProviders(<ItemTemplates />);
+
+    expect(
+      screen.getByRole("heading", { name: /suggested from your history/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/couldn't load suggestions from your history/i),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /try again/i }));
+    expect(refetch).toHaveBeenCalled();
+  });
 });
