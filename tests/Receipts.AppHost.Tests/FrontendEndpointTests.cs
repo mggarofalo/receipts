@@ -20,7 +20,7 @@ public class FrontendEndpointTests
 {
 	private static async Task<EndpointAnnotation[]> GetFrontendEndpointsAsync()
 	{
-		IDistributedApplicationTestingBuilder appHost =
+		await using IDistributedApplicationTestingBuilder appHost =
 			await DistributedApplicationTestingBuilder.CreateAsync<Projects.Receipts_AppHost>();
 
 		IResource frontend = appHost.Resources.Single(resource => resource.Name == "frontend");
