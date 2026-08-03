@@ -101,8 +101,5 @@ export function usePromoteToTemplate() {
         toast.info(`A template named "${result.name}" already exists`);
       }
     },
-    onError: () => {
-      toast.error("Failed to save as template");
-    },
   });
 }

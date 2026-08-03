@@ -267,7 +267,7 @@ describe("usePromoteToTemplate", () => {
     expect(invalidateSpy).not.toHaveBeenCalled();
   });
 
-  it("shows an error toast when the create request fails", async () => {
+  it("does not toast locally when the create request fails, leaving it to the global handler", async () => {
     (client.GET as Mock).mockResolvedValue({ data: [], error: undefined });
     (client.POST as Mock).mockResolvedValue({
       data: undefined,
@@ -281,7 +281,7 @@ describe("usePromoteToTemplate", () => {
     result.current.mutate({ name: "Milk" });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(toast.error).toHaveBeenCalledWith("Failed to save as template");
+    expect(toast.error).not.toHaveBeenCalled();
     expect(toast.success).not.toHaveBeenCalled();
   });
 
@@ -299,7 +299,7 @@ describe("usePromoteToTemplate", () => {
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(client.POST).not.toHaveBeenCalled();
-    expect(toast.error).toHaveBeenCalledWith("Failed to save as template");
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
   it("trims the name before checking for duplicates and creating", async () => {
