@@ -136,10 +136,14 @@ public class NormalizedDescriptionService(
 			return 0;
 		}
 
-		// Re-link every live ReceiptItem currently pointing at discard to point at keep.
-		// Soft-deleted items are deliberately excluded via the default query filter — re-linking
-		// logically-deleted rows would inflate the returned count and muddy the audit trail.
+		// Re-link EVERY ReceiptItem pointing at discard — including soft-deleted (trashed) ones,
+		// hence IgnoreQueryFilters. The ReceiptItem -> NormalizedDescription FK is
+		// DeleteBehavior.SetNull, so any row still pointing at discard when it is removed below
+		// has its link silently nulled by the database; a trashed item would then come back from
+		// the recycle bin unlinked, with no error raised anywhere. Same class of bug as the
+		// soft-deleted-transaction stranding fixed in AccountMergeService (RECEIPTS-801).
 		List<ReceiptItemEntity> items = await context.ReceiptItems
+			.IgnoreQueryFilters()
 			.IgnoreAutoIncludes()
 			.Where(r => r.NormalizedDescriptionId == discardId)
 			.ToListAsync(cancellationToken);
@@ -152,7 +156,11 @@ public class NormalizedDescriptionService(
 		context.NormalizedDescriptions.Remove(discard);
 
 		await context.SaveChangesAsync(cancellationToken);
-		return items.Count;
+
+		// The returned count keeps its established meaning — live items re-linked — so the
+		// admin-facing "N items re-linked" number still matches what a report would show.
+		// Trashed rows are repointed for integrity but deliberately not counted.
+		return items.Count(item => item.DeletedAt is null);
 	}
 
 	public async Task<NormalizedDescription> SplitAsync(Guid receiptItemId, CancellationToken cancellationToken)
