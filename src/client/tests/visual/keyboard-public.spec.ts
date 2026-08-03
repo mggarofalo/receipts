@@ -4,7 +4,7 @@ import { test, expect } from "@playwright/test";
 // surfaces. Authenticated keyboard flows (Cmd+K palette, list shortcuts,
 // bulk select) require deterministic API fixtures and will live in
 // keyboard-authed.spec.ts once the fixture layer stabilizes —
-// scaffolding is in tests/visual/fixtures/api-mocks.ts.
+// scaffolding is in tests/fixtures/api-mocks.ts.
 //
 // What we assert here:
 // - Every focusable element on /login is reachable via Tab

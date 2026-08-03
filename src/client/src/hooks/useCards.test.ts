@@ -146,7 +146,7 @@ describe("useCards", () => {
   });
 
   it("delete mutation calls DELETE and shows toast on success", async () => {
-    (client.DELETE as Mock).mockResolvedValue({ error: undefined, response: { status: 204 } });
+    (client.DELETE as Mock).mockResolvedValue({ error: undefined, response: { status: 204, ok: true } });
 
     const { result } = renderHook(() => useDeleteCard(), {
       wrapper: createWrapper(),
@@ -163,7 +163,7 @@ describe("useCards", () => {
   it("delete mutation shows conflict toast on 409", async () => {
     (client.DELETE as Mock).mockResolvedValue({
       error: { message: "Cannot delete — 3 transaction(s) reference this card", transactionCount: 3 },
-      response: { status: 409 },
+      response: { status: 409, ok: false },
     });
 
     const { result } = renderHook(() => useDeleteCard(), {
@@ -182,7 +182,7 @@ describe("useCards", () => {
   it("delete mutation does not toast on non-409 failure (surfaced by the global handler)", async () => {
     (client.DELETE as Mock).mockResolvedValue({
       error: { message: "Server error" },
-      response: { status: 500 },
+      response: { status: 500, ok: false },
     });
 
     const { result } = renderHook(() => useDeleteCard(), {
@@ -197,7 +197,7 @@ describe("useCards", () => {
   });
 
   it("merge mutation succeeds and shows success toast", async () => {
-    (client.POST as Mock).mockResolvedValue({ data: { success: true }, error: undefined, response: { status: 200 } });
+    (client.POST as Mock).mockResolvedValue({ data: { success: true }, error: undefined, response: { status: 200, ok: true } });
 
     const { result } = renderHook(() => useMergeCards(), {
       wrapper: createWrapper(),
@@ -221,7 +221,7 @@ describe("useCards", () => {
   it("merge mutation rejects with conflict object on 409 and does not toast error", async () => {
     (client.POST as Mock).mockResolvedValue({
       error: { message: "conflict", conflicts: [{ accountId: "a", accountName: "A", ynabBudgetId: "b", ynabAccountId: "y", ynabAccountName: "Y" }] },
-      response: { status: 409 },
+      response: { status: 409, ok: false },
     });
 
     const { result } = renderHook(() => useMergeCards(), {
@@ -244,7 +244,7 @@ describe("useCards", () => {
   it("merge mutation does not toast on non-409 failure (surfaced by the global handler)", async () => {
     (client.POST as Mock).mockResolvedValue({
       error: { message: "boom" },
-      response: { status: 500 },
+      response: { status: 500, ok: false },
     });
 
     const { result } = renderHook(() => useMergeCards(), {
@@ -258,6 +258,92 @@ describe("useCards", () => {
     await waitFor(() => {
       expect(toast.error).not.toHaveBeenCalled();
     });
+  });
+
+  // A merge is destructive — it deletes the emptied source accounts — so the one
+  // outcome the hook must never produce is "reported as merged when it wasn't".
+  // 403 (RequireAdmin) and 404 (stale card/account) both arrive with an EMPTY
+  // body, which openapi-fetch reports as `error: undefined`. Branching on
+  // `error` instead of the status silently turned those into successes.
+  it.each([403, 404])(
+    "merge mutation rejects a bodiless %i instead of reporting success",
+    async (status) => {
+      (client.POST as Mock).mockResolvedValue({
+        data: undefined,
+        error: undefined,
+        response: { status, ok: false },
+      });
+
+      const { result } = renderHook(() => useMergeCards(), {
+        wrapper: createWrapper(),
+      });
+
+      let caught: unknown = null;
+      try {
+        await result.current.mutateAsync({ targetAccountId: "t", sourceCardIds: ["c1", "c2"] });
+      } catch (err) {
+        caught = err;
+      }
+
+      // The status must survive onto the thrown value: handleGlobalError keys
+      // off it to decide whether to toast at all.
+      expect(caught).toMatchObject({ status });
+      expect(isMergeCardsConflict(caught)).toBe(false);
+      await waitFor(() => {
+        expect(toast.success).not.toHaveBeenCalled();
+      });
+    },
+  );
+
+  // `TypedResults.BadRequest("reason")` serialises to a bare JSON string, which
+  // carries no status of its own. The reason is the only thing telling the user
+  // why the merge was refused, so it has to reach the global handler intact.
+  it("merge mutation does not crash on a 409 that carries no body", async () => {
+    (client.POST as Mock).mockResolvedValue({
+      data: undefined,
+      error: undefined,
+      response: { status: 409, ok: false },
+    });
+
+    const { result } = renderHook(() => useMergeCards(), {
+      wrapper: createWrapper(),
+    });
+
+    let caught: unknown = null;
+    try {
+      await result.current.mutateAsync({ targetAccountId: "t", sourceCardIds: ["c1", "c2"] });
+    } catch (err) {
+      caught = err;
+    }
+
+    // Not a conflict object (there is nothing to resolve) and not a TypeError
+    // from dereferencing an absent body — a plain, toastable API error.
+    expect(isMergeCardsConflict(caught)).toBe(false);
+    expect(caught).not.toBeInstanceOf(TypeError);
+    expect(caught).toMatchObject({ status: 409 });
+  });
+
+  it("merge mutation preserves a bare-string 400 reason as ProblemDetails detail", async () => {
+    const reason =
+      "Source account would be partially merged: all of its cards must be included in the merge, or none.";
+    (client.POST as Mock).mockResolvedValue({
+      data: undefined,
+      error: reason,
+      response: { status: 400, ok: false },
+    });
+
+    const { result } = renderHook(() => useMergeCards(), {
+      wrapper: createWrapper(),
+    });
+
+    let caught: unknown = null;
+    try {
+      await result.current.mutateAsync({ targetAccountId: "t", sourceCardIds: ["c1", "c2"] });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toMatchObject({ status: 400, detail: reason });
   });
 
 });

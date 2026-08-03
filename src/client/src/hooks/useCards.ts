@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useStableQuery } from "@/hooks/useStableQuery";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import client from "@/lib/api-client";
+import { toApiError } from "@/lib/problem-details";
 import { toast } from "sonner";
 
 // Note: Cards are hard-delete entities (no soft-delete/restore).
@@ -145,18 +146,33 @@ export function useMergeCards() {
           ynabMappingWinnerAccountId: input.ynabMappingWinnerAccountId ?? null,
         },
       });
-      if (error) {
-        if (response.status === 409) {
-          const body = error as unknown as { message: string; conflicts: YnabMappingConflict[] };
-          const conflict: MergeCardsConflict = {
-            conflict: true,
-            message: body.message,
-            conflicts: body.conflicts,
-          };
-          throw conflict;
-        }
-        throw error;
+
+      // Branch on the status, NOT on `error` being truthy. Merge rejects with
+      // bodiless responses (403 from RequireAdmin, 404 for a stale card or
+      // target account), and openapi-fetch reports those as `error: undefined`
+      // — so `if (error)` would fall through and report a destructive
+      // operation that never happened as a success.
+      if (response.ok) return;
+
+      // `error &&` matters now that the guard above is a status check rather
+      // than a truthiness check: without it a bodiless 409 would reach the
+      // dereference below and throw a TypeError, which the global handler
+      // would misreport as a network failure.
+      if (response.status === 409 && error) {
+        const body = error as unknown as { message: string; conflicts: YnabMappingConflict[] };
+        const conflict: MergeCardsConflict = {
+          conflict: true,
+          message: body.message,
+          conflicts: body.conflicts,
+        };
+        throw conflict;
       }
+
+      // Everything else goes to the global handler as a ProblemDetails-shaped
+      // object. The merge endpoint answers with `BadRequest(string)` for its
+      // most useful rejections ("all of its cards must be included in the
+      // merge, or none"), and a bare string carries no status to toast on.
+      throw toApiError(response.status, error);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["cards"] });

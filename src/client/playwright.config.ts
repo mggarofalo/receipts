@@ -9,7 +9,10 @@ import { defineConfig, devices } from "@playwright/test";
 // Two viewports — desktop (1280x720) + mobile (375x812) — cover the layout
 // breakpoints (sidebar collapse at 900px, mobile tabbar swap-in).
 export default defineConfig({
-  testDir: "./tests/visual",
+  // Per-project testDir below: tests/visual holds the snapshot suite,
+  // tests/e2e holds behavioural flows (no screenshots). Shared fixtures live
+  // in tests/fixtures.
+  testDir: "./tests",
   // Each test should write its own baseline file relative to itself.
   snapshotPathTemplate: "{testDir}/baselines/{testFilePath}/{projectName}-{arg}{ext}",
   // Snapshots tolerate cross-platform font-rendering jitter (Windows vs
@@ -41,11 +44,21 @@ export default defineConfig({
   projects: [
     {
       name: "desktop-chromium",
+      testDir: "./tests/visual",
       use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 720 } },
     },
     {
       name: "mobile-chromium",
+      testDir: "./tests/visual",
       use: { ...devices["Desktop Chrome"], viewport: { width: 375, height: 812 } },
+    },
+    // Behavioural end-to-end flows against the mocked API. These assert on
+    // behaviour (toasts, dialog state, request bodies) rather than pixels, so
+    // they run at one viewport only and take no snapshots.
+    {
+      name: "e2e-chromium",
+      testDir: "./tests/e2e",
+      use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 720 } },
     },
   ],
   webServer: {

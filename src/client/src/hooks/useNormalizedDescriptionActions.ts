@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import client from "@/lib/api-client";
+import { toApiError } from "@/lib/problem-details";
 import { toast } from "sonner";
 import type { components } from "@/generated/api";
 
@@ -16,14 +17,17 @@ export function useMergeMutation() {
       id: string;
       discardId: string;
     }) => {
-      const { data, error } = await client.POST(
+      const { data, error, response } = await client.POST(
         "/api/normalized-descriptions/{id}/merge",
         {
           params: { path: { id } },
           body: { discardId },
         },
       );
-      if (error) throw error;
+      // Branch on status: the endpoint is admin-gated, and a 403 arrives with
+      // no body at all, which openapi-fetch surfaces as `error: undefined`.
+      // Checking `error` alone would report the merge as successful.
+      if (!response.ok) throw toApiError(response.status, error);
       return data;
     },
     onSuccess: (data) => {
@@ -49,14 +53,14 @@ export function useSplitMutation() {
       id: string;
       receiptItemId: string;
     }) => {
-      const { data, error } = await client.POST(
+      const { data, error, response } = await client.POST(
         "/api/normalized-descriptions/{id}/split",
         {
           params: { path: { id } },
           body: { receiptItemId },
         },
       );
-      if (error) throw error;
+      if (!response.ok) throw toApiError(response.status, error);
       return data;
     },
     onSuccess: () => {
@@ -77,14 +81,16 @@ export function useUpdateStatusMutation() {
       id: string;
       status: NormalizedDescriptionStatus;
     }) => {
-      const { error } = await client.PATCH(
+      const { error, response } = await client.PATCH(
         "/api/normalized-descriptions/{id}/status",
         {
           params: { path: { id } },
           body: { status },
         },
       );
-      if (error) throw error;
+      // Success here is 204 (no body), so `error` is undefined on BOTH the
+      // success and the bodiless-failure path — status is the only signal.
+      if (!response.ok) throw toApiError(response.status, error);
     },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["normalized-descriptions"] });

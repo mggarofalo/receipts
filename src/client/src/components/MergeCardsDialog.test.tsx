@@ -82,7 +82,7 @@ describe("MergeCardsDialog", () => {
     (client.POST as Mock).mockResolvedValue({
       data: { success: true },
       error: undefined,
-      response: { status: 200 },
+      response: { status: 200, ok: true },
     });
 
     const { onOpenChange } = renderDialog();
@@ -119,7 +119,7 @@ describe("MergeCardsDialog", () => {
       .mockResolvedValueOnce({
         data: { id: "new-acc-1", name: "Fresh Account", isActive: true },
         error: undefined,
-        response: { status: 200 },
+        response: { status: 200, ok: true },
       })
       .mockResolvedValueOnce({
         error: {
@@ -129,7 +129,7 @@ describe("MergeCardsDialog", () => {
             { accountId: "srcB", accountName: "Src B", ynabBudgetId: "b", ynabAccountId: "y2", ynabAccountName: "YB" },
           ],
         },
-        response: { status: 409 },
+        response: { status: 409, ok: false },
       });
 
     const { onOpenChange } = renderDialog();
@@ -160,7 +160,7 @@ describe("MergeCardsDialog", () => {
           { accountId: "srcB", accountName: "Src B", ynabBudgetId: "b", ynabAccountId: "y2", ynabAccountName: "YB" },
         ],
       },
-      response: { status: 409 },
+      response: { status: 409, ok: false },
     });
 
     renderDialog();
@@ -186,7 +186,7 @@ describe("MergeCardsDialog", () => {
     (client.POST as Mock).mockResolvedValueOnce({
       data: { success: true },
       error: undefined,
-      response: { status: 200 },
+      response: { status: 200, ok: true },
     });
     await user.click(resubmit);
 

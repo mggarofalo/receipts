@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { installApiMocks, signInAsFixtureUser } from "./fixtures/api-mocks";
+import { installApiMocks, signInAsFixtureUser } from "../fixtures/api-mocks";
 
 // Structural guard: form fields must never overlap, at any viewport width.
 //
