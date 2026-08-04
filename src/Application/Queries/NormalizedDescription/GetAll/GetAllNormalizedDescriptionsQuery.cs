@@ -1,4 +1,5 @@
 using Application.Interfaces;
+using Application.Models.NormalizedDescriptions;
 using Domain.NormalizedDescriptions;
 
 namespace Application.Queries.NormalizedDescription.GetAll;
@@ -9,4 +10,4 @@ namespace Application.Queries.NormalizedDescription.GetAll;
 // the admin screen can render the full set without server-side paging for the foreseeable
 // future. When pressure grows we can add offset/limit/sort in a follow-up without changing
 // the existing URL shape.
-public record GetAllNormalizedDescriptionsQuery(NormalizedDescriptionStatus? StatusFilter) : IQuery<List<Domain.NormalizedDescriptions.NormalizedDescription>>;
+public record GetAllNormalizedDescriptionsQuery(NormalizedDescriptionStatus? StatusFilter) : IQuery<List<NormalizedDescriptionDetail>>;

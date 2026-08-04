@@ -3122,6 +3122,31 @@ export interface components {
             status: components["schemas"]["NormalizedDescriptionStatus"];
             /** Format: date-time */
             createdAt: string;
+            /**
+             * Format: int32
+             * @description Number of live (non-deleted) receipt items currently pointing at this row. Tells a
+             *     reviewer how much data an Approve/Merge/Split decision actually moves.
+             */
+            linkedItemCount: number;
+            /**
+             * @description Up to three distinct raw receipt-item descriptions linked to this row, so a reviewer
+             *     can see the text the entry actually covers. Empty when no items are linked yet.
+             */
+            sampleRawDescriptions: string[];
+            /**
+             * @description Display name of the canonical row this entry most nearly matched when the resolver
+             *     flagged it for review. Null when no near-miss was recorded — the row was auto-accepted,
+             *     created outright, predates the field, or its neighbour has since been merged away.
+             *     Clients must render that absence as "no comparison recorded", never as a zero score.
+             */
+            nearestNeighbourName?: string | null;
+            /**
+             * Format: double
+             * @description Cosine similarity against `nearestNeighbourName` at the moment the entry was flagged,
+             *     in [0, 1]. Null carries the same "no comparison recorded" meaning as the name above and
+             *     is distinct from a genuine score of 0.
+             */
+            nearestNeighbourSimilarity?: number | null;
         };
         NormalizedDescriptionListResponse: {
             items: components["schemas"]["NormalizedDescriptionResponse"][];

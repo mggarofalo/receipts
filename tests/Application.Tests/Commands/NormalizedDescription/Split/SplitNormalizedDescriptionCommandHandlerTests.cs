@@ -1,5 +1,6 @@
 using Application.Commands.NormalizedDescription.Split;
 using Application.Interfaces.Services;
+using Application.Models.NormalizedDescriptions;
 using Domain.NormalizedDescriptions;
 using FluentAssertions;
 using Moq;
@@ -14,11 +15,15 @@ public class SplitNormalizedDescriptionCommandHandlerTests
 		// Arrange
 		Mock<INormalizedDescriptionService> mockService = new();
 		Guid receiptItemId = Guid.NewGuid();
-		Domain.NormalizedDescriptions.NormalizedDescription expected = new(
-			Guid.NewGuid(),
-			"cherry cola",
-			NormalizedDescriptionStatus.Active,
-			new DateTimeOffset(2026, 4, 19, 12, 0, 0, TimeSpan.Zero));
+		NormalizedDescriptionDetail expected = new(
+			new Domain.NormalizedDescriptions.NormalizedDescription(
+				Guid.NewGuid(),
+				"cherry cola",
+				NormalizedDescriptionStatus.Active,
+				new DateTimeOffset(2026, 4, 19, 12, 0, 0, TimeSpan.Zero)),
+			LinkedItemCount: 1,
+			NearestNeighbourName: null,
+			["cherry cola"]);
 
 		mockService
 			.Setup(s => s.SplitAsync(receiptItemId, It.IsAny<CancellationToken>()))
@@ -28,7 +33,7 @@ public class SplitNormalizedDescriptionCommandHandlerTests
 		SplitNormalizedDescriptionCommand command = new(receiptItemId);
 
 		// Act
-		Domain.NormalizedDescriptions.NormalizedDescription actual = await handler.Handle(command, CancellationToken.None);
+		NormalizedDescriptionDetail actual = await handler.Handle(command, CancellationToken.None);
 
 		// Assert
 		actual.Should().BeSameAs(expected);

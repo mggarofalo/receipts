@@ -11,4 +11,11 @@ public class NormalizedDescriptionEntity
 	public Vector? Embedding { get; set; }
 	public string? EmbeddingModelVersion { get; set; }
 	public DateTimeOffset CreatedAt { get; set; }
+
+	// Self-referencing near-miss: the canonical row this entry was closest to when the resolver
+	// decided it was too different to auto-accept but too similar to create outright (RECEIPTS-873).
+	// Populated only on the PendingReview path; null everywhere else.
+	public Guid? NearestNeighbourId { get; set; }
+	public double? NearestNeighbourSimilarity { get; set; }
+	public virtual NormalizedDescriptionEntity? NearestNeighbour { get; set; }
 }

@@ -292,18 +292,22 @@ public class NormalizedDescriptionServiceTests
 		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
 
 		// Act
-		NormalizedDescription created = await service.SplitAsync(itemId, CancellationToken.None);
+		NormalizedDescriptionDetail created = await service.SplitAsync(itemId, CancellationToken.None);
 
 		// Assert — a new Active entry was created with the ReceiptItem's raw text, and the
 		// ReceiptItem now points at the new entry.
-		created.Status.Should().Be(NormalizedDescriptionStatus.Active);
-		created.CanonicalName.Should().Be("Specific Raw Text");
-		created.Id.Should().NotBe(sharedId);
+		created.Description.Status.Should().Be(NormalizedDescriptionStatus.Active);
+		created.Description.CanonicalName.Should().Be("Specific Raw Text");
+		created.Description.Id.Should().NotBe(sharedId);
+		// The split row owns exactly the item it was carved out for, and reports it as such
+		// rather than the 0 a non-projecting implementation would return (RECEIPTS-873).
+		created.LinkedItemCount.Should().Be(1);
+		created.SampleRawDescriptions.Should().ContainSingle().Which.Should().Be("Specific Raw Text");
 		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
 		ReceiptItemEntity updatedItem = await verify.ReceiptItems
 			.IgnoreAutoIncludes()
 			.SingleAsync(r => r.Id == itemId);
-		updatedItem.NormalizedDescriptionId.Should().Be(created.Id);
+		updatedItem.NormalizedDescriptionId.Should().Be(created.Description.Id);
 	}
 
 	[Fact]
@@ -381,11 +385,11 @@ public class NormalizedDescriptionServiceTests
 		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
 
 		// Act
-		NormalizedDescription? result = await service.GetByIdAsync(id, CancellationToken.None);
+		NormalizedDescriptionDetail? result = await service.GetByIdAsync(id, CancellationToken.None);
 
 		// Assert
 		result.Should().NotBeNull();
-		result!.CanonicalName.Should().Be("Findable");
+		result!.Description.CanonicalName.Should().Be("Findable");
 	}
 
 	[Fact]
@@ -404,12 +408,12 @@ public class NormalizedDescriptionServiceTests
 		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
 
 		// Act
-		List<NormalizedDescription> pending = await service.GetAllAsync(NormalizedDescriptionStatus.PendingReview, CancellationToken.None);
-		List<NormalizedDescription> all = await service.GetAllAsync(null, CancellationToken.None);
+		List<NormalizedDescriptionDetail> pending = await service.GetAllAsync(NormalizedDescriptionStatus.PendingReview, CancellationToken.None);
+		List<NormalizedDescriptionDetail> all = await service.GetAllAsync(null, CancellationToken.None);
 
 		// Assert
 		pending.Should().ContainSingle();
-		pending[0].CanonicalName.Should().Be("Pending B");
+		pending[0].Description.CanonicalName.Should().Be("Pending B");
 		all.Should().HaveCount(3);
 	}
 
@@ -717,6 +721,240 @@ public class NormalizedDescriptionServiceTests
 
 		await service.Invoking(s => s.PreviewThresholdImpactAsync(0.5, 0.5, CancellationToken.None))
 			.Should().ThrowAsync<ArgumentException>();
+	}
+
+	// ── RECEIPTS-873: review-queue evidence ───────────────────────────────────
+
+	[Fact]
+	public async Task GetOrCreateAsync_BetweenThresholds_RecordsTheNearMissThatCausedTheReview()
+	{
+		// The whole point of the Review Queue is that an admin can see *why* a row is pending.
+		// Before this, only the score survived — on the ReceiptItem — so the API could not answer
+		// "what did this nearly match?".
+		Guid matchedId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
+			{
+				Id = matchedId,
+				CanonicalName = "Gallon of Milk",
+				Status = NormalizedDescriptionStatus.Active,
+				CreatedAt = DateTimeOffset.UtcNow,
+			});
+			await seed.SaveChangesAsync();
+		}
+
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
+		_embeddingServiceMock
+			.Setup(e => e.GenerateEmbeddingAsync("Milky Thing", It.IsAny<CancellationToken>()))
+			.ReturnsAsync(CreateFakeEmbedding());
+
+		double between = (NormalizedDescriptionService.InitialAutoAcceptThreshold + NormalizedDescriptionService.InitialPendingReviewThreshold) / 2;
+		TestableNormalizedDescriptionService service = new(
+			_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, matchedId, similarity: between);
+
+		GetOrCreateResult result = await service.GetOrCreateAsync("Milky Thing", CancellationToken.None);
+
+		result.Description.NearestNeighbourId.Should().Be(matchedId);
+		result.Description.NearestNeighbourSimilarity.Should().Be(between);
+
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		NormalizedDescriptionEntity stored = await verify.NormalizedDescriptions.SingleAsync(e => e.Id == result.Description.Id);
+		stored.NearestNeighbourId.Should().Be(matchedId);
+		stored.NearestNeighbourSimilarity.Should().Be(between);
+	}
+
+	[Theory]
+	// Auto-accept reuses the matched row outright, so there is no *new* row to annotate.
+	[InlineData(true)]
+	// Below the floor a brand-new canonical entry is created against no meaningful candidate.
+	[InlineData(false)]
+	public async Task GetOrCreateAsync_OutsideThePendingBand_LeavesTheNearMissUnrecorded(bool aboveAutoAccept)
+	{
+		Guid matchedId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
+			{
+				Id = matchedId,
+				CanonicalName = "Seeded Row",
+				Status = NormalizedDescriptionStatus.Active,
+				CreatedAt = DateTimeOffset.UtcNow,
+			});
+			await seed.SaveChangesAsync();
+		}
+
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
+		_embeddingServiceMock
+			.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(CreateFakeEmbedding());
+
+		double similarity = aboveAutoAccept
+			? NormalizedDescriptionService.InitialAutoAcceptThreshold + 0.01
+			: NormalizedDescriptionService.InitialPendingReviewThreshold - 0.1;
+
+		TestableNormalizedDescriptionService service = new(
+			_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, matchedId, similarity);
+
+		GetOrCreateResult result = await service.GetOrCreateAsync("Some Other Text", CancellationToken.None);
+
+		// Null, not 0 — the UI contract distinguishes "no comparison recorded" from a zero score.
+		result.Description.NearestNeighbourId.Should().BeNull();
+		result.Description.NearestNeighbourSimilarity.Should().BeNull();
+	}
+
+	[Fact]
+	public async Task GetOrCreateAsync_NoEmbeddingService_LeavesTheNearMissUnrecorded()
+	{
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(false);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		GetOrCreateResult result = await service.GetOrCreateAsync("Unembeddable", CancellationToken.None);
+
+		result.Description.NearestNeighbourId.Should().BeNull();
+		result.Description.NearestNeighbourSimilarity.Should().BeNull();
+	}
+
+	[Fact]
+	public async Task GetAllAsync_ReturnsLinkedItemCountAndDistinctSamples()
+	{
+		Guid pendingId = Guid.NewGuid();
+		Guid receiptId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
+			{
+				Id = pendingId,
+				CanonicalName = "Strawberry Preserves",
+				Status = NormalizedDescriptionStatus.PendingReview,
+				CreatedAt = DateTimeOffset.UtcNow,
+			});
+			// Five items across four distinct texts: the count reports every linked item, while
+			// the samples de-duplicate and cap at MaxSampleRawDescriptions.
+			seed.ReceiptItems.AddRange(
+				BuildReceiptItem(Guid.NewGuid(), receiptId, "STRAWBERRY PRES", pendingId),
+				BuildReceiptItem(Guid.NewGuid(), receiptId, "STRAWBERRY PRES", pendingId),
+				BuildReceiptItem(Guid.NewGuid(), receiptId, "STRWBRY PRESERVE", pendingId),
+				BuildReceiptItem(Guid.NewGuid(), receiptId, "Strawberry Jam Jar", pendingId),
+				BuildReceiptItem(Guid.NewGuid(), receiptId, "ZZZ Preserves", pendingId));
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		List<NormalizedDescriptionDetail> rows = await service.GetAllAsync(NormalizedDescriptionStatus.PendingReview, CancellationToken.None);
+
+		NormalizedDescriptionDetail row = rows.Should().ContainSingle().Subject;
+		row.LinkedItemCount.Should().Be(5);
+		row.SampleRawDescriptions.Should().HaveCount(NormalizedDescriptionService.MaxSampleRawDescriptions);
+		row.SampleRawDescriptions.Should().OnlyHaveUniqueItems();
+		row.SampleRawDescriptions.Should().BeSubsetOf(["STRAWBERRY PRES", "STRWBRY PRESERVE", "Strawberry Jam Jar", "ZZZ Preserves"]);
+
+		// The samples are ordered before the cap so the evidence an admin sees does not reshuffle
+		// between refreshes. Asserting repeatability rather than a specific sequence keeps the test
+		// honest: the actual collation is the database's, and InMemory does not share it.
+		List<NormalizedDescriptionDetail> secondCall = await service.GetAllAsync(NormalizedDescriptionStatus.PendingReview, CancellationToken.None);
+		secondCall.Single().SampleRawDescriptions.Should().Equal(row.SampleRawDescriptions);
+	}
+
+	[Fact]
+	public async Task GetAllAsync_ExcludesSoftDeletedItemsFromTheLinkedCount()
+	{
+		Guid pendingId = Guid.NewGuid();
+		Guid receiptId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
+			{
+				Id = pendingId,
+				CanonicalName = "Half Deleted",
+				Status = NormalizedDescriptionStatus.PendingReview,
+				CreatedAt = DateTimeOffset.UtcNow,
+			});
+
+			ReceiptItemEntity live = BuildReceiptItem(Guid.NewGuid(), receiptId, "LIVE ITEM", pendingId);
+			ReceiptItemEntity deleted = BuildReceiptItem(Guid.NewGuid(), receiptId, "DELETED ITEM", pendingId);
+			deleted.DeletedAt = DateTimeOffset.UtcNow;
+			seed.ReceiptItems.AddRange(live, deleted);
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		List<NormalizedDescriptionDetail> rows = await service.GetAllAsync(NormalizedDescriptionStatus.PendingReview, CancellationToken.None);
+
+		// A count that included soft-deleted rows would overstate how much data an
+		// Approve/Merge/Split decision actually moves.
+		NormalizedDescriptionDetail row = rows.Should().ContainSingle().Subject;
+		row.LinkedItemCount.Should().Be(1);
+		row.SampleRawDescriptions.Should().BeEquivalentTo(["LIVE ITEM"]);
+	}
+
+	[Fact]
+	public async Task GetAllAsync_ResolvesTheNearestNeighbourName()
+	{
+		Guid neighbourId = Guid.NewGuid();
+		Guid pendingId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.AddRange(
+				new NormalizedDescriptionEntity
+				{
+					Id = neighbourId,
+					CanonicalName = "Strawberry Jam",
+					Status = NormalizedDescriptionStatus.Active,
+					CreatedAt = DateTimeOffset.UtcNow,
+				},
+				new NormalizedDescriptionEntity
+				{
+					Id = pendingId,
+					CanonicalName = "Strawberry Preserves",
+					Status = NormalizedDescriptionStatus.PendingReview,
+					CreatedAt = DateTimeOffset.UtcNow,
+					NearestNeighbourId = neighbourId,
+					NearestNeighbourSimilarity = 0.86,
+				});
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		List<NormalizedDescriptionDetail> rows = await service.GetAllAsync(NormalizedDescriptionStatus.PendingReview, CancellationToken.None);
+
+		NormalizedDescriptionDetail row = rows.Should().ContainSingle().Subject;
+		row.NearestNeighbourName.Should().Be("Strawberry Jam");
+		row.Description.NearestNeighbourSimilarity.Should().Be(0.86);
+		// No linked receipt items — the count is a truthful 0 and the samples are empty, which is
+		// a different statement from "no comparison recorded".
+		row.LinkedItemCount.Should().Be(0);
+		row.SampleRawDescriptions.Should().BeEmpty();
+	}
+
+	[Fact]
+	public async Task GetAllAsync_NoRecordedNeighbour_ReturnsNullsRatherThanZero()
+	{
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
+			{
+				Id = Guid.NewGuid(),
+				CanonicalName = "Legacy Pending Row",
+				Status = NormalizedDescriptionStatus.PendingReview,
+				CreatedAt = DateTimeOffset.UtcNow,
+			});
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		List<NormalizedDescriptionDetail> rows = await service.GetAllAsync(NormalizedDescriptionStatus.PendingReview, CancellationToken.None);
+
+		// Rows that predate RECEIPTS-873 (and rows whose neighbour was merged away) must surface as
+		// "no comparison recorded" — a 0.0 default here would read as "scored zero against
+		// something", which is a different and false claim.
+		NormalizedDescriptionDetail row = rows.Should().ContainSingle().Subject;
+		row.NearestNeighbourName.Should().BeNull();
+		row.Description.NearestNeighbourSimilarity.Should().BeNull();
 	}
 
 	private static ReceiptItemEntity BuildReceiptItem(Guid id, Guid receiptId, string description, Guid? normalizedId)

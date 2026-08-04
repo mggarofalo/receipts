@@ -187,7 +187,7 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 		}
 
 		GetAllNormalizedDescriptionsQuery query = new(filter);
-		List<NormalizedDescription> items = await mediator.Send(query, cancellationToken);
+		List<NormalizedDescriptionDetail> items = await mediator.Send(query, cancellationToken);
 
 		return TypedResults.Ok(new NormalizedDescriptionListResponse
 		{
@@ -209,7 +209,7 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 		}
 
 		GetNormalizedDescriptionByIdQuery query = new(id);
-		NormalizedDescription? result = await mediator.Send(query, cancellationToken);
+		NormalizedDescriptionDetail? result = await mediator.Send(query, cancellationToken);
 		if (result is null)
 		{
 			return TypedResults.NotFound();
@@ -267,7 +267,7 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 		SplitNormalizedDescriptionCommand command = new(request.ReceiptItemId);
 		try
 		{
-			NormalizedDescription created = await mediator.Send(command, cancellationToken);
+			NormalizedDescriptionDetail created = await mediator.Send(command, cancellationToken);
 			return TypedResults.Ok(ToResponse(created));
 		}
 		catch (KeyNotFoundException)
@@ -304,7 +304,7 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 		// target status". To preserve REST semantics, do an existence check first so we can
 		// reliably return 404 for the missing case and 204 for both a real flip and a no-op.
 		GetNormalizedDescriptionByIdQuery existsQuery = new(id);
-		NormalizedDescription? existing = await mediator.Send(existsQuery, cancellationToken);
+		NormalizedDescriptionDetail? existing = await mediator.Send(existsQuery, cancellationToken);
 		if (existing is null)
 		{
 			return TypedResults.NotFound();
@@ -315,18 +315,29 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 		return TypedResults.NoContent();
 	}
 
-	private static NormalizedDescriptionResponse ToResponse(NormalizedDescription source) => new()
+	private static NormalizedDescriptionResponse ToResponse(NormalizedDescriptionDetail detail)
 	{
-		Id = source.Id,
-		CanonicalName = source.CanonicalName,
-		Status = source.Status switch
+		NormalizedDescription source = detail.Description;
+		return new NormalizedDescriptionResponse
 		{
-			DomainStatus.Active => DtoStatus.Active,
-			DomainStatus.PendingReview => DtoStatus.PendingReview,
-			_ => throw new InvalidOperationException($"Unhandled status value: {source.Status}"),
-		},
-		CreatedAt = source.CreatedAt,
-	};
+			Id = source.Id,
+			CanonicalName = source.CanonicalName,
+			Status = source.Status switch
+			{
+				DomainStatus.Active => DtoStatus.Active,
+				DomainStatus.PendingReview => DtoStatus.PendingReview,
+				_ => throw new InvalidOperationException($"Unhandled status value: {source.Status}"),
+			},
+			CreatedAt = source.CreatedAt,
+			LinkedItemCount = detail.LinkedItemCount,
+			SampleRawDescriptions = [.. detail.SampleRawDescriptions],
+			// Both neighbour fields stay null together when nothing was recorded — the contract
+			// says clients must read that as "no comparison recorded" rather than a zero score
+			// (RECEIPTS-873).
+			NearestNeighbourName = detail.NearestNeighbourName,
+			NearestNeighbourSimilarity = source.NearestNeighbourSimilarity,
+		};
+	}
 
 	private static NormalizedDescriptionSettingsResponse ToResponse(NormalizedDescriptionSettings settings) => new()
 	{

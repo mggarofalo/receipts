@@ -1,4 +1,5 @@
 using Application.Interfaces.Services;
+using Application.Models.NormalizedDescriptions;
 using Application.Queries.NormalizedDescription.GetById;
 using Domain.NormalizedDescriptions;
 using FluentAssertions;
@@ -14,11 +15,15 @@ public class GetNormalizedDescriptionByIdQueryHandlerTests
 		// Arrange
 		Mock<INormalizedDescriptionService> mockService = new();
 		Guid id = Guid.NewGuid();
-		Domain.NormalizedDescriptions.NormalizedDescription expected = new(
-			id,
-			"cherry cola",
-			NormalizedDescriptionStatus.Active,
-			new DateTimeOffset(2026, 4, 19, 0, 0, 0, TimeSpan.Zero));
+		NormalizedDescriptionDetail expected = new(
+			new Domain.NormalizedDescriptions.NormalizedDescription(
+				id,
+				"cherry cola",
+				NormalizedDescriptionStatus.Active,
+				new DateTimeOffset(2026, 4, 19, 0, 0, 0, TimeSpan.Zero)),
+			LinkedItemCount: 2,
+			NearestNeighbourName: null,
+			["CHERRY COLA 12PK", "cherry cola"]);
 
 		mockService
 			.Setup(s => s.GetByIdAsync(id, It.IsAny<CancellationToken>()))
@@ -28,7 +33,7 @@ public class GetNormalizedDescriptionByIdQueryHandlerTests
 		GetNormalizedDescriptionByIdQuery query = new(id);
 
 		// Act
-		Domain.NormalizedDescriptions.NormalizedDescription? actual = await handler.Handle(query, CancellationToken.None);
+		NormalizedDescriptionDetail? actual = await handler.Handle(query, CancellationToken.None);
 
 		// Assert
 		actual.Should().BeSameAs(expected);
@@ -43,12 +48,12 @@ public class GetNormalizedDescriptionByIdQueryHandlerTests
 
 		mockService
 			.Setup(s => s.GetByIdAsync(id, It.IsAny<CancellationToken>()))
-			.ReturnsAsync((Domain.NormalizedDescriptions.NormalizedDescription?)null);
+			.ReturnsAsync((NormalizedDescriptionDetail?)null);
 
 		GetNormalizedDescriptionByIdQueryHandler handler = new(mockService.Object);
 		GetNormalizedDescriptionByIdQuery query = new(id);
 
-		Domain.NormalizedDescriptions.NormalizedDescription? actual = await handler.Handle(query, CancellationToken.None);
+		NormalizedDescriptionDetail? actual = await handler.Handle(query, CancellationToken.None);
 
 		actual.Should().BeNull();
 	}
