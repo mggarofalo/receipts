@@ -1276,6 +1276,97 @@ public class NormalizedDescriptionServiceTests
 		splitLogs[0].GetChanges().Single(c => c.FieldName == "splitFrom").OldValue.Should().BeNull();
 	}
 
+	[Theory]
+	[InlineData("jam")]
+	[InlineData("  Jam  ")]
+	public async Task SplitAsync_ItemAlreadyOnAMatchingRow_RecordsNoSplit(string rawDescription)
+	{
+		// InsertAsync returns ANY existing row with this canonical name, including the item's own
+		// current description when the raw text differs only by case or whitespace. Nothing is
+		// detached, so an entry here would record a row as having been split out of itself.
+		Guid originId = Guid.NewGuid();
+		Guid receiptId = Guid.NewGuid();
+		Guid itemId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(BuildDescription(originId, "Jam", NormalizedDescriptionStatus.Active));
+			seed.ReceiptItems.Add(BuildReceiptItem(itemId, receiptId, rawDescription, originId));
+			await seed.SaveChangesAsync();
+		}
+
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(false);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		NormalizedDescriptionDetail result = await service.SplitAsync(itemId, CancellationToken.None);
+
+		// The item stays where it was — SplitAsync is a no-op in this case.
+		result.Description.Id.Should().Be(originId);
+
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		(await verify.AuditLogs.CountAsync(a => a.Action == AuditAction.Split)).Should().Be(0);
+	}
+
+	[Fact]
+	public async Task SplitAsync_LandsOnAPreexistingRow_RecordsThatNoRowWasCreated()
+	{
+		// A different pre-existing row means the item was re-linked, not split into a new
+		// description. Claiming otherwise would imply a row was created when none was.
+		Guid originId = Guid.NewGuid();
+		Guid existingTargetId = Guid.NewGuid();
+		Guid receiptId = Guid.NewGuid();
+		Guid itemId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.AddRange(
+				BuildDescription(originId, "Jam", NormalizedDescriptionStatus.Active),
+				BuildDescription(existingTargetId, "Strawberry Preserves", NormalizedDescriptionStatus.Active));
+			seed.ReceiptItems.Add(BuildReceiptItem(itemId, receiptId, "Strawberry Preserves", originId));
+			await seed.SaveChangesAsync();
+		}
+
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(false);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		await service.SplitAsync(itemId, CancellationToken.None);
+
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		List<AuditLogEntity> splitLogs = await verify.AuditLogs
+			.Where(a => a.Action == AuditAction.Split)
+			.ToListAsync();
+
+		splitLogs.Should().HaveCount(2);
+		splitLogs.Should().OnlyContain(a =>
+			a.ChangesJson.Contains("\"FieldName\":\"targetWasExistingRow\"") &&
+			a.ChangesJson.Contains("\"NewValue\":\"true\""));
+	}
+
+	[Fact]
+	public async Task SplitAsync_NewRowCreated_RecordsThatTheTargetIsNew()
+	{
+		Guid originId = Guid.NewGuid();
+		Guid receiptId = Guid.NewGuid();
+		Guid itemId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(BuildDescription(originId, "Jam", NormalizedDescriptionStatus.Active));
+			seed.ReceiptItems.Add(BuildReceiptItem(itemId, receiptId, "Strawberry Preserves", originId));
+			await seed.SaveChangesAsync();
+		}
+
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(false);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		await service.SplitAsync(itemId, CancellationToken.None);
+
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		List<AuditLogEntity> splitLogs = await verify.AuditLogs
+			.Where(a => a.Action == AuditAction.Split)
+			.ToListAsync();
+
+		splitLogs.Should().HaveCount(2);
+		splitLogs[0].GetChanges().Single(c => c.FieldName == "targetWasExistingRow").NewValue.Should().Be("false");
+	}
+
 	[Fact]
 	public async Task RequeuePendingAsync_WritesOneSemanticEntryForTheWholeOperation()
 	{

@@ -130,15 +130,28 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 	//
 	// Attribution (user, API key, IP, and the FieldChange serialization shape) is resolved here
 	// rather than in each service so explicit entries are indistinguishable from automatic ones on
-	// the audit page. Callers add the returned entity to AuditLogs and save it in their own
-	// transaction, so the semantic entry lands atomically with the change it describes.
-	internal AuditLogEntity CreateSemanticAuditEntry(
+	// the audit page.
+	//
+	// The entry is queued, not saved: callers add it immediately before their own SaveChangesAsync
+	// so it commits with the change it describes. Note that a caller whose operation spans more
+	// than one save (SplitAsync inserts its row in a nested save for race-safety) only gets that
+	// guarantee for the final save — the entry cannot vouch for work committed earlier.
+	//
+	// Honours AuditingEnabled for the same reason the automatic collector does: when a bulk path
+	// turns auditing off, "no audit rows" has to mean no audit rows, or the flag silently stops
+	// meaning anything.
+	internal void AddSemanticAuditEntry(
 		string entityType,
 		string entityId,
 		AuditAction action,
 		List<FieldChange> changes,
 		DateTimeOffset changedAt)
 	{
+		if (!AuditingEnabled)
+		{
+			return;
+		}
+
 		AuditLogEntity auditLog = new()
 		{
 			Id = Guid.NewGuid(),
@@ -155,7 +168,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 		// array and renders nothing for any other shape, so an object payload here would produce a
 		// row with an empty detail panel.
 		auditLog.SetChanges(changes);
-		return auditLog;
+		AuditLogs.Add(auditLog);
 	}
 
 	public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)

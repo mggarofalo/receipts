@@ -66,14 +66,21 @@ function AuditRow({
             {entityTypeLabels[log.entityType] ?? log.entityType}
           </TableCell>
           <TableCell>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="font-mono text-xs cursor-default">
-                  {truncateId(log.entityId)}
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>{log.entityId}</TooltipContent>
-            </Tooltip>
+            {log.entityId ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="font-mono text-xs cursor-default">
+                    {truncateId(log.entityId)}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>{log.entityId}</TooltipContent>
+              </Tooltip>
+            ) : (
+              // Bulk operations span every row of a type, so no single id owns them
+              // (RECEIPTS-890). Without this the cell renders an empty tooltip trigger, which
+              // looks like missing data rather than a deliberate absence.
+              <span className="text-xs text-muted-foreground">All</span>
+            )}
           </TableCell>
           <TableCell>
             <Badge variant={actionBadgeVariant(log.action)}>{log.action}</Badge>
