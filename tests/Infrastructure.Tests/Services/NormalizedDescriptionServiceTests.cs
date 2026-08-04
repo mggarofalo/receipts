@@ -957,6 +957,200 @@ public class NormalizedDescriptionServiceTests
 		row.Description.NearestNeighbourSimilarity.Should().BeNull();
 	}
 
+	[Fact]
+	public async Task PreviewRequeuePendingAsync_ReportsBlastRadiusAndCatchUpEstimate()
+	{
+		Guid pendingId = Guid.NewGuid();
+		Guid activeId = Guid.NewGuid();
+		Guid receiptId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.AddRange(
+				BuildDescription(pendingId, "Pending Row", NormalizedDescriptionStatus.PendingReview),
+				BuildDescription(activeId, "Active Row", NormalizedDescriptionStatus.Active));
+			seed.ReceiptItems.AddRange(
+				BuildReceiptItemWithScore(receiptId, "milk", 0.71, pendingId),
+				// No score: counts toward LinkedItemCount but not StaleMatchScoreCount.
+				BuildReceiptItemWithScore(receiptId, "bread", null, pendingId),
+				// Linked to an Active row — must not be counted at all.
+				BuildReceiptItemWithScore(receiptId, "eggs", 0.98, activeId));
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		RequeuePendingPreview preview = await service.PreviewRequeuePendingAsync(CancellationToken.None);
+
+		preview.PendingDescriptionCount.Should().Be(1);
+		preview.LinkedItemCount.Should().Be(2);
+		preview.StaleMatchScoreCount.Should().Be(1);
+		// Two items fit inside one 50-item batch, so a single 30-second cycle drains them.
+		preview.EstimatedResolverCycles.Should().Be(1);
+		preview.EstimatedCatchUpSeconds.Should().Be(30);
+	}
+
+	[Fact]
+	public async Task PreviewRequeuePendingAsync_NothingPending_ReportsAllZeroes()
+	{
+		Guid activeId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(BuildDescription(activeId, "Active Row", NormalizedDescriptionStatus.Active));
+			seed.ReceiptItems.Add(BuildReceiptItemWithScore(Guid.NewGuid(), "eggs", 0.98, activeId));
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		RequeuePendingPreview preview = await service.PreviewRequeuePendingAsync(CancellationToken.None);
+
+		// This all-zero shape is also the post-run verification the issue asks for: no receipt
+		// item left holding a match score with no description behind it.
+		preview.PendingDescriptionCount.Should().Be(0);
+		preview.LinkedItemCount.Should().Be(0);
+		preview.StaleMatchScoreCount.Should().Be(0);
+		preview.EstimatedResolverCycles.Should().Be(0);
+		preview.EstimatedCatchUpSeconds.Should().Be(0);
+	}
+
+	[Fact]
+	public async Task RequeuePendingAsync_DeletesPendingRowsAndClearsFkAndScore()
+	{
+		Guid pendingId = Guid.NewGuid();
+		Guid activeId = Guid.NewGuid();
+		Guid receiptId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.AddRange(
+				BuildDescription(pendingId, "Pending Row", NormalizedDescriptionStatus.PendingReview),
+				BuildDescription(activeId, "Active Row", NormalizedDescriptionStatus.Active));
+			seed.ReceiptItems.AddRange(
+				BuildReceiptItemWithScore(receiptId, "milk", 0.71, pendingId),
+				BuildReceiptItemWithScore(receiptId, "eggs", 0.98, activeId));
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		RequeuePendingResult? result = await service.RequeuePendingAsync(1, CancellationToken.None);
+
+		result.Should().NotBeNull();
+		result!.DeletedDescriptionCount.Should().Be(1);
+		result.UnlinkedItemCount.Should().Be(1);
+		result.ClearedMatchScoreCount.Should().Be(1);
+
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		verify.NormalizedDescriptions.Should().ContainSingle().Which.Id.Should().Be(activeId);
+
+		ReceiptItemEntity requeued = await verify.ReceiptItems.IgnoreAutoIncludes()
+			.SingleAsync(r => r.Description == "milk");
+		// Both halves must be cleared. The FK alone would leave a score with nothing behind it —
+		// the delete cascade covers the FK only, which is exactly why this is done explicitly.
+		requeued.NormalizedDescriptionId.Should().BeNull();
+		requeued.NormalizedDescriptionMatchScore.Should().BeNull();
+
+		ReceiptItemEntity untouched = await verify.ReceiptItems.IgnoreAutoIncludes()
+			.SingleAsync(r => r.Description == "eggs");
+		untouched.NormalizedDescriptionId.Should().Be(activeId);
+		untouched.NormalizedDescriptionMatchScore.Should().Be(0.98);
+	}
+
+	[Fact]
+	public async Task RequeuePendingAsync_UnlinksTrashedItemsButExcludesThemFromCounts()
+	{
+		Guid pendingId = Guid.NewGuid();
+		Guid receiptId = Guid.NewGuid();
+		Guid trashedId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(BuildDescription(pendingId, "Pending Row", NormalizedDescriptionStatus.PendingReview));
+			ReceiptItemEntity trashed = BuildReceiptItemWithScore(receiptId, "trashed milk", 0.71, pendingId);
+			trashed.Id = trashedId;
+			trashed.DeletedAt = DateTimeOffset.UtcNow;
+			seed.ReceiptItems.AddRange(BuildReceiptItemWithScore(receiptId, "live milk", 0.71, pendingId), trashed);
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		RequeuePendingResult? result = await service.RequeuePendingAsync(1, CancellationToken.None);
+
+		// Counts describe live items only, matching MergeAsync's established convention.
+		result!.UnlinkedItemCount.Should().Be(1);
+		result.ClearedMatchScoreCount.Should().Be(1);
+
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		ReceiptItemEntity trashedAfter = await verify.ReceiptItems
+			.IgnoreQueryFilters()
+			.IgnoreAutoIncludes()
+			.SingleAsync(r => r.Id == trashedId);
+		// Repointed even though it isn't counted: restoring it from the recycle bin must not
+		// resurrect an item carrying a stale score for a description that no longer exists.
+		trashedAfter.NormalizedDescriptionId.Should().BeNull();
+		trashedAfter.NormalizedDescriptionMatchScore.Should().BeNull();
+	}
+
+	[Fact]
+	public async Task RequeuePendingAsync_CountMismatch_DeletesNothing()
+	{
+		Guid pendingId = Guid.NewGuid();
+		Guid receiptId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(BuildDescription(pendingId, "Pending Row", NormalizedDescriptionStatus.PendingReview));
+			seed.ReceiptItems.Add(BuildReceiptItemWithScore(receiptId, "milk", 0.71, pendingId));
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		// The caller previewed 5 rows; only 1 is pending now. Acting anyway would destroy a row
+		// nobody reviewed, so the guard refuses and reports nothing happened.
+		RequeuePendingResult? result = await service.RequeuePendingAsync(5, CancellationToken.None);
+
+		result.Should().BeNull();
+
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		verify.NormalizedDescriptions.Should().ContainSingle();
+		ReceiptItemEntity item = await verify.ReceiptItems.IgnoreAutoIncludes().SingleAsync();
+		item.NormalizedDescriptionId.Should().Be(pendingId);
+		item.NormalizedDescriptionMatchScore.Should().Be(0.71);
+	}
+
+	[Fact]
+	public async Task RequeuePendingAsync_NothingPending_IsANoOpNotAnError()
+	{
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(BuildDescription(Guid.NewGuid(), "Active Row", NormalizedDescriptionStatus.Active));
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		// Re-runnable by design — running it twice must not be an error the second time.
+		RequeuePendingResult? result = await service.RequeuePendingAsync(0, CancellationToken.None);
+
+		result.Should().NotBeNull();
+		result!.DeletedDescriptionCount.Should().Be(0);
+		result.UnlinkedItemCount.Should().Be(0);
+		result.ClearedMatchScoreCount.Should().Be(0);
+
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		verify.NormalizedDescriptions.Should().ContainSingle();
+	}
+
+	private static NormalizedDescriptionEntity BuildDescription(Guid id, string canonicalName, NormalizedDescriptionStatus status)
+	{
+		return new NormalizedDescriptionEntity
+		{
+			Id = id,
+			CanonicalName = canonicalName,
+			Status = status,
+			CreatedAt = DateTimeOffset.UtcNow,
+		};
+	}
+
 	private static ReceiptItemEntity BuildReceiptItem(Guid id, Guid receiptId, string description, Guid? normalizedId)
 	{
 		return new ReceiptItemEntity

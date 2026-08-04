@@ -423,6 +423,114 @@ public class NormalizedDescriptionService(
 		return new ThresholdImpactPreview(current, proposed, deltas);
 	}
 
+	public async Task<RequeuePendingPreview> PreviewRequeuePendingAsync(CancellationToken cancellationToken)
+	{
+		using ApplicationDbContext context = contextFactory.CreateDbContext();
+
+		int pendingCount = await context.NormalizedDescriptions
+			.AsNoTracking()
+			.CountAsync(e => e.Status == NormalizedDescriptionStatus.PendingReview, cancellationToken);
+
+		// Live items only, matching the counts RequeuePendingAsync reports back. The default
+		// query filter already excludes trashed rows here; the requeue itself deliberately
+		// reaches past it to repoint them too (see RequeuePendingAsync).
+		var counts = await context.ReceiptItems
+			.AsNoTracking()
+			.IgnoreAutoIncludes()
+			.Where(r => r.NormalizedDescription!.Status == NormalizedDescriptionStatus.PendingReview)
+			.GroupBy(_ => 1)
+			.Select(g => new
+			{
+				Linked = g.Count(),
+				Stale = g.Count(r => r.NormalizedDescriptionMatchScore != null),
+			})
+			.FirstOrDefaultAsync(cancellationToken);
+
+		int linkedItemCount = counts?.Linked ?? 0;
+		int staleMatchScoreCount = counts?.Stale ?? 0;
+
+		// The resolver drains unresolved items at BatchSize per Interval. Approximate on purpose:
+		// the batch is shared with any items that were already unresolved before the requeue, so
+		// this is a floor on the catch-up time, not a promise.
+		int cycles = (int)Math.Ceiling(
+			linkedItemCount / (double)NormalizedDescriptionResolutionService.BatchSize);
+		int seconds = cycles * (int)NormalizedDescriptionResolutionService.Interval.TotalSeconds;
+
+		return new RequeuePendingPreview(pendingCount, linkedItemCount, staleMatchScoreCount, cycles, seconds);
+	}
+
+	public async Task<RequeuePendingResult?> RequeuePendingAsync(int expectedPendingCount, CancellationToken cancellationToken)
+	{
+		using ApplicationDbContext context = contextFactory.CreateDbContext();
+
+		List<NormalizedDescriptionEntity> pending = await context.NormalizedDescriptions
+			.Where(e => e.Status == NormalizedDescriptionStatus.PendingReview)
+			.ToListAsync(cancellationToken);
+
+		// Optimistic guard against a stale caller. The admin previewed a specific blast radius and
+		// confirmed THAT number; if the resolver has since queued more rows, deleting them silently
+		// would destroy review candidates nobody looked at. Bail out and make the caller re-read.
+		if (pending.Count != expectedPendingCount)
+		{
+			return null;
+		}
+
+		if (pending.Count == 0)
+		{
+			// Re-runnable by design: a second pass with nothing pending is a no-op, not an error.
+			return new RequeuePendingResult(0, 0, 0);
+		}
+
+		List<Guid> pendingIds = [.. pending.Select(e => e.Id)];
+
+		// IgnoreQueryFilters so trashed items are repointed as well. The FK is DeleteBehavior.SetNull,
+		// so a trashed row left pointing at a deleted description would have its link nulled by the
+		// database and come back from the recycle bin unlinked with no error raised — but with its
+		// stale match score intact, which is exactly the inconsistent state this issue exists to
+		// prevent. Same class of bug as the soft-deleted-transaction stranding fixed in
+		// AccountMergeService (RECEIPTS-801) and guarded in MergeAsync above.
+		List<ReceiptItemEntity> items = await context.ReceiptItems
+			.IgnoreQueryFilters()
+			.IgnoreAutoIncludes()
+			.Where(r => r.NormalizedDescriptionId != null && pendingIds.Contains(r.NormalizedDescriptionId.Value))
+			.ToListAsync(cancellationToken);
+
+		int unlinkedItemCount = 0;
+		int clearedMatchScoreCount = 0;
+
+		foreach (ReceiptItemEntity item in items)
+		{
+			bool isLive = item.DeletedAt is null;
+
+			// Null the score explicitly rather than relying on the delete cascade. ON DELETE SET NULL
+			// covers the FK only — NormalizedDescriptionMatchScore is a plain column, so the cascade
+			// would leave a score behind with no description to explain it. Doing both here keeps the
+			// pair consistent within the single transaction below.
+			if (item.NormalizedDescriptionMatchScore is not null)
+			{
+				item.NormalizedDescriptionMatchScore = null;
+				if (isLive)
+				{
+					clearedMatchScoreCount++;
+				}
+			}
+
+			item.NormalizedDescriptionId = null;
+			if (isLive)
+			{
+				unlinkedItemCount++;
+			}
+		}
+
+		context.NormalizedDescriptions.RemoveRange(pending);
+
+		// Single SaveChanges: either the unlink, the score clear and the delete all land, or none do.
+		// A partial commit would strand items pointing at deleted rows.
+		await context.SaveChangesAsync(cancellationToken);
+
+		return new RequeuePendingResult(pending.Count, unlinkedItemCount, clearedMatchScoreCount);
+	}
+
 	private static ClassificationCounts Classify(
 		List<double> scored,
 		double autoAcceptThreshold,

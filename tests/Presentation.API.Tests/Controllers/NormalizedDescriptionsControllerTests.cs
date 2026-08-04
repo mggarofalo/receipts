@@ -1,6 +1,7 @@
 using API.Controllers;
 using API.Generated.Dtos;
 using Application.Commands.NormalizedDescription.Merge;
+using Application.Commands.NormalizedDescription.RequeuePending;
 using Application.Commands.NormalizedDescription.Split;
 using Application.Commands.NormalizedDescription.UpdateSettings;
 using Application.Commands.NormalizedDescription.UpdateStatus;
@@ -8,6 +9,7 @@ using Application.Models.NormalizedDescriptions;
 using Application.Queries.NormalizedDescription.GetAll;
 using Application.Queries.NormalizedDescription.GetById;
 using Application.Queries.NormalizedDescription.GetSettings;
+using Application.Queries.NormalizedDescription.PreviewRequeuePending;
 using Application.Queries.NormalizedDescription.PreviewThresholdImpact;
 using Application.Queries.NormalizedDescription.TestMatch;
 using Domain.NormalizedDescriptions;
@@ -626,5 +628,88 @@ public class NormalizedDescriptionsControllerTests
 		bad.Value.Should().Be(NormalizedDescriptionsController.IdCannotBeEmpty);
 		_mediatorMock.Verify(m => m.Send(It.IsAny<GetNormalizedDescriptionByIdQuery>(), It.IsAny<CancellationToken>()), Times.Never);
 		_mediatorMock.Verify(m => m.Send(It.IsAny<UpdateNormalizedDescriptionStatusCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+	}
+
+	// ── Requeue pending (RECEIPTS-883) ──────────────────────────
+
+	[Fact]
+	public async Task PreviewRequeuePending_ReturnsOkWithMappedCounts()
+	{
+		_mediatorMock
+			.Setup(m => m.Send(It.IsAny<PreviewRequeuePendingQuery>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new RequeuePendingPreview(4, 120, 118, 3, 90));
+
+		Ok<RequeuePendingPreviewResponse> result = await _controller.PreviewRequeuePending(CancellationToken.None);
+
+		result.Value!.PendingDescriptionCount.Should().Be(4);
+		result.Value.LinkedItemCount.Should().Be(120);
+		result.Value.StaleMatchScoreCount.Should().Be(118);
+		result.Value.EstimatedResolverCycles.Should().Be(3);
+		result.Value.EstimatedCatchUpSeconds.Should().Be(90);
+	}
+
+	[Fact]
+	public async Task RequeuePending_ReturnsOkWithMappedCounts()
+	{
+		RequeuePendingRequest request = new() { ExpectedPendingCount = 4 };
+
+		_mediatorMock
+			.Setup(m => m.Send(It.Is<RequeuePendingCommand>(c => c.ExpectedPendingCount == 4), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new RequeuePendingResult(4, 120, 118));
+
+		Results<Ok<RequeuePendingResponse>, BadRequest<string>, Conflict<string>> result =
+			await _controller.RequeuePending(request, CancellationToken.None);
+
+		Ok<RequeuePendingResponse> ok = Assert.IsType<Ok<RequeuePendingResponse>>(result.Result);
+		ok.Value!.DeletedDescriptionCount.Should().Be(4);
+		ok.Value.UnlinkedItemCount.Should().Be(120);
+		ok.Value.ClearedMatchScoreCount.Should().Be(118);
+	}
+
+	[Fact]
+	public async Task RequeuePending_CountChangedSincePreview_ReturnsConflict()
+	{
+		RequeuePendingRequest request = new() { ExpectedPendingCount = 4 };
+
+		_mediatorMock
+			.Setup(m => m.Send(It.IsAny<RequeuePendingCommand>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync((RequeuePendingResult?)null);
+
+		Results<Ok<RequeuePendingResponse>, BadRequest<string>, Conflict<string>> result =
+			await _controller.RequeuePending(request, CancellationToken.None);
+
+		// 409, not 500 or a silent success: nothing was deleted and the caller must re-read.
+		Conflict<string> conflict = Assert.IsType<Conflict<string>>(result.Result);
+		conflict.Value.Should().Be(NormalizedDescriptionsController.PendingCountChanged);
+	}
+
+	[Fact]
+	public async Task RequeuePending_NegativeExpectedCount_ReturnsBadRequestWithoutDispatching()
+	{
+		RequeuePendingRequest request = new() { ExpectedPendingCount = -1 };
+
+		Results<Ok<RequeuePendingResponse>, BadRequest<string>, Conflict<string>> result =
+			await _controller.RequeuePending(request, CancellationToken.None);
+
+		BadRequest<string> bad = Assert.IsType<BadRequest<string>>(result.Result);
+		bad.Value.Should().Be(NormalizedDescriptionsController.ExpectedPendingCountNegative);
+		_mediatorMock.Verify(m => m.Send(It.IsAny<RequeuePendingCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+	}
+
+	[Fact]
+	public async Task RequeuePending_ZeroExpectedCount_IsAllowedAsARerun()
+	{
+		RequeuePendingRequest request = new() { ExpectedPendingCount = 0 };
+
+		_mediatorMock
+			.Setup(m => m.Send(It.Is<RequeuePendingCommand>(c => c.ExpectedPendingCount == 0), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new RequeuePendingResult(0, 0, 0));
+
+		Results<Ok<RequeuePendingResponse>, BadRequest<string>, Conflict<string>> result =
+			await _controller.RequeuePending(request, CancellationToken.None);
+
+		// Zero is a legitimate expectation, not a validation failure — it is what a re-run sees.
+		Ok<RequeuePendingResponse> ok = Assert.IsType<Ok<RequeuePendingResponse>>(result.Result);
+		ok.Value!.DeletedDescriptionCount.Should().Be(0);
 	}
 }

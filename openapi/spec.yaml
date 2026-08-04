@@ -1452,6 +1452,80 @@ paths:
               schema:
                 type: string
 
+  /api/normalized-descriptions/requeue-pending/preview:
+    get:
+      operationId: PreviewRequeuePendingNormalizedDescriptions
+      tags: [NormalizedDescriptions]
+      summary: Preview what a requeue of pending descriptions would destroy
+      description: |
+        Reports how many `PendingReview` rows would be deleted, how many live
+        ReceiptItems would be unlinked, and how many stale
+        `NormalizedDescriptionMatchScore` values would be cleared, along with an
+        estimate of how long the background resolver needs to rebuild them.
+
+        Read-only — nothing is modified. Also serves as the post-run
+        verification: after a successful requeue every count reads zero.
+        Admin-only.
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequeuePendingPreviewResponse"
+
+  /api/normalized-descriptions/requeue-pending:
+    post:
+      operationId: RequeuePendingNormalizedDescriptions
+      tags: [NormalizedDescriptions]
+      summary: Delete every pending-review description so the resolver rebuilds it
+      description: |
+        Deletes every `PendingReview` NormalizedDescription and, in the same
+        transaction, nulls both `NormalizedDescriptionId` and
+        `NormalizedDescriptionMatchScore` on every ReceiptItem that pointed at
+        one. Those items then match the background resolver's unresolved-item
+        query and are re-resolved from scratch with full near-miss evidence
+        (RECEIPTS-883).
+
+        Destructive: any review judgement already applied to a pending row is
+        discarded, and its receipt items are unnormalized until the resolver
+        catches up. `Active` rows are never touched.
+
+        `expectedPendingCount` must equal the count the caller last previewed;
+        a mismatch returns 409 rather than acting on stale information. Re-runnable
+        — a second call with no pending rows deletes nothing. Admin-only.
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequeuePendingRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequeuePendingResponse"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                type: string
+        "409":
+          description: The pending-review count changed since the caller previewed it. Nothing was deleted.
+          content:
+            application/json:
+              schema:
+                type: string
+
   /api/normalized-descriptions/test:
     post:
       operationId: TestNormalizedDescriptionMatch
@@ -6364,6 +6438,66 @@ components:
           type: integer
           format: int32
           description: Number of ReceiptItems that were re-linked from the discarded row to the kept row. Zero when either id was missing or the two ids were identical.
+
+    RequeuePendingRequest:
+      type: object
+      required: [expectedPendingCount]
+      properties:
+        expectedPendingCount:
+          type: integer
+          format: int32
+          minimum: 0
+          description: The `pendingDescriptionCount` the caller last previewed. The requeue is rejected with 409 if the live count no longer matches, so a stale client cannot delete more rows than its operator actually reviewed.
+
+    RequeuePendingPreviewResponse:
+      type: object
+      required:
+        [
+          pendingDescriptionCount,
+          linkedItemCount,
+          staleMatchScoreCount,
+          estimatedResolverCycles,
+          estimatedCatchUpSeconds,
+        ]
+      properties:
+        pendingDescriptionCount:
+          type: integer
+          format: int32
+          description: Number of PendingReview rows that would be deleted.
+        linkedItemCount:
+          type: integer
+          format: int32
+          description: Number of live (non-trashed) ReceiptItems that would be unlinked. Trashed items pointing at a pending row are unlinked too, for integrity, but are deliberately not counted here — the same convention the merge endpoint uses.
+        staleMatchScoreCount:
+          type: integer
+          format: int32
+          description: Number of those live items that also carry a non-null NormalizedDescriptionMatchScore, which the requeue clears in the same transaction. Reads zero after a successful run.
+        estimatedResolverCycles:
+          type: integer
+          format: int32
+          description: Approximate number of background-resolver cycles needed to rebuild the unlinked items, at 50 items per cycle. Approximate because the resolver's batch is shared with any items that were already unresolved.
+        estimatedCatchUpSeconds:
+          type: integer
+          format: int32
+          description: Approximate wall-clock seconds to drain the requeued backlog, at one 50-item cycle per 30 seconds.
+
+    RequeuePendingResponse:
+      type: object
+      required:
+        [deletedDescriptionCount, unlinkedItemCount, clearedMatchScoreCount]
+      properties:
+        deletedDescriptionCount:
+          type: integer
+          format: int32
+          description: Number of PendingReview rows deleted.
+        unlinkedItemCount:
+          type: integer
+          format: int32
+          description: Number of live ReceiptItems whose NormalizedDescriptionId was nulled.
+        clearedMatchScoreCount:
+          type: integer
+          format: int32
+          description: Number of live ReceiptItems whose NormalizedDescriptionMatchScore was nulled.
 
     # ── Receipt ──────────────────────────────────
 
