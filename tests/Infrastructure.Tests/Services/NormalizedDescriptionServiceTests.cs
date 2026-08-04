@@ -3,6 +3,7 @@ using Application.Models.NormalizedDescriptions;
 using Common;
 using Domain.NormalizedDescriptions;
 using FluentAssertions;
+using Infrastructure.Entities.Audit;
 using Infrastructure.Entities.Core;
 using Infrastructure.Mapping;
 using Infrastructure.Services;
@@ -1140,6 +1141,193 @@ public class NormalizedDescriptionServiceTests
 
 		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
 		verify.NormalizedDescriptions.Should().ContainSingle();
+	}
+
+	[Fact]
+	public async Task MergeAsync_WritesAMergeAuditEntryForBothSides()
+	{
+		Guid keepId = Guid.NewGuid();
+		Guid discardId = Guid.NewGuid();
+		Guid receiptId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.AddRange(
+				BuildDescription(keepId, "Strawberry Jam", NormalizedDescriptionStatus.Active),
+				BuildDescription(discardId, "Strawbery Jam", NormalizedDescriptionStatus.PendingReview));
+			ReceiptItemEntity trashed = BuildReceiptItemWithScore(receiptId, "trashed jam", 0.86, discardId);
+			trashed.DeletedAt = DateTimeOffset.UtcNow;
+			seed.ReceiptItems.AddRange(
+				BuildReceiptItemWithScore(receiptId, "jam a", 0.86, discardId),
+				BuildReceiptItemWithScore(receiptId, "jam b", 0.86, discardId),
+				trashed);
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		await service.MergeAsync(keepId, discardId, CancellationToken.None);
+
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		List<AuditLogEntity> mergeLogs = await verify.AuditLogs
+			.Where(a => a.Action == AuditAction.Merge)
+			.ToListAsync();
+
+		// One entry per side: the discarded id is about to stop existing, and an entry filed under
+		// it is the only way to answer "what happened to this row?" afterwards.
+		mergeLogs.Should().HaveCount(2);
+		mergeLogs.Should().OnlyContain(a => a.EntityType == "NormalizedDescription");
+
+		AuditLogEntity keepLog = mergeLogs.Single(a => a.EntityId == keepId.ToString());
+		Dictionary<string, string?> keepFields = keepLog.GetChanges().ToDictionary(c => c.FieldName, c => c.NewValue);
+		keepLog.GetChanges().Single(c => c.FieldName == "mergedFrom").OldValue.Should().Be("Strawbery Jam");
+		keepFields["mergedFrom"].Should().Be("Strawberry Jam");
+		keepFields["discardedId"].Should().BeNull();
+		keepFields["relinkedItemCount"].Should().Be("2");
+		// Trashed re-links are reported separately so the gap between this and the returned count
+		// is inspectable rather than looking like a miscount.
+		keepFields["relinkedTrashedItemCount"].Should().Be("1");
+
+		AuditLogEntity discardLog = mergeLogs.Single(a => a.EntityId == discardId.ToString());
+		Dictionary<string, string?> discardFields = discardLog.GetChanges().ToDictionary(c => c.FieldName, c => c.NewValue);
+		discardFields["mergedInto"].Should().Be("Strawberry Jam");
+		discardFields["keptId"].Should().Be(keepId.ToString());
+	}
+
+	[Fact]
+	public async Task MergeAsync_MissingRow_WritesNoAuditEntry()
+	{
+		Guid keepId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(BuildDescription(keepId, "Strawberry Jam", NormalizedDescriptionStatus.Active));
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		// No merge happened, so recording one would be a lie in the audit trail.
+		int relinked = await service.MergeAsync(keepId, Guid.NewGuid(), CancellationToken.None);
+
+		relinked.Should().Be(0);
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		(await verify.AuditLogs.CountAsync(a => a.Action == AuditAction.Merge)).Should().Be(0);
+	}
+
+	[Fact]
+	public async Task SplitAsync_WritesASplitAuditEntryForBothSides()
+	{
+		Guid originId = Guid.NewGuid();
+		Guid receiptId = Guid.NewGuid();
+		Guid itemId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(BuildDescription(originId, "Jam", NormalizedDescriptionStatus.Active));
+			seed.ReceiptItems.Add(BuildReceiptItem(itemId, receiptId, "Strawberry Preserves", originId));
+			await seed.SaveChangesAsync();
+		}
+
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(false);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		NormalizedDescriptionDetail created = await service.SplitAsync(itemId, CancellationToken.None);
+
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		List<AuditLogEntity> splitLogs = await verify.AuditLogs
+			.Where(a => a.Action == AuditAction.Split)
+			.ToListAsync();
+
+		splitLogs.Should().HaveCount(2);
+
+		AuditLogEntity newRowLog = splitLogs.Single(a => a.EntityId == created.Description.Id.ToString());
+		Dictionary<string, string?> newFields = newRowLog.GetChanges().ToDictionary(c => c.FieldName, c => c.NewValue);
+		newRowLog.GetChanges().Single(c => c.FieldName == "splitFrom").OldValue.Should().Be("Jam");
+		newFields["splitFrom"].Should().Be("Strawberry Preserves");
+		newFields["receiptItemId"].Should().Be(itemId.ToString());
+
+		AuditLogEntity originLog = splitLogs.Single(a => a.EntityId == originId.ToString());
+		Dictionary<string, string?> originFields = originLog.GetChanges().ToDictionary(c => c.FieldName, c => c.NewValue);
+		originFields["splitToId"].Should().Be(created.Description.Id.ToString());
+	}
+
+	[Fact]
+	public async Task SplitAsync_UnlinkedItem_WritesOnlyTheNewRowEntry()
+	{
+		Guid receiptId = Guid.NewGuid();
+		Guid itemId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.ReceiptItems.Add(BuildReceiptItem(itemId, receiptId, "Strawberry Preserves", normalizedId: null));
+			await seed.SaveChangesAsync();
+		}
+
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(false);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		await service.SplitAsync(itemId, CancellationToken.None);
+
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		List<AuditLogEntity> splitLogs = await verify.AuditLogs
+			.Where(a => a.Action == AuditAction.Split)
+			.ToListAsync();
+
+		// Splitting an item that was never resolved is legitimate; there is simply no origin row to
+		// file a second entry against, and inventing one would point at nothing.
+		splitLogs.Should().ContainSingle();
+		splitLogs[0].GetChanges().Single(c => c.FieldName == "splitFrom").OldValue.Should().BeNull();
+	}
+
+	[Fact]
+	public async Task RequeuePendingAsync_WritesOneSemanticEntryForTheWholeOperation()
+	{
+		Guid pendingId = Guid.NewGuid();
+		Guid receiptId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(BuildDescription(pendingId, "Pending Row", NormalizedDescriptionStatus.PendingReview));
+			ReceiptItemEntity trashed = BuildReceiptItemWithScore(receiptId, "trashed milk", 0.71, pendingId);
+			trashed.DeletedAt = DateTimeOffset.UtcNow;
+			seed.ReceiptItems.AddRange(BuildReceiptItemWithScore(receiptId, "live milk", 0.71, pendingId), trashed);
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		await service.RequeuePendingAsync(FingerprintOf(pendingId), CancellationToken.None);
+
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		List<AuditLogEntity> requeueLogs = await verify.AuditLogs
+			.Where(a => a.EntityType == "NormalizedDescription" && a.EntityId == string.Empty)
+			.ToListAsync();
+
+		// One entry for the operator's single decision — not N entries, which would bury the intent
+		// under the same row-by-row noise the semantic entry exists to summarise.
+		AuditLogEntity log = requeueLogs.Should().ContainSingle().Subject;
+		Dictionary<string, string?> fields = log.GetChanges().ToDictionary(c => c.FieldName, c => c.NewValue);
+		fields["operation"].Should().Be("RequeuePending");
+		fields["deletedDescriptionCount"].Should().Be("1");
+		fields["unlinkedItemCount"].Should().Be("1");
+		fields["clearedMatchScoreCount"].Should().Be("1");
+		fields["unlinkedTrashedItemCount"].Should().Be("1");
+	}
+
+	[Fact]
+	public async Task RequeuePendingAsync_RejectedGuard_WritesNoAuditEntry()
+	{
+		Guid pendingId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(BuildDescription(pendingId, "Pending Row", NormalizedDescriptionStatus.PendingReview));
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		await service.RequeuePendingAsync(FingerprintOf(Guid.NewGuid()), CancellationToken.None);
+
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		// Nothing was destroyed, so nothing may be recorded as destroyed.
+		(await verify.AuditLogs.CountAsync(a => a.EntityId == string.Empty && a.EntityType == "NormalizedDescription"))
+			.Should().Be(0);
 	}
 
 	// The requeue guard takes the digest of the exact pending set the caller previewed, so a test

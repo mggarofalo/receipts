@@ -122,6 +122,42 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 		}
 	}
 
+	// Builds an audit entry for an operation whose MEANING cannot be recovered from the row changes
+	// CollectAuditEntries produces on its own (RECEIPTS-890). A normalized-description merge, for
+	// instance, is mechanically a Delete plus N ReceiptItem Updates — reconstructing "X was merged
+	// into Y" from that means correlating rows by timestamp, and the discarded name survives only
+	// inside a delete payload.
+	//
+	// Attribution (user, API key, IP, and the FieldChange serialization shape) is resolved here
+	// rather than in each service so explicit entries are indistinguishable from automatic ones on
+	// the audit page. Callers add the returned entity to AuditLogs and save it in their own
+	// transaction, so the semantic entry lands atomically with the change it describes.
+	internal AuditLogEntity CreateSemanticAuditEntry(
+		string entityType,
+		string entityId,
+		AuditAction action,
+		List<FieldChange> changes,
+		DateTimeOffset changedAt)
+	{
+		AuditLogEntity auditLog = new()
+		{
+			Id = Guid.NewGuid(),
+			EntityType = entityType,
+			EntityId = entityId,
+			Action = action,
+			ChangedByUserId = _currentUserAccessor?.UserId,
+			ChangedByApiKeyId = _currentUserAccessor?.ApiKeyId,
+			ChangedAt = changedAt,
+			IpAddress = _currentUserAccessor?.IpAddress,
+		};
+
+		// SetChanges, not a bespoke payload: the audit page parses ChangesJson as a FieldChange
+		// array and renders nothing for any other shape, so an object payload here would produce a
+		// row with an empty detail panel.
+		auditLog.SetChanges(changes);
+		return auditLog;
+	}
+
 	public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
 	{
 		HandleSoftDelete();
