@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "postinstall": "patch-package",
     "generate:types:write": "openapi-typescript ../../openapi/spec.yaml -o src/generated/api.d.ts",
     "generate:types:check": "TMPFILE=$(mktemp) && openapi-typescript ../../openapi/spec.yaml -o \"$TMPFILE\" && diff -q src/generated/api.d.ts \"$TMPFILE\"; EC=$?; rm -f \"$TMPFILE\"; exit $EC",
     "predev": "npm run generate:types:write",
@@ -71,6 +72,7 @@
     "jsdom": "^28.1.0",
     "msw": "^2.12.10",
     "openapi-typescript": "7.13.0",
+    "patch-package": "^8.0.1",
     "prettier": "^3.8.1",
     "shadcn": "^3.8.5",
     "tailwindcss": "^4.2.0",
