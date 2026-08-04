@@ -26,6 +26,11 @@ vi.mock("@/hooks/useNormalizedDescriptionSettings", () => ({
   usePreviewImpactMutation: vi.fn(() => mockMutationResult()),
 }));
 
+vi.mock("@/hooks/useNormalizedDescriptionMaintenance", () => ({
+  useRequeuePendingPreview: vi.fn(),
+  useRequeuePendingMutation: vi.fn(() => mockMutationResult()),
+}));
+
 vi.mock("@/hooks/useReceiptItems", () => ({
   useReceiptItems: vi.fn(() => ({
     data: [],
@@ -54,6 +59,10 @@ import {
   useTestMatchMutation,
   usePreviewImpactMutation,
 } from "@/hooks/useNormalizedDescriptionSettings";
+import {
+  useRequeuePendingPreview,
+  useRequeuePendingMutation,
+} from "@/hooks/useNormalizedDescriptionMaintenance";
 import { useReceiptItems } from "@/hooks/useReceiptItems";
 import { usePermission } from "@/hooks/usePermission";
 
@@ -134,6 +143,15 @@ function mockList(status: string | undefined) {
   });
 }
 
+const requeuePreview = {
+  pendingDescriptionCount: 4,
+  pendingFingerprint: "digest-abc",
+  linkedItemCount: 120,
+  staleMatchScoreCount: 118,
+  estimatedResolverCycles: 3,
+  estimatedCatchUpSeconds: 90,
+};
+
 const liveSettings = {
   id: "00000000-0000-0000-0000-000000000001",
   autoAcceptThreshold: 0.9,
@@ -160,6 +178,16 @@ function wireDefaults() {
   vi.mocked(useUpdateSettingsMutation).mockReturnValue(mockMutationResult());
   vi.mocked(useTestMatchMutation).mockReturnValue(mockMutationResult());
   vi.mocked(usePreviewImpactMutation).mockReturnValue(mockMutationResult());
+  vi.mocked(useRequeuePendingPreview).mockReturnValue(
+    mockQueryResult({
+      data: requeuePreview,
+      isLoading: false,
+      isSuccess: true,
+      isPending: false,
+      status: "success",
+    }),
+  );
+  vi.mocked(useRequeuePendingMutation).mockReturnValue(mockMutationResult());
   vi.mocked(useReceiptItems).mockReturnValue({
     data: [],
     total: 0,
@@ -559,5 +587,139 @@ describe("NormalizedDescriptions settings tab", () => {
     expect(within(panel).getByText("AutoAccept")).toBeInTheDocument();
     expect(within(panel).getByText("Apples")).toBeInTheDocument();
     expect(within(panel).getByText("0.8700")).toBeInTheDocument();
+  });
+});
+
+describe("NormalizedDescriptions — Maintenance tab (RECEIPTS-883)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    wireDefaults();
+  });
+
+  it("shows the blast radius and the resolver catch-up estimate", async () => {
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    await user.click(screen.getByRole("tab", { name: "Maintenance" }));
+
+    const panel = await screen.findByTestId("requeue-preview-panel");
+    expect(within(panel).getByText("4")).toBeInTheDocument();
+    expect(within(panel).getByText("120")).toBeInTheDocument();
+    expect(within(panel).getByText("118")).toBeInTheDocument();
+    // 90s renders as minutes-and-seconds so the operator isn't reading raw seconds.
+    expect(await screen.findByText("1m 30s")).toBeInTheDocument();
+  });
+
+  it("requires confirmation and posts the previewed count", async () => {
+    const mutate = vi.fn();
+    vi.mocked(useRequeuePendingMutation).mockReturnValue(
+      mockMutationResult({ mutate }),
+    );
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    await user.click(screen.getByRole("tab", { name: "Maintenance" }));
+
+    await user.click(
+      screen.getByRole("button", { name: "Requeue 4 pending descriptions" }),
+    );
+
+    // Nothing may be destroyed on the strength of one click on a destructive action.
+    expect(mutate).not.toHaveBeenCalled();
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByText(/cannot be undone/i),
+    ).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "Requeue" }));
+
+    // The previewed set digest rides along so the server can reject a stale confirmation
+    // even when the pending total happens to be unchanged.
+    expect(mutate).toHaveBeenCalledWith(
+      { expectedFingerprint: "digest-abc" },
+      expect.anything(),
+    );
+  });
+
+  it("cancelling the dialog destroys nothing", async () => {
+    const mutate = vi.fn();
+    vi.mocked(useRequeuePendingMutation).mockReturnValue(
+      mockMutationResult({ mutate }),
+    );
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    await user.click(screen.getByRole("tab", { name: "Maintenance" }));
+    await user.click(
+      screen.getByRole("button", { name: "Requeue 4 pending descriptions" }),
+    );
+
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it("disables the action when there is nothing pending", async () => {
+    vi.mocked(useRequeuePendingPreview).mockReturnValue(
+      mockQueryResult({
+        data: {
+          pendingDescriptionCount: 0,
+          pendingFingerprint: "digest-empty",
+          linkedItemCount: 0,
+          staleMatchScoreCount: 0,
+          estimatedResolverCycles: 0,
+          estimatedCatchUpSeconds: 0,
+        },
+        isLoading: false,
+        isSuccess: true,
+        isPending: false,
+        status: "success",
+      }),
+    );
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    await user.click(screen.getByRole("tab", { name: "Maintenance" }));
+
+    expect(await screen.findByTestId("requeue-empty")).toBeInTheDocument();
+    expect(screen.queryByTestId("requeue-preview-panel")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Requeue 0 pending/ }),
+    ).toBeDisabled();
+  });
+
+  it("surfaces a failed preview instead of implying nothing needs doing", async () => {
+    vi.mocked(useRequeuePendingPreview).mockReturnValue(
+      mockQueryResult({
+        data: undefined,
+        isLoading: false,
+        isError: true,
+        isSuccess: false,
+        isPending: false,
+        status: "error",
+      }),
+    );
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    await user.click(screen.getByRole("tab", { name: "Maintenance" }));
+
+    // An unreadable preview must not render as "0 pending" — that reads as "all clear".
+    expect(
+      await screen.findByText("Failed to load maintenance status."),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("requeue-empty")).not.toBeInTheDocument();
+  });
+
+  it("hides the tab from non-admins", () => {
+    vi.mocked(usePermission).mockReturnValue({
+      roles: ["User"],
+      hasRole: (role: string) => role === "User",
+      isAdmin: () => false,
+    });
+    renderWithQueryClient(<NormalizedDescriptions />);
+
+    expect(
+      screen.queryByRole("tab", { name: "Maintenance" }),
+    ).not.toBeInTheDocument();
   });
 });

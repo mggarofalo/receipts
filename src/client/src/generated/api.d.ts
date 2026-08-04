@@ -563,6 +563,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/normalized-descriptions/requeue-pending/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Preview what a requeue of pending descriptions would destroy
+         * @description Reports how many `PendingReview` rows would be deleted, how many live
+         *     ReceiptItems would be unlinked, and how many stale
+         *     `NormalizedDescriptionMatchScore` values would be cleared, along with an
+         *     estimate of how long the background resolver needs to rebuild them.
+         *
+         *     Read-only — nothing is modified. Also serves as the post-run
+         *     verification: after a successful requeue every count reads zero.
+         *     Admin-only.
+         */
+        get: operations["PreviewRequeuePendingNormalizedDescriptions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/normalized-descriptions/requeue-pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Delete every pending-review description so the resolver rebuilds it
+         * @description Deletes every `PendingReview` NormalizedDescription and, in the same
+         *     transaction, nulls both `NormalizedDescriptionId` and
+         *     `NormalizedDescriptionMatchScore` on every ReceiptItem that pointed at
+         *     one. Those items then match the background resolver's unresolved-item
+         *     query and are re-resolved from scratch with full near-miss evidence
+         *     (RECEIPTS-883).
+         *
+         *     Destructive: any review judgement already applied to a pending row is
+         *     discarded, and its receipt items are unnormalized until the resolver
+         *     catches up. `Active` rows are never touched.
+         *
+         *     `expectedPendingCount` must equal the count the caller last previewed;
+         *     a mismatch returns 409 rather than acting on stale information. Re-runnable
+         *     — a second call with no pending rows deletes nothing. Admin-only.
+         */
+        post: operations["RequeuePendingNormalizedDescriptions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/normalized-descriptions/test": {
         parameters: {
             query?: never;
@@ -3180,6 +3240,56 @@ export interface components {
              */
             itemsRelinkedCount: number;
         };
+        RequeuePendingRequest: {
+            /** @description The `pendingFingerprint` the caller last previewed. The requeue is rejected with 409 unless the live pending set is identical, so a stale client cannot delete a row its operator never reviewed. A count would not be sufficient — one row being approved away while the resolver queues a new one leaves the count unchanged but the set different. */
+            expectedFingerprint: string;
+        };
+        RequeuePendingPreviewResponse: {
+            /**
+             * Format: int32
+             * @description Number of PendingReview rows that would be deleted.
+             */
+            pendingDescriptionCount: number;
+            /** @description Opaque digest identifying the exact set of PendingReview rows this preview describes. Echo it back on the requeue request; the server rejects the call with 409 if the set has changed in the meantime. Stable across processes and independent of row ordering. */
+            pendingFingerprint: string;
+            /**
+             * Format: int32
+             * @description Number of live (non-trashed) ReceiptItems that would be unlinked. Trashed items pointing at a pending row are unlinked too, for integrity, but are deliberately not counted here — the same convention the merge endpoint uses.
+             */
+            linkedItemCount: number;
+            /**
+             * Format: int32
+             * @description Number of those live items that also carry a non-null NormalizedDescriptionMatchScore, which the requeue clears in the same transaction. Reads zero after a successful run.
+             */
+            staleMatchScoreCount: number;
+            /**
+             * Format: int32
+             * @description Approximate number of background-resolver cycles needed to rebuild the unlinked items, at 50 items per cycle. Approximate because the resolver's batch is shared with any items that were already unresolved.
+             */
+            estimatedResolverCycles: number;
+            /**
+             * Format: int32
+             * @description Approximate wall-clock seconds to drain the requeued backlog, at one 50-item cycle per 30 seconds.
+             */
+            estimatedCatchUpSeconds: number;
+        };
+        RequeuePendingResponse: {
+            /**
+             * Format: int32
+             * @description Number of PendingReview rows deleted.
+             */
+            deletedDescriptionCount: number;
+            /**
+             * Format: int32
+             * @description Number of live ReceiptItems whose NormalizedDescriptionId was nulled.
+             */
+            unlinkedItemCount: number;
+            /**
+             * Format: int32
+             * @description Number of live ReceiptItems whose NormalizedDescriptionMatchScore was nulled.
+             */
+            clearedMatchScoreCount: number;
+        };
         CreateReceiptRequest: {
             location: string;
             /** Format: date */
@@ -5540,6 +5650,68 @@ export interface operations {
             };
             /** @description Bad Request */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                };
+            };
+        };
+    };
+    PreviewRequeuePendingNormalizedDescriptions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RequeuePendingPreviewResponse"];
+                };
+            };
+        };
+    };
+    RequeuePendingNormalizedDescriptions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequeuePendingRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RequeuePendingResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                };
+            };
+            /** @description The pending-review count changed since the caller previewed it. Nothing was deleted. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

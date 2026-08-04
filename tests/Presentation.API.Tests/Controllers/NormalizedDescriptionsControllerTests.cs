@@ -1,6 +1,7 @@
 using API.Controllers;
 using API.Generated.Dtos;
 using Application.Commands.NormalizedDescription.Merge;
+using Application.Commands.NormalizedDescription.RequeuePending;
 using Application.Commands.NormalizedDescription.Split;
 using Application.Commands.NormalizedDescription.UpdateSettings;
 using Application.Commands.NormalizedDescription.UpdateStatus;
@@ -8,6 +9,7 @@ using Application.Models.NormalizedDescriptions;
 using Application.Queries.NormalizedDescription.GetAll;
 using Application.Queries.NormalizedDescription.GetById;
 using Application.Queries.NormalizedDescription.GetSettings;
+using Application.Queries.NormalizedDescription.PreviewRequeuePending;
 using Application.Queries.NormalizedDescription.PreviewThresholdImpact;
 using Application.Queries.NormalizedDescription.TestMatch;
 using Domain.NormalizedDescriptions;
@@ -626,5 +628,93 @@ public class NormalizedDescriptionsControllerTests
 		bad.Value.Should().Be(NormalizedDescriptionsController.IdCannotBeEmpty);
 		_mediatorMock.Verify(m => m.Send(It.IsAny<GetNormalizedDescriptionByIdQuery>(), It.IsAny<CancellationToken>()), Times.Never);
 		_mediatorMock.Verify(m => m.Send(It.IsAny<UpdateNormalizedDescriptionStatusCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+	}
+
+	// ── Requeue pending (RECEIPTS-883) ──────────────────────────
+
+	[Fact]
+	public async Task PreviewRequeuePending_ReturnsOkWithMappedCounts()
+	{
+		_mediatorMock
+			.Setup(m => m.Send(It.IsAny<PreviewRequeuePendingQuery>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new RequeuePendingPreview(4, "digest-abc", 120, 118, 3, 90));
+
+		Ok<RequeuePendingPreviewResponse> result = await _controller.PreviewRequeuePending(CancellationToken.None);
+
+		result.Value!.PendingDescriptionCount.Should().Be(4);
+		result.Value.PendingFingerprint.Should().Be("digest-abc");
+		result.Value.LinkedItemCount.Should().Be(120);
+		result.Value.StaleMatchScoreCount.Should().Be(118);
+		result.Value.EstimatedResolverCycles.Should().Be(3);
+		result.Value.EstimatedCatchUpSeconds.Should().Be(90);
+	}
+
+	[Fact]
+	public async Task RequeuePending_ReturnsOkWithMappedCounts()
+	{
+		RequeuePendingRequest request = new() { ExpectedFingerprint = "digest-abc" };
+
+		_mediatorMock
+			.Setup(m => m.Send(It.Is<RequeuePendingCommand>(c => c.ExpectedFingerprint == "digest-abc"), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new RequeuePendingResult(4, 120, 118));
+
+		Results<Ok<RequeuePendingResponse>, BadRequest<string>, Conflict<string>> result =
+			await _controller.RequeuePending(request, CancellationToken.None);
+
+		Ok<RequeuePendingResponse> ok = Assert.IsType<Ok<RequeuePendingResponse>>(result.Result);
+		ok.Value!.DeletedDescriptionCount.Should().Be(4);
+		ok.Value.UnlinkedItemCount.Should().Be(120);
+		ok.Value.ClearedMatchScoreCount.Should().Be(118);
+	}
+
+	[Fact]
+	public async Task RequeuePending_SetChangedSincePreview_ReturnsConflict()
+	{
+		RequeuePendingRequest request = new() { ExpectedFingerprint = "digest-abc" };
+
+		_mediatorMock
+			.Setup(m => m.Send(It.IsAny<RequeuePendingCommand>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync((RequeuePendingResult?)null);
+
+		Results<Ok<RequeuePendingResponse>, BadRequest<string>, Conflict<string>> result =
+			await _controller.RequeuePending(request, CancellationToken.None);
+
+		// 409, not 500 or a silent success: nothing was deleted and the caller must re-read.
+		Conflict<string> conflict = Assert.IsType<Conflict<string>>(result.Result);
+		conflict.Value.Should().Be(NormalizedDescriptionsController.PendingSetChanged);
+	}
+
+	[Theory]
+	[InlineData("")]
+	[InlineData("   ")]
+	public async Task RequeuePending_MissingFingerprint_ReturnsBadRequestWithoutDispatching(string fingerprint)
+	{
+		RequeuePendingRequest request = new() { ExpectedFingerprint = fingerprint };
+
+		Results<Ok<RequeuePendingResponse>, BadRequest<string>, Conflict<string>> result =
+			await _controller.RequeuePending(request, CancellationToken.None);
+
+		// Without a fingerprint there is nothing to compare against, so the guard would be
+		// vacuous. Refuse rather than dispatch an unguarded bulk delete.
+		BadRequest<string> bad = Assert.IsType<BadRequest<string>>(result.Result);
+		bad.Value.Should().Be(NormalizedDescriptionsController.ExpectedFingerprintRequired);
+		_mediatorMock.Verify(m => m.Send(It.IsAny<RequeuePendingCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+	}
+
+	[Fact]
+	public async Task RequeuePending_EmptySetFingerprint_IsAllowedAsARerun()
+	{
+		RequeuePendingRequest request = new() { ExpectedFingerprint = "empty-digest" };
+
+		_mediatorMock
+			.Setup(m => m.Send(It.Is<RequeuePendingCommand>(c => c.ExpectedFingerprint == "empty-digest"), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new RequeuePendingResult(0, 0, 0));
+
+		Results<Ok<RequeuePendingResponse>, BadRequest<string>, Conflict<string>> result =
+			await _controller.RequeuePending(request, CancellationToken.None);
+
+		// The empty set has a real digest, so a re-run is a legitimate call, not a validation failure.
+		Ok<RequeuePendingResponse> ok = Assert.IsType<Ok<RequeuePendingResponse>>(result.Result);
+		ok.Value!.DeletedDescriptionCount.Should().Be(0);
 	}
 }

@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using Application.Interfaces.Services;
 using Application.Models.NormalizedDescriptions;
 using Domain.NormalizedDescriptions;
@@ -421,6 +423,137 @@ public class NormalizedDescriptionService(
 
 		ReclassificationDeltas deltas = new(autoToPending, pendingToAuto, unresolvedToAuto, unresolvedToPending);
 		return new ThresholdImpactPreview(current, proposed, deltas);
+	}
+
+	public async Task<RequeuePendingPreview> PreviewRequeuePendingAsync(CancellationToken cancellationToken)
+	{
+		using ApplicationDbContext context = contextFactory.CreateDbContext();
+
+		List<Guid> pendingIds = await context.NormalizedDescriptions
+			.AsNoTracking()
+			.Where(e => e.Status == NormalizedDescriptionStatus.PendingReview)
+			.Select(e => e.Id)
+			.ToListAsync(cancellationToken);
+
+		// Live items only, matching the counts RequeuePendingAsync reports back. The default
+		// query filter already excludes trashed rows here; the requeue itself deliberately
+		// reaches past it to repoint them too (see RequeuePendingAsync).
+		var counts = await context.ReceiptItems
+			.AsNoTracking()
+			.IgnoreAutoIncludes()
+			.Where(r => r.NormalizedDescription!.Status == NormalizedDescriptionStatus.PendingReview)
+			.GroupBy(_ => 1)
+			.Select(g => new
+			{
+				Linked = g.Count(),
+				Stale = g.Count(r => r.NormalizedDescriptionMatchScore != null),
+			})
+			.FirstOrDefaultAsync(cancellationToken);
+
+		int linkedItemCount = counts?.Linked ?? 0;
+		int staleMatchScoreCount = counts?.Stale ?? 0;
+
+		// The resolver drains unresolved items at BatchSize per Interval. Approximate on purpose:
+		// the batch is shared with any items that were already unresolved before the requeue, so
+		// this is a floor on the catch-up time, not a promise.
+		int cycles = (int)Math.Ceiling(
+			linkedItemCount / (double)NormalizedDescriptionResolutionService.BatchSize);
+		int seconds = cycles * (int)NormalizedDescriptionResolutionService.Interval.TotalSeconds;
+
+		return new RequeuePendingPreview(
+			pendingIds.Count,
+			ComputePendingFingerprint(pendingIds),
+			linkedItemCount,
+			staleMatchScoreCount,
+			cycles,
+			seconds);
+	}
+
+	public async Task<RequeuePendingResult?> RequeuePendingAsync(string expectedFingerprint, CancellationToken cancellationToken)
+	{
+		using ApplicationDbContext context = contextFactory.CreateDbContext();
+
+		List<NormalizedDescriptionEntity> pending = await context.NormalizedDescriptions
+			.Where(e => e.Status == NormalizedDescriptionStatus.PendingReview)
+			.ToListAsync(cancellationToken);
+
+		// Optimistic guard against a stale caller. The admin previewed a specific set of rows and
+		// confirmed THAT set; anything else must be re-read before it is destroyed.
+		//
+		// Comparing identities rather than counts is load-bearing. Suppose the preview showed
+		// {P1,P2,P3,P4}; a second admin approves P1 through the Review Queue while the resolver
+		// queues a new near-miss P5. The set is now {P2,P3,P4,P5} — still four rows, so a count
+		// check would sail straight through and delete P5, which no operator ever saw.
+		if (!string.Equals(ComputePendingFingerprint(pending.Select(e => e.Id)), expectedFingerprint, StringComparison.Ordinal))
+		{
+			return null;
+		}
+
+		if (pending.Count == 0)
+		{
+			// Re-runnable by design: a second pass with nothing pending is a no-op, not an error.
+			// The empty set has a stable fingerprint of its own, so this path is still guarded.
+			return new RequeuePendingResult(0, 0, 0);
+		}
+
+		List<Guid> pendingIds = [.. pending.Select(e => e.Id)];
+
+		// IgnoreQueryFilters so trashed items are repointed as well. The FK is DeleteBehavior.SetNull,
+		// so a trashed row left pointing at a deleted description would have its link nulled by the
+		// database and come back from the recycle bin unlinked with no error raised — but with its
+		// stale match score intact, which is exactly the inconsistent state this issue exists to
+		// prevent. Same class of bug as the soft-deleted-transaction stranding fixed in
+		// AccountMergeService (RECEIPTS-801) and guarded in MergeAsync above.
+		List<ReceiptItemEntity> items = await context.ReceiptItems
+			.IgnoreQueryFilters()
+			.IgnoreAutoIncludes()
+			.Where(r => r.NormalizedDescriptionId != null && pendingIds.Contains(r.NormalizedDescriptionId.Value))
+			.ToListAsync(cancellationToken);
+
+		int unlinkedItemCount = 0;
+		int clearedMatchScoreCount = 0;
+
+		foreach (ReceiptItemEntity item in items)
+		{
+			bool isLive = item.DeletedAt is null;
+
+			// Null the score explicitly rather than relying on the delete cascade. ON DELETE SET NULL
+			// covers the FK only — NormalizedDescriptionMatchScore is a plain column, so the cascade
+			// would leave a score behind with no description to explain it. Doing both here keeps the
+			// pair consistent within the single transaction below.
+			if (item.NormalizedDescriptionMatchScore is not null)
+			{
+				item.NormalizedDescriptionMatchScore = null;
+				if (isLive)
+				{
+					clearedMatchScoreCount++;
+				}
+			}
+
+			item.NormalizedDescriptionId = null;
+			if (isLive)
+			{
+				unlinkedItemCount++;
+			}
+		}
+
+		context.NormalizedDescriptions.RemoveRange(pending);
+
+		// Single SaveChanges: either the unlink, the score clear and the delete all land, or none do.
+		// A partial commit would strand items pointing at deleted rows.
+		await context.SaveChangesAsync(cancellationToken);
+
+		return new RequeuePendingResult(pending.Count, unlinkedItemCount, clearedMatchScoreCount);
+	}
+
+	// Order-independent digest of a set of pending ids. Sorted before hashing so two callers that
+	// read the same rows in different orders agree, and hashed rather than returned verbatim so the
+	// token stays a fixed small size no matter how deep the review queue gets. SHA-256 is used as a
+	// checksum here, not a security primitive — the value is opaque to clients either way.
+	internal static string ComputePendingFingerprint(IEnumerable<Guid> ids)
+	{
+		string joined = string.Join(',', ids.OrderBy(id => id));
+		return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(joined)));
 	}
 
 	private static ClassificationCounts Classify(
