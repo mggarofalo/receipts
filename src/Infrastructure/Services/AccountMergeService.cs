@@ -141,23 +141,21 @@ public class AccountMergeService(
 				int movedFromThisSource = transactionCountBySource.GetValueOrDefault(sourceAccountId, 0);
 				mergeEntries.Add(CreateMergeAuditEntry(
 					sourceAccountId,
-					new
-					{
-						targetAccountId,
-						mergedCardIds = cardsMovedFromThisAccount,
-						movedTransactionCount = movedFromThisSource,
-					},
+					[
+						new FieldChange { FieldName = "mergedIntoAccountId", OldValue = null, NewValue = targetAccountId.ToString() },
+						new FieldChange { FieldName = "mergedCardIds", OldValue = null, NewValue = string.Join(", ", cardsMovedFromThisAccount) },
+						new FieldChange { FieldName = "movedTransactionCount", OldValue = null, NewValue = movedFromThisSource.ToString() },
+					],
 					now));
 			}
 
 			mergeEntries.Add(CreateMergeAuditEntry(
 				targetAccountId,
-				new
-				{
-					sourceAccountIds,
-					mergedCardIds = distinctCardIds,
-					movedTransactionCount,
-				},
+				[
+					new FieldChange { FieldName = "mergedFromAccountIds", OldValue = null, NewValue = string.Join(", ", sourceAccountIds) },
+					new FieldChange { FieldName = "mergedCardIds", OldValue = null, NewValue = string.Join(", ", distinctCardIds) },
+					new FieldChange { FieldName = "movedTransactionCount", OldValue = null, NewValue = movedTransactionCount.ToString() },
+				],
 				now));
 
 			context.AuditLogs.AddRange(mergeEntries);
@@ -242,20 +240,26 @@ public class AccountMergeService(
 		return (sourceAccountIds, mappings, accountNamesById, originalCardAccountIds);
 	}
 
-	private AuditLogEntity CreateMergeAuditEntry(Guid accountId, object payload, DateTimeOffset now)
+	// RECEIPTS-890: these entries previously serialized an anonymous object into ChangesJson. The
+	// audit page parses ChangesJson as a FieldChange array and renders nothing for any other shape,
+	// so every account-merge entry showed a row with an empty detail panel — the information was
+	// recorded but unreadable anywhere except a raw CSV export. Emitting the same FieldChange shape
+	// the automatic auditor uses makes the detail render with no client change.
+	private AuditLogEntity CreateMergeAuditEntry(Guid accountId, List<FieldChange> changes, DateTimeOffset now)
 	{
-		return new AuditLogEntity
+		AuditLogEntity auditLog = new()
 		{
 			Id = Guid.NewGuid(),
 			EntityType = "Account",
 			EntityId = accountId.ToString(),
 			Action = AuditAction.Merge,
-			ChangesJson = JsonSerializer.Serialize(payload),
 			ChangedByUserId = currentUserAccessor.UserId,
 			ChangedByApiKeyId = currentUserAccessor.ApiKeyId,
 			ChangedAt = now,
 			IpAddress = currentUserAccessor.IpAddress,
 		};
+		auditLog.SetChanges(changes);
+		return auditLog;
 	}
 
 	private static MergeCardsResult BuildConflictResult(
