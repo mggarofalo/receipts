@@ -6441,19 +6441,19 @@ components:
 
     RequeuePendingRequest:
       type: object
-      required: [expectedPendingCount]
+      required: [expectedFingerprint]
       properties:
-        expectedPendingCount:
-          type: integer
-          format: int32
-          minimum: 0
-          description: The `pendingDescriptionCount` the caller last previewed. The requeue is rejected with 409 if the live count no longer matches, so a stale client cannot delete more rows than its operator actually reviewed.
+        expectedFingerprint:
+          type: string
+          minLength: 1
+          description: The `pendingFingerprint` the caller last previewed. The requeue is rejected with 409 unless the live pending set is identical, so a stale client cannot delete a row its operator never reviewed. A count would not be sufficient — one row being approved away while the resolver queues a new one leaves the count unchanged but the set different.
 
     RequeuePendingPreviewResponse:
       type: object
       required:
         [
           pendingDescriptionCount,
+          pendingFingerprint,
           linkedItemCount,
           staleMatchScoreCount,
           estimatedResolverCycles,
@@ -6464,6 +6464,9 @@ components:
           type: integer
           format: int32
           description: Number of PendingReview rows that would be deleted.
+        pendingFingerprint:
+          type: string
+          description: Opaque digest identifying the exact set of PendingReview rows this preview describes. Echo it back on the requeue request; the server rejects the call with 409 if the set has changed in the meantime. Stable across processes and independent of row ordering.
         linkedItemCount:
           type: integer
           format: int32

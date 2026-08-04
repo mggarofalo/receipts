@@ -3241,11 +3241,8 @@ export interface components {
             itemsRelinkedCount: number;
         };
         RequeuePendingRequest: {
-            /**
-             * Format: int32
-             * @description The `pendingDescriptionCount` the caller last previewed. The requeue is rejected with 409 if the live count no longer matches, so a stale client cannot delete more rows than its operator actually reviewed.
-             */
-            expectedPendingCount: number;
+            /** @description The `pendingFingerprint` the caller last previewed. The requeue is rejected with 409 unless the live pending set is identical, so a stale client cannot delete a row its operator never reviewed. A count would not be sufficient — one row being approved away while the resolver queues a new one leaves the count unchanged but the set different. */
+            expectedFingerprint: string;
         };
         RequeuePendingPreviewResponse: {
             /**
@@ -3253,6 +3250,8 @@ export interface components {
              * @description Number of PendingReview rows that would be deleted.
              */
             pendingDescriptionCount: number;
+            /** @description Opaque digest identifying the exact set of PendingReview rows this preview describes. Echo it back on the requeue request; the server rejects the call with 409 if the set has changed in the meantime. Stable across processes and independent of row ordering. */
+            pendingFingerprint: string;
             /**
              * Format: int32
              * @description Number of live (non-trashed) ReceiptItems that would be unlinked. Trashed items pointing at a pending row are unlinked too, for integrity, but are deliberately not counted here — the same convention the merge endpoint uses.

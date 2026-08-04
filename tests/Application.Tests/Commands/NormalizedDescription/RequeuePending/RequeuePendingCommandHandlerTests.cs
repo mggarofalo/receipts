@@ -15,12 +15,12 @@ public class RequeuePendingCommandHandlerTests
 		Mock<IDescriptionChangeSignal> mockSignal = new();
 
 		mockService
-			.Setup(s => s.RequeuePendingAsync(3, It.IsAny<CancellationToken>()))
+			.Setup(s => s.RequeuePendingAsync("abc123", It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new RequeuePendingResult(3, 12, 9));
 
 		RequeuePendingCommandHandler handler = new(mockService.Object, mockSignal.Object);
 
-		RequeuePendingResult? result = await handler.Handle(new RequeuePendingCommand(3), CancellationToken.None);
+		RequeuePendingResult? result = await handler.Handle(new RequeuePendingCommand("abc123"), CancellationToken.None);
 
 		result.Should().NotBeNull();
 		result!.DeletedDescriptionCount.Should().Be(3);
@@ -31,18 +31,18 @@ public class RequeuePendingCommandHandlerTests
 	}
 
 	[Fact]
-	public async Task Handle_CountMismatch_ReturnsNullAndDoesNotSignal()
+	public async Task Handle_FingerprintMismatch_ReturnsNullAndDoesNotSignal()
 	{
 		Mock<INormalizedDescriptionService> mockService = new();
 		Mock<IDescriptionChangeSignal> mockSignal = new();
 
 		mockService
-			.Setup(s => s.RequeuePendingAsync(5, It.IsAny<CancellationToken>()))
+			.Setup(s => s.RequeuePendingAsync("stale-digest", It.IsAny<CancellationToken>()))
 			.ReturnsAsync((RequeuePendingResult?)null);
 
 		RequeuePendingCommandHandler handler = new(mockService.Object, mockSignal.Object);
 
-		RequeuePendingResult? result = await handler.Handle(new RequeuePendingCommand(5), CancellationToken.None);
+		RequeuePendingResult? result = await handler.Handle(new RequeuePendingCommand("stale-digest"), CancellationToken.None);
 
 		// Nothing was deleted, so there is nothing for the resolver to pick up. Waking it would
 		// burn a cycle scanning a set that did not change.
@@ -57,12 +57,12 @@ public class RequeuePendingCommandHandlerTests
 		Mock<IDescriptionChangeSignal> mockSignal = new();
 
 		mockService
-			.Setup(s => s.RequeuePendingAsync(0, It.IsAny<CancellationToken>()))
+			.Setup(s => s.RequeuePendingAsync("empty-digest", It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new RequeuePendingResult(0, 0, 0));
 
 		RequeuePendingCommandHandler handler = new(mockService.Object, mockSignal.Object);
 
-		RequeuePendingResult? result = await handler.Handle(new RequeuePendingCommand(0), CancellationToken.None);
+		RequeuePendingResult? result = await handler.Handle(new RequeuePendingCommand("empty-digest"), CancellationToken.None);
 
 		result!.DeletedDescriptionCount.Should().Be(0);
 		mockSignal.Verify(s => s.NotifyDirty(), Times.Never);

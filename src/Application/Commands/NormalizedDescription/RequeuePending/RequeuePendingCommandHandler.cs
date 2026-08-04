@@ -11,7 +11,7 @@ public class RequeuePendingCommandHandler(
 {
 	public async ValueTask<RequeuePendingResult?> Handle(RequeuePendingCommand request, CancellationToken cancellationToken)
 	{
-		RequeuePendingResult? result = await service.RequeuePendingAsync(request.ExpectedPendingCount, cancellationToken);
+		RequeuePendingResult? result = await service.RequeuePendingAsync(request.ExpectedFingerprint, cancellationToken);
 
 		// Wake the resolver immediately instead of leaving the requeued items idle for up to a full
 		// poll interval. Only on a run that actually unlinked something: a rejected guard (null) or

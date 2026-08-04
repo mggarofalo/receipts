@@ -89,7 +89,7 @@ public class NormalizedDescriptionRequeueTests(PostgresFixture fixture)
 
 		// Act — deleting `pending` and `neighbour` together exercises the self-FK: one of the two
 		// is removed while the other still cites it. A RESTRICT here would raise 23503.
-		RequeuePendingResult? result = await service.RequeuePendingAsync(preview.PendingDescriptionCount, CancellationToken.None);
+		RequeuePendingResult? result = await service.RequeuePendingAsync(preview.PendingFingerprint, CancellationToken.None);
 
 		// Assert
 		result.Should().NotBeNull();
@@ -137,19 +137,70 @@ public class NormalizedDescriptionRequeueTests(PostgresFixture fixture)
 		liveAfter.NormalizedDescriptionId.Should().BeNull();
 		liveAfter.DeletedAt.Should().BeNull();
 
-		// And a re-run is a clean no-op rather than an error.
-		RequeuePendingResult? rerun = await service.RequeuePendingAsync(0, CancellationToken.None);
-		rerun.Should().NotBeNull();
-		rerun!.DeletedDescriptionCount.Should().Be(0);
-
+		// And a re-run is a clean no-op rather than an error. The empty set has a stable
+		// fingerprint of its own, so the guard still applies on this path.
 		RequeuePendingPreview after = await service.PreviewRequeuePendingAsync(CancellationToken.None);
 		after.PendingDescriptionCount.Should().Be(0);
 		after.LinkedItemCount.Should().Be(0);
 		after.StaleMatchScoreCount.Should().Be(0);
+
+		RequeuePendingResult? rerun = await service.RequeuePendingAsync(after.PendingFingerprint, CancellationToken.None);
+		rerun.Should().NotBeNull();
+		rerun!.DeletedDescriptionCount.Should().Be(0);
 	}
 
 	[Fact]
-	public async Task RequeuePendingAsync_CountMismatch_CommitsNothing()
+	public async Task RequeuePendingAsync_SetChangedButCountIdentical_StillRefuses()
+	{
+		// The case a count-based guard cannot catch (found by adversarial review of the first cut):
+		// one previewed row is approved away while the resolver queues a new near-miss. The total
+		// is unchanged, so only comparing identities can tell that the operator is confirming a
+		// set they never saw.
+		await ClearPendingAsync();
+
+		string token = Guid.NewGuid().ToString("N")[..8];
+		Guid previewedId = Guid.NewGuid();
+		Guid newcomerId = Guid.NewGuid();
+
+		{
+			await using ApplicationDbContext setup = fixture.CreateDbContext();
+			setup.NormalizedDescriptions.Add(BuildNormalized(previewedId, $"Previewed Row {token}", DomainStatus.PendingReview));
+			await setup.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = CreateService();
+
+		// The operator previews a world containing exactly {previewed}.
+		RequeuePendingPreview preview = await service.PreviewRequeuePendingAsync(CancellationToken.None);
+		preview.PendingDescriptionCount.Should().Be(1);
+
+		{
+			// Before they confirm: the previewed row is approved, and the resolver queues a new one.
+			// Count goes 1 -> 0 -> 1, landing exactly where it started.
+			await using ApplicationDbContext shift = fixture.CreateDbContext();
+			NormalizedDescriptionEntity previewed = await shift.NormalizedDescriptions.SingleAsync(e => e.Id == previewedId);
+			previewed.Status = DomainStatus.Active;
+			shift.NormalizedDescriptions.Add(BuildNormalized(newcomerId, $"Newcomer Row {token}", DomainStatus.PendingReview));
+			await shift.SaveChangesAsync();
+		}
+
+		RequeuePendingPreview shifted = await service.PreviewRequeuePendingAsync(CancellationToken.None);
+		shifted.PendingDescriptionCount.Should().Be(1, "the count is deliberately unchanged");
+		shifted.PendingFingerprint.Should().NotBe(preview.PendingFingerprint, "the set is not the same set");
+
+		// Act — confirm against the stale preview.
+		RequeuePendingResult? result = await service.RequeuePendingAsync(preview.PendingFingerprint, CancellationToken.None);
+
+		// Assert — refused, and the row nobody previewed survives.
+		result.Should().BeNull();
+
+		await using ApplicationDbContext verify = fixture.CreateDbContext();
+		bool newcomerSurvives = await verify.NormalizedDescriptions.AsNoTracking().AnyAsync(e => e.Id == newcomerId);
+		newcomerSurvives.Should().BeTrue("deleting a row the operator never previewed is exactly what the guard exists to prevent");
+	}
+
+	[Fact]
+	public async Task RequeuePendingAsync_FingerprintMismatch_CommitsNothing()
 	{
 		await ClearPendingAsync();
 
@@ -175,8 +226,10 @@ public class NormalizedDescriptionRequeueTests(PostgresFixture fixture)
 
 		NormalizedDescriptionService service = CreateService();
 
-		// The caller previewed a world with 7 pending rows; there is 1. Nothing may be destroyed.
-		RequeuePendingResult? result = await service.RequeuePendingAsync(7, CancellationToken.None);
+		// The caller previewed a set that does not exist here. Nothing may be destroyed.
+		RequeuePendingResult? result = await service.RequeuePendingAsync(
+			NormalizedDescriptionService.ComputePendingFingerprint([Guid.NewGuid()]),
+			CancellationToken.None);
 
 		result.Should().BeNull();
 
@@ -197,7 +250,7 @@ public class NormalizedDescriptionRequeueTests(PostgresFixture fixture)
 	{
 		NormalizedDescriptionService service = CreateService();
 		RequeuePendingPreview preview = await service.PreviewRequeuePendingAsync(CancellationToken.None);
-		await service.RequeuePendingAsync(preview.PendingDescriptionCount, CancellationToken.None);
+		await service.RequeuePendingAsync(preview.PendingFingerprint, CancellationToken.None);
 	}
 
 	private NormalizedDescriptionService CreateService() => new(

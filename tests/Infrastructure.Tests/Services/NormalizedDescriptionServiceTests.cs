@@ -982,6 +982,7 @@ public class NormalizedDescriptionServiceTests
 		RequeuePendingPreview preview = await service.PreviewRequeuePendingAsync(CancellationToken.None);
 
 		preview.PendingDescriptionCount.Should().Be(1);
+		preview.PendingFingerprint.Should().Be(FingerprintOf(pendingId), "the digest identifies the exact set the caller was shown");
 		preview.LinkedItemCount.Should().Be(2);
 		preview.StaleMatchScoreCount.Should().Be(1);
 		// Two items fit inside one 50-item batch, so a single 30-second cycle drains them.
@@ -1007,6 +1008,7 @@ public class NormalizedDescriptionServiceTests
 		// This all-zero shape is also the post-run verification the issue asks for: no receipt
 		// item left holding a match score with no description behind it.
 		preview.PendingDescriptionCount.Should().Be(0);
+		preview.PendingFingerprint.Should().Be(FingerprintOf(), "the empty set still has a stable digest");
 		preview.LinkedItemCount.Should().Be(0);
 		preview.StaleMatchScoreCount.Should().Be(0);
 		preview.EstimatedResolverCycles.Should().Be(0);
@@ -1032,7 +1034,7 @@ public class NormalizedDescriptionServiceTests
 
 		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
 
-		RequeuePendingResult? result = await service.RequeuePendingAsync(1, CancellationToken.None);
+		RequeuePendingResult? result = await service.RequeuePendingAsync(FingerprintOf(pendingId), CancellationToken.None);
 
 		result.Should().NotBeNull();
 		result!.DeletedDescriptionCount.Should().Be(1);
@@ -1073,7 +1075,7 @@ public class NormalizedDescriptionServiceTests
 
 		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
 
-		RequeuePendingResult? result = await service.RequeuePendingAsync(1, CancellationToken.None);
+		RequeuePendingResult? result = await service.RequeuePendingAsync(FingerprintOf(pendingId), CancellationToken.None);
 
 		// Counts describe live items only, matching MergeAsync's established convention.
 		result!.UnlinkedItemCount.Should().Be(1);
@@ -1091,7 +1093,7 @@ public class NormalizedDescriptionServiceTests
 	}
 
 	[Fact]
-	public async Task RequeuePendingAsync_CountMismatch_DeletesNothing()
+	public async Task RequeuePendingAsync_FingerprintMismatch_DeletesNothing()
 	{
 		Guid pendingId = Guid.NewGuid();
 		Guid receiptId = Guid.NewGuid();
@@ -1104,9 +1106,9 @@ public class NormalizedDescriptionServiceTests
 
 		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
 
-		// The caller previewed 5 rows; only 1 is pending now. Acting anyway would destroy a row
-		// nobody reviewed, so the guard refuses and reports nothing happened.
-		RequeuePendingResult? result = await service.RequeuePendingAsync(5, CancellationToken.None);
+		// The caller previewed a different set. Acting anyway would destroy a row nobody reviewed,
+		// so the guard refuses and reports nothing happened.
+		RequeuePendingResult? result = await service.RequeuePendingAsync(FingerprintOf(Guid.NewGuid()), CancellationToken.None);
 
 		result.Should().BeNull();
 
@@ -1129,7 +1131,7 @@ public class NormalizedDescriptionServiceTests
 		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
 
 		// Re-runnable by design — running it twice must not be an error the second time.
-		RequeuePendingResult? result = await service.RequeuePendingAsync(0, CancellationToken.None);
+		RequeuePendingResult? result = await service.RequeuePendingAsync(FingerprintOf(), CancellationToken.None);
 
 		result.Should().NotBeNull();
 		result!.DeletedDescriptionCount.Should().Be(0);
@@ -1139,6 +1141,12 @@ public class NormalizedDescriptionServiceTests
 		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
 		verify.NormalizedDescriptions.Should().ContainSingle();
 	}
+
+	// The requeue guard takes the digest of the exact pending set the caller previewed, so a test
+	// asserting the happy path has to hand back the ids it seeded, and a test asserting refusal
+	// hands back anything else.
+	private static string FingerprintOf(params Guid[] ids) =>
+		NormalizedDescriptionService.ComputePendingFingerprint(ids);
 
 	private static NormalizedDescriptionEntity BuildDescription(Guid id, string canonicalName, NormalizedDescriptionStatus status)
 	{

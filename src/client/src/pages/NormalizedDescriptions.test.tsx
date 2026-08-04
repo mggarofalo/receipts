@@ -145,6 +145,7 @@ function mockList(status: string | undefined) {
 
 const requeuePreview = {
   pendingDescriptionCount: 4,
+  pendingFingerprint: "digest-abc",
   linkedItemCount: 120,
   staleMatchScoreCount: 118,
   estimatedResolverCycles: 3,
@@ -630,9 +631,10 @@ describe("NormalizedDescriptions — Maintenance tab (RECEIPTS-883)", () => {
 
     await user.click(within(dialog).getByRole("button", { name: "Requeue" }));
 
-    // The previewed count rides along so the server can reject a stale confirmation.
+    // The previewed set digest rides along so the server can reject a stale confirmation
+    // even when the pending total happens to be unchanged.
     expect(mutate).toHaveBeenCalledWith(
-      { expectedPendingCount: 4 },
+      { expectedFingerprint: "digest-abc" },
       expect.anything(),
     );
   });
@@ -663,6 +665,7 @@ describe("NormalizedDescriptions — Maintenance tab (RECEIPTS-883)", () => {
       mockQueryResult({
         data: {
           pendingDescriptionCount: 0,
+          pendingFingerprint: "digest-empty",
           linkedItemCount: 0,
           staleMatchScoreCount: 0,
           estimatedResolverCycles: 0,

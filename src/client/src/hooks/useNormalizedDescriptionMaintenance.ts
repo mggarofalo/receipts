@@ -29,13 +29,13 @@ export function useRequeuePendingMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({
-      expectedPendingCount,
+      expectedFingerprint,
     }: {
-      expectedPendingCount: number;
+      expectedFingerprint: string;
     }) => {
       const { data, error, response } = await client.POST(
         "/api/normalized-descriptions/requeue-pending",
-        { body: { expectedPendingCount } },
+        { body: { expectedFingerprint } },
       );
       if (!response.ok) throw toApiError(response.status, error);
       return data;
@@ -60,9 +60,9 @@ export function useRequeuePendingMutation() {
     onError: (error: unknown) => {
       // No toast here — the global MutationCache handler already surfaces the server's
       // message, and a second one would double up (RECEIPTS-782). What this hook adds is
-      // the refetch: a 409 means the pending count moved, so the numbers on screen are
-      // stale and "try again" is the wrong instinct. Pull the real ones before the
-      // operator confirms anything.
+      // the refetch: a 409 means the pending set moved, so the rows on screen are stale
+      // and "try again" is the wrong instinct. Pull the real ones before the operator
+      // confirms anything.
       if (parseProblemDetails(error)?.status === 409) {
         queryClient.invalidateQueries({ queryKey: requeuePreviewQueryKey });
       }

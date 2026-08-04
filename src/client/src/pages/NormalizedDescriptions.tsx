@@ -632,6 +632,7 @@ function MaintenanceTab() {
 
   const {
     pendingDescriptionCount,
+    pendingFingerprint,
     linkedItemCount,
     staleMatchScoreCount,
     estimatedCatchUpSeconds,
@@ -713,6 +714,7 @@ function MaintenanceTab() {
       <RequeueConfirmDialog
         open={confirming}
         pendingDescriptionCount={pendingDescriptionCount}
+        pendingFingerprint={pendingFingerprint}
         linkedItemCount={linkedItemCount}
         onClose={() => setConfirming(false)}
       />
@@ -731,6 +733,7 @@ function formatCatchUp(seconds: number) {
 interface RequeueConfirmDialogProps {
   open: boolean;
   pendingDescriptionCount: number;
+  pendingFingerprint: string;
   linkedItemCount: number;
   onClose: () => void;
 }
@@ -738,14 +741,18 @@ interface RequeueConfirmDialogProps {
 function RequeueConfirmDialog({
   open,
   pendingDescriptionCount,
+  pendingFingerprint,
   linkedItemCount,
   onClose,
 }: RequeueConfirmDialogProps) {
   const requeue = useRequeuePendingMutation();
 
   function handleConfirm() {
+    // The fingerprint identifies the exact rows this dialog described. If the queue has shifted
+    // since — even to the same total — the server rejects rather than destroying a row the
+    // operator never saw.
     requeue.mutate(
-      { expectedPendingCount: pendingDescriptionCount },
+      { expectedFingerprint: pendingFingerprint },
       // Close on failure too: a 409 means the counts on screen are stale, and the hook has
       // already refetched them. Leaving the dialog open would invite a confirm against
       // numbers that no longer hold.

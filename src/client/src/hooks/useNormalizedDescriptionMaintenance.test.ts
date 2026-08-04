@@ -22,6 +22,7 @@ const mockClient = vi.mocked(client);
 
 const previewBody = {
   pendingDescriptionCount: 4,
+  pendingFingerprint: "digest-abc",
   linkedItemCount: 120,
   staleMatchScoreCount: 118,
   estimatedResolverCycles: 3,
@@ -93,12 +94,12 @@ describe("useRequeuePendingMutation", () => {
       wrapper: createQueryWrapper(),
     });
 
-    result.current.mutate({ expectedPendingCount: 4 });
+    result.current.mutate({ expectedFingerprint: "digest-abc" });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(mockClient.POST).toHaveBeenCalledWith(
       "/api/normalized-descriptions/requeue-pending",
-      { body: { expectedPendingCount: 4 } },
+      { body: { expectedFingerprint: "digest-abc" } },
     );
     expect(toast.success).toHaveBeenCalledWith(
       "Requeued 4 pending descriptions — 120 items awaiting re-resolution",
@@ -121,7 +122,7 @@ describe("useRequeuePendingMutation", () => {
       wrapper: createQueryWrapper(),
     });
 
-    result.current.mutate({ expectedPendingCount: 1 });
+    result.current.mutate({ expectedFingerprint: "digest-one" });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(toast.success).toHaveBeenCalledWith(
@@ -145,7 +146,7 @@ describe("useRequeuePendingMutation", () => {
       wrapper: createQueryWrapper(),
     });
 
-    result.current.mutate({ expectedPendingCount: 0 });
+    result.current.mutate({ expectedFingerprint: "digest-empty" });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(toast.success).toHaveBeenCalledWith(
@@ -156,7 +157,7 @@ describe("useRequeuePendingMutation", () => {
   it("surfaces a 409 stale-preview guard as an error carrying the status", async () => {
     mockClient.POST.mockResolvedValue({
       data: undefined,
-      error: "The pending-review count changed since it was previewed.",
+      error: "The set of pending-review descriptions changed since it was previewed.",
       response: { status: 409, ok: false } as Response,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
@@ -165,14 +166,14 @@ describe("useRequeuePendingMutation", () => {
       wrapper: createQueryWrapper(),
     });
 
-    result.current.mutate({ expectedPendingCount: 4 });
+    result.current.mutate({ expectedFingerprint: "digest-abc" });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     // The status must survive onto the thrown value: the global MutationCache handler keys off
     // it to surface the server's message, and this hook keys off it to refetch the preview.
     expect(result.current.error).toMatchObject({
       status: 409,
-      detail: "The pending-review count changed since it was previewed.",
+      detail: "The set of pending-review descriptions changed since it was previewed.",
     });
     // No toast from the hook itself — the global handler owns error toasts (RECEIPTS-782), and
     // a second one here would double up.
@@ -191,7 +192,7 @@ describe("useRequeuePendingMutation", () => {
       wrapper: createQueryWrapper(),
     });
 
-    result.current.mutate({ expectedPendingCount: 4 });
+    result.current.mutate({ expectedFingerprint: "digest-abc" });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(toast.success).not.toHaveBeenCalled();

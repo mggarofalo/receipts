@@ -56,8 +56,8 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 	public const string ReceiptItemIdCannotBeEmpty = "receiptItemId must not be empty";
 	public const string MergeIdsMustDiffer = "keep id and discardId must differ";
 	public const string InvalidStatusFilter = "status must be 'Active' or 'PendingReview' when provided";
-	public const string ExpectedPendingCountNegative = "expectedPendingCount must not be negative";
-	public const string PendingCountChanged = "The pending-review count changed since it was previewed. Nothing was deleted — re-read the preview and try again.";
+	public const string ExpectedFingerprintRequired = "expectedFingerprint must not be empty";
+	public const string PendingSetChanged = "The set of pending-review descriptions changed since it was previewed. Nothing was deleted — re-read the preview and try again.";
 
 	[HttpGet(RouteSettings)]
 	[EndpointSummary("Get the current normalized-description threshold settings")]
@@ -330,6 +330,7 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 		return TypedResults.Ok(new RequeuePendingPreviewResponse
 		{
 			PendingDescriptionCount = preview.PendingDescriptionCount,
+			PendingFingerprint = preview.PendingFingerprint,
 			LinkedItemCount = preview.LinkedItemCount,
 			StaleMatchScoreCount = preview.StaleMatchScoreCount,
 			EstimatedResolverCycles = preview.EstimatedResolverCycles,
@@ -339,25 +340,25 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 
 	[HttpPost(RouteRequeuePending)]
 	[EndpointSummary("Delete every pending-review description so the resolver rebuilds it")]
-	[EndpointDescription("Deletes all PendingReview rows and, in the same transaction, nulls the FK and the match score on every receipt item that pointed at one. Returns 409 when expectedPendingCount no longer matches the live count. Admin-only.")]
+	[EndpointDescription("Deletes all PendingReview rows and, in the same transaction, nulls the FK and the match score on every receipt item that pointed at one. Returns 409 when expectedFingerprint no longer matches the live pending set. Admin-only.")]
 	public async Task<Results<Ok<RequeuePendingResponse>, BadRequest<string>, Conflict<string>>> RequeuePending(
 		[FromBody] RequeuePendingRequest request,
 		CancellationToken cancellationToken)
 	{
-		if (request.ExpectedPendingCount < 0)
+		if (string.IsNullOrWhiteSpace(request.ExpectedFingerprint))
 		{
-			return TypedResults.BadRequest(ExpectedPendingCountNegative);
+			return TypedResults.BadRequest(ExpectedFingerprintRequired);
 		}
 
-		RequeuePendingCommand command = new(request.ExpectedPendingCount);
+		RequeuePendingCommand command = new(request.ExpectedFingerprint);
 		RequeuePendingResult? result = await mediator.Send(command, cancellationToken);
 
 		// A null result is the optimistic-concurrency guard tripping, not a failure to act: the
-		// live pending count moved between preview and confirm, so nothing was deleted. 409 tells
+		// live pending set moved between preview and confirm, so nothing was deleted. 409 tells
 		// the client to re-read rather than retry blindly.
 		if (result is null)
 		{
-			return TypedResults.Conflict(PendingCountChanged);
+			return TypedResults.Conflict(PendingSetChanged);
 		}
 
 		return TypedResults.Ok(new RequeuePendingResponse

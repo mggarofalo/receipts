@@ -17,10 +17,10 @@ public interface INormalizedDescriptionService
 	Task<bool> UpdateStatusAsync(Guid id, NormalizedDescriptionStatus status, CancellationToken cancellationToken);
 
 	// RECEIPTS-883. Preview is read-only and is also how a caller verifies the run afterwards.
-	// RequeuePendingAsync returns null when expectedPendingCount disagrees with the live count —
-	// the caller previewed a different world and must re-read before destroying anything.
+	// RequeuePendingAsync returns null when expectedFingerprint does not match the live pending
+	// set — the caller previewed a different world and must re-read before destroying anything.
 	Task<RequeuePendingPreview> PreviewRequeuePendingAsync(CancellationToken cancellationToken);
-	Task<RequeuePendingResult?> RequeuePendingAsync(int expectedPendingCount, CancellationToken cancellationToken);
+	Task<RequeuePendingResult?> RequeuePendingAsync(string expectedFingerprint, CancellationToken cancellationToken);
 
 	Task<NormalizedDescriptionSettings> GetSettingsAsync(CancellationToken cancellationToken);
 	Task<NormalizedDescriptionSettings> UpdateSettingsAsync(double autoAcceptThreshold, double pendingReviewThreshold, CancellationToken cancellationToken);
