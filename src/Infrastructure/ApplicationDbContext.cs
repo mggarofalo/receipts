@@ -122,6 +122,55 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 		}
 	}
 
+	// Builds an audit entry for an operation whose MEANING cannot be recovered from the row changes
+	// CollectAuditEntries produces on its own (RECEIPTS-890). A normalized-description merge, for
+	// instance, is mechanically a Delete plus N ReceiptItem Updates — reconstructing "X was merged
+	// into Y" from that means correlating rows by timestamp, and the discarded name survives only
+	// inside a delete payload.
+	//
+	// Attribution (user, API key, IP, and the FieldChange serialization shape) is resolved here
+	// rather than in each service so explicit entries are indistinguishable from automatic ones on
+	// the audit page.
+	//
+	// The entry is queued, not saved: callers add it immediately before their own SaveChangesAsync
+	// so it commits with the change it describes. Note that a caller whose operation spans more
+	// than one save (SplitAsync inserts its row in a nested save for race-safety) only gets that
+	// guarantee for the final save — the entry cannot vouch for work committed earlier.
+	//
+	// Honours AuditingEnabled for the same reason the automatic collector does: when a bulk path
+	// turns auditing off, "no audit rows" has to mean no audit rows, or the flag silently stops
+	// meaning anything.
+	internal void AddSemanticAuditEntry(
+		string entityType,
+		string entityId,
+		AuditAction action,
+		List<FieldChange> changes,
+		DateTimeOffset changedAt)
+	{
+		if (!AuditingEnabled)
+		{
+			return;
+		}
+
+		AuditLogEntity auditLog = new()
+		{
+			Id = Guid.NewGuid(),
+			EntityType = entityType,
+			EntityId = entityId,
+			Action = action,
+			ChangedByUserId = _currentUserAccessor?.UserId,
+			ChangedByApiKeyId = _currentUserAccessor?.ApiKeyId,
+			ChangedAt = changedAt,
+			IpAddress = _currentUserAccessor?.IpAddress,
+		};
+
+		// SetChanges, not a bespoke payload: the audit page parses ChangesJson as a FieldChange
+		// array and renders nothing for any other shape, so an object payload here would produce a
+		// row with an empty detail panel.
+		auditLog.SetChanges(changes);
+		AuditLogs.Add(auditLog);
+	}
+
 	public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
 	{
 		HandleSoftDelete();

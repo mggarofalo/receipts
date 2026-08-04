@@ -463,13 +463,26 @@ public class AccountMergeServiceTests : IDisposable
 			.Where(a => a.Action == AuditAction.Merge)
 			.ToListAsync();
 
+		// Assert through GetChanges rather than on the raw JSON. These entries now carry the same
+		// FieldChange shape the automatic auditor produces, because the audit page parses
+		// ChangesJson as a FieldChange array and rendered nothing for the previous object payload
+		// (RECEIPTS-890). Reading them the way the app does keeps this test honest about the
+		// contract rather than pinning an incidental serialization detail.
 		AuditLogEntity source1Audit = mergeAudits.Single(a => a.EntityId == source1.Id.ToString());
 		AuditLogEntity source2Audit = mergeAudits.Single(a => a.EntityId == source2.Id.ToString());
-		source1Audit.ChangesJson.Should().Contain("\"movedTransactionCount\":2");
-		source2Audit.ChangesJson.Should().Contain("\"movedTransactionCount\":3");
+		MovedTransactionCount(source1Audit).Should().Be("2");
+		MovedTransactionCount(source2Audit).Should().Be("3");
 
 		AuditLogEntity targetAudit = mergeAudits.Single(a => a.EntityId == target.Id.ToString());
-		targetAudit.ChangesJson.Should().Contain("\"movedTransactionCount\":5");
+		MovedTransactionCount(targetAudit).Should().Be("5");
+
+		// The whole point of the shape change: the detail is readable by the page's parser.
+		source1Audit.GetChanges().Should().NotBeEmpty();
+		source1Audit.GetChanges().Single(c => c.FieldName == "mergedIntoAccountId").NewValue
+			.Should().Be(target.Id.ToString());
+
+		static string? MovedTransactionCount(AuditLogEntity audit) =>
+			audit.GetChanges().Single(c => c.FieldName == "movedTransactionCount").NewValue;
 	}
 
 	[Fact]

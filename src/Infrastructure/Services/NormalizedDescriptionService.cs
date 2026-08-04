@@ -4,6 +4,7 @@ using Application.Interfaces.Services;
 using Application.Models.NormalizedDescriptions;
 using Domain.NormalizedDescriptions;
 using Infrastructure.Configurations;
+using Infrastructure.Entities.Audit;
 using Infrastructure.Entities.Core;
 using Infrastructure.Mapping;
 using Microsoft.EntityFrameworkCore;
@@ -30,6 +31,10 @@ public class NormalizedDescriptionService(
 
 	private const int MaxTopN = 20;
 	private const string PostgreSQL = "Npgsql.EntityFrameworkCore.PostgreSQL";
+
+	// Matches the name CollectAuditEntries derives by stripping the "Entity" suffix, so explicit
+	// entries land in the same EntityType bucket as the automatic ones (RECEIPTS-890).
+	internal const string NormalizedDescriptionEntityType = "NormalizedDescription";
 
 	// How many distinct raw receipt-item descriptions to surface per canonical row. Enough for a
 	// reviewer to recognise what the entry actually covers without turning the queue into a dump
@@ -64,7 +69,7 @@ public class NormalizedDescriptionService(
 		// Step 2: no embedding capability — create Active entry directly with no vector.
 		if (!embeddingService.IsConfigured)
 		{
-			NormalizedDescriptionEntity created = await InsertAsync(context, normalized, NormalizedDescriptionStatus.Active, embedding: null, cancellationToken);
+			(NormalizedDescriptionEntity created, _) = await InsertAsync(context, normalized, NormalizedDescriptionStatus.Active, embedding: null, cancellationToken);
 			return new GetOrCreateResult(mapper.ToDomain(created), MatchScore: null);
 		}
 
@@ -94,7 +99,7 @@ public class NormalizedDescriptionService(
 				// Persist the near-miss that caused the pending status (RECEIPTS-873). Previously
 				// only the score survived — on the ReceiptItem — so the API could not answer
 				// "what did this nearly match?" without recomputing embeddings.
-				NormalizedDescriptionEntity pending = await InsertAsync(
+				(NormalizedDescriptionEntity pending, _) = await InsertAsync(
 					context,
 					normalized,
 					NormalizedDescriptionStatus.PendingReview,
@@ -106,7 +111,7 @@ public class NormalizedDescriptionService(
 			}
 		}
 
-		NormalizedDescriptionEntity activeCreated = await InsertAsync(context, normalized, NormalizedDescriptionStatus.Active, embeddingVector, cancellationToken);
+		(NormalizedDescriptionEntity activeCreated, _) = await InsertAsync(context, normalized, NormalizedDescriptionStatus.Active, embeddingVector, cancellationToken);
 		return new GetOrCreateResult(mapper.ToDomain(activeCreated), MatchScore: null);
 	}
 
@@ -172,12 +177,48 @@ public class NormalizedDescriptionService(
 
 		context.NormalizedDescriptions.Remove(discard);
 
+		int liveCount = items.Count(item => item.DeletedAt is null);
+		int trashedCount = items.Count - liveCount;
+
+		// Record the merge itself, not just its mechanical parts. Two entries, keyed to each side,
+		// so the trail is findable whether you start from the row that survived or the one that
+		// vanished — the discarded id is about to stop existing, and an entry filed under it is the
+		// only way to answer "what happened to X?" afterwards.
+		DateTimeOffset now = DateTimeOffset.UtcNow;
+		string discardName = discard.CanonicalName;
+		string keepName = keep.CanonicalName;
+
+		context.AddSemanticAuditEntry(
+			NormalizedDescriptionEntityType,
+			keepId.ToString(),
+			AuditAction.Merge,
+			[
+				new FieldChange { FieldName = "mergedFrom", OldValue = discardName, NewValue = keepName },
+				new FieldChange { FieldName = "discardedId", OldValue = discardId.ToString(), NewValue = null },
+				new FieldChange { FieldName = "relinkedItemCount", OldValue = null, NewValue = liveCount.ToString() },
+				new FieldChange { FieldName = "relinkedTrashedItemCount", OldValue = null, NewValue = trashedCount.ToString() },
+			],
+			now);
+
+		context.AddSemanticAuditEntry(
+			NormalizedDescriptionEntityType,
+			discardId.ToString(),
+			AuditAction.Merge,
+			[
+				new FieldChange { FieldName = "mergedInto", OldValue = discardName, NewValue = keepName },
+				new FieldChange { FieldName = "keptId", OldValue = null, NewValue = keepId.ToString() },
+				new FieldChange { FieldName = "relinkedItemCount", OldValue = null, NewValue = liveCount.ToString() },
+				new FieldChange { FieldName = "relinkedTrashedItemCount", OldValue = null, NewValue = trashedCount.ToString() },
+			],
+			now);
+
 		await context.SaveChangesAsync(cancellationToken);
 
 		// The returned count keeps its established meaning — live items re-linked — so the
 		// admin-facing "N items re-linked" number still matches what a report would show.
-		// Trashed rows are repointed for integrity but deliberately not counted.
-		return items.Count(item => item.DeletedAt is null);
+		// Trashed rows are repointed for integrity but deliberately not counted here; the audit
+		// entry reports them separately so the discrepancy is inspectable rather than invisible.
+		return liveCount;
 	}
 
 	public async Task<NormalizedDescriptionDetail> SplitAsync(Guid receiptItemId, CancellationToken cancellationToken)
@@ -212,7 +253,12 @@ public class NormalizedDescriptionService(
 			}
 		}
 
-		NormalizedDescriptionEntity created = await InsertAsync(
+		// Captured before the repoint below overwrites it — this is the only moment the "split out
+		// of what?" answer exists in memory. Null when the item was never resolved, which is a
+		// legitimate split of an unlinked item rather than an error.
+		Guid? splitFromId = item.NormalizedDescriptionId;
+
+		(NormalizedDescriptionEntity created, bool wasInserted) = await InsertAsync(
 			context,
 			canonicalName,
 			NormalizedDescriptionStatus.Active,
@@ -220,6 +266,66 @@ public class NormalizedDescriptionService(
 			cancellationToken);
 
 		item.NormalizedDescriptionId = created.Id;
+
+		string? splitFromName = splitFromId is null
+			? null
+			: await context.NormalizedDescriptions
+				.AsNoTracking()
+				.Where(e => e.Id == splitFromId.Value)
+				.Select(e => e.CanonicalName)
+				.FirstOrDefaultAsync(cancellationToken);
+
+		// A split is mechanically a Create plus an Update, which says nothing about what was
+		// detached from what. Record it on both rows for the same reason merges are: so the trail
+		// reads from either side (RECEIPTS-890).
+		//
+		// But only when something actually moved. InsertAsync returns any existing row with this
+		// canonical name — including the item's OWN current description, when the raw text differs
+		// from the canonical name only by case or surrounding whitespace. In that case the repoint
+		// above is a no-op, nothing was detached, and writing an entry would record a row as having
+		// been split out of itself.
+		if (created.Id != splitFromId)
+		{
+			DateTimeOffset now = DateTimeOffset.UtcNow;
+
+			// The item can also land on a pre-existing *different* row, which is a re-link rather
+			// than a split into a new description. Recording that distinction keeps the entry from
+			// implying a row was created when none was.
+			FieldChange targetOrigin = new()
+			{
+				FieldName = "targetWasExistingRow",
+				OldValue = null,
+				NewValue = wasInserted ? "false" : "true",
+			};
+
+			context.AddSemanticAuditEntry(
+				NormalizedDescriptionEntityType,
+				created.Id.ToString(),
+				AuditAction.Split,
+				[
+					new FieldChange { FieldName = "splitFrom", OldValue = splitFromName, NewValue = canonicalName },
+					new FieldChange { FieldName = "splitFromId", OldValue = splitFromId?.ToString(), NewValue = null },
+					new FieldChange { FieldName = "receiptItemId", OldValue = null, NewValue = receiptItemId.ToString() },
+					targetOrigin,
+				],
+				now);
+
+			if (splitFromId is Guid originId)
+			{
+				context.AddSemanticAuditEntry(
+					NormalizedDescriptionEntityType,
+					originId.ToString(),
+					AuditAction.Split,
+					[
+						new FieldChange { FieldName = "splitOut", OldValue = splitFromName, NewValue = canonicalName },
+						new FieldChange { FieldName = "splitToId", OldValue = null, NewValue = created.Id.ToString() },
+						new FieldChange { FieldName = "receiptItemId", OldValue = null, NewValue = receiptItemId.ToString() },
+						targetOrigin,
+					],
+					now);
+			}
+		}
+
 		await context.SaveChangesAsync(cancellationToken);
 
 		// Re-read through the same projection the list endpoint uses so the caller gets a truthful
@@ -539,8 +645,30 @@ public class NormalizedDescriptionService(
 
 		context.NormalizedDescriptions.RemoveRange(pending);
 
-		// Single SaveChanges: either the unlink, the score clear and the delete all land, or none do.
-		// A partial commit would strand items pointing at deleted rows.
+		// One semantic entry for the whole operation rather than per deleted row: the requeue is a
+		// single operator decision, and N separate entries would bury that under the very
+		// row-by-row noise this exists to summarise. The per-row Deletes are still auto-audited
+		// alongside it, so nothing is lost — this adds the intent on top (RECEIPTS-890).
+		//
+		// EntityId is empty because no single row is the subject. The audit page keys its filter on
+		// EntityType, so the entry is still reachable; there is simply no one id to attribute a
+		// bulk delete to.
+		context.AddSemanticAuditEntry(
+			NormalizedDescriptionEntityType,
+			string.Empty,
+			AuditAction.Delete,
+			[
+				new FieldChange { FieldName = "operation", OldValue = null, NewValue = "RequeuePending" },
+				new FieldChange { FieldName = "deletedDescriptionCount", OldValue = null, NewValue = pending.Count.ToString() },
+				new FieldChange { FieldName = "unlinkedItemCount", OldValue = null, NewValue = unlinkedItemCount.ToString() },
+				new FieldChange { FieldName = "clearedMatchScoreCount", OldValue = null, NewValue = clearedMatchScoreCount.ToString() },
+				new FieldChange { FieldName = "unlinkedTrashedItemCount", OldValue = null, NewValue = (items.Count - unlinkedItemCount).ToString() },
+			],
+			DateTimeOffset.UtcNow);
+
+		// Single SaveChanges: either the unlink, the score clear, the delete and the audit entry all
+		// land, or none do. A partial commit would strand items pointing at deleted rows, or record
+		// a requeue that did not happen.
 		await context.SaveChangesAsync(cancellationToken);
 
 		return new RequeuePendingResult(pending.Count, unlinkedItemCount, clearedMatchScoreCount);
@@ -720,7 +848,11 @@ public class NormalizedDescriptionService(
 				cancellationToken);
 	}
 
-	private async Task<NormalizedDescriptionEntity> InsertAsync(
+	// Returns the row plus whether it was actually inserted. Callers that only need the row ignore
+	// the flag; SplitAsync needs it, because every early return below hands back a PRE-EXISTING row
+	// and reporting that as a freshly split-out description would be a false audit record
+	// (RECEIPTS-890).
+	private async Task<(NormalizedDescriptionEntity Entity, bool WasInserted)> InsertAsync(
 		ApplicationDbContext context,
 		string canonicalName,
 		NormalizedDescriptionStatus status,
@@ -741,7 +873,7 @@ public class NormalizedDescriptionService(
 		NormalizedDescriptionEntity? preInsert = await FindExactCaseInsensitiveAsync(context, canonicalName, cancellationToken);
 		if (preInsert is not null)
 		{
-			return preInsert;
+			return (preInsert, false);
 		}
 
 		NormalizedDescriptionEntity entity = new()
@@ -771,7 +903,7 @@ public class NormalizedDescriptionService(
 			NormalizedDescriptionEntity? winner = await FindExactCaseInsensitiveAsync(context, canonicalName, cancellationToken);
 			if (winner is not null)
 			{
-				return winner;
+				return (winner, false);
 			}
 
 			// 2. No name collision, so the other candidate is the self-FK added in RECEIPTS-873:
@@ -792,7 +924,7 @@ public class NormalizedDescriptionService(
 			return await InsertAsync(context, canonicalName, status, embedding, cancellationToken);
 		}
 
-		return entity;
+		return (entity, true);
 	}
 
 	// Virtual so tests can simulate specific top-1 matches without a real Postgres. On providers

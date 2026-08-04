@@ -48,17 +48,35 @@ export function parseChanges(changesJson: string): FieldChange[] {
   }
 }
 
+/**
+ * Badge styling for an audit action.
+ *
+ * Accepts both the raw enum name the API actually sends (`AuditService` projects
+ * `entity.Action.ToString()`, giving "Create"/"Delete") and the past-tense display labels from
+ * the enum-metadata endpoint ("Created"/"Deleted"). Only the past-tense forms were handled
+ * originally, so every real response fell through to the neutral default and a deletion never
+ * rendered as destructive (RECEIPTS-890).
+ */
 export function actionBadgeVariant(
   action: string,
 ): "default" | "secondary" | "destructive" | "outline" {
   switch (action) {
+    case "Create":
     case "Created":
       return "default";
+    case "Update":
     case "Updated":
       return "secondary";
+    case "Delete":
     case "Deleted":
       return "destructive";
+    case "Restore":
     case "Restored":
+      return "outline";
+    // Merge and Split both destroy or detach structure an admin may need to trace back.
+    case "Merge":
+    case "Merged":
+    case "Split":
       return "outline";
     default:
       return "secondary";

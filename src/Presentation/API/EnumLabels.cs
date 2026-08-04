@@ -37,6 +37,7 @@ public static class EnumLabels
 		new() { Value = "Delete", Label = "Deleted" },
 		new() { Value = "Restore", Label = "Restored" },
 		new() { Value = "Merge", Label = "Merged" },
+		new() { Value = "Split", Label = "Split" },
 	];
 
 	public static readonly EnumValuePair[] EntityTypes =
@@ -48,5 +49,9 @@ public static class EnumLabels
 		new() { Value = "Transaction", Label = "Transaction" },
 		new() { Value = "Adjustment", Label = "Adjustment" },
 		new() { Value = "ItemTemplate", Label = "Item Template" },
+		// Normalized descriptions have been auto-audited all along, but were missing from this
+		// list, so their entries could never be selected in the audit page's entity-type filter
+		// (RECEIPTS-890).
+		new() { Value = "NormalizedDescription", Label = "Normalized Description" },
 	];
 }
