@@ -69,6 +69,25 @@ describe("actionBadgeVariant", () => {
     expect(actionBadgeVariant("Restored")).toBe("outline");
   });
 
+  // The API sends the raw enum name, not the past-tense label: AuditService projects
+  // `entity.Action.ToString()`. Only the past-tense forms were handled, so every real response
+  // fell through to the neutral default and a deletion never rendered destructive
+  // (RECEIPTS-890). These are the values that actually arrive over the wire.
+  it.each([
+    ["Create", "default"],
+    ["Update", "secondary"],
+    ["Delete", "destructive"],
+    ["Restore", "outline"],
+  ])("maps the raw enum name %s to %s", (action, expected) => {
+    expect(actionBadgeVariant(action)).toBe(expected);
+  });
+
+  it("returns outline for Merge and Split", () => {
+    expect(actionBadgeVariant("Merge")).toBe("outline");
+    expect(actionBadgeVariant("Merged")).toBe("outline");
+    expect(actionBadgeVariant("Split")).toBe("outline");
+  });
+
   it("returns secondary for unknown action", () => {
     expect(actionBadgeVariant("Unknown")).toBe("secondary");
   });
