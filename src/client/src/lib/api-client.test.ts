@@ -36,6 +36,7 @@ import * as signalr from "@/lib/signalr-connection";
 const mockedAuth = vi.mocked(auth);
 const mockedSignalR = vi.mocked(signalr);
 
+let errorNormalizationMiddleware: Middleware;
 let authMiddleware: Middleware;
 let signalRMiddleware: Middleware;
 
@@ -76,9 +77,11 @@ beforeEach(async () => {
   // Extract the isTimeoutError and isNetworkError from the module
   Object.assign(globalThis, { __apiClientModule: mod });
 
-  // The module registers 2 middleware via client.use()
-  authMiddleware = registeredMiddleware[0];
-  signalRMiddleware = registeredMiddleware[1];
+  // Registration order matters: the error normaliser is registered first so
+  // that openapi-fetch — which runs `onResponse` in reverse order — invokes it
+  // last, after authMiddleware has had its chance to retry a 401.
+  [errorNormalizationMiddleware, authMiddleware, signalRMiddleware] =
+    registeredMiddleware;
 
   vi.clearAllMocks();
 });
@@ -315,6 +318,145 @@ describe("authMiddleware.onResponse", () => {
       writable: true,
       value: originalLocation,
     });
+  });
+});
+
+describe("errorNormalizationMiddleware.onResponse", () => {
+  const callOnResponse = (response: Response) =>
+    errorNormalizationMiddleware.onResponse!(
+      makeParams(makeRequest(), response),
+    );
+
+  /**
+   * Reads the middleware's output the way openapi-fetch does for a non-ok
+   * response: `await response.text()` followed by a best-effort `JSON.parse`.
+   * Whatever this returns is what a call site sees as `error`.
+   */
+  async function errorAsSeenByCallers(response: Response): Promise<unknown> {
+    const result = await callOnResponse(response);
+    const final = (result as Response | undefined) ?? response;
+    const raw = await final.text();
+    if (!raw) return undefined;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return raw;
+    }
+  }
+
+  it("leaves successful responses untouched", async () => {
+    expect(await callOnResponse(makeResponse(200, { id: 1 }))).toBeUndefined();
+  });
+
+  // RECEIPTS-885: the bug that reported a rejected merge as "Cards merged".
+  it("gives a bodiless 403 a truthy error carrying the status", async () => {
+    const error = await errorAsSeenByCallers(makeResponse(403));
+
+    expect(error).toBeTruthy();
+    expect(error).toMatchObject({ status: 403 });
+  });
+
+  it("gives a bodiless 403 sent with Content-Length: 0 the same treatment", async () => {
+    const response = new Response(null, {
+      status: 403,
+      headers: { "Content-Length": "0" },
+    });
+
+    expect(await errorAsSeenByCallers(response)).toMatchObject({ status: 403 });
+  });
+
+  it("gives a bodiless 404 a truthy error carrying the status", async () => {
+    expect(await errorAsSeenByCallers(makeResponse(404))).toMatchObject({
+      status: 404,
+    });
+  });
+
+  // RECEIPTS-886: TypedResults.BadRequest("...") serialises a bare JSON string,
+  // which handleGlobalError's `typeof === "object"` test used to discard.
+  it("promotes a bare-string 400 body to ProblemDetails detail", async () => {
+    const message =
+      "Source account would be partially merged: all of its cards must be included in the merge, or none.";
+    const response = new Response(JSON.stringify(message), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+
+    expect(await errorAsSeenByCallers(response)).toEqual({
+      status: 400,
+      detail: message,
+    });
+  });
+
+  it("promotes a non-JSON text body to ProblemDetails detail", async () => {
+    const response = new Response("Forbidden", {
+      status: 403,
+      headers: { "Content-Type": "text/plain" },
+    });
+
+    expect(await errorAsSeenByCallers(response)).toEqual({
+      status: 403,
+      detail: "Forbidden",
+    });
+  });
+
+  it("leaves a real ProblemDetails body untouched", async () => {
+    const problem = {
+      status: 400,
+      title: "One or more validation errors occurred.",
+      errors: { Date: ["Date cannot be in the future"] },
+    };
+
+    expect(await callOnResponse(makeResponse(400, problem))).toBeUndefined();
+    expect(await errorAsSeenByCallers(makeResponse(400, problem))).toEqual(
+      problem,
+    );
+  });
+
+  it("preserves a non-ProblemDetails object body and stamps the status on it", async () => {
+    // The 409 shape useMergeCards depends on to render its conflict dialog.
+    const conflict = {
+      message: "YNAB mapping conflict",
+      conflicts: [{ cardId: "abc", accountName: "Checking" }],
+    };
+
+    expect(await errorAsSeenByCallers(makeResponse(409, conflict))).toEqual({
+      ...conflict,
+      status: 409,
+    });
+  });
+
+  it("stamps the real status over a body whose status is not a number", async () => {
+    // `handleGlobalError` keys off a *numeric* status, so a body carrying
+    // `status: "error"` must not be mistaken for ProblemDetails.
+    const response = makeResponse(400, { status: "error", detail: "nope" });
+
+    expect(await errorAsSeenByCallers(response)).toEqual({
+      status: 400,
+      detail: "nope",
+    });
+  });
+
+  it("leaves an array body untouched rather than spreading its indices", async () => {
+    const body = ["first", "second"];
+
+    expect(await callOnResponse(makeResponse(422, body))).toBeUndefined();
+    expect(await errorAsSeenByCallers(makeResponse(422, body))).toEqual(body);
+  });
+
+  it("leaves a 304 alone, since a null-body status cannot carry one", async () => {
+    const response = new Response(null, { status: 304 });
+
+    // Constructing a body-bearing 304 throws, so the guard must short-circuit.
+    expect(await callOnResponse(response)).toBeUndefined();
+  });
+
+  it("does not consume the body, so later readers still see it", async () => {
+    const response = makeResponse(400, { status: 400, detail: "nope" });
+
+    await callOnResponse(response);
+
+    expect(response.bodyUsed).toBe(false);
+    await expect(response.json()).resolves.toMatchObject({ detail: "nope" });
   });
 });
 
