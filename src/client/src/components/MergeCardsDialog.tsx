@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { toast } from "sonner";
 import client from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -58,18 +59,44 @@ export function MergeCardsDialog({
   // the dialog before the merge lands, the account is deleted to avoid leaking
   // empty accounts into the DB.
   const pendingCreatedAccountIdRef = useRef<string | null>(null);
+  // The name that account was actually created with. Without this an edit made
+  // after a failed merge cannot be told apart from a plain retry, and the merge
+  // silently lands on an account still carrying the original name.
+  const pendingCreatedAccountNameRef = useRef<string | null>(null);
 
   const { data: accountsData } = useAccounts(0, 500, "name", "asc", true);
   const createAccount = useCreateAccount();
   const mergeCards = useMergeCards();
+
+  /**
+   * Deletes an account this dialog created but did not end up merging into.
+   *
+   * Deliberately not awaited by its callers — closing the dialog should not
+   * wait on the network — but it must never be fire-and-forget either: if the
+   * delete fails (offline, 403, a race with the merge) the empty account is
+   * leaked permanently, and saying nothing leaves the user unable to even know
+   * to clean it up. Resolves rather than rejects so no caller needs a .catch.
+   */
+  async function discardCreatedAccount(accountId: string) {
+    try {
+      const { error } = await client.DELETE("/api/accounts/{id}", {
+        params: { path: { id: accountId } },
+      });
+      if (error) throw error;
+    } catch {
+      toast.error(
+        "Couldn't remove the empty account created for this merge. You may need to delete it manually.",
+      );
+    }
+  }
 
   function handleOpenChange(next: boolean) {
     if (!next) {
       const leaked = pendingCreatedAccountIdRef.current;
       if (leaked) {
         pendingCreatedAccountIdRef.current = null;
-        // Fire-and-forget cleanup; we don't want to block the dialog close.
-        void client.DELETE("/api/accounts/{id}", { params: { path: { id: leaked } } });
+        pendingCreatedAccountNameRef.current = null;
+        void discardCreatedAccount(leaked);
       }
       setTargetMode("existing");
       setTargetAccountId("");
@@ -90,22 +117,58 @@ export function MergeCardsDialog({
     createAccount.isPending ||
     (conflict !== null && !winnerAccountId);
 
+  /**
+   * Resolves the target account id for "New account" mode, creating the account
+   * on first submit and reusing it on retries.
+   *
+   * Reuse is only safe while the name still matches what we created. A retry
+   * after the user corrects the name must apply that correction, or the merge
+   * lands on an account carrying the original name with nothing to indicate it
+   * (RECEIPTS-894). Renaming rather than re-creating keeps it to one request and
+   * cannot leak a second empty account.
+   */
+  async function resolveNewAccountTarget(name: string): Promise<string | null> {
+    const pendingId = pendingCreatedAccountIdRef.current;
+
+    if (!pendingId) {
+      const created = await createAccount.mutateAsync({ name, isActive: true });
+      if (!created?.id) return null;
+      pendingCreatedAccountIdRef.current = created.id;
+      pendingCreatedAccountNameRef.current = name;
+      return created.id;
+    }
+
+    if (pendingCreatedAccountNameRef.current !== name) {
+      const { error } = await client.PUT("/api/accounts/{id}", {
+        params: { path: { id: pendingId } },
+        body: { id: pendingId, name, isActive: true },
+      });
+      if (error) throw error;
+      pendingCreatedAccountNameRef.current = name;
+    }
+
+    return pendingId;
+  }
+
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
 
     let resolvedTargetId = targetAccountId;
 
-    if (targetMode === "new" && !pendingCreatedAccountIdRef.current) {
-      const created = await createAccount.mutateAsync({
-        name: newAccountName.trim(),
-        isActive: true,
-      });
-      if (!created?.id) return;
-      resolvedTargetId = created.id;
-      pendingCreatedAccountIdRef.current = created.id;
-    } else if (pendingCreatedAccountIdRef.current) {
-      // Second submit after conflict resolution — reuse the already-created account.
-      resolvedTargetId = pendingCreatedAccountIdRef.current;
+    // The conflict-resolution retry deliberately does NOT come through here:
+    // the conflict handler below switches targetMode to "existing" and pins
+    // targetAccountId to the created account, so resolvedTargetId already
+    // carries it. Keying reuse off the ref instead is what made an ordinary
+    // failed retry indistinguishable from conflict resolution.
+    if (targetMode === "new") {
+      try {
+        const created = await resolveNewAccountTarget(newAccountName.trim());
+        if (!created) return;
+        resolvedTargetId = created;
+      } catch {
+        // Surfaced by the global error handler.
+        return;
+      }
     }
 
     try {
@@ -114,9 +177,15 @@ export function MergeCardsDialog({
         sourceCardIds: selectedCards.map((c) => c.id),
         ynabMappingWinnerAccountId: winnerAccountId,
       });
-      // Merge succeeded — the created account (if any) now owns the merged cards,
-      // so it is no longer leaked; clear the ref before closing.
+      // The created account is only legitimately owned if the merge actually
+      // landed on it. If the user created one and then switched to an existing
+      // target, clearing the ref unconditionally would leak it.
+      const createdId = pendingCreatedAccountIdRef.current;
       pendingCreatedAccountIdRef.current = null;
+      pendingCreatedAccountNameRef.current = null;
+      if (createdId && createdId !== resolvedTargetId) {
+        void discardCreatedAccount(createdId);
+      }
       handleOpenChange(false);
       onMergeComplete?.();
     } catch (err) {
