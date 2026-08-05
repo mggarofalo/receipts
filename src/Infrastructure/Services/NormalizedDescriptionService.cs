@@ -170,9 +170,36 @@ public class NormalizedDescriptionService(
 			.Where(r => r.NormalizedDescriptionId == discardId)
 			.ToListAsync(cancellationToken);
 
-		foreach (ReceiptItemEntity item in items)
+		// Repoint AND rescore. The score on each item was the cosine similarity to the
+		// DISCARDED row's embedding, so once the item points at `keep` it describes a comparison
+		// that no longer exists. That is not cosmetic: PreviewThresholdImpactAsync buckets items
+		// by exactly this column, so every threshold-impact preview run after a merge would be
+		// computed partly from scores measured against a row that has been deleted.
+		//
+		// Leaving the score null instead is not an option here. The resolver only picks up rows
+		// WHERE "NormalizedDescriptionId" IS NULL, and a merged item keeps its link — so nothing
+		// would ever repopulate it, and the item would count as structurally unresolved forever.
+		//
+		// Grouped by description so one embedding serves every item sharing that text, mirroring
+		// the resolver's per-cycle grouping. Merges are low-volume admin operations, so the cost
+		// is a handful of embeddings per merge at worst.
+		int rescoredCount = 0;
+		foreach (IGrouping<string, ReceiptItemEntity> group in items.GroupBy(i => i.Description, StringComparer.Ordinal))
 		{
-			item.NormalizedDescriptionId = keepId;
+			double? similarity = await SimilarityToKeepAsync(context, group.Key, keep, cancellationToken);
+
+			foreach (ReceiptItemEntity item in group)
+			{
+				item.NormalizedDescriptionId = keepId;
+				if (item.NormalizedDescriptionMatchScore != similarity)
+				{
+					item.NormalizedDescriptionMatchScore = similarity;
+					if (item.DeletedAt is null)
+					{
+						rescoredCount++;
+					}
+				}
+			}
 		}
 
 		context.NormalizedDescriptions.Remove(discard);
@@ -197,6 +224,7 @@ public class NormalizedDescriptionService(
 				new FieldChange { FieldName = "discardedId", OldValue = discardId.ToString(), NewValue = null },
 				new FieldChange { FieldName = "relinkedItemCount", OldValue = null, NewValue = liveCount.ToString() },
 				new FieldChange { FieldName = "relinkedTrashedItemCount", OldValue = null, NewValue = trashedCount.ToString() },
+				new FieldChange { FieldName = "rescoredItemCount", OldValue = null, NewValue = rescoredCount.ToString() },
 			],
 			now);
 
@@ -209,6 +237,7 @@ public class NormalizedDescriptionService(
 				new FieldChange { FieldName = "keptId", OldValue = null, NewValue = keepId.ToString() },
 				new FieldChange { FieldName = "relinkedItemCount", OldValue = null, NewValue = liveCount.ToString() },
 				new FieldChange { FieldName = "relinkedTrashedItemCount", OldValue = null, NewValue = trashedCount.ToString() },
+				new FieldChange { FieldName = "rescoredItemCount", OldValue = null, NewValue = rescoredCount.ToString() },
 			],
 			now);
 
@@ -925,6 +954,78 @@ public class NormalizedDescriptionService(
 		}
 
 		return (entity, true);
+	}
+
+	/// <summary>
+	/// Cosine similarity between <paramref name="rawDescription"/> and the surviving row's
+	/// embedding, for re-scoring items re-linked by a merge (RECEIPTS-892).
+	/// </summary>
+	/// <remarks>
+	/// Returns null when no honest number can be produced — no embedding service, the surviving
+	/// row has no vector, or the provider is not Postgres. A null score is the correct answer
+	/// there: it reads as "unresolved" rather than asserting a similarity nobody measured.
+	/// </remarks>
+	private async Task<double?> SimilarityToKeepAsync(
+		ApplicationDbContext context,
+		string rawDescription,
+		NormalizedDescriptionEntity keep,
+		CancellationToken cancellationToken)
+	{
+		string normalized = (rawDescription ?? string.Empty).Trim();
+		if (string.IsNullOrEmpty(normalized))
+		{
+			return null;
+		}
+
+		// An exact case-insensitive name match is a perfect logical match. GetOrCreateAsync
+		// short-circuits to 1.0 here rather than paying for an embedding, and the score this
+		// writes has to mean the same thing as the score the resolver would have written.
+		if (string.Equals(normalized, keep.CanonicalName, StringComparison.OrdinalIgnoreCase))
+		{
+			return 1.0;
+		}
+
+		if (!embeddingService.IsConfigured || keep.Embedding is null)
+		{
+			return null;
+		}
+
+		float[] embeddingData = await embeddingService.GenerateEmbeddingAsync(normalized, cancellationToken);
+		if (embeddingData.Length == 0)
+		{
+			return null;
+		}
+
+		return await SimilarityToAsync(context, new Vector(embeddingData), keep.Id, cancellationToken);
+	}
+
+	// Virtual so tests can stub a similarity without pgvector, matching AnnSearchTopOneAsync.
+	// On providers that don't support pgvector (e.g., InMemory) the default is a no-op.
+	protected virtual async Task<double?> SimilarityToAsync(
+		ApplicationDbContext context,
+		Vector queryVector,
+		Guid targetId,
+		CancellationToken cancellationToken)
+	{
+		if (context.Database.ProviderName != PostgreSQL)
+		{
+			return null;
+		}
+
+		// Same expression as the ANN searches — `<=>` is cosine distance, so 1 - it is the
+		// similarity — but pinned to one row rather than ordered over the whole table.
+		string sql = """
+			SELECT "Id" AS entity_id,
+			       (1.0 - ("Embedding" <=> {0}::vector)) AS similarity
+			FROM "matching"."NormalizedDescriptions"
+			WHERE "Id" = {1} AND "Embedding" IS NOT NULL
+			""";
+
+		AnnSearchRow? row = await context.Database
+			.SqlQueryRaw<AnnSearchRow>(sql, queryVector, targetId)
+			.FirstOrDefaultAsync(cancellationToken);
+
+		return row?.similarity;
 	}
 
 	// Virtual so tests can simulate specific top-1 matches without a real Postgres. On providers
