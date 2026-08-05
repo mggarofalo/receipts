@@ -14,6 +14,7 @@ import {
   notifyServerError,
   setLoginFlash,
 } from "@/lib/server-error-bus";
+import { toApiError } from "@/lib/problem-details";
 
 const baseUrl = import.meta.env.VITE_API_URL ?? "";
 const API_TIMEOUT_MS = 30_000;
@@ -145,6 +146,82 @@ const serverErrorMiddleware: Middleware = {
   },
 };
 
+// Statuses the Fetch spec forbids from carrying a body. Constructing a
+// `Response` with a body and one of these statuses throws a TypeError, so the
+// normaliser has to leave them alone. 304 is the one that actually reaches
+// here: it is not `ok`, but it is also not an error worth rewriting.
+const NULL_BODY_STATUSES = new Set([204, 205, 304]);
+
+/**
+ * Guarantees that every failed response carries a ProblemDetails-shaped JSON
+ * body, so `error` is always a truthy object with a numeric `status`.
+ *
+ * openapi-fetch derives `error` from the raw body of a non-ok response
+ * (`error = await response.text()`, then a best-effort `JSON.parse`). This API
+ * produces three different failure bodies, and two of them break callers:
+ *
+ *   1. ProblemDetails — has `status`. Handled correctly everywhere already.
+ *   2. A bare JSON string, from `TypedResults.BadRequest("some reason")`.
+ *      Parses to a JS string, so `handleGlobalError`'s `typeof === "object"`
+ *      test fails and the user is shown *nothing* (RECEIPTS-886).
+ *   3. No body at all — an authorization 403 or a bodiless `NotFound()`.
+ *      openapi-fetch yields `""` here, or `undefined` when the response
+ *      carries `Content-Length: 0`. Both are falsy, so the ubiquitous
+ *      `if (error) throw error` treats the failure as a *success*: the
+ *      success toast fires and dialogs close (RECEIPTS-885).
+ *
+ * Normalising here rather than at each of the ~150 call sites means the
+ * existing `if (error) throw error` becomes correct everywhere, and no future
+ * hook can reintroduce the bug by forgetting a status check.
+ *
+ * Registered FIRST so it runs LAST: openapi-fetch invokes `onResponse` in
+ * reverse registration order, and this must observe the final response, after
+ * `authMiddleware` has had its chance to replace a 401 with a successful retry.
+ */
+const errorNormalizationMiddleware: Middleware = {
+  async onResponse({ response }) {
+    if (response.ok) return undefined;
+    if (NULL_BODY_STATUSES.has(response.status)) return undefined;
+
+    const raw = await response.clone().text();
+
+    let body: unknown = undefined;
+    if (raw.trim()) {
+      try {
+        body = JSON.parse(raw);
+      } catch {
+        // Not JSON — keep the raw text so it can become `detail`.
+        body = raw;
+      }
+    }
+
+    // Shape 1: already ProblemDetails. Leave the response untouched so the
+    // server's own `status`, `errors` map and `detail` survive verbatim.
+    // The status must be a *number*: `handleGlobalError` keys off that, so a
+    // body carrying `status: "error"` would otherwise pass through and still
+    // toast nothing. Stamping the real HTTP status over it is the fix.
+    if (
+      body &&
+      typeof body === "object" &&
+      !Array.isArray(body) &&
+      typeof (body as Record<string, unknown>).status === "number"
+    ) {
+      return undefined;
+    }
+
+    // An array body is already truthy, so neither bug applies. Rewriting it
+    // would mangle it (`{...[]}` spreads indices), so leave it be.
+    if (Array.isArray(body)) return undefined;
+
+    return new Response(JSON.stringify(toApiError(response.status, body)), {
+      status: response.status,
+      statusText: response.statusText,
+      headers: { "Content-Type": "application/json" },
+    });
+  },
+};
+
+client.use(errorNormalizationMiddleware);
 client.use(authMiddleware);
 client.use(signalRConnectionMiddleware);
 client.use(serverErrorMiddleware);

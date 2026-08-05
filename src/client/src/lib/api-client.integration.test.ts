@@ -174,6 +174,90 @@ describe("auth middleware (integration)", () => {
     }
   });
 
+  it("normalises a bodiless 403 into a truthy error (RECEIPTS-885)", async () => {
+    server.use(
+      http.get("*/api/cards", () => new HttpResponse(null, { status: 403 })),
+    );
+
+    setTokens("valid-token", "valid-refresh");
+    const { data, error, response } = await client.GET("/api/cards");
+
+    // The bug: openapi-fetch reports a bodiless failure as a falsy `error`, so
+    // `if (error) throw error` fell through and the caller reported success.
+    expect(response.ok).toBe(false);
+    expect(data).toBeUndefined();
+    expect(error).toBeTruthy();
+    expect(error).toMatchObject({ status: 403 });
+  });
+
+  it("normalises a bare-string 400 so its text reaches the caller (RECEIPTS-886)", async () => {
+    const message =
+      "Source account would be partially merged: all of its cards must be included in the merge, or none.";
+
+    server.use(
+      http.get("*/api/cards", () =>
+        HttpResponse.json(message, { status: 400 }),
+      ),
+    );
+
+    setTokens("valid-token", "valid-refresh");
+    const { error } = await client.GET("/api/cards");
+
+    // A bare string has no `status`, so handleGlobalError used to toast nothing.
+    expect(error).toMatchObject({ status: 400, detail: message });
+  });
+
+  it("passes a real ProblemDetails body through unchanged", async () => {
+    const problem = {
+      status: 400,
+      title: "One or more validation errors occurred.",
+      errors: { Date: ["Date cannot be in the future"] },
+    };
+
+    server.use(
+      http.get("*/api/cards", () =>
+        HttpResponse.json(problem, { status: 400 }),
+      ),
+    );
+
+    setTokens("valid-token", "valid-refresh");
+    const { error } = await client.GET("/api/cards");
+
+    expect(error).toEqual(problem);
+  });
+
+  it("does not normalise a 401 that the refresh retry turns into a success", async () => {
+    // Guards the registration order: the normaliser must observe the *final*
+    // response, after authMiddleware has swapped the 401 for a retried 200.
+    let callCount = 0;
+
+    server.use(
+      http.get("*/api/cards", () => {
+        callCount++;
+        if (callCount === 1) {
+          return new HttpResponse(null, { status: 401 });
+        }
+        return HttpResponse.json({ data: [], total: 0, offset: 0, limit: 50 });
+      }),
+      http.post("*/api/auth/refresh", () =>
+        HttpResponse.json({
+          accessToken: "new-access-token",
+          refreshToken: "new-refresh-token",
+          expiresIn: 3600,
+          mustResetPassword: false,
+          tokenType: "Bearer",
+          scope: "",
+        }),
+      ),
+    );
+
+    setTokens("expired-access-token", "valid-refresh-token");
+    const { data, error } = await client.GET("/api/cards");
+
+    expect(error).toBeUndefined();
+    expect(data).toEqual({ data: [], total: 0, offset: 0, limit: 50 });
+  });
+
   it("clears tokens and redirects to /login when refresh fails", async () => {
     // Replace window.location with a writable stub
     const originalLocation = window.location;
