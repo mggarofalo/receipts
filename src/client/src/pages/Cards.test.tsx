@@ -90,9 +90,21 @@ vi.mock("@/hooks/usePagination", () => ({
   })),
 }));
 
+async function setAdmin(isAdmin: boolean) {
+  const { usePermission } = await import("@/hooks/usePermission");
+  vi.mocked(usePermission).mockReturnValue({
+    roles: isAdmin ? ["Admin"] : ["User"],
+    hasRole: (role: string) => role === (isAdmin ? "Admin" : "User"),
+    isAdmin: () => isAdmin,
+  });
+}
+
 describe("Cards", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     localStorage.removeItem("cards-status-filter");
+    // Nothing resets mocks between tests in this file, so pin the default
+    // explicitly rather than letting an earlier test's admin state leak.
+    await setAdmin(false);
   });
 
   it("renders the page heading", () => {
@@ -657,6 +669,7 @@ describe("Cards", () => {
   });
 
   it("merge button is disabled until at least 2 cards are selected", async () => {
+    await setAdmin(true);
     const user = (await import("@testing-library/user-event")).default.setup();
     const items = [
       mockCardResponse({ id: "1", cardCode: "A1", name: "Alpha", isActive: true }),
@@ -688,6 +701,96 @@ describe("Cards", () => {
 
     await user.click(screen.getByLabelText("Select Beta"));
     expect(mergeButton).not.toBeDisabled();
+  });
+
+  // RECEIPTS-895: POST /api/cards/merge is [Authorize(Policy = "RequireAdmin")].
+  // Without a matching UI gate a non-admin could select cards, open the dialog,
+  // create a target account and only then be rejected with a 403.
+  describe("merge permission gate", () => {
+    async function renderWithTwoCards() {
+      const user = (await import("@testing-library/user-event")).default.setup();
+      const items = [
+        mockCardResponse({ id: "1", cardCode: "A1", name: "Alpha", isActive: true }),
+        mockCardResponse({ id: "2", cardCode: "A2", name: "Beta", isActive: true }),
+      ];
+      const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
+      vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
+        totalCount: items.length,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }));
+      const { useCards } = await import("@/hooks/useCards");
+      vi.mocked(useCards).mockReturnValue(mockQueryResult({
+        data: items,
+        total: items.length,
+        isLoading: false,
+      }));
+
+      renderWithProviders(<Cards />);
+      return user;
+    }
+
+    it("keeps the merge button disabled for a non-admin even with 2 cards selected", async () => {
+      const user = await renderWithTwoCards();
+
+      await user.click(screen.getByLabelText("Select Alpha"));
+      await user.click(screen.getByLabelText("Select Beta"));
+
+      expect(
+        screen.getByRole("button", { name: /merge selected cards/i }),
+      ).toBeDisabled();
+    });
+
+    it("explains why merging is unavailable to a non-admin", async () => {
+      await renderWithTwoCards();
+
+      // Asserted on the accessible name rather than the tooltip: a disabled
+      // control emits no pointer events, so the tooltip is sighted-hover only.
+      // The name is what a keyboard or screen-reader user actually receives.
+      expect(
+        screen.getByRole("button", {
+          name: /merge selected cards into an account — requires an administrator account/i,
+        }),
+      ).toBeInTheDocument();
+    });
+
+    it("does not clutter the admin's merge button with a reason", async () => {
+      await setAdmin(true);
+      await renderWithTwoCards();
+
+      expect(
+        screen.getByRole("button", { name: /merge selected cards/i }),
+      ).toHaveAccessibleName("Merge selected cards into an account");
+    });
+
+    it("never opens the merge dialog for a non-admin", async () => {
+      const user = await renderWithTwoCards();
+
+      await user.click(screen.getByLabelText("Select Alpha"));
+      await user.click(screen.getByLabelText("Select Beta"));
+      await user.click(
+        screen.getByRole("button", { name: /merge selected cards/i }),
+      );
+
+      expect(
+        screen.queryByRole("dialog", { name: /merge/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("enables merging for an admin with 2 cards selected", async () => {
+      await setAdmin(true);
+      const user = await renderWithTwoCards();
+
+      await user.click(screen.getByLabelText("Select Alpha"));
+      await user.click(screen.getByLabelText("Select Beta"));
+
+      expect(
+        screen.getByRole("button", { name: /merge selected cards/i }),
+      ).not.toBeDisabled();
+    });
   });
 
 });

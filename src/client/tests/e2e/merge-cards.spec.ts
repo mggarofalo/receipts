@@ -1,5 +1,11 @@
 import { test, expect, type Page, type Route } from "@playwright/test";
-import { installApiMocks, signInAs, ADMIN_FIXTURE_USER } from "../fixtures/api-mocks";
+import {
+  installApiMocks,
+  signInAs,
+  ADMIN_FIXTURE_USER,
+  FIXTURE_USER,
+  type FixtureUser,
+} from "../fixtures/api-mocks";
 
 // Behavioural coverage for the card-merge flow (/cards → "Merge (n)" → dialog).
 //
@@ -45,9 +51,13 @@ const json = (body: unknown, status = 200) => ({
  * all is deliberate in several tests — that is what ASP.NET sends for a bare
  * 403/404, and reproducing it faithfully is the whole point.
  */
-async function gotoCards(page: Page, mergeHandler: (route: Route) => unknown) {
+async function gotoCards(
+  page: Page,
+  mergeHandler: (route: Route) => unknown,
+  user: FixtureUser = ADMIN_FIXTURE_USER,
+) {
   await installApiMocks(page, {
-    user: ADMIN_FIXTURE_USER,
+    user,
     // Real timers: we assert on toasts, which sonner mounts and dismisses on
     // setTimeout. A frozen clock makes that behaviour unrepresentative.
     freezeClock: false,
@@ -60,7 +70,7 @@ async function gotoCards(page: Page, mergeHandler: (route: Route) => unknown) {
       "**/api/cards/merge": mergeHandler,
     },
   });
-  await signInAs(page, ADMIN_FIXTURE_USER);
+  await signInAs(page, user);
   await page.goto("/cards");
   await expect(page.getByRole("heading", { name: "Cards" })).toBeVisible();
 }
@@ -212,5 +222,38 @@ test.describe("card merge — entry conditions", () => {
 
     await page.getByLabel("Select Reissued Visa").check();
     await expect(mergeButton).toBeEnabled();
+  });
+
+  // RECEIPTS-895. The 403 test above proves a rejected merge is reported
+  // honestly; this proves a non-admin never gets far enough to be rejected.
+  // That matters because the dialog's "New account" mode creates the target
+  // account BEFORE submitting, so reaching it and failing leaves a stray
+  // empty account behind.
+  test("a non-admin is never offered the merge dialog", async ({ page }) => {
+    let mergeRequests = 0;
+    await gotoCards(
+      page,
+      (route) => {
+        mergeRequests++;
+        return route.fulfill({ status: 403 });
+      },
+      FIXTURE_USER,
+    );
+
+    const mergeButton = page.getByLabel("Merge selected cards into an account");
+
+    // Select enough cards that an admin would be able to merge.
+    await page.getByLabel("Select Primary Visa").check();
+    await page.getByLabel("Select Reissued Visa").check();
+    await expect(mergeButton).toHaveText("Merge (2)");
+
+    await expect(mergeButton).toBeDisabled();
+    await expect(mergeButton).toHaveAccessibleName(
+      "Merge selected cards into an account — requires an administrator account",
+    );
+
+    await expect(page.getByRole("dialog")).toBeHidden();
+    // The gate is real, not just visual: nothing ever hit the endpoint.
+    expect(mergeRequests).toBe(0);
   });
 });

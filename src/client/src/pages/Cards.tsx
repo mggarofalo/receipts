@@ -44,6 +44,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { TableSkeleton } from "@/components/ui/table-skeleton";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Info, Pencil } from "lucide-react";
 
@@ -188,6 +193,35 @@ function Cards() {
     return <TableSkeleton columns={4} />;
   }
 
+  // POST /api/cards/merge is gated with [Authorize(Policy = "RequireAdmin")].
+  // Without the same gate here a non-admin could select cards, open the dialog,
+  // create a brand-new target account and only then be rejected with a 403 —
+  // leaving the empty account behind (RECEIPTS-895).
+  const canMerge = isAdmin();
+  const mergeBlockedReason = canMerge
+    ? null
+    : "requires an administrator account";
+
+  const mergeButton = (
+    <button
+      type="button"
+      className="btn"
+      onClick={() => setMergeOpen(true)}
+      // The reason rides on the accessible name as well as the tooltip: a
+      // disabled control is skipped by most screen-reader navigation and the
+      // tooltip is sighted-hover only, so the name is the one channel a
+      // keyboard or screen-reader user reliably gets.
+      aria-label={
+        mergeBlockedReason
+          ? `Merge selected cards into an account — ${mergeBlockedReason}`
+          : "Merge selected cards into an account"
+      }
+      disabled={!canMerge || selectedIds.size < 2}
+    >
+      Merge ({selectedIds.size})
+    </button>
+  );
+
   return (
     <>
       <PageHead
@@ -195,15 +229,23 @@ function Cards() {
         sub={`${serverTotal} total${statusFilter === "all" ? "" : ` · ${statusFilter === "true" ? "active" : "inactive"}`}`}
         actions={
           <>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => setMergeOpen(true)}
-              aria-label="Merge selected cards into an account"
-              disabled={selectedIds.size < 2}
-            >
-              Merge ({selectedIds.size})
-            </button>
+            {canMerge ? (
+              mergeButton
+            ) : (
+              // A disabled button emits no pointer events, so the tooltip hangs
+              // off a wrapper span instead (the button's disabled styling sets
+              // pointer-events: none, so hovers land on the span). The wrapper
+              // is deliberately not focusable — keyboard and screen-reader
+              // users get the same reason from the button's accessible name.
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>{mergeButton}</span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Merging cards requires an administrator account.
+                </TooltipContent>
+              </Tooltip>
+            )}
             <button
               type="button"
               className="btn primary"
@@ -380,7 +422,9 @@ function Cards() {
       )}
 
       <MergeCardsDialog
-        open={mergeOpen}
+        // Belt and braces: gating only the button would leave the dialog
+        // reachable if any other path ever sets mergeOpen.
+        open={mergeOpen && canMerge}
         onOpenChange={setMergeOpen}
         selectedCards={selectedMergeCards}
         onMergeComplete={handleMergeComplete}
