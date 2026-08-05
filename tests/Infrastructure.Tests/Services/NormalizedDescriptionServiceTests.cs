@@ -269,6 +269,242 @@ public class NormalizedDescriptionServiceTests
 		linkedIds.Should().OnlyContain(id => id == keepId);
 	}
 
+	// RECEIPTS-892. A merge repoints items at the surviving row but used to leave
+	// NormalizedDescriptionMatchScore alone, so the score described a comparison against a row
+	// that had just been deleted. PreviewThresholdImpactAsync buckets items by exactly that
+	// column, which made every threshold preview run after a merge partly fictional.
+	public sealed class MergeRescoring : NormalizedDescriptionServiceTests
+	{
+		private (Guid KeepId, Guid DiscardId, Guid ReceiptId) SeedMergePair(
+			string keepName,
+			string discardName,
+			bool keepHasEmbedding = true)
+		{
+			Guid keepId = Guid.NewGuid();
+			Guid discardId = Guid.NewGuid();
+			Guid receiptId = Guid.NewGuid();
+
+			using ApplicationDbContext seed = _contextFactory.CreateDbContext();
+			seed.NormalizedDescriptions.AddRange(
+				new NormalizedDescriptionEntity
+				{
+					Id = keepId,
+					CanonicalName = keepName,
+					Status = NormalizedDescriptionStatus.Active,
+					CreatedAt = DateTimeOffset.UtcNow,
+					Embedding = keepHasEmbedding ? new Vector(CreateFakeEmbedding()) : null,
+				},
+				new NormalizedDescriptionEntity
+				{
+					Id = discardId,
+					CanonicalName = discardName,
+					Status = NormalizedDescriptionStatus.Active,
+					CreatedAt = DateTimeOffset.UtcNow,
+				});
+			seed.SaveChanges();
+
+			return (keepId, discardId, receiptId);
+		}
+
+		[Fact]
+		public async Task MergeAsync_ReplacesTheDiscardedRowsScoreWithOneMeasuredAgainstTheSurvivor()
+		{
+			(Guid keepId, Guid discardId, Guid receiptId) = SeedMergePair("Milk", "Mlik");
+
+			using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+			{
+				// 0.91 was the similarity to "Mlik", which is about to stop existing.
+				seed.ReceiptItems.Add(BuildReceiptItemWithScore(receiptId, "Mlik 2%", 0.91, discardId));
+				await seed.SaveChangesAsync();
+			}
+
+			_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
+			_embeddingServiceMock
+				.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+				.ReturnsAsync(CreateFakeEmbedding());
+
+			RescoringNormalizedDescriptionService service = new(
+				_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, similarity: 0.77);
+
+			await service.MergeAsync(keepId, discardId, CancellationToken.None);
+
+			using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+			ReceiptItemEntity item = await verify.ReceiptItems.IgnoreAutoIncludes().SingleAsync();
+			item.NormalizedDescriptionId.Should().Be(keepId);
+			item.NormalizedDescriptionMatchScore.Should().Be(0.77);
+		}
+
+		[Fact]
+		public async Task MergeAsync_ScoresAnExactNameMatchAsOneWithoutAnEmbedding()
+		{
+			(Guid keepId, Guid discardId, Guid receiptId) = SeedMergePair("Milk", "Mlik");
+
+			using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+			{
+				// Casing and surrounding space must not matter — GetOrCreateAsync trims and
+				// compares case-insensitively before it will pay for an embedding.
+				seed.ReceiptItems.Add(BuildReceiptItemWithScore(receiptId, "  milk  ", 0.42, discardId));
+				await seed.SaveChangesAsync();
+			}
+
+			_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
+
+			NormalizedDescriptionService service = new(
+				_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+			await service.MergeAsync(keepId, discardId, CancellationToken.None);
+
+			using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+			ReceiptItemEntity item = await verify.ReceiptItems.IgnoreAutoIncludes().SingleAsync();
+			item.NormalizedDescriptionMatchScore.Should().Be(1.0);
+			_embeddingServiceMock.Verify(
+				e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+				Times.Never);
+		}
+
+		[Fact]
+		public async Task MergeAsync_RescoresSoftDeletedItemsToo()
+		{
+			(Guid keepId, Guid discardId, Guid receiptId) = SeedMergePair("Milk", "Mlik");
+
+			using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+			{
+				ReceiptItemEntity trashed = BuildReceiptItemWithScore(receiptId, "Mlik 2%", 0.91, discardId);
+				trashed.DeletedAt = DateTimeOffset.UtcNow;
+				seed.ReceiptItems.Add(trashed);
+				await seed.SaveChangesAsync();
+			}
+
+			_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
+			_embeddingServiceMock
+				.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+				.ReturnsAsync(CreateFakeEmbedding());
+
+			RescoringNormalizedDescriptionService service = new(
+				_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, similarity: 0.64);
+
+			await service.MergeAsync(keepId, discardId, CancellationToken.None);
+
+			// A trashed item restored from the recycle bin must not bring a stale score back
+			// with it — the same stranding class as RECEIPTS-801.
+			using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+			ReceiptItemEntity item = await verify.ReceiptItems
+				.IgnoreQueryFilters()
+				.IgnoreAutoIncludes()
+				.SingleAsync();
+			item.NormalizedDescriptionId.Should().Be(keepId);
+			item.NormalizedDescriptionMatchScore.Should().Be(0.64);
+		}
+
+		[Fact]
+		public async Task MergeAsync_NullsTheScoreWhenNoHonestSimilarityCanBeComputed()
+		{
+			(Guid keepId, Guid discardId, Guid receiptId) = SeedMergePair("Milk", "Mlik", keepHasEmbedding: false);
+
+			using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+			{
+				seed.ReceiptItems.Add(BuildReceiptItemWithScore(receiptId, "Mlik 2%", 0.91, discardId));
+				await seed.SaveChangesAsync();
+			}
+
+			_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(false);
+
+			NormalizedDescriptionService service = new(
+				_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+			await service.MergeAsync(keepId, discardId, CancellationToken.None);
+
+			// Null reads as "unresolved", which is honest. Keeping 0.91 would assert a
+			// similarity to a row that no longer exists.
+			using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+			ReceiptItemEntity item = await verify.ReceiptItems.IgnoreAutoIncludes().SingleAsync();
+			item.NormalizedDescriptionId.Should().Be(keepId);
+			item.NormalizedDescriptionMatchScore.Should().BeNull();
+		}
+
+		[Fact]
+		public async Task MergeAsync_EmbedsEachDistinctDescriptionOnlyOnce()
+		{
+			(Guid keepId, Guid discardId, Guid receiptId) = SeedMergePair("Milk", "Mlik");
+
+			using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+			{
+				seed.ReceiptItems.AddRange(
+					BuildReceiptItemWithScore(receiptId, "Mlik 2%", 0.91, discardId),
+					BuildReceiptItemWithScore(receiptId, "Mlik 2%", 0.91, discardId),
+					BuildReceiptItemWithScore(receiptId, "Mlik whole", 0.88, discardId));
+				await seed.SaveChangesAsync();
+			}
+
+			_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
+			_embeddingServiceMock
+				.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+				.ReturnsAsync(CreateFakeEmbedding());
+
+			RescoringNormalizedDescriptionService service = new(
+				_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, similarity: 0.5);
+
+			await service.MergeAsync(keepId, discardId, CancellationToken.None);
+
+			// Three items, two distinct descriptions — grouping keeps this proportional to
+			// vocabulary rather than row count.
+			_embeddingServiceMock.Verify(
+				e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+				Times.Exactly(2));
+		}
+
+		[Fact]
+		public async Task MergeAsync_RecordsTheRescoredCountOnBothAuditEntries()
+		{
+			(Guid keepId, Guid discardId, Guid receiptId) = SeedMergePair("Milk", "Mlik");
+
+			using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+			{
+				seed.ReceiptItems.Add(BuildReceiptItemWithScore(receiptId, "Mlik 2%", 0.91, discardId));
+				await seed.SaveChangesAsync();
+			}
+
+			_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
+			_embeddingServiceMock
+				.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+				.ReturnsAsync(CreateFakeEmbedding());
+
+			RescoringNormalizedDescriptionService service = new(
+				_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, similarity: 0.77);
+
+			await service.MergeAsync(keepId, discardId, CancellationToken.None);
+
+			using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+			List<AuditLogEntity> merges = await verify.AuditLogs
+				.Where(a => a.Action == AuditAction.Merge)
+				.ToListAsync();
+
+			merges.Should().HaveCount(2);
+			foreach (AuditLogEntity entry in merges)
+			{
+				Dictionary<string, string?> fields = entry.GetChanges()
+					.ToDictionary(c => c.FieldName, c => c.NewValue);
+				fields["rescoredItemCount"].Should().Be("1");
+			}
+		}
+
+		// Overrides only the per-row similarity lookup, which needs pgvector's `<=>`. Everything
+		// above it — grouping, the exact-name short circuit, the null fallbacks — is the real code.
+		private sealed class RescoringNormalizedDescriptionService(
+			IDbContextFactory<ApplicationDbContext> contextFactory,
+			IEmbeddingService embeddingService,
+			NormalizedDescriptionMapper mapper,
+			NormalizedDescriptionSettingsMapper settingsMapper,
+			double similarity) : NormalizedDescriptionService(contextFactory, embeddingService, mapper, settingsMapper)
+		{
+			private readonly double _similarity = similarity;
+
+			protected override Task<double?> SimilarityToAsync(
+				ApplicationDbContext context, Vector queryVector, Guid targetId, CancellationToken cancellationToken)
+				=> Task.FromResult<double?>(_similarity);
+		}
+	}
+
 	[Fact]
 	public async Task SplitAsync_CreatesNewActiveEntryAndRepointsReceiptItem()
 	{
