@@ -226,8 +226,8 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 
 	[HttpPost(RouteMerge)]
 	[EndpointSummary("Merge two normalized descriptions")]
-	[EndpointDescription("Re-links every live ReceiptItem currently pointing at discardId to the canonical row identified by the path {id}, then deletes the discarded row. Returns the count of re-linked items — zero when either id was missing or the two ids were identical. Admin-only.")]
-	public async Task<Results<Ok<MergeNormalizedDescriptionsResponse>, BadRequest<ProblemDetails>>> MergeNormalizedDescriptions(
+	[EndpointDescription("Re-links every live ReceiptItem currently pointing at discardId to the canonical row identified by the path {id}, then deletes the discarded row. Returns the count of re-linked items, which is legitimately zero when the discarded row had no live items. Returns 404 if either id does not exist. Admin-only.")]
+	public async Task<Results<Ok<MergeNormalizedDescriptionsResponse>, BadRequest<ProblemDetails>, NotFound<ProblemDetails>>> MergeNormalizedDescriptions(
 		[FromRoute] Guid id,
 		[FromBody] MergeNormalizedDescriptionRequest request,
 		CancellationToken cancellationToken)
@@ -248,7 +248,20 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 		}
 
 		MergeNormalizedDescriptionsCommand command = new(id, request.DiscardId);
-		int itemsRelinkedCount = await mediator.Send(command, cancellationToken);
+		int itemsRelinkedCount;
+		try
+		{
+			itemsRelinkedCount = await mediator.Send(command, cancellationToken);
+		}
+		catch (KeyNotFoundException ex)
+		{
+			// The registry list this id came from can be minutes old, so a merge against a row
+			// somebody else already consolidated is routine. Answering 200 with a zero count made
+			// it indistinguishable from a merge that genuinely had nothing to re-link, and the
+			// row the admin thought they were consolidating was still there (RECEIPTS-891).
+			return ApiProblem.NotFound(ex.Message);
+		}
+
 		return TypedResults.Ok(new MergeNormalizedDescriptionsResponse { ItemsRelinkedCount = itemsRelinkedCount });
 	}
 

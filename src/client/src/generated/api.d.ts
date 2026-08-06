@@ -701,8 +701,9 @@ export interface paths {
          * Merge two normalized descriptions
          * @description Re-links every ReceiptItem currently pointing at `discardId` to the
          *     canonical row identified by the path `{id}` ("keep"), then deletes the
-         *     discarded row. Returns the count of re-linked items — zero when either
-         *     id was missing or the two ids were identical. Admin-only.
+         *     discarded row. Returns the count of re-linked items, which is
+         *     legitimately zero when the discarded row had no live items. Returns 404
+         *     if either id does not exist. Admin-only.
          */
         post: operations["MergeNormalizedDescriptions"];
         delete?: never;
@@ -5875,6 +5876,15 @@ export interface operations {
             };
             /** @description Bad Request */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found — the kept or the discarded id does not exist */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

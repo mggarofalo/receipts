@@ -139,11 +139,26 @@ public class NormalizedDescriptionService(
 		return [.. rows.Select(r => r.ToDetail())];
 	}
 
+	public const string MergeIdsMustDiffer = "A description cannot be merged into itself.";
+
+	/// <summary>
+	/// Merges <paramref name="discardId"/> into <paramref name="keepId"/> and returns the number
+	/// of live receipt items re-linked.
+	/// </summary>
+	/// <remarks>
+	/// The return value means one thing only: how many live items moved. It used to mean three —
+	/// "the ids were identical", "a row does not exist", and "a real merge re-linked nothing" all
+	/// returned 0, and the controller answered 200 to all three. Merging against a stale id was
+	/// therefore indistinguishable from success, and the registry list is routinely minutes old
+	/// (RECEIPTS-891). The two caller errors now throw.
+	/// </remarks>
+	/// <exception cref="ArgumentException">The two ids are the same row.</exception>
+	/// <exception cref="KeyNotFoundException">Either id does not exist.</exception>
 	public async Task<int> MergeAsync(Guid keepId, Guid discardId, CancellationToken cancellationToken)
 	{
 		if (keepId == discardId)
 		{
-			return 0;
+			throw new ArgumentException(MergeIdsMustDiffer, nameof(discardId));
 		}
 
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
@@ -153,9 +168,16 @@ public class NormalizedDescriptionService(
 		NormalizedDescriptionEntity? discard = await context.NormalizedDescriptions
 			.FirstOrDefaultAsync(e => e.Id == discardId, cancellationToken);
 
-		if (keep is null || discard is null)
+		// Named individually rather than as one "not found": an admin who merged the wrong way
+		// round needs to know which of the two ids was the stale one.
+		if (keep is null)
 		{
-			return 0;
+			throw new KeyNotFoundException($"Normalized description {keepId} not found.");
+		}
+
+		if (discard is null)
+		{
+			throw new KeyNotFoundException($"Normalized description {discardId} not found.");
 		}
 
 		// Re-link EVERY ReceiptItem pointing at discard — including soft-deleted (trashed) ones,

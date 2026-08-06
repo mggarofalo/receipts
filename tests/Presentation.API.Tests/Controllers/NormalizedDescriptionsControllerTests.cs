@@ -421,7 +421,7 @@ public class NormalizedDescriptionsControllerTests
 				It.IsAny<CancellationToken>()))
 			.ReturnsAsync(12);
 
-		Results<Ok<MergeNormalizedDescriptionsResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<MergeNormalizedDescriptionsResponse>, BadRequest<ProblemDetails>, NotFound<ProblemDetails>> result =
 			await _controller.MergeNormalizedDescriptions(keepId, request, CancellationToken.None);
 
 		Ok<MergeNormalizedDescriptionsResponse> ok = Assert.IsType<Ok<MergeNormalizedDescriptionsResponse>>(result.Result);
@@ -429,11 +429,53 @@ public class NormalizedDescriptionsControllerTests
 	}
 
 	[Fact]
+	public async Task MergeNormalizedDescriptions_WhenARowIsMissing_ReturnsNotFoundRatherThanAZeroCount()
+	{
+		// RECEIPTS-891. A stale id used to come back as 200 { itemsRelinkedCount: 0 } —
+		// the same body a merge that genuinely had nothing to re-link returns. The admin
+		// was told it worked and the row they meant to consolidate was still there.
+		Guid keepId = Guid.NewGuid();
+		Guid discardId = Guid.NewGuid();
+		MergeNormalizedDescriptionRequest request = new() { DiscardId = discardId };
+
+		_mediatorMock
+			.Setup(m => m.Send(It.IsAny<MergeNormalizedDescriptionsCommand>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new KeyNotFoundException($"Normalized description {discardId} not found."));
+
+		Results<Ok<MergeNormalizedDescriptionsResponse>, BadRequest<ProblemDetails>, NotFound<ProblemDetails>> result =
+			await _controller.MergeNormalizedDescriptions(keepId, request, CancellationToken.None);
+
+		NotFound<ProblemDetails> notFound = Assert.IsType<NotFound<ProblemDetails>>(result.Result);
+		notFound.Value!.Status.Should().Be(404);
+		// The id is carried through so the admin can tell which of the two was stale.
+		notFound.Value.Detail.Should().Contain(discardId.ToString());
+	}
+
+	[Fact]
+	public async Task MergeNormalizedDescriptions_WhenNothingNeededRelinking_StillReturnsOk()
+	{
+		// The counterpart to the test above: zero now means one thing only, and it is a
+		// success. If this ever became a 404 the honest-zero case would be unreachable.
+		Guid keepId = Guid.NewGuid();
+		MergeNormalizedDescriptionRequest request = new() { DiscardId = Guid.NewGuid() };
+
+		_mediatorMock
+			.Setup(m => m.Send(It.IsAny<MergeNormalizedDescriptionsCommand>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(0);
+
+		Results<Ok<MergeNormalizedDescriptionsResponse>, BadRequest<ProblemDetails>, NotFound<ProblemDetails>> result =
+			await _controller.MergeNormalizedDescriptions(keepId, request, CancellationToken.None);
+
+		Ok<MergeNormalizedDescriptionsResponse> ok = Assert.IsType<Ok<MergeNormalizedDescriptionsResponse>>(result.Result);
+		ok.Value!.ItemsRelinkedCount.Should().Be(0);
+	}
+
+	[Fact]
 	public async Task MergeNormalizedDescriptions_EmptyKeepId_ReturnsBadRequest()
 	{
 		MergeNormalizedDescriptionRequest request = new() { DiscardId = Guid.NewGuid() };
 
-		Results<Ok<MergeNormalizedDescriptionsResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<MergeNormalizedDescriptionsResponse>, BadRequest<ProblemDetails>, NotFound<ProblemDetails>> result =
 			await _controller.MergeNormalizedDescriptions(Guid.Empty, request, CancellationToken.None);
 
 		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
@@ -446,7 +488,7 @@ public class NormalizedDescriptionsControllerTests
 	{
 		MergeNormalizedDescriptionRequest request = new() { DiscardId = Guid.Empty };
 
-		Results<Ok<MergeNormalizedDescriptionsResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<MergeNormalizedDescriptionsResponse>, BadRequest<ProblemDetails>, NotFound<ProblemDetails>> result =
 			await _controller.MergeNormalizedDescriptions(Guid.NewGuid(), request, CancellationToken.None);
 
 		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
@@ -460,7 +502,7 @@ public class NormalizedDescriptionsControllerTests
 		Guid id = Guid.NewGuid();
 		MergeNormalizedDescriptionRequest request = new() { DiscardId = id };
 
-		Results<Ok<MergeNormalizedDescriptionsResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<MergeNormalizedDescriptionsResponse>, BadRequest<ProblemDetails>, NotFound<ProblemDetails>> result =
 			await _controller.MergeNormalizedDescriptions(id, request, CancellationToken.None);
 
 		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);

@@ -1430,9 +1430,13 @@ public class NormalizedDescriptionServiceTests
 	}
 
 	[Fact]
-	public async Task MergeAsync_MissingRow_WritesNoAuditEntry()
+	public async Task MergeAsync_MissingDiscardRow_ThrowsAndWritesNoAuditEntry()
 	{
+		// RECEIPTS-891: this used to return 0, which the controller answered 200 to — the
+		// same answer a real merge with nothing to re-link gets. The registry list an admin
+		// merges from can be minutes old, so a stale id is routine and must be told apart.
 		Guid keepId = Guid.NewGuid();
+		Guid missingId = Guid.NewGuid();
 		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
 		{
 			seed.NormalizedDescriptions.Add(BuildDescription(keepId, "Strawberry Jam", NormalizedDescriptionStatus.Active));
@@ -1441,12 +1445,57 @@ public class NormalizedDescriptionServiceTests
 
 		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
 
-		// No merge happened, so recording one would be a lie in the audit trail.
-		int relinked = await service.MergeAsync(keepId, Guid.NewGuid(), CancellationToken.None);
+		Func<Task> act = () => service.MergeAsync(keepId, missingId, CancellationToken.None);
 
-		relinked.Should().Be(0);
+		// The message names which id was missing: an admin who merged the wrong way round
+		// needs to know which of the two was stale.
+		(await act.Should().ThrowAsync<KeyNotFoundException>())
+			.WithMessage($"*{missingId}*");
+
+		// No merge happened, so recording one would be a lie in the audit trail.
 		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
 		(await verify.AuditLogs.CountAsync(a => a.Action == AuditAction.Merge)).Should().Be(0);
+	}
+
+	[Fact]
+	public async Task MergeAsync_MissingKeepRow_ThrowsNamingTheKeptId()
+	{
+		Guid missingKeepId = Guid.NewGuid();
+		Guid discardId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(BuildDescription(discardId, "Strawberry Preserve", NormalizedDescriptionStatus.Active));
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		Func<Task> act = () => service.MergeAsync(missingKeepId, discardId, CancellationToken.None);
+
+		(await act.Should().ThrowAsync<KeyNotFoundException>())
+			.WithMessage($"*{missingKeepId}*");
+
+		// The row that does exist survives — a rejected merge writes nothing.
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		(await verify.NormalizedDescriptions.CountAsync(d => d.Id == discardId)).Should().Be(1);
+	}
+
+	[Fact]
+	public async Task MergeAsync_SameIdOnBothSides_ThrowsRatherThanReportingANoOp()
+	{
+		Guid id = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(BuildDescription(id, "Strawberry Jam", NormalizedDescriptionStatus.Active));
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		Func<Task> act = () => service.MergeAsync(id, id, CancellationToken.None);
+
+		await act.Should().ThrowAsync<ArgumentException>()
+			.WithMessage($"{NormalizedDescriptionService.MergeIdsMustDiffer}*");
 	}
 
 	[Fact]
