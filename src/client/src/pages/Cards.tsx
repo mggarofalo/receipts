@@ -166,7 +166,12 @@ function Cards() {
     () =>
       data
         .filter((card) => selectedIds.has(card.id))
-        .map((card) => ({ id: card.id, name: card.name, cardCode: card.cardCode })),
+        .map((card) => ({
+          id: card.id,
+          name: card.name,
+          cardCode: card.cardCode,
+          accountId: card.accountId,
+        })),
     [data, selectedIds],
   );
 

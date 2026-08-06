@@ -36,9 +36,12 @@ function renderDialog(overrides: Partial<React.ComponentProps<typeof MergeCardsD
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
+  // Both cards sit on a source account, not on "a1" — the target the tests pick.
+  // A merge from here genuinely moves something, which is what most of these
+  // tests are about; the no-op guard is exercised explicitly further down.
   const selectedCards = overrides.selectedCards ?? [
-    { id: "c1", name: "Primary Visa", cardCode: "1234" },
-    { id: "c2", name: "Reissued Visa", cardCode: "5678" },
+    { id: "c1", name: "Primary Visa", cardCode: "1234", accountId: "a-source" },
+    { id: "c2", name: "Reissued Visa", cardCode: "5678", accountId: "a-source" },
   ];
   const onOpenChange = vi.fn();
   const props = {
@@ -85,7 +88,7 @@ describe("MergeCardsDialog", () => {
   it("submits merge request with selected target and closes on success", async () => {
     const user = userEvent.setup();
     (client.POST as Mock).mockResolvedValue({
-      data: { success: true },
+      data: { accountsRemoved: 1, cardsMoved: 2, transactionsRepointed: 3 },
       error: undefined,
       response: { status: 200, ok: true },
     });
@@ -189,7 +192,7 @@ describe("MergeCardsDialog", () => {
     expect(resubmit).not.toBeDisabled();
 
     (client.POST as Mock).mockResolvedValueOnce({
-      data: { success: true },
+      data: { accountsRemoved: 1, cardsMoved: 2, transactionsRepointed: 3 },
       error: undefined,
       response: { status: 200, ok: true },
     });
@@ -243,7 +246,7 @@ describe("MergeCardsDialog", () => {
       await user.type(nameInput, "Corrected Account");
 
       (client.POST as Mock).mockResolvedValueOnce({
-        data: { success: true },
+        data: { accountsRemoved: 1, cardsMoved: 2, transactionsRepointed: 3 },
         error: undefined,
         response: { status: 200, ok: true },
       });
@@ -276,7 +279,7 @@ describe("MergeCardsDialog", () => {
       await createThenFailMerge(user);
 
       (client.POST as Mock).mockResolvedValueOnce({
-        data: { success: true },
+        data: { accountsRemoved: 1, cardsMoved: 2, transactionsRepointed: 3 },
         error: undefined,
         response: { status: 200, ok: true },
       });
@@ -302,7 +305,7 @@ describe("MergeCardsDialog", () => {
       await user.click(await screen.findByRole("option", { name: "Account One" }));
 
       (client.POST as Mock).mockResolvedValueOnce({
-        data: { success: true },
+        data: { accountsRemoved: 1, cardsMoved: 2, transactionsRepointed: 3 },
         error: undefined,
         response: { status: 200, ok: true },
       });
@@ -334,6 +337,58 @@ describe("MergeCardsDialog", () => {
           expect.stringMatching(/couldn't remove the empty account/i),
         );
       });
+    });
+  });
+
+  // RECEIPTS-893. The server reports a no-op honestly now, but the better fix is
+  // for the user never to reach one by accident: if every selected card already
+  // sits on the chosen target, say so at the point of choosing.
+  describe("target that would change nothing", () => {
+    const cardsAlreadyOnA1 = [
+      { id: "c1", name: "Primary Visa", cardCode: "1234", accountId: "a1" },
+      { id: "c2", name: "Reissued Visa", cardCode: "5678", accountId: "a1" },
+    ];
+
+    it("blocks submit and explains why when every card already sits on the target", async () => {
+      const user = userEvent.setup();
+      renderDialog({ selectedCards: cardsAlreadyOnA1 });
+
+      await user.click(screen.getByLabelText("Target account"));
+      await user.click(await screen.findByRole("option", { name: "Account One" }));
+
+      expect(
+        await screen.findByText(/every selected card already belongs to this account/i),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /^merge$/i })).toBeDisabled();
+      expect(client.POST).not.toHaveBeenCalled();
+    });
+
+    it("still allows the merge when only some of the cards are already on the target", async () => {
+      const user = userEvent.setup();
+      renderDialog({
+        selectedCards: [
+          cardsAlreadyOnA1[0],
+          { id: "c2", name: "Reissued Visa", cardCode: "5678", accountId: "a-source" },
+        ],
+      });
+
+      await user.click(screen.getByLabelText("Target account"));
+      await user.click(await screen.findByRole("option", { name: "Account One" }));
+
+      expect(
+        screen.queryByText(/every selected card already belongs to this account/i),
+      ).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /^merge$/i })).not.toBeDisabled();
+    });
+
+    it("does not block 'New account' mode, which cannot already hold the cards", async () => {
+      const user = userEvent.setup();
+      renderDialog({ selectedCards: cardsAlreadyOnA1 });
+
+      await user.click(screen.getByLabelText("New account"));
+      await user.type(screen.getByLabelText(/new account name/i), "Fresh Account");
+
+      expect(screen.getByRole("button", { name: /^merge$/i })).not.toBeDisabled();
     });
   });
 });

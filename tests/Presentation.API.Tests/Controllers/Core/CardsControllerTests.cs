@@ -620,14 +620,43 @@ public class CardsControllerTests
 		_mediatorMock.Setup(m => m.Send(
 			It.IsAny<MergeCardsIntoAccountCommand>(),
 			It.IsAny<CancellationToken>()))
-			.ReturnsAsync(new MergeCardsResult(true, null));
+			.ReturnsAsync(new MergeCardsResult(1, 2, 7, null));
 
 		Results<Ok<MergeCardsResponse>, BadRequest<string>, NotFound, Conflict<MergeCardsConflictResponse>> result =
 			await _controller.MergeCards(request);
 
 		Ok<MergeCardsResponse> ok = Assert.IsType<Ok<MergeCardsResponse>>(result.Result);
-		ok.Value!.Success.Should().BeTrue();
+		(ok.Value!.AccountsRemoved, ok.Value.CardsMoved, ok.Value.TransactionsRepointed)
+			.Should().Be((1, 2, 7));
 		_notifierMock.Verify(n => n.NotifyBulkChanged("card", "updated", It.IsAny<IEnumerable<Guid>>()), Times.Once);
+	}
+
+	[Fact]
+	public async Task MergeCards_WhenNothingChanged_ReturnsZeroedCountsAndDoesNotNotify()
+	{
+		// RECEIPTS-893. The response used to be `{ success: true }` whether or not anything
+		// moved, so the client had no way to say so. It must now carry zeroes — and there is
+		// nothing for connected clients to refetch, so no broadcast either.
+		MergeCardsRequest request = new()
+		{
+			TargetAccountId = Guid.NewGuid(),
+			SourceCardIds = [Guid.NewGuid(), Guid.NewGuid()],
+		};
+
+		_mediatorMock.Setup(m => m.Send(
+			It.IsAny<MergeCardsIntoAccountCommand>(),
+			It.IsAny<CancellationToken>()))
+			.ReturnsAsync(MergeCardsResult.NoOp());
+
+		Results<Ok<MergeCardsResponse>, BadRequest<string>, NotFound, Conflict<MergeCardsConflictResponse>> result =
+			await _controller.MergeCards(request);
+
+		Ok<MergeCardsResponse> ok = Assert.IsType<Ok<MergeCardsResponse>>(result.Result);
+		(ok.Value!.AccountsRemoved, ok.Value.CardsMoved, ok.Value.TransactionsRepointed)
+			.Should().Be((0, 0, 0));
+		_notifierMock.Verify(
+			n => n.NotifyBulkChanged(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<IEnumerable<Guid>>()),
+			Times.Never);
 	}
 
 	[Fact]
@@ -648,7 +677,7 @@ public class CardsControllerTests
 		_mediatorMock.Setup(m => m.Send(
 			It.IsAny<MergeCardsIntoAccountCommand>(),
 			It.IsAny<CancellationToken>()))
-			.ReturnsAsync(new MergeCardsResult(false, conflicts));
+			.ReturnsAsync(MergeCardsResult.Conflicted(conflicts));
 
 		Results<Ok<MergeCardsResponse>, BadRequest<string>, NotFound, Conflict<MergeCardsConflictResponse>> result =
 			await _controller.MergeCards(request);

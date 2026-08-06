@@ -2865,8 +2865,23 @@ export interface components {
              */
             ynabMappingWinnerAccountId?: string | null;
         };
+        /** @description What the merge actually changed. All three counts are zero when every selected card already belonged to the target account — the merge is idempotent, but the caller must be able to tell that apart from one that moved data. */
         MergeCardsResponse: {
-            success: boolean;
+            /**
+             * Format: int32
+             * @description Source accounts left without cards and deleted.
+             */
+            accountsRemoved: number;
+            /**
+             * Format: int32
+             * @description Cards whose account actually changed.
+             */
+            cardsMoved: number;
+            /**
+             * Format: int32
+             * @description Transactions repointed to the target account, including soft-deleted ones.
+             */
+            transactionsRepointed: number;
         };
         YnabMappingConflict: {
             /** Format: uuid */

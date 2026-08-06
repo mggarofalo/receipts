@@ -135,11 +135,51 @@ export interface MergeCardsInput {
   ynabMappingWinnerAccountId?: string | null;
 }
 
+/** What the merge actually changed. All zero means it changed nothing. */
+export interface MergeCardsImpact {
+  accountsRemoved: number;
+  cardsMoved: number;
+  transactionsRepointed: number;
+}
+
+const NO_IMPACT: MergeCardsImpact = {
+  accountsRemoved: 0,
+  cardsMoved: 0,
+  transactionsRepointed: 0,
+};
+
+export function isNoOpMerge(impact: MergeCardsImpact): boolean {
+  return (
+    impact.accountsRemoved === 0 &&
+    impact.cardsMoved === 0 &&
+    impact.transactionsRepointed === 0
+  );
+}
+
+/**
+ * Renders the impact as the toast's supporting line.
+ *
+ * Only non-zero clauses appear: a merge that moved cards between accounts but had
+ * no transactions to carry should not claim "0 transactions repointed", which reads
+ * like something went wrong.
+ */
+export function describeMergeImpact(impact: MergeCardsImpact): string {
+  const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
+  const parts = [`${plural(impact.cardsMoved, "card")} moved`];
+  if (impact.transactionsRepointed > 0) {
+    parts.push(`${plural(impact.transactionsRepointed, "transaction")} repointed`);
+  }
+  if (impact.accountsRemoved > 0) {
+    parts.push(`${plural(impact.accountsRemoved, "empty account")} removed`);
+  }
+  return `${parts.join(", ")}.`;
+}
+
 export function useMergeCards() {
   const queryClient = useQueryClient();
-  return useMutation<void, MergeCardsConflict | unknown, MergeCardsInput>({
+  return useMutation<MergeCardsImpact, MergeCardsConflict | unknown, MergeCardsInput>({
     mutationFn: async (input) => {
-      const { error, response } = await client.POST("/api/cards/merge", {
+      const { data, error, response } = await client.POST("/api/cards/merge", {
         body: {
           targetAccountId: input.targetAccountId,
           sourceCardIds: input.sourceCardIds,
@@ -152,7 +192,10 @@ export function useMergeCards() {
       // target account), and openapi-fetch reports those as `error: undefined`
       // — so `if (error)` would fall through and report a destructive
       // operation that never happened as a success.
-      if (response.ok) return;
+      // Falling back to zeroes on a bodiless 200 is deliberate: the generic
+      // "Cards merged" that used to be shown unconditionally is exactly the claim
+      // this endpoint can no longer make without evidence. No body, no boast.
+      if (response.ok) return data ?? NO_IMPACT;
 
       // `error &&` matters now that the guard above is a status check rather
       // than a truthiness check: without it a bodiless 409 would reach the
@@ -174,10 +217,21 @@ export function useMergeCards() {
       // merge, or none"), and a bare string carries no status to toast on.
       throw toApiError(response.status, error);
     },
-    onSuccess: () => {
+    onSuccess: (impact) => {
+      // A merge that changed nothing has nothing to invalidate, and saying "Cards
+      // merged" for it is the bug this replaced (RECEIPTS-893). It is not an error
+      // either — the cards are where the user asked them to be — so it is reported
+      // as information, not success.
+      if (isNoOpMerge(impact)) {
+        toast.info("Nothing to merge", {
+          description: "Every selected card already belonged to that account.",
+        });
+        return;
+      }
+
       queryClient.invalidateQueries({ queryKey: ["cards"] });
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
-      toast.success("Cards merged");
+      toast.success("Cards merged", { description: describeMergeImpact(impact) });
     },
     onError: (error: unknown) => {
       const err = error as Partial<MergeCardsConflict>;

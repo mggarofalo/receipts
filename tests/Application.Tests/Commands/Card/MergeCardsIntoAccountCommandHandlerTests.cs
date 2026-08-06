@@ -12,7 +12,7 @@ public class MergeCardsIntoAccountCommandHandlerTests
 	public async Task Handle_WithValidCommand_DelegatesToServiceAndReturnsResult()
 	{
 		Mock<IAccountMergeService> mockService = new();
-		MergeCardsResult expected = new(true, null);
+		MergeCardsResult expected = new(1, 2, 7, null);
 		mockService
 			.Setup(s => s.MergeCardsAsync(
 				It.IsAny<Guid>(),
@@ -43,7 +43,7 @@ public class MergeCardsIntoAccountCommandHandlerTests
 			new(Guid.NewGuid(), "A", "b1", "y1", "Y1"),
 			new(Guid.NewGuid(), "B", "b1", "y2", "Y2"),
 		];
-		MergeCardsResult expected = new(false, conflicts);
+		MergeCardsResult expected = MergeCardsResult.Conflicted(conflicts);
 		mockService
 			.Setup(s => s.MergeCardsAsync(
 				It.IsAny<Guid>(),
@@ -57,7 +57,7 @@ public class MergeCardsIntoAccountCommandHandlerTests
 
 		MergeCardsResult result = await handler.Handle(command, CancellationToken.None);
 
-		result.Success.Should().BeFalse();
 		result.Conflicts.Should().BeEquivalentTo(conflicts);
+		result.IsNoOp.Should().BeFalse();
 	}
 }

@@ -33,6 +33,8 @@ export interface SelectedCardSummary {
   id: string;
   name: string;
   cardCode: string;
+  /** The card's current account. Used to spot a merge that would change nothing. */
+  accountId: string;
 }
 
 interface MergeCardsDialogProps {
@@ -109,12 +111,23 @@ export function MergeCardsDialog({
 
   const accounts = accountsData ?? [];
 
+  // A merge whose cards all already sit on the chosen target changes nothing. The
+  // server handles that idempotently and now says so, but telling the user before
+  // they commit is better than telling them after (RECEIPTS-893). "New account" mode
+  // is exempt: an account that does not exist yet cannot already hold the cards.
+  const wouldChangeNothing =
+    targetMode === "existing" &&
+    targetAccountId !== "" &&
+    selectedCards.length > 0 &&
+    selectedCards.every((c) => c.accountId === targetAccountId);
+
   const isSubmitDisabled =
     selectedCards.length < 2 ||
     (targetMode === "existing" && !targetAccountId) ||
     (targetMode === "new" && newAccountName.trim().length === 0) ||
     mergeCards.isPending ||
     createAccount.isPending ||
+    wouldChangeNothing ||
     (conflict !== null && !winnerAccountId);
 
   /**
@@ -268,6 +281,12 @@ export function MergeCardsDialog({
                     ))}
                   </SelectContent>
                 </Select>
+                {wouldChangeNothing && (
+                  <p role="status" className="text-sm text-muted-foreground">
+                    Every selected card already belongs to this account — there is
+                    nothing to merge. Choose a different target.
+                  </p>
+                )}
               </div>
             ) : (
               <div className="space-y-1">

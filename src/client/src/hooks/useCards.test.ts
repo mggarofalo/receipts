@@ -196,8 +196,12 @@ describe("useCards", () => {
     });
   });
 
-  it("merge mutation succeeds and shows success toast", async () => {
-    (client.POST as Mock).mockResolvedValue({ data: { success: true }, error: undefined, response: { status: 200, ok: true } });
+  it("merge mutation succeeds and reports what actually changed", async () => {
+    (client.POST as Mock).mockResolvedValue({
+      data: { accountsRemoved: 1, cardsMoved: 2, transactionsRepointed: 37 },
+      error: undefined,
+      response: { status: 200, ok: true },
+    });
 
     const { result } = renderHook(() => useMergeCards(), {
       wrapper: createWrapper(),
@@ -215,7 +219,55 @@ describe("useCards", () => {
         ynabMappingWinnerAccountId: null,
       },
     });
-    expect(toast.success).toHaveBeenCalledWith("Cards merged");
+    expect(toast.success).toHaveBeenCalledWith("Cards merged", {
+      description: "2 cards moved, 37 transactions repointed, 1 empty account removed.",
+    });
+    expect(toast.info).not.toHaveBeenCalled();
+  });
+
+  // RECEIPTS-893: the endpoint is idempotent, so this response is a success — but
+  // reporting it as "Cards merged" is what made a merge that did nothing
+  // indistinguishable from one that deleted accounts.
+  it("merge mutation that changed nothing says so instead of claiming a merge", async () => {
+    (client.POST as Mock).mockResolvedValue({
+      data: { accountsRemoved: 0, cardsMoved: 0, transactionsRepointed: 0 },
+      error: undefined,
+      response: { status: 200, ok: true },
+    });
+
+    const { result } = renderHook(() => useMergeCards(), {
+      wrapper: createWrapper(),
+    });
+
+    await result.current.mutateAsync({
+      targetAccountId: "target",
+      sourceCardIds: ["c1", "c2"],
+    });
+
+    expect(toast.info).toHaveBeenCalledWith("Nothing to merge", {
+      description: "Every selected card already belonged to that account.",
+    });
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it("merge success toast omits clauses with nothing behind them", async () => {
+    // A merge between two accounts that had no transactions: claiming
+    // "0 transactions repointed" reads like a partial failure.
+    (client.POST as Mock).mockResolvedValue({
+      data: { accountsRemoved: 1, cardsMoved: 1, transactionsRepointed: 0 },
+      error: undefined,
+      response: { status: 200, ok: true },
+    });
+
+    const { result } = renderHook(() => useMergeCards(), {
+      wrapper: createWrapper(),
+    });
+
+    await result.current.mutateAsync({ targetAccountId: "t", sourceCardIds: ["c1", "c2"] });
+
+    expect(toast.success).toHaveBeenCalledWith("Cards merged", {
+      description: "1 card moved, 1 empty account removed.",
+    });
   });
 
   it("merge mutation rejects with conflict object on 409 and does not toast error", async () => {
