@@ -57,26 +57,26 @@ public class ItemTemplatesController(IMediator mediator, ItemTemplateMapper mapp
 
 	[HttpGet(RouteGetAll)]
 	[EndpointSummary("Get all item templates")]
-	public async Task<Results<Ok<ItemTemplateListResponse>, BadRequest<string>>> GetAllItemTemplates([FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, CancellationToken cancellationToken = default)
+	public async Task<Results<Ok<ItemTemplateListResponse>, BadRequest<ProblemDetails>>> GetAllItemTemplates([FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, CancellationToken cancellationToken = default)
 	{
 		if (offset < 0)
 		{
-			return TypedResults.BadRequest("offset must be >= 0");
+			return ApiProblem.BadRequest("offset must be >= 0");
 		}
 
 		if (limit <= 0 || limit > 500)
 		{
-			return TypedResults.BadRequest("limit must be between 1 and 500");
+			return ApiProblem.BadRequest("limit must be between 1 and 500");
 		}
 
 		if (sortBy is not null && !SortableColumns.ItemTemplate.Contains(sortBy))
 		{
-			return TypedResults.BadRequest($"Invalid sortBy '{sortBy}'. Allowed: {string.Join(", ", SortableColumns.ItemTemplate)}");
+			return ApiProblem.BadRequest($"Invalid sortBy '{sortBy}'. Allowed: {string.Join(", ", SortableColumns.ItemTemplate)}");
 		}
 
 		if (!SortableColumns.IsValidDirection(sortDirection))
 		{
-			return TypedResults.BadRequest($"Invalid sortDirection '{sortDirection}'. Allowed: asc, desc");
+			return ApiProblem.BadRequest($"Invalid sortDirection '{sortDirection}'. Allowed: asc, desc");
 		}
 
 		SortParams sort = new(sortBy, sortDirection);
@@ -95,26 +95,26 @@ public class ItemTemplatesController(IMediator mediator, ItemTemplateMapper mapp
 	[HttpGet(RouteGetDeleted)]
 	[EndpointSummary("Get all soft-deleted item templates")]
 	[EndpointDescription("Returns all item templates that have been soft-deleted.")]
-	public async Task<Results<Ok<ItemTemplateListResponse>, BadRequest<string>>> GetDeletedItemTemplates([FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, CancellationToken cancellationToken = default)
+	public async Task<Results<Ok<ItemTemplateListResponse>, BadRequest<ProblemDetails>>> GetDeletedItemTemplates([FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, CancellationToken cancellationToken = default)
 	{
 		if (offset < 0)
 		{
-			return TypedResults.BadRequest("offset must be >= 0");
+			return ApiProblem.BadRequest("offset must be >= 0");
 		}
 
 		if (limit <= 0 || limit > 500)
 		{
-			return TypedResults.BadRequest("limit must be between 1 and 500");
+			return ApiProblem.BadRequest("limit must be between 1 and 500");
 		}
 
 		if (sortBy is not null && !SortableColumns.ItemTemplate.Contains(sortBy))
 		{
-			return TypedResults.BadRequest($"Invalid sortBy '{sortBy}'. Allowed: {string.Join(", ", SortableColumns.ItemTemplate)}");
+			return ApiProblem.BadRequest($"Invalid sortBy '{sortBy}'. Allowed: {string.Join(", ", SortableColumns.ItemTemplate)}");
 		}
 
 		if (!SortableColumns.IsValidDirection(sortDirection))
 		{
-			return TypedResults.BadRequest($"Invalid sortDirection '{sortDirection}'. Allowed: asc, desc");
+			return ApiProblem.BadRequest($"Invalid sortDirection '{sortDirection}'. Allowed: asc, desc");
 		}
 
 		SortParams sort = new(sortBy, sortDirection);
@@ -222,21 +222,21 @@ public class ItemTemplatesController(IMediator mediator, ItemTemplateMapper mapp
 	[HttpGet(RouteGetHistoryCandidates)]
 	[EndpointSummary("Get suggested item templates from receipt history")]
 	[EndpointDescription("Returns recurring receipt-item descriptions that do not yet have a matching item template, together with defaults suggested from purchase history.")]
-	public async Task<Results<Ok<ItemTemplateHistoryCandidateListResponse>, BadRequest<string>>> GetItemTemplateHistoryCandidates([FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] int minCount = 2, CancellationToken cancellationToken = default)
+	public async Task<Results<Ok<ItemTemplateHistoryCandidateListResponse>, BadRequest<ProblemDetails>>> GetItemTemplateHistoryCandidates([FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] int minCount = 2, CancellationToken cancellationToken = default)
 	{
 		if (offset < 0)
 		{
-			return TypedResults.BadRequest("offset must be >= 0");
+			return ApiProblem.BadRequest("offset must be >= 0");
 		}
 
 		if (limit <= 0 || limit > 500)
 		{
-			return TypedResults.BadRequest("limit must be between 1 and 500");
+			return ApiProblem.BadRequest("limit must be between 1 and 500");
 		}
 
 		if (minCount < 1)
 		{
-			return TypedResults.BadRequest("minCount must be >= 1");
+			return ApiProblem.BadRequest("minCount must be >= 1");
 		}
 
 		GetItemTemplateHistoryCandidatesQuery query = new(offset, limit, minCount);

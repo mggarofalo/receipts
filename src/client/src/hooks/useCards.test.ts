@@ -161,8 +161,17 @@ describe("useCards", () => {
   });
 
   it("delete mutation shows conflict toast on 409", async () => {
+    // RECEIPTS-886: the body is a problem document now. The prose moved from
+    // `message` to `detail`; `transactionCount` stayed put, because RFC 9457
+    // extension members serialise at the top level of the object.
     (client.DELETE as Mock).mockResolvedValue({
-      error: { message: "Cannot delete — 3 transaction(s) reference this card", transactionCount: 3 },
+      error: {
+        type: "https://tools.ietf.org/html/rfc9110#section-15.5.10",
+        title: "Conflict",
+        status: 409,
+        detail: "Cannot delete — 3 transaction(s) reference this card",
+        transactionCount: 3,
+      },
       response: { status: 409, ok: false },
     });
 

@@ -53,26 +53,26 @@ public class AccountsController(IMediator mediator, AccountMapper mapper, CardMa
 
 	[HttpGet(RouteGetAll)]
 	[EndpointSummary("Get all accounts")]
-	public async Task<Results<Ok<AccountListResponse>, BadRequest<string>>> GetAllAccounts([FromQuery] bool? isActive = null, [FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null)
+	public async Task<Results<Ok<AccountListResponse>, BadRequest<ProblemDetails>>> GetAllAccounts([FromQuery] bool? isActive = null, [FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null)
 	{
 		if (offset < 0)
 		{
-			return TypedResults.BadRequest("offset must be >= 0");
+			return ApiProblem.BadRequest("offset must be >= 0");
 		}
 
 		if (limit <= 0 || limit > 500)
 		{
-			return TypedResults.BadRequest("limit must be between 1 and 500");
+			return ApiProblem.BadRequest("limit must be between 1 and 500");
 		}
 
 		if (sortBy is not null && !SortableColumns.Account.Contains(sortBy))
 		{
-			return TypedResults.BadRequest($"Invalid sortBy '{sortBy}'. Allowed: {string.Join(", ", SortableColumns.Account)}");
+			return ApiProblem.BadRequest($"Invalid sortBy '{sortBy}'. Allowed: {string.Join(", ", SortableColumns.Account)}");
 		}
 
 		if (!SortableColumns.IsValidDirection(sortDirection))
 		{
-			return TypedResults.BadRequest($"Invalid sortDirection '{sortDirection}'. Allowed: asc, desc");
+			return ApiProblem.BadRequest($"Invalid sortDirection '{sortDirection}'. Allowed: asc, desc");
 		}
 
 		SortParams sort = new(sortBy, sortDirection);
@@ -164,13 +164,15 @@ public class AccountsController(IMediator mediator, AccountMapper mapper, CardMa
 	[Authorize(Policy = "RequireAdmin")]
 	[EndpointSummary("Hard-delete an account")]
 	[EndpointDescription("Permanently deletes an account. Requires the Admin role. Returns 409 Conflict if any card or transaction (including soft-deleted) references this account.")]
-	public async Task<Results<NoContent, NotFound, Conflict<object>>> DeleteAccount([FromRoute] Guid id)
+	public async Task<Results<NoContent, NotFound, Conflict<ProblemDetails>>> DeleteAccount([FromRoute] Guid id)
 	{
 		int cardCount = await accountService.GetCardCountByAccountIdAsync(id, HttpContext.RequestAborted);
 		if (cardCount > 0)
 		{
 			logger.LogWarning("Account {Id} cannot be deleted — {Count} cards reference it", id, cardCount);
-			return TypedResults.Conflict<object>(new { message = $"Cannot delete — {cardCount} card(s) reference this account", cardCount });
+			return ApiProblem.Conflict(
+				$"Cannot delete — {cardCount} card(s) reference this account",
+				new Dictionary<string, object?> { ["cardCount"] = cardCount });
 		}
 
 		// RECEIPTS-754: transactions can outlive the card that created them (a card may be
@@ -182,7 +184,9 @@ public class AccountsController(IMediator mediator, AccountMapper mapper, CardMa
 		if (transactionCount > 0)
 		{
 			logger.LogWarning("Account {Id} cannot be deleted — {Count} transactions reference it", id, transactionCount);
-			return TypedResults.Conflict<object>(new { message = $"Cannot delete — {transactionCount} transaction(s) reference this account", transactionCount });
+			return ApiProblem.Conflict(
+				$"Cannot delete — {transactionCount} transaction(s) reference this account",
+				new Dictionary<string, object?> { ["transactionCount"] = transactionCount });
 		}
 
 		DeleteAccountCommand command = new(id);

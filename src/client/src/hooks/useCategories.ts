@@ -127,7 +127,8 @@ export function useUpdateCategory() {
 }
 
 export interface DeleteCategoryConflict {
-  message: string;
+  /** ProblemDetails carries the prose in `detail`; the count rides as an extension member. */
+  detail: string;
   receiptItemCount?: number;
 }
 
@@ -152,9 +153,9 @@ export function useDeleteCategory() {
       toast.success("Category deleted");
     },
     onError: (error: unknown) => {
-      const err = error as { conflict?: boolean; message?: string };
+      const err = error as { conflict?: boolean; detail?: string };
       if (err.conflict) {
-        toast.error(err.message ?? "Cannot delete — dependencies reference this category");
+        toast.error(err.detail ?? "Cannot delete — dependencies reference this category");
       }
       // Non-conflict failures fall through to the global error handler.
     },

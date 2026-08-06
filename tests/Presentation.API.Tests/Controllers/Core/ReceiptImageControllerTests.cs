@@ -32,8 +32,8 @@ public class ReceiptImageControllerTests
 		var result = await _controller.UploadImage(receiptId, null);
 
 		// Assert
-		result.Result.Should().BeOfType<BadRequest<string>>()
-			.Which.Value.Should().Be("No file was uploaded.");
+		result.Result.Should().BeOfType<BadRequest<ProblemDetails>>()
+			.Which.Value!.Detail.Should().Be("No file was uploaded.");
 	}
 
 	[Fact]
@@ -48,8 +48,8 @@ public class ReceiptImageControllerTests
 		var result = await _controller.UploadImage(receiptId, fileMock.Object);
 
 		// Assert
-		result.Result.Should().BeOfType<BadRequest<string>>()
-			.Which.Value.Should().Be("No file was uploaded.");
+		result.Result.Should().BeOfType<BadRequest<ProblemDetails>>()
+			.Which.Value!.Detail.Should().Be("No file was uploaded.");
 	}
 
 	[Fact]
@@ -65,8 +65,8 @@ public class ReceiptImageControllerTests
 		var result = await _controller.UploadImage(receiptId, fileMock.Object);
 
 		// Assert
-		result.Result.Should().BeOfType<BadRequest<string>>()
-			.Which.Value.Should().Contain("maximum allowed size");
+		result.Result.Should().BeOfType<BadRequest<ProblemDetails>>()
+			.Which.Value!.Detail.Should().Contain("maximum allowed size");
 	}
 
 	[Theory]
@@ -141,8 +141,8 @@ public class ReceiptImageControllerTests
 		var result = await _controller.UploadImage(receiptId, file);
 
 		// Assert
-		result.Result.Should().BeOfType<BadRequest<string>>()
-			.Which.Value.Should().Contain("not a supported image format");
+		result.Result.Should().BeOfType<BadRequest<ProblemDetails>>()
+			.Which.Value!.Detail.Should().Contain("not a supported image format");
 	}
 
 	[Fact]

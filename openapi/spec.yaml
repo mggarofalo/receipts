@@ -197,7 +197,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
     post:
       operationId: CreateAccount
       tags: [Accounts]
@@ -329,7 +329,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
         "404":
           description: Not Found
     delete:
@@ -399,7 +399,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
     post:
       operationId: CreateCard
       tags: [Cards]
@@ -428,7 +428,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
   /api/cards/batch:
     post:
       operationId: CreateCards
@@ -459,7 +459,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
     put:
       operationId: UpdateCards
       tags: [Cards]
@@ -483,7 +483,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
         "404":
           description: Not Found
 
@@ -518,7 +518,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
         "404":
           description: Not Found — target account or source card missing
         "409":
@@ -647,7 +647,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
 
   /api/categories/{id}/restore:
     post:
@@ -703,7 +703,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
     post:
       operationId: CreateCategory
       tags: [Categories]
@@ -912,7 +912,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
 
   /api/subcategories/{id}/restore:
     post:
@@ -974,7 +974,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
     post:
       operationId: CreateSubcategory
       tags: [Subcategories]
@@ -1129,7 +1129,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
     post:
       operationId: CreateItemTemplate
       tags: [ItemTemplates]
@@ -1200,7 +1200,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
 
   /api/item-templates/similar:
     get:
@@ -1302,7 +1302,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
 
   /api/item-templates/category-suggestions:
     get:
@@ -1417,7 +1417,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
 
   /api/normalized-descriptions/settings/preview:
     post:
@@ -1450,7 +1450,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
 
   /api/normalized-descriptions/requeue-pending/preview:
     get:
@@ -1518,13 +1518,13 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
         "409":
           description: The pending-review count changed since the caller previewed it. Nothing was deleted.
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
 
   /api/normalized-descriptions/test:
     post:
@@ -1557,7 +1557,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
 
   /api/normalized-descriptions:
     get:
@@ -1591,7 +1591,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
 
   /api/normalized-descriptions/{id}:
     get:
@@ -1621,7 +1621,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
         "404":
           description: Not Found
 
@@ -1664,7 +1664,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
 
   /api/normalized-descriptions/{id}/split:
     post:
@@ -1705,7 +1705,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
         "404":
           description: Not Found
 
@@ -1742,7 +1742,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
         "404":
           description: Not Found
 
@@ -1863,7 +1863,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
     post:
       operationId: CreateReceipt
       tags: [Receipts]
@@ -1948,7 +1948,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
 
   /api/receipts/deleted:
     get:
@@ -1975,7 +1975,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
 
   /api/receipts/{id}/restore:
     post:
@@ -2040,7 +2040,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
         "404":
           description: Not Found
 
@@ -2214,7 +2214,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
     delete:
       operationId: DeleteReceiptItems
       tags: [ReceiptItems]
@@ -2262,7 +2262,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
 
   /api/receipt-items/suggestions:
     get:
@@ -2513,7 +2513,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
     delete:
       operationId: DeleteTransactions
       tags: [Transactions]
@@ -2561,7 +2561,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
 
   /api/transactions/{id}/restore:
     post:
@@ -2766,7 +2766,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
     delete:
       operationId: DeleteAdjustments
       tags: [Adjustments]
@@ -2814,7 +2814,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
 
   /api/adjustments/{id}/restore:
     post:
@@ -2952,7 +2952,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
 
   /api/trips:
     get:
@@ -3029,7 +3029,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
 
   /api/audit/recent:
     get:
@@ -3088,7 +3088,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
 
   # ──────────────────────────────────────────────
   # Backup
@@ -3128,7 +3128,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
 
   # ──────────────────────────────────────────────
   # Auth
@@ -3347,7 +3347,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
 
   /api/auth/audit/recent:
     get:
@@ -3374,7 +3374,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
 
   /api/auth/audit/failed:
     get:
@@ -3401,7 +3401,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
 
   # ──────────────────────────────────────────────
   # Users (admin-only)
@@ -3432,7 +3432,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
     post:
       operationId: CreateUser
       tags: [Users]
@@ -3714,7 +3714,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
 
   /api/reports/spending-by-location:
     get:
@@ -3785,7 +3785,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
 
   # ──────────────────────────────────────────────
 
@@ -3834,7 +3834,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
 
   /api/reports/item-cost-over-time:
     get:
@@ -3898,7 +3898,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
 
   /api/reports/duplicates:
     get:
@@ -3954,7 +3954,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
 
   /api/reports/duplicates/accepted:
     get:
@@ -3998,7 +3998,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
 
   /api/reports/duplicates/accepted/remove:
     post:
@@ -4082,7 +4082,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
 
   /api/reports/uncategorized-items:
     get:
@@ -4139,7 +4139,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
 
   # ──────────────────────────────────────────────
 
@@ -4212,7 +4212,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
 
   # ──────────────────────────────────────────────
   # Dashboard
@@ -4254,7 +4254,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
 
   /api/dashboard/spending-over-time:
     get:
@@ -4300,7 +4300,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
 
   /api/dashboard/spending-by-category:
     get:
@@ -4347,7 +4347,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
 
   /api/dashboard/spending-by-account:
     get:
@@ -4385,7 +4385,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
 
   /api/dashboard/spending-by-store:
     get:
@@ -4423,7 +4423,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
 
   /api/dashboard/earliest-receipt-year:
     get:
@@ -4556,7 +4556,7 @@ paths:
           content:
             application/json:
               schema:
-                type: string
+                $ref: "#/components/schemas/ProblemDetails"
 
   /api/ynab/budgets:
     get:
@@ -5111,6 +5111,39 @@ paths:
 
 components:
   schemas:
+    # ── Errors ────────────────────────────────────
+
+    ProblemDetails:
+      type: object
+      description: >
+        RFC 9457 problem document. Every 4xx this API raises with a reason answers in
+        this shape; the human-readable reason is always in `detail`. Some responses add
+        machine-readable members alongside these (for example `transactionCount` on a
+        409 from a delete that is blocked by references) — RFC 9457 permits such
+        extension members, and they appear at the top level of the object.
+      properties:
+        type:
+          type:
+            - string
+            - "null"
+        title:
+          type:
+            - string
+            - "null"
+        status:
+          type:
+            - integer
+            - "null"
+          format: int32
+        detail:
+          type:
+            - string
+            - "null"
+        instance:
+          type:
+            - string
+            - "null"
+
     # ── Reports ───────────────────────────────────
 
     ReportsHealthSummaryResponse:

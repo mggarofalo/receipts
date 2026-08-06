@@ -39,7 +39,7 @@ public class TransactionAccountControllerTests
 			.ReturnsAsync(transactionAccount);
 
 		// Act
-		Results<Ok<List<TransactionAccountResponse>>, BadRequest<string>> result = await _controller.GetTransactionAccounts(transactionId: transactionAccount.Transaction.Id, receiptId: null);
+		Results<Ok<List<TransactionAccountResponse>>, BadRequest<ProblemDetails>> result = await _controller.GetTransactionAccounts(transactionId: transactionAccount.Transaction.Id, receiptId: null);
 
 		// Assert
 		Ok<List<TransactionAccountResponse>> okResult = Assert.IsType<Ok<List<TransactionAccountResponse>>>(result.Result);
@@ -60,7 +60,7 @@ public class TransactionAccountControllerTests
 			.ReturnsAsync((TransactionAccount?)null);
 
 		// Act
-		Results<Ok<List<TransactionAccountResponse>>, BadRequest<string>> result = await _controller.GetTransactionAccounts(transactionId: missingTransactionId, receiptId: null);
+		Results<Ok<List<TransactionAccountResponse>>, BadRequest<ProblemDetails>> result = await _controller.GetTransactionAccounts(transactionId: missingTransactionId, receiptId: null);
 
 		// Assert
 		Ok<List<TransactionAccountResponse>> okResult = Assert.IsType<Ok<List<TransactionAccountResponse>>>(result.Result);
@@ -100,7 +100,7 @@ public class TransactionAccountControllerTests
 			.ReturnsAsync([transactionAccount]);
 
 		// Act
-		Results<Ok<List<TransactionAccountResponse>>, BadRequest<string>> result = await _controller.GetTransactionAccounts(transactionId: null, receiptId: receiptId);
+		Results<Ok<List<TransactionAccountResponse>>, BadRequest<ProblemDetails>> result = await _controller.GetTransactionAccounts(transactionId: null, receiptId: receiptId);
 
 		// Assert
 		Ok<List<TransactionAccountResponse>> okResult = Assert.IsType<Ok<List<TransactionAccountResponse>>>(result.Result);
@@ -121,7 +121,7 @@ public class TransactionAccountControllerTests
 			.ReturnsAsync((List<TransactionAccount>?)null);
 
 		// Act
-		Results<Ok<List<TransactionAccountResponse>>, BadRequest<string>> result = await _controller.GetTransactionAccounts(transactionId: null, receiptId: missingReceiptId);
+		Results<Ok<List<TransactionAccountResponse>>, BadRequest<ProblemDetails>> result = await _controller.GetTransactionAccounts(transactionId: null, receiptId: missingReceiptId);
 
 		// Assert
 		Ok<List<TransactionAccountResponse>> okResult = Assert.IsType<Ok<List<TransactionAccountResponse>>>(result.Result);

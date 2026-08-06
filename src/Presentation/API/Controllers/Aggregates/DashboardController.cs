@@ -19,7 +19,7 @@ public class DashboardController(IMediator mediator) : ControllerBase
 	[HttpGet("summary")]
 	[EndpointSummary("Get dashboard summary statistics")]
 	[EndpointDescription("Returns high-level stats for a date range including total receipts, total spent, average trip amount, and most-used account/category.")]
-	public async Task<Results<Ok<DashboardSummaryResponse>, BadRequest<string>>> GetDashboardSummary(
+	public async Task<Results<Ok<DashboardSummaryResponse>, BadRequest<ProblemDetails>>> GetDashboardSummary(
 		[FromQuery] DateOnly? startDate,
 		[FromQuery] DateOnly? endDate,
 		CancellationToken cancellationToken)
@@ -29,7 +29,7 @@ public class DashboardController(IMediator mediator) : ControllerBase
 
 		if (start > end)
 		{
-			return TypedResults.BadRequest("startDate must be before or equal to endDate");
+			return ApiProblem.BadRequest("startDate must be before or equal to endDate");
 		}
 
 		GetDashboardSummaryQuery query = new(start, end);
@@ -56,7 +56,7 @@ public class DashboardController(IMediator mediator) : ControllerBase
 	[HttpGet("spending-over-time")]
 	[EndpointSummary("Get spending over time")]
 	[EndpointDescription("Returns time-series spending data bucketed by the specified granularity.")]
-	public async Task<Results<Ok<SpendingOverTimeResponse>, BadRequest<string>>> GetSpendingOverTime(
+	public async Task<Results<Ok<SpendingOverTimeResponse>, BadRequest<ProblemDetails>>> GetSpendingOverTime(
 		[FromQuery] DateOnly? startDate,
 		[FromQuery] DateOnly? endDate,
 		[FromQuery] string? granularity,
@@ -68,13 +68,13 @@ public class DashboardController(IMediator mediator) : ControllerBase
 
 		if (start > end)
 		{
-			return TypedResults.BadRequest("startDate must be before or equal to endDate");
+			return ApiProblem.BadRequest("startDate must be before or equal to endDate");
 		}
 
 		string[] validGranularities = ["daily", "monthly", "quarterly", "yearly"];
 		if (!validGranularities.Contains(gran.ToLowerInvariant()))
 		{
-			return TypedResults.BadRequest($"Invalid granularity '{gran}'. Allowed: daily, monthly, quarterly, yearly");
+			return ApiProblem.BadRequest($"Invalid granularity '{gran}'. Allowed: daily, monthly, quarterly, yearly");
 		}
 
 		GetSpendingOverTimeQuery query = new(start, end, gran);
@@ -108,7 +108,7 @@ public class DashboardController(IMediator mediator) : ControllerBase
 	[HttpGet("spending-by-category")]
 	[EndpointSummary("Get spending grouped by category")]
 	[EndpointDescription("Returns spending amounts grouped by receipt item category.")]
-	public async Task<Results<Ok<SpendingByCategoryResponse>, BadRequest<string>>> GetSpendingByCategory(
+	public async Task<Results<Ok<SpendingByCategoryResponse>, BadRequest<ProblemDetails>>> GetSpendingByCategory(
 		[FromQuery] DateOnly? startDate,
 		[FromQuery] DateOnly? endDate,
 		[FromQuery] int limit = 10,
@@ -119,12 +119,12 @@ public class DashboardController(IMediator mediator) : ControllerBase
 
 		if (start > end)
 		{
-			return TypedResults.BadRequest("startDate must be before or equal to endDate");
+			return ApiProblem.BadRequest("startDate must be before or equal to endDate");
 		}
 
 		if (limit <= 0 || limit > 100)
 		{
-			return TypedResults.BadRequest("limit must be between 1 and 100");
+			return ApiProblem.BadRequest("limit must be between 1 and 100");
 		}
 
 		GetSpendingByCategoryQuery query = new(start, end, limit);
@@ -144,7 +144,7 @@ public class DashboardController(IMediator mediator) : ControllerBase
 	[HttpGet("spending-by-store")]
 	[EndpointSummary("Get spending grouped by store")]
 	[EndpointDescription("Returns spending amounts grouped by receipt location (store), including visit count and average per visit.")]
-	public async Task<Results<Ok<SpendingByStoreResponse>, BadRequest<string>>> GetSpendingByStore(
+	public async Task<Results<Ok<SpendingByStoreResponse>, BadRequest<ProblemDetails>>> GetSpendingByStore(
 		[FromQuery] DateOnly? startDate,
 		[FromQuery] DateOnly? endDate,
 		CancellationToken cancellationToken)
@@ -154,7 +154,7 @@ public class DashboardController(IMediator mediator) : ControllerBase
 
 		if (start > end)
 		{
-			return TypedResults.BadRequest("startDate must be before or equal to endDate");
+			return ApiProblem.BadRequest("startDate must be before or equal to endDate");
 		}
 
 		GetSpendingByStoreQuery query = new(start, end);
@@ -175,7 +175,7 @@ public class DashboardController(IMediator mediator) : ControllerBase
 	[HttpGet("spending-by-account")]
 	[EndpointSummary("Get spending grouped by account")]
 	[EndpointDescription("Returns spending amounts grouped by payment account.")]
-	public async Task<Results<Ok<SpendingByAccountResponse>, BadRequest<string>>> GetSpendingByAccount(
+	public async Task<Results<Ok<SpendingByAccountResponse>, BadRequest<ProblemDetails>>> GetSpendingByAccount(
 		[FromQuery] DateOnly? startDate,
 		[FromQuery] DateOnly? endDate,
 		CancellationToken cancellationToken)
@@ -185,7 +185,7 @@ public class DashboardController(IMediator mediator) : ControllerBase
 
 		if (start > end)
 		{
-			return TypedResults.BadRequest("startDate must be before or equal to endDate");
+			return ApiProblem.BadRequest("startDate must be before or equal to endDate");
 		}
 
 		GetSpendingByAccountQuery query = new(start, end);

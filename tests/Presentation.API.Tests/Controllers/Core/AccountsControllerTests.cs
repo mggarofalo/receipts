@@ -117,7 +117,7 @@ public class AccountsControllerTests
 			.ReturnsAsync(new PagedResult<Account>(accounts, accounts.Count, 0, 50));
 
 		// Act
-		Results<Ok<AccountListResponse>, BadRequest<string>> rawResult = await _controller.GetAllAccounts(null, 0, 50, null, null);
+		Results<Ok<AccountListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetAllAccounts(null, 0, 50, null, null);
 
 		// Assert
 		Ok<AccountListResponse> result = Assert.IsType<Ok<AccountListResponse>>(rawResult.Result);
@@ -142,7 +142,7 @@ public class AccountsControllerTests
 			.ReturnsAsync(new PagedResult<Account>(accounts, accounts.Count, 0, 50));
 
 		// Act
-		Results<Ok<AccountListResponse>, BadRequest<string>> rawResult = await _controller.GetAllAccounts(true, 0, 50, null, null);
+		Results<Ok<AccountListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetAllAccounts(true, 0, 50, null, null);
 
 		// Assert
 		Ok<AccountListResponse> result = Assert.IsType<Ok<AccountListResponse>>(rawResult.Result);
@@ -158,11 +158,11 @@ public class AccountsControllerTests
 	public async Task GetAllAccounts_ReturnsBadRequest_WhenOffsetIsNegative(int offset, int limit)
 	{
 		// Act
-		Results<Ok<AccountListResponse>, BadRequest<string>> result = await _controller.GetAllAccounts(null, offset, limit, null, null);
+		Results<Ok<AccountListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetAllAccounts(null, offset, limit, null, null);
 
 		// Assert
-		BadRequest<string> badRequestResult = Assert.IsType<BadRequest<string>>(result.Result);
-		badRequestResult.Value.Should().Be("offset must be >= 0");
+		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequestResult.Value!.Detail.Should().Be("offset must be >= 0");
 	}
 
 	[Theory]
@@ -172,11 +172,11 @@ public class AccountsControllerTests
 	public async Task GetAllAccounts_ReturnsBadRequest_WhenLimitIsOutOfRange(int offset, int limit)
 	{
 		// Act
-		Results<Ok<AccountListResponse>, BadRequest<string>> result = await _controller.GetAllAccounts(null, offset, limit, null, null);
+		Results<Ok<AccountListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetAllAccounts(null, offset, limit, null, null);
 
 		// Assert
-		BadRequest<string> badRequestResult = Assert.IsType<BadRequest<string>>(result.Result);
-		badRequestResult.Value.Should().Be("limit must be between 1 and 500");
+		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequestResult.Value!.Detail.Should().Be("limit must be between 1 and 500");
 	}
 
 	[Fact]
@@ -400,7 +400,7 @@ public class AccountsControllerTests
 			.ReturnsAsync(true);
 
 		// Act
-		Results<NoContent, NotFound, Conflict<object>> result = await _controller.DeleteAccount(id);
+		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.DeleteAccount(id);
 
 		// Assert
 		Assert.IsType<NoContent>(result.Result);
@@ -423,7 +423,7 @@ public class AccountsControllerTests
 			.ReturnsAsync(false);
 
 		// Act
-		Results<NoContent, NotFound, Conflict<object>> result = await _controller.DeleteAccount(id);
+		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.DeleteAccount(id);
 
 		// Assert
 		Assert.IsType<NotFound>(result.Result);
@@ -439,10 +439,10 @@ public class AccountsControllerTests
 			.ReturnsAsync(5);
 
 		// Act
-		Results<NoContent, NotFound, Conflict<object>> result = await _controller.DeleteAccount(id);
+		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.DeleteAccount(id);
 
 		// Assert
-		Assert.IsType<Conflict<object>>(result.Result);
+		Assert.IsType<Conflict<ProblemDetails>>(result.Result);
 	}
 
 	[Fact]
@@ -460,10 +460,10 @@ public class AccountsControllerTests
 			.ReturnsAsync(7);
 
 		// Act
-		Results<NoContent, NotFound, Conflict<object>> result = await _controller.DeleteAccount(id);
+		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.DeleteAccount(id);
 
 		// Assert
-		Assert.IsType<Conflict<object>>(result.Result);
+		Assert.IsType<Conflict<ProblemDetails>>(result.Result);
 		_mediatorMock.Verify(
 			m => m.Send(It.IsAny<DeleteAccountCommand>(), It.IsAny<CancellationToken>()),
 			Times.Never);

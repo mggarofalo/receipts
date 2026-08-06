@@ -36,11 +36,11 @@ public class UserRolesController(
 
 	[HttpPost("{role}")]
 	[EndpointSummary("Assign role to user")]
-	public async Task<Results<NoContent, BadRequest<string>, NotFound>> AssignUserRole([FromRoute] string userId, [FromRoute] string role)
+	public async Task<Results<NoContent, BadRequest<ProblemDetails>, NotFound>> AssignUserRole([FromRoute] string userId, [FromRoute] string role)
 	{
 		if (!AppRoles.All.Contains(role))
 		{
-			return TypedResults.BadRequest($"Invalid role '{role}'. Valid roles: {string.Join(", ", AppRoles.All)}");
+			return ApiProblem.BadRequest($"Invalid role '{role}'. Valid roles: {string.Join(", ", AppRoles.All)}");
 		}
 
 		ApplicationUser? user = await userManager.FindByIdAsync(userId);
@@ -55,11 +55,11 @@ public class UserRolesController(
 
 	[HttpDelete("{role}")]
 	[EndpointSummary("Remove role from user")]
-	public async Task<Results<NoContent, BadRequest<string>, NotFound>> RemoveUserRole([FromRoute] string userId, [FromRoute] string role)
+	public async Task<Results<NoContent, BadRequest<ProblemDetails>, NotFound>> RemoveUserRole([FromRoute] string userId, [FromRoute] string role)
 	{
 		if (!AppRoles.All.Contains(role))
 		{
-			return TypedResults.BadRequest($"Invalid role '{role}'. Valid roles: {string.Join(", ", AppRoles.All)}");
+			return ApiProblem.BadRequest($"Invalid role '{role}'. Valid roles: {string.Join(", ", AppRoles.All)}");
 		}
 
 		ApplicationUser? user = await userManager.FindByIdAsync(userId);

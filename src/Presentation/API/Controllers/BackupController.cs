@@ -66,23 +66,23 @@ public class BackupController(
 	[RequestSizeLimit(100 * 1024 * 1024)]
 	[EndpointSummary("Import data from a SQLite backup file")]
 	[EndpointDescription("Accepts a SQLite database file exported by the backup endpoint, reads all entity tables, and upserts each row into the current database. Backups from older export versions are accepted; tables and columns they lack are treated as absent. Requires the Admin role.")]
-	public async Task<Results<Ok<BackupImportResponse>, BadRequest<string>>> ImportBackup(
+	public async Task<Results<Ok<BackupImportResponse>, BadRequest<ProblemDetails>>> ImportBackup(
 		IFormFile? file)
 	{
 		if (file is null || file.Length == 0)
 		{
-			return TypedResults.BadRequest("No file was uploaded.");
+			return ApiProblem.BadRequest("No file was uploaded.");
 		}
 
 		if (file.Length > MaxFileSizeBytes)
 		{
-			return TypedResults.BadRequest($"File size exceeds the maximum allowed size of {MaxFileSizeBytes / (1024 * 1024)} MB.");
+			return ApiProblem.BadRequest($"File size exceeds the maximum allowed size of {MaxFileSizeBytes / (1024 * 1024)} MB.");
 		}
 
 		string extension = Path.GetExtension(file.FileName).ToLowerInvariant();
 		if (!AllowedExtensions.Contains(extension))
 		{
-			return TypedResults.BadRequest($"Invalid file extension '{extension}'. Allowed: {string.Join(", ", AllowedExtensions)}");
+			return ApiProblem.BadRequest($"Invalid file extension '{extension}'. Allowed: {string.Join(", ", AllowedExtensions)}");
 		}
 
 		try
@@ -121,12 +121,12 @@ public class BackupController(
 		catch (InvalidOperationException ex)
 		{
 			logger.LogWarning(ex, "Backup import failed: {Message}", ex.Message);
-			return TypedResults.BadRequest(ex.Message);
+			return ApiProblem.BadRequest(ex.Message);
 		}
 		catch (Exception ex) when (ex is FormatException or ArgumentException or Microsoft.Data.Sqlite.SqliteException)
 		{
 			logger.LogWarning(ex, "Backup import failed due to malformed data: {Message}", ex.Message);
-			return TypedResults.BadRequest($"The backup file contains invalid data: {ex.Message}");
+			return ApiProblem.BadRequest($"The backup file contains invalid data: {ex.Message}");
 		}
 	}
 }

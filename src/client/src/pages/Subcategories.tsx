@@ -495,7 +495,7 @@ function Subcategories() {
                                             variant="destructive"
                                             onClick={() => deleteSubcategory.mutate(subcategory.id, {
                                               onError: (error: unknown) => {
-                                                const err = error as { conflict?: boolean; message?: string; receiptItemCount?: number; affectedReceipts?: AffectedReceipt[] };
+                                                const err = error as { conflict?: boolean; detail?: string; receiptItemCount?: number; affectedReceipts?: AffectedReceipt[] };
                                                 if (err.conflict && err.affectedReceipts) {
                                                   setConflictData({
                                                     subcategoryName: subcategory.name,

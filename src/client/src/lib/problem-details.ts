@@ -39,9 +39,12 @@ export function parseProblemDetails(
  * produces three different shapes for a failed request:
  *
  *   1. A ProblemDetails object — has `status`, handled everywhere already.
+ *      Since RECEIPTS-886 every rejection carrying a reason arrives this way.
  *   2. A bare JSON string, from `TypedResults.BadRequest("some reason")`.
+ *      No longer emitted by this server; kept as a backstop against regression.
  *   3. `undefined`, when the response carried no body at all — which is what
  *      ASP.NET sends for an authorization 403 or a bodiless `NotFound()`.
+ *      Still live, and the reason this function cannot be retired.
  *
  * Only shape 1 has a `status`, and `handleGlobalError` keys off `status` to
  * decide whether to toast — so shapes 2 and 3 fail *silently* unless they are

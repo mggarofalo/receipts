@@ -57,26 +57,26 @@ public class ReceiptItemsController(IMediator mediator, ReceiptItemMapper mapper
 
 	[HttpGet(RouteGetAll)]
 	[EndpointSummary("Get all receipt items")]
-	public async Task<Results<Ok<ReceiptItemListResponse>, BadRequest<string>>> GetAllReceiptItems([FromQuery] Guid? receiptId = null, [FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, [FromQuery] string? q = null, CancellationToken cancellationToken = default)
+	public async Task<Results<Ok<ReceiptItemListResponse>, BadRequest<ProblemDetails>>> GetAllReceiptItems([FromQuery] Guid? receiptId = null, [FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, [FromQuery] string? q = null, CancellationToken cancellationToken = default)
 	{
 		if (offset < 0)
 		{
-			return TypedResults.BadRequest("offset must be >= 0");
+			return ApiProblem.BadRequest("offset must be >= 0");
 		}
 
 		if (limit <= 0 || limit > 500)
 		{
-			return TypedResults.BadRequest("limit must be between 1 and 500");
+			return ApiProblem.BadRequest("limit must be between 1 and 500");
 		}
 
 		if (sortBy is not null && !SortableColumns.ReceiptItem.Contains(sortBy))
 		{
-			return TypedResults.BadRequest($"Invalid sortBy '{sortBy}'. Allowed: {string.Join(", ", SortableColumns.ReceiptItem)}");
+			return ApiProblem.BadRequest($"Invalid sortBy '{sortBy}'. Allowed: {string.Join(", ", SortableColumns.ReceiptItem)}");
 		}
 
 		if (!SortableColumns.IsValidDirection(sortDirection))
 		{
-			return TypedResults.BadRequest($"Invalid sortDirection '{sortDirection}'. Allowed: asc, desc");
+			return ApiProblem.BadRequest($"Invalid sortDirection '{sortDirection}'. Allowed: asc, desc");
 		}
 
 		SortParams sort = new(sortBy, sortDirection);
@@ -111,26 +111,26 @@ public class ReceiptItemsController(IMediator mediator, ReceiptItemMapper mapper
 	[HttpGet(RouteGetDeleted)]
 	[EndpointSummary("Get all soft-deleted receipt items")]
 	[EndpointDescription("Returns all receipt items that have been soft-deleted.")]
-	public async Task<Results<Ok<ReceiptItemListResponse>, BadRequest<string>>> GetDeletedReceiptItems([FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, CancellationToken cancellationToken = default)
+	public async Task<Results<Ok<ReceiptItemListResponse>, BadRequest<ProblemDetails>>> GetDeletedReceiptItems([FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, CancellationToken cancellationToken = default)
 	{
 		if (offset < 0)
 		{
-			return TypedResults.BadRequest("offset must be >= 0");
+			return ApiProblem.BadRequest("offset must be >= 0");
 		}
 
 		if (limit <= 0 || limit > 500)
 		{
-			return TypedResults.BadRequest("limit must be between 1 and 500");
+			return ApiProblem.BadRequest("limit must be between 1 and 500");
 		}
 
 		if (sortBy is not null && !SortableColumns.ReceiptItem.Contains(sortBy))
 		{
-			return TypedResults.BadRequest($"Invalid sortBy '{sortBy}'. Allowed: {string.Join(", ", SortableColumns.ReceiptItem)}");
+			return ApiProblem.BadRequest($"Invalid sortBy '{sortBy}'. Allowed: {string.Join(", ", SortableColumns.ReceiptItem)}");
 		}
 
 		if (!SortableColumns.IsValidDirection(sortDirection))
 		{
-			return TypedResults.BadRequest($"Invalid sortDirection '{sortDirection}'. Allowed: asc, desc");
+			return ApiProblem.BadRequest($"Invalid sortDirection '{sortDirection}'. Allowed: asc, desc");
 		}
 
 		SortParams sort = new(sortBy, sortDirection);

@@ -65,6 +65,30 @@ The API does not self-migrate or self-seed. See **[docs/development.md](docs/dev
 
 C# conventions, Mapperly rules, EF Core query guidelines, React hook stability rules. See **[docs/coding-standards.md](docs/coding-standards.md)**.
 
+## API Error Contract
+
+Every 4xx this API raises **with a reason** answers with an RFC 9457 problem document — never a bare JSON string, never an ad-hoc `{ message }` object. Build them with `ApiProblem` (`src/Presentation/API/Http/ApiProblem.cs`):
+
+```csharp
+return ApiProblem.BadRequest("offset must be >= 0");
+return ApiProblem.NotFound($"Receipt {id} not found");
+return ApiProblem.Conflict(
+    $"Cannot delete — {count} transaction(s) reference this card",
+    new Dictionary<string, object?> { ["transactionCount"] = count });
+```
+
+Rules:
+
+- **The human-readable reason always goes in `detail`.** That is the one field the client renders (`extractErrorMessage` in `src/client/src/lib/problem-details.ts`).
+- **Machine-readable context goes in extensions**, not encoded into the prose. Extension members serialise at the top level of the body, so a consumer reads `body.transactionCount` directly.
+- **Declare the status in the return type** — `BadRequest<ProblemDetails>`, not `ProblemHttpResult`. The OpenAPI generator emits one schema per status from the `Results<…>` signature; `ProblemHttpResult` collapses them and the drift check will fail.
+- **A rejection with nothing useful to say stays bodiless.** `TypedResults.NotFound()` is correct when the id simply is not there; do not invent prose to fill a document.
+- **In `openapi/spec.yaml`, point 4xx responses at `#/components/schemas/ProblemDetails`.** A `type: string` error schema is the old contract and will not match what the server sends.
+
+Changing an endpoint's error schema trips the **API Breaking Changes** CI gate — see the note under Workflow Rules about `breaking-changes-allowed`.
+
+The client keeps a normalisation middleware (`errorNormalizationMiddleware`) for **bodiless** failures, which ASP.NET still produces for authorization 403s. That layer is a backstop, not the contract; do not rely on it to repair a body the server should have shaped correctly.
+
 ## React Best Practices
 
 State management, Effects, component patterns, and custom hook conventions for the React client. See **[docs/react/README.md](docs/react/README.md)**.

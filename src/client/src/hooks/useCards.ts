@@ -82,7 +82,8 @@ export function useUpdateCard() {
 }
 
 export interface DeleteCardConflict {
-  message: string;
+  /** ProblemDetails carries the prose in `detail`; the count rides as an extension member. */
+  detail: string;
   transactionCount: number;
 }
 
@@ -106,9 +107,9 @@ export function useDeleteCard() {
       toast.success("Card deleted");
     },
     onError: (error: unknown) => {
-      const err = error as { conflict?: boolean; message?: string; transactionCount?: number };
+      const err = error as { conflict?: boolean; detail?: string; transactionCount?: number };
       if (err.conflict) {
-        toast.error(err.message ?? "Cannot delete — transactions reference this card");
+        toast.error(err.detail ?? "Cannot delete — transactions reference this card");
       }
       // Non-conflict failures fall through to the global error handler.
     },
@@ -212,9 +213,10 @@ export function useMergeCards() {
       }
 
       // Everything else goes to the global handler as a ProblemDetails-shaped
-      // object. The merge endpoint answers with `BadRequest(string)` for its
-      // most useful rejections ("all of its cards must be included in the
-      // merge, or none"), and a bare string carries no status to toast on.
+      // object. Since RECEIPTS-886 the merge endpoint already answers that way
+      // for its most useful rejections ("all of its cards must be included in
+      // the merge, or none"); toApiError still stamps the real HTTP status over
+      // the body, which is what the bodiless 403/404 case depends on.
       throw toApiError(response.status, error);
     },
     onSuccess: (impact) => {

@@ -38,7 +38,7 @@ public class UncategorizedItemsReportsControllerTests
 			.ReturnsAsync(reportResult);
 
 		// Act
-		Results<Ok<UncategorizedItemsResponse>, BadRequest<string>> result =
+		Results<Ok<UncategorizedItemsResponse>, BadRequest<ProblemDetails>> result =
 			await _controller.GetUncategorizedItems(null, null, null, null, CancellationToken.None);
 
 		// Assert
@@ -62,7 +62,7 @@ public class UncategorizedItemsReportsControllerTests
 			.ReturnsAsync(reportResult);
 
 		// Act
-		Results<Ok<UncategorizedItemsResponse>, BadRequest<string>> result =
+		Results<Ok<UncategorizedItemsResponse>, BadRequest<ProblemDetails>> result =
 			await _controller.GetUncategorizedItems("total", "desc", 2, 25, CancellationToken.None);
 
 		// Assert
@@ -77,36 +77,36 @@ public class UncategorizedItemsReportsControllerTests
 	public async Task GetUncategorizedItems_ReturnsBadRequest_WhenInvalidSortBy()
 	{
 		// Act
-		Results<Ok<UncategorizedItemsResponse>, BadRequest<string>> result =
+		Results<Ok<UncategorizedItemsResponse>, BadRequest<ProblemDetails>> result =
 			await _controller.GetUncategorizedItems("invalid", null, null, null, CancellationToken.None);
 
 		// Assert
-		BadRequest<string> badResult = Assert.IsType<BadRequest<string>>(result.Result);
-		badResult.Value.Should().Contain("Invalid sortBy");
+		BadRequest<ProblemDetails> badResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badResult.Value!.Detail.Should().Contain("Invalid sortBy");
 	}
 
 	[Fact]
 	public async Task GetUncategorizedItems_ReturnsBadRequest_WhenInvalidSortDirection()
 	{
 		// Act
-		Results<Ok<UncategorizedItemsResponse>, BadRequest<string>> result =
+		Results<Ok<UncategorizedItemsResponse>, BadRequest<ProblemDetails>> result =
 			await _controller.GetUncategorizedItems(null, "invalid", null, null, CancellationToken.None);
 
 		// Assert
-		BadRequest<string> badResult = Assert.IsType<BadRequest<string>>(result.Result);
-		badResult.Value.Should().Contain("Invalid sortDirection");
+		BadRequest<ProblemDetails> badResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badResult.Value!.Detail.Should().Contain("Invalid sortDirection");
 	}
 
 	[Fact]
 	public async Task GetUncategorizedItems_ReturnsBadRequest_WhenPageLessThanOne()
 	{
 		// Act
-		Results<Ok<UncategorizedItemsResponse>, BadRequest<string>> result =
+		Results<Ok<UncategorizedItemsResponse>, BadRequest<ProblemDetails>> result =
 			await _controller.GetUncategorizedItems(null, null, 0, null, CancellationToken.None);
 
 		// Assert
-		BadRequest<string> badResult = Assert.IsType<BadRequest<string>>(result.Result);
-		badResult.Value.Should().Be("page must be at least 1");
+		BadRequest<ProblemDetails> badResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badResult.Value!.Detail.Should().Be("page must be at least 1");
 	}
 
 	[Theory]
@@ -116,12 +116,12 @@ public class UncategorizedItemsReportsControllerTests
 	public async Task GetUncategorizedItems_ReturnsBadRequest_WhenPageSizeOutOfRange(int pageSize)
 	{
 		// Act
-		Results<Ok<UncategorizedItemsResponse>, BadRequest<string>> result =
+		Results<Ok<UncategorizedItemsResponse>, BadRequest<ProblemDetails>> result =
 			await _controller.GetUncategorizedItems(null, null, null, pageSize, CancellationToken.None);
 
 		// Assert
-		BadRequest<string> badResult = Assert.IsType<BadRequest<string>>(result.Result);
-		badResult.Value.Should().Be("pageSize must be between 1 and 100");
+		BadRequest<ProblemDetails> badResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badResult.Value!.Detail.Should().Be("pageSize must be between 1 and 100");
 	}
 
 	[Theory]
@@ -139,7 +139,7 @@ public class UncategorizedItemsReportsControllerTests
 			.ReturnsAsync(reportResult);
 
 		// Act
-		Results<Ok<UncategorizedItemsResponse>, BadRequest<string>> result =
+		Results<Ok<UncategorizedItemsResponse>, BadRequest<ProblemDetails>> result =
 			await _controller.GetUncategorizedItems(sortBy, null, null, null, CancellationToken.None);
 
 		// Assert
@@ -182,7 +182,7 @@ public class UncategorizedItemsReportsControllerTests
 			.ReturnsAsync(reportResult);
 
 		// Act
-		Results<Ok<UncategorizedItemsResponse>, BadRequest<string>> result =
+		Results<Ok<UncategorizedItemsResponse>, BadRequest<ProblemDetails>> result =
 			await _controller.GetUncategorizedItems(null, null, null, null, CancellationToken.None);
 
 		// Assert

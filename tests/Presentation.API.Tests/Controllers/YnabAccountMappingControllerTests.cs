@@ -84,7 +84,7 @@ public class YnabAccountMappingControllerTests
 		};
 
 		// Act
-		Results<Created<YnabAccountMappingResponse>, BadRequest<string>> result =
+		Results<Created<YnabAccountMappingResponse>, BadRequest<ProblemDetails>> result =
 			await _controller.CreateAccountMapping(request, CancellationToken.None);
 
 		// Assert
@@ -111,12 +111,12 @@ public class YnabAccountMappingControllerTests
 		};
 
 		// Act
-		Results<Created<YnabAccountMappingResponse>, BadRequest<string>> result =
+		Results<Created<YnabAccountMappingResponse>, BadRequest<ProblemDetails>> result =
 			await _controller.CreateAccountMapping(request, CancellationToken.None);
 
 		// Assert
-		BadRequest<string> badRequest = Assert.IsType<BadRequest<string>>(result.Result);
-		badRequest.Value.Should().Contain("Card does not exist.");
+		BadRequest<ProblemDetails> badRequest = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequest.Value!.Detail.Should().Contain("Card does not exist.");
 	}
 
 	[Fact]

@@ -26,7 +26,7 @@ public class UsersController(
 {
 	[HttpGet]
 	[EndpointSummary("List all users with their roles")]
-	public async Task<Results<Ok<UserListResponse>, BadRequest<string>>> ListUsers(
+	public async Task<Results<Ok<UserListResponse>, BadRequest<ProblemDetails>>> ListUsers(
 		[FromQuery] int offset = 0,
 		[FromQuery] int limit = 50,
 		[FromQuery] string? sortBy = null,
@@ -34,22 +34,22 @@ public class UsersController(
 	{
 		if (offset < 0)
 		{
-			return TypedResults.BadRequest("offset must be >= 0");
+			return ApiProblem.BadRequest("offset must be >= 0");
 		}
 
 		if (limit <= 0 || limit > 500)
 		{
-			return TypedResults.BadRequest("limit must be between 1 and 500");
+			return ApiProblem.BadRequest("limit must be between 1 and 500");
 		}
 
 		if (sortBy is not null && !SortableColumns.User.Contains(sortBy))
 		{
-			return TypedResults.BadRequest($"Invalid sortBy '{sortBy}'. Allowed: {string.Join(", ", SortableColumns.User)}");
+			return ApiProblem.BadRequest($"Invalid sortBy '{sortBy}'. Allowed: {string.Join(", ", SortableColumns.User)}");
 		}
 
 		if (!SortableColumns.IsValidDirection(sortDirection))
 		{
-			return TypedResults.BadRequest($"Invalid sortDirection '{sortDirection}'. Allowed: asc, desc");
+			return ApiProblem.BadRequest($"Invalid sortDirection '{sortDirection}'. Allowed: asc, desc");
 		}
 
 		SortParams sort = new(sortBy, sortDirection);
@@ -93,7 +93,7 @@ public class UsersController(
 
 	[HttpPost]
 	[EndpointSummary("Create a new user (admin only)")]
-	public async Task<Results<Ok<UserSummaryResponse>, BadRequest<IEnumerable<string>>>> CreateUser([FromBody] CreateUserRequest request)
+	public async Task<Results<Ok<UserSummaryResponse>, BadRequest<ProblemDetails>>> CreateUser([FromBody] CreateUserRequest request)
 	{
 		ApplicationUser user = new()
 		{
@@ -108,13 +108,13 @@ public class UsersController(
 		IdentityResult result = await userManager.CreateAsync(user, request.Password);
 		if (!result.Succeeded)
 		{
-			return TypedResults.BadRequest(result.Errors.Select(e => e.Description));
+			return ApiProblem.BadRequest(result.Errors.Select(e => e.Description));
 		}
 
 		IdentityResult roleResult = await userManager.AddToRoleAsync(user, request.Role);
 		if (!roleResult.Succeeded)
 		{
-			return TypedResults.BadRequest(roleResult.Errors.Select(e => e.Description));
+			return ApiProblem.BadRequest(roleResult.Errors.Select(e => e.Description));
 		}
 
 		await LogAuthEventAsync(nameof(AuthEventType.UserRegistered), user.Id, user.Email);
@@ -134,7 +134,9 @@ public class UsersController(
 
 	[HttpPut("{userId}")]
 	[EndpointSummary("Update a user (admin only)")]
-	public async Task<Results<NoContent, NotFound, BadRequest<string>, BadRequest<IEnumerable<string>>>> UpdateUser(string userId, [FromBody] UpdateUserRequest request)
+	// One BadRequest arm, not two: the signature previously distinguished a bare-string
+	// rejection from an Identity error list, and both are now the same problem document.
+	public async Task<Results<NoContent, NotFound, BadRequest<ProblemDetails>>> UpdateUser(string userId, [FromBody] UpdateUserRequest request)
 	{
 		string? currentUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
@@ -148,13 +150,13 @@ public class UsersController(
 		{
 			if (request.IsDisabled)
 			{
-				return TypedResults.BadRequest("Cannot disable your own account.");
+				return ApiProblem.BadRequest("Cannot disable your own account.");
 			}
 
 			IList<string> currentRoles = await userManager.GetRolesAsync(user);
 			if (currentRoles.Contains("Admin") && request.Role != "Admin")
 			{
-				return TypedResults.BadRequest("Cannot remove your own Admin role.");
+				return ApiProblem.BadRequest("Cannot remove your own Admin role.");
 			}
 		}
 
@@ -173,7 +175,7 @@ public class UsersController(
 		IdentityResult updateResult = await userManager.UpdateAsync(user);
 		if (!updateResult.Succeeded)
 		{
-			return TypedResults.BadRequest(updateResult.Errors.Select(e => e.Description));
+			return ApiProblem.BadRequest(updateResult.Errors.Select(e => e.Description));
 		}
 
 		if (request.IsDisabled)
@@ -196,7 +198,7 @@ public class UsersController(
 		IdentityResult roleResult = await userManager.AddToRoleAsync(user, request.Role);
 		if (!roleResult.Succeeded)
 		{
-			return TypedResults.BadRequest(roleResult.Errors.Select(e => e.Description));
+			return ApiProblem.BadRequest(roleResult.Errors.Select(e => e.Description));
 		}
 
 		return TypedResults.NoContent();
@@ -204,12 +206,12 @@ public class UsersController(
 
 	[HttpDelete("{userId}")]
 	[EndpointSummary("Deactivate a user (admin only)")]
-	public async Task<Results<NoContent, BadRequest<string>, NotFound>> DeactivateUser(string userId)
+	public async Task<Results<NoContent, BadRequest<ProblemDetails>, NotFound>> DeactivateUser(string userId)
 	{
 		string? currentUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 		if (userId == currentUserId)
 		{
-			return TypedResults.BadRequest("Cannot deactivate your own account.");
+			return ApiProblem.BadRequest("Cannot deactivate your own account.");
 		}
 
 		ApplicationUser? user = await userManager.FindByIdAsync(userId);
@@ -239,7 +241,7 @@ public class UsersController(
 
 	[HttpPost("{userId}/reset-password")]
 	[EndpointSummary("Reset a user's password (admin only)")]
-	public async Task<Results<NoContent, NotFound, BadRequest<IEnumerable<string>>>> AdminResetPassword(string userId, [FromBody] AdminResetPasswordRequest request)
+	public async Task<Results<NoContent, NotFound, BadRequest<ProblemDetails>>> AdminResetPassword(string userId, [FromBody] AdminResetPasswordRequest request)
 	{
 		ApplicationUser? user = await userManager.FindByIdAsync(userId);
 		if (user is null)
@@ -251,7 +253,7 @@ public class UsersController(
 		IdentityResult result = await userManager.AddPasswordAsync(user, request.NewPassword);
 		if (!result.Succeeded)
 		{
-			return TypedResults.BadRequest(result.Errors.Select(e => e.Description));
+			return ApiProblem.BadRequest(result.Errors.Select(e => e.Description));
 		}
 
 		user.MustResetPassword = true;
