@@ -15,6 +15,9 @@ vi.mock("@/hooks/useCards", () => ({
   useUpdateCard: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
   useDeleteCard: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
   useMergeCards: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
+  // The merge dialog previews the impact before confirming (RECEIPTS-889). Idle here:
+  // these tests are about the Cards page, and the preview has its own coverage.
+  useMergeCardsPreview: vi.fn(() => ({ data: undefined, isFetching: false })),
   isMergeCardsConflict: vi.fn(() => false),
 }));
 

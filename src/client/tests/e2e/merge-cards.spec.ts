@@ -48,6 +48,16 @@ const MERGED = { accountsRemoved: 1, cardsMoved: 2, transactionsRepointed: 37 };
 /** The same 200, from a merge the database had already satisfied. */
 const CHANGED_NOTHING = { accountsRemoved: 0, cardsMoved: 0, transactionsRepointed: 0 };
 
+/** What the pre-flight preview reports for the default fixture (RECEIPTS-889). */
+const PREVIEW = {
+  accountsToRemove: [{ id: "acc-source", name: "Source Account" }],
+  cardsToMove: 1,
+  transactionsToRepoint: 37,
+  trashedTransactionsToRepoint: 4,
+  survivingYnabMapping: null,
+  conflicts: null,
+};
+
 /**
  * Boot /cards as an admin with two selectable cards, and stub the merge
  * endpoint with whatever the test needs.
@@ -66,6 +76,9 @@ async function gotoCards(
   // partial-merge test overrides it with a card the /cards page never shows —
   // which is the situation RECEIPTS-888 is about.
   accountCards?: Record<string, typeof CARDS>,
+  // What the pre-flight preview reports (RECEIPTS-889). The dialog holds submit
+  // until this resolves, so every test that merges needs it to answer.
+  previewBody: unknown = PREVIEW,
 ) {
   const cardsByAccount =
     accountCards ??
@@ -89,6 +102,9 @@ async function gotoCards(
         const accountId = new URL(route.request().url()).pathname.split("/").at(-2) ?? "";
         return route.fulfill(json(cardsByAccount[accountId] ?? []));
       },
+      // Must come before the merge route: `**/api/cards/merge` would otherwise also
+      // swallow the preview POST and answer it with a merge result.
+      "**/api/cards/merge/preview": (route) => route.fulfill(json(previewBody)),
       "**/api/cards/merge": mergeHandler,
     },
   });
@@ -366,6 +382,84 @@ test.describe("card merge — a source account only partly selected", () => {
       targetAccountId: "acc-target",
       sourceCardIds: ["card-2", "card-3"],
     });
+  });
+});
+
+// RECEIPTS-889. Merging deletes the emptied source accounts and repoints every one of
+// their transactions, trashed ones included, and there is no undo. The dialog's only
+// warning used to be a line of prose in its header.
+test.describe("card merge — pre-flight preview", () => {
+  test("spells out what would move and what would be destroyed before confirming", async ({ page }) => {
+    await gotoCards(page, (route) => route.fulfill(json(MERGED)));
+
+    await page.getByLabel("Select Reissued Visa").check();
+    await page.getByLabel("Merge selected cards into an account").click();
+
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Target account").click();
+    await page.getByRole("option", { name: "Target Account" }).click();
+
+    await expect(dialog.getByText(/this merge cannot be undone/i)).toBeVisible();
+    await expect(dialog.getByText("37 transactions repointed")).toBeVisible();
+    // The trashed ones are the part that would otherwise vanish unannounced: they are
+    // invisible everywhere except the recycle bin, and the merge moves them anyway.
+    await expect(dialog.getByText(/4 trashed transactions repointed/)).toBeVisible();
+    // The account is named, not just counted — it is about to stop existing.
+    await expect(dialog.getByText(/Deleted permanently:/)).toBeVisible();
+    await expect(dialog.getByText(/Deleted permanently:\s*Source Account/)).toBeVisible();
+  });
+
+  test("the preview reflects the request, and the merge is what actually writes", async ({ page }) => {
+    const previewBodies: unknown[] = [];
+    const mergeBodies: unknown[] = [];
+
+    await installApiMocks(page, {
+      user: ADMIN_FIXTURE_USER,
+      freezeClock: false,
+      overrides: {
+        "**/api/cards?*": (route) =>
+          route.fulfill(json({ data: CARDS, total: CARDS.length, offset: 0, limit: 50 })),
+        "**/api/accounts?*": (route) =>
+          route.fulfill(json({ data: ACCOUNTS, total: ACCOUNTS.length, offset: 0, limit: 500 })),
+        "**/api/accounts/*/cards": (route) => {
+          const accountId = new URL(route.request().url()).pathname.split("/").at(-2) ?? "";
+          return route.fulfill(json(CARDS.filter((c) => c.accountId === accountId)));
+        },
+        "**/api/cards/merge/preview": (route) => {
+          previewBodies.push(route.request().postDataJSON());
+          return route.fulfill(json(PREVIEW));
+        },
+        "**/api/cards/merge": (route) => {
+          mergeBodies.push(route.request().postDataJSON());
+          return route.fulfill(json(MERGED));
+        },
+      },
+    });
+    await signInAs(page, ADMIN_FIXTURE_USER);
+    await page.goto("/cards");
+    await expect(page.getByRole("heading", { name: "Cards" })).toBeVisible();
+
+    await page.getByLabel("Select Reissued Visa").check();
+    await page.getByLabel("Merge selected cards into an account").click();
+
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Target account").click();
+    await page.getByRole("option", { name: "Target Account" }).click();
+    await expect(dialog.getByText(/this merge cannot be undone/i)).toBeVisible();
+
+    // Previewing on its own writes nothing.
+    expect(mergeBodies).toHaveLength(0);
+    expect(previewBodies).toEqual([
+      { targetAccountId: "acc-target", sourceCardIds: ["card-2"], ynabMappingWinnerAccountId: null },
+    ]);
+
+    await dialog.getByRole("button", { name: "Merge", exact: true }).click();
+    await expect(page.getByText("Cards merged")).toBeVisible();
+
+    // The merge submits the same selection the preview described.
+    expect(mergeBodies).toEqual([
+      { targetAccountId: "acc-target", sourceCardIds: ["card-2"], ynabMappingWinnerAccountId: null },
+    ]);
   });
 });
 

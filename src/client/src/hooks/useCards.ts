@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import client from "@/lib/api-client";
 import { toApiError } from "@/lib/problem-details";
 import { toast } from "sonner";
+import type { components } from "@/generated/api";
 
 // Note: Cards are hard-delete entities (no soft-delete/restore).
 
@@ -174,6 +175,50 @@ export function describeMergeImpact(impact: MergeCardsImpact): string {
     parts.push(`${plural(impact.accountsRemoved, "empty account")} removed`);
   }
   return `${parts.join(", ")}.`;
+}
+
+export type MergeCardsPreview = components["schemas"]["MergeCardsPreviewResponse"];
+
+/**
+ * What the merge would do, fetched before the user commits to it.
+ *
+ * Merging is irreversible and has no undo, and the dialog's only warning used to be a
+ * line of prose (RECEIPTS-889). Disabled until a target is chosen, because the impact
+ * is meaningless without one.
+ *
+ * Failures resolve to `null` rather than throwing: a preview that cannot be fetched
+ * must not toast an error over a dialog the user has not submitted yet. The dialog
+ * holds submit while this is unresolved, and the merge itself still validates.
+ *
+ * `null` and not `undefined` — React Query rejects an undefined query result outright,
+ * which would turn a quiet failure into the error state this is avoiding.
+ */
+export function useMergeCardsPreview(input: MergeCardsInput | null) {
+  return useQuery({
+    queryKey: [
+      "cards",
+      "mergePreview",
+      input?.targetAccountId,
+      [...(input?.sourceCardIds ?? [])].sort().join(","),
+      input?.ynabMappingWinnerAccountId ?? null,
+    ],
+    enabled: !!input && input.sourceCardIds.length > 0 && !!input.targetAccountId,
+    // The preview describes live data the user is about to destroy; a cached one from
+    // before they changed the selection would describe a merge they are not running.
+    staleTime: 0,
+    retry: false,
+    queryFn: async (): Promise<MergeCardsPreview | null> => {
+      const { data, response } = await client.POST("/api/cards/merge/preview", {
+        body: {
+          targetAccountId: input!.targetAccountId,
+          sourceCardIds: input!.sourceCardIds,
+          ynabMappingWinnerAccountId: input!.ynabMappingWinnerAccountId ?? null,
+        },
+      });
+      if (!response.ok) return null;
+      return data ?? null;
+    },
+  });
 }
 
 export function useMergeCards() {

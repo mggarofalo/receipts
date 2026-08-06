@@ -594,6 +594,82 @@ public class CardsControllerTests
 	}
 
 	[Fact]
+	public async Task PreviewMergeCards_ReturnsTheImpactWithoutNotifyingAnyone()
+	{
+		// RECEIPTS-889: a preview writes nothing, so broadcasting a change would be a lie.
+		MergeCardsRequest request = new()
+		{
+			TargetAccountId = Guid.NewGuid(),
+			SourceCardIds = [Guid.NewGuid(), Guid.NewGuid()],
+		};
+
+		Guid removedAccountId = Guid.NewGuid();
+		_mediatorMock.Setup(m => m.Send(
+			It.IsAny<PreviewMergeCardsQuery>(),
+			It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new MergeCardsPreview(
+				[new Application.Models.Merge.MergeCardsPreviewAccount(removedAccountId, "Source Account")],
+				CardsToMove: 2,
+				TransactionsToRepoint: 37,
+				TrashedTransactionsToRepoint: 4,
+				SurvivingYnabMapping: null,
+				Conflicts: null));
+
+		Results<Ok<MergeCardsPreviewResponse>, BadRequest<ProblemDetails>, NotFound> result =
+			await _controller.PreviewMergeCards(request);
+
+		Ok<MergeCardsPreviewResponse> ok = Assert.IsType<Ok<MergeCardsPreviewResponse>>(result.Result);
+		(ok.Value!.CardsToMove, ok.Value.TransactionsToRepoint, ok.Value.TrashedTransactionsToRepoint)
+			.Should().Be((2, 37, 4));
+		ok.Value.AccountsToRemove.Should().ContainSingle()
+			.Which.Name.Should().Be("Source Account");
+		_notifierMock.Verify(
+			n => n.NotifyBulkChanged(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<IEnumerable<Guid>>()),
+			Times.Never);
+	}
+
+	[Fact]
+	public async Task PreviewMergeCards_WhenTheMergeWouldBeRejected_RejectsToo()
+	{
+		// The preview must not answer where the merge would throw; promising an impact
+		// that cannot be delivered is worse than showing none.
+		MergeCardsRequest request = new()
+		{
+			TargetAccountId = Guid.NewGuid(),
+			SourceCardIds = [Guid.NewGuid()],
+		};
+
+		_mediatorMock.Setup(m => m.Send(
+			It.IsAny<PreviewMergeCardsQuery>(),
+			It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new ArgumentException(
+				"Source account would be partially merged: all of its cards must be included in the merge, or none."));
+
+		Results<Ok<MergeCardsPreviewResponse>, BadRequest<ProblemDetails>, NotFound> result =
+			await _controller.PreviewMergeCards(request);
+
+		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		bad.Value!.Detail.Should().Contain("all of its cards must be included");
+	}
+
+	[Fact]
+	public async Task PreviewMergeCards_WithNoCards_ReturnsBadRequest()
+	{
+		MergeCardsRequest request = new()
+		{
+			TargetAccountId = Guid.NewGuid(),
+			SourceCardIds = [],
+		};
+
+		Results<Ok<MergeCardsPreviewResponse>, BadRequest<ProblemDetails>, NotFound> result =
+			await _controller.PreviewMergeCards(request);
+
+		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		bad.Value!.Detail.Should().Be(CardsController.SourceCardIdsRequired);
+		_mediatorMock.Verify(m => m.Send(It.IsAny<PreviewMergeCardsQuery>(), It.IsAny<CancellationToken>()), Times.Never);
+	}
+
+	[Fact]
 	public async Task MergeCards_WithNoCards_ReturnsBadRequest()
 	{
 		MergeCardsRequest request = new()

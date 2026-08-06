@@ -23,6 +23,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertCircle } from "lucide-react";
 import {
   useMergeCards,
+  useMergeCardsPreview,
   isMergeCardsConflict,
   type MergeCardsConflict,
   type YnabMappingConflict,
@@ -212,6 +213,28 @@ export function MergeCardsDialog({
     [incompleteAccounts],
   );
 
+  /**
+   * What the merge would actually do, fetched before the user commits.
+   *
+   * Only asked for once the selection is whole and would change something — a preview
+   * of a merge the server would reject describes nothing, and "New account" mode has
+   * no target id to preview against until the account exists.
+   */
+  const previewInput =
+    targetMode === "existing" &&
+    targetAccountId !== "" &&
+    effectiveCards.length > 0 &&
+    !hasIncompleteSelection &&
+    !wouldChangeNothing &&
+    !sourceCardsLoading
+      ? {
+          targetAccountId,
+          sourceCardIds: effectiveCards.map((c) => c.id),
+          ynabMappingWinnerAccountId: winnerAccountId,
+        }
+      : null;
+  const { data: preview, isFetching: previewLoading } = useMergeCardsPreview(previewInput);
+
   function includeMissingCards() {
     setIncludedCardIds((prev) => [...new Set([...prev, ...missingCardIds])]);
     // Tell the page too, so any of these it *is* showing tick their checkbox and the
@@ -235,6 +258,9 @@ export function MergeCardsDialog({
     // Until those card lists land the completeness check has nothing to go on, and
     // an unchecked submit is exactly the blind 400 this is meant to prevent.
     sourceCardsLoading ||
+    // Same reasoning one step later: while the impact is still being computed the
+    // user would be confirming something they have not been shown (RECEIPTS-889).
+    previewLoading ||
     (conflict !== null && !winnerAccountId);
 
   /**
@@ -454,6 +480,55 @@ export function MergeCardsDialog({
               </div>
             )}
           </fieldset>
+
+          {/* RECEIPTS-889. Merging deletes the emptied source accounts and repoints
+              every one of their transactions, trashed ones included, with no undo.
+              The only warning used to be the line of prose in the dialog header. */}
+          {previewLoading && (
+            <p role="status" className="text-sm text-muted-foreground">
+              Working out what this merge would change…
+            </p>
+          )}
+
+          {!previewLoading && preview && !preview.conflicts && (
+            <Alert>
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                <div className="font-medium mb-2">This merge cannot be undone</div>
+                <ul className="space-y-1 text-sm">
+                  <li>
+                    {preview.cardsToMove} card{preview.cardsToMove === 1 ? "" : "s"} moved
+                  </li>
+                  <li>
+                    {preview.transactionsToRepoint} transaction
+                    {preview.transactionsToRepoint === 1 ? "" : "s"} repointed
+                  </li>
+                  {preview.trashedTransactionsToRepoint > 0 && (
+                    <li>
+                      {preview.trashedTransactionsToRepoint} trashed transaction
+                      {preview.trashedTransactionsToRepoint === 1 ? "" : "s"} repointed —
+                      these are only visible in the recycle bin, and they move too
+                    </li>
+                  )}
+                  {preview.accountsToRemove.length > 0 && (
+                    <li>
+                      <span className="font-medium">Deleted permanently:</span>{" "}
+                      {preview.accountsToRemove.map((a) => a.name).join(", ")}
+                    </li>
+                  )}
+                  {preview.survivingYnabMapping && (
+                    <li>
+                      YNAB mapping kept:{" "}
+                      <span className="font-mono text-xs">
+                        {preview.survivingYnabMapping.ynabAccountName}
+                      </span>{" "}
+                      (from {preview.survivingYnabMapping.fromAccountName})
+                    </li>
+                  )}
+                </ul>
+              </AlertDescription>
+            </Alert>
+          )}
 
           {conflict && (
             <Alert variant="destructive">

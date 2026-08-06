@@ -33,6 +33,7 @@ public class CardsController(IMediator mediator, CardMapper mapper, ILogger<Card
 	public const string RouteUpdateBatch = "batch";
 	public const string RouteDelete = "{id}";
 	public const string RouteMerge = "merge";
+	public const string RouteMergePreview = "merge/preview";
 
 	public const string SourceCardIdsRequired = "sourceCardIds must contain at least 1 card id";
 
@@ -294,6 +295,76 @@ public class CardsController(IMediator mediator, CardMapper mapper, ILogger<Card
 			AccountsRemoved = result.AccountsRemoved,
 			CardsMoved = result.CardsMoved,
 			TransactionsRepointed = result.TransactionsRepointed,
+		});
+	}
+
+	[HttpPost(RouteMergePreview)]
+	[Authorize(Policy = "RequireAdmin")]
+	[EndpointSummary("Preview what a card merge would do")]
+	[EndpointDescription("Runs the merge's validation and reports its impact without writing anything. Requires the Admin role. Rejects exactly what the merge itself would reject.")]
+	public async Task<Results<Ok<MergeCardsPreviewResponse>, BadRequest<ProblemDetails>, NotFound>> PreviewMergeCards(
+		[FromBody] MergeCardsRequest model,
+		CancellationToken cancellationToken = default)
+	{
+		if (model.SourceCardIds is null || model.SourceCardIds.Count == 0)
+		{
+			return ApiProblem.BadRequest(SourceCardIdsRequired);
+		}
+
+		PreviewMergeCardsQuery query;
+		try
+		{
+			query = new PreviewMergeCardsQuery(
+				model.TargetAccountId,
+				[.. model.SourceCardIds],
+				model.YnabMappingWinnerAccountId);
+		}
+		catch (ArgumentException ex)
+		{
+			return ApiProblem.BadRequest(ex.Message);
+		}
+
+		MergeCardsPreview preview;
+		try
+		{
+			preview = await mediator.Send(query, cancellationToken);
+		}
+		catch (KeyNotFoundException ex)
+		{
+			logger.LogWarning("Merge preview failed — {Message}", ex.Message);
+			return TypedResults.NotFound();
+		}
+		catch (ArgumentException ex)
+		{
+			// A partial source-account selection lands here. The preview reports it the same
+			// way the merge would, rather than answering with an impact that could never happen.
+			return ApiProblem.BadRequest(ex.Message);
+		}
+
+		return TypedResults.Ok(new MergeCardsPreviewResponse
+		{
+			AccountsToRemove = [.. preview.AccountsToRemove.Select(a => new API.Generated.Dtos.MergeCardsPreviewAccount
+			{
+				Id = a.Id,
+				Name = a.Name,
+			})],
+			CardsToMove = preview.CardsToMove,
+			TransactionsToRepoint = preview.TransactionsToRepoint,
+			TrashedTransactionsToRepoint = preview.TrashedTransactionsToRepoint,
+			SurvivingYnabMapping = preview.SurvivingYnabMapping is null ? null : new API.Generated.Dtos.MergeCardsPreviewMapping
+			{
+				FromAccountId = preview.SurvivingYnabMapping.FromAccountId,
+				FromAccountName = preview.SurvivingYnabMapping.FromAccountName,
+				YnabAccountName = preview.SurvivingYnabMapping.YnabAccountName,
+			},
+			Conflicts = preview.Conflicts is null ? null : [.. preview.Conflicts.Select(c => new API.Generated.Dtos.YnabMappingConflict
+			{
+				AccountId = c.AccountId,
+				AccountName = c.AccountName,
+				YnabBudgetId = c.YnabBudgetId,
+				YnabAccountId = c.YnabAccountId,
+				YnabAccountName = c.YnabAccountName,
+			})],
 		});
 	}
 }

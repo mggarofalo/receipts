@@ -29,8 +29,18 @@ vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
 
+// The impact preview (RECEIPTS-889) is its own POST, and letting it share the
+// client.POST mock with the merge call would make every test's call ordering depend
+// on when the preview happened to fire. The hook's own behaviour is covered in
+// useCards.test.ts; here it is stubbed, and the tests that care set it explicitly.
+vi.mock("@/hooks/useCards", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/hooks/useCards")>();
+  return { ...actual, useMergeCardsPreview: vi.fn(() => ({ data: undefined, isFetching: false })) };
+});
+
 import client from "@/lib/api-client";
 import { toast } from "sonner";
+import { useMergeCardsPreview } from "@/hooks/useCards";
 
 function renderDialog(overrides: Partial<React.ComponentProps<typeof MergeCardsDialog>> = {}) {
   const queryClient = new QueryClient({
@@ -517,6 +527,78 @@ describe("MergeCardsDialog", () => {
       await vi.waitFor(() => {
         expect(cardRow.closest("li")).toHaveTextContent("Source Account");
       });
+    });
+  });
+
+  // RECEIPTS-889. Merging deletes the emptied source accounts and repoints all their
+  // transactions, trashed ones included, with no undo. The dialog's only warning was
+  // one line of prose, so the user committed without knowing the blast radius.
+  describe("impact preview", () => {
+    const FULL_PREVIEW = {
+      accountsToRemove: [{ id: "a-source", name: "Source Account" }],
+      cardsToMove: 2,
+      transactionsToRepoint: 37,
+      trashedTransactionsToRepoint: 4,
+      survivingYnabMapping: {
+        fromAccountId: "a-source",
+        fromAccountName: "Source Account",
+        ynabAccountName: "YNAB Source",
+      },
+      conflicts: null,
+    };
+
+    function stubPreview(data: unknown, isFetching = false) {
+      vi.mocked(useMergeCardsPreview).mockReturnValue({ data, isFetching } as ReturnType<
+        typeof useMergeCardsPreview
+      >);
+    }
+
+    async function openWithTarget() {
+      const user = userEvent.setup();
+      renderDialog();
+      await user.click(screen.getByLabelText("Target account"));
+      await user.click(await screen.findByRole("option", { name: "Account One" }));
+      return user;
+    }
+
+    it("spells out what would move and what would be destroyed", async () => {
+      stubPreview(FULL_PREVIEW);
+      await openWithTarget();
+
+      expect(await screen.findByText(/this merge cannot be undone/i)).toBeInTheDocument();
+      expect(screen.getByText(/2 cards moved/)).toBeInTheDocument();
+      expect(screen.getByText(/37 transactions repointed/)).toBeInTheDocument();
+      // Named, not just counted — the account is about to stop existing.
+      expect(screen.getByText(/Deleted permanently:/)).toBeInTheDocument();
+      expect(screen.getByText(/YNAB Source/)).toBeInTheDocument();
+    });
+
+    it("calls out trashed transactions, which are invisible everywhere else", async () => {
+      stubPreview(FULL_PREVIEW);
+      await openWithTarget();
+
+      expect(
+        await screen.findByText(/4 trashed transactions repointed/),
+      ).toBeInTheDocument();
+    });
+
+    it("says nothing about trashed transactions when there are none", async () => {
+      stubPreview({ ...FULL_PREVIEW, trashedTransactionsToRepoint: 0 });
+      await openWithTarget();
+
+      await screen.findByText(/this merge cannot be undone/i);
+      expect(screen.queryByText(/trashed transaction/)).not.toBeInTheDocument();
+    });
+
+    it("holds submit while the impact is still being worked out", async () => {
+      stubPreview(undefined, true);
+      await openWithTarget();
+
+      expect(
+        await screen.findByText(/working out what this merge would change/i),
+      ).toBeInTheDocument();
+      // Confirming an impact the user has not been shown is the thing to avoid.
+      expect(screen.getByRole("button", { name: /^merge$/i })).toBeDisabled();
     });
   });
 });

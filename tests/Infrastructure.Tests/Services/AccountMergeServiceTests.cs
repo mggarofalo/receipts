@@ -618,6 +618,188 @@ public class AccountMergeServiceTests : IDisposable
 			.WithMessage(AccountMergeService.InvalidWinnerAccount + "*");
 	}
 
+	// RECEIPTS-889. Merging is irreversible and there is no undo, so the dialog needs to
+	// be able to say what it would destroy before the user commits.
+	[Fact]
+	public async Task PreviewMergeCardsAsync_ReportsTheImpactAndWritesNothing()
+	{
+		AccountEntity target = AccountEntityGenerator.Generate();
+		AccountEntity source = AccountEntityGenerator.Generate();
+
+		CardEntity cardOnSource = CardEntityGenerator.Generate();
+		cardOnSource.AccountId = source.Id;
+		CardEntity cardOnTarget = CardEntityGenerator.Generate();
+		cardOnTarget.AccountId = target.Id;
+
+		TransactionEntity liveTx = TransactionEntityGenerator.Generate(accountId: source.Id);
+		TransactionEntity trashedTx = TransactionEntityGenerator.Generate(accountId: source.Id);
+		trashedTx.DeletedAt = DateTimeOffset.UtcNow;
+		TransactionEntity txOnTarget = TransactionEntityGenerator.Generate(accountId: target.Id);
+
+		using (ApplicationDbContext seed = CreateContext())
+		{
+			seed.Accounts.AddRange(target, source);
+			seed.Cards.AddRange(cardOnSource, cardOnTarget);
+			seed.Transactions.AddRange(liveTx, trashedTx, txOnTarget);
+			await seed.SaveChangesAsync();
+		}
+
+		MergeCardsPreview preview = await _service.PreviewMergeCardsAsync(
+			target.Id,
+			[cardOnSource.Id, cardOnTarget.Id],
+			null,
+			CancellationToken.None);
+
+		preview.Conflicts.Should().BeNull();
+		preview.IsNoOp.Should().BeFalse();
+		// cardOnTarget is listed but already home, so only one card moves. The target's
+		// own transaction stays put and must not inflate the count.
+		preview.CardsToMove.Should().Be(1);
+		preview.TransactionsToRepoint.Should().Be(1);
+		// Counted separately: trashed transactions are invisible outside the recycle bin
+		// and the merge moves them all the same.
+		preview.TrashedTransactionsToRepoint.Should().Be(1);
+		preview.AccountsToRemove.Should().ContainSingle()
+			.Which.Should().BeEquivalentTo(new MergeCardsPreviewAccount(source.Id, source.Name));
+
+		// Nothing was written: no repointing, no deletes, no audit trail.
+		using ApplicationDbContext assert = CreateContext();
+		(await assert.Accounts.AsNoTracking().CountAsync()).Should().Be(2);
+		(await assert.Cards.AsNoTracking().SingleAsync(c => c.Id == cardOnSource.Id))
+			.AccountId.Should().Be(source.Id);
+		(await assert.Transactions.IgnoreQueryFilters().IgnoreAutoIncludes().AsNoTracking()
+			.CountAsync(t => t.AccountId == source.Id)).Should().Be(2);
+		(await assert.AuditLogs.AsNoTracking().CountAsync(a => a.Action == AuditAction.Merge))
+			.Should().Be(0);
+	}
+
+	[Fact]
+	public async Task PreviewMergeCardsAsync_WithNothingToDo_ReportsANoOp()
+	{
+		AccountEntity target = AccountEntityGenerator.Generate();
+		CardEntity card = CardEntityGenerator.Generate();
+		card.AccountId = target.Id;
+
+		using (ApplicationDbContext seed = CreateContext())
+		{
+			seed.Accounts.Add(target);
+			seed.Cards.Add(card);
+			await seed.SaveChangesAsync();
+		}
+
+		MergeCardsPreview preview = await _service.PreviewMergeCardsAsync(
+			target.Id, [card.Id], null, CancellationToken.None);
+
+		preview.IsNoOp.Should().BeTrue();
+		preview.AccountsToRemove.Should().BeEmpty();
+	}
+
+	[Fact]
+	public async Task PreviewMergeCardsAsync_NamesTheYnabMappingThatWouldSurvive()
+	{
+		AccountEntity target = AccountEntityGenerator.Generate();
+		AccountEntity source = AccountEntityGenerator.Generate();
+		CardEntity card = CardEntityGenerator.Generate();
+		card.AccountId = source.Id;
+
+		YnabAccountMappingEntity sourceMapping = new()
+		{
+			Id = Guid.NewGuid(),
+			ReceiptsAccountId = source.Id,
+			YnabAccountId = "ynab-1",
+			YnabAccountName = "Source YNAB",
+			YnabBudgetId = "budget-1",
+			CreatedAt = DateTimeOffset.UtcNow,
+			UpdatedAt = DateTimeOffset.UtcNow,
+		};
+
+		using (ApplicationDbContext seed = CreateContext())
+		{
+			seed.Accounts.AddRange(target, source);
+			seed.Cards.Add(card);
+			seed.YnabAccountMappings.Add(sourceMapping);
+			await seed.SaveChangesAsync();
+		}
+
+		MergeCardsPreview preview = await _service.PreviewMergeCardsAsync(
+			target.Id, [card.Id], null, CancellationToken.None);
+
+		// Which mapping survives was previously only ever surfaced when there was a
+		// conflict, so an uncontested move happened silently.
+		preview.SurvivingYnabMapping.Should().NotBeNull();
+		preview.SurvivingYnabMapping!.YnabAccountName.Should().Be("Source YNAB");
+		preview.SurvivingYnabMapping.FromAccountName.Should().Be(source.Name);
+	}
+
+	[Fact]
+	public async Task PreviewMergeCardsAsync_WithConflictingMappings_ReportsTheConflictInsteadOfAnImpact()
+	{
+		AccountEntity target = AccountEntityGenerator.Generate();
+		AccountEntity source1 = AccountEntityGenerator.Generate();
+		AccountEntity source2 = AccountEntityGenerator.Generate();
+		CardEntity card1 = CardEntityGenerator.Generate();
+		CardEntity card2 = CardEntityGenerator.Generate();
+		card1.AccountId = source1.Id;
+		card2.AccountId = source2.Id;
+
+		using (ApplicationDbContext seed = CreateContext())
+		{
+			seed.Accounts.AddRange(target, source1, source2);
+			seed.Cards.AddRange(card1, card2);
+			seed.YnabAccountMappings.AddRange(
+				BuildMapping(source1.Id, "ynab-1", "Source1 YNAB"),
+				BuildMapping(source2.Id, "ynab-2", "Source2 YNAB"));
+			await seed.SaveChangesAsync();
+		}
+
+		MergeCardsPreview preview = await _service.PreviewMergeCardsAsync(
+			target.Id, [card1.Id, card2.Id], null, CancellationToken.None);
+
+		// The merge cannot run until a winner is nominated, so promising an impact would
+		// describe something that is not going to happen.
+		preview.Conflicts.Should().HaveCount(2);
+		preview.IsNoOp.Should().BeFalse();
+		preview.CardsToMove.Should().Be(0);
+	}
+
+	[Fact]
+	public async Task PreviewMergeCardsAsync_WithPartialSourceAccount_ThrowsJustAsTheMergeWould()
+	{
+		// A preview that answered where the merge throws would promise an outcome that
+		// cannot be delivered — worse than no preview at all.
+		AccountEntity target = AccountEntityGenerator.Generate();
+		AccountEntity source = AccountEntityGenerator.Generate();
+		CardEntity selected = CardEntityGenerator.Generate();
+		CardEntity leftBehind = CardEntityGenerator.Generate();
+		selected.AccountId = source.Id;
+		leftBehind.AccountId = source.Id;
+
+		using (ApplicationDbContext seed = CreateContext())
+		{
+			seed.Accounts.AddRange(target, source);
+			seed.Cards.AddRange(selected, leftBehind);
+			await seed.SaveChangesAsync();
+		}
+
+		Func<Task> act = () => _service.PreviewMergeCardsAsync(
+			target.Id, [selected.Id], null, CancellationToken.None);
+
+		await act.Should().ThrowAsync<ArgumentException>()
+			.WithMessage(AccountMergeService.PartialSourceAccountMerge + "*");
+	}
+
+	private static YnabAccountMappingEntity BuildMapping(Guid accountId, string ynabAccountId, string ynabAccountName) =>
+		new()
+		{
+			Id = Guid.NewGuid(),
+			ReceiptsAccountId = accountId,
+			YnabAccountId = ynabAccountId,
+			YnabAccountName = ynabAccountName,
+			YnabBudgetId = "budget-1",
+			CreatedAt = DateTimeOffset.UtcNow,
+			UpdatedAt = DateTimeOffset.UtcNow,
+		};
+
 	private sealed class TestFactory(
 		DbContextOptions<ApplicationDbContext> options,
 		Application.Interfaces.Services.ICurrentUserAccessor accessor)
