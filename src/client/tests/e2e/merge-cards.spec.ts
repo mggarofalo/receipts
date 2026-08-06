@@ -463,6 +463,132 @@ test.describe("card merge — pre-flight preview", () => {
   });
 });
 
+// RECEIPTS-902. "New account" mode has to create the target before it can submit a
+// merge, so a merge rejected afterwards left an account owning nothing and nothing
+// pointing at it. RECEIPTS-894 closed every leak the dialog can clean up after; this
+// closes the ones it cannot, by validating before anything is created.
+test.describe("card merge — a brand-new target account", () => {
+  test("validates against a target that does not exist before creating one", async ({ page }) => {
+    const previewBodies: unknown[] = [];
+    const created: unknown[] = [];
+    const mergeBodies: unknown[] = [];
+
+    await installApiMocks(page, {
+      user: ADMIN_FIXTURE_USER,
+      freezeClock: false,
+      overrides: {
+        "**/api/cards?*": (route) =>
+          route.fulfill(json({ data: CARDS, total: CARDS.length, offset: 0, limit: 50 })),
+        "**/api/accounts?*": (route) =>
+          route.fulfill(json({ data: ACCOUNTS, total: ACCOUNTS.length, offset: 0, limit: 500 })),
+        "**/api/accounts/*/cards": (route) => {
+          const accountId = new URL(route.request().url()).pathname.split("/").at(-2) ?? "";
+          return route.fulfill(json(CARDS.filter((c) => c.accountId === accountId)));
+        },
+        "**/api/cards/merge/preview": (route) => {
+          previewBodies.push(route.request().postDataJSON());
+          return route.fulfill(json(PREVIEW));
+        },
+        "**/api/cards/merge": (route) => {
+          mergeBodies.push(route.request().postDataJSON());
+          return route.fulfill(json(MERGED));
+        },
+        // Anything POSTed to /api/accounts is an account being created.
+        "**/api/accounts": (route) => {
+          if (route.request().method() !== "POST") return route.fallback();
+          created.push(route.request().postDataJSON());
+          return route.fulfill(json({ id: "acc-new", name: "Fresh Account", isActive: true }));
+        },
+      },
+    });
+    await signInAs(page, ADMIN_FIXTURE_USER);
+    await page.goto("/cards");
+    await expect(page.getByRole("heading", { name: "Cards" })).toBeVisible();
+
+    await page.getByLabel("Select Reissued Visa").check();
+    await page.getByLabel("Merge selected cards into an account").click();
+
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("New account").check();
+    await dialog.getByLabel(/new account name/i).fill("Fresh Account");
+
+    // The preview runs against a target that does not exist yet...
+    await expect(dialog.getByText(/this merge cannot be undone/i)).toBeVisible();
+    expect(previewBodies).toEqual([
+      { targetAccountId: null, sourceCardIds: ["card-2"], ynabMappingWinnerAccountId: null },
+    ]);
+    // ...and nothing has been created while it was being checked.
+    expect(created).toHaveLength(0);
+
+    await dialog.getByRole("button", { name: "Merge", exact: true }).click();
+    await expect(page.getByText("Cards merged")).toBeVisible();
+
+    // Only now, and the merge that follows lands on it.
+    expect(created).toEqual([{ name: "Fresh Account", isActive: true }]);
+    expect(mergeBodies).toEqual([
+      { targetAccountId: "acc-new", sourceCardIds: ["card-2"], ynabMappingWinnerAccountId: null },
+    ]);
+  });
+
+  test("a selection the merge would reject never gets as far as creating an account", async ({ page }) => {
+    const created: unknown[] = [];
+    let mergeRequests = 0;
+
+    await installApiMocks(page, {
+      user: ADMIN_FIXTURE_USER,
+      freezeClock: false,
+      overrides: {
+        "**/api/cards?*": (route) =>
+          route.fulfill(json({ data: CARDS, total: CARDS.length, offset: 0, limit: 50 })),
+        "**/api/accounts?*": (route) =>
+          route.fulfill(json({ data: ACCOUNTS, total: ACCOUNTS.length, offset: 0, limit: 500 })),
+        "**/api/accounts/*/cards": (route) => {
+          const accountId = new URL(route.request().url()).pathname.split("/").at(-2) ?? "";
+          return route.fulfill(json(CARDS.filter((c) => c.accountId === accountId)));
+        },
+        // The preview refuses, exactly as the merge would.
+        "**/api/cards/merge/preview": (route) =>
+          route.fulfill(
+            json(
+              {
+                type: "https://tools.ietf.org/html/rfc9110#section-15.5.1",
+                title: "Bad Request",
+                status: 400,
+                detail:
+                  "Source account would be partially merged: all of its cards must be included in the merge, or none.",
+              },
+              400,
+            ),
+          ),
+        "**/api/cards/merge": (route) => {
+          mergeRequests++;
+          return route.fulfill(json(MERGED));
+        },
+        "**/api/accounts": (route) => {
+          if (route.request().method() !== "POST") return route.fallback();
+          created.push(route.request().postDataJSON());
+          return route.fulfill(json({ id: "acc-new", name: "Fresh Account", isActive: true }));
+        },
+      },
+    });
+    await signInAs(page, ADMIN_FIXTURE_USER);
+    await page.goto("/cards");
+    await expect(page.getByRole("heading", { name: "Cards" })).toBeVisible();
+
+    await page.getByLabel("Select Reissued Visa").check();
+    await page.getByLabel("Merge selected cards into an account").click();
+
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("New account").check();
+    await dialog.getByLabel(/new account name/i).fill("Fresh Account");
+
+    // No impact to show and no way to commit, so nothing is created and nothing merged.
+    await expect(dialog.getByRole("button", { name: "Merge", exact: true })).toBeDisabled();
+    expect(created).toHaveLength(0);
+    expect(mergeRequests).toBe(0);
+  });
+});
+
 test.describe("card merge — entry conditions", () => {
   test("the merge button is enabled as soon as one card is selected", async ({ page }) => {
     await gotoCards(page, (route) => route.fulfill(json(MERGED)));

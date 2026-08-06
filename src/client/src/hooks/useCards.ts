@@ -180,6 +180,17 @@ export function describeMergeImpact(impact: MergeCardsImpact): string {
 export type MergeCardsPreview = components["schemas"]["MergeCardsPreviewResponse"];
 
 /**
+ * A merge to preview. `targetAccountId` may be null, meaning "an account that does not
+ * exist yet" — the only way to validate a "New account" merge without first creating
+ * the account it might not need (RECEIPTS-902).
+ */
+export interface MergeCardsPreviewInput {
+  targetAccountId: string | null;
+  sourceCardIds: string[];
+  ynabMappingWinnerAccountId?: string | null;
+}
+
+/**
  * What the merge would do, fetched before the user commits to it.
  *
  * Merging is irreversible and has no undo, and the dialog's only warning used to be a
@@ -193,16 +204,19 @@ export type MergeCardsPreview = components["schemas"]["MergeCardsPreviewResponse
  * `null` and not `undefined` — React Query rejects an undefined query result outright,
  * which would turn a quiet failure into the error state this is avoiding.
  */
-export function useMergeCardsPreview(input: MergeCardsInput | null) {
+export function useMergeCardsPreview(input: MergeCardsPreviewInput | null) {
   return useQuery({
     queryKey: [
       "cards",
       "mergePreview",
-      input?.targetAccountId,
+      input?.targetAccountId ?? null,
       [...(input?.sourceCardIds ?? [])].sort().join(","),
       input?.ynabMappingWinnerAccountId ?? null,
     ],
-    enabled: !!input && input.sourceCardIds.length > 0 && !!input.targetAccountId,
+    // No target-account requirement: a null target previews a merge into an account
+    // that does not exist yet, which is how "New account" mode validates a selection
+    // before creating anything (RECEIPTS-902).
+    enabled: !!input && input.sourceCardIds.length > 0,
     // The preview describes live data the user is about to destroy; a cached one from
     // before they changed the selection would describe a merge they are not running.
     staleTime: 0,
@@ -210,7 +224,7 @@ export function useMergeCardsPreview(input: MergeCardsInput | null) {
     queryFn: async (): Promise<MergeCardsPreview | null> => {
       const { data, response } = await client.POST("/api/cards/merge/preview", {
         body: {
-          targetAccountId: input!.targetAccountId,
+          targetAccountId: input!.targetAccountId ?? null,
           sourceCardIds: input!.sourceCardIds,
           ynabMappingWinnerAccountId: input!.ynabMappingWinnerAccountId ?? null,
         },
