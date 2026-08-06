@@ -25,6 +25,7 @@ import {
   useUpdateCard,
   useDeleteCard,
   useMergeCards,
+  useMergeCardsPreview,
   isMergeCardsConflict,
 } from "./useCards";
 
@@ -407,4 +408,75 @@ describe("useCards", () => {
     expect(caught).toMatchObject({ status: 400, detail: reason });
   });
 
+});
+
+// RECEIPTS-889. The preview exists so an irreversible operation is not confirmed blind.
+describe("useMergeCardsPreview", () => {
+  const PREVIEW = {
+    accountsToRemove: [{ id: "a-source", name: "Source Account" }],
+    cardsToMove: 2,
+    transactionsToRepoint: 37,
+    trashedTransactionsToRepoint: 4,
+    survivingYnabMapping: null,
+    conflicts: null,
+  };
+
+  it("posts the selection and returns the impact", async () => {
+    (client.POST as Mock).mockResolvedValue({
+      data: PREVIEW,
+      error: undefined,
+      response: { status: 200, ok: true },
+    });
+
+    const { result } = renderHook(
+      () => useMergeCardsPreview({ targetAccountId: "t", sourceCardIds: ["c1", "c2"] }),
+      { wrapper: createWrapper() },
+    );
+
+    await waitFor(() => expect(result.current.data).toEqual(PREVIEW));
+    expect(client.POST).toHaveBeenCalledWith("/api/cards/merge/preview", {
+      body: {
+        targetAccountId: "t",
+        sourceCardIds: ["c1", "c2"],
+        ynabMappingWinnerAccountId: null,
+      },
+    });
+  });
+
+  it("does not fire without a target, when the impact would be meaningless", async () => {
+    renderHook(
+      () => useMergeCardsPreview({ targetAccountId: "", sourceCardIds: ["c1"] }),
+      { wrapper: createWrapper() },
+    );
+
+    await waitFor(() => expect(client.POST).not.toHaveBeenCalled());
+  });
+
+  it("does not fire when there is no selection to preview", async () => {
+    renderHook(() => useMergeCardsPreview(null), { wrapper: createWrapper() });
+
+    await waitFor(() => expect(client.POST).not.toHaveBeenCalled());
+  });
+
+  it("resolves to undefined on failure rather than toasting over an unsubmitted dialog", async () => {
+    // A preview is speculative: the user has not asked for anything yet, so a failure
+    // must stay quiet. The dialog holds submit, and the merge still validates.
+    (client.POST as Mock).mockResolvedValue({
+      data: undefined,
+      error: { status: 403 },
+      response: { status: 403, ok: false },
+    });
+
+    const { result } = renderHook(
+      () => useMergeCardsPreview({ targetAccountId: "t", sourceCardIds: ["c1"] }),
+      { wrapper: createWrapper() },
+    );
+
+    await waitFor(() => expect(result.current.isFetching).toBe(false));
+    // null, not undefined: React Query treats an undefined result as an error, which
+    // would turn this quiet failure into the noisy one the hook is avoiding.
+    expect(result.current.data).toBeNull();
+    expect(result.current.isError).toBe(false);
+    expect(toast.error).not.toHaveBeenCalled();
+  });
 });

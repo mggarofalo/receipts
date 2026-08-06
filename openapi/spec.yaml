@@ -528,6 +528,42 @@ paths:
               schema:
                 $ref: "#/components/schemas/MergeCardsConflictResponse"
 
+  /api/cards/merge/preview:
+    post:
+      operationId: PreviewMergeCards
+      tags: [Cards]
+      summary: Preview what a card merge would do
+      description: >
+        Runs the merge's validation and reports its impact without writing anything.
+        Merging is irreversible: it repoints every transaction of each source account,
+        including soft-deleted ones, and then deletes those accounts. Requires the
+        Admin role. Rejects exactly what the merge itself would reject, so a preview
+        never promises an outcome the merge would refuse to deliver.
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MergeCardsRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MergeCardsPreviewResponse"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
+          description: Not Found — target account or source card missing
+
   # ──────────────────────────────────────────────
   # Categories
   # ──────────────────────────────────────────────
@@ -5842,6 +5878,72 @@ components:
           type: integer
           format: int32
           description: Transactions repointed to the target account, including soft-deleted ones.
+
+    MergeCardsPreviewAccount:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+
+    MergeCardsPreviewMapping:
+      type: object
+      required: [fromAccountId, fromAccountName, ynabAccountName]
+      description: The YNAB mapping that would survive, and the account it currently sits on.
+      properties:
+        fromAccountId:
+          type: string
+          format: uuid
+        fromAccountName:
+          type: string
+        ynabAccountName:
+          type: string
+
+    MergeCardsPreviewResponse:
+      type: object
+      required:
+        [accountsToRemove, cardsToMove, transactionsToRepoint, trashedTransactionsToRepoint]
+      description: >
+        What the merge would do, computed without writing. Every count is zero and
+        `accountsToRemove` empty when the merge would change nothing. When `conflicts`
+        is present the merge cannot run until a winner is nominated, and the rest of
+        the preview is not yet meaningful.
+      properties:
+        accountsToRemove:
+          type: array
+          description: Accounts the merge would empty and then delete. Deletion is not reversible.
+          items:
+            $ref: "#/components/schemas/MergeCardsPreviewAccount"
+        cardsToMove:
+          type: integer
+          format: int32
+          description: Cards whose account would actually change.
+        transactionsToRepoint:
+          type: integer
+          format: int32
+          description: Live transactions that would be repointed to the target account.
+        trashedTransactionsToRepoint:
+          type: integer
+          format: int32
+          description: >
+            Soft-deleted transactions that would be repointed too. Reported separately
+            because they are invisible everywhere except the recycle bin, and a merge
+            moves them just the same.
+        survivingYnabMapping:
+          oneOf:
+            - $ref: "#/components/schemas/MergeCardsPreviewMapping"
+            - type: "null"
+          description: Present only when a mapping would move from a source account to the target.
+        conflicts:
+          type:
+            - array
+            - "null"
+          description: Present when the sources carry differing YNAB mappings and no winner was given.
+          items:
+            $ref: "#/components/schemas/YnabMappingConflict"
 
     YnabMappingConflict:
       type: object

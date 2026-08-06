@@ -194,6 +194,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/cards/merge/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview what a card merge would do
+         * @description Runs the merge's validation and reports its impact without writing anything. Merging is irreversible: it repoints every transaction of each source account, including soft-deleted ones, and then deletes those accounts. Requires the Admin role. Rejects exactly what the merge itself would reject, so a preview never promises an outcome the merge would refuse to deliver.
+         */
+        post: operations["PreviewMergeCards"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/categories/{id}": {
         parameters: {
             query?: never;
@@ -2894,6 +2914,42 @@ export interface components {
              */
             transactionsRepointed: number;
         };
+        MergeCardsPreviewAccount: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+        };
+        /** @description The YNAB mapping that would survive, and the account it currently sits on. */
+        MergeCardsPreviewMapping: {
+            /** Format: uuid */
+            fromAccountId: string;
+            fromAccountName: string;
+            ynabAccountName: string;
+        };
+        /** @description What the merge would do, computed without writing. Every count is zero and `accountsToRemove` empty when the merge would change nothing. When `conflicts` is present the merge cannot run until a winner is nominated, and the rest of the preview is not yet meaningful. */
+        MergeCardsPreviewResponse: {
+            /** @description Accounts the merge would empty and then delete. Deletion is not reversible. */
+            accountsToRemove: components["schemas"]["MergeCardsPreviewAccount"][];
+            /**
+             * Format: int32
+             * @description Cards whose account would actually change.
+             */
+            cardsToMove: number;
+            /**
+             * Format: int32
+             * @description Live transactions that would be repointed to the target account.
+             */
+            transactionsToRepoint: number;
+            /**
+             * Format: int32
+             * @description Soft-deleted transactions that would be repointed too. Reported separately because they are invisible everywhere except the recycle bin, and a merge moves them just the same.
+             */
+            trashedTransactionsToRepoint: number;
+            /** @description Present only when a mapping would move from a source account to the target. */
+            survivingYnabMapping?: components["schemas"]["MergeCardsPreviewMapping"] | null;
+            /** @description Present when the sources carry differing YNAB mappings and no winner was given. */
+            conflicts?: components["schemas"]["YnabMappingConflict"][] | null;
+        };
         YnabMappingConflict: {
             /** Format: uuid */
             accountId: string;
@@ -4730,6 +4786,46 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["MergeCardsConflictResponse"];
                 };
+            };
+        };
+    };
+    PreviewMergeCards: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MergeCardsRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MergeCardsPreviewResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found — target account or source card missing */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

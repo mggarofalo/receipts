@@ -48,32 +48,11 @@ public class AccountMergeService(
 			return MergeCardsResult.NoOp();
 		}
 
-		int distinctMappingTuples = mappings
-			.Select(m => (m.YnabBudgetId, m.YnabAccountId))
-			.Distinct()
-			.Count();
-
-		Guid? winnerAccountId = null;
-		if (distinctMappingTuples > 1)
+		(bool needsWinner, Guid? winnerAccountId) =
+			ResolveMappingWinner(targetAccountId, mappings, ynabMappingWinnerAccountId);
+		if (needsWinner)
 		{
-			if (!ynabMappingWinnerAccountId.HasValue)
-			{
-				return BuildConflictResult(mappings, accountNamesById);
-			}
-
-			if (!mappings.Any(m => m.ReceiptsAccountId == ynabMappingWinnerAccountId.Value))
-			{
-				throw new ArgumentException(InvalidWinnerAccount, nameof(ynabMappingWinnerAccountId));
-			}
-
-			winnerAccountId = ynabMappingWinnerAccountId.Value;
-		}
-		else if (mappings.Count > 0)
-		{
-			// No conflict; keep the target mapping if it exists, else promote the sole source mapping.
-			winnerAccountId = mappings.Any(m => m.ReceiptsAccountId == targetAccountId)
-				? targetAccountId
-				: mappings[0].ReceiptsAccountId;
+			return BuildConflictResult(mappings, accountNamesById);
 		}
 
 		// Counted from the pre-merge snapshot, not from the cards we assign below: Phase 1
@@ -186,6 +165,119 @@ public class AccountMergeService(
 		return new MergeCardsResult(removedAccountCount, cardsMoved, movedTransactionCount, null);
 	}
 
+	public async Task<MergeCardsPreview> PreviewMergeCardsAsync(
+		Guid targetAccountId,
+		IReadOnlyList<Guid> sourceCardIds,
+		Guid? ynabMappingWinnerAccountId,
+		CancellationToken cancellationToken)
+	{
+		if (sourceCardIds is null || sourceCardIds.Count == 0)
+		{
+			throw new ArgumentException(AtLeastOneCardRequired, nameof(sourceCardIds));
+		}
+
+		List<Guid> distinctCardIds = [.. sourceCardIds.Distinct()];
+
+		// The same Phase 0 the merge runs, so a request the merge would reject is rejected
+		// here too. A preview that answered where the merge would throw would be worse than
+		// no preview: it would promise an outcome that cannot be delivered.
+		(List<Guid> sourceAccountIds, List<YnabAccountMappingEntity> mappings, Dictionary<Guid, string> accountNamesById, Dictionary<Guid, Guid> originalCardAccountIds) =
+			await LoadStateAsync(targetAccountId, distinctCardIds, cancellationToken);
+
+		if (sourceAccountIds.Count == 0)
+		{
+			return MergeCardsPreview.NoOp();
+		}
+
+		(bool needsWinner, Guid? winnerAccountId) =
+			ResolveMappingWinner(targetAccountId, mappings, ynabMappingWinnerAccountId);
+		if (needsWinner)
+		{
+			return MergeCardsPreview.Conflicted(BuildConflicts(mappings, accountNamesById));
+		}
+
+		using ApplicationDbContext context = contextFactory.CreateDbContext();
+
+		// Counted separately because the trashed ones are the whole point: the merge repoints
+		// soft-deleted transactions too, and a preview that quietly folded them into one total
+		// would understate what a supposedly reversible-looking bin still holds (RECEIPTS-889).
+		int transactionsToRepoint = await context.Transactions
+			.IgnoreQueryFilters()
+			.IgnoreAutoIncludes()
+			.CountAsync(t => sourceAccountIds.Contains(t.AccountId) && t.DeletedAt == null, cancellationToken);
+		int trashedTransactionsToRepoint = await context.Transactions
+			.IgnoreQueryFilters()
+			.IgnoreAutoIncludes()
+			.CountAsync(t => sourceAccountIds.Contains(t.AccountId) && t.DeletedAt != null, cancellationToken);
+
+		List<MergeCardsPreviewAccount> accountsToRemove =
+		[
+			.. sourceAccountIds.Select(id =>
+				new MergeCardsPreviewAccount(id, accountNamesById.GetValueOrDefault(id, "")))
+		];
+
+		// Only worth reporting when a mapping actually changes hands. One already sitting on
+		// the target survives by staying put, which is not news.
+		MergeCardsPreviewMapping? survivingMapping = null;
+		if (winnerAccountId.HasValue && winnerAccountId.Value != targetAccountId)
+		{
+			YnabAccountMappingEntity winner = mappings.First(m => m.ReceiptsAccountId == winnerAccountId.Value);
+			survivingMapping = new MergeCardsPreviewMapping(
+				winnerAccountId.Value,
+				accountNamesById.GetValueOrDefault(winnerAccountId.Value, ""),
+				winner.YnabAccountName);
+		}
+
+		return new MergeCardsPreview(
+			accountsToRemove,
+			originalCardAccountIds.Count(kvp => kvp.Value != targetAccountId),
+			transactionsToRepoint,
+			trashedTransactionsToRepoint,
+			survivingMapping,
+			null);
+	}
+
+	/// <summary>
+	/// Decides which YNAB mapping survives, or reports that the caller must choose.
+	/// Shared by the merge and its preview so the two can never disagree about which
+	/// selections need a decision.
+	/// </summary>
+	private static (bool NeedsWinner, Guid? WinnerAccountId) ResolveMappingWinner(
+		Guid targetAccountId,
+		List<YnabAccountMappingEntity> mappings,
+		Guid? ynabMappingWinnerAccountId)
+	{
+		int distinctMappingTuples = mappings
+			.Select(m => (m.YnabBudgetId, m.YnabAccountId))
+			.Distinct()
+			.Count();
+
+		if (distinctMappingTuples > 1)
+		{
+			if (!ynabMappingWinnerAccountId.HasValue)
+			{
+				return (true, null);
+			}
+
+			if (!mappings.Any(m => m.ReceiptsAccountId == ynabMappingWinnerAccountId.Value))
+			{
+				throw new ArgumentException(InvalidWinnerAccount, nameof(ynabMappingWinnerAccountId));
+			}
+
+			return (false, ynabMappingWinnerAccountId.Value);
+		}
+
+		if (mappings.Count > 0)
+		{
+			// No conflict; keep the target mapping if it exists, else promote the sole source mapping.
+			return (false, mappings.Any(m => m.ReceiptsAccountId == targetAccountId)
+				? targetAccountId
+				: mappings[0].ReceiptsAccountId);
+		}
+
+		return (false, null);
+	}
+
 	private async Task<(List<Guid> SourceAccountIds, List<YnabAccountMappingEntity> Mappings, Dictionary<Guid, string> AccountNamesById, Dictionary<Guid, Guid> OriginalCardAccountIds)> LoadStateAsync(
 		Guid targetAccountId,
 		List<Guid> distinctCardIds,
@@ -274,14 +366,16 @@ public class AccountMergeService(
 
 	private static MergeCardsResult BuildConflictResult(
 		List<YnabAccountMappingEntity> mappings,
-		Dictionary<Guid, string> accountNamesById)
-	{
-		List<YnabMappingConflict> conflicts = [.. mappings.Select(m => new YnabMappingConflict(
+		Dictionary<Guid, string> accountNamesById) =>
+		MergeCardsResult.Conflicted(BuildConflicts(mappings, accountNamesById));
+
+	private static List<YnabMappingConflict> BuildConflicts(
+		List<YnabAccountMappingEntity> mappings,
+		Dictionary<Guid, string> accountNamesById) =>
+		[.. mappings.Select(m => new YnabMappingConflict(
 			m.ReceiptsAccountId,
 			accountNamesById.GetValueOrDefault(m.ReceiptsAccountId, ""),
 			m.YnabBudgetId,
 			m.YnabAccountId,
 			m.YnabAccountName))];
-		return MergeCardsResult.Conflicted(conflicts);
-	}
 }
