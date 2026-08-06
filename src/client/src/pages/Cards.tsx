@@ -128,6 +128,18 @@ function Cards() {
 
   const handleMergeComplete = useCallback(() => setSelectedIds(new Set()), []);
 
+  // The merge dialog can spot a source account it would only partly merge, but the
+  // selection lives here — so completing it comes back through this callback
+  // (RECEIPTS-888). The cards being added may be on another page of the list, which
+  // is precisely why the user could not select them by hand.
+  const handleIncludeCards = useCallback((cardIds: string[]) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const id of cardIds) next.add(id);
+      return next;
+    });
+  }, []);
+
   const openCreate = useCallback(() => setCreateOpen(true), []);
   useOpenNewItem(openCreate);
 
@@ -436,6 +448,7 @@ function Cards() {
         onOpenChange={setMergeOpen}
         selectedCards={selectedMergeCards}
         onMergeComplete={handleMergeComplete}
+        onIncludeCards={handleIncludeCards}
       />
 
       {/* Create Dialog */}

@@ -60,12 +60,45 @@ function renderDialog(overrides: Partial<React.ComponentProps<typeof MergeCardsD
 
 const okEmpty = { data: undefined, error: undefined, response: { status: 204, ok: true } };
 
+/**
+ * Cards belonging to each account, as `GET /api/accounts/{id}/cards` returns them.
+ *
+ * "a-source" holds exactly the two cards the default selection covers, so the
+ * completeness check (RECEIPTS-888) passes and the pre-existing tests are unaffected.
+ * Tests about a partial merge override this.
+ */
+let cardsByAccount: Record<string, { id: string; name: string; cardCode: string }[]> = {};
+
 beforeEach(() => {
   vi.clearAllMocks();
-  // Accounts query used by the dialog
-  (client.GET as Mock).mockResolvedValue({
-    data: { data: [{ id: "a1", name: "Account One", isActive: true }], total: 1, offset: 0, limit: 500 },
-    error: undefined,
+  cardsByAccount = {
+    "a-source": [
+      { id: "c1", name: "Primary Visa", cardCode: "1234" },
+      { id: "c2", name: "Reissued Visa", cardCode: "5678" },
+    ],
+    a1: [],
+  };
+  // The dialog issues two different GETs: the accounts list for the target picker,
+  // and one card list per source account in the selection.
+  (client.GET as Mock).mockImplementation((path: string, opts?: { params?: { path?: { id?: string } } }) => {
+    if (path === "/api/accounts/{id}/cards") {
+      const id = opts?.params?.path?.id ?? "";
+      return Promise.resolve({ data: cardsByAccount[id] ?? [], error: undefined });
+    }
+    return Promise.resolve({
+      data: {
+        data: [
+          { id: "a1", name: "Account One", isActive: true },
+          // Named so the dialog can show where each selected card lives; the tests
+          // that pick a target always name "Account One" explicitly.
+          { id: "a-source", name: "Source Account", isActive: true },
+        ],
+        total: 2,
+        offset: 0,
+        limit: 500,
+      },
+      error: undefined,
+    });
   });
   (client.DELETE as Mock).mockResolvedValue(okEmpty);
   (client.PUT as Mock).mockResolvedValue(okEmpty);
@@ -365,6 +398,12 @@ describe("MergeCardsDialog", () => {
 
     it("still allows the merge when only some of the cards are already on the target", async () => {
       const user = userEvent.setup();
+      // Keep the account fixtures consistent with where the cards say they live:
+      // c1 sits on a1, so a-source holds only c2.
+      cardsByAccount = {
+        "a-source": [{ id: "c2", name: "Reissued Visa", cardCode: "5678" }],
+        a1: [{ id: "c1", name: "Primary Visa", cardCode: "1234" }],
+      };
       renderDialog({
         selectedCards: [
           cardsAlreadyOnA1[0],
@@ -389,6 +428,95 @@ describe("MergeCardsDialog", () => {
       await user.type(screen.getByLabelText(/new account name/i), "Fresh Account");
 
       expect(screen.getByRole("button", { name: /^merge$/i })).not.toBeDisabled();
+    });
+  });
+
+  // RECEIPTS-888. The server refuses a merge that would leave cards behind on an
+  // account it is about to delete. That rule is right, but it used to arrive only
+  // after submitting, naming no cards — and the siblings might be on another page
+  // of /cards, so the user could not have selected them even if they had known.
+  describe("a source account that would only be partly merged", () => {
+    const oneOfThree = [
+      { id: "c1", name: "Primary Visa", cardCode: "1234", accountId: "a-source" },
+    ];
+
+    function withThreeCardSource() {
+      cardsByAccount = {
+        "a-source": [
+          { id: "c1", name: "Primary Visa", cardCode: "1234" },
+          { id: "c2", name: "Reissued Visa", cardCode: "5678" },
+          { id: "c3", name: "Spare Visa", cardCode: "9012" },
+        ],
+        a1: [],
+      };
+    }
+
+    async function chooseTarget(user: ReturnType<typeof userEvent.setup>) {
+      await user.click(screen.getByLabelText("Target account"));
+      await user.click(await screen.findByRole("option", { name: "Account One" }));
+    }
+
+    it("names the account and the cards left out, and blocks submit", async () => {
+      const user = userEvent.setup();
+      withThreeCardSource();
+      renderDialog({ selectedCards: oneOfThree });
+
+      await chooseTarget(user);
+
+      expect(
+        await screen.findByText(/one account would be left with cards behind/i),
+      ).toBeInTheDocument();
+      // The specific cards, not just a count — they may not be on screen to select.
+      expect(screen.getByText(/5678 Reissued Visa, 9012 Spare Visa/)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /^merge$/i })).toBeDisabled();
+      expect(client.POST).not.toHaveBeenCalled();
+    });
+
+    it("offers to include the remaining cards and hands their ids back to the caller", async () => {
+      const user = userEvent.setup();
+      withThreeCardSource();
+      const onIncludeCards = vi.fn();
+      renderDialog({ selectedCards: oneOfThree, onIncludeCards });
+
+      await chooseTarget(user);
+
+      await user.click(await screen.findByRole("button", { name: /include the other 2 cards/i }));
+
+      // The dialog cannot widen the selection itself — it lives on the /cards page.
+      expect(onIncludeCards).toHaveBeenCalledWith(["c2", "c3"]);
+    });
+
+    it("clears once every card of the account is selected", async () => {
+      const user = userEvent.setup();
+      withThreeCardSource();
+      renderDialog({
+        selectedCards: [
+          ...oneOfThree,
+          { id: "c2", name: "Reissued Visa", cardCode: "5678", accountId: "a-source" },
+          { id: "c3", name: "Spare Visa", cardCode: "9012", accountId: "a-source" },
+        ],
+      });
+
+      await chooseTarget(user);
+
+      expect(
+        screen.queryByText(/would be left with cards behind/i),
+      ).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /^merge$/i })).not.toBeDisabled();
+    });
+
+    it("shows which account each selected card belongs to", async () => {
+      // Without this the all-or-nothing rule is unintelligible: the dialog listed
+      // card codes and names but never said where any of them lived.
+      withThreeCardSource();
+      renderDialog({ selectedCards: oneOfThree });
+
+      // The card list renders immediately; the account names arrive with the
+      // accounts query, so the name appears a tick later.
+      const cardRow = await screen.findByText("Primary Visa");
+      await vi.waitFor(() => {
+        expect(cardRow.closest("li")).toHaveTextContent("Source Account");
+      });
     });
   });
 });
