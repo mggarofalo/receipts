@@ -34,6 +34,8 @@ public class CardsController(IMediator mediator, CardMapper mapper, ILogger<Card
 	public const string RouteDelete = "{id}";
 	public const string RouteMerge = "merge";
 
+	public const string SourceCardIdsRequired = "sourceCardIds must contain at least 1 card id";
+
 	[HttpGet(RouteGetById)]
 	[EndpointSummary("Get a card by ID")]
 	[EndpointDescription("Returns a single card matching the provided GUID.")]
@@ -223,9 +225,9 @@ public class CardsController(IMediator mediator, CardMapper mapper, ILogger<Card
 	[EndpointDescription("Repoints the listed cards (and their transactions) to the target account and deletes any now-orphaned accounts. Requires the Admin role. Returns 409 Conflict if the source/target accounts have differing YNAB account mappings; resubmit with ynabMappingWinnerAccountId to resolve.")]
 	public async Task<Results<Ok<MergeCardsResponse>, BadRequest<ProblemDetails>, NotFound, Conflict<MergeCardsConflictResponse>>> MergeCards([FromBody] MergeCardsRequest model, CancellationToken cancellationToken = default)
 	{
-		if (model.SourceCardIds is null || model.SourceCardIds.Count < 2)
+		if (model.SourceCardIds is null || model.SourceCardIds.Count == 0)
 		{
-			return ApiProblem.BadRequest("sourceCardIds must contain at least 2 card ids");
+			return ApiProblem.BadRequest(SourceCardIdsRequired);
 		}
 
 		MergeCardsIntoAccountCommand command;

@@ -122,7 +122,9 @@ export function MergeCardsDialog({
     selectedCards.every((c) => c.accountId === targetAccountId);
 
   const isSubmitDisabled =
-    selectedCards.length < 2 ||
+    // One card is enough (RECEIPTS-887). What actually has to hold is that the merge
+    // would move something, and `wouldChangeNothing` below is the check for that.
+    selectedCards.length < 1 ||
     (targetMode === "existing" && !targetAccountId) ||
     (targetMode === "new" && newAccountName.trim().length === 0) ||
     mergeCards.isPending ||
@@ -283,8 +285,10 @@ export function MergeCardsDialog({
                 </Select>
                 {wouldChangeNothing && (
                   <p role="status" className="text-sm text-muted-foreground">
-                    Every selected card already belongs to this account — there is
-                    nothing to merge. Choose a different target.
+                    {selectedCards.length === 1
+                      ? "This card already belongs to this account"
+                      : "Every selected card already belongs to this account"}{" "}
+                    — there is nothing to merge. Choose a different target.
                   </p>
                 )}
               </div>

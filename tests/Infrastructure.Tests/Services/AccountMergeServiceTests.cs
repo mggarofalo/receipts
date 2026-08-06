@@ -41,7 +41,7 @@ public class AccountMergeServiceTests : IDisposable
 	private ApplicationDbContext CreateContext() => new(_options, _userAccessor);
 
 	[Fact]
-	public async Task MergeCardsAsync_WithFewerThanTwoCards_Throws()
+	public async Task MergeCardsAsync_WithNoCards_Throws()
 	{
 		AccountEntity target = AccountEntityGenerator.Generate();
 		using (ApplicationDbContext seed = CreateContext())
@@ -50,9 +50,75 @@ public class AccountMergeServiceTests : IDisposable
 			await seed.SaveChangesAsync();
 		}
 
-		Func<Task> act = () => _service.MergeCardsAsync(target.Id, [Guid.NewGuid()], null, CancellationToken.None);
+		Func<Task> act = () => _service.MergeCardsAsync(target.Id, [], null, CancellationToken.None);
 
-		await act.Should().ThrowAsync<ArgumentException>();
+		await act.Should().ThrowAsync<ArgumentException>()
+			.WithMessage($"{AccountMergeService.AtLeastOneCardRequired}*");
+	}
+
+	[Fact]
+	public async Task MergeCardsAsync_WithASingleCardFromAnotherAccount_MergesIt()
+	{
+		// RECEIPTS-887: this is the commonest merge there is — account B holds one card,
+		// fold it into account A — and the old two-card floor made it impossible. The user
+		// had to also tick unrelated cards already sitting on the target to satisfy a
+		// count that never described the real requirement.
+		AccountEntity target = AccountEntityGenerator.Generate();
+		AccountEntity source = AccountEntityGenerator.Generate();
+
+		CardEntity loneCard = CardEntityGenerator.Generate();
+		loneCard.AccountId = source.Id;
+		TransactionEntity tx = TransactionEntityGenerator.Generate(accountId: source.Id);
+
+		using (ApplicationDbContext seed = CreateContext())
+		{
+			seed.Accounts.AddRange(target, source);
+			seed.Cards.Add(loneCard);
+			seed.Transactions.Add(tx);
+			await seed.SaveChangesAsync();
+		}
+
+		MergeCardsResult result = await _service.MergeCardsAsync(
+			target.Id,
+			[loneCard.Id],
+			null,
+			CancellationToken.None);
+
+		result.Conflicts.Should().BeNull();
+		(result.AccountsRemoved, result.CardsMoved, result.TransactionsRepointed)
+			.Should().Be((1, 1, 1));
+
+		using ApplicationDbContext assert = CreateContext();
+		(await assert.Cards.AsNoTracking().SingleAsync(c => c.Id == loneCard.Id))
+			.AccountId.Should().Be(target.Id);
+		(await assert.Accounts.AsNoTracking().ToListAsync())
+			.Select(a => a.Id).Should().BeEquivalentTo([target.Id]);
+	}
+
+	[Fact]
+	public async Task MergeCardsAsync_WithASingleCardAlreadyOnTheTarget_IsStillAReportedNoOp()
+	{
+		// Dropping the count floor must not turn a one-card no-op into an exception:
+		// RECEIPTS-893 settled that a merge which changes nothing is idempotent and
+		// correct, reported with zeroed counts rather than rejected.
+		AccountEntity target = AccountEntityGenerator.Generate();
+		CardEntity card = CardEntityGenerator.Generate();
+		card.AccountId = target.Id;
+
+		using (ApplicationDbContext seed = CreateContext())
+		{
+			seed.Accounts.Add(target);
+			seed.Cards.Add(card);
+			await seed.SaveChangesAsync();
+		}
+
+		MergeCardsResult result = await _service.MergeCardsAsync(
+			target.Id,
+			[card.Id],
+			null,
+			CancellationToken.None);
+
+		result.IsNoOp.Should().BeTrue();
 	}
 
 	[Fact]

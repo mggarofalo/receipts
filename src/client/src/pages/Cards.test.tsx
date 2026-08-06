@@ -668,7 +668,7 @@ describe("Cards", () => {
     });
   });
 
-  it("merge button is disabled until at least 2 cards are selected", async () => {
+  it("merge button is enabled as soon as one card is selected", async () => {
     await setAdmin(true);
     const user = (await import("@testing-library/user-event")).default.setup();
     const items = [
@@ -694,10 +694,13 @@ describe("Cards", () => {
     renderWithProviders(<Cards />);
 
     const mergeButton = screen.getByRole("button", { name: /merge selected cards/i });
+    // Nothing selected is still nothing to merge.
     expect(mergeButton).toBeDisabled();
 
+    // RECEIPTS-887: one card used to be refused here, which is what made folding a
+    // single-card account into another impossible without ticking unrelated cards.
     await user.click(screen.getByLabelText("Select Alpha"));
-    expect(mergeButton).toBeDisabled();
+    expect(mergeButton).not.toBeDisabled();
 
     await user.click(screen.getByLabelText("Select Beta"));
     expect(mergeButton).not.toBeDisabled();
