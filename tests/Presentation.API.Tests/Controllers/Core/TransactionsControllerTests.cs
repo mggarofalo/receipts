@@ -107,7 +107,7 @@ public class TransactionsControllerTests
 			.ReturnsAsync(new PagedResult<Transaction>(mediatorReturn, mediatorReturn.Count, 0, 50));
 
 		// Act
-		Results<Ok<TransactionListResponse>, BadRequest<string>> rawResult = await _controller.GetAllTransactions(null, 0, 50, null, null);
+		Results<Ok<TransactionListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetAllTransactions(null, 0, 50, null, null);
 
 		// Assert
 		Ok<TransactionListResponse> result = Assert.IsType<Ok<TransactionListResponse>>(rawResult.Result);
@@ -125,11 +125,11 @@ public class TransactionsControllerTests
 	public async Task GetAllTransactions_ReturnsBadRequest_WhenOffsetIsNegative(int offset, int limit)
 	{
 		// Act
-		Results<Ok<TransactionListResponse>, BadRequest<string>> result = await _controller.GetAllTransactions(null, offset, limit, null, null);
+		Results<Ok<TransactionListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetAllTransactions(null, offset, limit, null, null);
 
 		// Assert
-		BadRequest<string> badRequestResult = Assert.IsType<BadRequest<string>>(result.Result);
-		badRequestResult.Value.Should().Be("offset must be >= 0");
+		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequestResult.Value!.Detail.Should().Be("offset must be >= 0");
 	}
 
 	[Theory]
@@ -139,11 +139,11 @@ public class TransactionsControllerTests
 	public async Task GetAllTransactions_ReturnsBadRequest_WhenLimitIsOutOfRange(int offset, int limit)
 	{
 		// Act
-		Results<Ok<TransactionListResponse>, BadRequest<string>> result = await _controller.GetAllTransactions(null, offset, limit, null, null);
+		Results<Ok<TransactionListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetAllTransactions(null, offset, limit, null, null);
 
 		// Assert
-		BadRequest<string> badRequestResult = Assert.IsType<BadRequest<string>>(result.Result);
-		badRequestResult.Value.Should().Be("limit must be between 1 and 500");
+		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequestResult.Value!.Detail.Should().Be("limit must be between 1 and 500");
 	}
 
 	[Theory]
@@ -152,11 +152,11 @@ public class TransactionsControllerTests
 	public async Task GetDeletedTransactions_ReturnsBadRequest_WhenOffsetIsNegative(int offset, int limit)
 	{
 		// Act
-		Results<Ok<TransactionListResponse>, BadRequest<string>> result = await _controller.GetDeletedTransactions(offset, limit, null, null);
+		Results<Ok<TransactionListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetDeletedTransactions(offset, limit, null, null);
 
 		// Assert
-		BadRequest<string> badRequestResult = Assert.IsType<BadRequest<string>>(result.Result);
-		badRequestResult.Value.Should().Be("offset must be >= 0");
+		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequestResult.Value!.Detail.Should().Be("offset must be >= 0");
 	}
 
 	[Theory]
@@ -166,11 +166,11 @@ public class TransactionsControllerTests
 	public async Task GetDeletedTransactions_ReturnsBadRequest_WhenLimitIsOutOfRange(int offset, int limit)
 	{
 		// Act
-		Results<Ok<TransactionListResponse>, BadRequest<string>> result = await _controller.GetDeletedTransactions(offset, limit, null, null);
+		Results<Ok<TransactionListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetDeletedTransactions(offset, limit, null, null);
 
 		// Assert
-		BadRequest<string> badRequestResult = Assert.IsType<BadRequest<string>>(result.Result);
-		badRequestResult.Value.Should().Be("limit must be between 1 and 500");
+		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequestResult.Value!.Detail.Should().Be("limit must be between 1 and 500");
 	}
 
 	[Fact]
@@ -203,7 +203,7 @@ public class TransactionsControllerTests
 			.ReturnsAsync(new PagedResult<Transaction>(mediatorReturn, mediatorReturn.Count, 0, 50));
 
 		// Act
-		Results<Ok<TransactionListResponse>, BadRequest<string>> rawResult = await _controller.GetAllTransactions(receiptId, 0, 50, null, null);
+		Results<Ok<TransactionListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetAllTransactions(receiptId, 0, 50, null, null);
 
 		// Assert
 		Ok<TransactionListResponse> result = Assert.IsType<Ok<TransactionListResponse>>(rawResult.Result);
@@ -227,7 +227,7 @@ public class TransactionsControllerTests
 			.ReturnsAsync(new PagedResult<Transaction>([], 0, 0, 50));
 
 		// Act
-		Results<Ok<TransactionListResponse>, BadRequest<string>> rawResult = await _controller.GetAllTransactions(receiptId, 0, 50, null, null);
+		Results<Ok<TransactionListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetAllTransactions(receiptId, 0, 50, null, null);
 
 		// Assert
 		Ok<TransactionListResponse> result = Assert.IsType<Ok<TransactionListResponse>>(rawResult.Result);
@@ -248,7 +248,7 @@ public class TransactionsControllerTests
 			.ReturnsAsync(new PagedResult<Transaction>([], 0, 0, 50));
 
 		// Act
-		Results<Ok<TransactionListResponse>, BadRequest<string>> rawResult = await _controller.GetAllTransactions(missingReceiptId, 0, 50, null, null);
+		Results<Ok<TransactionListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetAllTransactions(missingReceiptId, 0, 50, null, null);
 
 		// Assert
 		Ok<TransactionListResponse> result = Assert.IsType<Ok<TransactionListResponse>>(rawResult.Result);

@@ -20,11 +20,11 @@ public class TransactionAccountController(IMediator mediator, TransactionAccount
 	[HttpGet("")]
 	[EndpointSummary("Get transaction accounts")]
 	[EndpointDescription("Returns transaction accounts filtered by transaction ID or receipt ID.")]
-	public async Task<Results<Ok<List<TransactionAccountResponse>>, BadRequest<string>>> GetTransactionAccounts([FromQuery] Guid? transactionId = null, [FromQuery] Guid? receiptId = null, CancellationToken cancellationToken = default)
+	public async Task<Results<Ok<List<TransactionAccountResponse>>, BadRequest<ProblemDetails>>> GetTransactionAccounts([FromQuery] Guid? transactionId = null, [FromQuery] Guid? receiptId = null, CancellationToken cancellationToken = default)
 	{
 		if (transactionId.HasValue && receiptId.HasValue)
 		{
-			return TypedResults.BadRequest("Provide either transactionId or receiptId, not both.");
+			return ApiProblem.BadRequest("Provide either transactionId or receiptId, not both.");
 		}
 
 		if (transactionId.HasValue)
@@ -47,6 +47,6 @@ public class TransactionAccountController(IMediator mediator, TransactionAccount
 			return TypedResults.Ok(model);
 		}
 
-		return TypedResults.BadRequest("Either transactionId or receiptId query parameter is required.");
+		return ApiProblem.BadRequest("Either transactionId or receiptId query parameter is required.");
 	}
 }

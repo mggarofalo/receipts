@@ -17,7 +17,7 @@ namespace API.Controllers;
 public class AuthAuditController(IAuthAuditService authAuditService) : ControllerBase
 {
 	[HttpGet("me")]
-	public async Task<Results<Ok<GeneratedDtos.AuthAuditListResponse>, BadRequest<string>, UnauthorizedHttpResult>> GetMyAuditLog(
+	public async Task<Results<Ok<GeneratedDtos.AuthAuditListResponse>, BadRequest<ProblemDetails>, UnauthorizedHttpResult>> GetMyAuditLog(
 		[FromQuery] int offset = 0,
 		[FromQuery] int limit = 50,
 		[FromQuery] string? sortBy = null,
@@ -26,12 +26,12 @@ public class AuthAuditController(IAuthAuditService authAuditService) : Controlle
 	{
 		if (offset < 0)
 		{
-			return TypedResults.BadRequest("offset must be non-negative");
+			return ApiProblem.BadRequest("offset must be non-negative");
 		}
 
 		if (limit <= 0 || limit > 500)
 		{
-			return TypedResults.BadRequest("limit must be between 1 and 500");
+			return ApiProblem.BadRequest("limit must be between 1 and 500");
 		}
 
 		string? userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
@@ -42,12 +42,12 @@ public class AuthAuditController(IAuthAuditService authAuditService) : Controlle
 
 		if (sortBy is not null && !SortableColumns.AuthAudit.Contains(sortBy))
 		{
-			return TypedResults.BadRequest($"Invalid sortBy '{sortBy}'. Allowed: {string.Join(", ", SortableColumns.AuthAudit)}");
+			return ApiProblem.BadRequest($"Invalid sortBy '{sortBy}'. Allowed: {string.Join(", ", SortableColumns.AuthAudit)}");
 		}
 
 		if (!SortableColumns.IsValidDirection(sortDirection))
 		{
-			return TypedResults.BadRequest($"Invalid sortDirection '{sortDirection}'. Allowed: asc, desc");
+			return ApiProblem.BadRequest($"Invalid sortDirection '{sortDirection}'. Allowed: asc, desc");
 		}
 
 		SortParams sort = new(sortBy, sortDirection);
@@ -57,7 +57,7 @@ public class AuthAuditController(IAuthAuditService authAuditService) : Controlle
 
 	[HttpGet("recent")]
 	[Authorize(Policy = "RequireAdmin")]
-	public async Task<Results<Ok<GeneratedDtos.AuthAuditListResponse>, BadRequest<string>>> GetRecent(
+	public async Task<Results<Ok<GeneratedDtos.AuthAuditListResponse>, BadRequest<ProblemDetails>>> GetRecent(
 		[FromQuery] int offset = 0,
 		[FromQuery] int limit = 50,
 		[FromQuery] string? sortBy = null,
@@ -66,22 +66,22 @@ public class AuthAuditController(IAuthAuditService authAuditService) : Controlle
 	{
 		if (offset < 0)
 		{
-			return TypedResults.BadRequest("offset must be non-negative");
+			return ApiProblem.BadRequest("offset must be non-negative");
 		}
 
 		if (limit <= 0 || limit > 500)
 		{
-			return TypedResults.BadRequest("limit must be between 1 and 500");
+			return ApiProblem.BadRequest("limit must be between 1 and 500");
 		}
 
 		if (sortBy is not null && !SortableColumns.AuthAudit.Contains(sortBy))
 		{
-			return TypedResults.BadRequest($"Invalid sortBy '{sortBy}'. Allowed: {string.Join(", ", SortableColumns.AuthAudit)}");
+			return ApiProblem.BadRequest($"Invalid sortBy '{sortBy}'. Allowed: {string.Join(", ", SortableColumns.AuthAudit)}");
 		}
 
 		if (!SortableColumns.IsValidDirection(sortDirection))
 		{
-			return TypedResults.BadRequest($"Invalid sortDirection '{sortDirection}'. Allowed: asc, desc");
+			return ApiProblem.BadRequest($"Invalid sortDirection '{sortDirection}'. Allowed: asc, desc");
 		}
 
 		SortParams sort = new(sortBy, sortDirection);
@@ -91,7 +91,7 @@ public class AuthAuditController(IAuthAuditService authAuditService) : Controlle
 
 	[HttpGet("failed")]
 	[Authorize(Policy = "RequireAdmin")]
-	public async Task<Results<Ok<GeneratedDtos.AuthAuditListResponse>, BadRequest<string>>> GetFailed(
+	public async Task<Results<Ok<GeneratedDtos.AuthAuditListResponse>, BadRequest<ProblemDetails>>> GetFailed(
 		[FromQuery] int offset = 0,
 		[FromQuery] int limit = 50,
 		[FromQuery] string? sortBy = null,
@@ -100,22 +100,22 @@ public class AuthAuditController(IAuthAuditService authAuditService) : Controlle
 	{
 		if (offset < 0)
 		{
-			return TypedResults.BadRequest("offset must be non-negative");
+			return ApiProblem.BadRequest("offset must be non-negative");
 		}
 
 		if (limit <= 0 || limit > 500)
 		{
-			return TypedResults.BadRequest("limit must be between 1 and 500");
+			return ApiProblem.BadRequest("limit must be between 1 and 500");
 		}
 
 		if (sortBy is not null && !SortableColumns.AuthAudit.Contains(sortBy))
 		{
-			return TypedResults.BadRequest($"Invalid sortBy '{sortBy}'. Allowed: {string.Join(", ", SortableColumns.AuthAudit)}");
+			return ApiProblem.BadRequest($"Invalid sortBy '{sortBy}'. Allowed: {string.Join(", ", SortableColumns.AuthAudit)}");
 		}
 
 		if (!SortableColumns.IsValidDirection(sortDirection))
 		{
-			return TypedResults.BadRequest($"Invalid sortDirection '{sortDirection}'. Allowed: asc, desc");
+			return ApiProblem.BadRequest($"Invalid sortDirection '{sortDirection}'. Allowed: asc, desc");
 		}
 
 		SortParams sort = new(sortBy, sortDirection);

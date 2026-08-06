@@ -107,7 +107,7 @@ public class ReceiptItemsControllerTests
 			.ReturnsAsync(new PagedResult<ReceiptItem>(mediatorReturn, mediatorReturn.Count, 0, 50));
 
 		// Act
-		Results<Ok<ReceiptItemListResponse>, BadRequest<string>> rawResult = await _controller.GetAllReceiptItems(null, 0, 50, null, null);
+		Results<Ok<ReceiptItemListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetAllReceiptItems(null, 0, 50, null, null);
 
 		// Assert
 		Ok<ReceiptItemListResponse> result = Assert.IsType<Ok<ReceiptItemListResponse>>(rawResult.Result);
@@ -125,11 +125,11 @@ public class ReceiptItemsControllerTests
 	public async Task GetAllReceiptItems_ReturnsBadRequest_WhenOffsetIsNegative(int offset, int limit)
 	{
 		// Act
-		Results<Ok<ReceiptItemListResponse>, BadRequest<string>> result = await _controller.GetAllReceiptItems(null, offset, limit, null, null);
+		Results<Ok<ReceiptItemListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetAllReceiptItems(null, offset, limit, null, null);
 
 		// Assert
-		BadRequest<string> badRequestResult = Assert.IsType<BadRequest<string>>(result.Result);
-		badRequestResult.Value.Should().Be("offset must be >= 0");
+		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequestResult.Value!.Detail.Should().Be("offset must be >= 0");
 	}
 
 	[Theory]
@@ -139,11 +139,11 @@ public class ReceiptItemsControllerTests
 	public async Task GetAllReceiptItems_ReturnsBadRequest_WhenLimitIsOutOfRange(int offset, int limit)
 	{
 		// Act
-		Results<Ok<ReceiptItemListResponse>, BadRequest<string>> result = await _controller.GetAllReceiptItems(null, offset, limit, null, null);
+		Results<Ok<ReceiptItemListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetAllReceiptItems(null, offset, limit, null, null);
 
 		// Assert
-		BadRequest<string> badRequestResult = Assert.IsType<BadRequest<string>>(result.Result);
-		badRequestResult.Value.Should().Be("limit must be between 1 and 500");
+		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequestResult.Value!.Detail.Should().Be("limit must be between 1 and 500");
 	}
 
 	[Theory]
@@ -152,11 +152,11 @@ public class ReceiptItemsControllerTests
 	public async Task GetDeletedReceiptItems_ReturnsBadRequest_WhenOffsetIsNegative(int offset, int limit)
 	{
 		// Act
-		Results<Ok<ReceiptItemListResponse>, BadRequest<string>> result = await _controller.GetDeletedReceiptItems(offset, limit, null, null);
+		Results<Ok<ReceiptItemListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetDeletedReceiptItems(offset, limit, null, null);
 
 		// Assert
-		BadRequest<string> badRequestResult = Assert.IsType<BadRequest<string>>(result.Result);
-		badRequestResult.Value.Should().Be("offset must be >= 0");
+		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequestResult.Value!.Detail.Should().Be("offset must be >= 0");
 	}
 
 	[Theory]
@@ -166,11 +166,11 @@ public class ReceiptItemsControllerTests
 	public async Task GetDeletedReceiptItems_ReturnsBadRequest_WhenLimitIsOutOfRange(int offset, int limit)
 	{
 		// Act
-		Results<Ok<ReceiptItemListResponse>, BadRequest<string>> result = await _controller.GetDeletedReceiptItems(offset, limit, null, null);
+		Results<Ok<ReceiptItemListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetDeletedReceiptItems(offset, limit, null, null);
 
 		// Assert
-		BadRequest<string> badRequestResult = Assert.IsType<BadRequest<string>>(result.Result);
-		badRequestResult.Value.Should().Be("limit must be between 1 and 500");
+		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequestResult.Value!.Detail.Should().Be("limit must be between 1 and 500");
 	}
 
 	[Fact]
@@ -201,7 +201,7 @@ public class ReceiptItemsControllerTests
 			.ReturnsAsync(new PagedResult<ReceiptItem>(mediatorReturn, mediatorReturn.Count, 0, 50));
 
 		// Act
-		Results<Ok<ReceiptItemListResponse>, BadRequest<string>> result = await _controller.GetAllReceiptItems(null, 0, 50, null, null, "  Apples  ");
+		Results<Ok<ReceiptItemListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetAllReceiptItems(null, 0, 50, null, null, "  Apples  ");
 
 		// Assert
 		Assert.IsType<Ok<ReceiptItemListResponse>>(result.Result);
@@ -245,7 +245,7 @@ public class ReceiptItemsControllerTests
 			.ReturnsAsync(new PagedResult<ReceiptItem>(mediatorReturn, mediatorReturn.Count, 0, 50));
 
 		// Act
-		Results<Ok<ReceiptItemListResponse>, BadRequest<string>> rawResult = await _controller.GetAllReceiptItems(receiptId, 0, 50, null, null);
+		Results<Ok<ReceiptItemListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetAllReceiptItems(receiptId, 0, 50, null, null);
 
 		// Assert
 		Ok<ReceiptItemListResponse> result = Assert.IsType<Ok<ReceiptItemListResponse>>(rawResult.Result);
@@ -269,7 +269,7 @@ public class ReceiptItemsControllerTests
 			.ReturnsAsync(new PagedResult<ReceiptItem>([], 0, 0, 50));
 
 		// Act
-		Results<Ok<ReceiptItemListResponse>, BadRequest<string>> rawResult = await _controller.GetAllReceiptItems(receiptId, 0, 50, null, null);
+		Results<Ok<ReceiptItemListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetAllReceiptItems(receiptId, 0, 50, null, null);
 
 		// Assert
 		Ok<ReceiptItemListResponse> result = Assert.IsType<Ok<ReceiptItemListResponse>>(rawResult.Result);
@@ -290,7 +290,7 @@ public class ReceiptItemsControllerTests
 			.ReturnsAsync(new PagedResult<ReceiptItem>([], 0, 0, 50));
 
 		// Act
-		Results<Ok<ReceiptItemListResponse>, BadRequest<string>> rawResult = await _controller.GetAllReceiptItems(missingReceiptId, 0, 50, null, null);
+		Results<Ok<ReceiptItemListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetAllReceiptItems(missingReceiptId, 0, 50, null, null);
 
 		// Assert
 		Ok<ReceiptItemListResponse> result = Assert.IsType<Ok<ReceiptItemListResponse>>(rawResult.Result);

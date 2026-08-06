@@ -120,7 +120,7 @@ public class CardsControllerTests
 			.ReturnsAsync(new PagedResult<Card>(accounts, accounts.Count, 0, 50));
 
 		// Act
-		Results<Ok<CardListResponse>, BadRequest<string>> rawResult = await _controller.GetAllCards(null, 0, 50, null, null);
+		Results<Ok<CardListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetAllCards(null, 0, 50, null, null);
 
 		// Assert
 		Ok<CardListResponse> result = Assert.IsType<Ok<CardListResponse>>(rawResult.Result);
@@ -145,7 +145,7 @@ public class CardsControllerTests
 			.ReturnsAsync(new PagedResult<Card>(accounts, accounts.Count, 0, 50));
 
 		// Act
-		Results<Ok<CardListResponse>, BadRequest<string>> rawResult = await _controller.GetAllCards(true, 0, 50, null, null);
+		Results<Ok<CardListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetAllCards(true, 0, 50, null, null);
 
 		// Assert
 		Ok<CardListResponse> result = Assert.IsType<Ok<CardListResponse>>(rawResult.Result);
@@ -161,11 +161,11 @@ public class CardsControllerTests
 	public async Task GetAllAccounts_ReturnsBadRequest_WhenOffsetIsNegative(int offset, int limit)
 	{
 		// Act
-		Results<Ok<CardListResponse>, BadRequest<string>> result = await _controller.GetAllCards(null, offset, limit, null, null);
+		Results<Ok<CardListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetAllCards(null, offset, limit, null, null);
 
 		// Assert
-		BadRequest<string> badRequestResult = Assert.IsType<BadRequest<string>>(result.Result);
-		badRequestResult.Value.Should().Be("offset must be >= 0");
+		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequestResult.Value!.Detail.Should().Be("offset must be >= 0");
 	}
 
 	[Theory]
@@ -175,11 +175,11 @@ public class CardsControllerTests
 	public async Task GetAllAccounts_ReturnsBadRequest_WhenLimitIsOutOfRange(int offset, int limit)
 	{
 		// Act
-		Results<Ok<CardListResponse>, BadRequest<string>> result = await _controller.GetAllCards(null, offset, limit, null, null);
+		Results<Ok<CardListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetAllCards(null, offset, limit, null, null);
 
 		// Assert
-		BadRequest<string> badRequestResult = Assert.IsType<BadRequest<string>>(result.Result);
-		badRequestResult.Value.Should().Be("limit must be between 1 and 500");
+		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequestResult.Value!.Detail.Should().Be("limit must be between 1 and 500");
 	}
 
 	[Fact]
@@ -213,7 +213,7 @@ public class CardsControllerTests
 		CreateCardRequest controllerInput = CardDtoGenerator.GenerateCreateRequest();
 
 		// Act
-		Results<Ok<CardResponse>, BadRequest<string>> result = await _controller.CreateCard(controllerInput);
+		Results<Ok<CardResponse>, BadRequest<ProblemDetails>> result = await _controller.CreateCard(controllerInput);
 
 		// Assert
 		Ok<CardResponse> okResult = Assert.IsType<Ok<CardResponse>>(result.Result);
@@ -242,7 +242,7 @@ public class CardsControllerTests
 			.ReturnsAsync([createdCard]);
 
 		// Act
-		Results<Ok<CardResponse>, BadRequest<string>> result = await _controller.CreateCard(controllerInput);
+		Results<Ok<CardResponse>, BadRequest<ProblemDetails>> result = await _controller.CreateCard(controllerInput);
 
 		// Assert
 		Ok<CardResponse> okResult = Assert.IsType<Ok<CardResponse>>(result.Result);
@@ -261,10 +261,10 @@ public class CardsControllerTests
 			.ReturnsAsync(false);
 
 		// Act
-		Results<Ok<CardResponse>, BadRequest<string>> result = await _controller.CreateCard(controllerInput);
+		Results<Ok<CardResponse>, BadRequest<ProblemDetails>> result = await _controller.CreateCard(controllerInput);
 
 		// Assert
-		Assert.IsType<BadRequest<string>>(result.Result);
+		Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
 		_mediatorMock.Verify(m => m.Send(It.IsAny<CreateCardCommand>(), It.IsAny<CancellationToken>()), Times.Never);
 	}
 
@@ -280,10 +280,10 @@ public class CardsControllerTests
 			.ReturnsAsync(false);
 
 		// Act
-		Results<Ok<List<CardResponse>>, BadRequest<string>> result = await _controller.CreateCards(controllerInput);
+		Results<Ok<List<CardResponse>>, BadRequest<ProblemDetails>> result = await _controller.CreateCards(controllerInput);
 
 		// Assert
-		Assert.IsType<BadRequest<string>>(result.Result);
+		Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
 		_mediatorMock.Verify(m => m.Send(It.IsAny<CreateCardCommand>(), It.IsAny<CancellationToken>()), Times.Never);
 	}
 
@@ -320,7 +320,7 @@ public class CardsControllerTests
 		List<CreateCardRequest> controllerInput = CardDtoGenerator.GenerateCreateRequestList(2);
 
 		// Act
-		Results<Ok<List<CardResponse>>, BadRequest<string>> result = await _controller.CreateCards(controllerInput);
+		Results<Ok<List<CardResponse>>, BadRequest<ProblemDetails>> result = await _controller.CreateCards(controllerInput);
 
 		// Assert
 		Ok<List<CardResponse>> okResult = Assert.IsType<Ok<List<CardResponse>>>(result.Result);
@@ -358,7 +358,7 @@ public class CardsControllerTests
 			.ReturnsAsync(true);
 
 		// Act
-		Results<NoContent, NotFound, BadRequest<string>> result = await _controller.UpdateCard(controllerInput.Id, controllerInput);
+		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result = await _controller.UpdateCard(controllerInput.Id, controllerInput);
 
 		// Assert
 		Assert.IsType<NoContent>(result.Result);
@@ -376,7 +376,7 @@ public class CardsControllerTests
 			.ReturnsAsync(false);
 
 		// Act
-		Results<NoContent, NotFound, BadRequest<string>> result = await _controller.UpdateCard(controllerInput.Id, controllerInput);
+		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result = await _controller.UpdateCard(controllerInput.Id, controllerInput);
 
 		// Assert
 		Assert.IsType<NotFound>(result.Result);
@@ -417,7 +417,7 @@ public class CardsControllerTests
 			.ReturnsAsync(true);
 
 		// Act
-		Results<NoContent, NotFound, BadRequest<string>> result = await _controller.UpdateCard(controllerInput.Id, controllerInput);
+		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result = await _controller.UpdateCard(controllerInput.Id, controllerInput);
 
 		// Assert
 		Assert.IsType<NoContent>(result.Result);
@@ -435,10 +435,10 @@ public class CardsControllerTests
 			.ReturnsAsync(false);
 
 		// Act
-		Results<NoContent, NotFound, BadRequest<string>> result = await _controller.UpdateCard(controllerInput.Id, controllerInput);
+		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result = await _controller.UpdateCard(controllerInput.Id, controllerInput);
 
 		// Assert
-		Assert.IsType<BadRequest<string>>(result.Result);
+		Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
 		_mediatorMock.Verify(m => m.Send(It.IsAny<UpdateCardCommand>(), It.IsAny<CancellationToken>()), Times.Never);
 	}
 
@@ -454,10 +454,10 @@ public class CardsControllerTests
 			.ReturnsAsync(false);
 
 		// Act
-		Results<NoContent, NotFound, BadRequest<string>> result = await _controller.UpdateCards(controllerInput);
+		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result = await _controller.UpdateCards(controllerInput);
 
 		// Assert
-		Assert.IsType<BadRequest<string>>(result.Result);
+		Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
 		_mediatorMock.Verify(m => m.Send(It.IsAny<UpdateCardCommand>(), It.IsAny<CancellationToken>()), Times.Never);
 	}
 
@@ -473,7 +473,7 @@ public class CardsControllerTests
 			.ReturnsAsync(true);
 
 		// Act
-		Results<NoContent, NotFound, BadRequest<string>> result = await _controller.UpdateCards(controllerInput);
+		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result = await _controller.UpdateCards(controllerInput);
 
 		// Assert
 		Assert.IsType<NoContent>(result.Result);
@@ -491,7 +491,7 @@ public class CardsControllerTests
 			.ReturnsAsync(false);
 
 		// Act
-		Results<NoContent, NotFound, BadRequest<string>> result = await _controller.UpdateCards(controllerInput);
+		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result = await _controller.UpdateCards(controllerInput);
 
 		// Assert
 		Assert.IsType<NotFound>(result.Result);
@@ -529,7 +529,7 @@ public class CardsControllerTests
 			.ReturnsAsync(true);
 
 		// Act
-		Results<NoContent, NotFound, Conflict<object>> result = await _controller.DeleteCard(id);
+		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.DeleteCard(id);
 
 		// Assert
 		Assert.IsType<NoContent>(result.Result);
@@ -550,7 +550,7 @@ public class CardsControllerTests
 			.ReturnsAsync(false);
 
 		// Act
-		Results<NoContent, NotFound, Conflict<object>> result = await _controller.DeleteCard(id);
+		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.DeleteCard(id);
 
 		// Assert
 		Assert.IsType<NotFound>(result.Result);
@@ -566,10 +566,10 @@ public class CardsControllerTests
 			.ReturnsAsync(5);
 
 		// Act
-		Results<NoContent, NotFound, Conflict<object>> result = await _controller.DeleteCard(id);
+		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.DeleteCard(id);
 
 		// Assert
-		Assert.IsType<Conflict<object>>(result.Result);
+		Assert.IsType<Conflict<ProblemDetails>>(result.Result);
 	}
 
 	[Fact]
@@ -602,10 +602,10 @@ public class CardsControllerTests
 			SourceCardIds = [Guid.NewGuid()],
 		};
 
-		Results<Ok<MergeCardsResponse>, BadRequest<string>, NotFound, Conflict<MergeCardsConflictResponse>> result =
+		Results<Ok<MergeCardsResponse>, BadRequest<ProblemDetails>, NotFound, Conflict<MergeCardsConflictResponse>> result =
 			await _controller.MergeCards(request);
 
-		Assert.IsType<BadRequest<string>>(result.Result);
+		Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
 	}
 
 	[Fact]
@@ -622,7 +622,7 @@ public class CardsControllerTests
 			It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new MergeCardsResult(1, 2, 7, null));
 
-		Results<Ok<MergeCardsResponse>, BadRequest<string>, NotFound, Conflict<MergeCardsConflictResponse>> result =
+		Results<Ok<MergeCardsResponse>, BadRequest<ProblemDetails>, NotFound, Conflict<MergeCardsConflictResponse>> result =
 			await _controller.MergeCards(request);
 
 		Ok<MergeCardsResponse> ok = Assert.IsType<Ok<MergeCardsResponse>>(result.Result);
@@ -648,7 +648,7 @@ public class CardsControllerTests
 			It.IsAny<CancellationToken>()))
 			.ReturnsAsync(MergeCardsResult.NoOp());
 
-		Results<Ok<MergeCardsResponse>, BadRequest<string>, NotFound, Conflict<MergeCardsConflictResponse>> result =
+		Results<Ok<MergeCardsResponse>, BadRequest<ProblemDetails>, NotFound, Conflict<MergeCardsConflictResponse>> result =
 			await _controller.MergeCards(request);
 
 		Ok<MergeCardsResponse> ok = Assert.IsType<Ok<MergeCardsResponse>>(result.Result);
@@ -679,7 +679,7 @@ public class CardsControllerTests
 			It.IsAny<CancellationToken>()))
 			.ReturnsAsync(MergeCardsResult.Conflicted(conflicts));
 
-		Results<Ok<MergeCardsResponse>, BadRequest<string>, NotFound, Conflict<MergeCardsConflictResponse>> result =
+		Results<Ok<MergeCardsResponse>, BadRequest<ProblemDetails>, NotFound, Conflict<MergeCardsConflictResponse>> result =
 			await _controller.MergeCards(request);
 
 		Conflict<MergeCardsConflictResponse> conflict = Assert.IsType<Conflict<MergeCardsConflictResponse>>(result.Result);
@@ -700,7 +700,7 @@ public class CardsControllerTests
 			It.IsAny<CancellationToken>()))
 			.ThrowsAsync(new KeyNotFoundException("not found"));
 
-		Results<Ok<MergeCardsResponse>, BadRequest<string>, NotFound, Conflict<MergeCardsConflictResponse>> result =
+		Results<Ok<MergeCardsResponse>, BadRequest<ProblemDetails>, NotFound, Conflict<MergeCardsConflictResponse>> result =
 			await _controller.MergeCards(request);
 
 		Assert.IsType<NotFound>(result.Result);
@@ -715,9 +715,9 @@ public class CardsControllerTests
 			SourceCardIds = [Guid.NewGuid(), Guid.NewGuid()],
 		};
 
-		Results<Ok<MergeCardsResponse>, BadRequest<string>, NotFound, Conflict<MergeCardsConflictResponse>> result =
+		Results<Ok<MergeCardsResponse>, BadRequest<ProblemDetails>, NotFound, Conflict<MergeCardsConflictResponse>> result =
 			await _controller.MergeCards(request);
 
-		Assert.IsType<BadRequest<string>>(result.Result);
+		Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
 	}
 }

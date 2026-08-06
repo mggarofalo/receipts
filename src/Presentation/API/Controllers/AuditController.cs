@@ -16,7 +16,7 @@ namespace API.Controllers;
 public class AuditController(IAuditService auditService) : ControllerBase
 {
 	[HttpGet("")]
-	public async Task<Results<Ok<GeneratedDtos.AuditLogListResponse>, BadRequest<string>>> GetAuditLogs(
+	public async Task<Results<Ok<GeneratedDtos.AuditLogListResponse>, BadRequest<ProblemDetails>>> GetAuditLogs(
 		[FromQuery] string? entityType = null,
 		[FromQuery] string? entityId = null,
 		[FromQuery] string? userId = null,
@@ -29,22 +29,22 @@ public class AuditController(IAuditService auditService) : ControllerBase
 	{
 		if (offset < 0)
 		{
-			return TypedResults.BadRequest("offset must be non-negative");
+			return ApiProblem.BadRequest("offset must be non-negative");
 		}
 
 		if (limit <= 0 || limit > 500)
 		{
-			return TypedResults.BadRequest("limit must be between 1 and 500");
+			return ApiProblem.BadRequest("limit must be between 1 and 500");
 		}
 
 		if (sortBy is not null && !SortableColumns.AuditLog.Contains(sortBy))
 		{
-			return TypedResults.BadRequest($"Invalid sortBy '{sortBy}'. Allowed: {string.Join(", ", SortableColumns.AuditLog)}");
+			return ApiProblem.BadRequest($"Invalid sortBy '{sortBy}'. Allowed: {string.Join(", ", SortableColumns.AuditLog)}");
 		}
 
 		if (!SortableColumns.IsValidDirection(sortDirection))
 		{
-			return TypedResults.BadRequest($"Invalid sortDirection '{sortDirection}'. Allowed: asc, desc");
+			return ApiProblem.BadRequest($"Invalid sortDirection '{sortDirection}'. Allowed: asc, desc");
 		}
 
 		SortParams sort = new(sortBy, sortDirection);
@@ -64,14 +64,14 @@ public class AuditController(IAuditService auditService) : ControllerBase
 		}
 		else
 		{
-			return TypedResults.BadRequest("At least one filter parameter (entityType+entityId, userId, or apiKeyId) is required.");
+			return ApiProblem.BadRequest("At least one filter parameter (entityType+entityId, userId, or apiKeyId) is required.");
 		}
 
 		return TypedResults.Ok(ToListResponse(result));
 	}
 
 	[HttpGet("recent")]
-	public async Task<Results<Ok<GeneratedDtos.AuditLogListResponse>, BadRequest<string>>> GetRecent(
+	public async Task<Results<Ok<GeneratedDtos.AuditLogListResponse>, BadRequest<ProblemDetails>>> GetRecent(
 		[FromQuery] int offset = 0,
 		[FromQuery] int limit = 50,
 		[FromQuery] string? sortBy = null,
@@ -85,22 +85,22 @@ public class AuditController(IAuditService auditService) : ControllerBase
 	{
 		if (offset < 0)
 		{
-			return TypedResults.BadRequest("offset must be non-negative");
+			return ApiProblem.BadRequest("offset must be non-negative");
 		}
 
 		if (limit <= 0 || limit > 500)
 		{
-			return TypedResults.BadRequest("limit must be between 1 and 500");
+			return ApiProblem.BadRequest("limit must be between 1 and 500");
 		}
 
 		if (sortBy is not null && !SortableColumns.AuditLog.Contains(sortBy))
 		{
-			return TypedResults.BadRequest($"Invalid sortBy '{sortBy}'. Allowed: {string.Join(", ", SortableColumns.AuditLog)}");
+			return ApiProblem.BadRequest($"Invalid sortBy '{sortBy}'. Allowed: {string.Join(", ", SortableColumns.AuditLog)}");
 		}
 
 		if (!SortableColumns.IsValidDirection(sortDirection))
 		{
-			return TypedResults.BadRequest($"Invalid sortDirection '{sortDirection}'. Allowed: asc, desc");
+			return ApiProblem.BadRequest($"Invalid sortDirection '{sortDirection}'. Allowed: asc, desc");
 		}
 
 		SortParams sort = new(sortBy, sortDirection);

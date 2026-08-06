@@ -107,7 +107,7 @@ public class AdjustmentsControllerTests
 			.ReturnsAsync(new PagedResult<Adjustment>(adjustments, adjustments.Count, 0, 50));
 
 		// Act
-		Results<Ok<AdjustmentListResponse>, BadRequest<string>> rawResult = await _controller.GetAllAdjustments(null, 0, 50, null, null);
+		Results<Ok<AdjustmentListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetAllAdjustments(null, 0, 50, null, null);
 
 		// Assert
 		Ok<AdjustmentListResponse> result = Assert.IsType<Ok<AdjustmentListResponse>>(rawResult.Result);
@@ -124,11 +124,11 @@ public class AdjustmentsControllerTests
 	public async Task GetAllAdjustments_ReturnsBadRequest_WhenOffsetIsNegative(int offset, int limit)
 	{
 		// Act
-		Results<Ok<AdjustmentListResponse>, BadRequest<string>> result = await _controller.GetAllAdjustments(null, offset, limit, null, null);
+		Results<Ok<AdjustmentListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetAllAdjustments(null, offset, limit, null, null);
 
 		// Assert
-		BadRequest<string> badRequestResult = Assert.IsType<BadRequest<string>>(result.Result);
-		badRequestResult.Value.Should().Be("offset must be >= 0");
+		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequestResult.Value!.Detail.Should().Be("offset must be >= 0");
 	}
 
 	[Theory]
@@ -138,11 +138,11 @@ public class AdjustmentsControllerTests
 	public async Task GetAllAdjustments_ReturnsBadRequest_WhenLimitIsOutOfRange(int offset, int limit)
 	{
 		// Act
-		Results<Ok<AdjustmentListResponse>, BadRequest<string>> result = await _controller.GetAllAdjustments(null, offset, limit, null, null);
+		Results<Ok<AdjustmentListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetAllAdjustments(null, offset, limit, null, null);
 
 		// Assert
-		BadRequest<string> badRequestResult = Assert.IsType<BadRequest<string>>(result.Result);
-		badRequestResult.Value.Should().Be("limit must be between 1 and 500");
+		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequestResult.Value!.Detail.Should().Be("limit must be between 1 and 500");
 	}
 
 	[Theory]
@@ -151,11 +151,11 @@ public class AdjustmentsControllerTests
 	public async Task GetDeletedAdjustments_ReturnsBadRequest_WhenOffsetIsNegative(int offset, int limit)
 	{
 		// Act
-		Results<Ok<AdjustmentListResponse>, BadRequest<string>> result = await _controller.GetDeletedAdjustments(offset, limit, null, null);
+		Results<Ok<AdjustmentListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetDeletedAdjustments(offset, limit, null, null);
 
 		// Assert
-		BadRequest<string> badRequestResult = Assert.IsType<BadRequest<string>>(result.Result);
-		badRequestResult.Value.Should().Be("offset must be >= 0");
+		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequestResult.Value!.Detail.Should().Be("offset must be >= 0");
 	}
 
 	[Theory]
@@ -165,11 +165,11 @@ public class AdjustmentsControllerTests
 	public async Task GetDeletedAdjustments_ReturnsBadRequest_WhenLimitIsOutOfRange(int offset, int limit)
 	{
 		// Act
-		Results<Ok<AdjustmentListResponse>, BadRequest<string>> result = await _controller.GetDeletedAdjustments(offset, limit, null, null);
+		Results<Ok<AdjustmentListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetDeletedAdjustments(offset, limit, null, null);
 
 		// Assert
-		BadRequest<string> badRequestResult = Assert.IsType<BadRequest<string>>(result.Result);
-		badRequestResult.Value.Should().Be("limit must be between 1 and 500");
+		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequestResult.Value!.Detail.Should().Be("limit must be between 1 and 500");
 	}
 
 	[Fact]
@@ -201,7 +201,7 @@ public class AdjustmentsControllerTests
 			.ReturnsAsync(new PagedResult<Adjustment>(adjustments, adjustments.Count, 0, 50));
 
 		// Act
-		Results<Ok<AdjustmentListResponse>, BadRequest<string>> rawResult = await _controller.GetDeletedAdjustments(0, 50, null, null);
+		Results<Ok<AdjustmentListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetDeletedAdjustments(0, 50, null, null);
 
 		// Assert
 		Ok<AdjustmentListResponse> result = Assert.IsType<Ok<AdjustmentListResponse>>(rawResult.Result);
@@ -242,7 +242,7 @@ public class AdjustmentsControllerTests
 			.ReturnsAsync(new PagedResult<Adjustment>(adjustments, adjustments.Count, 0, 50));
 
 		// Act
-		Results<Ok<AdjustmentListResponse>, BadRequest<string>> rawResult = await _controller.GetAllAdjustments(receiptId, 0, 50, null, null);
+		Results<Ok<AdjustmentListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetAllAdjustments(receiptId, 0, 50, null, null);
 
 		// Assert
 		Ok<AdjustmentListResponse> result = Assert.IsType<Ok<AdjustmentListResponse>>(rawResult.Result);
@@ -265,7 +265,7 @@ public class AdjustmentsControllerTests
 			.ReturnsAsync(new PagedResult<Adjustment>([], 0, 0, 50));
 
 		// Act
-		Results<Ok<AdjustmentListResponse>, BadRequest<string>> rawResult = await _controller.GetAllAdjustments(receiptId, 0, 50, null, null);
+		Results<Ok<AdjustmentListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetAllAdjustments(receiptId, 0, 50, null, null);
 
 		// Assert
 		Ok<AdjustmentListResponse> result = Assert.IsType<Ok<AdjustmentListResponse>>(rawResult.Result);

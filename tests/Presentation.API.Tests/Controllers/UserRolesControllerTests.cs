@@ -72,7 +72,7 @@ public class UserRolesControllerTests
 		_userManagerMock.Setup(m => m.FindByIdAsync(user.Id)).ReturnsAsync(user);
 		_userManagerMock.Setup(m => m.AddToRoleAsync(user, "Admin")).ReturnsAsync(IdentityResult.Success);
 
-		Results<NoContent, BadRequest<string>, NotFound> result = await _controller.AssignUserRole(user.Id, "Admin");
+		Results<NoContent, BadRequest<ProblemDetails>, NotFound> result = await _controller.AssignUserRole(user.Id, "Admin");
 
 		Assert.IsType<NoContent>(result.Result);
 	}
@@ -80,10 +80,10 @@ public class UserRolesControllerTests
 	[Fact]
 	public async Task AssignUserRole_ReturnsBadRequest_WhenRoleIsInvalid()
 	{
-		Results<NoContent, BadRequest<string>, NotFound> result = await _controller.AssignUserRole("user-123", "InvalidRole");
+		Results<NoContent, BadRequest<ProblemDetails>, NotFound> result = await _controller.AssignUserRole("user-123", "InvalidRole");
 
-		BadRequest<string> badRequest = Assert.IsType<BadRequest<string>>(result.Result);
-		badRequest.Value.Should().Contain("Invalid role");
+		BadRequest<ProblemDetails> badRequest = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequest.Value!.Detail.Should().Contain("Invalid role");
 	}
 
 	[Fact]
@@ -91,7 +91,7 @@ public class UserRolesControllerTests
 	{
 		_userManagerMock.Setup(m => m.FindByIdAsync("missing")).ReturnsAsync((ApplicationUser?)null);
 
-		Results<NoContent, BadRequest<string>, NotFound> result = await _controller.AssignUserRole("missing", "Admin");
+		Results<NoContent, BadRequest<ProblemDetails>, NotFound> result = await _controller.AssignUserRole("missing", "Admin");
 
 		Assert.IsType<NotFound>(result.Result);
 	}
@@ -105,7 +105,7 @@ public class UserRolesControllerTests
 		_userManagerMock.Setup(m => m.FindByIdAsync(user.Id)).ReturnsAsync(user);
 		_userManagerMock.Setup(m => m.RemoveFromRoleAsync(user, "Admin")).ReturnsAsync(IdentityResult.Success);
 
-		Results<NoContent, BadRequest<string>, NotFound> result = await _controller.RemoveUserRole(user.Id, "Admin");
+		Results<NoContent, BadRequest<ProblemDetails>, NotFound> result = await _controller.RemoveUserRole(user.Id, "Admin");
 
 		Assert.IsType<NoContent>(result.Result);
 	}
@@ -113,10 +113,10 @@ public class UserRolesControllerTests
 	[Fact]
 	public async Task RemoveUserRole_ReturnsBadRequest_WhenRoleIsInvalid()
 	{
-		Results<NoContent, BadRequest<string>, NotFound> result = await _controller.RemoveUserRole("user-123", "InvalidRole");
+		Results<NoContent, BadRequest<ProblemDetails>, NotFound> result = await _controller.RemoveUserRole("user-123", "InvalidRole");
 
-		BadRequest<string> badRequest = Assert.IsType<BadRequest<string>>(result.Result);
-		badRequest.Value.Should().Contain("Invalid role");
+		BadRequest<ProblemDetails> badRequest = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequest.Value!.Detail.Should().Contain("Invalid role");
 	}
 
 	[Fact]
@@ -124,7 +124,7 @@ public class UserRolesControllerTests
 	{
 		_userManagerMock.Setup(m => m.FindByIdAsync("missing")).ReturnsAsync((ApplicationUser?)null);
 
-		Results<NoContent, BadRequest<string>, NotFound> result = await _controller.RemoveUserRole("missing", "Admin");
+		Results<NoContent, BadRequest<ProblemDetails>, NotFound> result = await _controller.RemoveUserRole("missing", "Admin");
 
 		Assert.IsType<NotFound>(result.Result);
 	}

@@ -54,26 +54,26 @@ public class SubcategoriesController(IMediator mediator, SubcategoryMapper mappe
 
 	[HttpGet(RouteGetAll)]
 	[EndpointSummary("Get all subcategories")]
-	public async Task<Results<Ok<SubcategoryListResponse>, BadRequest<string>>> GetAllSubcategories([FromQuery] Guid? categoryId = null, [FromQuery] bool? isActive = null, [FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, CancellationToken cancellationToken = default)
+	public async Task<Results<Ok<SubcategoryListResponse>, BadRequest<ProblemDetails>>> GetAllSubcategories([FromQuery] Guid? categoryId = null, [FromQuery] bool? isActive = null, [FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, CancellationToken cancellationToken = default)
 	{
 		if (offset < 0)
 		{
-			return TypedResults.BadRequest("offset must be >= 0");
+			return ApiProblem.BadRequest("offset must be >= 0");
 		}
 
 		if (limit <= 0 || limit > 500)
 		{
-			return TypedResults.BadRequest("limit must be between 1 and 500");
+			return ApiProblem.BadRequest("limit must be between 1 and 500");
 		}
 
 		if (sortBy is not null && !SortableColumns.Subcategory.Contains(sortBy))
 		{
-			return TypedResults.BadRequest($"Invalid sortBy '{sortBy}'. Allowed: {string.Join(", ", SortableColumns.Subcategory)}");
+			return ApiProblem.BadRequest($"Invalid sortBy '{sortBy}'. Allowed: {string.Join(", ", SortableColumns.Subcategory)}");
 		}
 
 		if (!SortableColumns.IsValidDirection(sortDirection))
 		{
-			return TypedResults.BadRequest($"Invalid sortDirection '{sortDirection}'. Allowed: asc, desc");
+			return ApiProblem.BadRequest($"Invalid sortDirection '{sortDirection}'. Allowed: asc, desc");
 		}
 
 		SortParams sort = new(sortBy, sortDirection);
@@ -107,26 +107,26 @@ public class SubcategoriesController(IMediator mediator, SubcategoryMapper mappe
 	[HttpGet(RouteGetDeleted)]
 	[EndpointSummary("Get all soft-deleted subcategories")]
 	[EndpointDescription("Returns all subcategories that have been soft-deleted.")]
-	public async Task<Results<Ok<SubcategoryListResponse>, BadRequest<string>>> GetDeletedSubcategories([FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, CancellationToken cancellationToken = default)
+	public async Task<Results<Ok<SubcategoryListResponse>, BadRequest<ProblemDetails>>> GetDeletedSubcategories([FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, CancellationToken cancellationToken = default)
 	{
 		if (offset < 0)
 		{
-			return TypedResults.BadRequest("offset must be >= 0");
+			return ApiProblem.BadRequest("offset must be >= 0");
 		}
 
 		if (limit <= 0 || limit > 500)
 		{
-			return TypedResults.BadRequest("limit must be between 1 and 500");
+			return ApiProblem.BadRequest("limit must be between 1 and 500");
 		}
 
 		if (sortBy is not null && !SortableColumns.Subcategory.Contains(sortBy))
 		{
-			return TypedResults.BadRequest($"Invalid sortBy '{sortBy}'. Allowed: {string.Join(", ", SortableColumns.Subcategory)}");
+			return ApiProblem.BadRequest($"Invalid sortBy '{sortBy}'. Allowed: {string.Join(", ", SortableColumns.Subcategory)}");
 		}
 
 		if (!SortableColumns.IsValidDirection(sortDirection))
 		{
-			return TypedResults.BadRequest($"Invalid sortDirection '{sortDirection}'. Allowed: asc, desc");
+			return ApiProblem.BadRequest($"Invalid sortDirection '{sortDirection}'. Allowed: asc, desc");
 		}
 
 		SortParams sort = new(sortBy, sortDirection);
@@ -201,7 +201,7 @@ public class SubcategoriesController(IMediator mediator, SubcategoryMapper mappe
 	[HttpDelete(RouteDelete)]
 	[EndpointSummary("Soft-delete a subcategory")]
 	[EndpointDescription("Soft-deletes a subcategory. Returns 409 Conflict if receipt items reference this subcategory.")]
-	public async Task<Results<NoContent, NotFound, Conflict<object>>> DeleteSubcategory([FromRoute] Guid id, CancellationToken cancellationToken = default)
+	public async Task<Results<NoContent, NotFound, Conflict<ProblemDetails>>> DeleteSubcategory([FromRoute] Guid id, CancellationToken cancellationToken = default)
 	{
 		Subcategory? subcategory = await mediator.Send(new GetSubcategoryByIdQuery(id), cancellationToken);
 		if (subcategory == null)
@@ -215,12 +215,16 @@ public class SubcategoriesController(IMediator mediator, SubcategoryMapper mappe
 		{
 			logger.LogWarning("Subcategory {Id} cannot be deleted — {Count} receipt items reference it", id, receiptItemCount);
 			List<(Guid ReceiptId, DateOnly Date, string Location)> affected = await subcategoryService.GetAffectedReceiptsBySubcategoryNameAsync(subcategory.Name, 20, cancellationToken);
-			return TypedResults.Conflict<object>(new
-			{
-				message = $"Cannot delete — {receiptItemCount} receipt item(s) use this subcategory",
-				receiptItemCount,
-				affectedReceipts = affected.Select(r => new { id = r.ReceiptId, date = r.Date.ToString("yyyy-MM-dd"), location = r.Location }).ToList()
-			});
+			// The count and the sample of affected receipts ride as ProblemDetails extensions,
+			// which serialise at the top level of the body — the same place the client already
+			// reads them from. Only the prose moves, from `message` to `detail`.
+			return ApiProblem.Conflict(
+				$"Cannot delete — {receiptItemCount} receipt item(s) use this subcategory",
+				new Dictionary<string, object?>
+				{
+					["receiptItemCount"] = receiptItemCount,
+					["affectedReceipts"] = affected.Select(r => new { id = r.ReceiptId, date = r.Date.ToString("yyyy-MM-dd"), location = r.Location }).ToList(),
+				});
 		}
 
 		DeleteSubcategoryCommand command = new([id]);

@@ -28,19 +28,19 @@ public class ReceiptImageController(
 	[RequestSizeLimit(20 * 1024 * 1024)]
 	[EndpointSummary("Upload an image for a receipt")]
 	[EndpointDescription("Accepts a JPEG or PNG image, saves the original, runs preprocessing (grayscale, adaptive threshold, deskew), and returns both image paths.")]
-	public async Task<Results<Ok<UploadReceiptImageResponse>, NotFound, BadRequest<string>, StatusCodeHttpResult>> UploadImage(
+	public async Task<Results<Ok<UploadReceiptImageResponse>, NotFound, BadRequest<ProblemDetails>, StatusCodeHttpResult>> UploadImage(
 		[FromRoute] Guid receiptId,
 		IFormFile? file,
 		CancellationToken cancellationToken = default)
 	{
 		if (file is null || file.Length == 0)
 		{
-			return TypedResults.BadRequest("No file was uploaded.");
+			return ApiProblem.BadRequest("No file was uploaded.");
 		}
 
 		if (file.Length > MaxFileSizeBytes)
 		{
-			return TypedResults.BadRequest($"File size exceeds the maximum allowed size of {MaxFileSizeBytes / (1024 * 1024)} MB.");
+			return ApiProblem.BadRequest($"File size exceeds the maximum allowed size of {MaxFileSizeBytes / (1024 * 1024)} MB.");
 		}
 
 		if (!AllowedContentTypes.Contains(file.ContentType))
@@ -68,7 +68,7 @@ public class ReceiptImageController(
 		}
 		catch (ArgumentException ex)
 		{
-			return TypedResults.BadRequest(ex.Message);
+			return ApiProblem.BadRequest(ex.Message);
 		}
 
 		UploadReceiptImageResult result;
@@ -84,7 +84,7 @@ public class ReceiptImageController(
 		catch (InvalidOperationException ex)
 		{
 			logger.LogWarning(ex, "Invalid image uploaded for receipt {Id}", receiptId);
-			return TypedResults.BadRequest(ex.Message);
+			return ApiProblem.BadRequest(ex.Message);
 		}
 
 		return TypedResults.Ok(new UploadReceiptImageResponse

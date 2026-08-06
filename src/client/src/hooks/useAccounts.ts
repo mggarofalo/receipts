@@ -101,7 +101,8 @@ export function useUpdateAccount() {
 }
 
 export interface DeleteAccountConflict {
-  message: string;
+  /** ProblemDetails carries the prose in `detail`; the count rides as an extension member. */
+  detail: string;
   cardCount: number;
 }
 
@@ -125,9 +126,9 @@ export function useDeleteAccount() {
       toast.success("Account deleted");
     },
     onError: (error: unknown) => {
-      const err = error as { conflict?: boolean; message?: string; cardCount?: number };
+      const err = error as { conflict?: boolean; detail?: string; cardCount?: number };
       if (err.conflict) {
-        toast.error(err.message ?? "Cannot delete — cards reference this account");
+        toast.error(err.detail ?? "Cannot delete — cards reference this account");
       }
       // Non-conflict failures fall through to the global error handler.
     },

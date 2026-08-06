@@ -153,7 +153,8 @@ export interface AffectedReceipt {
 }
 
 export interface DeleteSubcategoryConflict {
-  message: string;
+  /** ProblemDetails carries the prose in `detail`; the rest ride as extension members. */
+  detail: string;
   receiptItemCount: number;
   affectedReceipts: AffectedReceipt[];
 }
@@ -179,13 +180,13 @@ export function useDeleteSubcategory() {
       toast.success("Subcategory deleted");
     },
     onError: (error: unknown) => {
-      const err = error as { conflict?: boolean; message?: string; receiptItemCount?: number; affectedReceipts?: AffectedReceipt[] };
+      const err = error as { conflict?: boolean; detail?: string; receiptItemCount?: number; affectedReceipts?: AffectedReceipt[] };
       if (err.conflict && err.affectedReceipts) {
         // Conflict with affected receipts — handled by the component via onError callback
         return;
       }
       if (err.conflict) {
-        toast.error(err.message ?? "Cannot delete — receipt items reference this subcategory");
+        toast.error(err.detail ?? "Cannot delete — receipt items reference this subcategory");
       }
       // Non-conflict failures fall through to the global error handler.
     },

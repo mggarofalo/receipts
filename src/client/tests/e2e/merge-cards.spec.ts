@@ -119,19 +119,26 @@ test.describe("card merge — failed merges must not report success", () => {
     await expect(dialog).toBeVisible();
   });
 
-  test("a 400 with a bare-string body shows the server's reason", async ({ page }) => {
+  test("a 400 problem document shows the server's reason", async ({ page }) => {
     // The most confusing rejection in practice: you selected two cards, but a
     // source account has a third card you did not select, so the merge would
     // orphan it. The server explains exactly that — the user must see it.
     const reason =
       "Source account would be partially merged: all of its cards must be included in the merge, or none.";
     await gotoCards(page, (route) =>
-      route.fulfill({
-        status: 400,
-        contentType: "application/json",
-        // `TypedResults.BadRequest(string)` serialises to a bare JSON string.
-        body: JSON.stringify(reason),
-      }),
+      route.fulfill(
+        json(
+          {
+            // RECEIPTS-886: this used to be a bare JSON string, which the client had
+            // to repair before anything could read it. It is a problem document now.
+            type: "https://tools.ietf.org/html/rfc9110#section-15.5.1",
+            title: "Bad Request",
+            status: 400,
+            detail: reason,
+          },
+          400,
+        ),
+      ),
     );
 
     const dialog = await submitMerge(page);

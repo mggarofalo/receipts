@@ -50,7 +50,7 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 	[HttpGet("events")]
 	[EndpointSummary("Get recent YNAB sync events with optional filtering")]
 	[EndpointDescription("Paginated, filterable feed of YNAB push and validate attempts, most recent first.")]
-	public async Task<Results<Ok<YnabSyncEventListResponse>, BadRequest<string>>> GetEvents(
+	public async Task<Results<Ok<YnabSyncEventListResponse>, BadRequest<ProblemDetails>>> GetEvents(
 		[FromQuery] int offset = 0,
 		[FromQuery] int limit = 50,
 		[FromQuery] string? sortBy = null,
@@ -62,17 +62,17 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 	{
 		if (offset < 0)
 		{
-			return TypedResults.BadRequest("offset must be non-negative");
+			return ApiProblem.BadRequest("offset must be non-negative");
 		}
 
 		if (limit <= 0 || limit > 500)
 		{
-			return TypedResults.BadRequest("limit must be between 1 and 500");
+			return ApiProblem.BadRequest("limit must be between 1 and 500");
 		}
 
 		if (!SortableColumns.IsValidDirection(sortDirection))
 		{
-			return TypedResults.BadRequest($"Invalid sortDirection '{sortDirection}'. Allowed: asc, desc");
+			return ApiProblem.BadRequest($"Invalid sortDirection '{sortDirection}'. Allowed: asc, desc");
 		}
 
 		bool? success;
@@ -88,7 +88,7 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 				success = false;
 				break;
 			default:
-				return TypedResults.BadRequest("outcome must be 'success' or 'failure'");
+				return ApiProblem.BadRequest("outcome must be 'success' or 'failure'");
 		}
 
 		SortParams sort = new(sortBy, sortDirection);
@@ -201,7 +201,7 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 	[HttpPost("account-mappings")]
 	[EndpointSummary("Create a YNAB account mapping")]
 	[EndpointDescription("Maps a receipts account to a YNAB account.")]
-	public async Task<Results<Created<YnabAccountMappingResponse>, BadRequest<string>>> CreateAccountMapping(
+	public async Task<Results<Created<YnabAccountMappingResponse>, BadRequest<ProblemDetails>>> CreateAccountMapping(
 		[FromBody] CreateYnabAccountMappingRequest request,
 		CancellationToken cancellationToken)
 	{
@@ -220,7 +220,7 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 		}
 		catch (ArgumentException ex)
 		{
-			return TypedResults.BadRequest(ex.Message);
+			return ApiProblem.BadRequest(ex.Message);
 		}
 	}
 
@@ -278,7 +278,7 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 	[HttpPost("category-mappings")]
 	[EndpointSummary("Create a category mapping")]
 	[EndpointDescription("Creates a new mapping from a receipts category to a YNAB category.")]
-	public async Task<Results<Created<YnabCategoryMappingResponse>, Conflict<string>>> CreateCategoryMapping(
+	public async Task<Results<Created<YnabCategoryMappingResponse>, Conflict<ProblemDetails>>> CreateCategoryMapping(
 		[FromBody] CreateYnabCategoryMappingRequest request,
 		CancellationToken cancellationToken)
 	{
@@ -296,7 +296,7 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 		}
 		catch (DuplicateEntityException ex)
 		{
-			return TypedResults.Conflict(ex.Message);
+			return ApiProblem.Conflict(ex.Message);
 		}
 	}
 
@@ -423,6 +423,8 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 
 			if (!result.Success)
 			{
+				// Not a problem document: a partial push reports per-transaction outcomes the
+				// client renders individually, and collapsing that into prose would lose them.
 				return TypedResults.BadRequest(response);
 			}
 

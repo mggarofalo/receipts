@@ -36,7 +36,7 @@ public class AuditControllerTests
 			.ReturnsAsync(pagedResult);
 
 		// Act
-		Results<Ok<GeneratedDtos.AuditLogListResponse>, BadRequest<string>> result = await _controller.GetAuditLogs(entityType, entityId, null, null, 0, 50, null, null, CancellationToken.None);
+		Results<Ok<GeneratedDtos.AuditLogListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetAuditLogs(entityType, entityId, null, null, 0, 50, null, null, CancellationToken.None);
 
 		// Assert
 		Ok<GeneratedDtos.AuditLogListResponse> okResult = Assert.IsType<Ok<GeneratedDtos.AuditLogListResponse>>(result.Result);
@@ -56,7 +56,7 @@ public class AuditControllerTests
 			.ReturnsAsync(pagedResult);
 
 		// Act
-		Results<Ok<GeneratedDtos.AuditLogListResponse>, BadRequest<string>> result = await _controller.GetAuditLogs(entityType, entityId, null, null, 0, 50, null, null, CancellationToken.None);
+		Results<Ok<GeneratedDtos.AuditLogListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetAuditLogs(entityType, entityId, null, null, 0, 50, null, null, CancellationToken.None);
 
 		// Assert
 		Ok<GeneratedDtos.AuditLogListResponse> okResult = Assert.IsType<Ok<GeneratedDtos.AuditLogListResponse>>(result.Result);
@@ -79,7 +79,7 @@ public class AuditControllerTests
 			.ReturnsAsync(pagedResult);
 
 		// Act
-		Results<Ok<GeneratedDtos.AuditLogListResponse>, BadRequest<string>> result = await _controller.GetRecent(0, 50, null, null, null, null, null, null, null, CancellationToken.None);
+		Results<Ok<GeneratedDtos.AuditLogListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetRecent(0, 50, null, null, null, null, null, null, null, CancellationToken.None);
 
 		// Assert
 		Ok<GeneratedDtos.AuditLogListResponse> okResult = Assert.IsType<Ok<GeneratedDtos.AuditLogListResponse>>(result.Result);
@@ -111,11 +111,11 @@ public class AuditControllerTests
 	public async Task GetRecent_ReturnsBadRequest_WhenOffsetIsNegative()
 	{
 		// Act
-		Results<Ok<GeneratedDtos.AuditLogListResponse>, BadRequest<string>> result = await _controller.GetRecent(-1, 50, null, null, null, null, null, null, null, CancellationToken.None);
+		Results<Ok<GeneratedDtos.AuditLogListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetRecent(-1, 50, null, null, null, null, null, null, null, CancellationToken.None);
 
 		// Assert
-		BadRequest<string> badRequest = Assert.IsType<BadRequest<string>>(result.Result);
-		badRequest.Value.Should().Be("offset must be non-negative");
+		BadRequest<ProblemDetails> badRequest = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequest.Value!.Detail.Should().Be("offset must be non-negative");
 	}
 
 	[Theory]
@@ -125,45 +125,45 @@ public class AuditControllerTests
 	public async Task GetRecent_ReturnsBadRequest_WhenLimitIsOutOfRange(int limit)
 	{
 		// Act
-		Results<Ok<GeneratedDtos.AuditLogListResponse>, BadRequest<string>> result = await _controller.GetRecent(0, limit, null, null, null, null, null, null, null, CancellationToken.None);
+		Results<Ok<GeneratedDtos.AuditLogListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetRecent(0, limit, null, null, null, null, null, null, null, CancellationToken.None);
 
 		// Assert
-		BadRequest<string> badRequest = Assert.IsType<BadRequest<string>>(result.Result);
-		badRequest.Value.Should().Be("limit must be between 1 and 500");
+		BadRequest<ProblemDetails> badRequest = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequest.Value!.Detail.Should().Be("limit must be between 1 and 500");
 	}
 
 	[Fact]
 	public async Task GetRecent_WithInvalidSortBy_ReturnsBadRequest()
 	{
 		// Act
-		Results<Ok<GeneratedDtos.AuditLogListResponse>, BadRequest<string>> result = await _controller.GetRecent(0, 50, "invalidColumn", null, null, null, null, null, null, CancellationToken.None);
+		Results<Ok<GeneratedDtos.AuditLogListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetRecent(0, 50, "invalidColumn", null, null, null, null, null, null, CancellationToken.None);
 
 		// Assert
-		BadRequest<string> badRequestResult = Assert.IsType<BadRequest<string>>(result.Result);
-		badRequestResult.Value.Should().Contain("Invalid sortBy");
+		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequestResult.Value!.Detail.Should().Contain("Invalid sortBy");
 	}
 
 	[Fact]
 	public async Task GetRecent_WithInvalidSortDirection_ReturnsBadRequest()
 	{
 		// Act
-		Results<Ok<GeneratedDtos.AuditLogListResponse>, BadRequest<string>> result = await _controller.GetRecent(0, 50, null, "invalid", null, null, null, null, null, CancellationToken.None);
+		Results<Ok<GeneratedDtos.AuditLogListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetRecent(0, 50, null, "invalid", null, null, null, null, null, CancellationToken.None);
 
 		// Assert
-		BadRequest<string> badRequestResult = Assert.IsType<BadRequest<string>>(result.Result);
-		badRequestResult.Value.Should().Contain("Invalid sortDirection");
+		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequestResult.Value!.Detail.Should().Contain("Invalid sortDirection");
 	}
 
 	[Fact]
 	public async Task GetAuditLogs_ReturnsBadRequest_WhenOffsetIsNegative()
 	{
 		// Act
-		Results<Ok<GeneratedDtos.AuditLogListResponse>, BadRequest<string>> result = await _controller.GetAuditLogs(
+		Results<Ok<GeneratedDtos.AuditLogListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetAuditLogs(
 			"Account", Guid.NewGuid().ToString(), null, null, -1, 50, null, null, CancellationToken.None);
 
 		// Assert
-		BadRequest<string> badRequest = Assert.IsType<BadRequest<string>>(result.Result);
-		badRequest.Value.Should().Be("offset must be non-negative");
+		BadRequest<ProblemDetails> badRequest = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequest.Value!.Detail.Should().Be("offset must be non-negative");
 	}
 
 	[Theory]
@@ -173,12 +173,12 @@ public class AuditControllerTests
 	public async Task GetAuditLogs_ReturnsBadRequest_WhenLimitIsOutOfRange(int limit)
 	{
 		// Act
-		Results<Ok<GeneratedDtos.AuditLogListResponse>, BadRequest<string>> result = await _controller.GetAuditLogs(
+		Results<Ok<GeneratedDtos.AuditLogListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetAuditLogs(
 			"Account", Guid.NewGuid().ToString(), null, null, 0, limit, null, null, CancellationToken.None);
 
 		// Assert
-		BadRequest<string> badRequest = Assert.IsType<BadRequest<string>>(result.Result);
-		badRequest.Value.Should().Be("limit must be between 1 and 500");
+		BadRequest<ProblemDetails> badRequest = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequest.Value!.Detail.Should().Be("limit must be between 1 and 500");
 	}
 
 	[Fact]
@@ -196,7 +196,7 @@ public class AuditControllerTests
 			.ReturnsAsync(pagedResult);
 
 		// Act
-		Results<Ok<GeneratedDtos.AuditLogListResponse>, BadRequest<string>> result = await _controller.GetAuditLogs(null, null, userId, null, 0, 50, null, null, CancellationToken.None);
+		Results<Ok<GeneratedDtos.AuditLogListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetAuditLogs(null, null, userId, null, 0, 50, null, null, CancellationToken.None);
 
 		// Assert
 		Ok<GeneratedDtos.AuditLogListResponse> okResult = Assert.IsType<Ok<GeneratedDtos.AuditLogListResponse>>(result.Result);
@@ -219,7 +219,7 @@ public class AuditControllerTests
 			.ReturnsAsync(pagedResult);
 
 		// Act
-		Results<Ok<GeneratedDtos.AuditLogListResponse>, BadRequest<string>> result = await _controller.GetAuditLogs(null, null, null, apiKeyId, 0, 50, null, null, CancellationToken.None);
+		Results<Ok<GeneratedDtos.AuditLogListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetAuditLogs(null, null, null, apiKeyId, 0, 50, null, null, CancellationToken.None);
 
 		// Assert
 		Ok<GeneratedDtos.AuditLogListResponse> okResult = Assert.IsType<Ok<GeneratedDtos.AuditLogListResponse>>(result.Result);
@@ -292,45 +292,45 @@ public class AuditControllerTests
 	public async Task GetAuditLogs_InvalidSortBy_ReturnsBadRequest()
 	{
 		// Act
-		Results<Ok<GeneratedDtos.AuditLogListResponse>, BadRequest<string>> result = await _controller.GetAuditLogs(
+		Results<Ok<GeneratedDtos.AuditLogListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetAuditLogs(
 			"Account", Guid.NewGuid().ToString(), null, null, 0, 50, "invalid", null, CancellationToken.None);
 
 		// Assert
-		BadRequest<string> badRequest = Assert.IsType<BadRequest<string>>(result.Result);
-		badRequest.Value.Should().Contain("Invalid sortBy");
+		BadRequest<ProblemDetails> badRequest = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequest.Value!.Detail.Should().Contain("Invalid sortBy");
 	}
 
 	[Fact]
 	public async Task GetAuditLogs_InvalidSortDirection_ReturnsBadRequest()
 	{
 		// Act
-		Results<Ok<GeneratedDtos.AuditLogListResponse>, BadRequest<string>> result = await _controller.GetAuditLogs(
+		Results<Ok<GeneratedDtos.AuditLogListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetAuditLogs(
 			"Account", Guid.NewGuid().ToString(), null, null, 0, 50, null, "invalid", CancellationToken.None);
 
 		// Assert
-		BadRequest<string> badRequest = Assert.IsType<BadRequest<string>>(result.Result);
-		badRequest.Value.Should().Contain("Invalid sortDirection");
+		BadRequest<ProblemDetails> badRequest = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequest.Value!.Detail.Should().Contain("Invalid sortDirection");
 	}
 
 	[Fact]
 	public async Task GetRecent_InvalidSortBy_ReturnsBadRequest()
 	{
 		// Act
-		Results<Ok<GeneratedDtos.AuditLogListResponse>, BadRequest<string>> result = await _controller.GetRecent(0, 50, "invalid", null, null, null, null, null, null, CancellationToken.None);
+		Results<Ok<GeneratedDtos.AuditLogListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetRecent(0, 50, "invalid", null, null, null, null, null, null, CancellationToken.None);
 
 		// Assert
-		BadRequest<string> badRequest = Assert.IsType<BadRequest<string>>(result.Result);
-		badRequest.Value.Should().Contain("Invalid sortBy");
+		BadRequest<ProblemDetails> badRequest = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequest.Value!.Detail.Should().Contain("Invalid sortBy");
 	}
 
 	[Fact]
 	public async Task GetRecent_InvalidSortDirection_ReturnsBadRequest()
 	{
 		// Act
-		Results<Ok<GeneratedDtos.AuditLogListResponse>, BadRequest<string>> result = await _controller.GetRecent(0, 50, null, "invalid", null, null, null, null, null, CancellationToken.None);
+		Results<Ok<GeneratedDtos.AuditLogListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetRecent(0, 50, null, "invalid", null, null, null, null, null, CancellationToken.None);
 
 		// Assert
-		BadRequest<string> badRequest = Assert.IsType<BadRequest<string>>(result.Result);
-		badRequest.Value.Should().Contain("Invalid sortDirection");
+		BadRequest<ProblemDetails> badRequest = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequest.Value!.Detail.Should().Contain("Invalid sortDirection");
 	}
 }

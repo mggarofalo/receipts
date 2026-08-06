@@ -161,14 +161,18 @@ const NULL_BODY_STATUSES = new Set([204, 205, 304]);
  * produces three different failure bodies, and two of them break callers:
  *
  *   1. ProblemDetails — has `status`. Handled correctly everywhere already.
+ *      Since RECEIPTS-886 this is what every rejection-with-a-reason sends.
  *   2. A bare JSON string, from `TypedResults.BadRequest("some reason")`.
  *      Parses to a JS string, so `handleGlobalError`'s `typeof === "object"`
- *      test fails and the user is shown *nothing* (RECEIPTS-886).
+ *      test fails and the user is shown *nothing*. The server no longer
+ *      produces this shape, but the branch stays: it is the backstop for any
+ *      endpoint that regresses, and it costs one `typeof` check.
  *   3. No body at all — an authorization 403 or a bodiless `NotFound()`.
  *      openapi-fetch yields `""` here, or `undefined` when the response
  *      carries `Content-Length: 0`. Both are falsy, so the ubiquitous
  *      `if (error) throw error` treats the failure as a *success*: the
- *      success toast fires and dialogs close (RECEIPTS-885).
+ *      success toast fires and dialogs close (RECEIPTS-885). This one is
+ *      still live — ASP.NET's authorization failures have no body to give.
  *
  * Normalising here rather than at each of the ~150 call sites means the
  * existing `if (error) throw error` becomes correct everywhere, and no future

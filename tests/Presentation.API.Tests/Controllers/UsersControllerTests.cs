@@ -84,10 +84,10 @@ public class UsersControllerTests
 	[InlineData(-100, 50)]
 	public async Task ListUsers_ReturnsBadRequest_WhenOffsetIsNegative(int offset, int limit)
 	{
-		Results<Ok<UserListResponse>, BadRequest<string>> result = await _controller.ListUsers(offset, limit, null, null);
+		Results<Ok<UserListResponse>, BadRequest<ProblemDetails>> result = await _controller.ListUsers(offset, limit, null, null);
 
-		BadRequest<string> badRequestResult = Assert.IsType<BadRequest<string>>(result.Result);
-		badRequestResult.Value.Should().Be("offset must be >= 0");
+		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequestResult.Value!.Detail.Should().Be("offset must be >= 0");
 	}
 
 	[Theory]
@@ -96,10 +96,10 @@ public class UsersControllerTests
 	[InlineData(0, 501)]
 	public async Task ListUsers_ReturnsBadRequest_WhenLimitIsOutOfRange(int offset, int limit)
 	{
-		Results<Ok<UserListResponse>, BadRequest<string>> result = await _controller.ListUsers(offset, limit, null, null);
+		Results<Ok<UserListResponse>, BadRequest<ProblemDetails>> result = await _controller.ListUsers(offset, limit, null, null);
 
-		BadRequest<string> badRequestResult = Assert.IsType<BadRequest<string>>(result.Result);
-		badRequestResult.Value.Should().Be("limit must be between 1 and 500");
+		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequestResult.Value!.Detail.Should().Be("limit must be between 1 and 500");
 	}
 
 	[Fact]
@@ -113,7 +113,7 @@ public class UsersControllerTests
 		_userServiceMock.Setup(s => s.ListUsersAsync(0, 50, It.IsAny<SortParams>(), It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new PagedResult<UserSummary>(users, 2, 0, 50));
 
-		Results<Ok<UserListResponse>, BadRequest<string>> rawResult = await _controller.ListUsers(0, 50, null, null);
+		Results<Ok<UserListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.ListUsers(0, 50, null, null);
 
 		Ok<UserListResponse> result = Assert.IsType<Ok<UserListResponse>>(rawResult.Result);
 		UserListResponse response = result.Value!;
@@ -156,7 +156,7 @@ public class UsersControllerTests
 		_userManagerMock.Setup(m => m.AddToRoleAsync(It.IsAny<ApplicationUser>(), "User"))
 			.ReturnsAsync(IdentityResult.Success);
 
-		Results<Ok<UserSummaryResponse>, BadRequest<IEnumerable<string>>> result = await _controller.CreateUser(
+		Results<Ok<UserSummaryResponse>, BadRequest<ProblemDetails>> result = await _controller.CreateUser(
 			new CreateUserRequest { Email = "new@example.com", Password = "Password1!", FirstName = "New", LastName = "User", Role = "User" });
 
 		Ok<UserSummaryResponse> okResult = Assert.IsType<Ok<UserSummaryResponse>>(result.Result);
@@ -169,11 +169,11 @@ public class UsersControllerTests
 		_userManagerMock.Setup(m => m.CreateAsync(It.IsAny<ApplicationUser>(), It.IsAny<string>()))
 			.ReturnsAsync(IdentityResult.Failed(new IdentityError { Description = "Password too weak" }));
 
-		Results<Ok<UserSummaryResponse>, BadRequest<IEnumerable<string>>> result = await _controller.CreateUser(
+		Results<Ok<UserSummaryResponse>, BadRequest<ProblemDetails>> result = await _controller.CreateUser(
 			new CreateUserRequest { Email = "new@example.com", Password = "weak", FirstName = "New", LastName = "User", Role = "User" });
 
-		BadRequest<IEnumerable<string>> badRequest = Assert.IsType<BadRequest<IEnumerable<string>>>(result.Result);
-		badRequest.Value.Should().Contain("Password too weak");
+		BadRequest<ProblemDetails> badRequest = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequest.Value!.Detail.Should().Contain("Password too weak");
 	}
 
 	[Fact]
@@ -184,11 +184,11 @@ public class UsersControllerTests
 		_userManagerMock.Setup(m => m.AddToRoleAsync(It.IsAny<ApplicationUser>(), It.IsAny<string>()))
 			.ReturnsAsync(IdentityResult.Failed(new IdentityError { Description = "Role not found" }));
 
-		Results<Ok<UserSummaryResponse>, BadRequest<IEnumerable<string>>> result = await _controller.CreateUser(
+		Results<Ok<UserSummaryResponse>, BadRequest<ProblemDetails>> result = await _controller.CreateUser(
 			new CreateUserRequest { Email = "new@example.com", Password = "Password1!", FirstName = "New", LastName = "User", Role = "BadRole" });
 
-		BadRequest<IEnumerable<string>> badRequest = Assert.IsType<BadRequest<IEnumerable<string>>>(result.Result);
-		badRequest.Value.Should().Contain("Role not found");
+		BadRequest<ProblemDetails> badRequest = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequest.Value!.Detail.Should().Contain("Role not found");
 	}
 
 	// ── UpdateUser ──────────────────────────────────────────
@@ -204,7 +204,7 @@ public class UsersControllerTests
 		_userManagerMock.Setup(m => m.RemoveFromRolesAsync(user, It.IsAny<IEnumerable<string>>())).ReturnsAsync(IdentityResult.Success);
 		_userManagerMock.Setup(m => m.AddToRoleAsync(user, "Admin")).ReturnsAsync(IdentityResult.Success);
 
-		Results<NoContent, NotFound, BadRequest<string>, BadRequest<IEnumerable<string>>> result = await _controller.UpdateUser(
+		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result = await _controller.UpdateUser(
 			"user-123",
 			new UpdateUserRequest { Email = "updated@example.com", FirstName = "Up", LastName = "Dated", Role = "Admin", IsDisabled = false });
 
@@ -299,7 +299,7 @@ public class UsersControllerTests
 		_userManagerMock.Setup(m => m.RemoveFromRolesAsync(user, It.IsAny<IEnumerable<string>>())).ReturnsAsync(IdentityResult.Success);
 		_userManagerMock.Setup(m => m.AddToRoleAsync(user, "User")).ReturnsAsync(IdentityResult.Success);
 
-		Results<NoContent, NotFound, BadRequest<string>, BadRequest<IEnumerable<string>>> result = await _controller.UpdateUser(
+		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result = await _controller.UpdateUser(
 			"user-123",
 			new UpdateUserRequest { Email = "a@b.com", FirstName = "A", LastName = "B", Role = "User", IsDisabled = false });
 
@@ -339,7 +339,7 @@ public class UsersControllerTests
 		SetupUserClaims("admin-1");
 		_userManagerMock.Setup(m => m.FindByIdAsync("missing")).ReturnsAsync((ApplicationUser?)null);
 
-		Results<NoContent, NotFound, BadRequest<string>, BadRequest<IEnumerable<string>>> result = await _controller.UpdateUser(
+		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result = await _controller.UpdateUser(
 			"missing",
 			new UpdateUserRequest { Email = "a@b.com", FirstName = "A", LastName = "B", Role = "User", IsDisabled = false });
 
@@ -353,12 +353,12 @@ public class UsersControllerTests
 		ApplicationUser user = CreateTestUser("user-123");
 		_userManagerMock.Setup(m => m.FindByIdAsync("user-123")).ReturnsAsync(user);
 
-		Results<NoContent, NotFound, BadRequest<string>, BadRequest<IEnumerable<string>>> result = await _controller.UpdateUser(
+		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result = await _controller.UpdateUser(
 			"user-123",
 			new UpdateUserRequest { Email = "a@b.com", FirstName = "A", LastName = "B", Role = "Admin", IsDisabled = true });
 
-		BadRequest<string> badRequest = Assert.IsType<BadRequest<string>>(result.Result);
-		badRequest.Value.Should().Contain("Cannot disable your own account");
+		BadRequest<ProblemDetails> badRequest = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequest.Value!.Detail.Should().Contain("Cannot disable your own account");
 	}
 
 	[Fact]
@@ -369,12 +369,12 @@ public class UsersControllerTests
 		_userManagerMock.Setup(m => m.FindByIdAsync("user-123")).ReturnsAsync(user);
 		_userManagerMock.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "Admin" });
 
-		Results<NoContent, NotFound, BadRequest<string>, BadRequest<IEnumerable<string>>> result = await _controller.UpdateUser(
+		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result = await _controller.UpdateUser(
 			"user-123",
 			new UpdateUserRequest { Email = "a@b.com", FirstName = "A", LastName = "B", Role = "User", IsDisabled = false });
 
-		BadRequest<string> badRequest = Assert.IsType<BadRequest<string>>(result.Result);
-		badRequest.Value.Should().Contain("Cannot remove your own Admin role");
+		BadRequest<ProblemDetails> badRequest = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequest.Value!.Detail.Should().Contain("Cannot remove your own Admin role");
 	}
 
 	[Fact]
@@ -386,12 +386,12 @@ public class UsersControllerTests
 		_userManagerMock.Setup(m => m.UpdateAsync(user))
 			.ReturnsAsync(IdentityResult.Failed(new IdentityError { Description = "Update failed" }));
 
-		Results<NoContent, NotFound, BadRequest<string>, BadRequest<IEnumerable<string>>> result = await _controller.UpdateUser(
+		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result = await _controller.UpdateUser(
 			"user-123",
 			new UpdateUserRequest { Email = "a@b.com", FirstName = "A", LastName = "B", Role = "User", IsDisabled = false });
 
-		BadRequest<IEnumerable<string>> badRequest = Assert.IsType<BadRequest<IEnumerable<string>>>(result.Result);
-		badRequest.Value.Should().Contain("Update failed");
+		BadRequest<ProblemDetails> badRequest = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequest.Value!.Detail.Should().Contain("Update failed");
 	}
 
 	[Fact]
@@ -406,12 +406,12 @@ public class UsersControllerTests
 		_userManagerMock.Setup(m => m.AddToRoleAsync(user, "Admin"))
 			.ReturnsAsync(IdentityResult.Failed(new IdentityError { Description = "Role failed" }));
 
-		Results<NoContent, NotFound, BadRequest<string>, BadRequest<IEnumerable<string>>> result = await _controller.UpdateUser(
+		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result = await _controller.UpdateUser(
 			"user-123",
 			new UpdateUserRequest { Email = "a@b.com", FirstName = "A", LastName = "B", Role = "Admin", IsDisabled = false });
 
-		BadRequest<IEnumerable<string>> badRequest = Assert.IsType<BadRequest<IEnumerable<string>>>(result.Result);
-		badRequest.Value.Should().Contain("Role failed");
+		BadRequest<ProblemDetails> badRequest = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequest.Value!.Detail.Should().Contain("Role failed");
 	}
 
 	// ── DeactivateUser ──────────────────────────────────────
@@ -424,7 +424,7 @@ public class UsersControllerTests
 		_userManagerMock.Setup(m => m.FindByIdAsync("user-123")).ReturnsAsync(user);
 		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
 
-		Results<NoContent, BadRequest<string>, NotFound> result = await _controller.DeactivateUser("user-123");
+		Results<NoContent, BadRequest<ProblemDetails>, NotFound> result = await _controller.DeactivateUser("user-123");
 
 		Assert.IsType<NoContent>(result.Result);
 	}
@@ -462,10 +462,10 @@ public class UsersControllerTests
 	{
 		SetupUserClaims("user-123");
 
-		Results<NoContent, BadRequest<string>, NotFound> result = await _controller.DeactivateUser("user-123");
+		Results<NoContent, BadRequest<ProblemDetails>, NotFound> result = await _controller.DeactivateUser("user-123");
 
-		BadRequest<string> badRequest = Assert.IsType<BadRequest<string>>(result.Result);
-		badRequest.Value.Should().Contain("Cannot deactivate your own account");
+		BadRequest<ProblemDetails> badRequest = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequest.Value!.Detail.Should().Contain("Cannot deactivate your own account");
 	}
 
 	[Fact]
@@ -474,7 +474,7 @@ public class UsersControllerTests
 		SetupUserClaims("admin-1");
 		_userManagerMock.Setup(m => m.FindByIdAsync("missing")).ReturnsAsync((ApplicationUser?)null);
 
-		Results<NoContent, BadRequest<string>, NotFound> result = await _controller.DeactivateUser("missing");
+		Results<NoContent, BadRequest<ProblemDetails>, NotFound> result = await _controller.DeactivateUser("missing");
 
 		Assert.IsType<NotFound>(result.Result);
 	}
@@ -490,7 +490,7 @@ public class UsersControllerTests
 		_userManagerMock.Setup(m => m.AddPasswordAsync(user, "NewPassword1!")).ReturnsAsync(IdentityResult.Success);
 		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
 
-		Results<NoContent, NotFound, BadRequest<IEnumerable<string>>> result = await _controller.AdminResetPassword(
+		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result = await _controller.AdminResetPassword(
 			user.Id,
 			new AdminResetPasswordRequest { NewPassword = "NewPassword1!" });
 
@@ -532,7 +532,7 @@ public class UsersControllerTests
 	{
 		_userManagerMock.Setup(m => m.FindByIdAsync("missing")).ReturnsAsync((ApplicationUser?)null);
 
-		Results<NoContent, NotFound, BadRequest<IEnumerable<string>>> result = await _controller.AdminResetPassword(
+		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result = await _controller.AdminResetPassword(
 			"missing",
 			new AdminResetPasswordRequest { NewPassword = "NewPassword1!" });
 
@@ -548,11 +548,11 @@ public class UsersControllerTests
 		_userManagerMock.Setup(m => m.AddPasswordAsync(user, "weak"))
 			.ReturnsAsync(IdentityResult.Failed(new IdentityError { Description = "Password too weak" }));
 
-		Results<NoContent, NotFound, BadRequest<IEnumerable<string>>> result = await _controller.AdminResetPassword(
+		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result = await _controller.AdminResetPassword(
 			user.Id,
 			new AdminResetPasswordRequest { NewPassword = "weak" });
 
-		BadRequest<IEnumerable<string>> badRequest = Assert.IsType<BadRequest<IEnumerable<string>>>(result.Result);
-		badRequest.Value.Should().Contain("Password too weak");
+		BadRequest<ProblemDetails> badRequest = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequest.Value!.Detail.Should().Contain("Password too weak");
 	}
 }

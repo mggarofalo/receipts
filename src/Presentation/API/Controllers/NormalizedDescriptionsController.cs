@@ -71,23 +71,23 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 	[HttpPatch(RouteSettings)]
 	[EndpointSummary("Update the normalized-description threshold settings")]
 	[EndpointDescription("Both thresholds must satisfy 0 <= pendingReviewThreshold < autoAcceptThreshold <= 1. Admin-only.")]
-	public async Task<Results<Ok<NormalizedDescriptionSettingsResponse>, BadRequest<string>>> UpdateSettings(
+	public async Task<Results<Ok<NormalizedDescriptionSettingsResponse>, BadRequest<ProblemDetails>>> UpdateSettings(
 		[FromBody] UpdateNormalizedDescriptionSettingsRequest request,
 		CancellationToken cancellationToken)
 	{
 		if (request.AutoAcceptThreshold < 0 || request.AutoAcceptThreshold > 1)
 		{
-			return TypedResults.BadRequest(AutoAcceptOutOfRange);
+			return ApiProblem.BadRequest(AutoAcceptOutOfRange);
 		}
 
 		if (request.PendingReviewThreshold < 0 || request.PendingReviewThreshold > 1)
 		{
-			return TypedResults.BadRequest(PendingReviewOutOfRange);
+			return ApiProblem.BadRequest(PendingReviewOutOfRange);
 		}
 
 		if (request.PendingReviewThreshold >= request.AutoAcceptThreshold)
 		{
-			return TypedResults.BadRequest(PendingMustBeLessThanAuto);
+			return ApiProblem.BadRequest(PendingMustBeLessThanAuto);
 		}
 
 		UpdateNormalizedDescriptionSettingsCommand command = new(request.AutoAcceptThreshold, request.PendingReviewThreshold);
@@ -98,31 +98,31 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 	[HttpPost(RouteTest)]
 	[EndpointSummary("Probe the normalized-description classifier for a given description")]
 	[EndpointDescription("Returns the top-N ANN candidates and the classification branch the resolver would take. Admin-only.")]
-	public async Task<Results<Ok<MatchTestResultResponse>, BadRequest<string>>> TestMatch(
+	public async Task<Results<Ok<MatchTestResultResponse>, BadRequest<ProblemDetails>>> TestMatch(
 		[FromBody] TestMatchRequest request,
 		CancellationToken cancellationToken)
 	{
 		if (string.IsNullOrWhiteSpace(request.Description))
 		{
-			return TypedResults.BadRequest(DescriptionRequired);
+			return ApiProblem.BadRequest(DescriptionRequired);
 		}
 
 		int topN = request.TopN == 0 ? 5 : request.TopN;
 		if (topN < 1 || topN > 20)
 		{
-			return TypedResults.BadRequest(TopNOutOfRange);
+			return ApiProblem.BadRequest(TopNOutOfRange);
 		}
 
 		if (request.AutoAcceptThresholdOverride is double autoOverride &&
 			(autoOverride < 0 || autoOverride > 1))
 		{
-			return TypedResults.BadRequest(OverrideOutOfRange);
+			return ApiProblem.BadRequest(OverrideOutOfRange);
 		}
 
 		if (request.PendingReviewThresholdOverride is double pendingOverride &&
 			(pendingOverride < 0 || pendingOverride > 1))
 		{
-			return TypedResults.BadRequest(OverrideOutOfRange);
+			return ApiProblem.BadRequest(OverrideOutOfRange);
 		}
 
 		// If both overrides are supplied, reject a crossed pair up front for the same reason
@@ -131,7 +131,7 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 			request.PendingReviewThresholdOverride is double pendingSet &&
 			pendingSet >= autoSet)
 		{
-			return TypedResults.BadRequest(PendingMustBeLessThanAuto);
+			return ApiProblem.BadRequest(PendingMustBeLessThanAuto);
 		}
 
 		TestNormalizedDescriptionMatchQuery query = new(
@@ -147,23 +147,23 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 	[HttpPost(RoutePreview)]
 	[EndpointSummary("Preview the impact of changing normalized-description thresholds")]
 	[EndpointDescription("Returns current and proposed classification counts with per-bucket deltas. Admin-only.")]
-	public async Task<Results<Ok<ThresholdImpactPreviewResponse>, BadRequest<string>>> PreviewThresholdImpact(
+	public async Task<Results<Ok<ThresholdImpactPreviewResponse>, BadRequest<ProblemDetails>>> PreviewThresholdImpact(
 		[FromBody] PreviewThresholdImpactRequest request,
 		CancellationToken cancellationToken)
 	{
 		if (request.AutoAcceptThreshold < 0 || request.AutoAcceptThreshold > 1)
 		{
-			return TypedResults.BadRequest(AutoAcceptOutOfRange);
+			return ApiProblem.BadRequest(AutoAcceptOutOfRange);
 		}
 
 		if (request.PendingReviewThreshold < 0 || request.PendingReviewThreshold > 1)
 		{
-			return TypedResults.BadRequest(PendingReviewOutOfRange);
+			return ApiProblem.BadRequest(PendingReviewOutOfRange);
 		}
 
 		if (request.PendingReviewThreshold >= request.AutoAcceptThreshold)
 		{
-			return TypedResults.BadRequest(PendingMustBeLessThanAuto);
+			return ApiProblem.BadRequest(PendingMustBeLessThanAuto);
 		}
 
 		PreviewThresholdImpactQuery query = new(request.AutoAcceptThreshold, request.PendingReviewThreshold);
@@ -174,7 +174,7 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 	[HttpGet(RouteGetAll)]
 	[EndpointSummary("List normalized descriptions")]
 	[EndpointDescription("Returns all canonical normalized-description rows, optionally filtered by status (Active or PendingReview). Admin-only.")]
-	public async Task<Results<Ok<NormalizedDescriptionListResponse>, BadRequest<string>>> GetAllNormalizedDescriptions(
+	public async Task<Results<Ok<NormalizedDescriptionListResponse>, BadRequest<ProblemDetails>>> GetAllNormalizedDescriptions(
 		[FromQuery] string? status,
 		CancellationToken cancellationToken)
 	{
@@ -186,7 +186,7 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 			// but query params traditionally flex on case.
 			if (!Enum.TryParse(status, ignoreCase: true, out DomainStatus parsed))
 			{
-				return TypedResults.BadRequest(InvalidStatusFilter);
+				return ApiProblem.BadRequest(InvalidStatusFilter);
 			}
 
 			filter = parsed;
@@ -205,13 +205,13 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 	[HttpGet(RouteGetById)]
 	[EndpointSummary("Get a normalized description by ID")]
 	[EndpointDescription("Returns a single canonical normalized-description row by GUID. Admin-only.")]
-	public async Task<Results<Ok<NormalizedDescriptionResponse>, NotFound, BadRequest<string>>> GetNormalizedDescriptionById(
+	public async Task<Results<Ok<NormalizedDescriptionResponse>, NotFound, BadRequest<ProblemDetails>>> GetNormalizedDescriptionById(
 		[FromRoute] Guid id,
 		CancellationToken cancellationToken)
 	{
 		if (id == Guid.Empty)
 		{
-			return TypedResults.BadRequest(IdCannotBeEmpty);
+			return ApiProblem.BadRequest(IdCannotBeEmpty);
 		}
 
 		GetNormalizedDescriptionByIdQuery query = new(id);
@@ -227,24 +227,24 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 	[HttpPost(RouteMerge)]
 	[EndpointSummary("Merge two normalized descriptions")]
 	[EndpointDescription("Re-links every live ReceiptItem currently pointing at discardId to the canonical row identified by the path {id}, then deletes the discarded row. Returns the count of re-linked items — zero when either id was missing or the two ids were identical. Admin-only.")]
-	public async Task<Results<Ok<MergeNormalizedDescriptionsResponse>, BadRequest<string>>> MergeNormalizedDescriptions(
+	public async Task<Results<Ok<MergeNormalizedDescriptionsResponse>, BadRequest<ProblemDetails>>> MergeNormalizedDescriptions(
 		[FromRoute] Guid id,
 		[FromBody] MergeNormalizedDescriptionRequest request,
 		CancellationToken cancellationToken)
 	{
 		if (id == Guid.Empty)
 		{
-			return TypedResults.BadRequest(IdCannotBeEmpty);
+			return ApiProblem.BadRequest(IdCannotBeEmpty);
 		}
 
 		if (request.DiscardId == Guid.Empty)
 		{
-			return TypedResults.BadRequest(DiscardIdCannotBeEmpty);
+			return ApiProblem.BadRequest(DiscardIdCannotBeEmpty);
 		}
 
 		if (id == request.DiscardId)
 		{
-			return TypedResults.BadRequest(MergeIdsMustDiffer);
+			return ApiProblem.BadRequest(MergeIdsMustDiffer);
 		}
 
 		MergeNormalizedDescriptionsCommand command = new(id, request.DiscardId);
@@ -255,19 +255,19 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 	[HttpPost(RouteSplit)]
 	[EndpointSummary("Detach a receipt item from its normalized description")]
 	[EndpointDescription("Creates a new canonical NormalizedDescription row for the supplied ReceiptItem's raw description and re-points the item at it. Used to unpick bad auto-merges. Admin-only.")]
-	public async Task<Results<Ok<NormalizedDescriptionResponse>, NotFound, BadRequest<string>>> SplitNormalizedDescription(
+	public async Task<Results<Ok<NormalizedDescriptionResponse>, NotFound, BadRequest<ProblemDetails>>> SplitNormalizedDescription(
 		[FromRoute] Guid id,
 		[FromBody] SplitNormalizedDescriptionRequest request,
 		CancellationToken cancellationToken)
 	{
 		if (id == Guid.Empty)
 		{
-			return TypedResults.BadRequest(IdCannotBeEmpty);
+			return ApiProblem.BadRequest(IdCannotBeEmpty);
 		}
 
 		if (request.ReceiptItemId == Guid.Empty)
 		{
-			return TypedResults.BadRequest(ReceiptItemIdCannotBeEmpty);
+			return ApiProblem.BadRequest(ReceiptItemIdCannotBeEmpty);
 		}
 
 		SplitNormalizedDescriptionCommand command = new(request.ReceiptItemId);
@@ -289,14 +289,14 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 	[HttpPatch(RouteUpdateStatus)]
 	[EndpointSummary("Update the status of a normalized description")]
 	[EndpointDescription("Flips a NormalizedDescription between Active and PendingReview. Returns 204 on success and 404 when the row does not exist. Admin-only.")]
-	public async Task<Results<NoContent, NotFound, BadRequest<string>>> UpdateNormalizedDescriptionStatus(
+	public async Task<Results<NoContent, NotFound, BadRequest<ProblemDetails>>> UpdateNormalizedDescriptionStatus(
 		[FromRoute] Guid id,
 		[FromBody] UpdateNormalizedDescriptionStatusRequest request,
 		CancellationToken cancellationToken)
 	{
 		if (id == Guid.Empty)
 		{
-			return TypedResults.BadRequest(IdCannotBeEmpty);
+			return ApiProblem.BadRequest(IdCannotBeEmpty);
 		}
 
 		DomainStatus domainStatus = request.Status switch
@@ -341,13 +341,13 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 	[HttpPost(RouteRequeuePending)]
 	[EndpointSummary("Delete every pending-review description so the resolver rebuilds it")]
 	[EndpointDescription("Deletes all PendingReview rows and, in the same transaction, nulls the FK and the match score on every receipt item that pointed at one. Returns 409 when expectedFingerprint no longer matches the live pending set. Admin-only.")]
-	public async Task<Results<Ok<RequeuePendingResponse>, BadRequest<string>, Conflict<string>>> RequeuePending(
+	public async Task<Results<Ok<RequeuePendingResponse>, BadRequest<ProblemDetails>, Conflict<ProblemDetails>>> RequeuePending(
 		[FromBody] RequeuePendingRequest request,
 		CancellationToken cancellationToken)
 	{
 		if (string.IsNullOrWhiteSpace(request.ExpectedFingerprint))
 		{
-			return TypedResults.BadRequest(ExpectedFingerprintRequired);
+			return ApiProblem.BadRequest(ExpectedFingerprintRequired);
 		}
 
 		RequeuePendingCommand command = new(request.ExpectedFingerprint);
@@ -358,7 +358,7 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 		// the client to re-read rather than retry blindly.
 		if (result is null)
 		{
-			return TypedResults.Conflict(PendingSetChanged);
+			return ApiProblem.Conflict(PendingSetChanged);
 		}
 
 		return TypedResults.Ok(new RequeuePendingResponse

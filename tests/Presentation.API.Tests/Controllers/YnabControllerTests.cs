@@ -89,7 +89,7 @@ public class YnabControllerTests
 		_mediatorMock.Setup(m => m.Send(It.IsAny<GetYnabSyncEventsQuery>(), It.IsAny<CancellationToken>()))
 			.ReturnsAsync(paged);
 
-		Results<Ok<YnabSyncEventListResponse>, BadRequest<string>> result =
+		Results<Ok<YnabSyncEventListResponse>, BadRequest<ProblemDetails>> result =
 			await _controller.GetEvents(cancellationToken: CancellationToken.None);
 
 		Ok<YnabSyncEventListResponse> ok = result.Result.Should().BeOfType<Ok<YnabSyncEventListResponse>>().Subject;
@@ -104,10 +104,10 @@ public class YnabControllerTests
 	[InlineData(0, 50, "bogus")]
 	public async Task GetEvents_ReturnsBadRequest_ForInvalidArguments(int offset, int limit, string? outcome)
 	{
-		Results<Ok<YnabSyncEventListResponse>, BadRequest<string>> result =
+		Results<Ok<YnabSyncEventListResponse>, BadRequest<ProblemDetails>> result =
 			await _controller.GetEvents(offset: offset, limit: limit, outcome: outcome, cancellationToken: CancellationToken.None);
 
-		result.Result.Should().BeOfType<BadRequest<string>>();
+		result.Result.Should().BeOfType<BadRequest<ProblemDetails>>();
 	}
 
 	[Fact]
@@ -323,7 +323,7 @@ public class YnabControllerTests
 		};
 
 		// Act
-		Results<Created<YnabCategoryMappingResponse>, Conflict<string>> result = await _controller.CreateCategoryMapping(request, CancellationToken.None);
+		Results<Created<YnabCategoryMappingResponse>, Conflict<ProblemDetails>> result = await _controller.CreateCategoryMapping(request, CancellationToken.None);
 
 		// Assert
 		Created<YnabCategoryMappingResponse> createdResult = Assert.IsType<Created<YnabCategoryMappingResponse>>(result.Result);
@@ -349,11 +349,11 @@ public class YnabControllerTests
 		};
 
 		// Act
-		Results<Created<YnabCategoryMappingResponse>, Conflict<string>> result = await _controller.CreateCategoryMapping(request, CancellationToken.None);
+		Results<Created<YnabCategoryMappingResponse>, Conflict<ProblemDetails>> result = await _controller.CreateCategoryMapping(request, CancellationToken.None);
 
 		// Assert
-		Conflict<string> conflictResult = Assert.IsType<Conflict<string>>(result.Result);
-		conflictResult.Value.Should().Contain("already exists");
+		Conflict<ProblemDetails> conflictResult = Assert.IsType<Conflict<ProblemDetails>>(result.Result);
+		conflictResult.Value!.Detail.Should().Contain("already exists");
 	}
 
 	[Fact]
