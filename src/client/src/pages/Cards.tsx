@@ -221,7 +221,10 @@ function Cards() {
           ? `Merge selected cards into an account — ${mergeBlockedReason}`
           : "Merge selected cards into an account"
       }
-      disabled={!canMerge || selectedIds.size < 2}
+      // One selected card is enough (RECEIPTS-887). Folding a single-card
+      // account into another is the commonest merge there is, and the old
+      // two-card floor made it impossible to express.
+      disabled={!canMerge || selectedIds.size < 1}
     >
       Merge ({selectedIds.size})
     </button>

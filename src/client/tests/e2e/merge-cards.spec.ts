@@ -278,21 +278,48 @@ test.describe("card merge — a merge that changes nothing", () => {
 });
 
 test.describe("card merge — entry conditions", () => {
-  test("the merge button is disabled until at least two cards are selected", async ({ page }) => {
+  test("the merge button is enabled as soon as one card is selected", async ({ page }) => {
     await gotoCards(page, (route) => route.fulfill(json(MERGED)));
 
     const mergeButton = page.getByLabel("Merge selected cards into an account");
     await expect(mergeButton).toBeDisabled();
 
-    // One card is not enough — the API rejects fewer than two source cards, so
-    // the UI must not offer the action. This is also the reason a single-card
-    // account cannot currently be merged into another account at all.
+    // RECEIPTS-887. This used to require two, which meant a single-card account
+    // could not be folded into another one at all: the user had to also tick
+    // unrelated cards that already sat on the target, purely to pass a count
+    // check that never described the real requirement.
     await page.getByLabel("Select Primary Visa").check();
     await expect(mergeButton).toHaveText("Merge (1)");
-    await expect(mergeButton).toBeDisabled();
+    await expect(mergeButton).toBeEnabled();
 
     await page.getByLabel("Select Reissued Visa").check();
     await expect(mergeButton).toBeEnabled();
+  });
+
+  test("a single card from another account merges without needing a second", async ({ page }) => {
+    const mergeBodies: unknown[] = [];
+    await gotoCards(page, (route) => {
+      mergeBodies.push(route.request().postDataJSON());
+      return route.fulfill(json({ accountsRemoved: 1, cardsMoved: 1, transactionsRepointed: 8 }));
+    });
+
+    // card-2 is the only card on "Source Account" — the exact shape 887 describes.
+    await page.getByLabel("Select Reissued Visa").check();
+    await page.getByLabel("Merge selected cards into an account").click();
+
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByText("Merging 1 card", { exact: false })).toBeVisible();
+    await dialog.getByLabel("Target account").click();
+    await page.getByRole("option", { name: "Target Account" }).click();
+    await dialog.getByRole("button", { name: "Merge", exact: true }).click();
+
+    await expect(page.getByText("Cards merged")).toBeVisible();
+    await expect(
+      page.getByText("1 card moved, 8 transactions repointed, 1 empty account removed."),
+    ).toBeVisible();
+    expect(mergeBodies).toEqual([
+      { targetAccountId: "acc-target", sourceCardIds: ["card-2"], ynabMappingWinnerAccountId: null },
+    ]);
   });
 
   // RECEIPTS-895. The 403 test above proves a rejected merge is reported

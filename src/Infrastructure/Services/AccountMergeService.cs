@@ -11,7 +11,7 @@ public class AccountMergeService(
 	IDbContextFactory<ApplicationDbContext> contextFactory,
 	ICurrentUserAccessor currentUserAccessor) : IAccountMergeService
 {
-	public const string AtLeastTwoCardsRequired = "Merge requires at least two source cards.";
+	public const string AtLeastOneCardRequired = "Merge requires at least one source card.";
 	public const string TargetAccountNotFound = "Target account not found.";
 	public const string SourceCardNotFound = "One or more source cards not found.";
 	public const string InvalidWinnerAccount = "Winner account id must match one of the accounts involved in the merge.";
@@ -23,16 +23,18 @@ public class AccountMergeService(
 		Guid? ynabMappingWinnerAccountId,
 		CancellationToken cancellationToken)
 	{
-		if (sourceCardIds is null || sourceCardIds.Count < 2)
+		// One card is enough. The old rule demanded two, which made the most ordinary merge
+		// of all — "account B has a single card, fold it into account A" — impossible: the
+		// user had to also tick unrelated cards that already sat on the target just to get
+		// past a count check (RECEIPTS-887). The count was never what mattered. The merge
+		// only ever moves cards whose account differs from the target, and LoadStateAsync
+		// already rejects a selection that would leave siblings behind on a source account.
+		if (sourceCardIds is null || sourceCardIds.Count == 0)
 		{
-			throw new ArgumentException(AtLeastTwoCardsRequired, nameof(sourceCardIds));
+			throw new ArgumentException(AtLeastOneCardRequired, nameof(sourceCardIds));
 		}
 
 		List<Guid> distinctCardIds = [.. sourceCardIds.Distinct()];
-		if (distinctCardIds.Count < 2)
-		{
-			throw new ArgumentException(AtLeastTwoCardsRequired, nameof(sourceCardIds));
-		}
 
 		// Phase 0: validate + detect conflicts using read-only snapshot.
 		(List<Guid> sourceAccountIds, List<YnabAccountMappingEntity> mappings, Dictionary<Guid, string> accountNamesById, Dictionary<Guid, Guid> originalCardAccountIds) =

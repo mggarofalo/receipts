@@ -594,18 +594,43 @@ public class CardsControllerTests
 	}
 
 	[Fact]
-	public async Task MergeCards_WithFewerThanTwoCards_ReturnsBadRequest()
+	public async Task MergeCards_WithNoCards_ReturnsBadRequest()
 	{
+		MergeCardsRequest request = new()
+		{
+			TargetAccountId = Guid.NewGuid(),
+			SourceCardIds = [],
+		};
+
+		Results<Ok<MergeCardsResponse>, BadRequest<ProblemDetails>, NotFound, Conflict<MergeCardsConflictResponse>> result =
+			await _controller.MergeCards(request);
+
+		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		bad.Value!.Detail.Should().Be(CardsController.SourceCardIdsRequired);
+	}
+
+	[Fact]
+	public async Task MergeCards_WithASingleCard_IsAccepted()
+	{
+		// RECEIPTS-887: one card used to be rejected here before the request ever reached
+		// the service, which is what made folding a single-card account impossible.
 		MergeCardsRequest request = new()
 		{
 			TargetAccountId = Guid.NewGuid(),
 			SourceCardIds = [Guid.NewGuid()],
 		};
 
+		_mediatorMock.Setup(m => m.Send(
+			It.IsAny<MergeCardsIntoAccountCommand>(),
+			It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new MergeCardsResult(1, 1, 4, null));
+
 		Results<Ok<MergeCardsResponse>, BadRequest<ProblemDetails>, NotFound, Conflict<MergeCardsConflictResponse>> result =
 			await _controller.MergeCards(request);
 
-		Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		Ok<MergeCardsResponse> ok = Assert.IsType<Ok<MergeCardsResponse>>(result.Result);
+		(ok.Value!.AccountsRemoved, ok.Value.CardsMoved, ok.Value.TransactionsRepointed)
+			.Should().Be((1, 1, 4));
 	}
 
 	[Fact]

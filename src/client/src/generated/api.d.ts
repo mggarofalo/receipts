@@ -2868,6 +2868,7 @@ export interface components {
         MergeCardsRequest: {
             /** Format: uuid */
             targetAccountId: string;
+            /** @description Cards to move onto the target account. Cards already on the target may be included and are simply left where they are; a request consisting only of such cards is an idempotent no-op, reported as zeroed counts rather than rejected. Every card of a source account must be listed, or none of them. */
             sourceCardIds: string[];
             /**
              * Format: uuid
