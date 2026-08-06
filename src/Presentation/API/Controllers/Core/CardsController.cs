@@ -271,7 +271,25 @@ public class CardsController(IMediator mediator, CardMapper mapper, ILogger<Card
 			return TypedResults.Conflict(body);
 		}
 
-		await notifier.NotifyBulkChanged("card", "updated", model.SourceCardIds);
-		return TypedResults.Ok(new MergeCardsResponse { Success = true });
+		// A no-op merge wrote nothing, so there is nothing for connected clients to refetch —
+		// broadcasting "cards updated" would be the same lie the response used to tell.
+		if (result.IsNoOp)
+		{
+			logger.LogInformation(
+				"Merge into account {TargetAccountId} changed nothing — all {CardCount} selected cards already belonged to it",
+				model.TargetAccountId,
+				model.SourceCardIds.Count);
+		}
+		else
+		{
+			await notifier.NotifyBulkChanged("card", "updated", model.SourceCardIds);
+		}
+
+		return TypedResults.Ok(new MergeCardsResponse
+		{
+			AccountsRemoved = result.AccountsRemoved,
+			CardsMoved = result.CardsMoved,
+			TransactionsRepointed = result.TransactionsRepointed,
+		});
 	}
 }

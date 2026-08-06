@@ -89,8 +89,10 @@ public class AccountMergeServiceTests : IDisposable
 	}
 
 	[Fact]
-	public async Task MergeCardsAsync_WithAllCardsAlreadyOnTarget_ReturnsSuccessWithoutChanges()
+	public async Task MergeCardsAsync_WithAllCardsAlreadyOnTarget_ReportsANoOpRatherThanAMerge()
 	{
+		// RECEIPTS-893: this is the branch that used to return the same value as a real
+		// merge. The counts are what makes it distinguishable, so they are the assertion.
 		AccountEntity target = AccountEntityGenerator.Generate();
 		CardEntity card1 = CardEntityGenerator.Generate();
 		CardEntity card2 = CardEntityGenerator.Generate();
@@ -109,8 +111,10 @@ public class AccountMergeServiceTests : IDisposable
 			null,
 			CancellationToken.None);
 
-		result.Success.Should().BeTrue();
 		result.Conflicts.Should().BeNull();
+		result.IsNoOp.Should().BeTrue();
+		(result.AccountsRemoved, result.CardsMoved, result.TransactionsRepointed)
+			.Should().Be((0, 0, 0));
 
 		using ApplicationDbContext assert = CreateContext();
 		(await assert.AuditLogs.Where(a => a.Action == AuditAction.Merge).ToListAsync())
@@ -156,8 +160,12 @@ public class AccountMergeServiceTests : IDisposable
 			null,
 			CancellationToken.None);
 
-		result.Success.Should().BeTrue();
 		result.Conflicts.Should().BeNull();
+		result.IsNoOp.Should().BeFalse();
+		// Two source accounts deleted, two cards moved, and only the two transactions that
+		// sat on a source — txOnTarget was already home and must not inflate the count.
+		(result.AccountsRemoved, result.CardsMoved, result.TransactionsRepointed)
+			.Should().Be((2, 2, 2));
 
 		using ApplicationDbContext assert = CreateContext();
 		List<CardEntity> cards = await assert.Cards.AsNoTracking().ToListAsync();
@@ -214,8 +222,11 @@ public class AccountMergeServiceTests : IDisposable
 			null,
 			CancellationToken.None);
 
-		result.Success.Should().BeTrue();
 		result.Conflicts.Should().BeNull();
+		// Only cardOnSource changed hands — cardOnTarget was listed but already home.
+		// TransactionsRepointed counts the soft-deleted row too, because it moved too.
+		(result.AccountsRemoved, result.CardsMoved, result.TransactionsRepointed)
+			.Should().Be((1, 1, 2));
 
 		using ApplicationDbContext assert = CreateContext();
 
@@ -274,8 +285,9 @@ public class AccountMergeServiceTests : IDisposable
 			null,
 			CancellationToken.None);
 
-		result.Success.Should().BeTrue();
 		result.Conflicts.Should().BeNull();
+		(result.AccountsRemoved, result.CardsMoved, result.TransactionsRepointed)
+			.Should().Be((1, 2, 0));
 
 		using ApplicationDbContext assert = CreateContext();
 		List<YnabAccountMappingEntity> mappings = await assert.YnabAccountMappings.AsNoTracking().ToListAsync();
@@ -328,9 +340,13 @@ public class AccountMergeServiceTests : IDisposable
 			null,
 			CancellationToken.None);
 
-		result.Success.Should().BeFalse();
 		result.Conflicts.Should().HaveCount(2);
 		result.Conflicts!.Select(c => c.YnabAccountId).Should().BeEquivalentTo(["ynab-1", "ynab-2"]);
+		// A refused merge wrote nothing, but it is not a no-op: the caller must prompt for a
+		// winner rather than tell the user their cards were already where they wanted them.
+		result.IsNoOp.Should().BeFalse();
+		(result.AccountsRemoved, result.CardsMoved, result.TransactionsRepointed)
+			.Should().Be((0, 0, 0));
 
 		using ApplicationDbContext assert = CreateContext();
 		List<CardEntity> cards = await assert.Cards.AsNoTracking().ToListAsync();
@@ -385,8 +401,9 @@ public class AccountMergeServiceTests : IDisposable
 			source1.Id,
 			CancellationToken.None);
 
-		result.Success.Should().BeTrue();
 		result.Conflicts.Should().BeNull();
+		(result.AccountsRemoved, result.CardsMoved, result.TransactionsRepointed)
+			.Should().Be((2, 2, 0));
 
 		using ApplicationDbContext assert = CreateContext();
 		List<YnabAccountMappingEntity> mappings = await assert.YnabAccountMappings.AsNoTracking().ToListAsync();

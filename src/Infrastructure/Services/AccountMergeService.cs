@@ -40,8 +40,10 @@ public class AccountMergeService(
 
 		if (sourceAccountIds.Count == 0)
 		{
-			// No-op: all cards already belong to the target account.
-			return new MergeCardsResult(true, null);
+			// No-op: all cards already belong to the target account. Idempotent and correct,
+			// but the caller must be able to tell it apart from a merge that moved data —
+			// hence a zeroed result rather than a bare success (RECEIPTS-893).
+			return MergeCardsResult.NoOp();
 		}
 
 		int distinctMappingTuples = mappings
@@ -72,10 +74,16 @@ public class AccountMergeService(
 				: mappings[0].ReceiptsAccountId;
 		}
 
+		// Counted from the pre-merge snapshot, not from the cards we assign below: Phase 1
+		// assigns the target account to every listed card, including ones already sitting on
+		// it, so the assignment count would overstate what actually moved.
+		int cardsMoved = originalCardAccountIds.Count(kvp => kvp.Value != targetAccountId);
+
 		// Phases 1 and 2 run inside ONE transaction so a Phase-2 failure (e.g. the Restrict
 		// AccountId FK rejecting an account delete) rolls back the Phase-1 repointing —
 		// there is no half-applied merge.
 		int movedTransactionCount;
+		int removedAccountCount;
 		using (ApplicationDbContext context = contextFactory.CreateDbContext())
 		{
 			await using IDbContextTransaction dbTransaction = await context.Database.BeginTransactionAsync(cancellationToken);
@@ -167,12 +175,13 @@ public class AccountMergeService(
 				.Where(a => sourceAccountIds.Contains(a.Id))
 				.ToListAsync(cancellationToken);
 			context.Accounts.RemoveRange(orphanedAccounts);
+			removedAccountCount = orphanedAccounts.Count;
 			await context.SaveChangesAsync(cancellationToken);
 
 			await dbTransaction.CommitAsync(cancellationToken);
 		}
 
-		return new MergeCardsResult(true, null);
+		return new MergeCardsResult(removedAccountCount, cardsMoved, movedTransactionCount, null);
 	}
 
 	private async Task<(List<Guid> SourceAccountIds, List<YnabAccountMappingEntity> Mappings, Dictionary<Guid, string> AccountNamesById, Dictionary<Guid, Guid> OriginalCardAccountIds)> LoadStateAsync(
@@ -271,6 +280,6 @@ public class AccountMergeService(
 			m.YnabBudgetId,
 			m.YnabAccountId,
 			m.YnabAccountName))];
-		return new MergeCardsResult(false, conflicts);
+		return MergeCardsResult.Conflicted(conflicts);
 	}
 }

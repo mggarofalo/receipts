@@ -43,6 +43,11 @@ const json = (body: unknown, status = 200) => ({
   body: JSON.stringify(body),
 });
 
+/** A merge that moved something. The endpoint answers with what it changed, not a flag. */
+const MERGED = { accountsRemoved: 1, cardsMoved: 2, transactionsRepointed: 37 };
+/** The same 200, from a merge the database had already satisfied. */
+const CHANGED_NOTHING = { accountsRemoved: 0, cardsMoved: 0, transactionsRepointed: 0 };
+
 /**
  * Boot /cards as an admin with two selectable cards, and stub the merge
  * endpoint with whatever the test needs.
@@ -55,6 +60,7 @@ async function gotoCards(
   page: Page,
   mergeHandler: (route: Route) => unknown,
   user: FixtureUser = ADMIN_FIXTURE_USER,
+  cards: typeof CARDS = CARDS,
 ) {
   await installApiMocks(page, {
     user,
@@ -64,7 +70,7 @@ async function gotoCards(
     overrides: {
       // `?*` keeps this disjoint from the merge route (which has no query string).
       "**/api/cards?*": (route) =>
-        route.fulfill(json({ data: CARDS, total: CARDS.length, offset: 0, limit: 50 })),
+        route.fulfill(json({ data: cards, total: cards.length, offset: 0, limit: 50 })),
       "**/api/accounts?*": (route) =>
         route.fulfill(json({ data: ACCOUNTS, total: ACCOUNTS.length, offset: 0, limit: 500 })),
       "**/api/cards/merge": mergeHandler,
@@ -138,11 +144,15 @@ test.describe("card merge — failed merges must not report success", () => {
 
 test.describe("card merge — successful and recoverable paths", () => {
   test("a 200 merges, closes the dialog, and clears the selection", async ({ page }) => {
-    await gotoCards(page, (route) => route.fulfill(json({ success: true })));
+    await gotoCards(page, (route) => route.fulfill(json(MERGED)));
 
     await submitMerge(page);
 
     await expect(page.getByText("Cards merged")).toBeVisible();
+    // The counts are the point: "Cards merged" alone is what RECEIPTS-893 was about.
+    await expect(
+      page.getByText("2 cards moved, 37 transactions repointed, 1 empty account removed."),
+    ).toBeVisible();
     await expect(page.getByRole("dialog")).toBeHidden();
     // handleMergeComplete resets the selection, so the button falls back to 0.
     await expect(page.getByLabel("Merge selected cards into an account")).toHaveText("Merge (0)");
@@ -178,7 +188,7 @@ test.describe("card merge — successful and recoverable paths", () => {
           ),
         );
       }
-      return route.fulfill(json({ success: true }));
+      return route.fulfill(json(MERGED));
     });
 
     const dialog = await submitMerge(page);
@@ -206,9 +216,63 @@ test.describe("card merge — successful and recoverable paths", () => {
   });
 });
 
+// RECEIPTS-893. A merge whose cards already all sit on the target is idempotent
+// and returns 200 — it used to be indistinguishable from one that deleted two
+// accounts and moved four hundred transactions. Two defences, tested separately:
+// the dialog refuses to submit one it can see coming, and the toast tells the
+// truth about one it could not.
+test.describe("card merge — a merge that changes nothing", () => {
+  const BOTH_CARDS_ON_TARGET = [
+    { id: "card-1", cardCode: "1111", name: "Primary Visa", isActive: true, accountId: "acc-target" },
+    { id: "card-2", cardCode: "2222", name: "Reissued Visa", isActive: true, accountId: "acc-target" },
+  ];
+
+  test("choosing a target that already holds every card blocks submit and says why", async ({ page }) => {
+    let mergeRequests = 0;
+    await gotoCards(
+      page,
+      (route) => {
+        mergeRequests++;
+        return route.fulfill(json(CHANGED_NOTHING));
+      },
+      ADMIN_FIXTURE_USER,
+      BOTH_CARDS_ON_TARGET,
+    );
+
+    await page.getByLabel("Select Primary Visa").check();
+    await page.getByLabel("Select Reissued Visa").check();
+    await page.getByLabel("Merge selected cards into an account").click();
+
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Target account").click();
+    await page.getByRole("option", { name: "Target Account" }).click();
+
+    await expect(
+      dialog.getByText("Every selected card already belongs to this account", { exact: false }),
+    ).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Merge", exact: true })).toBeDisabled();
+    expect(mergeRequests).toBe(0);
+  });
+
+  test("a 200 that changed nothing is reported as such, not as 'Cards merged'", async ({ page }) => {
+    // The list says card-2 lives on the source account, so the dialog has no
+    // reason to block — but the server knows it was already moved. This is the
+    // stale-data path the guard above cannot cover.
+    await gotoCards(page, (route) => route.fulfill(json(CHANGED_NOTHING)));
+
+    await submitMerge(page);
+
+    await expect(page.getByText("Nothing to merge")).toBeVisible();
+    await expect(
+      page.getByText("Every selected card already belonged to that account."),
+    ).toBeVisible();
+    await expect(page.getByText("Cards merged")).toBeHidden();
+  });
+});
+
 test.describe("card merge — entry conditions", () => {
   test("the merge button is disabled until at least two cards are selected", async ({ page }) => {
-    await gotoCards(page, (route) => route.fulfill(json({ success: true })));
+    await gotoCards(page, (route) => route.fulfill(json(MERGED)));
 
     const mergeButton = page.getByLabel("Merge selected cards into an account");
     await expect(mergeButton).toBeDisabled();
