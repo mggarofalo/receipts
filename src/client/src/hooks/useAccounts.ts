@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useStableQuery } from "@/hooks/useStableQuery";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/react-query";
 import client from "@/lib/api-client";
 import { toast } from "sonner";
 
@@ -59,6 +59,70 @@ export function useAccountCards(accountId: string | null) {
     }),
     [query.data, query.isLoading, query.isError, query.error],
   );
+}
+
+/**
+ * The card lists of several accounts at once.
+ *
+ * The merge dialog has to know every card belonging to each source account in the
+ * selection, not just the ones on the current page of /cards — the server refuses a
+ * merge that would leave siblings behind on an account it is about to delete, and
+ * before RECEIPTS-888 the user had no way to see which cards those were.
+ *
+ * Same query key as {@link useAccountCards}, so a single account's list is shared
+ * between the two hooks and one `["cards"]` invalidation still clears both.
+ */
+export function useAccountsCards(accountIds: string[]) {
+  const results = useQueries({
+    queries: accountIds.map((accountId) => ({
+      queryKey: ["cards", "byAccount", accountId],
+      queryFn: async () => {
+        const { data, error } = await client.GET("/api/accounts/{id}/cards", {
+          params: { path: { id: accountId } },
+        });
+        if (error) throw error;
+        return data;
+      },
+    })),
+  });
+
+  const isLoading = results.some((r) => r.isLoading);
+  const isError = results.some((r) => r.isError);
+
+  // useQueries hands back a fresh array (and fresh result objects) every render, so
+  // memoising on `results` would rebuild the map each time and defeat every downstream
+  // memo. Key on the resolved ids instead — the only part the dialog reacts to.
+  const signature = accountIds
+    .map((id, i) => `${id}:${(results[i]?.data ?? []).map((c) => c.id).join("|")}`)
+    .join(";");
+
+  const cardsByAccountId = useMemo(() => {
+    const map = new Map<string, CardSummary[]>();
+    accountIds.forEach((accountId, i) => {
+      const cards = results[i]?.data;
+      if (cards) {
+        map.set(
+          accountId,
+          cards.map((c) => ({ id: c.id, name: c.name, cardCode: c.cardCode, accountId })),
+        );
+      }
+    });
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signature]);
+
+  return useMemo(
+    () => ({ cardsByAccountId, isLoading, isError }),
+    [cardsByAccountId, isLoading, isError],
+  );
+}
+
+/** The shape the merge dialog needs from a card: enough to list it and to place it. */
+export interface CardSummary {
+  id: string;
+  name: string;
+  cardCode: string;
+  accountId: string;
 }
 
 export function useCreateAccount() {

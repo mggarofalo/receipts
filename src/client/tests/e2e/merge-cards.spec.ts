@@ -61,7 +61,19 @@ async function gotoCards(
   mergeHandler: (route: Route) => unknown,
   user: FixtureUser = ADMIN_FIXTURE_USER,
   cards: typeof CARDS = CARDS,
+  // What `GET /api/accounts/{id}/cards` reports each account holds. Defaults to
+  // grouping the listed cards, so a selection covering the list is complete. The
+  // partial-merge test overrides it with a card the /cards page never shows —
+  // which is the situation RECEIPTS-888 is about.
+  accountCards?: Record<string, typeof CARDS>,
 ) {
+  const cardsByAccount =
+    accountCards ??
+    cards.reduce<Record<string, typeof CARDS>>((acc, card) => {
+      (acc[card.accountId] ??= []).push(card);
+      return acc;
+    }, {});
+
   await installApiMocks(page, {
     user,
     // Real timers: we assert on toasts, which sonner mounts and dismisses on
@@ -73,6 +85,10 @@ async function gotoCards(
         route.fulfill(json({ data: cards, total: cards.length, offset: 0, limit: 50 })),
       "**/api/accounts?*": (route) =>
         route.fulfill(json({ data: ACCOUNTS, total: ACCOUNTS.length, offset: 0, limit: 500 })),
+      "**/api/accounts/*/cards": (route) => {
+        const accountId = new URL(route.request().url()).pathname.split("/").at(-2) ?? "";
+        return route.fulfill(json(cardsByAccount[accountId] ?? []));
+      },
       "**/api/cards/merge": mergeHandler,
     },
   });
@@ -274,6 +290,82 @@ test.describe("card merge — a merge that changes nothing", () => {
       page.getByText("Every selected card already belonged to that account."),
     ).toBeVisible();
     await expect(page.getByText("Cards merged")).toBeHidden();
+  });
+});
+
+// RECEIPTS-888. A merge that would leave cards behind on an account it is about to
+// delete is refused by the server, correctly — but the rejection used to arrive only
+// after submitting, named no cards, and the siblings might sit on another page of
+// /cards where the user could not have selected them even knowing to.
+test.describe("card merge — a source account only partly selected", () => {
+  // acc-source really holds three cards. The /cards list shows two of them, so the
+  // third is invisible to the user — exactly the paginated case from the issue.
+  const HIDDEN_SIBLING = {
+    id: "card-3",
+    cardCode: "3333",
+    name: "Spare Visa",
+    isActive: true,
+    accountId: "acc-source",
+  };
+
+  async function gotoWithHiddenSibling(page: Page, mergeHandler: (route: Route) => unknown) {
+    await gotoCards(page, mergeHandler, ADMIN_FIXTURE_USER, CARDS, {
+      "acc-target": [CARDS[0]],
+      "acc-source": [CARDS[1], HIDDEN_SIBLING],
+    });
+  }
+
+  test("names the cards left behind and refuses to submit", async ({ page }) => {
+    let mergeRequests = 0;
+    await gotoWithHiddenSibling(page, (route) => {
+      mergeRequests++;
+      return route.fulfill(json(MERGED));
+    });
+
+    await page.getByLabel("Select Reissued Visa").check();
+    await page.getByLabel("Merge selected cards into an account").click();
+
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Target account").click();
+    await page.getByRole("option", { name: "Target Account" }).click();
+
+    await expect(dialog.getByText(/would be left with cards behind/i)).toBeVisible();
+    // The card the user cannot see on the list is named for them.
+    await expect(dialog.getByText(/3333 Spare Visa/)).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Merge", exact: true })).toBeDisabled();
+
+    // The gate is real: nothing was sent to be rejected with a 400.
+    expect(mergeRequests).toBe(0);
+  });
+
+  test("including the remaining cards completes the selection and unblocks the merge", async ({ page }) => {
+    const mergeBodies: unknown[] = [];
+    await gotoWithHiddenSibling(page, (route) => {
+      mergeBodies.push(route.request().postDataJSON());
+      return route.fulfill(json({ accountsRemoved: 1, cardsMoved: 2, transactionsRepointed: 5 }));
+    });
+
+    await page.getByLabel("Select Reissued Visa").check();
+    await page.getByLabel("Merge selected cards into an account").click();
+
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Target account").click();
+    await page.getByRole("option", { name: "Target Account" }).click();
+
+    await dialog.getByRole("button", { name: /include the other 1 card/i }).click();
+
+    await expect(dialog.getByText(/would be left with cards behind/i)).toBeHidden();
+    const submit = dialog.getByRole("button", { name: "Merge", exact: true });
+    await expect(submit).toBeEnabled();
+    await submit.click();
+
+    await expect(page.getByText("Cards merged")).toBeVisible();
+    // The hidden sibling went along, which is the whole point.
+    expect(mergeBodies).toHaveLength(1);
+    expect(mergeBodies[0]).toMatchObject({
+      targetAccountId: "acc-target",
+      sourceCardIds: ["card-2", "card-3"],
+    });
   });
 });
 

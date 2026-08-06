@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import client from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
@@ -27,7 +27,7 @@ import {
   type MergeCardsConflict,
   type YnabMappingConflict,
 } from "@/hooks/useCards";
-import { useAccounts, useCreateAccount } from "@/hooks/useAccounts";
+import { useAccounts, useAccountsCards, useCreateAccount } from "@/hooks/useAccounts";
 
 export interface SelectedCardSummary {
   id: string;
@@ -42,6 +42,12 @@ interface MergeCardsDialogProps {
   onOpenChange: (open: boolean) => void;
   selectedCards: SelectedCardSummary[];
   onMergeComplete?: () => void;
+  /**
+   * Adds cards to the caller's selection. Used by the "include the other N" action
+   * when a source account is only partly selected — the selection lives on the
+   * /cards page, so completing it has to go back through the caller.
+   */
+  onIncludeCards?: (cardIds: string[]) => void;
 }
 
 type TargetMode = "existing" | "new";
@@ -51,12 +57,18 @@ export function MergeCardsDialog({
   onOpenChange,
   selectedCards,
   onMergeComplete,
+  onIncludeCards,
 }: MergeCardsDialogProps) {
   const [targetMode, setTargetMode] = useState<TargetMode>("existing");
   const [targetAccountId, setTargetAccountId] = useState<string>("");
   const [newAccountName, setNewAccountName] = useState<string>("");
   const [conflict, setConflict] = useState<MergeCardsConflict | null>(null);
   const [winnerAccountId, setWinnerAccountId] = useState<string | null>(null);
+  // Cards pulled in by "include the other N" that the /cards page cannot supply,
+  // because they sit on a page it is not showing. The caller is told about them
+  // too, but it can only reflect the ones it happens to hold — so the dialog owns
+  // the authoritative set it will submit (RECEIPTS-888).
+  const [includedCardIds, setIncludedCardIds] = useState<string[]>([]);
   // Tracks an account the dialog created as the merge target. If the user closes
   // the dialog before the merge lands, the account is deleted to avoid leaking
   // empty accounts into the DB.
@@ -105,11 +117,58 @@ export function MergeCardsDialog({
       setNewAccountName("");
       setConflict(null);
       setWinnerAccountId(null);
+      setIncludedCardIds([]);
     }
     onOpenChange(next);
   }
 
   const accounts = accountsData ?? [];
+  // Keyed on accountsData, not the `?? []` above: that fallback builds a fresh array
+  // every render, so memoising on it would rebuild the map each time.
+  const accountNamesById = useMemo(
+    () => new Map((accountsData ?? []).map((a) => [a.id, a.name])),
+    [accountsData],
+  );
+
+  // Every account the selection would empty out. The target is excluded because its
+  // own cards are staying put — only accounts the merge will delete matter here.
+  // Derived from the caller's selection alone: a card pulled in by "include the
+  // other N" always belongs to an account that is already in this set, so feeding
+  // the effective selection back in here would be circular for no gain.
+  const sourceAccountIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const card of selectedCards) {
+      if (card.accountId && card.accountId !== targetAccountId) ids.add(card.accountId);
+    }
+    return [...ids].sort();
+  }, [selectedCards, targetAccountId]);
+
+  // The full card set of each of those accounts — not just what happens to be on the
+  // current page of /cards, which is the reason this could not be checked before.
+  const { cardsByAccountId, isLoading: sourceCardsLoading } =
+    useAccountsCards(sourceAccountIds);
+
+  /**
+   * What this dialog will actually submit: the caller's selection plus anything the
+   * user added with "include the other N".
+   *
+   * Those extras cannot come from the caller. It derives its selection from the page
+   * of cards it is displaying, and the whole point of the affordance is to reach cards
+   * that page is not showing — so the dialog resolves them from the account card lists
+   * it already fetched.
+   */
+  const effectiveCards = useMemo(() => {
+    if (includedCardIds.length === 0) return selectedCards;
+
+    const byId = new Map(selectedCards.map((c) => [c.id, c]));
+    const wanted = new Set(includedCardIds);
+    for (const cards of cardsByAccountId.values()) {
+      for (const card of cards) {
+        if (wanted.has(card.id) && !byId.has(card.id)) byId.set(card.id, card);
+      }
+    }
+    return [...byId.values()];
+  }, [selectedCards, includedCardIds, cardsByAccountId]);
 
   // A merge whose cards all already sit on the chosen target changes nothing. The
   // server handles that idempotently and now says so, but telling the user before
@@ -118,18 +177,64 @@ export function MergeCardsDialog({
   const wouldChangeNothing =
     targetMode === "existing" &&
     targetAccountId !== "" &&
-    selectedCards.length > 0 &&
-    selectedCards.every((c) => c.accountId === targetAccountId);
+    effectiveCards.length > 0 &&
+    effectiveCards.every((c) => c.accountId === targetAccountId);
+
+  /**
+   * Source accounts the selection would only partly merge.
+   *
+   * The server refuses these: a merge that left cards behind on an account it is about
+   * to delete would orphan them and reassign their unrelated transactions. That rule is
+   * right, but it used to arrive only after submitting, naming no cards and offering no
+   * way to fix it — and the sibling cards might not even be on screen to select
+   * (RECEIPTS-888).
+   */
+  const incompleteAccounts = useMemo(() => {
+    const chosenIds = new Set(effectiveCards.map((c) => c.id));
+    return sourceAccountIds
+      .map((accountId) => {
+        const all = cardsByAccountId.get(accountId);
+        if (!all) return null;
+        const missing = all.filter((c) => !chosenIds.has(c.id));
+        if (missing.length === 0) return null;
+        return {
+          accountId,
+          accountName: accountNamesById.get(accountId) ?? "this account",
+          missing,
+        };
+      })
+      .filter((a): a is NonNullable<typeof a> => a !== null);
+  }, [sourceAccountIds, cardsByAccountId, effectiveCards, accountNamesById]);
+
+  const hasIncompleteSelection = incompleteAccounts.length > 0;
+  const missingCardIds = useMemo(
+    () => incompleteAccounts.flatMap((a) => a.missing.map((c) => c.id)),
+    [incompleteAccounts],
+  );
+
+  function includeMissingCards() {
+    setIncludedCardIds((prev) => [...new Set([...prev, ...missingCardIds])]);
+    // Tell the page too, so any of these it *is* showing tick their checkbox and the
+    // "Merge (n)" count stays truthful. It cannot hold the ones it is not showing,
+    // which is why the dialog keeps its own copy above.
+    onIncludeCards?.(missingCardIds);
+  }
 
   const isSubmitDisabled =
     // One card is enough (RECEIPTS-887). What actually has to hold is that the merge
     // would move something, and `wouldChangeNothing` below is the check for that.
-    selectedCards.length < 1 ||
+    effectiveCards.length < 1 ||
     (targetMode === "existing" && !targetAccountId) ||
     (targetMode === "new" && newAccountName.trim().length === 0) ||
     mergeCards.isPending ||
     createAccount.isPending ||
     wouldChangeNothing ||
+    // Submitting would earn a 400 the user cannot act on. Hold it until the
+    // selection is whole, or until they include the rest with one click.
+    hasIncompleteSelection ||
+    // Until those card lists land the completeness check has nothing to go on, and
+    // an unchecked submit is exactly the blind 400 this is meant to prevent.
+    sourceCardsLoading ||
     (conflict !== null && !winnerAccountId);
 
   /**
@@ -189,7 +294,7 @@ export function MergeCardsDialog({
     try {
       await mergeCards.mutateAsync({
         targetAccountId: resolvedTargetId,
-        sourceCardIds: selectedCards.map((c) => c.id),
+        sourceCardIds: effectiveCards.map((c) => c.id),
         ynabMappingWinnerAccountId: winnerAccountId,
       });
       // The created account is only legitimately owned if the merge actually
@@ -230,18 +335,63 @@ export function MergeCardsDialog({
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1">
             <div className="text-sm font-medium">
-              Merging {selectedCards.length} card
-              {selectedCards.length === 1 ? "" : "s"}
+              Merging {effectiveCards.length} card
+              {effectiveCards.length === 1 ? "" : "s"}
             </div>
             <ul className="rounded-md border bg-muted/30 p-2 text-sm max-h-32 overflow-y-auto">
-              {selectedCards.map((card) => (
+              {effectiveCards.map((card) => (
                 <li key={card.id} className="py-0.5">
                   <span className="font-mono text-xs">{card.cardCode}</span>{" "}
                   <span>{card.name}</span>
+                  {/* Which account a card belongs to is the whole basis of the
+                      all-or-nothing rule below, and the dialog used not to show it
+                      at all — leaving the rejection unintelligible (RECEIPTS-888). */}
+                  {accountNamesById.has(card.accountId) && (
+                    <span className="text-muted-foreground">
+                      {" — "}
+                      {accountNamesById.get(card.accountId)}
+                    </span>
+                  )}
                 </li>
               ))}
             </ul>
           </div>
+
+          {hasIncompleteSelection && (
+            <Alert>
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                <div className="font-medium mb-2">
+                  {incompleteAccounts.length === 1
+                    ? "One account would be left with cards behind"
+                    : `${incompleteAccounts.length} accounts would be left with cards behind`}
+                </div>
+                <p className="text-sm mb-2">
+                  A source account is emptied and removed by the merge, so every one of
+                  its cards has to come along — otherwise the ones left behind would be
+                  orphaned and their transactions reassigned. These are not selected yet:
+                </p>
+                <ul className="mb-2 space-y-1 text-sm">
+                  {incompleteAccounts.map((account) => (
+                    <li key={account.accountId}>
+                      <span className="font-medium">{account.accountName}</span>
+                      {": "}
+                      {account.missing.map((c) => `${c.cardCode} ${c.name}`).join(", ")}
+                    </li>
+                  ))}
+                </ul>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={includeMissingCards}
+                >
+                  Include the other {missingCardIds.length} card
+                  {missingCardIds.length === 1 ? "" : "s"}
+                </Button>
+              </AlertDescription>
+            </Alert>
+          )}
 
           <fieldset className="space-y-2" disabled={conflict !== null}>
             <legend className="text-sm font-medium">Target account</legend>
@@ -285,7 +435,7 @@ export function MergeCardsDialog({
                 </Select>
                 {wouldChangeNothing && (
                   <p role="status" className="text-sm text-muted-foreground">
-                    {selectedCards.length === 1
+                    {effectiveCards.length === 1
                       ? "This card already belongs to this account"
                       : "Every selected card already belongs to this account"}{" "}
                     — there is nothing to merge. Choose a different target.
