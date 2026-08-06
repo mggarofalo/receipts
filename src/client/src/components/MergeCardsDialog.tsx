@@ -216,19 +216,24 @@ export function MergeCardsDialog({
   /**
    * What the merge would actually do, fetched before the user commits.
    *
-   * Only asked for once the selection is whole and would change something — a preview
-   * of a merge the server would reject describes nothing, and "New account" mode has
-   * no target id to preview against until the account exists.
+   * Only asked for once the selection is whole and would change something — a preview of
+   * a merge the server would reject describes nothing.
+   *
+   * In "New account" mode the target is null, meaning "an account that does not exist
+   * yet". That is what lets the account be created *after* the selection is known to be
+   * valid rather than before (RECEIPTS-902); a hypothetical target holds no cards, which
+   * is exactly what a fresh account would be.
    */
+  const targetIsReady =
+    targetMode === "existing" ? targetAccountId !== "" : newAccountName.trim().length > 0;
   const previewInput =
-    targetMode === "existing" &&
-    targetAccountId !== "" &&
+    targetIsReady &&
     effectiveCards.length > 0 &&
     !hasIncompleteSelection &&
     !wouldChangeNothing &&
     !sourceCardsLoading
       ? {
-          targetAccountId,
+          targetAccountId: targetMode === "existing" ? targetAccountId : null,
           sourceCardIds: effectiveCards.map((c) => c.id),
           ynabMappingWinnerAccountId: winnerAccountId,
         }
@@ -261,11 +266,22 @@ export function MergeCardsDialog({
     // Same reasoning one step later: while the impact is still being computed the
     // user would be confirming something they have not been shown (RECEIPTS-889).
     previewLoading ||
+    // In "New account" mode submit is what *creates* the account, so it must not be
+    // reachable until the preview has confirmed the merge would be accepted. A merge
+    // rejected after creation strands an empty account nobody can find (RECEIPTS-902).
+    (targetMode === "new" && !preview) ||
     (conflict !== null && !winnerAccountId);
 
   /**
    * Resolves the target account id for "New account" mode, creating the account
    * on first submit and reusing it on retries.
+   *
+   * Called only after the preview has accepted the selection (RECEIPTS-902), so the
+   * merge that follows fails for far fewer reasons than it used to — every rejection
+   * the server can predict has already happened, against a hypothetical target, with
+   * nothing created. What remains is the unavoidable gap: the merge needs a real
+   * account id, so the account must exist a moment before the merge runs. The cleanup
+   * machinery below still covers a crash inside that gap.
    *
    * Reuse is only safe while the name still matches what we created. A retry
    * after the user corrects the name must apply that correction, or the merge

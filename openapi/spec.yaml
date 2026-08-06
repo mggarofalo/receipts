@@ -547,7 +547,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/MergeCardsRequest"
+              $ref: "#/components/schemas/MergeCardsPreviewRequest"
       responses:
         "200":
           description: OK
@@ -5878,6 +5878,33 @@ components:
           type: integer
           format: int32
           description: Transactions repointed to the target account, including soft-deleted ones.
+
+    MergeCardsPreviewRequest:
+      type: object
+      required: [sourceCardIds]
+      description: >
+        Like MergeCardsRequest, but `targetAccountId` may be omitted to preview a merge
+        into an account that does not exist yet. The merge dialog's "New account" mode
+        needs that: it must know the selection is valid before creating the account,
+        because a rejected merge would otherwise strand an empty one.
+      properties:
+        targetAccountId:
+          type:
+            - string
+            - "null"
+          format: uuid
+          description: Omit to preview against a new, empty account.
+        sourceCardIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          minItems: 1
+        ynabMappingWinnerAccountId:
+          type:
+            - string
+            - "null"
+          format: uuid
 
     MergeCardsPreviewAccount:
       type: object

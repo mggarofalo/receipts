@@ -10,26 +10,28 @@ namespace Application.Queries.Core.Card;
 /// </summary>
 public record PreviewMergeCardsQuery : IQuery<MergeCardsPreview>
 {
-	public Guid TargetAccountId { get; }
+	/// <summary>
+	/// The account the cards would move to, or null to preview a merge into an account
+	/// that does not exist yet. The merge dialog's "New account" mode needs the latter:
+	/// it has to know the selection is valid <em>before</em> creating the account, or a
+	/// rejected merge strands an empty one nobody can find (RECEIPTS-902).
+	/// </summary>
+	public Guid? TargetAccountId { get; }
 	public IReadOnlyList<Guid> SourceCardIds { get; }
 	public Guid? YnabMappingWinnerAccountId { get; }
 
-	public const string TargetIdCannotBeEmpty = "Target account id cannot be empty.";
 	public const string SourceCardIdsCannotBeEmpty = "Source card ids cannot be empty.";
 
-	public PreviewMergeCardsQuery(Guid targetAccountId, IReadOnlyList<Guid> sourceCardIds, Guid? ynabMappingWinnerAccountId = null)
+	public PreviewMergeCardsQuery(Guid? targetAccountId, IReadOnlyList<Guid> sourceCardIds, Guid? ynabMappingWinnerAccountId = null)
 	{
-		if (targetAccountId == Guid.Empty)
-		{
-			throw new ArgumentException(TargetIdCannotBeEmpty, nameof(targetAccountId));
-		}
-
 		if (sourceCardIds is null || sourceCardIds.Count == 0)
 		{
 			throw new ArgumentException(SourceCardIdsCannotBeEmpty, nameof(sourceCardIds));
 		}
 
-		TargetAccountId = targetAccountId;
+		// Guid.Empty is how an omitted uuid arrives from the wire; treat it as "no target"
+		// rather than as a real id that will never be found.
+		TargetAccountId = targetAccountId == Guid.Empty ? null : targetAccountId;
 		SourceCardIds = sourceCardIds;
 		YnabMappingWinnerAccountId = ynabMappingWinnerAccountId;
 	}

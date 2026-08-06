@@ -303,7 +303,7 @@ public class CardsController(IMediator mediator, CardMapper mapper, ILogger<Card
 	[EndpointSummary("Preview what a card merge would do")]
 	[EndpointDescription("Runs the merge's validation and reports its impact without writing anything. Requires the Admin role. Rejects exactly what the merge itself would reject.")]
 	public async Task<Results<Ok<MergeCardsPreviewResponse>, BadRequest<ProblemDetails>, NotFound>> PreviewMergeCards(
-		[FromBody] MergeCardsRequest model,
+		[FromBody] MergeCardsPreviewRequest model,
 		CancellationToken cancellationToken = default)
 	{
 		if (model.SourceCardIds is null || model.SourceCardIds.Count == 0)

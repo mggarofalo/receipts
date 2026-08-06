@@ -443,9 +443,33 @@ describe("useMergeCardsPreview", () => {
     });
   });
 
-  it("does not fire without a target, when the impact would be meaningless", async () => {
+  // RECEIPTS-902. "New account" mode has to know a selection is valid before creating
+  // the account, so the preview has to accept a target that does not exist yet.
+  it("previews against a target that does not exist yet", async () => {
+    (client.POST as Mock).mockResolvedValue({
+      data: PREVIEW,
+      error: undefined,
+      response: { status: 200, ok: true },
+    });
+
+    const { result } = renderHook(
+      () => useMergeCardsPreview({ targetAccountId: null, sourceCardIds: ["c1"] }),
+      { wrapper: createWrapper() },
+    );
+
+    await waitFor(() => expect(result.current.data).toEqual(PREVIEW));
+    expect(client.POST).toHaveBeenCalledWith("/api/cards/merge/preview", {
+      body: {
+        targetAccountId: null,
+        sourceCardIds: ["c1"],
+        ynabMappingWinnerAccountId: null,
+      },
+    });
+  });
+
+  it("does not fire with an empty selection, when there is nothing to describe", async () => {
     renderHook(
-      () => useMergeCardsPreview({ targetAccountId: "", sourceCardIds: ["c1"] }),
+      () => useMergeCardsPreview({ targetAccountId: "t", sourceCardIds: [] }),
       { wrapper: createWrapper() },
     );
 

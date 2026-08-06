@@ -597,7 +597,7 @@ public class CardsControllerTests
 	public async Task PreviewMergeCards_ReturnsTheImpactWithoutNotifyingAnyone()
 	{
 		// RECEIPTS-889: a preview writes nothing, so broadcasting a change would be a lie.
-		MergeCardsRequest request = new()
+		MergeCardsPreviewRequest request = new()
 		{
 			TargetAccountId = Guid.NewGuid(),
 			SourceCardIds = [Guid.NewGuid(), Guid.NewGuid()],
@@ -633,7 +633,7 @@ public class CardsControllerTests
 	{
 		// The preview must not answer where the merge would throw; promising an impact
 		// that cannot be delivered is worse than showing none.
-		MergeCardsRequest request = new()
+		MergeCardsPreviewRequest request = new()
 		{
 			TargetAccountId = Guid.NewGuid(),
 			SourceCardIds = [Guid.NewGuid()],
@@ -655,7 +655,7 @@ public class CardsControllerTests
 	[Fact]
 	public async Task PreviewMergeCards_WithNoCards_ReturnsBadRequest()
 	{
-		MergeCardsRequest request = new()
+		MergeCardsPreviewRequest request = new()
 		{
 			TargetAccountId = Guid.NewGuid(),
 			SourceCardIds = [],

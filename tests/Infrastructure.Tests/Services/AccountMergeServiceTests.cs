@@ -788,6 +788,94 @@ public class AccountMergeServiceTests : IDisposable
 			.WithMessage(AccountMergeService.PartialSourceAccountMerge + "*");
 	}
 
+	// RECEIPTS-902. The merge dialog's "New account" mode used to create the target account
+	// before submitting, so a merge rejected afterwards left an account owning nothing and
+	// no way to find it. Previewing against a target that does not exist yet is what lets
+	// the account be created only once the selection is known to be good.
+	[Fact]
+	public async Task PreviewMergeCardsAsync_WithNoTargetYet_TreatsEveryCardsAccountAsASource()
+	{
+		AccountEntity source1 = AccountEntityGenerator.Generate();
+		AccountEntity source2 = AccountEntityGenerator.Generate();
+		CardEntity card1 = CardEntityGenerator.Generate();
+		CardEntity card2 = CardEntityGenerator.Generate();
+		card1.AccountId = source1.Id;
+		card2.AccountId = source2.Id;
+		TransactionEntity tx = TransactionEntityGenerator.Generate(accountId: source1.Id);
+
+		using (ApplicationDbContext seed = CreateContext())
+		{
+			seed.Accounts.AddRange(source1, source2);
+			seed.Cards.AddRange(card1, card2);
+			seed.Transactions.Add(tx);
+			await seed.SaveChangesAsync();
+		}
+
+		MergeCardsPreview preview = await _service.PreviewMergeCardsAsync(
+			targetAccountId: null,
+			[card1.Id, card2.Id],
+			null,
+			CancellationToken.None);
+
+		// A target that does not exist holds no cards, so nothing is already "home".
+		preview.CardsToMove.Should().Be(2);
+		preview.TransactionsToRepoint.Should().Be(1);
+		preview.AccountsToRemove.Select(a => a.Id).Should().BeEquivalentTo([source1.Id, source2.Id]);
+		preview.Conflicts.Should().BeNull();
+	}
+
+	[Fact]
+	public async Task PreviewMergeCardsAsync_WithNoTargetYet_StillRejectsAPartialSourceAccount()
+	{
+		// The point of previewing before creating is to catch the rejections. If the
+		// hypothetical-target path skipped them, the account would still be created and
+		// the merge would still fail — exactly the sequence this is meant to prevent.
+		AccountEntity source = AccountEntityGenerator.Generate();
+		CardEntity selected = CardEntityGenerator.Generate();
+		CardEntity leftBehind = CardEntityGenerator.Generate();
+		selected.AccountId = source.Id;
+		leftBehind.AccountId = source.Id;
+
+		using (ApplicationDbContext seed = CreateContext())
+		{
+			seed.Accounts.Add(source);
+			seed.Cards.AddRange(selected, leftBehind);
+			await seed.SaveChangesAsync();
+		}
+
+		Func<Task> act = () => _service.PreviewMergeCardsAsync(
+			targetAccountId: null, [selected.Id], null, CancellationToken.None);
+
+		await act.Should().ThrowAsync<ArgumentException>()
+			.WithMessage(AccountMergeService.PartialSourceAccountMerge + "*");
+	}
+
+	[Fact]
+	public async Task PreviewMergeCardsAsync_WithNoTargetYet_StillReportsAYnabConflict()
+	{
+		AccountEntity source1 = AccountEntityGenerator.Generate();
+		AccountEntity source2 = AccountEntityGenerator.Generate();
+		CardEntity card1 = CardEntityGenerator.Generate();
+		CardEntity card2 = CardEntityGenerator.Generate();
+		card1.AccountId = source1.Id;
+		card2.AccountId = source2.Id;
+
+		using (ApplicationDbContext seed = CreateContext())
+		{
+			seed.Accounts.AddRange(source1, source2);
+			seed.Cards.AddRange(card1, card2);
+			seed.YnabAccountMappings.AddRange(
+				BuildMapping(source1.Id, "ynab-1", "Source1 YNAB"),
+				BuildMapping(source2.Id, "ynab-2", "Source2 YNAB"));
+			await seed.SaveChangesAsync();
+		}
+
+		MergeCardsPreview preview = await _service.PreviewMergeCardsAsync(
+			targetAccountId: null, [card1.Id, card2.Id], null, CancellationToken.None);
+
+		preview.Conflicts.Should().HaveCount(2);
+	}
+
 	private static YnabAccountMappingEntity BuildMapping(Guid accountId, string ynabAccountId, string ynabAccountName) =>
 		new()
 		{

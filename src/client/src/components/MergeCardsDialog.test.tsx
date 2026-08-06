@@ -35,7 +35,25 @@ vi.mock("sonner", () => ({
 // useCards.test.ts; here it is stubbed, and the tests that care set it explicitly.
 vi.mock("@/hooks/useCards", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/hooks/useCards")>();
-  return { ...actual, useMergeCardsPreview: vi.fn(() => ({ data: undefined, isFetching: false })) };
+  return {
+    ...actual,
+    // Mirrors the real hook's `enabled`: no input, no preview. "New account" mode
+    // holds submit until a preview arrives (RECEIPTS-902), so a stub that always
+    // answered `undefined` would wedge every test that creates an account.
+    useMergeCardsPreview: vi.fn((input: unknown) => ({
+      data: input
+        ? {
+            accountsToRemove: [],
+            cardsToMove: 1,
+            transactionsToRepoint: 0,
+            trashedTransactionsToRepoint: 0,
+            survivingYnabMapping: null,
+            conflicts: null,
+          }
+        : undefined,
+      isFetching: false,
+    })),
+  };
 });
 
 import client from "@/lib/api-client";
@@ -79,8 +97,24 @@ const okEmpty = { data: undefined, error: undefined, response: { status: 204, ok
  */
 let cardsByAccount: Record<string, { id: string; name: string; cardCode: string }[]> = {};
 
+/** What the preview reports unless a test says otherwise. */
+const DEFAULT_PREVIEW = {
+  accountsToRemove: [],
+  cardsToMove: 1,
+  transactionsToRepoint: 0,
+  trashedTransactionsToRepoint: 0,
+  survivingYnabMapping: null,
+  conflicts: null,
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
+  // clearAllMocks resets recorded calls but keeps implementations, so a mockReturnValue
+  // set by one test would follow the next one into a state it never asked for.
+  vi.mocked(useMergeCardsPreview).mockImplementation(((input: unknown) => ({
+    data: input ? DEFAULT_PREVIEW : undefined,
+    isFetching: false,
+  })) as unknown as typeof useMergeCardsPreview);
   cardsByAccount = {
     "a-source": [
       { id: "c1", name: "Primary Visa", cardCode: "1234" },
@@ -599,6 +633,76 @@ describe("MergeCardsDialog", () => {
       ).toBeInTheDocument();
       // Confirming an impact the user has not been shown is the thing to avoid.
       expect(screen.getByRole("button", { name: /^merge$/i })).toBeDisabled();
+    });
+  });
+
+  // RECEIPTS-902. "New account" mode creates the target account before submitting the
+  // merge, so a merge rejected afterwards leaves an account owning nothing. RECEIPTS-894
+  // closed every leak the dialog can clean up after; this closes the ones it cannot, by
+  // validating the selection against a target that does not exist yet.
+  describe("new account created only once the merge is known to be valid", () => {
+    async function chooseNewAccount() {
+      const user = userEvent.setup();
+      renderDialog();
+      await user.click(screen.getByLabelText("New account"));
+      await user.type(screen.getByLabelText(/new account name/i), "Fresh Account");
+      return user;
+    }
+
+    it("previews against a target that does not exist yet", async () => {
+      await chooseNewAccount();
+
+      await vi.waitFor(() => {
+        expect(vi.mocked(useMergeCardsPreview)).toHaveBeenCalledWith(
+          expect.objectContaining({ targetAccountId: null, sourceCardIds: ["c1", "c2"] }),
+        );
+      });
+      // Nothing has been created: the whole point is that validation comes first.
+      expect(client.POST).not.toHaveBeenCalled();
+    });
+
+    it("will not submit — and so will not create an account — until the preview lands", async () => {
+      vi.mocked(useMergeCardsPreview).mockReturnValue({
+        data: undefined,
+        isFetching: true,
+      } as ReturnType<typeof useMergeCardsPreview>);
+
+      await chooseNewAccount();
+
+      // Submit is what creates the account here, so it must stay shut until the server
+      // has said the merge would be accepted.
+      expect(screen.getByRole("button", { name: /^merge$/i })).toBeDisabled();
+      expect(client.POST).not.toHaveBeenCalled();
+    });
+
+    it("creates the account and merges once the preview has accepted the selection", async () => {
+      const user = await chooseNewAccount();
+
+      (client.POST as Mock)
+        .mockResolvedValueOnce({
+          data: { id: "new-acc-1", name: "Fresh Account", isActive: true },
+          error: undefined,
+          response: { status: 200, ok: true },
+        })
+        .mockResolvedValueOnce({
+          data: { accountsRemoved: 1, cardsMoved: 2, transactionsRepointed: 3 },
+          error: undefined,
+          response: { status: 200, ok: true },
+        });
+
+      await user.click(screen.getByRole("button", { name: /^merge$/i }));
+
+      await vi.waitFor(() => {
+        const merges = (client.POST as Mock).mock.calls.filter(
+          ([url]) => url === "/api/cards/merge",
+        );
+        expect(merges).toHaveLength(1);
+      });
+      // Creation happened, and it happened after validation rather than before it.
+      const [firstUrl] = (client.POST as Mock).mock.calls[0];
+      expect(firstUrl).toBe("/api/accounts");
+      // Nothing to clean up: the merge landed on the account that was created for it.
+      expect(client.DELETE).not.toHaveBeenCalled();
     });
   });
 });

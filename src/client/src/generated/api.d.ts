@@ -2914,6 +2914,17 @@ export interface components {
              */
             transactionsRepointed: number;
         };
+        /** @description Like MergeCardsRequest, but `targetAccountId` may be omitted to preview a merge into an account that does not exist yet. The merge dialog's "New account" mode needs that: it must know the selection is valid before creating the account, because a rejected merge would otherwise strand an empty one. */
+        MergeCardsPreviewRequest: {
+            /**
+             * Format: uuid
+             * @description Omit to preview against a new, empty account.
+             */
+            targetAccountId?: string | null;
+            sourceCardIds: string[];
+            /** Format: uuid */
+            ynabMappingWinnerAccountId?: string | null;
+        };
         MergeCardsPreviewAccount: {
             /** Format: uuid */
             id: string;
@@ -4798,7 +4809,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["MergeCardsRequest"];
+                "application/json": components["schemas"]["MergeCardsPreviewRequest"];
             };
         };
         responses: {

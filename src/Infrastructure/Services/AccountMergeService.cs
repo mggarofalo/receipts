@@ -166,7 +166,7 @@ public class AccountMergeService(
 	}
 
 	public async Task<MergeCardsPreview> PreviewMergeCardsAsync(
-		Guid targetAccountId,
+		Guid? targetAccountId,
 		IReadOnlyList<Guid> sourceCardIds,
 		Guid? ynabMappingWinnerAccountId,
 		CancellationToken cancellationToken)
@@ -219,7 +219,7 @@ public class AccountMergeService(
 		// Only worth reporting when a mapping actually changes hands. One already sitting on
 		// the target survives by staying put, which is not news.
 		MergeCardsPreviewMapping? survivingMapping = null;
-		if (winnerAccountId.HasValue && winnerAccountId.Value != targetAccountId)
+		if (winnerAccountId.HasValue && (!targetAccountId.HasValue || winnerAccountId.Value != targetAccountId.Value))
 		{
 			YnabAccountMappingEntity winner = mappings.First(m => m.ReceiptsAccountId == winnerAccountId.Value);
 			survivingMapping = new MergeCardsPreviewMapping(
@@ -243,7 +243,7 @@ public class AccountMergeService(
 	/// selections need a decision.
 	/// </summary>
 	private static (bool NeedsWinner, Guid? WinnerAccountId) ResolveMappingWinner(
-		Guid targetAccountId,
+		Guid? targetAccountId,
 		List<YnabAccountMappingEntity> mappings,
 		Guid? ynabMappingWinnerAccountId)
 	{
@@ -269,28 +269,42 @@ public class AccountMergeService(
 
 		if (mappings.Count > 0)
 		{
-			// No conflict; keep the target mapping if it exists, else promote the sole source mapping.
-			return (false, mappings.Any(m => m.ReceiptsAccountId == targetAccountId)
-				? targetAccountId
+			// No conflict; keep the target mapping if it exists, else promote the sole source
+			// mapping. A target that does not exist yet cannot have one, so the source wins.
+			return (false, targetAccountId.HasValue && mappings.Any(m => m.ReceiptsAccountId == targetAccountId.Value)
+				? targetAccountId.Value
 				: mappings[0].ReceiptsAccountId);
 		}
 
 		return (false, null);
 	}
 
+	/// <summary>
+	/// Phase 0: read-only validation and the state both the merge and its preview need.
+	/// </summary>
+	/// <param name="targetAccountId">
+	/// Null means "an account that does not exist yet", which only the preview passes. The
+	/// merge dialog's "New account" mode has to validate a selection *before* creating the
+	/// account, or a rejected merge strands an empty one nobody can find (RECEIPTS-902). A
+	/// hypothetical target holds no cards, so every selected card counts as a source — which
+	/// is what an empty new account would mean anyway.
+	/// </param>
 	private async Task<(List<Guid> SourceAccountIds, List<YnabAccountMappingEntity> Mappings, Dictionary<Guid, string> AccountNamesById, Dictionary<Guid, Guid> OriginalCardAccountIds)> LoadStateAsync(
-		Guid targetAccountId,
+		Guid? targetAccountId,
 		List<Guid> distinctCardIds,
 		CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 
-		bool targetExists = await context.Accounts
-			.AsNoTracking()
-			.AnyAsync(a => a.Id == targetAccountId, cancellationToken);
-		if (!targetExists)
+		if (targetAccountId.HasValue)
 		{
-			throw new KeyNotFoundException(TargetAccountNotFound);
+			bool targetExists = await context.Accounts
+				.AsNoTracking()
+				.AnyAsync(a => a.Id == targetAccountId.Value, cancellationToken);
+			if (!targetExists)
+			{
+				throw new KeyNotFoundException(TargetAccountNotFound);
+			}
 		}
 
 		List<CardEntity> sourceCards = await context.Cards
@@ -307,7 +321,7 @@ public class AccountMergeService(
 			.ToDictionary(c => c.Id, c => c.AccountId);
 
 		List<Guid> sourceAccountIds = [.. originalCardAccountIds.Values
-			.Where(id => id != targetAccountId)
+			.Where(id => !targetAccountId.HasValue || id != targetAccountId.Value)
 			.Distinct()];
 
 		// Ensure each source account is being fully merged. Partial merges (leaving behind
@@ -327,7 +341,9 @@ public class AccountMergeService(
 			}
 		}
 
-		List<Guid> allAccountIds = [.. sourceAccountIds, targetAccountId];
+		List<Guid> allAccountIds = targetAccountId.HasValue
+			? [.. sourceAccountIds, targetAccountId.Value]
+			: [.. sourceAccountIds];
 
 		List<YnabAccountMappingEntity> mappings = await context.YnabAccountMappings
 			.AsNoTracking()
