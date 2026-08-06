@@ -1633,8 +1633,9 @@ paths:
       description: |
         Re-links every ReceiptItem currently pointing at `discardId` to the
         canonical row identified by the path `{id}` ("keep"), then deletes the
-        discarded row. Returns the count of re-linked items — zero when either
-        id was missing or the two ids were identical. Admin-only.
+        discarded row. Returns the count of re-linked items, which is
+        legitimately zero when the discarded row had no live items. Returns 404
+        if either id does not exist. Admin-only.
       security:
         - BearerAuth: []
         - ApiKey: []
@@ -1661,6 +1662,12 @@ paths:
                 $ref: "#/components/schemas/MergeNormalizedDescriptionsResponse"
         "400":
           description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
+          description: Not Found — the kept or the discarded id does not exist
           content:
             application/json:
               schema:

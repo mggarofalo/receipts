@@ -26,7 +26,9 @@ export function useMergeMutation() {
       );
       // Branch on status: the endpoint is admin-gated, and a 403 arrives with
       // no body at all, which openapi-fetch surfaces as `error: undefined`.
-      // Checking `error` alone would report the merge as successful.
+      // Checking `error` alone would report the merge as successful. A 404 —
+      // one of the two ids no longer exists — comes through the same path and
+      // reaches the global handler as the server's problem document.
       if (!response.ok) throw toApiError(response.status, error);
       return data;
     },
@@ -35,9 +37,13 @@ export function useMergeMutation() {
       queryClient.invalidateQueries({ queryKey: ["receipt-items"] });
       const count = data?.itemsRelinkedCount ?? 0;
       if (count > 0) {
-        toast.success(`Merged — ${count} items re-linked`);
+        toast.success(`Merged — ${count} item${count === 1 ? "" : "s"} re-linked`);
       } else {
-        toast.success("Merge completed");
+        // Zero now means one thing: the merge happened and the discarded row had
+        // no live items to move. It used to also mean "one of those ids does not
+        // exist", which the server answers with a 404 since RECEIPTS-891 — so
+        // this message can finally claim the merge took place.
+        toast.success("Merged — no items needed re-linking");
       }
     },
   });

@@ -18,6 +18,7 @@ vi.mock("sonner", () => ({
 }));
 
 import client from "@/lib/api-client";
+import { toast } from "sonner";
 const mockClient = vi.mocked(client);
 
 describe("useMergeMutation", () => {
@@ -47,6 +48,66 @@ describe("useMergeMutation", () => {
         body: { discardId: "drop-1" },
       },
     );
+  });
+
+  it("reports the re-linked count when items moved", async () => {
+    mockClient.POST.mockResolvedValue({
+      data: { itemsRelinkedCount: 4 },
+      error: undefined,
+      response: { status: 200, ok: true } as Response,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    const { result } = renderHook(() => useMergeMutation(), {
+      wrapper: createQueryWrapper(),
+    });
+    result.current.mutate({ id: "keep-1", discardId: "drop-1" });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(toast.success).toHaveBeenCalledWith("Merged — 4 items re-linked");
+  });
+
+  // RECEIPTS-891: zero used to mean three things — identical ids, a missing row, or a
+  // genuine merge with nothing to move — and "Merge completed" was vague enough to
+  // cover all three. The first two are rejections now, so this can name what happened.
+  it("says a zero count merged nothing rather than staying vague", async () => {
+    mockClient.POST.mockResolvedValue({
+      data: { itemsRelinkedCount: 0 },
+      error: undefined,
+      response: { status: 200, ok: true } as Response,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    const { result } = renderHook(() => useMergeMutation(), {
+      wrapper: createQueryWrapper(),
+    });
+    result.current.mutate({ id: "keep-1", discardId: "drop-1" });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(toast.success).toHaveBeenCalledWith("Merged — no items needed re-linking");
+  });
+
+  it("does not report a merge against a stale id as a success", async () => {
+    // The 404 the server now sends. Previously this arrived as 200 { count: 0 }.
+    mockClient.POST.mockResolvedValue({
+      data: undefined,
+      error: {
+        type: "https://tools.ietf.org/html/rfc9110#section-15.5.5",
+        title: "Not Found",
+        status: 404,
+        detail: "Normalized description 0f3c… not found.",
+      },
+      response: { status: 404, ok: false } as Response,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    const { result } = renderHook(() => useMergeMutation(), {
+      wrapper: createQueryWrapper(),
+    });
+    result.current.mutate({ id: "keep-1", discardId: "stale-1" });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(toast.success).not.toHaveBeenCalled();
   });
 
   it("propagates errors", async () => {
