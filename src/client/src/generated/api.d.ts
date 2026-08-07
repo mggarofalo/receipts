@@ -777,6 +777,33 @@ export interface paths {
         patch: operations["UpdateNormalizedDescriptionStatus"];
         trace?: never;
     };
+    "/api/normalized-descriptions/{id}/rename": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Set or clear a normalized description's display label
+         * @description Changes only the display label — never `canonicalName`, and never the embedding.
+         *     Renaming is cosmetic by construction, so it cannot change which receipt text resolves
+         *     to this row. Send `displayLabel: null` to clear the label and fall back to showing the
+         *     matched text. Admin-only.
+         *
+         *     Returns 409 when another row already displays the requested name, compared
+         *     case-insensitively against each row's effective display name (its label if set,
+         *     otherwise its matched text).
+         */
+        patch: operations["RenameNormalizedDescription"];
+        trace?: never;
+    };
     "/api/receipts/{id}": {
         parameters: {
             query?: never;
@@ -3272,15 +3299,33 @@ export interface components {
             unresolvedToPending: number;
         };
         /**
-         * @description Active rows are confidently-classified and re-used as-is by the resolver; pendingReview rows are flagged for admin review before being promoted.
+         * @description `active` rows are confidently-classified and re-used as-is by the resolver.
+         *     `pendingReview` rows are flagged for admin review before being promoted.
+         *     `rejected` rows are tombstones: a reviewer judged the matched text not worth a canonical
+         *     entry, so the row survives only to stop the resolver recreating it. Rejected rows are
+         *     excluded from ANN candidate search, carry no linked receipt items, and never appear as a
+         *     bucket in the spending report — their items report as "(Not Normalized)".
          * @enum {string}
          */
-        NormalizedDescriptionStatus: "active" | "pendingReview";
+        NormalizedDescriptionStatus: "active" | "pendingReview" | "rejected";
         NormalizedDescriptionResponse: {
             /** Format: uuid */
             id: string;
-            /** @description The canonical name shared by every receipt item linked to this row. */
+            /**
+             * @description The observed receipt text this row matches on. Never edited — the embedding is
+             *     anchored to it. Use `displayName` when showing this row to a user.
+             */
             canonicalName: string;
+            /**
+             * @description Human-chosen name for this row, or null when nobody has renamed it. Purely cosmetic:
+             *     it never participates in matching, so it can never misroute a future resolution.
+             */
+            displayLabel?: string | null;
+            /**
+             * @description What to show a user: `displayLabel` when set, otherwise `canonicalName`. Unique
+             *     across rows, case-insensitively.
+             */
+            displayName: string;
             status: components["schemas"]["NormalizedDescriptionStatus"];
             /** Format: date-time */
             createdAt: string;
@@ -3317,6 +3362,18 @@ export interface components {
              * @description Total number of rows returned. Matches the length of `items` since the endpoint is not paginated.
              */
             totalCount: number;
+        };
+        RenameNormalizedDescriptionRequest: {
+            /**
+             * @description New display label. Null — or an omitted property — clears it, so the row falls back
+             *     to showing its matched text. The two are equivalent because this is the only field
+             *     the endpoint has: there is no other change a caller could be asking for, so an
+             *     absent label cannot mean "leave it alone".
+             *
+             *     A whitespace-only string is a 400, not a clear. An empty text box is far more often
+             *     a mistake than an intent, and the two deserve different answers.
+             */
+            displayLabel?: string | null;
         };
         MergeNormalizedDescriptionRequest: {
             /**
@@ -6091,6 +6148,59 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    RenameNormalizedDescription: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenameNormalizedDescriptionRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NormalizedDescriptionResponse"];
+                };
+            };
+            /** @description Bad Request — the label is whitespace-only or longer than 200 characters */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict — another normalized description already displays that name */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
             };
         };
     };

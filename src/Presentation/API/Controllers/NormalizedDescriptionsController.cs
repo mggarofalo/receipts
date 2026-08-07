@@ -1,5 +1,6 @@
 using API.Generated.Dtos;
 using Application.Commands.NormalizedDescription.Merge;
+using Application.Commands.NormalizedDescription.Rename;
 using Application.Commands.NormalizedDescription.RequeuePending;
 using Application.Commands.NormalizedDescription.Split;
 using Application.Commands.NormalizedDescription.UpdateSettings;
@@ -42,6 +43,7 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 	public const string RouteMerge = "{id}/merge";
 	public const string RouteSplit = "{id}/split";
 	public const string RouteUpdateStatus = "{id}/status";
+	public const string RouteRename = "{id}/rename";
 	public const string RouteRequeuePending = "requeue-pending";
 	public const string RouteRequeuePendingPreview = "requeue-pending/preview";
 
@@ -316,6 +318,7 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 		{
 			DtoStatus.Active => DomainStatus.Active,
 			DtoStatus.PendingReview => DomainStatus.PendingReview,
+			DtoStatus.Rejected => DomainStatus.Rejected,
 			_ => throw new InvalidOperationException($"Unhandled status value: {request.Status}"),
 		};
 
@@ -332,6 +335,43 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 		UpdateNormalizedDescriptionStatusCommand command = new(id, domainStatus);
 		await mediator.Send(command, cancellationToken);
 		return TypedResults.NoContent();
+	}
+
+	[HttpPatch(RouteRename)]
+	[EndpointSummary("Set or clear a normalized description's display label")]
+	[EndpointDescription("Changes only the display label — never canonicalName, never the embedding — so a rename cannot change which receipt text resolves to this row. Send a null displayLabel to clear it. Returns 409 when another row already displays that name. Admin-only.")]
+	public async Task<Results<Ok<NormalizedDescriptionResponse>, NotFound<ProblemDetails>, BadRequest<ProblemDetails>, Conflict<ProblemDetails>>> RenameNormalizedDescription(
+		[FromRoute] Guid id,
+		[FromBody] RenameNormalizedDescriptionRequest request,
+		CancellationToken cancellationToken)
+	{
+		if (id == Guid.Empty)
+		{
+			return ApiProblem.BadRequest(IdCannotBeEmpty);
+		}
+
+		RenameNormalizedDescriptionCommand command = new(id, request.DisplayLabel);
+		try
+		{
+			NormalizedDescriptionDetail renamed = await mediator.Send(command, cancellationToken);
+			return TypedResults.Ok(ToResponse(renamed));
+		}
+		catch (KeyNotFoundException ex)
+		{
+			return ApiProblem.NotFound(ex.Message);
+		}
+		catch (ArgumentException ex)
+		{
+			// Whitespace-only or over-long label. Distinct from the null case, which is a
+			// deliberate clear and succeeds.
+			return ApiProblem.BadRequest(ex.Message);
+		}
+		catch (InvalidOperationException ex)
+		{
+			// Another row already displays this name. 409 rather than 400: the request is
+			// well-formed, it just lost a race with the current state of the registry.
+			return ApiProblem.Conflict(ex.Message);
+		}
 	}
 
 	[HttpGet(RouteRequeuePendingPreview)]
@@ -389,10 +429,13 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 		{
 			Id = source.Id,
 			CanonicalName = source.CanonicalName,
+			DisplayLabel = source.DisplayLabel,
+			DisplayName = source.DisplayName,
 			Status = source.Status switch
 			{
 				DomainStatus.Active => DtoStatus.Active,
 				DomainStatus.PendingReview => DtoStatus.PendingReview,
+				DomainStatus.Rejected => DtoStatus.Rejected,
 				_ => throw new InvalidOperationException($"Unhandled status value: {source.Status}"),
 			},
 			CreatedAt = source.CreatedAt,

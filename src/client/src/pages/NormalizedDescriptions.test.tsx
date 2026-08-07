@@ -17,6 +17,7 @@ vi.mock("@/hooks/useNormalizedDescriptionActions", () => ({
   useMergeMutation: vi.fn(() => mockMutationResult()),
   useSplitMutation: vi.fn(() => mockMutationResult()),
   useUpdateStatusMutation: vi.fn(() => mockMutationResult()),
+  useRenameMutation: vi.fn(() => mockMutationResult()),
 }));
 
 vi.mock("@/hooks/useNormalizedDescriptionSettings", () => ({
@@ -50,6 +51,7 @@ vi.mock("@/hooks/usePermission", () => ({
 import { useNormalizedDescriptions } from "@/hooks/useNormalizedDescriptions";
 import {
   useMergeMutation,
+  useRenameMutation,
   useSplitMutation,
   useUpdateStatusMutation,
 } from "@/hooks/useNormalizedDescriptionActions";
@@ -73,6 +75,8 @@ const pendingItems = [
   {
     id: "p-1",
     canonicalName: "Strawberry Preserves",
+    displayLabel: null,
+    displayName: "Strawberry Preserves",
     status: "pendingReview" as const,
     createdAt: "2025-03-01T00:00:00Z",
     linkedItemCount: 4,
@@ -83,6 +87,8 @@ const pendingItems = [
   {
     id: "p-2",
     canonicalName: "Organic Milk",
+    displayLabel: null,
+    displayName: "Organic Milk",
     status: "pendingReview" as const,
     createdAt: "2025-03-02T00:00:00Z",
     linkedItemCount: 0,
@@ -96,6 +102,8 @@ const activeItems = [
   {
     id: "a-1",
     canonicalName: "Apples",
+    displayLabel: null,
+    displayName: "Apples",
     status: "active" as const,
     createdAt: "2025-02-01T00:00:00Z",
     linkedItemCount: 12,
@@ -105,7 +113,10 @@ const activeItems = [
   },
   {
     id: "a-2",
-    canonicalName: "Milk",
+    canonicalName: "MILK 2% GAL",
+    // The renamed case: what a user sees diverges from the text the embedding is anchored to.
+    displayLabel: "Milk",
+    displayName: "Milk",
     status: "active" as const,
     createdAt: "2025-02-02T00:00:00Z",
     linkedItemCount: 9,
@@ -412,6 +423,129 @@ describe("NormalizedDescriptions registry tab", () => {
       expect(screen.getByText("Apples")).toBeInTheDocument();
       expect(screen.queryByText("Milk")).not.toBeInTheDocument();
     });
+  });
+});
+
+// RECEIPTS-876: the two dispositions the queue previously could not express — "call this
+// something else" and "this text is garbage, stop asking me".
+describe("NormalizedDescriptions rename and reject", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    wireDefaults();
+  });
+
+  it("shows the display label and the matched text it diverges from", async () => {
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    await user.click(screen.getByRole("tab", { name: "Registry" }));
+
+    const row = (await screen.findByText("Milk")).closest("tr")!;
+    // Both, because a reviewer renaming "MILK 2% GAL" to "Milk" still needs to know which
+    // receipt text the entry actually covers.
+    expect(within(row).getByText(/matches/i)).toHaveTextContent("MILK 2% GAL");
+  });
+
+  it("renames a row to a new label", async () => {
+    const user = userEvent.setup();
+    const mutate = vi.fn();
+    vi.mocked(useRenameMutation).mockReturnValue(mockMutationResult({ mutate }));
+
+    renderWithQueryClient(<NormalizedDescriptions />);
+    await user.click(
+      await screen.findByRole("button", { name: /rename strawberry preserves/i }),
+    );
+
+    const input = screen.getByLabelText(/display name for strawberry preserves/i);
+    await user.clear(input);
+    await user.type(input, "Jam");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(mutate).toHaveBeenCalledWith(
+      { id: "p-1", displayLabel: "Jam" },
+      expect.any(Object),
+    );
+  });
+
+  it("treats renaming a row back to its matched text as clearing the label", async () => {
+    const user = userEvent.setup();
+    const mutate = vi.fn();
+    vi.mocked(useRenameMutation).mockReturnValue(mockMutationResult({ mutate }));
+
+    renderWithQueryClient(<NormalizedDescriptions />);
+    await user.click(screen.getByRole("tab", { name: "Registry" }));
+    await user.click(await screen.findByRole("button", { name: /rename milk/i }));
+
+    const input = screen.getByLabelText(/display name for milk/i);
+    await user.clear(input);
+    await user.type(input, "MILK 2% GAL");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    // null, not the string — storing a label identical to the matched text would leave the row
+    // permanently "renamed" to what it already displayed.
+    expect(mutate).toHaveBeenCalledWith(
+      { id: "a-2", displayLabel: null },
+      expect.any(Object),
+    );
+  });
+
+  it("will not submit an empty name", async () => {
+    const user = userEvent.setup();
+    const mutate = vi.fn();
+    vi.mocked(useRenameMutation).mockReturnValue(mockMutationResult({ mutate }));
+
+    renderWithQueryClient(<NormalizedDescriptions />);
+    await user.click(
+      await screen.findByRole("button", { name: /rename strawberry preserves/i }),
+    );
+    await user.clear(screen.getByLabelText(/display name for strawberry preserves/i));
+
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it("confirms a rejection and names its two consequences", async () => {
+    const user = userEvent.setup();
+    const mutate = vi.fn();
+    vi.mocked(useUpdateStatusMutation).mockReturnValue(
+      mockMutationResult({ mutate }),
+    );
+
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    await user.click(within(row).getByRole("button", { name: "Reject" }));
+
+    const dialog = await screen.findByRole("dialog");
+    // p-1 has 4 linked items. Both consequences are non-obvious, so both are spelled out.
+    expect(dialog).toHaveTextContent(/4 receipt items will become unnormalized/i);
+    expect(dialog).toHaveTextContent(/will not create it again/i);
+
+    await user.click(within(dialog).getByRole("button", { name: "Reject" }));
+    expect(mutate).toHaveBeenCalledWith(
+      { id: "p-1", status: "rejected" },
+      expect.any(Object),
+    );
+  });
+
+  it("does not claim items will move when the entry has none", async () => {
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+
+    // p-2 has linkedItemCount 0.
+    const row = (await screen.findByText("Organic Milk")).closest("tr")!;
+    await user.click(within(row).getByRole("button", { name: "Reject" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent(/no receipt items are linked/i);
+  });
+
+  it("keeps Reject distinct from Merge in the row actions", async () => {
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+
+    // Merge means "this is the same as X" and re-points items; Reject means "this is not worth
+    // an entry" and unlinks them. Collapsing them was the original complaint.
+    expect(within(row).getByRole("button", { name: "Merge" })).toBeInTheDocument();
+    expect(within(row).getByRole("button", { name: "Reject" })).toBeInTheDocument();
   });
 });
 

@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useNormalizedDescriptions } from "@/hooks/useNormalizedDescriptions";
 import {
   useMergeMutation,
+  useRenameMutation,
   useSplitMutation,
   useUpdateStatusMutation,
 } from "@/hooks/useNormalizedDescriptionActions";
@@ -127,6 +128,9 @@ function ReviewQueueTab() {
   const [splitTarget, setSplitTarget] = useState<NormalizedDescription | null>(
     null,
   );
+  const [rejectTarget, setRejectTarget] = useState<NormalizedDescription | null>(
+    null,
+  );
 
   const pending = useMemo(() => {
     const items = pendingData?.items ?? [];
@@ -189,7 +193,7 @@ function ReviewQueueTab() {
           {pending.map((row) => (
             <TableRow key={row.id}>
               <TableCell className="font-medium">
-                {row.canonicalName}
+                <EditableName row={row} />
                 <SampleRawDescriptions samples={row.sampleRawDescriptions} />
               </TableCell>
               <TableCell>
@@ -231,6 +235,17 @@ function ReviewQueueTab() {
                 >
                   Split
                 </Button>
+                {/* Reject sits apart from Merge deliberately. Merge says "this is the same as
+                    X" and re-points the items; Reject says "this text is not worth a canonical
+                    entry at all" and unlinks them. Before this existed the only way to dispose
+                    of a bad entry was to merge it into an unrelated row (RECEIPTS-876). */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setRejectTarget(row)}
+                >
+                  Reject
+                </Button>
               </TableCell>
             </TableRow>
           ))}
@@ -246,7 +261,164 @@ function ReviewQueueTab() {
         source={splitTarget}
         onClose={() => setSplitTarget(null)}
       />
+      <RejectDialog
+        source={rejectTarget}
+        onClose={() => setRejectTarget(null)}
+      />
     </div>
+  );
+}
+
+interface EditableNameProps {
+  row: NormalizedDescription;
+}
+
+/**
+ * The row's display name, editable in place (RECEIPTS-876).
+ *
+ * Editing writes `displayLabel` only. The matched text underneath is what the embedding is
+ * anchored to, so it is shown read-only whenever a label diverges from it — a reviewer renaming
+ * "MILK 2% GAL" to "Milk" still needs to see which receipt text the entry actually covers.
+ */
+function EditableName({ row }: EditableNameProps) {
+  const rename = useRenameMutation();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  function startEditing() {
+    setDraft(row.displayLabel ?? row.canonicalName);
+    setEditing(true);
+  }
+
+  function commit() {
+    const trimmed = draft.trim();
+    if (!trimmed) return;
+    // Renaming a row back to its matched text is a clear, not a label that happens to match.
+    const next = trimmed === row.canonicalName ? null : trimmed;
+    if (next === (row.displayLabel ?? null)) {
+      setEditing(false);
+      return;
+    }
+
+    rename.mutate(
+      { id: row.id, displayLabel: next },
+      { onSuccess: () => setEditing(false) },
+    );
+  }
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-2">
+        <Input
+          value={draft}
+          // Focus follows the user's own click on "Rename", so it is focus management rather
+          // than the page-load focus stealing that jsx-a11y/no-autofocus guards against. A
+          // callback ref does the same job without tripping the rule.
+          ref={(el) => el?.focus()}
+          aria-label={`Display name for ${row.displayName}`}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commit();
+            if (e.key === "Escape") setEditing(false);
+          }}
+          className="h-8 max-w-[16rem]"
+        />
+        <Button
+          size="sm"
+          onClick={commit}
+          disabled={!draft.trim() || rename.isPending}
+        >
+          {rename.isPending ? "Saving…" : "Save"}
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setEditing(false)}
+          disabled={rename.isPending}
+        >
+          Cancel
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-baseline gap-2">
+      <span>{row.displayName}</span>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-6 px-2 text-xs font-normal text-muted-foreground"
+        onClick={startEditing}
+        aria-label={`Rename ${row.displayName}`}
+      >
+        Rename
+      </Button>
+      {row.displayLabel && (
+        <span className="text-xs font-normal text-muted-foreground">
+          matches “{row.canonicalName}”
+        </span>
+      )}
+    </div>
+  );
+}
+
+interface RejectDialogProps {
+  source: NormalizedDescription | null;
+  onClose: () => void;
+}
+
+/**
+ * Confirmation for the one action that both destroys links and is remembered (RECEIPTS-876).
+ *
+ * Spelled out rather than fired inline like Approve, because two consequences are non-obvious:
+ * the linked items become unnormalized, and the resolver will not offer this text again.
+ */
+function RejectDialog({ source, onClose }: RejectDialogProps) {
+  const updateStatus = useUpdateStatusMutation();
+  const count = source?.linkedItemCount ?? 0;
+
+  function handleConfirm() {
+    if (!source) return;
+    updateStatus.mutate(
+      { id: source.id, status: "rejected" },
+      { onSuccess: () => onClose() },
+    );
+  }
+
+  return (
+    <Dialog
+      open={source !== null}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Reject “{source?.displayName}”?</DialogTitle>
+          <DialogDescription>
+            {count === 0
+              ? "No receipt items are linked to this entry."
+              : `${count} receipt ${count === 1 ? "item" : "items"} will become unnormalized and report under "(Not Normalized)".`}{" "}
+            The entry is kept as a record of your decision, so the resolver will not create it
+            again the next time this text appears on a receipt. Use Merge instead if this is
+            really the same item as an existing entry.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={handleConfirm}
+            disabled={updateStatus.isPending}
+          >
+            {updateStatus.isPending ? "Rejecting…" : "Reject"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -322,7 +494,13 @@ function MergeDialog({ source, candidates, onClose }: MergeDialogProps) {
     const list = candidates.filter((c) => c.id !== source?.id);
     if (!q) return list.slice(0, 50);
     return list
-      .filter((c) => c.canonicalName.toLowerCase().includes(q))
+      .filter(
+        (c) =>
+          // Both, so a search finds an entry by what it is called now or by the receipt text
+          // it still matches on.
+          c.displayName.toLowerCase().includes(q) ||
+          c.canonicalName.toLowerCase().includes(q),
+      )
       .slice(0, 50);
   }, [candidates, search, source?.id]);
 
@@ -352,7 +530,7 @@ function MergeDialog({ source, candidates, onClose }: MergeDialogProps) {
           <DialogTitle>Merge Into Active Entry</DialogTitle>
           <DialogDescription>
             Pick the canonical row to keep. All receipt items currently linked
-            to &quot;{source?.canonicalName}&quot; will be re-pointed at the
+            to &quot;{source?.displayName}&quot; will be re-pointed at the
             chosen row, and this pending-review entry will be deleted.
           </DialogDescription>
         </DialogHeader>
@@ -384,7 +562,7 @@ function MergeDialog({ source, candidates, onClose }: MergeDialogProps) {
                         checked={targetId === c.id}
                         onChange={() => setTargetId(c.id)}
                       />
-                      <span className="font-medium">{c.canonicalName}</span>
+                      <span className="font-medium">{c.displayName}</span>
                     </label>
                   </li>
                 ))}
@@ -453,7 +631,7 @@ function SplitDialog({ source, onClose }: SplitDialogProps) {
           <DialogTitle>Split Out a Receipt Item</DialogTitle>
           <DialogDescription>
             Pick a receipt item currently linked to &quot;
-            {source?.canonicalName}&quot;. It will be detached into a brand-new
+            {source?.displayName}&quot;. It will be detached into a brand-new
             normalized description that keeps the item&apos;s raw description.
           </DialogDescription>
         </DialogHeader>
@@ -508,7 +686,11 @@ function RegistryTab() {
     const items = data?.items ?? [];
     const q = search.trim().toLowerCase();
     if (!q) return items;
-    return items.filter((i) => i.canonicalName.toLowerCase().includes(q));
+    return items.filter(
+      (i) =>
+        i.displayName.toLowerCase().includes(q) ||
+        i.canonicalName.toLowerCase().includes(q),
+    );
   }, [data?.items, search]);
 
   if (isLoading) {
@@ -566,7 +748,7 @@ function RegistryTab() {
             {filtered.map((row) => (
               <TableRow key={row.id}>
                 <TableCell className="font-medium">
-                  {row.canonicalName}
+                  <EditableName row={row} />
                 </TableCell>
                 <TableCell>
                   <span className="text-sm text-muted-foreground">

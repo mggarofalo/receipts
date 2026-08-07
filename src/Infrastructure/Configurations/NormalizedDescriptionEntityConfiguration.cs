@@ -25,6 +25,9 @@ public class NormalizedDescriptionEntityConfiguration : IEntityTypeConfiguration
 				v => Enum.Parse<NormalizedDescriptionStatus>(v, ignoreCase: true))
 			.HasMaxLength(32);
 
+		builder.Property(e => e.DisplayLabel)
+			.HasMaxLength(NormalizedDescription.DisplayLabelMaxLength);
+
 		builder.Property(e => e.Embedding)
 			.HasColumnType($"vector({OnnxEmbeddingService.EmbeddingDimension})");
 
@@ -40,8 +43,15 @@ public class NormalizedDescriptionEntityConfiguration : IEntityTypeConfiguration
 			.HasForeignKey(e => e.NearestNeighbourId)
 			.OnDelete(DeleteBehavior.SetNull);
 
-		// The unique functional index on lower(CanonicalName) and the partial HNSW index on
-		// Embedding are added via raw SQL in the migration — EF cannot natively express
-		// functional indexes or pgvector operator classes.
+		// Three indexes are added via raw SQL in the migration — EF cannot natively express
+		// functional indexes or pgvector operator classes:
+		//   - unique on lower("CanonicalName")                       — one row per matched text
+		//   - unique on lower(COALESCE("DisplayLabel","CanonicalName")) — one row per displayed name
+		//   - partial HNSW on "Embedding"                            — the ANN search
+		//
+		// The second is what stops a rename colliding with an existing name (RECEIPTS-876). It has
+		// to be over the COALESCE rather than over DisplayLabel alone: renaming row B to match
+		// row A's un-renamed CanonicalName would otherwise pass, and the two would then be
+		// indistinguishable everywhere a user looks.
 	}
 }

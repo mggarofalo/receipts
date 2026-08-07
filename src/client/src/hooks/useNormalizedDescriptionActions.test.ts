@@ -3,6 +3,7 @@ import { QueryClient } from "@tanstack/react-query";
 import { createQueryWrapper } from "@/test/test-utils";
 import {
   useMergeMutation,
+  useRenameMutation,
   useSplitMutation,
   useUpdateStatusMutation,
 } from "./useNormalizedDescriptionActions";
@@ -171,6 +172,89 @@ describe("useSplitMutation", () => {
       wrapper: createQueryWrapper(),
     });
     result.current.mutate({ id: "a", receiptItemId: "b" });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+  });
+});
+
+describe("useRenameMutation", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("patches the label and says what changed", async () => {
+    mockClient.PATCH.mockResolvedValue({
+      data: { id: "n-1", displayLabel: "Milk", displayName: "Milk" },
+      error: undefined,
+      response: { status: 200, ok: true } as Response,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    const { result } = renderHook(() => useRenameMutation(), {
+      wrapper: createQueryWrapper(),
+    });
+    result.current.mutate({ id: "n-1", displayLabel: "Milk" });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(mockClient.PATCH).toHaveBeenCalledWith(
+      "/api/normalized-descriptions/{id}/rename",
+      { params: { path: { id: "n-1" } }, body: { displayLabel: "Milk" } },
+    );
+    expect(toast.success).toHaveBeenCalledWith('Renamed to "Milk"');
+  });
+
+  it("reports a cleared label differently from a set one", async () => {
+    mockClient.PATCH.mockResolvedValue({
+      data: { id: "n-1", displayLabel: null, displayName: "MILK 2% GAL" },
+      error: undefined,
+      response: { status: 200, ok: true } as Response,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    const { result } = renderHook(() => useRenameMutation(), {
+      wrapper: createQueryWrapper(),
+    });
+    result.current.mutate({ id: "n-1", displayLabel: null });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(toast.success).toHaveBeenCalledWith(
+      "Name cleared — showing the matched text again",
+    );
+  });
+
+  // The report groups by display name, so a rename relabels a bucket. Without this the report
+  // serves its cache and the rename looks like it did nothing (RECEIPTS-876).
+  it("invalidates the reports cache", async () => {
+    const invalidateSpy = vi.spyOn(QueryClient.prototype, "invalidateQueries");
+    mockClient.PATCH.mockResolvedValue({
+      data: { id: "n-1", displayLabel: "Milk", displayName: "Milk" },
+      error: undefined,
+      response: { status: 200, ok: true } as Response,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    const { result } = renderHook(() => useRenameMutation(), {
+      wrapper: createQueryWrapper(),
+    });
+    result.current.mutate({ id: "n-1", displayLabel: "Milk" });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["reports"] });
+    invalidateSpy.mockRestore();
+  });
+
+  it("propagates a 409 name collision", async () => {
+    mockClient.PATCH.mockResolvedValue({
+      data: undefined,
+      error: { detail: "Another normalized description already displays that name." },
+      response: { status: 409, ok: false } as Response,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    const { result } = renderHook(() => useRenameMutation(), {
+      wrapper: createQueryWrapper(),
+    });
+    result.current.mutate({ id: "n-1", displayLabel: "Milk" });
+
     await waitFor(() => expect(result.current.isError).toBe(true));
   });
 });
