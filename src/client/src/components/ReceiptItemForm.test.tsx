@@ -1,5 +1,5 @@
 import "@/test/setup-combobox-polyfills";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ReceiptItemForm } from "./ReceiptItemForm";
 
@@ -253,6 +253,180 @@ describe("ReceiptItemForm", () => {
     await waitFor(() => {
       expect(screen.getByText("Item Templates")).toBeInTheDocument();
     });
+  });
+
+  // ── RECEIPTS-881: template provenance reaches the server ──────
+
+  /** Applies the "Milk" template through the description autocomplete. */
+  async function pickMilkTemplate(user: ReturnType<typeof userEvent.setup>) {
+    const descriptionInput = screen.getByLabelText(/^Description/);
+    await user.type(descriptionInput, "Milk");
+    await waitFor(() => {
+      expect(screen.getByText("Item Templates")).toBeInTheDocument();
+    });
+    const group = screen.getByText("Item Templates").closest("[cmdk-group]")!;
+    await user.click(within(group as HTMLElement).getByText("Milk"));
+  }
+
+  it("submits the template id when a line is entered from a template", async () => {
+    const user = userEvent.setup();
+    render(
+      <ReceiptItemForm
+        {...defaultProps}
+        defaultValues={{
+          receiptId: "r-1",
+          receiptItemCode: "ITM-001",
+          quantity: 1,
+          unitPrice: 3.99,
+          category: "Groceries",
+          subcategory: "Dairy",
+        }}
+      />,
+    );
+
+    await pickMilkTemplate(user);
+    await user.click(screen.getByRole("button", { name: /create item/i }));
+
+    // The server uses this to stamp the item's canonical description and skip the resolver.
+    // Without it, an item the user explicitly classified still goes through embedding search
+    // and can land in the review queue.
+    await waitFor(() => {
+      expect(defaultProps.onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({ itemTemplateId: "tmpl-1" }),
+      );
+    });
+  });
+
+  it("drops the template id once the description is edited away from it", async () => {
+    const user = userEvent.setup();
+    render(
+      <ReceiptItemForm
+        {...defaultProps}
+        defaultValues={{
+          receiptId: "r-1",
+          receiptItemCode: "ITM-001",
+          quantity: 1,
+          unitPrice: 3.99,
+          category: "Groceries",
+          subcategory: "Dairy",
+        }}
+      />,
+    );
+
+    await pickMilkTemplate(user);
+
+    const descriptionInput = screen.getByLabelText(/^Description/);
+    await user.clear(descriptionInput);
+    await user.type(descriptionInput, "Orange Juice");
+
+    await user.click(screen.getByRole("button", { name: /create item/i }));
+
+    // Keeping it would stamp orange juice with the milk canonical entry and file it under milk
+    // in every report, with nothing on screen to reveal it.
+    await waitFor(() => {
+      expect(defaultProps.onSubmit).toHaveBeenCalled();
+    });
+    const submitted = vi.mocked(defaultProps.onSubmit).mock.calls.at(-1)![0];
+    expect(submitted.itemTemplateId).toBeUndefined();
+    expect(submitted.description).toBe("Orange Juice");
+  });
+
+  it("keeps the template id when only trailing whitespace is added", async () => {
+    const user = userEvent.setup();
+    render(
+      <ReceiptItemForm
+        {...defaultProps}
+        defaultValues={{
+          receiptId: "r-1",
+          receiptItemCode: "ITM-001",
+          quantity: 1,
+          unitPrice: 3.99,
+          category: "Groceries",
+          subcategory: "Dairy",
+        }}
+      />,
+    );
+
+    await pickMilkTemplate(user);
+
+    // An in-place edit that changes no meaning. Clearing the field is a different thing and
+    // does drop the link — see the test below.
+    const descriptionInput = screen.getByLabelText(/^Description/);
+    await user.type(descriptionInput, " ");
+
+    await user.click(screen.getByRole("button", { name: /create item/i }));
+
+    // Incidental whitespace is not a change of meaning, so it must not silently throw away a
+    // link the user did not mean to break.
+    await waitFor(() => {
+      expect(defaultProps.onSubmit).toHaveBeenCalled();
+    });
+    const submitted = vi.mocked(defaultProps.onSubmit).mock.calls.at(-1)![0];
+    expect(submitted.itemTemplateId).toBe("tmpl-1");
+  });
+
+  it("drops the template id when the field is cleared, even if the same name is retyped", async () => {
+    const user = userEvent.setup();
+    render(
+      <ReceiptItemForm
+        {...defaultProps}
+        defaultValues={{
+          receiptId: "r-1",
+          receiptItemCode: "ITM-001",
+          quantity: 1,
+          unitPrice: 3.99,
+          category: "Groceries",
+          subcategory: "Dairy",
+        }}
+      />,
+    );
+
+    await pickMilkTemplate(user);
+
+    const descriptionInput = screen.getByLabelText(/^Description/);
+    await user.clear(descriptionInput);
+    await user.type(descriptionInput, "Milk");
+
+    await user.click(screen.getByRole("button", { name: /create item/i }));
+
+    // Clearing empties the field, which does not match the template name, so the link goes —
+    // and nothing re-applies it when the same text is typed back by hand. That is deliberately
+    // left alone rather than "fixed": such an item falls through to the resolver, which
+    // exact-matches the very entry the template created and links it anyway. The outcome is the
+    // same; only the route differs. Restoring the link on a text match would mean re-deriving
+    // provenance from a string, which is the guesswork this issue removes.
+    await waitFor(() => {
+      expect(defaultProps.onSubmit).toHaveBeenCalled();
+    });
+    const submitted = vi.mocked(defaultProps.onSubmit).mock.calls.at(-1)![0];
+    expect(submitted.itemTemplateId).toBeUndefined();
+    expect(submitted.description).toBe("Milk");
+  });
+
+  it("sends no template id for a hand-typed line", async () => {
+    const user = userEvent.setup();
+    render(
+      <ReceiptItemForm
+        {...defaultProps}
+        defaultValues={{
+          receiptId: "r-1",
+          receiptItemCode: "ITM-001",
+          description: "Sourdough Loaf",
+          quantity: 1,
+          unitPrice: 3.99,
+          category: "Groceries",
+          subcategory: "Dairy",
+        }}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /create item/i }));
+
+    await waitFor(() => {
+      expect(defaultProps.onSubmit).toHaveBeenCalled();
+    });
+    const submitted = vi.mocked(defaultProps.onSubmit).mock.calls.at(-1)![0];
+    expect(submitted.itemTemplateId).toBeUndefined();
   });
 
   it("selects a description history entry and populates the field", async () => {

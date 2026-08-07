@@ -10,10 +10,47 @@ using Npgsql;
 
 namespace Infrastructure.Services;
 
-public class ItemTemplateService(IItemTemplateRepository repository, ItemTemplateMapper mapper) : IItemTemplateService
+public class ItemTemplateService(
+	IItemTemplateRepository repository,
+	ItemTemplateMapper mapper,
+	INormalizedDescriptionService normalizedDescriptions) : IItemTemplateService
 {
+	/// <summary>
+	/// Gives each model the canonical entry its name declares (RECEIPTS-881).
+	/// </summary>
+	/// <remarks>
+	/// Creating a template is a user saying "this item exists and is called X", which is exactly
+	/// what a canonical entry records — so the entry is created up front and <c>Active</c>, and
+	/// every item later entered from the template is stamped with it and skips the resolver.
+	///
+	/// Failure here does not fail the template. The canonical entry is a convenience link, and the
+	/// embedding service can be unconfigured or transiently down; refusing to save someone's
+	/// template because the classifier is unavailable trades a working feature for a bookkeeping
+	/// one. An unlinked template links on its next use.
+	/// </remarks>
+	private async Task LinkCanonicalEntriesAsync(List<ItemTemplate> models, CancellationToken cancellationToken)
+	{
+		foreach (ItemTemplate model in models)
+		{
+			try
+			{
+				Domain.NormalizedDescriptions.NormalizedDescription canonical =
+					await normalizedDescriptions.GetOrCreateForTemplateAsync(model.Name, cancellationToken);
+				model.NormalizedDescriptionId = canonical.Id;
+			}
+			catch (Exception ex) when (ex is not OperationCanceledException)
+			{
+				// Left unlinked deliberately — see the remarks above. Swallowing this is only
+				// acceptable because the link is recoverable on next use; if it ever becomes
+				// load-bearing, this must become a hard failure.
+				model.NormalizedDescriptionId = null;
+			}
+		}
+	}
+
 	public async Task<List<ItemTemplate>> CreateAsync(List<ItemTemplate> models, CancellationToken cancellationToken)
 	{
+		await LinkCanonicalEntriesAsync(models, cancellationToken);
 		List<ItemTemplateEntity> entities = [.. models.Select(mapper.ToEntity)];
 		List<ItemTemplateEntity> createdEntities = await repository.CreateAsync(entities, cancellationToken);
 		return [.. createdEntities.Select(mapper.ToDomain)];
@@ -58,6 +95,14 @@ public class ItemTemplateService(IItemTemplateRepository repository, ItemTemplat
 
 	public async Task UpdateAsync(List<ItemTemplate> models, CancellationToken cancellationToken)
 	{
+		// Re-resolved on every update rather than only when the name changed. The name is what the
+		// canonical entry is keyed on, and comparing against the stored name would need a read per
+		// template to find out whether it moved — GetOrCreateForTemplateAsync already answers
+		// "which entry is this name?" with a single indexed lookup, and returns the existing row
+		// unchanged when nothing moved. Renaming a template therefore re-points it at the entry
+		// for its new name; the old entry is left alone, since other receipt items may still be
+		// grouped under it and deleting it would silently move their spending.
+		await LinkCanonicalEntriesAsync(models, cancellationToken);
 		List<ItemTemplateEntity> entities = [.. models.Select(mapper.ToEntity)];
 		await repository.UpdateAsync(entities, cancellationToken);
 	}

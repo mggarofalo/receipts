@@ -8,6 +8,16 @@ public interface INormalizedDescriptionService
 {
 	Task<GetOrCreateResult> GetOrCreateAsync(string rawDescription, CancellationToken cancellationToken);
 
+	// RECEIPTS-881. The canonical entry for a user-declared item template. Distinct from
+	// GetOrCreateAsync because the two answer different questions: that one asks "what does this
+	// receipt text probably mean?" and may land in the review queue, this one records what a user
+	// has already told us the item is. No ANN search, no threshold bands, always Active — asking
+	// someone to review a grouping they just declared by hand is the duplication this issue
+	// exists to remove.
+	Task<Domain.NormalizedDescriptions.NormalizedDescription> GetOrCreateForTemplateAsync(
+		string templateName,
+		CancellationToken cancellationToken);
+
 	// The three read paths below all serialize to the same NormalizedDescriptionResponse, so they
 	// all return the evidence-bearing detail (RECEIPTS-873). If only the list endpoint populated it,
 	// the other two would have to report a structurally false LinkedItemCount of 0.

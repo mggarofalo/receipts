@@ -157,7 +157,7 @@ public class ReceiptItemsController(IMediator mediator, ReceiptItemMapper mapper
 	[EndpointSummary("Create a single receipt item")]
 	public async Task<Ok<ReceiptItemResponse>> CreateReceiptItem([FromBody] CreateReceiptItemRequest model, [FromRoute] Guid receiptId, CancellationToken cancellationToken = default)
 	{
-		CreateReceiptItemCommand command = new([mapper.ToDomain(model)], receiptId);
+		CreateReceiptItemCommand command = new([mapper.ToDomain(model)], receiptId, [model.ItemTemplateId]);
 		List<ReceiptItem> receiptItems = await mediator.Send(command, cancellationToken);
 		await notifier.NotifyCreated("receipt-item", receiptItems[0].Id);
 		return TypedResults.Ok(mapper.ToResponse(receiptItems[0]));
@@ -167,7 +167,10 @@ public class ReceiptItemsController(IMediator mediator, ReceiptItemMapper mapper
 	[EndpointSummary("Create receipt items in batch")]
 	public async Task<Ok<List<ReceiptItemResponse>>> CreateReceiptItems([FromBody] List<CreateReceiptItemRequest> models, [FromRoute] Guid receiptId, CancellationToken cancellationToken = default)
 	{
-		CreateReceiptItemCommand command = new([.. models.Select(mapper.ToDomain)], receiptId);
+		CreateReceiptItemCommand command = new(
+			[.. models.Select(mapper.ToDomain)],
+			receiptId,
+			[.. models.Select(m => m.ItemTemplateId)]);
 		List<ReceiptItem> receiptItems = await mediator.Send(command, cancellationToken);
 		await notifier.NotifyBulkChanged("receipt-item", "created", receiptItems.Select(ri => ri.Id));
 		return TypedResults.Ok(receiptItems.Select(mapper.ToResponse).ToList());

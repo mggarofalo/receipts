@@ -803,6 +803,212 @@ public class NormalizedDescriptionServiceTests
 		page.Data.Should().ContainSingle().Which.Description.CanonicalName.Should().Be("Coffee Filters");
 	}
 
+	// ── RECEIPTS-881: templates own a canonical entry ─────────────────────────
+
+	[Fact]
+	public async Task GetOrCreateForTemplateAsync_CreatesAnActiveEntry()
+	{
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(false);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		NormalizedDescription created = await service.GetOrCreateForTemplateAsync("Gallon of Milk", CancellationToken.None);
+
+		// Active, never PendingReview. A template is a user declaring what the item is; parking
+		// that in the review queue asks a human to confirm what the same human just said.
+		created.Status.Should().Be(NormalizedDescriptionStatus.Active);
+		created.CanonicalName.Should().Be("Gallon of Milk");
+	}
+
+	[Fact]
+	public async Task GetOrCreateForTemplateAsync_ReusesAnExistingEntryCaseInsensitively()
+	{
+		Guid existingId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
+			{
+				Id = existingId,
+				CanonicalName = "Gallon of Milk",
+				Status = NormalizedDescriptionStatus.Active,
+				CreatedAt = DateTimeOffset.UtcNow,
+			});
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		NormalizedDescription result = await service.GetOrCreateForTemplateAsync("GALLON OF MILK", CancellationToken.None);
+
+		// A second row would collide with the unique index on lower("CanonicalName") and, worse,
+		// split one item's spending across two buckets.
+		result.Id.Should().Be(existingId);
+	}
+
+	[Fact]
+	public async Task GetOrCreateForTemplateAsync_DoesNotFoldTheNameIntoANeighbour()
+	{
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
+			{
+				Id = Guid.NewGuid(),
+				CanonicalName = "Milk",
+				Status = NormalizedDescriptionStatus.Active,
+				CreatedAt = DateTimeOffset.UtcNow,
+			});
+			await seed.SaveChangesAsync();
+		}
+
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(false);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		NormalizedDescription created = await service.GetOrCreateForTemplateAsync("Gallon of Milk", CancellationToken.None);
+
+		// A "Milk" entry already exists, but similarity is not the question here: the user named
+		// their template, so it gets its own entry rather than being folded into the neighbour
+		// the way GetOrCreateAsync would consider doing.
+		created.CanonicalName.Should().Be("Gallon of Milk");
+		created.Status.Should().Be(NormalizedDescriptionStatus.Active);
+	}
+
+	[Fact]
+	public async Task GetOrCreateForTemplateAsync_ReinstatesATombstoneTheUserHasContradicted()
+	{
+		Guid rejectedId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
+			{
+				Id = rejectedId,
+				CanonicalName = "Gallon of Milk",
+				Status = NormalizedDescriptionStatus.Rejected,
+				CreatedAt = DateTimeOffset.UtcNow,
+			});
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		NormalizedDescription result = await service.GetOrCreateForTemplateAsync("Gallon of Milk", CancellationToken.None);
+
+		// Creating a template for rejected text is a deliberate, later contradiction of that
+		// decision, and the explicit action wins. Refusing would leave the user unable to name
+		// their own item with nowhere to find out why — tombstones appear on no screen they
+		// would look at.
+		result.Id.Should().Be(rejectedId);
+		result.Status.Should().Be(NormalizedDescriptionStatus.Active);
+
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		verify.NormalizedDescriptions.Single(n => n.Id == rejectedId).Status
+			.Should().Be(NormalizedDescriptionStatus.Active);
+	}
+
+	[Fact]
+	public async Task GetOrCreateForTemplateAsync_LeavesAPendingEntryPending()
+	{
+		Guid pendingId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
+			{
+				Id = pendingId,
+				CanonicalName = "Gallon of Milk",
+				Status = NormalizedDescriptionStatus.PendingReview,
+				CreatedAt = DateTimeOffset.UtcNow,
+			});
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		NormalizedDescription result = await service.GetOrCreateForTemplateAsync("Gallon of Milk", CancellationToken.None);
+
+		// Linked but still pending. The template says what the item is called; it does not vouch
+		// for the resolver's grouping of whatever raw receipt text landed on that row, and that
+		// grouping is exactly what review is for.
+		result.Id.Should().Be(pendingId);
+		result.Status.Should().Be(NormalizedDescriptionStatus.PendingReview);
+	}
+
+	[Theory]
+	[InlineData("")]
+	[InlineData("   ")]
+	public async Task GetOrCreateForTemplateAsync_BlankName_Throws(string name)
+	{
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		Func<Task> act = async () => await service.GetOrCreateForTemplateAsync(name, CancellationToken.None);
+
+		await act.Should().ThrowAsync<ArgumentException>();
+	}
+
+	[Fact]
+	public async Task MergeAsync_RepointsTemplatesAtTheSurvivingRow()
+	{
+		Guid keepId = Guid.NewGuid();
+		Guid discardId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.AddRange(
+				new NormalizedDescriptionEntity { Id = keepId, CanonicalName = "Milk", Status = NormalizedDescriptionStatus.Active, CreatedAt = DateTimeOffset.UtcNow },
+				new NormalizedDescriptionEntity { Id = discardId, CanonicalName = "Whole Milk", Status = NormalizedDescriptionStatus.Active, CreatedAt = DateTimeOffset.UtcNow });
+			seed.ItemTemplates.AddRange(
+				new ItemTemplateEntity { Id = Guid.NewGuid(), Name = "Whole Milk", NormalizedDescriptionId = discardId },
+				new ItemTemplateEntity { Id = Guid.NewGuid(), Name = "Old Whole Milk", NormalizedDescriptionId = discardId, DeletedAt = DateTimeOffset.UtcNow });
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		await service.MergeAsync(keepId, discardId, CancellationToken.None);
+
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		List<ItemTemplateEntity> templates = await verify.ItemTemplates
+			.IgnoreQueryFilters()
+			.ToListAsync();
+
+		// The FK is ON DELETE SET NULL, so leaving this to the database would silently unlink both
+		// templates and quietly put every item entered from them back through the resolver, with
+		// nothing raised anywhere. The trashed one counts too — it would otherwise come back from
+		// the recycle bin unlinked.
+		templates.Should().HaveCount(2);
+		templates.Should().OnlyContain(t => t.NormalizedDescriptionId == keepId);
+	}
+
+	[Fact]
+	public async Task UpdateStatusAsync_ToRejected_UnlinksTemplatesButKeepsThem()
+	{
+		Guid rejectedId = Guid.NewGuid();
+		Guid templateId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
+			{
+				Id = rejectedId,
+				CanonicalName = "Gallon of Milk",
+				Status = NormalizedDescriptionStatus.Active,
+				CreatedAt = DateTimeOffset.UtcNow,
+			});
+			seed.ItemTemplates.Add(new ItemTemplateEntity { Id = templateId, Name = "Gallon of Milk", NormalizedDescriptionId = rejectedId });
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		await service.UpdateStatusAsync(rejectedId, NormalizedDescriptionStatus.Rejected, CancellationToken.None);
+
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		ItemTemplateEntity template = verify.ItemTemplates.IgnoreQueryFilters().Single(t => t.Id == templateId);
+
+		// Unlinked, because a template still pointing at a tombstone would go on stamping new
+		// receipt items with it — the resolver bypass working against the reviewer's decision.
+		template.NormalizedDescriptionId.Should().BeNull();
+		// Not deleted, though. Rejecting a canonical entry is a judgement about receipt text, not
+		// about somebody's curated entry-time defaults, and destroying their template as a side
+		// effect of an admin action on another screen would be a far bigger surprise.
+		template.Name.Should().Be("Gallon of Milk");
+	}
+
 	// ── RECEIPTS-878: several statuses at once ────────────────────────────────
 
 	[Fact]

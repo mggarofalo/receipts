@@ -91,6 +91,10 @@ export function ReceiptItemsCard({
           unitPrice: values.unitPrice,
           category: values.category,
           subcategory: values.subcategory,
+          // Present only when this line was entered from a template and the description still
+          // matches it. The server uses it to stamp the item's canonical description and skip
+          // the resolver (RECEIPTS-881).
+          itemTemplateId: values.itemTemplateId,
         },
       },
       {
