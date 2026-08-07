@@ -1,5 +1,6 @@
 using Application.Interfaces.Services;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
 using Microsoft.ML.Tokenizers;
@@ -17,38 +18,40 @@ public sealed class OnnxEmbeddingService : IEmbeddingService, IDisposable
 	public const string PoolingStrategyName = "CLS";
 
 	private const int MaxTokens = 512;
-	private const string ModelDirectoryName = "BgeLargeEnV15";
 
-	private readonly InferenceSession _session;
-	private readonly BertTokenizer _tokenizer;
+	private readonly string _modelPath;
+	private readonly string _vocabPath;
 	private readonly ILogger<OnnxEmbeddingService> _logger;
 	private readonly object _inferLock = new();
+
+	private LoadedModel? _loaded;
 	private bool _disposed;
 
-	public OnnxEmbeddingService(ILogger<OnnxEmbeddingService> logger)
+	public OnnxEmbeddingService(IOptions<EmbeddingModelOptions> options, ILogger<OnnxEmbeddingService> logger)
 	{
 		_logger = logger;
 
-		string baseDir = AppContext.BaseDirectory;
-		string modelPath = Path.Combine(baseDir, "Models", ModelDirectoryName, "model.onnx");
-		string vocabPath = Path.Combine(baseDir, "Models", ModelDirectoryName, "vocab.txt");
-
-		if (!File.Exists(modelPath) || !File.Exists(vocabPath))
-		{
-			throw new FileNotFoundException(
-				$"ONNX model files not found at {Path.GetDirectoryName(modelPath)}. " +
-				"Run scripts/download-onnx-model.cs to download them.");
-		}
-
-		SessionOptions options = new();
-		options.GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL;
-		_session = new InferenceSession(modelPath, options);
-
-		using FileStream vocabStream = File.OpenRead(vocabPath);
-		_tokenizer = BertTokenizer.Create(vocabStream);
+		string directory = options.Value.ResolveModelDirectory();
+		_modelPath = Path.Combine(directory, EmbeddingModelOptions.ModelFileName);
+		_vocabPath = Path.Combine(directory, EmbeddingModelOptions.VocabFileName);
 	}
 
-	public bool IsConfigured => true;
+	/// <summary>
+	/// True once the model has loaded. The model is provisioned onto a volume at runtime
+	/// rather than shipped in the image (RECEIPTS-929), so on a fresh deployment this is
+	/// false until <see cref="EmbeddingModelProvisioningService"/> finishes the download.
+	/// Every caller already guards on this and degrades gracefully.
+	/// </summary>
+	public bool IsConfigured
+	{
+		get
+		{
+			lock (_inferLock)
+			{
+				return TryLoad() is not null;
+			}
+		}
+	}
 
 	public Task<float[]> GenerateEmbeddingAsync(string text, CancellationToken cancellationToken)
 	{
@@ -76,14 +79,63 @@ public sealed class OnnxEmbeddingService : IEmbeddingService, IDisposable
 		// to keep it simple — embedding generation is I/O-bound, not a hot path.
 		lock (_inferLock)
 		{
-			return GenerateEmbeddingCore(text);
+			LoadedModel model = TryLoad()
+				?? throw new InvalidOperationException(
+					$"The ONNX embedding model is not available at {Path.GetDirectoryName(_modelPath)}. " +
+					$"Check {nameof(IEmbeddingService)}.{nameof(IsConfigured)} before generating embeddings.");
+
+			return GenerateEmbeddingCore(model, text);
 		}
 	}
 
-	private float[] GenerateEmbeddingCore(string text)
+	/// <summary>
+	/// Loads the session on first use. Callers must hold <see cref="_inferLock"/>.
+	///
+	/// A failed load is not latched: the files may simply not have finished downloading yet,
+	/// so a later call retries and the app recovers without a restart.
+	/// </summary>
+	private LoadedModel? TryLoad()
+	{
+		if (_loaded is not null)
+		{
+			return _loaded;
+		}
+
+		if (_disposed || !File.Exists(_modelPath) || !File.Exists(_vocabPath))
+		{
+			return null;
+		}
+
+		InferenceSession? session = null;
+		try
+		{
+			SessionOptions sessionOptions = new()
+			{
+				GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL,
+			};
+
+			session = new InferenceSession(_modelPath, sessionOptions);
+
+			using FileStream vocabStream = File.OpenRead(_vocabPath);
+			BertTokenizer tokenizer = BertTokenizer.Create(vocabStream);
+
+			_loaded = new LoadedModel(session, tokenizer);
+			_logger.LogInformation("Loaded ONNX embedding model {ModelName} from {ModelPath}", ModelName, _modelPath);
+
+			return _loaded;
+		}
+		catch (Exception ex)
+		{
+			session?.Dispose();
+			_logger.LogError(ex, "Failed to load the ONNX embedding model from {ModelPath}", _modelPath);
+			return null;
+		}
+	}
+
+	private static float[] GenerateEmbeddingCore(LoadedModel model, string text)
 	{
 		// Tokenize: EncodeToIds with addSpecialTokens=true adds [CLS] and [SEP]
-		IReadOnlyList<int> tokenIds = _tokenizer.EncodeToIds(text, MaxTokens, out _, out _);
+		IReadOnlyList<int> tokenIds = model.Tokenizer.EncodeToIds(text, MaxTokens, out _, out _);
 
 		int seqLen = tokenIds.Count;
 
@@ -106,7 +158,7 @@ public sealed class OnnxEmbeddingService : IEmbeddingService, IDisposable
 			NamedOnnxValue.CreateFromTensor("token_type_ids", tokenTypeIdsTensor),
 		];
 
-		using IDisposableReadOnlyCollection<DisposableNamedOnnxValue> results = _session.Run(inputs);
+		using IDisposableReadOnlyCollection<DisposableNamedOnnxValue> results = model.Session.Run(inputs);
 
 		// BGE's ONNX export returns last_hidden_state with shape [1, seq_len, 1024].
 		// CLS pooling: take only the [CLS] token (index 0), which is the model's
@@ -138,10 +190,18 @@ public sealed class OnnxEmbeddingService : IEmbeddingService, IDisposable
 
 	public void Dispose()
 	{
-		if (!_disposed)
+		lock (_inferLock)
 		{
-			_session.Dispose();
+			if (_disposed)
+			{
+				return;
+			}
+
+			_loaded?.Session.Dispose();
+			_loaded = null;
 			_disposed = true;
 		}
 	}
+
+	private sealed record LoadedModel(InferenceSession Session, BertTokenizer Tokenizer);
 }

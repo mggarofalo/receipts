@@ -72,7 +72,7 @@ public class OnnxEmbeddingServiceIntegrationTests : IClassFixture<OnnxEmbeddingS
 - CI and pre-commit hooks run with `--filter "Category!=Integration"` — integration tests are excluded
 - Unit tests do NOT need a `[Trait]` attribute — they run everywhere by default
 - Integration tests use `IClassFixture<T>` to share expensive resources (e.g., loading the ONNX model once for all tests in a class)
-- The ONNX model (~90MB) is not in git; run `dotnet run scripts/download-onnx-model.cs` to download it locally
+- The ONNX model (~1.34 GB) is not in git and is no longer copied into test output. It lives in a per-machine cache (`%LOCALAPPDATA%\Receipts\models` on Windows, `~/.local/share/Receipts/models` elsewhere); run `dotnet run scripts/download-onnx-model.cs` to populate it once
 - Run `dotnet test --filter "Category=Integration"` to execute integration tests locally
 
 ## React Frontend

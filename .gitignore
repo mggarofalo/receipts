@@ -327,10 +327,9 @@ src/client/coverage/
 # SDLC pipeline state files
 .sdlc/
 
-# ONNX model files — downloaded via scripts/download-onnx-model.cs
-# (also fetched in Dockerfile during image build).
-src/Infrastructure/Models/BgeLargeEnV15/model.onnx
-src/Infrastructure/Models/BgeLargeEnV15/vocab.txt
+# ONNX model files are no longer stored in the repo (RECEIPTS-929). They live in a
+# per-machine cache (%LOCALAPPDATA%\Receipts\models on Windows, ~/.local/share/Receipts/models
+# elsewhere), populated by the app at startup or up front via scripts/download-onnx-model.cs.
 
 # Playwright + visual regression
 src/client/test-results/

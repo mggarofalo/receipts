@@ -226,20 +226,16 @@ public static class InfrastructureService
 			});
 		});
 
-		// Singleton AI/ML services (local models — always available)
+		// Singleton AI/ML services. The ONNX model is provisioned onto a volume at runtime
+		// rather than shipped in the image (RECEIPTS-929), so this resolves whether or not
+		// the model files are present yet — see OnnxEmbeddingService.IsConfigured.
+		services.Configure<EmbeddingModelOptions>(configuration.GetSection(EmbeddingModelOptions.SectionName));
 		services.AddSingleton<IEmbeddingService, OnnxEmbeddingService>();
-		services.AddHostedService<EmbeddingGenerationService>();
-
-		services.AddHostedService<AuthAuditCleanupService>();
 
 		// TryAdd so callers (tests, specific deployments) can override with a FakeTimeProvider.
 		services.TryAddSingleton(TimeProvider.System);
 
 		services.AddSingleton<IDescriptionChangeSignal, DescriptionChangeSignal>();
-
-		// Resolver for RECEIPTS-578 — scans unresolved ReceiptItems, groups by description,
-		// and links each to a NormalizedDescription via NormalizedDescriptionService.
-		services.AddHostedService<NormalizedDescriptionResolutionService>();
 
 		services
 			.AddSingleton<AccountMapper>()
@@ -253,6 +249,33 @@ public static class InfrastructureService
 			.AddSingleton<ItemTemplateMapper>()
 			.AddSingleton<NormalizedDescriptionMapper>()
 			.AddSingleton<NormalizedDescriptionSettingsMapper>();
+
+		return services;
+	}
+
+	/// <summary>
+	/// Registers the long-running background workers. Kept separate from
+	/// <see cref="RegisterInfrastructureServices"/> so that short-lived CLI tools (DbSeeder,
+	/// DbExporter) get the service graph without starting workers they have no use for —
+	/// notably the embedding pipeline, which would otherwise load a 1.34 GB model during a
+	/// migration or a seed run (RECEIPTS-929). Call this from long-running hosts only.
+	/// </summary>
+	public static IServiceCollection AddInfrastructureBackgroundServices(this IServiceCollection services)
+	{
+		// Long download with no natural retry semantics of its own; the service handles its
+		// own backoff, so keep the handler out of the way and let it manage the deadline.
+		services.AddHttpClient(EmbeddingModelProvisioningService.HttpClientName, client =>
+		{
+			client.Timeout = Timeout.InfiniteTimeSpan;
+		});
+
+		services.AddHostedService<EmbeddingModelProvisioningService>();
+		services.AddHostedService<EmbeddingGenerationService>();
+		services.AddHostedService<AuthAuditCleanupService>();
+
+		// Resolver for RECEIPTS-578 — scans unresolved ReceiptItems, groups by description,
+		// and links each to a NormalizedDescription via NormalizedDescriptionService.
+		services.AddHostedService<NormalizedDescriptionResolutionService>();
 
 		return services;
 	}

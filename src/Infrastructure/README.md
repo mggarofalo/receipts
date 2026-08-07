@@ -10,7 +10,6 @@ Data access and external service implementations. Depends on Domain and Applicat
 - **`Mapping/`** — Mapperly mappers (Domain <-> Entity bidirectional mapping)
 - **`Configurations/`** — EF Core entity type configurations (`IEntityTypeConfiguration<T>`)
 - **`Migrations/`** — EF Core database migrations
-- **`Models/`** — Local ML model files (ONNX)
 - **`Extensions/`** — Extension methods for query building
 - **`Interfaces/`** — Infrastructure-specific interfaces
 

@@ -42,7 +42,9 @@ if (checkOnly)
         missing.Add("src/client/src/generated/api.d.ts — run: cd src/client && npm run generate:types:write");
     }
 
-    if (!File.Exists(Path.Combine(repoRoot, "src", "Infrastructure", "Models", "BgeLargeEnV15", "model.onnx")))
+    // The model lives in a per-machine cache rather than in the repo (RECEIPTS-929), so it
+    // is downloaded once and shared by every clone and worktree.
+    if (!File.Exists(Path.Combine(ResolveModelDirectory(), "model.onnx")))
     {
         missing.Add("ONNX model — run: dotnet run scripts/download-onnx-model.cs");
     }
@@ -126,4 +128,26 @@ static string GetRepoRoot()
     string output = proc!.StandardOutput.ReadToEnd().Trim();
     proc.WaitForExit();
     return output;
+}
+
+// Mirrors EmbeddingModelOptions.ResolveModelDirectory and download-onnx-model.cs.
+static string ResolveModelDirectory()
+{
+    if (Environment.GetEnvironmentVariable("Embeddings__ModelPath") is { Length: > 0 } configured)
+    {
+        return configured;
+    }
+
+    string root = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+
+    // Each branch supplies only the root — "Receipts" is appended once, below.
+    if (string.IsNullOrWhiteSpace(root))
+    {
+        string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        root = string.IsNullOrWhiteSpace(home)
+            ? Path.GetTempPath()
+            : Path.Combine(home, ".local", "share");
+    }
+
+    return Path.Combine(root, "Receipts", "models", "BgeLargeEnV15");
 }
