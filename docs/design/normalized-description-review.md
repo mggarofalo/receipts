@@ -181,3 +181,63 @@ That is **RECEIPTS-884**, tracked separately. Until it is fixed, client-side sta
 go through `src/client/src/lib/normalized-description-status.ts`, which compares
 case-insensitively. Those predicates keep working under either casing, so fixing RECEIPTS-884
 will not silently invert them.
+
+## The registry is paged, searched server-side, and no longer read-only (RECEIPTS-879)
+
+`GET /api/normalized-descriptions` was explicitly unpaginated — the schema said `totalCount`
+"matches the length of `items` since the endpoint is not paginated". The registry tab loaded
+every Active row and filtered the array in the browser, and every merge-dialog open paid for the
+same full list. The row count is bounded by the number of distinct receipt-item descriptions ever
+seen, and grocery receipts generate thousands of them.
+
+The endpoint now takes `q`, `offset` and `limit` (default 50, ceiling 200) alongside the existing
+`status`, and `totalCount` means the number of rows matching the filter. The additions are all
+optional, so `check:breaking` passes; the behavioural change is real though — a caller that omits
+`limit` now gets 50 rows instead of all of them, which is the point.
+
+### Search matches both names
+
+A renamed entry has two names: the label an admin gave it and the receipt text its embedding is
+anchored to. `q` matches either, case-insensitively. Matching only the label would hide a row
+from the admin looking at a receipt; matching only the matched text would hide it from the admin
+who renamed it.
+
+### Ordered by display name, with an id tiebreak
+
+Offset paging over an unordered set drops and duplicates rows between pages. The order is
+`COALESCE(DisplayLabel, CanonicalName)` then `Id` — by what is on screen, not by the underlying
+matched text, so a renamed row does not sort somewhere alphabetically unrelated to its own label.
+It also puts near-duplicates adjacent, which is what a reviewer hunting merge candidates wants.
+
+The review queue's client-side "newest first" sort was removed rather than kept. Once the list is
+paged that sort only reorders the rows in hand, so it reads as a global ordering while being a
+per-page one.
+
+### The total is counted before paging
+
+`totalCount` is the size of the filtered set, not the length of the page. A client cannot build a
+pager from a total that tracks the page length — it would report one page forever — and a total
+that ignored the filter would offer pages that turn out to be empty.
+
+### Four row actions, because approval was otherwise permanent
+
+Rename, merge, split, and send-back-to-review. The registry is the only place an already-approved
+entry can be corrected; read-only meant every approval was irreversible.
+
+**Send back to review is not Reject.** It flips `Active` → `PendingReview` and touches nothing
+else: no item is unlinked, no receipt data changes, and approving it again from the queue undoes
+it. Reject (RECEIPTS-876) unlinks every item and tombstones the text so the resolver stops
+proposing it. One is "I want to think about this again", the other is "this is not a thing". They
+are confirmed separately and the copy on each says which consequence applies.
+
+**Merge shows the count before it acts.** Merging is irreversible and direction-sensitive: the
+entry being merged away is deleted and its items are re-pointed, so merging the wrong way round
+moves the larger set under the smaller name. The dialog states how many items move and that the
+source is deleted. Its old copy said "this pending-review entry will be deleted", which stopped
+being true the moment the registry could merge two Active entries.
+
+The merge dialog's candidate list also moved to server-side search here, out of necessity: it
+filtered whatever the Active list had already loaded, and once that list is one page the dialog
+could only find a target that happened to be on it. It now shows "showing N of M" when there are
+more matches than fit. Including *pending* entries as merge targets, linked-item counts beside
+each candidate, and the tests for those remain RECEIPTS-878.

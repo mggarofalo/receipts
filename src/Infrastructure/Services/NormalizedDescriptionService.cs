@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using Application.Interfaces.Services;
+using Application.Models;
 using Application.Models.NormalizedDescriptions;
 using Domain.NormalizedDescriptions;
 using Infrastructure.Configurations;
@@ -137,19 +138,63 @@ public class NormalizedDescriptionService(
 			: null;
 	}
 
-	public async Task<List<NormalizedDescriptionDetail>> GetAllAsync(NormalizedDescriptionStatus? filter, CancellationToken cancellationToken)
+	public const int MaxPageSize = 200;
+
+	/// <summary>
+	/// One page of canonical rows, optionally filtered by status and search term (RECEIPTS-879).
+	/// </summary>
+	/// <remarks>
+	/// Paginated in SQL. The registry previously loaded every Active row and filtered in the
+	/// browser, and every merge-dialog open paid for the same full list — fine for a handful of
+	/// rows, not for the thousands of distinct descriptions grocery receipts generate.
+	///
+	/// Search matches the display name and the matched text, so an entry is findable both by what
+	/// it is called now and by the receipt text it still resolves on (RECEIPTS-876).
+	///
+	/// Ordered by display name with the id as a tiebreaker: the name is not unique across rows
+	/// under a case-insensitive collation, and without a total order offset pagination can skip or
+	/// repeat a row between page requests.
+	/// </remarks>
+	public async Task<PagedResult<NormalizedDescriptionDetail>> GetAllAsync(
+		NormalizedDescriptionStatus? filter,
+		string? q,
+		int offset,
+		int limit,
+		CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		IQueryable<DetailRow> query = ProjectDetails(context);
+
 		if (filter.HasValue)
 		{
 			query = query.Where(d => d.Status == filter.Value);
 		}
 
+		string? trimmed = q?.Trim();
+		if (!string.IsNullOrEmpty(trimmed))
+		{
+			string lowered = trimmed.ToLowerInvariant();
+			query = query.Where(d =>
+				(d.DisplayLabel != null && d.DisplayLabel.ToLower().Contains(lowered))
+				|| d.CanonicalName.ToLower().Contains(lowered));
+		}
+
+		// Counted before paging, so the client can page through a filtered set rather than being
+		// told how many rows exist in total and then handed a shorter list.
+		int total = await query.CountAsync(cancellationToken);
+
 		List<DetailRow> rows = await query
-			.OrderBy(d => d.CanonicalName)
+			.OrderBy(d => d.DisplayLabel ?? d.CanonicalName)
+			.ThenBy(d => d.Id)
+			.Skip(offset)
+			.Take(limit)
 			.ToListAsync(cancellationToken);
-		return [.. rows.Select(r => r.ToDetail())];
+
+		return new PagedResult<NormalizedDescriptionDetail>(
+			[.. rows.Select(r => r.ToDetail())],
+			total,
+			offset,
+			limit);
 	}
 
 	public const string MergeIdsMustDiffer = "A description cannot be merged into itself.";

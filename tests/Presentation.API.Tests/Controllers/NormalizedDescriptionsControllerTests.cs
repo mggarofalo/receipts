@@ -6,6 +6,7 @@ using Application.Commands.NormalizedDescription.RequeuePending;
 using Application.Commands.NormalizedDescription.Split;
 using Application.Commands.NormalizedDescription.UpdateSettings;
 using Application.Commands.NormalizedDescription.UpdateStatus;
+using Application.Models;
 using Application.Models.NormalizedDescriptions;
 using Application.Queries.NormalizedDescription.GetAll;
 using Application.Queries.NormalizedDescription.GetById;
@@ -292,6 +293,13 @@ public class NormalizedDescriptionsControllerTests
 
 	// ── GET list ─────────────────────────────────────────────────
 
+	private static PagedResult<NormalizedDescriptionDetail> Page(
+		List<NormalizedDescriptionDetail> data,
+		int? total = null,
+		int offset = 0,
+		int limit = 50) =>
+		new(data, total ?? data.Count, offset, limit);
+
 	[Fact]
 	public async Task GetAllNormalizedDescriptions_NoFilter_ReturnsOkWithAllItems()
 	{
@@ -303,10 +311,10 @@ public class NormalizedDescriptionsControllerTests
 
 		_mediatorMock
 			.Setup(m => m.Send(It.Is<GetAllNormalizedDescriptionsQuery>(q => q.StatusFilter == null), It.IsAny<CancellationToken>()))
-			.ReturnsAsync(items);
+			.ReturnsAsync(Page(items));
 
 		Results<Ok<NormalizedDescriptionListResponse>, BadRequest<ProblemDetails>> result =
-			await _controller.GetAllNormalizedDescriptions(status: null, CancellationToken.None);
+			await _controller.GetAllNormalizedDescriptions(status: null, q: null, cancellationToken: CancellationToken.None);
 
 		Ok<NormalizedDescriptionListResponse> ok = Assert.IsType<Ok<NormalizedDescriptionListResponse>>(result.Result);
 		ok.Value!.Items.Should().HaveCount(2);
@@ -317,16 +325,17 @@ public class NormalizedDescriptionsControllerTests
 	[Theory]
 	[InlineData("Active", DomainStatus.Active)]
 	[InlineData("PendingReview", DomainStatus.PendingReview)]
+	[InlineData("Rejected", DomainStatus.Rejected)]
 	[InlineData("active", DomainStatus.Active)]
 	[InlineData("pendingreview", DomainStatus.PendingReview)]
 	public async Task GetAllNormalizedDescriptions_WithStatusFilter_ForwardsToQuery(string status, DomainStatus expected)
 	{
 		_mediatorMock
 			.Setup(m => m.Send(It.Is<GetAllNormalizedDescriptionsQuery>(q => q.StatusFilter == expected), It.IsAny<CancellationToken>()))
-			.ReturnsAsync([]);
+			.ReturnsAsync(Page([]));
 
 		Results<Ok<NormalizedDescriptionListResponse>, BadRequest<ProblemDetails>> result =
-			await _controller.GetAllNormalizedDescriptions(status, CancellationToken.None);
+			await _controller.GetAllNormalizedDescriptions(status, q: null, cancellationToken: CancellationToken.None);
 
 		Ok<NormalizedDescriptionListResponse> ok = Assert.IsType<Ok<NormalizedDescriptionListResponse>>(result.Result);
 		ok.Value!.Items.Should().BeEmpty();
@@ -338,11 +347,93 @@ public class NormalizedDescriptionsControllerTests
 	public async Task GetAllNormalizedDescriptions_InvalidStatusFilter_ReturnsBadRequest()
 	{
 		Results<Ok<NormalizedDescriptionListResponse>, BadRequest<ProblemDetails>> result =
-			await _controller.GetAllNormalizedDescriptions(status: "archived", CancellationToken.None);
+			await _controller.GetAllNormalizedDescriptions(status: "archived", q: null, cancellationToken: CancellationToken.None);
 
 		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
 		bad.Value!.Detail.Should().Be(NormalizedDescriptionsController.InvalidStatusFilter);
 		_mediatorMock.Verify(m => m.Send(It.IsAny<GetAllNormalizedDescriptionsQuery>(), It.IsAny<CancellationToken>()), Times.Never);
+	}
+
+	// ── RECEIPTS-879: paging ──────────────────────────────────────
+
+	[Fact]
+	public async Task GetAllNormalizedDescriptions_DefaultsToTheFirstPage()
+	{
+		_mediatorMock
+			.Setup(m => m.Send(It.IsAny<GetAllNormalizedDescriptionsQuery>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(Page([]));
+
+		await _controller.GetAllNormalizedDescriptions(status: null, q: null, cancellationToken: CancellationToken.None);
+
+		// A caller that supplies no window gets a bounded one. The endpoint used to return every
+		// row, which is what RECEIPTS-879 exists to stop.
+		_mediatorMock.Verify(
+			m => m.Send(It.Is<GetAllNormalizedDescriptionsQuery>(q => q.Offset == 0 && q.Limit == 50), It.IsAny<CancellationToken>()),
+			Times.Once);
+	}
+
+	[Fact]
+	public async Task GetAllNormalizedDescriptions_ForwardsSearchTermAndWindow()
+	{
+		_mediatorMock
+			.Setup(m => m.Send(It.IsAny<GetAllNormalizedDescriptionsQuery>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(Page([], total: 412, offset: 100, limit: 25));
+
+		Results<Ok<NormalizedDescriptionListResponse>, BadRequest<ProblemDetails>> result =
+			await _controller.GetAllNormalizedDescriptions(status: null, q: "milk", offset: 100, limit: 25, CancellationToken.None);
+
+		_mediatorMock.Verify(
+			m => m.Send(It.Is<GetAllNormalizedDescriptionsQuery>(q => q.Q == "milk" && q.Offset == 100 && q.Limit == 25), It.IsAny<CancellationToken>()),
+			Times.Once);
+
+		// The response echoes the window back so a client rendering a pager does not have to
+		// remember what it asked for, and reports the true match count rather than the page length.
+		Ok<NormalizedDescriptionListResponse> ok = Assert.IsType<Ok<NormalizedDescriptionListResponse>>(result.Result);
+		ok.Value!.TotalCount.Should().Be(412);
+		ok.Value.Offset.Should().Be(100);
+		ok.Value.Limit.Should().Be(25);
+	}
+
+	[Theory]
+	[InlineData(-1)]
+	[InlineData(int.MinValue)]
+	public async Task GetAllNormalizedDescriptions_NegativeOffset_ReturnsBadRequest(int offset)
+	{
+		Results<Ok<NormalizedDescriptionListResponse>, BadRequest<ProblemDetails>> result =
+			await _controller.GetAllNormalizedDescriptions(status: null, q: null, offset, limit: 50, CancellationToken.None);
+
+		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		bad.Value!.Detail.Should().Be(NormalizedDescriptionsController.OffsetOutOfRange);
+		_mediatorMock.Verify(m => m.Send(It.IsAny<GetAllNormalizedDescriptionsQuery>(), It.IsAny<CancellationToken>()), Times.Never);
+	}
+
+	[Theory]
+	[InlineData(0)]
+	[InlineData(-5)]
+	[InlineData(NormalizedDescriptionsController.MaxPageSize + 1)]
+	public async Task GetAllNormalizedDescriptions_LimitOutsideBounds_ReturnsBadRequest(int limit)
+	{
+		Results<Ok<NormalizedDescriptionListResponse>, BadRequest<ProblemDetails>> result =
+			await _controller.GetAllNormalizedDescriptions(status: null, q: null, offset: 0, limit, CancellationToken.None);
+
+		// The upper bound is the point of the issue: without it a client can ask for everything
+		// again and undo the pagination by parameter.
+		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		bad.Value!.Detail.Should().Be(NormalizedDescriptionsController.LimitOutOfRange);
+		_mediatorMock.Verify(m => m.Send(It.IsAny<GetAllNormalizedDescriptionsQuery>(), It.IsAny<CancellationToken>()), Times.Never);
+	}
+
+	[Fact]
+	public async Task GetAllNormalizedDescriptions_LimitAtTheCeiling_IsAccepted()
+	{
+		_mediatorMock
+			.Setup(m => m.Send(It.IsAny<GetAllNormalizedDescriptionsQuery>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(Page([], limit: NormalizedDescriptionsController.MaxPageSize));
+
+		Results<Ok<NormalizedDescriptionListResponse>, BadRequest<ProblemDetails>> result =
+			await _controller.GetAllNormalizedDescriptions(status: null, q: null, offset: 0, NormalizedDescriptionsController.MaxPageSize, CancellationToken.None);
+
+		Assert.IsType<Ok<NormalizedDescriptionListResponse>>(result.Result);
 	}
 
 	// ── GET by id ────────────────────────────────────────────────

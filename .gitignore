@@ -330,6 +330,9 @@ src/client/coverage/
 # ONNX model files are no longer stored in the repo (RECEIPTS-929). They live in a
 # per-machine cache (%LOCALAPPDATA%\Receipts\models on Windows, ~/.local/share/Receipts/models
 # elsewhere), populated by the app at startup or up front via scripts/download-onnx-model.cs.
+# The old in-repo location stays ignored: checkouts that predate the move still have a 1.3 GB
+# model.onnx sitting there, and untracked it is one `git add -A` away from being committed.
+src/Infrastructure/Models/
 
 # Playwright + visual regression
 src/client/test-results/

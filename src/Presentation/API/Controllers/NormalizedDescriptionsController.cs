@@ -5,6 +5,7 @@ using Application.Commands.NormalizedDescription.RequeuePending;
 using Application.Commands.NormalizedDescription.Split;
 using Application.Commands.NormalizedDescription.UpdateSettings;
 using Application.Commands.NormalizedDescription.UpdateStatus;
+using Application.Models;
 using Application.Models.NormalizedDescriptions;
 using Application.Queries.NormalizedDescription.GetAll;
 using Application.Queries.NormalizedDescription.GetById;
@@ -59,7 +60,13 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 	public const string SplitRequiresAtLeastOneItem = "receiptItemIds must contain at least one id";
 	public const string SplitNameRequired = "canonicalName must not be empty";
 	public const string MergeIdsMustDiffer = "keep id and discardId must differ";
-	public const string InvalidStatusFilter = "status must be 'Active' or 'PendingReview' when provided";
+	public const string InvalidStatusFilter = "status must be 'Active', 'PendingReview' or 'Rejected' when provided";
+	public const string OffsetOutOfRange = "offset must be >= 0";
+	public const string LimitOutOfRange = "limit must be between 1 and 200";
+
+	// Bound lives here rather than in the service: it is an HTTP input rule, and Presentation
+	// must not reach into Infrastructure for a constant.
+	public const int MaxPageSize = 200;
 	public const string ExpectedFingerprintRequired = "expectedFingerprint must not be empty";
 	public const string PendingSetChanged = "The set of pending-review descriptions changed since it was previewed. Nothing was deleted — re-read the preview and try again.";
 
@@ -177,10 +184,13 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 
 	[HttpGet(RouteGetAll)]
 	[EndpointSummary("List normalized descriptions")]
-	[EndpointDescription("Returns all canonical normalized-description rows, optionally filtered by status (Active or PendingReview). Admin-only.")]
+	[EndpointDescription("Returns one page of canonical normalized-description rows, optionally filtered by status and search term. Search matches the display name and the matched text. Admin-only.")]
 	public async Task<Results<Ok<NormalizedDescriptionListResponse>, BadRequest<ProblemDetails>>> GetAllNormalizedDescriptions(
 		[FromQuery] string? status,
-		CancellationToken cancellationToken)
+		[FromQuery] string? q,
+		[FromQuery] int offset = 0,
+		[FromQuery] int limit = 50,
+		CancellationToken cancellationToken = default)
 	{
 		DomainStatus? filter = null;
 		if (!string.IsNullOrWhiteSpace(status))
@@ -196,13 +206,26 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 			filter = parsed;
 		}
 
-		GetAllNormalizedDescriptionsQuery query = new(filter);
-		List<NormalizedDescriptionDetail> items = await mediator.Send(query, cancellationToken);
+		if (offset < 0)
+		{
+			return ApiProblem.BadRequest(OffsetOutOfRange);
+		}
+
+		if (limit < 1 || limit > MaxPageSize)
+		{
+			return ApiProblem.BadRequest(LimitOutOfRange);
+		}
+
+		GetAllNormalizedDescriptionsQuery query = new(filter, q, offset, limit);
+		PagedResult<NormalizedDescriptionDetail> page = await mediator.Send(query, cancellationToken);
 
 		return TypedResults.Ok(new NormalizedDescriptionListResponse
 		{
-			Items = [.. items.Select(ToResponse)],
-			TotalCount = items.Count,
+			Items = [.. page.Data.Select(ToResponse)],
+			// The matching row count, not the page length. Clients page against this.
+			TotalCount = page.Total,
+			Offset = page.Offset,
+			Limit = page.Limit,
 		});
 	}
 

@@ -1,13 +1,22 @@
 using Application.Interfaces;
+using Application.Models;
 using Application.Models.NormalizedDescriptions;
 using Domain.NormalizedDescriptions;
 
 namespace Application.Queries.NormalizedDescription.GetAll;
 
-// Lists canonical normalized-description rows, optionally filtered to a single status.
-// Unlike the Core entity list queries, this isn't paginated — the row count is bounded by
-// the number of unique receipt-item descriptions ever seen, which stays small enough that
-// the admin screen can render the full set without server-side paging for the foreseeable
-// future. When pressure grows we can add offset/limit/sort in a follow-up without changing
-// the existing URL shape.
-public record GetAllNormalizedDescriptionsQuery(NormalizedDescriptionStatus? StatusFilter) : IQuery<List<NormalizedDescriptionDetail>>;
+/// <summary>
+/// One page of canonical normalized-description rows, optionally filtered by status and search
+/// term (RECEIPTS-879).
+/// </summary>
+/// <remarks>
+/// This used to be unpaginated on the theory that the row count stays small. It does not:
+/// the count is bounded by the number of unique receipt-item descriptions ever seen, and grocery
+/// receipts generate thousands of them. The registry loaded all of them and filtered in the
+/// browser, and every merge-dialog open paid for the same full list.
+/// </remarks>
+public record GetAllNormalizedDescriptionsQuery(
+	NormalizedDescriptionStatus? StatusFilter,
+	string? Q,
+	int Offset,
+	int Limit) : IQuery<PagedResult<NormalizedDescriptionDetail>>;
