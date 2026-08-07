@@ -15,7 +15,11 @@ public class DistinctDescriptionEntityConfiguration : IEntityTypeConfiguration<D
 		builder.Property(e => e.Description)
 			.IsRequired();
 
-		// Trigram GIN index is added in the migration's Up() via raw SQL — EF does not model
-		// custom index methods like `USING gin (col gin_trgm_ops)`.
+		// No trigram index on this table any more (RECEIPTS-859). The GIN index existed to serve
+		// ItemSimilarityEdgeRefresher's `%` similarity join, which went with the refresher in
+		// RECEIPTS-836. Every remaining trigram query runs against library.ItemTemplates or
+		// receipts.ReceiptItems, each of which has its own index; the only access to this table is
+		// the reconciliation INSERT/DELETE in ApplicationDbContext, both keyed on the primary key.
+		// Keeping it would cost a GIN write on every receipt save and buy nothing.
 	}
 }
