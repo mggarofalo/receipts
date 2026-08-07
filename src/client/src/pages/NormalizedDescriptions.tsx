@@ -1,5 +1,8 @@
 import { useMemo, useState } from "react";
-import { useNormalizedDescriptions } from "@/hooks/useNormalizedDescriptions";
+import {
+  useNormalizedDescriptions,
+  NORMALIZED_DESCRIPTION_PAGE_SIZE,
+} from "@/hooks/useNormalizedDescriptions";
 import {
   useMergeMutation,
   useRenameMutation,
@@ -19,6 +22,9 @@ import {
 import { useLinkedReceiptItems } from "@/hooks/useReceiptItems";
 import { usePermission } from "@/hooks/usePermission";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import { useServerPagination } from "@/hooks/useServerPagination";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { Pagination } from "@/components/Pagination";
 import { formatDecimal } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -120,10 +126,19 @@ export default function NormalizedDescriptions() {
 }
 
 function ReviewQueueTab() {
-  const { data: pendingData, isLoading, isError } = useNormalizedDescriptions(
-    "PendingReview",
-  );
-  const { data: activeData } = useNormalizedDescriptions("Active");
+  const pagination = useServerPagination({
+    defaultPageSize: NORMALIZED_DESCRIPTION_PAGE_SIZE,
+  });
+  const {
+    items: pending,
+    total,
+    isLoading,
+    isError,
+  } = useNormalizedDescriptions({
+    status: "PendingReview",
+    offset: pagination.offset,
+    limit: pagination.limit,
+  });
   const updateStatus = useUpdateStatusMutation();
   const [mergeTarget, setMergeTarget] = useState<NormalizedDescription | null>(
     null,
@@ -135,13 +150,11 @@ function ReviewQueueTab() {
     null,
   );
 
-  const pending = useMemo(() => {
-    const items = pendingData?.items ?? [];
-    return [...items].sort(
-      (a, b) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-    );
-  }, [pendingData?.items]);
+  // The queue used to re-sort each fetch newest-first in the browser. Once the list is paged that
+  // is no longer a sort — it only reorders the rows in hand, so "newest" would mean "newest on
+  // this page" while reading as a global ordering. The server's ordering (display name, then id)
+  // is used as-is: it is stable across pages, and it puts near-duplicates next to each other,
+  // which is exactly what a reviewer hunting merge candidates wants.
 
   if (isLoading) {
     return (
@@ -176,9 +189,7 @@ function ReviewQueueTab() {
       <div className="flex gap-6 rounded-lg border p-4">
         <div>
           <p className="card-sub">Pending Review</p>
-          <p className="money-med">
-            {pendingData?.totalCount ?? pending.length}
-          </p>
+          <p className="money-med">{total}</p>
         </div>
       </div>
 
@@ -255,9 +266,17 @@ function ReviewQueueTab() {
         </TableBody>
       </Table>
 
+      <Pagination
+        currentPage={pagination.currentPage}
+        totalItems={total}
+        pageSize={pagination.pageSize}
+        totalPages={pagination.totalPages(total)}
+        onPageChange={(page) => pagination.setPage(page, total)}
+        onPageSizeChange={pagination.setPageSize}
+      />
+
       <MergeDialog
         source={mergeTarget}
-        candidates={activeData?.items ?? []}
         onClose={() => setMergeTarget(null)}
       />
       <SplitDialog
@@ -483,29 +502,34 @@ function SampleRawDescriptions({ samples }: { samples: string[] | undefined }) {
 
 interface MergeDialogProps {
   source: NormalizedDescription | null;
-  candidates: NormalizedDescription[];
   onClose: () => void;
 }
 
-function MergeDialog({ source, candidates, onClose }: MergeDialogProps) {
+/** Candidate window. Search runs server-side, so this bounds one page, not the searchable set. */
+const MERGE_CANDIDATE_PAGE_SIZE = 50;
+
+function MergeDialog({ source, onClose }: MergeDialogProps) {
   const merge = useMergeMutation();
   const [targetId, setTargetId] = useState<string | undefined>();
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search);
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const list = candidates.filter((c) => c.id !== source?.id);
-    if (!q) return list.slice(0, 50);
-    return list
-      .filter(
-        (c) =>
-          // Both, so a search finds an entry by what it is called now or by the receipt text
-          // it still matches on.
-          c.displayName.toLowerCase().includes(q) ||
-          c.canonicalName.toLowerCase().includes(q),
-      )
-      .slice(0, 50);
-  }, [candidates, search, source?.id]);
+  // Searched on the server (RECEIPTS-879). It used to filter whatever the "Active" list had
+  // already loaded, which meant the dialog could only ever find a target that happened to be in
+  // that array — and once the list endpoint became paged, that array is one page.
+  const { items: candidates, total } = useNormalizedDescriptions({
+    status: "Active",
+    q: debouncedSearch,
+    limit: MERGE_CANDIDATE_PAGE_SIZE,
+    enabled: source !== null,
+  });
+
+  const filtered = useMemo(
+    () => candidates.filter((c) => c.id !== source?.id),
+    [candidates, source?.id],
+  );
+
+  const sourceCount = source?.linkedItemCount ?? 0;
 
   function handleClose() {
     setTargetId(undefined);
@@ -531,10 +555,16 @@ function MergeDialog({ source, candidates, onClose }: MergeDialogProps) {
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Merge Into Active Entry</DialogTitle>
+          {/* States the blast radius up front: how many items move, and that the entry being
+              merged away is deleted rather than filed somewhere. The old copy said "this
+              pending-review entry", which became wrong once the registry could merge two Active
+              entries (RECEIPTS-879). */}
           <DialogDescription>
-            Pick the canonical row to keep. All receipt items currently linked
-            to &quot;{source?.displayName}&quot; will be re-pointed at the
-            chosen row, and this pending-review entry will be deleted.
+            Pick the canonical row to keep.{" "}
+            {sourceCount === 0
+              ? "No receipt items are linked to this entry, so nothing will be re-pointed."
+              : `${sourceCount} receipt ${sourceCount === 1 ? "item" : "items"} linked to “${source?.displayName}” will be re-pointed at the chosen row.`}{" "}
+            “{source?.displayName}” is then deleted. This cannot be undone.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
@@ -572,6 +602,18 @@ function MergeDialog({ source, candidates, onClose }: MergeDialogProps) {
               </ul>
             )}
           </div>
+          {/* Says so when there are more matches than are shown. The list was capped at 50 before
+              this with nothing on screen to say so, which reads as "your target does not exist"
+              (RECEIPTS-878). */}
+          {total > candidates.length && (
+            <p
+              className="text-xs text-muted-foreground"
+              data-testid="merge-truncation-notice"
+            >
+              Showing {candidates.length} of {total} matching entries — refine
+              your search to narrow it down.
+            </p>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={handleClose}>
@@ -752,20 +794,50 @@ function SplitDialog({ source, onClose }: SplitDialogProps) {
   );
 }
 
+/**
+ * The Active registry: everything the resolver is currently allowed to match against.
+ *
+ * Two things changed here in RECEIPTS-879. Search and paging moved to the server — the tab used
+ * to load every Active row and filter the array in the browser, which does not survive a registry
+ * of a few thousand descriptions. And the tab stopped being read-only: it is the only place an
+ * already-approved entry can be corrected, so without actions here every approval was permanent.
+ */
 function RegistryTab() {
-  const { data, isLoading, isError } = useNormalizedDescriptions("Active");
+  const pagination = useServerPagination({
+    defaultPageSize: NORMALIZED_DESCRIPTION_PAGE_SIZE,
+  });
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search);
 
-  const filtered = useMemo(() => {
-    const items = data?.items ?? [];
-    const q = search.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter(
-      (i) =>
-        i.displayName.toLowerCase().includes(q) ||
-        i.canonicalName.toLowerCase().includes(q),
-    );
-  }, [data?.items, search]);
+  const {
+    items,
+    total,
+    isLoading,
+    isError,
+  } = useNormalizedDescriptions({
+    status: "Active",
+    q: debouncedSearch,
+    offset: pagination.offset,
+    limit: pagination.limit,
+  });
+
+  const [mergeTarget, setMergeTarget] = useState<NormalizedDescription | null>(
+    null,
+  );
+  const [splitTarget, setSplitTarget] = useState<NormalizedDescription | null>(
+    null,
+  );
+  const [retireTarget, setRetireTarget] = useState<NormalizedDescription | null>(
+    null,
+  );
+
+  function handleSearchChange(value: string) {
+    setSearch(value);
+    // A new search re-filters the whole set on the server, so the page the admin was on no
+    // longer refers to anything. Staying on page 4 of the old result would show an empty table
+    // for a search that has matches.
+    pagination.resetPage();
+  }
 
   if (isLoading) {
     return (
@@ -792,49 +864,158 @@ function RegistryTab() {
           <Input
             id="registry-search"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Filter by canonical name…"
+            onChange={(e) => handleSearchChange(e.target.value)}
+            placeholder="Search by name or matched receipt text…"
             className="mt-1"
           />
         </div>
         <div className="text-right">
-          <p className="card-sub">Active Entries</p>
-          <p className="money-med">{data?.totalCount ?? 0}</p>
+          <p className="card-sub">
+            {debouncedSearch ? "Matching Entries" : "Active Entries"}
+          </p>
+          <p className="money-med">{total}</p>
         </div>
       </div>
-      {filtered.length === 0 ? (
+      {items.length === 0 ? (
         <div className="rounded-lg border p-6 text-center">
           <p className="text-muted-foreground">
-            {search
+            {debouncedSearch
               ? "No active entries match your search."
               : "No active entries yet."}
           </p>
         </div>
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Canonical Name</TableHead>
-              <TableHead>Created</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filtered.map((row) => (
-              <TableRow key={row.id}>
-                <TableCell className="font-medium">
-                  <EditableName row={row} />
-                </TableCell>
-                <TableCell>
-                  <span className="text-sm text-muted-foreground">
-                    {new Date(row.createdAt).toLocaleDateString()}
-                  </span>
-                </TableCell>
+        <>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Canonical Name</TableHead>
+                <TableHead className="text-right">Linked Items</TableHead>
+                <TableHead>Created</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {items.map((row) => (
+                <TableRow key={row.id}>
+                  <TableCell className="font-medium">
+                    <EditableName row={row} />
+                    <SampleRawDescriptions samples={row.sampleRawDescriptions} />
+                  </TableCell>
+                  {/* Makes runaway and near-empty entries visible: a row holding thousands of
+                      items is probably over-matching, and one holding none is dead weight. */}
+                  <TableCell className="text-right tabular-nums">
+                    {row.linkedItemCount}
+                  </TableCell>
+                  <TableCell>
+                    <span className="text-sm text-muted-foreground">
+                      {new Date(row.createdAt).toLocaleDateString()}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-right space-x-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setMergeTarget(row)}
+                    >
+                      Merge
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSplitTarget(row)}
+                    >
+                      Split
+                    </Button>
+                    {/* Send back to review rather than reject: an entry that looks wrong on
+                        second thought is a judgement to redo, not a decision to record. Reject
+                        stays in the review queue, where it tombstones the text for good. */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setRetireTarget(row)}
+                    >
+                      Send back to review
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+
+          <Pagination
+            currentPage={pagination.currentPage}
+            totalItems={total}
+            pageSize={pagination.pageSize}
+            totalPages={pagination.totalPages(total)}
+            onPageChange={(page) => pagination.setPage(page, total)}
+            onPageSizeChange={pagination.setPageSize}
+          />
+        </>
       )}
+
+      <MergeDialog source={mergeTarget} onClose={() => setMergeTarget(null)} />
+      <SplitDialog source={splitTarget} onClose={() => setSplitTarget(null)} />
+      <RetireDialog
+        source={retireTarget}
+        onClose={() => setRetireTarget(null)}
+      />
     </div>
+  );
+}
+
+interface RetireDialogProps {
+  source: NormalizedDescription | null;
+  onClose: () => void;
+}
+
+/**
+ * Sends an Active entry back to the review queue (RECEIPTS-879).
+ *
+ * Confirmed rather than fired inline because the consequence is not local to this row: until it
+ * is approved again, its spend renders as provisional in the spending report (RECEIPTS-875).
+ * Nothing is unlinked — this is the reversible action, which is what separates it from Reject.
+ */
+function RetireDialog({ source, onClose }: RetireDialogProps) {
+  const updateStatus = useUpdateStatusMutation();
+  const count = source?.linkedItemCount ?? 0;
+
+  function handleConfirm() {
+    if (!source) return;
+    updateStatus.mutate(
+      { id: source.id, status: "pendingReview" },
+      { onSuccess: () => onClose() },
+    );
+  }
+
+  return (
+    <Dialog
+      open={source !== null}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Send “{source?.displayName}” back to review?</DialogTitle>
+          <DialogDescription>
+            The entry returns to the review queue and its{" "}
+            {count === 1 ? "one linked item stays" : `${count} linked items stay`}{" "}
+            attached — nothing is unlinked and no receipt data changes. Until it is
+            approved again its spending is reported as unreviewed. Approve it from
+            the review queue to undo this.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={handleConfirm} disabled={updateStatus.isPending}>
+            {updateStatus.isPending ? "Sending…" : "Send back to review"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

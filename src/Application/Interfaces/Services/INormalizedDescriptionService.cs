@@ -1,3 +1,4 @@
+using Application.Models;
 using Application.Models.NormalizedDescriptions;
 using Domain.NormalizedDescriptions;
 
@@ -11,7 +12,15 @@ public interface INormalizedDescriptionService
 	// all return the evidence-bearing detail (RECEIPTS-873). If only the list endpoint populated it,
 	// the other two would have to report a structurally false LinkedItemCount of 0.
 	Task<NormalizedDescriptionDetail?> GetByIdAsync(Guid id, CancellationToken cancellationToken);
-	Task<List<NormalizedDescriptionDetail>> GetAllAsync(NormalizedDescriptionStatus? filter, CancellationToken cancellationToken);
+	// Paginated and searchable since RECEIPTS-879: the registry used to load every Active row and
+	// filter in the browser, and grocery receipts generate thousands of distinct descriptions.
+	// Search matches display name and matched text, so a renamed entry is findable either way.
+	Task<PagedResult<NormalizedDescriptionDetail>> GetAllAsync(
+		NormalizedDescriptionStatus? filter,
+		string? q,
+		int offset,
+		int limit,
+		CancellationToken cancellationToken);
 	Task<int> MergeAsync(Guid keepId, Guid discardId, CancellationToken cancellationToken);
 	// RECEIPTS-877. Detaches N receipt items into one new canonical entry under a caller-supplied
 	// name. The name is not derived from the selection: a multi-item split routinely spans

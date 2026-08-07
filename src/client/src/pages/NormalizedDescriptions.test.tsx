@@ -11,6 +11,8 @@ vi.mock("@/hooks/usePageTitle", () => ({
 vi.mock("@/hooks/useNormalizedDescriptions", () => ({
   useNormalizedDescriptions: vi.fn(),
   useNormalizedDescription: vi.fn(),
+  NORMALIZED_DESCRIPTION_PAGE_SIZE: 50,
+  NORMALIZED_DESCRIPTION_MAX_PAGE_SIZE: 200,
 }));
 
 vi.mock("@/hooks/useNormalizedDescriptionActions", () => ({
@@ -126,32 +128,33 @@ const activeItems = [
   },
 ];
 
-function mockList(status: string | undefined) {
-  if (status === "PendingReview") {
-    return mockQueryResult({
-      data: { items: pendingItems, totalCount: pendingItems.length },
+type ListItem = (typeof pendingItems)[number] | (typeof activeItems)[number];
+
+/**
+ * The shape the hook returns since RECEIPTS-879: the query plus a materialised page. `total` is
+ * the count of matching rows, deliberately independent of `items.length` — a fixture where they
+ * always agree cannot catch a pager that reads the page length.
+ */
+function listResult(items: ListItem[], total: number = items.length) {
+  return {
+    ...mockQueryResult({
+      data: { items, totalCount: total },
       isLoading: false,
       isSuccess: true,
       isPending: false,
       status: "success",
-    });
-  }
-  if (status === "Active") {
-    return mockQueryResult({
-      data: { items: activeItems, totalCount: activeItems.length },
-      isLoading: false,
-      isSuccess: true,
-      isPending: false,
-      status: "success",
-    });
-  }
-  return mockQueryResult({
-    data: { items: [], totalCount: 0 },
-    isLoading: false,
-    isSuccess: true,
-    isPending: false,
-    status: "success",
-  });
+    }),
+    items,
+    total,
+  };
+}
+
+type ListOptions = { status?: string; q?: string; offset?: number; limit?: number };
+
+function mockList(options: ListOptions | undefined) {
+  if (options?.status === "PendingReview") return listResult(pendingItems);
+  if (options?.status === "Active") return listResult(activeItems);
+  return listResult([]);
 }
 
 const requeuePreview = {
@@ -171,8 +174,9 @@ const liveSettings = {
 };
 
 function wireDefaults() {
-  vi.mocked(useNormalizedDescriptions).mockImplementation((status) =>
-    mockList(status),
+  vi.mocked(useNormalizedDescriptions).mockImplementation(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ((options?: ListOptions) => mockList(options)) as any,
   );
   vi.mocked(useSettings).mockReturnValue(
     mockQueryResult({
@@ -286,18 +290,13 @@ describe("NormalizedDescriptions review queue", () => {
   });
 
   it("shows empty state when queue is empty", () => {
-    vi.mocked(useNormalizedDescriptions).mockImplementation((status) => {
-      if (status === "PendingReview") {
-        return mockQueryResult({
-          data: { items: [], totalCount: 0 },
-          isLoading: false,
-          isSuccess: true,
-          isPending: false,
-          status: "success",
-        });
-      }
-      return mockList(status);
-    });
+    vi.mocked(useNormalizedDescriptions).mockImplementation(((
+      options?: ListOptions,
+    ) =>
+      options?.status === "PendingReview"
+        ? listResult([])
+        : // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          mockList(options)) as any);
     renderWithQueryClient(<NormalizedDescriptions />);
     expect(screen.getByText("Review Queue Empty")).toBeInTheDocument();
   });
@@ -453,16 +452,279 @@ describe("NormalizedDescriptions registry tab", () => {
     expect(screen.getByText("Milk")).toBeInTheDocument();
   });
 
-  it("filters by search box", async () => {
+  // ── RECEIPTS-879: paging and server-side search ──────────────
+
+  it("asks the server for a bounded page rather than the whole registry", async () => {
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    await user.click(screen.getByRole("tab", { name: "Registry" }));
+    await screen.findByText("Apples");
+
+    // The tab used to fetch every Active row and filter the array in the browser. A window is
+    // now mandatory: without one the client is back to holding the entire registry.
+    expect(vi.mocked(useNormalizedDescriptions)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "Active",
+        offset: 0,
+        limit: expect.any(Number),
+      }),
+    );
+  });
+
+  it("sends the search term to the server instead of filtering the page", async () => {
     const user = userEvent.setup();
     renderWithQueryClient(<NormalizedDescriptions />);
     await user.click(screen.getByRole("tab", { name: "Registry" }));
     const input = await screen.findByLabelText("Search");
     await user.type(input, "apple");
-    await waitFor(() => {
-      expect(screen.getByText("Apples")).toBeInTheDocument();
-      expect(screen.queryByText("Milk")).not.toBeInTheDocument();
+
+    // Client-side filtering can only ever search the page in hand, so a match on page 7 was
+    // invisible. Debounced, hence waitFor.
+    await waitFor(() =>
+      expect(vi.mocked(useNormalizedDescriptions)).toHaveBeenCalledWith(
+        expect.objectContaining({ status: "Active", q: "apple" }),
+      ),
+    );
+  });
+
+  it("reports the matching total, not the number of rows on this page", async () => {
+    vi.mocked(useNormalizedDescriptions).mockImplementation(((
+      options?: ListOptions,
+    ) =>
+      options?.status === "Active"
+        ? listResult(activeItems, 843)
+        : // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          mockList(options)) as any);
+
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    await user.click(screen.getByRole("tab", { name: "Registry" }));
+
+    expect(await screen.findByText("843")).toBeInTheDocument();
+  });
+
+  it("pages forward through the registry", async () => {
+    vi.mocked(useNormalizedDescriptions).mockImplementation(((
+      options?: ListOptions,
+    ) =>
+      options?.status === "Active"
+        ? listResult(activeItems, 843)
+        : // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          mockList(options)) as any);
+
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    await user.click(screen.getByRole("tab", { name: "Registry" }));
+    await screen.findByText("Apples");
+
+    await user.click(screen.getByRole("button", { name: "Next page" }));
+
+    await waitFor(() =>
+      expect(vi.mocked(useNormalizedDescriptions)).toHaveBeenCalledWith(
+        expect.objectContaining({ status: "Active", offset: expect.any(Number) }),
+      ),
+    );
+    const offsets = vi
+      .mocked(useNormalizedDescriptions)
+      .mock.calls.map(([o]) => (o as ListOptions | undefined))
+      .filter((o) => o?.status === "Active")
+      .map((o) => o!.offset);
+    expect(offsets.some((offset) => (offset ?? 0) > 0)).toBe(true);
+  });
+
+  it("shows how many receipt items each registry row holds", async () => {
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    await user.click(screen.getByRole("tab", { name: "Registry" }));
+
+    // Without this an over-matching entry that has swallowed thousands of items looks exactly
+    // like one holding three.
+    const row = (await screen.findByText("Apples")).closest("tr")!;
+    expect(within(row).getByText("12")).toBeInTheDocument();
+  });
+
+  // ── RECEIPTS-879: row actions ────────────────────────────────
+
+  it("offers merge, split and send-back-to-review on an active entry", async () => {
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    await user.click(screen.getByRole("tab", { name: "Registry" }));
+
+    // The registry is the only place an approved mistake can be corrected. Read-only meant
+    // every approval was permanent.
+    const row = (await screen.findByText("Apples")).closest("tr")!;
+    expect(within(row).getByRole("button", { name: "Merge" })).toBeInTheDocument();
+    expect(within(row).getByRole("button", { name: "Split" })).toBeInTheDocument();
+    expect(
+      within(row).getByRole("button", { name: /rename apples/i }),
+    ).toBeInTheDocument();
+    expect(
+      within(row).getByRole("button", { name: "Send back to review" }),
+    ).toBeInTheDocument();
+  });
+
+  it("merges one active entry into another and says how many items move", async () => {
+    const mutate = vi.fn((_vars, opts?: { onSuccess?: () => void }) => {
+      opts?.onSuccess?.();
     });
+    vi.mocked(useMergeMutation).mockReturnValue(mockMutationResult({ mutate }));
+
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    await user.click(screen.getByRole("tab", { name: "Registry" }));
+    const row = (await screen.findByText("Apples")).closest("tr")!;
+    await user.click(within(row).getByRole("button", { name: "Merge" }));
+
+    const dialog = await screen.findByRole("dialog");
+    // a-1 holds 12 items. The count is the whole confirmation: merging the wrong direction
+    // moves the larger set into the smaller name, and it cannot be undone.
+    expect(dialog).toHaveTextContent(/12 receipt items/i);
+    expect(dialog).toHaveTextContent(/cannot be undone/i);
+
+    const target = within(dialog).getByText("Milk").closest("label")!;
+    await user.click(within(target).getByRole("radio"));
+    await user.click(within(dialog).getByRole("button", { name: "Merge" }));
+
+    expect(mutate).toHaveBeenCalledWith(
+      { id: "a-2", discardId: "a-1" },
+      expect.any(Object),
+    );
+  });
+
+  it("splits items out of an active entry", async () => {
+    const mutate = vi.fn((_vars, opts?: { onSuccess?: () => void }) => {
+      opts?.onSuccess?.();
+    });
+    vi.mocked(useSplitMutation).mockReturnValue(mockMutationResult({ mutate }));
+    mockLinkedItems([{ id: "ri-9", description: "GALA APPLES" }]);
+
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    await user.click(screen.getByRole("tab", { name: "Registry" }));
+    const row = (await screen.findByText("Apples")).closest("tr")!;
+    await user.click(within(row).getByRole("button", { name: "Split" }));
+
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByLabelText("GALA APPLES"));
+    await user.click(within(dialog).getByRole("button", { name: "Split" }));
+
+    expect(mutate).toHaveBeenCalledWith(
+      { id: "a-1", receiptItemIds: ["ri-9"], canonicalName: "GALA APPLES" },
+      expect.any(Object),
+    );
+  });
+
+  it("sends an active entry back to review without unlinking anything", async () => {
+    const mutate = vi.fn();
+    vi.mocked(useUpdateStatusMutation).mockReturnValue(
+      mockMutationResult({ mutate }),
+    );
+
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    await user.click(screen.getByRole("tab", { name: "Registry" }));
+    const row = (await screen.findByText("Apples")).closest("tr")!;
+    await user.click(
+      within(row).getByRole("button", { name: "Send back to review" }),
+    );
+
+    const dialog = await screen.findByRole("dialog");
+    // The reversible action. Saying so is what keeps it distinct from Reject, which unlinks
+    // every item and tombstones the text.
+    expect(dialog).toHaveTextContent(/nothing is unlinked/i);
+
+    await user.click(
+      within(dialog).getByRole("button", { name: "Send back to review" }),
+    );
+    expect(mutate).toHaveBeenCalledWith(
+      { id: "a-1", status: "pendingReview" },
+      expect.any(Object),
+    );
+  });
+});
+
+// RECEIPTS-879 moved the candidate search server-side. The dialog is the second consumer of the
+// list hook, and the one that breaks least visibly when it is only searching a page.
+describe("NormalizedDescriptions merge candidates", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    wireDefaults();
+  });
+
+  it("searches candidates on the server rather than filtering the loaded page", async () => {
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    await user.click(within(row).getByRole("button", { name: "Merge" }));
+
+    const dialog = await screen.findByRole("dialog");
+    await user.type(
+      within(dialog).getByLabelText(/search active entries/i),
+      "milk",
+    );
+
+    await waitFor(() =>
+      expect(vi.mocked(useNormalizedDescriptions)).toHaveBeenCalledWith(
+        expect.objectContaining({ status: "Active", q: "milk" }),
+      ),
+    );
+  });
+
+  it("says when there are more matches than it is showing", async () => {
+    vi.mocked(useNormalizedDescriptions).mockImplementation(((
+      options?: ListOptions,
+    ) =>
+      options?.status === "Active"
+        ? listResult(activeItems, 412)
+        : // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          mockList(options)) as any);
+
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    await user.click(within(row).getByRole("button", { name: "Merge" }));
+
+    // Silently showing the first 50 of 412 reads as "the entry you want does not exist"
+    // (RECEIPTS-878).
+    expect(await screen.findByTestId("merge-truncation-notice")).toHaveTextContent(
+      /showing 2 of 412/i,
+    );
+  });
+
+  it("stays quiet when every match is on screen", async () => {
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    await user.click(within(row).getByRole("button", { name: "Merge" }));
+
+    await screen.findByRole("dialog");
+    expect(
+      screen.queryByTestId("merge-truncation-notice"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("never offers the entry being merged away as its own target", async () => {
+    vi.mocked(useNormalizedDescriptions).mockImplementation(((
+      options?: ListOptions,
+    ) =>
+      options?.status === "Active"
+        ? listResult(activeItems)
+        : // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          mockList(options)) as any);
+
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    await user.click(screen.getByRole("tab", { name: "Registry" }));
+    const row = (await screen.findByText("Apples")).closest("tr")!;
+    await user.click(within(row).getByRole("button", { name: "Merge" }));
+
+    // Merging a row into itself is a 400 from the server; it should not be reachable. The
+    // registry makes this possible for the first time, since source and candidates are now the
+    // same set.
+    const dialog = await screen.findByRole("dialog");
+    const radios = within(dialog).getAllByRole("radio");
+    expect(radios).toHaveLength(1);
+    expect(within(dialog).getByText("Milk")).toBeInTheDocument();
   });
 });
 

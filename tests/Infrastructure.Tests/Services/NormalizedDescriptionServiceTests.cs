@@ -1,4 +1,5 @@
 using Application.Interfaces.Services;
+using Application.Models;
 using Application.Models.NormalizedDescriptions;
 using Common;
 using Domain.NormalizedDescriptions;
@@ -30,6 +31,14 @@ public class NormalizedDescriptionServiceTests
 		_mapper = new NormalizedDescriptionMapper();
 		_settingsMapper = new NormalizedDescriptionSettingsMapper();
 	}
+
+	// RECEIPTS-879 made the list paged. The tests that predate paging assert on row content, not on
+	// the window, so they go through this helper and take a page wide enough to hold their seed.
+	// Paging and search get their own tests further down.
+	private static async Task<List<NormalizedDescriptionDetail>> GetAllRowsAsync(
+		NormalizedDescriptionService service,
+		NormalizedDescriptionStatus? filter) =>
+		(await service.GetAllAsync(filter, null, 0, NormalizedDescriptionService.MaxPageSize, CancellationToken.None)).Data;
 
 	[Fact]
 	public async Task GetOrCreateAsync_ExactCaseInsensitiveMatch_ReturnsExisting()
@@ -645,13 +654,168 @@ public class NormalizedDescriptionServiceTests
 		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
 
 		// Act
-		List<NormalizedDescriptionDetail> pending = await service.GetAllAsync(NormalizedDescriptionStatus.PendingReview, CancellationToken.None);
-		List<NormalizedDescriptionDetail> all = await service.GetAllAsync(null, CancellationToken.None);
+		List<NormalizedDescriptionDetail> pending = await GetAllRowsAsync(service, NormalizedDescriptionStatus.PendingReview);
+		List<NormalizedDescriptionDetail> all = await GetAllRowsAsync(service, null);
 
 		// Assert
 		pending.Should().ContainSingle();
 		pending[0].Description.CanonicalName.Should().Be("Pending B");
 		all.Should().HaveCount(3);
+	}
+
+	// ── RECEIPTS-879: paging and search ───────────────────────────────────────
+
+	private async Task SeedRowsAsync(params string[] canonicalNames)
+	{
+		using ApplicationDbContext seed = _contextFactory.CreateDbContext();
+		foreach (string name in canonicalNames)
+		{
+			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
+			{
+				Id = Guid.NewGuid(),
+				CanonicalName = name,
+				Status = NormalizedDescriptionStatus.Active,
+				CreatedAt = DateTimeOffset.UtcNow,
+			});
+		}
+
+		await seed.SaveChangesAsync();
+	}
+
+	[Fact]
+	public async Task GetAllAsync_PagesThroughTheOrderedSetWithoutGapsOrRepeats()
+	{
+		await SeedRowsAsync("Apples", "Bananas", "Cherries", "Dates", "Elderberries");
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		PagedResult<NormalizedDescriptionDetail> first = await service.GetAllAsync(null, null, 0, 2, CancellationToken.None);
+		PagedResult<NormalizedDescriptionDetail> second = await service.GetAllAsync(null, null, 2, 2, CancellationToken.None);
+		PagedResult<NormalizedDescriptionDetail> third = await service.GetAllAsync(null, null, 4, 2, CancellationToken.None);
+
+		// Total is the size of the matching set, not of the page — the client's page count depends
+		// on it, so a total that tracked the page length would report one page forever.
+		first.Total.Should().Be(5);
+		second.Total.Should().Be(5);
+		third.Total.Should().Be(5);
+
+		first.Offset.Should().Be(0);
+		first.Limit.Should().Be(2);
+
+		// The ordering is by display name with an id tiebreak, so consecutive windows partition the
+		// set exactly. Without a deterministic order, offset paging drops and duplicates rows.
+		first.Data.Select(d => d.Description.CanonicalName).Should().Equal("Apples", "Bananas");
+		second.Data.Select(d => d.Description.CanonicalName).Should().Equal("Cherries", "Dates");
+		third.Data.Select(d => d.Description.CanonicalName).Should().Equal("Elderberries");
+	}
+
+	[Fact]
+	public async Task GetAllAsync_OffsetPastTheEnd_ReturnsEmptyPageWithTheRealTotal()
+	{
+		await SeedRowsAsync("Apples", "Bananas");
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		PagedResult<NormalizedDescriptionDetail> page = await service.GetAllAsync(null, null, 500, 50, CancellationToken.None);
+
+		// An empty page is not an empty set. A client that paged too far needs to be able to tell
+		// the difference and walk back.
+		page.Data.Should().BeEmpty();
+		page.Total.Should().Be(2);
+	}
+
+	[Fact]
+	public async Task GetAllAsync_SearchMatchesDisplayLabelAndMatchedText()
+	{
+		Guid renamedId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.AddRange(
+				new NormalizedDescriptionEntity
+				{
+					Id = renamedId,
+					CanonicalName = "WHL MLK GAL",
+					DisplayLabel = "Whole Milk",
+					Status = NormalizedDescriptionStatus.Active,
+					CreatedAt = DateTimeOffset.UtcNow,
+				},
+				new NormalizedDescriptionEntity
+				{
+					Id = Guid.NewGuid(),
+					CanonicalName = "Sourdough Loaf",
+					Status = NormalizedDescriptionStatus.Active,
+					CreatedAt = DateTimeOffset.UtcNow,
+				});
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		// A renamed row has to stay findable by both names. The admin who renamed it searches for
+		// what they typed; the admin looking at a receipt searches for the text on the receipt.
+		PagedResult<NormalizedDescriptionDetail> byLabel = await service.GetAllAsync(null, "whole", 0, 50, CancellationToken.None);
+		PagedResult<NormalizedDescriptionDetail> byMatchedText = await service.GetAllAsync(null, "mlk", 0, 50, CancellationToken.None);
+		PagedResult<NormalizedDescriptionDetail> noMatch = await service.GetAllAsync(null, "zzz", 0, 50, CancellationToken.None);
+
+		byLabel.Data.Should().ContainSingle().Which.Description.Id.Should().Be(renamedId);
+		byMatchedText.Data.Should().ContainSingle().Which.Description.Id.Should().Be(renamedId);
+		noMatch.Data.Should().BeEmpty();
+		noMatch.Total.Should().Be(0);
+	}
+
+	[Fact]
+	public async Task GetAllAsync_SearchIsCaseInsensitiveAndTotalReflectsTheFilteredSet()
+	{
+		await SeedRowsAsync("Coffee Beans", "COFFEE FILTERS", "Sourdough Loaf");
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		PagedResult<NormalizedDescriptionDetail> page = await service.GetAllAsync(null, "  CoFfEe  ", 0, 1, CancellationToken.None);
+
+		// Total counts the matches, not the whole table — this is what drives the pager, so a total
+		// of 3 here would offer the admin a page that does not exist.
+		page.Total.Should().Be(2);
+		page.Data.Should().ContainSingle();
+	}
+
+	[Fact]
+	public async Task GetAllAsync_SearchCombinesWithTheStatusFilter()
+	{
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.AddRange(
+				new NormalizedDescriptionEntity { Id = Guid.NewGuid(), CanonicalName = "Coffee Beans", Status = NormalizedDescriptionStatus.Active, CreatedAt = DateTimeOffset.UtcNow },
+				new NormalizedDescriptionEntity { Id = Guid.NewGuid(), CanonicalName = "Coffee Filters", Status = NormalizedDescriptionStatus.PendingReview, CreatedAt = DateTimeOffset.UtcNow });
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		PagedResult<NormalizedDescriptionDetail> page =
+			await service.GetAllAsync(NormalizedDescriptionStatus.PendingReview, "coffee", 0, 50, CancellationToken.None);
+
+		page.Total.Should().Be(1);
+		page.Data.Should().ContainSingle().Which.Description.CanonicalName.Should().Be("Coffee Filters");
+	}
+
+	[Fact]
+	public async Task GetAllAsync_OrdersByDisplayNameNotMatchedText()
+	{
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.AddRange(
+				new NormalizedDescriptionEntity { Id = Guid.NewGuid(), CanonicalName = "ZZZ RAW TEXT", DisplayLabel = "Apples", Status = NormalizedDescriptionStatus.Active, CreatedAt = DateTimeOffset.UtcNow },
+				new NormalizedDescriptionEntity { Id = Guid.NewGuid(), CanonicalName = "Bananas", Status = NormalizedDescriptionStatus.Active, CreatedAt = DateTimeOffset.UtcNow });
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		PagedResult<NormalizedDescriptionDetail> page = await service.GetAllAsync(null, null, 0, 50, CancellationToken.None);
+
+		// The list is sorted by what the admin reads on screen. Sorting by CanonicalName would put
+		// a renamed row somewhere alphabetically unrelated to its own label.
+		page.Data.Select(d => d.Description.DisplayName).Should().Equal("Apples", "Bananas");
 	}
 
 	// ── RECEIPTS-580: settings / test-match / threshold-impact ─────────────────
@@ -1079,7 +1243,7 @@ public class NormalizedDescriptionServiceTests
 
 		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
 
-		List<NormalizedDescriptionDetail> rows = await service.GetAllAsync(NormalizedDescriptionStatus.PendingReview, CancellationToken.None);
+		List<NormalizedDescriptionDetail> rows = await GetAllRowsAsync(service, NormalizedDescriptionStatus.PendingReview);
 
 		NormalizedDescriptionDetail row = rows.Should().ContainSingle().Subject;
 		row.LinkedItemCount.Should().Be(5);
@@ -1090,7 +1254,7 @@ public class NormalizedDescriptionServiceTests
 		// The samples are ordered before the cap so the evidence an admin sees does not reshuffle
 		// between refreshes. Asserting repeatability rather than a specific sequence keeps the test
 		// honest: the actual collation is the database's, and InMemory does not share it.
-		List<NormalizedDescriptionDetail> secondCall = await service.GetAllAsync(NormalizedDescriptionStatus.PendingReview, CancellationToken.None);
+		List<NormalizedDescriptionDetail> secondCall = await GetAllRowsAsync(service, NormalizedDescriptionStatus.PendingReview);
 		secondCall.Single().SampleRawDescriptions.Should().Equal(row.SampleRawDescriptions);
 	}
 
@@ -1118,7 +1282,7 @@ public class NormalizedDescriptionServiceTests
 
 		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
 
-		List<NormalizedDescriptionDetail> rows = await service.GetAllAsync(NormalizedDescriptionStatus.PendingReview, CancellationToken.None);
+		List<NormalizedDescriptionDetail> rows = await GetAllRowsAsync(service, NormalizedDescriptionStatus.PendingReview);
 
 		// A count that included soft-deleted rows would overstate how much data an
 		// Approve/Merge/Split decision actually moves.
@@ -1156,7 +1320,7 @@ public class NormalizedDescriptionServiceTests
 
 		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
 
-		List<NormalizedDescriptionDetail> rows = await service.GetAllAsync(NormalizedDescriptionStatus.PendingReview, CancellationToken.None);
+		List<NormalizedDescriptionDetail> rows = await GetAllRowsAsync(service, NormalizedDescriptionStatus.PendingReview);
 
 		NormalizedDescriptionDetail row = rows.Should().ContainSingle().Subject;
 		row.NearestNeighbourName.Should().Be("Strawberry Jam");
@@ -1184,7 +1348,7 @@ public class NormalizedDescriptionServiceTests
 
 		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
 
-		List<NormalizedDescriptionDetail> rows = await service.GetAllAsync(NormalizedDescriptionStatus.PendingReview, CancellationToken.None);
+		List<NormalizedDescriptionDetail> rows = await GetAllRowsAsync(service, NormalizedDescriptionStatus.PendingReview);
 
 		// Rows that predate RECEIPTS-873 (and rows whose neighbour was merged away) must surface as
 		// "no comparison recorded" — a 0.0 default here would read as "scored zero against

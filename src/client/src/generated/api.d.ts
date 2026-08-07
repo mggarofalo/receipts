@@ -675,9 +675,14 @@ export interface paths {
         };
         /**
          * List normalized descriptions
-         * @description Returns all canonical normalized-description rows, optionally filtered by
-         *     status. Not paginated — the row count is bounded by the number of unique
-         *     receipt-item descriptions ever seen. Admin-only.
+         * @description Returns one page of canonical normalized-description rows, optionally filtered by
+         *     status and search term. Admin-only.
+         *
+         *     Paginated since RECEIPTS-879. The row count is bounded by the number of unique
+         *     receipt-item descriptions ever seen, which grocery receipts push into the thousands —
+         *     the previous unpaginated behaviour made the registry load every row and filter in the
+         *     browser. Callers that omit `offset`/`limit` now receive the first 50 rows rather than
+         *     everything; read `totalCount` to page.
          */
         get: operations["GetAllNormalizedDescriptions"];
         put?: never;
@@ -3359,9 +3364,21 @@ export interface components {
             items: components["schemas"]["NormalizedDescriptionResponse"][];
             /**
              * Format: int32
-             * @description Total number of rows returned. Matches the length of `items` since the endpoint is not paginated.
+             * @description Total number of rows matching the status and search filters, across all pages.
+             *     Since RECEIPTS-879 this is the count to page against — it is no longer the length
+             *     of `items`, which is capped by `limit`.
              */
             totalCount: number;
+            /**
+             * Format: int32
+             * @description Echoed from the request. Absent on responses from before RECEIPTS-879.
+             */
+            offset?: number;
+            /**
+             * Format: int32
+             * @description Echoed from the request. Absent on responses from before RECEIPTS-879.
+             */
+            limit?: number;
         };
         RenameNormalizedDescriptionRequest: {
             /**
@@ -5966,8 +5983,16 @@ export interface operations {
     GetAllNormalizedDescriptions: {
         parameters: {
             query?: {
-                /** @description Optional status filter. When absent, returns rows of both statuses. Matching is case-insensitive. */
-                status?: "Active" | "PendingReview";
+                /** @description Optional status filter. When absent, returns rows of every status. Matching is case-insensitive. */
+                status?: "Active" | "PendingReview" | "Rejected";
+                /**
+                 * @description Case-insensitive substring filter matched against both the display name and the
+                 *     matched text, so an entry is findable by what it is called now or by the receipt
+                 *     text it still resolves on. Whitespace-only values are ignored.
+                 */
+                q?: string;
+                offset?: number;
+                limit?: number;
             };
             header?: never;
             path?: never;
