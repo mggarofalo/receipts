@@ -73,12 +73,10 @@ RUN case ${TARGETARCH} in \
 # Copy remaining source
 COPY src/ src/
 
-# Download ONNX model for local embedding generation (~1.34 GB)
-RUN mkdir -p src/Infrastructure/Models/BgeLargeEnV15 && \
-    curl -sL -o src/Infrastructure/Models/BgeLargeEnV15/model.onnx \
-      "https://huggingface.co/BAAI/bge-large-en-v1.5/resolve/main/onnx/model.onnx" && \
-    curl -sL -o src/Infrastructure/Models/BgeLargeEnV15/vocab.txt \
-      "https://huggingface.co/BAAI/bge-large-en-v1.5/resolve/main/vocab.txt"
+# The ONNX embedding model (~1.34 GB) is NOT downloaded here. Baking it in made the image
+# 2.54 GB — three copies of one file, since MSBuild flowed it into the CLI tools' output too
+# — and re-pushed an immutable blob on every release. The app now fetches it once into
+# /data on first start; see EmbeddingModelProvisioningService (RECEIPTS-929).
 
 RUN case ${TARGETARCH} in \
       amd64) DOTNET_ARCH=x64 ;; \
@@ -116,6 +114,10 @@ ARG SENTRY_BACKEND_DSN=
 ENV SENTRY_BACKEND_DSN=${SENTRY_BACKEND_DSN}
 ENV ASPNETCORE_ENVIRONMENT=Production
 ENV ASPNETCORE_URLS=http://+:8080
+
+# Model cache on the mounted /data volume, so it survives image upgrades and is downloaded
+# once per deployment rather than shipped in every image tag.
+ENV Embeddings__ModelPath=/data/models/BgeLargeEnV15
 
 WORKDIR /app
 

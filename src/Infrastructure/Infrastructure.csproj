@@ -12,10 +12,11 @@
     <InternalsVisibleTo Include="Infrastructure.IntegrationTests" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Content Include="Models\BgeLargeEnV15\model.onnx" Condition="Exists('Models\BgeLargeEnV15\model.onnx')" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="Models\BgeLargeEnV15\vocab.txt" Condition="Exists('Models\BgeLargeEnV15\vocab.txt')" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
+  <!-- The ONNX embedding model is deliberately NOT a Content item. CopyToOutputDirectory
+       flows transitively to every referencing project, so DbMigrator, DbSeeder and
+       DbExporter each received their own 1.34 GB copy and the container image carried
+       three of them (RECEIPTS-929). It is provisioned to a persistent directory at
+       runtime instead — see EmbeddingModelProvisioningService. -->
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" />

@@ -46,8 +46,24 @@ On first `docker compose up`:
 1. **init** container generates random secrets (`pg_password`, `jwt_key`, `admin_password`) to a shared `secrets` volume, then exits
 2. **db** (PostgreSQL) starts using `POSTGRES_PASSWORD_FILE` to read the generated password
 3. **app** reads secrets from the volume, runs migrations and seeding, then starts the API
+4. **app** downloads the embedding model (~1.34 GB) into the `app-data` volume in the background
 
 On subsequent starts, the init container detects existing secrets and skips generation. Secrets persist in the `secrets` Docker volume.
+
+### First start and the embedding model
+
+The embedding model is not shipped inside the image — that kept the image at 2.54 GB and re-pushed an unchanging 1.34 GB blob on every release. It is fetched once into `app-data` at `/data/models` instead, verified against a pinned upstream revision and SHA-256 before use.
+
+The API serves traffic normally throughout. Until the download finishes, only the semantic features degrade: description normalization and similarity search fall back rather than fail. Progress and any failures appear in `docker compose logs -f app`. A failed download is retried with backoff and never stops the container.
+
+Two settings control this:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `Embeddings__ModelPath` | `/data/models/BgeLargeEnV15` | Where the model is stored |
+| `Embeddings__AutoDownload` | `true` | Set `false` for air-gapped hosts |
+
+For an air-gapped deployment, run `dotnet run scripts/download-onnx-model.cs` on a connected machine, copy the resulting directory into the `app-data` volume at `/data/models/BgeLargeEnV15`, and set `Embeddings__AutoDownload=false`.
 
 ## Configuration
 
@@ -358,4 +374,4 @@ Target for Raspberry Pi 4 (4GB RAM):
 | PostgreSQL | uncapped | ~100-200 MB |
 | **Total** | — | ~300-600 MB |
 
-Disk: Docker images ~500 MB, database grows with usage.
+Disk: Docker images ~660 MB, plus ~1.4 GB in the `app-data` volume for the embedding model (downloaded once on first start, not re-pulled on upgrades). Database grows with usage.

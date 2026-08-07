@@ -124,6 +124,9 @@ services:
         limits:
           # BGE-large ONNX model (~1.34 GB) is mmap'd into the singleton
           # InferenceSession; keep headroom for .NET runtime + request load.
+          # The model itself is not in the image — it is downloaded into app-data
+          # at /data/models on first start, so budget ~1.4 GB of disk there too
+          # and expect semantic features to lag the first boot (RECEIPTS-929).
           memory: 3G
           cpus: "2"
     cap_drop:

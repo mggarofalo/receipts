@@ -44,7 +44,10 @@ builder.Services
 	.AddAuthServices(builder.Configuration)
 	.RegisterProgramServices()
 	.RegisterApplicationServices(builder.Configuration)
-	.RegisterInfrastructureServices(builder.Configuration);
+	.RegisterInfrastructureServices(builder.Configuration)
+	// Background workers live only in the long-running host — the CLI tools deliberately
+	// skip them so a migration or seed run never loads the embedding model (RECEIPTS-929).
+	.AddInfrastructureBackgroundServices();
 
 // Build application
 WebApplication app = builder.Build();

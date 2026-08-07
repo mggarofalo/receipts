@@ -19,7 +19,6 @@ This is a .NET 10 Clean Architecture solution for a receipt management applicati
   - `Repositories/` - Repository pattern implementation
   - `Services/` - Service implementations (audit logging, embeddings, similarity search)
   - `Mapping/` - Mapperly mappers (Domain <-> Entity)
-  - `Models/` - Local ML model files (ONNX)
 - **Presentation**
   - **API** - ASP.NET Core Web API with SignalR hub for real-time updates
     - `Controllers/Core/` and `Controllers/Aggregates/` - REST endpoints
@@ -81,7 +80,10 @@ Migrations run automatically on API startup via `IDatabaseMigratorService`.
 
 The system uses pgvector for semantic similarity search on item names and descriptions. Embeddings are generated locally via ONNX Runtime using the `bge-large-en-v1.5` model (1024-dimensional vectors, CLS pooling). No external API keys are required.
 
-- **`OnnxEmbeddingService`** — Singleton service that loads the ONNX model and tokenizer at startup, generates 1024-dim L2-normalized embeddings
+The 1.34 GB model is deliberately not shipped in the container image or copied into build output — doing so made the image 2.54 GB, most of it three copies of the same file (RECEIPTS-929). It is fetched once into a persistent directory and loaded from there.
+
+- **`EmbeddingModelProvisioningService`** — Background service that downloads the model on first start if absent, verifying size and SHA-256 against a pinned upstream revision before the file is moved into place. Failures are logged and retried, never fatal. Configured via `Embeddings__ModelPath` (the container points it at `/data/models`, so budget ~1.4 GB of volume space) and `Embeddings__AutoDownload`
+- **`OnnxEmbeddingService`** — Singleton service that loads the ONNX model and tokenizer lazily on first use, generates 1024-dim L2-normalized embeddings. Reports `IsConfigured == false` while the model is still missing, which every consumer already handles by degrading rather than failing
 - **`EmbeddingGenerationService`** — Background service that polls every 30s, generates embeddings for new/changed ItemTemplates and ReceiptItems in batches of 50
 - **`ItemTemplateSimilarityService`** — Hybrid search combining trigram similarity (0.4 weight) and cosine vector similarity (0.6 weight) with HNSW indexing
 

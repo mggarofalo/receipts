@@ -125,7 +125,9 @@ public class OnnxEmbeddingServiceIntegrationTests : IClassFixture<OnnxEmbeddingS
 	public void Dispose_CanBeCalledMultipleTimes()
 	{
 		// Create a separate instance for this test since the fixture's instance is shared
-		using OnnxEmbeddingService service = new(new Microsoft.Extensions.Logging.Abstractions.NullLogger<OnnxEmbeddingService>());
+		using OnnxEmbeddingService service = new(
+			Microsoft.Extensions.Options.Options.Create(new EmbeddingModelOptions()),
+			new Microsoft.Extensions.Logging.Abstractions.NullLogger<OnnxEmbeddingService>());
 
 		Action act = () =>
 		{

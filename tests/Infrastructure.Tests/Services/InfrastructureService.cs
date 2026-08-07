@@ -9,8 +9,10 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace Infrastructure.Tests.Services;
 
@@ -311,6 +313,96 @@ public class InfrastructureServiceTests
 
 		// Assert
 		result.Should().BeSameAs(services);
+	}
+
+	[Fact]
+	public void RegisterInfrastructureServices_RegistersNoHostedServices()
+	{
+		// Arrange — DbSeeder and DbExporter call this and then StartAsync(). If the workers
+		// were still registered here, a seed run would spin up the embedding pipeline and try
+		// to load a 1.34 GB model it has no use for (RECEIPTS-929).
+		ServiceCollection services = new();
+		services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
+		IConfiguration configuration = BuildPostgresConfiguration();
+
+		// Act
+		services.RegisterInfrastructureServices(configuration);
+
+		// Assert
+		services.Should().NotContain(d => d.ServiceType == typeof(IHostedService));
+	}
+
+	[Fact]
+	public void AddInfrastructureBackgroundServices_RegistersTheWorkers()
+	{
+		// Arrange
+		ServiceCollection services = new();
+		services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
+		IConfiguration configuration = BuildPostgresConfiguration();
+
+		// Act
+		services.RegisterInfrastructureServices(configuration);
+		IServiceCollection result = services.AddInfrastructureBackgroundServices();
+
+		// Assert
+		result.Should().BeSameAs(services);
+
+		List<Type?> hostedServiceTypes = [.. services
+			.Where(d => d.ServiceType == typeof(IHostedService))
+			.Select(d => d.ImplementationType)];
+
+		hostedServiceTypes.Should().Contain(typeof(EmbeddingModelProvisioningService));
+		hostedServiceTypes.Should().Contain(typeof(EmbeddingGenerationService));
+		hostedServiceTypes.Should().Contain(typeof(AuthAuditCleanupService));
+		hostedServiceTypes.Should().Contain(typeof(NormalizedDescriptionResolutionService));
+	}
+
+	[Fact]
+	public void RegisterInfrastructureServices_BindsEmbeddingModelPathFromConfiguration()
+	{
+		// Arrange — this is the binding the container relies on via Embeddings__ModelPath.
+		ServiceCollection services = new();
+		services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
+		IConfiguration configuration = new ConfigurationBuilder()
+			.AddInMemoryCollection(new Dictionary<string, string?>
+			{
+				["Embeddings:ModelPath"] = "/data/models/BgeLargeEnV15",
+				["Embeddings:AutoDownload"] = "false",
+			})
+			.Build();
+
+		// Act
+		services.RegisterInfrastructureServices(configuration);
+		ServiceProvider serviceProvider = services.BuildServiceProvider();
+		EmbeddingModelOptions options = serviceProvider.GetRequiredService<IOptions<EmbeddingModelOptions>>().Value;
+
+		// Assert
+		options.ModelPath.Should().Be("/data/models/BgeLargeEnV15");
+		options.AutoDownload.Should().BeFalse();
+		options.ResolveModelDirectory().Should().Be("/data/models/BgeLargeEnV15");
+	}
+
+	[Fact]
+	public void RegisterInfrastructureServices_EmbeddingServiceResolves_WhenModelIsAbsent()
+	{
+		// Arrange — on a fresh deployment the model has not been downloaded yet. Resolving
+		// IEmbeddingService must still succeed; it reports IsConfigured == false instead.
+		ServiceCollection services = new();
+		services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
+		IConfiguration configuration = new ConfigurationBuilder()
+			.AddInMemoryCollection(new Dictionary<string, string?>
+			{
+				["Embeddings:ModelPath"] = Path.Combine(Path.GetTempPath(), "receipts-no-model", Guid.NewGuid().ToString("N")),
+			})
+			.Build();
+
+		// Act
+		services.RegisterInfrastructureServices(configuration);
+		ServiceProvider serviceProvider = services.BuildServiceProvider();
+
+		// Assert
+		IEmbeddingService embeddingService = serviceProvider.GetRequiredService<IEmbeddingService>();
+		embeddingService.IsConfigured.Should().BeFalse();
 	}
 
 	#endregion

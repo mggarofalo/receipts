@@ -31,9 +31,16 @@ dotnet restore Receipts.slnx
 # Install Node dependencies (OpenAPI linting tools)
 npm install
 
-# Download the ONNX embedding model (~90MB, required at runtime)
+# Pre-download the ONNX embedding model (~1.34 GB)
+# Optional: the app fetches this itself on first start. Running it up front just means
+# semantic features work immediately instead of a few minutes in.
 dotnet run scripts/download-onnx-model.cs
 ```
+
+The model is stored per-machine, not per-checkout — `%LOCALAPPDATA%\Receipts\models` on
+Windows, `~/.local/share/Receipts/models` elsewhere — so every clone and worktree shares one
+copy. Override the location with `Embeddings__ModelPath`, or set `Embeddings__AutoDownload=false`
+to require it be staged in by hand.
 
 ## F5 Debugging (Recommended)
 
