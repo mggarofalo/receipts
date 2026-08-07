@@ -79,17 +79,30 @@ public sealed class EmbeddingModelOptions
 			return ModelPath;
 		}
 
-		string root = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+		return BuildDefaultDirectory(
+			Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+			Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+			Path.GetTempPath());
+	}
 
+	/// <summary>
+	/// Picks the per-machine cache root. Split out of <see cref="ResolveModelDirectory"/> so the
+	/// fallback branches are reachable from tests without manipulating the real environment.
+	/// </summary>
+	internal static string BuildDefaultDirectory(string localApplicationData, string userProfile, string tempPath)
+	{
 		// GetFolderPath returns empty when the platform cannot resolve the folder (e.g. a
-		// container with no HOME set). Fall back to the XDG default rather than producing
-		// a relative path that would land inside whatever the current directory happens to be.
+		// container with no HOME set). Fall back to the XDG default and then to temp, rather
+		// than producing a relative path that would land inside whatever the current
+		// directory happens to be. Each branch supplies only the ROOT — the "Receipts"
+		// segment is appended once, below.
+		string root = localApplicationData;
+
 		if (string.IsNullOrWhiteSpace(root))
 		{
-			string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-			root = string.IsNullOrWhiteSpace(home)
-				? Path.Combine(Path.GetTempPath(), "Receipts")
-				: Path.Combine(home, ".local", "share");
+			root = string.IsNullOrWhiteSpace(userProfile)
+				? tempPath
+				: Path.Combine(userProfile, ".local", "share");
 		}
 
 		return Path.Combine(root, "Receipts", "models", ModelDirectoryName);

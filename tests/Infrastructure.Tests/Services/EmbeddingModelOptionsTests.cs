@@ -38,6 +38,62 @@ public class EmbeddingModelOptionsTests
 	}
 
 	[Fact]
+	public void BuildDefaultDirectory_LocalApplicationDataAvailable_UsesIt()
+	{
+		string directory = EmbeddingModelOptions.BuildDefaultDirectory(
+			localApplicationData: Path.Combine("C:", "Users", "someone", "AppData", "Local"),
+			userProfile: Path.Combine("C:", "Users", "someone"),
+			tempPath: Path.Combine("C:", "Temp"));
+
+		directory.Should().Be(Path.Combine("C:", "Users", "someone", "AppData", "Local", "Receipts", "models", "BgeLargeEnV15"));
+	}
+
+	[Fact]
+	public void BuildDefaultDirectory_NoLocalApplicationData_FallsBackToXdgShare()
+	{
+		string directory = EmbeddingModelOptions.BuildDefaultDirectory(
+			localApplicationData: "",
+			userProfile: Path.Combine("home", "someone"),
+			tempPath: Path.Combine("tmp"));
+
+		directory.Should().Be(Path.Combine("home", "someone", ".local", "share", "Receipts", "models", "BgeLargeEnV15"));
+	}
+
+	[Fact]
+	public void BuildDefaultDirectory_NoHomeAtAll_FallsBackToTempWithoutRepeatingTheReceiptsSegment()
+	{
+		// Regression guard: the temp branch used to pre-combine "Receipts" into the root and
+		// then have it appended a second time, yielding .../Receipts/Receipts/models/...
+		string directory = EmbeddingModelOptions.BuildDefaultDirectory(
+			localApplicationData: "",
+			userProfile: "",
+			tempPath: Path.Combine("tmp"));
+
+		directory.Should().Be(Path.Combine("tmp", "Receipts", "models", "BgeLargeEnV15"));
+		directory.Should().NotContain(Path.Combine("Receipts", "Receipts"));
+	}
+
+	[Fact]
+	public void BuildDefaultDirectory_NeverRepeatsTheReceiptsSegment_AcrossEveryBranch()
+	{
+		string[] roots = ["", "   ", Path.Combine("C:", "Local")];
+
+		foreach (string localAppData in roots)
+		{
+			foreach (string userProfile in roots)
+			{
+				string directory = EmbeddingModelOptions.BuildDefaultDirectory(
+					localAppData,
+					userProfile,
+					Path.Combine("tmp"));
+
+				directory.Should().NotContain(Path.Combine("Receipts", "Receipts"));
+				directory.Should().EndWith(Path.Combine("Receipts", "models", "BgeLargeEnV15"));
+			}
+		}
+	}
+
+	[Fact]
 	public void BuildDownloadUri_PinsTheRevision_AndDoesNotUseAMutableBranchRef()
 	{
 		// Arrange

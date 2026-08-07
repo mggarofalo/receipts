@@ -140,11 +140,12 @@ static string ResolveModelDirectory()
 
     string root = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
 
+    // Each branch supplies only the root — "Receipts" is appended once, below.
     if (string.IsNullOrWhiteSpace(root))
     {
         string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         root = string.IsNullOrWhiteSpace(home)
-            ? Path.Combine(Path.GetTempPath(), "Receipts")
+            ? Path.GetTempPath()
             : Path.Combine(home, ".local", "share");
     }
 

@@ -32,6 +32,11 @@ string modelDir = args.Length > 0 && !string.IsNullOrWhiteSpace(args[0])
 Directory.CreateDirectory(modelDir);
 Console.WriteLine($"Model directory: {modelDir}");
 
+// HttpClient.Timeout stops applying once ResponseHeadersRead hands back the stream, so the
+// deadline is enforced per file with a CancellationTokenSource instead — same approach as
+// EmbeddingModelProvisioningService. Without it a stalled connection hangs forever, which
+// would also hang worktree-setup.cs, since that waits on this process with no timeout.
+TimeSpan downloadTimeout = TimeSpan.FromMinutes(30);
 using HttpClient http = new() { Timeout = Timeout.InfiniteTimeSpan };
 
 foreach ((string fileName, string remotePath, long size, string sha256) in files)
@@ -50,17 +55,19 @@ foreach ((string fileName, string remotePath, long size, string sha256) in files
 
     Console.WriteLine($"Downloading {fileName} ({size:N0} bytes) from {uri}...");
 
+    using CancellationTokenSource timeout = new(downloadTimeout);
+
     try
     {
         string actualHash;
         long actualSize;
 
-        using (HttpResponseMessage response = await http.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead))
+        using (HttpResponseMessage response = await http.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, timeout.Token))
         {
             // Without this an HTTP error would be written into the file and reported as success.
             response.EnsureSuccessStatusCode();
 
-            await using Stream source = await response.Content.ReadAsStreamAsync();
+            await using Stream source = await response.Content.ReadAsStreamAsync(timeout.Token);
             await using FileStream target = new(tempPath, FileMode.Create, FileAccess.Write, FileShare.None);
 
             using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
@@ -68,10 +75,10 @@ foreach ((string fileName, string remotePath, long size, string sha256) in files
 
             long total = 0;
             int read;
-            while ((read = await source.ReadAsync(buffer)) > 0)
+            while ((read = await source.ReadAsync(buffer, timeout.Token)) > 0)
             {
                 hash.AppendData(buffer, 0, read);
-                await target.WriteAsync(buffer.AsMemory(0, read));
+                await target.WriteAsync(buffer.AsMemory(0, read), timeout.Token);
                 total += read;
             }
 
@@ -113,11 +120,12 @@ static string ResolveDefaultDirectory()
 {
     string root = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
 
+    // Each branch supplies only the root — "Receipts" is appended once, below.
     if (string.IsNullOrWhiteSpace(root))
     {
         string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         root = string.IsNullOrWhiteSpace(home)
-            ? Path.Combine(Path.GetTempPath(), "Receipts")
+            ? Path.GetTempPath()
             : Path.Combine(home, ".local", "share");
     }
 
