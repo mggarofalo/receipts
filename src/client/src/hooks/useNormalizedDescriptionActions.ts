@@ -35,6 +35,9 @@ export function useMergeMutation() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["normalized-descriptions"] });
       queryClient.invalidateQueries({ queryKey: ["receipt-items"] });
+      // Re-pointing items moves spend from one bucket to another, so any cached
+      // spending-by-description page is now wrong.
+      queryClient.invalidateQueries({ queryKey: ["reports"] });
       const count = data?.itemsRelinkedCount ?? 0;
       if (count > 0) {
         toast.success(`Merged — ${count} item${count === 1 ? "" : "s"} re-linked`);
@@ -72,6 +75,8 @@ export function useSplitMutation() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["normalized-descriptions"] });
       queryClient.invalidateQueries({ queryKey: ["receipt-items"] });
+      // A split creates a new bucket and shrinks the one it came out of.
+      queryClient.invalidateQueries({ queryKey: ["reports"] });
       toast.success("Receipt item split into a new normalized description");
     },
   });
@@ -100,6 +105,11 @@ export function useUpdateStatusMutation() {
     },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["normalized-descriptions"] });
+      // Approval's whole point is that the spending report stops rendering this bucket as
+      // provisional (RECEIPTS-875). Without this the report keeps its cached copy and the
+      // badge lingers, which is precisely the "approve changes nothing you can see"
+      // complaint the issue is about.
+      queryClient.invalidateQueries({ queryKey: ["reports"] });
       toast.success(
         variables.status === "active"
           ? "Approved as active"

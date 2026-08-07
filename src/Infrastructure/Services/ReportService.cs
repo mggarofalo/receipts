@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using Application.Interfaces.Services;
 using Application.Models.Reports;
 using Common;
+using Domain.NormalizedDescriptions;
 using Infrastructure.Entities.Core;
 using Microsoft.EntityFrameworkCore;
 
@@ -996,10 +997,17 @@ public partial class ReportService(IDbContextFactory<ApplicationDbContext> conte
 			return new SpendingByNormalizedDescriptionResult([], totalCount, grandTotal, from, to);
 		}
 
+		List<string> pagedNames = [.. pagedGroups.Select(x => x.CanonicalName)];
+
 		Dictionary<string, string> dominantCurrencies = await GetDominantCurrenciesAsync(
 			context,
 			receiptsQuery,
-			[.. pagedGroups.Select(x => x.CanonicalName)],
+			pagedNames,
+			cancellationToken);
+
+		Dictionary<string, NormalizedDescriptionStatus> statuses = await GetStatusesAsync(
+			context,
+			pagedNames,
 			cancellationToken);
 
 		List<SpendingByNormalizedDescriptionItem> items = [.. pagedGroups.Select(x =>
@@ -1009,7 +1017,8 @@ public partial class ReportService(IDbContextFactory<ApplicationDbContext> conte
 				dominantCurrencies.TryGetValue(x.CanonicalName, out string? currency) ? currency : Currency.USD.ToString(),
 				x.ItemCount,
 				ToDateTimeOffset(x.FirstSeen),
-				ToDateTimeOffset(x.LastSeen)))];
+				ToDateTimeOffset(x.LastSeen),
+				statuses.TryGetValue(x.CanonicalName, out NormalizedDescriptionStatus status) ? status : null))];
 
 		return new SpendingByNormalizedDescriptionResult(items, totalCount, grandTotal, from, to);
 	}
@@ -1048,6 +1057,31 @@ public partial class ReportService(IDbContextFactory<ApplicationDbContext> conte
 					.ThenBy(x => x.TotalAmountCurrency)
 					.Select(x => x.TotalAmountCurrency.ToString())
 					.First());
+	}
+
+	/// <summary>
+	/// Review status for each canonical name on the current page (RECEIPTS-875).
+	/// </summary>
+	/// <remarks>
+	/// A second lookup rather than an extra GROUP BY key. The aggregate query reaches
+	/// NormalizedDescriptions through a LEFT JOIN, so its <c>Status</c> is NULL for every receipt
+	/// item that has no canonical row — and the entity maps that column to a non-nullable enum
+	/// through a value converter, which will not materialize a NULL. Keying off the page's names
+	/// instead keeps the aggregate SQL untouched and costs one indexed read of at most
+	/// <c>pageSize</c> rows. Safe because <c>lower("CanonicalName")</c> is uniquely indexed, so a
+	/// name identifies exactly one row; the synthetic "(Not Normalized)" key simply misses.
+	/// </remarks>
+	private static async Task<Dictionary<string, NormalizedDescriptionStatus>> GetStatusesAsync(
+		ApplicationDbContext context,
+		List<string> canonicalNames,
+		CancellationToken cancellationToken)
+	{
+		var rows = await context.NormalizedDescriptions.AsNoTracking()
+			.Where(n => canonicalNames.Contains(n.CanonicalName))
+			.Select(n => new { n.CanonicalName, n.Status })
+			.ToListAsync(cancellationToken);
+
+		return rows.ToDictionary(x => x.CanonicalName, x => x.Status);
 	}
 
 	private static DateTimeOffset ToDateTimeOffset(DateOnly date) =>

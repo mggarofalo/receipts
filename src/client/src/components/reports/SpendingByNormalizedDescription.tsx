@@ -17,9 +17,12 @@ import {
   parsePositiveIntParam,
   serializeDateRangeParam,
 } from "@/lib/report-params";
+import { isPendingReview } from "@/lib/normalized-description-status";
+import { usePermission } from "@/hooks/usePermission";
 import { DateRangeSelector } from "@/components/dashboard/DateRangeSelector";
 import type { DateRange } from "@/hooks/useDashboard";
 import { ChartCard, BarChart } from "@/components/charts";
+import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -31,6 +34,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SortableTableHead } from "@/components/SortableTableHead";
+import type { components } from "@/generated/api";
 
 type SortColumn = "canonicalName" | "totalAmount" | "itemCount";
 type SortDirection = "asc" | "desc";
@@ -67,6 +71,19 @@ function parseSpendingByNormalizedDescriptionParams(
 }
 
 /**
+ * CSV label for a bucket's review state (RECEIPTS-875).
+ *
+ * Three outcomes, not two: the synthetic "(Not Normalized)" bucket carries no status because
+ * it has no backing row, and calling that "Reviewed" would assert an approval nobody gave.
+ */
+function reviewStatusLabel(
+  status: components["schemas"]["NormalizedDescriptionStatus"] | null | undefined,
+): string {
+  if (status == null) return "";
+  return isPendingReview(status) ? "Unreviewed" : "Reviewed";
+}
+
+/**
  * Share of the grand total, as a display string. The denominator spans every
  * bucket (not just the current page), so the column reads consistently while
  * paging. A zero/absent grand total yields an em dash rather than NaN%.
@@ -94,6 +111,7 @@ export default function SpendingByNormalizedDescription() {
   const { data, isLoading, isError } =
     useSpendingByNormalizedDescription(params);
   const { exportCsv, isExporting } = useCsvExport();
+  const { isAdmin } = usePermission();
 
   const handleDateRangeChange = useCallback(
     (range: DateRange) => {
@@ -135,6 +153,13 @@ export default function SpendingByNormalizedDescription() {
     [items],
   );
 
+  // Only counts the current page — the endpoint reports no server-side pending total, and
+  // claiming a figure that spans pages we never fetched would be a guess.
+  const pendingOnPage = useMemo(
+    () => items.filter((item) => isPendingReview(item.status)).length,
+    [items],
+  );
+
   function handleExport() {
     exportCsv({
       filename: csvFilename("spending-by-normalized-description", dateRange),
@@ -144,6 +169,9 @@ export default function SpendingByNormalizedDescription() {
         "Total Amount",
         "Share of Total",
         "Currency",
+        // Without this the export flattens reviewed and unreviewed spend into one
+        // indistinguishable list — the exact confusion the on-screen badge removes.
+        "Review Status",
       ],
       rows: async () => {
         const allItems = await fetchAllReportPages(
@@ -176,6 +204,7 @@ export default function SpendingByNormalizedDescription() {
           item.totalAmount,
           formatShare(Number(item.totalAmount ?? 0), grandTotal),
           item.currency,
+          reviewStatusLabel(item.status),
         ]);
       },
     });
@@ -249,6 +278,32 @@ export default function SpendingByNormalizedDescription() {
         </div>
       </div>
 
+      {pendingOnPage > 0 && (
+        <p
+          className="text-sm text-muted-foreground"
+          data-testid="unreviewed-note"
+        >
+          {pendingOnPage} {pendingOnPage === 1 ? "bucket" : "buckets"} on this
+          page {pendingOnPage === 1 ? "is" : "are"} still awaiting review. Their
+          spend is included in the totals, but the grouping is the resolver&apos;s
+          own and nobody has confirmed it.
+          {/* The review queue lives behind AdminRoute, so only offer the link to
+              someone who can actually follow it. */}
+          {isAdmin() && (
+            <>
+              {" "}
+              <Link
+                to="/admin/normalized-descriptions"
+                className="underline underline-offset-4 hover:text-primary"
+              >
+                Review them
+              </Link>
+              .
+            </>
+          )}
+        </p>
+      )}
+
       <ChartCard
         title="Top Normalized Descriptions by Spending"
         empty={chartData.length === 0}
@@ -301,8 +356,12 @@ export default function SpendingByNormalizedDescription() {
               item.canonicalName,
               dateRange,
             );
+            const pending = isPendingReview(item.status);
             return (
-              <TableRow key={item.canonicalName}>
+              <TableRow
+                key={item.canonicalName}
+                className={pending ? "text-muted-foreground" : undefined}
+              >
                 <TableCell className="font-medium">
                   {href ? (
                     <Link
@@ -314,6 +373,15 @@ export default function SpendingByNormalizedDescription() {
                     </Link>
                   ) : (
                     item.canonicalName
+                  )}
+                  {pending && (
+                    <Badge
+                      variant="secondary"
+                      className="ml-2 align-middle font-normal"
+                      data-testid="unreviewed-badge"
+                    >
+                      Unreviewed
+                    </Badge>
                   )}
                 </TableCell>
                 <TableCell className="text-right money">

@@ -1234,9 +1234,10 @@ public class ReportsControllerTests
 
 		AppReports.SpendingByNormalizedDescriptionResult reportResult = new(
 		[
-			new AppReports.SpendingByNormalizedDescriptionItem("Organic Milk", 42.50m, "USD", 5, firstSeen, lastSeen),
-			new AppReports.SpendingByNormalizedDescriptionItem("(Not Normalized)", 12.00m, "USD", 2, null, null),
-		], 2, 54.50m, null, null);
+			new AppReports.SpendingByNormalizedDescriptionItem("Organic Milk", 42.50m, "USD", 5, firstSeen, lastSeen, Domain.NormalizedDescriptions.NormalizedDescriptionStatus.Active),
+			new AppReports.SpendingByNormalizedDescriptionItem("Oat Drink", 7.25m, "USD", 1, firstSeen, lastSeen, Domain.NormalizedDescriptions.NormalizedDescriptionStatus.PendingReview),
+			new AppReports.SpendingByNormalizedDescriptionItem("(Not Normalized)", 12.00m, "USD", 2, null, null, null),
+		], 3, 61.75m, null, null);
 
 		_mediatorMock.Setup(m => m.Send(
 			It.IsAny<GetSpendingByNormalizedDescriptionQuery>(),
@@ -1250,9 +1251,9 @@ public class ReportsControllerTests
 		// Assert
 		Ok<SpendingByNormalizedDescriptionResponse> okResult = Assert.IsType<Ok<SpendingByNormalizedDescriptionResponse>>(result.Result);
 		SpendingByNormalizedDescriptionResponse response = okResult.Value!;
-		response.Items.Should().HaveCount(2);
-		response.TotalCount.Should().Be(2);
-		response.GrandTotal.Should().Be(54.50);
+		response.Items.Should().HaveCount(3);
+		response.TotalCount.Should().Be(3);
+		response.GrandTotal.Should().Be(61.75);
 
 		SpendingByNormalizedDescriptionItem first = response.Items.First(i => i.CanonicalName == "Organic Milk");
 		first.TotalAmount.Should().Be(42.50);
@@ -1260,12 +1261,20 @@ public class ReportsControllerTests
 		first.ItemCount.Should().Be(5);
 		first.FirstSeen.Should().Be(firstSeen);
 		first.LastSeen.Should().Be(lastSeen);
+		first.Status.Should().Be(NormalizedDescriptionStatus.Active);
+
+		// The bucket a reviewer has not confirmed yet must arrive marked, or the client cannot
+		// tell provisional money from settled money (RECEIPTS-875).
+		SpendingByNormalizedDescriptionItem pending = response.Items.First(i => i.CanonicalName == "Oat Drink");
+		pending.Status.Should().Be(NormalizedDescriptionStatus.PendingReview);
 
 		SpendingByNormalizedDescriptionItem notNormalized = response.Items.First(i => i.CanonicalName == "(Not Normalized)");
 		notNormalized.TotalAmount.Should().Be(12.00);
 		notNormalized.ItemCount.Should().Be(2);
 		notNormalized.FirstSeen.Should().BeNull();
 		notNormalized.LastSeen.Should().BeNull();
+		// No backing row, so no status to report — distinct from a row that happens to be Active.
+		notNormalized.Status.Should().BeNull();
 	}
 
 	[Fact]

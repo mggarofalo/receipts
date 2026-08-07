@@ -511,7 +511,13 @@ public class ReportsController(IMediator mediator) : ControllerBase
 				Currency = i.Currency,
 				ItemCount = i.ItemCount,
 				FirstSeen = i.FirstSeen,
-				LastSeen = i.LastSeen
+				LastSeen = i.LastSeen,
+				Status = i.Status switch
+				{
+					Domain.NormalizedDescriptions.NormalizedDescriptionStatus.Active => NormalizedDescriptionStatus.Active,
+					Domain.NormalizedDescriptions.NormalizedDescriptionStatus.PendingReview => NormalizedDescriptionStatus.PendingReview,
+					_ => null
+				}
 			}).ToList()
 		});
 	}
