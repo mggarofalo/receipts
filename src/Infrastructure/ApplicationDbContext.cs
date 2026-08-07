@@ -277,8 +277,8 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 		// ReceiptItem. ON CONFLICT keeps it idempotent (and race-safe on the PK).
 		int rowsInserted = await Database.ExecuteSqlRawAsync(
 			"""
-			INSERT INTO "matching"."DistinctDescriptions" ("Description", "ProcessedAt")
-			SELECT d, NULL
+			INSERT INTO "matching"."DistinctDescriptions" ("Description")
+			SELECT d
 			FROM unnest({0}::text[]) AS d
 			WHERE EXISTS (SELECT 1 FROM "receipts"."ReceiptItems" AS ri WHERE ri."Description" = d AND ri."DeletedAt" IS NULL)
 			ON CONFLICT ("Description") DO NOTHING;

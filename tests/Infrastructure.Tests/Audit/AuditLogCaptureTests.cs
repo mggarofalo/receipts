@@ -257,7 +257,7 @@ public class AuditLogCaptureTests
 		// save without excluding this type would crash CollectAuditEntries() on the
 		// `entry.Property("Id")` lookup.
 		(IDbContextFactory<ApplicationDbContext> contextFactory, MockCurrentUserAccessor _) = DbContextWithUserHelpers.CreateInMemoryContextFactoryWithUser();
-		DistinctDescriptionEntity entity = new() { Description = "COCA COLA", ProcessedAt = null };
+		DistinctDescriptionEntity entity = new() { Description = "COCA COLA" };
 
 		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
 		{
