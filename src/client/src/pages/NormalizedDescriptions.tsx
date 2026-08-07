@@ -26,6 +26,7 @@ import { useServerPagination } from "@/hooks/useServerPagination";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { Pagination } from "@/components/Pagination";
 import { formatDecimal } from "@/lib/format";
+import { isPendingReview } from "@/lib/normalized-description-status";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -517,8 +518,13 @@ function MergeDialog({ source, onClose }: MergeDialogProps) {
   // Searched on the server (RECEIPTS-879). It used to filter whatever the "Active" list had
   // already loaded, which meant the dialog could only ever find a target that happened to be in
   // that array — and once the list endpoint became paged, that array is one page.
+  //
+  // Both statuses, not just Active (RECEIPTS-878). Two near-duplicate pending entries out of the
+  // same resolver batch are exactly the pair you want to merge, and requiring one to be approved
+  // first forced a judgement ("this is a real item") that the reviewer had not made yet. Rejected
+  // is excluded: merging items into a tombstone would resurrect text someone retired on purpose.
   const { items: candidates, total } = useNormalizedDescriptions({
-    status: "Active",
+    status: ["Active", "PendingReview"],
     q: debouncedSearch,
     limit: MERGE_CANDIDATE_PAGE_SIZE,
     enabled: source !== null,
@@ -554,7 +560,7 @@ function MergeDialog({ source, onClose }: MergeDialogProps) {
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Merge Into Active Entry</DialogTitle>
+          <DialogTitle>Merge Into Another Entry</DialogTitle>
           {/* States the blast radius up front: how many items move, and that the entry being
               merged away is deleted rather than filed somewhere. The old copy said "this
               pending-review entry", which became wrong once the registry could merge two Active
@@ -581,7 +587,7 @@ function MergeDialog({ source, onClose }: MergeDialogProps) {
           <div className="max-h-64 overflow-y-auto rounded border">
             {filtered.length === 0 ? (
               <p className="p-4 text-sm text-muted-foreground">
-                No matching active entries.
+                No matching entries.
               </p>
             ) : (
               <ul className="divide-y">
@@ -596,6 +602,21 @@ function MergeDialog({ source, onClose }: MergeDialogProps) {
                         onChange={() => setTargetId(c.id)}
                       />
                       <span className="font-medium">{c.displayName}</span>
+                      {/* Pending targets are legitimate but consequential: the survivor stays
+                          pending and still needs review, so the reviewer should know they are
+                          not merging into something already approved. */}
+                      {isPendingReview(c.status) && (
+                        <Badge variant="secondary" className="text-xs">
+                          Pending review
+                        </Badge>
+                      )}
+                      {/* Merging is direction-sensitive and irreversible. Without both counts
+                          side by side there is nothing on screen to say which way round moves
+                          the fewest items. */}
+                      <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
+                        {c.linkedItemCount}{" "}
+                        {c.linkedItemCount === 1 ? "item" : "items"}
+                      </span>
                     </label>
                   </li>
                 ))}

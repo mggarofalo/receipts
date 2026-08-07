@@ -156,7 +156,7 @@ public class NormalizedDescriptionService(
 	/// repeat a row between page requests.
 	/// </remarks>
 	public async Task<PagedResult<NormalizedDescriptionDetail>> GetAllAsync(
-		NormalizedDescriptionStatus? filter,
+		IReadOnlyCollection<NormalizedDescriptionStatus>? statuses,
 		string? q,
 		int offset,
 		int limit,
@@ -165,9 +165,15 @@ public class NormalizedDescriptionService(
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		IQueryable<DetailRow> query = ProjectDetails(context);
 
-		if (filter.HasValue)
+		if (statuses is { Count: > 0 })
 		{
-			query = query.Where(d => d.Status == filter.Value);
+			// Materialised to a List because EF translates Contains over a local collection to
+			// an IN clause; the interface takes a read-only collection so callers cannot mutate
+			// the filter mid-query.
+			List<NormalizedDescriptionStatus> wanted = [.. statuses];
+			query = wanted.Count == 1
+				? query.Where(d => d.Status == wanted[0])
+				: query.Where(d => wanted.Contains(d.Status));
 		}
 
 		string? trimmed = q?.Trim();

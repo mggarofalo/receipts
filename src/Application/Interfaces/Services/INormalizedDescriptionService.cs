@@ -15,8 +15,9 @@ public interface INormalizedDescriptionService
 	// Paginated and searchable since RECEIPTS-879: the registry used to load every Active row and
 	// filter in the browser, and grocery receipts generate thousands of distinct descriptions.
 	// Search matches display name and matched text, so a renamed entry is findable either way.
+	// `statuses` is a set rather than one value (RECEIPTS-878) — null or empty means no filter.
 	Task<PagedResult<NormalizedDescriptionDetail>> GetAllAsync(
-		NormalizedDescriptionStatus? filter,
+		IReadOnlyCollection<NormalizedDescriptionStatus>? statuses,
 		string? q,
 		int offset,
 		int limit,

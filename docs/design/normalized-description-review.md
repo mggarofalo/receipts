@@ -241,3 +241,47 @@ filtered whatever the Active list had already loaded, and once that list is one 
 could only find a target that happened to be on it. It now shows "showing N of M" when there are
 more matches than fit. Including *pending* entries as merge targets, linked-item counts beside
 each candidate, and the tests for those remain RECEIPTS-878.
+
+## Every legitimate merge target, in one list (RECEIPTS-878)
+
+The merge dialog took candidates from `useNormalizedDescriptions("Active")` and cut them to 50
+with `.slice(0, 50)` in both branches, with nothing on screen saying so. With a real registry the
+target you wanted might simply not be shown, and the search box only re-filtered the same
+client-side array. RECEIPTS-879 moved that search to the server and added the "showing N of M"
+notice; what was left is *which* rows count as candidates.
+
+### Pending entries are targets too
+
+Two near-duplicate pending entries out of the same resolver batch are exactly the pair a reviewer
+wants to merge. Requiring one to be approved first forced a judgement — "this is a real item" —
+that they had not made yet, and often could not make until after the merge.
+
+The survivor stays pending. That is correct rather than an omission: merging two near-duplicates
+answers "are these the same thing?", which is a different question from "should this be in the
+registry?". The candidate is badged **Pending review** so the reviewer knows the merge does not
+also approve it.
+
+Rejected rows are never candidates. A tombstone exists to stop the resolver proposing that text
+again; merging items into one would resurrect it. They are excluded in the query rather than
+filtered out of the response — a client-side filter would still let tombstones consume the page
+and push real candidates off it.
+
+### The status filter takes a set
+
+`?status=Active&status=PendingReview` (comma-separated in one value works too). A single-valued
+filter could not express "any legitimate target", and the alternatives were worse: two round
+trips whose totals have to be reconciled for one pager, or redefining "no filter" to silently
+exclude tombstones, which changes what an unfiltered request means for every other caller.
+
+An empty set means *no filter*, not *match nothing*. A caller that builds the list from an empty
+selection gets everything rather than a silent zero. One unparseable value fails the whole
+request — dropping it would answer a narrower question than was asked while looking successful.
+
+`?status=Active` behaves exactly as before, and `check:breaking` does not flag the change: it
+compares schemas and endpoint presence, not query-parameter shapes.
+
+### Counts beside each candidate
+
+Merging is direction-sensitive and irreversible — the source is deleted and its items re-pointed —
+so merging the wrong way round moves the larger set under the smaller name. Both counts are now on
+screen: the source's in the dialog description, each candidate's in its row.

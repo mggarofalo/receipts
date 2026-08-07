@@ -77,11 +77,67 @@ describe("useNormalizedDescriptions", () => {
       {
         params: {
           query: {
-            status: "PendingReview",
+            status: ["PendingReview"],
             q: undefined,
             offset: 0,
             limit: 50,
           },
+        },
+      },
+    );
+  });
+
+  it("sends several statuses as a repeated query param", async () => {
+    mockClient.GET.mockResolvedValue({
+      data: { items: [], totalCount: 0 },
+      error: undefined,
+      response: {} as Response,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    const { result } = renderHook(
+      () =>
+        useNormalizedDescriptions({ status: ["PendingReview", "Active"] }),
+      { wrapper: createQueryWrapper() },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    // Sorted, so ["Active","PendingReview"] and ["PendingReview","Active"] are one cache entry
+    // rather than two fetches of the same rows.
+    expect(mockClient.GET).toHaveBeenCalledWith(
+      "/api/normalized-descriptions",
+      {
+        params: {
+          query: {
+            status: ["Active", "PendingReview"],
+            q: undefined,
+            offset: 0,
+            limit: 50,
+          },
+        },
+      },
+    );
+  });
+
+  it("wraps a single status so callers can pass either shape", async () => {
+    mockClient.GET.mockResolvedValue({
+      data: { items: [], totalCount: 0 },
+      error: undefined,
+      response: {} as Response,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    const { result } = renderHook(
+      () => useNormalizedDescriptions({ status: "Active" }),
+      { wrapper: createQueryWrapper() },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(mockClient.GET).toHaveBeenCalledWith(
+      "/api/normalized-descriptions",
+      {
+        params: {
+          query: { status: ["Active"], q: undefined, offset: 0, limit: 50 },
         },
       },
     );
@@ -111,7 +167,7 @@ describe("useNormalizedDescriptions", () => {
       "/api/normalized-descriptions",
       {
         params: {
-          query: { status: "Active", q: "milk", offset: 100, limit: 25 },
+          query: { status: ["Active"], q: "milk", offset: 100, limit: 25 },
         },
       },
     );
