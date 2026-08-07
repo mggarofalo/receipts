@@ -8,18 +8,25 @@ type NormalizedDescriptionStatus =
   components["schemas"]["NormalizedDescriptionStatus"];
 
 /**
+ * Each message names what actually changed, not which column was written.
+ *
  * Rejection is not a status flip like the other two — it unlinks every receipt item and leaves
- * the row as a tombstone (RECEIPTS-876). The toast says so, because "Status updated" would let
- * an admin believe they had merely re-filed the row.
+ * the row as a tombstone (RECEIPTS-876). "Status updated" would let an admin believe they had
+ * merely re-filed the row.
+ *
+ * Approve is the one action with no confirmation dialog, so this toast is the only place its
+ * effect is ever stated (RECEIPTS-874). "Approved as active" restated the status it had just
+ * been given; what an admin needs to know is that approving moves no data and that the spending
+ * report stops flagging the entry.
  */
 function statusToastMessage(status: NormalizedDescriptionStatus): string {
   switch (status) {
     case "active":
-      return "Approved as active";
+      return "Approved — nothing was moved, and its spending is no longer reported as unreviewed";
     case "rejected":
       return "Rejected — items unlinked and this text will not be suggested again";
     default:
-      return "Moved to pending review";
+      return "Back in the review queue — its items stay linked, but its spending is reported as unreviewed";
   }
 }
 

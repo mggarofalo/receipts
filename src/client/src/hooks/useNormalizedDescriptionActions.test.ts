@@ -321,6 +321,36 @@ describe("useUpdateStatusMutation", () => {
     invalidateSpy.mockRestore();
   });
 
+  // RECEIPTS-874: Approve is the one action with no confirmation dialog, so this toast is the
+  // only place its effect is ever stated. It used to read "Approved as active", which restated
+  // the status the row had just been given and said nothing about what changed.
+  it.each([
+    ["active", /nothing was moved/i],
+    ["active", /no longer reported as unreviewed/i],
+    ["rejected", /items unlinked/i],
+    ["rejected", /will not be suggested again/i],
+    ["pendingReview", /items stay linked/i],
+    ["pendingReview", /reported as unreviewed/i],
+  ] as const)(
+    "toast for %s names what changed (%s)",
+    async (status, expected) => {
+      mockClient.PATCH.mockResolvedValue({
+        data: undefined,
+        error: undefined,
+        response: { status: 204, ok: true } as Response,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any);
+
+      const { result } = renderHook(() => useUpdateStatusMutation(), {
+        wrapper: createQueryWrapper(),
+      });
+      result.current.mutate({ id: "n-1", status });
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      expect(toast.success).toHaveBeenCalledWith(expect.stringMatching(expected));
+    },
+  );
+
   it("propagates errors", async () => {
     mockClient.PATCH.mockResolvedValue({
       data: undefined,
