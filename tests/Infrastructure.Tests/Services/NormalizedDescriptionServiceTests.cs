@@ -528,8 +528,8 @@ public class NormalizedDescriptionServiceTests
 		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(false);
 		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
 
-		// Act
-		NormalizedDescriptionDetail created = await service.SplitAsync(itemId, CancellationToken.None);
+		// Act — the name is the caller's now, so pass the raw text the old signature derived.
+		NormalizedDescriptionDetail created = await service.SplitAsync([itemId], "Specific Raw Text", CancellationToken.None);
 
 		// Assert — a new Active entry was created with the ReceiptItem's raw text, and the
 		// ReceiptItem now points at the new entry.
@@ -1514,7 +1514,7 @@ public class NormalizedDescriptionServiceTests
 		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(false);
 		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
 
-		NormalizedDescriptionDetail created = await service.SplitAsync(itemId, CancellationToken.None);
+		NormalizedDescriptionDetail created = await service.SplitAsync([itemId], "Strawberry Preserves", CancellationToken.None);
 
 		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
 		List<AuditLogEntity> splitLogs = await verify.AuditLogs
@@ -1527,7 +1527,8 @@ public class NormalizedDescriptionServiceTests
 		Dictionary<string, string?> newFields = newRowLog.GetChanges().ToDictionary(c => c.FieldName, c => c.NewValue);
 		newRowLog.GetChanges().Single(c => c.FieldName == "splitFrom").OldValue.Should().Be("Jam");
 		newFields["splitFrom"].Should().Be("Strawberry Preserves");
-		newFields["receiptItemId"].Should().Be(itemId.ToString());
+		newFields["receiptItemIds"].Should().Be(itemId.ToString());
+		newFields["receiptItemCount"].Should().Be("1");
 
 		AuditLogEntity originLog = splitLogs.Single(a => a.EntityId == originId.ToString());
 		Dictionary<string, string?> originFields = originLog.GetChanges().ToDictionary(c => c.FieldName, c => c.NewValue);
@@ -1548,7 +1549,7 @@ public class NormalizedDescriptionServiceTests
 		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(false);
 		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
 
-		await service.SplitAsync(itemId, CancellationToken.None);
+		await service.SplitAsync([itemId], "Strawberry Preserves", CancellationToken.None);
 
 		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
 		List<AuditLogEntity> splitLogs = await verify.AuditLogs
@@ -1582,7 +1583,8 @@ public class NormalizedDescriptionServiceTests
 		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(false);
 		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
 
-		NormalizedDescriptionDetail result = await service.SplitAsync(itemId, CancellationToken.None);
+		// The chosen name resolves to the row the item is already on, so nothing moves.
+		NormalizedDescriptionDetail result = await service.SplitAsync([itemId], rawDescription, CancellationToken.None);
 
 		// The item stays where it was — SplitAsync is a no-op in this case.
 		result.Description.Id.Should().Be(originId);
@@ -1612,7 +1614,7 @@ public class NormalizedDescriptionServiceTests
 		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(false);
 		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
 
-		await service.SplitAsync(itemId, CancellationToken.None);
+		await service.SplitAsync([itemId], "Strawberry Preserves", CancellationToken.None);
 
 		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
 		List<AuditLogEntity> splitLogs = await verify.AuditLogs
@@ -1641,7 +1643,7 @@ public class NormalizedDescriptionServiceTests
 		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(false);
 		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
 
-		await service.SplitAsync(itemId, CancellationToken.None);
+		await service.SplitAsync([itemId], "Strawberry Preserves", CancellationToken.None);
 
 		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
 		List<AuditLogEntity> splitLogs = await verify.AuditLogs
@@ -1756,6 +1758,168 @@ public class NormalizedDescriptionServiceTests
 			NormalizedDescriptionId = normalizedId,
 			NormalizedDescriptionMatchScore = score,
 		};
+	}
+
+	// ── RECEIPTS-877: multi-item split ─────────────────────────────────────────────────
+
+	[Fact]
+	public async Task SplitAsync_MovesEveryItemInTheSelectionUnderTheGivenName()
+	{
+		// Arrange — three items on one row, two of them selected. Heterogeneous raw text, which
+		// is exactly why the name is the caller's rather than derived from the selection.
+		Guid originId = Guid.NewGuid();
+		Guid receiptId = Guid.NewGuid();
+		Guid firstId = Guid.NewGuid();
+		Guid secondId = Guid.NewGuid();
+		Guid stayingId = Guid.NewGuid();
+
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(BuildDescription(originId, "Dairy", NormalizedDescriptionStatus.Active));
+			seed.ReceiptItems.AddRange(
+				BuildReceiptItem(firstId, receiptId, "MILK 2% GAL", originId),
+				BuildReceiptItem(secondId, receiptId, "milk gallon", originId),
+				BuildReceiptItem(stayingId, receiptId, "CHEDDAR BLOCK", originId));
+			await seed.SaveChangesAsync();
+		}
+
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(false);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		// Act
+		NormalizedDescriptionDetail created = await service.SplitAsync([firstId, secondId], "Milk", CancellationToken.None);
+
+		// Assert
+		created.Description.CanonicalName.Should().Be("Milk");
+		created.LinkedItemCount.Should().Be(2);
+
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		List<ReceiptItemEntity> items = await verify.ReceiptItems.IgnoreAutoIncludes().ToListAsync();
+
+		items.Single(r => r.Id == firstId).NormalizedDescriptionId.Should().Be(created.Description.Id);
+		items.Single(r => r.Id == secondId).NormalizedDescriptionId.Should().Be(created.Description.Id);
+		// One split, one call — not N calls, and the unselected item is untouched.
+		items.Single(r => r.Id == stayingId).NormalizedDescriptionId.Should().Be(originId);
+	}
+
+	[Fact]
+	public async Task SplitAsync_UnknownIdInSelection_MovesNothing()
+	{
+		// Arrange
+		Guid originId = Guid.NewGuid();
+		Guid receiptId = Guid.NewGuid();
+		Guid goodId = Guid.NewGuid();
+
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(BuildDescription(originId, "Dairy", NormalizedDescriptionStatus.Active));
+			seed.ReceiptItems.Add(BuildReceiptItem(goodId, receiptId, "MILK 2% GAL", originId));
+			await seed.SaveChangesAsync();
+		}
+
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(false);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		// Act
+		Func<Task> act = async () => await service.SplitAsync([goodId, Guid.NewGuid()], "Milk", CancellationToken.None);
+
+		// Assert
+		await act.Should().ThrowAsync<KeyNotFoundException>();
+
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		// All-or-nothing. A partial split would leave a half-corrected group with no indication
+		// of which half moved, which is worse than an outright failure.
+		verify.ReceiptItems.IgnoreAutoIncludes().Single(r => r.Id == goodId)
+			.NormalizedDescriptionId.Should().Be(originId);
+		verify.NormalizedDescriptions.Should().ContainSingle();
+	}
+
+	[Fact]
+	public async Task SplitAsync_RescoresMovedItemsAgainstTheirNewRow()
+	{
+		// Arrange — the item carries a score measured against the row it is leaving.
+		Guid originId = Guid.NewGuid();
+		Guid receiptId = Guid.NewGuid();
+		Guid itemId = Guid.NewGuid();
+
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(BuildDescription(originId, "Dairy", NormalizedDescriptionStatus.Active));
+			ReceiptItemEntity item = BuildReceiptItem(itemId, receiptId, "Milk", originId);
+			item.NormalizedDescriptionMatchScore = 0.62;
+			seed.ReceiptItems.Add(item);
+			await seed.SaveChangesAsync();
+		}
+
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(false);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		// Act — the new row's name equals the item's raw text, which is a perfect logical match.
+		await service.SplitAsync([itemId], "Milk", CancellationToken.None);
+
+		// Assert — 1.0, not the stale 0.62 measured against "Dairy". PreviewThresholdImpactAsync
+		// buckets items by exactly this column, so a stale score skews every later preview
+		// (same reasoning as RECEIPTS-892 for merges).
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		verify.ReceiptItems.IgnoreAutoIncludes().Single(r => r.Id == itemId)
+			.NormalizedDescriptionMatchScore.Should().Be(1.0);
+	}
+
+	[Fact]
+	public async Task SplitAsync_EmptySelection_Throws()
+	{
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		Func<Task> act = async () => await service.SplitAsync([], "Milk", CancellationToken.None);
+
+		await act.Should().ThrowAsync<ArgumentException>()
+			.WithMessage($"{NormalizedDescriptionService.SplitRequiresAtLeastOneItem}*");
+	}
+
+	[Fact]
+	public async Task SplitAsync_ItemsFromSeveralOrigins_RecordsAnEntryPerOrigin()
+	{
+		// Arrange — a selection can span more than one source row.
+		Guid firstOriginId = Guid.NewGuid();
+		Guid secondOriginId = Guid.NewGuid();
+		Guid receiptId = Guid.NewGuid();
+		Guid fromFirstId = Guid.NewGuid();
+		Guid fromSecondId = Guid.NewGuid();
+
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.AddRange(
+				BuildDescription(firstOriginId, "Dairy", NormalizedDescriptionStatus.Active),
+				BuildDescription(secondOriginId, "Drinks", NormalizedDescriptionStatus.Active));
+			seed.ReceiptItems.AddRange(
+				BuildReceiptItem(fromFirstId, receiptId, "MILK 2% GAL", firstOriginId),
+				BuildReceiptItem(fromSecondId, receiptId, "milk gallon", secondOriginId));
+			await seed.SaveChangesAsync();
+		}
+
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(false);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		// Act
+		NormalizedDescriptionDetail created = await service.SplitAsync([fromFirstId, fromSecondId], "Milk", CancellationToken.None);
+
+		// Assert — one entry for the new row plus one per source, so the trail reads from any side.
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		List<AuditLogEntity> splitLogs = await verify.AuditLogs
+			.Where(a => a.Action == AuditAction.Split)
+			.ToListAsync();
+
+		splitLogs.Should().HaveCount(3);
+		splitLogs.Should().Contain(a => a.EntityId == created.Description.Id.ToString());
+		splitLogs.Should().Contain(a => a.EntityId == firstOriginId.ToString());
+		splitLogs.Should().Contain(a => a.EntityId == secondOriginId.ToString());
+
+		AuditLogEntity newRowLog = splitLogs.Single(a => a.EntityId == created.Description.Id.ToString());
+		newRowLog.GetChanges().Single(c => c.FieldName == "receiptItemCount").NewValue.Should().Be("2");
+		// Both origins named, so "where did this come from?" is answerable without opening two
+		// more entries.
+		newRowLog.GetChanges().Single(c => c.FieldName == "splitFrom").OldValue
+			.Should().ContainAll("Dairy", "Drinks");
 	}
 
 	// ── RECEIPTS-876: rename and reject ────────────────────────────────────────────────

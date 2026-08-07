@@ -285,25 +285,55 @@ public class NormalizedDescriptionService(
 		return liveCount;
 	}
 
-	public async Task<NormalizedDescriptionDetail> SplitAsync(Guid receiptItemId, CancellationToken cancellationToken)
-	{
-		using ApplicationDbContext context = contextFactory.CreateDbContext();
+	public const string SplitRequiresAtLeastOneItem = "At least one receipt item must be selected to split.";
 
-		ReceiptItemEntity? item = await context.ReceiptItems
-			.IgnoreAutoIncludes()
-			.FirstOrDefaultAsync(r => r.Id == receiptItemId, cancellationToken);
-		if (item is null)
+	/// <summary>
+	/// Detaches <paramref name="receiptItemIds"/> into a single new canonical entry named
+	/// <paramref name="name"/>, and re-points every one of them at it (RECEIPTS-877).
+	/// </summary>
+	/// <remarks>
+	/// The name is the caller's, not derived from the selection. A multi-item split routinely
+	/// covers heterogeneous raw text ("MILK 2%", "milk gal", "WHOLE MILK"), where no automatic
+	/// rule produces a name anyone would want.
+	///
+	/// All-or-nothing: an unknown id throws before anything is written, so a split either moves
+	/// the whole selection or none of it. A partial split would leave the reviewer looking at a
+	/// half-corrected group with no indication of which half moved.
+	/// </remarks>
+	/// <exception cref="KeyNotFoundException">Any id does not exist.</exception>
+	/// <exception cref="ArgumentException">The selection is empty or the name is blank.</exception>
+	public async Task<NormalizedDescriptionDetail> SplitAsync(
+		IReadOnlyList<Guid> receiptItemIds,
+		string name,
+		CancellationToken cancellationToken)
+	{
+		if (receiptItemIds is null || receiptItemIds.Count == 0)
 		{
-			throw new KeyNotFoundException(ReceiptItemNotFound);
+			throw new ArgumentException(SplitRequiresAtLeastOneItem, nameof(receiptItemIds));
 		}
 
 		// Match the normalization contract from GetOrCreateAsync so that callers can't create
 		// whitespace-divergent duplicates via Split.
-		string canonicalName = (item.Description ?? string.Empty).Trim();
+		string canonicalName = (name ?? string.Empty).Trim();
 		if (string.IsNullOrEmpty(canonicalName))
 		{
-			throw new ArgumentException(NormalizedDescription.CanonicalNameCannotBeEmpty, nameof(receiptItemId));
+			throw new ArgumentException(NormalizedDescription.CanonicalNameCannotBeEmpty, nameof(name));
 		}
+
+		using ApplicationDbContext context = contextFactory.CreateDbContext();
+
+		List<Guid> distinctIds = [.. receiptItemIds.Distinct()];
+		List<ReceiptItemEntity> items = await context.ReceiptItems
+			.IgnoreAutoIncludes()
+			.Where(r => distinctIds.Contains(r.Id))
+			.ToListAsync(cancellationToken);
+
+		if (items.Count != distinctIds.Count)
+		{
+			throw new KeyNotFoundException(ReceiptItemNotFound);
+		}
+
+		ReceiptItemEntity item = items[0];
 
 		// Generate an embedding for the split item's raw description if possible, so the
 		// new entry is consistent with entries produced by GetOrCreateAsync.
@@ -317,10 +347,17 @@ public class NormalizedDescriptionService(
 			}
 		}
 
-		// Captured before the repoint below overwrites it — this is the only moment the "split out
-		// of what?" answer exists in memory. Null when the item was never resolved, which is a
-		// legitimate split of an unlinked item rather than an error.
-		Guid? splitFromId = item.NormalizedDescriptionId;
+		// Captured before the repoint below overwrites them — this is the only moment the "split out
+		// of what?" answer exists in memory. A null origin is an unlinked item, which is a
+		// legitimate thing to split rather than an error, and a multi-item selection can span
+		// several source rows.
+		// Counted here, not after the loop below: the repoint overwrites the very column these
+		// counts are derived from.
+		Dictionary<Guid, int> originCounts = items
+			.Where(r => r.NormalizedDescriptionId.HasValue)
+			.GroupBy(r => r.NormalizedDescriptionId!.Value)
+			.ToDictionary(g => g.Key, g => g.Count());
+		List<Guid> originIds = [.. originCounts.Keys];
 
 		(NormalizedDescriptionEntity created, bool wasInserted) = await InsertAsync(
 			context,
@@ -329,32 +366,49 @@ public class NormalizedDescriptionService(
 			embeddingVector,
 			cancellationToken);
 
-		item.NormalizedDescriptionId = created.Id;
-
-		string? splitFromName = splitFromId is null
-			? null
-			: await context.NormalizedDescriptions
-				.AsNoTracking()
-				.Where(e => e.Id == splitFromId.Value)
-				.Select(e => e.CanonicalName)
-				.FirstOrDefaultAsync(cancellationToken);
-
-		// A split is mechanically a Create plus an Update, which says nothing about what was
-		// detached from what. Record it on both rows for the same reason merges are: so the trail
-		// reads from either side (RECEIPTS-890).
+		// Repoint AND rescore, for the reason MergeAsync does (RECEIPTS-892): each item's score was
+		// the similarity to the row it is leaving, so once it points at `created` the number
+		// describes a comparison that no longer applies. PreviewThresholdImpactAsync buckets items
+		// by exactly this column, so a stale score would skew every later threshold preview.
 		//
-		// But only when something actually moved. InsertAsync returns any existing row with this
-		// canonical name — including the item's OWN current description, when the raw text differs
-		// from the canonical name only by case or surrounding whitespace. In that case the repoint
-		// above is a no-op, nothing was detached, and writing an entry would record a row as having
-		// been split out of itself.
-		if (created.Id != splitFromId)
+		// Grouped by description so one embedding serves every item sharing that text.
+		foreach (IGrouping<string, ReceiptItemEntity> group in items.GroupBy(r => r.Description, StringComparer.Ordinal))
+		{
+			double? similarity = await SimilarityToKeepAsync(context, group.Key, created, cancellationToken);
+			foreach (ReceiptItemEntity moved in group)
+			{
+				moved.NormalizedDescriptionId = created.Id;
+				moved.NormalizedDescriptionMatchScore = similarity;
+			}
+		}
+
+		Dictionary<Guid, string> originNames = await context.NormalizedDescriptions
+			.AsNoTracking()
+			.Where(e => originIds.Contains(e.Id))
+			.ToDictionaryAsync(e => e.Id, e => e.DisplayLabel ?? e.CanonicalName, cancellationToken);
+
+		// A split is mechanically a Create plus N Updates, which says nothing about what was
+		// detached from what. Record it on the new row and on each source row, for the same reason
+		// merges are: so the trail reads from either side (RECEIPTS-890).
+		//
+		// Origins equal to the created row are dropped. InsertAsync returns any existing row with
+		// this canonical name — including a source row itself, when the chosen name matches its
+		// canonical name but for case or surrounding whitespace. Those items did not move, and an
+		// entry would record a row as having been split out of itself.
+		List<Guid> movedFrom = [.. originIds.Where(id => id != created.Id)];
+
+		// Two cases warrant an entry: something was detached from another row, or previously
+		// unlinked items were gathered into a new one. The case with no entry is the no-op — every
+		// selected item already belonged to the row the chosen name resolves to.
+		bool anythingMoved = movedFrom.Count > 0 || originCounts.Count < items.Count;
+
+		if (anythingMoved)
 		{
 			DateTimeOffset now = DateTimeOffset.UtcNow;
 
-			// The item can also land on a pre-existing *different* row, which is a re-link rather
-			// than a split into a new description. Recording that distinction keeps the entry from
-			// implying a row was created when none was.
+			// The selection can also land on a pre-existing *different* row, which is a re-link
+			// rather than a split into a new description. Recording that distinction keeps the
+			// entry from implying a row was created when none was.
 			FieldChange targetOrigin = new()
 			{
 				FieldName = "targetWasExistingRow",
@@ -362,28 +416,37 @@ public class NormalizedDescriptionService(
 				NewValue = wasInserted ? "false" : "true",
 			};
 
+			// Null, not a placeholder string, when the selection had no origin row. Absence is
+			// already how the rest of the trail says "nothing to point at", and inventing
+			// "(unlinked)" would read like the name of a row somebody could go look up.
+			string? originSummary = movedFrom.Count == 0
+				? null
+				: string.Join(", ", movedFrom.Select(id => originNames.TryGetValue(id, out string? n) ? n : id.ToString()));
+
 			context.AddSemanticAuditEntry(
 				NormalizedDescriptionEntityType,
 				created.Id.ToString(),
 				AuditAction.Split,
 				[
-					new FieldChange { FieldName = "splitFrom", OldValue = splitFromName, NewValue = canonicalName },
-					new FieldChange { FieldName = "splitFromId", OldValue = splitFromId?.ToString(), NewValue = null },
-					new FieldChange { FieldName = "receiptItemId", OldValue = null, NewValue = receiptItemId.ToString() },
+					new FieldChange { FieldName = "splitFrom", OldValue = originSummary, NewValue = canonicalName },
+					new FieldChange { FieldName = "splitFromIds", OldValue = string.Join(",", movedFrom), NewValue = null },
+					new FieldChange { FieldName = "receiptItemIds", OldValue = null, NewValue = string.Join(",", items.Select(r => r.Id)) },
+					new FieldChange { FieldName = "receiptItemCount", OldValue = null, NewValue = items.Count.ToString() },
 					targetOrigin,
 				],
 				now);
 
-			if (splitFromId is Guid originId)
+			foreach (Guid originId in movedFrom)
 			{
+				int movedFromThisOrigin = originCounts[originId];
 				context.AddSemanticAuditEntry(
 					NormalizedDescriptionEntityType,
 					originId.ToString(),
 					AuditAction.Split,
 					[
-						new FieldChange { FieldName = "splitOut", OldValue = splitFromName, NewValue = canonicalName },
+						new FieldChange { FieldName = "splitOut", OldValue = originNames.TryGetValue(originId, out string? originName) ? originName : null, NewValue = canonicalName },
 						new FieldChange { FieldName = "splitToId", OldValue = null, NewValue = created.Id.ToString() },
-						new FieldChange { FieldName = "receiptItemId", OldValue = null, NewValue = receiptItemId.ToString() },
+						new FieldChange { FieldName = "receiptItemCount", OldValue = null, NewValue = movedFromThisOrigin.ToString() },
 						targetOrigin,
 					],
 					now);
@@ -393,8 +456,9 @@ public class NormalizedDescriptionService(
 		await context.SaveChangesAsync(cancellationToken);
 
 		// Re-read through the same projection the list endpoint uses so the caller gets a truthful
-		// LinkedItemCount for the row it just created, rather than a hardcoded 1 that would drift
-		// the moment Split's semantics change. One extra query on an admin-only action.
+		// LinkedItemCount for the row it just created, rather than a count derived from the
+		// selection that would drift the moment Split's semantics change. One extra query on an
+		// admin-only action.
 		DetailRow? row = await ProjectDetails(context)
 			.FirstOrDefaultAsync(d => d.Id == created.Id, cancellationToken);
 
@@ -402,7 +466,7 @@ public class NormalizedDescriptionService(
 		// it out from under us mid-call. Fall back to the in-memory entity with the evidence we
 		// know first-hand rather than throwing.
 		return row?.ToDetail()
-			?? new NormalizedDescriptionDetail(mapper.ToDomain(created), LinkedItemCount: 1, NearestNeighbourName: null, [canonicalName]);
+			?? new NormalizedDescriptionDetail(mapper.ToDomain(created), items.Count, NearestNeighbourName: null, [canonicalName]);
 	}
 
 	public async Task<bool> UpdateStatusAsync(Guid id, NormalizedDescriptionStatus status, CancellationToken cancellationToken)

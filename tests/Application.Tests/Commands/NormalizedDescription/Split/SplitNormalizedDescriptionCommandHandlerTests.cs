@@ -10,11 +10,12 @@ namespace Application.Tests.Commands.NormalizedDescription.Split;
 public class SplitNormalizedDescriptionCommandHandlerTests
 {
 	[Fact]
-	public async Task Handle_ForwardsReceiptItemIdAndReturnsCreated()
+	public async Task Handle_ForwardsSelectionAndNameAndReturnsCreated()
 	{
 		// Arrange
 		Mock<INormalizedDescriptionService> mockService = new();
-		Guid receiptItemId = Guid.NewGuid();
+		Guid firstId = Guid.NewGuid();
+		Guid secondId = Guid.NewGuid();
 		NormalizedDescriptionDetail expected = new(
 			new Domain.NormalizedDescriptions.NormalizedDescription(
 				Guid.NewGuid(),
@@ -26,18 +27,28 @@ public class SplitNormalizedDescriptionCommandHandlerTests
 			["cherry cola"]);
 
 		mockService
-			.Setup(s => s.SplitAsync(receiptItemId, It.IsAny<CancellationToken>()))
+			.Setup(s => s.SplitAsync(
+				It.IsAny<IReadOnlyList<Guid>>(),
+				It.IsAny<string>(),
+				It.IsAny<CancellationToken>()))
 			.ReturnsAsync(expected);
 
 		SplitNormalizedDescriptionCommandHandler handler = new(mockService.Object);
-		SplitNormalizedDescriptionCommand command = new(receiptItemId);
+		SplitNormalizedDescriptionCommand command = new([firstId, secondId], "cherry cola");
 
 		// Act
 		NormalizedDescriptionDetail actual = await handler.Handle(command, CancellationToken.None);
 
 		// Assert
 		actual.Should().BeSameAs(expected);
-		mockService.Verify(s => s.SplitAsync(receiptItemId, It.IsAny<CancellationToken>()), Times.Once);
+		// The whole selection and the caller's name both reach the service — dropping either
+		// would silently turn a multi-item split into a single-item one, or rename the result.
+		mockService.Verify(
+			s => s.SplitAsync(
+				It.Is<IReadOnlyList<Guid>>(ids => ids.SequenceEqual(new[] { firstId, secondId })),
+				"cherry cola",
+				It.IsAny<CancellationToken>()),
+			Times.Once);
 	}
 
 	[Fact]
@@ -50,11 +61,14 @@ public class SplitNormalizedDescriptionCommandHandlerTests
 		Guid missing = Guid.NewGuid();
 
 		mockService
-			.Setup(s => s.SplitAsync(missing, It.IsAny<CancellationToken>()))
+			.Setup(s => s.SplitAsync(
+				It.IsAny<IReadOnlyList<Guid>>(),
+				It.IsAny<string>(),
+				It.IsAny<CancellationToken>()))
 			.ThrowsAsync(new KeyNotFoundException("Receipt item not found."));
 
 		SplitNormalizedDescriptionCommandHandler handler = new(mockService.Object);
-		SplitNormalizedDescriptionCommand command = new(missing);
+		SplitNormalizedDescriptionCommand command = new([missing], "cherry cola");
 
 		Func<Task> act = async () => await handler.Handle(command, CancellationToken.None);
 		await act.Should().ThrowAsync<KeyNotFoundException>();

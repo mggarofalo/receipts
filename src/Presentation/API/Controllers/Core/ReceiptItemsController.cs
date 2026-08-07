@@ -57,7 +57,7 @@ public class ReceiptItemsController(IMediator mediator, ReceiptItemMapper mapper
 
 	[HttpGet(RouteGetAll)]
 	[EndpointSummary("Get all receipt items")]
-	public async Task<Results<Ok<ReceiptItemListResponse>, BadRequest<ProblemDetails>>> GetAllReceiptItems([FromQuery] Guid? receiptId = null, [FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, [FromQuery] string? q = null, CancellationToken cancellationToken = default)
+	public async Task<Results<Ok<ReceiptItemListResponse>, BadRequest<ProblemDetails>>> GetAllReceiptItems([FromQuery] Guid? receiptId = null, [FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, [FromQuery] string? q = null, [FromQuery] Guid? normalizedDescriptionId = null, CancellationToken cancellationToken = default)
 	{
 		if (offset < 0)
 		{
@@ -95,8 +95,15 @@ public class ReceiptItemsController(IMediator mediator, ReceiptItemMapper mapper
 			});
 		}
 
+		if (normalizedDescriptionId == Guid.Empty)
+		{
+			// An empty GUID is a caller mistake, not "no filter". Silently treating it as unfiltered
+			// would hand back the whole table to a split dialog asking for one row's items.
+			return ApiProblem.BadRequest("normalizedDescriptionId must not be an empty GUID");
+		}
+
 		string? normalizedQ = string.IsNullOrWhiteSpace(q) ? null : q.Trim();
-		GetAllReceiptItemsQuery query = new(offset, limit, sort, normalizedQ);
+		GetAllReceiptItemsQuery query = new(offset, limit, sort, normalizedQ, normalizedDescriptionId);
 		PagedResult<ReceiptItem> result = await mediator.Send(query, cancellationToken);
 
 		return TypedResults.Ok(new ReceiptItemListResponse

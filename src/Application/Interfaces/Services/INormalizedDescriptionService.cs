@@ -13,7 +13,11 @@ public interface INormalizedDescriptionService
 	Task<NormalizedDescriptionDetail?> GetByIdAsync(Guid id, CancellationToken cancellationToken);
 	Task<List<NormalizedDescriptionDetail>> GetAllAsync(NormalizedDescriptionStatus? filter, CancellationToken cancellationToken);
 	Task<int> MergeAsync(Guid keepId, Guid discardId, CancellationToken cancellationToken);
-	Task<NormalizedDescriptionDetail> SplitAsync(Guid receiptItemId, CancellationToken cancellationToken);
+	// RECEIPTS-877. Detaches N receipt items into one new canonical entry under a caller-supplied
+	// name. The name is not derived from the selection: a multi-item split routinely spans
+	// heterogeneous raw text, where no automatic rule produces a name anyone would want.
+	// All-or-nothing — an unknown id throws before anything is written.
+	Task<NormalizedDescriptionDetail> SplitAsync(IReadOnlyList<Guid> receiptItemIds, string name, CancellationToken cancellationToken);
 	Task<bool> UpdateStatusAsync(Guid id, NormalizedDescriptionStatus status, CancellationToken cancellationToken);
 
 	// RECEIPTS-876. Sets or clears the display label only — never CanonicalName, never the

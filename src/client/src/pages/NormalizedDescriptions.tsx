@@ -16,7 +16,7 @@ import {
   useRequeuePendingPreview,
   useRequeuePendingMutation,
 } from "@/hooks/useNormalizedDescriptionMaintenance";
-import { useReceiptItems } from "@/hooks/useReceiptItems";
+import { useLinkedReceiptItems } from "@/hooks/useReceiptItems";
 import { usePermission } from "@/hooks/usePermission";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { formatDecimal } from "@/lib/format";
@@ -70,6 +70,9 @@ type ReceiptItem = {
 };
 
 type TabKey = "review" | "registry" | "settings" | "maintenance";
+
+/** Page size for the split dialog's linked-item list. */
+const SPLIT_PAGE_SIZE = 50;
 
 export default function NormalizedDescriptions() {
   usePageTitle("Normalized Descriptions");
@@ -593,28 +596,54 @@ interface SplitDialogProps {
 
 function SplitDialog({ source, onClose }: SplitDialogProps) {
   const split = useSplitMutation();
-  const [selectedItemId, setSelectedItemId] = useState<string | undefined>();
-  // Pull a broad page of receipt items and filter client-side by normalized
-  // description id. The list endpoint doesn't expose a dedicated filter today,
-  // so this keeps the dialog functional without requiring a new API.
-  const { data: items, isLoading } = useReceiptItems(0, 200);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [name, setName] = useState("");
+  const [nameTouched, setNameTouched] = useState(false);
+  const [page, setPage] = useState(0);
 
-  const linked = useMemo(() => {
-    if (!source || !items) return [] as ReceiptItem[];
-    return (items as ReceiptItem[]).filter(
-      (i) => i.normalizedDescriptionId === source.id,
-    );
-  }, [items, source]);
+  // Server-side, filtered to this entry. Every linked item is reachable by paging, rather than
+  // only those that happened to fall in a fixed page of the unfiltered list (RECEIPTS-877).
+  const { data: items, total, isLoading } = useLinkedReceiptItems(
+    source?.id ?? null,
+    page * SPLIT_PAGE_SIZE,
+    SPLIT_PAGE_SIZE,
+  );
+
+  const linked = useMemo(() => (items ?? []) as ReceiptItem[], [items]);
+  const totalPages = Math.ceil(total / SPLIT_PAGE_SIZE);
 
   function handleClose() {
-    setSelectedItemId(undefined);
+    setSelectedIds([]);
+    setName("");
+    setNameTouched(false);
+    setPage(0);
     onClose();
   }
 
+  function toggle(itemId: string, description: string) {
+    setSelectedIds((prev) => {
+      const next = prev.includes(itemId)
+        ? prev.filter((existing) => existing !== itemId)
+        : [...prev, itemId];
+
+      // Pre-fill from the first selection, but never overwrite what the reviewer typed.
+      if (!nameTouched && next.length === 1 && !prev.includes(itemId)) {
+        setName(description);
+      }
+      if (!nameTouched && next.length === 0) {
+        setName("");
+      }
+      return next;
+    });
+  }
+
+  const trimmedName = name.trim();
+  const canSubmit = selectedIds.length > 0 && trimmedName.length > 0 && !split.isPending;
+
   function handleConfirm() {
-    if (!source || !selectedItemId) return;
+    if (!source || !canSubmit) return;
     split.mutate(
-      { id: source.id, receiptItemId: selectedItemId },
+      { id: source.id, receiptItemIds: selectedIds, canonicalName: trimmedName },
       { onSuccess: () => handleClose() },
     );
   }
@@ -628,48 +657,93 @@ function SplitDialog({ source, onClose }: SplitDialogProps) {
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Split Out a Receipt Item</DialogTitle>
+          <DialogTitle>Split Out Receipt Items</DialogTitle>
           <DialogDescription>
-            Pick a receipt item currently linked to &quot;
-            {source?.displayName}&quot;. It will be detached into a brand-new
-            normalized description that keeps the item&apos;s raw description.
+            Select the receipt items to detach from &quot;{source?.displayName}&quot; and give
+            the group a name. They move together into one entry; anything you leave unselected
+            stays where it is.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           {isLoading ? (
             <Skeleton className="h-24 w-full rounded" />
           ) : linked.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No linked receipt items found in the most recent 200 items. Split
-              from the receipt detail page if the item is older.
+            // Says what is true — this entry has nothing linked — rather than the old
+            // "we could not find them in the most recent 200 items", which was a statement
+            // about the query rather than the data.
+            <p className="text-sm text-muted-foreground" data-testid="split-empty">
+              No receipt items are linked to this entry, so there is nothing to split out.
             </p>
           ) : (
-            <ul className="max-h-64 overflow-y-auto divide-y rounded border">
-              {linked.map((item) => (
-                <li key={item.id}>
-                  <label className="flex cursor-pointer items-center gap-2 p-2 text-sm hover:bg-muted/50">
-                    <input
-                      type="radio"
-                      name="split-target"
-                      value={item.id}
-                      checked={selectedItemId === item.id}
-                      onChange={() => setSelectedItemId(item.id)}
-                    />
-                    <span>{item.description}</span>
-                  </label>
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul className="max-h-64 overflow-y-auto divide-y rounded border">
+                {linked.map((item) => (
+                  <li key={item.id}>
+                    <label className="flex cursor-pointer items-center gap-2 p-2 text-sm hover:bg-muted/50">
+                      <input
+                        type="checkbox"
+                        value={item.id}
+                        checked={selectedIds.includes(item.id)}
+                        onChange={() => toggle(item.id, item.description)}
+                      />
+                      <span>{item.description}</span>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">
+                    Page {page + 1} of {totalPages} · {total} linked items
+                  </span>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={page === 0}
+                      onClick={() => setPage((p) => p - 1)}
+                    >
+                      Previous
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={page + 1 >= totalPages}
+                      onClick={() => setPage((p) => p + 1)}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <Label htmlFor="split-name">Name for the new entry</Label>
+                <Input
+                  id="split-name"
+                  value={name}
+                  onChange={(e) => {
+                    setNameTouched(true);
+                    setName(e.target.value);
+                  }}
+                  placeholder="e.g. Milk"
+                  className="mt-1"
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {selectedIds.length === 0
+                    ? "Select at least one item."
+                    : `${selectedIds.length} selected. If an entry with this name already exists, the items are moved to it instead.`}
+                </p>
+              </div>
+            </>
           )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={handleClose}>
             Cancel
           </Button>
-          <Button
-            onClick={handleConfirm}
-            disabled={!selectedItemId || split.isPending}
-          >
+          <Button onClick={handleConfirm} disabled={!canSubmit}>
             {split.isPending ? "Splitting…" : "Split"}
           </Button>
         </DialogFooter>
