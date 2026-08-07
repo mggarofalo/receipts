@@ -82,6 +82,7 @@ const pendingItems = [
     status: "pendingReview" as const,
     createdAt: "2025-03-01T00:00:00Z",
     linkedItemCount: 4,
+    lastSeen: "2025-03-05T00:00:00Z",
     sampleRawDescriptions: ["STRAWBERRY PRES", "STRWBRY PRESERVE"],
     nearestNeighbourName: "Strawberry Jam",
     nearestNeighbourSimilarity: 0.8642,
@@ -94,6 +95,8 @@ const pendingItems = [
     status: "pendingReview" as const,
     createdAt: "2025-03-02T00:00:00Z",
     linkedItemCount: 0,
+    // Never matched anything — must render as "Never", not as a date.
+    lastSeen: null,
     sampleRawDescriptions: [],
     nearestNeighbourName: null,
     nearestNeighbourSimilarity: null,
@@ -109,6 +112,7 @@ const activeItems = [
     status: "active" as const,
     createdAt: "2025-02-01T00:00:00Z",
     linkedItemCount: 12,
+    lastSeen: "2026-04-18T00:00:00Z",
     sampleRawDescriptions: ["GALA APPLES"],
     nearestNeighbourName: null,
     nearestNeighbourSimilarity: null,
@@ -122,6 +126,8 @@ const activeItems = [
     status: "active" as const,
     createdAt: "2025-02-02T00:00:00Z",
     linkedItemCount: 9,
+    // An entry with items but no receipt date resolved — also "Never".
+    lastSeen: null,
     sampleRawDescriptions: ["MILK 2% GAL"],
     nearestNeighbourName: null,
     nearestNeighbourSimilarity: null,
@@ -563,6 +569,31 @@ describe("NormalizedDescriptions registry tab", () => {
   });
 
   // ── RECEIPTS-879: row actions ────────────────────────────────
+
+  // RECEIPTS-880: the registry was two columns of whitespace. Content, not a width cap, is what
+  // fixes an empty-looking table.
+  it("shows when each entry was last seen on a receipt", async () => {
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    await user.click(screen.getByRole("tab", { name: "Registry" }));
+
+    // a-1 last appeared on a 2026-04-18 receipt. Formatted in the viewer's locale, so assert on
+    // the parts rather than a fixed string.
+    const seen = (await screen.findByText("Apples")).closest("tr")!;
+    const expected = new Date("2026-04-18T00:00:00Z").toLocaleDateString();
+    expect(within(seen).getByText(expected)).toBeInTheDocument();
+  });
+
+  it("says Never rather than inventing a date for an entry nothing has matched", async () => {
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    await user.click(screen.getByRole("tab", { name: "Registry" }));
+
+    // "Never matched anything" and "last matched a long time ago" call for opposite decisions —
+    // one is dead weight to retire, the other is a live entry. A default date would merge them.
+    const never = (await screen.findByText("Milk")).closest("tr")!;
+    expect(within(never).getByText("Never")).toBeInTheDocument();
+  });
 
   it("offers merge, split and send-back-to-review on an active entry", async () => {
     const user = userEvent.setup();

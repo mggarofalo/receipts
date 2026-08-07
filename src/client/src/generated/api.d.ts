@@ -3341,6 +3341,18 @@ export interface components {
              */
             linkedItemCount: number;
             /**
+             * Format: date-time
+             * @description Latest receipt date among the live items linked to this row, at midnight UTC — a
+             *     receipt has a date, not a time. Null when nothing is linked, which is a different
+             *     statement from "last seen a long time ago".
+             *
+             *     Added in RECEIPTS-880. `createdAt` alone cannot distinguish a two-year-old entry
+             *     still matching this week's receipts from one nothing has matched since, and that is
+             *     the difference between a live registry entry and dead weight. Same meaning as
+             *     `SpendingByNormalizedDescriptionItem.lastSeen`.
+             */
+            lastSeen?: string | null;
+            /**
              * @description Up to three distinct raw receipt-item descriptions linked to this row, so a reviewer
              *     can see the text the entry actually covers. Empty when no items are linked yet.
              */

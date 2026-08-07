@@ -497,6 +497,7 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 			},
 			CreatedAt = source.CreatedAt,
 			LinkedItemCount = detail.LinkedItemCount,
+			LastSeen = detail.LastSeen,
 			SampleRawDescriptions = [.. detail.SampleRawDescriptions],
 			// Both neighbour fields stay null together when nothing was recorded — the contract
 			// says clients must read that as "no comparison recorded" rather than a zero score

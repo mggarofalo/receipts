@@ -335,3 +335,48 @@ a dialog on the common case would train people to click through dialogs. Its toa
 the only place its effect is ever stated, so it says what changed ("nothing was moved, and its
 spending is no longer reported as unreviewed") rather than restating the status the row was just
 given ("Approved as active").
+
+## The page is empty, not too wide (RECEIPTS-880)
+
+**Decision: no max-width. Give the tables something to hold instead.**
+
+The complaint was that the page stretches uncomfortably across a desktop monitor: the Review
+Queue had four short columns, so the name sat pinned far-left and the buttons far-right with a
+void between, and the Registry was two columns at full width, which is worse.
+
+Capping the width would have treated the symptom. Rejected explicitly: capping *this* page only
+leaves the same problem everywhere and makes pages inconsistent, and a global readable width on
+`.page` is wrong for the dense tables and charts elsewhere that genuinely want the room.
+
+What actually fills the space is evidence. The Review Queue's dead Status column — every row
+rendered the identical badge, because the query is filtered to `PendingReview` — went in
+RECEIPTS-873 (`54c50682`), replaced by the near-miss, the linked-item count, and the sample raw
+text. RECEIPTS-879 gave the Registry the same treatment plus row actions. This issue finishes it:
+
+- **Last seen**, a new column and API field. `createdAt` alone cannot distinguish a two-year-old
+  entry still matching this week's receipts from one nothing has matched since, and that is
+  exactly the difference between a live registry entry and dead weight. It is the latest receipt
+  date among live linked items, computed as one more correlated subquery in the existing
+  projection — no extra round trip.
+- **Null means never**, rendered as "Never". An entry that has never matched anything and one
+  that last matched in 2023 call for opposite decisions, so a default date would merge two
+  different facts.
+- The pending-count element is sized to its contents. One number in a full-width bordered bar
+  reads as a section header with nothing in it.
+
+### The width sweep found a real bug
+
+`tests/visual/page-overflow.spec.ts` asserts the document never exceeds the viewport across
+375–2560px, on both tabs. A baseline screenshot cannot catch this: it is taken at one width, and
+the widths where layout breaks are the ones nobody screenshots. So the test carries no baselines
+to regenerate — it reads geometry and reports which element is doing the widening.
+
+It immediately failed at 375px, and not on the table: `TabsList` is `inline-flex w-fit`, so four
+tabs pushed the document ~10px past the viewport. A horizontally-scrolling page detaches every
+fixed element from the content as you scroll and competes with vertical scrolling on touch. Fixed
+globally with `max-w-full overflow-x-auto` on the tabs-list variant, so an oversized tab strip
+scrolls inside its own box. Tables were already fine — `Table` wraps itself in an
+`overflow-x-auto` container.
+
+The probe skips any element inside a horizontally-scrolling ancestor. Without that, every cell of
+a scrollable table reports as an offender and buries the element actually widening the page.

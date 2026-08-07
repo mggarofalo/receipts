@@ -1294,6 +1294,92 @@ public class NormalizedDescriptionServiceTests
 		result.Description.NearestNeighbourSimilarity.Should().BeNull();
 	}
 
+	// ── RECEIPTS-880: last seen ───────────────────────────────────────────────
+
+	[Fact]
+	public async Task GetAllAsync_LastSeenIsTheLatestReceiptDateAmongLinkedItems()
+	{
+		Guid descriptionId = Guid.NewGuid();
+		Guid oldReceiptId = Guid.NewGuid();
+		Guid recentReceiptId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
+			{
+				Id = descriptionId,
+				CanonicalName = "Coffee Beans",
+				Status = NormalizedDescriptionStatus.Active,
+				CreatedAt = DateTimeOffset.UtcNow,
+			});
+			seed.Receipts.AddRange(
+				new ReceiptEntity { Id = oldReceiptId, Location = "Old", Date = new DateOnly(2024, 1, 15), TaxAmountCurrency = Currency.USD },
+				new ReceiptEntity { Id = recentReceiptId, Location = "Recent", Date = new DateOnly(2026, 5, 2), TaxAmountCurrency = Currency.USD });
+			seed.ReceiptItems.AddRange(
+				BuildReceiptItem(Guid.NewGuid(), oldReceiptId, "COFFEE", descriptionId),
+				BuildReceiptItem(Guid.NewGuid(), recentReceiptId, "COFFEE BEANS", descriptionId));
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		List<NormalizedDescriptionDetail> rows = await GetAllRowsAsync(service, NormalizedDescriptionStatus.Active);
+
+		// The latest, not the earliest and not the row's own CreatedAt: the question is whether
+		// this entry is still matching new receipts.
+		NormalizedDescriptionDetail row = rows.Should().ContainSingle().Subject;
+		row.LastSeen.Should().Be(new DateTimeOffset(2026, 5, 2, 0, 0, 0, TimeSpan.Zero));
+	}
+
+	[Fact]
+	public async Task GetAllAsync_LastSeenIsNullWhenNothingIsLinked()
+	{
+		await SeedRowsAsync("Orphaned Entry");
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		List<NormalizedDescriptionDetail> rows = await GetAllRowsAsync(service, NormalizedDescriptionStatus.Active);
+
+		// Null, not DateTimeOffset.MinValue or the creation date. "Never matched anything" and
+		// "last matched a long time ago" call for opposite decisions about the entry.
+		rows.Should().ContainSingle().Which.LastSeen.Should().BeNull();
+	}
+
+	[Fact]
+	public async Task GetAllAsync_LastSeenIgnoresSoftDeletedItems()
+	{
+		Guid descriptionId = Guid.NewGuid();
+		Guid oldReceiptId = Guid.NewGuid();
+		Guid recentReceiptId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
+			{
+				Id = descriptionId,
+				CanonicalName = "Coffee Beans",
+				Status = NormalizedDescriptionStatus.Active,
+				CreatedAt = DateTimeOffset.UtcNow,
+			});
+			seed.Receipts.AddRange(
+				new ReceiptEntity { Id = oldReceiptId, Location = "Old", Date = new DateOnly(2024, 1, 15), TaxAmountCurrency = Currency.USD },
+				new ReceiptEntity { Id = recentReceiptId, Location = "Recent", Date = new DateOnly(2026, 5, 2), TaxAmountCurrency = Currency.USD });
+
+			ReceiptItemEntity live = BuildReceiptItem(Guid.NewGuid(), oldReceiptId, "COFFEE", descriptionId);
+			ReceiptItemEntity trashed = BuildReceiptItem(Guid.NewGuid(), recentReceiptId, "COFFEE BEANS", descriptionId);
+			trashed.DeletedAt = DateTimeOffset.UtcNow;
+			seed.ReceiptItems.AddRange(live, trashed);
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		List<NormalizedDescriptionDetail> rows = await GetAllRowsAsync(service, NormalizedDescriptionStatus.Active);
+
+		// A trashed item is not evidence the entry is still live — the same reasoning that keeps
+		// soft-deleted rows out of LinkedItemCount.
+		rows.Should().ContainSingle().Which.LastSeen
+			.Should().Be(new DateTimeOffset(2024, 1, 15, 0, 0, 0, TimeSpan.Zero));
+	}
+
 	[Fact]
 	public async Task GetAllAsync_ReturnsLinkedItemCountAndDistinctSamples()
 	{

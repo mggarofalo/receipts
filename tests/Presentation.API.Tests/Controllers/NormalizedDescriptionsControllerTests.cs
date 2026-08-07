@@ -457,6 +457,32 @@ public class NormalizedDescriptionsControllerTests
 		_mediatorMock.Verify(m => m.Send(It.IsAny<GetAllNormalizedDescriptionsQuery>(), It.IsAny<CancellationToken>()), Times.Never);
 	}
 
+	// ── RECEIPTS-880: last seen ───────────────────────────────────
+
+	[Fact]
+	public async Task GetAllNormalizedDescriptions_CarriesLastSeenThrough()
+	{
+		DateTimeOffset lastSeen = new(2026, 5, 2, 0, 0, 0, TimeSpan.Zero);
+		List<NormalizedDescriptionDetail> items =
+		[
+			new(new NormalizedDescription(Guid.NewGuid(), "coffee beans", DomainStatus.Active, new DateTimeOffset(2026, 4, 1, 0, 0, 0, TimeSpan.Zero)), LinkedItemCount: 7, NearestNeighbourName: null, ["COFFEE BEANS 1LB"], lastSeen),
+			new(new NormalizedDescription(Guid.NewGuid(), "orphan", DomainStatus.Active, new DateTimeOffset(2026, 4, 2, 0, 0, 0, TimeSpan.Zero)), LinkedItemCount: 0, NearestNeighbourName: null, [], null),
+		];
+
+		_mediatorMock
+			.Setup(m => m.Send(It.IsAny<GetAllNormalizedDescriptionsQuery>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(Page(items));
+
+		Results<Ok<NormalizedDescriptionListResponse>, BadRequest<ProblemDetails>> result =
+			await _controller.GetAllNormalizedDescriptions(status: null, q: null, cancellationToken: CancellationToken.None);
+
+		// Null stays null rather than collapsing to a default date — "never matched anything" and
+		// "last matched a long time ago" call for opposite decisions about the entry.
+		Ok<NormalizedDescriptionListResponse> ok = Assert.IsType<Ok<NormalizedDescriptionListResponse>>(result.Result);
+		ok.Value!.Items.First().LastSeen.Should().Be(lastSeen);
+		ok.Value.Items.Last().LastSeen.Should().BeNull();
+	}
+
 	// ── RECEIPTS-879: paging ──────────────────────────────────────
 
 	[Fact]
