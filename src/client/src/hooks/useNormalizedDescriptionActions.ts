@@ -7,6 +7,22 @@ import type { components } from "@/generated/api";
 type NormalizedDescriptionStatus =
   components["schemas"]["NormalizedDescriptionStatus"];
 
+/**
+ * Rejection is not a status flip like the other two — it unlinks every receipt item and leaves
+ * the row as a tombstone (RECEIPTS-876). The toast says so, because "Status updated" would let
+ * an admin believe they had merely re-filed the row.
+ */
+function statusToastMessage(status: NormalizedDescriptionStatus): string {
+  switch (status) {
+    case "active":
+      return "Approved as active";
+    case "rejected":
+      return "Rejected — items unlinked and this text will not be suggested again";
+    default:
+      return "Moved to pending review";
+  }
+}
+
 export function useMergeMutation() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -82,6 +98,41 @@ export function useSplitMutation() {
   });
 }
 
+export function useRenameMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      displayLabel,
+    }: {
+      id: string;
+      displayLabel: string | null;
+    }) => {
+      const { data, error, response } = await client.PATCH(
+        "/api/normalized-descriptions/{id}/rename",
+        {
+          params: { path: { id } },
+          body: { displayLabel },
+        },
+      );
+      if (!response.ok) throw toApiError(response.status, error);
+      return data;
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["normalized-descriptions"] });
+      // The spending report groups by display name, so a rename relabels a bucket
+      // (RECEIPTS-876). Without this the report keeps showing the old raw receipt text and the
+      // rename looks like it did nothing.
+      queryClient.invalidateQueries({ queryKey: ["reports"] });
+      toast.success(
+        variables.displayLabel === null
+          ? "Name cleared — showing the matched text again"
+          : `Renamed to "${variables.displayLabel}"`,
+      );
+    },
+  });
+}
+
 export function useUpdateStatusMutation() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -110,11 +161,9 @@ export function useUpdateStatusMutation() {
       // badge lingers, which is precisely the "approve changes nothing you can see"
       // complaint the issue is about.
       queryClient.invalidateQueries({ queryKey: ["reports"] });
-      toast.success(
-        variables.status === "active"
-          ? "Approved as active"
-          : "Moved to pending review",
-      );
+      // Rejecting unlinks every receipt item, so their spend moves to "(Not Normalized)".
+      queryClient.invalidateQueries({ queryKey: ["receipt-items"] });
+      toast.success(statusToastMessage(variables.status));
     },
   });
 }

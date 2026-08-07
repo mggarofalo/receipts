@@ -133,13 +133,24 @@ public class NormalizedDescriptionResolutionService(
 		// rather than relying on soft-delete filters, and the explicit DeletedAt == null
 		// condition keeps the semantics identical. The ordering pin by Id keeps successive
 		// cycles deterministic on an otherwise-arbitrary set and makes test assertions easier.
+		// Tombstoned text is excluded here rather than only being declined further down
+		// (RECEIPTS-876). Rejecting a description unlinks its items, so they become unresolved
+		// again and match this predicate forever. Filtering them out at the source is what stops
+		// them occupying the Take(BatchSize) window on every cycle and starving genuinely-new
+		// items behind them — a queue of rejected rows would otherwise halt resolution entirely.
+		//
+		// The comparison mirrors the unique functional index on lower("CanonicalName"), so this is
+		// an index probe per candidate rather than a scan.
 		List<ReceiptItemEntity> pending = await context.ReceiptItems
 			.IgnoreQueryFilters()
 			.Where(r =>
 				r.DeletedAt == null &&
 				r.NormalizedDescriptionId == null &&
 				r.Description != string.Empty &&
-				r.Description.Length >= MinDescriptionLength)
+				r.Description.Length >= MinDescriptionLength &&
+				!context.NormalizedDescriptions.Any(n =>
+					n.Status == NormalizedDescriptionStatus.Rejected &&
+					n.CanonicalName.ToLower() == r.Description.ToLower()))
 			.OrderBy(r => r.Id)
 			.Take(BatchSize)
 			.ToListAsync(cancellationToken);
@@ -184,6 +195,20 @@ public class NormalizedDescriptionResolutionService(
 				logger.LogError(
 					ex,
 					"Failed to resolve normalized description for {Count} receipt item(s) with text {Description}",
+					group.Count(),
+					group.Key);
+				skipped += group.Count();
+				continue;
+			}
+
+			// A tombstone the candidate filter did not catch — the text was rejected between
+			// building the batch and resolving this group, or a caller reached the service by
+			// another path. Leave the items unlinked; the next cycle's filter will exclude them
+			// (RECEIPTS-876).
+			if (result.IsRejected)
+			{
+				logger.LogDebug(
+					"Skipping {Count} receipt item(s): description {Description} is tombstoned",
 					group.Count(),
 					group.Key);
 				skipped += group.Count();

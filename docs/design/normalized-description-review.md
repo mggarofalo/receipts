@@ -45,6 +45,75 @@ The synthetic `(Not Normalized)` bucket has no backing row, so its status is `nu
 some third enum value. Clients must not render it as either reviewed or unreviewed — there is
 nothing to review. The CSV writes an empty cell for it.
 
+## Renaming is cosmetic, by construction (RECEIPTS-876)
+
+**Decision: display label is a separate column from match text.**
+
+`CanonicalName` was set once, verbatim, from whatever raw text the receipt carried, and there
+was no update path. "Approve" therefore meant "accept this raw string as the canonical name
+forever."
+
+`DisplayLabel` is now a nullable column beside it. `DisplayName` is `DisplayLabel ??
+CanonicalName`, and that is what every user-facing surface shows: the review queue, the
+registry, merge and split dialogs, the nearest-match evidence line, and the spending report's
+bucket labels. The rename endpoint writes the label and nothing else — never `CanonicalName`,
+never the embedding.
+
+That separation is the whole point. A clean human label like "Milk" may match receipt text
+markedly *worse* than the messy original "MILK 2% GAL", so re-embedding on rename would quietly
+degrade resolution for every future receipt while looking like a cosmetic edit. Rejected
+alternatives: re-embedding on rename (silently misroutes future matches), and freezing the
+vector while letting the name drift with no record of the original (name and behaviour diverge
+invisibly — we keep showing the matched text next to a diverged label instead).
+
+### Uniqueness is on the effective display name
+
+A unique functional index on `lower(COALESCE("DisplayLabel", "CanonicalName"))`, not on the
+label alone. The collision that actually bites is renaming row B onto row A's *un-renamed* name;
+an index over the label column would allow it, and the two rows would then be indistinguishable
+everywhere a user looks — including as two identically-named buckets in the spending report.
+The existing unique index on `lower("CanonicalName")` stays, since match text still has to be
+unique in its own right.
+
+Renaming a row to its own matched text stores `null` rather than a duplicate copy, so the row
+reads as "not renamed" rather than permanently pinned to what it already displayed.
+
+## Rejection is a remembered "no" (RECEIPTS-876)
+
+**Decision: a third status, `Rejected`, whose row survives as a tombstone.**
+
+The status enum had two members and no way to say "this is garbage text". The only way to
+dispose of a bad pending entry was to merge it into an unrelated active row, which silently
+re-pointed its receipt items there. Merge means "this is the same as X"; rejection means "this
+does not deserve an entry at all". Those are different judgements and now have different
+actions.
+
+Rejecting **unlinks every receipt item and clears its match score**, so the items report under
+"(Not Normalized)" — they genuinely are unnormalized. The score is cleared alongside the FK for
+the same reason as in the requeue: a live item carrying a score with no description to explain
+it is the inconsistent state RECEIPTS-883 exists to prevent. Soft-deleted items are detached
+too, or one would return from the recycle bin linked to a row the reviewer rejected.
+
+The row itself is kept. That is what stops the resolver recreating the entry the next time the
+same text appears.
+
+### Why the resolver filters tombstones at the query, not at the decision
+
+Rejecting unlinks the items, so they become unresolved again and match the resolver's candidate
+predicate forever. If the resolver only declined them *after* fetching a batch, they would
+occupy the `Take(BatchSize)` window on every cycle and starve genuinely-new items behind them —
+enough rejected rows would halt resolution entirely.
+
+So the candidate query excludes any item whose description matches a `Rejected` row's
+`CanonicalName`, case-insensitively, riding the existing unique index. The post-fetch check
+survives as a second line of defence for the narrow race where text is rejected between
+building the batch and resolving the group.
+
+Tombstones are also excluded from both ANN searches. A rejected row keeps its embedding so the
+exact-match lookup still finds it, but it must never win a similarity search: auto-accepting
+onto one would re-link the very items the reviewer detached, and citing one as a near-miss would
+offer "nearly matched \<the thing you rejected\>" as evidence.
+
 ### Wire-format caveat
 
 The spec documents this enum lowercase (`active`, `pendingReview`) and the generated TypeScript

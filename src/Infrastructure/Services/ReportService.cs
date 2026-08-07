@@ -949,11 +949,16 @@ public partial class ReportService(IDbContextFactory<ApplicationDbContext> conte
 		// coalesced canonical name. Aggregation happens in SQL (RECEIPTS-841) — the previous
 		// implementation pulled every matching receipt item into memory before grouping, which
 		// cannot support server-side pagination.
+		// Grouped by DISPLAY name, not matched text (RECEIPTS-876). Renaming an entry is meant to
+		// change what the report calls it — a rename that left this report showing the old raw
+		// receipt text would be the same "the action has no observable effect" complaint
+		// RECEIPTS-875 was about. COALESCE mirrors the unique index on
+		// lower(COALESCE("DisplayLabel","CanonicalName")), so two buckets can never share a label.
 		var baseQuery = from ri in context.ReceiptItems.AsNoTracking().Where(ri => ri.DeletedAt == null)
 						join r in receiptsQuery on ri.ReceiptId equals r.Id
 						join n in context.NormalizedDescriptions.AsNoTracking() on ri.NormalizedDescriptionId equals n.Id into gj
 						from n in gj.DefaultIfEmpty()
-						group new { ri.TotalAmount, r.Date } by n.CanonicalName ?? NotNormalizedLabel into g
+						group new { ri.TotalAmount, r.Date } by (n.DisplayLabel ?? n.CanonicalName) ?? NotNormalizedLabel into g
 						select new
 						{
 							CanonicalName = g.Key,
@@ -1040,8 +1045,10 @@ public partial class ReportService(IDbContextFactory<ApplicationDbContext> conte
 			join r in receiptsQuery on ri.ReceiptId equals r.Id
 			join n in context.NormalizedDescriptions.AsNoTracking() on ri.NormalizedDescriptionId equals n.Id into gj
 			from n in gj.DefaultIfEmpty()
-			where canonicalNames.Contains(n.CanonicalName ?? NotNormalizedLabel)
-			group ri by new { CanonicalName = n.CanonicalName ?? NotNormalizedLabel, ri.TotalAmountCurrency } into cg
+				// Same display-name key as the aggregate query above, or the dictionary this builds
+				// would miss every renamed bucket and silently fall back to USD (RECEIPTS-876).
+			where canonicalNames.Contains((n.DisplayLabel ?? n.CanonicalName) ?? NotNormalizedLabel)
+			group ri by new { CanonicalName = (n.DisplayLabel ?? n.CanonicalName) ?? NotNormalizedLabel, ri.TotalAmountCurrency } into cg
 			select new
 			{
 				cg.Key.CanonicalName,
@@ -1077,11 +1084,11 @@ public partial class ReportService(IDbContextFactory<ApplicationDbContext> conte
 		CancellationToken cancellationToken)
 	{
 		var rows = await context.NormalizedDescriptions.AsNoTracking()
-			.Where(n => canonicalNames.Contains(n.CanonicalName))
-			.Select(n => new { n.CanonicalName, n.Status })
+			.Select(n => new { DisplayName = n.DisplayLabel ?? n.CanonicalName, n.Status })
+			.Where(x => canonicalNames.Contains(x.DisplayName))
 			.ToListAsync(cancellationToken);
 
-		return rows.ToDictionary(x => x.CanonicalName, x => x.Status);
+		return rows.ToDictionary(x => x.DisplayName, x => x.Status);
 	}
 
 	private static DateTimeOffset ToDateTimeOffset(DateOnly date) =>

@@ -115,6 +115,91 @@ public class NormalizedDescriptionResolutionServiceTests
 		return new GetOrCreateResult(domain, matchScore);
 	}
 
+	// ── RECEIPTS-876: tombstoned text ──────────────────────────────────────────────────
+
+	[Fact]
+	public async Task ProcessPendingResolutionsAsync_TombstonedDescription_IsNeverEvenAskedAbout()
+	{
+		// Arrange — one item whose text a reviewer already rejected, one ordinary item.
+		Guid receiptId = Guid.NewGuid();
+		ReceiptItemEntity rejected = BuildItem("MISC 4.99", receiptId);
+		ReceiptItemEntity ordinary = BuildItem("Bananas", receiptId);
+		await SeedReceiptAndItemsAsync(rejected, ordinary);
+
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
+			{
+				Id = Guid.NewGuid(),
+				// Different casing from the receipt text on purpose: the tombstone has to bite
+				// case-insensitively, matching the unique index on lower("CanonicalName").
+				CanonicalName = "misc 4.99",
+				Status = NormalizedDescriptionStatus.Rejected,
+				CreatedAt = DateTimeOffset.UtcNow,
+			});
+			await seed.SaveChangesAsync();
+		}
+
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
+		_normalizedServiceMock
+			.Setup(s => s.GetOrCreateAsync("Bananas", It.IsAny<CancellationToken>()))
+			.ReturnsAsync(NewResult("Bananas", null));
+
+		// Act
+		NormalizedDescriptionResolutionService.ResolutionSummary summary =
+			await CreateService().ProcessPendingResolutionsAsync(CancellationToken.None);
+
+		// Assert — the rejected text never reaches the service at all. Excluding it at the query
+		// is what stops it occupying the batch window on every cycle forever; declining it later
+		// would leave it re-selected each time and eventually starve real work.
+		_normalizedServiceMock.Verify(
+			s => s.GetOrCreateAsync("MISC 4.99", It.IsAny<CancellationToken>()),
+			Times.Never);
+		summary.Linked.Should().Be(1);
+
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		verify.ReceiptItems.IgnoreAutoIncludes().Single(r => r.Id == rejected.Id)
+			.NormalizedDescriptionId.Should().BeNull();
+		verify.ReceiptItems.IgnoreAutoIncludes().Single(r => r.Id == ordinary.Id)
+			.NormalizedDescriptionId.Should().NotBeNull();
+	}
+
+	[Fact]
+	public async Task ProcessPendingResolutionsAsync_ServiceReturnsRejectedRow_DoesNotLink()
+	{
+		// Arrange — the race the query filter cannot close: the text is tombstoned between
+		// building the batch and resolving the group.
+		ReceiptItemEntity item = BuildItem("MISC 4.99");
+		await SeedReceiptAndItemsAsync(item);
+
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
+
+		NormalizedDescription tombstone = new(
+			Guid.NewGuid(),
+			"MISC 4.99",
+			NormalizedDescriptionStatus.Rejected,
+			DateTimeOffset.UtcNow);
+		_normalizedServiceMock
+			.Setup(s => s.GetOrCreateAsync("MISC 4.99", It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new GetOrCreateResult(tombstone, MatchScore: null));
+
+		// Act
+		NormalizedDescriptionResolutionService.ResolutionSummary summary =
+			await CreateService().ProcessPendingResolutionsAsync(CancellationToken.None);
+
+		// Assert
+		summary.Linked.Should().Be(0);
+		summary.Skipped.Should().Be(1);
+		// Emphatically not linked to the tombstone: that would re-attach the very items the
+		// reviewer detached, and hide their spend from "(Not Normalized)".
+		summary.NewEntriesCreated.Should().Be(0);
+
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		ReceiptItemEntity saved = verify.ReceiptItems.IgnoreAutoIncludes().Single(r => r.Id == item.Id);
+		saved.NormalizedDescriptionId.Should().BeNull();
+		saved.NormalizedDescriptionMatchScore.Should().BeNull();
+	}
+
 	[Fact]
 	public async Task ProcessPendingResolutionsAsync_BatchDedup_OneCallPerUniqueDescription()
 	{

@@ -60,6 +60,19 @@ public class NormalizedDescriptionService(
 		NormalizedDescriptionEntity? existing = await FindExactCaseInsensitiveAsync(context, normalized, cancellationToken);
 		if (existing is not null)
 		{
+			// A tombstone (RECEIPTS-876). The reviewer already said this text does not deserve a
+			// canonical entry, so we hand the row back with its Rejected status intact and let the
+			// caller decline to link. Returning it rather than null is deliberate: the caller can
+			// then tell "deliberately rejected" from "nothing happened", and log accordingly.
+			//
+			// MatchScore stays null. A score of 1.0 would be recorded on a ReceiptItem that is not
+			// being linked to anything, reproducing exactly the orphan-score inconsistency
+			// RECEIPTS-883 exists to prevent.
+			if (existing.Status == NormalizedDescriptionStatus.Rejected)
+			{
+				return new GetOrCreateResult(mapper.ToDomain(existing), MatchScore: null);
+			}
+
 			// An exact-name match is a perfect logical match — surface similarity = 1 so
 			// the resolver can record it on the ReceiptItem without requiring a second
 			// embedding roundtrip.
@@ -402,9 +415,158 @@ public class NormalizedDescriptionService(
 			return false;
 		}
 
+		NormalizedDescriptionStatus previous = entity.Status;
 		entity.Status = status;
+
+		if (status == NormalizedDescriptionStatus.Rejected)
+		{
+			await DetachItemsForRejectionAsync(context, entity, previous, cancellationToken);
+		}
+
 		await context.SaveChangesAsync(cancellationToken);
 		return true;
+	}
+
+	/// <summary>
+	/// Unlinks every receipt item from a row being rejected, so the items fall back to
+	/// unnormalized while the row survives as a tombstone (RECEIPTS-876).
+	/// </summary>
+	/// <remarks>
+	/// Two details are load-bearing.
+	///
+	/// The match score is cleared alongside the FK. ON DELETE SET NULL would not help here — the
+	/// row is not being deleted — and a live item carrying a score with no description to explain
+	/// it is exactly the inconsistent state RECEIPTS-883 exists to prevent.
+	///
+	/// IgnoreQueryFilters reaches past soft-delete so trashed items are detached too. A trashed
+	/// item left pointing at a tombstone would come back from the recycle bin linked to a row the
+	/// reviewer rejected, and no report would ever show it again.
+	/// </remarks>
+	private static async Task DetachItemsForRejectionAsync(
+		ApplicationDbContext context,
+		NormalizedDescriptionEntity entity,
+		NormalizedDescriptionStatus previous,
+		CancellationToken cancellationToken)
+	{
+		List<ReceiptItemEntity> items = await context.ReceiptItems
+			.IgnoreQueryFilters()
+			.IgnoreAutoIncludes()
+			.Where(r => r.NormalizedDescriptionId == entity.Id)
+			.ToListAsync(cancellationToken);
+
+		int unlinkedItemCount = 0;
+		foreach (ReceiptItemEntity item in items)
+		{
+			if (item.DeletedAt is null)
+			{
+				unlinkedItemCount++;
+			}
+
+			item.NormalizedDescriptionId = null;
+			item.NormalizedDescriptionMatchScore = null;
+		}
+
+		// A rejection is a reviewer's judgement, not the mechanical status flip the automatic
+		// audit would record. Naming it explicitly keeps "who decided this text was garbage, and
+		// how much data moved" answerable later (RECEIPTS-890).
+		context.AddSemanticAuditEntry(
+			NormalizedDescriptionEntityType,
+			entity.Id.ToString(),
+			AuditAction.Update,
+			[
+				new FieldChange { FieldName = "operation", OldValue = null, NewValue = "Reject" },
+				new FieldChange { FieldName = "status", OldValue = previous.ToString(), NewValue = NormalizedDescriptionStatus.Rejected.ToString() },
+				new FieldChange { FieldName = "canonicalName", OldValue = null, NewValue = entity.CanonicalName },
+				new FieldChange { FieldName = "unlinkedItemCount", OldValue = null, NewValue = unlinkedItemCount.ToString() },
+				new FieldChange { FieldName = "unlinkedTrashedItemCount", OldValue = null, NewValue = (items.Count - unlinkedItemCount).ToString() },
+			],
+			DateTimeOffset.UtcNow);
+	}
+
+	public const string RenameTargetNotFound = "Normalized description not found.";
+	public const string DisplayNameAlreadyTaken = "Another normalized description already displays that name.";
+
+	/// <summary>
+	/// Sets or clears a row's display label (RECEIPTS-876). Null clears it, so the row falls back
+	/// to showing its matched text.
+	/// </summary>
+	/// <remarks>
+	/// The embedding and <c>CanonicalName</c> are deliberately untouched. Renaming is cosmetic by
+	/// construction here, so no rename can change which receipt text resolves to this row.
+	/// </remarks>
+	/// <exception cref="KeyNotFoundException">No row with this id.</exception>
+	/// <exception cref="ArgumentException">The label is whitespace-only or too long.</exception>
+	/// <exception cref="InvalidOperationException">Another row already displays that name.</exception>
+	public async Task<NormalizedDescriptionDetail> RenameAsync(
+		Guid id,
+		string? displayLabel,
+		CancellationToken cancellationToken)
+	{
+		string? trimmed = displayLabel?.Trim();
+		NormalizedDescription.ValidateDisplayLabel(trimmed);
+
+		using ApplicationDbContext context = contextFactory.CreateDbContext();
+
+		NormalizedDescriptionEntity? entity = await context.NormalizedDescriptions
+			.FirstOrDefaultAsync(e => e.Id == id, cancellationToken);
+		if (entity is null)
+		{
+			throw new KeyNotFoundException(RenameTargetNotFound);
+		}
+
+		// A label that merely restates the row's own matched text is stored as null rather than a
+		// duplicate copy. Otherwise the row would be permanently "renamed" to the thing it already
+		// displayed, and a later edit to CanonicalName-derived display logic would not reach it.
+		if (trimmed is not null && string.Equals(trimmed, entity.CanonicalName, StringComparison.OrdinalIgnoreCase))
+		{
+			trimmed = null;
+		}
+
+		// Checked here as well as by the unique index so the caller gets a usable message instead
+		// of a raw constraint violation. The index remains the authority under concurrency — see
+		// the DbUpdateException handler below.
+		if (trimmed is not null && await DisplayNameTakenAsync(context, trimmed, id, cancellationToken))
+		{
+			throw new InvalidOperationException(DisplayNameAlreadyTaken);
+		}
+
+		entity.DisplayLabel = trimmed;
+
+		try
+		{
+			await context.SaveChangesAsync(cancellationToken);
+		}
+		catch (DbUpdateException)
+		{
+			// Another writer claimed the same display name between the check above and this save.
+			throw new InvalidOperationException(DisplayNameAlreadyTaken);
+		}
+
+		DetailRow? row = await ProjectDetails(context)
+			.FirstOrDefaultAsync(d => d.Id == id, cancellationToken);
+
+		return row?.ToDetail()
+			?? new NormalizedDescriptionDetail(mapper.ToDomain(entity), LinkedItemCount: 0, NearestNeighbourName: null, []);
+	}
+
+	// Compares against each row's effective display name, matching the unique index on
+	// lower(COALESCE("DisplayLabel","CanonicalName")). Comparing against DisplayLabel alone would
+	// miss the common collision: renaming one row onto another row's un-renamed name.
+	private static async Task<bool> DisplayNameTakenAsync(
+		ApplicationDbContext context,
+		string displayLabel,
+		Guid excludingId,
+		CancellationToken cancellationToken)
+	{
+		string lowered = displayLabel.ToLowerInvariant();
+		return await context.NormalizedDescriptions
+			.AsNoTracking()
+			.AnyAsync(
+				e => e.Id != excludingId
+					&& (e.DisplayLabel == null
+						? e.CanonicalName.ToLower()
+						: e.DisplayLabel.ToLower()) == lowered,
+				cancellationToken);
 	}
 
 	public async Task<NormalizedDescriptionSettings> GetSettingsAsync(CancellationToken cancellationToken)
@@ -850,11 +1012,17 @@ public class NormalizedDescriptionService(
 			{
 				Id = e.Id,
 				CanonicalName = e.CanonicalName,
+				DisplayLabel = e.DisplayLabel,
 				Status = e.Status,
 				CreatedAt = e.CreatedAt,
 				NearestNeighbourId = e.NearestNeighbourId,
 				NearestNeighbourSimilarity = e.NearestNeighbourSimilarity,
-				NearestNeighbourName = e.NearestNeighbour == null ? null : e.NearestNeighbour.CanonicalName,
+				// The neighbour's display name, not its raw matched text — the reviewer is being
+				// told which entry this nearly matched, and they know that entry by whatever it
+				// is called on screen.
+				NearestNeighbourName = e.NearestNeighbour == null
+					? null
+					: (e.NearestNeighbour.DisplayLabel ?? e.NearestNeighbour.CanonicalName),
 				LinkedItemCount = context.ReceiptItems.Count(r => r.NormalizedDescriptionId == e.Id),
 				SampleRawDescriptions = context.ReceiptItems
 					.Where(r => r.NormalizedDescriptionId == e.Id)
@@ -871,6 +1039,7 @@ public class NormalizedDescriptionService(
 	{
 		public Guid Id { get; init; }
 		public string CanonicalName { get; init; } = string.Empty;
+		public string? DisplayLabel { get; init; }
 		public NormalizedDescriptionStatus Status { get; init; }
 		public DateTimeOffset CreatedAt { get; init; }
 		public Guid? NearestNeighbourId { get; init; }
@@ -880,7 +1049,7 @@ public class NormalizedDescriptionService(
 		public List<string> SampleRawDescriptions { get; init; } = [];
 
 		public NormalizedDescriptionDetail ToDetail() => new(
-			new NormalizedDescription(Id, CanonicalName, Status, CreatedAt, NearestNeighbourId, NearestNeighbourSimilarity),
+			new NormalizedDescription(Id, CanonicalName, Status, CreatedAt, NearestNeighbourId, NearestNeighbourSimilarity, DisplayLabel),
 			LinkedItemCount,
 			NearestNeighbourName,
 			SampleRawDescriptions);
@@ -1062,11 +1231,16 @@ public class NormalizedDescriptionService(
 
 		// pgvector's `<=>` operator returns cosine distance (1 - cosine_similarity).
 		// The partial HNSW index covers the WHERE "Embedding" IS NOT NULL clause.
+		//
+		// Tombstones are excluded (RECEIPTS-876). A Rejected row keeps its embedding so the exact
+		// -match lookup still finds it, but it must never win an ANN search: auto-accepting onto a
+		// rejected row would re-link the very items the reviewer detached, and citing one as a
+		// near-miss would offer "nearly matched <thing you rejected>" as evidence.
 		string sql = """
 			SELECT "Id" AS entity_id,
 			       (1.0 - ("Embedding" <=> {0}::vector)) AS similarity
 			FROM "matching"."NormalizedDescriptions"
-			WHERE "Embedding" IS NOT NULL
+			WHERE "Embedding" IS NOT NULL AND "Status" <> 'Rejected'
 			ORDER BY "Embedding" <=> {0}::vector
 			LIMIT 1
 			""";
@@ -1097,13 +1271,15 @@ public class NormalizedDescriptionService(
 			return [];
 		}
 
-		// Same index as AnnSearchTopOneAsync (partial HNSW on Embedding). Raising LIMIT costs
-		// extra index probes but no additional table scans; safe to keep at topN ≤ 20.
+		// Same index and same tombstone exclusion as AnnSearchTopOneAsync — the settings-page
+		// match test must simulate what the resolver would actually do, and the resolver can
+		// never land on a Rejected row. Raising LIMIT costs extra index probes but no additional
+		// table scans; safe to keep at topN ≤ 20.
 		string sql = """
 			SELECT "Id" AS entity_id,
 			       (1.0 - ("Embedding" <=> {0}::vector)) AS similarity
 			FROM "matching"."NormalizedDescriptions"
-			WHERE "Embedding" IS NOT NULL
+			WHERE "Embedding" IS NOT NULL AND "Status" <> 'Rejected'
 			ORDER BY "Embedding" <=> {0}::vector
 			LIMIT {1}
 			""";

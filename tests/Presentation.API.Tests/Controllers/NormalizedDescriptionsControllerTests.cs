@@ -1,6 +1,7 @@
 using API.Controllers;
 using API.Generated.Dtos;
 using Application.Commands.NormalizedDescription.Merge;
+using Application.Commands.NormalizedDescription.Rename;
 using Application.Commands.NormalizedDescription.RequeuePending;
 using Application.Commands.NormalizedDescription.Split;
 using Application.Commands.NormalizedDescription.UpdateSettings;
@@ -589,6 +590,151 @@ public class NormalizedDescriptionsControllerTests
 		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
 		bad.Value!.Detail.Should().Be(NormalizedDescriptionsController.ReceiptItemIdCannotBeEmpty);
 		_mediatorMock.Verify(m => m.Send(It.IsAny<SplitNormalizedDescriptionCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+	}
+
+	// ── PATCH rename (RECEIPTS-876) ──────────────────────────────
+
+	private static NormalizedDescriptionDetail RenamedDetail(Guid id, string canonicalName, string? label) => new(
+		new NormalizedDescription(
+			id,
+			canonicalName,
+			DomainStatus.Active,
+			new DateTimeOffset(2026, 8, 6, 12, 0, 0, TimeSpan.Zero),
+			nearestNeighbourId: null,
+			nearestNeighbourSimilarity: null,
+			displayLabel: label),
+		LinkedItemCount: 3,
+		NearestNeighbourName: null,
+		[canonicalName]);
+
+	[Fact]
+	public async Task RenameNormalizedDescription_SetsLabel_ReturnsOkWithBothNames()
+	{
+		Guid id = Guid.NewGuid();
+		RenameNormalizedDescriptionRequest request = new() { DisplayLabel = "Milk" };
+
+		_mediatorMock
+			.Setup(m => m.Send(
+				It.Is<RenameNormalizedDescriptionCommand>(c => c.Id == id && c.DisplayLabel == "Milk"),
+				It.IsAny<CancellationToken>()))
+			.ReturnsAsync(RenamedDetail(id, "MILK 2% GAL", "Milk"));
+
+		Results<Ok<NormalizedDescriptionResponse>, NotFound<ProblemDetails>, BadRequest<ProblemDetails>, Conflict<ProblemDetails>> result =
+			await _controller.RenameNormalizedDescription(id, request, CancellationToken.None);
+
+		Ok<NormalizedDescriptionResponse> ok = Assert.IsType<Ok<NormalizedDescriptionResponse>>(result.Result);
+		ok.Value!.DisplayLabel.Should().Be("Milk");
+		ok.Value.DisplayName.Should().Be("Milk");
+		// The matched text is still reported. A reviewer who renamed "MILK 2% GAL" to "Milk"
+		// needs to see which receipt text the entry actually covers.
+		ok.Value.CanonicalName.Should().Be("MILK 2% GAL");
+	}
+
+	[Fact]
+	public async Task RenameNormalizedDescription_NullLabel_ClearsBackToMatchedText()
+	{
+		Guid id = Guid.NewGuid();
+		RenameNormalizedDescriptionRequest request = new() { DisplayLabel = null };
+
+		_mediatorMock
+			.Setup(m => m.Send(
+				It.Is<RenameNormalizedDescriptionCommand>(c => c.Id == id && c.DisplayLabel == null),
+				It.IsAny<CancellationToken>()))
+			.ReturnsAsync(RenamedDetail(id, "MILK 2% GAL", null));
+
+		Results<Ok<NormalizedDescriptionResponse>, NotFound<ProblemDetails>, BadRequest<ProblemDetails>, Conflict<ProblemDetails>> result =
+			await _controller.RenameNormalizedDescription(id, request, CancellationToken.None);
+
+		Ok<NormalizedDescriptionResponse> ok = Assert.IsType<Ok<NormalizedDescriptionResponse>>(result.Result);
+		ok.Value!.DisplayLabel.Should().BeNull();
+		ok.Value.DisplayName.Should().Be("MILK 2% GAL");
+	}
+
+	[Fact]
+	public async Task RenameNormalizedDescription_NameTaken_ReturnsConflict()
+	{
+		Guid id = Guid.NewGuid();
+		RenameNormalizedDescriptionRequest request = new() { DisplayLabel = "Milk" };
+
+		_mediatorMock
+			.Setup(m => m.Send(It.IsAny<RenameNormalizedDescriptionCommand>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new InvalidOperationException("Another normalized description already displays that name."));
+
+		Results<Ok<NormalizedDescriptionResponse>, NotFound<ProblemDetails>, BadRequest<ProblemDetails>, Conflict<ProblemDetails>> result =
+			await _controller.RenameNormalizedDescription(id, request, CancellationToken.None);
+
+		// 409 rather than 400: the request is well-formed, it just lost to the current registry.
+		Conflict<ProblemDetails> conflict = Assert.IsType<Conflict<ProblemDetails>>(result.Result);
+		conflict.Value!.Detail.Should().Contain("already displays that name");
+	}
+
+	[Fact]
+	public async Task RenameNormalizedDescription_WhitespaceLabel_ReturnsBadRequest()
+	{
+		Guid id = Guid.NewGuid();
+		RenameNormalizedDescriptionRequest request = new() { DisplayLabel = "   " };
+
+		_mediatorMock
+			.Setup(m => m.Send(It.IsAny<RenameNormalizedDescriptionCommand>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new ArgumentException(NormalizedDescription.DisplayLabelCannotBeWhitespace));
+
+		Results<Ok<NormalizedDescriptionResponse>, NotFound<ProblemDetails>, BadRequest<ProblemDetails>, Conflict<ProblemDetails>> result =
+			await _controller.RenameNormalizedDescription(id, request, CancellationToken.None);
+
+		Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+	}
+
+	[Fact]
+	public async Task RenameNormalizedDescription_UnknownId_ReturnsNotFound()
+	{
+		Guid id = Guid.NewGuid();
+		RenameNormalizedDescriptionRequest request = new() { DisplayLabel = "Milk" };
+
+		_mediatorMock
+			.Setup(m => m.Send(It.IsAny<RenameNormalizedDescriptionCommand>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new KeyNotFoundException("Normalized description not found."));
+
+		Results<Ok<NormalizedDescriptionResponse>, NotFound<ProblemDetails>, BadRequest<ProblemDetails>, Conflict<ProblemDetails>> result =
+			await _controller.RenameNormalizedDescription(id, request, CancellationToken.None);
+
+		Assert.IsType<NotFound<ProblemDetails>>(result.Result);
+	}
+
+	[Fact]
+	public async Task RenameNormalizedDescription_EmptyId_ReturnsBadRequest()
+	{
+		RenameNormalizedDescriptionRequest request = new() { DisplayLabel = "Milk" };
+
+		Results<Ok<NormalizedDescriptionResponse>, NotFound<ProblemDetails>, BadRequest<ProblemDetails>, Conflict<ProblemDetails>> result =
+			await _controller.RenameNormalizedDescription(Guid.Empty, request, CancellationToken.None);
+
+		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		bad.Value!.Detail.Should().Be(NormalizedDescriptionsController.IdCannotBeEmpty);
+		_mediatorMock.Verify(m => m.Send(It.IsAny<RenameNormalizedDescriptionCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+	}
+
+	[Fact]
+	public async Task UpdateNormalizedDescriptionStatus_Rejected_IsAcceptedAndForwarded()
+	{
+		Guid id = Guid.NewGuid();
+		UpdateNormalizedDescriptionStatusRequest request = new() { Status = DtoStatus.Rejected };
+
+		_mediatorMock
+			.Setup(m => m.Send(It.IsAny<GetNormalizedDescriptionByIdQuery>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(RenamedDetail(id, "MISC 4.99", null));
+		_mediatorMock
+			.Setup(m => m.Send(It.IsAny<UpdateNormalizedDescriptionStatusCommand>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(true);
+
+		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result =
+			await _controller.UpdateNormalizedDescriptionStatus(id, request, CancellationToken.None);
+
+		Assert.IsType<NoContent>(result.Result);
+		_mediatorMock.Verify(
+			m => m.Send(
+				It.Is<UpdateNormalizedDescriptionStatusCommand>(c => c.Status == DomainStatus.Rejected),
+				It.IsAny<CancellationToken>()),
+			Times.Once);
 	}
 
 	// ── PATCH status ─────────────────────────────────────────────

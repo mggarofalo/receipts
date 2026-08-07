@@ -1758,6 +1758,260 @@ public class NormalizedDescriptionServiceTests
 		};
 	}
 
+	// ── RECEIPTS-876: rename and reject ────────────────────────────────────────────────
+
+	[Fact]
+	public async Task GetOrCreateAsync_ExactMatchOnTombstone_ReturnsRejectedWithNoScore()
+	{
+		// Arrange — a reviewer already said this text is not worth a canonical entry.
+		Guid tombstoneId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
+			{
+				Id = tombstoneId,
+				CanonicalName = "MISC 4.99",
+				Status = NormalizedDescriptionStatus.Rejected,
+				CreatedAt = DateTimeOffset.UtcNow,
+			});
+			await seed.SaveChangesAsync();
+		}
+
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		// Act
+		GetOrCreateResult result = await service.GetOrCreateAsync("misc 4.99", CancellationToken.None);
+
+		// Assert
+		result.IsRejected.Should().BeTrue();
+		result.Description.Id.Should().Be(tombstoneId);
+
+		// Not 1.0 as the ordinary exact-match branch returns. The caller is about to decline to
+		// link, and a score recorded against no link is exactly the orphan state RECEIPTS-883
+		// exists to prevent.
+		result.MatchScore.Should().BeNull();
+
+		// No new row: the whole point of a tombstone is that the resolver stops recreating it.
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		verify.NormalizedDescriptions.Should().HaveCount(1);
+	}
+
+	[Fact]
+	public async Task UpdateStatusAsync_ToRejected_UnlinksItemsAndClearsScores()
+	{
+		// Arrange
+		Guid descriptionId = Guid.NewGuid();
+		Guid liveItemId = Guid.NewGuid();
+		Guid trashedItemId = Guid.NewGuid();
+
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
+			{
+				Id = descriptionId,
+				CanonicalName = "MISC 4.99",
+				Status = NormalizedDescriptionStatus.PendingReview,
+				CreatedAt = DateTimeOffset.UtcNow,
+			});
+
+			ReceiptItemEntity live = BuildReceiptItem(liveItemId, Guid.NewGuid(), "misc 4.99", descriptionId);
+			live.NormalizedDescriptionMatchScore = 0.71;
+
+			ReceiptItemEntity trashed = BuildReceiptItem(trashedItemId, Guid.NewGuid(), "misc 4.99", descriptionId);
+			trashed.NormalizedDescriptionMatchScore = 0.68;
+			trashed.DeletedAt = DateTimeOffset.UtcNow;
+
+			seed.ReceiptItems.AddRange(live, trashed);
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		// Act
+		bool changed = await service.UpdateStatusAsync(descriptionId, NormalizedDescriptionStatus.Rejected, CancellationToken.None);
+
+		// Assert
+		changed.Should().BeTrue();
+
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+
+		// The row survives — it is the tombstone.
+		verify.NormalizedDescriptions.Single(e => e.Id == descriptionId)
+			.Status.Should().Be(NormalizedDescriptionStatus.Rejected);
+
+		List<ReceiptItemEntity> items = await verify.ReceiptItems
+			.IgnoreQueryFilters()
+			.IgnoreAutoIncludes()
+			.Where(r => r.Id == liveItemId || r.Id == trashedItemId)
+			.ToListAsync();
+
+		items.Should().HaveCount(2);
+		items.Should().OnlyContain(r => r.NormalizedDescriptionId == null);
+
+		// The score has to go with the link. A live item carrying a score with nothing to explain
+		// it is the inconsistent state RECEIPTS-883 exists to prevent.
+		items.Should().OnlyContain(r => r.NormalizedDescriptionMatchScore == null);
+	}
+
+	[Fact]
+	public async Task RenameAsync_SetsLabelWithoutTouchingMatchTextOrEmbedding()
+	{
+		// Arrange
+		Guid id = Guid.NewGuid();
+		float[] original = CreateFakeEmbedding();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
+			{
+				Id = id,
+				CanonicalName = "MILK 2% GAL",
+				Status = NormalizedDescriptionStatus.Active,
+				Embedding = new Vector(original),
+				EmbeddingModelVersion = "test-model",
+				CreatedAt = DateTimeOffset.UtcNow,
+			});
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		// Act
+		NormalizedDescriptionDetail result = await service.RenameAsync(id, "  Milk  ", CancellationToken.None);
+
+		// Assert
+		result.Description.DisplayLabel.Should().Be("Milk", "the label is trimmed before storing");
+		result.Description.DisplayName.Should().Be("Milk");
+
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		NormalizedDescriptionEntity row = verify.NormalizedDescriptions.Single(e => e.Id == id);
+
+		// The two things a rename must never touch. Re-embedding on rename would let a clean
+		// human label match receipt text worse than the messy original, silently degrading
+		// resolution for every future receipt.
+		row.CanonicalName.Should().Be("MILK 2% GAL");
+		row.Embedding!.ToArray().Should().BeEquivalentTo(original);
+		row.EmbeddingModelVersion.Should().Be("test-model");
+
+		// No embedding was generated at all — renaming is a metadata write, not a re-resolution.
+		_embeddingServiceMock.Verify(
+			e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+			Times.Never);
+	}
+
+	[Fact]
+	public async Task RenameAsync_LabelMatchingItsOwnMatchText_StoresNullRatherThanADuplicate()
+	{
+		// Arrange
+		Guid id = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
+			{
+				Id = id,
+				CanonicalName = "Bananas",
+				Status = NormalizedDescriptionStatus.Active,
+				CreatedAt = DateTimeOffset.UtcNow,
+			});
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		// Act — "renaming" a row to what it already displays.
+		await service.RenameAsync(id, "bananas", CancellationToken.None);
+
+		// Assert — stored as "not renamed" rather than a redundant copy of the matched text.
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		verify.NormalizedDescriptions.Single(e => e.Id == id).DisplayLabel.Should().BeNull();
+	}
+
+	[Fact]
+	public async Task RenameAsync_NullLabel_ClearsBackToMatchText()
+	{
+		// Arrange
+		Guid id = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
+			{
+				Id = id,
+				CanonicalName = "MILK 2% GAL",
+				DisplayLabel = "Milk",
+				Status = NormalizedDescriptionStatus.Active,
+				CreatedAt = DateTimeOffset.UtcNow,
+			});
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		// Act
+		NormalizedDescriptionDetail result = await service.RenameAsync(id, null, CancellationToken.None);
+
+		// Assert
+		result.Description.DisplayLabel.Should().BeNull();
+		result.Description.DisplayName.Should().Be("MILK 2% GAL");
+	}
+
+	[Fact]
+	public async Task RenameAsync_CollidingWithAnotherRowsUnrenamedName_Throws()
+	{
+		// Arrange — the collision an index on DisplayLabel alone would miss: renaming one row
+		// onto a name another row already displays via its matched text.
+		Guid targetId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.AddRange(
+				new NormalizedDescriptionEntity
+				{
+					Id = targetId,
+					CanonicalName = "MILK 2% GAL",
+					Status = NormalizedDescriptionStatus.Active,
+					CreatedAt = DateTimeOffset.UtcNow,
+				},
+				new NormalizedDescriptionEntity
+				{
+					Id = Guid.NewGuid(),
+					CanonicalName = "Milk",
+					Status = NormalizedDescriptionStatus.Active,
+					CreatedAt = DateTimeOffset.UtcNow,
+				});
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		// Act
+		Func<Task> act = async () => await service.RenameAsync(targetId, "milk", CancellationToken.None);
+
+		// Assert
+		await act.Should().ThrowAsync<InvalidOperationException>()
+			.WithMessage(NormalizedDescriptionService.DisplayNameAlreadyTaken);
+	}
+
+	[Fact]
+	public async Task RenameAsync_WhitespaceOnlyLabel_Throws()
+	{
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		// A blank text box is far more often a slip than an intent to clear, so it is an error
+		// rather than a silent fallback to the matched text.
+		Func<Task> act = async () => await service.RenameAsync(Guid.NewGuid(), "   ", CancellationToken.None);
+
+		await act.Should().ThrowAsync<ArgumentException>();
+	}
+
+	[Fact]
+	public async Task RenameAsync_UnknownId_Throws()
+	{
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		Func<Task> act = async () => await service.RenameAsync(Guid.NewGuid(), "Milk", CancellationToken.None);
+
+		await act.Should().ThrowAsync<KeyNotFoundException>();
+	}
+
 	private static float[] CreateFakeEmbedding()
 	{
 		float[] embedding = new float[OnnxEmbeddingService.EmbeddingDimension];

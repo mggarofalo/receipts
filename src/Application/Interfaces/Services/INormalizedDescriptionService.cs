@@ -16,6 +16,11 @@ public interface INormalizedDescriptionService
 	Task<NormalizedDescriptionDetail> SplitAsync(Guid receiptItemId, CancellationToken cancellationToken);
 	Task<bool> UpdateStatusAsync(Guid id, NormalizedDescriptionStatus status, CancellationToken cancellationToken);
 
+	// RECEIPTS-876. Sets or clears the display label only — never CanonicalName, never the
+	// embedding — so a rename cannot change which receipt text resolves to this row. Pass null to
+	// clear the label and fall back to the matched text.
+	Task<NormalizedDescriptionDetail> RenameAsync(Guid id, string? displayLabel, CancellationToken cancellationToken);
+
 	// RECEIPTS-883. Preview is read-only and is also how a caller verifies the run afterwards.
 	// RequeuePendingAsync returns null when expectedFingerprint does not match the live pending
 	// set — the caller previewed a different world and must re-read before destroying anything.
