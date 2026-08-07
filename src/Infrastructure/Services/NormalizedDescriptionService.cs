@@ -129,6 +129,79 @@ public class NormalizedDescriptionService(
 		return new GetOrCreateResult(mapper.ToDomain(activeCreated), MatchScore: null);
 	}
 
+	/// <summary>
+	/// The canonical entry for a user-declared item template (RECEIPTS-881).
+	/// </summary>
+	/// <remarks>
+	/// Deliberately not a call into <see cref="GetOrCreateAsync"/>. That method answers "what does
+	/// this receipt text probably mean?" — it runs an ANN search and can land the result in the
+	/// review queue. This one records a declaration a user already made by creating the template,
+	/// so it takes the exact-match-or-create path only and always produces an <c>Active</c> row.
+	/// Routing templates through the resolver would ask a human to confirm a grouping the same
+	/// human just made by hand, which is the duplication this issue exists to remove.
+	///
+	/// The embedding is still generated, because the entry has to be findable by ANN search when
+	/// the *same item typed freehand* comes in on a later receipt. That is the whole point: the
+	/// template teaches the registry a name, and the registry then recognises it without the
+	/// template.
+	/// </remarks>
+	public async Task<NormalizedDescription> GetOrCreateForTemplateAsync(string templateName, CancellationToken cancellationToken)
+	{
+		string normalized = (templateName ?? string.Empty).Trim();
+		if (string.IsNullOrEmpty(normalized))
+		{
+			throw new ArgumentException(NormalizedDescription.CanonicalNameCannotBeEmpty, nameof(templateName));
+		}
+
+		using ApplicationDbContext context = contextFactory.CreateDbContext();
+
+		NormalizedDescriptionEntity? existing = await FindExactCaseInsensitiveAsync(context, normalized, cancellationToken);
+		if (existing is not null)
+		{
+			// A tombstone the user has now contradicted by hand. Their explicit, later declaration
+			// wins over the earlier "this text is not worth an entry" — but it is a reversal of a
+			// recorded decision, so it is audited rather than flipped silently. The alternative,
+			// refusing the template, leaves the user unable to name their own item with no way to
+			// discover why (RECEIPTS-876 tombstones are not surfaced anywhere they would look).
+			if (existing.Status == NormalizedDescriptionStatus.Rejected)
+			{
+				existing.Status = NormalizedDescriptionStatus.Active;
+				context.AddSemanticAuditEntry(
+					NormalizedDescriptionEntityType,
+					existing.Id.ToString(),
+					AuditAction.Update,
+					[
+						new FieldChange { FieldName = "operation", OldValue = null, NewValue = "ReinstateForTemplate" },
+						new FieldChange { FieldName = "status", OldValue = NormalizedDescriptionStatus.Rejected.ToString(), NewValue = NormalizedDescriptionStatus.Active.ToString() },
+						new FieldChange { FieldName = "canonicalName", OldValue = null, NewValue = existing.CanonicalName },
+					],
+					DateTimeOffset.UtcNow);
+				await context.SaveChangesAsync(cancellationToken);
+			}
+			// A PendingReview row is left pending-but-linked rather than auto-approved. The
+			// template says what the item is called; it does not say the resolver's *grouping* of
+			// whatever raw text landed there is right, and that grouping is what review is for.
+
+			return mapper.ToDomain(existing);
+		}
+
+		Vector? embedding = null;
+		if (embeddingService.IsConfigured)
+		{
+			float[] data = await embeddingService.GenerateEmbeddingAsync(normalized, cancellationToken);
+			embedding = data.Length > 0 ? new Vector(data) : null;
+		}
+
+		(NormalizedDescriptionEntity created, _) = await InsertAsync(
+			context,
+			normalized,
+			NormalizedDescriptionStatus.Active,
+			embedding,
+			cancellationToken);
+
+		return mapper.ToDomain(created);
+	}
+
 	public async Task<NormalizedDescriptionDetail?> GetByIdAsync(Guid id, CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
@@ -288,6 +361,21 @@ public class NormalizedDescriptionService(
 			}
 		}
 
+		// Item templates that declared the discarded row follow it (RECEIPTS-881). Same reasoning
+		// as the receipt items above: their FK is SetNull, so leaving them to the database would
+		// silently strip the link and quietly put every item entered from that template back
+		// through the resolver — a regression with nothing raised anywhere. IgnoreQueryFilters
+		// so a soft-deleted template does not come back from the recycle bin unlinked.
+		List<ItemTemplateEntity> templates = await context.ItemTemplates
+			.IgnoreQueryFilters()
+			.Where(t => t.NormalizedDescriptionId == discardId)
+			.ToListAsync(cancellationToken);
+
+		foreach (ItemTemplateEntity template in templates)
+		{
+			template.NormalizedDescriptionId = keepId;
+		}
+
 		context.NormalizedDescriptions.Remove(discard);
 
 		int liveCount = items.Count(item => item.DeletedAt is null);
@@ -311,6 +399,7 @@ public class NormalizedDescriptionService(
 				new FieldChange { FieldName = "relinkedItemCount", OldValue = null, NewValue = liveCount.ToString() },
 				new FieldChange { FieldName = "relinkedTrashedItemCount", OldValue = null, NewValue = trashedCount.ToString() },
 				new FieldChange { FieldName = "rescoredItemCount", OldValue = null, NewValue = rescoredCount.ToString() },
+				new FieldChange { FieldName = "relinkedTemplateCount", OldValue = null, NewValue = templates.Count.ToString() },
 			],
 			now);
 
@@ -324,6 +413,7 @@ public class NormalizedDescriptionService(
 				new FieldChange { FieldName = "relinkedItemCount", OldValue = null, NewValue = liveCount.ToString() },
 				new FieldChange { FieldName = "relinkedTrashedItemCount", OldValue = null, NewValue = trashedCount.ToString() },
 				new FieldChange { FieldName = "rescoredItemCount", OldValue = null, NewValue = rescoredCount.ToString() },
+				new FieldChange { FieldName = "relinkedTemplateCount", OldValue = null, NewValue = templates.Count.ToString() },
 			],
 			now);
 
@@ -581,6 +671,27 @@ public class NormalizedDescriptionService(
 			item.NormalizedDescriptionMatchScore = null;
 		}
 
+		// Templates declaring this text are unlinked too (RECEIPTS-881). The row survives as a
+		// tombstone, so nothing in the database forces this — a template would keep pointing at a
+		// Rejected entry and go on stamping new receipt items with it, which is precisely the
+		// resolver bypass working against the reviewer's decision.
+		//
+		// The template itself is left alone. Rejecting a canonical entry is a judgement about
+		// receipt text, not about the user's curated entry-time defaults, and silently deleting
+		// someone's template as a side effect of an admin action on a different screen would be a
+		// much bigger surprise than an unlinked one. An unlinked template simply re-links on its
+		// next use — which, if the text is still tombstoned, GetOrCreateForTemplateAsync treats as
+		// the user contradicting the rejection on purpose.
+		List<ItemTemplateEntity> templates = await context.ItemTemplates
+			.IgnoreQueryFilters()
+			.Where(t => t.NormalizedDescriptionId == entity.Id)
+			.ToListAsync(cancellationToken);
+
+		foreach (ItemTemplateEntity template in templates)
+		{
+			template.NormalizedDescriptionId = null;
+		}
+
 		// A rejection is a reviewer's judgement, not the mechanical status flip the automatic
 		// audit would record. Naming it explicitly keeps "who decided this text was garbage, and
 		// how much data moved" answerable later (RECEIPTS-890).
@@ -594,6 +705,7 @@ public class NormalizedDescriptionService(
 				new FieldChange { FieldName = "canonicalName", OldValue = null, NewValue = entity.CanonicalName },
 				new FieldChange { FieldName = "unlinkedItemCount", OldValue = null, NewValue = unlinkedItemCount.ToString() },
 				new FieldChange { FieldName = "unlinkedTrashedItemCount", OldValue = null, NewValue = (items.Count - unlinkedItemCount).ToString() },
+				new FieldChange { FieldName = "unlinkedTemplateCount", OldValue = null, NewValue = templates.Count.ToString() },
 			],
 			DateTimeOffset.UtcNow);
 	}

@@ -13,6 +13,12 @@ public partial class ItemTemplateMapper
 	[MapperIgnoreSource(nameof(ItemTemplate.DefaultUnitPrice))]
 	[MapperIgnoreTarget(nameof(ItemTemplateResponse.DefaultUnitPrice))]
 	[MapperIgnoreTarget(nameof(ItemTemplateResponse.DefaultUnitPriceCurrency))]
+	// The canonical link is deliberately not on the wire yet (RECEIPTS-881). No client reads it:
+	// items are stamped server-side from the template id they post, so the browser never needs to
+	// know which canonical row a template declares. RECEIPTS-930 adds it if the review-queue
+	// "link to template" UI turns out to need it — until then it is an internal detail, and an
+	// exposed field is a contract we would have to keep.
+	[MapperIgnoreSource(nameof(ItemTemplate.NormalizedDescriptionId))]
 	public partial ItemTemplateResponse ToResponsePartial(ItemTemplate source);
 
 	public ItemTemplateResponse ToResponse(ItemTemplate source)

@@ -23,6 +23,25 @@ public class ItemTemplateEntityConfiguration : IEntityTypeConfiguration<ItemTemp
 			.IsUnique()
 			.HasFilter("\"DeletedAt\" IS NULL");
 
+		// RECEIPTS-881. SetNull mirrors ReceiptItem's FK to the same table: a canonical entry can
+		// legitimately disappear (a merge deletes the discarded row), and blocking that to protect
+		// a template's convenience link would be the wrong trade.
+		//
+		// SetNull is a backstop, not the mechanism. MergeAsync re-points templates explicitly for
+		// the same reason it re-points receipt items — relying on the database to null the column
+		// would silently unlink every template pointing at the merged-away row, with nothing
+		// raised anywhere. Same class of bug as the soft-deleted-transaction stranding in
+		// RECEIPTS-801.
+		builder.HasOne(e => e.NormalizedDescription)
+			.WithMany()
+			.HasForeignKey(e => e.NormalizedDescriptionId)
+			.OnDelete(DeleteBehavior.SetNull);
+
+		// Deliberately NOT AutoInclude, unlike ReceiptItem's. Nothing that reads templates needs
+		// the canonical row, and an auto-include would drag a 1024-float embedding into every
+		// template list page.
+		builder.HasIndex(e => e.NormalizedDescriptionId);
+
 		builder.HasData(
 			new ItemTemplateEntity { Id = new Guid("cb05ed31-92a0-4c3d-bdbe-b9bd05183f38"), Name = "Gallon of Milk", DefaultCategory = "Groceries", DefaultSubcategory = "Dairy", DefaultUnitPrice = 4.99m, DefaultUnitPriceCurrency = Currency.USD, DefaultItemCode = "MILK-GAL" },
 			new ItemTemplateEntity { Id = new Guid("33255f68-44df-4813-ad55-92260303c0ce"), Name = "Loaf of Bread", DefaultCategory = "Groceries", DefaultSubcategory = "Bakery", DefaultUnitPrice = 3.49m, DefaultUnitPriceCurrency = Currency.USD, DefaultItemCode = "BREAD" },

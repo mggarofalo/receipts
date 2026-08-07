@@ -100,6 +100,8 @@ export function useCreateReceiptItem() {
         unitPrice: number;
         category: string;
         subcategory: string;
+        /** Set when the line was entered from a template (RECEIPTS-881). */
+        itemTemplateId?: string;
       };
     }) => {
       const { data, error } = await client.POST(

@@ -3550,6 +3550,22 @@ export interface components {
             unitPrice: number;
             category: string;
             subcategory?: string | null;
+            /**
+             * Format: uuid
+             * @description The item template this line was entered from, if any (RECEIPTS-881).
+             *
+             *     Supplying it stamps the item with the template's canonical normalized description at
+             *     write time, so the background resolver skips it entirely — it only considers items
+             *     with no normalized description. The user already declared what this item is by
+             *     picking the template; re-deriving it by embedding search could disagree with them and
+             *     park the result in the review queue.
+             *
+             *     Unknown ids and templates that have no canonical entry yet are ignored rather than
+             *     rejected: the id is a hint about provenance, not a constraint, and failing a receipt
+             *     save over a stale template id would be the wrong trade. Such an item simply falls
+             *     through to the resolver as before.
+             */
+            itemTemplateId?: string | null;
         };
         UpdateReceiptItemRequest: {
             /** Format: uuid */

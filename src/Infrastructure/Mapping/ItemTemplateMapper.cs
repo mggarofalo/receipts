@@ -15,6 +15,9 @@ public partial class ItemTemplateMapper
 	[MapperIgnoreTarget(nameof(ItemTemplateEntity.CascadeDeletedByParentId))]
 	[MapperIgnoreTarget(nameof(ItemTemplateEntity.DefaultUnitPrice))]
 	[MapperIgnoreTarget(nameof(ItemTemplateEntity.DefaultUnitPriceCurrency))]
+	// The FK carries across; the navigation does not. Materialising a NormalizedDescriptionEntity
+	// from a domain model that only holds an id would invent a row EF then tries to insert.
+	[MapperIgnoreTarget(nameof(ItemTemplateEntity.NormalizedDescription))]
 	[MapperIgnoreSource(nameof(ItemTemplate.DefaultUnitPrice))]
 	public partial ItemTemplateEntity ToEntityPartial(ItemTemplate source);
 
@@ -32,6 +35,7 @@ public partial class ItemTemplateMapper
 	[MapperIgnoreSource(nameof(ItemTemplateEntity.CascadeDeletedByParentId))]
 	[MapperIgnoreSource(nameof(ItemTemplateEntity.DefaultUnitPrice))]
 	[MapperIgnoreSource(nameof(ItemTemplateEntity.DefaultUnitPriceCurrency))]
+	[MapperIgnoreSource(nameof(ItemTemplateEntity.NormalizedDescription))]
 	[MapperIgnoreTarget(nameof(ItemTemplate.DefaultUnitPrice))]
 	public partial ItemTemplate ToDomainPartial(ItemTemplateEntity source);
 

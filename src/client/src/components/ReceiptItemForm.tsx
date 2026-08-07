@@ -66,6 +66,10 @@ const receiptItemSchema = z.object({
   unitPrice: z.number().min(0, "Unit price must be non-negative"),
   category: z.string().min(1, "Category is required"),
   subcategory: z.string().min(1, "Subcategory is required"),
+  // Provenance, not user input — there is no control bound to it (RECEIPTS-881). Set when a
+  // template is applied and cleared the moment the description stops matching that template's
+  // name, so the server never stamps an item with a canonical entry the text no longer means.
+  itemTemplateId: z.string().optional(),
 });
 
 type ReceiptItemSchemaValues = z.output<typeof receiptItemSchema>;
@@ -258,6 +262,7 @@ export function ReceiptItemForm({
     setItemCodeInput(suggestion.itemCode);
     form.setValue("description", suggestion.description);
     setDescriptionInput(suggestion.description);
+    clearTemplateProvenance(suggestion.description);
     form.setValue("category", suggestion.category);
     if (suggestion.subcategory) {
       form.setValue("subcategory", suggestion.subcategory);
@@ -343,7 +348,34 @@ export function ReceiptItemForm({
     [isDescriptionPopoverOpen, descriptionListId],
   );
 
+  /**
+   * Drops the template link once the description no longer matches the template's name.
+   *
+   * Compared case-insensitively and trimmed, so incidental whitespace or capitalisation does not
+   * throw away a link the user did not mean to break — but any real edit does. Erring towards
+   * dropping is deliberate: an unstamped item just goes through the resolver as it always did,
+   * whereas a wrongly-stamped one is silently misfiled in every report with nothing to reveal it.
+   */
+  function clearTemplateProvenance(nextDescription: string) {
+    const templateId = form.getValues("itemTemplateId");
+    if (!templateId) return;
+
+    const source = templates.find((t) => t.id === templateId);
+    const stillMatches =
+      source != null &&
+      source.name.trim().toLowerCase() === nextDescription.trim().toLowerCase();
+
+    if (!stillMatches) {
+      form.setValue("itemTemplateId", undefined);
+    }
+  }
+
   function applyTemplate(template: ItemTemplate) {
+    // Recorded so the server can stamp the item with the template's canonical description and
+    // skip the resolver (RECEIPTS-881). The user picking a template *is* the classification;
+    // re-deriving it from an embedding search could disagree and park the line in the review
+    // queue for a human to confirm what a human just said.
+    form.setValue("itemTemplateId", template.id);
     form.setValue("description", template.name);
     setDescriptionInput(template.name);
     if (template.defaultCategory) {
@@ -539,6 +571,12 @@ export function ReceiptItemForm({
                         const val = e.target.value;
                         setDescriptionInput(val);
                         field.onChange(val);
+                        // Typing over a template's name breaks the claim that this line came
+                        // from that template, so the provenance goes with it (RECEIPTS-881).
+                        // Otherwise "Gallon of Milk" edited to "Orange Juice" would still be
+                        // stamped with the milk canonical entry and skip the resolver, and the
+                        // spending report would file the juice under milk.
+                        clearTemplateProvenance(val);
                         setAutocompleteOpen(true);
                       }}
                       onFocus={() => {
@@ -569,6 +607,7 @@ export function ReceiptItemForm({
                               onSelect={() => {
                                 setDescriptionInput(opt.value);
                                 field.onChange(opt.value);
+                                clearTemplateProvenance(opt.value);
                                 setAutocompleteOpen(false);
                               }}
                             >
