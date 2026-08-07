@@ -5983,8 +5983,18 @@ export interface operations {
     GetAllNormalizedDescriptions: {
         parameters: {
             query?: {
-                /** @description Optional status filter. When absent, returns rows of every status. Matching is case-insensitive. */
-                status?: "Active" | "PendingReview" | "Rejected";
+                /**
+                 * @description Optional status filter. Repeat the parameter to match any of several statuses
+                 *     (`?status=Active&status=PendingReview`); a comma-separated single value is accepted
+                 *     too. When absent, returns rows of every status. Matching is case-insensitive.
+                 *
+                 *     Repeatable since RECEIPTS-878: the merge dialog needs every legitimate merge target,
+                 *     which is Active *and* PendingReview but never Rejected — a tombstone must not be
+                 *     resurrected by having items merged into it. A single-valued filter forced the client
+                 *     to choose one, so two near-duplicate pending entries from the same resolver batch
+                 *     could not be merged with each other. `?status=Active` still behaves exactly as before.
+                 */
+                status?: ("Active" | "PendingReview" | "Rejected")[];
                 /**
                  * @description Case-insensitive substring filter matched against both the display name and the
                  *     matched text, so an entry is findable by what it is called now or by the receipt

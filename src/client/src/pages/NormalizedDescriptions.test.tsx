@@ -149,12 +149,26 @@ function listResult(items: ListItem[], total: number = items.length) {
   };
 }
 
-type ListOptions = { status?: string; q?: string; offset?: number; limit?: number };
+type ListOptions = {
+  status?: string | string[];
+  q?: string;
+  offset?: number;
+  limit?: number;
+};
+
+/** The status filter is one value or several since RECEIPTS-878. */
+function statusesOf(options: ListOptions | undefined): string[] {
+  if (options?.status === undefined) return [];
+  return Array.isArray(options.status) ? options.status : [options.status];
+}
 
 function mockList(options: ListOptions | undefined) {
-  if (options?.status === "PendingReview") return listResult(pendingItems);
-  if (options?.status === "Active") return listResult(activeItems);
-  return listResult([]);
+  const statuses = statusesOf(options);
+  const matched = [
+    ...(statuses.includes("Active") ? activeItems : []),
+    ...(statuses.includes("PendingReview") ? pendingItems : []),
+  ];
+  return listResult(matched);
 }
 
 const requeuePreview = {
@@ -293,7 +307,7 @@ describe("NormalizedDescriptions review queue", () => {
     vi.mocked(useNormalizedDescriptions).mockImplementation(((
       options?: ListOptions,
     ) =>
-      options?.status === "PendingReview"
+      statusesOf(options).includes("PendingReview")
         ? listResult([])
         : // eslint-disable-next-line @typescript-eslint/no-explicit-any
           mockList(options)) as any);
@@ -324,7 +338,7 @@ describe("NormalizedDescriptions review queue", () => {
       "tr",
     )!;
     await user.click(within(row).getByRole("button", { name: "Merge" }));
-    expect(screen.getByText("Merge Into Active Entry")).toBeInTheDocument();
+    expect(screen.getByText("Merge Into Another Entry")).toBeInTheDocument();
     expect(screen.getByText("Apples")).toBeInTheDocument();
     expect(screen.getByText("Milk")).toBeInTheDocument();
   });
@@ -491,7 +505,7 @@ describe("NormalizedDescriptions registry tab", () => {
     vi.mocked(useNormalizedDescriptions).mockImplementation(((
       options?: ListOptions,
     ) =>
-      options?.status === "Active"
+      statusesOf(options).includes("Active")
         ? listResult(activeItems, 843)
         : // eslint-disable-next-line @typescript-eslint/no-explicit-any
           mockList(options)) as any);
@@ -507,7 +521,7 @@ describe("NormalizedDescriptions registry tab", () => {
     vi.mocked(useNormalizedDescriptions).mockImplementation(((
       options?: ListOptions,
     ) =>
-      options?.status === "Active"
+      statusesOf(options).includes("Active")
         ? listResult(activeItems, 843)
         : // eslint-disable-next-line @typescript-eslint/no-explicit-any
           mockList(options)) as any);
@@ -665,7 +679,10 @@ describe("NormalizedDescriptions merge candidates", () => {
 
     await waitFor(() =>
       expect(vi.mocked(useNormalizedDescriptions)).toHaveBeenCalledWith(
-        expect.objectContaining({ status: "Active", q: "milk" }),
+        expect.objectContaining({
+          status: ["Active", "PendingReview"],
+          q: "milk",
+        }),
       ),
     );
   });
@@ -674,7 +691,7 @@ describe("NormalizedDescriptions merge candidates", () => {
     vi.mocked(useNormalizedDescriptions).mockImplementation(((
       options?: ListOptions,
     ) =>
-      options?.status === "Active"
+      statusesOf(options).includes("Active")
         ? listResult(activeItems, 412)
         : // eslint-disable-next-line @typescript-eslint/no-explicit-any
           mockList(options)) as any);
@@ -707,7 +724,7 @@ describe("NormalizedDescriptions merge candidates", () => {
     vi.mocked(useNormalizedDescriptions).mockImplementation(((
       options?: ListOptions,
     ) =>
-      options?.status === "Active"
+      statusesOf(options).includes("Active")
         ? listResult(activeItems)
         : // eslint-disable-next-line @typescript-eslint/no-explicit-any
           mockList(options)) as any);
@@ -725,6 +742,83 @@ describe("NormalizedDescriptions merge candidates", () => {
     const radios = within(dialog).getAllByRole("radio");
     expect(radios).toHaveLength(1);
     expect(within(dialog).getByText("Milk")).toBeInTheDocument();
+  });
+
+  it("asks for active and pending targets, and never rejected ones", async () => {
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    await user.click(within(row).getByRole("button", { name: "Merge" }));
+
+    // Rejected rows are tombstones. Merging items into one would resurrect text a reviewer
+    // retired on purpose, so it must never be in the candidate query at all — filtering it out
+    // in the browser would still let it consume the page.
+    const calls = vi
+      .mocked(useNormalizedDescriptions)
+      .mock.calls.map(([o]) => o as ListOptions | undefined)
+      .filter((o) => Array.isArray(o?.status));
+    expect(calls.length).toBeGreaterThan(0);
+    for (const call of calls) {
+      expect(call!.status).toEqual(["Active", "PendingReview"]);
+    }
+  });
+
+  it("offers a pending entry as a target and marks it as pending", async () => {
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    await user.click(within(row).getByRole("button", { name: "Merge" }));
+
+    // Two near-duplicates out of the same resolver batch are exactly the pair you want to merge.
+    // Requiring one to be approved first forced a judgement the reviewer had not made yet.
+    const dialog = await screen.findByRole("dialog");
+    const candidate = within(dialog).getByText("Organic Milk").closest("label")!;
+    // Distinguished, because the survivor stays pending and still needs review — that is a
+    // different outcome from merging into something already approved.
+    expect(within(candidate).getByText(/pending review/i)).toBeInTheDocument();
+
+    const active = within(dialog).getByText("Apples").closest("label")!;
+    expect(within(active).queryByText(/pending review/i)).not.toBeInTheDocument();
+  });
+
+  it("merges one pending entry into another", async () => {
+    const mutate = vi.fn((_vars, opts?: { onSuccess?: () => void }) => {
+      opts?.onSuccess?.();
+    });
+    vi.mocked(useMergeMutation).mockReturnValue(mockMutationResult({ mutate }));
+
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    await user.click(within(row).getByRole("button", { name: "Merge" }));
+
+    const dialog = await screen.findByRole("dialog");
+    const target = within(dialog).getByText("Organic Milk").closest("label")!;
+    await user.click(within(target).getByRole("radio"));
+    await user.click(within(dialog).getByRole("button", { name: "Merge" }));
+
+    // p-2 survives and stays pending — the server does not touch the keeper's status, which is
+    // correct: merging two near-duplicates is a separate judgement from approving the survivor.
+    expect(mutate).toHaveBeenCalledWith(
+      { id: "p-2", discardId: "p-1" },
+      expect.any(Object),
+    );
+  });
+
+  it("shows each candidate's linked-item count", async () => {
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    await user.click(within(row).getByRole("button", { name: "Merge" }));
+
+    // Merging is direction-sensitive and irreversible. Without the counts there is nothing on
+    // screen to say which way round moves the fewest items.
+    const dialog = await screen.findByRole("dialog");
+    const apples = within(dialog).getByText("Apples").closest("label")!;
+    expect(within(apples).getByText("12 items")).toBeInTheDocument();
+
+    const milk = within(dialog).getByText("Milk").closest("label")!;
+    expect(within(milk).getByText("9 items")).toBeInTheDocument();
   });
 });
 

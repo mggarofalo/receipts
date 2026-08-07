@@ -17,7 +17,13 @@ export const NORMALIZED_DESCRIPTION_PAGE_SIZE = 50;
 export const NORMALIZED_DESCRIPTION_MAX_PAGE_SIZE = 200;
 
 export interface NormalizedDescriptionListOptions {
-  status?: NormalizedDescriptionStatusFilter;
+  /**
+   * One status, or several to match any of them (RECEIPTS-878). Omit for no filter.
+   *
+   * The merge dialog passes two: every legitimate target is Active or PendingReview, and never
+   * Rejected — merging items into a tombstone would resurrect text the reviewer retired.
+   */
+  status?: NormalizedDescriptionStatusFilter | NormalizedDescriptionStatusFilter[];
   /** Matches the display name and the matched text, so a renamed row is findable by either. */
   q?: string;
   offset?: number;
@@ -44,11 +50,20 @@ export function useNormalizedDescriptions({
   // cache entry instead of three, and so a box the user has cleared back to spaces is not a search.
   const trimmedQ = q?.trim() || undefined;
 
+  // One value or many, sorted so ["Active","PendingReview"] and ["PendingReview","Active"] hit the
+  // same cache entry. openapi-fetch serialises the array as a repeated query param.
+  const statuses = useMemo(() => {
+    if (status === undefined) return undefined;
+    const list = Array.isArray(status) ? status : [status];
+    return list.length > 0 ? [...list].sort() : undefined;
+  }, [status]);
+  const statusKey = statuses?.join(",");
+
   const query = useQuery({
     queryKey: [
       "normalized-descriptions",
       "list",
-      status,
+      statusKey,
       trimmedQ,
       offset,
       limit,
@@ -59,7 +74,7 @@ export function useNormalizedDescriptions({
     placeholderData: keepPreviousData,
     queryFn: async () => {
       const { data, error } = await client.GET("/api/normalized-descriptions", {
-        params: { query: { status, q: trimmedQ, offset, limit } },
+        params: { query: { status: statuses, q: trimmedQ, offset, limit } },
       });
       if (error) throw error;
       return data;

@@ -322,6 +322,12 @@ public class NormalizedDescriptionsControllerTests
 		ok.Value.Items.First().CanonicalName.Should().Be("coffee beans");
 	}
 
+	/** Matches a query whose status filter is exactly the given set, in any order. */
+	private static bool FilterIs(GetAllNormalizedDescriptionsQuery query, params DomainStatus[] expected) =>
+		query.StatusFilter is not null &&
+		query.StatusFilter.Count == expected.Length &&
+		expected.All(query.StatusFilter.Contains);
+
 	[Theory]
 	[InlineData("Active", DomainStatus.Active)]
 	[InlineData("PendingReview", DomainStatus.PendingReview)]
@@ -331,24 +337,121 @@ public class NormalizedDescriptionsControllerTests
 	public async Task GetAllNormalizedDescriptions_WithStatusFilter_ForwardsToQuery(string status, DomainStatus expected)
 	{
 		_mediatorMock
-			.Setup(m => m.Send(It.Is<GetAllNormalizedDescriptionsQuery>(q => q.StatusFilter == expected), It.IsAny<CancellationToken>()))
+			.Setup(m => m.Send(It.Is<GetAllNormalizedDescriptionsQuery>(q => FilterIs(q, expected)), It.IsAny<CancellationToken>()))
 			.ReturnsAsync(Page([]));
 
 		Results<Ok<NormalizedDescriptionListResponse>, BadRequest<ProblemDetails>> result =
-			await _controller.GetAllNormalizedDescriptions(status, q: null, cancellationToken: CancellationToken.None);
+			await _controller.GetAllNormalizedDescriptions([status], q: null, cancellationToken: CancellationToken.None);
 
 		Ok<NormalizedDescriptionListResponse> ok = Assert.IsType<Ok<NormalizedDescriptionListResponse>>(result.Result);
 		ok.Value!.Items.Should().BeEmpty();
 		ok.Value.TotalCount.Should().Be(0);
-		_mediatorMock.Verify(m => m.Send(It.Is<GetAllNormalizedDescriptionsQuery>(q => q.StatusFilter == expected), It.IsAny<CancellationToken>()), Times.Once);
+		_mediatorMock.Verify(m => m.Send(It.Is<GetAllNormalizedDescriptionsQuery>(q => FilterIs(q, expected)), It.IsAny<CancellationToken>()), Times.Once);
 	}
 
 	[Fact]
 	public async Task GetAllNormalizedDescriptions_InvalidStatusFilter_ReturnsBadRequest()
 	{
 		Results<Ok<NormalizedDescriptionListResponse>, BadRequest<ProblemDetails>> result =
-			await _controller.GetAllNormalizedDescriptions(status: "archived", q: null, cancellationToken: CancellationToken.None);
+			await _controller.GetAllNormalizedDescriptions(["archived"], q: null, cancellationToken: CancellationToken.None);
 
+		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		bad.Value!.Detail.Should().Be(NormalizedDescriptionsController.InvalidStatusFilter);
+		_mediatorMock.Verify(m => m.Send(It.IsAny<GetAllNormalizedDescriptionsQuery>(), It.IsAny<CancellationToken>()), Times.Never);
+	}
+
+	// ── RECEIPTS-878: the status filter takes several values ──────
+
+	[Fact]
+	public async Task GetAllNormalizedDescriptions_RepeatedStatus_MatchesAnyOfThem()
+	{
+		_mediatorMock
+			.Setup(m => m.Send(It.IsAny<GetAllNormalizedDescriptionsQuery>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(Page([]));
+
+		// The merge dialog's query. Before this it had to pick one status, so two near-duplicate
+		// pending entries from the same resolver batch could not be merged with each other.
+		await _controller.GetAllNormalizedDescriptions(
+			["Active", "PendingReview"],
+			q: null,
+			cancellationToken: CancellationToken.None);
+
+		_mediatorMock.Verify(
+			m => m.Send(
+				It.Is<GetAllNormalizedDescriptionsQuery>(q => FilterIs(q, DomainStatus.Active, DomainStatus.PendingReview)),
+				It.IsAny<CancellationToken>()),
+			Times.Once);
+	}
+
+	[Fact]
+	public async Task GetAllNormalizedDescriptions_CommaSeparatedStatus_IsSplit()
+	{
+		_mediatorMock
+			.Setup(m => m.Send(It.IsAny<GetAllNormalizedDescriptionsQuery>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(Page([]));
+
+		// ASP.NET Core binds ?status=Active,PendingReview as one element, and that is what a
+		// hand-written URL tends to look like.
+		await _controller.GetAllNormalizedDescriptions(
+			["Active,PendingReview"],
+			q: null,
+			cancellationToken: CancellationToken.None);
+
+		_mediatorMock.Verify(
+			m => m.Send(
+				It.Is<GetAllNormalizedDescriptionsQuery>(q => FilterIs(q, DomainStatus.Active, DomainStatus.PendingReview)),
+				It.IsAny<CancellationToken>()),
+			Times.Once);
+	}
+
+	[Fact]
+	public async Task GetAllNormalizedDescriptions_DuplicateStatuses_AreCollapsed()
+	{
+		_mediatorMock
+			.Setup(m => m.Send(It.IsAny<GetAllNormalizedDescriptionsQuery>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(Page([]));
+
+		await _controller.GetAllNormalizedDescriptions(
+			["Active", "active", "ACTIVE"],
+			q: null,
+			cancellationToken: CancellationToken.None);
+
+		_mediatorMock.Verify(
+			m => m.Send(It.Is<GetAllNormalizedDescriptionsQuery>(q => FilterIs(q, DomainStatus.Active)), It.IsAny<CancellationToken>()),
+			Times.Once);
+	}
+
+	[Theory]
+	[InlineData(null)]        // ?status omitted entirely
+	[InlineData("")]          // ?status=
+	[InlineData("   ")]       // ?status=%20%20%20
+	[InlineData(",")]         // ?status=, — separators with nothing between them
+	public async Task GetAllNormalizedDescriptions_BlankStatus_IsNoFilterNotAnEmptySet(string? token)
+	{
+		_mediatorMock
+			.Setup(m => m.Send(It.IsAny<GetAllNormalizedDescriptionsQuery>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(Page([]));
+
+		string[]? status = token is null ? null : [token];
+		await _controller.GetAllNormalizedDescriptions(status, q: null, cancellationToken: CancellationToken.None);
+
+		// An empty set would silently return zero rows for what reads like an unfiltered request.
+		_mediatorMock.Verify(
+			m => m.Send(It.Is<GetAllNormalizedDescriptionsQuery>(q => q.StatusFilter == null), It.IsAny<CancellationToken>()),
+			Times.Once);
+	}
+
+	[Fact]
+	public async Task GetAllNormalizedDescriptions_OneBadStatusAmongGoodOnes_ReturnsBadRequest()
+	{
+		Results<Ok<NormalizedDescriptionListResponse>, BadRequest<ProblemDetails>> result =
+			await _controller.GetAllNormalizedDescriptions(
+				["Active", "archived"],
+				q: null,
+				cancellationToken: CancellationToken.None);
+
+		// Silently dropping the unparseable one would answer a narrower question than was asked
+		// and look like a successful filter.
 		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
 		bad.Value!.Detail.Should().Be(NormalizedDescriptionsController.InvalidStatusFilter);
 		_mediatorMock.Verify(m => m.Send(It.IsAny<GetAllNormalizedDescriptionsQuery>(), It.IsAny<CancellationToken>()), Times.Never);

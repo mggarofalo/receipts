@@ -15,8 +15,13 @@ namespace Application.Queries.NormalizedDescription.GetAll;
 /// receipts generate thousands of them. The registry loaded all of them and filtered in the
 /// browser, and every merge-dialog open paid for the same full list.
 /// </remarks>
+/// <param name="StatusFilter">
+/// Statuses to match, OR'd together. Null (or empty) means every status. A set rather than a
+/// single value since RECEIPTS-878: the merge dialog wants every legitimate target, which is
+/// Active and PendingReview but never Rejected.
+/// </param>
 public record GetAllNormalizedDescriptionsQuery(
-	NormalizedDescriptionStatus? StatusFilter,
+	IReadOnlyCollection<NormalizedDescriptionStatus>? StatusFilter,
 	string? Q,
 	int Offset,
 	int Limit) : IQuery<PagedResult<NormalizedDescriptionDetail>>;

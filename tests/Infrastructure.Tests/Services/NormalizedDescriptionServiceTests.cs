@@ -38,7 +38,12 @@ public class NormalizedDescriptionServiceTests
 	private static async Task<List<NormalizedDescriptionDetail>> GetAllRowsAsync(
 		NormalizedDescriptionService service,
 		NormalizedDescriptionStatus? filter) =>
-		(await service.GetAllAsync(filter, null, 0, NormalizedDescriptionService.MaxPageSize, CancellationToken.None)).Data;
+		(await service.GetAllAsync(
+			filter is null ? null : [filter.Value],
+			null,
+			0,
+			NormalizedDescriptionService.MaxPageSize,
+			CancellationToken.None)).Data;
 
 	[Fact]
 	public async Task GetOrCreateAsync_ExactCaseInsensitiveMatch_ReturnsExisting()
@@ -792,10 +797,83 @@ public class NormalizedDescriptionServiceTests
 		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
 
 		PagedResult<NormalizedDescriptionDetail> page =
-			await service.GetAllAsync(NormalizedDescriptionStatus.PendingReview, "coffee", 0, 50, CancellationToken.None);
+			await service.GetAllAsync([NormalizedDescriptionStatus.PendingReview], "coffee", 0, 50, CancellationToken.None);
 
 		page.Total.Should().Be(1);
 		page.Data.Should().ContainSingle().Which.Description.CanonicalName.Should().Be("Coffee Filters");
+	}
+
+	// ── RECEIPTS-878: several statuses at once ────────────────────────────────
+
+	[Fact]
+	public async Task GetAllAsync_MatchesAnyOfSeveralStatuses()
+	{
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.AddRange(
+				new NormalizedDescriptionEntity { Id = Guid.NewGuid(), CanonicalName = "Active Row", Status = NormalizedDescriptionStatus.Active, CreatedAt = DateTimeOffset.UtcNow },
+				new NormalizedDescriptionEntity { Id = Guid.NewGuid(), CanonicalName = "Pending Row", Status = NormalizedDescriptionStatus.PendingReview, CreatedAt = DateTimeOffset.UtcNow },
+				new NormalizedDescriptionEntity { Id = Guid.NewGuid(), CanonicalName = "Rejected Row", Status = NormalizedDescriptionStatus.Rejected, CreatedAt = DateTimeOffset.UtcNow });
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		// The merge dialog's exact query: every legitimate target, and nothing else. A rejected
+		// row appearing here would let a reviewer merge items into a tombstone, resurrecting text
+		// somebody retired on purpose.
+		PagedResult<NormalizedDescriptionDetail> page = await service.GetAllAsync(
+			[NormalizedDescriptionStatus.Active, NormalizedDescriptionStatus.PendingReview],
+			null,
+			0,
+			50,
+			CancellationToken.None);
+
+		page.Total.Should().Be(2);
+		page.Data.Select(d => d.Description.CanonicalName).Should().BeEquivalentTo(["Active Row", "Pending Row"]);
+	}
+
+	[Fact]
+	public async Task GetAllAsync_EmptyStatusSetIsNoFilterRatherThanNoRows()
+	{
+		await SeedRowsAsync("Apples", "Bananas");
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		// An empty set reads as "I did not filter", not "match nothing" — the alternative is a
+		// caller that builds a filter from an empty list and silently gets zero rows back.
+		PagedResult<NormalizedDescriptionDetail> page =
+			await service.GetAllAsync([], null, 0, 50, CancellationToken.None);
+
+		page.Total.Should().Be(2);
+	}
+
+	[Fact]
+	public async Task GetAllAsync_SeveralStatusesCombineWithSearchAndPaging()
+	{
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.AddRange(
+				new NormalizedDescriptionEntity { Id = Guid.NewGuid(), CanonicalName = "Coffee Beans", Status = NormalizedDescriptionStatus.Active, CreatedAt = DateTimeOffset.UtcNow },
+				new NormalizedDescriptionEntity { Id = Guid.NewGuid(), CanonicalName = "Coffee Filters", Status = NormalizedDescriptionStatus.PendingReview, CreatedAt = DateTimeOffset.UtcNow },
+				new NormalizedDescriptionEntity { Id = Guid.NewGuid(), CanonicalName = "Coffee Grinder", Status = NormalizedDescriptionStatus.Rejected, CreatedAt = DateTimeOffset.UtcNow },
+				new NormalizedDescriptionEntity { Id = Guid.NewGuid(), CanonicalName = "Sourdough Loaf", Status = NormalizedDescriptionStatus.Active, CreatedAt = DateTimeOffset.UtcNow });
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		PagedResult<NormalizedDescriptionDetail> page = await service.GetAllAsync(
+			[NormalizedDescriptionStatus.Active, NormalizedDescriptionStatus.PendingReview],
+			"coffee",
+			0,
+			1,
+			CancellationToken.None);
+
+		// Two of the three "coffee" rows are legitimate targets, and the total must count those
+		// two rather than all three or the whole table.
+		page.Total.Should().Be(2);
+		page.Data.Should().ContainSingle().Which.Description.CanonicalName.Should().Be("Coffee Beans");
 	}
 
 	[Fact]

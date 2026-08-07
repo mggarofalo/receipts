@@ -186,24 +186,46 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 	[EndpointSummary("List normalized descriptions")]
 	[EndpointDescription("Returns one page of canonical normalized-description rows, optionally filtered by status and search term. Search matches the display name and the matched text. Admin-only.")]
 	public async Task<Results<Ok<NormalizedDescriptionListResponse>, BadRequest<ProblemDetails>>> GetAllNormalizedDescriptions(
-		[FromQuery] string? status,
+		[FromQuery] string[]? status,
 		[FromQuery] string? q,
 		[FromQuery] int offset = 0,
 		[FromQuery] int limit = 50,
 		CancellationToken cancellationToken = default)
 	{
-		DomainStatus? filter = null;
-		if (!string.IsNullOrWhiteSpace(status))
+		// Repeatable since RECEIPTS-878. The merge dialog needs Active *and* PendingReview in one
+		// list — a single-valued filter forced it to pick one, so two near-duplicate pending
+		// entries from the same resolver batch could not be merged with each other.
+		List<DomainStatus>? filter = null;
+		if (status is { Length: > 0 })
 		{
-			// Parse case-insensitively so the URL is tolerant of "active", "Active", "ACTIVE" —
-			// the spec enumerates PascalCase to stay symmetric with the response-body enum,
-			// but query params traditionally flex on case.
-			if (!Enum.TryParse(status, ignoreCase: true, out DomainStatus parsed))
+			HashSet<DomainStatus> parsedStatuses = [];
+			// Split on commas as well as honouring repeated params: ?status=Active,PendingReview
+			// is what a hand-written URL tends to look like, and ASP.NET Core binds that as one
+			// element rather than two.
+			foreach (string token in status.SelectMany(s => s.Split(',')))
 			{
-				return ApiProblem.BadRequest(InvalidStatusFilter);
+				if (string.IsNullOrWhiteSpace(token))
+				{
+					continue;
+				}
+
+				// Parse case-insensitively so the URL is tolerant of "active", "Active", "ACTIVE" —
+				// the spec enumerates PascalCase to stay symmetric with the response-body enum,
+				// but query params traditionally flex on case.
+				if (!Enum.TryParse(token.Trim(), ignoreCase: true, out DomainStatus parsed))
+				{
+					return ApiProblem.BadRequest(InvalidStatusFilter);
+				}
+
+				parsedStatuses.Add(parsed);
 			}
 
-			filter = parsed;
+			// An all-whitespace filter is "no filter", not "match nothing" — an empty set would
+			// silently return zero rows for what reads like an unfiltered request.
+			if (parsedStatuses.Count > 0)
+			{
+				filter = [.. parsedStatuses];
+			}
 		}
 
 		if (offset < 0)
