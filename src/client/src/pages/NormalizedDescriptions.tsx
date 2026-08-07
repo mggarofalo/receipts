@@ -197,7 +197,9 @@ function ReviewQueueTab() {
     <div className="space-y-4">
       <ReviewQueueExplainer />
 
-      <div className="flex gap-6 rounded-lg border p-4">
+      {/* Sized to its contents rather than stretched across the viewport (RECEIPTS-880). One
+          number in a full-width bordered bar reads as a section header with nothing in it. */}
+      <div className="inline-flex rounded-lg border px-4 py-3">
         <div>
           <p className="card-sub">Pending Review</p>
           <p className="money-med">{total}</p>
@@ -615,6 +617,25 @@ function NearestMatch({ name, similarity }: NearestMatchProps) {
     <span className="text-sm">
       Nearly matched <span className="font-medium">{name}</span> at{" "}
       <span className="tabular-nums">{formatDecimal(similarity, 2)}</span>
+    </span>
+  );
+}
+
+/**
+ * The most recent receipt this entry still appears on (RECEIPTS-880).
+ *
+ * "Never" is not a date in the distant past — an entry with nothing linked has never matched
+ * anything, which is a different fact from one that last matched in 2023, and the two call for
+ * opposite decisions.
+ */
+function LastSeen({ value }: { value: string | null | undefined }) {
+  if (value == null) {
+    return <span className="text-sm text-muted-foreground">Never</span>;
+  }
+
+  return (
+    <span className="text-sm text-muted-foreground">
+      {new Date(value).toLocaleDateString()}
     </span>
   );
 }
@@ -1044,6 +1065,7 @@ function RegistryTab() {
               <TableRow>
                 <TableHead>Canonical Name</TableHead>
                 <TableHead className="text-right">Linked Items</TableHead>
+                <TableHead>Last Seen</TableHead>
                 <TableHead>Created</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -1059,6 +1081,9 @@ function RegistryTab() {
                       items is probably over-matching, and one holding none is dead weight. */}
                   <TableCell className="text-right tabular-nums">
                     {row.linkedItemCount}
+                  </TableCell>
+                  <TableCell>
+                    <LastSeen value={row.lastSeen} />
                   </TableCell>
                   <TableCell>
                     <span className="text-sm text-muted-foreground">

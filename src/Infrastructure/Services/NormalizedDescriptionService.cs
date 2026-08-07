@@ -1139,6 +1139,19 @@ public class NormalizedDescriptionService(
 					? null
 					: (e.NearestNeighbour.DisplayLabel ?? e.NearestNeighbour.CanonicalName),
 				LinkedItemCount = context.ReceiptItems.Count(r => r.NormalizedDescriptionId == e.Id),
+				// RECEIPTS-880. The latest receipt date this row still appears on. CreatedAt alone
+				// cannot tell a two-year-old entry that is still matching this week's receipts
+				// from one nothing has matched since. Null when nothing is linked — which is a
+				// different statement from "last seen a long time ago".
+				//
+				// Guarded on Receipt != null rather than dereferencing blind: the receipt may be
+				// soft-deleted (its query filter applies inside the subquery), and these
+				// projections run under IgnoreAutoIncludes, so the navigation is not guaranteed
+				// to be populated on every provider.
+				LastSeen = context.ReceiptItems
+					.Where(r => r.NormalizedDescriptionId == e.Id && r.Receipt != null)
+					.Select(r => (DateOnly?)r.Receipt!.Date)
+					.Max(),
 				SampleRawDescriptions = context.ReceiptItems
 					.Where(r => r.NormalizedDescriptionId == e.Id)
 					.Select(r => r.Description)
@@ -1161,13 +1174,19 @@ public class NormalizedDescriptionService(
 		public double? NearestNeighbourSimilarity { get; init; }
 		public string? NearestNeighbourName { get; init; }
 		public int LinkedItemCount { get; init; }
+		public DateOnly? LastSeen { get; init; }
 		public List<string> SampleRawDescriptions { get; init; } = [];
 
 		public NormalizedDescriptionDetail ToDetail() => new(
 			new NormalizedDescription(Id, CanonicalName, Status, CreatedAt, NearestNeighbourId, NearestNeighbourSimilarity, DisplayLabel),
 			LinkedItemCount,
 			NearestNeighbourName,
-			SampleRawDescriptions);
+			SampleRawDescriptions,
+			// Midnight UTC, matching how the spending report widens a receipt's DateOnly
+			// (ReportService.ToDateTimeOffset). A receipt has a date, not a time.
+			LastSeen is null
+				? null
+				: new DateTimeOffset(LastSeen.Value.Year, LastSeen.Value.Month, LastSeen.Value.Day, 0, 0, 0, TimeSpan.Zero));
 	}
 
 	private static async Task<NormalizedDescriptionEntity?> FindExactCaseInsensitiveAsync(

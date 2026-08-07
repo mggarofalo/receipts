@@ -14,8 +14,14 @@ namespace Application.Models.NormalizedDescriptions;
 // or when the neighbour has since been merged away and the FK was nulled out. Callers must render
 // that absence as "no comparison recorded" rather than a zero score — see
 // Description.NearestNeighbourSimilarity for the matching rationale.
+// LastSeen is the latest receipt date among the live items linked to this row, or null when
+// nothing is linked (RECEIPTS-880). It answers a question CreatedAt cannot: an entry created two
+// years ago and still appearing on this week's receipts, and one created two years ago that
+// nothing has matched since, look identical without it. Same meaning as
+// SpendingByNormalizedDescriptionItem.LastSeen, hence the same name.
 public record NormalizedDescriptionDetail(
 	NormalizedDescription Description,
 	int LinkedItemCount,
 	string? NearestNeighbourName,
-	IReadOnlyList<string> SampleRawDescriptions);
+	IReadOnlyList<string> SampleRawDescriptions,
+	DateTimeOffset? LastSeen = null);

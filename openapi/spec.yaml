@@ -6699,6 +6699,18 @@ components:
           description: |
             Number of live (non-deleted) receipt items currently pointing at this row. Tells a
             reviewer how much data an Approve/Merge/Split decision actually moves.
+        lastSeen:
+          type: ["string", "null"]
+          format: date-time
+          description: |
+            Latest receipt date among the live items linked to this row, at midnight UTC — a
+            receipt has a date, not a time. Null when nothing is linked, which is a different
+            statement from "last seen a long time ago".
+
+            Added in RECEIPTS-880. `createdAt` alone cannot distinguish a two-year-old entry
+            still matching this week's receipts from one nothing has matched since, and that is
+            the difference between a live registry entry and dead weight. Same meaning as
+            `SpendingByNormalizedDescriptionItem.lastSeen`.
         sampleRawDescriptions:
           type: array
           items:

@@ -75,6 +75,58 @@ export function buildFixtureJwt(user: FixtureUser): string {
 
 export const FIXTURE_JWT = buildFixtureJwt(FIXTURE_USER);
 
+/**
+ * Registry rows with the widest realistic content: a long matched text, a renamed row whose label
+ * diverges from it, sample descriptions, and a near-miss with a score. Short fixtures would let a
+ * layout pass here and still collapse on real data.
+ */
+const NORMALIZED_DESCRIPTION_FIXTURES = {
+  pending: [
+    {
+      id: "d0000000-0000-0000-0000-000000000001",
+      canonicalName: "ORGANIC STRAWBERRY PRESERVES 12OZ JAR",
+      displayLabel: null,
+      displayName: "ORGANIC STRAWBERRY PRESERVES 12OZ JAR",
+      status: "pendingReview",
+      createdAt: "2026-05-20T09:00:00.000Z",
+      linkedItemCount: 4,
+      lastSeen: "2026-05-22T00:00:00.000Z",
+      sampleRawDescriptions: ["ORG STRWBRY PRES 12OZ", "STRAWBERRY PRESERVES"],
+      nearestNeighbourName: "Strawberry Jam",
+      nearestNeighbourSimilarity: 0.8642,
+    },
+  ],
+  active: [
+    {
+      id: "d0000000-0000-0000-0000-000000000002",
+      canonicalName: "MILK 2% GAL",
+      displayLabel: "Milk",
+      displayName: "Milk",
+      status: "active",
+      createdAt: "2026-02-02T09:00:00.000Z",
+      linkedItemCount: 128,
+      lastSeen: "2026-05-23T00:00:00.000Z",
+      sampleRawDescriptions: ["MILK 2% GAL", "2% MILK GALLON"],
+      nearestNeighbourName: null,
+      nearestNeighbourSimilarity: null,
+    },
+    {
+      id: "d0000000-0000-0000-0000-000000000003",
+      canonicalName: "GALA APPLES LOOSE PER LB",
+      displayLabel: null,
+      displayName: "GALA APPLES LOOSE PER LB",
+      status: "active",
+      createdAt: "2026-02-01T09:00:00.000Z",
+      linkedItemCount: 0,
+      // Never matched anything — the case that must not render as a date.
+      lastSeen: null,
+      sampleRawDescriptions: [],
+      nearestNeighbourName: null,
+      nearestNeighbourSimilarity: null,
+    },
+  ],
+};
+
 type RouteOverride = (route: Route) => Promise<unknown> | unknown;
 
 export interface ApiMockOptions {
@@ -171,6 +223,43 @@ export async function installApiMocks(page: Page, opts: ApiMockOptions = {}): Pr
   await page.route("**/api/ynab/**", (route) => route.fulfill(json({ data: [], totalCount: 0 })));
 
   // API keys / audit / security — list endpoints return empty
+  // Normalized descriptions — admin-only, and the one surface whose whole point is a wide table
+  // of evidence (RECEIPTS-880). Populated rather than empty: an empty table cannot demonstrate
+  // that the layout holds, which is exactly what the width sweep checks.
+  await page.route("**/api/normalized-descriptions/settings**", (route) =>
+    route.fulfill(
+      json({
+        id: "00000000-0000-0000-0000-000000000001",
+        autoAcceptThreshold: 0.9,
+        pendingReviewThreshold: 0.75,
+        updatedAt: FROZEN_NOW_ISO,
+      }),
+    ),
+  );
+  await page.route("**/api/normalized-descriptions/requeue-pending/preview**", (route) =>
+    route.fulfill(
+      json({
+        pendingDescriptionCount: 0,
+        pendingFingerprint: "fixture",
+        linkedItemCount: 0,
+        staleMatchScoreCount: 0,
+        estimatedResolverCycles: 0,
+        estimatedCatchUpSeconds: 0,
+      }),
+    ),
+  );
+  await page.route("**/api/normalized-descriptions?*", (route) => {
+    const status = new URL(route.request().url()).searchParams.getAll("status");
+    const wants = (s: string) => status.length === 0 || status.includes(s);
+    const items = [
+      ...(wants("PendingReview") ? NORMALIZED_DESCRIPTION_FIXTURES.pending : []),
+      ...(wants("Active") ? NORMALIZED_DESCRIPTION_FIXTURES.active : []),
+    ];
+    return route.fulfill(
+      json({ items, totalCount: items.length, offset: 0, limit: 50 }),
+    );
+  });
+
   await page.route("**/api/api-keys**", (route) => route.fulfill(json({ data: [], totalCount: 0 })));
   await page.route("**/api/audit/**", (route) => route.fulfill(json({ data: [], totalCount: 0 })));
   await page.route("**/api/security/**", (route) => route.fulfill(json({ data: [], totalCount: 0 })));
