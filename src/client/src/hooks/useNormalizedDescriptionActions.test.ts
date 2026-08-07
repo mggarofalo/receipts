@@ -149,16 +149,23 @@ describe("useSplitMutation", () => {
       wrapper: createQueryWrapper(),
     });
 
-    result.current.mutate({ id: "src-1", receiptItemId: "item-1" });
+    result.current.mutate({
+      id: "src-1",
+      receiptItemIds: ["item-1", "item-2"],
+      canonicalName: "Banana",
+    });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(mockClient.POST).toHaveBeenCalledWith(
       "/api/normalized-descriptions/{id}/split",
       {
         params: { path: { id: "src-1" } },
-        body: { receiptItemId: "item-1" },
+        body: { receiptItemIds: ["item-1", "item-2"], canonicalName: "Banana" },
       },
     );
+    // The toast counts what actually moved — "an item was split" would understate a bulk
+    // correction and leave the reviewer unsure whether the rest went through (RECEIPTS-877).
+    expect(toast.success).toHaveBeenCalledWith('2 items split into "Banana"');
   });
 
   it("propagates errors", async () => {
@@ -171,7 +178,11 @@ describe("useSplitMutation", () => {
     const { result } = renderHook(() => useSplitMutation(), {
       wrapper: createQueryWrapper(),
     });
-    result.current.mutate({ id: "a", receiptItemId: "b" });
+    result.current.mutate({
+      id: "a",
+      receiptItemIds: ["b"],
+      canonicalName: "Banana",
+    });
     await waitFor(() => expect(result.current.isError).toBe(true));
   });
 });

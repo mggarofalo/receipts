@@ -250,4 +250,87 @@ public class ReceiptItemRepositoryTests
 
 		_contextFactory.ResetDatabase();
 	}
+
+	// ── RECEIPTS-877: normalized-description link and filter ───────────────────────────
+
+	[Fact]
+	public async Task GetAllAsync_CarriesTheNormalizedDescriptionLink()
+	{
+		// The list projection used to build a fresh entity that omitted these columns, so
+		// GET /api/receipt-items reported normalizedDescriptionId: null on every row despite the
+		// spec documenting it — and the review queue's split dialog, which filters on exactly
+		// that field, could never match anything. Nothing covered it, which is why it survived.
+		ReceiptEntity receipt = await CreateParentReceiptAsync();
+		Guid normalizedId = Guid.NewGuid();
+
+		using (ApplicationDbContext context = _contextFactory.CreateDbContext())
+		{
+			context.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
+			{
+				Id = normalizedId,
+				CanonicalName = "MILK 2% GAL",
+				DisplayLabel = "Milk",
+				Status = Domain.NormalizedDescriptions.NormalizedDescriptionStatus.Active,
+				CreatedAt = DateTimeOffset.UtcNow,
+			});
+
+			ReceiptItemEntity linked = ReceiptItemEntityGenerator.Generate(receipt.Id);
+			linked.NormalizedDescriptionId = normalizedId;
+			linked.NormalizedDescriptionMatchScore = 0.91;
+			context.ReceiptItems.Add(linked);
+			await context.SaveChangesAsync(CancellationToken.None);
+		}
+
+		ReceiptItemRepository repository = new(_contextFactory);
+
+		List<ReceiptItemEntity> actual = await repository.GetAllAsync(0, 50, SortParams.Default, CancellationToken.None);
+
+		ReceiptItemEntity row = actual.Should().ContainSingle().Subject;
+		row.NormalizedDescriptionId.Should().Be(normalizedId);
+		row.NormalizedDescriptionMatchScore.Should().Be(0.91);
+		// The neighbour comes through as a trimmed stand-in so the mapper can denormalize a name
+		// without an Include dragging the embedding across the wire for every row.
+		row.NormalizedDescription.Should().NotBeNull();
+		row.NormalizedDescription!.DisplayLabel.Should().Be("Milk");
+		row.NormalizedDescription.CanonicalName.Should().Be("MILK 2% GAL");
+
+		_contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task GetAllAsync_FiltersToOneNormalizedDescription()
+	{
+		ReceiptEntity receipt = await CreateParentReceiptAsync();
+		Guid wantedId = Guid.NewGuid();
+		Guid otherId = Guid.NewGuid();
+		Guid wantedItemId = Guid.NewGuid();
+
+		using (ApplicationDbContext context = _contextFactory.CreateDbContext())
+		{
+			ReceiptItemEntity wanted = ReceiptItemEntityGenerator.Generate(receipt.Id);
+			wanted.Id = wantedItemId;
+			wanted.NormalizedDescriptionId = wantedId;
+
+			ReceiptItemEntity other = ReceiptItemEntityGenerator.Generate(receipt.Id);
+			other.NormalizedDescriptionId = otherId;
+
+			ReceiptItemEntity unlinked = ReceiptItemEntityGenerator.Generate(receipt.Id);
+			unlinked.NormalizedDescriptionId = null;
+
+			context.ReceiptItems.AddRange(wanted, other, unlinked);
+			await context.SaveChangesAsync(CancellationToken.None);
+		}
+
+		ReceiptItemRepository repository = new(_contextFactory);
+
+		List<ReceiptItemEntity> actual = await repository.GetAllAsync(0, 50, SortParams.Default, q: null, wantedId, CancellationToken.None);
+		int count = await repository.GetCountAsync(q: null, wantedId, CancellationToken.None);
+
+		actual.Should().ContainSingle().Which.Id.Should().Be(wantedItemId);
+		// The count has to agree with the page, or the dialog pages against a total that spans
+		// rows it will never be shown.
+		count.Should().Be(1);
+
+		_contextFactory.ResetDatabase();
+	}
 }

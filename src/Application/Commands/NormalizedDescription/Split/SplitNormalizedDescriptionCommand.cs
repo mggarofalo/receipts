@@ -3,8 +3,19 @@ using Application.Models.NormalizedDescriptions;
 
 namespace Application.Commands.NormalizedDescription.Split;
 
-// Detaches a single ReceiptItem from its current NormalizedDescription by creating a new
-// canonical entry for the item's raw description and re-pointing the item at it. Used by
-// admins to unpick bad merges or isolate an item that was auto-classified into the wrong
-// canonical group. The service throws KeyNotFoundException if the ReceiptItem does not exist.
-public record SplitNormalizedDescriptionCommand(Guid ReceiptItemId) : ICommand<NormalizedDescriptionDetail>;
+/// <summary>
+/// Detaches one or more ReceiptItems from their current NormalizedDescription into a single new
+/// canonical entry, and re-points them at it. Used to unpick bad auto-merges or isolate items
+/// that were auto-classified into the wrong canonical group.
+/// </summary>
+/// <remarks>
+/// The name is supplied by the caller rather than derived from the selection (RECEIPTS-877).
+/// Splitting is a deliberate correction and the person doing it knows what the group should be
+/// called; deriving it also sidesteps the heterogeneous-selection problem entirely — there is no
+/// sensible automatic answer when the selected items read "MILK 2%", "milk gal" and "WHOLE MILK".
+///
+/// The service throws KeyNotFoundException if any ReceiptItem does not exist.
+/// </remarks>
+public record SplitNormalizedDescriptionCommand(
+	IReadOnlyList<Guid> ReceiptItemIds,
+	string CanonicalName) : ICommand<NormalizedDescriptionDetail>;

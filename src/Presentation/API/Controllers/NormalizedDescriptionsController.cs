@@ -56,6 +56,8 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 	public const string IdCannotBeEmpty = "id must not be empty";
 	public const string DiscardIdCannotBeEmpty = "discardId must not be empty";
 	public const string ReceiptItemIdCannotBeEmpty = "receiptItemId must not be empty";
+	public const string SplitRequiresAtLeastOneItem = "receiptItemIds must contain at least one id";
+	public const string SplitNameRequired = "canonicalName must not be empty";
 	public const string MergeIdsMustDiffer = "keep id and discardId must differ";
 	public const string InvalidStatusFilter = "status must be 'Active' or 'PendingReview' when provided";
 	public const string ExpectedFingerprintRequired = "expectedFingerprint must not be empty";
@@ -280,12 +282,22 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 			return ApiProblem.BadRequest(IdCannotBeEmpty);
 		}
 
-		if (request.ReceiptItemId == Guid.Empty)
+		if (request.ReceiptItemIds is null || request.ReceiptItemIds.Count == 0)
+		{
+			return ApiProblem.BadRequest(SplitRequiresAtLeastOneItem);
+		}
+
+		if (request.ReceiptItemIds.Any(itemId => itemId == Guid.Empty))
 		{
 			return ApiProblem.BadRequest(ReceiptItemIdCannotBeEmpty);
 		}
 
-		SplitNormalizedDescriptionCommand command = new(request.ReceiptItemId);
+		if (string.IsNullOrWhiteSpace(request.CanonicalName))
+		{
+			return ApiProblem.BadRequest(SplitNameRequired);
+		}
+
+		SplitNormalizedDescriptionCommand command = new([.. request.ReceiptItemIds], request.CanonicalName);
 		try
 		{
 			NormalizedDescriptionDetail created = await mediator.Send(command, cancellationToken);
@@ -293,7 +305,7 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 		}
 		catch (KeyNotFoundException)
 		{
-			// The service throws when the ReceiptItem does not exist — surface it as a 404.
+			// The service throws when any ReceiptItem does not exist — surface it as a 404.
 			// We don't translate every exception type because that would mask genuine server
 			// errors (DB failures, embedding service outages) behind a 404; only this one
 			// maps cleanly to a client-facing 404.

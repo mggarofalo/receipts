@@ -519,7 +519,12 @@ public class NormalizedDescriptionsControllerTests
 		Guid currentId = Guid.NewGuid();
 		Guid receiptItemId = Guid.NewGuid();
 		Guid newId = Guid.NewGuid();
-		SplitNormalizedDescriptionRequest request = new() { ReceiptItemId = receiptItemId };
+		Guid secondItemId = Guid.NewGuid();
+		SplitNormalizedDescriptionRequest request = new()
+		{
+			ReceiptItemIds = [receiptItemId, secondItemId],
+			CanonicalName = "reese cup",
+		};
 
 		NormalizedDescriptionDetail created = new(
 			new NormalizedDescription(
@@ -527,13 +532,15 @@ public class NormalizedDescriptionsControllerTests
 				"reese cup",
 				DomainStatus.Active,
 				new DateTimeOffset(2026, 4, 19, 12, 0, 0, TimeSpan.Zero)),
-			LinkedItemCount: 1,
+			LinkedItemCount: 2,
 			NearestNeighbourName: null,
 			["REESE CUP KING"]);
 
 		_mediatorMock
 			.Setup(m => m.Send(
-				It.Is<SplitNormalizedDescriptionCommand>(c => c.ReceiptItemId == receiptItemId),
+				It.Is<SplitNormalizedDescriptionCommand>(c =>
+					c.ReceiptItemIds.SequenceEqual(new[] { receiptItemId, secondItemId })
+					&& c.CanonicalName == "reese cup"),
 				It.IsAny<CancellationToken>()))
 			.ReturnsAsync(created);
 
@@ -544,7 +551,9 @@ public class NormalizedDescriptionsControllerTests
 		ok.Value!.Id.Should().Be(newId);
 		ok.Value.CanonicalName.Should().Be("reese cup");
 		ok.Value.Status.Should().Be(DtoStatus.Active);
-		ok.Value.LinkedItemCount.Should().Be(1);
+		// Both selected items landed on the new row — a multi-item split that silently moved one
+		// would be worse than one that failed (RECEIPTS-877).
+		ok.Value.LinkedItemCount.Should().Be(2);
 	}
 
 	[Fact]
@@ -552,11 +561,17 @@ public class NormalizedDescriptionsControllerTests
 	{
 		Guid currentId = Guid.NewGuid();
 		Guid missingReceiptItemId = Guid.NewGuid();
-		SplitNormalizedDescriptionRequest request = new() { ReceiptItemId = missingReceiptItemId };
+		SplitNormalizedDescriptionRequest request = new()
+		{
+			// One good id and one stale one: the split is all-or-nothing, so the whole request
+			// must 404 rather than quietly moving the half it could find.
+			ReceiptItemIds = [Guid.NewGuid(), missingReceiptItemId],
+			CanonicalName = "reese cup",
+		};
 
 		_mediatorMock
 			.Setup(m => m.Send(
-				It.Is<SplitNormalizedDescriptionCommand>(c => c.ReceiptItemId == missingReceiptItemId),
+				It.Is<SplitNormalizedDescriptionCommand>(c => c.ReceiptItemIds.Contains(missingReceiptItemId)),
 				It.IsAny<CancellationToken>()))
 			.ThrowsAsync(new KeyNotFoundException("Receipt item not found."));
 
@@ -569,7 +584,11 @@ public class NormalizedDescriptionsControllerTests
 	[Fact]
 	public async Task SplitNormalizedDescription_EmptyId_ReturnsBadRequest()
 	{
-		SplitNormalizedDescriptionRequest request = new() { ReceiptItemId = Guid.NewGuid() };
+		SplitNormalizedDescriptionRequest request = new()
+		{
+			ReceiptItemIds = [Guid.NewGuid()],
+			CanonicalName = "reese cup",
+		};
 
 		Results<Ok<NormalizedDescriptionResponse>, NotFound, BadRequest<ProblemDetails>> result =
 			await _controller.SplitNormalizedDescription(Guid.Empty, request, CancellationToken.None);
@@ -582,13 +601,51 @@ public class NormalizedDescriptionsControllerTests
 	[Fact]
 	public async Task SplitNormalizedDescription_EmptyReceiptItemId_ReturnsBadRequest()
 	{
-		SplitNormalizedDescriptionRequest request = new() { ReceiptItemId = Guid.Empty };
+		SplitNormalizedDescriptionRequest request = new()
+		{
+			ReceiptItemIds = [Guid.NewGuid(), Guid.Empty],
+			CanonicalName = "reese cup",
+		};
 
 		Results<Ok<NormalizedDescriptionResponse>, NotFound, BadRequest<ProblemDetails>> result =
 			await _controller.SplitNormalizedDescription(Guid.NewGuid(), request, CancellationToken.None);
 
 		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
 		bad.Value!.Detail.Should().Be(NormalizedDescriptionsController.ReceiptItemIdCannotBeEmpty);
+		_mediatorMock.Verify(m => m.Send(It.IsAny<SplitNormalizedDescriptionCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+	}
+
+	[Fact]
+	public async Task SplitNormalizedDescription_EmptySelection_ReturnsBadRequest()
+	{
+		SplitNormalizedDescriptionRequest request = new()
+		{
+			ReceiptItemIds = [],
+			CanonicalName = "reese cup",
+		};
+
+		Results<Ok<NormalizedDescriptionResponse>, NotFound, BadRequest<ProblemDetails>> result =
+			await _controller.SplitNormalizedDescription(Guid.NewGuid(), request, CancellationToken.None);
+
+		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		bad.Value!.Detail.Should().Be(NormalizedDescriptionsController.SplitRequiresAtLeastOneItem);
+		_mediatorMock.Verify(m => m.Send(It.IsAny<SplitNormalizedDescriptionCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+	}
+
+	[Fact]
+	public async Task SplitNormalizedDescription_BlankName_ReturnsBadRequest()
+	{
+		SplitNormalizedDescriptionRequest request = new()
+		{
+			ReceiptItemIds = [Guid.NewGuid()],
+			CanonicalName = "   ",
+		};
+
+		Results<Ok<NormalizedDescriptionResponse>, NotFound, BadRequest<ProblemDetails>> result =
+			await _controller.SplitNormalizedDescription(Guid.NewGuid(), request, CancellationToken.None);
+
+		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		bad.Value!.Detail.Should().Be(NormalizedDescriptionsController.SplitNameRequired);
 		_mediatorMock.Verify(m => m.Send(It.IsAny<SplitNormalizedDescriptionCommand>(), It.IsAny<CancellationToken>()), Times.Never);
 	}
 

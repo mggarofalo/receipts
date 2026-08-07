@@ -76,8 +76,8 @@ public class ReceiptItemServiceTests
 		// Arrange
 		List<ReceiptItemEntity> entities = ReceiptItemEntityGenerator.GenerateList(3);
 
-		_mockRepository.Setup(r => r.GetCountAsync(null, It.IsAny<CancellationToken>())).ReturnsAsync(entities.Count);
-		_mockRepository.Setup(r => r.GetAllAsync(0, 50, It.IsAny<SortParams>(), null, It.IsAny<CancellationToken>())).ReturnsAsync(entities);
+		_mockRepository.Setup(r => r.GetCountAsync(null, null, It.IsAny<CancellationToken>())).ReturnsAsync(entities.Count);
+		_mockRepository.Setup(r => r.GetAllAsync(0, 50, It.IsAny<SortParams>(), null, null, It.IsAny<CancellationToken>())).ReturnsAsync(entities);
 
 		// Act
 		PagedResult<ReceiptItem> actual = await _service.GetAllAsync(0, 50, SortParams.Default, CancellationToken.None);

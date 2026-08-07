@@ -73,27 +73,32 @@ export function useSplitMutation() {
   return useMutation({
     mutationFn: async ({
       id,
-      receiptItemId,
+      receiptItemIds,
+      canonicalName,
     }: {
       id: string;
-      receiptItemId: string;
+      receiptItemIds: string[];
+      canonicalName: string;
     }) => {
       const { data, error, response } = await client.POST(
         "/api/normalized-descriptions/{id}/split",
         {
           params: { path: { id } },
-          body: { receiptItemId },
+          body: { receiptItemIds, canonicalName },
         },
       );
       if (!response.ok) throw toApiError(response.status, error);
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["normalized-descriptions"] });
       queryClient.invalidateQueries({ queryKey: ["receipt-items"] });
       // A split creates a new bucket and shrinks the one it came out of.
       queryClient.invalidateQueries({ queryKey: ["reports"] });
-      toast.success("Receipt item split into a new normalized description");
+      const count = variables.receiptItemIds.length;
+      toast.success(
+        `${count} ${count === 1 ? "item" : "items"} split into "${variables.canonicalName}"`,
+      );
     },
   });
 }

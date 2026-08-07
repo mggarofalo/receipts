@@ -33,7 +33,7 @@ vi.mock("@/hooks/useNormalizedDescriptionMaintenance", () => ({
 }));
 
 vi.mock("@/hooks/useReceiptItems", () => ({
-  useReceiptItems: vi.fn(() => ({
+  useLinkedReceiptItems: vi.fn(() => ({
     data: [],
     total: 0,
     isLoading: false,
@@ -65,7 +65,7 @@ import {
   useRequeuePendingPreview,
   useRequeuePendingMutation,
 } from "@/hooks/useNormalizedDescriptionMaintenance";
-import { useReceiptItems } from "@/hooks/useReceiptItems";
+import { useLinkedReceiptItems } from "@/hooks/useReceiptItems";
 import { usePermission } from "@/hooks/usePermission";
 
 // Fixtures carry the RECEIPTS-873 evidence fields because the real API always does. p-1 is the
@@ -199,7 +199,7 @@ function wireDefaults() {
     }),
   );
   vi.mocked(useRequeuePendingMutation).mockReturnValue(mockMutationResult());
-  vi.mocked(useReceiptItems).mockReturnValue({
+  vi.mocked(useLinkedReceiptItems).mockReturnValue({
     data: [],
     total: 0,
     isLoading: false,
@@ -210,6 +210,16 @@ function wireDefaults() {
     hasRole: (role: string) => role === "Admin",
     isAdmin: () => true,
   });
+}
+
+/** The items the server reports as linked to whichever entry the split dialog asked about. */
+function mockLinkedItems(items: { id: string; description: string }[]) {
+  vi.mocked(useLinkedReceiptItems).mockReturnValue({
+    data: items,
+    total: items.length,
+    isLoading: false,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } as any);
 }
 
 describe("NormalizedDescriptions review queue", () => {
@@ -348,53 +358,83 @@ describe("NormalizedDescriptions review queue", () => {
     );
   });
 
-  it("opens split dialog and confirms with receipt item id", async () => {
+  // RECEIPTS-877: the dialog now asks the server for this entry's items, takes a multi-select,
+  // and prompts for the name rather than deriving one.
+  it("splits several selected items into one named entry", async () => {
     const mutate = vi.fn((_vars, opts?: { onSuccess?: () => void }) => {
       opts?.onSuccess?.();
     });
-    vi.mocked(useSplitMutation).mockReturnValue(
-      mockMutationResult({ mutate }),
-    );
-    vi.mocked(useReceiptItems).mockReturnValue({
-      data: [
-        {
-          id: "ri-1",
-          description: "STRAWBERRY PRESERVES",
-          normalizedDescriptionId: "p-1",
-          normalizedDescriptionName: "Strawberry Preserves",
-        },
-        {
-          id: "ri-2",
-          description: "OTHER",
-          normalizedDescriptionId: "different",
-        },
-      ],
-      total: 2,
-      isLoading: false,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any);
+    vi.mocked(useSplitMutation).mockReturnValue(mockMutationResult({ mutate }));
+    mockLinkedItems([
+      { id: "ri-1", description: "MILK 2% GAL" },
+      { id: "ri-2", description: "milk gallon" },
+      { id: "ri-3", description: "CHEDDAR BLOCK" },
+    ]);
 
     const user = userEvent.setup();
     renderWithQueryClient(<NormalizedDescriptions />);
-    const row = (await screen.findByText("Strawberry Preserves")).closest(
-      "tr",
-    )!;
+    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
     await user.click(within(row).getByRole("button", { name: "Split" }));
 
     const dialog = screen.getByRole("dialog");
-    expect(
-      within(dialog).getByText("Split Out a Receipt Item"),
-    ).toBeInTheDocument();
-    const label = within(dialog)
-      .getByText("STRAWBERRY PRESERVES")
-      .closest("label")!;
-    const radio = within(label).getByRole("radio");
-    await user.click(radio);
+    await user.click(within(dialog).getByLabelText("MILK 2% GAL"));
+    await user.click(within(dialog).getByLabelText("milk gallon"));
+
+    // Pre-filled from the first selection, then overridden — the reviewer names the group.
+    const nameInput = within(dialog).getByLabelText(/name for the new entry/i);
+    expect(nameInput).toHaveValue("MILK 2% GAL");
+    await user.clear(nameInput);
+    await user.type(nameInput, "Milk");
+
     await user.click(within(dialog).getByRole("button", { name: "Split" }));
 
     expect(mutate).toHaveBeenCalledWith(
-      { id: "p-1", receiptItemId: "ri-1" },
+      { id: "p-1", receiptItemIds: ["ri-1", "ri-2"], canonicalName: "Milk" },
       expect.any(Object),
+    );
+  });
+
+  it("asks the server for this entry's items instead of filtering a page client-side", async () => {
+    mockLinkedItems([{ id: "ri-1", description: "MILK 2% GAL" }]);
+
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    await user.click(within(row).getByRole("button", { name: "Split" }));
+
+    // The old dialog pulled a fixed page of every receipt item app-wide and filtered it in the
+    // browser, which could never match because the list projection dropped the FK.
+    expect(vi.mocked(useLinkedReceiptItems)).toHaveBeenCalledWith("p-1", 0, 50);
+  });
+
+  it("will not split without both a selection and a name", async () => {
+    mockLinkedItems([{ id: "ri-1", description: "MILK 2% GAL" }]);
+
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    await user.click(within(row).getByRole("button", { name: "Split" }));
+
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByRole("button", { name: "Split" })).toBeDisabled();
+
+    await user.click(within(dialog).getByLabelText("MILK 2% GAL"));
+    await user.clear(within(dialog).getByLabelText(/name for the new entry/i));
+    expect(within(dialog).getByRole("button", { name: "Split" })).toBeDisabled();
+  });
+
+  it("says the entry has no linked items rather than blaming the lookup", async () => {
+    mockLinkedItems([]);
+
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Organic Milk")).closest("tr")!;
+    await user.click(within(row).getByRole("button", { name: "Split" }));
+
+    // The old copy — "not found in the most recent 200 items" — described the query rather than
+    // the data, and was shown even when the entry did have linked items.
+    expect(await screen.findByTestId("split-empty")).toHaveTextContent(
+      /no receipt items are linked to this entry/i,
     );
   });
 });

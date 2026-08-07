@@ -22,6 +22,39 @@ export function useReceiptItems(offset = 0, limit = 50, sortBy?: string | null, 
   return useMemo(() => ({ ...base, data: query.data?.data, total: query.data?.total ?? 0 }), [base, query.data]);
 }
 
+/**
+ * Every receipt item linked to one canonical description, paged server-side (RECEIPTS-877).
+ *
+ * The split dialog used to pull a fixed page of the unfiltered list and filter it in the
+ * browser, which could not work: the list projection did not carry `normalizedDescriptionId`,
+ * so the predicate never matched, and even once it did the answer would have been limited to
+ * whichever linked items happened to fall in that page.
+ */
+export function useLinkedReceiptItems(
+  normalizedDescriptionId: string | null,
+  offset = 0,
+  limit = 50,
+) {
+  const query = useQuery({
+    queryKey: ["receipt-items", "by-normalized-description", normalizedDescriptionId, offset, limit],
+    enabled: !!normalizedDescriptionId,
+    queryFn: async () => {
+      const { data, error } = await client.GET("/api/receipt-items", {
+        params: {
+          query: { normalizedDescriptionId: normalizedDescriptionId!, offset, limit },
+        },
+      });
+      if (error) throw error;
+      return data;
+    },
+  });
+  const base = useStableQuery(query);
+  return useMemo(
+    () => ({ ...base, data: query.data?.data, total: query.data?.total ?? 0 }),
+    [base, query.data],
+  );
+}
+
 export function useReceiptItem(id: string | null) {
   return useQuery({
     queryKey: ["receipt-items", id],

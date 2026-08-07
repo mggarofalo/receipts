@@ -9,6 +9,6 @@ public class SplitNormalizedDescriptionCommandHandler(INormalizedDescriptionServ
 {
 	public async ValueTask<NormalizedDescriptionDetail> Handle(SplitNormalizedDescriptionCommand request, CancellationToken cancellationToken)
 	{
-		return await service.SplitAsync(request.ReceiptItemId, cancellationToken);
+		return await service.SplitAsync(request.ReceiptItemIds, request.CanonicalName, cancellationToken);
 	}
 }

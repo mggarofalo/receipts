@@ -43,10 +43,16 @@ public partial class ReceiptItemMapper
 	public ReceiptItem ToDomain(ReceiptItemEntity source)
 	{
 		ReceiptItem domain = ToDomainPartial(source);
-		// Denormalize CanonicalName from the nav property for read paths. Mapperly can emit
+		// Denormalize the neighbour's name from the nav property for read paths. Mapperly can emit
 		// the direct FK via the partial method above, but the nested path through the
 		// navigation requires a custom projection.
-		domain.NormalizedDescriptionName = source.NormalizedDescription?.CanonicalName;
+		//
+		// The DISPLAY name, not the raw matched text: once a row is renamed, showing a receipt
+		// item under the old receipt-scanned string would contradict every other surface
+		// (RECEIPTS-876).
+		domain.NormalizedDescriptionName = source.NormalizedDescription is null
+			? null
+			: source.NormalizedDescription.DisplayLabel ?? source.NormalizedDescription.CanonicalName;
 		return domain;
 	}
 }

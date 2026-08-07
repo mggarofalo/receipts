@@ -114,6 +114,59 @@ exact-match lookup still finds it, but it must never win a similarity search: au
 onto one would re-link the very items the reviewer detached, and citing one as a near-miss would
 offer "nearly matched \<the thing you rejected\>" as evidence.
 
+## Splitting moves a group, under a name you choose (RECEIPTS-877)
+
+**Decision: a server-side filter, a multi-select, and a caller-supplied name.**
+
+### The dialog had never worked
+
+The stated problem was a 200-item ceiling. The real one was worse:
+`ReceiptItemRepository` projected list rows into a fresh `ReceiptItemEntity` that omitted
+`NormalizedDescriptionId`, so `GET /api/receipt-items` returned `normalizedDescriptionId: null`
+on every row despite the spec documenting the field. The dialog filtered on exactly that field,
+so it could never match — it always reported "no linked receipt items found", regardless of how
+recent the items were. Nothing asserted the field, which is why it survived; the same blind spot
+hid RECEIPTS-884.
+
+The projection now carries the FK, the match score, and a trimmed stand-in for the neighbour
+(id, matched text, label, status). A stand-in rather than an `Include`, because an include drags
+the 1024-float embedding across the wire for every row of every page. It is built from a
+correlated subquery rather than a navigation access: these queries run under
+`IgnoreAutoIncludes`, which leaves the navigation unpopulated, so reading it yields null on some
+providers regardless of the underlying row.
+
+### The name is the caller's
+
+A multi-item split routinely spans heterogeneous raw text — "MILK 2% GAL", "milk gallon",
+"WHOLE MILK". No automatic rule produces a name anyone would want from that set. The dialog
+pre-fills from the first selection and then gets out of the way; once the reviewer edits the
+field, further selections leave it alone. Rejected alternatives: modal or most-common raw text,
+first-selected text, and one-entry-per-distinct-description (a single click causing surprising
+fan-out).
+
+If an entry with the chosen name already exists, the items are re-linked to it rather than a
+duplicate row being created, and the audit records `targetWasExistingRow` so the trail does not
+imply a row was created when none was.
+
+### All-or-nothing
+
+An unknown id throws before anything is written. A partial split would leave a half-corrected
+group with no indication of which half moved — worse than an outright failure, because the
+reviewer would have to reconstruct what happened by hand.
+
+### Moved items are rescored
+
+Each item's score was its similarity to the row it is leaving, so after the repoint it describes
+a comparison that no longer applies. `PreviewThresholdImpactAsync` buckets items by exactly that
+column, so a stale score would skew every later threshold preview. Same reasoning as
+RECEIPTS-892 applied to merges; the split path reuses the same helper.
+
+### Empty state says what is true
+
+"No receipt items are linked to this entry" — a statement about the data. The old copy, "not
+found in the most recent 200 items", was a statement about the query, and was shown even when
+the entry did have linked items.
+
 ### Wire-format caveat
 
 The spec documents this enum lowercase (`active`, `pendingReview`) and the generated TypeScript

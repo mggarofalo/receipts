@@ -3384,10 +3384,20 @@ export interface components {
         };
         SplitNormalizedDescriptionRequest: {
             /**
-             * Format: uuid
-             * @description ID of the ReceiptItem to detach from its current NormalizedDescription.
+             * @description IDs of the ReceiptItems to detach into one new canonical entry. All-or-nothing: if
+             *     any id does not exist the whole request is rejected with 404 and nothing is written,
+             *     so a split never leaves a half-corrected group behind.
              */
-            receiptItemId: string;
+            receiptItemIds: string[];
+            /**
+             * @description Name for the new entry. Supplied by the caller rather than derived from the
+             *     selection: a multi-item split routinely spans heterogeneous raw text ("MILK 2%",
+             *     "milk gal", "WHOLE MILK") where no automatic rule produces a name anyone would want.
+             *
+             *     If an entry with this name already exists the items are re-linked to it instead of a
+             *     new row being created; the response reports the row they landed on either way.
+             */
+            canonicalName: string;
         };
         UpdateNormalizedDescriptionStatusRequest: {
             status: components["schemas"]["NormalizedDescriptionStatus"];
@@ -6656,6 +6666,13 @@ export interface operations {
                 sortDirection?: components["parameters"]["SortDirection"];
                 /** @description Case-insensitive substring filter applied across Description, ReceiptItemCode, Category, and Subcategory. Whitespace-only values are ignored. Ignored when receiptId is supplied. */
                 q?: string;
+                /**
+                 * @description Restricts the page to receipt items linked to this canonical NormalizedDescription.
+                 *     Combines with `q`; ignored when `receiptId` is supplied. An empty GUID is rejected
+                 *     with 400 rather than treated as "no filter". Backed by an index, so this is the
+                 *     supported way to enumerate one entry's items rather than paging the whole table.
+                 */
+                normalizedDescriptionId?: string;
             };
             header?: never;
             path?: never;
