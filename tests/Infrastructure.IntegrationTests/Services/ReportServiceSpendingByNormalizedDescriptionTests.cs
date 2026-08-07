@@ -80,6 +80,77 @@ public class ReportServiceSpendingByNormalizedDescriptionTests(PostgresFixture f
 		SpendingByNormalizedDescriptionItem notNormalized = result.Items.Single(i => i.CanonicalName == "(Not Normalized)");
 		notNormalized.TotalAmount.Should().Be(2.00m);
 		notNormalized.ItemCount.Should().Be(1);
+
+		milk.Status.Should().Be(NormalizedDescriptionStatus.Active);
+		// No backing row to carry a status. Null here is what stops the client rendering the
+		// synthetic bucket as either reviewed or unreviewed (RECEIPTS-875).
+		notNormalized.Status.Should().BeNull();
+	}
+
+	// RECEIPTS-875: the report is where approval becomes observable, so a bucket whose canonical
+	// row is still PendingReview has to arrive marked. The status comes from a second page-scoped
+	// query rather than an extra GROUP BY key — a translation regression there would silently
+	// return null for every bucket and quietly un-gate the review queue again.
+	[Fact]
+	public async Task GetSpendingByNormalizedDescriptionAsync_CarriesPendingReviewStatus()
+	{
+		// Arrange
+		await ResetTablesAsync();
+
+		Guid activeId = Guid.NewGuid();
+		Guid pendingId = Guid.NewGuid();
+		ReceiptEntity receipt = ReceiptEntityGenerator.Generate();
+
+		await using (ApplicationDbContext setup = fixture.CreateDbContext())
+		{
+			setup.NormalizedDescriptions.AddRange(
+				new NormalizedDescriptionEntity
+				{
+					Id = activeId,
+					CanonicalName = "Settled Item",
+					Status = NormalizedDescriptionStatus.Active,
+					CreatedAt = DateTimeOffset.UtcNow,
+				},
+				new NormalizedDescriptionEntity
+				{
+					Id = pendingId,
+					CanonicalName = "Unconfirmed Item",
+					Status = NormalizedDescriptionStatus.PendingReview,
+					CreatedAt = DateTimeOffset.UtcNow,
+				});
+
+			setup.Receipts.Add(receipt);
+
+			ReceiptItemEntity settled = ReceiptItemEntityGenerator.Generate(receipt.Id);
+			settled.Description = "settled item";
+			settled.TotalAmount = 3.00m;
+			settled.NormalizedDescriptionId = activeId;
+
+			ReceiptItemEntity unconfirmed = ReceiptItemEntityGenerator.Generate(receipt.Id);
+			unconfirmed.Description = "unconfirmed item";
+			unconfirmed.TotalAmount = 7.00m;
+			unconfirmed.NormalizedDescriptionId = pendingId;
+
+			setup.ReceiptItems.AddRange(settled, unconfirmed);
+			await setup.SaveChangesAsync();
+		}
+
+		ReportService service = new(new FixtureDbContextFactory(fixture));
+
+		// Act
+		SpendingByNormalizedDescriptionResult result = await service
+			.GetSpendingByNormalizedDescriptionAsync(from: null, to: null, "totalAmount", "desc", 1, 50, CancellationToken.None);
+
+		// Assert
+		result.Items.Single(i => i.CanonicalName == "Settled Item")
+			.Status.Should().Be(NormalizedDescriptionStatus.Active);
+		result.Items.Single(i => i.CanonicalName == "Unconfirmed Item")
+			.Status.Should().Be(NormalizedDescriptionStatus.PendingReview);
+
+		// The unreviewed bucket's money still counts. A report that silently drops it would stop
+		// reconciling against receipt totals, which is the reason pending buckets stay visible
+		// rather than being filtered out.
+		result.GrandTotal.Should().Be(10.00m);
 	}
 
 	[Fact]

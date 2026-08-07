@@ -1,4 +1,5 @@
 import { renderHook, waitFor } from "@testing-library/react";
+import { QueryClient } from "@tanstack/react-query";
 import { createQueryWrapper } from "@/test/test-utils";
 import {
   useMergeMutation,
@@ -201,6 +202,28 @@ describe("useUpdateStatusMutation", () => {
         body: { status: "active" },
       },
     );
+  });
+
+  // RECEIPTS-875: approving is only observable because the spending report re-fetches and drops
+  // the "Unreviewed" badge. Without this invalidation the report serves its cached copy and
+  // approval once again changes nothing the user can see.
+  it("invalidates the reports cache so the spending report drops the badge", async () => {
+    const invalidateSpy = vi.spyOn(QueryClient.prototype, "invalidateQueries");
+    mockClient.PATCH.mockResolvedValue({
+      data: undefined,
+      error: undefined,
+      response: { status: 204, ok: true } as Response,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    const { result } = renderHook(() => useUpdateStatusMutation(), {
+      wrapper: createQueryWrapper(),
+    });
+    result.current.mutate({ id: "n-1", status: "active" });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["reports"] });
+    invalidateSpy.mockRestore();
   });
 
   it("propagates errors", async () => {

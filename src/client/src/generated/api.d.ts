@@ -2755,6 +2755,15 @@ export interface components {
              * @description Latest receipt date among items in this bucket.
              */
             lastSeen?: string | null;
+            /**
+             * @description Review status of the canonical row behind this bucket. `pendingReview` means the
+             *     resolver grouped these items on its own and no reviewer has confirmed the grouping —
+             *     clients must render the bucket as provisional rather than settled. The bucket still
+             *     counts toward `grandTotal` either way, so the report reconciles against receipt totals
+             *     regardless of review progress. Null for the synthetic "(Not Normalized)" bucket, which
+             *     has no backing row.
+             */
+            status?: components["schemas"]["NormalizedDescriptionStatus"] | null;
         };
         DashboardSummaryResponse: {
             /** Format: int32 */

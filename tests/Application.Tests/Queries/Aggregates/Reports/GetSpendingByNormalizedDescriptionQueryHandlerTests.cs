@@ -1,6 +1,7 @@
 using Application.Interfaces.Services;
 using Application.Models.Reports;
 using Application.Queries.Aggregates.Reports;
+using Domain.NormalizedDescriptions;
 using FluentAssertions;
 using Moq;
 
@@ -71,7 +72,8 @@ public class GetSpendingByNormalizedDescriptionQueryHandlerTests
 			"USD",
 			5,
 			new DateTimeOffset(2025, 1, 5, 0, 0, 0, TimeSpan.Zero),
-			new DateTimeOffset(2025, 3, 15, 0, 0, 0, TimeSpan.Zero));
+			new DateTimeOffset(2025, 3, 15, 0, 0, 0, TimeSpan.Zero),
+			NormalizedDescriptionStatus.Active);
 		SpendingByNormalizedDescriptionResult expectedResult = new([item], 1, 42.50m, null, null);
 
 		_reportServiceMock

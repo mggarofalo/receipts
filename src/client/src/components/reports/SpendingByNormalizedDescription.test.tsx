@@ -47,6 +47,7 @@ const sampleItems = [
     itemCount: 3,
     firstSeen: null,
     lastSeen: null,
+    status: "active",
   },
   {
     canonicalName: "Bananas",
@@ -55,8 +56,20 @@ const sampleItems = [
     itemCount: 5,
     firstSeen: null,
     lastSeen: null,
+    status: "active",
   },
 ];
+
+const ADMIN_AUTH = {
+  user: {
+    id: "u1",
+    email: "admin@example.com",
+    firstName: "A",
+    lastName: "D",
+    roles: ["Admin"],
+  },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+} as any;
 
 function setupMock(overrides: Record<string, unknown> = {}) {
   mockHook.mockReturnValue({
@@ -367,9 +380,9 @@ describe("SpendingByNormalizedDescription", () => {
       `spending-by-normalized-description_${expectedStart}_${expectedEnd}.csv`,
     );
     expect(csv).toBe(
-      "Canonical Name,Item Count,Total Amount,Share of Total,Currency\r\n" +
-        "Apples,3,12.5,23.8%,USD\r\n" +
-        "Bananas,5,40,76.2%,USD\r\n",
+      "Canonical Name,Item Count,Total Amount,Share of Total,Currency,Review Status\r\n" +
+        "Apples,3,12.5,23.8%,USD,Reviewed\r\n" +
+        "Bananas,5,40,76.2%,USD,Reviewed\r\n",
     );
   });
 
@@ -437,5 +450,125 @@ describe("SpendingByNormalizedDescription", () => {
         page: 3,
       }),
     );
+  });
+
+  // RECEIPTS-875: the report is the place approval becomes visible. A bucket nobody has
+  // confirmed has to read as provisional — while still counting toward the totals, so the
+  // report keeps reconciling against receipt totals.
+  describe("unreviewed buckets", () => {
+    const withPending = [
+      sampleItems[0],
+      { ...sampleItems[1], status: "pendingReview" },
+    ];
+
+    it("badges a pending bucket and leaves an active one unbadged", () => {
+      setupMock({
+        data: { items: withPending, totalCount: 2, grandTotal: 52.5 },
+      });
+      renderWithQueryClient(<SpendingByNormalizedDescription />);
+
+      const bananas = screen.getByText("Bananas").closest("tr")!;
+      expect(within(bananas).getByTestId("unreviewed-badge")).toBeInTheDocument();
+
+      const apples = screen.getByText("Apples").closest("tr")!;
+      expect(within(apples).queryByTestId("unreviewed-badge")).toBeNull();
+    });
+
+    // The API serializes this enum PascalCase despite the spec documenting it lowercase
+    // (RECEIPTS-884). If the badge only matched the documented casing it would silently
+    // never render against the real server.
+    it("recognises the PascalCase casing the API actually sends", () => {
+      setupMock({
+        data: {
+          items: [sampleItems[0], { ...sampleItems[1], status: "PendingReview" }],
+          totalCount: 2,
+          grandTotal: 52.5,
+        },
+      });
+      renderWithQueryClient(<SpendingByNormalizedDescription />);
+
+      const bananas = screen.getByText("Bananas").closest("tr")!;
+      expect(within(bananas).getByTestId("unreviewed-badge")).toBeInTheDocument();
+    });
+
+    it("keeps pending spend in the totals", () => {
+      setupMock({
+        data: { items: withPending, totalCount: 2, grandTotal: 52.5 },
+      });
+      renderWithQueryClient(<SpendingByNormalizedDescription />);
+
+      // 52.50 is Apples + Bananas. If pending spend were excluded this would read $12.50.
+      expect(screen.getByText("$52.50")).toBeInTheDocument();
+    });
+
+    it("explains the badge, and offers the review link only to an admin", () => {
+      setupMock({
+        data: { items: withPending, totalCount: 2, grandTotal: 52.5 },
+      });
+      const { unmount } = renderWithQueryClient(
+        <SpendingByNormalizedDescription />,
+      );
+
+      expect(screen.getByTestId("unreviewed-note")).toHaveTextContent(
+        /1 bucket on this page is still awaiting review/i,
+      );
+      expect(screen.queryByRole("link", { name: /review them/i })).toBeNull();
+      unmount();
+
+      renderWithQueryClient(<SpendingByNormalizedDescription />, {
+        auth: ADMIN_AUTH,
+      });
+      expect(
+        screen.getByRole("link", { name: /review them/i }),
+      ).toHaveAttribute("href", "/admin/normalized-descriptions");
+    });
+
+    it("says nothing when every bucket on the page is reviewed", () => {
+      setupMock();
+      renderWithQueryClient(<SpendingByNormalizedDescription />);
+
+      expect(screen.queryByTestId("unreviewed-note")).toBeNull();
+      expect(screen.queryByTestId("unreviewed-badge")).toBeNull();
+    });
+
+    it("exports review status, blank for the bucket that has no backing row", async () => {
+      const user = userEvent.setup();
+      const exportItems = [
+        sampleItems[0],
+        { ...sampleItems[1], status: "PendingReview" },
+        {
+          canonicalName: "(Not Normalized)",
+          totalAmount: 5,
+          currency: "USD",
+          itemCount: 1,
+          firstSeen: null,
+          lastSeen: null,
+          status: null,
+        },
+      ];
+      setupMock({
+        data: { items: exportItems, totalCount: 3, grandTotal: 57.5 },
+      });
+      mockClient.GET.mockResolvedValue({
+        data: { items: exportItems, totalCount: 3 },
+        error: undefined,
+        response: {} as Response,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any);
+
+      renderWithQueryClient(<SpendingByNormalizedDescription />);
+      await user.click(screen.getByRole("button", { name: /export csv/i }));
+
+      await waitFor(() => expect(mockDownloadCsv).toHaveBeenCalledTimes(1));
+      const [, csv] = mockDownloadCsv.mock.calls[0];
+      const [header, ...rows] = csv.trimEnd().split("\r\n");
+
+      expect(header.endsWith(",Review Status")).toBe(true);
+      expect(rows[0].endsWith(",Reviewed")).toBe(true);
+      expect(rows[1].endsWith(",Unreviewed")).toBe(true);
+      // Trailing empty cell, not "Reviewed": there is no row behind this bucket, so nobody
+      // approved anything.
+      expect(rows[2].endsWith(",")).toBe(true);
+    });
   });
 });
