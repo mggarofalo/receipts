@@ -128,6 +128,11 @@ const activeItems = [
   },
 ];
 
+// The row action reads "Merge into…" (RECEIPTS-874) — the ellipsis says a picker follows and
+// "into" says the direction. The dialog's own confirm button stays "Merge", which is what makes
+// the two unambiguous to query separately.
+const MERGE_ACTION = "Merge into…";
+
 type ListItem = (typeof pendingItems)[number] | (typeof activeItems)[number];
 
 /**
@@ -337,7 +342,7 @@ describe("NormalizedDescriptions review queue", () => {
     const row = (await screen.findByText("Strawberry Preserves")).closest(
       "tr",
     )!;
-    await user.click(within(row).getByRole("button", { name: "Merge" }));
+    await user.click(within(row).getByRole("button", { name: MERGE_ACTION }));
     expect(screen.getByText("Merge Into Another Entry")).toBeInTheDocument();
     expect(screen.getByText("Apples")).toBeInTheDocument();
     expect(screen.getByText("Milk")).toBeInTheDocument();
@@ -356,7 +361,7 @@ describe("NormalizedDescriptions review queue", () => {
     const row = (await screen.findByText("Strawberry Preserves")).closest(
       "tr",
     )!;
-    await user.click(within(row).getByRole("button", { name: "Merge" }));
+    await user.click(within(row).getByRole("button", { name: MERGE_ACTION }));
 
     // Select target
     const dialog = screen.getByRole("dialog");
@@ -567,7 +572,7 @@ describe("NormalizedDescriptions registry tab", () => {
     // The registry is the only place an approved mistake can be corrected. Read-only meant
     // every approval was permanent.
     const row = (await screen.findByText("Apples")).closest("tr")!;
-    expect(within(row).getByRole("button", { name: "Merge" })).toBeInTheDocument();
+    expect(within(row).getByRole("button", { name: MERGE_ACTION })).toBeInTheDocument();
     expect(within(row).getByRole("button", { name: "Split" })).toBeInTheDocument();
     expect(
       within(row).getByRole("button", { name: /rename apples/i }),
@@ -587,7 +592,7 @@ describe("NormalizedDescriptions registry tab", () => {
     renderWithQueryClient(<NormalizedDescriptions />);
     await user.click(screen.getByRole("tab", { name: "Registry" }));
     const row = (await screen.findByText("Apples")).closest("tr")!;
-    await user.click(within(row).getByRole("button", { name: "Merge" }));
+    await user.click(within(row).getByRole("button", { name: MERGE_ACTION }));
 
     const dialog = await screen.findByRole("dialog");
     // a-1 holds 12 items. The count is the whole confirmation: merging the wrong direction
@@ -657,6 +662,111 @@ describe("NormalizedDescriptions registry tab", () => {
   });
 });
 
+// RECEIPTS-874. Three bare outline buttons used to sit at the end of every row with no
+// explanation anywhere except inside the dialog you got *after* clicking — and Approve has no
+// dialog at all, so its consequences were never stated anywhere.
+describe("NormalizedDescriptions action explanations", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    wireDefaults();
+  });
+
+  it("explains what the queue is and what each action does", async () => {
+    renderWithQueryClient(<NormalizedDescriptions />);
+
+    const explainer = await screen.findByTestId("review-queue-explainer");
+    // Why a row is here at all: the near-match band. Without this the queue reads as a list of
+    // arbitrary rows a reviewer is expected to have an opinion about.
+    expect(explainer).toHaveTextContent(/nearly matches an entry the registry already has/i);
+    // And that the spend is already counted — approving is not what puts it in the reports.
+    expect(explainer).toHaveTextContent(/already appears in reports/i);
+
+    for (const action of ["Approve", "Merge into…", "Split", "Reject"]) {
+      expect(within(explainer).getByText(action)).toBeInTheDocument();
+    }
+    // The sharpest edge, called out rather than implied.
+    expect(explainer).toHaveTextContent(/this entry is deleted/i);
+  });
+
+  it("keeps the explainer up when the queue is empty", () => {
+    vi.mocked(useNormalizedDescriptions).mockImplementation(((
+      options?: ListOptions,
+    ) =>
+      statusesOf(options).includes("PendingReview")
+        ? listResult([])
+        : // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          mockList(options)) as any);
+
+    renderWithQueryClient(<NormalizedDescriptions />);
+
+    // An empty queue is exactly when someone is reading to find out what this page is for.
+    expect(screen.getByTestId("review-queue-explainer")).toBeInTheDocument();
+    expect(screen.getByText("Review Queue Empty")).toBeInTheDocument();
+  });
+
+  it("describes each row action, with the count of items it would move", async () => {
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+
+    // p-1 holds 4 items. The hint reaches keyboard and screen-reader users through
+    // aria-describedby, not only whoever happens to hover.
+    const expectations: [string, RegExp][] = [
+      ["Approve", /nothing is re-linked or moved.*4 receipt items stay where they are/is],
+      [MERGE_ACTION, /4 receipt items are re-pointed.*this one is deleted/is],
+      ["Split", /everything you leave unselected stays here/i],
+      ["Reject", /4 receipt items become unnormalized/i],
+    ];
+
+    for (const [name, pattern] of expectations) {
+      const button = within(row).getByRole("button", { name });
+      const describedBy = button.getAttribute("aria-describedby");
+      expect(describedBy).toBeTruthy();
+      expect(document.getElementById(describedBy!)).toHaveTextContent(pattern);
+    }
+  });
+
+  it("says one receipt item rather than 1 receipt items", async () => {
+    vi.mocked(useNormalizedDescriptions).mockImplementation(((
+      options?: ListOptions,
+    ) =>
+      statusesOf(options).includes("PendingReview")
+        ? listResult([{ ...pendingItems[0], linkedItemCount: 1 }])
+        : // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          mockList(options)) as any);
+
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    const button = within(row).getByRole("button", { name: "Approve" });
+    const hint = document.getElementById(button.getAttribute("aria-describedby")!);
+
+    expect(hint).toHaveTextContent(/1 receipt item stay/i);
+    expect(hint).not.toHaveTextContent(/1 receipt items/i);
+  });
+
+  it("names the direction of a merge in the button itself", async () => {
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+
+    // "Merge" alone said nothing about which of the two rows survives, and the answer is that
+    // this one does not.
+    expect(within(row).getByRole("button", { name: MERGE_ACTION })).toBeInTheDocument();
+    expect(within(row).queryByRole("button", { name: "Merge" })).not.toBeInTheDocument();
+  });
+
+  it("explains the registry's actions too", async () => {
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    await user.click(screen.getByRole("tab", { name: "Registry" }));
+    const row = (await screen.findByText("Apples")).closest("tr")!;
+
+    const button = within(row).getByRole("button", { name: "Send back to review" });
+    const hint = document.getElementById(button.getAttribute("aria-describedby")!);
+    // The reversible one. Saying "nothing is unlinked" is what separates it from Reject.
+    expect(hint).toHaveTextContent(/nothing is unlinked/i);
+    expect(hint).toHaveTextContent(/12 receipt items stay attached/i);
+  });
+});
+
 // RECEIPTS-879 moved the candidate search server-side. The dialog is the second consumer of the
 // list hook, and the one that breaks least visibly when it is only searching a page.
 describe("NormalizedDescriptions merge candidates", () => {
@@ -669,7 +779,7 @@ describe("NormalizedDescriptions merge candidates", () => {
     const user = userEvent.setup();
     renderWithQueryClient(<NormalizedDescriptions />);
     const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
-    await user.click(within(row).getByRole("button", { name: "Merge" }));
+    await user.click(within(row).getByRole("button", { name: MERGE_ACTION }));
 
     const dialog = await screen.findByRole("dialog");
     await user.type(
@@ -699,7 +809,7 @@ describe("NormalizedDescriptions merge candidates", () => {
     const user = userEvent.setup();
     renderWithQueryClient(<NormalizedDescriptions />);
     const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
-    await user.click(within(row).getByRole("button", { name: "Merge" }));
+    await user.click(within(row).getByRole("button", { name: MERGE_ACTION }));
 
     // Silently showing the first 50 of 412 reads as "the entry you want does not exist"
     // (RECEIPTS-878).
@@ -712,7 +822,7 @@ describe("NormalizedDescriptions merge candidates", () => {
     const user = userEvent.setup();
     renderWithQueryClient(<NormalizedDescriptions />);
     const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
-    await user.click(within(row).getByRole("button", { name: "Merge" }));
+    await user.click(within(row).getByRole("button", { name: MERGE_ACTION }));
 
     await screen.findByRole("dialog");
     expect(
@@ -733,7 +843,7 @@ describe("NormalizedDescriptions merge candidates", () => {
     renderWithQueryClient(<NormalizedDescriptions />);
     await user.click(screen.getByRole("tab", { name: "Registry" }));
     const row = (await screen.findByText("Apples")).closest("tr")!;
-    await user.click(within(row).getByRole("button", { name: "Merge" }));
+    await user.click(within(row).getByRole("button", { name: MERGE_ACTION }));
 
     // Merging a row into itself is a 400 from the server; it should not be reachable. The
     // registry makes this possible for the first time, since source and candidates are now the
@@ -748,7 +858,7 @@ describe("NormalizedDescriptions merge candidates", () => {
     const user = userEvent.setup();
     renderWithQueryClient(<NormalizedDescriptions />);
     const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
-    await user.click(within(row).getByRole("button", { name: "Merge" }));
+    await user.click(within(row).getByRole("button", { name: MERGE_ACTION }));
 
     // Rejected rows are tombstones. Merging items into one would resurrect text a reviewer
     // retired on purpose, so it must never be in the candidate query at all — filtering it out
@@ -767,7 +877,7 @@ describe("NormalizedDescriptions merge candidates", () => {
     const user = userEvent.setup();
     renderWithQueryClient(<NormalizedDescriptions />);
     const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
-    await user.click(within(row).getByRole("button", { name: "Merge" }));
+    await user.click(within(row).getByRole("button", { name: MERGE_ACTION }));
 
     // Two near-duplicates out of the same resolver batch are exactly the pair you want to merge.
     // Requiring one to be approved first forced a judgement the reviewer had not made yet.
@@ -790,7 +900,7 @@ describe("NormalizedDescriptions merge candidates", () => {
     const user = userEvent.setup();
     renderWithQueryClient(<NormalizedDescriptions />);
     const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
-    await user.click(within(row).getByRole("button", { name: "Merge" }));
+    await user.click(within(row).getByRole("button", { name: MERGE_ACTION }));
 
     const dialog = await screen.findByRole("dialog");
     const target = within(dialog).getByText("Organic Milk").closest("label")!;
@@ -809,7 +919,7 @@ describe("NormalizedDescriptions merge candidates", () => {
     const user = userEvent.setup();
     renderWithQueryClient(<NormalizedDescriptions />);
     const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
-    await user.click(within(row).getByRole("button", { name: "Merge" }));
+    await user.click(within(row).getByRole("button", { name: MERGE_ACTION }));
 
     // Merging is direction-sensitive and irreversible. Without the counts there is nothing on
     // screen to say which way round moves the fewest items.
@@ -940,7 +1050,7 @@ describe("NormalizedDescriptions rename and reject", () => {
 
     // Merge means "this is the same as X" and re-points items; Reject means "this is not worth
     // an entry" and unlinks them. Collapsing them was the original complaint.
-    expect(within(row).getByRole("button", { name: "Merge" })).toBeInTheDocument();
+    expect(within(row).getByRole("button", { name: MERGE_ACTION })).toBeInTheDocument();
     expect(within(row).getByRole("button", { name: "Reject" })).toBeInTheDocument();
   });
 });

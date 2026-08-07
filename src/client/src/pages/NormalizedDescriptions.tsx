@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import {
   useNormalizedDescriptions,
   NORMALIZED_DESCRIPTION_PAGE_SIZE,
@@ -64,6 +64,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type { components } from "@/generated/api";
 
 type NormalizedDescription =
@@ -176,17 +181,22 @@ function ReviewQueueTab() {
 
   if (pending.length === 0) {
     return (
-      <div className="rounded-lg border p-6 text-center">
-        <h2 className="card-title">Review Queue Empty</h2>
-        <p className="mt-2 text-muted-foreground">
-          No descriptions are awaiting review right now.
-        </p>
+      <div className="space-y-4">
+        <ReviewQueueExplainer />
+        <div className="rounded-lg border p-6 text-center">
+          <h2 className="card-title">Review Queue Empty</h2>
+          <p className="mt-2 text-muted-foreground">
+            No descriptions are awaiting review right now.
+          </p>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
+      <ReviewQueueExplainer />
+
       <div className="flex gap-6 rounded-lg border p-4">
         <div>
           <p className="card-sub">Pending Review</p>
@@ -225,42 +235,40 @@ function ReviewQueueTab() {
                   {new Date(row.createdAt).toLocaleDateString()}
                 </span>
               </TableCell>
+              {/* Every action carries a tooltip naming its consequence (RECEIPTS-874). Three
+                  bare outline buttons used to sit here with no explanation anywhere except
+                  inside the dialog you got *after* clicking — and Approve has no dialog at all,
+                  so its consequences were never stated. */}
               <TableCell className="text-right space-x-2">
-                <Button
-                  variant="outline"
-                  size="sm"
+                <ActionButton
+                  label="Approve"
+                  hint={approveHint(row.linkedItemCount)}
                   disabled={updateStatus.isPending}
                   onClick={() =>
                     updateStatus.mutate({ id: row.id, status: "active" })
                   }
-                >
-                  Approve
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
+                />
+                {/* "Merge into…" rather than "Merge": the ellipsis says a picker follows, and
+                    "into" says the direction, which decides which of the two rows survives. */}
+                <ActionButton
+                  label="Merge into…"
+                  hint={mergeHint(row.linkedItemCount)}
                   onClick={() => setMergeTarget(row)}
-                >
-                  Merge
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
+                />
+                <ActionButton
+                  label="Split"
+                  hint="Move some of the linked items into a new entry of their own. Everything you leave unselected stays here."
                   onClick={() => setSplitTarget(row)}
-                >
-                  Split
-                </Button>
+                />
                 {/* Reject sits apart from Merge deliberately. Merge says "this is the same as
                     X" and re-points the items; Reject says "this text is not worth a canonical
                     entry at all" and unlinks them. Before this existed the only way to dispose
                     of a bad entry was to merge it into an unrelated row (RECEIPTS-876). */}
-                <Button
-                  variant="outline"
-                  size="sm"
+                <ActionButton
+                  label="Reject"
+                  hint={rejectHint(row.linkedItemCount)}
                   onClick={() => setRejectTarget(row)}
-                >
-                  Reject
-                </Button>
+                />
               </TableCell>
             </TableRow>
           ))}
@@ -288,6 +296,130 @@ function ReviewQueueTab() {
         source={rejectTarget}
         onClose={() => setRejectTarget(null)}
       />
+    </div>
+  );
+}
+
+function itemsPhrase(count: number) {
+  return count === 1 ? "1 receipt item" : `${count} receipt items`;
+}
+
+/**
+ * Per-action consequence copy (RECEIPTS-874).
+ *
+ * Each names what actually changes, and the count is folded in where an action moves data — the
+ * difference between "Merge re-points the items" and "Merge re-points 47 items" is the difference
+ * between a rule and a decision.
+ */
+function approveHint(linkedItemCount: number) {
+  return `Accept this as a real entry. Nothing is re-linked or moved; its ${itemsPhrase(linkedItemCount)} stay where they are, and their spending stops being reported as unreviewed.`;
+}
+
+function mergeHint(linkedItemCount: number) {
+  return `Say this is the same thing as another entry. Its ${itemsPhrase(linkedItemCount)} are re-pointed at the entry you pick and this one is deleted. Cannot be undone.`;
+}
+
+function rejectHint(linkedItemCount: number) {
+  return `Say this text does not deserve an entry. Its ${itemsPhrase(linkedItemCount)} become unnormalized, and the resolver will not propose this text again.`;
+}
+
+interface ActionButtonProps {
+  label: string;
+  hint: string;
+  disabled?: boolean;
+  onClick: () => void;
+}
+
+/**
+ * A row action whose consequence is readable before you commit to it.
+ *
+ * The hint is both a tooltip and the button's accessible description, so it reaches a keyboard or
+ * screen-reader user as well as one who happens to hover. `aria-describedby` rather than
+ * `aria-label`, because the label is the action and the hint is what it does — collapsing them
+ * would make the button announce a paragraph where a verb belongs.
+ */
+function ActionButton({ label, hint, disabled, onClick }: ActionButtonProps) {
+  const hintId = useId();
+
+  return (
+    <>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={disabled}
+            onClick={onClick}
+            aria-describedby={hintId}
+          >
+            {label}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-xs">{hint}</TooltipContent>
+      </Tooltip>
+      <span id={hintId} className="sr-only">
+        {hint}
+      </span>
+    </>
+  );
+}
+
+/**
+ * What this queue is and what the four actions do (RECEIPTS-874).
+ *
+ * Sits above the table rather than behind a help icon: the actions are destructive and mostly
+ * irreversible, and a reviewer meeting the queue for the first time has no way to know that
+ * Merge deletes a row. Collapsed by default after the first read would be nice, but a
+ * remembered-dismissal is state we would have to persist and get wrong; a short block that is
+ * cheap to skip is the better trade.
+ */
+function ReviewQueueExplainer() {
+  return (
+    <div
+      className="rounded-lg border bg-muted/30 p-4 text-sm"
+      data-testid="review-queue-explainer"
+    >
+      <h2 className="card-title">What is in this queue</h2>
+      <p className="mt-1 text-muted-foreground">
+        When a receipt item's text nearly matches an entry the registry already has — close enough
+        to be suspicious, not close enough to be certain — the resolver creates a new entry and
+        parks it here instead of guessing. The near-match that caused it is shown on each row.
+        Its receipt items are already linked, and its spending already appears in reports, marked
+        as unreviewed until you decide.
+      </p>
+      <dl className="mt-3 grid gap-2 sm:grid-cols-2">
+        <div>
+          <dt className="font-medium">Approve</dt>
+          <dd className="text-muted-foreground">
+            This is its own thing. Nothing moves; the “unreviewed” marking clears.
+          </dd>
+        </div>
+        <div>
+          <dt className="font-medium">Merge into…</dt>
+          <dd className="text-muted-foreground">
+            This is the same as an entry you already have. Its items are re-pointed there and{" "}
+            <strong>this entry is deleted</strong>. Cannot be undone.
+          </dd>
+        </div>
+        <div>
+          <dt className="font-medium">Split</dt>
+          <dd className="text-muted-foreground">
+            Some of these items belong together under a different name. You pick which, and the
+            rest stay here.
+          </dd>
+        </div>
+        <div>
+          <dt className="font-medium">Reject</dt>
+          <dd className="text-muted-foreground">
+            This text does not deserve an entry. Its items become unnormalized and the resolver
+            stops proposing it.
+          </dd>
+        </div>
+      </dl>
+      <p className="mt-3 text-muted-foreground">
+        You can also rename an entry in place. That changes the label only — never the receipt
+        text it matches on — so renaming can never change what resolves here later.
+      </p>
     </div>
   );
 }
@@ -934,30 +1066,24 @@ function RegistryTab() {
                     </span>
                   </TableCell>
                   <TableCell className="text-right space-x-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
+                    <ActionButton
+                      label="Merge into…"
+                      hint={mergeHint(row.linkedItemCount)}
                       onClick={() => setMergeTarget(row)}
-                    >
-                      Merge
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
+                    />
+                    <ActionButton
+                      label="Split"
+                      hint="Move some of the linked items into a new entry of their own. Everything you leave unselected stays here."
                       onClick={() => setSplitTarget(row)}
-                    >
-                      Split
-                    </Button>
+                    />
                     {/* Send back to review rather than reject: an entry that looks wrong on
                         second thought is a judgement to redo, not a decision to record. Reject
                         stays in the review queue, where it tombstones the text for good. */}
-                    <Button
-                      variant="outline"
-                      size="sm"
+                    <ActionButton
+                      label="Send back to review"
+                      hint={`Put this back in the review queue. Nothing is unlinked — its ${itemsPhrase(row.linkedItemCount)} stay attached — but its spending is reported as unreviewed again until you approve it.`}
                       onClick={() => setRetireTarget(row)}
-                    >
-                      Send back to review
-                    </Button>
+                    />
                   </TableCell>
                 </TableRow>
               ))}

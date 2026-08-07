@@ -285,3 +285,53 @@ compares schemas and endpoint presence, not query-parameter shapes.
 Merging is direction-sensitive and irreversible — the source is deleted and its items re-pointed —
 so merging the wrong way round moves the larger set under the smaller name. Both counts are now on
 screen: the source's in the dialog description, each candidate's in its row.
+
+## Saying what an action does before it is taken (RECEIPTS-874)
+
+Four bare outline buttons sat at the end of every review-queue row with no tooltip, no help text,
+and no explanation of consequences. The only prose describing each action lived inside the dialog
+you got *after* clicking — and Approve has no dialog at all, so its effects were never stated
+anywhere. Merge, the sharpest edge, deletes a row.
+
+### An explainer above the table, not behind an icon
+
+It says what a pending description is (a near-match the resolver would not guess at), why the row
+is here, that its items are already linked and its spending already in the reports, and what each
+of the four actions does. Above the table rather than behind a help icon because the actions are
+destructive and mostly irreversible: a reviewer meeting the queue for the first time has no way to
+know that Merge deletes a row, and an affordance you have to discover is one most people will not.
+
+It stays up when the queue is empty. An empty queue is exactly when somebody is reading to work
+out what the page is for.
+
+Rejected: remembering a dismissal. That is persisted per-user state we would have to store and
+would get wrong on a shared or fresh login; a short block that costs a glance to skip is cheaper
+than the bug.
+
+### Hints are descriptions, not labels
+
+Every action carries a hint that is both a tooltip and the button's `aria-describedby` target, so
+it reaches keyboard and screen-reader users rather than only whoever hovers. It is not folded into
+`aria-label`: the label is the action and the hint is what the action does, and collapsing them
+would make the button announce a paragraph where a verb belongs.
+
+Each hint carries the row's item count, because the difference between "Merge re-points the items"
+and "Merge re-points 47 items" is the difference between a rule and a decision.
+
+### "Merge into…"
+
+Renamed from "Merge". The ellipsis says a picker follows; "into" says the direction, which is the
+part that decides which of the two rows survives. The issue also floated "Not a new item" —
+rejected, because that describes the *judgement* rather than the action, and it stopped being
+accurate once Reject existed to carry the "this is not a thing" case.
+
+The dialog's confirm button stays "Merge", which is also what makes the two unambiguous to query
+in tests.
+
+### Approve's toast states the effect
+
+Approve remains the one action with no confirmation step — it is the only non-destructive one, and
+a dialog on the common case would train people to click through dialogs. Its toast is therefore
+the only place its effect is ever stated, so it says what changed ("nothing was moved, and its
+spending is no longer reported as unreviewed") rather than restating the status the row was just
+given ("Approved as active").
