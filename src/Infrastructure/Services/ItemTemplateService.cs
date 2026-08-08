@@ -66,10 +66,21 @@ public class ItemTemplateService(
 		return await repository.ExistsAsync(id, cancellationToken);
 	}
 
-	public async Task<PagedResult<ItemTemplate>> GetAllAsync(int offset, int limit, SortParams sort, CancellationToken cancellationToken)
+	public async Task<PagedResult<ItemTemplate>> GetAllAsync(int offset, int limit, SortParams sort, CancellationToken cancellationToken) =>
+		await SearchAsync(null, offset, limit, sort, cancellationToken);
+
+	/// <summary>
+	/// One page of templates whose name contains <paramref name="q"/> (RECEIPTS-930).
+	/// </summary>
+	/// <remarks>
+	/// The total counts matching templates, not all of them, so a caller can page through a filtered
+	/// set. <see cref="GetAllAsync"/> is this with no term rather than a separate query, so the two
+	/// cannot drift.
+	/// </remarks>
+	public async Task<PagedResult<ItemTemplate>> SearchAsync(string? q, int offset, int limit, SortParams sort, CancellationToken cancellationToken)
 	{
-		int total = await repository.GetCountAsync(cancellationToken);
-		List<ItemTemplateEntity> entities = await repository.GetAllAsync(offset, limit, sort, cancellationToken);
+		int total = await repository.GetCountAsync(q, cancellationToken);
+		List<ItemTemplateEntity> entities = await repository.SearchAsync(q, offset, limit, sort, cancellationToken);
 		List<ItemTemplate> data = [.. entities.Select(mapper.ToDomain)];
 		return new PagedResult<ItemTemplate>(data, total, offset, limit);
 	}

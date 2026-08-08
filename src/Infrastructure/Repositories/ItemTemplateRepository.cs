@@ -20,15 +20,50 @@ public class ItemTemplateRepository(IDbContextFactory<ApplicationDbContext> cont
 		return await context.ItemTemplates.FindAsync([id], cancellationToken);
 	}
 
-	public async Task<List<ItemTemplateEntity>> GetAllAsync(int offset, int limit, SortParams sort, CancellationToken cancellationToken)
+	public async Task<List<ItemTemplateEntity>> GetAllAsync(int offset, int limit, SortParams sort, CancellationToken cancellationToken) =>
+		await SearchAsync(null, offset, limit, sort, cancellationToken);
+
+	/// <summary>
+	/// One page of templates whose name contains <paramref name="q"/> (RECEIPTS-930).
+	/// </summary>
+	/// <remarks>
+	/// Added so a picker can search the whole table instead of filtering whatever page it happened
+	/// to load — the failure RECEIPTS-878 removed from the merge dialog, where a name past the cap
+	/// reads as "no such thing exists".
+	///
+	/// A null or blank term is the unfiltered list, which is why <see cref="GetAllAsync"/> is just
+	/// this with no term rather than a second query to keep in step.
+	/// </remarks>
+	public async Task<List<ItemTemplateEntity>> SearchAsync(string? q, int offset, int limit, SortParams sort, CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
-		return await context.ItemTemplates
-			.AsNoTracking()
+		return await ApplyNameFilter(context.ItemTemplates.AsNoTracking(), q)
 			.ApplySort(sort, AllowedSortColumns, e => e.Name, e => e.Id)
 			.Skip(offset)
 			.Take(limit)
 			.ToListAsync(cancellationToken);
+	}
+
+	// Counted before paging, so a caller can page through the filtered set rather than being told
+	// how many templates exist in total and then handed a shorter list.
+	public async Task<int> GetCountAsync(string? q, CancellationToken cancellationToken)
+	{
+		using ApplicationDbContext context = contextFactory.CreateDbContext();
+		return await ApplyNameFilter(context.ItemTemplates.AsNoTracking(), q).CountAsync(cancellationToken);
+	}
+
+	// ToLower() rather than EF.Functions.Like: it translates on both PostgreSQL and the InMemory
+	// provider the unit tests use, matching how NormalizedDescriptionService searches.
+	private static IQueryable<ItemTemplateEntity> ApplyNameFilter(IQueryable<ItemTemplateEntity> query, string? q)
+	{
+		string? trimmed = q?.Trim();
+		if (string.IsNullOrEmpty(trimmed))
+		{
+			return query;
+		}
+
+		string lowered = trimmed.ToLowerInvariant();
+		return query.Where(e => e.Name.ToLower().Contains(lowered));
 	}
 
 	public async Task<List<ItemTemplateEntity>> GetDeletedAsync(int offset, int limit, SortParams sort, CancellationToken cancellationToken)

@@ -145,6 +145,62 @@ export function useRenameMutation() {
   });
 }
 
+/**
+ * Records that a row is an existing item template's item (RECEIPTS-930).
+ *
+ * The row the caller pointed at usually does not survive: unless it already was the template's
+ * canonical entry, it is consolidated into that entry and deleted. `merged` says which happened,
+ * and the toast has to distinguish them — "linked" reads as harmless, and one of the two cases
+ * deleted a row and moved its receipt items.
+ */
+export function useLinkTemplateMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      itemTemplateId,
+    }: {
+      id: string;
+      itemTemplateId: string;
+    }) => {
+      const { data, error, response } = await client.POST(
+        "/api/normalized-descriptions/{id}/link-template",
+        {
+          params: { path: { id } },
+          body: { itemTemplateId },
+        },
+      );
+      if (!response.ok) throw toApiError(response.status, error);
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["normalized-descriptions"] });
+      queryClient.invalidateQueries({ queryKey: ["receipt-items"] });
+      // The template's foreign key moved, so any cached template row is stale — and it is the
+      // column the review queue now reads its evidence from.
+      queryClient.invalidateQueries({ queryKey: ["itemTemplates"] });
+      // Consolidating moves spend between buckets, exactly as a merge does.
+      queryClient.invalidateQueries({ queryKey: ["reports"] });
+
+      const name = data?.description?.displayName ?? "the template's entry";
+      if (!data?.merged) {
+        toast.success(`Linked to the template — nothing was moved or deleted`);
+        return;
+      }
+
+      const count = data.itemsRelinkedCount ?? 0;
+      toast.success(
+        count > 0
+          ? `Consolidated into "${name}" — ${count} item${count === 1 ? "" : "s"} re-linked`
+          : // "No live items", not "no items": the count is live-only, while the merge also
+            // re-points trashed ones. Claiming nothing moved would be false for a row whose items
+            // are all in the recycle bin.
+            `Consolidated into "${name}" — no live items needed re-linking`,
+      );
+    },
+  });
+}
+
 export function useUpdateStatusMutation() {
   const queryClient = useQueryClient();
   return useMutation({

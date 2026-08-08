@@ -760,6 +760,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/normalized-descriptions/{id}/link-template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record that this row is an existing item template's item
+         * @description For a reviewer who recognises a resolver-derived row as something they already curated a
+         *     template for (RECEIPTS-930).
+         *
+         *     The template's entry is the one whose canonical name equals the template's name — that is
+         *     the invariant `ItemTemplateService` re-establishes on every create and update. So this
+         *     endpoint resolves that entry (creating it if the template has never been linked), points
+         *     the template's foreign key at it, and then **consolidates the row at `{id}` into it**:
+         *     the row's receipt items are re-linked and the row is deleted, exactly as
+         *     `POST {id}/merge` would.
+         *
+         *     It does not simply point the template's foreign key at `{id}`, for two reasons. The link
+         *     would not survive the template's next edit, which re-resolves it from the template's
+         *     name. And it would not move the receipt items already sitting on `{id}`, so the two would
+         *     go on reporting as separate buckets — which is the whole thing the caller is trying to
+         *     fix.
+         *
+         *     When `{id}` already *is* the template's entry, nothing is merged and nothing is deleted;
+         *     only the foreign key is set. `merged` in the response says which of the two happened.
+         *
+         *     Rejected rows cannot be linked: consolidating a tombstone away would delete the record of
+         *     a reviewer's decision and let the resolver recreate the text. Admin-only.
+         */
+        post: operations["LinkItemTemplateToNormalizedDescription"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/normalized-descriptions/{id}/status": {
         parameters: {
             query?: never;
@@ -3358,6 +3398,33 @@ export interface components {
              */
             sampleRawDescriptions: string[];
             /**
+             * @description Name of an item template that declares this row, or null when no template does.
+             *     Evidence rather than decoration: a template is a user saying "this item exists and
+             *     is called X", so a pending row carrying one has already been vouched for by hand and
+             *     is almost always an Approve (RECEIPTS-930).
+             *
+             *     When several templates point here — the ordinary result of merging two
+             *     template-backed entries — this is the alphabetically first, and `linkedTemplateCount`
+             *     says how many there are. Soft-deleted (hidden) templates are excluded: a template the
+             *     user has put in the recycle bin is not evidence of anything.
+             */
+            linkedTemplateName?: string | null;
+            /**
+             * Format: uuid
+             * @description ID of the template named by `linkedTemplateName`, so a client can link straight to
+             *     it. Null exactly when that name is null.
+             */
+            linkedTemplateId?: string | null;
+            /**
+             * Format: int32
+             * @description How many live item templates declare this row. Zero for the machine-derived majority.
+             *     Greater than one is legitimate and reachable: merging two template-backed entries
+             *     leaves both templates pointing at the survivor.
+             *
+             *     Absent on responses from before RECEIPTS-930; treat a missing value as 0.
+             */
+            linkedTemplateCount?: number;
+            /**
              * @description Display name of the canonical row this entry most nearly matched when the resolver
              *     flagged it for review. Null when no near-miss was recorded — the row was auto-accepted,
              *     created outright, predates the field, or its neighbour has since been merged away.
@@ -3431,12 +3498,40 @@ export interface components {
         UpdateNormalizedDescriptionStatusRequest: {
             status: components["schemas"]["NormalizedDescriptionStatus"];
         };
+        LinkItemTemplateRequest: {
+            /**
+             * Format: uuid
+             * @description The template whose item this row is. Must be a live template — a soft-deleted one is
+             *     a 404, since linking to something sitting in the recycle bin would produce a link
+             *     that vanishes the moment it is purged.
+             */
+            itemTemplateId: string;
+        };
         MergeNormalizedDescriptionsResponse: {
             /**
              * Format: int32
              * @description Number of ReceiptItems that were re-linked from the discarded row to the kept row. Zero when either id was missing or the two ids were identical.
              */
             itemsRelinkedCount: number;
+        };
+        LinkItemTemplateResponse: {
+            description: components["schemas"]["NormalizedDescriptionResponse"];
+            /**
+             * Format: int32
+             * @description Live receipt items moved off the requested row and onto the template's entry. Zero
+             *     when `merged` is false, and legitimately zero when it is true and the row held
+             *     nothing.
+             */
+            itemsRelinkedCount: number;
+            /**
+             * @description False when the requested row already *was* the template's entry, so all that happened
+             *     was the template's foreign key being set — nothing moved and nothing was deleted.
+             *
+             *     True when the two were different rows and the requested row was consolidated into the
+             *     template's entry and deleted. Clients should treat this as the destructive case and
+             *     say so before asking for it.
+             */
+            merged: boolean;
         };
         RequeuePendingRequest: {
             /** @description The `pendingFingerprint` the caller last previewed. The requeue is rejected with 409 unless the live pending set is identical, so a stale client cannot delete a row its operator never reviewed. A count would not be sufficient — one row being approved away while the resolver queues a new one leaves the count unchanged but the set different. */
@@ -5595,6 +5690,17 @@ export interface operations {
                 /** @description Column name to sort by. Allowed values depend on the entity type. */
                 sortBy?: components["parameters"]["SortBy"];
                 sortDirection?: components["parameters"]["SortDirection"];
+                /**
+                 * @description Case-insensitive substring match on the template name. Omitted or blank means no
+                 *     filter — blank is deliberately not "match nothing", which would return zero rows for
+                 *     what reads like an unfiltered request.
+                 *
+                 *     `total` counts matching templates rather than all of them, so a caller can page
+                 *     through a filtered set. Added in RECEIPTS-930 so a picker can search the whole table
+                 *     instead of filtering whichever page it happened to load, which is the failure
+                 *     RECEIPTS-878 removed from the merge dialog.
+                 */
+                q?: string;
             };
             header?: never;
             path?: never;
@@ -6181,6 +6287,51 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    LinkItemTemplateToNormalizedDescription: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The row being recognised. Deleted when it is not already the template's entry. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LinkItemTemplateRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LinkItemTemplateResponse"];
+                };
+            };
+            /** @description Bad Request — an empty id, or the row is a rejected tombstone */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found — the row or the template does not exist */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
             };
         };
     };

@@ -94,6 +94,12 @@ const NORMALIZED_DESCRIPTION_FIXTURES = {
       sampleRawDescriptions: ["ORG STRWBRY PRES 12OZ", "STRAWBERRY PRESERVES"],
       nearestNeighbourName: "Strawberry Jam",
       nearestNeighbourSimilarity: 0.8642,
+      // A long template name on the narrowest viewport, deliberately: the evidence badge is the
+      // widest single unbroken thing in the name column, so it is the likeliest new cause of the
+      // horizontal overflow the width sweep guards (RECEIPTS-930).
+      linkedTemplateId: "70000000-0000-0000-0000-000000000001",
+      linkedTemplateName: "Organic Strawberry Preserves (12oz)",
+      linkedTemplateCount: 2,
     },
   ],
   active: [
@@ -109,6 +115,9 @@ const NORMALIZED_DESCRIPTION_FIXTURES = {
       sampleRawDescriptions: ["MILK 2% GAL", "2% MILK GALLON"],
       nearestNeighbourName: null,
       nearestNeighbourSimilarity: null,
+      linkedTemplateId: "70000000-0000-0000-0000-000000000002",
+      linkedTemplateName: "Gallon of Milk",
+      linkedTemplateCount: 1,
     },
     {
       id: "d0000000-0000-0000-0000-000000000003",
@@ -123,6 +132,10 @@ const NORMALIZED_DESCRIPTION_FIXTURES = {
       sampleRawDescriptions: [],
       nearestNeighbourName: null,
       nearestNeighbourSimilarity: null,
+      // Machine-derived and unclaimed — the majority case, and the one where no badge renders.
+      linkedTemplateId: null,
+      linkedTemplateName: null,
+      linkedTemplateCount: 0,
     },
   ],
 };

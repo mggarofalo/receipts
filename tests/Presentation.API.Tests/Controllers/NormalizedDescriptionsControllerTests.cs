@@ -1,5 +1,6 @@
 using API.Controllers;
 using API.Generated.Dtos;
+using Application.Commands.NormalizedDescription.LinkTemplate;
 using Application.Commands.NormalizedDescription.Merge;
 using Application.Commands.NormalizedDescription.Rename;
 using Application.Commands.NormalizedDescription.RequeuePending;
@@ -870,6 +871,140 @@ public class NormalizedDescriptionsControllerTests
 	}
 
 	// ── PATCH rename (RECEIPTS-876) ──────────────────────────────
+
+	// ── POST {id}/link-template (RECEIPTS-930) ──────────────────
+
+	private static NormalizedDescriptionDetail TemplateBackedDetail(Guid id, string canonicalName, string templateName) => new(
+		new NormalizedDescription(
+			id,
+			canonicalName,
+			DomainStatus.Active,
+			new DateTimeOffset(2026, 8, 8, 12, 0, 0, TimeSpan.Zero),
+			nearestNeighbourId: null,
+			nearestNeighbourSimilarity: null,
+			displayLabel: null),
+		LinkedItemCount: 5,
+		NearestNeighbourName: null,
+		[canonicalName],
+		LastSeen: null,
+		LinkedTemplateId: Guid.NewGuid(),
+		LinkedTemplateName: templateName,
+		LinkedTemplateCount: 1);
+
+	[Fact]
+	public async Task LinkItemTemplate_ReturnsTheSurvivingRowAndWhatMoved()
+	{
+		Guid rowId = Guid.NewGuid();
+		Guid survivorId = Guid.NewGuid();
+		Guid templateId = Guid.NewGuid();
+		LinkItemTemplateRequest request = new() { ItemTemplateId = templateId };
+
+		_mediatorMock
+			.Setup(m => m.Send(
+				It.Is<LinkItemTemplateCommand>(c => c.DescriptionId == rowId && c.ItemTemplateId == templateId),
+				It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new LinkTemplateResult(
+				TemplateBackedDetail(survivorId, "Gallon of Milk", "Gallon of Milk"),
+				ItemsRelinkedCount: 5,
+				Merged: true));
+
+		Results<Ok<LinkItemTemplateResponse>, BadRequest<ProblemDetails>, NotFound<ProblemDetails>> result =
+			await _controller.LinkItemTemplateToNormalizedDescription(rowId, request, CancellationToken.None);
+
+		Ok<LinkItemTemplateResponse> ok = Assert.IsType<Ok<LinkItemTemplateResponse>>(result.Result);
+		// The survivor is the template's entry, not the row the caller asked about — a client that
+		// assumed otherwise would show the wrong name and leave a deleted row on screen.
+		ok.Value!.Description.Id.Should().Be(survivorId);
+		ok.Value.ItemsRelinkedCount.Should().Be(5);
+		ok.Value.Merged.Should().BeTrue();
+		ok.Value.Description.LinkedTemplateName.Should().Be("Gallon of Milk");
+		ok.Value.Description.LinkedTemplateCount.Should().Be(1);
+	}
+
+	[Fact]
+	public async Task LinkItemTemplate_ReportsTheNonDestructiveCaseSeparately()
+	{
+		// merged: false means nothing moved and nothing was deleted. Collapsing the two cases
+		// would make the client either over-warn or under-warn on every link.
+		Guid rowId = Guid.NewGuid();
+		LinkItemTemplateRequest request = new() { ItemTemplateId = Guid.NewGuid() };
+
+		_mediatorMock
+			.Setup(m => m.Send(It.IsAny<LinkItemTemplateCommand>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new LinkTemplateResult(
+				TemplateBackedDetail(rowId, "Gallon of Milk", "Gallon of Milk"),
+				ItemsRelinkedCount: 0,
+				Merged: false));
+
+		Results<Ok<LinkItemTemplateResponse>, BadRequest<ProblemDetails>, NotFound<ProblemDetails>> result =
+			await _controller.LinkItemTemplateToNormalizedDescription(rowId, request, CancellationToken.None);
+
+		Ok<LinkItemTemplateResponse> ok = Assert.IsType<Ok<LinkItemTemplateResponse>>(result.Result);
+		ok.Value!.Merged.Should().BeFalse();
+		ok.Value.ItemsRelinkedCount.Should().Be(0);
+		ok.Value.Description.Id.Should().Be(rowId);
+	}
+
+	[Fact]
+	public async Task LinkItemTemplate_EmptyId_ReturnsBadRequest()
+	{
+		LinkItemTemplateRequest request = new() { ItemTemplateId = Guid.NewGuid() };
+
+		Results<Ok<LinkItemTemplateResponse>, BadRequest<ProblemDetails>, NotFound<ProblemDetails>> result =
+			await _controller.LinkItemTemplateToNormalizedDescription(Guid.Empty, request, CancellationToken.None);
+
+		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		bad.Value!.Detail.Should().Be(NormalizedDescriptionsController.IdCannotBeEmpty);
+	}
+
+	[Fact]
+	public async Task LinkItemTemplate_EmptyTemplateId_ReturnsBadRequest()
+	{
+		LinkItemTemplateRequest request = new() { ItemTemplateId = Guid.Empty };
+
+		Results<Ok<LinkItemTemplateResponse>, BadRequest<ProblemDetails>, NotFound<ProblemDetails>> result =
+			await _controller.LinkItemTemplateToNormalizedDescription(Guid.NewGuid(), request, CancellationToken.None);
+
+		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		bad.Value!.Detail.Should().Be(NormalizedDescriptionsController.ItemTemplateIdCannotBeEmpty);
+	}
+
+	[Fact]
+	public async Task LinkItemTemplate_MissingRowOrTemplate_ReturnsNotFoundNamingWhich()
+	{
+		LinkItemTemplateRequest request = new() { ItemTemplateId = Guid.NewGuid() };
+
+		_mediatorMock
+			.Setup(m => m.Send(It.IsAny<LinkItemTemplateCommand>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new KeyNotFoundException("Item template not found."));
+
+		Results<Ok<LinkItemTemplateResponse>, BadRequest<ProblemDetails>, NotFound<ProblemDetails>> result =
+			await _controller.LinkItemTemplateToNormalizedDescription(Guid.NewGuid(), request, CancellationToken.None);
+
+		NotFound<ProblemDetails> notFound = Assert.IsType<NotFound<ProblemDetails>>(result.Result);
+		notFound.Value!.Status.Should().Be(404);
+		// Both the review queue and the template picker can be minutes old, so "not found" alone
+		// leaves the admin guessing which half of their request went stale.
+		notFound.Value.Detail.Should().Be("Item template not found.");
+	}
+
+	[Fact]
+	public async Task LinkItemTemplate_RejectedRow_ReturnsBadRequestRatherThanConflict()
+	{
+		// Not a lost race: retrying unchanged will never succeed, because the endpoint refuses to
+		// undo a rejection on the caller's behalf.
+		LinkItemTemplateRequest request = new() { ItemTemplateId = Guid.NewGuid() };
+
+		_mediatorMock
+			.Setup(m => m.Send(It.IsAny<LinkItemTemplateCommand>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new InvalidOperationException("This entry was rejected."));
+
+		Results<Ok<LinkItemTemplateResponse>, BadRequest<ProblemDetails>, NotFound<ProblemDetails>> result =
+			await _controller.LinkItemTemplateToNormalizedDescription(Guid.NewGuid(), request, CancellationToken.None);
+
+		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		bad.Value!.Detail.Should().Be("This entry was rejected.");
+	}
 
 	private static NormalizedDescriptionDetail RenamedDetail(Guid id, string canonicalName, string? label) => new(
 		new NormalizedDescription(

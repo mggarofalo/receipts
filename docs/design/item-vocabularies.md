@@ -142,14 +142,127 @@ Every path here degrades to "as before" rather than to an error:
   unstamped and the resolver picks it up. The id is a hint about provenance, not a constraint the
   receipt has to satisfy.
 
-## Still open
+## Surfacing the link to a reviewer
 
-Deferred to **RECEIPTS-930**, and deliberately not attempted here:
+Added in **RECEIPTS-930**, on top of the schema link above.
 
-- Showing "matches template X" as review-queue evidence, with "link to template" as a row action.
-- Whether approving a normalized description should offer to promote it into a template, carrying
-  category/subcategory/price defaults.
+### "Declared by template X" is evidence, not decoration
 
-Both are UI surfaces over the link this issue creates, and neither is needed for the link to be
-correct. Landing the schema, the entry-time rule, and the merge/reject interactions first keeps
-the risky part — a new FK on the receipt write path — separable from presentation work.
+Every canonical row now carries the template that declares it — read off the FK, never inferred
+from the name, so the badge can only ever say *these are linked* and never *these look alike*.
+`NormalizedDescriptionDetail` gains `LinkedTemplateId` / `LinkedTemplateName` /
+`LinkedTemplateCount`, projected as correlated subqueries in the same single query as `LastSeen`.
+
+It reads as the opposite thing in the two places it appears:
+
+- **Review queue** — a nudge. Everything else on a pending row is a machine's opinion; this is the
+  one fact a human put there. A pending row with a template is almost always an Approve.
+- **Registry** — a warning. An entry somebody curated should not be merged away or sent back to
+  review on the same impulse as resolver output.
+
+The count is surfaced rather than collapsed because **more than one template per row is normal, not
+anomalous**: merging two template-backed entries leaves both templates on the survivor, and
+`MergeAsync` re-points them on purpose. Naming one and implying it is the only one would hide
+exactly the case an admin most needs to see. Soft-deleted templates are excluded by the entity's
+query filter — a template in the recycle bin is not evidence of anything.
+
+### "Link to template" consolidates; it does not just set the FK
+
+The obvious reading of the action is "point the template's FK at this row". That is what the issue
+asked for, and it is wrong twice over:
+
+1. **It would not survive.** `ItemTemplateService.UpdateAsync` re-resolves the link from the
+   template's *name* on every save. The next edit to that template — a price change, a category fix,
+   anything — would silently point it back at its own entry. A link that disappears on an unrelated
+   edit is worse than no link, because nobody would connect the two events.
+2. **It would not do what the reviewer wants.** Pointing the FK affects items entered from the
+   template *in future*. The receipt items already sitting on the row stay where they are, so the
+   two go on reporting as separate buckets — which is the duplication being complained about.
+
+So `LinkTemplateAsync` resolves the template's entry, consolidates the caller's row into it via
+`MergeAsync` — same re-linking, re-scoring, trashed-item handling and audit trail as any other merge
+— and only then commits the template's foreign key.
+
+### Which row *is* the template's entry
+
+Not simply "the row named after the template". **`MergeAsync` breaks that invariant on purpose**: it
+re-points templates at the survivor when their entry is merged away. After "Gallon of Milk" is
+merged into "Milk", the template declares "Milk" and holds all of its history there, while no row
+named "Gallon of Milk" exists at all.
+
+Resolving by name in that state would create a fresh empty "Gallon of Milk", move the template onto
+it, and consolidate the reviewer's row into it — three buckets where they wanted one, and the
+template silently detached from its own history. So the FK is read first and name resolution is the
+fallback, used for what it is actually needed for: a template that has never been linked.
+
+The ordering of the two writes is load-bearing for the same reason. They run in separate
+`DbContext`s, so they are separate transactions: committing the FK first and then failing the merge
+would leave the template permanently on an entry nobody chose, the row still in the queue, and no
+audit entry explaining the move. Merging first means a failure leaves the template exactly where it
+was.
+
+Two more cases the row-level guard did not cover on its own:
+
+- **The template's own entry can be a tombstone.** `GetOrCreateForTemplateAsync` reinstates one it
+  finds by name, which is right when a user types that name into a template — deliberately
+  contradicting the rejection — and wrong here, where they picked an existing template from a list
+  while looking at a differently-named row. Refused, so the endpoint keeps the promise it documents.
+- **The template's name can already be another row's display label.** The unique index is on
+  `lower(COALESCE("DisplayLabel","CanonicalName"))`, so creating an entry for it collides even
+  though no `CanonicalName` matches, and `InsertAsync`'s race handler only recovers from a
+  `CanonicalName` collision. Checked up front, so the caller gets a message naming the obstacle
+  instead of a 500 that no retry could clear.
+
+Consequences, stated because they are not free:
+
+- **The row the caller pointed at usually stops existing.** The response says which happened
+  (`merged`), the dialog predicts it per selection using the same exact-match rule the server uses,
+  and the toast reports what actually occurred rather than what was predicted.
+- **Trashed items move too, and the copy says so.** `linkedItemCount` is live-only, but `MergeAsync`
+  re-points soft-deleted items as well. "Nothing will be re-pointed" would be false for a row whose
+  items are all in the recycle bin — they would come back attached to a different entry with nothing
+  having disclosed it — so the dialog says "no *live* receipt items" and names the bin explicitly.
+- **A rejected row cannot be linked.** Consolidating a tombstone away would delete the record of a
+  reviewer's decision and free the resolver to recreate the text. `GetOrCreateForTemplateAsync` does
+  reinstate a tombstone — but only the one whose name the user typed as their template, which is
+  them contradicting the rejection deliberately. Reaching a differently-named tombstone from the
+  review queue is not that.
+- **The merge-recurrence caveat applies**, as it does to every merge here: the consolidated row's
+  matched text no longer exists, so a later receipt carrying it goes back through the resolver and
+  may re-enter the queue. Not made worse by this action, and not solved by it.
+
+The template picker searches server-side, via a new `q` on `/api/item-templates`. Filtering a capped
+page in the browser was tried first and is wrong for the same reason it was wrong in the merge
+dialog (RECEIPTS-878): it can only ever find what was loaded, so a template past the page size reads
+as "no such template exists" — while a truncation notice advises refining a search that cannot reach
+it. `q` is declared on `IItemTemplateService` rather than widened onto
+`ISoftDeletableService.GetAllAsync`, which would oblige every other entity and all their callers to
+carry a parameter only templates need; `GetAllAsync` is `SearchAsync(null, …)` so the two paths
+cannot drift.
+
+## Decision: approving does *not* offer to promote into a template
+
+Considered in RECEIPTS-930 and **declined**. Four reasons, in order of how badly it fails:
+
+1. **It would create the duplicate this whole design exists to prevent.** A promoted template takes
+   the row's *display* name, and `GetOrCreateForTemplateAsync` resolves a template to the entry
+   whose *canonical* name matches. For any row that has been renamed — the exact rows an admin has
+   curated enough to want a template for — those differ, so promoting mints a second canonical entry
+   and points the new template at *that*. The row you promoted from is untouched, and you are left
+   with an empty duplicate. The feature would be correct only for rows that have not used the
+   adjacent feature.
+2. **It conflates the two vocabularies this document exists to separate.** Approving says "this
+   grouping is right for reporting". Creating a template says "I will type this item again and want
+   defaults". Neither implies the other, and the rejected-alternatives list above already turned
+   down collapsing them.
+3. **The defaults would be guesses presented as declarations.** Category, subcategory and unit price
+   would have to be inferred from the linked receipt items — a modal category, some average price —
+   and written into the table whose entire purpose is to hold what a user stated by hand.
+4. **Volume.** The registry is machine-derived and grows without bound; templates are hand-curated
+   and shown in a picker during data entry. Attaching an offer to the most-repeated admin action in
+   the app is an invitation to fill that picker with receipt text.
+
+What exists instead is the reverse direction, which is already correct: creating a template creates
+its canonical entry (above), and a reviewer who recognises a row as a template's item links it
+(above). Both routes end with one entry and one template pointing at it, which is the outcome
+promotion was reaching for.

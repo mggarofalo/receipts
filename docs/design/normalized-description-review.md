@@ -380,3 +380,39 @@ scrolls inside its own box. Tables were already fine — `Table` wraps itself in
 
 The probe skips any element inside a horizontally-scrolling ancestor. Without that, every cell of
 a scrollable table reports as an offender and buries the element actually widening the page.
+
+## A template is the strongest evidence on a row (RECEIPTS-930)
+
+Everything else the queue shows a reviewer is a machine's opinion: the near-miss score, the sample
+raw text, the linked-item count. RECEIPTS-881 gave `ItemTemplate` an FK to the registry, so there is
+now one fact on the row that a human put there — somebody created a template saying this item exists
+and is called that.
+
+So each row shows **"Declared by template X"** when a template points at it, and the queue's
+explainer says what to do with that: a row somebody already named by hand is the clearest Approve
+there is. The same badge appears in the Registry, where it means the opposite — an entry a user
+curated should not be merged away on the same impulse as resolver output.
+
+Read off the FK, never matched by name, so it can only say "these are linked" and never "these look
+alike". Projected as two more correlated subqueries in the same query as `lastSeen`, so no extra
+round trip. It reports a count as well as a name, because two templates on one row is the ordinary
+result of merging two template-backed entries, and showing one while implying it is the only one
+would hide the case worth seeing.
+
+### "Link to template…" is a fifth action, and it deletes the row
+
+For the reverse recognition: a reviewer looking at a resolver-derived row who knows it is an item
+they already have a template for. It resolves that template's canonical entry and **consolidates
+this row into it**, rather than pointing the template's FK at this row — the FK alone would be
+re-derived away by the template's next edit and would leave this row's existing receipt items in
+their own bucket anyway. Full reasoning in
+[item-vocabularies.md](item-vocabularies.md#link-to-template-consolidates-it-does-not-just-set-the-fk).
+
+That makes it as destructive as Merge, so it is labelled and explained like Merge: an ellipsis
+because a picker follows, a tooltip naming the item count that moves, and a per-selection line in
+the dialog that says whether this row survives — predicted with the same exact-match rule the server
+uses, then confirmed by what the server reports back.
+
+Five actions do not fit one line at 375px, so the actions cell wraps. The width sweep from
+RECEIPTS-880 was re-run and still passes with the fifth button and the badge in place, including a
+deliberately long template name in the fixture.
