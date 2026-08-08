@@ -1009,6 +1009,314 @@ public class NormalizedDescriptionServiceTests
 		template.Name.Should().Be("Gallon of Milk");
 	}
 
+	// ── RECEIPTS-930: template evidence, and recognising a template's item ────
+
+	[Fact]
+	public async Task GetAllAsync_NamesTheTemplateThatDeclaresARow()
+	{
+		Guid rowId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity { Id = rowId, CanonicalName = "Gallon of Milk", Status = NormalizedDescriptionStatus.Active, CreatedAt = DateTimeOffset.UtcNow });
+			seed.ItemTemplates.Add(new ItemTemplateEntity { Id = Guid.NewGuid(), Name = "Gallon of Milk", NormalizedDescriptionId = rowId });
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		List<NormalizedDescriptionDetail> rows = await GetAllRowsAsync(service, NormalizedDescriptionStatus.Active);
+
+		NormalizedDescriptionDetail row = rows.Single(r => r.Description.Id == rowId);
+		row.LinkedTemplateName.Should().Be("Gallon of Milk");
+		row.LinkedTemplateCount.Should().Be(1);
+		row.LinkedTemplateId.Should().NotBeNull();
+	}
+
+	[Fact]
+	public async Task GetAllAsync_CountsEveryTemplateOnARowAndNamesTheFirstAlphabetically()
+	{
+		// Two templates on one row is not an anomaly — it is what merging two template-backed
+		// entries leaves behind, since MergeAsync re-points both. Naming one while implying it is
+		// the only one would hide exactly that.
+		Guid rowId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity { Id = rowId, CanonicalName = "Milk", Status = NormalizedDescriptionStatus.Active, CreatedAt = DateTimeOffset.UtcNow });
+			seed.ItemTemplates.AddRange(
+				new ItemTemplateEntity { Id = Guid.NewGuid(), Name = "Whole Milk", NormalizedDescriptionId = rowId },
+				new ItemTemplateEntity { Id = Guid.NewGuid(), Name = "Gallon of Milk", NormalizedDescriptionId = rowId });
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		List<NormalizedDescriptionDetail> rows = await GetAllRowsAsync(service, NormalizedDescriptionStatus.Active);
+
+		NormalizedDescriptionDetail row = rows.Single(r => r.Description.Id == rowId);
+		row.LinkedTemplateCount.Should().Be(2);
+		// Ordered, so the name a reviewer sees does not shuffle between refreshes.
+		row.LinkedTemplateName.Should().Be("Gallon of Milk");
+	}
+
+	[Fact]
+	public async Task GetAllAsync_DoesNotCiteASoftDeletedTemplateAsEvidence()
+	{
+		Guid rowId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity { Id = rowId, CanonicalName = "Milk", Status = NormalizedDescriptionStatus.Active, CreatedAt = DateTimeOffset.UtcNow });
+			seed.ItemTemplates.Add(new ItemTemplateEntity { Id = Guid.NewGuid(), Name = "Hidden Milk", NormalizedDescriptionId = rowId, DeletedAt = DateTimeOffset.UtcNow });
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		List<NormalizedDescriptionDetail> rows = await GetAllRowsAsync(service, NormalizedDescriptionStatus.Active);
+
+		// A template sitting in the recycle bin is not evidence of anything, and the badge is read
+		// as "a user vouched for this".
+		NormalizedDescriptionDetail row = rows.Single(r => r.Description.Id == rowId);
+		row.LinkedTemplateName.Should().BeNull();
+		row.LinkedTemplateId.Should().BeNull();
+		row.LinkedTemplateCount.Should().Be(0);
+	}
+
+	[Fact]
+	public async Task GetAllAsync_LeavesTemplateEvidenceEmptyForAResolverDerivedRow()
+	{
+		Guid rowId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity { Id = rowId, CanonicalName = "MILK 2% GAL", Status = NormalizedDescriptionStatus.Active, CreatedAt = DateTimeOffset.UtcNow });
+			// A template exists with a similar name but no link. Evidence is read off the FK, never
+			// matched by name, so this must not be cited.
+			seed.ItemTemplates.Add(new ItemTemplateEntity { Id = Guid.NewGuid(), Name = "Milk", NormalizedDescriptionId = null });
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		List<NormalizedDescriptionDetail> rows = await GetAllRowsAsync(service, NormalizedDescriptionStatus.Active);
+
+		NormalizedDescriptionDetail row = rows.Single(r => r.Description.Id == rowId);
+		row.LinkedTemplateName.Should().BeNull();
+		row.LinkedTemplateCount.Should().Be(0);
+	}
+
+	[Fact]
+	public async Task LinkTemplateAsync_ConsolidatesTheRowIntoTheTemplatesEntry()
+	{
+		Guid templateEntryId = Guid.NewGuid();
+		Guid pendingId = Guid.NewGuid();
+		Guid templateId = Guid.NewGuid();
+		Guid receiptId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.AddRange(
+				new NormalizedDescriptionEntity { Id = templateEntryId, CanonicalName = "Gallon of Milk", Status = NormalizedDescriptionStatus.Active, CreatedAt = DateTimeOffset.UtcNow },
+				new NormalizedDescriptionEntity { Id = pendingId, CanonicalName = "MILK 2% GAL", Status = NormalizedDescriptionStatus.PendingReview, CreatedAt = DateTimeOffset.UtcNow });
+			// Unlinked on purpose: a template that predates RECEIPTS-881, or whose link failed while
+			// the embedding service was down, still has to work here.
+			seed.ItemTemplates.Add(new ItemTemplateEntity { Id = templateId, Name = "Gallon of Milk", NormalizedDescriptionId = null });
+			seed.ReceiptItems.AddRange(
+				BuildReceiptItem(Guid.NewGuid(), receiptId, "MILK 2% GAL", pendingId),
+				BuildReceiptItem(Guid.NewGuid(), receiptId, "MILK 2% GAL", pendingId));
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		LinkTemplateResult result = await service.LinkTemplateAsync(pendingId, templateId, CancellationToken.None);
+
+		// The template's entry survives, not the row the caller pointed at: that is the row the name
+		// invariant keeps re-deriving, so it is the only durable survivor.
+		result.Merged.Should().BeTrue();
+		result.ItemsRelinkedCount.Should().Be(2);
+		result.Survivor.Description.Id.Should().Be(templateEntryId);
+
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		(await verify.NormalizedDescriptions.AnyAsync(e => e.Id == pendingId)).Should().BeFalse();
+		(await verify.ReceiptItems.CountAsync(r => r.NormalizedDescriptionId == templateEntryId)).Should().Be(2);
+		ItemTemplateEntity template = await verify.ItemTemplates.SingleAsync(t => t.Id == templateId);
+		template.NormalizedDescriptionId.Should().Be(templateEntryId);
+	}
+
+	[Fact]
+	public async Task LinkTemplateAsync_CreatesTheTemplatesEntryWhenNoneExistsYet()
+	{
+		Guid pendingId = Guid.NewGuid();
+		Guid templateId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity { Id = pendingId, CanonicalName = "MILK 2% GAL", Status = NormalizedDescriptionStatus.PendingReview, CreatedAt = DateTimeOffset.UtcNow });
+			seed.ItemTemplates.Add(new ItemTemplateEntity { Id = templateId, Name = "Gallon of Milk", NormalizedDescriptionId = null });
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		LinkTemplateResult result = await service.LinkTemplateAsync(pendingId, templateId, CancellationToken.None);
+
+		// Reporting "that template has no entry" would leave the admin with nothing they could do
+		// about it from this screen.
+		result.Merged.Should().BeTrue();
+		result.Survivor.Description.CanonicalName.Should().Be("Gallon of Milk");
+		result.Survivor.Description.Status.Should().Be(NormalizedDescriptionStatus.Active);
+		result.Survivor.LinkedTemplateName.Should().Be("Gallon of Milk");
+	}
+
+	[Fact]
+	public async Task LinkTemplateAsync_OnlySetsTheForeignKeyWhenTheRowAlreadyIsTheTemplatesEntry()
+	{
+		Guid rowId = Guid.NewGuid();
+		Guid templateId = Guid.NewGuid();
+		Guid receiptId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity { Id = rowId, CanonicalName = "Gallon of Milk", Status = NormalizedDescriptionStatus.PendingReview, CreatedAt = DateTimeOffset.UtcNow });
+			seed.ItemTemplates.Add(new ItemTemplateEntity { Id = templateId, Name = "gallon of milk", NormalizedDescriptionId = null });
+			seed.ReceiptItems.Add(BuildReceiptItem(Guid.NewGuid(), receiptId, "GALLON OF MILK", rowId));
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		LinkTemplateResult result = await service.LinkTemplateAsync(rowId, templateId, CancellationToken.None);
+
+		// Matched case-insensitively, so this is the same row — nothing to consolidate, nothing to
+		// delete. Reporting it as a merge would send an admin looking for data that never moved.
+		result.Merged.Should().BeFalse();
+		result.ItemsRelinkedCount.Should().Be(0);
+		result.Survivor.Description.Id.Should().Be(rowId);
+		// Left pending: the template says what the item is called, not that the resolver's grouping
+		// of the raw text on this row is right, and that grouping is what review is for.
+		result.Survivor.Description.Status.Should().Be(NormalizedDescriptionStatus.PendingReview);
+
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		(await verify.NormalizedDescriptions.AnyAsync(e => e.Id == rowId)).Should().BeTrue();
+		(await verify.ItemTemplates.SingleAsync(t => t.Id == templateId)).NormalizedDescriptionId.Should().Be(rowId);
+	}
+
+	[Fact]
+	public async Task LinkTemplateAsync_RefusesATombstone()
+	{
+		Guid rejectedId = Guid.NewGuid();
+		Guid templateId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity { Id = rejectedId, CanonicalName = "MISC", Status = NormalizedDescriptionStatus.Rejected, CreatedAt = DateTimeOffset.UtcNow });
+			seed.ItemTemplates.Add(new ItemTemplateEntity { Id = templateId, Name = "Gallon of Milk", NormalizedDescriptionId = null });
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		// Consolidating it away would delete the only record that a reviewer decided this text was
+		// not worth an entry, and the resolver would be free to recreate it on the next receipt.
+		await service.Invoking(s => s.LinkTemplateAsync(rejectedId, templateId, CancellationToken.None))
+			.Should().ThrowAsync<InvalidOperationException>()
+			.WithMessage(NormalizedDescriptionService.CannotLinkTemplateToRejected);
+
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		(await verify.NormalizedDescriptions.AnyAsync(e => e.Id == rejectedId)).Should().BeTrue();
+		(await verify.ItemTemplates.SingleAsync(t => t.Id == templateId)).NormalizedDescriptionId.Should().BeNull();
+	}
+
+	[Fact]
+	public async Task LinkTemplateAsync_UnknownTemplate_Throws()
+	{
+		Guid rowId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity { Id = rowId, CanonicalName = "Milk", Status = NormalizedDescriptionStatus.Active, CreatedAt = DateTimeOffset.UtcNow });
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		await service.Invoking(s => s.LinkTemplateAsync(rowId, Guid.NewGuid(), CancellationToken.None))
+			.Should().ThrowAsync<KeyNotFoundException>()
+			.WithMessage(NormalizedDescriptionService.LinkTemplateTemplateNotFound);
+	}
+
+	[Fact]
+	public async Task LinkTemplateAsync_SoftDeletedTemplate_Throws()
+	{
+		Guid rowId = Guid.NewGuid();
+		Guid templateId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity { Id = rowId, CanonicalName = "Milk", Status = NormalizedDescriptionStatus.Active, CreatedAt = DateTimeOffset.UtcNow });
+			seed.ItemTemplates.Add(new ItemTemplateEntity { Id = templateId, Name = "Hidden Milk", DeletedAt = DateTimeOffset.UtcNow });
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		// Linking to something in the recycle bin would produce a link that evaporates when it is
+		// purged, and the picker never offers one.
+		await service.Invoking(s => s.LinkTemplateAsync(rowId, templateId, CancellationToken.None))
+			.Should().ThrowAsync<KeyNotFoundException>()
+			.WithMessage(NormalizedDescriptionService.LinkTemplateTemplateNotFound);
+	}
+
+	[Fact]
+	public async Task LinkTemplateAsync_UnknownDescription_Throws()
+	{
+		Guid templateId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.ItemTemplates.Add(new ItemTemplateEntity { Id = templateId, Name = "Gallon of Milk" });
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		await service.Invoking(s => s.LinkTemplateAsync(Guid.NewGuid(), templateId, CancellationToken.None))
+			.Should().ThrowAsync<KeyNotFoundException>()
+			.WithMessage(NormalizedDescriptionService.LinkTemplateDescriptionNotFound);
+	}
+
+	[Fact]
+	public async Task LinkTemplateAsync_RecordsTheOperatorsIntentInTheAuditTrail()
+	{
+		Guid templateEntryId = Guid.NewGuid();
+		Guid pendingId = Guid.NewGuid();
+		Guid templateId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.AddRange(
+				new NormalizedDescriptionEntity { Id = templateEntryId, CanonicalName = "Gallon of Milk", Status = NormalizedDescriptionStatus.Active, CreatedAt = DateTimeOffset.UtcNow },
+				new NormalizedDescriptionEntity { Id = pendingId, CanonicalName = "MILK 2% GAL", Status = NormalizedDescriptionStatus.PendingReview, CreatedAt = DateTimeOffset.UtcNow });
+			seed.ItemTemplates.Add(new ItemTemplateEntity { Id = templateId, Name = "Gallon of Milk", NormalizedDescriptionId = templateEntryId });
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		await service.LinkTemplateAsync(pendingId, templateId, CancellationToken.None);
+
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		List<AuditLogEntity> entries = await verify.AuditLogs
+			.Where(a => a.EntityType == "NormalizedDescription")
+			.ToListAsync();
+
+		// The merge files its own pair of entries for what physically moved. This one adds why —
+		// that an operator recognised the row as a template's item — which no mechanical trail can
+		// reconstruct.
+		List<AuditLogEntity> linkEntries = [.. entries.Where(a => a.GetChanges()
+			.Any(c => c.FieldName == "operation" && c.NewValue == "LinkItemTemplate"))];
+		AuditLogEntity linkEntry = linkEntries.Should().ContainSingle().Subject;
+
+		linkEntry.EntityId.Should().Be(templateEntryId.ToString());
+		List<FieldChange> changes = [.. linkEntry.GetChanges()];
+		changes.Should().Contain(c => c.FieldName == "itemTemplateName" && c.NewValue == "Gallon of Milk");
+		changes.Should().Contain(c => c.FieldName == "relinkedItemCount" && c.NewValue == "0");
+		// The row that was consolidated away is named on the entry filed under the survivor —
+		// otherwise "what happened to MILK 2% GAL?" has no answer once the row is gone.
+		changes.Should().Contain(c => c.FieldName == "consolidatedFromId" && c.OldValue == pendingId.ToString());
+	}
+
 	// ── RECEIPTS-878: several statuses at once ────────────────────────────────
 
 	[Fact]

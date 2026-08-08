@@ -1,4 +1,5 @@
 using API.Generated.Dtos;
+using Application.Commands.NormalizedDescription.LinkTemplate;
 using Application.Commands.NormalizedDescription.Merge;
 using Application.Commands.NormalizedDescription.Rename;
 using Application.Commands.NormalizedDescription.RequeuePending;
@@ -45,6 +46,7 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 	public const string RouteSplit = "{id}/split";
 	public const string RouteUpdateStatus = "{id}/status";
 	public const string RouteRename = "{id}/rename";
+	public const string RouteLinkTemplate = "{id}/link-template";
 	public const string RouteRequeuePending = "requeue-pending";
 	public const string RouteRequeuePendingPreview = "requeue-pending/preview";
 
@@ -61,6 +63,7 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 	public const string SplitNameRequired = "canonicalName must not be empty";
 	public const string MergeIdsMustDiffer = "keep id and discardId must differ";
 	public const string InvalidStatusFilter = "status must be 'Active', 'PendingReview' or 'Rejected' when provided";
+	public const string ItemTemplateIdCannotBeEmpty = "itemTemplateId must not be empty";
 	public const string OffsetOutOfRange = "offset must be >= 0";
 	public const string LimitOutOfRange = "limit must be between 1 and 200";
 
@@ -431,6 +434,51 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 		}
 	}
 
+	[HttpPost(RouteLinkTemplate)]
+	[EndpointSummary("Record that this row is an existing item template's item")]
+	[EndpointDescription("Points the template's foreign key at its own canonical entry and consolidates the row at {id} into it, deleting {id} unless it already was that entry. Returns the surviving row, the items re-linked, and which of the two happened. Admin-only.")]
+	public async Task<Results<Ok<LinkItemTemplateResponse>, BadRequest<ProblemDetails>, NotFound<ProblemDetails>>> LinkItemTemplateToNormalizedDescription(
+		[FromRoute] Guid id,
+		[FromBody] LinkItemTemplateRequest request,
+		CancellationToken cancellationToken)
+	{
+		if (id == Guid.Empty)
+		{
+			return ApiProblem.BadRequest(IdCannotBeEmpty);
+		}
+
+		if (request.ItemTemplateId == Guid.Empty)
+		{
+			return ApiProblem.BadRequest(ItemTemplateIdCannotBeEmpty);
+		}
+
+		LinkItemTemplateCommand command = new(id, request.ItemTemplateId);
+		try
+		{
+			LinkTemplateResult result = await mediator.Send(command, cancellationToken);
+			return TypedResults.Ok(new LinkItemTemplateResponse
+			{
+				Description = ToResponse(result.Survivor),
+				ItemsRelinkedCount = result.ItemsRelinkedCount,
+				Merged = result.Merged,
+			});
+		}
+		catch (KeyNotFoundException ex)
+		{
+			// Either the row or the template. The message names which — the review queue this id
+			// came from can be minutes old, and so can the template picker, so "not found" alone
+			// leaves the admin guessing which half of their request went stale.
+			return ApiProblem.NotFound(ex.Message);
+		}
+		catch (InvalidOperationException ex)
+		{
+			// The row is a tombstone. 400 rather than 409: this is not a lost race, it is a
+			// request that would undo a decision the endpoint refuses to undo on the caller's
+			// behalf, and retrying unchanged will never succeed.
+			return ApiProblem.BadRequest(ex.Message);
+		}
+	}
+
 	[HttpGet(RouteRequeuePendingPreview)]
 	[EndpointSummary("Preview what a requeue of pending descriptions would destroy")]
 	[EndpointDescription("Reports the pending rows that would be deleted, the live receipt items that would be unlinked, the stale match scores that would be cleared, and the resolver's estimated catch-up time. Read-only. Admin-only.")]
@@ -499,6 +547,13 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 			LinkedItemCount = detail.LinkedItemCount,
 			LastSeen = detail.LastSeen,
 			SampleRawDescriptions = [.. detail.SampleRawDescriptions],
+			// Id and name travel together — both null when no live template declares this row
+			// (RECEIPTS-930). The count is separate because one name plus "and 2 others" is a
+			// different statement from one name alone, and merging template-backed entries
+			// routinely produces the second.
+			LinkedTemplateId = detail.LinkedTemplateId,
+			LinkedTemplateName = detail.LinkedTemplateName,
+			LinkedTemplateCount = detail.LinkedTemplateCount,
 			// Both neighbour fields stay null together when nothing was recorded — the contract
 			// says clients must read that as "no comparison recorded" rather than a zero score
 			// (RECEIPTS-873).

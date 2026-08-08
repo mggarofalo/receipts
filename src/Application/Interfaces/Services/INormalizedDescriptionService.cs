@@ -45,6 +45,14 @@ public interface INormalizedDescriptionService
 	// clear the label and fall back to the matched text.
 	Task<NormalizedDescriptionDetail> RenameAsync(Guid id, string? displayLabel, CancellationToken cancellationToken);
 
+	// RECEIPTS-930. Records that a resolver-derived row is an item the user already has a template
+	// for. Consolidates rather than just setting the template's FK to descriptionId: that link
+	// would not survive the template's next edit (ItemTemplateService re-resolves it from the
+	// template's name), and it would leave the row's existing receipt items reporting in their own
+	// bucket, which is the thing the caller is trying to fix. Throws on a Rejected row — deleting a
+	// tombstone would erase a reviewer's decision and let the resolver recreate the text.
+	Task<LinkTemplateResult> LinkTemplateAsync(Guid descriptionId, Guid itemTemplateId, CancellationToken cancellationToken);
+
 	// RECEIPTS-883. Preview is read-only and is also how a caller verifies the run afterwards.
 	// RequeuePendingAsync returns null when expectedFingerprint does not match the live pending
 	// set — the caller previewed a different world and must re-read before destroying anything.

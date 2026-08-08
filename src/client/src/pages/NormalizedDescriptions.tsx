@@ -4,11 +4,13 @@ import {
   NORMALIZED_DESCRIPTION_PAGE_SIZE,
 } from "@/hooks/useNormalizedDescriptions";
 import {
+  useLinkTemplateMutation,
   useMergeMutation,
   useRenameMutation,
   useSplitMutation,
   useUpdateStatusMutation,
 } from "@/hooks/useNormalizedDescriptionActions";
+import { useItemTemplates } from "@/hooks/useItemTemplates";
 import {
   useSettings,
   useUpdateSettingsMutation,
@@ -73,6 +75,8 @@ import type { components } from "@/generated/api";
 
 type NormalizedDescription =
   components["schemas"]["NormalizedDescriptionResponse"];
+
+type ItemTemplate = components["schemas"]["ItemTemplateResponse"];
 
 type ReceiptItem = {
   id: string;
@@ -155,6 +159,9 @@ function ReviewQueueTab() {
   const [rejectTarget, setRejectTarget] = useState<NormalizedDescription | null>(
     null,
   );
+  const [linkTarget, setLinkTarget] = useState<NormalizedDescription | null>(
+    null,
+  );
 
   // The queue used to re-sort each fetch newest-first in the browser. Once the list is paged that
   // is no longer a sort — it only reorders the rows in hand, so "newest" would mean "newest on
@@ -222,6 +229,7 @@ function ReviewQueueTab() {
               <TableCell className="font-medium">
                 <EditableName row={row} />
                 <SampleRawDescriptions samples={row.sampleRawDescriptions} />
+                <TemplateEvidence row={row} />
               </TableCell>
               <TableCell>
                 <NearestMatch
@@ -241,36 +249,49 @@ function ReviewQueueTab() {
                   bare outline buttons used to sit here with no explanation anywhere except
                   inside the dialog you got *after* clicking — and Approve has no dialog at all,
                   so its consequences were never stated. */}
-              <TableCell className="text-right space-x-2">
-                <ActionButton
-                  label="Approve"
-                  hint={approveHint(row.linkedItemCount)}
-                  disabled={updateStatus.isPending}
-                  onClick={() =>
-                    updateStatus.mutate({ id: row.id, status: "active" })
-                  }
-                />
-                {/* "Merge into…" rather than "Merge": the ellipsis says a picker follows, and
-                    "into" says the direction, which decides which of the two rows survives. */}
-                <ActionButton
-                  label="Merge into…"
-                  hint={mergeHint(row.linkedItemCount)}
-                  onClick={() => setMergeTarget(row)}
-                />
-                <ActionButton
-                  label="Split"
-                  hint="Move some of the linked items into a new entry of their own. Everything you leave unselected stays here."
-                  onClick={() => setSplitTarget(row)}
-                />
-                {/* Reject sits apart from Merge deliberately. Merge says "this is the same as
-                    X" and re-points the items; Reject says "this text is not worth a canonical
-                    entry at all" and unlinks them. Before this existed the only way to dispose
-                    of a bad entry was to merge it into an unrelated row (RECEIPTS-876). */}
-                <ActionButton
-                  label="Reject"
-                  hint={rejectHint(row.linkedItemCount)}
-                  onClick={() => setRejectTarget(row)}
-                />
+              {/* Wraps rather than overflowing. Five actions do not fit a narrow viewport on one
+                  line, and a row that pushes the document wider is the bug the width sweep added
+                  in RECEIPTS-880 exists to catch. */}
+              <TableCell className="text-right">
+                <div className="flex flex-wrap justify-end gap-2">
+                  <ActionButton
+                    label="Approve"
+                    hint={approveHint(row.linkedItemCount)}
+                    disabled={updateStatus.isPending}
+                    onClick={() =>
+                      updateStatus.mutate({ id: row.id, status: "active" })
+                    }
+                  />
+                  {/* Next to Approve because it answers the same question — "is this a real
+                      item?" — with better evidence: a template means the user already said yes
+                      by hand (RECEIPTS-930). */}
+                  <ActionButton
+                    label="Link to template…"
+                    hint={linkTemplateHint(row.linkedItemCount)}
+                    onClick={() => setLinkTarget(row)}
+                  />
+                  {/* "Merge into…" rather than "Merge": the ellipsis says a picker follows, and
+                      "into" says the direction, which decides which of the two rows survives. */}
+                  <ActionButton
+                    label="Merge into…"
+                    hint={mergeHint(row.linkedItemCount)}
+                    onClick={() => setMergeTarget(row)}
+                  />
+                  <ActionButton
+                    label="Split"
+                    hint="Move some of the linked items into a new entry of their own. Everything you leave unselected stays here."
+                    onClick={() => setSplitTarget(row)}
+                  />
+                  {/* Reject sits apart from Merge deliberately. Merge says "this is the same as
+                      X" and re-points the items; Reject says "this text is not worth a canonical
+                      entry at all" and unlinks them. Before this existed the only way to dispose
+                      of a bad entry was to merge it into an unrelated row (RECEIPTS-876). */}
+                  <ActionButton
+                    label="Reject"
+                    hint={rejectHint(row.linkedItemCount)}
+                    onClick={() => setRejectTarget(row)}
+                  />
+                </div>
               </TableCell>
             </TableRow>
           ))}
@@ -298,6 +319,10 @@ function ReviewQueueTab() {
         source={rejectTarget}
         onClose={() => setRejectTarget(null)}
       />
+      <LinkTemplateDialog
+        source={linkTarget}
+        onClose={() => setLinkTarget(null)}
+      />
     </div>
   );
 }
@@ -323,6 +348,10 @@ function mergeHint(linkedItemCount: number) {
 
 function rejectHint(linkedItemCount: number) {
   return `Say this text does not deserve an entry. Its ${itemsPhrase(linkedItemCount)} become unnormalized, and the resolver will not propose this text again.`;
+}
+
+function linkTemplateHint(linkedItemCount: number) {
+  return `Say this is an item you already have a template for. Its ${itemsPhrase(linkedItemCount)} are re-pointed at that template's entry and this one is deleted, unless it already is that entry.`;
 }
 
 interface ActionButtonProps {
@@ -417,7 +446,19 @@ function ReviewQueueExplainer() {
             stops proposing it.
           </dd>
         </div>
+        <div>
+          <dt className="font-medium">Link to template…</dt>
+          <dd className="text-muted-foreground">
+            You already have a template for this item. Its items move to that template's entry
+            and <strong>this entry is deleted</strong>, unless it already is that entry.
+          </dd>
+        </div>
       </dl>
+      <p className="mt-3 text-muted-foreground">
+        A row marked “Declared by template” is one somebody already named by hand, which is the
+        strongest reason to approve it — the grouping was a user's decision, not the resolver's
+        guess.
+      </p>
       <p className="mt-3 text-muted-foreground">
         You can also rename an entry in place. That changes the label only — never the receipt
         text it matches on — so renaming can never change what resolves here later.
@@ -579,6 +620,196 @@ function RejectDialog({ source, onClose }: RejectDialogProps) {
   );
 }
 
+interface LinkTemplateDialogProps {
+  source: NormalizedDescription | null;
+  onClose: () => void;
+}
+
+/**
+ * One page of the template list. Templates are hand-curated and shown in a picker at entry time,
+ * so a list this long is already past the point where anyone browses it — but the notice below
+ * says so rather than letting the picker look complete when it is not.
+ */
+const TEMPLATE_PICKER_PAGE_SIZE = 200;
+
+/**
+ * "This row is an item I already have a template for" (RECEIPTS-930).
+ *
+ * The consequence is stated per selection rather than in general, because it genuinely differs:
+ * choosing a template whose name already matches this row's matched text only records the link,
+ * while choosing any other consolidates this row into that template's entry and deletes it. The
+ * dialog predicts which by the same rule the server uses — exact, case-insensitive, on the matched
+ * text — so the warning is specific instead of hedged. The server is still the authority; the
+ * toast reports what actually happened.
+ */
+function LinkTemplateDialog({ source, onClose }: LinkTemplateDialogProps) {
+  const link = useLinkTemplateMutation();
+  const [templateId, setTemplateId] = useState<string | undefined>();
+  const [search, setSearch] = useState("");
+
+  const { data, total, isLoading } = useItemTemplates(
+    0,
+    TEMPLATE_PICKER_PAGE_SIZE,
+    "name",
+    "asc",
+    { enabled: source !== null },
+  );
+
+  const templates = useMemo(
+    () => (data as ItemTemplate[] | undefined) ?? [],
+    [data],
+  );
+
+  // Filtered in the browser, unlike the merge dialog's server-side search: /api/item-templates has
+  // no search parameter, and adding one is a change to a different module's contract. Safe only
+  // because the loaded page is capped and the cap is disclosed below — for a machine-generated list
+  // this would be the silent-truncation trap RECEIPTS-878 fixed.
+  const filtered = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    if (!needle) return templates;
+    return templates.filter((t) => t.name.toLowerCase().includes(needle));
+  }, [templates, search]);
+
+  const selected = useMemo(
+    () => templates.find((t) => t.id === templateId),
+    [templates, templateId],
+  );
+
+  // The server resolves a template's entry by exact, case-insensitive match on the matched text.
+  // Same comparison here, so the dialog can name the actual outcome.
+  const willConsolidate =
+    selected != null &&
+    source != null &&
+    selected.name.trim().toLowerCase() !==
+      source.canonicalName.trim().toLowerCase();
+
+  const sourceCount = source?.linkedItemCount ?? 0;
+
+  function handleClose() {
+    setTemplateId(undefined);
+    setSearch("");
+    onClose();
+  }
+
+  function handleConfirm() {
+    if (!source || !templateId) return;
+    link.mutate(
+      { id: source.id, itemTemplateId: templateId },
+      { onSuccess: () => handleClose() },
+    );
+  }
+
+  return (
+    <Dialog
+      open={source !== null}
+      onOpenChange={(open) => {
+        if (!open) handleClose();
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Link to an Item Template</DialogTitle>
+          <DialogDescription>
+            Pick the template whose item this is. Its entry becomes the one that survives, because
+            a template is always represented by the entry named after it — so this entry is
+            consolidated into that one unless it already is that one.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <Label htmlFor="link-template-search">Search templates</Label>
+            <Input
+              id="link-template-search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Start typing a template name…"
+              className="mt-1"
+            />
+          </div>
+          <div className="max-h-64 overflow-y-auto rounded border">
+            {isLoading ? (
+              <Skeleton className="h-24 w-full rounded" />
+            ) : filtered.length === 0 ? (
+              <p
+                className="p-4 text-sm text-muted-foreground"
+                data-testid="link-template-empty"
+              >
+                {templates.length === 0
+                  ? "You have no item templates yet. Create one from the Item Templates page first."
+                  : "No templates match your search."}
+              </p>
+            ) : (
+              <ul className="divide-y">
+                {filtered.map((t) => (
+                  <li key={t.id}>
+                    <label className="flex cursor-pointer items-center gap-2 p-2 text-sm hover:bg-muted/50">
+                      <input
+                        type="radio"
+                        name="link-template-target"
+                        value={t.id}
+                        checked={templateId === t.id}
+                        onChange={() => setTemplateId(t.id)}
+                      />
+                      <span className="font-medium">{t.name}</span>
+                      {/* The defaults are what makes a template a template, and they are what
+                          the reviewer is really identifying the item by. */}
+                      {t.defaultCategory && (
+                        <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+                          {t.defaultCategory}
+                          {t.defaultSubcategory ? ` · ${t.defaultSubcategory}` : ""}
+                        </span>
+                      )}
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          {total > templates.length && (
+            <p
+              className="text-xs text-muted-foreground"
+              data-testid="link-template-truncation-notice"
+            >
+              Showing {templates.length} of {total} templates — refine your
+              search to narrow it down.
+            </p>
+          )}
+          {selected && (
+            <p className="text-sm" data-testid="link-template-consequence">
+              {willConsolidate ? (
+                <>
+                  “{source?.displayName}” will be consolidated into the “
+                  {selected.name}” entry.{" "}
+                  {sourceCount === 0
+                    ? "No receipt items are linked, so nothing will be re-pointed."
+                    : `Its ${itemsPhrase(sourceCount)} will be re-pointed there.`}{" "}
+                  <strong>This entry is then deleted.</strong> Cannot be undone.
+                </>
+              ) : (
+                <>
+                  This entry already is the “{selected.name}” entry. Linking only records the
+                  connection — nothing is moved and nothing is deleted.
+                </>
+              )}
+            </p>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={handleClose}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleConfirm}
+            disabled={!templateId || link.isPending}
+          >
+            {link.isPending ? "Linking…" : "Link"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 interface NearestMatchProps {
   name: string | null | undefined;
   similarity: number | null | undefined;
@@ -637,6 +868,35 @@ function LastSeen({ value }: { value: string | null | undefined }) {
     <span className="text-sm text-muted-foreground">
       {new Date(value).toLocaleDateString()}
     </span>
+  );
+}
+
+/**
+ * That a user already named this item by hand (RECEIPTS-930).
+ *
+ * The strongest evidence on the row, and the only one that is not a machine's opinion: a template
+ * exists because somebody typed it. A pending row carrying one is almost always an Approve, and an
+ * Active row carrying one should not be merged away casually — it is somebody's curated entry, not
+ * resolver output.
+ *
+ * Read off the FK, never inferred from the name, so it can only ever say "these are linked" and
+ * never "these look alike". The count is surfaced because more than one template on a row is the
+ * ordinary result of merging two template-backed entries, and naming one while implying it is the
+ * only one would hide exactly the case worth seeing.
+ */
+function TemplateEvidence({ row }: { row: NormalizedDescription }) {
+  const name = row.linkedTemplateName;
+  if (name == null) return null;
+
+  const others = (row.linkedTemplateCount ?? 1) - 1;
+
+  return (
+    <p className="mt-1" data-testid="template-evidence">
+      <Badge variant="secondary" className="font-normal">
+        Declared by template “{name}”
+        {others > 0 && ` and ${others} ${others === 1 ? "other" : "others"}`}
+      </Badge>
+    </p>
   );
 }
 
@@ -1076,6 +1336,11 @@ function RegistryTab() {
                   <TableCell className="font-medium">
                     <EditableName row={row} />
                     <SampleRawDescriptions samples={row.sampleRawDescriptions} />
+                    {/* Shown here as well as in the queue, for the opposite reason: in the
+                        registry it is a warning. An entry a user curated by hand should not be
+                        merged away or sent back to review on the same impulse as resolver
+                        output (RECEIPTS-930). */}
+                    <TemplateEvidence row={row} />
                   </TableCell>
                   {/* Makes runaway and near-empty entries visible: a row holding thousands of
                       items is probably over-matching, and one holding none is dead weight. */}

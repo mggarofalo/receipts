@@ -796,6 +796,119 @@ public class NormalizedDescriptionService(
 				cancellationToken);
 	}
 
+	public const string LinkTemplateTemplateNotFound = "Item template not found.";
+	public const string LinkTemplateDescriptionNotFound = "Normalized description not found.";
+	public const string CannotLinkTemplateToRejected = "This entry was rejected. Reinstate it before linking a template, or create the template from its own name instead.";
+
+	/// <summary>
+	/// Records that <paramref name="descriptionId"/> is the item an existing template already
+	/// describes (RECEIPTS-930).
+	/// </summary>
+	/// <remarks>
+	/// A template's canonical entry is the row whose name matches the template's — that is the
+	/// invariant <c>ItemTemplateService</c> re-establishes on every create and update. So this
+	/// resolves that entry, points the template at it, and consolidates the caller's row into it.
+	///
+	/// It deliberately does <em>not</em> simply set the template's FK to
+	/// <paramref name="descriptionId"/>, which is the obvious reading of "link". Two reasons, both
+	/// load-bearing:
+	///
+	/// 1. It would not survive. <c>ItemTemplateService.UpdateAsync</c> re-resolves the link from
+	///    the template's name on every save, so the next edit to that template — a price change,
+	///    a category fix, anything — would silently point it back at its own entry. A link that
+	///    disappears on an unrelated edit is worse than no link, because nobody would connect
+	///    the two events.
+	/// 2. It would not do what the caller wants. Pointing the FK affects items entered from the
+	///    template <em>in future</em>. The receipt items already sitting on this row would stay
+	///    where they are, so the two would go on reporting as separate buckets — which is the
+	///    duplication being complained about.
+	///
+	/// When the row already is the template's entry, there is nothing to consolidate and only the
+	/// FK is set. That case is reported separately rather than smoothed over: the caller pointed at
+	/// a row, and whether that row still exists afterwards is not a detail.
+	/// </remarks>
+	/// <exception cref="KeyNotFoundException">The row or the (live) template does not exist.</exception>
+	/// <exception cref="InvalidOperationException">The row is a rejected tombstone.</exception>
+	public async Task<LinkTemplateResult> LinkTemplateAsync(
+		Guid descriptionId,
+		Guid itemTemplateId,
+		CancellationToken cancellationToken)
+	{
+		using ApplicationDbContext context = contextFactory.CreateDbContext();
+
+		// The default query filter excludes soft-deleted templates, which is the behaviour we want:
+		// linking to something in the recycle bin would produce a link that evaporates when it is
+		// purged, and the picker never offers one.
+		ItemTemplateEntity? template = await context.ItemTemplates
+			.FirstOrDefaultAsync(t => t.Id == itemTemplateId, cancellationToken);
+		if (template is null)
+		{
+			throw new KeyNotFoundException(LinkTemplateTemplateNotFound);
+		}
+
+		NormalizedDescriptionEntity? target = await context.NormalizedDescriptions
+			.FirstOrDefaultAsync(e => e.Id == descriptionId, cancellationToken);
+		if (target is null)
+		{
+			throw new KeyNotFoundException(LinkTemplateDescriptionNotFound);
+		}
+
+		// Consolidating a tombstone away would delete the only record that a reviewer decided this
+		// text was not worth an entry, and the resolver would be free to recreate it on the next
+		// receipt. GetOrCreateForTemplateAsync does reinstate a tombstone — but only the one whose
+		// name the user typed as their template, which is them contradicting the rejection on
+		// purpose. Reaching a differently-named tombstone from the review queue is not that.
+		if (target.Status == NormalizedDescriptionStatus.Rejected)
+		{
+			throw new InvalidOperationException(CannotLinkTemplateToRejected);
+		}
+
+		// Creates the entry when this template has never been linked (it predates RECEIPTS-881, or
+		// linking failed while the embedding service was down), so the link works on a template
+		// that has no entry yet rather than reporting a state the user cannot fix from here.
+		NormalizedDescription canonical = await GetOrCreateForTemplateAsync(template.Name, cancellationToken);
+		bool merged = canonical.Id != descriptionId;
+
+		template.NormalizedDescriptionId = canonical.Id;
+		await context.SaveChangesAsync(cancellationToken);
+
+		// Merge second, and only after the FK is committed, so the template is already off the
+		// discarded row by the time MergeAsync goes looking for templates to re-point. Doing it in
+		// this order also means a merge failure leaves a correct link rather than a recorded
+		// consolidation that did not happen.
+		int itemsRelinked = merged
+			? await MergeAsync(canonical.Id, descriptionId, cancellationToken)
+			: 0;
+
+		// Written last, once both halves are known. MergeAsync files its own pair of entries for
+		// what physically moved; this one records why — that an operator recognised the row as a
+		// template's item — which is the part no mechanical trail can reconstruct (RECEIPTS-890).
+		context.AddSemanticAuditEntry(
+			NormalizedDescriptionEntityType,
+			canonical.Id.ToString(),
+			AuditAction.Update,
+			[
+				new FieldChange { FieldName = "operation", OldValue = null, NewValue = "LinkItemTemplate" },
+				new FieldChange { FieldName = "itemTemplateId", OldValue = null, NewValue = template.Id.ToString() },
+				new FieldChange { FieldName = "itemTemplateName", OldValue = null, NewValue = template.Name },
+				// Null rather than the same id repeated when nothing was consolidated: absence is
+				// already how the rest of the trail says "no other row was involved".
+				new FieldChange { FieldName = "consolidatedFromId", OldValue = merged ? descriptionId.ToString() : null, NewValue = null },
+				new FieldChange { FieldName = "relinkedItemCount", OldValue = null, NewValue = itemsRelinked.ToString() },
+			],
+			DateTimeOffset.UtcNow);
+		await context.SaveChangesAsync(cancellationToken);
+
+		// Re-read through the shared projection so the caller gets a truthful LinkedItemCount and
+		// the template evidence it just created, rather than numbers assembled from the pieces
+		// above. The row was committed in this call, so a miss means something deleted it
+		// concurrently — a genuine 404 rather than something to paper over.
+		NormalizedDescriptionDetail survivor = await GetByIdAsync(canonical.Id, cancellationToken)
+			?? throw new KeyNotFoundException(LinkTemplateDescriptionNotFound);
+
+		return new LinkTemplateResult(survivor, itemsRelinked, merged);
+	}
+
 	public async Task<NormalizedDescriptionSettings> GetSettingsAsync(CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
@@ -1264,6 +1377,26 @@ public class NormalizedDescriptionService(
 					.Where(r => r.NormalizedDescriptionId == e.Id && r.Receipt != null)
 					.Select(r => (DateOnly?)r.Receipt!.Date)
 					.Max(),
+				// RECEIPTS-930. The template, if any, that declares this row — read off the FK
+				// ItemTemplate gained in RECEIPTS-881, so it states a recorded link rather than a
+				// resemblance. Soft-deleted templates fall out via the entity's query filter, which
+				// is what we want: a template sitting in the recycle bin is not evidence of anything.
+				//
+				// Ordered by name so the row a reviewer sees does not shuffle between refreshes when
+				// several templates point here — same reason the samples above are ordered before
+				// Take. Name and id are two subqueries rather than one because EF cannot project a
+				// tuple out of a correlated FirstOrDefault; both hit IX_ItemTemplates_NormalizedDescriptionId.
+				LinkedTemplateId = context.ItemTemplates
+					.Where(t => t.NormalizedDescriptionId == e.Id)
+					.OrderBy(t => t.Name)
+					.Select(t => (Guid?)t.Id)
+					.FirstOrDefault(),
+				LinkedTemplateName = context.ItemTemplates
+					.Where(t => t.NormalizedDescriptionId == e.Id)
+					.OrderBy(t => t.Name)
+					.Select(t => t.Name)
+					.FirstOrDefault(),
+				LinkedTemplateCount = context.ItemTemplates.Count(t => t.NormalizedDescriptionId == e.Id),
 				SampleRawDescriptions = context.ReceiptItems
 					.Where(r => r.NormalizedDescriptionId == e.Id)
 					.Select(r => r.Description)
@@ -1287,6 +1420,9 @@ public class NormalizedDescriptionService(
 		public string? NearestNeighbourName { get; init; }
 		public int LinkedItemCount { get; init; }
 		public DateOnly? LastSeen { get; init; }
+		public Guid? LinkedTemplateId { get; init; }
+		public string? LinkedTemplateName { get; init; }
+		public int LinkedTemplateCount { get; init; }
 		public List<string> SampleRawDescriptions { get; init; } = [];
 
 		public NormalizedDescriptionDetail ToDetail() => new(
@@ -1298,7 +1434,10 @@ public class NormalizedDescriptionService(
 			// (ReportService.ToDateTimeOffset). A receipt has a date, not a time.
 			LastSeen is null
 				? null
-				: new DateTimeOffset(LastSeen.Value.Year, LastSeen.Value.Month, LastSeen.Value.Day, 0, 0, 0, TimeSpan.Zero));
+				: new DateTimeOffset(LastSeen.Value.Year, LastSeen.Value.Month, LastSeen.Value.Day, 0, 0, 0, TimeSpan.Zero),
+			LinkedTemplateId,
+			LinkedTemplateName,
+			LinkedTemplateCount);
 	}
 
 	private static async Task<NormalizedDescriptionEntity?> FindExactCaseInsensitiveAsync(

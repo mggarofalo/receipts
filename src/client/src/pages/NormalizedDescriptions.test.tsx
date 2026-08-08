@@ -8,6 +8,29 @@ vi.mock("@/hooks/usePageTitle", () => ({
   usePageTitle: vi.fn(),
 }));
 
+// Hoisted so the useItemTemplates factory below can close over it — vi.mock factories run before
+// the module body, so a plain const would still be in its temporal dead zone.
+//
+// "Strawberry Preserves" deliberately matches pendingItems[0].canonicalName exactly: that is the
+// case where the row already IS the template's entry, so linking moves nothing. "Gallon of Milk"
+// matches nothing, which is the consolidating case.
+const { itemTemplates } = vi.hoisted(() => ({
+  itemTemplates: [
+    {
+      id: "t-1",
+      name: "Gallon of Milk",
+      defaultCategory: "Groceries",
+      defaultSubcategory: "Dairy",
+    },
+    {
+      id: "t-2",
+      name: "Strawberry Preserves",
+      defaultCategory: "Groceries",
+      defaultSubcategory: null,
+    },
+  ],
+}));
+
 vi.mock("@/hooks/useNormalizedDescriptions", () => ({
   useNormalizedDescriptions: vi.fn(),
   useNormalizedDescription: vi.fn(),
@@ -20,6 +43,15 @@ vi.mock("@/hooks/useNormalizedDescriptionActions", () => ({
   useSplitMutation: vi.fn(() => mockMutationResult()),
   useUpdateStatusMutation: vi.fn(() => mockMutationResult()),
   useRenameMutation: vi.fn(() => mockMutationResult()),
+  useLinkTemplateMutation: vi.fn(() => mockMutationResult()),
+}));
+
+vi.mock("@/hooks/useItemTemplates", () => ({
+  useItemTemplates: vi.fn(() => ({
+    data: itemTemplates,
+    total: itemTemplates.length,
+    isLoading: false,
+  })),
 }));
 
 vi.mock("@/hooks/useNormalizedDescriptionSettings", () => ({
@@ -52,11 +84,13 @@ vi.mock("@/hooks/usePermission", () => ({
 
 import { useNormalizedDescriptions } from "@/hooks/useNormalizedDescriptions";
 import {
+  useLinkTemplateMutation,
   useMergeMutation,
   useRenameMutation,
   useSplitMutation,
   useUpdateStatusMutation,
 } from "@/hooks/useNormalizedDescriptionActions";
+import { useItemTemplates } from "@/hooks/useItemTemplates";
 import {
   useSettings,
   useUpdateSettingsMutation,
@@ -86,6 +120,10 @@ const pendingItems = [
     sampleRawDescriptions: ["STRAWBERRY PRES", "STRWBRY PRESERVE"],
     nearestNeighbourName: "Strawberry Jam",
     nearestNeighbourSimilarity: 0.8642,
+    // No template declares this row — it is the one a reviewer would link (RECEIPTS-930).
+    linkedTemplateId: null,
+    linkedTemplateName: null,
+    linkedTemplateCount: 0,
   },
   {
     id: "p-2",
@@ -100,6 +138,11 @@ const pendingItems = [
     sampleRawDescriptions: [],
     nearestNeighbourName: null,
     nearestNeighbourSimilarity: null,
+    // Two templates point here, which is the ordinary result of merging two template-backed
+    // entries — the plural path the evidence badge has to get right.
+    linkedTemplateId: "t-1",
+    linkedTemplateName: "Gallon of Milk",
+    linkedTemplateCount: 2,
   },
 ];
 
@@ -116,6 +159,10 @@ const activeItems = [
     sampleRawDescriptions: ["GALA APPLES"],
     nearestNeighbourName: null,
     nearestNeighbourSimilarity: null,
+    // A curated entry sitting in the registry — the warning case, not the approve case.
+    linkedTemplateId: "t-3",
+    linkedTemplateName: "Bag of Apples",
+    linkedTemplateCount: 1,
   },
   {
     id: "a-2",
@@ -131,6 +178,9 @@ const activeItems = [
     sampleRawDescriptions: ["MILK 2% GAL"],
     nearestNeighbourName: null,
     nearestNeighbourSimilarity: null,
+    linkedTemplateId: null,
+    linkedTemplateName: null,
+    linkedTemplateCount: 0,
   },
 ];
 
@@ -228,6 +278,13 @@ function wireDefaults() {
     }),
   );
   vi.mocked(useRequeuePendingMutation).mockReturnValue(mockMutationResult());
+  vi.mocked(useLinkTemplateMutation).mockReturnValue(mockMutationResult());
+  vi.mocked(useItemTemplates).mockReturnValue({
+    data: itemTemplates,
+    total: itemTemplates.length,
+    isLoading: false,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } as any);
   vi.mocked(useLinkedReceiptItems).mockReturnValue({
     data: [],
     total: 0,
@@ -1083,6 +1140,211 @@ describe("NormalizedDescriptions rename and reject", () => {
     // an entry" and unlinks them. Collapsing them was the original complaint.
     expect(within(row).getByRole("button", { name: MERGE_ACTION })).toBeInTheDocument();
     expect(within(row).getByRole("button", { name: "Reject" })).toBeInTheDocument();
+  });
+});
+
+// RECEIPTS-930: the evidence a user already named this item by hand, and the action that says so.
+describe("NormalizedDescriptions template evidence and linking", () => {
+  const LINK_ACTION = "Link to template…";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    wireDefaults();
+  });
+
+  it("names the template that declares a pending row", async () => {
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Organic Milk")).closest("tr")!;
+    expect(
+      within(row).getByText(/Declared by template “Gallon of Milk”/),
+    ).toBeInTheDocument();
+  });
+
+  it("says how many other templates declare the same row", async () => {
+    renderWithQueryClient(<NormalizedDescriptions />);
+    // Two templates on one row is the ordinary result of merging two template-backed entries.
+    // Naming one and implying it is the only one would hide exactly that case.
+    const row = (await screen.findByText("Organic Milk")).closest("tr")!;
+    expect(within(row).getByText(/and 1 other\b/)).toBeInTheDocument();
+  });
+
+  it("shows no evidence badge on a row no template declares", async () => {
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    expect(
+      within(row).queryByTestId("template-evidence"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("marks a curated entry in the registry too", async () => {
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    await user.click(screen.getByRole("tab", { name: /registry/i }));
+
+    // In the registry the badge is a warning rather than a nudge: an entry somebody curated
+    // should not be merged away on the same impulse as resolver output.
+    const row = (await screen.findByText("Apples")).closest("tr")!;
+    const evidence = within(row).getByTestId("template-evidence");
+    expect(evidence).toHaveTextContent(/Declared by template “Bag of Apples”/);
+    // Scoped to the badge: the row's action hints mention "another entry", so a document-wide
+    // match for "other" would pass whatever the badge said.
+    expect(evidence).not.toHaveTextContent(/other/);
+  });
+
+  it("consolidates the row into the chosen template's entry", async () => {
+    const mutate = vi.fn((_vars, opts?: { onSuccess?: () => void }) => {
+      opts?.onSuccess?.();
+    });
+    vi.mocked(useLinkTemplateMutation).mockReturnValue(
+      mockMutationResult({ mutate }),
+    );
+
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    await user.click(within(row).getByRole("button", { name: LINK_ACTION }));
+
+    const dialog = await screen.findByRole("dialog");
+    const target = within(dialog).getByText("Gallon of Milk").closest("label")!;
+    await user.click(within(target).getByRole("radio"));
+    await user.click(within(dialog).getByRole("button", { name: "Link" }));
+
+    expect(mutate).toHaveBeenCalledWith(
+      { id: "p-1", itemTemplateId: "t-1" },
+      expect.any(Object),
+    );
+  });
+
+  it("warns that the row is deleted when the template's entry is a different row", async () => {
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    await user.click(within(row).getByRole("button", { name: LINK_ACTION }));
+
+    const dialog = await screen.findByRole("dialog");
+    const target = within(dialog).getByText("Gallon of Milk").closest("label")!;
+    await user.click(within(target).getByRole("radio"));
+
+    const consequence = within(dialog).getByTestId(
+      "link-template-consequence",
+    );
+    expect(consequence).toHaveTextContent(/consolidated into the “Gallon of Milk” entry/);
+    expect(consequence).toHaveTextContent(/4 receipt items will be re-pointed/);
+    expect(consequence).toHaveTextContent(/this entry is then deleted/i);
+  });
+
+  it("says nothing moves when the row already is that template's entry", async () => {
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    await user.click(within(row).getByRole("button", { name: LINK_ACTION }));
+
+    // The template's name matches this row's matched text exactly, which is how the server
+    // resolves a template's entry — so there is nothing to consolidate and nothing to delete.
+    const dialog = await screen.findByRole("dialog");
+    const target = within(dialog)
+      .getAllByText("Strawberry Preserves")
+      .map((node) => node.closest("label"))
+      .find((label): label is HTMLLabelElement => label !== null)!;
+    await user.click(within(target).getByRole("radio"));
+
+    const consequence = within(dialog).getByTestId(
+      "link-template-consequence",
+    );
+    expect(consequence).toHaveTextContent(/already is the “Strawberry Preserves” entry/);
+    // "nothing is deleted" contains "deleted", so the assertion has to be about the destructive
+    // claim rather than the word.
+    expect(consequence).toHaveTextContent(/nothing is moved and nothing is deleted/);
+    expect(consequence).not.toHaveTextContent(/consolidated/i);
+    expect(consequence).not.toHaveTextContent(/entry is then deleted/i);
+  });
+
+  it("will not link without a template selected", async () => {
+    const mutate = vi.fn();
+    vi.mocked(useLinkTemplateMutation).mockReturnValue(
+      mockMutationResult({ mutate }),
+    );
+
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    await user.click(within(row).getByRole("button", { name: LINK_ACTION }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("button", { name: "Link" })).toBeDisabled();
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it("filters the template list as you type", async () => {
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    await user.click(within(row).getByRole("button", { name: LINK_ACTION }));
+
+    const dialog = await screen.findByRole("dialog");
+    await user.type(within(dialog).getByLabelText(/search templates/i), "milk");
+    expect(within(dialog).getByText("Gallon of Milk")).toBeInTheDocument();
+    expect(within(dialog).getAllByRole("radio")).toHaveLength(1);
+  });
+
+  it("says when it is showing only part of the template list", async () => {
+    // The filter runs in the browser, so a capped page would otherwise read as "your template
+    // does not exist" — the same failure RECEIPTS-878 fixed in the merge dialog.
+    vi.mocked(useItemTemplates).mockReturnValue({
+      data: itemTemplates,
+      total: 250,
+      isLoading: false,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    await user.click(within(row).getByRole("button", { name: LINK_ACTION }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByTestId("link-template-truncation-notice"),
+    ).toHaveTextContent("Showing 2 of 250 templates");
+  });
+
+  it("stays quiet when every template is on screen", async () => {
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    await user.click(within(row).getByRole("button", { name: LINK_ACTION }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).queryByTestId("link-template-truncation-notice"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("points at the Item Templates page when there are none to link", async () => {
+    vi.mocked(useItemTemplates).mockReturnValue({
+      data: [],
+      total: 0,
+      isLoading: false,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    await user.click(within(row).getByRole("button", { name: LINK_ACTION }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByTestId("link-template-empty"),
+    ).toHaveTextContent(/no item templates yet/i);
+  });
+
+  it("explains the action in the queue explainer, deletion included", async () => {
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const explainer = await screen.findByTestId("review-queue-explainer");
+    expect(within(explainer).getByText(LINK_ACTION)).toBeInTheDocument();
+    expect(explainer).toHaveTextContent(/this entry is deleted/i);
+    expect(explainer).toHaveTextContent(/Declared by template/);
   });
 });
 

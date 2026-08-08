@@ -2,6 +2,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient } from "@tanstack/react-query";
 import { createQueryWrapper } from "@/test/test-utils";
 import {
+  useLinkTemplateMutation,
   useMergeMutation,
   useRenameMutation,
   useSplitMutation,
@@ -124,6 +125,126 @@ describe("useMergeMutation", () => {
     });
     result.current.mutate({ id: "a", discardId: "b" });
     await waitFor(() => expect(result.current.isError).toBe(true));
+  });
+});
+
+// RECEIPTS-930. The response, not the request, decides what the toast may claim: the caller asks
+// about one row and the server decides whether that row survived.
+describe("useLinkTemplateMutation", () => {
+  function linkResponse(merged: boolean, itemsRelinkedCount: number) {
+    return {
+      data: {
+        description: { id: "keep-1", displayName: "Gallon of Milk" },
+        itemsRelinkedCount,
+        merged,
+      },
+      error: undefined,
+      response: { status: 200, ok: true } as Response,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("links with path and body", async () => {
+    mockClient.POST.mockResolvedValue(linkResponse(true, 3));
+
+    const { result } = renderHook(() => useLinkTemplateMutation(), {
+      wrapper: createQueryWrapper(),
+    });
+    result.current.mutate({ id: "n-1", itemTemplateId: "t-1" });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(mockClient.POST).toHaveBeenCalledWith(
+      "/api/normalized-descriptions/{id}/link-template",
+      {
+        params: { path: { id: "n-1" } },
+        body: { itemTemplateId: "t-1" },
+      },
+    );
+  });
+
+  it("names the surviving entry and the items that moved when it consolidated", async () => {
+    mockClient.POST.mockResolvedValue(linkResponse(true, 3));
+
+    const { result } = renderHook(() => useLinkTemplateMutation(), {
+      wrapper: createQueryWrapper(),
+    });
+    result.current.mutate({ id: "n-1", itemTemplateId: "t-1" });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(toast.success).toHaveBeenCalledWith(
+      'Consolidated into "Gallon of Milk" — 3 items re-linked',
+    );
+  });
+
+  it("distinguishes a consolidation that moved nothing from one that moved items", async () => {
+    mockClient.POST.mockResolvedValue(linkResponse(true, 0));
+
+    const { result } = renderHook(() => useLinkTemplateMutation(), {
+      wrapper: createQueryWrapper(),
+    });
+    result.current.mutate({ id: "n-1", itemTemplateId: "t-1" });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(toast.success).toHaveBeenCalledWith(
+      'Consolidated into "Gallon of Milk" — no items needed re-linking',
+    );
+  });
+
+  // The non-destructive case has to read as non-destructive. "Consolidated" on a row that still
+  // exists would send an admin looking for data that never moved.
+  it("says nothing was moved when only the foreign key was set", async () => {
+    mockClient.POST.mockResolvedValue(linkResponse(false, 0));
+
+    const { result } = renderHook(() => useLinkTemplateMutation(), {
+      wrapper: createQueryWrapper(),
+    });
+    result.current.mutate({ id: "n-1", itemTemplateId: "t-1" });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(toast.success).toHaveBeenCalledWith(
+      "Linked to the template — nothing was moved or deleted",
+    );
+  });
+
+  it("invalidates the template cache the evidence is read from", async () => {
+    const invalidateSpy = vi.spyOn(QueryClient.prototype, "invalidateQueries");
+    mockClient.POST.mockResolvedValue(linkResponse(true, 1));
+
+    const { result } = renderHook(() => useLinkTemplateMutation(), {
+      wrapper: createQueryWrapper(),
+    });
+    result.current.mutate({ id: "n-1", itemTemplateId: "t-1" });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["itemTemplates"] });
+    // Consolidating moves spend between buckets exactly as a merge does.
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["reports"] });
+    invalidateSpy.mockRestore();
+  });
+
+  it("does not report a 404 as a success", async () => {
+    mockClient.POST.mockResolvedValue({
+      data: undefined,
+      error: {
+        title: "Not Found",
+        status: 404,
+        detail: "Item template not found.",
+      },
+      response: { status: 404, ok: false } as Response,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    const { result } = renderHook(() => useLinkTemplateMutation(), {
+      wrapper: createQueryWrapper(),
+    });
+    result.current.mutate({ id: "n-1", itemTemplateId: "gone" });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(toast.success).not.toHaveBeenCalled();
   });
 });
 
