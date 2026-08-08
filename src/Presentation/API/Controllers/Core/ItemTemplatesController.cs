@@ -57,7 +57,7 @@ public class ItemTemplatesController(IMediator mediator, ItemTemplateMapper mapp
 
 	[HttpGet(RouteGetAll)]
 	[EndpointSummary("Get all item templates")]
-	public async Task<Results<Ok<ItemTemplateListResponse>, BadRequest<ProblemDetails>>> GetAllItemTemplates([FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, CancellationToken cancellationToken = default)
+	public async Task<Results<Ok<ItemTemplateListResponse>, BadRequest<ProblemDetails>>> GetAllItemTemplates([FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, [FromQuery] string? q = null, CancellationToken cancellationToken = default)
 	{
 		if (offset < 0)
 		{
@@ -80,7 +80,9 @@ public class ItemTemplatesController(IMediator mediator, ItemTemplateMapper mapp
 		}
 
 		SortParams sort = new(sortBy, sortDirection);
-		GetAllItemTemplatesQuery query = new(offset, limit, sort);
+		// `q` filters by name (RECEIPTS-930). Blank is no filter rather than match-nothing, matching
+		// how the normalized-descriptions list treats an empty search.
+		GetAllItemTemplatesQuery query = new(offset, limit, sort, q);
 		PagedResult<ItemTemplate> result = await mediator.Send(query, cancellationToken);
 
 		return TypedResults.Ok(new ItemTemplateListResponse

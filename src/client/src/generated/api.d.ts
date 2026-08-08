@@ -5690,6 +5690,17 @@ export interface operations {
                 /** @description Column name to sort by. Allowed values depend on the entity type. */
                 sortBy?: components["parameters"]["SortBy"];
                 sortDirection?: components["parameters"]["SortDirection"];
+                /**
+                 * @description Case-insensitive substring match on the template name. Omitted or blank means no
+                 *     filter — blank is deliberately not "match nothing", which would return zero rows for
+                 *     what reads like an unfiltered request.
+                 *
+                 *     `total` counts matching templates rather than all of them, so a caller can page
+                 *     through a filtered set. Added in RECEIPTS-930 so a picker can search the whole table
+                 *     instead of filtering whichever page it happened to load, which is the failure
+                 *     RECEIPTS-878 removed from the merge dialog.
+                 */
+                q?: string;
             };
             header?: never;
             path?: never;

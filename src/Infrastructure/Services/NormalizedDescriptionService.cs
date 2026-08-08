@@ -291,7 +291,7 @@ public class NormalizedDescriptionService(
 	/// </remarks>
 	/// <exception cref="ArgumentException">The two ids are the same row.</exception>
 	/// <exception cref="KeyNotFoundException">Either id does not exist.</exception>
-	public async Task<int> MergeAsync(Guid keepId, Guid discardId, CancellationToken cancellationToken)
+	public virtual async Task<int> MergeAsync(Guid keepId, Guid discardId, CancellationToken cancellationToken)
 	{
 		if (keepId == discardId)
 		{
@@ -799,6 +799,8 @@ public class NormalizedDescriptionService(
 	public const string LinkTemplateTemplateNotFound = "Item template not found.";
 	public const string LinkTemplateDescriptionNotFound = "Normalized description not found.";
 	public const string CannotLinkTemplateToRejected = "This entry was rejected. Reinstate it before linking a template, or create the template from its own name instead.";
+	public const string CannotLinkTemplateToRejectedEntry = "That template's own entry was rejected. Reinstate it from the registry first — linking here would silently undo that rejection.";
+	public const string TemplateNameCollidesWithDisplayName = "Another entry is already displayed as \"{0}\", so this template cannot be given an entry of its own. Rename that entry first.";
 
 	/// <summary>
 	/// Records that <paramref name="descriptionId"/> is the item an existing template already
@@ -826,9 +828,15 @@ public class NormalizedDescriptionService(
 	/// When the row already is the template's entry, there is nothing to consolidate and only the
 	/// FK is set. That case is reported separately rather than smoothed over: the caller pointed at
 	/// a row, and whether that row still exists afterwards is not a detail.
+	///
+	/// Which row counts as "the template's entry" is <see cref="ResolveTemplateEntryIdAsync"/>'s
+	/// job, and it is not simply the row named after the template — see the remarks there.
 	/// </remarks>
 	/// <exception cref="KeyNotFoundException">The row or the (live) template does not exist.</exception>
-	/// <exception cref="InvalidOperationException">The row is a rejected tombstone.</exception>
+	/// <exception cref="InvalidOperationException">
+	/// Either row is a rejected tombstone, or the template's name is already taken as another row's
+	/// display name.
+	/// </exception>
 	public async Task<LinkTemplateResult> LinkTemplateAsync(
 		Guid descriptionId,
 		Guid itemTemplateId,
@@ -855,37 +863,41 @@ public class NormalizedDescriptionService(
 
 		// Consolidating a tombstone away would delete the only record that a reviewer decided this
 		// text was not worth an entry, and the resolver would be free to recreate it on the next
-		// receipt. GetOrCreateForTemplateAsync does reinstate a tombstone — but only the one whose
-		// name the user typed as their template, which is them contradicting the rejection on
-		// purpose. Reaching a differently-named tombstone from the review queue is not that.
+		// receipt.
 		if (target.Status == NormalizedDescriptionStatus.Rejected)
 		{
 			throw new InvalidOperationException(CannotLinkTemplateToRejected);
 		}
 
-		// Creates the entry when this template has never been linked (it predates RECEIPTS-881, or
-		// linking failed while the embedding service was down), so the link works on a template
-		// that has no entry yet rather than reporting a state the user cannot fix from here.
-		NormalizedDescription canonical = await GetOrCreateForTemplateAsync(template.Name, cancellationToken);
-		bool merged = canonical.Id != descriptionId;
+		Guid canonicalId = await ResolveTemplateEntryIdAsync(context, template, cancellationToken);
+		bool merged = canonicalId != descriptionId;
 
-		template.NormalizedDescriptionId = canonical.Id;
-		await context.SaveChangesAsync(cancellationToken);
-
-		// Merge second, and only after the FK is committed, so the template is already off the
-		// discarded row by the time MergeAsync goes looking for templates to re-point. Doing it in
-		// this order also means a merge failure leaves a correct link rather than a recorded
-		// consolidation that did not happen.
+		// Merge FIRST, and commit the foreign key only once it has succeeded.
+		//
+		// The reverse order looks tidier — put the template on its entry, then move the items — but
+		// the two run in separate DbContexts and therefore separate transactions, so a merge failure
+		// (the embedding service is down mid-rescore, the caller goes away) would leave the template
+		// permanently torn off whatever entry it previously declared, with the row still in the queue
+		// and no audit entry to explain the move. Every receipt item entered from that template would
+		// then be filed under a bucket nobody chose. Failing before the FK write instead leaves the
+		// template exactly where it was.
+		//
+		// MergeAsync re-points templates pointing at the discarded row, so a template already on
+		// `descriptionId` follows the items automatically; the explicit write below then confirms the
+		// same value rather than fighting it.
 		int itemsRelinked = merged
-			? await MergeAsync(canonical.Id, descriptionId, cancellationToken)
+			? await MergeAsync(canonicalId, descriptionId, cancellationToken)
 			: 0;
 
-		// Written last, once both halves are known. MergeAsync files its own pair of entries for
-		// what physically moved; this one records why — that an operator recognised the row as a
-		// template's item — which is the part no mechanical trail can reconstruct (RECEIPTS-890).
+		template.NormalizedDescriptionId = canonicalId;
+
+		// Written with the FK in one save, so the trail cannot claim a link that was not committed.
+		// MergeAsync files its own pair of entries for what physically moved; this one records why —
+		// that an operator recognised the row as a template's item — which is the part no mechanical
+		// trail can reconstruct (RECEIPTS-890).
 		context.AddSemanticAuditEntry(
 			NormalizedDescriptionEntityType,
-			canonical.Id.ToString(),
+			canonicalId.ToString(),
 			AuditAction.Update,
 			[
 				new FieldChange { FieldName = "operation", OldValue = null, NewValue = "LinkItemTemplate" },
@@ -903,10 +915,92 @@ public class NormalizedDescriptionService(
 		// the template evidence it just created, rather than numbers assembled from the pieces
 		// above. The row was committed in this call, so a miss means something deleted it
 		// concurrently — a genuine 404 rather than something to paper over.
-		NormalizedDescriptionDetail survivor = await GetByIdAsync(canonical.Id, cancellationToken)
+		NormalizedDescriptionDetail survivor = await GetByIdAsync(canonicalId, cancellationToken)
 			?? throw new KeyNotFoundException(LinkTemplateDescriptionNotFound);
 
 		return new LinkTemplateResult(survivor, itemsRelinked, merged);
+	}
+
+	/// <summary>
+	/// The entry a template already declares, or the one its name resolves to, creating it if needed.
+	/// </summary>
+	/// <remarks>
+	/// The FK is consulted first, and that ordering is load-bearing. "A template's entry is the row
+	/// named after it" is only an invariant at create and update time — <see cref="MergeAsync"/>
+	/// breaks it deliberately, re-pointing templates at the survivor when their entry is merged away.
+	/// After "Gallon of Milk" is merged into "Milk", the template still declares "Milk" and holds all
+	/// of its history there, while no row named "Gallon of Milk" exists any more.
+	///
+	/// Resolving by name alone in that state would create a fresh empty "Gallon of Milk", move the
+	/// template onto it, and consolidate the reviewer's row into it — leaving three buckets where
+	/// they were trying to end up with one, and silently detaching the template from its own history.
+	/// Reading the FK first makes the linked case exact and leaves name resolution for what it is
+	/// actually needed for: a template that has never been linked at all.
+	/// </remarks>
+	private async Task<Guid> ResolveTemplateEntryIdAsync(
+		ApplicationDbContext context,
+		ItemTemplateEntity template,
+		CancellationToken cancellationToken)
+	{
+		if (template.NormalizedDescriptionId is { } linkedId)
+		{
+			// Confirmed against the table rather than trusted: the FK is ON DELETE SET NULL, but a
+			// row deleted by another request between this read and the merge would otherwise send a
+			// stale id into MergeAsync as the keeper.
+			NormalizedDescriptionEntity? linked = await context.NormalizedDescriptions
+				.AsNoTracking()
+				.FirstOrDefaultAsync(e => e.Id == linkedId, cancellationToken);
+
+			// A Rejected row here would mean a tombstone somehow kept its template, which
+			// DetachItemsForRejectionAsync exists to prevent. Falling through to name resolution
+			// rather than merging into it keeps the tombstone guard below authoritative.
+			if (linked is { Status: not NormalizedDescriptionStatus.Rejected })
+			{
+				return linked.Id;
+			}
+		}
+
+		string name = template.Name.Trim();
+		NormalizedDescriptionEntity? byName = await FindExactCaseInsensitiveAsync(context, name, cancellationToken);
+
+		// GetOrCreateForTemplateAsync reinstates a tombstone it finds by name, and on *that* path it
+		// is right to: the user typed the name into a template, deliberately contradicting the
+		// rejection. Here they picked an existing template out of a list while looking at a
+		// differently-named row, so nothing about the gesture says "un-reject this". Refusing keeps
+		// the promise the endpoint documents — rejected rows are not linkable — which the guard on
+		// the caller's row alone did not actually make good on.
+		if (byName is { Status: NormalizedDescriptionStatus.Rejected })
+		{
+			throw new InvalidOperationException(CannotLinkTemplateToRejectedEntry);
+		}
+
+		if (byName is not null)
+		{
+			return byName.Id;
+		}
+
+		// About to insert. The unique index is on lower(COALESCE("DisplayLabel","CanonicalName")), so
+		// a row somebody renamed *to* this template's name collides even though no CanonicalName
+		// matches — and InsertAsync's race handler only recovers from a CanonicalName collision, so
+		// the DbUpdateException would escape as a 500 that no amount of retrying could clear.
+		// Checked up front so the caller gets a message naming the actual obstacle.
+		if (await DisplayNameTakenAsync(context, name, Guid.Empty, cancellationToken))
+		{
+			throw new InvalidOperationException(string.Format(TemplateNameCollidesWithDisplayName, name));
+		}
+
+		try
+		{
+			NormalizedDescription created = await GetOrCreateForTemplateAsync(template.Name, cancellationToken);
+			return created.Id;
+		}
+		catch (DbUpdateException)
+		{
+			// Lost the race the check above was guarding: another writer claimed that display name
+			// between the check and the insert. Same message, still a 400 — retrying unchanged cannot
+			// succeed either way.
+			throw new InvalidOperationException(string.Format(TemplateNameCollidesWithDisplayName, name));
+		}
 	}
 
 	public async Task<NormalizedDescriptionSettings> GetSettingsAsync(CancellationToken cancellationToken)

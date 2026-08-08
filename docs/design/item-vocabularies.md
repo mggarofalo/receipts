@@ -179,16 +179,49 @@ asked for, and it is wrong twice over:
    template *in future*. The receipt items already sitting on the row stay where they are, so the
    two go on reporting as separate buckets — which is the duplication being complained about.
 
-So `LinkTemplateAsync` resolves the template's entry (creating it when the template has never been
-linked), points the template at it, and then consolidates the caller's row into it via `MergeAsync`
-— same re-linking, re-scoring, trashed-item handling and audit trail as any other merge. The
-surviving row is the template's, because that is the row the name invariant will keep re-deriving.
+So `LinkTemplateAsync` resolves the template's entry, consolidates the caller's row into it via
+`MergeAsync` — same re-linking, re-scoring, trashed-item handling and audit trail as any other merge
+— and only then commits the template's foreign key.
+
+### Which row *is* the template's entry
+
+Not simply "the row named after the template". **`MergeAsync` breaks that invariant on purpose**: it
+re-points templates at the survivor when their entry is merged away. After "Gallon of Milk" is
+merged into "Milk", the template declares "Milk" and holds all of its history there, while no row
+named "Gallon of Milk" exists at all.
+
+Resolving by name in that state would create a fresh empty "Gallon of Milk", move the template onto
+it, and consolidate the reviewer's row into it — three buckets where they wanted one, and the
+template silently detached from its own history. So the FK is read first and name resolution is the
+fallback, used for what it is actually needed for: a template that has never been linked.
+
+The ordering of the two writes is load-bearing for the same reason. They run in separate
+`DbContext`s, so they are separate transactions: committing the FK first and then failing the merge
+would leave the template permanently on an entry nobody chose, the row still in the queue, and no
+audit entry explaining the move. Merging first means a failure leaves the template exactly where it
+was.
+
+Two more cases the row-level guard did not cover on its own:
+
+- **The template's own entry can be a tombstone.** `GetOrCreateForTemplateAsync` reinstates one it
+  finds by name, which is right when a user types that name into a template — deliberately
+  contradicting the rejection — and wrong here, where they picked an existing template from a list
+  while looking at a differently-named row. Refused, so the endpoint keeps the promise it documents.
+- **The template's name can already be another row's display label.** The unique index is on
+  `lower(COALESCE("DisplayLabel","CanonicalName"))`, so creating an entry for it collides even
+  though no `CanonicalName` matches, and `InsertAsync`'s race handler only recovers from a
+  `CanonicalName` collision. Checked up front, so the caller gets a message naming the obstacle
+  instead of a 500 that no retry could clear.
 
 Consequences, stated because they are not free:
 
 - **The row the caller pointed at usually stops existing.** The response says which happened
   (`merged`), the dialog predicts it per selection using the same exact-match rule the server uses,
   and the toast reports what actually occurred rather than what was predicted.
+- **Trashed items move too, and the copy says so.** `linkedItemCount` is live-only, but `MergeAsync`
+  re-points soft-deleted items as well. "Nothing will be re-pointed" would be false for a row whose
+  items are all in the recycle bin — they would come back attached to a different entry with nothing
+  having disclosed it — so the dialog says "no *live* receipt items" and names the bin explicitly.
 - **A rejected row cannot be linked.** Consolidating a tombstone away would delete the record of a
   reviewer's decision and free the resolver to recreate the text. `GetOrCreateForTemplateAsync` does
   reinstate a tombstone — but only the one whose name the user typed as their template, which is
@@ -198,11 +231,14 @@ Consequences, stated because they are not free:
   matched text no longer exists, so a later receipt carrying it goes back through the resolver and
   may re-enter the queue. Not made worse by this action, and not solved by it.
 
-The template picker filters in the browser over a capped page, because `/api/item-templates` has no
-search parameter and adding one is a change to another module's contract. Safe only because the cap
-is disclosed on screen — for a machine-generated list this would be the silent truncation
-RECEIPTS-878 fixed in the merge dialog. If the template list ever grows past browsing size, that
-endpoint needs a `q`.
+The template picker searches server-side, via a new `q` on `/api/item-templates`. Filtering a capped
+page in the browser was tried first and is wrong for the same reason it was wrong in the merge
+dialog (RECEIPTS-878): it can only ever find what was loaded, so a template past the page size reads
+as "no such template exists" — while a truncation notice advises refining a search that cannot reach
+it. `q` is declared on `IItemTemplateService` rather than widened onto
+`ISoftDeletableService.GetAllAsync`, which would oblige every other entity and all their callers to
+carry a parameter only templates need; `GetAllAsync` is `SearchAsync(null, …)` so the two paths
+cannot drift.
 
 ## Decision: approving does *not* offer to promote into a template
 

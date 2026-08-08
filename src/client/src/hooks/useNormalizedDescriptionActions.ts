@@ -192,7 +192,10 @@ export function useLinkTemplateMutation() {
       toast.success(
         count > 0
           ? `Consolidated into "${name}" — ${count} item${count === 1 ? "" : "s"} re-linked`
-          : `Consolidated into "${name}" — no items needed re-linking`,
+          : // "No live items", not "no items": the count is live-only, while the merge also
+            // re-points trashed ones. Claiming nothing moved would be false for a row whose items
+            // are all in the recycle bin.
+            `Consolidated into "${name}" — no live items needed re-linking`,
       );
     },
   });

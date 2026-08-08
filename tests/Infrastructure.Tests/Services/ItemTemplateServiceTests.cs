@@ -178,4 +178,45 @@ public class ItemTemplateServiceTests
 		// Assert
 		actual.Should().BeFalse();
 	}
+
+	// ── RECEIPTS-930: name search ─────────────────────────────────────────────
+
+	[Fact]
+	public async Task SearchAsync_CountsMatchesRatherThanEveryTemplate()
+	{
+		// The total is what a picker pages and reports against, so counting the whole table while
+		// returning a filtered page would tell the user there are more matches than exist.
+		_mockRepository
+			.Setup(r => r.GetCountAsync("milk", It.IsAny<CancellationToken>()))
+			.ReturnsAsync(2);
+		_mockRepository
+			.Setup(r => r.SearchAsync("milk", 0, 50, It.IsAny<Application.Models.SortParams>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync([new ItemTemplateEntity { Id = Guid.NewGuid(), Name = "Gallon of Milk" }]);
+
+		Application.Models.PagedResult<ItemTemplate> result = await _service.SearchAsync(
+			"milk", 0, 50, new Application.Models.SortParams(null, null), CancellationToken.None);
+
+		result.Total.Should().Be(2);
+		result.Data.Should().ContainSingle().Which.Name.Should().Be("Gallon of Milk");
+	}
+
+	[Fact]
+	public async Task GetAllAsync_IsSearchWithNoTerm()
+	{
+		// One implementation, so the filtered and unfiltered paths cannot drift apart.
+		_mockRepository
+			.Setup(r => r.GetCountAsync((string?)null, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(7);
+		_mockRepository
+			.Setup(r => r.SearchAsync(null, 0, 50, It.IsAny<Application.Models.SortParams>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync([]);
+
+		Application.Models.PagedResult<ItemTemplate> result = await _service.GetAllAsync(
+			0, 50, new Application.Models.SortParams(null, null), CancellationToken.None);
+
+		result.Total.Should().Be(7);
+		_mockRepository.Verify(
+			r => r.SearchAsync(null, 0, 50, It.IsAny<Application.Models.SortParams>(), It.IsAny<CancellationToken>()),
+			Times.Once);
+	}
 }

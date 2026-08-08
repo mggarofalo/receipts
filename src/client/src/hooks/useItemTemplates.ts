@@ -4,14 +4,17 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import client from "@/lib/api-client";
 import { toast } from "sonner";
 
-export function useItemTemplates(offset = 0, limit = 50, sortBy?: string | null, sortDirection?: string | null, options: { enabled?: boolean } = {}) {
-  const { enabled = true } = options;
+export function useItemTemplates(offset = 0, limit = 50, sortBy?: string | null, sortDirection?: string | null, options: { enabled?: boolean; q?: string } = {}) {
+  const { enabled = true, q } = options;
+  // Trimmed to undefined so a whitespace-only box is the unfiltered list and does not mint a
+  // separate cache entry from the empty one (RECEIPTS-930).
+  const search = q?.trim() || undefined;
   const query = useQuery({
-    queryKey: ["itemTemplates", "list", offset, limit, sortBy, sortDirection],
+    queryKey: ["itemTemplates", "list", offset, limit, sortBy, sortDirection, search],
     enabled,
     queryFn: async () => {
       const { data, error } = await client.GET("/api/item-templates", {
-        params: { query: { offset, limit, sortBy: sortBy ?? undefined, sortDirection: (sortDirection ?? undefined) as "asc" | "desc" | undefined } },
+        params: { query: { offset, limit, sortBy: sortBy ?? undefined, sortDirection: (sortDirection ?? undefined) as "asc" | "desc" | undefined, q: search } },
       });
       if (error) throw error;
       return data;

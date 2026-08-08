@@ -1198,6 +1198,152 @@ public class NormalizedDescriptionServiceTests
 	}
 
 	[Fact]
+	public async Task LinkTemplateAsync_UsesTheTemplatesExistingLinkRatherThanItsName()
+	{
+		// The scenario the app creates for itself: MergeAsync re-points templates at the survivor, so
+		// after "Gallon of Milk" is merged into "Milk" the template declares "Milk" and no row named
+		// "Gallon of Milk" exists. Resolving by name would mint a fresh empty entry, move the template
+		// onto it, and consolidate the reviewer's row into it — three buckets instead of one.
+		Guid survivorId = Guid.NewGuid();
+		Guid pendingId = Guid.NewGuid();
+		Guid templateId = Guid.NewGuid();
+		Guid receiptId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.AddRange(
+				new NormalizedDescriptionEntity { Id = survivorId, CanonicalName = "Milk", Status = NormalizedDescriptionStatus.Active, CreatedAt = DateTimeOffset.UtcNow },
+				new NormalizedDescriptionEntity { Id = pendingId, CanonicalName = "MLK GAL", Status = NormalizedDescriptionStatus.PendingReview, CreatedAt = DateTimeOffset.UtcNow });
+			seed.ItemTemplates.Add(new ItemTemplateEntity { Id = templateId, Name = "Gallon of Milk", NormalizedDescriptionId = survivorId });
+			seed.ReceiptItems.Add(BuildReceiptItem(Guid.NewGuid(), receiptId, "MLK GAL", pendingId));
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		LinkTemplateResult result = await service.LinkTemplateAsync(pendingId, templateId, CancellationToken.None);
+
+		result.Survivor.Description.Id.Should().Be(survivorId);
+		result.ItemsRelinkedCount.Should().Be(1);
+
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		// No stray entry invented from the template's name.
+		(await verify.NormalizedDescriptions.AnyAsync(e => e.CanonicalName == "Gallon of Milk")).Should().BeFalse();
+		(await verify.NormalizedDescriptions.CountAsync()).Should().Be(1);
+		// And the template still declares the row holding its history.
+		(await verify.ItemTemplates.SingleAsync(t => t.Id == templateId)).NormalizedDescriptionId.Should().Be(survivorId);
+	}
+
+	[Fact]
+	public async Task LinkTemplateAsync_RefusesWhenTheTemplatesOwnEntryIsATombstone()
+	{
+		// The guard on the caller's row does not cover this: GetOrCreateForTemplateAsync reinstates a
+		// tombstone it finds by name, which is right when a user types that name into a template and
+		// wrong here, where they picked an existing template while looking at a different row.
+		Guid pendingId = Guid.NewGuid();
+		Guid tombstoneId = Guid.NewGuid();
+		Guid templateId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.AddRange(
+				new NormalizedDescriptionEntity { Id = pendingId, CanonicalName = "BANANA BUNCH", Status = NormalizedDescriptionStatus.PendingReview, CreatedAt = DateTimeOffset.UtcNow },
+				new NormalizedDescriptionEntity { Id = tombstoneId, CanonicalName = "Bananas", Status = NormalizedDescriptionStatus.Rejected, CreatedAt = DateTimeOffset.UtcNow });
+			// Unlinked, as DetachItemsForRejectionAsync leaves it.
+			seed.ItemTemplates.Add(new ItemTemplateEntity { Id = templateId, Name = "Bananas", NormalizedDescriptionId = null });
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		await service.Invoking(s => s.LinkTemplateAsync(pendingId, templateId, CancellationToken.None))
+			.Should().ThrowAsync<InvalidOperationException>()
+			.WithMessage(NormalizedDescriptionService.CannotLinkTemplateToRejectedEntry);
+
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		// The rejection stands, and nothing was consolidated into it.
+		(await verify.NormalizedDescriptions.SingleAsync(e => e.Id == tombstoneId)).Status
+			.Should().Be(NormalizedDescriptionStatus.Rejected);
+		(await verify.NormalizedDescriptions.AnyAsync(e => e.Id == pendingId)).Should().BeTrue();
+	}
+
+	[Fact]
+	public async Task LinkTemplateAsync_RefusesWhenTheTemplateNameIsTakenAsAnotherRowsDisplayName()
+	{
+		// The unique index is on lower(COALESCE(DisplayLabel, CanonicalName)), so a row renamed *to*
+		// this template's name collides even though no CanonicalName matches. Left to InsertAsync it
+		// surfaced as an unhandled DbUpdateException — a 500 that retrying could never clear.
+		Guid pendingId = Guid.NewGuid();
+		Guid templateId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.AddRange(
+				new NormalizedDescriptionEntity { Id = pendingId, CanonicalName = "BANANA BUNCH", Status = NormalizedDescriptionStatus.PendingReview, CreatedAt = DateTimeOffset.UtcNow },
+				new NormalizedDescriptionEntity { Id = Guid.NewGuid(), CanonicalName = "BANANAS ORG 4011", DisplayLabel = "Bananas", Status = NormalizedDescriptionStatus.Active, CreatedAt = DateTimeOffset.UtcNow });
+			seed.ItemTemplates.Add(new ItemTemplateEntity { Id = templateId, Name = "Bananas", NormalizedDescriptionId = null });
+			await seed.SaveChangesAsync();
+		}
+
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		await service.Invoking(s => s.LinkTemplateAsync(pendingId, templateId, CancellationToken.None))
+			.Should().ThrowAsync<InvalidOperationException>()
+			.WithMessage(string.Format(NormalizedDescriptionService.TemplateNameCollidesWithDisplayName, "Bananas"));
+	}
+
+	[Fact]
+	public async Task LinkTemplateAsync_LeavesTheTemplateAloneWhenTheMergeFails()
+	{
+		// The FK is committed only after the merge succeeds. The reverse order left the template
+		// permanently torn off its entry when the merge threw, with the row still in the queue and
+		// no audit entry to explain the move.
+		Guid templateEntryId = Guid.NewGuid();
+		Guid pendingId = Guid.NewGuid();
+		Guid templateId = Guid.NewGuid();
+		Guid previousEntryId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.AddRange(
+				new NormalizedDescriptionEntity { Id = templateEntryId, CanonicalName = "Gallon of Milk", Status = NormalizedDescriptionStatus.Active, CreatedAt = DateTimeOffset.UtcNow },
+				new NormalizedDescriptionEntity { Id = previousEntryId, CanonicalName = "Milk", Status = NormalizedDescriptionStatus.Active, CreatedAt = DateTimeOffset.UtcNow },
+				new NormalizedDescriptionEntity { Id = pendingId, CanonicalName = "MILK 2% GAL", Status = NormalizedDescriptionStatus.PendingReview, CreatedAt = DateTimeOffset.UtcNow });
+			seed.ItemTemplates.Add(new ItemTemplateEntity { Id = templateId, Name = "Gallon of Milk", NormalizedDescriptionId = previousEntryId });
+			await seed.SaveChangesAsync();
+		}
+
+		ThrowingMergeNormalizedDescriptionService service = new(
+			_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		await service.Invoking(s => s.LinkTemplateAsync(pendingId, templateId, CancellationToken.None))
+			.Should().ThrowAsync<InvalidOperationException>()
+			.WithMessage("merge exploded");
+
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		// Still on the entry it declared before the call — not moved to a bucket nobody chose.
+		(await verify.ItemTemplates.SingleAsync(t => t.Id == templateId)).NormalizedDescriptionId
+			.Should().Be(previousEntryId);
+
+		// And no entry claiming a link that did not happen. Scoped to the semantic entry rather than
+		// counting every row: seeding writes automatic Create entries of its own.
+		List<AuditLogEntity> entries = await verify.AuditLogs
+			.Where(a => a.EntityType == "NormalizedDescription")
+			.ToListAsync();
+		entries.Should().NotContain(a => a.GetChanges()
+			.Any(c => c.FieldName == "operation" && c.NewValue == "LinkItemTemplate"));
+	}
+
+	// Fails the merge only, leaving every other step real, so the test exercises the actual ordering
+	// rather than a mock of it.
+	private sealed class ThrowingMergeNormalizedDescriptionService(
+		IDbContextFactory<ApplicationDbContext> contextFactory,
+		IEmbeddingService embeddingService,
+		NormalizedDescriptionMapper mapper,
+		NormalizedDescriptionSettingsMapper settingsMapper)
+		: NormalizedDescriptionService(contextFactory, embeddingService, mapper, settingsMapper)
+	{
+		public override Task<int> MergeAsync(Guid keepId, Guid discardId, CancellationToken cancellationToken) =>
+			throw new InvalidOperationException("merge exploded");
+	}
+
+	[Fact]
 	public async Task LinkTemplateAsync_RefusesATombstone()
 	{
 		Guid rejectedId = Guid.NewGuid();

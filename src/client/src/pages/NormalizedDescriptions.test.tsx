@@ -1231,6 +1231,28 @@ describe("NormalizedDescriptions template evidence and linking", () => {
     expect(consequence).toHaveTextContent(/consolidated into the “Gallon of Milk” entry/);
     expect(consequence).toHaveTextContent(/4 receipt items will be re-pointed/);
     expect(consequence).toHaveTextContent(/this entry is then deleted/i);
+    // The merge re-points trashed items too, which linkedItemCount does not count.
+    expect(consequence).toHaveTextContent(/recycle bin moves with it/i);
+  });
+
+  it("does not claim nothing moves when the row's only items are trashed", async () => {
+    // linkedItemCount is live-only, but MergeAsync re-points soft-deleted items as well. A flat
+    // "nothing will be re-pointed" would be false for a row whose items are all in the bin — they
+    // would come back attached to a different entry with nothing having said so.
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Organic Milk")).closest("tr")!;
+    await user.click(within(row).getByRole("button", { name: LINK_ACTION }));
+
+    const dialog = await screen.findByRole("dialog");
+    const target = within(dialog).getByText("Strawberry Preserves").closest("label")!;
+    await user.click(within(target).getByRole("radio"));
+
+    const consequence = within(dialog).getByTestId(
+      "link-template-consequence",
+    );
+    expect(consequence).toHaveTextContent(/no live receipt items are linked/i);
+    expect(consequence).toHaveTextContent(/recycle bin moves with it/i);
   });
 
   it("says nothing moves when the row already is that template's entry", async () => {
@@ -1275,7 +1297,9 @@ describe("NormalizedDescriptions template evidence and linking", () => {
     expect(mutate).not.toHaveBeenCalled();
   });
 
-  it("filters the template list as you type", async () => {
+  it("searches templates on the server rather than filtering the loaded page", async () => {
+    // Filtering in the browser can only ever find what was loaded, so a template past the page
+    // size read as "no such template exists" — the failure RECEIPTS-878 removed from merge.
     const user = userEvent.setup();
     renderWithQueryClient(<NormalizedDescriptions />);
     const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
@@ -1283,13 +1307,60 @@ describe("NormalizedDescriptions template evidence and linking", () => {
 
     const dialog = await screen.findByRole("dialog");
     await user.type(within(dialog).getByLabelText(/search templates/i), "milk");
-    expect(within(dialog).getByText("Gallon of Milk")).toBeInTheDocument();
-    expect(within(dialog).getAllByRole("radio")).toHaveLength(1);
+
+    await waitFor(() =>
+      expect(useItemTemplates).toHaveBeenCalledWith(
+        0,
+        expect.any(Number),
+        "name",
+        "asc",
+        expect.objectContaining({ q: "milk" }),
+      ),
+    );
   });
 
-  it("says when it is showing only part of the template list", async () => {
-    // The filter runs in the browser, so a capped page would otherwise read as "your template
-    // does not exist" — the same failure RECEIPTS-878 fixed in the merge dialog.
+  it("keeps the requested page within the documented limit", async () => {
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    await user.click(within(row).getByRole("button", { name: LINK_ACTION }));
+
+    await screen.findByRole("dialog");
+    // The shared `limit` parameter is documented with maximum: 100. Asking for more relied on
+    // undocumented server headroom.
+    const limits = vi
+      .mocked(useItemTemplates)
+      .mock.calls.map((call) => call[1] as number);
+    expect(Math.max(...limits)).toBeLessThanOrEqual(100);
+  });
+
+  it("says a failed template fetch failed, rather than claiming there are none", async () => {
+    // The empty state instructs the admin to create a template. Rendering it on a fetch failure
+    // tells someone who owns templates that they own none, and the template they then create
+    // links to a second canonical entry — the exact split this feature removes.
+    vi.mocked(useItemTemplates).mockReturnValue({
+      data: undefined,
+      total: 0,
+      isLoading: false,
+      isError: true,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    await user.click(within(row).getByRole("button", { name: LINK_ACTION }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByTestId("link-template-error")).toHaveTextContent(
+      /could not load your item templates/i,
+    );
+    expect(
+      within(dialog).queryByTestId("link-template-empty"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("says when it is showing only part of the matching templates", async () => {
     vi.mocked(useItemTemplates).mockReturnValue({
       data: itemTemplates,
       total: 250,
@@ -1303,9 +1374,12 @@ describe("NormalizedDescriptions template evidence and linking", () => {
     await user.click(within(row).getByRole("button", { name: LINK_ACTION }));
 
     const dialog = await screen.findByRole("dialog");
-    expect(
-      within(dialog).getByTestId("link-template-truncation-notice"),
-    ).toHaveTextContent("Showing 2 of 250 templates");
+    // "keep typing", not "refine your search": the search now runs on the server, so narrowing it
+    // genuinely reaches templates that are not on this page. The old copy advised the one thing
+    // that could not work.
+    const notice = within(dialog).getByTestId("link-template-truncation-notice");
+    expect(notice).toHaveTextContent("Showing 2 of 250 matching templates");
+    expect(notice).toHaveTextContent(/keep typing/i);
   });
 
   it("stays quiet when every template is on screen", async () => {

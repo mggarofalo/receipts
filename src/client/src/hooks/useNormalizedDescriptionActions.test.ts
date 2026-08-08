@@ -189,8 +189,10 @@ describe("useLinkTemplateMutation", () => {
     result.current.mutate({ id: "n-1", itemTemplateId: "t-1" });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    // "no live items", not "no items": the count is live-only while the merge also re-points
+    // trashed ones, so the flat phrasing would be false for a row whose items are all in the bin.
     expect(toast.success).toHaveBeenCalledWith(
-      'Consolidated into "Gallon of Milk" — no items needed re-linking',
+      'Consolidated into "Gallon of Milk" — no live items needed re-linking',
     );
   });
 

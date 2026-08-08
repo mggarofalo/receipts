@@ -626,11 +626,11 @@ interface LinkTemplateDialogProps {
 }
 
 /**
- * One page of the template list. Templates are hand-curated and shown in a picker at entry time,
- * so a list this long is already past the point where anyone browses it — but the notice below
- * says so rather than letting the picker look complete when it is not.
+ * One page of the template list. 100 is the documented ceiling on the shared `limit` parameter, and
+ * the page is a window on a server-side search rather than the whole searchable set — so a template
+ * past it is still reachable by typing, which is the part that matters.
  */
-const TEMPLATE_PICKER_PAGE_SIZE = 200;
+const TEMPLATE_PICKER_PAGE_SIZE = 100;
 
 /**
  * "This row is an item I already have a template for" (RECEIPTS-930).
@@ -646,29 +646,24 @@ function LinkTemplateDialog({ source, onClose }: LinkTemplateDialogProps) {
   const link = useLinkTemplateMutation();
   const [templateId, setTemplateId] = useState<string | undefined>();
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search);
 
-  const { data, total, isLoading } = useItemTemplates(
+  // Searched on the server, like the merge dialog since RECEIPTS-879. Filtering the loaded page in
+  // the browser can only ever find what was loaded, so a template past the page size read as "no
+  // such template exists" while the notice below told you to refine a search that could not reach
+  // it — the same failure RECEIPTS-878 removed from merge, rebuilt.
+  const { data, total, isLoading, isError } = useItemTemplates(
     0,
     TEMPLATE_PICKER_PAGE_SIZE,
     "name",
     "asc",
-    { enabled: source !== null },
+    { enabled: source !== null, q: debouncedSearch },
   );
 
   const templates = useMemo(
     () => (data as ItemTemplate[] | undefined) ?? [],
     [data],
   );
-
-  // Filtered in the browser, unlike the merge dialog's server-side search: /api/item-templates has
-  // no search parameter, and adding one is a change to a different module's contract. Safe only
-  // because the loaded page is capped and the cap is disclosed below — for a machine-generated list
-  // this would be the silent-truncation trap RECEIPTS-878 fixed.
-  const filtered = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    if (!needle) return templates;
-    return templates.filter((t) => t.name.toLowerCase().includes(needle));
-  }, [templates, search]);
 
   const selected = useMemo(
     () => templates.find((t) => t.id === templateId),
@@ -729,18 +724,30 @@ function LinkTemplateDialog({ source, onClose }: LinkTemplateDialogProps) {
           <div className="max-h-64 overflow-y-auto rounded border">
             {isLoading ? (
               <Skeleton className="h-24 w-full rounded" />
-            ) : filtered.length === 0 ? (
+            ) : isError ? (
+              // Distinguished from "you have no templates", which is what a failed fetch used to
+              // render. That is not a cosmetic difference: it told an admin who owns templates that
+              // they own none, and pointed them at creating one — which would link to a second
+              // canonical entry and produce exactly the split bucket this feature removes.
+              <p
+                className="p-4 text-sm text-destructive"
+                data-testid="link-template-error"
+              >
+                Could not load your item templates. Nothing has been changed — close this and try
+                again.
+              </p>
+            ) : templates.length === 0 ? (
               <p
                 className="p-4 text-sm text-muted-foreground"
                 data-testid="link-template-empty"
               >
-                {templates.length === 0
-                  ? "You have no item templates yet. Create one from the Item Templates page first."
-                  : "No templates match your search."}
+                {debouncedSearch
+                  ? "No templates match your search."
+                  : "You have no item templates yet. Create one from the Item Templates page first."}
               </p>
             ) : (
               <ul className="divide-y">
-                {filtered.map((t) => (
+                {templates.map((t) => (
                   <li key={t.id}>
                     <label className="flex cursor-pointer items-center gap-2 p-2 text-sm hover:bg-muted/50">
                       <input
@@ -765,13 +772,15 @@ function LinkTemplateDialog({ source, onClose }: LinkTemplateDialogProps) {
               </ul>
             )}
           </div>
+          {/* Now truthful advice: the search runs on the server, so narrowing it genuinely reaches
+              templates that are not on this page. */}
           {total > templates.length && (
             <p
               className="text-xs text-muted-foreground"
               data-testid="link-template-truncation-notice"
             >
-              Showing {templates.length} of {total} templates — refine your
-              search to narrow it down.
+              Showing {templates.length} of {total} matching templates — keep
+              typing to narrow it down.
             </p>
           )}
           {selected && (
@@ -780,9 +789,14 @@ function LinkTemplateDialog({ source, onClose }: LinkTemplateDialogProps) {
                 <>
                   “{source?.displayName}” will be consolidated into the “
                   {selected.name}” entry.{" "}
+                  {/* "No live receipt items", not "no receipt items". The count is live-only, but
+                      the merge re-points trashed ones too, so a flat "nothing will be re-pointed"
+                      would be false for a row whose items are all in the recycle bin — they would
+                      come back attached to a different entry with nothing having said so. */}
                   {sourceCount === 0
-                    ? "No receipt items are linked, so nothing will be re-pointed."
+                    ? "No live receipt items are linked, so nothing you can see will move."
                     : `Its ${itemsPhrase(sourceCount)} will be re-pointed there.`}{" "}
+                  Anything of its own sitting in the recycle bin moves with it.{" "}
                   <strong>This entry is then deleted.</strong> Cannot be undone.
                 </>
               ) : (
