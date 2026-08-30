@@ -20,6 +20,7 @@ import client from "@/lib/api-client";
 import { toast } from "sonner";
 import {
   useReceipts,
+  useAllReceipts,
   useReceipt,
   useCreateReceipt,
   useUpdateReceipt,
@@ -389,6 +390,62 @@ describe("useReceipts", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["receipts"] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["receipts", "deleted"] });
+  });
+});
+
+describe("useAllReceipts", () => {
+  it("does not fetch when disabled", () => {
+    const { result } = renderHook(
+      () => useAllReceipts({ enabled: false }),
+      { wrapper: createWrapper() },
+    );
+
+    expect(result.current.fetchStatus).toBe("idle");
+    expect(client.GET).not.toHaveBeenCalled();
+  });
+
+  it("auto-paginates across multiple pages in descending date order", async () => {
+    const pageOne = Array.from({ length: 500 }, (_, index) => ({
+      id: `receipt-${index}`,
+      location: `Store ${index}`,
+      date: "2025-01-02",
+    }));
+    const pageTwo = Array.from({ length: 100 }, (_, index) => ({
+      id: `receipt-${500 + index}`,
+      location: `Store ${500 + index}`,
+      date: "2025-01-01",
+    }));
+    (client.GET as Mock).mockImplementation((_path, options) => {
+      const offset = options.params.query.offset;
+      return Promise.resolve({
+        data: {
+          data: offset === 0 ? pageOne : pageTwo,
+          total: 600,
+          offset,
+          limit: 500,
+        },
+        error: undefined,
+      });
+    });
+
+    const { result } = renderHook(() => useAllReceipts(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toHaveLength(600);
+    expect(client.GET).toHaveBeenCalledTimes(2);
+    expect(client.GET).toHaveBeenLastCalledWith("/api/receipts", {
+      params: {
+        query: {
+          offset: 500,
+          limit: 500,
+          sortBy: "date",
+          sortDirection: "desc",
+        },
+      },
+      signal: expect.any(AbortSignal),
+    });
   });
 });
 

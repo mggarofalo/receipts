@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { usePageTitle } from "@/hooks/usePageTitle";
-import { useAccounts } from "@/hooks/useAccounts";
+import { useAllAccounts } from "@/hooks/useAccounts";
 import {
   useYnabConnectionStatus,
   useYnabBudgets,
@@ -78,7 +78,7 @@ export default function YnabSettings() {
   // Only fetch YNAB data when configured (budgets query succeeded)
   const ynabReady = !budgetsLoading && !budgetsError;
 
-  const { data: receiptsAccounts, isLoading: accountsLoading } = useAccounts(0, 200);
+  const { data: receiptsAccounts, isLoading: accountsLoading } = useAllAccounts();
   const { accounts: ynabAccounts, isLoading: ynabAccountsLoading } = useYnabAccounts(ynabReady);
   const { mappings: accountMappings, isLoading: accountMappingsLoading } = useYnabAccountMappings(ynabReady);
   const createAccountMapping = useCreateYnabAccountMapping();

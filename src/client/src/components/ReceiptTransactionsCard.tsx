@@ -4,7 +4,7 @@ import {
   useUpdateTransaction,
   useDeleteTransactions,
 } from "@/hooks/useTransactions";
-import { useCards } from "@/hooks/useCards";
+import { useAllCards } from "@/hooks/useCards";
 import {
   ReceiptTransactionForm,
   type ReceiptTransactionFormValues,
@@ -72,7 +72,7 @@ export function ReceiptTransactionsCard({
   const updateTransaction = useUpdateTransaction();
   const deleteTransactions = useDeleteTransactions();
 
-  const { data: cards } = useCards(0, 500, undefined, undefined, null);
+  const { data: cards } = useAllCards();
 
   const cardNameMap = useMemo(() => {
     const map = new Map<string, string>();

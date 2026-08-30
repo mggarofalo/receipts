@@ -25,6 +25,41 @@ export function useCards(offset = 0, limit = 50, sortBy?: string | null, sortDir
   return useMemo(() => ({ ...base, data: query.data?.data, total: Number(query.data?.total ?? 0) }), [base, query.data]);
 }
 
+/** Fetches the complete card list for pickers and entity lookups. */
+export function useAllCards(isActive?: boolean | null) {
+  return useQuery({
+    queryKey: ["cards", "all", isActive ?? undefined],
+    queryFn: async ({ signal }) => {
+      const pageSize = 500;
+      const fetchPage = async (offset: number) => {
+        const { data, error } = await client.GET("/api/cards", {
+          params: {
+            query: {
+              offset,
+              limit: pageSize,
+              sortBy: "name",
+              sortDirection: "asc",
+              isActive: isActive ?? undefined,
+            },
+          },
+          signal,
+        });
+        if (error) throw error;
+        return data;
+      };
+
+      const first = await fetchPage(0);
+      const all = [...(first?.data ?? [])];
+      const total = Number(first?.total ?? all.length);
+      for (let offset = pageSize; offset < total; offset += pageSize) {
+        const page = await fetchPage(offset);
+        all.push(...(page?.data ?? []));
+      }
+      return all;
+    },
+  });
+}
+
 export function useCard(id: string | null) {
   return useQuery({
     queryKey: ["cards", id],

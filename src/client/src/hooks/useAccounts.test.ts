@@ -20,6 +20,7 @@ import client from "@/lib/api-client";
 import { toast } from "sonner";
 import {
   useAccounts,
+  useAllAccounts,
   useAccount,
   useAccountCards,
   useCreateAccount,
@@ -76,6 +77,51 @@ describe("useAccounts", () => {
     const { result } = renderHook(() => useAccounts(), { wrapper: createWrapper() });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
+  });
+});
+
+describe("useAllAccounts", () => {
+  it("auto-paginates across multiple pages", async () => {
+    const pageOne = Array.from({ length: 500 }, (_, index) => ({
+      id: `account-${index}`,
+      name: `Account ${index}`,
+    }));
+    const pageTwo = Array.from({ length: 100 }, (_, index) => ({
+      id: `account-${500 + index}`,
+      name: `Account ${500 + index}`,
+    }));
+    (client.GET as Mock).mockImplementation((_path, options) => {
+      const offset = options.params.query.offset;
+      return Promise.resolve({
+        data: {
+          data: offset === 0 ? pageOne : pageTwo,
+          total: 600,
+          offset,
+          limit: 500,
+        },
+        error: undefined,
+      });
+    });
+
+    const { result } = renderHook(() => useAllAccounts(true), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toHaveLength(600);
+    expect(client.GET).toHaveBeenCalledTimes(2);
+    expect(client.GET).toHaveBeenLastCalledWith("/api/accounts", {
+      params: {
+        query: {
+          offset: 500,
+          limit: 500,
+          sortBy: "name",
+          sortDirection: "asc",
+          isActive: true,
+        },
+      },
+      signal: expect.any(AbortSignal),
+    });
   });
 });
 

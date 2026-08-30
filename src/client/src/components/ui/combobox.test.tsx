@@ -112,6 +112,38 @@ describe("Combobox", () => {
     });
   });
 
+  it("searches and selects an option beyond the first 50 results", async () => {
+    const manyOptions: ComboboxOption[] = Array.from(
+      { length: 75 },
+      (_, index) => ({
+        value: `category-${index + 1}`,
+        label: `Category ${String(index + 1).padStart(2, "0")}`,
+      }),
+    );
+    const onValueChange = vi.fn();
+    const user = userEvent.setup();
+
+    render(
+      <Combobox
+        {...defaultProps}
+        options={manyOptions}
+        onValueChange={onValueChange}
+        searchPlaceholder="Search categories..."
+      />,
+    );
+
+    await user.click(screen.getByRole("combobox"));
+    await user.type(
+      screen.getByPlaceholderText("Search categories..."),
+      "Category 75",
+    );
+
+    const category = await screen.findByText("Category 75");
+    await user.click(category);
+
+    expect(onValueChange).toHaveBeenCalledWith("category-75");
+  });
+
   it("shows empty message when no options match the search", async () => {
     const user = userEvent.setup();
     render(

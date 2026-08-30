@@ -59,6 +59,41 @@ export function useReceipts(
   return useMemo(() => ({ ...base, data: query.data?.data, total: Number(query.data?.total ?? 0) }), [base, query.data]);
 }
 
+/** Fetches the complete receipt list for pickers. */
+export function useAllReceipts(options: { enabled?: boolean } = {}) {
+  return useQuery({
+    queryKey: ["receipts", "all"],
+    enabled: options.enabled ?? true,
+    queryFn: async ({ signal }) => {
+      const pageSize = 500;
+      const fetchPage = async (offset: number) => {
+        const { data, error } = await client.GET("/api/receipts", {
+          params: {
+            query: {
+              offset,
+              limit: pageSize,
+              sortBy: "date",
+              sortDirection: "desc",
+            },
+          },
+          signal,
+        });
+        if (error) throw error;
+        return data;
+      };
+
+      const first = await fetchPage(0);
+      const all = [...(first?.data ?? [])];
+      const total = Number(first?.total ?? all.length);
+      for (let offset = pageSize; offset < total; offset += pageSize) {
+        const page = await fetchPage(offset);
+        all.push(...(page?.data ?? []));
+      }
+      return all;
+    },
+  });
+}
+
 export function useReceipt(id: string | null) {
   return useQuery({
     queryKey: ["receipts", id],

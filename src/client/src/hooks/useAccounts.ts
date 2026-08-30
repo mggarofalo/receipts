@@ -21,6 +21,41 @@ export function useAccounts(offset = 0, limit = 50, sortBy?: string | null, sort
   return useMemo(() => ({ ...base, data: query.data?.data, total: Number(query.data?.total ?? 0) }), [base, query.data]);
 }
 
+/** Fetches the complete account list for pickers and entity lookups. */
+export function useAllAccounts(isActive?: boolean | null) {
+  return useQuery({
+    queryKey: ["accounts", "all", isActive ?? undefined],
+    queryFn: async ({ signal }) => {
+      const pageSize = 500;
+      const fetchPage = async (offset: number) => {
+        const { data, error } = await client.GET("/api/accounts", {
+          params: {
+            query: {
+              offset,
+              limit: pageSize,
+              sortBy: "name",
+              sortDirection: "asc",
+              isActive: isActive ?? undefined,
+            },
+          },
+          signal,
+        });
+        if (error) throw error;
+        return data;
+      };
+
+      const first = await fetchPage(0);
+      const all = [...(first?.data ?? [])];
+      const total = Number(first?.total ?? all.length);
+      for (let offset = pageSize; offset < total; offset += pageSize) {
+        const page = await fetchPage(offset);
+        all.push(...(page?.data ?? []));
+      }
+      return all;
+    },
+  });
+}
+
 export function useAccount(id: string | null) {
   return useQuery({
     queryKey: ["accounts", id],

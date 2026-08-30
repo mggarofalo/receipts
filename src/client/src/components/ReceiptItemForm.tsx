@@ -5,7 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import Fuse from "fuse.js";
 import { useFormShortcuts } from "@/hooks/useFormShortcuts";
 import { useFieldHistory } from "@/hooks/useFieldHistory";
-import { useReceipts } from "@/hooks/useReceipts";
+import { useAllReceipts } from "@/hooks/useReceipts";
 import { useAllCategories } from "@/hooks/useCategories";
 import {
   useAllSubcategoriesByCategoryId,
@@ -104,7 +104,9 @@ export function ReceiptItemForm({
   const { options: itemCodeOptions, add: addItemCodeHistory } =
     useFieldHistory(itemCodeHistory);
 
-  const { data: receipts, isLoading: receiptsLoading } = useReceipts();
+  const { data: receipts, isLoading: receiptsLoading } = useAllReceipts({
+    enabled: !hideReceiptField,
+  });
   const { data: categories } = useAllCategories(true);
   const { data: itemTemplatesData } = useItemTemplates();
   const templates = useMemo(

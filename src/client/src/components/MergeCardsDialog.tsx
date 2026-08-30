@@ -28,7 +28,7 @@ import {
   type MergeCardsConflict,
   type YnabMappingConflict,
 } from "@/hooks/useCards";
-import { useAccounts, useAccountsCards, useCreateAccount } from "@/hooks/useAccounts";
+import { useAllAccounts, useAccountsCards, useCreateAccount } from "@/hooks/useAccounts";
 
 export interface SelectedCardSummary {
   id: string;
@@ -79,7 +79,7 @@ export function MergeCardsDialog({
   // silently lands on an account still carrying the original name.
   const pendingCreatedAccountNameRef = useRef<string | null>(null);
 
-  const { data: accountsData } = useAccounts(0, 500, "name", "asc", true);
+  const { data: accountsData } = useAllAccounts(true);
   const createAccount = useCreateAccount();
   const mergeCards = useMergeCards();
 

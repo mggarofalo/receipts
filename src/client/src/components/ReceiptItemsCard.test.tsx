@@ -6,7 +6,7 @@ import { renderWithQueryClient } from "@/test/test-utils";
 import { mockMutationResult } from "@/test/mock-hooks";
 
 vi.mock("@/hooks/useReceipts", () => ({
-  useReceipts: vi.fn(() => ({
+  useAllReceipts: vi.fn(() => ({
     data: [],
     isLoading: false,
   })),

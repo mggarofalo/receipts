@@ -135,7 +135,7 @@ const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps>(
                 )}
               </CommandEmpty>
               <CommandGroup>
-                {options.slice(0, 50).map((option) => (
+                {options.map((option) => (
                   <CommandItem
                     key={option.value}
                     value={

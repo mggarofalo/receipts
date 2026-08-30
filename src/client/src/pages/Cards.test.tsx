@@ -27,7 +27,7 @@ const mockAccountList = [
 ];
 
 vi.mock("@/hooks/useAccounts", () => ({
-  useAccounts: vi.fn(() => ({ data: mockAccountList, total: mockAccountList.length, isLoading: false })),
+  useAllAccounts: vi.fn(() => ({ data: mockAccountList, isLoading: false })),
   useCreateAccount: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   // The merge dialog reads every source account's full card set to spot a partial
   // merge (RECEIPTS-888). Empty here: these tests are about the Cards page itself.
