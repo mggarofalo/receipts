@@ -29,10 +29,10 @@ public class CardService(ICardRepository repository, CardMapper mapper) : ICardS
 		return new PagedResult<Card>(data, total, offset, limit);
 	}
 
-	public async Task<PagedResult<Card>> GetAllAsync(int offset, int limit, SortParams sort, bool? isActive, CancellationToken cancellationToken)
+	public async Task<PagedResult<Card>> GetAllAsync(int offset, int limit, SortParams sort, bool? isActive, string? q, CancellationToken cancellationToken)
 	{
-		int total = await repository.GetCountAsync(cancellationToken, isActive);
-		List<CardEntity> entities = await repository.GetAllAsync(offset, limit, sort, cancellationToken, isActive);
+		int total = await repository.GetCountAsync(cancellationToken, isActive, q);
+		List<CardEntity> entities = await repository.GetAllAsync(offset, limit, sort, cancellationToken, isActive, q);
 		List<Card> data = [.. entities.Select(mapper.ToDomain)];
 		return new PagedResult<Card>(data, total, offset, limit);
 	}

@@ -29,10 +29,10 @@ public class AccountService(IAccountRepository repository, AccountMapper mapper)
 		return new PagedResult<Account>(data, total, offset, limit);
 	}
 
-	public async Task<PagedResult<Account>> GetAllAsync(int offset, int limit, SortParams sort, bool? isActive, CancellationToken cancellationToken)
+	public async Task<PagedResult<Account>> GetAllAsync(int offset, int limit, SortParams sort, bool? isActive, string? q, CancellationToken cancellationToken)
 	{
-		int total = await repository.GetCountAsync(cancellationToken, isActive);
-		List<AccountEntity> entities = await repository.GetAllAsync(offset, limit, sort, cancellationToken, isActive);
+		int total = await repository.GetCountAsync(cancellationToken, isActive, q);
+		List<AccountEntity> entities = await repository.GetAllAsync(offset, limit, sort, cancellationToken, isActive, q);
 		List<Account> data = [.. entities.Select(mapper.ToDomain)];
 		return new PagedResult<Account>(data, total, offset, limit);
 	}

@@ -12,6 +12,14 @@ The canonical API contract lives in `openapi/spec.yaml` (OpenAPI 3.1.0). All API
 
 Use `TypedResults` with concrete `Results<T1, T2, ...>` union return types on all endpoints (see MGG-227). This provides compile-time enforcement of response types and eliminates the need for `[ProducesResponseType]` attributes.
 
+## List Search Filters
+
+Entity list endpoints use the optional `q` query parameter for picker and table
+search. Search is a trimmed, case-insensitive substring match across the
+user-visible identity fields documented by that endpoint. Missing or
+whitespace-only `q` values mean no search filter. Apply search and other filters
+before counting, sorting, and pagination so `total` describes the filtered set.
+
 ## Authentication Standards
 
 Token-based authentication must conform to these RFCs:

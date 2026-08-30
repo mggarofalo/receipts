@@ -30,7 +30,7 @@ public class AccountRepository(IDbContextFactory<ApplicationDbContext> contextFa
 			.FirstOrDefaultAsync(cancellationToken);
 	}
 
-	public async Task<List<AccountEntity>> GetAllAsync(int offset, int limit, SortParams sort, CancellationToken cancellationToken, bool? isActive = null)
+	public async Task<List<AccountEntity>> GetAllAsync(int offset, int limit, SortParams sort, CancellationToken cancellationToken, bool? isActive = null, string? q = null)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		IQueryable<AccountEntity> query = context.Accounts.AsNoTracking();
@@ -38,6 +38,7 @@ public class AccountRepository(IDbContextFactory<ApplicationDbContext> contextFa
 		{
 			query = query.Where(e => e.IsActive == isActive.Value);
 		}
+		query = ApplySearchFilter(query, q);
 
 		return await query
 			.ApplySort(sort, AllowedSortColumns, e => e.Name, e => e.Id)
@@ -83,7 +84,7 @@ public class AccountRepository(IDbContextFactory<ApplicationDbContext> contextFa
 		return await context.Accounts.AnyAsync(e => e.Id == id, cancellationToken);
 	}
 
-	public async Task<int> GetCountAsync(CancellationToken cancellationToken, bool? isActive = null)
+	public async Task<int> GetCountAsync(CancellationToken cancellationToken, bool? isActive = null, string? q = null)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		IQueryable<AccountEntity> query = context.Accounts;
@@ -91,8 +92,19 @@ public class AccountRepository(IDbContextFactory<ApplicationDbContext> contextFa
 		{
 			query = query.Where(e => e.IsActive == isActive.Value);
 		}
+		query = ApplySearchFilter(query, q);
 
 		return await query.CountAsync(cancellationToken);
+	}
+
+	private static IQueryable<AccountEntity> ApplySearchFilter(IQueryable<AccountEntity> query, string? q)
+	{
+		if (string.IsNullOrWhiteSpace(q))
+		{
+			return query;
+		}
+		string search = q.Trim().ToLower();
+		return query.Where(e => e.Name.ToLower().Contains(search));
 	}
 
 	public async Task DeleteAsync(Guid id, CancellationToken cancellationToken)

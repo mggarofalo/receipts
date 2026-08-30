@@ -45,7 +45,7 @@ public class CardRepository(IDbContextFactory<ApplicationDbContext> contextFacto
 			.ToListAsync(cancellationToken);
 	}
 
-	public async Task<List<CardEntity>> GetAllAsync(int offset, int limit, SortParams sort, CancellationToken cancellationToken, bool? isActive = null)
+	public async Task<List<CardEntity>> GetAllAsync(int offset, int limit, SortParams sort, CancellationToken cancellationToken, bool? isActive = null, string? q = null)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		IQueryable<CardEntity> query = context.Cards.AsNoTracking();
@@ -53,6 +53,7 @@ public class CardRepository(IDbContextFactory<ApplicationDbContext> contextFacto
 		{
 			query = query.Where(e => e.IsActive == isActive.Value);
 		}
+		query = ApplySearchFilter(query, q);
 
 		return await query
 			.ApplySort(sort, AllowedSortColumns, e => e.Name, e => e.Id)
@@ -100,7 +101,7 @@ public class CardRepository(IDbContextFactory<ApplicationDbContext> contextFacto
 		return await context.Cards.AnyAsync(e => e.Id == id, cancellationToken);
 	}
 
-	public async Task<int> GetCountAsync(CancellationToken cancellationToken, bool? isActive = null)
+	public async Task<int> GetCountAsync(CancellationToken cancellationToken, bool? isActive = null, string? q = null)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		IQueryable<CardEntity> query = context.Cards;
@@ -108,8 +109,19 @@ public class CardRepository(IDbContextFactory<ApplicationDbContext> contextFacto
 		{
 			query = query.Where(e => e.IsActive == isActive.Value);
 		}
+		query = ApplySearchFilter(query, q);
 
 		return await query.CountAsync(cancellationToken);
+	}
+
+	private static IQueryable<CardEntity> ApplySearchFilter(IQueryable<CardEntity> query, string? q)
+	{
+		if (string.IsNullOrWhiteSpace(q))
+		{
+			return query;
+		}
+		string search = q.Trim().ToLower();
+		return query.Where(e => e.Name.ToLower().Contains(search) || e.CardCode.ToLower().Contains(search));
 	}
 
 	public async Task DeleteAsync(Guid id, CancellationToken cancellationToken)

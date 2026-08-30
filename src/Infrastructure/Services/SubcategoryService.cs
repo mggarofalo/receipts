@@ -39,10 +39,10 @@ public class SubcategoryService(ISubcategoryRepository repository, SubcategoryMa
 		return new PagedResult<Subcategory>(data, total, offset, limit);
 	}
 
-	public async Task<PagedResult<Subcategory>> GetAllAsync(int offset, int limit, SortParams sort, bool? isActive, CancellationToken cancellationToken)
+	public async Task<PagedResult<Subcategory>> GetAllAsync(int offset, int limit, SortParams sort, bool? isActive, string? q, CancellationToken cancellationToken)
 	{
-		int total = await repository.GetCountAsync(cancellationToken, isActive);
-		List<SubcategoryEntity> entities = await repository.GetAllAsync(offset, limit, sort, cancellationToken, isActive);
+		int total = await repository.GetCountAsync(cancellationToken, isActive, q);
+		List<SubcategoryEntity> entities = await repository.GetAllAsync(offset, limit, sort, cancellationToken, isActive, q);
 		List<Subcategory> data = [.. entities.Select(mapper.ToDomain)];
 		return new PagedResult<Subcategory>(data, total, offset, limit);
 	}
@@ -69,10 +69,10 @@ public class SubcategoryService(ISubcategoryRepository repository, SubcategoryMa
 		return new PagedResult<Subcategory>(data, total, offset, limit);
 	}
 
-	public async Task<PagedResult<Subcategory>> GetByCategoryIdAsync(Guid categoryId, int offset, int limit, SortParams sort, bool? isActive, CancellationToken cancellationToken)
+	public async Task<PagedResult<Subcategory>> GetByCategoryIdAsync(Guid categoryId, int offset, int limit, SortParams sort, bool? isActive, string? q, CancellationToken cancellationToken)
 	{
-		int total = await repository.GetByCategoryIdCountAsync(categoryId, cancellationToken, isActive);
-		List<SubcategoryEntity> entities = await repository.GetByCategoryIdAsync(categoryId, offset, limit, sort, cancellationToken, isActive);
+		int total = await repository.GetByCategoryIdCountAsync(categoryId, cancellationToken, isActive, q);
+		List<SubcategoryEntity> entities = await repository.GetByCategoryIdAsync(categoryId, offset, limit, sort, cancellationToken, isActive, q);
 		List<Subcategory> data = entities.Select(mapper.ToDomain).ToList();
 		return new PagedResult<Subcategory>(data, total, offset, limit);
 	}

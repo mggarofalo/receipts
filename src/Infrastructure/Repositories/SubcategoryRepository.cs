@@ -20,7 +20,7 @@ public class SubcategoryRepository(IDbContextFactory<ApplicationDbContext> conte
 		return await context.Subcategories.FindAsync([id], cancellationToken);
 	}
 
-	public async Task<List<SubcategoryEntity>> GetAllAsync(int offset, int limit, SortParams sort, CancellationToken cancellationToken, bool? isActive = null)
+	public async Task<List<SubcategoryEntity>> GetAllAsync(int offset, int limit, SortParams sort, CancellationToken cancellationToken, bool? isActive = null, string? q = null)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		IQueryable<SubcategoryEntity> query = context.Subcategories.AsNoTracking();
@@ -28,6 +28,7 @@ public class SubcategoryRepository(IDbContextFactory<ApplicationDbContext> conte
 		{
 			query = query.Where(e => e.IsActive == isActive.Value);
 		}
+		query = ApplySearchFilter(query, q);
 
 		return await query
 			.ApplySort(sort, AllowedSortColumns, e => e.Name, e => e.Id)
@@ -65,7 +66,7 @@ public class SubcategoryRepository(IDbContextFactory<ApplicationDbContext> conte
 			.CountAsync(cancellationToken);
 	}
 
-	public async Task<List<SubcategoryEntity>> GetByCategoryIdAsync(Guid categoryId, int offset, int limit, SortParams sort, CancellationToken cancellationToken, bool? isActive = null)
+	public async Task<List<SubcategoryEntity>> GetByCategoryIdAsync(Guid categoryId, int offset, int limit, SortParams sort, CancellationToken cancellationToken, bool? isActive = null, string? q = null)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		IQueryable<SubcategoryEntity> query = context.Subcategories
@@ -74,6 +75,7 @@ public class SubcategoryRepository(IDbContextFactory<ApplicationDbContext> conte
 		{
 			query = query.Where(e => e.IsActive == isActive.Value);
 		}
+		query = ApplySearchFilter(query, q);
 
 		return await query
 			.AsNoTracking()
@@ -83,7 +85,7 @@ public class SubcategoryRepository(IDbContextFactory<ApplicationDbContext> conte
 			.ToListAsync(cancellationToken);
 	}
 
-	public async Task<int> GetByCategoryIdCountAsync(Guid categoryId, CancellationToken cancellationToken, bool? isActive = null)
+	public async Task<int> GetByCategoryIdCountAsync(Guid categoryId, CancellationToken cancellationToken, bool? isActive = null, string? q = null)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		IQueryable<SubcategoryEntity> query = context.Subcategories
@@ -92,6 +94,7 @@ public class SubcategoryRepository(IDbContextFactory<ApplicationDbContext> conte
 		{
 			query = query.Where(e => e.IsActive == isActive.Value);
 		}
+		query = ApplySearchFilter(query, q);
 
 		return await query.CountAsync(cancellationToken);
 	}
@@ -127,7 +130,7 @@ public class SubcategoryRepository(IDbContextFactory<ApplicationDbContext> conte
 		return await context.Subcategories.AnyAsync(e => e.Id == id, cancellationToken);
 	}
 
-	public async Task<int> GetCountAsync(CancellationToken cancellationToken, bool? isActive = null)
+	public async Task<int> GetCountAsync(CancellationToken cancellationToken, bool? isActive = null, string? q = null)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		IQueryable<SubcategoryEntity> query = context.Subcategories;
@@ -135,8 +138,19 @@ public class SubcategoryRepository(IDbContextFactory<ApplicationDbContext> conte
 		{
 			query = query.Where(e => e.IsActive == isActive.Value);
 		}
+		query = ApplySearchFilter(query, q);
 
 		return await query.CountAsync(cancellationToken);
+	}
+
+	private static IQueryable<SubcategoryEntity> ApplySearchFilter(IQueryable<SubcategoryEntity> query, string? q)
+	{
+		if (string.IsNullOrWhiteSpace(q))
+		{
+			return query;
+		}
+		string search = q.Trim().ToLower();
+		return query.Where(e => e.Name.ToLower().Contains(search));
 	}
 
 	public async Task DeleteAsync(List<Guid> ids, CancellationToken cancellationToken)

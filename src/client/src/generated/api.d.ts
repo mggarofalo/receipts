@@ -4606,6 +4606,8 @@ export interface operations {
         parameters: {
             query?: {
                 isActive?: boolean;
+                /** @description Case-insensitive substring filter applied to the account name. Whitespace-only values are ignored. */
+                q?: string;
                 offset?: components["parameters"]["Offset"];
                 limit?: components["parameters"]["Limit"];
                 /** @description Column name to sort by. Allowed values depend on the entity type. */
@@ -4830,6 +4832,8 @@ export interface operations {
         parameters: {
             query?: {
                 isActive?: boolean;
+                /** @description Case-insensitive substring filter applied to the card name and card code. Whitespace-only values are ignored. */
+                q?: string;
                 offset?: components["parameters"]["Offset"];
                 limit?: components["parameters"]["Limit"];
                 /** @description Column name to sort by. Allowed values depend on the entity type. */
@@ -5224,6 +5228,8 @@ export interface operations {
         parameters: {
             query?: {
                 isActive?: boolean;
+                /** @description Case-insensitive substring filter applied to the category name. Whitespace-only values are ignored. */
+                q?: string;
                 offset?: components["parameters"]["Offset"];
                 limit?: components["parameters"]["Limit"];
                 /** @description Column name to sort by. Allowed values depend on the entity type. */
@@ -5510,6 +5516,8 @@ export interface operations {
             query?: {
                 categoryId?: string;
                 isActive?: boolean;
+                /** @description Case-insensitive substring filter applied to the subcategory name. Whitespace-only values are ignored. */
+                q?: string;
                 offset?: components["parameters"]["Offset"];
                 limit?: components["parameters"]["Limit"];
                 /** @description Column name to sort by. Allowed values depend on the entity type. */

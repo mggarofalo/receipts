@@ -120,7 +120,7 @@ public class CardsControllerTests
 			.ReturnsAsync(new PagedResult<Card>(accounts, accounts.Count, 0, 50));
 
 		// Act
-		Results<Ok<CardListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetAllCards(null, 0, 50, null, null);
+		Results<Ok<CardListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetAllCards(null, null, 0, 50, null, null);
 
 		// Assert
 		Ok<CardListResponse> result = Assert.IsType<Ok<CardListResponse>>(rawResult.Result);
@@ -140,12 +140,12 @@ public class CardsControllerTests
 		List<CardResponse> expectedReturn = [.. accounts.Select(_mapper.ToResponse)];
 
 		_mediatorMock.Setup(m => m.Send(
-			It.Is<GetAllCardsQuery>(q => q.Offset == 0 && q.Limit == 50 && q.IsActive == true),
+			It.Is<GetAllCardsQuery>(q => q.Offset == 0 && q.Limit == 50 && q.IsActive == true && q.Q == "4242"),
 			It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new PagedResult<Card>(accounts, accounts.Count, 0, 50));
 
 		// Act
-		Results<Ok<CardListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetAllCards(true, 0, 50, null, null);
+		Results<Ok<CardListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetAllCards(true, "4242", 0, 50, null, null);
 
 		// Assert
 		Ok<CardListResponse> result = Assert.IsType<Ok<CardListResponse>>(rawResult.Result);
@@ -161,7 +161,7 @@ public class CardsControllerTests
 	public async Task GetAllAccounts_ReturnsBadRequest_WhenOffsetIsNegative(int offset, int limit)
 	{
 		// Act
-		Results<Ok<CardListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetAllCards(null, offset, limit, null, null);
+		Results<Ok<CardListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetAllCards(null, null, offset, limit, null, null);
 
 		// Assert
 		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
@@ -175,7 +175,7 @@ public class CardsControllerTests
 	public async Task GetAllAccounts_ReturnsBadRequest_WhenLimitIsOutOfRange(int offset, int limit)
 	{
 		// Act
-		Results<Ok<CardListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetAllCards(null, offset, limit, null, null);
+		Results<Ok<CardListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetAllCards(null, null, offset, limit, null, null);
 
 		// Assert
 		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
@@ -192,7 +192,7 @@ public class CardsControllerTests
 			.ThrowsAsync(new Exception());
 
 		// Act
-		Func<Task> act = () => _controller.GetAllCards(null, 0, 50, null, null);
+		Func<Task> act = () => _controller.GetAllCards(null, null, 0, 50, null, null);
 
 		// Assert
 		await act.Should().ThrowAsync<Exception>();

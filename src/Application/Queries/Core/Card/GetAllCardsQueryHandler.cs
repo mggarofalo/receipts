@@ -8,6 +8,6 @@ public class GetAllCardsQueryHandler(ICardService cardService) : IRequestHandler
 {
 	public async ValueTask<PagedResult<Domain.Core.Card>> Handle(GetAllCardsQuery request, CancellationToken cancellationToken)
 	{
-		return await cardService.GetAllAsync(request.Offset, request.Limit, request.Sort, request.IsActive, cancellationToken);
+		return await cardService.GetAllAsync(request.Offset, request.Limit, request.Sort, request.IsActive, request.Q, cancellationToken);
 	}
 }
