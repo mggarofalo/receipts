@@ -54,7 +54,7 @@ public class SubcategoriesController(IMediator mediator, SubcategoryMapper mappe
 
 	[HttpGet(RouteGetAll)]
 	[EndpointSummary("Get all subcategories")]
-	public async Task<Results<Ok<SubcategoryListResponse>, BadRequest<ProblemDetails>>> GetAllSubcategories([FromQuery] Guid? categoryId = null, [FromQuery] bool? isActive = null, [FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, CancellationToken cancellationToken = default)
+	public async Task<Results<Ok<SubcategoryListResponse>, BadRequest<ProblemDetails>>> GetAllSubcategories([FromQuery] Guid? categoryId = null, [FromQuery] bool? isActive = null, [FromQuery] string? q = null, [FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, CancellationToken cancellationToken = default)
 	{
 		if (offset < 0)
 		{
@@ -80,7 +80,7 @@ public class SubcategoriesController(IMediator mediator, SubcategoryMapper mappe
 
 		if (categoryId.HasValue)
 		{
-			GetSubcategoriesByCategoryIdQuery byCategoryQuery = new(categoryId.Value, offset, limit, sort, isActive);
+			GetSubcategoriesByCategoryIdQuery byCategoryQuery = new(categoryId.Value, offset, limit, sort, isActive, q);
 			PagedResult<Subcategory> byCategoryResult = await mediator.Send(byCategoryQuery, cancellationToken);
 
 			return TypedResults.Ok(new SubcategoryListResponse
@@ -92,7 +92,7 @@ public class SubcategoriesController(IMediator mediator, SubcategoryMapper mappe
 			});
 		}
 
-		GetAllSubcategoriesQuery query = new(offset, limit, sort, isActive);
+		GetAllSubcategoriesQuery query = new(offset, limit, sort, isActive, q);
 		PagedResult<Subcategory> result = await mediator.Send(query, cancellationToken);
 
 		return TypedResults.Ok(new SubcategoryListResponse

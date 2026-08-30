@@ -15,13 +15,14 @@ public class GetAllCardsQueryHandlerTests
 		List<Domain.Core.Card> expected = CardGenerator.GenerateList(2);
 
 		Mock<ICardService> mockService = new();
-		mockService.Setup(r => r.GetAllAsync(0, 50, It.IsAny<SortParams>(), It.IsAny<bool?>(), It.IsAny<CancellationToken>())).ReturnsAsync(new PagedResult<Domain.Core.Card>(expected, expected.Count, 0, 50));
+		mockService.Setup(r => r.GetAllAsync(0, 50, It.IsAny<SortParams>(), false, "4242", It.IsAny<CancellationToken>())).ReturnsAsync(new PagedResult<Domain.Core.Card>(expected, expected.Count, 0, 50));
 
 		GetAllCardsQueryHandler handler = new(mockService.Object);
-		GetAllCardsQuery query = new(0, 50, SortParams.Default);
+		GetAllCardsQuery query = new(0, 50, SortParams.Default, false, "4242");
 
 		PagedResult<Domain.Core.Card> result = await handler.Handle(query, CancellationToken.None);
 
 		result.Data.Should().BeSameAs(expected);
+		mockService.VerifyAll();
 	}
 }

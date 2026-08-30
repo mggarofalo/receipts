@@ -81,17 +81,17 @@ public class AccountServiceTests
 		// Arrange
 		List<AccountEntity> entities = AccountEntityGenerator.GenerateList(2);
 
-		_mockRepository.Setup(r => r.GetCountAsync(It.IsAny<CancellationToken>(), true)).ReturnsAsync(entities.Count);
-		_mockRepository.Setup(r => r.GetAllAsync(0, 50, It.IsAny<SortParams>(), It.IsAny<CancellationToken>(), true)).ReturnsAsync(entities);
+		_mockRepository.Setup(r => r.GetCountAsync(It.IsAny<CancellationToken>(), true, "needle")).ReturnsAsync(entities.Count);
+		_mockRepository.Setup(r => r.GetAllAsync(0, 50, It.IsAny<SortParams>(), It.IsAny<CancellationToken>(), true, "needle")).ReturnsAsync(entities);
 
 		// Act
-		PagedResult<Account> actual = await _service.GetAllAsync(0, 50, SortParams.Default, true, CancellationToken.None);
+		PagedResult<Account> actual = await _service.GetAllAsync(0, 50, SortParams.Default, true, "needle", CancellationToken.None);
 
 		// Assert
 		Assert.Equal(entities.Count, actual.Data.Count);
 		Assert.Equal(entities.Count, actual.Total);
-		_mockRepository.Verify(r => r.GetCountAsync(It.IsAny<CancellationToken>(), true), Times.Once);
-		_mockRepository.Verify(r => r.GetAllAsync(0, 50, It.IsAny<SortParams>(), It.IsAny<CancellationToken>(), true), Times.Once);
+		_mockRepository.Verify(r => r.GetCountAsync(It.IsAny<CancellationToken>(), true, "needle"), Times.Once);
+		_mockRepository.Verify(r => r.GetAllAsync(0, 50, It.IsAny<SortParams>(), It.IsAny<CancellationToken>(), true, "needle"), Times.Once);
 	}
 
 	[Fact]

@@ -35,7 +35,7 @@ public class ProblemDetailsContractTests
 		CardsController controller = BuildCardsController(out _, out _);
 
 		Results<Ok<CardListResponse>, BadRequest<ProblemDetails>> result =
-			await controller.GetAllCards(null, -1, 50, null, null);
+			await controller.GetAllCards(null, null, -1, 50, null, null);
 
 		ProblemDetails problem = Assert.IsType<BadRequest<ProblemDetails>>(result.Result).Value!;
 		problem.Status.Should().Be(StatusCodes.Status400BadRequest);

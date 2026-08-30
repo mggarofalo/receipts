@@ -53,7 +53,7 @@ public class AccountsController(IMediator mediator, AccountMapper mapper, CardMa
 
 	[HttpGet(RouteGetAll)]
 	[EndpointSummary("Get all accounts")]
-	public async Task<Results<Ok<AccountListResponse>, BadRequest<ProblemDetails>>> GetAllAccounts([FromQuery] bool? isActive = null, [FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null)
+	public async Task<Results<Ok<AccountListResponse>, BadRequest<ProblemDetails>>> GetAllAccounts([FromQuery] bool? isActive = null, [FromQuery] string? q = null, [FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null)
 	{
 		if (offset < 0)
 		{
@@ -76,7 +76,7 @@ public class AccountsController(IMediator mediator, AccountMapper mapper, CardMa
 		}
 
 		SortParams sort = new(sortBy, sortDirection);
-		GetAllAccountsQuery query = new(offset, limit, sort, isActive);
+		GetAllAccountsQuery query = new(offset, limit, sort, isActive, q);
 		PagedResult<Account> result = await mediator.Send(query, HttpContext.RequestAborted);
 
 		return TypedResults.Ok(new AccountListResponse

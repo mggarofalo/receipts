@@ -1,5 +1,7 @@
 using Application.Exceptions;
+using Application.Models;
 using FluentAssertions;
+using Infrastructure.Entities.Core;
 using Infrastructure.Interfaces.Repositories;
 using Infrastructure.Mapping;
 using Infrastructure.Services;
@@ -15,6 +17,21 @@ public class SubcategoryServiceTests
 	public SubcategoryServiceTests()
 	{
 		_service = new SubcategoryService(_mockRepository.Object, new SubcategoryMapper());
+	}
+
+	[Fact]
+	public async Task GetByCategoryIdAsync_ForwardsSearchAndUsesFilteredTotal()
+	{
+		Guid categoryId = Guid.NewGuid();
+		List<SubcategoryEntity> page = [new() { Id = Guid.NewGuid(), CategoryId = categoryId, Name = "Dairy", IsActive = true }];
+		_mockRepository.Setup(r => r.GetByCategoryIdCountAsync(categoryId, It.IsAny<CancellationToken>(), true, "dairy")).ReturnsAsync(4);
+		_mockRepository.Setup(r => r.GetByCategoryIdAsync(categoryId, 2, 1, It.IsAny<SortParams>(), It.IsAny<CancellationToken>(), true, "dairy")).ReturnsAsync(page);
+
+		PagedResult<Domain.Core.Subcategory> result = await _service.GetByCategoryIdAsync(categoryId, 2, 1, SortParams.Default, true, "dairy", CancellationToken.None);
+
+		result.Data.Should().HaveCount(1);
+		result.Total.Should().Be(4);
+		_mockRepository.VerifyAll();
 	}
 
 	[Fact]

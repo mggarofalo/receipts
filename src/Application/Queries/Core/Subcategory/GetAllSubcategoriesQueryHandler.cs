@@ -8,6 +8,6 @@ public class GetAllSubcategoriesQueryHandler(ISubcategoryService subcategoryServ
 {
 	public async ValueTask<PagedResult<Domain.Core.Subcategory>> Handle(GetAllSubcategoriesQuery request, CancellationToken cancellationToken)
 	{
-		return await subcategoryService.GetAllAsync(request.Offset, request.Limit, request.Sort, request.IsActive, cancellationToken);
+		return await subcategoryService.GetAllAsync(request.Offset, request.Limit, request.Sort, request.IsActive, request.Q, cancellationToken);
 	}
 }

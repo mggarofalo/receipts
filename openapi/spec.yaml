@@ -181,6 +181,12 @@ paths:
           required: false
           schema:
             type: boolean
+        - name: q
+          in: query
+          required: false
+          description: Case-insensitive substring filter applied to the account name. Whitespace-only values are ignored.
+          schema:
+            type: string
         - $ref: "#/components/parameters/Offset"
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/SortBy"
@@ -383,6 +389,12 @@ paths:
           required: false
           schema:
             type: boolean
+        - name: q
+          in: query
+          required: false
+          description: Case-insensitive substring filter applied to the card name and card code. Whitespace-only values are ignored.
+          schema:
+            type: string
         - $ref: "#/components/parameters/Offset"
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/SortBy"
@@ -723,6 +735,12 @@ paths:
           required: false
           schema:
             type: boolean
+        - name: q
+          in: query
+          required: false
+          description: Case-insensitive substring filter applied to the category name. Whitespace-only values are ignored.
+          schema:
+            type: string
         - $ref: "#/components/parameters/Offset"
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/SortBy"
@@ -994,6 +1012,12 @@ paths:
           required: false
           schema:
             type: boolean
+        - name: q
+          in: query
+          required: false
+          description: Case-insensitive substring filter applied to the subcategory name. Whitespace-only values are ignored.
+          schema:
+            type: string
         - $ref: "#/components/parameters/Offset"
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/SortBy"

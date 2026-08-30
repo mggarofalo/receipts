@@ -20,7 +20,7 @@ public class CategoryRepository(IDbContextFactory<ApplicationDbContext> contextF
 		return await context.Categories.FindAsync([id], cancellationToken);
 	}
 
-	public async Task<List<CategoryEntity>> GetAllAsync(int offset, int limit, SortParams sort, CancellationToken cancellationToken, bool? isActive = null)
+	public async Task<List<CategoryEntity>> GetAllAsync(int offset, int limit, SortParams sort, CancellationToken cancellationToken, bool? isActive = null, string? q = null)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		IQueryable<CategoryEntity> query = context.Categories.AsNoTracking();
@@ -28,6 +28,7 @@ public class CategoryRepository(IDbContextFactory<ApplicationDbContext> contextF
 		{
 			query = query.Where(e => e.IsActive == isActive.Value);
 		}
+		query = ApplySearchFilter(query, q);
 
 		return await query
 			.ApplySort(sort, AllowedSortColumns, e => e.Name, e => e.Id)
@@ -95,7 +96,7 @@ public class CategoryRepository(IDbContextFactory<ApplicationDbContext> contextF
 		return await context.Categories.AnyAsync(e => e.Id == id, cancellationToken);
 	}
 
-	public async Task<int> GetCountAsync(CancellationToken cancellationToken, bool? isActive = null)
+	public async Task<int> GetCountAsync(CancellationToken cancellationToken, bool? isActive = null, string? q = null)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		IQueryable<CategoryEntity> query = context.Categories;
@@ -103,8 +104,19 @@ public class CategoryRepository(IDbContextFactory<ApplicationDbContext> contextF
 		{
 			query = query.Where(e => e.IsActive == isActive.Value);
 		}
+		query = ApplySearchFilter(query, q);
 
 		return await query.CountAsync(cancellationToken);
+	}
+
+	private static IQueryable<CategoryEntity> ApplySearchFilter(IQueryable<CategoryEntity> query, string? q)
+	{
+		if (string.IsNullOrWhiteSpace(q))
+		{
+			return query;
+		}
+		string search = q.Trim().ToLower();
+		return query.Where(e => e.Name.ToLower().Contains(search));
 	}
 
 	public async Task DeleteAsync(List<Guid> ids, CancellationToken cancellationToken)

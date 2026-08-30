@@ -39,10 +39,10 @@ public class CategoryService(ICategoryRepository repository, CategoryMapper mapp
 		return new PagedResult<Category>(data, total, offset, limit);
 	}
 
-	public async Task<PagedResult<Category>> GetAllAsync(int offset, int limit, SortParams sort, bool? isActive, CancellationToken cancellationToken)
+	public async Task<PagedResult<Category>> GetAllAsync(int offset, int limit, SortParams sort, bool? isActive, string? q, CancellationToken cancellationToken)
 	{
-		int total = await repository.GetCountAsync(cancellationToken, isActive);
-		List<CategoryEntity> entities = await repository.GetAllAsync(offset, limit, sort, cancellationToken, isActive);
+		int total = await repository.GetCountAsync(cancellationToken, isActive, q);
+		List<CategoryEntity> entities = await repository.GetAllAsync(offset, limit, sort, cancellationToken, isActive, q);
 		List<Category> data = [.. entities.Select(mapper.ToDomain)];
 		return new PagedResult<Category>(data, total, offset, limit);
 	}

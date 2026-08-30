@@ -107,7 +107,7 @@ public class CategoriesControllerTests
 			It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new PagedResult<Category>(categories, categories.Count, 0, 50));
 
-		Results<Ok<CategoryListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetAllCategories(null, 0, 50, null, null);
+		Results<Ok<CategoryListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetAllCategories(null, null, 0, 50, null, null);
 
 		Ok<CategoryListResponse> result = Assert.IsType<Ok<CategoryListResponse>>(rawResult.Result);
 		CategoryListResponse actualReturn = result.Value!;
@@ -122,7 +122,7 @@ public class CategoriesControllerTests
 	[InlineData(-100, 50)]
 	public async Task GetAllCategories_ReturnsBadRequest_WhenOffsetIsNegative(int offset, int limit)
 	{
-		Results<Ok<CategoryListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetAllCategories(null, offset, limit, null, null);
+		Results<Ok<CategoryListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetAllCategories(null, null, offset, limit, null, null);
 
 		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
 		badRequestResult.Value!.Detail.Should().Be("offset must be >= 0");
@@ -134,7 +134,7 @@ public class CategoriesControllerTests
 	[InlineData(0, 501)]
 	public async Task GetAllCategories_ReturnsBadRequest_WhenLimitIsOutOfRange(int offset, int limit)
 	{
-		Results<Ok<CategoryListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetAllCategories(null, offset, limit, null, null);
+		Results<Ok<CategoryListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetAllCategories(null, null, offset, limit, null, null);
 
 		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
 		badRequestResult.Value!.Detail.Should().Be("limit must be between 1 and 500");
@@ -148,15 +148,15 @@ public class CategoriesControllerTests
 		List<Category> categories = CategoryGenerator.GenerateList(1);
 
 		_mediatorMock.Setup(m => m.Send(
-			It.Is<GetAllCategoriesQuery>(q => q.IsActive == isActive),
+			It.Is<GetAllCategoriesQuery>(q => q.IsActive == isActive && q.Q == "food"),
 			It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new PagedResult<Category>(categories, categories.Count, 0, 50));
 
-		Results<Ok<CategoryListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetAllCategories(isActive, 0, 50, null, null);
+		Results<Ok<CategoryListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetAllCategories(isActive, "food", 0, 50, null, null);
 
 		Ok<CategoryListResponse> result = Assert.IsType<Ok<CategoryListResponse>>(rawResult.Result);
 		_mediatorMock.Verify(m => m.Send(
-			It.Is<GetAllCategoriesQuery>(q => q.IsActive == isActive),
+			It.Is<GetAllCategoriesQuery>(q => q.IsActive == isActive && q.Q == "food"),
 			It.IsAny<CancellationToken>()), Times.Once);
 	}
 
@@ -170,7 +170,7 @@ public class CategoriesControllerTests
 			It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new PagedResult<Category>(categories, categories.Count, 0, 50));
 
-		Results<Ok<CategoryListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetAllCategories(null, 0, 50, null, null);
+		Results<Ok<CategoryListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetAllCategories(null, null, 0, 50, null, null);
 
 		Assert.IsType<Ok<CategoryListResponse>>(rawResult.Result);
 		_mediatorMock.Verify(m => m.Send(
@@ -186,7 +186,7 @@ public class CategoriesControllerTests
 			It.IsAny<CancellationToken>()))
 			.ThrowsAsync(new Exception());
 
-		Func<Task> act = () => _controller.GetAllCategories(null, 0, 50, null, null);
+		Func<Task> act = () => _controller.GetAllCategories(null, null, 0, 50, null, null);
 
 		await act.Should().ThrowAsync<Exception>();
 	}

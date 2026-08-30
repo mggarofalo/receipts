@@ -1,5 +1,7 @@
 using Application.Exceptions;
+using Application.Models;
 using FluentAssertions;
+using Infrastructure.Entities.Core;
 using Infrastructure.Interfaces.Repositories;
 using Infrastructure.Mapping;
 using Infrastructure.Services;
@@ -15,6 +17,20 @@ public class CategoryServiceTests
 	public CategoryServiceTests()
 	{
 		_service = new CategoryService(_mockRepository.Object, new CategoryMapper());
+	}
+
+	[Fact]
+	public async Task GetAllAsync_ForwardsSearchAndUsesFilteredTotal()
+	{
+		List<CategoryEntity> page = [new() { Id = Guid.NewGuid(), Name = "Food", IsActive = true }];
+		_mockRepository.Setup(r => r.GetCountAsync(It.IsAny<CancellationToken>(), true, "food")).ReturnsAsync(3);
+		_mockRepository.Setup(r => r.GetAllAsync(1, 1, It.IsAny<SortParams>(), It.IsAny<CancellationToken>(), true, "food")).ReturnsAsync(page);
+
+		PagedResult<Domain.Core.Category> result = await _service.GetAllAsync(1, 1, SortParams.Default, true, "food", CancellationToken.None);
+
+		result.Data.Should().HaveCount(1);
+		result.Total.Should().Be(3);
+		_mockRepository.VerifyAll();
 	}
 
 	[Fact]

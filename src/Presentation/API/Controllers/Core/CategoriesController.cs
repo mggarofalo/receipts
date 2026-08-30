@@ -54,7 +54,7 @@ public class CategoriesController(IMediator mediator, CategoryMapper mapper, ILo
 
 	[HttpGet(RouteGetAll)]
 	[EndpointSummary("Get all categories")]
-	public async Task<Results<Ok<CategoryListResponse>, BadRequest<ProblemDetails>>> GetAllCategories([FromQuery] bool? isActive = null, [FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, CancellationToken cancellationToken = default)
+	public async Task<Results<Ok<CategoryListResponse>, BadRequest<ProblemDetails>>> GetAllCategories([FromQuery] bool? isActive = null, [FromQuery] string? q = null, [FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, CancellationToken cancellationToken = default)
 	{
 		if (offset < 0)
 		{
@@ -77,7 +77,7 @@ public class CategoriesController(IMediator mediator, CategoryMapper mapper, ILo
 		}
 
 		SortParams sort = new(sortBy, sortDirection);
-		GetAllCategoriesQuery query = new(offset, limit, sort, isActive);
+		GetAllCategoriesQuery query = new(offset, limit, sort, isActive, q);
 		PagedResult<Category> result = await mediator.Send(query, cancellationToken);
 
 		return TypedResults.Ok(new CategoryListResponse

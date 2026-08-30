@@ -57,7 +57,7 @@ public class CardsController(IMediator mediator, CardMapper mapper, ILogger<Card
 
 	[HttpGet(RouteGetAll)]
 	[EndpointSummary("Get all cards")]
-	public async Task<Results<Ok<CardListResponse>, BadRequest<ProblemDetails>>> GetAllCards([FromQuery] bool? isActive = null, [FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, CancellationToken cancellationToken = default)
+	public async Task<Results<Ok<CardListResponse>, BadRequest<ProblemDetails>>> GetAllCards([FromQuery] bool? isActive = null, [FromQuery] string? q = null, [FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, CancellationToken cancellationToken = default)
 	{
 		if (offset < 0)
 		{
@@ -80,7 +80,7 @@ public class CardsController(IMediator mediator, CardMapper mapper, ILogger<Card
 		}
 
 		SortParams sort = new(sortBy, sortDirection);
-		GetAllCardsQuery query = new(offset, limit, sort, isActive);
+		GetAllCardsQuery query = new(offset, limit, sort, isActive, q);
 		PagedResult<Card> result = await mediator.Send(query, cancellationToken);
 
 		return TypedResults.Ok(new CardListResponse
