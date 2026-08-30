@@ -8,7 +8,7 @@ vi.mock("@/hooks/usePageTitle", () => ({
 }));
 
 vi.mock("@/hooks/useAccounts", () => ({
-  useAccounts: vi.fn(() =>
+  useAllAccounts: vi.fn(() =>
     mockQueryResult({ data: [], isLoading: false }),
   ),
 }));

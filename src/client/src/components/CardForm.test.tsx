@@ -13,7 +13,7 @@ const mockAccounts = [
 ];
 
 vi.mock("@/hooks/useAccounts", () => ({
-  useAccounts: vi.fn(() => ({
+  useAllAccounts: vi.fn(() => ({
     data: mockAccounts,
     total: mockAccounts.length,
     isLoading: false,

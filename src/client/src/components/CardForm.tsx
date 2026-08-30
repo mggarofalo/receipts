@@ -3,7 +3,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod/v4";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useFormShortcuts } from "@/hooks/useFormShortcuts";
-import { useAccounts } from "@/hooks/useAccounts";
+import { useAllAccounts } from "@/hooks/useAccounts";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { SubmitButton } from "@/components/ui/submit-button";
@@ -62,7 +62,7 @@ export function CardForm({
 }: CardFormProps) {
   const formRef = useRef<HTMLFormElement>(null);
   useFormShortcuts({ formRef });
-  const { data: accounts } = useAccounts(0, 500, "name", "asc", true);
+  const { data: accounts } = useAllAccounts(true);
 
   const accountOptions = useMemo(() => {
     const active = (accounts as { id: string; name: string }[] | undefined) ?? [];

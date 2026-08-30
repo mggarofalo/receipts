@@ -20,6 +20,7 @@ import client from "@/lib/api-client";
 import { toast } from "sonner";
 import {
   useCards,
+  useAllCards,
   useCard,
   useCreateCard,
   useUpdateCard,
@@ -408,6 +409,53 @@ describe("useCards", () => {
     expect(caught).toMatchObject({ status: 400, detail: reason });
   });
 
+});
+
+describe("useAllCards", () => {
+  it("auto-paginates across multiple pages", async () => {
+    const pageOne = Array.from({ length: 500 }, (_, index) => ({
+      id: `card-${index}`,
+      cardCode: `CODE-${index}`,
+      name: `Card ${index}`,
+    }));
+    const pageTwo = Array.from({ length: 100 }, (_, index) => ({
+      id: `card-${500 + index}`,
+      cardCode: `CODE-${500 + index}`,
+      name: `Card ${500 + index}`,
+    }));
+    (client.GET as Mock).mockImplementation((_path, options) => {
+      const offset = options.params.query.offset;
+      return Promise.resolve({
+        data: {
+          data: offset === 0 ? pageOne : pageTwo,
+          total: 600,
+          offset,
+          limit: 500,
+        },
+        error: undefined,
+      });
+    });
+
+    const { result } = renderHook(() => useAllCards(true), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toHaveLength(600);
+    expect(client.GET).toHaveBeenCalledTimes(2);
+    expect(client.GET).toHaveBeenLastCalledWith("/api/cards", {
+      params: {
+        query: {
+          offset: 500,
+          limit: 500,
+          sortBy: "name",
+          sortDirection: "asc",
+          isActive: true,
+        },
+      },
+      signal: expect.any(AbortSignal),
+    });
+  });
 });
 
 // RECEIPTS-889. The preview exists so an irreversible operation is not confirmed blind.

@@ -6,7 +6,7 @@ import {
   useUpdateCard,
   useDeleteCard,
 } from "@/hooks/useCards";
-import { useAccounts } from "@/hooks/useAccounts";
+import { useAllAccounts } from "@/hooks/useAccounts";
 import { usePermission } from "@/hooks/usePermission";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { useEntityLinkParams } from "@/hooks/useEntityLinkParams";
@@ -83,7 +83,7 @@ function Cards() {
   });
   const isActiveParam = statusFilter === "all" ? undefined : statusFilter === "true";
   const { data: cardsData, total: serverTotal, isLoading } = useCards(offset, limit, sortBy, sortDirection, isActiveParam);
-  const { data: accountsData } = useAccounts(0, 500, "name", "asc", null);
+  const { data: accountsData } = useAllAccounts();
   const accountsById = useMemo(() => {
     const map = new Map<string, string>();
     for (const a of (accountsData as { id: string; name: string }[] | undefined) ?? []) {

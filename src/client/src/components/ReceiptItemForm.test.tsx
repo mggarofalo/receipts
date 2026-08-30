@@ -2,13 +2,14 @@ import "@/test/setup-combobox-polyfills";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ReceiptItemForm } from "./ReceiptItemForm";
+import { useAllReceipts } from "@/hooks/useReceipts";
 
 vi.mock("@/hooks/useFormShortcuts", () => ({
   useFormShortcuts: vi.fn(),
 }));
 
 vi.mock("@/hooks/useReceipts", () => ({
-  useReceipts: vi.fn(() => ({
+  useAllReceipts: vi.fn(() => ({
     data: [
       { id: "r-1", location: "Walmart", date: "2024-01-15" },
     ],
@@ -105,6 +106,13 @@ describe("ReceiptItemForm", () => {
     expect(screen.getByText(/^Subcategory/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /create item/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /cancel/i })).toBeInTheDocument();
+  });
+
+  it("disables the receipt query when the receipt field is hidden", () => {
+    render(<ReceiptItemForm {...defaultProps} hideReceiptField />);
+
+    expect(useAllReceipts).toHaveBeenCalledWith({ enabled: false });
+    expect(screen.queryByText(/^Receipt/)).not.toBeInTheDocument();
   });
 
   it("renders in edit mode with pre-populated fields and correct submit button text", () => {

@@ -194,5 +194,12 @@ This project uses **shadcn/ui** (Radix UI + Tailwind CSS). Custom variants are d
 - Use the `cn()` utility for conditional class merging
 - Prefer existing shadcn components over custom implementations
 - Custom form controls: `Combobox`, `DateInput`, `CurrencyInput`, `PasswordInput`, `SubmitButton`
+
+Shared picker controls must preserve the complete option set supplied by their
+callers. Do not silently cap or slice options inside a reusable control: entity
+pickers rely on server-side auto-pagination to make every value searchable and
+selectable. If a list becomes too large to render efficiently, add explicit
+virtualization or server-backed search with loading and error states instead of
+discarding entries.
 - Toasts: `sonner` — call `toast.success()` / `toast.error()` in mutation hooks
 - Icons: `lucide-react`
