@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { Fragment, useState, useMemo, useEffect, useCallback } from "react";
 import { generateId } from "@/lib/id";
 import { Link } from "react-router";
 import {
@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/dialog";
 import { TableSkeleton } from "@/components/ui/table-skeleton";
 import { Spinner } from "@/components/ui/spinner";
+import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Info } from "lucide-react";
@@ -44,6 +45,7 @@ import {
   useBulkPushYnabTransactions,
 } from "@/hooks/useYnab";
 import { BulkActionsBar } from "@/components/BulkActionsBar";
+import { useTripByReceiptId } from "@/hooks/useTrips";
 import {
   Checkbox,
   Icon,
@@ -103,6 +105,114 @@ function syncStatusToChip(
   }
 }
 
+function ReceiptInlineDetails({
+  receipt,
+  ynabStatus,
+}: {
+  receipt: ReceiptListItem;
+  ynabStatus: string | undefined;
+}) {
+  const { data: trip, isLoading, isError, refetch, isRefetching } =
+    useTripByReceiptId(receipt.id);
+
+  if (isLoading) {
+    return (
+      <div className="receipt-inline-loading" role="status" aria-live="polite">
+        <span className="sr-only">Loading receipt details…</span>
+        <Skeleton className="h-5 w-2/3" />
+        <Skeleton className="h-5 w-1/2" />
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="receipt-inline-error" role="alert">
+        <span>Couldn&apos;t load receipt details.</span>
+        <button
+          type="button"
+          className="btn xs"
+          disabled={isRefetching}
+          onClick={() => void refetch()}
+        >
+          {isRefetching ? "Retrying…" : "Retry"}
+        </button>
+      </div>
+    );
+  }
+
+  const items = trip?.receipt?.items ?? [];
+  const subtotal = Number(trip?.receipt?.subtotal ?? receipt.itemSubtotal);
+  const adjustmentTotal = Number(
+    trip?.receipt?.adjustmentTotal ?? receipt.adjustmentTotal,
+  );
+  const expectedTotal = Number(
+    trip?.receipt?.expectedTotal ?? receipt.expectedTotal,
+  );
+  const transactionTotal =
+    trip?.transactions?.reduce(
+      (sum, transaction) =>
+        sum + Number(transaction.transaction.amount ?? 0),
+      0,
+    ) ?? receipt.transactionTotal;
+
+  return (
+    <div className="receipt-inline-detail">
+      <div className="receipt-inline-summary">
+        <div>
+          <span className="receipt-inline-label">Balance equation</span>
+          <strong>
+            {formatCurrency(subtotal)} + {formatCurrency(receipt.taxAmount)} +{" "}
+            {formatCurrency(adjustmentTotal)} = {formatCurrency(expectedTotal)}
+          </strong>
+        </div>
+        <div>
+          <span className="receipt-inline-label">Payments</span>
+          <strong>{formatCurrency(transactionTotal)}</strong>
+          <span>{receipt.paymentSummary || "No transactions"}</span>
+          <span>
+            Reconciliation: {receipt.balanceState === "noTransactions"
+              ? "No transactions"
+              : receipt.balanceState === "outOfBalance"
+                ? "Out of balance"
+                : "Balanced"}
+          </span>
+        </div>
+        <div>
+          <span className="receipt-inline-label">Classification</span>
+          <strong>{receipt.categorySummary || "Uncategorized"}</strong>
+          <span>
+            YNAB: {syncStatusToChip(ynabStatus) === "none" ? "not synced" : syncStatusToChip(ynabStatus)}
+          </span>
+        </div>
+      </div>
+      <div className="receipt-inline-items">
+        <span className="receipt-inline-label">Items</span>
+        {items.length === 0 ? (
+          <span>No items</span>
+        ) : (
+          <ul>
+            {items.slice(0, 5).map((item) => (
+              <li key={item.id}>
+                <span>{Number(item.quantity ?? 0)} × {item.description}</span>
+                <strong>
+                  {formatCurrency(
+                    Number(item.quantity ?? 0) * Number(item.unitPrice ?? 0),
+                  )}
+                </strong>
+              </li>
+            ))}
+          </ul>
+        )}
+        {items.length > 5 && <span>+{items.length - 5} more</span>}
+      </div>
+      <Link to={`/receipts/${receipt.id}`} className="btn xs">
+        Open receipt
+      </Link>
+    </div>
+  );
+}
+
 function Receipts() {
   usePageTitle("Receipts");
   const { params: linkParams, clearParams: clearLinkParams } =
@@ -144,6 +254,7 @@ function Receipts() {
   const bulkPushYnab = useBulkPushYnabTransactions();
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [editReceipt, setEditReceipt] = useState<ReceiptListItem | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -191,6 +302,16 @@ function Receipts() {
     return applyFilters(items, FILTER_DEFS, filterValues);
   }, [results, filterValues]);
 
+  // Expansion belongs to the current result set. Clear it as soon as paging,
+  // filtering, or searching removes the row so returning later cannot silently
+  // remount a detail query without a fresh user expansion.
+  if (
+    expandedId !== null &&
+    !filteredResults.some((receipt) => receipt.id === expandedId)
+  ) {
+    setExpandedId(null);
+  }
+
   const matchMap = useMemo(() => {
     const map = new Map<string, (typeof results)[number]>();
     for (const r of results) {
@@ -227,7 +348,6 @@ function Receipts() {
       getId: (r) => r.id,
       listId: "receipts",
       enabled: !anyDialogOpen,
-      onOpen: (r) => setEditReceipt(r),
       onDelete: () => setDeleteOpen(true),
       onSelectAll: () =>
         setSelected(new Set(filteredResults.map((r) => r.id))),
@@ -402,11 +522,37 @@ function Receipts() {
             onPageChange={(page) => setPage(page, serverTotal)}
             onPageSizeChange={setPageSize}
           />
+          {/* Keyboard events bubble from the focusable table rows; the card itself
+              deliberately stays out of the tab order and accessibility tree. */}
+          {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
           <div
             className="card"
             style={{ padding: 0, overflow: "hidden" }}
             ref={tableRef}
             {...containerProps}
+            onKeyDown={(e) => {
+              if (
+                (e.target as HTMLElement).closest(
+                  "button, input, a, [role='button'], [role='checkbox']",
+                )
+              )
+                return;
+              if (!focusedId) return;
+              if (e.key === "Enter") {
+                e.preventDefault();
+                setExpandedId((current) =>
+                  current === focusedId ? null : focusedId,
+                );
+              } else if (e.key === "ArrowRight") {
+                e.preventDefault();
+                setExpandedId(focusedId);
+              } else if (e.key === "ArrowLeft") {
+                e.preventDefault();
+                setExpandedId((current) =>
+                  current === focusedId ? null : current,
+                );
+              }
+            }}
           >
             <table className="tbl receipts-table">
               <thead>
@@ -463,29 +609,39 @@ function Receipts() {
                   ]
                     .filter(Boolean)
                     .join(" ");
+                  const isExpanded = expandedId === receipt.id;
+                  const detailId = `receipt-detail-${receipt.id}`;
+                  const rowProps = getRowProps(receipt.id);
+                  const toggleExpanded = () =>
+                    setExpandedId((current) =>
+                      current === receipt.id ? null : receipt.id,
+                    );
                   return (
-                    <tr
-                      key={receipt.id}
-                      {...getRowProps(receipt.id)}
-                      className={rowClass}
-                      style={
-                        isHighlighted
-                          ? {
-                              boxShadow:
-                                "inset 0 0 0 2px var(--accent), inset 2px 0 0 var(--accent)",
-                            }
-                          : undefined
-                      }
-                      onClick={(e) => {
-                        if (
-                          (e.target as HTMLElement).closest(
-                            "button, input, a, [role='button'], [role='checkbox']",
+                    <Fragment key={receipt.id}>
+                      <tr
+                        {...rowProps}
+                        className={rowClass}
+                        aria-expanded={isExpanded}
+                        aria-controls={isExpanded ? detailId : undefined}
+                        style={
+                          isHighlighted
+                            ? {
+                                boxShadow:
+                                  "inset 0 0 0 2px var(--accent), inset 2px 0 0 var(--accent)",
+                              }
+                            : undefined
+                        }
+                        onClick={(e) => {
+                          if (
+                            (e.target as HTMLElement).closest(
+                              "button, input, a, [role='button'], [role='checkbox']",
+                            )
                           )
-                        )
-                          return;
-                        setFocusedIndex(index);
-                      }}
-                    >
+                            return;
+                          setFocusedIndex(index);
+                          toggleExpanded();
+                        }}
+                      >
                       <td className="receipt-select" onClick={(e) => e.stopPropagation()}>
                         <Checkbox
                           aria-label={`Select ${receipt.location}`}
@@ -571,7 +727,18 @@ function Receipts() {
                           </button>
                         </div>
                       </td>
-                    </tr>
+                      </tr>
+                      {isExpanded && (
+                        <tr id={detailId} className="receipt-detail-row">
+                          <td colSpan={8}>
+                            <ReceiptInlineDetails
+                              receipt={receipt}
+                              ynabStatus={syncStatusMap.get(receipt.id)}
+                            />
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   );
                 })}
               </tbody>
