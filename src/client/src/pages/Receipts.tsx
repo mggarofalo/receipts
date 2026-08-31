@@ -638,7 +638,7 @@ function Receipts() {
             <table className="tbl receipts-table">
               <thead>
                 <tr>
-                  <th style={{ width: 36 }}>
+                  <th className="receipt-select">
                     <Checkbox
                       aria-label="Select all rows"
                       on={
@@ -675,7 +675,7 @@ function Receipts() {
                     Contents
                   </th>
                   <th style={{ width: 180 }}>Status</th>
-                  <th style={{ width: 60 }}>Actions</th>
+                  <th className="receipt-actions">Actions</th>
                 </tr>
               </thead>
               <tbody>

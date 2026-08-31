@@ -16,9 +16,14 @@ describe("receipt table action visibility", () => {
     expect(rule?.[1]).toMatch(/opacity\s*:\s*1\s*;/);
   });
 
-  it("uses a fixed wide-table layout with bounded columns and unwrapped actions", () => {
+  it("fits the table with border-box cells and bounded utility columns without ellipses", () => {
     expect(css).toMatch(/\.receipts-table\s*\{[^}]*table-layout\s*:\s*fixed\s*;/s);
-    expect(css).toMatch(/\.receipts-table-card\s*\{[^}]*overflow-x\s*:\s*auto\s*;/s);
+    expect(css).toMatch(/\.receipts-table th,\s*\.receipts-table td\s*\{[^}]*box-sizing\s*:\s*border-box\s*;/s);
+    const cardRule = css.match(/\.receipts-table-card\s*\{([^}]*)\}/);
+    expect(cardRule?.[1]).toMatch(/container-type\s*:\s*inline-size\s*;/);
+    expect(cardRule?.[1]).not.toMatch(/overflow-x\s*:\s*(?:auto|scroll|clip)\s*;/);
+    expect(css).toMatch(/\.receipts-table \.receipt-select\s*\{[^}]*width\s*:\s*44px\s*;[^}]*overflow\s*:\s*visible\s*;[^}]*text-overflow\s*:\s*clip\s*;/s);
+    expect(css).toMatch(/\.receipts-table \.receipt-actions\s*\{[^}]*width\s*:\s*92px\s*;[^}]*overflow\s*:\s*visible\s*;[^}]*text-overflow\s*:\s*clip\s*;/s);
     expect(css).toMatch(/\.receipts-table th:nth-child\(3\)\s*\{\s*width\s*:\s*18%\s*;/);
     expect(css).toMatch(/\.receipts-table th:nth-child\(6\)\s*\{\s*width\s*:\s*20%\s*;/);
     expect(css).toMatch(/\.receipts-table \.row-actions\s*\{[^}]*flex-wrap\s*:\s*nowrap\s*;/s);
@@ -27,6 +32,7 @@ describe("receipt table action visibility", () => {
   it("hides secondary columns at tablet width and preserves the compact mobile grid", () => {
     expect(css).toMatch(/@media\s*\(max-width:\s*900px\)[\s\S]*?\.receipts-table \.receipt-col-secondary\s*\{[^}]*display\s*:\s*none\s*;/);
     expect(css).toMatch(/@media\s*\(max-width:\s*1400px\)\s*and\s*\(min-width:\s*901px\)[\s\S]*?\.receipts-table \.receipt-col-contents\s*\{[^}]*display\s*:\s*none\s*;/);
+    expect(css).toMatch(/@container\s*\(max-width:\s*1200px\)[\s\S]*?\.receipts-table \.receipt-col-contents\s*\{[^}]*display\s*:\s*none\s*;/);
     expect(css).toMatch(/\.receipts-table tr\s*\{\s*grid-template-columns\s*:\s*auto minmax\(0, 1fr\) auto\s*;/);
   });
 
