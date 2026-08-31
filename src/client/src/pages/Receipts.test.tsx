@@ -278,6 +278,18 @@ describe("Receipts", () => {
     const table = document.querySelector<HTMLTableElement>("table.receipts-table")!;
     expect(table).toBeInTheDocument();
     expect(table.closest(".receipts-table-card")).toHaveClass("card");
+    const columns = Array.from(table.querySelectorAll("colgroup > col"));
+    expect(columns).toHaveLength(8);
+    expect(columns.map((column) => column.className)).toEqual([
+      "receipt-select",
+      "receipt-date",
+      "receipt-merchant",
+      "receipt-total",
+      "receipt-col-secondary",
+      "receipt-col-secondary receipt-col-contents",
+      "receipt-status",
+      "receipt-actions",
+    ]);
     expect(within(table).getByRole("columnheader", { name: "Select all rows" })).toHaveClass(
       "receipt-select",
     );
