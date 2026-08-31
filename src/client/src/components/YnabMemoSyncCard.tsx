@@ -36,6 +36,7 @@ import { Spinner } from "@/components/ui/spinner";
 
 interface YnabMemoSyncCardProps {
   receiptId: string;
+  embedded?: boolean;
 }
 
 function outcomeLabel(outcome: string): string {
@@ -87,13 +88,25 @@ function formatMilliunits(amount: number): string {
   });
 }
 
-export function YnabMemoSyncCard({ receiptId }: YnabMemoSyncCardProps) {
-  // YNAB-gated: when YNAB isn't configured this card's actions can't do
-  // anything, so render nothing rather than dead controls. Mirrors
-  // YnabSplitComparisonCard's pattern (RECEIPTS-731).
+export function YnabMemoSyncCard({
+  receiptId,
+  embedded = false,
+}: YnabMemoSyncCardProps) {
   const { isConfigured, isLoading: connectionLoading } =
     useYnabConnectionStatus();
   const { selectedBudgetId } = useSelectedYnabBudget();
+
+  if (connectionLoading || !isConfigured || !selectedBudgetId) {
+    return null;
+  }
+
+  return <YnabMemoSyncContent receiptId={receiptId} embedded={embedded} />;
+}
+
+export function YnabMemoSyncContent({
+  receiptId,
+  embedded = false,
+}: YnabMemoSyncCardProps) {
   const syncMemos = useSyncYnabMemos();
   const resolveSync = useResolveYnabMemoSync();
   const [results, setResults] = useState<YnabMemoSyncResult[] | undefined>();
@@ -102,11 +115,6 @@ export function YnabMemoSyncCard({ receiptId }: YnabMemoSyncCardProps) {
     candidates: YnabTransactionCandidateDto[];
   } | null>(null);
   const summary = useMemoSyncSummary(results);
-
-  // Hooks above run unconditionally to keep order stable; the gate is below.
-  if (connectionLoading || !isConfigured || !selectedBudgetId) {
-    return null;
-  }
 
   function handleSync() {
     syncMemos.mutate(receiptId, {
@@ -139,11 +147,13 @@ export function YnabMemoSyncCard({ receiptId }: YnabMemoSyncCardProps) {
 
   return (
     <>
-      <Card>
+      <Card className={embedded ? "border-0 shadow-none" : undefined}>
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle>YNAB Memo Sync</CardTitle>
+              <CardTitle className={embedded ? "text-base" : undefined}>
+                Memo sync
+              </CardTitle>
               <CardDescription>
                 Match transactions and update YNAB memos with receipt links.
               </CardDescription>
@@ -169,36 +179,36 @@ export function YnabMemoSyncCard({ receiptId }: YnabMemoSyncCardProps) {
           <CardContent>
             {/* aria-live region so screen readers announce memo sync outcomes */}
             <div aria-live="polite" aria-atomic="true">
-            {summary && (
-              <div className="mb-4 flex flex-wrap gap-2 text-sm text-muted-foreground">
-                {summary.synced > 0 && (
-                  <Badge variant="default">{summary.synced} synced</Badge>
-                )}
-                {summary.alreadySynced > 0 && (
-                  <Badge variant="secondary">
-                    {summary.alreadySynced} already synced
-                  </Badge>
-                )}
-                {summary.noMatch > 0 && (
-                  <Badge variant="secondary">
-                    {summary.noMatch} no match
-                  </Badge>
-                )}
-                {summary.ambiguous > 0 && (
-                  <Badge variant="outline">
-                    {summary.ambiguous} ambiguous
-                  </Badge>
-                )}
-                {summary.reconciledSkipped > 0 && (
-                  <Badge variant="secondary">
-                    {summary.reconciledSkipped} reconciled
-                  </Badge>
-                )}
-                {summary.failed > 0 && (
-                  <Badge variant="destructive">{summary.failed} failed</Badge>
-                )}
-              </div>
-            )}
+              {summary && (
+                <div className="mb-4 flex flex-wrap gap-2 text-sm text-muted-foreground">
+                  {summary.synced > 0 && (
+                    <Badge variant="default">{summary.synced} synced</Badge>
+                  )}
+                  {summary.alreadySynced > 0 && (
+                    <Badge variant="secondary">
+                      {summary.alreadySynced} already synced
+                    </Badge>
+                  )}
+                  {summary.noMatch > 0 && (
+                    <Badge variant="secondary">
+                      {summary.noMatch} no match
+                    </Badge>
+                  )}
+                  {summary.ambiguous > 0 && (
+                    <Badge variant="outline">
+                      {summary.ambiguous} ambiguous
+                    </Badge>
+                  )}
+                  {summary.reconciledSkipped > 0 && (
+                    <Badge variant="secondary">
+                      {summary.reconciledSkipped} reconciled
+                    </Badge>
+                  )}
+                  {summary.failed > 0 && (
+                    <Badge variant="destructive">{summary.failed} failed</Badge>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="space-y-2">

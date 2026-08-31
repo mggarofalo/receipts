@@ -51,8 +51,10 @@ describe("YnabMemoSyncCard", () => {
   it("renders the card title and sync button", () => {
     renderWithProviders(<YnabMemoSyncCard receiptId="r1" />);
 
-    expect(screen.getByText("YNAB Memo Sync")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Sync Memos/i })).toBeInTheDocument();
+    expect(screen.getByText("Memo sync")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Sync Memos/i }),
+    ).toBeInTheDocument();
   });
 
   it("returns null when no budget is selected", async () => {
@@ -62,7 +64,9 @@ describe("YnabMemoSyncCard", () => {
       isLoading: false,
     } as ReturnType<typeof ynab.useSelectedYnabBudget>);
 
-    const { container } = renderWithProviders(<YnabMemoSyncCard receiptId="r1" />);
+    const { container } = renderWithProviders(
+      <YnabMemoSyncCard receiptId="r1" />,
+    );
     expect(container.firstChild).toBeNull();
   });
 
@@ -166,7 +170,12 @@ describe("YnabMemoSyncCard", () => {
     const mutateWithCallback = vi.fn().mockImplementation((_id, opts) => {
       opts?.onSuccess?.({
         results: [
-          { localTransactionId: "tx-1", outcome: "Synced", error: null, ambiguousCandidates: null },
+          {
+            localTransactionId: "tx-1",
+            outcome: "Synced",
+            error: null,
+            ambiguousCandidates: null,
+          },
         ],
       });
     });

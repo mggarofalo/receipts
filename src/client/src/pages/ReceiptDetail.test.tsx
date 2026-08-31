@@ -87,12 +87,18 @@ vi.mock("@/hooks/useYnab", () => ({
     isConnected: true,
     isLoading: false,
   })),
+  useSelectedYnabBudget: vi.fn(() => ({
+    selectedBudgetId: "budget-1",
+    isLoading: false,
+  })),
 }));
 
-vi.mock("@/components/YnabPushButton", () => ({
-  YnabPushButton: function MockYnabPushButton() {
-    return <div data-testid="ynab-push-button">Push to YNAB</div>;
-  },
+const mockYnabReceiptCard = vi.fn((_props: unknown) => (
+  <div data-testid="ynab-receipt-card">YNAB</div>
+));
+
+vi.mock("@/components/YnabReceiptCard", () => ({
+  YnabReceiptCard: (props: unknown) => mockYnabReceiptCard(props),
 }));
 
 vi.mock("@/components/ReceiptHeaderForm", () => ({
@@ -101,24 +107,15 @@ vi.mock("@/components/ReceiptHeaderForm", () => ({
   },
 }));
 
-vi.mock("@/components/YnabMemoSyncCard", () => ({
-  YnabMemoSyncCard: function MockYnabMemoSyncCard() {
-    return null;
-  },
-}));
-
-vi.mock("@/components/YnabSplitComparisonCard", () => ({
-  YnabSplitComparisonCard: function MockYnabSplitComparisonCard() {
-    return <div data-testid="ynab-split-comparison-card">Split Comparison</div>;
-  },
-}));
-
 function renderWithRoutes(initialRoute: string) {
   return render(
     <MemoryRouter initialEntries={[initialRoute]}>
       <Routes>
         <Route path="/receipts/:id" element={<ReceiptDetail />} />
-        <Route path="/receipts" element={<div data-testid="receipts-page">Receipts</div>} />
+        <Route
+          path="/receipts"
+          element={<div data-testid="receipts-page">Receipts</div>}
+        />
       </Routes>
     </MemoryRouter>,
   );
@@ -149,8 +146,12 @@ describe("ReceiptDetail", () => {
   // `vi.mocked(useYnabConnectionStatus).mockReturnValue(...)` leaks that
   // state into the rest of the file and silently corrupts later assertions.
   beforeEach(async () => {
-    const { useYnabConnectionStatus, useReceiptYnabSyncStatuses } =
-      await import("@/hooks/useYnab");
+    mockYnabReceiptCard.mockClear();
+    const {
+      useYnabConnectionStatus,
+      useReceiptYnabSyncStatuses,
+      useSelectedYnabBudget,
+    } = await import("@/hooks/useYnab");
     vi.mocked(useYnabConnectionStatus).mockReturnValue({
       isConfigured: true,
       isConnected: true,
@@ -160,6 +161,10 @@ describe("ReceiptDetail", () => {
       statusMap: new Map(),
       isLoading: false,
     } as ReturnType<typeof useReceiptYnabSyncStatuses>);
+    vi.mocked(useSelectedYnabBudget).mockReturnValue({
+      selectedBudgetId: "budget-1",
+      isLoading: false,
+    } as ReturnType<typeof useSelectedYnabBudget>);
   });
 
   it("renders the page heading when id is present", () => {
@@ -334,12 +339,10 @@ describe("ReceiptDetail", () => {
     );
 
     renderWithRoutes("/receipts/r1");
-    expect(
-      screen.getByRole("button", { name: /^edit$/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^edit$/i })).toBeInTheDocument();
   });
 
-  it("hides the YNAB push card and PageHead chip when YNAB is unconfigured (RECEIPTS-731)", async () => {
+  it("hides the PageHead YNAB chip when YNAB is unconfigured (RECEIPTS-731)", async () => {
     const { useTripByReceiptId } = await import("@/hooks/useTrips");
     vi.mocked(useTripByReceiptId).mockReturnValue(
       mockQueryResult({
@@ -364,16 +367,15 @@ describe("ReceiptDetail", () => {
     } as ReturnType<typeof useReceiptYnabSyncStatuses>);
 
     renderWithRoutes("/receipts/r1");
-    // "YNAB sync" card header should not render
-    expect(screen.queryByText(/^YNAB sync$/)).not.toBeInTheDocument();
-    // Push button is mocked, so verify the mocked test-id is absent
-    expect(screen.queryByTestId("ynab-push-button")).not.toBeInTheDocument();
     // YnabChip with status="synced" would render aria-label="YNAB: synced".
     // The gate must prevent it from rendering.
     expect(screen.queryByLabelText(/YNAB: synced/)).not.toBeInTheDocument();
+    expect(mockYnabReceiptCard).toHaveBeenCalledWith(
+      expect.objectContaining({ isAvailable: false }),
+    );
   });
 
-  it("renders the YNAB push card when YNAB is configured", async () => {
+  it("renders one unified YNAB card with receipt state", async () => {
     const { useTripByReceiptId } = await import("@/hooks/useTrips");
     vi.mocked(useTripByReceiptId).mockReturnValue(
       mockQueryResult({
@@ -386,8 +388,32 @@ describe("ReceiptDetail", () => {
     // to the configured default, so no inline override is needed here.
 
     renderWithRoutes("/receipts/r1");
-    expect(screen.getByText(/^YNAB sync$/)).toBeInTheDocument();
-    expect(screen.getByTestId("ynab-push-button")).toBeInTheDocument();
+    expect(screen.getByTestId("ynab-receipt-card")).toBeInTheDocument();
+    expect(mockYnabReceiptCard).toHaveBeenCalledTimes(1);
+    expect(mockYnabReceiptCard).toHaveBeenCalledWith({
+      receiptId: "r1",
+      hasTransactions: false,
+      isAvailable: true,
+      persistedSyncStatus: undefined,
+    });
+  });
+
+  it("marks the unified YNAB card unavailable when no budget is selected", async () => {
+    const { useTripByReceiptId } = await import("@/hooks/useTrips");
+    vi.mocked(useTripByReceiptId).mockReturnValue(
+      mockQueryResult({ data: MOCK_TRIP, isLoading: false, isError: false }),
+    );
+    const { useSelectedYnabBudget } = await import("@/hooks/useYnab");
+    vi.mocked(useSelectedYnabBudget).mockReturnValue({
+      selectedBudgetId: null,
+      isLoading: false,
+    } as ReturnType<typeof useSelectedYnabBudget>);
+
+    renderWithRoutes("/receipts/r1");
+
+    expect(mockYnabReceiptCard).toHaveBeenCalledWith(
+      expect.objectContaining({ isAvailable: false }),
+    );
   });
 
   it("opens edit dialog when edit button is clicked", async () => {

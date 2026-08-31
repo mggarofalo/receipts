@@ -54,7 +54,11 @@ function createWrapper() {
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
   return function Wrapper({ children }: { children: ReactNode }) {
-    return createElement(QueryClientProvider, { client: queryClient }, children);
+    return createElement(
+      QueryClientProvider,
+      { client: queryClient },
+      children,
+    );
   };
 }
 
@@ -83,7 +87,10 @@ describe("useYnab", () => {
   });
 
   it("useYnabConnectionStatus returns defaults when data is undefined", async () => {
-    (client.GET as Mock).mockResolvedValue({ data: undefined, error: "Server error" });
+    (client.GET as Mock).mockResolvedValue({
+      data: undefined,
+      error: "Server error",
+    });
 
     const { result } = renderHook(() => useYnabConnectionStatus(), {
       wrapper: createWrapper(),
@@ -100,7 +107,10 @@ describe("useYnab", () => {
       { id: "budget-1", name: "My Budget" },
       { id: "budget-2", name: "Other Budget" },
     ];
-    (client.GET as Mock).mockResolvedValue({ data: { data: budgets }, error: undefined });
+    (client.GET as Mock).mockResolvedValue({
+      data: { data: budgets },
+      error: undefined,
+    });
 
     const { result } = renderHook(() => useYnabBudgets(), {
       wrapper: createWrapper(),
@@ -112,7 +122,10 @@ describe("useYnab", () => {
   });
 
   it("useYnabBudgets returns empty array when data is undefined", async () => {
-    (client.GET as Mock).mockResolvedValue({ data: undefined, error: "Service unavailable" });
+    (client.GET as Mock).mockResolvedValue({
+      data: undefined,
+      error: "Service unavailable",
+    });
 
     const { result } = renderHook(() => useYnabBudgets(), {
       wrapper: createWrapper(),
@@ -124,7 +137,10 @@ describe("useYnab", () => {
 
   it("useSelectedYnabBudget returns selected budget id", async () => {
     const budgetId = "budget-123";
-    (client.GET as Mock).mockResolvedValue({ data: { selectedBudgetId: budgetId }, error: undefined });
+    (client.GET as Mock).mockResolvedValue({
+      data: { selectedBudgetId: budgetId },
+      error: undefined,
+    });
 
     const { result } = renderHook(() => useSelectedYnabBudget(), {
       wrapper: createWrapper(),
@@ -135,7 +151,10 @@ describe("useYnab", () => {
   });
 
   it("useSelectedYnabBudget returns null when no budget selected", async () => {
-    (client.GET as Mock).mockResolvedValue({ data: { selectedBudgetId: null }, error: undefined });
+    (client.GET as Mock).mockResolvedValue({
+      data: { selectedBudgetId: null },
+      error: undefined,
+    });
 
     const { result } = renderHook(() => useSelectedYnabBudget(), {
       wrapper: createWrapper(),
@@ -176,10 +195,27 @@ describe("useYnab", () => {
 
   it("useYnabAccounts returns accounts on success", async () => {
     const accounts = [
-      { id: "acc-1", name: "Checking", type: "checking", onBudget: true, closed: false, balance: 100000 },
-      { id: "acc-2", name: "Savings", type: "savings", onBudget: true, closed: false, balance: 50000 },
+      {
+        id: "acc-1",
+        name: "Checking",
+        type: "checking",
+        onBudget: true,
+        closed: false,
+        balance: 100000,
+      },
+      {
+        id: "acc-2",
+        name: "Savings",
+        type: "savings",
+        onBudget: true,
+        closed: false,
+        balance: 50000,
+      },
     ];
-    (client.GET as Mock).mockResolvedValue({ data: { data: accounts }, error: undefined });
+    (client.GET as Mock).mockResolvedValue({
+      data: { data: accounts },
+      error: undefined,
+    });
 
     const { result } = renderHook(() => useYnabAccounts(), {
       wrapper: createWrapper(),
@@ -191,7 +227,10 @@ describe("useYnab", () => {
   });
 
   it("useYnabAccounts returns empty array on error", async () => {
-    (client.GET as Mock).mockResolvedValue({ data: undefined, error: "Service unavailable" });
+    (client.GET as Mock).mockResolvedValue({
+      data: undefined,
+      error: "Service unavailable",
+    });
 
     const { result } = renderHook(() => useYnabAccounts(), {
       wrapper: createWrapper(),
@@ -203,9 +242,18 @@ describe("useYnab", () => {
 
   it("useYnabAccountMappings returns mappings on success", async () => {
     const mappings = [
-      { id: "m1", receiptsAccountId: "a1", ynabAccountId: "y1", ynabAccountName: "Checking", ynabBudgetId: "b1" },
+      {
+        id: "m1",
+        receiptsAccountId: "a1",
+        ynabAccountId: "y1",
+        ynabAccountName: "Checking",
+        ynabBudgetId: "b1",
+      },
     ];
-    (client.GET as Mock).mockResolvedValue({ data: { data: mappings }, error: undefined });
+    (client.GET as Mock).mockResolvedValue({
+      data: { data: mappings },
+      error: undefined,
+    });
 
     const { result } = renderHook(() => useYnabAccountMappings(), {
       wrapper: createWrapper(),
@@ -217,7 +265,10 @@ describe("useYnab", () => {
   });
 
   it("useCreateYnabAccountMapping calls POST and shows toast", async () => {
-    (client.POST as Mock).mockResolvedValue({ data: { id: "new-id" }, error: undefined });
+    (client.POST as Mock).mockResolvedValue({
+      data: { id: "new-id" },
+      error: undefined,
+    });
 
     const { result } = renderHook(() => useCreateYnabAccountMapping(), {
       wrapper: createWrapper(),
@@ -275,9 +326,12 @@ describe("useYnab", () => {
 
     await result.current.mutateAsync("m1");
 
-    expect(client.DELETE).toHaveBeenCalledWith("/api/ynab/account-mappings/{id}", {
-      params: { path: { id: "m1" } },
-    });
+    expect(client.DELETE).toHaveBeenCalledWith(
+      "/api/ynab/account-mappings/{id}",
+      {
+        params: { path: { id: "m1" } },
+      },
+    );
     expect(toast.success).toHaveBeenCalledWith("Account mapping removed");
   });
 
@@ -304,10 +358,25 @@ describe("useYnab", () => {
 
   it("useYnabCategories returns categories on success", async () => {
     const categories = [
-      { id: "cat-1", name: "Groceries", categoryGroupId: "group-1", categoryGroupName: "Needs", hidden: false },
-      { id: "cat-2", name: "Rent", categoryGroupId: "group-1", categoryGroupName: "Needs", hidden: false },
+      {
+        id: "cat-1",
+        name: "Groceries",
+        categoryGroupId: "group-1",
+        categoryGroupName: "Needs",
+        hidden: false,
+      },
+      {
+        id: "cat-2",
+        name: "Rent",
+        categoryGroupId: "group-1",
+        categoryGroupName: "Needs",
+        hidden: false,
+      },
     ];
-    (client.GET as Mock).mockResolvedValue({ data: { data: categories }, error: undefined });
+    (client.GET as Mock).mockResolvedValue({
+      data: { data: categories },
+      error: undefined,
+    });
 
     const { result } = renderHook(() => useYnabCategories(), {
       wrapper: createWrapper(),
@@ -319,7 +388,10 @@ describe("useYnab", () => {
   });
 
   it("useYnabCategories returns empty array on error", async () => {
-    (client.GET as Mock).mockResolvedValue({ data: undefined, error: "Service unavailable" });
+    (client.GET as Mock).mockResolvedValue({
+      data: undefined,
+      error: "Service unavailable",
+    });
 
     const { result } = renderHook(() => useYnabCategories(), {
       wrapper: createWrapper(),
@@ -331,7 +403,10 @@ describe("useYnab", () => {
 
   it("useDistinctReceiptItemCategories returns categories on success", async () => {
     const categories = ["Electronics", "Groceries", "Pharmacy"];
-    (client.GET as Mock).mockResolvedValue({ data: { categories }, error: undefined });
+    (client.GET as Mock).mockResolvedValue({
+      data: { categories },
+      error: undefined,
+    });
 
     const { result } = renderHook(() => useDistinctReceiptItemCategories(), {
       wrapper: createWrapper(),
@@ -339,14 +414,28 @@ describe("useYnab", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.categories).toEqual(categories);
-    expect(client.GET).toHaveBeenCalledWith("/api/receipt-items/distinct-categories");
+    expect(client.GET).toHaveBeenCalledWith(
+      "/api/receipt-items/distinct-categories",
+    );
   });
 
   it("useYnabCategoryMappings returns mappings on success", async () => {
     const mappings = [
-      { id: "m-1", receiptsCategory: "Groceries", ynabCategoryId: "cat-1", ynabCategoryName: "Groceries", ynabCategoryGroupName: "Needs", ynabBudgetId: "budget-1", createdAt: "2024-01-01T00:00:00Z", updatedAt: "2024-01-01T00:00:00Z" },
+      {
+        id: "m-1",
+        receiptsCategory: "Groceries",
+        ynabCategoryId: "cat-1",
+        ynabCategoryName: "Groceries",
+        ynabCategoryGroupName: "Needs",
+        ynabBudgetId: "budget-1",
+        createdAt: "2024-01-01T00:00:00Z",
+        updatedAt: "2024-01-01T00:00:00Z",
+      },
     ];
-    (client.GET as Mock).mockResolvedValue({ data: { data: mappings }, error: undefined });
+    (client.GET as Mock).mockResolvedValue({
+      data: { data: mappings },
+      error: undefined,
+    });
 
     const { result } = renderHook(() => useYnabCategoryMappings(), {
       wrapper: createWrapper(),
@@ -359,7 +448,10 @@ describe("useYnab", () => {
 
   it("useUnmappedCategories returns unmapped list on success", async () => {
     const unmappedCategories = ["Electronics", "Pharmacy"];
-    (client.GET as Mock).mockResolvedValue({ data: { unmappedCategories }, error: undefined });
+    (client.GET as Mock).mockResolvedValue({
+      data: { unmappedCategories },
+      error: undefined,
+    });
 
     const { result } = renderHook(() => useUnmappedCategories(), {
       wrapper: createWrapper(),
@@ -367,7 +459,9 @@ describe("useYnab", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.unmappedCategories).toEqual(unmappedCategories);
-    expect(client.GET).toHaveBeenCalledWith("/api/ynab/category-mappings/unmapped");
+    expect(client.GET).toHaveBeenCalledWith(
+      "/api/ynab/category-mappings/unmapped",
+    );
   });
 
   it("useCreateYnabCategoryMapping calls POST and shows toast on success", async () => {
@@ -415,15 +509,18 @@ describe("useYnab", () => {
       ynabBudgetId: "budget-1",
     });
 
-    expect(client.PUT).toHaveBeenCalledWith("/api/ynab/category-mappings/{id}", {
-      params: { path: { id: "m-1" } },
-      body: {
-        ynabCategoryId: "cat-2",
-        ynabCategoryName: "Rent",
-        ynabCategoryGroupName: "Needs",
-        ynabBudgetId: "budget-1",
+    expect(client.PUT).toHaveBeenCalledWith(
+      "/api/ynab/category-mappings/{id}",
+      {
+        params: { path: { id: "m-1" } },
+        body: {
+          ynabCategoryId: "cat-2",
+          ynabCategoryName: "Rent",
+          ynabCategoryGroupName: "Needs",
+          ynabBudgetId: "budget-1",
+        },
       },
-    });
+    );
     expect(toast.success).toHaveBeenCalledWith("Category mapping updated");
   });
 
@@ -436,9 +533,12 @@ describe("useYnab", () => {
 
     await result.current.mutateAsync("m-1");
 
-    expect(client.DELETE).toHaveBeenCalledWith("/api/ynab/category-mappings/{id}", {
-      params: { path: { id: "m-1" } },
-    });
+    expect(client.DELETE).toHaveBeenCalledWith(
+      "/api/ynab/category-mappings/{id}",
+      {
+        params: { path: { id: "m-1" } },
+      },
+    );
     expect(toast.success).toHaveBeenCalledWith("Category mapping deleted");
   });
 
@@ -467,10 +567,18 @@ describe("useYnab", () => {
   it("useSyncYnabMemos calls POST and shows toast on success", async () => {
     const syncResults = {
       results: [
-        { localTransactionId: "tx-1", receiptId: "r-1", outcome: "Synced", ynabTransactionId: "yt-1" },
+        {
+          localTransactionId: "tx-1",
+          receiptId: "r-1",
+          outcome: "Synced",
+          ynabTransactionId: "yt-1",
+        },
       ],
     };
-    (client.POST as Mock).mockResolvedValue({ data: syncResults, error: undefined });
+    (client.POST as Mock).mockResolvedValue({
+      data: syncResults,
+      error: undefined,
+    });
 
     const { result } = renderHook(() => useSyncYnabMemos(), {
       wrapper: createWrapper(),
@@ -481,7 +589,9 @@ describe("useYnab", () => {
     expect(client.POST).toHaveBeenCalledWith("/api/ynab/sync-memos", {
       body: { receiptId: "r-1" },
     });
-    expect(toast.success).toHaveBeenCalledWith("Synced 1 transaction memo(s) to YNAB");
+    expect(toast.success).toHaveBeenCalledWith(
+      "Synced 1 transaction memo(s) to YNAB",
+    );
   });
 
   it("useSyncYnabMemos shows info toast when no transactions synced", async () => {
@@ -490,7 +600,10 @@ describe("useYnab", () => {
         { localTransactionId: "tx-1", receiptId: "r-1", outcome: "NoMatch" },
       ],
     };
-    (client.POST as Mock).mockResolvedValue({ data: syncResults, error: undefined });
+    (client.POST as Mock).mockResolvedValue({
+      data: syncResults,
+      error: undefined,
+    });
 
     const { result } = renderHook(() => useSyncYnabMemos(), {
       wrapper: createWrapper(),
@@ -518,11 +631,24 @@ describe("useYnab", () => {
   it("useSyncYnabMemosBulk calls POST and shows toast on success", async () => {
     const syncResults = {
       results: [
-        { localTransactionId: "tx-1", receiptId: "r-1", outcome: "Synced", ynabTransactionId: "yt-1" },
-        { localTransactionId: "tx-2", receiptId: "r-2", outcome: "Synced", ynabTransactionId: "yt-2" },
+        {
+          localTransactionId: "tx-1",
+          receiptId: "r-1",
+          outcome: "Synced",
+          ynabTransactionId: "yt-1",
+        },
+        {
+          localTransactionId: "tx-2",
+          receiptId: "r-2",
+          outcome: "Synced",
+          ynabTransactionId: "yt-2",
+        },
       ],
     };
-    (client.POST as Mock).mockResolvedValue({ data: syncResults, error: undefined });
+    (client.POST as Mock).mockResolvedValue({
+      data: syncResults,
+      error: undefined,
+    });
 
     const { result } = renderHook(() => useSyncYnabMemosBulk(), {
       wrapper: createWrapper(),
@@ -533,7 +659,9 @@ describe("useYnab", () => {
     expect(client.POST).toHaveBeenCalledWith("/api/ynab/sync-memos/bulk", {
       body: { receiptIds: ["r-1", "r-2"] },
     });
-    expect(toast.success).toHaveBeenCalledWith("Synced 2 transaction memo(s) to YNAB");
+    expect(toast.success).toHaveBeenCalledWith(
+      "Synced 2 transaction memo(s) to YNAB",
+    );
   });
 
   it("useSyncYnabMemosBulk does not toast on failure (surfaced by the global handler)", async () => {
@@ -557,7 +685,10 @@ describe("useYnab", () => {
       outcome: "Synced",
       ynabTransactionId: "yt-1",
     };
-    (client.POST as Mock).mockResolvedValue({ data: resolved, error: undefined });
+    (client.POST as Mock).mockResolvedValue({
+      data: resolved,
+      error: undefined,
+    });
 
     const { result } = renderHook(() => useResolveYnabMemoSync(), {
       wrapper: createWrapper(),
@@ -595,11 +726,35 @@ describe("useYnab", () => {
 
   it("useMemoSyncSummary computes correct summary", () => {
     const results = [
-      { localTransactionId: "tx-1", receiptId: "r-1", outcome: "Synced" as const, ynabTransactionId: "yt-1" },
-      { localTransactionId: "tx-2", receiptId: "r-1", outcome: "AlreadySynced" as const, ynabTransactionId: "yt-2" },
-      { localTransactionId: "tx-3", receiptId: "r-1", outcome: "NoMatch" as const },
-      { localTransactionId: "tx-4", receiptId: "r-1", outcome: "Ambiguous" as const, ambiguousCandidates: [] },
-      { localTransactionId: "tx-5", receiptId: "r-1", outcome: "Failed" as const, error: "err" },
+      {
+        localTransactionId: "tx-1",
+        receiptId: "r-1",
+        outcome: "Synced" as const,
+        ynabTransactionId: "yt-1",
+      },
+      {
+        localTransactionId: "tx-2",
+        receiptId: "r-1",
+        outcome: "AlreadySynced" as const,
+        ynabTransactionId: "yt-2",
+      },
+      {
+        localTransactionId: "tx-3",
+        receiptId: "r-1",
+        outcome: "NoMatch" as const,
+      },
+      {
+        localTransactionId: "tx-4",
+        receiptId: "r-1",
+        outcome: "Ambiguous" as const,
+        ambiguousCandidates: [],
+      },
+      {
+        localTransactionId: "tx-5",
+        receiptId: "r-1",
+        outcome: "Failed" as const,
+        error: "err",
+      },
     ];
 
     const { result } = renderHook(() => useMemoSyncSummary(results), {
@@ -620,8 +775,19 @@ describe("useYnab", () => {
 
   it("useMemoSyncSummary counts reconciledSkipped outcomes", () => {
     const results = [
-      { localTransactionId: "tx-1", receiptId: "r-1", outcome: "ReconciledSkipped" as const, ynabTransactionId: "yt-1", error: "reconciled" },
-      { localTransactionId: "tx-2", receiptId: "r-1", outcome: "Synced" as const, ynabTransactionId: "yt-2" },
+      {
+        localTransactionId: "tx-1",
+        receiptId: "r-1",
+        outcome: "ReconciledSkipped" as const,
+        ynabTransactionId: "yt-1",
+        error: "reconciled",
+      },
+      {
+        localTransactionId: "tx-2",
+        receiptId: "r-1",
+        outcome: "Synced" as const,
+        ynabTransactionId: "yt-2",
+      },
     ];
 
     const { result } = renderHook(() => useMemoSyncSummary(results), {
@@ -805,8 +971,14 @@ describe("useYnab", () => {
   it("useBulkPushYnabTransactions shows a success toast when every receipt succeeds", async () => {
     const bulkResult = {
       results: [
-        { receiptId: "r1", result: { success: true, pushedTransactions: [], error: null } },
-        { receiptId: "r2", result: { success: true, pushedTransactions: [], error: null } },
+        {
+          receiptId: "r1",
+          result: { success: true, pushedTransactions: [], error: null },
+        },
+        {
+          receiptId: "r2",
+          result: { success: true, pushedTransactions: [], error: null },
+        },
       ],
     };
     (client.POST as Mock).mockResolvedValue({
@@ -921,7 +1093,10 @@ describe("useYnab", () => {
         { receiptId: "r3", syncStatus: "NotSynced" },
       ],
     };
-    (client.GET as Mock).mockResolvedValue({ data: statuses, error: undefined });
+    (client.GET as Mock).mockResolvedValue({
+      data: statuses,
+      error: undefined,
+    });
 
     const { result } = renderHook(
       () => useReceiptYnabSyncStatuses(["r1", "r2", "r3"]),
@@ -938,25 +1113,42 @@ describe("useYnab", () => {
   });
 
   it("useReceiptYnabSyncStatuses returns empty map on error", async () => {
-    (client.GET as Mock).mockResolvedValue({ data: undefined, error: "Server error" });
+    (client.GET as Mock).mockResolvedValue({
+      data: undefined,
+      error: "Server error",
+    });
 
-    const { result } = renderHook(
-      () => useReceiptYnabSyncStatuses(["r1"]),
-      { wrapper: createWrapper() },
-    );
+    const { result } = renderHook(() => useReceiptYnabSyncStatuses(["r1"]), {
+      wrapper: createWrapper(),
+    });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.statusMap.size).toBe(0);
   });
 
   it("useReceiptYnabSyncStatuses is disabled when receiptIds is empty", () => {
+    const { result } = renderHook(() => useReceiptYnabSyncStatuses([]), {
+      wrapper: createWrapper(),
+    });
+
+    expect(result.current.statusMap.size).toBe(0);
+    expect(client.GET).not.toHaveBeenCalledWith(
+      "/api/ynab/receipt-sync-statuses",
+      expect.anything(),
+    );
+  });
+
+  it("useReceiptYnabSyncStatuses suppresses the request when disabled", () => {
     const { result } = renderHook(
-      () => useReceiptYnabSyncStatuses([]),
+      () => useReceiptYnabSyncStatuses(["r1"], false),
       { wrapper: createWrapper() },
     );
 
     expect(result.current.statusMap.size).toBe(0);
-    expect(client.GET).not.toHaveBeenCalledWith("/api/ynab/receipt-sync-statuses", expect.anything());
+    expect(client.GET).not.toHaveBeenCalledWith(
+      "/api/ynab/receipt-sync-statuses",
+      expect.anything(),
+    );
   });
 
   it("useStaleMappings returns stale counts on success", async () => {
@@ -1052,7 +1244,10 @@ describe("useYnab", () => {
       windowResetAt: "2026-04-05T23:00:00Z",
       oldestRequestAt: "2026-04-05T22:00:00Z",
     };
-    (client.GET as Mock).mockResolvedValue({ data: rateLimitData, error: undefined });
+    (client.GET as Mock).mockResolvedValue({
+      data: rateLimitData,
+      error: undefined,
+    });
 
     const { result } = renderHook(() => useYnabRateLimitStatus(), {
       wrapper: createWrapper(),
@@ -1085,7 +1280,11 @@ describe("useYnab", () => {
           accountName: "Checking",
           totalMilliunits: -11000,
           expected: [
-            { ynabCategoryId: "cat-1", categoryName: "Groceries", milliunits: -11000 },
+            {
+              ynabCategoryId: "cat-1",
+              categoryName: "Groceries",
+              milliunits: -11000,
+            },
           ],
           actual: null,
           actualFetchError: null,
@@ -1093,7 +1292,10 @@ describe("useYnab", () => {
         },
       ],
     };
-    (client.GET as Mock).mockResolvedValue({ data: response, error: undefined });
+    (client.GET as Mock).mockResolvedValue({
+      data: response,
+      error: undefined,
+    });
 
     const { result } = renderHook(() => useYnabSplitComparison("receipt-1"), {
       wrapper: createWrapper(),
