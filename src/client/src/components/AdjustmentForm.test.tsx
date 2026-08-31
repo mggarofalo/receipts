@@ -70,6 +70,21 @@ describe("AdjustmentForm", () => {
     expect(defaultProps.onSubmit).not.toHaveBeenCalled();
   });
 
+  it("rejects a zero amount before submitting", async () => {
+    const user = userEvent.setup();
+    render(
+      <AdjustmentForm
+        {...defaultProps}
+        defaultValues={{ type: "tip", amount: 0, description: "" }}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /add adjustment/i }));
+
+    expect(await screen.findByText("Amount must be non-zero")).toBeInTheDocument();
+    expect(defaultProps.onSubmit).not.toHaveBeenCalled();
+  });
+
   it("calls onCancel when cancel button is clicked", async () => {
     const user = userEvent.setup();
     render(<AdjustmentForm {...defaultProps} />);

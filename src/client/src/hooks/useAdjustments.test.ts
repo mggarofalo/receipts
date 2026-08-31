@@ -29,13 +29,21 @@ import {
   useRestoreAdjustment,
 } from "./useAdjustments";
 
-function createWrapper() {
-  const queryClient = new QueryClient({
+function createWrapper(queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
-  });
+  })) {
   return function Wrapper({ children }: { children: ReactNode }) {
     return createElement(QueryClientProvider, { client: queryClient }, children);
   };
+}
+
+function expectReceiptDependentsInvalidated(invalidateSpy: ReturnType<typeof vi.spyOn>) {
+  expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["receipts"] });
+  expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["receipts-with-items"] });
+  expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["trips"] });
+  expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["reports"] });
+  expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["ynab", "split-comparison"] });
+  expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["ynab", "receipt-sync-statuses"] });
 }
 
 beforeEach(() => {
@@ -100,8 +108,10 @@ describe("useAdjustments", () => {
     const created = { id: "2", ...body };
     (client.POST as Mock).mockResolvedValue({ data: created, error: undefined });
 
+    const queryClient = new QueryClient();
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
     const { result } = renderHook(() => useCreateAdjustment(), {
-      wrapper: createWrapper(),
+      wrapper: createWrapper(queryClient),
     });
 
     await result.current.mutateAsync({ receiptId: "r-1", body });
@@ -111,6 +121,7 @@ describe("useAdjustments", () => {
       body,
     });
     expect(toast.success).toHaveBeenCalledWith("Adjustment created");
+    expectReceiptDependentsInvalidated(invalidateSpy);
   });
 
   it("update mutation calls PUT and shows toast on success", async () => {
@@ -122,8 +133,10 @@ describe("useAdjustments", () => {
     };
     (client.PUT as Mock).mockResolvedValue({ error: undefined });
 
+    const queryClient = new QueryClient();
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
     const { result } = renderHook(() => useUpdateAdjustment(), {
-      wrapper: createWrapper(),
+      wrapper: createWrapper(queryClient),
     });
 
     await result.current.mutateAsync({ body });
@@ -133,6 +146,7 @@ describe("useAdjustments", () => {
       body,
     });
     expect(toast.success).toHaveBeenCalledWith("Adjustment updated");
+    expectReceiptDependentsInvalidated(invalidateSpy);
   });
 
   it("delete mutation calls DELETE", async () => {
@@ -168,8 +182,10 @@ describe("useAdjustments", () => {
   it("restore mutation calls POST and shows toast on success", async () => {
     (client.POST as Mock).mockResolvedValue({ error: undefined });
 
+    const queryClient = new QueryClient();
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
     const { result } = renderHook(() => useRestoreAdjustment(), {
-      wrapper: createWrapper(),
+      wrapper: createWrapper(queryClient),
     });
 
     await result.current.mutateAsync("1");
@@ -178,6 +194,7 @@ describe("useAdjustments", () => {
       params: { path: { id: "1" } },
     });
     expect(toast.success).toHaveBeenCalledWith("Adjustment restored");
+    expectReceiptDependentsInvalidated(invalidateSpy);
   });
 
   // --- Branch coverage: error callbacks ---
@@ -335,5 +352,6 @@ describe("useAdjustments", () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["adjustments", "deleted"] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["receipts-with-items"] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["trips"] });
+    expectReceiptDependentsInvalidated(invalidateSpy);
   });
 });

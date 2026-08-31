@@ -11,6 +11,10 @@ import {
   type ReceiptTransaction,
 } from "./TransactionsSection";
 import { LineItemsSection, type ReceiptLineItem } from "./LineItemsSection";
+import {
+  AdjustmentsSection,
+  type ReceiptAdjustment,
+} from "./AdjustmentsSection";
 import { BalanceSidebar } from "./BalanceSidebar";
 import { Combobox } from "@/components/ui/combobox";
 import { DateInput } from "@/components/ui/date-input";
@@ -37,6 +41,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
+import { extractErrorMessage } from "@/lib/problem-details";
 
 const headerSchema = z.object({
   location: z
@@ -60,6 +65,7 @@ export default function NewReceiptPage() {
 
   const [transactions, setTransactions] = useState<ReceiptTransaction[]>([]);
   const [items, setItems] = useState<ReceiptLineItem[]>([]);
+  const [adjustments, setAdjustments] = useState<ReceiptAdjustment[]>([]);
   const [showDiscard, setShowDiscard] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitErrorSummary, setSubmitErrorSummary] = useState<string | null>(null);
@@ -102,9 +108,14 @@ export default function NewReceiptPage() {
     [transactions],
   );
 
+  const adjustmentTotal = useMemo(
+    () => adjustments.reduce((sum, adjustment) => sum + adjustment.amount, 0),
+    [adjustments],
+  );
+
   // Mirrors BalanceSidebar's internal balance math so the sticky action bar
   // can show the same status and gate its Submit button.
-  const expectedTotal = subtotal + taxAmount;
+  const expectedTotal = subtotal + taxAmount + adjustmentTotal;
   const balanceDiff = Math.abs(expectedTotal - transactionTotal);
   const isBalanced = balanceDiff < 0.01;
   const isOver = expectedTotal > transactionTotal;
@@ -114,7 +125,8 @@ export default function NewReceiptPage() {
     receiptDate !== "" ||
     taxAmount !== 0 ||
     transactions.length > 0 ||
-    items.length > 0;
+    items.length > 0 ||
+    adjustments.length > 0;
 
   // Tracks a successful save (so we don't block the post-save redirect) and an
   // in-flight discard decision (so the dialog's close handler doesn't cancel a
@@ -249,6 +261,11 @@ export default function NewReceiptPage() {
           category: item.category,
           subcategory: item.subcategory,
         })),
+        adjustments: adjustments.map((adjustment) => ({
+          type: adjustment.type,
+          amount: adjustment.amount,
+          description: adjustment.description || null,
+        })),
       });
 
       const receiptId = (result as { receipt: { id: string } }).receipt.id;
@@ -258,8 +275,11 @@ export default function NewReceiptPage() {
       hasSavedRef.current = true;
       toast.success("Receipt created successfully!");
       navigate(`/receipts/${receiptId}`);
-    } catch {
-      toast.error("Failed to create receipt.");
+    } catch (error) {
+      const message =
+        extractErrorMessage(error) ?? "Failed to create receipt.";
+      setSubmitErrorSummary(message);
+      toast.error(message);
     } finally {
       setIsSubmitting(false);
     }
@@ -267,6 +287,7 @@ export default function NewReceiptPage() {
     form,
     transactions,
     items,
+    adjustments,
     createCompleteReceiptAsync,
     addLocation,
     navigate,
@@ -365,6 +386,7 @@ export default function NewReceiptPage() {
           <BalanceSidebar
             subtotal={subtotal}
             taxAmount={taxAmount}
+            adjustmentTotal={adjustmentTotal}
             transactionTotal={transactionTotal}
             isSubmitting={isSubmitting}
             onSubmit={handleSubmit}
@@ -372,6 +394,11 @@ export default function NewReceiptPage() {
           />
         </div>
       </div>
+
+      <AdjustmentsSection
+        adjustments={adjustments}
+        onChange={setAdjustments}
+      />
 
       {/* Full-width line-item entry table, below the upper container */}
       <LineItemsSection items={items} onChange={setItems} location={location} />
@@ -381,8 +408,13 @@ export default function NewReceiptPage() {
           Balance panel scrolls out of view once the line items grow tall. */}
       <div className="sticky bottom-0 z-10 -mx-4 border-t bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-sm">
-            <span className="text-muted-foreground">Balance</span>
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="text-muted-foreground">
+              Subtotal {formatCurrency(subtotal)} + Tax {formatCurrency(taxAmount)}
+              {" + "}Adjustments {formatCurrency(adjustmentTotal)} = Expected{" "}
+              {formatCurrency(expectedTotal)} · Transactions{" "}
+              {formatCurrency(transactionTotal)}
+            </span>
             <Badge variant={isBalanced ? "default" : "secondary"}>
               {isBalanced
                 ? "Balanced"

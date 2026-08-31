@@ -20,6 +20,60 @@ public class CreateCompleteReceiptCommandHandlerTests
 	}
 
 	[Fact]
+	public async Task Handle_WithNegativeAdjustment_BalancesAgainstReducedExpectedTotal()
+	{
+		Domain.Core.Receipt receipt = new(Guid.NewGuid(), "Test", DateOnly.FromDateTime(DateTime.Now), new Money(2));
+		List<Domain.Core.ReceiptItem> items =
+		[
+			new(Guid.NewGuid(), null, "Item", 1, new Money(10), new Money(10), "Food", null)
+		];
+		List<Domain.Core.Adjustment> adjustments =
+		[
+			new(Guid.NewGuid(), Common.AdjustmentType.Discount, new Money(-2))
+		];
+		List<Domain.Core.Transaction> transactions =
+		[
+			new(Guid.NewGuid(), Guid.NewGuid(), new Money(10), DateOnly.FromDateTime(DateTime.Now))
+		];
+		CreateCompleteReceiptResult expected = new(receipt, transactions, items, adjustments);
+		_mockService.Setup(s => s.CreateAsync(receipt, transactions, items, adjustments, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(expected);
+
+		CreateCompleteReceiptResult result = await _handler.Handle(
+			new CreateCompleteReceiptCommand(receipt, transactions, items, adjustments), CancellationToken.None);
+
+		result.Should().BeSameAs(expected);
+		_mockService.Verify(s => s.CreateAsync(receipt, transactions, items, adjustments, It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	[Fact]
+	public async Task Handle_WithPositiveAdjustment_RejectsTransactionTotalThatOmitsAdjustment()
+	{
+		Domain.Core.Receipt receipt = new(Guid.NewGuid(), "Test", DateOnly.FromDateTime(DateTime.Now), new Money(2));
+		List<Domain.Core.ReceiptItem> items =
+		[
+			new(Guid.NewGuid(), null, "Item", 1, new Money(10), new Money(10), "Food", null)
+		];
+		List<Domain.Core.Adjustment> adjustments =
+		[
+			new(Guid.NewGuid(), Common.AdjustmentType.Other, new Money(3), "Delivery fee")
+		];
+		List<Domain.Core.Transaction> transactions =
+		[
+			new(Guid.NewGuid(), Guid.NewGuid(), new Money(12), DateOnly.FromDateTime(DateTime.Now))
+		];
+
+		Func<Task> act = () => _handler.Handle(
+			new CreateCompleteReceiptCommand(receipt, transactions, items, adjustments), CancellationToken.None).AsTask();
+
+		await act.Should().ThrowAsync<ValidationException>();
+		_mockService.Verify(s => s.CreateAsync(
+			It.IsAny<Domain.Core.Receipt>(), It.IsAny<List<Domain.Core.Transaction>>(),
+			It.IsAny<List<Domain.Core.ReceiptItem>>(), It.IsAny<List<Domain.Core.Adjustment>>(),
+			It.IsAny<CancellationToken>()), Times.Never);
+	}
+
+	[Fact]
 	public async Task Handle_WithBalancedTransactions_DelegatesToService()
 	{
 		// Arrange: receipt with $10 tax, 2 items at $5 each = $20 expected total
@@ -32,15 +86,16 @@ public class CreateCompleteReceiptCommandHandlerTests
 			new Domain.Core.Transaction(Guid.NewGuid(), Guid.NewGuid(), new Money(expectedTotal), DateOnly.FromDateTime(DateTime.Now))
 		];
 
-		CreateCompleteReceiptResult expectedResult = new(receipt, transactions, items);
+		CreateCompleteReceiptResult expectedResult = new(receipt, transactions, items, []);
 		_mockService.Setup(s => s.CreateAsync(
 				It.IsAny<Domain.Core.Receipt>(),
 				It.IsAny<List<Domain.Core.Transaction>>(),
 				It.IsAny<List<Domain.Core.ReceiptItem>>(),
+				It.IsAny<List<Domain.Core.Adjustment>>(),
 				It.IsAny<CancellationToken>()))
 			.ReturnsAsync(expectedResult);
 
-		CreateCompleteReceiptCommand command = new(receipt, transactions, items);
+		CreateCompleteReceiptCommand command = new(receipt, transactions, items, []);
 
 		// Act
 		CreateCompleteReceiptResult result = await _handler.Handle(command, CancellationToken.None);
@@ -51,6 +106,7 @@ public class CreateCompleteReceiptCommandHandlerTests
 			It.IsAny<Domain.Core.Receipt>(),
 			It.IsAny<List<Domain.Core.Transaction>>(),
 			It.IsAny<List<Domain.Core.ReceiptItem>>(),
+			It.IsAny<List<Domain.Core.Adjustment>>(),
 			It.IsAny<CancellationToken>()), Times.Once);
 	}
 
@@ -65,7 +121,7 @@ public class CreateCompleteReceiptCommandHandlerTests
 			new Domain.Core.Transaction(Guid.NewGuid(), Guid.NewGuid(), new Money(15), DateOnly.FromDateTime(DateTime.Now))
 		];
 
-		CreateCompleteReceiptCommand command = new(receipt, transactions, items);
+		CreateCompleteReceiptCommand command = new(receipt, transactions, items, []);
 
 		// Act & Assert
 		await Assert.ThrowsAsync<ValidationException>(() => _handler.Handle(command, CancellationToken.None).AsTask());
@@ -74,6 +130,7 @@ public class CreateCompleteReceiptCommandHandlerTests
 			It.IsAny<Domain.Core.Receipt>(),
 			It.IsAny<List<Domain.Core.Transaction>>(),
 			It.IsAny<List<Domain.Core.ReceiptItem>>(),
+			It.IsAny<List<Domain.Core.Adjustment>>(),
 			It.IsAny<CancellationToken>()), Times.Never);
 	}
 
@@ -82,16 +139,17 @@ public class CreateCompleteReceiptCommandHandlerTests
 	{
 		// Arrange: receipt only, no transactions or items — should not validate balance
 		Domain.Core.Receipt receipt = ReceiptGenerator.Generate();
-		CreateCompleteReceiptResult expectedResult = new(receipt, [], []);
+		CreateCompleteReceiptResult expectedResult = new(receipt, [], [], []);
 
 		_mockService.Setup(s => s.CreateAsync(
 				It.IsAny<Domain.Core.Receipt>(),
 				It.IsAny<List<Domain.Core.Transaction>>(),
 				It.IsAny<List<Domain.Core.ReceiptItem>>(),
+				It.IsAny<List<Domain.Core.Adjustment>>(),
 				It.IsAny<CancellationToken>()))
 			.ReturnsAsync(expectedResult);
 
-		CreateCompleteReceiptCommand command = new(receipt, [], []);
+		CreateCompleteReceiptCommand command = new(receipt, [], [], []);
 
 		// Act
 		CreateCompleteReceiptResult result = await _handler.Handle(command, CancellationToken.None);
@@ -102,6 +160,7 @@ public class CreateCompleteReceiptCommandHandlerTests
 			It.IsAny<Domain.Core.Receipt>(),
 			It.IsAny<List<Domain.Core.Transaction>>(),
 			It.IsAny<List<Domain.Core.ReceiptItem>>(),
+			It.IsAny<List<Domain.Core.Adjustment>>(),
 			It.IsAny<CancellationToken>()), Times.Once);
 	}
 
@@ -112,7 +171,7 @@ public class CreateCompleteReceiptCommandHandlerTests
 		Domain.Core.Receipt receipt = ReceiptGenerator.Generate(); // TaxAmount = $10
 		List<Domain.Core.Transaction> transactions = TransactionGenerator.GenerateList(1); // Amount = $100
 
-		CreateCompleteReceiptCommand command = new(receipt, transactions, []);
+		CreateCompleteReceiptCommand command = new(receipt, transactions, [], []);
 
 		// Act & Assert — $100 != $10, should throw
 		await Assert.ThrowsAsync<ValidationException>(() => _handler.Handle(command, CancellationToken.None).AsTask());
@@ -121,6 +180,7 @@ public class CreateCompleteReceiptCommandHandlerTests
 			It.IsAny<Domain.Core.Receipt>(),
 			It.IsAny<List<Domain.Core.Transaction>>(),
 			It.IsAny<List<Domain.Core.ReceiptItem>>(),
+			It.IsAny<List<Domain.Core.Adjustment>>(),
 			It.IsAny<CancellationToken>()), Times.Never);
 	}
 
@@ -133,16 +193,17 @@ public class CreateCompleteReceiptCommandHandlerTests
 		[
 			new Domain.Core.Transaction(Guid.NewGuid(), Guid.NewGuid(), new Money(10), DateOnly.FromDateTime(DateTime.Now))
 		];
-		CreateCompleteReceiptResult expectedResult = new(receipt, transactions, []);
+		CreateCompleteReceiptResult expectedResult = new(receipt, transactions, [], []);
 
 		_mockService.Setup(s => s.CreateAsync(
 				It.IsAny<Domain.Core.Receipt>(),
 				It.IsAny<List<Domain.Core.Transaction>>(),
 				It.IsAny<List<Domain.Core.ReceiptItem>>(),
+				It.IsAny<List<Domain.Core.Adjustment>>(),
 				It.IsAny<CancellationToken>()))
 			.ReturnsAsync(expectedResult);
 
-		CreateCompleteReceiptCommand command = new(receipt, transactions, []);
+		CreateCompleteReceiptCommand command = new(receipt, transactions, [], []);
 
 		// Act
 		CreateCompleteReceiptResult result = await _handler.Handle(command, CancellationToken.None);
@@ -174,15 +235,16 @@ public class CreateCompleteReceiptCommandHandlerTests
 			new Domain.Core.Transaction(Guid.NewGuid(), Guid.NewGuid(), new Money(transactionAmount), DateOnly.FromDateTime(DateTime.Now))
 		];
 
-		CreateCompleteReceiptResult expectedResult = new(receipt, transactions, items);
+		CreateCompleteReceiptResult expectedResult = new(receipt, transactions, items, []);
 		_mockService.Setup(s => s.CreateAsync(
 				It.IsAny<Domain.Core.Receipt>(),
 				It.IsAny<List<Domain.Core.Transaction>>(),
 				It.IsAny<List<Domain.Core.ReceiptItem>>(),
+				It.IsAny<List<Domain.Core.Adjustment>>(),
 				It.IsAny<CancellationToken>()))
 			.ReturnsAsync(expectedResult);
 
-		CreateCompleteReceiptCommand command = new(receipt, transactions, items);
+		CreateCompleteReceiptCommand command = new(receipt, transactions, items, []);
 
 		// Act
 		CreateCompleteReceiptResult result = await _handler.Handle(command, CancellationToken.None);
@@ -193,6 +255,7 @@ public class CreateCompleteReceiptCommandHandlerTests
 			It.IsAny<Domain.Core.Receipt>(),
 			It.IsAny<List<Domain.Core.Transaction>>(),
 			It.IsAny<List<Domain.Core.ReceiptItem>>(),
+			It.IsAny<List<Domain.Core.Adjustment>>(),
 			It.IsAny<CancellationToken>()), Times.Once);
 	}
 
@@ -207,7 +270,7 @@ public class CreateCompleteReceiptCommandHandlerTests
 			new Domain.Core.Transaction(Guid.NewGuid(), Guid.NewGuid(), new Money(22), DateOnly.FromDateTime(DateTime.Now))
 		];
 
-		CreateCompleteReceiptCommand command = new(receipt, transactions, items);
+		CreateCompleteReceiptCommand command = new(receipt, transactions, items, []);
 
 		// Act & Assert — $22 vs $20 = $2 difference, well beyond tolerance
 		await Assert.ThrowsAsync<ValidationException>(() => _handler.Handle(command, CancellationToken.None).AsTask());
@@ -216,6 +279,7 @@ public class CreateCompleteReceiptCommandHandlerTests
 			It.IsAny<Domain.Core.Receipt>(),
 			It.IsAny<List<Domain.Core.Transaction>>(),
 			It.IsAny<List<Domain.Core.ReceiptItem>>(),
+			It.IsAny<List<Domain.Core.Adjustment>>(),
 			It.IsAny<CancellationToken>()), Times.Never);
 	}
 
@@ -225,16 +289,17 @@ public class CreateCompleteReceiptCommandHandlerTests
 		// Arrange: items but no transactions — balance check skipped since no transactions
 		Domain.Core.Receipt receipt = ReceiptGenerator.Generate();
 		List<Domain.Core.ReceiptItem> items = ReceiptItemGenerator.GenerateList(2);
-		CreateCompleteReceiptResult expectedResult = new(receipt, [], items);
+		CreateCompleteReceiptResult expectedResult = new(receipt, [], items, []);
 
 		_mockService.Setup(s => s.CreateAsync(
 				It.IsAny<Domain.Core.Receipt>(),
 				It.IsAny<List<Domain.Core.Transaction>>(),
 				It.IsAny<List<Domain.Core.ReceiptItem>>(),
+				It.IsAny<List<Domain.Core.Adjustment>>(),
 				It.IsAny<CancellationToken>()))
 			.ReturnsAsync(expectedResult);
 
-		CreateCompleteReceiptCommand command = new(receipt, [], items);
+		CreateCompleteReceiptCommand command = new(receipt, [], items, []);
 
 		// Act
 		CreateCompleteReceiptResult result = await _handler.Handle(command, CancellationToken.None);

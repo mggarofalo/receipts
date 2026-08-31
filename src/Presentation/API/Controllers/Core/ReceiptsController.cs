@@ -27,6 +27,7 @@ public class ReceiptsController(
 	ReceiptMapper mapper,
 	TransactionMapper transactionMapper,
 	ReceiptItemMapper receiptItemMapper,
+	AdjustmentMapper adjustmentMapper,
 	ILogger<ReceiptsController> logger,
 	IEntityChangeNotifier notifier) : ControllerBase
 {
@@ -203,9 +204,9 @@ public class ReceiptsController(
 	}
 
 	[HttpPost(RouteCreateComplete)]
-	[EndpointSummary("Create a receipt with transactions and items atomically")]
-	[EndpointDescription("Creates a receipt along with its transactions and items in a single atomic operation. If any part fails, nothing is persisted.")]
-	public async Task<Ok<CompleteReceiptResponse>> CreateCompleteReceipt([FromBody] CreateCompleteReceiptRequest model, CancellationToken cancellationToken = default)
+	[EndpointSummary("Create a receipt with transactions, items, and adjustments atomically")]
+	[EndpointDescription("Creates a receipt along with its transactions, items, and signed receipt-level adjustments in a single atomic operation. If any part fails, nothing is persisted.")]
+	public async Task<Results<Ok<CompleteReceiptResponse>, BadRequest<ProblemDetails>>> CreateCompleteReceipt([FromBody] CreateCompleteReceiptRequest model, CancellationToken cancellationToken = default)
 	{
 		Receipt receipt = mapper.ToDomain(model.Receipt);
 
@@ -217,8 +218,9 @@ public class ReceiptsController(
 		})];
 
 		List<ReceiptItem> items = [.. model.Items.Select(receiptItemMapper.ToDomain)];
+		List<Adjustment> adjustments = [.. (model.Adjustments ?? []).Select(adjustmentMapper.ToDomain)];
 
-		CreateCompleteReceiptCommand command = new(receipt, transactions, items);
+		CreateCompleteReceiptCommand command = new(receipt, transactions, items, adjustments);
 		CreateCompleteReceiptResult result = await mediator.Send(command, cancellationToken);
 
 		CompleteReceiptResponse response = new()
@@ -226,6 +228,7 @@ public class ReceiptsController(
 			Receipt = mapper.ToResponse(result.Receipt),
 			Transactions = [.. result.Transactions.Select(transactionMapper.ToResponse)],
 			Items = [.. result.Items.Select(receiptItemMapper.ToResponse)],
+			Adjustments = [.. result.Adjustments.Select(adjustmentMapper.ToResponse)],
 		};
 
 		await notifier.NotifyCreated("receipt", result.Receipt.Id);

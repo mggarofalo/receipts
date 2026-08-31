@@ -17,7 +17,7 @@ public class CreateCompleteReceiptCommandHandler(
 			{
 				Receipt = request.Receipt,
 				Items = [.. request.Items],
-				Adjustments = []
+				Adjustments = [.. request.Adjustments]
 			};
 
 			decimal expectedTotal = receiptWithItems.ExpectedTotal.Amount;
@@ -38,6 +38,7 @@ public class CreateCompleteReceiptCommandHandler(
 			request.Receipt,
 			[.. request.Transactions],
 			[.. request.Items],
+			[.. request.Adjustments],
 			cancellationToken);
 	}
 }

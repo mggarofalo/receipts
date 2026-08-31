@@ -3,6 +3,10 @@ import { useStableQuery } from "@/hooks/useStableQuery";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import client from "@/lib/api-client";
 import { toast } from "sonner";
+import type { components } from "@/generated/api";
+
+type CreateCompleteReceiptRequest =
+  components["schemas"]["CreateCompleteReceiptRequest"];
 
 export function useReceipts(
   offset = 0,
@@ -204,18 +208,7 @@ export function useDeletedReceipts(offset = 0, limit = 50, sortBy?: string | nul
 export function useCreateCompleteReceipt() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (body: {
-      receipt: { location: string; date: string; taxAmount: number };
-      transactions: { amount: number; date: string; accountId: string; cardId: string }[];
-      items: {
-        receiptItemCode: string;
-        description: string;
-        quantity: number;
-        unitPrice: number;
-        category: string;
-        subcategory: string;
-      }[];
-    }) => {
+    mutationFn: async (body: CreateCompleteReceiptRequest) => {
       const { data, error } = await client.POST("/api/receipts/complete", { body });
       if (error) throw error;
       return data;
@@ -224,6 +217,14 @@ export function useCreateCompleteReceipt() {
       queryClient.invalidateQueries({ queryKey: ["receipts"] });
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       queryClient.invalidateQueries({ queryKey: ["receipt-items"] });
+      queryClient.invalidateQueries({ queryKey: ["adjustments"] });
+      queryClient.invalidateQueries({ queryKey: ["receipts-with-items"] });
+      queryClient.invalidateQueries({ queryKey: ["trips"] });
+      queryClient.invalidateQueries({ queryKey: ["reports"] });
+      queryClient.invalidateQueries({ queryKey: ["ynab", "split-comparison"] });
+      queryClient.invalidateQueries({
+        queryKey: ["ynab", "receipt-sync-statuses"],
+      });
     },
   });
 }

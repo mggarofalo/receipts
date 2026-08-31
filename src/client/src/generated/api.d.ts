@@ -971,8 +971,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Create a receipt with transactions and items atomically
-         * @description Creates a receipt along with its transactions and items in a single atomic operation. If any part fails, nothing is persisted.
+         * Create a receipt with transactions, items, and adjustments atomically
+         * @description Creates a receipt along with its transactions, items, and receipt-level adjustments in a single atomic operation. If any part fails, nothing is persisted. Adjustment amounts are signed: additions are positive and reductions are negative.
          */
         post: operations["CreateCompleteReceipt"];
         delete?: never;
@@ -3669,11 +3669,17 @@ export interface components {
             receipt: components["schemas"]["CreateReceiptRequest"];
             transactions: components["schemas"]["CreateTransactionRequest"][];
             items: components["schemas"]["CreateReceiptItemRequest"][];
+            /**
+             * @description Signed receipt-level adjustments. Omitted is equivalent to an empty array.
+             * @default []
+             */
+            adjustments: components["schemas"]["CreateAdjustmentRequest"][];
         };
         CompleteReceiptResponse: {
             receipt: components["schemas"]["ReceiptResponse"];
             transactions: components["schemas"]["TransactionResponse"][];
             items: components["schemas"]["ReceiptItemResponse"][];
+            adjustments: components["schemas"]["AdjustmentResponse"][];
         };
         CreateReceiptItemRequest: {
             receiptItemCode?: string | null;
@@ -6795,6 +6801,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CompleteReceiptResponse"];
+                };
+            };
+            /** @description Invalid receipt data or unbalanced totals */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
         };
