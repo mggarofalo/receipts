@@ -8,7 +8,6 @@ import {
 } from "@/lib/audit-utils";
 import type { AuditLog } from "@/lib/audit-utils";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Tooltip,
@@ -137,12 +136,12 @@ export function ChangeHistory({ entityType, entityId }: ChangeHistoryProps) {
   }
 
   return (
-    <ScrollArea className="h-[400px]">
+    <div className="max-h-[400px] overflow-y-auto">
       <div className="px-4">
         {logs.map((log) => (
           <TimelineEntry key={log.id} log={log} />
         ))}
       </div>
-    </ScrollArea>
+    </div>
   );
 }

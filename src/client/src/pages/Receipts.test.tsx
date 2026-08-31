@@ -277,8 +277,12 @@ describe("Receipts", () => {
 
     const table = document.querySelector<HTMLTableElement>("table.receipts-table")!;
     expect(table).toBeInTheDocument();
+    expect(table.closest(".receipts-table-card")).toHaveClass("card");
     expect(within(table).getByRole("columnheader", { name: "Payment" })).toHaveClass("receipt-col-secondary");
-    expect(within(table).getByRole("columnheader", { name: "Contents" })).toHaveClass("receipt-col-secondary");
+    expect(within(table).getByRole("columnheader", { name: "Contents" })).toHaveClass(
+      "receipt-col-secondary",
+      "receipt-col-contents",
+    );
 
     const row = within(table).getAllByRole("row")[1];
     expect(row.querySelector(".receipt-date")).toBeInTheDocument();
@@ -287,6 +291,8 @@ describe("Receipts", () => {
     expect(row.querySelector(".receipt-status")).toBeInTheDocument();
     expect(row.querySelector(".receipt-actions")).toBeInTheDocument();
     expect(row.querySelectorAll(".receipt-col-secondary")).toHaveLength(2);
+    expect(document.querySelector(".receipts-pagination-top")).toHaveClass("receipts-pagination");
+    expect(document.querySelector(".receipts-pagination-bottom")).toHaveClass("receipts-pagination");
   });
 
   it("renders text and accessible labels for every balance and YNAB state", async () => {
@@ -450,9 +456,9 @@ describe("Receipts", () => {
       location: "Target",
       taxAmount: 1,
       itemSubtotal: 10,
-      adjustmentTotal: 2,
-      expectedTotal: 13,
-      transactionTotal: 13,
+      adjustmentTotal: -2,
+      expectedTotal: 9,
+      transactionTotal: 9,
       balanceState: "outOfBalance",
       paymentSummary: "Checking · Visa",
       categorySummary: "Grocery",
@@ -469,8 +475,8 @@ describe("Receipts", () => {
       isLoading: false,
       isError: false,
       data: {
-        receipt: { subtotal: 10, adjustmentTotal: 2, expectedTotal: 13, items },
-        transactions: [{ transaction: { amount: 13 } }],
+        receipt: { subtotal: 10, adjustmentTotal: -2, expectedTotal: 9, items },
+        transactions: [{ transaction: { amount: 9 } }],
       },
     }));
 
@@ -480,14 +486,49 @@ describe("Receipts", () => {
       .click(screen.getByRole("row", { name: /Target/ }));
 
     const detail = document.querySelector<HTMLElement>(".receipt-inline-detail")!;
-    expect(within(detail).getByText("$10.00 + $1.00 + $2.00 = $13.00")).toBeInTheDocument();
+    const terms = [...detail.querySelectorAll(".receipt-equation-term")].map((term) => term.textContent);
+    expect(terms).toEqual(["Subtotal$10.00", "Tax$1.00", "Adjustments$2.00", "Expected$9.00"]);
+    expect([...detail.querySelectorAll(".receipt-equation-operator")].map((term) => term.textContent))
+      .toEqual(["+", "−", "="]);
+    expect(within(detail).getByRole("math", {
+      name: "Subtotal $10.00, plus Tax $1.00, minus Adjustments $2.00; equals Expected $9.00",
+    })).toHaveClass("receipt-equation");
     expect(within(detail).getByText("Checking · Visa")).toBeInTheDocument();
-    expect(within(detail).getByText("Reconciliation: Out of balance")).toBeInTheDocument();
+    expect(within(detail).getByText("Checking · Visa")).toHaveClass("receipt-detail-pill");
+    expect(within(detail).getByText("Reconciliation: Out of balance")).toHaveClass("chip", "neg");
     expect(within(detail).getByText("Grocery")).toBeInTheDocument();
     expect(within(detail).getByText("YNAB: synced")).toBeInTheDocument();
     expect(within(detail).getAllByRole("listitem")).toHaveLength(5);
     expect(within(detail).getByText("+1 more")).toBeInTheDocument();
     expect(within(detail).getByRole("link", { name: "Open receipt" })).toHaveAttribute("href", "/receipts/r1");
+  });
+
+  it("omits zero tax and adjustment terms from the inline equation", async () => {
+    const receipt = mockReceiptListItemResponse({
+      id: "r1",
+      location: "Target",
+      taxAmount: 0,
+      itemSubtotal: 10,
+      adjustmentTotal: 0,
+      expectedTotal: 10,
+    });
+    await mockReceiptTable([receipt]);
+    const { useTripByReceiptId } = await import("@/hooks/useTrips");
+    vi.mocked(useTripByReceiptId).mockReturnValue(mockQueryResult({
+      isLoading: false,
+      isError: false,
+      data: { receipt: { subtotal: 10, adjustmentTotal: 0, expectedTotal: 10, items: [] }, transactions: [] },
+    }));
+
+    renderWithProviders(<Receipts />);
+    await (await import("@testing-library/user-event")).default.setup()
+      .click(screen.getByRole("row", { name: /Target/ }));
+
+    const equation = document.querySelector<HTMLElement>(".receipt-equation")!;
+    expect(within(equation).getByText("Subtotal")).toBeInTheDocument();
+    expect(within(equation).getByText("Expected")).toBeInTheDocument();
+    expect(within(equation).queryByText("Tax")).not.toBeInTheDocument();
+    expect(within(equation).queryByText("Adjustments")).not.toBeInTheDocument();
   });
 
   it("renders deterministic empty related-data labels", async () => {
