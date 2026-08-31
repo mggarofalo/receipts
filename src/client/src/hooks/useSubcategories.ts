@@ -4,14 +4,15 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import client from "@/lib/api-client";
 import { toast } from "sonner";
 
-export function useSubcategories(offset = 0, limit = 50, sortBy?: string | null, sortDirection?: string | null, isActive?: boolean | null, options: { enabled?: boolean } = {}) {
-  const { enabled = true } = options;
+export function useSubcategories(offset = 0, limit = 50, sortBy?: string | null, sortDirection?: string | null, isActive?: boolean | null, options: { enabled?: boolean; q?: string } = {}) {
+  const { enabled = true, q } = options;
+  const search = q?.trim() || undefined;
   const query = useQuery({
-    queryKey: ["subcategories", "list", offset, limit, sortBy, sortDirection, isActive],
+    queryKey: ["subcategories", "list", offset, limit, sortBy, sortDirection, isActive, search],
     enabled,
     queryFn: async () => {
       const { data, error } = await client.GET("/api/subcategories", {
-        params: { query: { offset, limit, sortBy: sortBy ?? undefined, sortDirection: (sortDirection ?? undefined) as "asc" | "desc" | undefined, isActive: isActive ?? undefined } },
+        params: { query: { offset, limit, sortBy: sortBy ?? undefined, sortDirection: (sortDirection ?? undefined) as "asc" | "desc" | undefined, isActive: isActive ?? undefined, q: search } },
       });
       if (error) throw error;
       return data;

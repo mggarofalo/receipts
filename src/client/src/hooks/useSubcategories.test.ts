@@ -80,6 +80,23 @@ describe("useSubcategories", () => {
     });
   });
 
+  it("list query trims q, sends it to the API, and refetches for a new q", async () => {
+    (client.GET as Mock).mockResolvedValue({ data: { data: [], total: 0, offset: 0, limit: 50 } });
+    const { result, rerender } = renderHook(
+      ({ q }) => useSubcategories(0, 50, null, null, null, { q }),
+      { initialProps: { q: "  produce  " }, wrapper: createWrapper() },
+    );
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(client.GET).toHaveBeenLastCalledWith("/api/subcategories", {
+      params: { query: { offset: 0, limit: 50, q: "produce" } },
+    });
+    rerender({ q: "dairy" });
+    await waitFor(() => expect(client.GET).toHaveBeenCalledTimes(2));
+    expect(client.GET).toHaveBeenLastCalledWith("/api/subcategories", {
+      params: { query: { offset: 0, limit: 50, q: "dairy" } },
+    });
+  });
+
   it("single query is disabled when id is null", () => {
     const { result } = renderHook(() => useSubcategory(null), {
       wrapper: createWrapper(),

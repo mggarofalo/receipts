@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
 import { screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
+import { toast } from "sonner";
 import { CommandPalette } from "./CommandPalette";
 import { renderWithQueryClient } from "@/test/test-utils";
 import { mockQueryResult } from "@/test/mock-hooks";
@@ -60,6 +62,16 @@ const bulkPushMutate = vi.fn();
 const backupExportMutate = vi.fn();
 const purgeTrashMutateAsync = vi.fn(async () => {});
 const fetchAllReceiptIdsMock = vi.fn(async () => ({ ids: ["r1", "r2"], total: 2 }));
+
+function ControlledPalette() {
+  const [open, setOpen] = useState(true);
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)}>Reopen palette</button>
+      <CommandPalette open={open} onOpenChange={setOpen} />
+    </>
+  );
+}
 
 vi.mock("@/hooks/useYnab", () => ({
   fetchAllReceiptIds: () => fetchAllReceiptIdsMock(),
@@ -282,6 +294,49 @@ describe("CommandPalette", () => {
         ) as HTMLInputElement
       ).value,
     ).toBe("");
+  });
+
+  it("clears the query when closed and reopens with an empty input", async () => {
+    const user = userEvent.setup();
+    renderWithQueryClient(<ControlledPalette />);
+    await user.type(
+      screen.getByPlaceholderText(/type a command or search/i),
+      "stale account",
+    );
+    await user.keyboard("{Escape}");
+    expect(screen.queryByPlaceholderText(/type a command or search/i)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /reopen palette/i }));
+    expect(screen.getByPlaceholderText(/type a command or search/i)).toHaveValue("");
+  });
+
+  it("selecting an entity clears the query and disables searches before reopen", async () => {
+    const { useAccounts } = await import("@/hooks/useAccounts");
+    vi.mocked(useAccounts).mockReturnValue(
+      mockQueryResult({ data: [{ id: "a1", name: "Apple Card" }] }),
+    );
+    const user = userEvent.setup();
+    renderWithQueryClient(<ControlledPalette />);
+    await user.type(screen.getByPlaceholderText(/type a command or search/i), "apple");
+    await user.click(screen.getByText("Apple Card"));
+
+    expect(navigateMock).toHaveBeenCalledWith("/accounts");
+    expect(vi.mocked(useAccounts).mock.calls.at(-1)?.at(-1)).toMatchObject({ enabled: false });
+    await user.click(screen.getByRole("button", { name: /reopen palette/i }));
+    expect(screen.getByPlaceholderText(/type a command or search/i)).toHaveValue("");
+  });
+
+  it("New Receipt navigation leaves no stale enabled search or error toast", async () => {
+    const { useAccounts } = await import("@/hooks/useAccounts");
+    const errorToast = vi.spyOn(toast, "error");
+    const user = userEvent.setup();
+    renderWithQueryClient(<ControlledPalette />);
+    await user.type(screen.getByPlaceholderText(/type a command or search/i), "new receipt");
+    await user.keyboard("{Enter}");
+
+    expect(navigateMock).toHaveBeenCalledWith("/receipts/new");
+    expect(vi.mocked(useAccounts).mock.calls.at(-1)?.at(-1)).toMatchObject({ enabled: false });
+    expect(errorToast).not.toHaveBeenCalled();
   });
 
   it("renders Pinned section at the top when commands are pinned and query is empty", () => {

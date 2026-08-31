@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { renderHook } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
 import { useEntityResults } from "./entity-results";
 import { mockQueryResult } from "@/test/mock-hooks";
 
@@ -34,7 +34,7 @@ beforeEach(() => {
 
 describe("useEntityResults", () => {
   it("returns no groups when all hooks have no data", () => {
-    const { result } = renderHook(() => useEntityResults({ isAdmin: false }));
+    const { result } = renderHook(() => useEntityResults({ isAdmin: false, open: true }));
     expect(result.current).toEqual([]);
   });
 
@@ -48,7 +48,7 @@ describe("useEntityResults", () => {
         ],
       }),
     );
-    const { result } = renderHook(() => useEntityResults({ isAdmin: false }));
+    const { result } = renderHook(() => useEntityResults({ isAdmin: false, open: true }));
     const accounts = result.current.find((g) => g.id === "accounts");
     expect(accounts).toBeDefined();
     expect(accounts!.items).toHaveLength(2);
@@ -64,7 +64,7 @@ describe("useEntityResults", () => {
         data: [{ id: "c1", name: "Checking", cardCode: "VISA-1234" }],
       }),
     );
-    const { result } = renderHook(() => useEntityResults({ isAdmin: false }));
+    const { result } = renderHook(() => useEntityResults({ isAdmin: false, open: true }));
     const cards = result.current.find((g) => g.id === "cards");
     expect(cards!.items[0].meta).toBe("VISA-1234");
     expect(cards!.items[0].searchValue).toContain("visa-1234");
@@ -85,7 +85,7 @@ describe("useEntityResults", () => {
         ],
       }),
     );
-    const { result } = renderHook(() => useEntityResults({ isAdmin: false }));
+    const { result } = renderHook(() => useEntityResults({ isAdmin: false, open: true }));
     const receiptItems = result.current.find((g) => g.id === "receipt-items");
     expect(receiptItems!.items[0].href).toBe("/receipts/r42");
     expect(receiptItems!.items[0].label).toBe("Organic bananas");
@@ -98,13 +98,15 @@ describe("useEntityResults", () => {
         data: [{ userId: "u1", email: "bob@example.com" }],
       }),
     );
-    const { result } = renderHook(() => useEntityResults({ isAdmin: false }));
+    const { result } = renderHook(() =>
+      useEntityResults({ isAdmin: false, open: true }),
+    );
     expect(result.current.find((g) => g.id === "users")).toBeUndefined();
   });
 
   it("passes enabled=false to useUsers when not admin (no API storm)", async () => {
     const { useUsers } = await import("@/hooks/useUsers");
-    renderHook(() => useEntityResults({ isAdmin: false }));
+    renderHook(() => useEntityResults({ isAdmin: false, open: true }));
     expect(vi.mocked(useUsers)).toHaveBeenCalledWith(
       0,
       expect.any(Number),
@@ -116,7 +118,7 @@ describe("useEntityResults", () => {
 
   it("passes enabled=false to useUsers when admin but query is empty", async () => {
     const { useUsers } = await import("@/hooks/useUsers");
-    renderHook(() => useEntityResults({ isAdmin: true }));
+    renderHook(() => useEntityResults({ isAdmin: true, open: true }));
     expect(vi.mocked(useUsers)).toHaveBeenCalledWith(
       0,
       expect.any(Number),
@@ -128,7 +130,7 @@ describe("useEntityResults", () => {
 
   it("passes enabled=true to useUsers when admin and query is non-empty", async () => {
     const { useUsers } = await import("@/hooks/useUsers");
-    renderHook(() => useEntityResults({ isAdmin: true, query: "bob" }));
+    renderHook(() => useEntityResults({ isAdmin: true, open: true, query: "bob" }));
     expect(vi.mocked(useUsers)).toHaveBeenCalledWith(
       0,
       expect.any(Number),
@@ -147,7 +149,7 @@ describe("useEntityResults", () => {
         ],
       }),
     );
-    const { result } = renderHook(() => useEntityResults({ isAdmin: true }));
+    const { result } = renderHook(() => useEntityResults({ isAdmin: true, open: true }));
     const users = result.current.find((g) => g.id === "users");
     expect(users).toBeDefined();
     expect(users!.items[0].label).toBe("Bob Roy");
@@ -157,7 +159,7 @@ describe("useEntityResults", () => {
   it("omits q from receipt hooks when query is empty", async () => {
     const { useReceipts } = await import("@/hooks/useReceipts");
     const { useReceiptItems } = await import("@/hooks/useReceiptItems");
-    renderHook(() => useEntityResults({ isAdmin: false, query: "" }));
+    renderHook(() => useEntityResults({ isAdmin: false, open: true, query: "" }));
     expect(vi.mocked(useReceipts)).toHaveBeenCalledWith(
       0,
       expect.any(Number),
@@ -184,14 +186,14 @@ describe("useEntityResults", () => {
       const { useReceipts } = await import("@/hooks/useReceipts");
       const { useReceiptItems } = await import("@/hooks/useReceiptItems");
       const { rerender } = renderHook(
-        ({ query }: { query: string }) => useEntityResults({ isAdmin: false, query }),
+        ({ query }: { query: string }) => useEntityResults({ isAdmin: false, open: true, query }),
         { initialProps: { query: "" } },
       );
 
       vi.mocked(useReceipts).mockClear();
       vi.mocked(useReceiptItems).mockClear();
       rerender({ query: "  Walmart  " });
-      vi.advanceTimersByTime(250);
+      await act(() => vi.advanceTimersByTimeAsync(250));
       rerender({ query: "  Walmart  " });
 
       const receiptsCalls = vi.mocked(useReceipts).mock.calls;
@@ -213,7 +215,7 @@ describe("useEntityResults", () => {
     const { useReceiptItems } = await import("@/hooks/useReceiptItems");
     const { useUsers } = await import("@/hooks/useUsers");
 
-    renderHook(() => useEntityResults({ isAdmin: true, query: "" }));
+    renderHook(() => useEntityResults({ isAdmin: true, open: true, query: "" }));
 
     for (const mock of [
       useAccounts,
@@ -230,24 +232,168 @@ describe("useEntityResults", () => {
     }
   });
 
-  it("enables the reference-list entity hooks once the palette input is non-empty", async () => {
-    const { useAccounts } = await import("@/hooks/useAccounts");
-    const { useCards } = await import("@/hooks/useCards");
-    const { useCategories } = await import("@/hooks/useCategories");
-    const { useSubcategories } = await import("@/hooks/useSubcategories");
-    const { useItemTemplates } = await import("@/hooks/useItemTemplates");
+  it("keeps every hook disabled before debounce, then enables with the debounced q", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const { useAccounts } = await import("@/hooks/useAccounts");
+      const { useCards } = await import("@/hooks/useCards");
+      const { useCategories } = await import("@/hooks/useCategories");
+      const { useSubcategories } = await import("@/hooks/useSubcategories");
+      const { useItemTemplates } = await import("@/hooks/useItemTemplates");
+      const { useReceipts } = await import("@/hooks/useReceipts");
+      const { useReceiptItems } = await import("@/hooks/useReceiptItems");
+      const { useUsers } = await import("@/hooks/useUsers");
+      const { rerender } = renderHook(
+        ({ query }) => useEntityResults({ isAdmin: true, open: true, query }),
+        { initialProps: { query: "" } },
+      );
 
-    renderHook(() => useEntityResults({ isAdmin: false, query: "wal" }));
+      rerender({ query: "  grocer  " });
 
-    for (const mock of [
-      useAccounts,
-      useCards,
-      useCategories,
-      useSubcategories,
-      useItemTemplates,
-    ]) {
-      const lastCall = vi.mocked(mock).mock.calls.at(-1);
-      expect(lastCall?.at(-1)).toEqual({ enabled: true });
+      for (const hook of [
+        useAccounts,
+        useCards,
+        useCategories,
+        useSubcategories,
+        useItemTemplates,
+        useReceipts,
+        useReceiptItems,
+        useUsers,
+      ]) {
+        expect(vi.mocked(hook).mock.calls.at(-1)?.at(-1)).toMatchObject({
+          enabled: false,
+        });
+      }
+      for (const hook of [useAccounts, useCards, useCategories, useSubcategories]) {
+        expect(vi.mocked(hook).mock.calls.at(-1)?.at(-1)).toEqual({
+          enabled: false,
+          q: undefined,
+        });
+      }
+
+      await act(() => vi.advanceTimersByTimeAsync(200));
+      rerender({ query: "  grocer  " });
+
+      for (const hook of [useAccounts, useCards, useCategories, useSubcategories]) {
+        expect(vi.mocked(hook).mock.calls.at(-1)?.at(-1)).toEqual({
+          enabled: true,
+          q: "grocer",
+        });
+      }
+      for (const hook of [useItemTemplates, useReceipts, useReceiptItems, useUsers]) {
+        expect(vi.mocked(hook).mock.calls.at(-1)?.at(-1)).toEqual({
+          enabled: true,
+        });
+      }
+      expect(vi.mocked(useReceipts).mock.calls.at(-1)?.[6]).toBe("grocer");
+      expect(vi.mocked(useReceiptItems).mock.calls.at(-1)?.[4]).toBe("grocer");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("disables every entity query while closed even when a stale query remains", async () => {
+    const hooks = await Promise.all([
+      import("@/hooks/useAccounts").then((m) => m.useAccounts),
+      import("@/hooks/useCards").then((m) => m.useCards),
+      import("@/hooks/useCategories").then((m) => m.useCategories),
+      import("@/hooks/useSubcategories").then((m) => m.useSubcategories),
+      import("@/hooks/useItemTemplates").then((m) => m.useItemTemplates),
+      import("@/hooks/useReceipts").then((m) => m.useReceipts),
+      import("@/hooks/useReceiptItems").then((m) => m.useReceiptItems),
+      import("@/hooks/useUsers").then((m) => m.useUsers),
+    ]);
+
+    renderHook(() =>
+      useEntityResults({ isAdmin: true, open: false, query: "stale search" }),
+    );
+
+    for (const hook of hooks) {
+      expect(vi.mocked(hook).mock.calls.at(-1)?.at(-1)).toMatchObject({
+        enabled: false,
+      });
+    }
+  });
+
+  it("does not revive a stale search after a rapid close, reopen, and clear", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const hooks = await Promise.all([
+        import("@/hooks/useAccounts").then((m) => m.useAccounts),
+        import("@/hooks/useCards").then((m) => m.useCards),
+        import("@/hooks/useCategories").then((m) => m.useCategories),
+        import("@/hooks/useSubcategories").then((m) => m.useSubcategories),
+        import("@/hooks/useItemTemplates").then((m) => m.useItemTemplates),
+        import("@/hooks/useReceipts").then((m) => m.useReceipts),
+        import("@/hooks/useReceiptItems").then((m) => m.useReceiptItems),
+        import("@/hooks/useUsers").then((m) => m.useUsers),
+      ]);
+      const searchableHooks = hooks.slice(0, 4);
+      const { rerender } = renderHook(
+        ({ open, query }) => useEntityResults({ isAdmin: true, open, query }),
+        { initialProps: { open: true, query: "old search" } },
+      );
+
+      // Establish a previously valid debounced search.
+      for (const hook of hooks) {
+        expect(vi.mocked(hook).mock.calls.at(-1)?.at(-1)).toMatchObject({
+          enabled: true,
+        });
+      }
+
+      // Close and reopen with the input cleared well inside the debounce window.
+      rerender({ open: false, query: "old search" });
+      rerender({ open: true, query: "" });
+      for (const hook of hooks) {
+        expect(vi.mocked(hook).mock.calls.at(-1)?.at(-1)).toMatchObject({ enabled: false });
+      }
+
+      await act(() => vi.advanceTimersByTimeAsync(199));
+      for (const hook of hooks) {
+        expect(vi.mocked(hook).mock.calls.at(-1)?.at(-1)).toMatchObject({ enabled: false });
+      }
+
+      // A new term must not enable requests while the debounced value is still
+      // empty (or stale from the previous palette lifecycle).
+      rerender({ open: true, query: "new search" });
+      for (const hook of hooks) {
+        expect(vi.mocked(hook).mock.calls.at(-1)?.at(-1)).toMatchObject({ enabled: false });
+      }
+      await act(() => vi.advanceTimersByTimeAsync(200));
+      rerender({ open: true, query: "new search" });
+
+      for (const hook of hooks) {
+        expect(vi.mocked(hook).mock.calls.at(-1)?.at(-1)).toMatchObject({ enabled: true });
+      }
+      for (const hook of searchableHooks) {
+        expect(vi.mocked(hook).mock.calls.at(-1)?.at(-1)).toEqual({
+          enabled: true,
+          q: "new search",
+        });
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("never requests an entity page above the API maximum of 500", async () => {
+    const hooks = await Promise.all([
+      import("@/hooks/useAccounts").then((m) => m.useAccounts),
+      import("@/hooks/useCards").then((m) => m.useCards),
+      import("@/hooks/useCategories").then((m) => m.useCategories),
+      import("@/hooks/useSubcategories").then((m) => m.useSubcategories),
+      import("@/hooks/useItemTemplates").then((m) => m.useItemTemplates),
+      import("@/hooks/useReceipts").then((m) => m.useReceipts),
+      import("@/hooks/useReceiptItems").then((m) => m.useReceiptItems),
+      import("@/hooks/useUsers").then((m) => m.useUsers),
+    ]);
+
+    renderHook(() =>
+      useEntityResults({ isAdmin: true, open: true, query: "anything" }),
+    );
+
+    for (const hook of hooks) {
+      expect(vi.mocked(hook).mock.calls.at(-1)?.[1]).toBeLessThanOrEqual(500);
     }
   });
 });
