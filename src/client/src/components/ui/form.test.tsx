@@ -109,11 +109,16 @@ describe("FormMessage", () => {
     expect(describedBy).toContain(message.id);
   });
 
-  it("renders nothing when there is no error and no children", async () => {
+  it("reserves a hidden message slot when there is no error", () => {
     const onSubmit = vi.fn();
-    render(<TestForm onSubmit={onSubmit} defaultValues={{ name: "Alice" }} />);
+    const { container } = render(
+      <TestForm onSubmit={onSubmit} defaultValues={{ name: "Alice" }} />,
+    );
 
-    // No alert should be present when the form is valid and untouched
+    const messageSlot = container.querySelector('[data-slot="form-message"]');
+    expect(messageSlot).toBeInTheDocument();
+    expect(messageSlot).toHaveClass("min-h-5");
+    expect(messageSlot).toHaveAttribute("aria-hidden", "true");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 

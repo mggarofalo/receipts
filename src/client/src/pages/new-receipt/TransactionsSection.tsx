@@ -1,4 +1,9 @@
-import { useMemo, useCallback, useRef, useEffect } from "react";
+import {
+  useMemo,
+  useCallback,
+  useRef,
+  useEffect,
+} from "react";
 import { generateId } from "@/lib/id";
 import { useForm } from "react-hook-form";
 import { z } from "zod/v4";
@@ -60,6 +65,8 @@ export function TransactionsSection({
   onChange,
 }: TransactionsSectionProps) {
   const formRef = useRef<HTMLFormElement>(null);
+  const sectionRef = useRef<HTMLDivElement>(null);
+  const focusScopeActiveRef = useRef(false);
   const cardRef = useRef<HTMLButtonElement>(null);
   const { data: accounts } = useAllAccounts(true);
   const { data: cards } = useAllCards(true);
@@ -161,8 +168,62 @@ export function TransactionsSection({
     [transactions, onChange],
   );
 
+  const isInTransactionEditor = useCallback((target: EventTarget | null) => {
+    if (!(target instanceof Element)) return false;
+
+    const section = sectionRef.current;
+    if (!section) return false;
+    if (section.contains(target)) return true;
+
+    // Combobox popovers are portaled to document.body. Radix links each one to
+    // its in-card trigger with aria-controls, so include an open popover in the
+    // same logical focus boundary without treating unrelated popovers as ours.
+    const popover = target.closest('[data-slot="popover-content"]');
+    if (!popover?.id) return false;
+
+    return Array.from(section.querySelectorAll("[aria-controls]")).some(
+      (trigger) => trigger.getAttribute("aria-controls") === popover.id,
+    );
+  }, []);
+
+  const clearDraftValidation = useCallback(() => {
+    if (!focusScopeActiveRef.current) return;
+
+    focusScopeActiveRef.current = false;
+    // clearErrors alone leaves isSubmitted set, which makes RHF revalidate on
+    // change after re-entry. Reset the validation lifecycle while preserving
+    // exactly what the user typed in the draft.
+    form.reset(form.getValues());
+  }, [form]);
+
+  useEffect(() => {
+    function handleDocumentFocus(event: FocusEvent) {
+      if (isInTransactionEditor(event.target)) return;
+      clearDraftValidation();
+    }
+
+    document.addEventListener("focusin", handleDocumentFocus);
+    return () => document.removeEventListener("focusin", handleDocumentFocus);
+  }, [clearDraftValidation, isInTransactionEditor]);
+
+  function handleSectionBlur() {
+    // A focusin event normally identifies the destination. This fallback also
+    // handles focus being cleared to body (where no focusin event is emitted).
+    queueMicrotask(() => {
+      if (!isInTransactionEditor(document.activeElement)) {
+        clearDraftValidation();
+      }
+    });
+  }
+
   return (
-    <Card>
+    <Card
+      ref={sectionRef}
+      onFocusCapture={() => {
+        focusScopeActiveRef.current = true;
+      }}
+      onBlur={handleSectionBlur}
+    >
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <CardTitle className="text-lg">Transactions</CardTitle>
