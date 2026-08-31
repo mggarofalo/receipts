@@ -86,11 +86,14 @@ const FILTER_DEFS: FilterDefinition[] = [
 // `location` is the drill-down target from the Spending by Location report
 // (RECEIPTS-841): an exact-match server-side filter, not the fuzzy client-side
 // search box.
-const HIGHLIGHT_PARAMS = ["highlight", "accountId", "cardId", "location"] as const;
+const HIGHLIGHT_PARAMS = [
+  "highlight",
+  "accountId",
+  "cardId",
+  "location",
+] as const;
 
-function syncStatusToChip(
-  status: string | undefined | null,
-): YnabStatus {
+function syncStatusToChip(status: string | undefined | null): YnabStatus {
   switch (status) {
     case "Synced":
     case "AlreadySynced":
@@ -112,8 +115,13 @@ function ReceiptInlineDetails({
   receipt: ReceiptListItem;
   ynabStatus: string | undefined;
 }) {
-  const { data: trip, isLoading, isError, refetch, isRefetching } =
-    useTripByReceiptId(receipt.id);
+  const {
+    data: trip,
+    isLoading,
+    isError,
+    refetch,
+    isRefetching,
+  } = useTripByReceiptId(receipt.id);
 
   if (isLoading) {
     return (
@@ -146,47 +154,120 @@ function ReceiptInlineDetails({
   const adjustmentTotal = Number(
     trip?.receipt?.adjustmentTotal ?? receipt.adjustmentTotal,
   );
+  const taxAmount = Number(receipt.taxAmount);
   const expectedTotal = Number(
     trip?.receipt?.expectedTotal ?? receipt.expectedTotal,
   );
   const transactionTotal =
     trip?.transactions?.reduce(
-      (sum, transaction) =>
-        sum + Number(transaction.transaction.amount ?? 0),
+      (sum, transaction) => sum + Number(transaction.transaction.amount ?? 0),
       0,
     ) ?? receipt.transactionTotal;
+  const equationTerms = [
+    { label: "Subtotal", amount: subtotal, operator: "" },
+    ...(Math.abs(taxAmount) >= 0.005
+      ? [
+          {
+            label: "Tax",
+            amount: Math.abs(taxAmount),
+            operator: taxAmount < 0 ? "−" : "+",
+          },
+        ]
+      : []),
+    ...(Math.abs(adjustmentTotal) >= 0.005
+      ? [
+          {
+            label: "Adjustments",
+            amount: Math.abs(adjustmentTotal),
+            operator: adjustmentTotal < 0 ? "−" : "+",
+          },
+        ]
+      : []),
+  ];
+  const balanceLabel =
+    receipt.balanceState === "noTransactions"
+      ? "No transactions"
+      : receipt.balanceState === "outOfBalance"
+        ? "Out of balance"
+        : "Balanced";
+  const ynabChipStatus = syncStatusToChip(ynabStatus);
+  const equationAccessibleLabel = `${equationTerms
+    .map((term) =>
+      `${term.operator === "−" ? "minus " : term.operator === "+" ? "plus " : ""}${term.label} ${formatCurrency(term.amount)}`,
+    )
+    .join(", ")}; equals Expected ${formatCurrency(expectedTotal)}`;
 
   return (
     <div className="receipt-inline-detail">
-      <div className="receipt-inline-summary">
-        <div>
-          <span className="receipt-inline-label">Balance equation</span>
-          <strong>
-            {formatCurrency(subtotal)} + {formatCurrency(receipt.taxAmount)} +{" "}
-            {formatCurrency(adjustmentTotal)} = {formatCurrency(expectedTotal)}
-          </strong>
-        </div>
-        <div>
-          <span className="receipt-inline-label">Payments</span>
-          <strong>{formatCurrency(transactionTotal)}</strong>
-          <span>{receipt.paymentSummary || "No transactions"}</span>
-          <span>
-            Reconciliation: {receipt.balanceState === "noTransactions"
-              ? "No transactions"
-              : receipt.balanceState === "outOfBalance"
-                ? "Out of balance"
-                : "Balanced"}
-          </span>
-        </div>
-        <div>
-          <span className="receipt-inline-label">Classification</span>
-          <strong>{receipt.categorySummary || "Uncategorized"}</strong>
-          <span>
-            YNAB: {syncStatusToChip(ynabStatus) === "none" ? "not synced" : syncStatusToChip(ynabStatus)}
-          </span>
-        </div>
+      <div className="receipt-inline-heading">
+        <span className="receipt-inline-label">Receipt breakdown</span>
+        <Link to={`/receipts/${receipt.id}`} className="btn xs">
+          Open receipt
+        </Link>
       </div>
-      <div className="receipt-inline-items">
+      <div className="receipt-inline-summary">
+        <section className="receipt-inline-panel receipt-inline-balance">
+          <span className="receipt-inline-label">Balance equation</span>
+          <div
+            className="receipt-equation"
+            role="math"
+            aria-label={equationAccessibleLabel}
+          >
+            {equationTerms.map((term) => (
+              <Fragment key={term.label}>
+                {term.operator && (
+                  <span
+                    className="receipt-equation-operator"
+                    aria-hidden="true"
+                  >
+                    {term.operator}
+                  </span>
+                )}
+                <span className="receipt-equation-term">
+                  <span>{term.label}</span>
+                  <strong>{formatCurrency(term.amount)}</strong>
+                </span>
+              </Fragment>
+            ))}
+            <span className="receipt-equation-operator" aria-hidden="true">
+              =
+            </span>
+            <span className="receipt-equation-term receipt-equation-total">
+              <span>Expected</span>
+              <strong>{formatCurrency(expectedTotal)}</strong>
+            </span>
+          </div>
+        </section>
+        <section className="receipt-inline-panel">
+          <span className="receipt-inline-label">Payments</span>
+          <strong className="receipt-inline-primary">
+            {formatCurrency(transactionTotal)}
+          </strong>
+          <div className="receipt-inline-pills">
+            <span className="receipt-detail-pill">
+              {receipt.paymentSummary || "No transactions"}
+            </span>
+            <span
+              className={`chip ${receipt.balanceState === "balanced" ? "pos" : receipt.balanceState === "outOfBalance" ? "neg" : ""}`}
+            >
+              Reconciliation: {balanceLabel}
+            </span>
+          </div>
+        </section>
+        <section className="receipt-inline-panel">
+          <span className="receipt-inline-label">Classification</span>
+          <strong className="receipt-inline-primary">
+            {receipt.categorySummary || "Uncategorized"}
+          </strong>
+          <div className="receipt-inline-pills">
+            <YnabChip status={ynabChipStatus} />
+            <span className="sr-only">
+              YNAB: {ynabChipStatus === "none" ? "not synced" : ynabChipStatus}
+            </span>
+          </div>
+        </section>
+      </div>
+      <section className="receipt-inline-items">
         <span className="receipt-inline-label">Items</span>
         {items.length === 0 ? (
           <span>No items</span>
@@ -194,7 +275,9 @@ function ReceiptInlineDetails({
           <ul>
             {items.slice(0, 5).map((item) => (
               <li key={item.id}>
-                <span>{Number(item.quantity ?? 0)} × {item.description}</span>
+                <span>
+                  {Number(item.quantity ?? 0)} × {item.description}
+                </span>
                 <strong>
                   {formatCurrency(
                     Number(item.quantity ?? 0) * Number(item.unitPrice ?? 0),
@@ -205,10 +288,7 @@ function ReceiptInlineDetails({
           </ul>
         )}
         {items.length > 5 && <span>+{items.length - 5} more</span>}
-      </div>
-      <Link to={`/receipts/${receipt.id}`} className="btn xs">
-        Open receipt
-      </Link>
+      </section>
     </div>
   );
 }
@@ -349,8 +429,7 @@ function Receipts() {
       listId: "receipts",
       enabled: !anyDialogOpen,
       onDelete: () => setDeleteOpen(true),
-      onSelectAll: () =>
-        setSelected(new Set(filteredResults.map((r) => r.id))),
+      onSelectAll: () => setSelected(new Set(filteredResults.map((r) => r.id))),
       onDeselectAll: () => setSelected(new Set()),
       onToggleSelect: (r) => toggleSelect(r.id),
       onFocusSearch: () => {
@@ -514,20 +593,22 @@ function Receipts() {
         )
       ) : (
         <>
-          <Pagination
-            currentPage={currentPage}
-            totalItems={serverTotal}
-            pageSize={pageSize}
-            totalPages={totalPages(serverTotal)}
-            onPageChange={(page) => setPage(page, serverTotal)}
-            onPageSizeChange={setPageSize}
-          />
+          <div className="receipts-pagination receipts-pagination-top">
+            <Pagination
+              currentPage={currentPage}
+              totalItems={serverTotal}
+              pageSize={pageSize}
+              totalPages={totalPages(serverTotal)}
+              onPageChange={(page) => setPage(page, serverTotal)}
+              onPageSizeChange={setPageSize}
+            />
+          </div>
           {/* Keyboard events bubble from the focusable table rows; the card itself
               deliberately stays out of the tab order and accessibility tree. */}
           {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
           <div
-            className="card"
-            style={{ padding: 0, overflow: "hidden" }}
+            className="card receipts-table-card"
+            style={{ padding: 0 }}
             ref={tableRef}
             {...containerProps}
             onKeyDown={(e) => {
@@ -590,7 +671,9 @@ function Receipts() {
                     className="num-h"
                   />
                   <th className="receipt-col-secondary">Payment</th>
-                  <th className="receipt-col-secondary">Contents</th>
+                  <th className="receipt-col-secondary receipt-col-contents">
+                    Contents
+                  </th>
                   <th style={{ width: 180 }}>Status</th>
                   <th style={{ width: 60 }}>Actions</th>
                 </tr>
@@ -601,8 +684,7 @@ function Receipts() {
                   const matches = result?.matches;
                   const isFocused = focusedId === receipt.id;
                   const isSelected = selected.has(receipt.id);
-                  const isHighlighted =
-                    linkParams.highlight === receipt.id;
+                  const isHighlighted = linkParams.highlight === receipt.id;
                   const rowClass = [
                     isFocused ? "focused" : "",
                     isSelected ? "selected" : "",
@@ -642,91 +724,105 @@ function Receipts() {
                           toggleExpanded();
                         }}
                       >
-                      <td className="receipt-select" onClick={(e) => e.stopPropagation()}>
-                        <Checkbox
-                          aria-label={`Select ${receipt.location}`}
-                          on={isSelected}
-                          onClick={() => toggleSelect(receipt.id)}
-                        />
-                      </td>
-                      <td
-                        className="num receipt-date"
-                        style={{ color: "var(--mute)", fontSize: 12 }}
-                      >
-                        {formatDate(receipt.date)}
-                      </td>
-                      <td className="receipt-merchant">
-                        <span style={{ fontWeight: 500 }}>
+                        <td
+                          className="receipt-select"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Checkbox
+                            aria-label={`Select ${receipt.location}`}
+                            on={isSelected}
+                            onClick={() => toggleSelect(receipt.id)}
+                          />
+                        </td>
+                        <td
+                          className="num receipt-date"
+                          style={{ color: "var(--mute)", fontSize: 12 }}
+                        >
+                          {formatDate(receipt.date)}
+                        </td>
+                        <td className="receipt-merchant">
+                          <span style={{ fontWeight: 500 }}>
                             <SearchHighlight
                               text={receipt.location}
                               indices={getMatchIndices(matches, "location")}
                             />
-                        </span>
-                      </td>
-                      <td className="money receipt-total">
-                        {formatCurrency(receipt.expectedTotal)}
-                      </td>
-                      <td className="receipt-col-secondary">
-                        {receipt.paymentSummary || (
-                          <span className="receipt-empty-summary">Unpaid</span>
-                        )}
-                      </td>
-                      <td className="receipt-col-secondary">
-                        <span>{receipt.itemCount} item{receipt.itemCount === 1 ? "" : "s"}</span>
-                        {receipt.categorySummary && (
-                          <span className="receipt-summary-detail"> · {receipt.categorySummary}</span>
-                        )}
-                      </td>
-                      <td className="receipt-status">
-                        <div className="receipt-statuses">
-                          <span
-                            className={`chip ${
-                              receipt.balanceState === "balanced"
-                                ? "pos"
-                                : receipt.balanceState === "outOfBalance"
-                                  ? "neg"
-                                  : ""
-                            }`}
-                            aria-label={`Balance: ${
-                              receipt.balanceState === "noTransactions"
-                                ? "no transactions"
-                                : receipt.balanceState === "outOfBalance"
-                                  ? "out of balance"
-                                  : "balanced"
-                            }`}
-                          >
-                            {receipt.balanceState === "noTransactions"
-                              ? "No transactions"
-                              : receipt.balanceState === "outOfBalance"
-                                ? "Out of balance"
-                                : "Balanced"}
                           </span>
-                          <YnabChip
-                            status={syncStatusToChip(
-                              syncStatusMap.get(receipt.id),
-                            )}
-                          />
-                        </div>
-                      </td>
-                      <td className="receipt-actions" onClick={(e) => e.stopPropagation()}>
-                        <div className="row-actions">
-                          <Link
-                            to={`/receipts/${receipt.id}`}
-                            className="icon-btn"
-                            aria-label="View"
-                          >
-                            <Icon.Arrow />
-                          </Link>
-                          <button
-                            type="button"
-                            className="icon-btn"
-                            aria-label="Edit"
-                            onClick={() => setEditReceipt(receipt)}
-                          >
-                            <Icon.Edit />
-                          </button>
-                        </div>
-                      </td>
+                        </td>
+                        <td className="money receipt-total">
+                          {formatCurrency(receipt.expectedTotal)}
+                        </td>
+                        <td className="receipt-col-secondary">
+                          {receipt.paymentSummary || (
+                            <span className="receipt-empty-summary">
+                              Unpaid
+                            </span>
+                          )}
+                        </td>
+                        <td className="receipt-col-secondary receipt-col-contents">
+                          <span>
+                            {receipt.itemCount} item
+                            {receipt.itemCount === 1 ? "" : "s"}
+                          </span>
+                          {receipt.categorySummary && (
+                            <span className="receipt-summary-detail">
+                              {" "}
+                              · {receipt.categorySummary}
+                            </span>
+                          )}
+                        </td>
+                        <td className="receipt-status">
+                          <div className="receipt-statuses">
+                            <span
+                              className={`chip ${
+                                receipt.balanceState === "balanced"
+                                  ? "pos"
+                                  : receipt.balanceState === "outOfBalance"
+                                    ? "neg"
+                                    : ""
+                              }`}
+                              aria-label={`Balance: ${
+                                receipt.balanceState === "noTransactions"
+                                  ? "no transactions"
+                                  : receipt.balanceState === "outOfBalance"
+                                    ? "out of balance"
+                                    : "balanced"
+                              }`}
+                            >
+                              {receipt.balanceState === "noTransactions"
+                                ? "No transactions"
+                                : receipt.balanceState === "outOfBalance"
+                                  ? "Out of balance"
+                                  : "Balanced"}
+                            </span>
+                            <YnabChip
+                              status={syncStatusToChip(
+                                syncStatusMap.get(receipt.id),
+                              )}
+                            />
+                          </div>
+                        </td>
+                        <td
+                          className="receipt-actions"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="row-actions">
+                            <Link
+                              to={`/receipts/${receipt.id}`}
+                              className="icon-btn"
+                              aria-label="View"
+                            >
+                              <Icon.Arrow />
+                            </Link>
+                            <button
+                              type="button"
+                              className="icon-btn"
+                              aria-label="Edit"
+                              onClick={() => setEditReceipt(receipt)}
+                            >
+                              <Icon.Edit />
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                       {isExpanded && (
                         <tr id={detailId} className="receipt-detail-row">
@@ -744,14 +840,16 @@ function Receipts() {
               </tbody>
             </table>
           </div>
-          <Pagination
-            currentPage={currentPage}
-            totalItems={serverTotal}
-            pageSize={pageSize}
-            totalPages={totalPages(serverTotal)}
-            onPageChange={(page) => setPage(page, serverTotal)}
-            onPageSizeChange={setPageSize}
-          />
+          <div className="receipts-pagination receipts-pagination-bottom">
+            <Pagination
+              currentPage={currentPage}
+              totalItems={serverTotal}
+              pageSize={pageSize}
+              totalPages={totalPages(serverTotal)}
+              onPageChange={(page) => setPage(page, serverTotal)}
+              onPageSizeChange={setPageSize}
+            />
+          </div>
           <BulkActionsBar
             selectedCount={selected.size}
             totalCount={filteredResults.length}

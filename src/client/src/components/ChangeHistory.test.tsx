@@ -104,7 +104,7 @@ describe("ChangeHistory", () => {
     expect(screen.getByText("Updated")).toBeInTheDocument();
   });
 
-  it("keeps populated history in a definite-height scroll container", () => {
+  it("sizes populated history to content until a native max-height scroll cap", () => {
     mockUseEntityAuditHistory.mockReturnValue(mockQueryResult({
       data: [
         {
@@ -126,18 +126,11 @@ describe("ChangeHistory", () => {
       <ChangeHistory entityType="Receipt" entityId="abc-123" />,
     );
 
-    const root = container.querySelector<HTMLElement>('[data-slot="scroll-area"]');
-    const viewport = container.querySelector<HTMLElement>(
-      '[data-slot="scroll-area-viewport"]',
-    );
-
+    const root = container.querySelector<HTMLElement>(".max-h-\\[400px\\]");
     expect(root).not.toBeNull();
-    expect(root).toHaveClass("h-[400px]");
-    expect(root).not.toHaveClass("max-h-[400px]");
-    expect(viewport).not.toBeNull();
-    expect(viewport?.parentElement).toBe(root);
-    expect(viewport).toHaveClass("size-full");
-    expect(viewport?.style.overflowY).toBe("scroll");
+    expect(root).toHaveClass("max-h-[400px]", "overflow-y-auto");
+    expect(root).not.toHaveClass("h-[400px]");
+    expect(container.querySelector('[data-slot="scroll-area"]')).not.toBeInTheDocument();
   });
 
   it("passes correct entityType and entityId to the hook", () => {
