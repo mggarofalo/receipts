@@ -104,6 +104,42 @@ describe("ChangeHistory", () => {
     expect(screen.getByText("Updated")).toBeInTheDocument();
   });
 
+  it("keeps populated history in a definite-height scroll container", () => {
+    mockUseEntityAuditHistory.mockReturnValue(mockQueryResult({
+      data: [
+        {
+          id: "log-overflow",
+          entityType: "Receipt",
+          entityId: "abc-123",
+          action: "Updated",
+          changesJson: "[]",
+          changedByUserId: null,
+          changedByApiKeyId: null,
+          changedAt: new Date().toISOString(),
+          ipAddress: null,
+        },
+      ],
+      isLoading: false,
+    }));
+
+    const { container } = renderWithProviders(
+      <ChangeHistory entityType="Receipt" entityId="abc-123" />,
+    );
+
+    const root = container.querySelector<HTMLElement>('[data-slot="scroll-area"]');
+    const viewport = container.querySelector<HTMLElement>(
+      '[data-slot="scroll-area-viewport"]',
+    );
+
+    expect(root).not.toBeNull();
+    expect(root).toHaveClass("h-[400px]");
+    expect(root).not.toHaveClass("max-h-[400px]");
+    expect(viewport).not.toBeNull();
+    expect(viewport?.parentElement).toBe(root);
+    expect(viewport).toHaveClass("size-full");
+    expect(viewport?.style.overflowY).toBe("scroll");
+  });
+
   it("passes correct entityType and entityId to the hook", () => {
     mockUseEntityAuditHistory.mockReturnValue(mockQueryResult({
       data: [],
