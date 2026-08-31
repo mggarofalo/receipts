@@ -1,5 +1,5 @@
 import "@/test/setup-combobox-polyfills";
-import { screen, within } from "@testing-library/react";
+import { fireEvent, screen, within } from "@testing-library/react";
 import { renderWithProviders } from "@/test/test-utils";
 import { mockQueryResult, mockMutationResult } from "@/test/mock-hooks";
 import {
@@ -21,6 +21,14 @@ vi.mock("@/hooks/useYnab", () => ({
   useBulkPushYnabTransactions: vi.fn(() => ({
     mutate: vi.fn(),
     isPending: false,
+  })),
+}));
+
+vi.mock("@/hooks/useTrips", () => ({
+  useTripByReceiptId: vi.fn(() => mockQueryResult({
+    data: undefined,
+    isLoading: false,
+    isError: false,
   })),
 }));
 
@@ -301,6 +309,245 @@ describe("Receipts", () => {
     expect(screen.getByLabelText("YNAB: synced")).toHaveTextContent("YNAB");
     expect(screen.getByLabelText("YNAB: pending")).toHaveTextContent("Pending");
     expect(screen.getByLabelText("YNAB: error")).toHaveTextContent("Error");
+  });
+
+  it("lazy-loads on mouse expansion, exposes valid detail-row relationships, and reopens cached data", async () => {
+    const receipt = mockReceiptListItemResponse({ id: "r1", location: "Target" });
+    await mockReceiptTable([receipt]);
+    const refetch = vi.fn();
+    const { useTripByReceiptId } = await import("@/hooks/useTrips");
+    const tripHook = vi.mocked(useTripByReceiptId);
+    tripHook.mockClear();
+    tripHook.mockReturnValue(mockQueryResult({
+      data: undefined,
+      isLoading: false,
+      isError: false,
+      refetch,
+    }));
+
+    renderWithProviders(<Receipts />);
+    expect(tripHook).not.toHaveBeenCalled();
+
+    const row = screen.getByRole("row", { name: /Target/ });
+    expect(row).toHaveAttribute("aria-expanded", "false");
+    expect(row).not.toHaveAttribute("aria-controls");
+    const detailId = "receipt-detail-r1";
+    await (await import("@testing-library/user-event")).default.setup().click(row);
+
+    expect(tripHook).toHaveBeenCalledTimes(1);
+    expect(tripHook).toHaveBeenCalledWith("r1");
+    expect(row).toHaveAttribute("aria-expanded", "true");
+    expect(row).toHaveAttribute("aria-controls", detailId);
+    const detailRow = document.getElementById(detailId)!;
+    expect(detailRow).toHaveClass("receipt-detail-row");
+    expect(detailRow.querySelector("td")).toHaveAttribute("colspan", "8");
+
+    await (await import("@testing-library/user-event")).default.setup().click(row);
+    expect(document.getElementById(detailId)).not.toBeInTheDocument();
+    await (await import("@testing-library/user-event")).default.setup().click(row);
+    expect(screen.getByRole("link", { name: "Open receipt" })).toBeInTheDocument();
+    expect(refetch).not.toHaveBeenCalled();
+  });
+
+  it("forgets expansion when a filtered-out receipt later returns", async () => {
+    const receipt = mockReceiptListItemResponse({ id: "r1", location: "Target" });
+    await mockReceiptTable([receipt]);
+    const { useTripByReceiptId } = await import("@/hooks/useTrips");
+    const tripHook = vi.mocked(useTripByReceiptId);
+    tripHook.mockClear();
+    tripHook.mockReturnValue(mockQueryResult({ isLoading: false, isError: false }));
+    const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
+    const fuzzySearch = vi.mocked(useFuzzySearch);
+
+    const { rerender } = renderWithProviders(<Receipts />);
+    const user = (await import("@testing-library/user-event")).default.setup();
+    await user.click(screen.getByRole("row", { name: /Target/ }));
+    expect(tripHook).toHaveBeenCalledTimes(1);
+
+    fuzzySearch.mockReturnValue(mockQueryResult({
+      search: "hidden",
+      setSearch: vi.fn(),
+      results: [],
+      totalCount: 0,
+      isSearching: true,
+      clearSearch: vi.fn(),
+    }));
+    rerender(<Receipts />);
+    expect(screen.queryByRole("row", { name: /Target/ })).not.toBeInTheDocument();
+
+    fuzzySearch.mockReturnValue(mockQueryResult({
+      search: "",
+      setSearch: vi.fn(),
+      results: [{ item: receipt, matches: [], score: 0, refIndex: 0 }],
+      totalCount: 1,
+      isSearching: false,
+      clearSearch: vi.fn(),
+    }));
+    rerender(<Receipts />);
+
+    const returnedRow = screen.getByRole("row", { name: /Target/ });
+    expect(returnedRow).toHaveAttribute("aria-expanded", "false");
+    expect(returnedRow).not.toHaveAttribute("aria-controls");
+    expect(tripHook).toHaveBeenCalledTimes(1);
+
+    await user.click(returnedRow);
+    expect(tripHook).toHaveBeenCalledTimes(2);
+    expect(returnedRow).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("keeps only one row expanded and switches the lazy detail receipt", async () => {
+    const first = mockReceiptListItemResponse({ id: "r1", location: "Target" });
+    const second = mockReceiptListItemResponse({ id: "r2", location: "Walmart" });
+    await mockReceiptTable([first, second]);
+    const { useTripByReceiptId } = await import("@/hooks/useTrips");
+    const tripHook = vi.mocked(useTripByReceiptId);
+    tripHook.mockClear();
+    tripHook.mockReturnValue(mockQueryResult({ isLoading: false, isError: false }));
+
+    renderWithProviders(<Receipts />);
+    const user = (await import("@testing-library/user-event")).default.setup();
+    const firstRow = screen.getByRole("row", { name: /Target/ });
+    const secondRow = screen.getByRole("row", { name: /Walmart/ });
+    await user.click(firstRow);
+    await user.click(secondRow);
+
+    expect(firstRow).toHaveAttribute("aria-expanded", "false");
+    expect(secondRow).toHaveAttribute("aria-expanded", "true");
+    expect(document.querySelectorAll(".receipt-detail-row")).toHaveLength(1);
+    expect(tripHook.mock.calls.map(([id]) => id)).toEqual(["r1", "r2"]);
+  });
+
+  it("renders loading and retryable error states inside the expanded row", async () => {
+    const receipt = mockReceiptListItemResponse({ id: "r1", location: "Target" });
+    await mockReceiptTable([receipt]);
+    const { useTripByReceiptId } = await import("@/hooks/useTrips");
+    const tripHook = vi.mocked(useTripByReceiptId);
+    tripHook.mockReturnValue(mockQueryResult({ isLoading: true }));
+
+    const { rerender } = renderWithProviders(<Receipts />);
+    const user = (await import("@testing-library/user-event")).default.setup();
+    await user.click(screen.getByRole("row", { name: /Target/ }));
+    expect(screen.getByRole("status")).toHaveTextContent("Loading receipt details");
+    expect(screen.getByRole("status").closest(".receipt-detail-row")).toBeInTheDocument();
+
+    const refetch = vi.fn();
+    tripHook.mockReturnValue(mockQueryResult({
+      isLoading: false,
+      isError: true,
+      isRefetching: false,
+      refetch,
+    }));
+    rerender(<Receipts />);
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent("Couldn't load receipt details");
+    await user.click(within(alert).getByRole("button", { name: "Retry" }));
+    expect(refetch).toHaveBeenCalledOnce();
+  });
+
+  it("renders the balance equation, payment/classification summaries, five items and full route", async () => {
+    const receipt = mockReceiptListItemResponse({
+      id: "r1",
+      location: "Target",
+      taxAmount: 1,
+      itemSubtotal: 10,
+      adjustmentTotal: 2,
+      expectedTotal: 13,
+      transactionTotal: 13,
+      balanceState: "outOfBalance",
+      paymentSummary: "Checking · Visa",
+      categorySummary: "Grocery",
+    });
+    await mockReceiptTable([receipt], new Map([["r1", "Synced"]]));
+    const items = Array.from({ length: 6 }, (_, index) => ({
+      id: `item-${index}`,
+      description: `Item ${index + 1}`,
+      quantity: 2,
+      unitPrice: index + 1,
+    }));
+    const { useTripByReceiptId } = await import("@/hooks/useTrips");
+    vi.mocked(useTripByReceiptId).mockReturnValue(mockQueryResult({
+      isLoading: false,
+      isError: false,
+      data: {
+        receipt: { subtotal: 10, adjustmentTotal: 2, expectedTotal: 13, items },
+        transactions: [{ transaction: { amount: 13 } }],
+      },
+    }));
+
+    renderWithProviders(<Receipts />);
+    await (await import("@testing-library/user-event")).default
+      .setup()
+      .click(screen.getByRole("row", { name: /Target/ }));
+
+    const detail = document.querySelector<HTMLElement>(".receipt-inline-detail")!;
+    expect(within(detail).getByText("$10.00 + $1.00 + $2.00 = $13.00")).toBeInTheDocument();
+    expect(within(detail).getByText("Checking · Visa")).toBeInTheDocument();
+    expect(within(detail).getByText("Reconciliation: Out of balance")).toBeInTheDocument();
+    expect(within(detail).getByText("Grocery")).toBeInTheDocument();
+    expect(within(detail).getByText("YNAB: synced")).toBeInTheDocument();
+    expect(within(detail).getAllByRole("listitem")).toHaveLength(5);
+    expect(within(detail).getByText("+1 more")).toBeInTheDocument();
+    expect(within(detail).getByRole("link", { name: "Open receipt" })).toHaveAttribute("href", "/receipts/r1");
+  });
+
+  it("renders deterministic empty related-data labels", async () => {
+    const receipt = mockReceiptListItemResponse({ id: "r1", location: "Target" });
+    await mockReceiptTable([receipt]);
+    const { useTripByReceiptId } = await import("@/hooks/useTrips");
+    vi.mocked(useTripByReceiptId).mockReturnValue(mockQueryResult({
+      isLoading: false,
+      isError: false,
+      data: { receipt: { items: [] }, transactions: [] },
+    }));
+
+    renderWithProviders(<Receipts />);
+    await (await import("@testing-library/user-event")).default
+      .setup()
+      .click(screen.getByRole("row", { name: /Target/ }));
+
+    const detail = document.querySelector<HTMLElement>(".receipt-inline-detail")!;
+    expect(within(detail).getByText("No transactions")).toBeInTheDocument();
+    expect(within(detail).getByText("Reconciliation: No transactions")).toBeInTheDocument();
+    expect(within(detail).getByText("Uncategorized")).toBeInTheDocument();
+    expect(within(detail).getByText("YNAB: not synced")).toBeInTheDocument();
+    expect(within(detail).getByText("No items")).toBeInTheDocument();
+  });
+
+  it("supports Enter, Right and Left expansion without nested controls toggling", async () => {
+    const receipt = mockReceiptListItemResponse({ id: "r1", location: "Target" });
+    await mockReceiptTable([receipt]);
+    const { useListKeyboardNav } = await import("@/hooks/useListKeyboardNav");
+    vi.mocked(useListKeyboardNav).mockReturnValue({
+      focusedIndex: 0,
+      focusedId: "r1",
+      setFocusedIndex: vi.fn(),
+      tableRef: { current: null },
+      containerProps: { role: "grid", tabIndex: 0, "aria-label": "list", "aria-activedescendant": "list-row-r1" },
+      getRowProps: (id: string) => ({ id: `list-row-${id}`, role: "row" }),
+    });
+    const { useTripByReceiptId } = await import("@/hooks/useTrips");
+    const tripHook = vi.mocked(useTripByReceiptId);
+    tripHook.mockClear();
+    tripHook.mockReturnValue(mockQueryResult({ isLoading: false, isError: false }));
+
+    renderWithProviders(<Receipts />);
+    const grid = screen.getByRole("grid", { name: "list" });
+    const row = screen.getByRole("row", { name: /Target/ });
+    fireEvent.keyDown(grid, { key: "ArrowRight" });
+    expect(row).toHaveAttribute("aria-expanded", "true");
+    fireEvent.keyDown(grid, { key: "ArrowLeft" });
+    expect(row).toHaveAttribute("aria-expanded", "false");
+    fireEvent.keyDown(grid, { key: "Enter" });
+    expect(row).toHaveAttribute("aria-expanded", "true");
+    fireEvent.keyDown(grid, { key: "Enter" });
+    expect(row).toHaveAttribute("aria-expanded", "false");
+
+    tripHook.mockClear();
+    await (await import("@testing-library/user-event")).default
+      .setup()
+      .click(screen.getByLabelText("Select Target"));
+    expect(row).toHaveAttribute("aria-expanded", "false");
+    expect(tripHook).not.toHaveBeenCalled();
   });
 
   it("keeps compact actions isolated from row focus and links to the full receipt", async () => {
