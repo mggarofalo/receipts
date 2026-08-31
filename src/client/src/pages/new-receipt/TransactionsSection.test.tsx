@@ -1,4 +1,4 @@
-import { screen, act } from "@testing-library/react";
+import { screen, act, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "@/test/test-utils";
 import { mockQueryResult } from "@/test/mock-hooks";
@@ -65,6 +65,120 @@ describe("TransactionsSection", () => {
       screen.getByRole("button", { name: /add/i }),
     ).toBeInTheDocument();
   });
+
+  it("shows draft validation only after an Add attempt", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<TransactionsSection {...defaultProps} />);
+
+    const amountInput = screen.getByLabelText(/amount/i);
+    await user.click(amountInput);
+    await user.tab();
+
+    expect(screen.queryByText("Amount is required")).not.toBeInTheDocument();
+    expect(screen.queryByText("Card is required")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /add/i }));
+
+    expect(await screen.findByText("Amount is required")).toBeInTheDocument();
+    expect(screen.getByText("Card is required")).toBeInTheDocument();
+    expect(defaultProps.onChange).not.toHaveBeenCalled();
+  });
+
+  it("keeps draft validation visible while focus moves within the Transactions card", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<TransactionsSection {...defaultProps} />);
+
+    await user.click(screen.getByRole("button", { name: /add/i }));
+    expect(await screen.findByText("Amount is required")).toBeInTheDocument();
+
+    await user.click(screen.getByLabelText(/amount/i));
+
+    expect(screen.getByText("Amount is required")).toBeInTheDocument();
+    expect(screen.getByText("Card is required")).toBeInTheDocument();
+  });
+
+  it("clears draft validation when focus leaves the Transactions card without clearing values", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <>
+        <TransactionsSection {...defaultProps} />
+        <button type="button">Outside transactions</button>
+      </>,
+    );
+
+    const amountInput = screen.getByLabelText(/amount/i);
+    await user.clear(amountInput);
+    await user.type(amountInput, "12.34");
+    await user.click(screen.getByRole("button", { name: /add/i }));
+    expect(await screen.findByText("Card is required")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Outside transactions" }));
+
+    expect(screen.queryByText("Card is required")).not.toBeInTheDocument();
+    expect(screen.queryByText("Account is required")).not.toBeInTheDocument();
+    expect(amountInput).toHaveValue("12.34");
+  });
+
+  it("keeps validation dormant after leaving until Add is attempted again", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <>
+        <TransactionsSection {...defaultProps} />
+        <button type="button">Outside transactions</button>
+      </>,
+    );
+
+    const amountInput = screen.getByLabelText(/amount/i);
+    await user.clear(amountInput);
+    await user.type(amountInput, "5.00");
+    await user.click(screen.getByRole("button", { name: /add/i }));
+    expect(await screen.findByText("Card is required")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Outside transactions" }));
+    await waitFor(() => {
+      expect(screen.queryByText("Card is required")).not.toBeInTheDocument();
+    });
+
+    await user.clear(amountInput);
+    await user.type(amountInput, "6.00");
+    await user.tab();
+
+    expect(screen.queryByText("Card is required")).not.toBeInTheDocument();
+    expect(screen.queryByText("Account is required")).not.toBeInTheDocument();
+    expect(screen.queryByText("Amount is required")).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["Card", "Search cards..."],
+    ["Account", "Search accounts..."],
+  ])(
+    "treats the portaled %s combobox editor as part of the Transactions focus boundary",
+    async (fieldName, searchPlaceholder) => {
+      const user = userEvent.setup();
+      renderWithProviders(
+        <>
+          <TransactionsSection {...defaultProps} />
+          <button type="button">Outside transactions</button>
+        </>,
+      );
+
+      await user.click(screen.getByRole("button", { name: /add/i }));
+      expect(await screen.findByText("Amount is required")).toBeInTheDocument();
+
+      await user.click(
+        screen.getByRole("combobox", { name: new RegExp(`^${fieldName}`) }),
+      );
+      const searchInput = await screen.findByPlaceholderText(searchPlaceholder);
+      expect(searchInput).toHaveFocus();
+      expect(screen.getByText("Amount is required")).toBeInTheDocument();
+      expect(screen.getByText(`${fieldName} is required`)).toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: "Outside transactions" }));
+
+      expect(screen.queryByText("Amount is required")).not.toBeInTheDocument();
+      expect(screen.queryByText(`${fieldName} is required`)).not.toBeInTheDocument();
+    },
+  );
 
   it("displays running total", () => {
     renderWithProviders(<TransactionsSection {...defaultProps} />);
