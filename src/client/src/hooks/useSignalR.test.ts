@@ -229,6 +229,19 @@ describe("useSignalR", () => {
         queryKey: ["trips"],
         refetchType: "active",
       });
+      for (const queryKey of [
+        ["receipt-items"],
+        ["transactions"],
+        ["adjustments"],
+        ["reports"],
+        ["ynab", "split-comparison"],
+        ["ynab", "receipt-sync-statuses"],
+      ]) {
+        expect(mockQueryClient.invalidateQueries).toHaveBeenCalledWith({
+          queryKey,
+          refetchType: "active",
+        });
+      }
       expect(bufferToast).toHaveBeenCalledWith("receipt", "created", 1, "other-user");
       expect(toast.info).not.toHaveBeenCalled();
     });
@@ -287,6 +300,31 @@ describe("useSignalR", () => {
       });
       expect(bufferToast).toHaveBeenCalledWith("transaction", "deleted", 1, "other-user");
       expect(toast.info).not.toHaveBeenCalled();
+    });
+
+    it("invalidates adjustment and all receipt-derived query keys", async () => {
+      const mockQueryClient = vi.mocked(useQueryClient)();
+      await renderEnabled();
+      const handler = getOnHandler("EntityChanged");
+
+      act(() => {
+        handler!({ entityType: "adjustment", changeType: "updated", id: "adj-1", count: 1, userId: "other-user-id", authMethod: "jwt", connectionId: "other-conn" });
+      });
+
+      for (const queryKey of [
+        ["adjustments"],
+        ["receipts"],
+        ["receipts-with-items"],
+        ["trips"],
+        ["reports"],
+        ["ynab", "split-comparison"],
+        ["ynab", "receipt-sync-statuses"],
+      ]) {
+        expect(mockQueryClient.invalidateQueries).toHaveBeenCalledWith({
+          queryKey,
+          refetchType: "active",
+        });
+      }
     });
 
     it("buffers toast with display name for receipt-item", async () => {

@@ -115,20 +115,49 @@ vi.mock("./LineItemsSection", () => ({
   ),
 }));
 
+vi.mock("./AdjustmentsSection", () => ({
+  AdjustmentsSection: ({
+    onChange,
+  }: {
+    adjustments: unknown[];
+    onChange: (data: unknown[]) => void;
+  }) => (
+    <div data-testid="adjustments-section">
+      <button
+        onClick={() =>
+          onChange([
+            {
+              id: "a1",
+              type: "Other",
+              amount: 5,
+              description: "Delivery fee",
+            },
+          ])
+        }
+      >
+        Add Adjustment
+      </button>
+    </div>
+  ),
+}));
+
 vi.mock("./BalanceSidebar", () => ({
   BalanceSidebar: ({
     onSubmit,
     onCancel,
     isSubmitting,
+    adjustmentTotal,
   }: {
     subtotal: number;
     taxAmount: number;
+    adjustmentTotal: number;
     transactionTotal: number;
     isSubmitting: boolean;
     onSubmit: () => void;
     onCancel: () => void;
   }) => (
     <div data-testid="balance-sidebar">
+      <span data-testid="sidebar-adjustment-total">{adjustmentTotal}</span>
       <button onClick={onSubmit} disabled={isSubmitting}>
         {isSubmitting ? "Submitting..." : "Submit Receipt"}
       </button>
@@ -156,11 +185,26 @@ describe("NewReceiptPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("renders all three sections", () => {
+  it("renders receipt header, transactions, line items, and adjustments sections", () => {
     renderWithProviders(<NewReceiptPage />);
     expect(screen.getByText(/^Location/)).toBeInTheDocument();
     expect(screen.getByTestId("transactions-section")).toBeInTheDocument();
     expect(screen.getByTestId("line-items-section")).toBeInTheDocument();
+    expect(screen.getByTestId("adjustments-section")).toBeInTheDocument();
+  });
+
+  it("treats a newly entered adjustment as unsaved receipt data", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<NewReceiptPage />);
+
+    await user.click(screen.getByRole("button", { name: "Add Adjustment" }));
+
+    expect(
+      capturedShouldBlock!({
+        currentLocation: { pathname: "/receipts/new" },
+        nextLocation: { pathname: "/dashboard" },
+      }),
+    ).toBe(true);
   });
 
   it("renders balance sidebar", () => {
@@ -199,6 +243,9 @@ describe("NewReceiptPage", () => {
     expect(stickyBar?.textContent).toContain("Cancel");
     // No data yet → expected and transaction totals are both 0 → balanced.
     expect(stickyBar?.textContent).toContain("Balanced");
+    expect(stickyBar?.textContent).toContain(
+      "Subtotal $0.00 + Tax $0.00 + Adjustments $0.00 = Expected $0.00 · Transactions $0.00",
+    );
 
     // The sticky bar is a sibling below the line-item table, not nested in it.
     const lineItems = screen.getByTestId("line-items-section");
@@ -372,6 +419,51 @@ describe("NewReceiptPage", () => {
     );
   });
 
+  it("updates the sticky itemized equation when receipt contents change", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<NewReceiptPage />);
+
+    await user.click(screen.getAllByText("Add Transaction")[0]);
+    await user.click(screen.getAllByText("Add Item")[0]);
+    await user.click(screen.getByRole("button", { name: "Add Adjustment" }));
+
+    const stickyBar = document.querySelector(".sticky.bottom-0");
+    expect(stickyBar).toHaveTextContent(
+      "Subtotal $50.00 + Tax $0.00 + Adjustments $5.00 = Expected $55.00 · Transactions $55.00",
+    );
+    expect(stickyBar).toHaveTextContent("Balanced");
+  });
+
+  it("includes adjustments in the complete-receipt payload", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<NewReceiptPage />);
+
+    const combobox = screen.getByRole("combobox");
+    await user.click(combobox);
+    await user.click(await screen.findByText("Walmart"));
+    const dateInput = screen.getByPlaceholderText("MM/DD/YYYY");
+    await user.click(dateInput);
+    await user.type(dateInput, "01/15/2024");
+    await user.click(screen.getAllByText("Add Transaction")[0]);
+    await user.click(screen.getAllByText("Add Item")[0]);
+    await user.click(screen.getByRole("button", { name: "Add Adjustment" }));
+    await user.click(screen.getAllByText("Submit Receipt")[0]);
+
+    await vi.waitFor(() =>
+      expect(mockCreateCompleteReceiptAsync).toHaveBeenCalledWith(
+        expect.objectContaining({
+          adjustments: [
+            {
+              type: "Other",
+              amount: 5,
+              description: "Delivery fee",
+            },
+          ],
+        }),
+      ),
+    );
+  });
+
   it("shows error toast when submission fails", async () => {
     const { toast } = await import("sonner");
     mockCreateCompleteReceiptAsync.mockRejectedValueOnce(
@@ -400,6 +492,38 @@ describe("NewReceiptPage", () => {
 
     await vi.waitFor(() => {
       expect(toast.error).toHaveBeenCalledWith("Failed to create receipt.");
+    });
+  });
+
+  it("surfaces the actionable ProblemDetails validation message", async () => {
+    const { toast } = await import("sonner");
+    mockCreateCompleteReceiptAsync.mockRejectedValueOnce({
+      status: 400,
+      title: "One or more validation errors occurred.",
+      errors: {
+        Adjustments: ["Receipt total must equal the transaction total."],
+      },
+    });
+    const user = userEvent.setup();
+    renderWithProviders(<NewReceiptPage />);
+
+    const combobox = screen.getByRole("combobox");
+    await user.click(combobox);
+    await user.click(await screen.findByText("Walmart"));
+    const dateInput = screen.getByPlaceholderText("MM/DD/YYYY");
+    await user.click(dateInput);
+    await user.type(dateInput, "01/15/2024");
+    await user.click(screen.getAllByText("Add Transaction")[0]);
+    await user.click(screen.getAllByText("Add Item")[0]);
+    await user.click(screen.getAllByText("Submit Receipt")[0]);
+
+    await vi.waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(
+        "Receipt total must equal the transaction total.",
+      );
+      expect(document.querySelector("[aria-live='polite']")).toHaveTextContent(
+        "Receipt total must equal the transaction total.",
+      );
     });
   });
 

@@ -1,8 +1,24 @@
 import { useMemo } from "react";
 import { useStableQuery } from "@/hooks/useStableQuery";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query";
 import client from "@/lib/api-client";
 import { toast } from "sonner";
+
+function invalidateAdjustmentDependents(queryClient: QueryClient) {
+  queryClient.invalidateQueries({ queryKey: ["receipts"] });
+  queryClient.invalidateQueries({ queryKey: ["receipts-with-items"] });
+  queryClient.invalidateQueries({ queryKey: ["trips"] });
+  queryClient.invalidateQueries({ queryKey: ["reports"] });
+  queryClient.invalidateQueries({ queryKey: ["ynab", "split-comparison"] });
+  queryClient.invalidateQueries({
+    queryKey: ["ynab", "receipt-sync-statuses"],
+  });
+}
 
 export function useAdjustments(offset = 0, limit = 50, sortBy?: string | null, sortDirection?: string | null) {
   const query = useQuery({
@@ -72,8 +88,7 @@ export function useCreateAdjustment() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["adjustments"] });
-      queryClient.invalidateQueries({ queryKey: ["receipts-with-items"] });
-      queryClient.invalidateQueries({ queryKey: ["trips"] });
+      invalidateAdjustmentDependents(queryClient);
       toast.success("Adjustment created");
     },
   });
@@ -100,8 +115,7 @@ export function useUpdateAdjustment() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["adjustments"] });
-      queryClient.invalidateQueries({ queryKey: ["receipts-with-items"] });
-      queryClient.invalidateQueries({ queryKey: ["trips"] });
+      invalidateAdjustmentDependents(queryClient);
       toast.success("Adjustment updated");
     },
   });
@@ -136,8 +150,7 @@ export function useDeleteAdjustments() {
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["adjustments"] });
       queryClient.invalidateQueries({ queryKey: ["adjustments", "deleted"] });
-      queryClient.invalidateQueries({ queryKey: ["receipts-with-items"] });
-      queryClient.invalidateQueries({ queryKey: ["trips"] });
+      invalidateAdjustmentDependents(queryClient);
     },
     onSuccess: () => {
       toast.success("Adjustment(s) deleted");
@@ -172,8 +185,7 @@ export function useRestoreAdjustment() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["adjustments"] });
       queryClient.invalidateQueries({ queryKey: ["adjustments", "deleted"] });
-      queryClient.invalidateQueries({ queryKey: ["receipts-with-items"] });
-      queryClient.invalidateQueries({ queryKey: ["trips"] });
+      invalidateAdjustmentDependents(queryClient);
       toast.success("Adjustment restored");
     },
   });

@@ -3,6 +3,7 @@ using API.Generated.Dtos;
 using API.Mapping.Core;
 using API.Services;
 using Application.Commands.Receipt.Create;
+using Application.Commands.Receipt.CreateComplete;
 using Application.Commands.Receipt.Delete;
 using Application.Commands.Receipt.Restore;
 using Application.Commands.Receipt.Update;
@@ -25,6 +26,7 @@ public class ReceiptsControllerTests
 	private readonly ReceiptMapper _mapper;
 	private readonly TransactionMapper _transactionMapper;
 	private readonly ReceiptItemMapper _receiptItemMapper;
+	private readonly AdjustmentMapper _adjustmentMapper;
 	private readonly Mock<IMediator> _mediatorMock;
 	private readonly Mock<ILogger<ReceiptsController>> _loggerMock;
 	private readonly Mock<IEntityChangeNotifier> _notifierMock;
@@ -36,16 +38,47 @@ public class ReceiptsControllerTests
 		_mapper = new ReceiptMapper();
 		_transactionMapper = new TransactionMapper();
 		_receiptItemMapper = new ReceiptItemMapper();
+		_adjustmentMapper = new AdjustmentMapper();
 		_loggerMock = ControllerTestHelpers.GetLoggerMock<ReceiptsController>();
 		_notifierMock = new Mock<IEntityChangeNotifier>();
 
-		_controller = new ReceiptsController(_mediatorMock.Object, _mapper, _transactionMapper, _receiptItemMapper, _loggerMock.Object, _notifierMock.Object);
+		_controller = new ReceiptsController(_mediatorMock.Object, _mapper, _transactionMapper, _receiptItemMapper, _adjustmentMapper, _loggerMock.Object, _notifierMock.Object);
 	}
 
 	private static List<ReceiptListItem> CreateListItems(int count) =>
 		[.. Enumerable.Range(0, count).Select(index => new ReceiptListItem(
 			Guid.NewGuid(), $"Location {index}", new DateOnly(2026, 8, 30), 1m,
 			2m, 3m, 6m, 6m, "balanced", 1, "Food", "Checking · Visa"))];
+
+	[Fact]
+	public async Task CreateCompleteReceipt_MapsAdjustmentsIntoCommandAndResponse()
+	{
+		CreateAdjustmentRequest adjustmentRequest = AdjustmentDtoGenerator.GenerateCreateRequest();
+		CreateCompleteReceiptRequest request = new()
+		{
+			Receipt = ReceiptDtoGenerator.GenerateCreateRequest(),
+			Transactions = [],
+			Items = [],
+			Adjustments = [adjustmentRequest],
+		};
+		Receipt receipt = ReceiptGenerator.Generate();
+		Adjustment adjustment = new(Guid.NewGuid(), Common.AdjustmentType.Tip, new Domain.Money(5));
+		CreateCompleteReceiptResult serviceResult = new(receipt, [], [], [adjustment]);
+		_mediatorMock.Setup(m => m.Send(It.IsAny<CreateCompleteReceiptCommand>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(serviceResult);
+
+		Results<Ok<CompleteReceiptResponse>, BadRequest<ProblemDetails>> result =
+			await _controller.CreateCompleteReceipt(request);
+
+		_mediatorMock.Verify(m => m.Send(
+			It.Is<CreateCompleteReceiptCommand>(command =>
+				command.Adjustments.Count == 1 && command.Adjustments[0].Amount.Amount == 5m),
+			It.IsAny<CancellationToken>()), Times.Once);
+		Ok<CompleteReceiptResponse> okResult = Assert.IsType<Ok<CompleteReceiptResponse>>(result.Result);
+		CompleteReceiptResponse response = Assert.IsType<CompleteReceiptResponse>(okResult.Value);
+		response.Adjustments.Should().ContainSingle();
+		response.Adjustments.Single().Amount.Should().Be(5d);
+	}
 
 	[Fact]
 	public async Task GetReceiptById_ReturnsOkResult_WithReceipt()

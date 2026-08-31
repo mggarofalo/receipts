@@ -22,7 +22,9 @@ import { Spinner } from "@/components/ui/spinner";
 const adjustmentSchema = z
   .object({
     type: z.string().min(1, "Type is required"),
-    amount: z.number({ error: "Amount is required" }),
+    amount: z
+      .number({ error: "Amount is required" })
+      .refine((value) => value !== 0, "Amount must be non-zero"),
     description: z.string().optional(),
   })
   .refine((data) => data.type.toLowerCase() !== "other" || (data.description && data.description.trim().length > 0), {

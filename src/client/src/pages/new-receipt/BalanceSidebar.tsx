@@ -12,6 +12,7 @@ import {
 interface BalanceSidebarProps {
   subtotal: number;
   taxAmount: number;
+  adjustmentTotal: number;
   transactionTotal: number;
   isSubmitting: boolean;
   onSubmit: () => void;
@@ -21,12 +22,13 @@ interface BalanceSidebarProps {
 export function BalanceSidebar({
   subtotal,
   taxAmount,
+  adjustmentTotal,
   transactionTotal,
   isSubmitting,
   onSubmit,
   onCancel,
 }: BalanceSidebarProps) {
-  const expectedTotal = subtotal + taxAmount;
+  const expectedTotal = subtotal + taxAmount + adjustmentTotal;
   const balanceDiff = Math.abs(expectedTotal - transactionTotal);
   const isBalanced = balanceDiff < 0.01;
   const isOver = expectedTotal > transactionTotal;
@@ -43,6 +45,8 @@ export function BalanceSidebar({
             <dd className="text-right">{formatCurrency(subtotal)}</dd>
             <dt className="text-muted-foreground">Tax</dt>
             <dd className="text-right">{formatCurrency(taxAmount)}</dd>
+            <dt className="text-muted-foreground">Adjustments</dt>
+            <dd className="text-right">{formatCurrency(adjustmentTotal)}</dd>
             <Separator className="col-span-2 my-1" />
             <dt className="font-medium">Expected Total</dt>
             <dd className="text-right font-medium">

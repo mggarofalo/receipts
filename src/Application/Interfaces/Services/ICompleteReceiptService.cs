@@ -8,5 +8,6 @@ public interface ICompleteReceiptService
 		Domain.Core.Receipt receipt,
 		List<Domain.Core.Transaction> transactions,
 		List<Domain.Core.ReceiptItem> items,
+		List<Domain.Core.Adjustment> adjustments,
 		CancellationToken cancellationToken);
 }

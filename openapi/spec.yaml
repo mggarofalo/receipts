@@ -2293,10 +2293,12 @@ paths:
     post:
       operationId: CreateCompleteReceipt
       tags: [Receipts]
-      summary: Create a receipt with transactions and items atomically
+      summary: Create a receipt with transactions, items, and adjustments atomically
       description: >
-        Creates a receipt along with its transactions and items in a single
-        atomic operation. If any part fails, nothing is persisted.
+        Creates a receipt along with its transactions, items, and receipt-level
+        adjustments in a single atomic operation. If any part fails, nothing is
+        persisted. Adjustment amounts are signed: additions are positive and
+        reductions are negative.
       security:
         - BearerAuth: []
         - ApiKey: []
@@ -2313,6 +2315,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CompleteReceiptResponse"
+        "400":
+          description: Invalid receipt data or unbalanced totals
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
 
   /api/receipts/batch:
     post:
@@ -7199,10 +7207,16 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CreateReceiptItemRequest"
+        adjustments:
+          type: array
+          default: []
+          description: Signed receipt-level adjustments. Omitted is equivalent to an empty array.
+          items:
+            $ref: "#/components/schemas/CreateAdjustmentRequest"
 
     CompleteReceiptResponse:
       type: object
-      required: [receipt, transactions, items]
+      required: [receipt, transactions, items, adjustments]
       properties:
         receipt:
           $ref: "#/components/schemas/ReceiptResponse"
@@ -7214,6 +7228,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ReceiptItemResponse"
+        adjustments:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdjustmentResponse"
 
     # ── Receipt Item ─────────────────────────────
 

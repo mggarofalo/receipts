@@ -24,7 +24,17 @@ interface EntityChangeNotification {
 }
 
 const queryKeyMap: Record<string, string[][]> = {
-  receipt: [["receipts"], ["receipts-with-items"], ["trips"]],
+  receipt: [
+    ["receipts"],
+    ["receipt-items"],
+    ["transactions"],
+    ["adjustments"],
+    ["receipts-with-items"],
+    ["trips"],
+    ["reports"],
+    ["ynab", "split-comparison"],
+    ["ynab", "receipt-sync-statuses"],
+  ],
   "receipt-item": [["receipt-items"], ["receipts-with-items"], ["trips"]],
   transaction: [
     ["transactions"],
@@ -32,7 +42,15 @@ const queryKeyMap: Record<string, string[][]> = {
     ["trips"],
     ["transaction-accounts"],
   ],
-  adjustment: [["adjustments"], ["receipts-with-items"], ["trips"]],
+  adjustment: [
+    ["adjustments"],
+    ["receipts"],
+    ["receipts-with-items"],
+    ["trips"],
+    ["reports"],
+    ["ynab", "split-comparison"],
+    ["ynab", "receipt-sync-statuses"],
+  ],
   card: [["cards"], ["transaction-accounts"]],
   category: [["categories"]],
   subcategory: [["subcategories"]],

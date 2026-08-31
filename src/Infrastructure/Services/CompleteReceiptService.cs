@@ -11,12 +11,14 @@ public class CompleteReceiptService(
 	IDbContextFactory<ApplicationDbContext> contextFactory,
 	ReceiptMapper receiptMapper,
 	TransactionMapper transactionMapper,
-	ReceiptItemMapper receiptItemMapper) : ICompleteReceiptService
+	ReceiptItemMapper receiptItemMapper,
+	AdjustmentMapper adjustmentMapper) : ICompleteReceiptService
 {
 	public async Task<CreateCompleteReceiptResult> CreateAsync(
 		Receipt receipt,
 		List<Transaction> transactions,
 		List<ReceiptItem> items,
+		List<Adjustment> adjustments,
 		CancellationToken cancellationToken)
 	{
 		await using ApplicationDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
@@ -46,10 +48,19 @@ public class CompleteReceiptService(
 			return entity;
 		}).ToList();
 
+		List<AdjustmentEntity> adjustmentEntities = adjustments.Select(adjustment =>
+		{
+			AdjustmentEntity entity = adjustmentMapper.ToEntity(adjustment);
+			entity.Id = Guid.NewGuid();
+			entity.ReceiptId = receiptEntity.Id;
+			return entity;
+		}).ToList();
+
 		// Add all to context and persist in a single SaveChangesAsync (implicit transaction)
 		context.Set<ReceiptEntity>().Add(receiptEntity);
 		context.Set<TransactionEntity>().AddRange(transactionEntities);
 		context.Set<ReceiptItemEntity>().AddRange(itemEntities);
+		context.Set<AdjustmentEntity>().AddRange(adjustmentEntities);
 
 		await context.SaveChangesAsync(cancellationToken);
 
@@ -57,7 +68,8 @@ public class CompleteReceiptService(
 		Receipt createdReceipt = receiptMapper.ToDomain(receiptEntity);
 		List<Transaction> createdTransactions = transactionEntities.Select(transactionMapper.ToDomain).ToList();
 		List<ReceiptItem> createdItems = itemEntities.Select(receiptItemMapper.ToDomain).ToList();
+		List<Adjustment> createdAdjustments = adjustmentEntities.Select(adjustmentMapper.ToDomain).ToList();
 
-		return new CreateCompleteReceiptResult(createdReceipt, createdTransactions, createdItems);
+		return new CreateCompleteReceiptResult(createdReceipt, createdTransactions, createdItems, createdAdjustments);
 	}
 }

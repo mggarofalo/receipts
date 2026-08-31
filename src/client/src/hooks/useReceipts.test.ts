@@ -23,6 +23,7 @@ import {
   useAllReceipts,
   useReceipt,
   useCreateReceipt,
+  useCreateCompleteReceipt,
   useUpdateReceipt,
   useDeleteReceipts,
   useDeletedReceipts,
@@ -30,10 +31,9 @@ import {
   useLocationSuggestions,
 } from "./useReceipts";
 
-function createWrapper() {
-  const queryClient = new QueryClient({
+function createWrapper(queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
-  });
+  })) {
   return function Wrapper({ children }: { children: ReactNode }) {
     return createElement(QueryClientProvider, { client: queryClient }, children);
   };
@@ -44,6 +44,41 @@ beforeEach(() => {
 });
 
 describe("useReceipts", () => {
+  it("complete create invalidates every receipt aggregate and downstream cache", async () => {
+    const queryClient = new QueryClient();
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    (client.POST as Mock).mockResolvedValue({
+      data: { receipt: { id: "r-1" }, transactions: [], items: [], adjustments: [] },
+      error: undefined,
+    });
+    const { result } = renderHook(() => useCreateCompleteReceipt(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await result.current.mutateAsync({
+      receipt: { location: "Store", date: "2026-08-31", taxAmount: 0 },
+      transactions: [],
+      items: [],
+      adjustments: [],
+    });
+
+    expect(client.POST).toHaveBeenCalledWith("/api/receipts/complete", {
+      body: expect.objectContaining({ adjustments: [] }),
+    });
+    for (const queryKey of [
+      ["receipts"],
+      ["transactions"],
+      ["receipt-items"],
+      ["adjustments"],
+      ["receipts-with-items"],
+      ["trips"],
+      ["reports"],
+      ["ynab", "split-comparison"],
+      ["ynab", "receipt-sync-statuses"],
+    ]) {
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey });
+    }
+  });
   it("list query returns data on success", async () => {
     const receipts = [
       { id: "1", location: "Walmart", date: "2025-01-01", taxAmount: 5.0 },
