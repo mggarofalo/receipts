@@ -205,10 +205,15 @@ public class NormalizedDescriptionService(
 	public async Task<NormalizedDescriptionDetail?> GetByIdAsync(Guid id, CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
-		return await ProjectDetails(context)
-			.FirstOrDefaultAsync(d => d.Id == id, cancellationToken) is { } row
-			? row.ToDetail()
-			: null;
+		DetailRow? row = await ProjectDetails(context)
+			.FirstOrDefaultAsync(d => d.Id == id, cancellationToken);
+		if (row is null)
+		{
+			return null;
+		}
+
+		await PopulateSampleRawDescriptionsAsync(context, [row], cancellationToken);
+		return row.ToDetail();
 	}
 
 	public const int MaxPageSize = 200;
@@ -268,6 +273,7 @@ public class NormalizedDescriptionService(
 			.Skip(offset)
 			.Take(limit)
 			.ToListAsync(cancellationToken);
+		await PopulateSampleRawDescriptionsAsync(context, rows, cancellationToken);
 
 		return new PagedResult<NormalizedDescriptionDetail>(
 			[.. rows.Select(r => r.ToDetail())],
@@ -602,6 +608,10 @@ public class NormalizedDescriptionService(
 		// admin-only action.
 		DetailRow? row = await ProjectDetails(context)
 			.FirstOrDefaultAsync(d => d.Id == created.Id, cancellationToken);
+		if (row is not null)
+		{
+			await PopulateSampleRawDescriptionsAsync(context, [row], cancellationToken);
+		}
 
 		// The row was just committed in this same context, so a miss here means something deleted
 		// it out from under us mid-call. Fall back to the in-memory entity with the evidence we
@@ -771,6 +781,10 @@ public class NormalizedDescriptionService(
 
 		DetailRow? row = await ProjectDetails(context)
 			.FirstOrDefaultAsync(d => d.Id == id, cancellationToken);
+		if (row is not null)
+		{
+			await PopulateSampleRawDescriptionsAsync(context, [row], cancellationToken);
+		}
 
 		return row?.ToDetail()
 			?? new NormalizedDescriptionDetail(mapper.ToDomain(entity), LinkedItemCount: 0, NearestNeighbourName: null, []);
@@ -1426,19 +1440,18 @@ public class NormalizedDescriptionService(
 		return entity;
 	}
 
-	// Single-query evidence projection shared by GetAllAsync / GetByIdAsync / SplitAsync
+	// Scalar evidence projection shared by GetAllAsync / GetByIdAsync / SplitAsync
 	// (RECEIPTS-873). Three things happen here that a naive implementation would get wrong:
 	//
-	//  1. No N+1. LinkedItemCount and SampleRawDescriptions are correlated subqueries, which EF
-	//     translates to lateral joins on Npgsql — one round trip regardless of row count. The
-	//     existing IX_ReceiptItems_NormalizedDescriptionId index covers both.
+	//  1. No N+1. Scalar evidence stays in this query; sample descriptions are loaded by one
+	//     bounded set query after the requested row/page is known. Npgsql cannot translate a
+	//     correlated Distinct/OrderBy/ToList collection inside this projection (RECEIPTS-940).
+	//     The existing IX_ReceiptItems_NormalizedDescriptionId index covers both queries.
 	//  2. Soft-deleted receipt items are excluded automatically: the ReceiptItemEntity query filter
 	//     applies inside subqueries, so a deleted item never inflates the count an admin sees.
 	//  3. Embedding is not selected. The old GetAllAsync materialized whole entities, dragging a
 	//     384-float vector per row across the wire for a list that never displays it.
 	//
-	// Samples are ordered before Take so the same rows produce the same samples across calls —
-	// an unordered LIMIT would let the displayed evidence shuffle between refreshes.
 	private static IQueryable<DetailRow> ProjectDetails(ApplicationDbContext context) =>
 		context.NormalizedDescriptions
 			.AsNoTracking()
@@ -1491,14 +1504,76 @@ public class NormalizedDescriptionService(
 					.Select(t => t.Name)
 					.FirstOrDefault(),
 				LinkedTemplateCount = context.ItemTemplates.Count(t => t.NormalizedDescriptionId == e.Id),
-				SampleRawDescriptions = context.ReceiptItems
-					.Where(r => r.NormalizedDescriptionId == e.Id)
-					.Select(r => r.Description)
-					.Distinct()
-					.OrderBy(d => d)
-					.Take(MaxSampleRawDescriptions)
-					.ToList(),
 			});
+
+	private static async Task PopulateSampleRawDescriptionsAsync(
+		ApplicationDbContext context,
+		IReadOnlyCollection<DetailRow> rows,
+		CancellationToken cancellationToken)
+	{
+		Guid[] ids = [.. rows.Select(r => r.Id)];
+		if (ids.Length == 0)
+		{
+			return;
+		}
+
+		const string sql =
+			"""
+			WITH distinct_samples AS (
+			    SELECT DISTINCT
+			        "NormalizedDescriptionId" AS "Id",
+			        "Description"
+			    FROM receipts."ReceiptItems"
+			    WHERE "DeletedAt" IS NULL
+			      AND "NormalizedDescriptionId" = ANY ({0})
+			), ranked_samples AS (
+			    SELECT
+			        "Id",
+			        "Description",
+			        ROW_NUMBER() OVER (PARTITION BY "Id" ORDER BY "Description") AS row_number
+			    FROM distinct_samples
+			)
+			SELECT "Id", "Description"
+			FROM ranked_samples
+			WHERE row_number <= {1}
+			ORDER BY "Id", row_number
+			""";
+
+		List<SampleDescriptionRow> samples;
+		if (context.Database.ProviderName == "Npgsql.EntityFrameworkCore.PostgreSQL")
+		{
+			samples = await context.Database
+				.SqlQueryRaw<SampleDescriptionRow>(sql, ids, MaxSampleRawDescriptions)
+				.ToListAsync(cancellationToken);
+		}
+		else
+		{
+			// Unit tests use EF InMemory, which cannot execute relational SQL. Keep an equivalent
+			// provider-neutral path there; production PostgreSQL uses the bounded window query above.
+			var fallbackSamples = await context.ReceiptItems
+				.Where(r => r.NormalizedDescriptionId != null && ids.Contains(r.NormalizedDescriptionId.Value))
+				.Select(r => new { Id = r.NormalizedDescriptionId!.Value, r.Description })
+				.Distinct()
+				.ToListAsync(cancellationToken);
+			samples = [.. fallbackSamples.Select(r => new SampleDescriptionRow { Id = r.Id, Description = r.Description })];
+		}
+		Dictionary<Guid, List<string>> samplesById = samples
+			.GroupBy(r => r.Id)
+			.ToDictionary(
+				g => g.Key,
+				g => g.Select(r => r.Description).OrderBy(d => d).Take(MaxSampleRawDescriptions).ToList());
+
+		foreach (DetailRow row in rows)
+		{
+			row.SampleRawDescriptions = samplesById.GetValueOrDefault(row.Id, []);
+		}
+	}
+
+	private sealed class SampleDescriptionRow
+	{
+		public Guid Id { get; init; }
+		public string Description { get; init; } = string.Empty;
+	}
 
 	// Flat shape so the projection stays translatable — EF cannot project into a type with a
 	// non-default constructor's worth of nested objects. ToDetail() rebuilds the domain model.
@@ -1517,7 +1592,7 @@ public class NormalizedDescriptionService(
 		public Guid? LinkedTemplateId { get; init; }
 		public string? LinkedTemplateName { get; init; }
 		public int LinkedTemplateCount { get; init; }
-		public List<string> SampleRawDescriptions { get; init; } = [];
+		public List<string> SampleRawDescriptions { get; set; } = [];
 
 		public NormalizedDescriptionDetail ToDetail() => new(
 			new NormalizedDescription(Id, CanonicalName, Status, CreatedAt, NearestNeighbourId, NearestNeighbourSimilarity, DisplayLabel),

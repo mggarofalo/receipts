@@ -229,6 +229,62 @@ public class ReceiptRepositoryLocationFilterTests(PostgresFixture fixture)
 	}
 
 	[Fact]
+	public async Task GetListAsync_PopulatedRelationships_ProjectsAggregatesOnPostgres()
+	{
+		// Arrange — this deliberately exercises the relational provider. The in-memory provider
+		// accepts projection shapes that PostgreSQL's EF translator may reject at execution time.
+		await ResetTablesAsync();
+
+		ReceiptEntity receipt = ReceiptEntityGenerator.Generate();
+		receipt.TaxAmount = 1.005m;
+
+		string[] categories = ["Snacks", "Bakery", "Produce", "Dairy", "  Bakery  ", "   "];
+		decimal[] itemAmounts = [1m, 2m, 3m, 4m, 0m, 0m];
+		List<ReceiptItemEntity> items = [.. categories.Select((category, index) =>
+		{
+			ReceiptItemEntity item = ReceiptItemEntityGenerator.Generate(receipt.Id);
+			item.Category = category;
+			item.TotalAmount = itemAmounts[index];
+			return item;
+		})];
+
+		AdjustmentEntity adjustment = AdjustmentEntityGenerator.Generate();
+		adjustment.ReceiptId = receipt.Id;
+		adjustment.Amount = 2.25m;
+
+		AccountEntity account = AccountEntityGenerator.Generate();
+		account.Name = "Checking";
+		CardEntity card = CardEntityGenerator.Generate();
+		card.AccountId = account.Id;
+		card.Name = "Visa 4321";
+		TransactionEntity transaction = TransactionEntityGenerator.Generate(receipt.Id, account.Id, card.Id);
+		transaction.Amount = 13.26m;
+
+		await using (ApplicationDbContext seed = fixture.CreateDbContext())
+		{
+			seed.AddRange(receipt, account, card, adjustment, transaction);
+			seed.ReceiptItems.AddRange(items);
+			await seed.SaveChangesAsync();
+		}
+
+		ReceiptRepository repository = new(new FixtureDbContextFactory(fixture));
+
+		// Act
+		ReceiptListItem actual = (await repository.GetListAsync(
+			0, 50, SortParams.Default, null, null, null, null, CancellationToken.None)).Single();
+
+		// Assert
+		actual.ItemSubtotal.Should().Be(10m);
+		actual.AdjustmentTotal.Should().Be(2.25m);
+		actual.ExpectedTotal.Should().Be(13.26m);
+		actual.TransactionTotal.Should().Be(13.26m);
+		actual.BalanceState.Should().Be("balanced");
+		actual.ItemCount.Should().Be(6);
+		actual.CategorySummary.Should().Be("Bakery, Dairy, Produce +1");
+		actual.PaymentSummary.Should().Be("Checking · Visa 4321");
+	}
+
+	[Fact]
 	public async Task GetListAsync_SearchFilter_IsAppliedBeforePagination()
 	{
 		// Arrange — the newest row is a decoy. If the repository paginates first and filters the

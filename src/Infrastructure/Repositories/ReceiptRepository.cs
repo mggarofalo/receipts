@@ -63,10 +63,6 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 			TransactionTotal = context.Transactions.Where(t => t.ReceiptId == r.Id).Sum(t => (decimal?)t.Amount) ?? 0m,
 			TransactionCount = context.Transactions.Count(t => t.ReceiptId == r.Id),
 			ItemCount = context.ReceiptItems.Count(i => i.ReceiptId == r.Id),
-			Categories = context.ReceiptItems.Where(i => i.ReceiptId == r.Id && i.Category.Trim() != "").Select(i => i.Category.Trim()).Distinct().OrderBy(x => x).ToList(),
-			Payments = context.Transactions.Where(t => t.ReceiptId == r.Id && t.Card != null)
-				.Select(t => (t.Card!.ParentAccount != null ? t.Card.ParentAccount.Name + " · " : "") + t.Card.Name)
-				.Distinct().OrderBy(x => x).ToList(),
 		});
 
 		bool descending = sort.IsDescending;
@@ -91,12 +87,43 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 		}
 
 		var materialized = await rows.Skip(offset).Take(limit).ToListAsync(cancellationToken);
+		Guid[] receiptIds = [.. materialized.Select(r => r.Id)];
+		Dictionary<Guid, List<string>> categoriesByReceipt = [];
+		Dictionary<Guid, List<string>> paymentsByReceipt = [];
+
+		if (receiptIds.Length > 0)
+		{
+			var categories = await context.ReceiptItems
+				.Where(i => receiptIds.Contains(i.ReceiptId) && i.Category.Trim() != "")
+				.Select(i => new { i.ReceiptId, Category = i.Category.Trim() })
+				.Distinct()
+				.ToListAsync(cancellationToken);
+			categoriesByReceipt = categories
+				.GroupBy(i => i.ReceiptId)
+				.ToDictionary(g => g.Key, g => g.Select(i => i.Category).OrderBy(x => x).ToList());
+
+			var payments = await context.Transactions
+				.Where(t => receiptIds.Contains(t.ReceiptId) && t.Card != null)
+				.Select(t => new
+				{
+					t.ReceiptId,
+					Payment = (t.Card!.ParentAccount != null ? t.Card.ParentAccount.Name + " · " : "") + t.Card.Name
+				})
+				.Distinct()
+				.ToListAsync(cancellationToken);
+			paymentsByReceipt = payments
+				.GroupBy(t => t.ReceiptId)
+				.ToDictionary(g => g.Key, g => g.Select(t => t.Payment).OrderBy(x => x).ToList());
+		}
+
 		return [.. materialized.Select(r =>
 		{
 			decimal expected = decimal.Round(r.ItemSubtotal + r.TaxAmount + r.AdjustmentTotal, 2, MidpointRounding.AwayFromZero);
 			string state = r.TransactionCount == 0 ? "no-transactions" : Math.Abs(expected - r.TransactionTotal) < 0.005m ? "balanced" : "out-of-balance";
 			return new ReceiptListItem(r.Id, r.Location, r.Date, r.TaxAmount, r.ItemSubtotal, r.AdjustmentTotal, expected,
-				r.TransactionTotal, state, r.ItemCount, Summarize(r.Categories), Summarize(r.Payments));
+				r.TransactionTotal, state, r.ItemCount,
+				Summarize(categoriesByReceipt.GetValueOrDefault(r.Id, [])),
+				Summarize(paymentsByReceipt.GetValueOrDefault(r.Id, [])));
 		})];
 	}
 
