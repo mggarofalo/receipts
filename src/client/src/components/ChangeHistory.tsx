@@ -137,7 +137,7 @@ export function ChangeHistory({ entityType, entityId }: ChangeHistoryProps) {
   }
 
   return (
-    <ScrollArea className="max-h-[400px]">
+    <ScrollArea className="h-[400px]">
       <div className="px-4">
         {logs.map((log) => (
           <TimelineEntry key={log.id} log={log} />
