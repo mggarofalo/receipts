@@ -636,6 +636,16 @@ function Receipts() {
             }}
           >
             <table className="tbl receipts-table">
+              <colgroup>
+                <col className="receipt-select" />
+                <col className="receipt-date" />
+                <col className="receipt-merchant" />
+                <col className="receipt-total" />
+                <col className="receipt-col-secondary" />
+                <col className="receipt-col-secondary receipt-col-contents" />
+                <col className="receipt-status" />
+                <col className="receipt-actions" />
+              </colgroup>
               <thead>
                 <tr>
                   <th className="receipt-select">
