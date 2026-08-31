@@ -945,8 +945,22 @@ body {
 .receipts-table {
   table-layout: fixed;
 }
+.receipts-table th,
+.receipts-table td {
+  box-sizing: border-box;
+}
 .receipts-table-card {
-  overflow-x: auto;
+  container-type: inline-size;
+}
+.receipts-table .receipt-select {
+  width: 44px;
+  overflow: visible;
+  text-overflow: clip;
+}
+.receipts-table .receipt-actions {
+  width: 92px;
+  overflow: visible;
+  text-overflow: clip;
 }
 .receipts-table th:nth-child(2) {
   width: 112px;
@@ -1088,6 +1102,12 @@ body {
   }
   .receipt-inline-summary {
     grid-template-columns: minmax(280px, 1.4fr) repeat(2, minmax(160px, 1fr));
+  }
+}
+
+@container (max-width: 1200px) {
+  .receipts-table .receipt-col-contents {
+    display: none;
   }
 }
 

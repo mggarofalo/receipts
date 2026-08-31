@@ -278,6 +278,12 @@ describe("Receipts", () => {
     const table = document.querySelector<HTMLTableElement>("table.receipts-table")!;
     expect(table).toBeInTheDocument();
     expect(table.closest(".receipts-table-card")).toHaveClass("card");
+    expect(within(table).getByRole("columnheader", { name: "Select all rows" })).toHaveClass(
+      "receipt-select",
+    );
+    expect(within(table).getByRole("columnheader", { name: "Actions" })).toHaveClass(
+      "receipt-actions",
+    );
     expect(within(table).getByRole("columnheader", { name: "Payment" })).toHaveClass("receipt-col-secondary");
     expect(within(table).getByRole("columnheader", { name: "Contents" })).toHaveClass(
       "receipt-col-secondary",
