@@ -228,11 +228,42 @@ public class ReceiptRepositoryLocationFilterTests(PostgresFixture fixture)
 		qAndLocation[0].Id.Should().Be(exactTarget);
 	}
 
-	private static void AddReceipt(ApplicationDbContext context, Guid receiptId, string location)
+	[Fact]
+	public async Task GetListAsync_SearchFilter_IsAppliedBeforePagination()
+	{
+		// Arrange — the newest row is a decoy. If the repository paginates first and filters the
+		// materialized page afterward, limit=1 produces an empty result instead of the older match.
+		await ResetTablesAsync();
+
+		Guid matchingReceipt = Guid.NewGuid();
+		await using (ApplicationDbContext seed = fixture.CreateDbContext())
+		{
+			AddReceipt(seed, Guid.NewGuid(), "Unrelated newest receipt", new DateOnly(2026, 8, 30));
+			AddReceipt(seed, matchingReceipt, "Target Grocery", new DateOnly(2026, 8, 29));
+			AddReceipt(seed, Guid.NewGuid(), "Another Target", new DateOnly(2026, 8, 28));
+			await seed.SaveChangesAsync();
+		}
+
+		ReceiptRepository repository = new(new FixtureDbContextFactory(fixture));
+
+		// Act
+		List<ReceiptListItem> result = await repository.GetListAsync(
+			0, 1, SortParams.Default, accountId: null, cardId: null, q: "  tArGeT  ", location: null, CancellationToken.None);
+
+		// Assert
+		result.Should().ContainSingle();
+		result[0].Id.Should().Be(matchingReceipt);
+	}
+
+	private static void AddReceipt(ApplicationDbContext context, Guid receiptId, string location, DateOnly? date = null)
 	{
 		ReceiptEntity receipt = ReceiptEntityGenerator.Generate();
 		receipt.Id = receiptId;
 		receipt.Location = location;
+		if (date.HasValue)
+		{
+			receipt.Date = date.Value;
+		}
 		context.Receipts.Add(receipt);
 	}
 

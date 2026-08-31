@@ -3609,7 +3609,7 @@ export interface components {
             taxAmount: number;
         };
         ReceiptListResponse: {
-            data: components["schemas"]["ReceiptResponse"][];
+            data: components["schemas"]["ReceiptListItemResponse"][];
             /** Format: int32 */
             total: number;
             /** Format: int32 */
@@ -3617,6 +3617,45 @@ export interface components {
             /** Format: int32 */
             limit: number;
         };
+        ReceiptListItemResponse: {
+            /** Format: uuid */
+            id: string;
+            location: string;
+            /** Format: date */
+            date: string;
+            /** Format: double */
+            taxAmount: number;
+            /**
+             * Format: double
+             * @description Sum of active receipt item totals, or zero when there are no items.
+             */
+            itemSubtotal: number;
+            /**
+             * Format: double
+             * @description Sum of active adjustments, including their signed amounts, or zero when absent.
+             */
+            adjustmentTotal: number;
+            /**
+             * Format: double
+             * @description Item subtotal plus tax amount plus adjustment total, rounded to receipt money precision.
+             */
+            expectedTotal: number;
+            /**
+             * Format: double
+             * @description Sum of active transaction amounts, or zero when there are no transactions.
+             */
+            transactionTotal: number;
+            /** @description No-transactions when none exist; otherwise balanced when expected and transaction totals differ by less than half a cent. */
+            balanceState: components["schemas"]["ReceiptListItemResponseBalanceState"];
+            /** Format: int32 */
+            itemCount: number;
+            /** @description Alphabetical list of up to three distinct non-blank item categories; an additional count is appended when more exist. Empty when uncategorized. */
+            categorySummary: string;
+            /** @description Alphabetical list of up to three distinct account and card labels used by transactions; an additional count is appended when more exist. Empty when unpaid. */
+            paymentSummary: string;
+        };
+        /** @enum {string} */
+        ReceiptListItemResponseBalanceState: "noTransactions" | "balanced" | "outOfBalance";
         LocationSuggestionsResponse: {
             locations: string[];
         };

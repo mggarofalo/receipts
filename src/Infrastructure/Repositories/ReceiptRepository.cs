@@ -46,6 +46,66 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 			.ToListAsync(cancellationToken);
 	}
 
+	public async Task<List<ReceiptListItem>> GetListAsync(int offset, int limit, SortParams sort, Guid? accountId, Guid? cardId, string? q, string? location, CancellationToken cancellationToken)
+	{
+		using ApplicationDbContext context = contextFactory.CreateDbContext();
+		IQueryable<ReceiptEntity> receipts = ApplyTransactionFilters(context, context.Receipts.AsNoTracking(), accountId, cardId);
+		receipts = ApplyLocationFilter(ApplySearchFilter(receipts, q), location);
+
+		var rows = receipts.Select(r => new
+		{
+			r.Id,
+			r.Location,
+			r.Date,
+			r.TaxAmount,
+			ItemSubtotal = context.ReceiptItems.Where(i => i.ReceiptId == r.Id).Sum(i => (decimal?)i.TotalAmount) ?? 0m,
+			AdjustmentTotal = context.Adjustments.Where(a => a.ReceiptId == r.Id).Sum(a => (decimal?)a.Amount) ?? 0m,
+			TransactionTotal = context.Transactions.Where(t => t.ReceiptId == r.Id).Sum(t => (decimal?)t.Amount) ?? 0m,
+			TransactionCount = context.Transactions.Count(t => t.ReceiptId == r.Id),
+			ItemCount = context.ReceiptItems.Count(i => i.ReceiptId == r.Id),
+			Categories = context.ReceiptItems.Where(i => i.ReceiptId == r.Id && i.Category.Trim() != "").Select(i => i.Category.Trim()).Distinct().OrderBy(x => x).ToList(),
+			Payments = context.Transactions.Where(t => t.ReceiptId == r.Id && t.Card != null)
+				.Select(t => (t.Card!.ParentAccount != null ? t.Card.ParentAccount.Name + " · " : "") + t.Card.Name)
+				.Distinct().OrderBy(x => x).ToList(),
+		});
+
+		bool descending = sort.IsDescending;
+		if (string.Equals(sort.SortBy, "expectedTotal", StringComparison.OrdinalIgnoreCase))
+		{
+			rows = descending
+				? rows.OrderByDescending(r => r.ItemSubtotal + r.TaxAmount + r.AdjustmentTotal).ThenBy(r => r.Id)
+				: rows.OrderBy(r => r.ItemSubtotal + r.TaxAmount + r.AdjustmentTotal).ThenBy(r => r.Id);
+		}
+		else if (string.Equals(sort.SortBy, "location", StringComparison.OrdinalIgnoreCase))
+		{
+			rows = descending ? rows.OrderByDescending(r => r.Location).ThenBy(r => r.Id) : rows.OrderBy(r => r.Location).ThenBy(r => r.Id);
+		}
+		else if (string.Equals(sort.SortBy, "taxAmount", StringComparison.OrdinalIgnoreCase))
+		{
+			rows = descending ? rows.OrderByDescending(r => r.TaxAmount).ThenBy(r => r.Id) : rows.OrderBy(r => r.TaxAmount).ThenBy(r => r.Id);
+		}
+		else
+		{
+			bool dateDescending = sort.SortBy is null || descending;
+			rows = dateDescending ? rows.OrderByDescending(r => r.Date).ThenBy(r => r.Id) : rows.OrderBy(r => r.Date).ThenBy(r => r.Id);
+		}
+
+		var materialized = await rows.Skip(offset).Take(limit).ToListAsync(cancellationToken);
+		return [.. materialized.Select(r =>
+		{
+			decimal expected = decimal.Round(r.ItemSubtotal + r.TaxAmount + r.AdjustmentTotal, 2, MidpointRounding.AwayFromZero);
+			string state = r.TransactionCount == 0 ? "no-transactions" : Math.Abs(expected - r.TransactionTotal) < 0.005m ? "balanced" : "out-of-balance";
+			return new ReceiptListItem(r.Id, r.Location, r.Date, r.TaxAmount, r.ItemSubtotal, r.AdjustmentTotal, expected,
+				r.TransactionTotal, state, r.ItemCount, Summarize(r.Categories), Summarize(r.Payments));
+		})];
+	}
+
+	private static string Summarize(IReadOnlyList<string> values)
+	{
+		string summary = string.Join(", ", values.Take(3));
+		return values.Count > 3 ? $"{summary} +{values.Count - 3}" : summary;
+	}
+
 	private static IQueryable<ReceiptEntity> ApplySearchFilter(IQueryable<ReceiptEntity> query, string? q)
 	{
 		if (string.IsNullOrWhiteSpace(q))

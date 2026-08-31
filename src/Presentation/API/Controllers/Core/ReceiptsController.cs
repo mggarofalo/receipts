@@ -93,11 +93,25 @@ public class ReceiptsController(
 		string? normalizedLocation = string.IsNullOrEmpty(location) ? null : location;
 		SortParams sort = new(sortBy, sortDirection);
 		GetAllReceiptsQuery query = new(offset, limit, sort, accountId, cardId, normalizedQ, normalizedLocation);
-		PagedResult<Receipt> result = await mediator.Send(query, cancellationToken);
+		PagedResult<ReceiptListItem> result = await mediator.Send(query, cancellationToken);
 
 		return TypedResults.Ok(new ReceiptListResponse
 		{
-			Data = [.. result.Data.Select(mapper.ToResponse)],
+			Data = [.. result.Data.Select(r => new ReceiptListItemResponse
+			{
+				Id = r.Id,
+				Location = r.Location,
+				Date = r.Date,
+				TaxAmount = (double)r.TaxAmount,
+				ItemSubtotal = (double)r.ItemSubtotal,
+				AdjustmentTotal = (double)r.AdjustmentTotal,
+				ExpectedTotal = (double)r.ExpectedTotal,
+				TransactionTotal = (double)r.TransactionTotal,
+				BalanceState = Enum.Parse<ReceiptListItemResponseBalanceState>(r.BalanceState.Replace("-", ""), true),
+				ItemCount = r.ItemCount,
+				CategorySummary = r.CategorySummary,
+				PaymentSummary = r.PaymentSummary,
+			})],
 			Total = result.Total,
 			Offset = result.Offset,
 			Limit = result.Limit,
@@ -156,7 +170,21 @@ public class ReceiptsController(
 
 		return TypedResults.Ok(new ReceiptListResponse
 		{
-			Data = [.. result.Data.Select(mapper.ToResponse)],
+			Data = [.. result.Data.Select(r => new ReceiptListItemResponse
+			{
+				Id = r.Id,
+				Location = r.Location,
+				Date = r.Date,
+				TaxAmount = (double)r.TaxAmount.Amount,
+				ItemSubtotal = 0,
+				AdjustmentTotal = 0,
+				ExpectedTotal = (double)r.TaxAmount.Amount,
+				TransactionTotal = 0,
+				BalanceState = ReceiptListItemResponseBalanceState.NoTransactions,
+				ItemCount = 0,
+				CategorySummary = string.Empty,
+				PaymentSummary = string.Empty,
+			})],
 			Total = result.Total,
 			Offset = result.Offset,
 			Limit = result.Limit,

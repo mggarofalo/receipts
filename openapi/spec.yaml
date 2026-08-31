@@ -7104,7 +7104,7 @@ components:
         data:
           type: array
           items:
-            $ref: "#/components/schemas/ReceiptResponse"
+            $ref: "#/components/schemas/ReceiptListItemResponse"
         total:
           type: integer
           format: int32
@@ -7114,6 +7114,54 @@ components:
         limit:
           type: integer
           format: int32
+
+    ReceiptListItemResponse:
+      type: object
+      required: [id, location, date, taxAmount, itemSubtotal, adjustmentTotal, expectedTotal, transactionTotal, balanceState, itemCount, categorySummary, paymentSummary]
+      properties:
+        id:
+          type: string
+          format: uuid
+        location:
+          type: string
+        date:
+          type: string
+          format: date
+        taxAmount:
+          type: number
+          format: double
+        itemSubtotal:
+          type: number
+          format: double
+          description: Sum of active receipt item totals, or zero when there are no items.
+        adjustmentTotal:
+          type: number
+          format: double
+          description: Sum of active adjustments, including their signed amounts, or zero when absent.
+        expectedTotal:
+          type: number
+          format: double
+          description: Item subtotal plus tax amount plus adjustment total, rounded to receipt money precision.
+        transactionTotal:
+          type: number
+          format: double
+          description: Sum of active transaction amounts, or zero when there are no transactions.
+        balanceState:
+          $ref: "#/components/schemas/ReceiptListItemResponseBalanceState"
+          description: No-transactions when none exist; otherwise balanced when expected and transaction totals differ by less than half a cent.
+        itemCount:
+          type: integer
+          format: int32
+        categorySummary:
+          type: string
+          description: Alphabetical list of up to three distinct non-blank item categories; an additional count is appended when more exist. Empty when uncategorized.
+        paymentSummary:
+          type: string
+          description: Alphabetical list of up to three distinct account and card labels used by transactions; an additional count is appended when more exist. Empty when unpaid.
+
+    ReceiptListItemResponseBalanceState:
+      type: string
+      enum: [noTransactions, balanced, outOfBalance]
 
     LocationSuggestionsResponse:
       type: object
