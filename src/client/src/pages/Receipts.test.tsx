@@ -1,8 +1,11 @@
 import "@/test/setup-combobox-polyfills";
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import { renderWithProviders } from "@/test/test-utils";
 import { mockQueryResult, mockMutationResult } from "@/test/mock-hooks";
-import { mockReceiptResponse } from "@/test/mock-api";
+import {
+  mockReceiptListItemResponse,
+  mockReceiptResponse,
+} from "@/test/mock-api";
 import Receipts from "./Receipts";
 
 vi.mock("@/hooks/usePageTitle", () => ({
@@ -92,6 +95,31 @@ vi.mock("@/hooks/usePagination", () => ({
 }));
 
 describe("Receipts", () => {
+  async function mockReceiptTable(
+    items: ReturnType<typeof mockReceiptListItemResponse>[],
+    statusMap: Map<string, string> = new Map(),
+  ) {
+    const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
+    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
+      search: "",
+      setSearch: vi.fn(),
+      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
+      totalCount: items.length,
+      isSearching: false,
+      clearSearch: vi.fn(),
+    }));
+
+    const { useReceipts } = await import("@/hooks/useReceipts");
+    vi.mocked(useReceipts).mockReturnValue(mockQueryResult({
+      data: items,
+      total: items.length,
+      isLoading: false,
+    }));
+
+    const { useReceiptYnabSyncStatuses } = await import("@/hooks/useYnab");
+    vi.mocked(useReceiptYnabSyncStatuses).mockReturnValue(mockQueryResult({ statusMap }));
+  }
+
   it("renders the page heading", () => {
     renderWithProviders(<Receipts />);
     expect(
@@ -164,6 +192,141 @@ describe("Receipts", () => {
     renderWithProviders(<Receipts />);
     expect(screen.getByText("Walmart")).toBeInTheDocument();
     expect(screen.getByText("Target")).toBeInTheDocument();
+  });
+
+  it("renders the dense desktop fields without default Tax or short ID columns", async () => {
+    const receipt = mockReceiptListItemResponse({
+      id: "deadbeef-0000-4000-a000-000000000001",
+      location: "Walmart",
+      taxAmount: 123.45,
+      expectedTotal: 42.5,
+      paymentSummary: "Checking · Visa 4321",
+      itemCount: 2,
+      categorySummary: "Grocery, Household",
+      balanceState: "balanced",
+    });
+    await mockReceiptTable([receipt]);
+
+    renderWithProviders(<Receipts />);
+
+    const table = screen.getByRole("grid", { name: "list" }).querySelector("table")!;
+    const headers = within(table)
+      .getAllByRole("columnheader")
+      .map((header) => header.textContent?.trim() ?? "");
+    expect(headers).toEqual([
+      "",
+      "Date",
+      "Merchant",
+      "Total",
+      "Payment",
+      "Contents",
+      "Status",
+      "Actions",
+    ]);
+    expect(screen.getByText("$42.50")).toHaveClass("receipt-total");
+    expect(screen.getByText("Checking · Visa 4321")).toBeInTheDocument();
+    expect(screen.getByText(/2 items/)).toBeInTheDocument();
+    expect(screen.getByText(/Grocery, Household/)).toBeInTheDocument();
+    expect(screen.queryByText("deadbeef")).not.toBeInTheDocument();
+    expect(within(table).queryByRole("columnheader", { name: "Tax" })).not.toBeInTheDocument();
+    expect(screen.queryByText("$123.45")).not.toBeInTheDocument();
+  });
+
+  it("sorts Total by expectedTotal and resets pagination", async () => {
+    const toggleSort = vi.fn();
+    const resetPage = vi.fn();
+    const { useServerSort } = await import("@/hooks/useServerSort");
+    vi.mocked(useServerSort).mockReturnValue({
+      sortBy: "date",
+      sortDirection: "desc",
+      toggleSort,
+    });
+    const { useServerPagination } = await import("@/hooks/useServerPagination");
+    vi.mocked(useServerPagination).mockReturnValue({
+      offset: 0,
+      limit: 25,
+      currentPage: 1,
+      pageSize: 25,
+      totalPages: vi.fn(() => 1),
+      setPage: vi.fn(),
+      setPageSize: vi.fn(),
+      resetPage,
+    });
+    await mockReceiptTable([mockReceiptListItemResponse()]);
+
+    renderWithProviders(<Receipts />);
+    await (await import("@testing-library/user-event")).default
+      .setup()
+      .click(screen.getByRole("button", { name: "Total" }));
+
+    expect(toggleSort).toHaveBeenCalledWith("expectedTotal");
+    expect(resetPage).toHaveBeenCalled();
+  });
+
+  it("marks responsive priority so Date, Merchant, Total, Status and actions remain", async () => {
+    await mockReceiptTable([mockReceiptListItemResponse()]);
+    renderWithProviders(<Receipts />);
+
+    const table = document.querySelector<HTMLTableElement>("table.receipts-table")!;
+    expect(table).toBeInTheDocument();
+    expect(within(table).getByRole("columnheader", { name: "Payment" })).toHaveClass("receipt-col-secondary");
+    expect(within(table).getByRole("columnheader", { name: "Contents" })).toHaveClass("receipt-col-secondary");
+
+    const row = within(table).getAllByRole("row")[1];
+    expect(row.querySelector(".receipt-date")).toBeInTheDocument();
+    expect(row.querySelector(".receipt-merchant")).toBeInTheDocument();
+    expect(row.querySelector(".receipt-total")).toBeInTheDocument();
+    expect(row.querySelector(".receipt-status")).toBeInTheDocument();
+    expect(row.querySelector(".receipt-actions")).toBeInTheDocument();
+    expect(row.querySelectorAll(".receipt-col-secondary")).toHaveLength(2);
+  });
+
+  it("renders text and accessible labels for every balance and YNAB state", async () => {
+    const items = [
+      mockReceiptListItemResponse({ id: "balanced", balanceState: "balanced" }),
+      mockReceiptListItemResponse({ id: "missing", balanceState: "noTransactions" }),
+      mockReceiptListItemResponse({ id: "mismatch", balanceState: "outOfBalance" }),
+    ];
+    await mockReceiptTable(items, new Map([
+      ["balanced", "Synced"],
+      ["missing", "Pending"],
+      ["mismatch", "Failed"],
+    ]));
+
+    renderWithProviders(<Receipts />);
+
+    expect(screen.getByLabelText("Balance: balanced")).toHaveTextContent("Balanced");
+    expect(screen.getByLabelText("Balance: no transactions")).toHaveTextContent("No transactions");
+    expect(screen.getByLabelText("Balance: out of balance")).toHaveTextContent("Out of balance");
+    expect(screen.getByLabelText("YNAB: synced")).toHaveTextContent("YNAB");
+    expect(screen.getByLabelText("YNAB: pending")).toHaveTextContent("Pending");
+    expect(screen.getByLabelText("YNAB: error")).toHaveTextContent("Error");
+  });
+
+  it("keeps compact actions isolated from row focus and links to the full receipt", async () => {
+    const setFocusedIndex = vi.fn();
+    const { useListKeyboardNav } = await import("@/hooks/useListKeyboardNav");
+    vi.mocked(useListKeyboardNav).mockReturnValue({
+      focusedIndex: -1,
+      focusedId: null,
+      setFocusedIndex,
+      tableRef: { current: null },
+      containerProps: { role: "grid", tabIndex: 0, "aria-label": "list", "aria-activedescendant": undefined },
+      getRowProps: (id: string) => ({ id: `list-row-${id}`, role: "row" }),
+    });
+    const receipt = mockReceiptListItemResponse({ id: "receipt-123", location: "Target" });
+    await mockReceiptTable([receipt]);
+
+    renderWithProviders(<Receipts />);
+    const viewLink = screen.getByRole("link", { name: "View" });
+    expect(viewLink).toHaveAttribute("href", "/receipts/receipt-123");
+    viewLink.focus();
+    expect(viewLink).toHaveFocus();
+
+    const user = (await import("@testing-library/user-event")).default.setup();
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    expect(setFocusedIndex).not.toHaveBeenCalled();
+    expect(screen.getByRole("heading", { name: /edit receipt/i })).toBeInTheDocument();
   });
 
   it("opens create dialog when Quick Add button is clicked", async () => {
@@ -509,7 +672,7 @@ describe("Receipts", () => {
     expect(screen.getByText("Error")).toBeInTheDocument();
   });
 
-  it("renders YNAB column header", async () => {
+  it("renders the combined Status column header", async () => {
     const items = [
       mockReceiptResponse({ id: "1", location: "Walmart", date: "2024-01-15", taxAmount: 5.25 }),
     ];
@@ -532,7 +695,7 @@ describe("Receipts", () => {
     }));
 
     renderWithProviders(<Receipts />);
-    expect(screen.getByText("YNAB")).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Status" })).toBeInTheDocument();
   });
 
   it("opens create dialog on shortcut:new-item event", async () => {

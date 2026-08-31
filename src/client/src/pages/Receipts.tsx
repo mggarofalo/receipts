@@ -52,14 +52,22 @@ import {
   type YnabStatus,
 } from "@/components/primitives";
 
-interface ReceiptResponse {
+interface ReceiptListItem {
   id: string;
   location: string;
   date: string;
   taxAmount: number;
+  itemSubtotal: number;
+  adjustmentTotal: number;
+  expectedTotal: number;
+  transactionTotal: number;
+  balanceState: "noTransactions" | "balanced" | "outOfBalance";
+  itemCount: number;
+  categorySummary: string;
+  paymentSummary: string;
 }
 
-const SEARCH_CONFIG: FuseSearchConfig<ReceiptResponse> = {
+const SEARCH_CONFIG: FuseSearchConfig<ReceiptListItem> = {
   keys: [{ name: "location", weight: 1.5 }],
 };
 
@@ -137,7 +145,7 @@ function Receipts() {
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [createOpen, setCreateOpen] = useState(false);
-  const [editReceipt, setEditReceipt] = useState<ReceiptResponse | null>(null);
+  const [editReceipt, setEditReceipt] = useState<ReceiptListItem | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   // Filter state persists to localStorage so reload / fresh-tab returns the
   // user to their last-applied filter set (RECEIPTS-736).
@@ -161,7 +169,10 @@ function Receipts() {
     [toggleSort, resetPage],
   );
 
-  const data = (receiptsData as ReceiptResponse[] | undefined) ?? [];
+  const data = useMemo(
+    () => (receiptsData as ReceiptListItem[] | undefined) ?? [],
+    [receiptsData],
+  );
 
   const receiptIds = useMemo(() => data.map((r) => r.id), [data]);
   const { statusMap: syncStatusMap } = useReceiptYnabSyncStatuses(receiptIds);
@@ -397,7 +408,7 @@ function Receipts() {
             ref={tableRef}
             {...containerProps}
           >
-            <table className="tbl">
+            <table className="tbl receipts-table">
               <thead>
                 <tr>
                   <th style={{ width: 36 }}>
@@ -411,13 +422,6 @@ function Receipts() {
                     />
                   </th>
                   <SortableTableHead
-                    column="location"
-                    label="Location"
-                    currentSortBy={sortBy}
-                    currentSortDirection={sortDirection}
-                    onToggleSort={handleSort}
-                  />
-                  <SortableTableHead
                     column="date"
                     label="Date"
                     currentSortBy={sortBy}
@@ -425,15 +429,24 @@ function Receipts() {
                     onToggleSort={handleSort}
                   />
                   <SortableTableHead
-                    column="taxAmount"
-                    label="Tax"
+                    column="location"
+                    label="Merchant"
+                    currentSortBy={sortBy}
+                    currentSortDirection={sortDirection}
+                    onToggleSort={handleSort}
+                  />
+                  <SortableTableHead
+                    column="expectedTotal"
+                    label="Total"
                     currentSortBy={sortBy}
                     currentSortDirection={sortDirection}
                     onToggleSort={handleSort}
                     className="num-h"
                   />
-                  <th style={{ width: 90 }}>YNAB</th>
-                  <th style={{ width: 60 }} />
+                  <th className="receipt-col-secondary">Payment</th>
+                  <th className="receipt-col-secondary">Contents</th>
+                  <th style={{ width: 180 }}>Status</th>
+                  <th style={{ width: 60 }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -473,55 +486,73 @@ function Receipts() {
                         setFocusedIndex(index);
                       }}
                     >
-                      <td onClick={(e) => e.stopPropagation()}>
+                      <td className="receipt-select" onClick={(e) => e.stopPropagation()}>
                         <Checkbox
                           aria-label={`Select ${receipt.location}`}
                           on={isSelected}
                           onClick={() => toggleSelect(receipt.id)}
                         />
                       </td>
-                      <td>
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 10,
-                          }}
-                        >
-                          <span style={{ fontWeight: 500 }}>
-                            <SearchHighlight
-                              text={receipt.location}
-                              indices={getMatchIndices(matches, "location")}
-                            />
-                          </span>
-                          <span
-                            className="num"
-                            style={{
-                              color: "var(--mute-2)",
-                              fontSize: 11,
-                            }}
-                          >
-                            {receipt.id.slice(0, 8)}
-                          </span>
-                        </div>
-                      </td>
                       <td
-                        className="num"
+                        className="num receipt-date"
                         style={{ color: "var(--mute)", fontSize: 12 }}
                       >
                         {formatDate(receipt.date)}
                       </td>
-                      <td className="money">
-                        {formatCurrency(receipt.taxAmount)}
+                      <td className="receipt-merchant">
+                        <span style={{ fontWeight: 500 }}>
+                            <SearchHighlight
+                              text={receipt.location}
+                              indices={getMatchIndices(matches, "location")}
+                            />
+                        </span>
                       </td>
-                      <td>
-                        <YnabChip
-                          status={syncStatusToChip(
-                            syncStatusMap.get(receipt.id),
-                          )}
-                        />
+                      <td className="money receipt-total">
+                        {formatCurrency(receipt.expectedTotal)}
                       </td>
-                      <td onClick={(e) => e.stopPropagation()}>
+                      <td className="receipt-col-secondary">
+                        {receipt.paymentSummary || (
+                          <span className="receipt-empty-summary">Unpaid</span>
+                        )}
+                      </td>
+                      <td className="receipt-col-secondary">
+                        <span>{receipt.itemCount} item{receipt.itemCount === 1 ? "" : "s"}</span>
+                        {receipt.categorySummary && (
+                          <span className="receipt-summary-detail"> · {receipt.categorySummary}</span>
+                        )}
+                      </td>
+                      <td className="receipt-status">
+                        <div className="receipt-statuses">
+                          <span
+                            className={`chip ${
+                              receipt.balanceState === "balanced"
+                                ? "pos"
+                                : receipt.balanceState === "outOfBalance"
+                                  ? "neg"
+                                  : ""
+                            }`}
+                            aria-label={`Balance: ${
+                              receipt.balanceState === "noTransactions"
+                                ? "no transactions"
+                                : receipt.balanceState === "outOfBalance"
+                                  ? "out of balance"
+                                  : "balanced"
+                            }`}
+                          >
+                            {receipt.balanceState === "noTransactions"
+                              ? "No transactions"
+                              : receipt.balanceState === "outOfBalance"
+                                ? "Out of balance"
+                                : "Balanced"}
+                          </span>
+                          <YnabChip
+                            status={syncStatusToChip(
+                              syncStatusMap.get(receipt.id),
+                            )}
+                          />
+                        </div>
+                      </td>
+                      <td className="receipt-actions" onClick={(e) => e.stopPropagation()}>
                         <div className="row-actions">
                           <Link
                             to={`/receipts/${receipt.id}`}
