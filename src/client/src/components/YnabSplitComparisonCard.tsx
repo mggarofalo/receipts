@@ -27,6 +27,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 interface YnabSplitComparisonCardProps {
   receiptId: string;
+  embedded?: boolean;
 }
 
 /**
@@ -41,22 +42,31 @@ function formatMilliunits(milliunits: number): string {
 
 export function YnabSplitComparisonCard({
   receiptId,
+  embedded = false,
 }: YnabSplitComparisonCardProps) {
   // The split-comparison endpoint is YNAB-gated (503 when YNAB is not set up).
   // Only query — and only render the card — once we know YNAB is configured;
   // otherwise the card would surface a spurious 503 on every receipt detail.
   const { isConfigured, isLoading: connectionLoading } =
     useYnabConnectionStatus();
-  const { data, isLoading, error } = useYnabSplitComparison(
-    receiptId,
-    isConfigured,
+
+  if (connectionLoading || !isConfigured) return null;
+
+  return (
+    <YnabSplitComparisonContent receiptId={receiptId} embedded={embedded} />
   );
+}
+
+export function YnabSplitComparisonContent({
+  receiptId,
+  embedded = false,
+}: YnabSplitComparisonCardProps) {
+  const { data, isLoading, error } = useYnabSplitComparison(receiptId, true);
 
   // Derived values — memoized so downstream render stays stable regardless of
   // which branch we render. Safe because we only derive from `data`.
   const hasAnyActual = useMemo(
-    () =>
-      data?.transactionComparisons.some((tc) => tc.actual != null) ?? false,
+    () => data?.transactionComparisons.some((tc) => tc.actual != null) ?? false,
     [data],
   );
 
@@ -76,15 +86,12 @@ export function YnabSplitComparisonCard({
     [data],
   );
 
-  // No YNAB integration → the comparison is meaningless. Render nothing rather
-  // than a 503 error card. (All hooks above run unconditionally to keep order
-  // stable.)
-  if (connectionLoading || !isConfigured) return null;
-
   return (
-    <Card>
+    <Card className={embedded ? "border-0 shadow-none" : undefined}>
       <CardHeader>
-        <CardTitle>YNAB Split Comparison</CardTitle>
+        <CardTitle className={embedded ? "text-base" : undefined}>
+          Split comparison
+        </CardTitle>
         <CardDescription>
           Expected category split (computed locally) vs. the actual state
           currently stored in YNAB.
@@ -183,9 +190,7 @@ function PushedState({
 }) {
   return (
     <div className="space-y-4">
-      {hasAnyMismatch && (
-        <Badge variant="destructive">Mismatch detected</Badge>
-      )}
+      {hasAnyMismatch && <Badge variant="destructive">Mismatch detected</Badge>}
       {comparisons.map((tc) => (
         <TransactionSection key={tc.localTransactionId} tc={tc} />
       ))}

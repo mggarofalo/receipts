@@ -8,7 +8,11 @@ const configuredStatus = () =>
 
 vi.mock("@/hooks/useYnab", () => ({
   useYnabConnectionStatus: vi.fn(() =>
-    mockQueryResult({ isConfigured: true, isConnected: true, isLoading: false }),
+    mockQueryResult({
+      isConfigured: true,
+      isConnected: true,
+      isLoading: false,
+    }),
   ),
   useYnabSplitComparison: vi.fn(() => mockQueryResult()),
 }));
@@ -36,9 +40,7 @@ describe("YnabSplitComparisonCard", () => {
     );
 
     expect(container).toBeEmptyDOMElement();
-    expect(
-      screen.queryByText("YNAB Split Comparison"),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Split comparison")).not.toBeInTheDocument();
   });
 
   it("renders nothing while the connection status is still loading", async () => {
@@ -66,11 +68,11 @@ describe("YnabSplitComparisonCard", () => {
 
     renderWithProviders(<YnabSplitComparisonCard receiptId="r1" />);
 
-    expect(screen.getByText("YNAB Split Comparison")).toBeInTheDocument();
+    expect(screen.getByText("Split comparison")).toBeInTheDocument();
     // Skeleton contains no specific text but should be in the card body.
     expect(
       screen
-        .getByText("YNAB Split Comparison")
+        .getByText("Split comparison")
         .closest(".rounded-lg, [data-slot='card']") ??
         document.querySelector("[class*='skeleton']"),
     ).toBeTruthy();
@@ -89,7 +91,9 @@ describe("YnabSplitComparisonCard", () => {
 
     renderWithProviders(<YnabSplitComparisonCard receiptId="r1" />);
 
-    expect(screen.getByText(/Could not load split comparison/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Could not load split comparison/),
+    ).toBeInTheDocument();
     expect(screen.getByText(/Boom/)).toBeInTheDocument();
   });
 
@@ -176,10 +180,18 @@ describe("YnabSplitComparisonCard", () => {
               accountName: "Checking",
               totalMilliunits: -11000,
               expected: [
-                { ynabCategoryId: "cat-1", categoryName: "Groceries", milliunits: -11000 },
+                {
+                  ynabCategoryId: "cat-1",
+                  categoryName: "Groceries",
+                  milliunits: -11000,
+                },
               ],
               actual: [
-                { ynabCategoryId: "cat-1", categoryName: "Groceries", milliunits: -11000 },
+                {
+                  ynabCategoryId: "cat-1",
+                  categoryName: "Groceries",
+                  milliunits: -11000,
+                },
               ],
               actualFetchError: null,
               matches: true,
@@ -214,10 +226,18 @@ describe("YnabSplitComparisonCard", () => {
               accountName: "Checking",
               totalMilliunits: -11000,
               expected: [
-                { ynabCategoryId: "cat-1", categoryName: "Groceries", milliunits: -11000 },
+                {
+                  ynabCategoryId: "cat-1",
+                  categoryName: "Groceries",
+                  milliunits: -11000,
+                },
               ],
               actual: [
-                { ynabCategoryId: "cat-2", categoryName: "Dining", milliunits: -11000 },
+                {
+                  ynabCategoryId: "cat-2",
+                  categoryName: "Dining",
+                  milliunits: -11000,
+                },
               ],
               actualFetchError: null,
               matches: false,
@@ -256,7 +276,11 @@ describe("YnabSplitComparisonCard", () => {
               accountName: "Checking",
               totalMilliunits: -11000,
               expected: [
-                { ynabCategoryId: "cat-1", categoryName: "Groceries", milliunits: -11000 },
+                {
+                  ynabCategoryId: "cat-1",
+                  categoryName: "Groceries",
+                  milliunits: -11000,
+                },
               ],
               actual: null,
               actualFetchError: "YNAB 503",
@@ -299,12 +323,28 @@ describe("YnabSplitComparisonCard", () => {
               accountName: "Checking",
               totalMilliunits: -80000,
               expected: [
-                { ynabCategoryId: "cat-groceries", categoryName: "Groceries", milliunits: -30000 },
-                { ynabCategoryId: "cat-groceries", categoryName: "Groceries", milliunits: -50000 },
+                {
+                  ynabCategoryId: "cat-groceries",
+                  categoryName: "Groceries",
+                  milliunits: -30000,
+                },
+                {
+                  ynabCategoryId: "cat-groceries",
+                  categoryName: "Groceries",
+                  milliunits: -50000,
+                },
               ],
               actual: [
-                { ynabCategoryId: "cat-groceries", categoryName: "Groceries", milliunits: -30000 },
-                { ynabCategoryId: "cat-groceries", categoryName: "Groceries", milliunits: -50000 },
+                {
+                  ynabCategoryId: "cat-groceries",
+                  categoryName: "Groceries",
+                  milliunits: -30000,
+                },
+                {
+                  ynabCategoryId: "cat-groceries",
+                  categoryName: "Groceries",
+                  milliunits: -50000,
+                },
               ],
               actualFetchError: null,
               matches: true,

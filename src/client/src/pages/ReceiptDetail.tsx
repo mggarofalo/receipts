@@ -5,13 +5,11 @@ import { useUpdateReceipt } from "@/hooks/useReceipts";
 import { useCreateAdjustment } from "@/hooks/useAdjustments";
 import {
   useReceiptYnabSyncStatuses,
+  useSelectedYnabBudget,
   useYnabConnectionStatus,
 } from "@/hooks/useYnab";
 import { usePageTitle } from "@/hooks/usePageTitle";
-import {
-  parseProblemDetails,
-  extractFieldErrors,
-} from "@/lib/problem-details";
+import { parseProblemDetails, extractFieldErrors } from "@/lib/problem-details";
 import { ValidationWarnings } from "@/components/ValidationWarnings";
 import { BalanceSummaryCard } from "@/components/BalanceSummaryCard";
 import { ReceiptItemsCard } from "@/components/ReceiptItemsCard";
@@ -21,13 +19,7 @@ import {
   ReceiptHeaderForm,
   type ReceiptHeaderFormValues,
 } from "@/components/ReceiptHeaderForm";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -35,10 +27,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ChangeHistory } from "@/components/ChangeHistory";
-import { YnabMemoSyncCard } from "@/components/YnabMemoSyncCard";
 import { CardSkeleton } from "@/components/ui/card-skeleton";
-import { YnabPushButton } from "@/components/YnabPushButton";
-import { YnabSplitComparisonCard } from "@/components/YnabSplitComparisonCard";
+import { YnabReceiptCard } from "@/components/YnabReceiptCard";
 import { ReconcileSheet } from "@/components/ReconcileSheet";
 import { Icon, PageHead, YnabChip } from "@/components/primitives";
 
@@ -49,17 +39,24 @@ function ReceiptDetail() {
   const { data: trip, isLoading, isError } = useTripByReceiptId(id ?? null);
   const updateReceipt = useUpdateReceipt();
   const createAdjustment = useCreateAdjustment();
-  const { statusMap: ynabStatusMap } = useReceiptYnabSyncStatuses(
-    id ? [id] : [],
-  );
-  const persistedYnabStatus = id ? ynabStatusMap.get(id) : undefined;
   // YNAB-gated rendering — when no PAT is configured, the YNAB push and chip
   // surfaces can't do anything useful (RECEIPTS-731). The split-comparison
   // and memo-sync cards self-gate; the push Card and PageHead chip below
   // share this signal.
   const { isConfigured: ynabConfigured, isLoading: ynabConnectionLoading } =
     useYnabConnectionStatus();
-  const ynabReady = !ynabConnectionLoading && ynabConfigured;
+  const { selectedBudgetId, isLoading: ynabBudgetLoading } =
+    useSelectedYnabBudget();
+  const ynabReady =
+    !ynabConnectionLoading &&
+    !ynabBudgetLoading &&
+    ynabConfigured &&
+    selectedBudgetId != null;
+  const { statusMap: ynabStatusMap } = useReceiptYnabSyncStatuses(
+    id ? [id] : [],
+    ynabReady,
+  );
+  const persistedYnabStatus = id ? ynabStatusMap.get(id) : undefined;
 
   const [editOpen, setEditOpen] = useState(false);
   const [reconcileOpen, setReconcileOpen] = useState(false);
@@ -187,15 +184,9 @@ function ReceiptDetail() {
       )}
 
       {trip && (
-        <div
-          style={{ display: "flex", flexDirection: "column", gap: 14 }}
-        >
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           {(allWarnings.length > 0 || transactionsImbalanced) && (
-            <div
-              className="warn-banner"
-              role="status"
-              aria-live="polite"
-            >
+            <div className="warn-banner" role="status" aria-live="polite">
               <Icon.AlertTriangle className="ico" aria-hidden="true" />
               <div style={{ flex: 1 }}>
                 {allWarnings.length > 0 ? (
@@ -274,28 +265,12 @@ function ReceiptDetail() {
             transactionsTotal={transactionsTotal}
           />
 
-          <YnabMemoSyncCard receiptId={id} />
-
-          {ynabReady && (
-            <Card>
-              <CardHeader>
-                <CardTitle>YNAB sync</CardTitle>
-                <CardDescription>
-                  Push this receipt’s transactions to YNAB with category
-                  splits.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <YnabPushButton
-                  receiptId={id}
-                  hasTransactions={trip.transactions.length > 0}
-                  persistedSyncStatus={persistedYnabStatus}
-                />
-              </CardContent>
-            </Card>
-          )}
-
-          <YnabSplitComparisonCard receiptId={id} />
+          <YnabReceiptCard
+            receiptId={id}
+            hasTransactions={trip.transactions.length > 0}
+            isAvailable={ynabReady}
+            persistedSyncStatus={persistedYnabStatus}
+          />
 
           <Card>
             <CardHeader>
