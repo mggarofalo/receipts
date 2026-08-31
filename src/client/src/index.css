@@ -907,12 +907,31 @@ body {
   transition: opacity 0.12s;
 }
 .tbl tbody tr:hover .row-actions,
-.tbl tbody tr.focused .row-actions {
+.tbl tbody tr.focused .row-actions,
+.tbl tbody tr:focus-within .row-actions {
   opacity: 1;
 }
 .tbl .money {
   text-align: right;
   font-size: 13px;
+}
+.receipts-table .receipt-total {
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.receipts-table .receipt-statuses {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.receipts-table .receipt-summary-detail,
+.receipts-table .receipt-empty-summary {
+  color: var(--mute);
+}
+@media (max-width: 900px) {
+  .receipts-table .receipt-col-secondary {
+    display: none;
+  }
 }
 
 /* ── View tabs + filter strip ───────────────────────────────────────── */
@@ -1703,6 +1722,33 @@ body {
     overflow: hidden;
     text-overflow: ellipsis;
     min-width: 0;
+  }
+  .receipts-table tr {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+  .receipts-table .receipt-select {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+  }
+  .receipts-table .receipt-merchant {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .receipts-table .receipt-date {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  .receipts-table .receipt-total {
+    grid-column: 3;
+    grid-row: 1;
+  }
+  .receipts-table .receipt-status {
+    grid-column: 2 / span 2;
+    grid-row: 3;
+  }
+  .receipts-table .receipt-actions {
+    grid-column: 3;
+    grid-row: 2;
   }
 }
 
