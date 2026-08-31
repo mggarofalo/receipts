@@ -21,6 +21,7 @@ type CardResponse = components["schemas"]["CardResponse"];
 type CategoryResponse = components["schemas"]["CategoryResponse"];
 type SubcategoryResponse = components["schemas"]["SubcategoryResponse"];
 type ReceiptResponse = components["schemas"]["ReceiptResponse"];
+type ReceiptListItemResponse = components["schemas"]["ReceiptListItemResponse"];
 type ReceiptItemResponse = components["schemas"]["ReceiptItemResponse"];
 type TransactionResponse = components["schemas"]["TransactionResponse"];
 type AdjustmentResponse = components["schemas"]["AdjustmentResponse"];
@@ -156,6 +157,31 @@ export function mockReceiptResponse(
   };
 }
 
+/** Creates a receipt-list row with deterministic aggregate metadata defaults. */
+export function mockReceiptListItemResponse(
+  overrides?: Partial<ReceiptListItemResponse>,
+): ReceiptListItemResponse {
+  const taxAmount = overrides?.taxAmount ?? 5.0;
+  const itemSubtotal = overrides?.itemSubtotal ?? 0;
+  const adjustmentTotal = overrides?.adjustmentTotal ?? 0;
+
+  return {
+    id: nextId(),
+    location: "Test Store",
+    date: "2025-01-15",
+    taxAmount,
+    itemSubtotal,
+    adjustmentTotal,
+    expectedTotal: itemSubtotal + taxAmount + adjustmentTotal,
+    transactionTotal: 0,
+    balanceState: "noTransactions",
+    itemCount: 0,
+    categorySummary: "",
+    paymentSummary: "",
+    ...overrides,
+  };
+}
+
 /** Creates a single `ReceiptItemResponse` with sensible defaults. */
 export function mockReceiptItemResponse(
   overrides?: Partial<ReceiptItemResponse>,
@@ -249,10 +275,17 @@ export function mockSubcategoryListResponse(
 
 /** Creates a `ReceiptListResponse` in the paginated envelope. */
 export function mockReceiptListResponse(
-  items?: ReceiptResponse[],
-  overrides?: Partial<PaginatedEnvelope<ReceiptResponse>>,
+  items?: Array<ReceiptResponse | ReceiptListItemResponse>,
+  overrides?: Omit<Partial<PaginatedEnvelope<ReceiptListItemResponse>>, "data"> & {
+    data?: Array<ReceiptResponse | ReceiptListItemResponse>;
+  },
 ): ReceiptListResponse {
-  return mockPaginatedResponse(items ?? [mockReceiptResponse()], overrides);
+  const { data: overrideData, ...envelopeOverrides } = overrides ?? {};
+  const rows = overrideData ?? items ?? [mockReceiptResponse()];
+  return mockPaginatedResponse(
+    rows.map((row) => mockReceiptListItemResponse(row)),
+    envelopeOverrides,
+  );
 }
 
 /** Creates a `ReceiptItemListResponse` in the paginated envelope. */

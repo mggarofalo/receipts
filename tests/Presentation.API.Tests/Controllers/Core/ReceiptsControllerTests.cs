@@ -42,6 +42,11 @@ public class ReceiptsControllerTests
 		_controller = new ReceiptsController(_mediatorMock.Object, _mapper, _transactionMapper, _receiptItemMapper, _loggerMock.Object, _notifierMock.Object);
 	}
 
+	private static List<ReceiptListItem> CreateListItems(int count) =>
+		[.. Enumerable.Range(0, count).Select(index => new ReceiptListItem(
+			Guid.NewGuid(), $"Location {index}", new DateOnly(2026, 8, 30), 1m,
+			2m, 3m, 6m, 6m, "balanced", 1, "Food", "Checking · Visa"))];
+
 	[Fact]
 	public async Task GetReceiptById_ReturnsOkResult_WithReceipt()
 	{
@@ -103,13 +108,12 @@ public class ReceiptsControllerTests
 	public async Task GetAllReceipts_ReturnsOkResult_WithListOfReceipts()
 	{
 		// Arrange
-		List<Receipt> mediatorReturn = ReceiptGenerator.GenerateList(2);
-		List<ReceiptResponse> expectedControllerReturn = [.. mediatorReturn.Select(_mapper.ToResponse)];
+		List<ReceiptListItem> mediatorReturn = CreateListItems(2);
 
 		_mediatorMock.Setup(m => m.Send(
 			It.Is<GetAllReceiptsQuery>(q => q.Offset == 0 && q.Limit == 50),
 			It.IsAny<CancellationToken>()))
-			.ReturnsAsync(new PagedResult<Receipt>(mediatorReturn, mediatorReturn.Count, 0, 50));
+			.ReturnsAsync(new PagedResult<ReceiptListItem>(mediatorReturn, mediatorReturn.Count, 0, 50));
 
 		// Act
 		Results<Ok<ReceiptListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetAllReceipts(0, 50, null, null);
@@ -118,10 +122,44 @@ public class ReceiptsControllerTests
 		Ok<ReceiptListResponse> result = Assert.IsType<Ok<ReceiptListResponse>>(rawResult.Result);
 		ReceiptListResponse actualControllerReturn = result.Value!;
 
-		actualControllerReturn.Data.Should().BeEquivalentTo(expectedControllerReturn);
+		actualControllerReturn.Data.Should().HaveCount(2);
+		ReceiptListItemResponse first = actualControllerReturn.Data.First();
+		first.Should().BeEquivalentTo(new
+		{
+			mediatorReturn[0].Id,
+			mediatorReturn[0].Location,
+			mediatorReturn[0].Date,
+			TaxAmount = (double)mediatorReturn[0].TaxAmount,
+			ItemSubtotal = (double)mediatorReturn[0].ItemSubtotal,
+			AdjustmentTotal = (double)mediatorReturn[0].AdjustmentTotal,
+			ExpectedTotal = (double)mediatorReturn[0].ExpectedTotal,
+			TransactionTotal = (double)mediatorReturn[0].TransactionTotal,
+			mediatorReturn[0].ItemCount,
+			mediatorReturn[0].CategorySummary,
+			mediatorReturn[0].PaymentSummary,
+		});
+		first.BalanceState.ToString().Should().Be("Balanced");
 		actualControllerReturn.Total.Should().Be(mediatorReturn.Count);
 		actualControllerReturn.Offset.Should().Be(0);
 		actualControllerReturn.Limit.Should().Be(50);
+	}
+
+	[Fact]
+	public async Task GetAllReceipts_AcceptsExpectedTotalSortAndForwardsItToMediator()
+	{
+		// Arrange
+		_mediatorMock.Setup(m => m.Send(
+			It.Is<GetAllReceiptsQuery>(q => q.Sort.SortBy == "expectedTotal" && q.Sort.SortDirection == "desc"),
+			It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new PagedResult<ReceiptListItem>([], 0, 0, 50));
+
+		// Act
+		Results<Ok<ReceiptListResponse>, BadRequest<ProblemDetails>> result =
+			await _controller.GetAllReceipts(0, 50, "expectedTotal", "desc");
+
+		// Assert
+		Assert.IsType<Ok<ReceiptListResponse>>(result.Result);
+		_mediatorMock.VerifyAll();
 	}
 
 	[Theory]
@@ -198,12 +236,12 @@ public class ReceiptsControllerTests
 	public async Task GetAllReceipts_ForwardsTrimmedSearchQuery_ToMediator()
 	{
 		// Arrange
-		List<Receipt> mediatorReturn = ReceiptGenerator.GenerateList(1);
+		List<ReceiptListItem> mediatorReturn = CreateListItems(1);
 
 		_mediatorMock.Setup(m => m.Send(
 			It.Is<GetAllReceiptsQuery>(q => q.Q == "Walmart"),
 			It.IsAny<CancellationToken>()))
-			.ReturnsAsync(new PagedResult<Receipt>(mediatorReturn, mediatorReturn.Count, 0, 50));
+			.ReturnsAsync(new PagedResult<ReceiptListItem>(mediatorReturn, mediatorReturn.Count, 0, 50));
 
 		// Act
 		Results<Ok<ReceiptListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetAllReceipts(0, 50, null, null, null, null, "  Walmart  ");
@@ -225,7 +263,7 @@ public class ReceiptsControllerTests
 		_mediatorMock.Setup(m => m.Send(
 			It.IsAny<GetAllReceiptsQuery>(),
 			It.IsAny<CancellationToken>()))
-			.ReturnsAsync(new PagedResult<Receipt>([], 0, 0, 50));
+			.ReturnsAsync(new PagedResult<ReceiptListItem>([], 0, 0, 50));
 
 		// Act
 		await _controller.GetAllReceipts(0, 50, null, null, null, null, q);
@@ -242,12 +280,12 @@ public class ReceiptsControllerTests
 		// Arrange — unlike q, location is an exact-match drill-down key that has to reproduce the
 		// Spending by Location report's raw GROUP BY value byte-for-byte, so it must NOT be trimmed.
 		// See ReceiptRepository.ApplyLocationFilter.
-		List<Receipt> mediatorReturn = ReceiptGenerator.GenerateList(1);
+		List<ReceiptListItem> mediatorReturn = CreateListItems(1);
 
 		_mediatorMock.Setup(m => m.Send(
 			It.Is<GetAllReceiptsQuery>(q => q.Location == "  Target  "),
 			It.IsAny<CancellationToken>()))
-			.ReturnsAsync(new PagedResult<Receipt>(mediatorReturn, mediatorReturn.Count, 0, 50));
+			.ReturnsAsync(new PagedResult<ReceiptListItem>(mediatorReturn, mediatorReturn.Count, 0, 50));
 
 		// Act
 		Results<Ok<ReceiptListResponse>, BadRequest<ProblemDetails>> result =
@@ -269,7 +307,7 @@ public class ReceiptsControllerTests
 		_mediatorMock.Setup(m => m.Send(
 			It.IsAny<GetAllReceiptsQuery>(),
 			It.IsAny<CancellationToken>()))
-			.ReturnsAsync(new PagedResult<Receipt>([], 0, 0, 50));
+			.ReturnsAsync(new PagedResult<ReceiptListItem>([], 0, 0, 50));
 
 		// Act
 		await _controller.GetAllReceipts(0, 50, null, null, null, null, null, location);
@@ -290,7 +328,7 @@ public class ReceiptsControllerTests
 		_mediatorMock.Setup(m => m.Send(
 			It.IsAny<GetAllReceiptsQuery>(),
 			It.IsAny<CancellationToken>()))
-			.ReturnsAsync(new PagedResult<Receipt>([], 0, 0, 50));
+			.ReturnsAsync(new PagedResult<ReceiptListItem>([], 0, 0, 50));
 
 		// Act
 		await _controller.GetAllReceipts(0, 50, null, null, null, null, null, "   ");
@@ -305,12 +343,12 @@ public class ReceiptsControllerTests
 	public async Task GetAllReceipts_CombinesLocationAndSearchQuery_ToMediator()
 	{
 		// Arrange
-		List<Receipt> mediatorReturn = ReceiptGenerator.GenerateList(1);
+		List<ReceiptListItem> mediatorReturn = CreateListItems(1);
 
 		_mediatorMock.Setup(m => m.Send(
 			It.Is<GetAllReceiptsQuery>(q => q.Q == "Milk" && q.Location == "Target"),
 			It.IsAny<CancellationToken>()))
-			.ReturnsAsync(new PagedResult<Receipt>(mediatorReturn, mediatorReturn.Count, 0, 50));
+			.ReturnsAsync(new PagedResult<ReceiptListItem>(mediatorReturn, mediatorReturn.Count, 0, 50));
 
 		// Act
 		Results<Ok<ReceiptListResponse>, BadRequest<ProblemDetails>> result =

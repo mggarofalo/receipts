@@ -75,6 +75,209 @@ public class ReceiptRepositoryTests
 	}
 
 	[Fact]
+	public async Task GetListAsync_PopulatedReceipt_ProjectsTotalsBalanceAndConciseSummaries()
+	{
+		// Arrange
+		ReceiptEntity receipt = ReceiptEntityGenerator.Generate();
+		receipt.TaxAmount = 1.005m;
+
+		string[] categories = ["Snacks", "Bakery", "Produce", "Dairy", "  Bakery  ", "   "];
+		decimal[] itemAmounts = [1m, 2m, 3m, 4m, 0m, 0m];
+		List<ReceiptItemEntity> items = [.. categories.Select((category, index) =>
+		{
+			ReceiptItemEntity item = ReceiptItemEntityGenerator.Generate(receipt.Id);
+			item.Category = category;
+			item.TotalAmount = itemAmounts[index];
+			return item;
+		})];
+
+		AdjustmentEntity adjustment = AdjustmentEntityGenerator.Generate();
+		adjustment.ReceiptId = receipt.Id;
+		adjustment.Amount = 2.25m;
+
+		AccountEntity account = AccountEntityGenerator.Generate();
+		account.Name = "Checking";
+		CardEntity card = CardEntityGenerator.Generate();
+		card.AccountId = account.Id;
+		card.Name = "Visa 4321";
+		TransactionEntity transaction = TransactionEntityGenerator.Generate(receipt.Id, account.Id, card.Id);
+		transaction.Amount = 13.26m;
+
+		using (ApplicationDbContext context = _contextFactory.CreateDbContext())
+		{
+			context.AddRange(receipt, account, card, adjustment, transaction);
+			context.ReceiptItems.AddRange(items);
+			await context.SaveChangesAsync();
+		}
+
+		ReceiptRepository repository = new(_contextFactory);
+
+		// Act
+		ReceiptListItem actual = (await repository.GetListAsync(
+			0, 50, SortParams.Default, null, null, null, null, CancellationToken.None)).Single();
+
+		// Assert
+		actual.ItemSubtotal.Should().Be(10m);
+		actual.AdjustmentTotal.Should().Be(2.25m);
+		actual.ExpectedTotal.Should().Be(13.26m, "money totals round midpoint values away from zero to two decimals");
+		actual.TransactionTotal.Should().Be(13.26m);
+		actual.BalanceState.Should().Be("balanced");
+		actual.ItemCount.Should().Be(6);
+		actual.CategorySummary.Should().Be("Bakery, Dairy, Produce +1");
+		actual.PaymentSummary.Should().Be("Checking · Visa 4321");
+
+		_contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task GetListAsync_ReceiptWithoutRelatedRows_ReturnsDeterministicEmptyMetadata()
+	{
+		// Arrange
+		ReceiptEntity receipt = ReceiptEntityGenerator.Generate();
+		receipt.TaxAmount = 1.23m;
+		using (ApplicationDbContext context = _contextFactory.CreateDbContext())
+		{
+			context.Receipts.Add(receipt);
+			await context.SaveChangesAsync();
+		}
+
+		ReceiptRepository repository = new(_contextFactory);
+
+		// Act
+		ReceiptListItem actual = (await repository.GetListAsync(
+			0, 50, SortParams.Default, null, null, null, null, CancellationToken.None)).Single();
+
+		// Assert
+		actual.ItemSubtotal.Should().Be(0m);
+		actual.AdjustmentTotal.Should().Be(0m);
+		actual.ExpectedTotal.Should().Be(1.23m);
+		actual.TransactionTotal.Should().Be(0m);
+		actual.BalanceState.Should().Be("no-transactions");
+		actual.ItemCount.Should().Be(0);
+		actual.CategorySummary.Should().BeEmpty();
+		actual.PaymentSummary.Should().BeEmpty();
+
+		_contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task GetListAsync_TransactionThatDoesNotMatchExpectedTotal_IsOutOfBalance()
+	{
+		// Arrange
+		ReceiptEntity receipt = CreateReceipt("Mismatch", 1m);
+		AccountEntity account = AccountEntityGenerator.Generate();
+		CardEntity card = CardEntityGenerator.Generate();
+		card.AccountId = account.Id;
+		TransactionEntity transaction = TransactionEntityGenerator.Generate(receipt.Id, account.Id, card.Id);
+		transaction.Amount = 99m;
+
+		using (ApplicationDbContext context = _contextFactory.CreateDbContext())
+		{
+			context.AddRange(receipt, account, card, transaction);
+			context.ReceiptItems.Add(CreateItem(receipt.Id, 9m));
+			await context.SaveChangesAsync();
+		}
+
+		ReceiptRepository repository = new(_contextFactory);
+
+		// Act
+		ReceiptListItem actual = (await repository.GetListAsync(
+			0, 50, SortParams.Default, null, null, null, null, CancellationToken.None)).Single();
+
+		// Assert
+		actual.ExpectedTotal.Should().Be(10m);
+		actual.TransactionTotal.Should().Be(99m);
+		actual.BalanceState.Should().Be("out-of-balance");
+
+		_contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task GetListAsync_ExpectedTotalSortAndPagination_AreAppliedToAggregateValues()
+	{
+		// Arrange
+		ReceiptEntity low = CreateReceipt("Low", taxAmount: 1m);
+		ReceiptEntity middle = CreateReceipt("Middle", taxAmount: 2m);
+		ReceiptEntity high = CreateReceipt("High", taxAmount: 3m);
+
+		using (ApplicationDbContext context = _contextFactory.CreateDbContext())
+		{
+			context.Receipts.AddRange(low, middle, high);
+			context.ReceiptItems.AddRange(
+				CreateItem(low.Id, 4m),
+				CreateItem(middle.Id, 8m),
+				CreateItem(high.Id, 17m));
+			await context.SaveChangesAsync();
+		}
+
+		ReceiptRepository repository = new(_contextFactory);
+
+		// Act
+		List<ReceiptListItem> page = await repository.GetListAsync(
+			1, 1, new SortParams("expectedTotal", "asc"), null, null, null, null, CancellationToken.None);
+
+		// Assert
+		page.Should().ContainSingle();
+		page[0].Id.Should().Be(middle.Id);
+		page[0].ExpectedTotal.Should().Be(10m);
+
+		_contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task GetListAsync_ExistingFilters_RestrictProjectionBeforePagination()
+	{
+		// Arrange
+		AccountEntity wantedAccount = AccountEntityGenerator.Generate();
+		CardEntity wantedCard = CardEntityGenerator.Generate();
+		wantedCard.AccountId = wantedAccount.Id;
+		AccountEntity otherAccount = AccountEntityGenerator.Generate();
+		CardEntity otherCard = CardEntityGenerator.Generate();
+		otherCard.AccountId = otherAccount.Id;
+
+		ReceiptEntity wanted = CreateReceipt("Target", 0m);
+		ReceiptEntity wrongCard = CreateReceipt("Target", 0m);
+		ReceiptEntity wrongLocation = CreateReceipt("Other", 0m);
+
+		using (ApplicationDbContext context = _contextFactory.CreateDbContext())
+		{
+			context.AddRange(wantedAccount, wantedCard, otherAccount, otherCard, wanted, wrongCard, wrongLocation);
+			context.Transactions.AddRange(
+				TransactionEntityGenerator.Generate(wanted.Id, wantedAccount.Id, wantedCard.Id),
+				TransactionEntityGenerator.Generate(wrongCard.Id, otherAccount.Id, otherCard.Id),
+				TransactionEntityGenerator.Generate(wrongLocation.Id, wantedAccount.Id, wantedCard.Id));
+			await context.SaveChangesAsync();
+		}
+
+		ReceiptRepository repository = new(_contextFactory);
+
+		// Act
+		List<ReceiptListItem> result = await repository.GetListAsync(
+			0, 1, SortParams.Default, wantedAccount.Id, wantedCard.Id, null, "Target", CancellationToken.None);
+
+		// Assert
+		result.Should().ContainSingle();
+		result[0].Id.Should().Be(wanted.Id);
+
+		_contextFactory.ResetDatabase();
+	}
+
+	private static ReceiptEntity CreateReceipt(string location, decimal taxAmount)
+	{
+		ReceiptEntity receipt = ReceiptEntityGenerator.Generate();
+		receipt.Location = location;
+		receipt.TaxAmount = taxAmount;
+		return receipt;
+	}
+
+	private static ReceiptItemEntity CreateItem(Guid receiptId, decimal totalAmount)
+	{
+		ReceiptItemEntity item = ReceiptItemEntityGenerator.Generate(receiptId);
+		item.TotalAmount = totalAmount;
+		return item;
+	}
+
+	[Fact]
 	public async Task CreateAsync_ValidReceipts_ReturnsCreatedReceipts()
 	{
 		// Arrange
