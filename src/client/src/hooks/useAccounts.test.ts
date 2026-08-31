@@ -71,6 +71,32 @@ describe("useAccounts", () => {
     });
   });
 
+  it("list query trims q and sends it to the API", async () => {
+    (client.GET as Mock).mockResolvedValue({ data: { data: [], total: 0, offset: 0, limit: 50 } });
+    const { result } = renderHook(
+      () => useAccounts(0, 50, null, null, null, { q: "  chase  " }),
+      { wrapper: createWrapper() },
+    );
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(client.GET).toHaveBeenCalledWith("/api/accounts", {
+      params: { query: { offset: 0, limit: 50, q: "chase" } },
+    });
+  });
+
+  it("includes q in the cache key so different searches make different requests", async () => {
+    (client.GET as Mock).mockResolvedValue({ data: { data: [], total: 0, offset: 0, limit: 50 } });
+    const { result, rerender } = renderHook(
+      ({ q }) => useAccounts(0, 50, null, null, null, { q }),
+      { initialProps: { q: "chase" }, wrapper: createWrapper() },
+    );
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    rerender({ q: "amex" });
+    await waitFor(() => expect(client.GET).toHaveBeenCalledTimes(2));
+    expect(client.GET).toHaveBeenLastCalledWith("/api/accounts", {
+      params: { query: { offset: 0, limit: 50, q: "amex" } },
+    });
+  });
+
   it("list query throws when API returns error", async () => {
     (client.GET as Mock).mockResolvedValue({ data: undefined, error: { message: "boom" } });
 

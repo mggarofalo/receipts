@@ -83,6 +83,23 @@ describe("useCategories", () => {
     });
   });
 
+  it("list query trims q, sends it to the API, and refetches for a new q", async () => {
+    (client.GET as Mock).mockResolvedValue({ data: { data: [], total: 0, offset: 0, limit: 50 } });
+    const { result, rerender } = renderHook(
+      ({ q }) => useCategories(0, 50, null, null, null, { q }),
+      { initialProps: { q: "  food  " }, wrapper: createWrapper() },
+    );
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(client.GET).toHaveBeenLastCalledWith("/api/categories", {
+      params: { query: { offset: 0, limit: 50, q: "food" } },
+    });
+    rerender({ q: "travel" });
+    await waitFor(() => expect(client.GET).toHaveBeenCalledTimes(2));
+    expect(client.GET).toHaveBeenLastCalledWith("/api/categories", {
+      params: { query: { offset: 0, limit: 50, q: "travel" } },
+    });
+  });
+
   it("useAllCategories returns the full list when it fits in one page", async () => {
     const categories = [
       { id: "1", name: "Apparel" },

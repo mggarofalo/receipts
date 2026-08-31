@@ -19,8 +19,8 @@ import { useReceiptItems } from "@/hooks/useReceiptItems";
 import { useUsers } from "@/hooks/useUsers";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 
-/** Effectively "all" for small reference datasets; capped for large ones. */
-const SMALL_LIMIT = 1000;
+/** API list endpoints reject any page larger than 500. */
+const SMALL_LIMIT = 500;
 const LARGE_LIMIT = 200;
 
 export interface EntityResultItem {
@@ -59,9 +59,11 @@ function tokens(...parts: Array<string | null | undefined>): string {
 
 export function useEntityResults({
   isAdmin,
+  open,
   query = "",
 }: {
   isAdmin: boolean;
+  open: boolean;
   /**
    * Current palette input. When non-empty, the debounced value is sent to the
    * backend `q=` filter on receipts and receipt items so matches against
@@ -70,17 +72,21 @@ export function useEntityResults({
   query?: string;
 }): EntityResultGroup[] {
   const debouncedQuery = useDebouncedValue(query, 200);
+  const rawSearch = query.trim() || undefined;
   const entitySearch = debouncedQuery.trim() || undefined;
-  // Nothing renders until the user types (CommandPalette only shows entity
-  // groups once `query` is non-empty), so mounting these on palette open
-  // would fire 7-8 list queries the UI never displays. Gate on the raw
-  // (non-debounced) input so the fetch starts on the very first keystroke
-  // rather than waiting out the debounce window.
-  const hasQuery = query.trim().length > 0;
-  const accounts = useAccounts(0, SMALL_LIMIT, undefined, undefined, undefined, { enabled: hasQuery });
-  const cards = useCards(0, SMALL_LIMIT, undefined, undefined, undefined, { enabled: hasQuery });
-  const categories = useCategories(0, SMALL_LIMIT, undefined, undefined, undefined, { enabled: hasQuery });
-  const subcategories = useSubcategories(0, SMALL_LIMIT, undefined, undefined, undefined, { enabled: hasQuery });
+  // Wait for the debounced value before enabling. Enabling from the raw input
+  // would issue an unfiltered 500-row request on the first keystroke and then
+  // immediately replace it with the real server search.
+  const hasQuery =
+    open && rawSearch !== undefined && rawSearch === entitySearch;
+  const referenceOptions = { enabled: hasQuery, q: entitySearch };
+  const accounts = useAccounts(0, SMALL_LIMIT, undefined, undefined, undefined, referenceOptions);
+  const cards = useCards(0, SMALL_LIMIT, undefined, undefined, undefined, referenceOptions);
+  const categories = useCategories(0, SMALL_LIMIT, undefined, undefined, undefined, referenceOptions);
+  const subcategories = useSubcategories(0, SMALL_LIMIT, undefined, undefined, undefined, referenceOptions);
+  // Item templates and admin users do not yet expose the same reference-list
+  // search contract. Keep their single page within the API ceiling; cmdk can
+  // only filter the returned page until those endpoints gain server search.
   const itemTemplates = useItemTemplates(0, SMALL_LIMIT, undefined, undefined, { enabled: hasQuery });
   const receipts = useReceipts(0, LARGE_LIMIT, null, null, null, null, entitySearch, { enabled: hasQuery });
   const receiptItems = useReceiptItems(0, LARGE_LIMIT, null, null, entitySearch, { enabled: hasQuery });

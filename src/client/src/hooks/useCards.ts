@@ -8,14 +8,15 @@ import type { components } from "@/generated/api";
 
 // Note: Cards are hard-delete entities (no soft-delete/restore).
 
-export function useCards(offset = 0, limit = 50, sortBy?: string | null, sortDirection?: string | null, isActive?: boolean | null, options: { enabled?: boolean } = {}) {
-  const { enabled = true } = options;
+export function useCards(offset = 0, limit = 50, sortBy?: string | null, sortDirection?: string | null, isActive?: boolean | null, options: { enabled?: boolean; q?: string } = {}) {
+  const { enabled = true, q } = options;
+  const search = q?.trim() || undefined;
   const query = useQuery({
-    queryKey: ["cards", "list", offset, limit, sortBy, sortDirection, isActive],
+    queryKey: ["cards", "list", offset, limit, sortBy, sortDirection, isActive, search],
     enabled,
     queryFn: async () => {
       const { data, error } = await client.GET("/api/cards", {
-        params: { query: { offset, limit, sortBy: sortBy ?? undefined, sortDirection: (sortDirection ?? undefined) as "asc" | "desc" | undefined, isActive: isActive ?? undefined } },
+        params: { query: { offset, limit, sortBy: sortBy ?? undefined, sortDirection: (sortDirection ?? undefined) as "asc" | "desc" | undefined, isActive: isActive ?? undefined, q: search } },
       });
       if (error) throw error;
       return data;

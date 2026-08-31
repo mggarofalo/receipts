@@ -1,4 +1,10 @@
-import { Fragment, useCallback, useContext, useMemo, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+} from "react";
 import { useLocation, useNavigate } from "react-router";
 import { ChevronDown, Star } from "lucide-react";
 import { toast } from "sonner";
@@ -119,7 +125,17 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     usePurgeTrash();
 
   const admin = isAdmin();
-  const close = useCallback(() => onOpenChange(false), [onOpenChange]);
+  const handleOpenChange = useCallback(
+    (nextOpen: boolean) => {
+      if (!nextOpen) {
+        setQuery("");
+        setExpandedGroups(new Set());
+      }
+      onOpenChange(nextOpen);
+    },
+    [onOpenChange],
+  );
+  const close = useCallback(() => handleOpenChange(false), [handleOpenChange]);
   const openShortcutsHelp = useCallback(
     () => shortcutsCtx?.setHelpOpen(true),
     [shortcutsCtx],
@@ -152,13 +168,13 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     try {
       await purgeTrashMutateAsync();
       setConfirmingEmptyTrash(false);
-      onOpenChange(false);
+      handleOpenChange(false);
     } catch {
       // Purge failed — keep the palette open so the user can retry. The
       // error toast is surfaced by usePurgeTrash.onError.
       setConfirmingEmptyTrash(false);
     }
-  }, [purgeTrashMutateAsync, onOpenChange]);
+  }, [purgeTrashMutateAsync, handleOpenChange]);
 
   const ctx = useMemo<CommandContext>(
     () => ({
@@ -218,7 +234,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     [recentIds, pinnedSet, visibleCommands],
   );
 
-  const entityGroups = useEntityResults({ isAdmin: admin, query });
+  const entityGroups = useEntityResults({ isAdmin: admin, open, query });
 
   const showEntities = query.trim().length > 0;
   const showTopSections = !showEntities;
@@ -296,7 +312,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 
   return (
     <>
-    <CommandDialog open={open} onOpenChange={onOpenChange}>
+    <CommandDialog open={open} onOpenChange={handleOpenChange}>
       <CommandInput
         placeholder="Type a command or search…"
         value={query}
