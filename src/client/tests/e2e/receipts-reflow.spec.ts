@@ -41,6 +41,7 @@ type CellGeometry = {
   width: number;
 };
 type TableGeometry = {
+  card: { left: number; right: number; width: number };
   table: { left: number; right: number; width: number };
   header: CellGeometry[];
   rows: CellGeometry[][];
@@ -107,10 +108,14 @@ async function geometry(page: Page): Promise<TableGeometry> {
         .map(cellRect)
         .filter((cell) => cell.width > 0.5);
     const tableBox = table.getBoundingClientRect();
+    const cardBox = table
+      .closest(".receipts-table-card")!
+      .getBoundingClientRect();
     const normalRows = Array.from(table.tBodies[0]?.rows ?? []).filter(
       (row) => !row.classList.contains("receipt-detail-row"),
     );
     return {
+      card: { left: cardBox.left, right: cardBox.right, width: cardBox.width },
       table: {
         left: tableBox.left,
         right: tableBox.right,
@@ -123,6 +128,23 @@ async function geometry(page: Page): Promise<TableGeometry> {
       rows: normalRows.map(visibleCells),
     };
   });
+}
+
+function expectTableFillsCard(value: TableGeometry, label: string) {
+  // The card's one-pixel border may put its content edge one pixel inside its
+  // outer bounding box; no responsive branch may leave a larger empty gutter.
+  expect(
+    Math.abs(value.table.left - value.card.left),
+    `${label}: table left edge does not fill card`,
+  ).toBeLessThanOrEqual(1.5);
+  expect(
+    Math.abs(value.table.right - value.card.right),
+    `${label}: table right edge does not fill card`,
+  ).toBeLessThanOrEqual(1.5);
+  expect(
+    Math.abs(value.table.width - value.card.width),
+    `${label}: table width does not fill card`,
+  ).toBeLessThanOrEqual(2);
 }
 
 function expectCellsDoNotOverlap(cells: CellGeometry[], label: string) {
@@ -223,6 +245,7 @@ for (const responsiveCase of responsiveCases) {
       responsiveCase.cardWidth,
     );
     const before = await geometry(page);
+    expectTableFillsCard(before, "before expansion");
     expect(before.header).toHaveLength(responsiveCase.visibleHeaders);
     if (before.header.length > 0) {
       const corners = await page
@@ -249,7 +272,37 @@ for (const responsiveCase of responsiveCases) {
 
     await page.getByRole("row", { name: /Wegmans Food Markets/ }).click();
     await expect(page.getByText("Receipt breakdown")).toBeVisible();
-    expectStable(await geometry(page), before);
+    const after = await geometry(page);
+    expectTableFillsCard(after, "after expansion");
+    expectStable(after, before);
+  });
+}
+
+for (const mode of [
+  { name: "desktop table", viewportWidth: 1600, cardWidth: 1100 },
+  { name: "mobile grid", viewportWidth: 600, cardWidth: 560 },
+] as const) {
+  test(`the final receipt row has no dashed bottom divider in ${mode.name} mode`, async ({
+    page,
+  }) => {
+    await gotoReceipts(page, mode.viewportWidth, mode.cardWidth);
+    const borders = await page
+      .locator("table.receipts-table")
+      .evaluate((table) => {
+        const rows = Array.from(table.tBodies[0].rows).filter(
+          (row) => !row.classList.contains("receipt-detail-row"),
+        );
+        const last = rows.at(-1)!;
+        return {
+          row: getComputedStyle(last).borderBottomWidth,
+          cells: Array.from(last.cells).map(
+            (cell) => getComputedStyle(cell).borderBottomWidth,
+          ),
+        };
+      });
+
+    expect(borders.row).toBe("0px");
+    expect(borders.cells).toEqual(borders.cells.map(() => "0px"));
   });
 }
 
