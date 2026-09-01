@@ -942,6 +942,9 @@ body {
   white-space: normal;
   overflow: visible;
 }
+.receipts-table tbody tr:last-child > td {
+  border-bottom: 0;
+}
 .receipts-table {
   table-layout: fixed;
 }
@@ -1095,6 +1098,7 @@ body {
 }
 @container (max-width: 1200px) {
   .receipts-table col.receipt-col-contents {
+    width: 0;
     visibility: collapse;
   }
   .receipt-inline-summary {
@@ -1104,6 +1108,7 @@ body {
 
 @container (max-width: 900px) {
   .receipts-table col.receipt-col-secondary {
+    width: 0;
     visibility: collapse;
   }
   .receipt-inline-summary {
@@ -1905,6 +1910,9 @@ body {
   }
   .receipts-table tr {
     grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+  .receipts-table tbody tr:last-child {
+    border-bottom: 0;
   }
   .receipts-table .receipt-select {
     grid-column: 1;

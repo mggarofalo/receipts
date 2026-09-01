@@ -63,13 +63,13 @@ describe("receipt table action visibility", () => {
     )?.[1];
 
     expect(contentsRule).toMatch(
-      /\.receipts-table col\.receipt-col-contents\s*\{[^}]*visibility\s*:\s*collapse\s*;/,
+      /\.receipts-table col\.receipt-col-contents\s*\{[^}]*width\s*:\s*0\s*;[^}]*visibility\s*:\s*collapse\s*;/,
     );
     expect(contentsRule).not.toMatch(
       /\.receipts-table \.receipt-col-contents\s*\{[^}]*display\s*:\s*none/,
     );
     expect(secondaryRule).toMatch(
-      /\.receipts-table col\.receipt-col-secondary\s*\{[^}]*visibility\s*:\s*collapse\s*;/,
+      /\.receipts-table col\.receipt-col-secondary\s*\{[^}]*width\s*:\s*0\s*;[^}]*visibility\s*:\s*collapse\s*;/,
     );
     expect(secondaryRule).not.toMatch(
       /\.receipts-table \.receipt-col-secondary\s*\{[^}]*display\s*:\s*none/,
@@ -88,6 +88,15 @@ describe("receipt table action visibility", () => {
     );
     expect(css).toMatch(
       /\.receipts-table thead th:last-child\s*\{[^}]*border-top-right-radius\s*:\s*var\(--radius\)\s*;/s,
+    );
+  });
+
+  it("removes the final receipt divider in table and mobile-grid layouts", () => {
+    expect(css).toMatch(
+      /\.receipts-table tbody tr:last-child > td\s*\{[^}]*border-bottom\s*:\s*0\s*;/s,
+    );
+    expect(css).toMatch(
+      /@media\s*\(max-width:\s*640px\)[\s\S]*?\.receipts-table tbody tr:last-child\s*\{[^}]*border-bottom\s*:\s*0\s*;/,
     );
   });
 
