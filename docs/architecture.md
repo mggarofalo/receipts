@@ -86,6 +86,20 @@ PostgreSQL with EF Core + pgvector extension. Connection configured via environm
 
 Migrations run automatically on API startup via `IDatabaseMigratorService`.
 
+### Transaction and audit ownership
+
+All synchronous and asynchronous `ApplicationDbContext.SaveChanges` overloads use the same persistence policy. Automatic audit rows are prepared using the tracked entities' assigned IDs, then saved with business changes in one base EF save. Temporary database-generated keys on audited entities are unsupported and fail before writing. Description reconciliation participates in the same transaction. PostgreSQL is the production guarantee; the InMemory test provider cannot establish transactional atomicity.
+
+Without an existing transaction, the context owns and commits a transaction around the entire save. Within a caller-owned transaction, it uses a savepoint and leaves commit/rollback ownership with the caller. Unsupported ambient/enlisted transactions and caller transactions without savepoints fail before writing. Existing role, merge, import, and balance operations retain their transaction boundaries. Retrying execution strategies must coordinate the whole transaction explicitly; the application does not enable automatic retries for this pipeline.
+
+The tracker accepts changes only after the entire save succeeds. `acceptAllChangesOnSuccess: false` leaves caller-owned changes pending; internal automatic audit entries are detached so they cannot leak into later saves. Failure also detaches only the automatic audit rows from that attempt. Caller-added semantic audits and business entries remain owned by the caller. The return count excludes automatic audit rows, preserving the prior business-save count.
+
+A failure before commit rolls back business changes, mandatory audits, and description reconciliation together. Cancellation during rollback does not reuse the cancelled request token. A lost connection or cancellation during COMMIT can have an unknown outcome: reconcile persisted state before retrying; this is not an exactly-once delivery guarantee. If rollback itself fails, discard the context and transaction.
+
+Description-change notifications are wake-up hints. An owned transaction emits its hint after commit. A caller-owned transaction may emit a hint after a successful savepoint while its outer transaction is still pending; the resolver's periodic scan remains the recovery mechanism after delayed commit or rollback.
+
+The boundary follows [EF Core transaction and savepoint behavior](https://learn.microsoft.com/en-us/ef/core/saving/transactions).
+
 ### Vector Similarity Search
 
 The system uses pgvector for semantic similarity search on item names and descriptions. Embeddings are generated locally via ONNX Runtime using the `bge-large-en-v1.5` model (1024-dimensional vectors, CLS pooling). No external API keys are required.
