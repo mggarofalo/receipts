@@ -1,14 +1,12 @@
-import { useMemo, useRef, useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { useRef, useEffect } from "react";
+import { useForm, useController } from "react-hook-form";
 import { z } from "zod/v4";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useFormShortcuts } from "@/hooks/useFormShortcuts";
-import { useAllAccounts } from "@/hooks/useAccounts";
-import { useAllCards } from "@/hooks/useCards";
-import { accountToOption, cardToOption } from "@/lib/combobox-options";
+import { AccountCardSelector } from "@/components/AccountCardSelector";
+import { useAccountCardSelection } from "@/hooks/useAccountCardSelection";
 import { Button } from "@/components/ui/button";
 import { DateInput } from "@/components/ui/date-input";
-import { Combobox } from "@/components/ui/combobox";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import {
   Form,
@@ -20,27 +18,14 @@ import {
 } from "@/components/ui/form";
 import { Spinner } from "@/components/ui/spinner";
 
-const baseTransactionSchema = z.object({
+const transactionSchema = z.object({
+  cardId: z.string().min(1, "Card is required"),
   accountId: z.string().min(1, "Account is required"),
   amount: z.number().refine((v) => v !== 0, "Amount is required"),
   date: z.string().min(1, "Date is required"),
 });
 
-const createTransactionSchema = baseTransactionSchema.extend({
-  cardId: z.string().min(1, "Card is required"),
-});
-
-// Edit mode keeps cardId string-typed but skips the min(1) check so legacy
-// transactions with cardId = null can still be edited (amount, date, account)
-// without forcing the user to assign a card first. RECEIPTS-574 will tighten
-// this once all rows are backfilled.
-const editTransactionSchema = baseTransactionSchema.extend({
-  cardId: z.string(),
-});
-
-export type ReceiptTransactionFormValues = z.output<
-  typeof createTransactionSchema
->;
+export type ReceiptTransactionFormValues = z.output<typeof transactionSchema>;
 
 interface ReceiptTransactionFormProps {
   mode: "create" | "edit";
@@ -62,29 +47,9 @@ export function ReceiptTransactionForm({
   const formRef = useRef<HTMLFormElement>(null);
   useFormShortcuts({ formRef });
 
-  const { data: accounts, isLoading: accountsLoading } = useAllAccounts(true);
-  const { data: cards, isLoading: cardsLoading } = useAllCards(true);
-
-  const accountOptions = useMemo(
-    () => (accounts ?? []).map(accountToOption),
-    [accounts],
-  );
-
-  const cardOptions = useMemo(
-    () => (cards ?? []).map(cardToOption),
-    [cards],
-  );
-
-  const cardById = useMemo(() => {
-    const map = new Map<string, { id: string; accountId?: string | null }>();
-    for (const c of cards ?? []) map.set(c.id, c);
-    return map;
-  }, [cards]);
-
-  const schema = mode === "create" ? createTransactionSchema : editTransactionSchema;
   const form = useForm<ReceiptTransactionFormValues>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    resolver: zodResolver(schema) as any,
+    resolver: zodResolver(transactionSchema) as any,
     defaultValues: {
       cardId: "",
       accountId: "",
@@ -103,72 +68,54 @@ export function ReceiptTransactionForm({
       form.clearErrors();
       return;
     }
-    (Object.entries(serverErrors) as [keyof ReceiptTransactionFormValues, string][]).forEach(
-      ([field, message]) => {
-        form.setError(field, { type: "server", message });
-      },
-    );
+    (
+      Object.entries(serverErrors) as [
+        keyof ReceiptTransactionFormValues,
+        string,
+      ][]
+    ).forEach(([field, message]) => {
+      form.setError(field, { type: "server", message });
+    });
   }, [serverErrors, form]);
 
-  function handleCardChange(value: string) {
-    form.setValue("cardId", value, { shouldValidate: true });
-    const card = cardById.get(value);
-    if (card?.accountId) {
-      form.setValue("accountId", card.accountId, { shouldValidate: true });
+  const account = useController({ control: form.control, name: "accountId" });
+  const card = useController({ control: form.control, name: "cardId" });
+  const selection = useAccountCardSelection({ accountId: account.field.value, cardId: card.field.value });
+
+  function submit(values: ReceiptTransactionFormValues) {
+    const message = selection.validate(values);
+    if (message) {
+      form.setError("cardId", { type: "validate", message });
+      return;
     }
+    onSubmit(values);
   }
+
 
   return (
     <Form {...form}>
       <form
         ref={formRef}
-        onSubmit={form.handleSubmit(onSubmit)}
+        onSubmit={form.handleSubmit(submit)}
         className="space-y-4"
       >
-        <FormField
-          control={form.control}
-          name="cardId"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel required>Card</FormLabel>
-              <FormControl>
-                <Combobox
-                  options={cardOptions}
-                  value={field.value}
-                  onValueChange={handleCardChange}
-                  placeholder="Select a card..."
-                  searchPlaceholder="Search cards..."
-                  emptyMessage="No cards found."
-                  loading={cardsLoading}
-                  aria-required="true"
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="accountId"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel required>Account</FormLabel>
-              <FormControl>
-                <Combobox
-                  options={accountOptions}
-                  value={field.value}
-                  onValueChange={field.onChange}
-                  placeholder="Select an account..."
-                  searchPlaceholder="Search accounts..."
-                  emptyMessage="No accounts found."
-                  loading={accountsLoading}
-                  aria-required="true"
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
+        <AccountCardSelector
+          selection={selection}
+          onChange={(value) => {
+            account.field.onChange(value.accountId);
+            card.field.onChange(value.cardId);
+            form.clearErrors("cardId");
+          }}
+          accountInput={{
+            ref: account.field.ref,
+            onBlur: account.field.onBlur,
+            error: account.fieldState.error?.message,
+          }}
+          cardInput={{
+            ref: card.field.ref,
+            onBlur: card.field.onBlur,
+            error: card.fieldState.error?.message,
+          }}
         />
 
         <FormField

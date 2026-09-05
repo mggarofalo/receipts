@@ -1,6 +1,6 @@
 import { screen, act, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { renderWithProviders } from "@/test/test-utils";
+import { renderWithQueryClient } from "@/test/test-utils";
 import { mockQueryResult } from "@/test/mock-hooks";
 import "@/test/setup-combobox-polyfills";
 import { TransactionsSection } from "./TransactionsSection";
@@ -21,6 +21,14 @@ vi.mock("@/hooks/useAccounts", () => ({
       isSuccess: true,
     }),
   ),
+  useAccountCards: vi.fn((accountId: string | null) => ({
+    data: [
+      { id: "card-1", name: "Visa 4321", cardCode: "V4321", isActive: true, accountId: "acct-1" },
+      { id: "card-2", name: "Amex 7777", cardCode: "A7777", isActive: true, accountId: "acct-2" },
+    ].filter(card => card.accountId === accountId),
+    isLoading: false,
+    isError: false,
+  })),
 }));
 
 vi.mock("@/hooks/useCards", () => ({
@@ -49,18 +57,18 @@ describe("TransactionsSection", () => {
   });
 
   it("renders the card title", () => {
-    renderWithProviders(<TransactionsSection {...defaultProps} />);
+    renderWithQueryClient(<TransactionsSection {...defaultProps} />);
     expect(screen.getByText("Transactions")).toBeInTheDocument();
   });
 
   it("renders the form fields", () => {
-    renderWithProviders(<TransactionsSection {...defaultProps} />);
+    renderWithQueryClient(<TransactionsSection {...defaultProps} />);
     expect(screen.getByLabelText(/amount/i)).toBeInTheDocument();
     expect(screen.getByText(/^date$/i)).toBeInTheDocument();
   });
 
   it("renders Add button", () => {
-    renderWithProviders(<TransactionsSection {...defaultProps} />);
+    renderWithQueryClient(<TransactionsSection {...defaultProps} />);
     expect(
       screen.getByRole("button", { name: /add/i }),
     ).toBeInTheDocument();
@@ -68,7 +76,7 @@ describe("TransactionsSection", () => {
 
   it("shows draft validation only after an Add attempt", async () => {
     const user = userEvent.setup();
-    renderWithProviders(<TransactionsSection {...defaultProps} />);
+    renderWithQueryClient(<TransactionsSection {...defaultProps} />);
 
     const amountInput = screen.getByLabelText(/amount/i);
     await user.click(amountInput);
@@ -86,7 +94,7 @@ describe("TransactionsSection", () => {
 
   it("keeps draft validation visible while focus moves within the Transactions card", async () => {
     const user = userEvent.setup();
-    renderWithProviders(<TransactionsSection {...defaultProps} />);
+    renderWithQueryClient(<TransactionsSection {...defaultProps} />);
 
     await user.click(screen.getByRole("button", { name: /add/i }));
     expect(await screen.findByText("Amount is required")).toBeInTheDocument();
@@ -99,7 +107,7 @@ describe("TransactionsSection", () => {
 
   it("clears draft validation when focus leaves the Transactions card without clearing values", async () => {
     const user = userEvent.setup();
-    renderWithProviders(
+    renderWithQueryClient(
       <>
         <TransactionsSection {...defaultProps} />
         <button type="button">Outside transactions</button>
@@ -121,7 +129,7 @@ describe("TransactionsSection", () => {
 
   it("keeps validation dormant after leaving until Add is attempted again", async () => {
     const user = userEvent.setup();
-    renderWithProviders(
+    renderWithQueryClient(
       <>
         <TransactionsSection {...defaultProps} />
         <button type="button">Outside transactions</button>
@@ -155,13 +163,17 @@ describe("TransactionsSection", () => {
     "treats the portaled %s combobox editor as part of the Transactions focus boundary",
     async (fieldName, searchPlaceholder) => {
       const user = userEvent.setup();
-      renderWithProviders(
+      renderWithQueryClient(
         <>
           <TransactionsSection {...defaultProps} />
           <button type="button">Outside transactions</button>
         </>,
       );
 
+      if (fieldName === "Card") {
+        await user.click(screen.getByRole("combobox", { name: /^Account/ }));
+        await user.click(await screen.findByText("Checking"));
+      }
       await user.click(screen.getByRole("button", { name: /add/i }));
       expect(await screen.findByText("Amount is required")).toBeInTheDocument();
 
@@ -181,7 +193,7 @@ describe("TransactionsSection", () => {
   );
 
   it("displays running total", () => {
-    renderWithProviders(<TransactionsSection {...defaultProps} />);
+    renderWithQueryClient(<TransactionsSection {...defaultProps} />);
     expect(screen.getByText("Total: $0.00")).toBeInTheDocument();
   });
 
@@ -189,7 +201,7 @@ describe("TransactionsSection", () => {
     const transactions = [
       { id: "1", cardId: "card-1", accountId: "acct-1", amount: 25.5, date: "2024-01-15" },
     ];
-    renderWithProviders(
+    renderWithQueryClient(
       <TransactionsSection {...defaultProps} transactions={transactions} />,
     );
     expect(screen.getByText("$25.50")).toBeInTheDocument();
@@ -197,16 +209,16 @@ describe("TransactionsSection", () => {
     expect(screen.getByText("Visa 4321")).toBeInTheDocument();
   });
 
-  it("calls onChange when a transaction is added via form submit; card selection auto-fills account", async () => {
+  it("calls onChange when an account and its card are selected before submitting", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
-    renderWithProviders(
+    renderWithQueryClient(
       <TransactionsSection {...defaultProps} onChange={onChange} />,
     );
 
-    // Select card via combobox (first combobox is Card)
-    const [cardCombobox] = screen.getAllByRole("combobox");
-    await user.click(cardCombobox);
+    await user.click(screen.getByRole("combobox", { name: /^Account/ }));
+    await user.click(await screen.findByText("Checking"));
+    await user.click(screen.getByRole("combobox", { name: /^Card/ }));
     const cardOption = await screen.findByText("Visa 4321");
     await user.click(cardOption);
 
@@ -236,7 +248,7 @@ describe("TransactionsSection", () => {
     const transactions = [
       { id: "1", cardId: "card-1", accountId: "acct-1", amount: 25.5, date: "2024-01-15" },
     ];
-    renderWithProviders(
+    renderWithQueryClient(
       <TransactionsSection
         {...defaultProps}
         transactions={transactions}
@@ -249,7 +261,7 @@ describe("TransactionsSection", () => {
   });
 
   it("syncs transaction date when defaultDate changes and date field is empty", async () => {
-    const { rerender } = renderWithProviders(
+    const { rerender } = renderWithQueryClient(
       <TransactionsSection {...defaultProps} defaultDate="" />,
     );
     // The date input should be empty initially
@@ -266,7 +278,7 @@ describe("TransactionsSection", () => {
   });
 
   it("syncs transaction date when defaultDate changes and date matches previous default", async () => {
-    const { rerender } = renderWithProviders(
+    const { rerender } = renderWithQueryClient(
       <TransactionsSection {...defaultProps} defaultDate="2024-01-15" />,
     );
     const dateInput = screen.getByPlaceholderText("MM/DD/YYYY");
@@ -286,7 +298,7 @@ describe("TransactionsSection", () => {
       { id: "1", cardId: "card-1", accountId: "acct-1", amount: 25.5, date: "2024-01-15" },
       { id: "2", cardId: "card-2", accountId: "acct-2", amount: 10.0, date: "2024-01-15" },
     ];
-    renderWithProviders(
+    renderWithQueryClient(
       <TransactionsSection {...defaultProps} transactions={transactions} />,
     );
     expect(screen.getByText("Total: $35.50")).toBeInTheDocument();

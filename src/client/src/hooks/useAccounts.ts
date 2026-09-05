@@ -93,8 +93,9 @@ export function useAccountCards(accountId: string | null) {
       isLoading: query.isLoading,
       isError: query.isError,
       error: query.error,
+      refetch: query.refetch,
     }),
-    [query.data, query.isLoading, query.isError, query.error],
+    [query.data, query.isLoading, query.isError, query.error, query.refetch],
   );
 }
 
