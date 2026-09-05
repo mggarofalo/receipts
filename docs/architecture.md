@@ -160,6 +160,14 @@ public partial class ReceiptMapper
 }
 ```
 
+**Receipt update ownership:**
+
+`ReceiptRepository.UpdateAsync` and `ReceiptItemRepository.UpdateAsync` assign an explicit set of editable fields to tracked rows. A domain-to-entity mapping is not a complete replacement for a stored row: image paths, normalization metadata, parent identity, and deletion metadata have separate owners. Adding a persistence field must not silently make it writable through an ordinary edit.
+
+Receipt edits own location, date, and tax amount/currency. `UpdateImagePathsAsync` owns the original and processed image paths. Item edits own the item code, raw description, quantity, prices/currencies, category, and subcategory; each item retains its stored `ReceiptId`, including batches spanning multiple receipts. Categories and subcategories remain historical string snapshots.
+
+An item edit with an identical raw description preserves both `NormalizedDescriptionId` and `NormalizedDescriptionMatchScore`, including curated links and null scores. Any ordinal text change, including case or whitespace, clears both fields in the same item update. The existing background resolver can then classify the new description; while unavailable, the item remains unresolved. A null score does not identify manual curation, so it is not used to infer provenance. Explicit normalization operations retain ownership of assigning and changing canonical links.
+
 **Ignoring Navigation Properties:**
 ```csharp
 [MapperIgnoreTarget(nameof(ReceiptItemEntity.Receipt))]
