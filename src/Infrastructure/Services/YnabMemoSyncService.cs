@@ -11,6 +11,7 @@ namespace Infrastructure.Services;
 public class YnabMemoSyncService(
 	IYnabApiClient ynabClient,
 	IYnabBudgetSelectionService budgetSelectionService,
+	IYnabAccountMappingService accountMappingService,
 	IYnabSyncRecordService syncRecordService,
 	ITransactionRepository transactionRepository,
 	IReceiptRepository receiptRepository,
@@ -22,64 +23,198 @@ public class YnabMemoSyncService(
 	internal const double FuzzyMatchThreshold = 0.3;
 	internal const string ReconciledClearedStatus = "reconciled";
 
-	public async Task<List<YnabMemoSyncResult>> SyncMemosByReceiptAsync(Guid receiptId, CancellationToken cancellationToken)
+	public Task<List<YnabMemoSyncResult>> SyncMemosByReceiptAsync(Guid receiptId, CancellationToken cancellationToken)
+		=> SyncOperationAsync([receiptId], cancellationToken);
+
+	public Task<List<YnabMemoSyncResult>> SyncMemosBulkAsync(List<Guid> receiptIds, CancellationToken cancellationToken)
+		=> SyncOperationAsync(receiptIds, cancellationToken);
+
+	private sealed record MemoWork(TransactionEntity Transaction, ReceiptEntity Receipt,
+		YnabSyncRecordDto? MemoRecord, YnabSyncRecordDto? PushRecord);
+
+	private sealed record MemoPlan(MemoWork Work, YnabMemoSyncResult Result, YnabTransaction? AutomaticCandidate = null);
+
+	private async Task<List<YnabMemoSyncResult>> SyncOperationAsync(List<Guid> receiptIds, CancellationToken cancellationToken)
 	{
-		string? budgetId = await budgetSelectionService.GetSelectedBudgetIdAsync(cancellationToken);
-		if (string.IsNullOrEmpty(budgetId))
-		{
-			return [new YnabMemoSyncResult(Guid.Empty, receiptId, YnabMemoSyncOutcome.Failed, null, "No YNAB budget selected.", null)];
-		}
-
-		ReceiptEntity? receipt = await receiptRepository.GetByIdAsync(receiptId, cancellationToken);
-		if (receipt is null)
-		{
-			return [new YnabMemoSyncResult(Guid.Empty, receiptId, YnabMemoSyncOutcome.Failed, null, "Receipt not found.", null)];
-		}
-
-		List<TransactionEntity> transactions = await transactionRepository.GetWithAccountByReceiptIdAsync(receiptId, cancellationToken);
-		if (transactions.Count == 0)
+		List<Guid> uniqueReceiptIds = receiptIds.Distinct().ToList();
+		if (uniqueReceiptIds.Count == 0)
 		{
 			return [];
 		}
 
-		// Pre-fetch YNAB transactions once per unique date to avoid duplicate API calls
-		// when multiple local transactions share the same date (RECEIPTS-527).
-		Dictionary<DateOnly, (List<YnabTransaction>? Transactions, string? Error)> ynabTransactionsByDate = [];
-		foreach (IGrouping<DateOnly, TransactionEntity> group in transactions.GroupBy(t => t.Date))
+		string? budgetId = await budgetSelectionService.GetSelectedBudgetIdAsync(cancellationToken);
+		if (string.IsNullOrEmpty(budgetId))
 		{
-			try
+			return uniqueReceiptIds.Select(id => new YnabMemoSyncResult(Guid.Empty, id,
+				YnabMemoSyncOutcome.Failed, null, "No YNAB budget selected.", null)).ToList();
+		}
+
+		// Capture account identity once for the entire operation, including bulk requests.
+		ILookup<Guid, YnabAccountMappingDto> mappings = (await accountMappingService.GetAllAsync(cancellationToken))
+			.Where(mapping => string.Equals(mapping.YnabBudgetId, budgetId, StringComparison.Ordinal))
+			.ToLookup(mapping => mapping.ReceiptsAccountId);
+		List<YnabMemoSyncResult> results = [];
+		List<MemoWork> work = [];
+		HashSet<Guid> localIds = [];
+		Dictionary<string, HashSet<Guid>> owners = new(StringComparer.Ordinal);
+		foreach (Guid receiptId in uniqueReceiptIds)
+		{
+			ReceiptEntity? receipt = await receiptRepository.GetByIdAsync(receiptId, cancellationToken);
+			if (receipt is null)
 			{
-				YnabTransactionsResult result = await ynabClient.GetTransactionsByDateAsync(budgetId, group.Key, cancellationToken: cancellationToken);
-				ynabTransactionsByDate[group.Key] = (result.Transactions, null);
-				// Do NOT persist ServerKnowledge from date-filtered fetches (RECEIPTS-523)
+				results.Add(new(Guid.Empty, receiptId, YnabMemoSyncOutcome.Failed, null, "Receipt not found.", null));
+				continue;
 			}
-			catch (Exception ex)
+
+			foreach (TransactionEntity transaction in await transactionRepository.GetWithAccountByReceiptIdAsync(receiptId, cancellationToken))
 			{
-				logger.LogError(ex, "Failed to fetch YNAB transactions for date {Date}", group.Key);
-				ynabTransactionsByDate[group.Key] = (null, ex.Message);
+				if (!localIds.Add(transaction.Id))
+				{
+					continue;
+				}
+
+				YnabSyncRecordDto? memo = await syncRecordService.GetByTransactionAndTypeAsync(transaction.Id, YnabSyncType.MemoUpdate, cancellationToken);
+				YnabSyncRecordDto? push = await syncRecordService.GetByTransactionAndTypeAsync(transaction.Id, YnabSyncType.TransactionPush, cancellationToken);
+				work.Add(new(transaction, receipt, memo, push));
+				// Preload even later AlreadySynced/Pending/Failed bindings before choosing any target.
+				foreach (YnabSyncRecordDto? record in new[] { memo, push })
+				{
+					if (record is not null && record.YnabBudgetId == budgetId && !string.IsNullOrWhiteSpace(record.YnabTransactionId))
+					{
+						Reserve(owners, record.YnabTransactionId, transaction.Id);
+					}
+				}
 			}
 		}
 
-		List<YnabMemoSyncResult> results = [];
-		foreach (TransactionEntity transaction in transactions)
+		Dictionary<DateOnly, (List<YnabTransaction>? Transactions, string? Error)> byDate = [];
+		foreach (DateOnly date in work.Select(item => item.Transaction.Date).Distinct())
 		{
-			YnabMemoSyncResult result = await SyncSingleTransactionAsync(transaction, receipt, budgetId, ynabTransactionsByDate, cancellationToken);
-			results.Add(result);
+			try
+			{
+				YnabTransactionsResult fetched = await ynabClient.GetTransactionsByDateAsync(budgetId, date, cancellationToken: cancellationToken);
+				byDate[date] = (fetched.Transactions, null);
+				// Date-filtered knowledge is not a complete budget snapshot (RECEIPTS-523).
+			}
+			catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+			{
+				throw;
+			}
+			catch (Exception ex)
+			{
+				logger.LogError(ex, "Failed to fetch YNAB transactions for date {Date}", date);
+				byDate[date] = (null, ex.Message);
+			}
+		}
+
+		List<MemoPlan> plans = work.Select(item => PlanMemo(item, budgetId, mappings, byDate, owners)).ToList();
+		// Reserve every confident choice before any outbound write. Equally competing choices
+		// remain unresolved; neither receipt order nor failure of an earlier PATCH breaks a tie.
+		foreach (MemoPlan plan in plans.Where(plan => plan.AutomaticCandidate is not null))
+		{
+			Reserve(owners, plan.AutomaticCandidate!.Id, plan.Work.Transaction.Id);
+		}
+
+		foreach (MemoPlan plan in plans)
+		{
+			cancellationToken.ThrowIfCancellationRequested();
+			if (plan.AutomaticCandidate is not { } candidate)
+			{
+				results.Add(plan.Result);
+			}
+			else if (owners[candidate.Id].Count > 1)
+			{
+				results.Add(Unresolved(plan.Work, [candidate], "Multiple local payments match this YNAB transaction. Confirm the intended payment."));
+			}
+			else
+			{
+				results.Add(await UpdateMemoAndTrackAsync(plan.Work.Transaction, plan.Work.Receipt, budgetId, candidate, cancellationToken));
+			}
 		}
 
 		return results;
 	}
 
-	public async Task<List<YnabMemoSyncResult>> SyncMemosBulkAsync(List<Guid> receiptIds, CancellationToken cancellationToken)
+	private static void Reserve(Dictionary<string, HashSet<Guid>> owners, string remoteId, Guid localId)
 	{
-		List<YnabMemoSyncResult> allResults = [];
-		foreach (Guid receiptId in receiptIds)
+		if (!owners.TryGetValue(remoteId, out HashSet<Guid>? localOwners))
 		{
-			List<YnabMemoSyncResult> results = await SyncMemosByReceiptAsync(receiptId, cancellationToken);
-			allResults.AddRange(results);
+			localOwners = [];
+			owners.Add(remoteId, localOwners);
+		}
+		localOwners.Add(localId);
+	}
+
+	private static YnabMemoSyncResult Unresolved(MemoWork work, List<YnabTransaction> candidates, string? error = null)
+		=> new(work.Transaction.Id, work.Receipt.Id, YnabMemoSyncOutcome.Ambiguous, null, error,
+			candidates.Select(candidate => new YnabTransactionCandidate(candidate.Id, candidate.Date, candidate.Amount,
+				candidate.Memo, candidate.PayeeName, candidate.AccountId)).ToList());
+
+	private static MemoPlan PlanMemo(MemoWork work, string budgetId, ILookup<Guid, YnabAccountMappingDto> mappings,
+		Dictionary<DateOnly, (List<YnabTransaction>? Transactions, string? Error)> byDate,
+		Dictionary<string, HashSet<Guid>> owners)
+	{
+		TransactionEntity transaction = work.Transaction;
+		MemoPlan Outcome(YnabMemoSyncOutcome outcome, string? error = null, string? remoteId = null)
+			=> new(work, new(transaction.Id, work.Receipt.Id, outcome, remoteId, error, null));
+
+		if (transaction.AmountCurrency != Currency.USD)
+		{
+			return Outcome(YnabMemoSyncOutcome.CurrencySkipped, $"Non-USD currency: {transaction.AmountCurrency}");
 		}
 
-		return allResults;
+		YnabSyncRecordDto?[] records = [work.MemoRecord, work.PushRecord];
+		if (records.Any(record => record is not null && record.YnabBudgetId != budgetId))
+		{
+			return Outcome(YnabMemoSyncOutcome.Failed, "An existing sync record belongs to another YNAB budget. Resolve that binding before syncing.");
+		}
+		if (work.MemoRecord is { SyncStatus: YnabSyncStatus.Synced } synced)
+		{
+			return Outcome(YnabMemoSyncOutcome.AlreadySynced, remoteId: synced.YnabTransactionId);
+		}
+
+		List<YnabAccountMappingDto> accountMappings = transaction.Card is null ? [] : mappings[transaction.Card.AccountId].ToList();
+		if (accountMappings.Count != 1 || string.IsNullOrWhiteSpace(accountMappings[0].YnabAccountId))
+		{
+			return Outcome(YnabMemoSyncOutcome.Failed, "Map this payment's account to exactly one account in the selected YNAB budget before syncing.");
+		}
+		if (!byDate.TryGetValue(transaction.Date, out var fetched) || fetched.Transactions is null)
+		{
+			return Outcome(YnabMemoSyncOutcome.Failed, fetched.Error is null
+				? "Failed to fetch YNAB transactions for this date." : $"Failed to fetch YNAB transactions: {fetched.Error}");
+		}
+
+		long amount = -YnabConvert.ToMilliunits(transaction.Amount);
+		List<YnabTransaction> candidates = fetched.Transactions.Where(candidate =>
+			string.Equals(candidate.AccountId, accountMappings[0].YnabAccountId, StringComparison.Ordinal)
+			&& candidate.Date == transaction.Date && candidate.Amount == amount).DistinctBy(candidate => candidate.Id).ToList();
+		if (candidates.Count == 0)
+		{
+			return Outcome(YnabMemoSyncOutcome.NoMatch);
+		}
+		candidates = candidates.Where(candidate => !string.Equals(candidate.ClearedStatus, ReconciledClearedStatus, StringComparison.OrdinalIgnoreCase)).ToList();
+		if (candidates.Count == 0)
+		{
+			return Outcome(YnabMemoSyncOutcome.ReconciledSkipped, "All matching YNAB transactions are reconciled.");
+		}
+
+		List<YnabTransaction> payeeMatches = candidates.Where(candidate => IsPayeeMatch(work.Receipt.Location, candidate.PayeeName)).ToList();
+		if (payeeMatches.Count != 1)
+		{
+			return new(work, Unresolved(work, payeeMatches.Count > 0 ? payeeMatches : candidates));
+		}
+
+		YnabTransaction selected = payeeMatches[0];
+		if (records.Any(record => !string.IsNullOrWhiteSpace(record?.YnabTransactionId) && record.YnabTransactionId != selected.Id))
+		{
+			return Outcome(YnabMemoSyncOutcome.Failed, "This payment is already bound to another YNAB transaction. Resolve that binding before syncing.");
+		}
+		if (owners.TryGetValue(selected.Id, out HashSet<Guid>? existingOwners) && existingOwners.Any(id => id != transaction.Id))
+		{
+			return new(work, Unresolved(work, [selected], "This YNAB transaction is already bound to another participating local payment."));
+		}
+
+		return new(work, Unresolved(work, [selected]), selected);
 	}
 
 	public async Task<YnabMemoSyncResult> ResolveMemoSyncAsync(Guid localTransactionId, string ynabTransactionId, CancellationToken cancellationToken)
@@ -116,109 +251,26 @@ public class YnabMemoSyncService(
 		return await UpdateMemoAndTrackAsync(transaction, receipt, budgetId, ynabTx, cancellationToken);
 	}
 
-	private async Task<YnabMemoSyncResult> SyncSingleTransactionAsync(
-		TransactionEntity transaction, ReceiptEntity receipt, string budgetId,
-		Dictionary<DateOnly, (List<YnabTransaction>? Transactions, string? Error)> ynabTransactionsByDate,
-		CancellationToken cancellationToken)
-	{
-		// Currency guard: V1 supports only USD
-		if (transaction.AmountCurrency != Currency.USD)
-		{
-			logger.LogWarning("Skipping non-USD transaction {TransactionId} with currency {Currency}", transaction.Id, transaction.AmountCurrency);
-			return new YnabMemoSyncResult(transaction.Id, receipt.Id, YnabMemoSyncOutcome.CurrencySkipped, null, $"Non-USD currency: {transaction.AmountCurrency}", null);
-		}
-
-		// Check if already synced
-		YnabSyncRecordDto? existingRecord = await syncRecordService.GetByTransactionAndTypeAsync(transaction.Id, YnabSyncType.MemoUpdate, cancellationToken);
-		if (existingRecord is not null && existingRecord.SyncStatus == YnabSyncStatus.Synced)
-		{
-			return new YnabMemoSyncResult(transaction.Id, receipt.Id, YnabMemoSyncOutcome.AlreadySynced, existingRecord.YnabTransactionId, null, null);
-		}
-
-		// Use pre-fetched YNAB transactions for this date (fetched once per unique date in the caller).
-		// A null Transactions entry means the fetch failed for this date.
-		if (!ynabTransactionsByDate.TryGetValue(transaction.Date, out var dateFetchResult) || dateFetchResult.Transactions is null)
-		{
-			string error = dateFetchResult.Error is not null
-				? $"Failed to fetch YNAB transactions: {dateFetchResult.Error}"
-				: "Failed to fetch YNAB transactions for this date.";
-			return new YnabMemoSyncResult(transaction.Id, receipt.Id, YnabMemoSyncOutcome.Failed, null, error, null);
-		}
-
-		List<YnabTransaction> ynabTransactions = dateFetchResult.Transactions;
-
-		// Convert local amount to YNAB milliunits (negated: local positive = YNAB outflow negative)
-		long expectedYnabAmount = -YnabConvert.ToMilliunits(transaction.Amount);
-
-		// Filter by exact date and exact negated amount
-		List<YnabTransaction> candidates = ynabTransactions
-			.Where(yt => yt.Date == transaction.Date && yt.Amount == expectedYnabAmount)
-			.ToList();
-
-		if (candidates.Count == 0)
-		{
-			return new YnabMemoSyncResult(transaction.Id, receipt.Id, YnabMemoSyncOutcome.NoMatch, null, null, null);
-		}
-
-		// Filter out reconciled transactions — users consider them finalized
-		List<YnabTransaction> nonReconciled = candidates
-			.Where(yt => !string.Equals(yt.ClearedStatus, ReconciledClearedStatus, StringComparison.OrdinalIgnoreCase))
-			.ToList();
-
-		if (nonReconciled.Count == 0)
-		{
-			// All date+amount matches were reconciled
-			return new YnabMemoSyncResult(transaction.Id, receipt.Id, YnabMemoSyncOutcome.ReconciledSkipped, null, "All matching YNAB transactions are reconciled.", null);
-		}
-
-		candidates = nonReconciled;
-
-		// Apply fuzzy payee matching
-		string payeeName = receipt.Location;
-		List<YnabTransaction> fuzzyMatches = candidates
-			.Where(yt => IsPayeeMatch(payeeName, yt.PayeeName))
-			.ToList();
-
-		if (fuzzyMatches.Count == 1)
-		{
-			return await UpdateMemoAndTrackAsync(transaction, receipt, budgetId, fuzzyMatches[0], cancellationToken);
-		}
-
-		if (fuzzyMatches.Count > 1)
-		{
-			// Ambiguous — return candidates for user resolution
-			List<YnabTransactionCandidate> ambiguousCandidates = fuzzyMatches
-				.Select(yt => new YnabTransactionCandidate(yt.Id, yt.Date, yt.Amount, yt.Memo, yt.PayeeName, yt.AccountId))
-				.ToList();
-			return new YnabMemoSyncResult(transaction.Id, receipt.Id, YnabMemoSyncOutcome.Ambiguous, null, null, ambiguousCandidates);
-		}
-
-		// No fuzzy match but had date+amount matches — still ambiguous if multiple, no match if zero
-		if (candidates.Count == 1)
-		{
-			// Single date+amount match even without fuzzy payee — use it
-			return await UpdateMemoAndTrackAsync(transaction, receipt, budgetId, candidates[0], cancellationToken);
-		}
-
-		// Multiple date+amount matches, no fuzzy payee match — ambiguous
-		List<YnabTransactionCandidate> dateCandidates = candidates
-			.Select(yt => new YnabTransactionCandidate(yt.Id, yt.Date, yt.Amount, yt.Memo, yt.PayeeName, yt.AccountId))
-			.ToList();
-		return new YnabMemoSyncResult(transaction.Id, receipt.Id, YnabMemoSyncOutcome.Ambiguous, null, null, dateCandidates);
-	}
-
 	private async Task<YnabMemoSyncResult> UpdateMemoAndTrackAsync(
 		TransactionEntity transaction, ReceiptEntity receipt, string budgetId,
 		YnabTransaction ynabTransaction, CancellationToken cancellationToken)
 	{
+		// The current schema identifies records by local payment/type. Never overwrite a
+		// binding for another budget; destination-scoped recovery is owned by RECEIPTS-961/962.
+		YnabSyncRecordDto? syncRecord = await syncRecordService.GetByTransactionAndTypeAsync(transaction.Id, YnabSyncType.MemoUpdate, cancellationToken);
+		if (syncRecord is not null && syncRecord.YnabBudgetId != budgetId)
+		{
+			return new(transaction.Id, receipt.Id, YnabMemoSyncOutcome.Failed, null,
+				"An existing sync record belongs to another YNAB budget. Resolve that binding before syncing.", null);
+		}
+
 		string receiptLink = $"/receipts/{receipt.Id}";
 
 		// Idempotency: if memo already contains this receipt link, skip
 		if (ynabTransaction.Memo is not null && ynabTransaction.Memo.Contains(receiptLink))
 		{
 			// Ensure we have a sync record for tracking
-			YnabSyncRecordDto? existing = await syncRecordService.GetByTransactionAndTypeAsync(transaction.Id, YnabSyncType.MemoUpdate, cancellationToken);
-			if (existing is null)
+			if (syncRecord is null)
 			{
 				YnabSyncRecordDto record = await syncRecordService.CreateAsync(transaction.Id, budgetId, YnabSyncType.MemoUpdate, cancellationToken);
 				await syncRecordService.UpdateStatusAsync(record.Id, YnabSyncStatus.Synced, ynabTransaction.Id, null, cancellationToken);
@@ -231,7 +283,6 @@ public class YnabMemoSyncService(
 		string newMemo = FormatMemo(ynabTransaction.Memo, receiptLink);
 
 		// Create sync record as pending
-		YnabSyncRecordDto? syncRecord = await syncRecordService.GetByTransactionAndTypeAsync(transaction.Id, YnabSyncType.MemoUpdate, cancellationToken);
 		if (syncRecord is null)
 		{
 			syncRecord = await syncRecordService.CreateAsync(transaction.Id, budgetId, YnabSyncType.MemoUpdate, cancellationToken);
@@ -286,7 +337,7 @@ public class YnabMemoSyncService(
 
 	internal static bool IsPayeeMatch(string receiptLocation, string? ynabPayeeName)
 	{
-		if (string.IsNullOrWhiteSpace(ynabPayeeName))
+		if (string.IsNullOrWhiteSpace(receiptLocation) || string.IsNullOrWhiteSpace(ynabPayeeName))
 		{
 			return false;
 		}
