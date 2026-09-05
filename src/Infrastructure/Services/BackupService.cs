@@ -61,6 +61,7 @@ public class BackupService(
 			// Excluding all log/audit and regenerable-cursor tables is the consistent choice: a
 			// backup restores your data, not the history of how it got there.
 			await CreateSchemaAsync(sqlite, cancellationToken);
+			await ExportNormalizedDescriptionsAsync(source, sqlite, cancellationToken);
 			await ExportAccountsAsync(source, sqlite, cancellationToken);
 			await ExportCardsAsync(source, sqlite, cancellationToken);
 			await ExportCategoriesAsync(source, sqlite, cancellationToken);
@@ -74,8 +75,8 @@ public class BackupService(
 			await ExportYnabAccountMappingsAsync(source, sqlite, cancellationToken);
 			await ExportYnabCategoryMappingsAsync(source, sqlite, cancellationToken);
 			await ExportYnabSyncRecordsAsync(source, sqlite, cancellationToken);
-			await ExportNormalizedDescriptionsAsync(source, sqlite, cancellationToken);
 			await ExportNormalizedDescriptionSettingsAsync(source, sqlite, cancellationToken);
+			await ExportAcceptedDuplicatePairsAsync(source, sqlite, cancellationToken);
 			await WriteMetadataAsync(sqlite, cancellationToken);
 
 
@@ -151,7 +152,9 @@ public class BackupService(
 				default_unit_price TEXT,
 				default_unit_price_currency TEXT,
 				default_item_code TEXT,
-				description TEXT
+				description TEXT,
+				normalized_description_id TEXT,
+				FOREIGN KEY (normalized_description_id) REFERENCES normalized_descriptions(id)
 			)
 			""",
 			"""
@@ -178,6 +181,9 @@ public class BackupService(
 				total_amount_currency TEXT NOT NULL,
 				category TEXT NOT NULL,
 				subcategory TEXT,
+				normalized_description_id TEXT,
+				normalized_description_match_score TEXT,
+				FOREIGN KEY (normalized_description_id) REFERENCES normalized_descriptions(id),
 				FOREIGN KEY (receipt_id) REFERENCES receipts(id)
 			)
 			""",
@@ -256,7 +262,23 @@ public class BackupService(
 				id TEXT NOT NULL PRIMARY KEY,
 				canonical_name TEXT NOT NULL,
 				status TEXT NOT NULL,
-				created_at TEXT NOT NULL
+				created_at TEXT NOT NULL,
+				display_label TEXT,
+				nearest_neighbour_id TEXT,
+				nearest_neighbour_similarity TEXT,
+				FOREIGN KEY (nearest_neighbour_id) REFERENCES normalized_descriptions(id) DEFERRABLE INITIALLY DEFERRED
+			)
+			""",
+			"""
+			CREATE TABLE accepted_duplicate_pairs (
+				id TEXT NOT NULL PRIMARY KEY,
+				receipt_id_a TEXT NOT NULL,
+				receipt_id_b TEXT NOT NULL,
+				accepted_at TEXT NOT NULL,
+				CHECK (receipt_id_a < receipt_id_b),
+				UNIQUE (receipt_id_a, receipt_id_b),
+				FOREIGN KEY (receipt_id_a) REFERENCES receipts(id),
+				FOREIGN KEY (receipt_id_b) REFERENCES receipts(id)
 			)
 			""",
 			"""
@@ -362,8 +384,8 @@ public class BackupService(
 		const string sql = """
 			INSERT INTO item_templates (id, name, default_category, default_subcategory,
 				default_unit_price, default_unit_price_currency,
-				default_item_code, description)
-			VALUES ($id, $name, $cat, $subcat, $price, $priceCurrency, $itemCode, $desc)
+				default_item_code, description, normalized_description_id)
+			VALUES ($id, $name, $cat, $subcat, $price, $priceCurrency, $itemCode, $desc, $canonicalId)
 			""";
 
 		foreach (ItemTemplateEntity template in templates)
@@ -378,6 +400,7 @@ public class BackupService(
 			cmd.Parameters.AddWithValue("$priceCurrency", template.DefaultUnitPriceCurrency.HasValue ? template.DefaultUnitPriceCurrency.Value.ToString() : DBNull.Value);
 			cmd.Parameters.AddWithValue("$itemCode", (object?)template.DefaultItemCode ?? DBNull.Value);
 			cmd.Parameters.AddWithValue("$desc", (object?)template.Description ?? DBNull.Value);
+			cmd.Parameters.AddWithValue("$canonicalId", (object?)template.NormalizedDescriptionId?.ToString() ?? DBNull.Value);
 			await cmd.ExecuteNonQueryAsync(cancellationToken);
 		}
 	}
@@ -415,9 +438,9 @@ public class BackupService(
 		const string sql = """
 			INSERT INTO receipt_items (id, receipt_id, receipt_item_code, description, quantity,
 				unit_price, unit_price_currency, total_amount, total_amount_currency,
-				category, subcategory)
+				category, subcategory, normalized_description_id, normalized_description_match_score)
 			VALUES ($id, $receiptId, $itemCode, $desc, $qty, $unitPrice, $unitPriceCurrency,
-				$totalAmt, $totalAmtCurrency, $cat, $subcat)
+				$totalAmt, $totalAmtCurrency, $cat, $subcat, $canonicalId, $matchScore)
 			""";
 
 		foreach (ReceiptItemEntity item in items)
@@ -435,6 +458,8 @@ public class BackupService(
 			cmd.Parameters.AddWithValue("$totalAmtCurrency", item.TotalAmountCurrency.ToString());
 			cmd.Parameters.AddWithValue("$cat", item.Category);
 			cmd.Parameters.AddWithValue("$subcat", (object?)item.Subcategory ?? DBNull.Value);
+			cmd.Parameters.AddWithValue("$canonicalId", (object?)item.NormalizedDescriptionId?.ToString() ?? DBNull.Value);
+			cmd.Parameters.AddWithValue("$matchScore", (object?)item.NormalizedDescriptionMatchScore?.ToString("R", CultureInfo.InvariantCulture) ?? DBNull.Value);
 			await cmd.ExecuteNonQueryAsync(cancellationToken);
 		}
 	}
@@ -594,7 +619,7 @@ public class BackupService(
 	{
 		List<NormalizedDescriptionEntity> descriptions = await source.NormalizedDescriptions.AsNoTracking().ToListAsync(cancellationToken);
 
-		const string sql = "INSERT INTO normalized_descriptions (id, canonical_name, status, created_at) VALUES ($id, $canonicalName, $status, $createdAt)";
+		const string sql = "INSERT INTO normalized_descriptions (id, canonical_name, status, created_at, display_label, nearest_neighbour_id, nearest_neighbour_similarity) VALUES ($id, $canonicalName, $status, $createdAt, $displayLabel, $neighbourId, $neighbourScore)";
 		foreach (NormalizedDescriptionEntity description in descriptions)
 		{
 			await using SqliteCommand cmd = sqlite.CreateCommand();
@@ -603,6 +628,9 @@ public class BackupService(
 			cmd.Parameters.AddWithValue("$canonicalName", description.CanonicalName);
 			cmd.Parameters.AddWithValue("$status", description.Status.ToString());
 			cmd.Parameters.AddWithValue("$createdAt", description.CreatedAt.ToString("O"));
+			cmd.Parameters.AddWithValue("$displayLabel", (object?)description.DisplayLabel ?? DBNull.Value);
+			cmd.Parameters.AddWithValue("$neighbourId", (object?)description.NearestNeighbourId?.ToString() ?? DBNull.Value);
+			cmd.Parameters.AddWithValue("$neighbourScore", (object?)description.NearestNeighbourSimilarity?.ToString("R", CultureInfo.InvariantCulture) ?? DBNull.Value);
 			await cmd.ExecuteNonQueryAsync(cancellationToken);
 		}
 	}
@@ -630,11 +658,31 @@ public class BackupService(
 		}
 	}
 
+	private static async Task ExportAcceptedDuplicatePairsAsync(ApplicationDbContext source, SqliteConnection sqlite, CancellationToken cancellationToken)
+	{
+		// Acceptances survive receipt soft deletion locally. Portable backups exclude trash,
+		// so only assertions whose two endpoints are included can be restored independently.
+		List<AcceptedDuplicatePairEntity> pairs = await source.AcceptedDuplicatePairs.AsNoTracking()
+			.Where(pair => source.Receipts.Any(receipt => receipt.Id == pair.ReceiptIdA)
+				&& source.Receipts.Any(receipt => receipt.Id == pair.ReceiptIdB))
+			.ToListAsync(cancellationToken);
+		foreach (AcceptedDuplicatePairEntity pair in pairs)
+		{
+			await using SqliteCommand cmd = sqlite.CreateCommand();
+			cmd.CommandText = "INSERT INTO accepted_duplicate_pairs (id, receipt_id_a, receipt_id_b, accepted_at) VALUES ($id, $a, $b, $at)";
+			cmd.Parameters.AddWithValue("$id", pair.Id.ToString());
+			cmd.Parameters.AddWithValue("$a", pair.ReceiptIdA.ToString());
+			cmd.Parameters.AddWithValue("$b", pair.ReceiptIdB.ToString());
+			cmd.Parameters.AddWithValue("$at", pair.AcceptedAt.ToString("O"));
+			await cmd.ExecuteNonQueryAsync(cancellationToken);
+		}
+	}
+
 	private static async Task WriteMetadataAsync(SqliteConnection sqlite, CancellationToken cancellationToken)
 	{
 		Dictionary<string, string> metadata = new()
 		{
-			["export_version"] = "4",
+			["export_version"] = PortableBackupFormat.CurrentVersion.ToString(CultureInfo.InvariantCulture),
 			["exported_at"] = DateTimeOffset.UtcNow.ToString("O"),
 			["format"] = "receipts-sqlite-backup",
 		};

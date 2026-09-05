@@ -4121,6 +4121,10 @@ export interface components {
             /** Format: int32 */
             adjustmentsUpdated: number;
             /** Format: int32 */
+            acceptedDuplicatePairsCreated?: number;
+            /** Format: int32 */
+            acceptedDuplicatePairsUpdated?: number;
+            /** Format: int32 */
             totalCreated: number;
             /** Format: int32 */
             totalUpdated: number;

@@ -2,16 +2,16 @@ using System.Globalization;
 using Application.Interfaces.Services;
 using Application.Models;
 using Common;
-using Domain.NormalizedDescriptions;
 using Infrastructure.Entities.Core;
 using Infrastructure.Interfaces;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 
 namespace Infrastructure.Services;
 
-public class BackupImportService(
+public partial class BackupImportService(
 	IDbContextFactory<ApplicationDbContext> contextFactory,
 	ILogger<BackupImportService> logger) : IBackupImportService
 {
@@ -67,6 +67,17 @@ public class BackupImportService(
 			await sqlite.OpenAsync(cancellationToken);
 
 			int exportVersion = ReadExportVersion(sqlite);
+			if (exportVersion >= 5)
+			{
+				foreach (string table in PortableBackupFormat.RequiredTables)
+				{
+					if (!TableExists(sqlite, table))
+					{
+						throw new InvalidOperationException($"Backup export_version={exportVersion} is missing required '{table}' table.");
+					}
+				}
+				await ValidateCurationReferencesAsync(sqlite, cancellationToken);
+			}
 
 			// Import in dependency order: independent entities first, then dependent ones.
 			// Accounts must come before Cards (FK constraint on Cards.AccountId → Accounts.Id).
@@ -74,9 +85,10 @@ public class BackupImportService(
 			(int cardsCreated, int cardsUpdated) = await UpsertCardsAsync(context, sqlite, exportVersion, cancellationToken);
 			(int categoriesCreated, int categoriesUpdated) = await UpsertCategoriesAsync(context, sqlite, cancellationToken);
 			(int subcategoriesCreated, int subcategoriesUpdated) = await UpsertSubcategoriesAsync(context, sqlite, cancellationToken);
-			(int itemTemplatesCreated, int itemTemplatesUpdated) = await UpsertItemTemplatesAsync(context, sqlite, cancellationToken);
+			(int normalizedDescriptionsCreated, int normalizedDescriptionsUpdated) = await UpsertNormalizedDescriptionsAsync(context, sqlite, exportVersion, cancellationToken);
+			(int itemTemplatesCreated, int itemTemplatesUpdated) = await UpsertItemTemplatesAsync(context, sqlite, exportVersion, cancellationToken);
 			(int receiptsCreated, int receiptsUpdated) = await UpsertReceiptsAsync(context, sqlite, exportVersion, cancellationToken);
-			(int receiptItemsCreated, int receiptItemsUpdated) = await UpsertReceiptItemsAsync(context, sqlite, cancellationToken);
+			(int receiptItemsCreated, int receiptItemsUpdated) = await UpsertReceiptItemsAsync(context, sqlite, exportVersion, cancellationToken);
 			(int transactionsCreated, int transactionsUpdated) = await UpsertTransactionsAsync(context, sqlite, exportVersion, cancellationToken);
 			(int adjustmentsCreated, int adjustmentsUpdated) = await UpsertAdjustmentsAsync(context, sqlite, cancellationToken);
 
@@ -88,8 +100,9 @@ public class BackupImportService(
 			(int ynabAccountMappingsCreated, int ynabAccountMappingsUpdated) = await UpsertYnabAccountMappingsAsync(context, sqlite, exportVersion, cancellationToken);
 			(int ynabCategoryMappingsCreated, int ynabCategoryMappingsUpdated) = await UpsertYnabCategoryMappingsAsync(context, sqlite, exportVersion, cancellationToken);
 			(int ynabSyncRecordsCreated, int ynabSyncRecordsUpdated) = await UpsertYnabSyncRecordsAsync(context, sqlite, exportVersion, cancellationToken);
-			(int normalizedDescriptionsCreated, int normalizedDescriptionsUpdated) = await UpsertNormalizedDescriptionsAsync(context, sqlite, exportVersion, cancellationToken);
 			(int normalizedDescriptionSettingsCreated, int normalizedDescriptionSettingsUpdated) = await UpsertNormalizedDescriptionSettingsAsync(context, sqlite, exportVersion, cancellationToken);
+
+			(int acceptedPairsCreated, int acceptedPairsUpdated) = await UpsertAcceptedDuplicatePairsAsync(context, sqlite, exportVersion, cancellationToken);
 
 			await transaction.CommitAsync(cancellationToken);
 
@@ -108,13 +121,20 @@ public class BackupImportService(
 				ynabCategoryMappingsCreated, ynabCategoryMappingsUpdated,
 				ynabSyncRecordsCreated, ynabSyncRecordsUpdated,
 				normalizedDescriptionsCreated, normalizedDescriptionsUpdated,
-				normalizedDescriptionSettingsCreated, normalizedDescriptionSettingsUpdated);
+				normalizedDescriptionSettingsCreated, normalizedDescriptionSettingsUpdated,
+				acceptedPairsCreated, acceptedPairsUpdated);
 
 			logger.LogInformation(
 				"Backup import complete: {TotalCreated} created, {TotalUpdated} updated",
 				result.TotalCreated, result.TotalUpdated);
 
 			return result;
+		}
+		catch (DbUpdateException ex) when (ex.InnerException is PostgresException
+		{ SqlState: PostgresErrorCodes.ForeignKeyViolation or PostgresErrorCodes.UniqueViolation or PostgresErrorCodes.CheckViolation or PostgresErrorCodes.NotNullViolation or PostgresErrorCodes.StringDataRightTruncation })
+		{
+			await transaction.RollbackAsync(CancellationToken.None);
+			throw new InvalidOperationException("Backup data conflicts with database constraints. The import was rolled back.", ex);
 		}
 		catch
 		{
@@ -177,7 +197,11 @@ public class BackupImportService(
 			return 1;
 		}
 
-		return int.TryParse(result.ToString(), out int version) ? version : 1;
+		if (!int.TryParse(result.ToString(), out int version) || version < 1 || version > PortableBackupFormat.CurrentVersion)
+		{
+			throw new InvalidOperationException($"Unsupported backup export_version '{result}'. Supported versions are 1 through {PortableBackupFormat.CurrentVersion}.");
+		}
+		return version;
 	}
 
 	// Import Accounts before Cards so the FK Cards.AccountId → Accounts.Id resolves.
@@ -447,7 +471,7 @@ public class BackupImportService(
 	}
 
 	private static async Task<(int Created, int Updated)> UpsertItemTemplatesAsync(
-		ApplicationDbContext context, SqliteConnection sqlite, CancellationToken cancellationToken)
+		ApplicationDbContext context, SqliteConnection sqlite, int exportVersion, CancellationToken cancellationToken)
 	{
 		if (!TableExists(sqlite, "item_templates"))
 		{
@@ -456,7 +480,9 @@ public class BackupImportService(
 
 		int created = 0, updated = 0;
 		await using SqliteCommand cmd = sqlite.CreateCommand();
-		cmd.CommandText = "SELECT id, name, default_category, default_subcategory, default_unit_price, default_unit_price_currency, default_item_code, description FROM item_templates";
+		bool hasCuration = exportVersion >= 5;
+		cmd.CommandText = "SELECT id, name, default_category, default_subcategory, default_unit_price, default_unit_price_currency, default_item_code, description"
+			+ (hasCuration ? ", normalized_description_id" : "") + " FROM item_templates";
 		await using SqliteDataReader reader = await cmd.ExecuteReaderAsync(cancellationToken);
 
 		while (await reader.ReadAsync(cancellationToken))
@@ -469,6 +495,7 @@ public class BackupImportService(
 			Currency? defaultUnitPriceCurrency = reader.IsDBNull(5) ? null : Enum.Parse<Currency>(reader.GetString(5));
 			string? defaultItemCode = reader.IsDBNull(6) ? null : reader.GetString(6);
 			string? description = reader.IsDBNull(7) ? null : reader.GetString(7);
+			Guid? canonicalId = hasCuration ? ReadNullableGuid(reader, 8) : null;
 
 			ItemTemplateEntity? existing = await context.ItemTemplates
 				.IgnoreQueryFilters()
@@ -482,6 +509,10 @@ public class BackupImportService(
 				existing.DefaultUnitPriceCurrency = defaultUnitPriceCurrency;
 				existing.DefaultItemCode = defaultItemCode;
 				existing.Description = description;
+				if (hasCuration)
+				{
+					existing.NormalizedDescriptionId = canonicalId;
+				}
 				ClearSoftDelete(existing);
 				updated++;
 			}
@@ -497,6 +528,7 @@ public class BackupImportService(
 					DefaultUnitPriceCurrency = defaultUnitPriceCurrency,
 					DefaultItemCode = defaultItemCode,
 					Description = description,
+					NormalizedDescriptionId = canonicalId,
 				});
 				created++;
 			}
@@ -576,7 +608,7 @@ public class BackupImportService(
 	}
 
 	private static async Task<(int Created, int Updated)> UpsertReceiptItemsAsync(
-		ApplicationDbContext context, SqliteConnection sqlite, CancellationToken cancellationToken)
+		ApplicationDbContext context, SqliteConnection sqlite, int exportVersion, CancellationToken cancellationToken)
 	{
 		if (!TableExists(sqlite, "receipt_items"))
 		{
@@ -585,7 +617,9 @@ public class BackupImportService(
 
 		int created = 0, updated = 0;
 		await using SqliteCommand cmd = sqlite.CreateCommand();
-		cmd.CommandText = "SELECT id, receipt_id, receipt_item_code, description, quantity, unit_price, unit_price_currency, total_amount, total_amount_currency, category, subcategory FROM receipt_items";
+		bool hasCuration = exportVersion >= 5;
+		cmd.CommandText = "SELECT id, receipt_id, receipt_item_code, description, quantity, unit_price, unit_price_currency, total_amount, total_amount_currency, category, subcategory"
+			+ (hasCuration ? ", normalized_description_id, normalized_description_match_score" : "") + " FROM receipt_items";
 		await using SqliteDataReader reader = await cmd.ExecuteReaderAsync(cancellationToken);
 
 		while (await reader.ReadAsync(cancellationToken))
@@ -601,12 +635,25 @@ public class BackupImportService(
 			Currency totalAmountCurrency = Enum.Parse<Currency>(reader.GetString(8));
 			string category = reader.GetString(9);
 			string? subcategory = reader.IsDBNull(10) ? null : reader.GetString(10);
+			Guid? canonicalId = hasCuration ? ReadNullableGuid(reader, 11) : null;
+			double? matchScore = hasCuration ? ReadNullableScore(reader, 12) : null;
+			if (canonicalId is null && matchScore is not null)
+			{
+				throw new InvalidOperationException($"Receipt item {id} has a match score without a canonical description.");
+			}
 
 			ReceiptItemEntity? existing = await context.ReceiptItems
 				.IgnoreQueryFilters()
 				.FirstOrDefaultAsync(ri => ri.Id == id, cancellationToken);
 			if (existing is not null)
 			{
+				// Older formats cannot restore a link for new text. Preserve absent metadata only
+				// while the raw description still matches the target's existing classification.
+				if (hasCuration || !string.Equals(existing.Description, description, StringComparison.Ordinal))
+				{
+					existing.NormalizedDescriptionId = canonicalId;
+					existing.NormalizedDescriptionMatchScore = matchScore;
+				}
 				existing.ReceiptId = receiptId;
 				existing.ReceiptItemCode = receiptItemCode;
 				existing.Description = description;
@@ -635,6 +682,8 @@ public class BackupImportService(
 					TotalAmountCurrency = totalAmountCurrency,
 					Category = category,
 					Subcategory = subcategory,
+					NormalizedDescriptionId = canonicalId,
+					NormalizedDescriptionMatchScore = matchScore,
 				});
 				created++;
 			}
@@ -996,54 +1045,6 @@ public class BackupImportService(
 					LastError = lastError,
 					CreatedAt = createdAt,
 					UpdatedAt = updatedAt,
-				});
-				created++;
-			}
-		}
-
-		await context.SaveChangesAsync(cancellationToken);
-		return (created, updated);
-	}
-
-	// The embedding vector is intentionally not restored (see BackupService for rationale): new
-	// rows are created with a null embedding and repopulated by the embedding pipeline, and the
-	// embedding on an existing row is left untouched so a restore never destroys a valid vector.
-	private static async Task<(int Created, int Updated)> UpsertNormalizedDescriptionsAsync(
-		ApplicationDbContext context, SqliteConnection sqlite, int exportVersion, CancellationToken cancellationToken)
-	{
-		if (exportVersion < 4 || !TableExists(sqlite, "normalized_descriptions"))
-		{
-			return (0, 0);
-		}
-
-		int created = 0, updated = 0;
-		await using SqliteCommand cmd = sqlite.CreateCommand();
-		cmd.CommandText = "SELECT id, canonical_name, status, created_at FROM normalized_descriptions";
-		await using SqliteDataReader reader = await cmd.ExecuteReaderAsync(cancellationToken);
-
-		while (await reader.ReadAsync(cancellationToken))
-		{
-			Guid id = Guid.Parse(reader.GetString(0));
-			string canonicalName = reader.GetString(1);
-			NormalizedDescriptionStatus status = Enum.Parse<NormalizedDescriptionStatus>(reader.GetString(2));
-			DateTimeOffset createdAt = ParseTimestamp(reader.GetString(3));
-
-			NormalizedDescriptionEntity? existing = await context.NormalizedDescriptions.FindAsync([id], cancellationToken);
-			if (existing is not null)
-			{
-				existing.CanonicalName = canonicalName;
-				existing.Status = status;
-				existing.CreatedAt = createdAt;
-				updated++;
-			}
-			else
-			{
-				context.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
-				{
-					Id = id,
-					CanonicalName = canonicalName,
-					Status = status,
-					CreatedAt = createdAt,
 				});
 				created++;
 			}
