@@ -24,22 +24,27 @@ public class CreateReceiptRequestValidatorTests
 		Assert.True(result.IsValid);
 	}
 
-	[Fact]
-	public void Should_Fail_When_LocationExceeds200Characters()
+	[Theory]
+	[InlineData(0, false)]
+	[InlineData(200, true)]
+	[InlineData(201, false)]
+	public void GeneratedContract_EnforcesCanonicalLocationLength(int length, bool valid)
 	{
-		// Arrange
 		CreateReceiptRequest receipt = new()
 		{
-			Location = new string('a', 201),
-			Date = DateOnly.FromDateTime(DateTime.Today)
+			Location = new string('a', length),
+			Date = new DateOnly(2025, 1, 1),
 		};
+		List<System.ComponentModel.DataAnnotations.ValidationResult> errors = [];
 
-		// Act
-		FluentValidation.Results.ValidationResult result = _validator.Validate(receipt);
+		bool actual = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(receipt,
+			new System.ComponentModel.DataAnnotations.ValidationContext(receipt), errors, validateAllProperties: true);
 
-		// Assert
-		Assert.False(result.IsValid);
-		Assert.Contains(result.Errors, e => e.ErrorMessage == CreateReceiptRequestValidator.LocationMustNotExceed200Characters);
+		Assert.Equal(valid, actual);
+		if (!valid)
+		{
+			Assert.Contains(errors, error => error.MemberNames.Contains("Location"));
+		}
 	}
 
 	[Fact]

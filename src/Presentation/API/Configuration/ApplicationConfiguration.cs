@@ -43,6 +43,8 @@ public static class ApplicationConfiguration
 				options.Filters.Add<FluentValidationActionFilter>();
 				options.Filters.Add<ResourceIdResultFilter>();
 			})
+			.ConfigureApiBehaviorOptions(options =>
+				options.InvalidModelStateResponseFactory = context => ApiValidationProblem.FromModelState(context.ModelState))
 			.AddJsonOptions(options =>
 			{
 				options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;

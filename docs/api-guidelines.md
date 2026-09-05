@@ -8,6 +8,16 @@ The canonical API contract lives in `openapi/spec.yaml` (OpenAPI 3.1.0). All API
 
 **npm scripts:** `npm run lint:spec`, `npm run check:drift`, `npm run check:breaking -- origin/main`
 
+## Validation Ownership
+
+Schema-expressible constraints belong in `openapi/spec.yaml`. Generated DTO DataAnnotations enforce them through MVC model validation; for example, receipt location length is 1–200 characters. Keep whitespace-only rejection and rules relative to today's date in the API FluentValidation validators. Do not duplicate a generated length limit in a handwritten validator.
+
+The API registers its own DTO validators. `FluentValidationActionFilter` validates both collection-level rules and each list element before invoking an action. An empty list or a null element is invalid; element errors use paths such as `[1].Date`. A list validator does not replace the element validators. Nested DTO business rules remain the responsibility of their owning validator, such as `CreateCompleteReceiptRequestValidator`. Validation honors request cancellation, including a final check before action dispatch.
+
+Application validators are registered by `ApplicationService.RegisterApplicationServices` from the Application assembly. The Mediator validation behavior therefore applies query rules to HTTP requests and other Mediator callers. Do not rely on the API's assembly scan or query-parameter annotations to register or replace these rules.
+
+Automatic model-state failures and FluentValidation failures use `ApiValidationProblem`: HTTP 400, `application/problem+json`, field errors in `errors`, and a human-readable reason in `detail`. Tests should exercise configured MVC/Mediator composition and use a business rule as well as a schema constraint when proving batch traversal; generated annotations alone can hide a missing element validator. Invalid-batch tests must establish that persistence did not begin.
+
 ## Endpoint Return Types
 
 Use `TypedResults` with concrete `Results<T1, T2, ...>` union return types on all endpoints (see MGG-227). This provides compile-time enforcement of response types and eliminates the need for `[ProducesResponseType]` attributes.
