@@ -7096,6 +7096,8 @@ components:
       properties:
         location:
           type: string
+          minLength: 1
+          maxLength: 200
         date:
           type: string
           format: date
@@ -7112,6 +7114,8 @@ components:
           format: uuid
         location:
           type: string
+          minLength: 1
+          maxLength: 200
         date:
           type: string
           format: date

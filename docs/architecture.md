@@ -34,7 +34,7 @@ This is a .NET 10 Clean Architecture solution for a receipt management applicati
 
 - **CQRS**: Commands and Queries are separate with dedicated handlers
 - **Mediator Pattern**: martinothamar/Mediator dispatches commands/queries to handlers via source-generated dispatch (no runtime reflection)
-- **Validation Pipeline**: `ValidationBehavior<TMessage, TResponse>` intercepts Mediator requests and runs registered `IValidator<T>` instances before handlers execute. `FluentValidationActionFilter` validates controller DTOs. `ValidationExceptionMiddleware` catches `ValidationException` and returns 400 ProblemDetails.
+- **Validation Pipeline**: `ValidationBehavior<TMessage, TResponse>` intercepts Mediator requests and runs registered `IValidator<T>` instances before handlers execute. Application owns its validator registration. `FluentValidationActionFilter` validates controller DTOs and every collection element before action dispatch. Generated schema constraints and FluentValidation failures share the 400 problem contract. See [validation ownership](api-guidelines.md#validation-ownership).
 - **Repository Pattern**: Infrastructure repositories abstract EF Core
 - **Mapping**: Mapperly handles Domain <-> Entity (Infrastructure) and Domain <-> generated DTOs (API)
 - **Service Registration**: Each layer has a static extension method (`RegisterApplicationServices`, `RegisterInfrastructureServices`) for DI setup

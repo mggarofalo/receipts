@@ -21,12 +21,7 @@ public class ValidationExceptionMiddleware(RequestDelegate next)
 					g => g.Key,
 					g => g.Select(e => e.ErrorMessage).ToArray());
 
-			ValidationProblemDetails problemDetails = new(errors)
-			{
-				Status = StatusCodes.Status400BadRequest,
-				Title = "One or more validation errors occurred.",
-				Type = "https://tools.ietf.org/html/rfc9110#section-15.5.1",
-			};
+			ValidationProblemDetails problemDetails = ApiValidationProblem.Create(errors);
 
 			await context.Response.WriteAsJsonAsync(
 				problemDetails,

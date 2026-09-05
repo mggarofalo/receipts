@@ -63,23 +63,28 @@ public class UpdateReceiptRequestValidatorTests
 		Assert.Contains(result.Errors, e => e.ErrorMessage == UpdateReceiptRequestValidator.LocationMustNotBeEmpty);
 	}
 
-	[Fact]
-	public void Should_Fail_When_LocationExceeds200Characters()
+	[Theory]
+	[InlineData(0, false)]
+	[InlineData(200, true)]
+	[InlineData(201, false)]
+	public void GeneratedContract_EnforcesCanonicalLocationLength(int length, bool valid)
 	{
-		// Arrange
 		UpdateReceiptRequest request = new()
 		{
 			Id = Guid.NewGuid(),
-			Location = new string('a', 201),
-			Date = DateOnly.FromDateTime(DateTime.Today)
+			Location = new string('a', length),
+			Date = new DateOnly(2025, 1, 1),
 		};
+		List<System.ComponentModel.DataAnnotations.ValidationResult> errors = [];
 
-		// Act
-		FluentValidation.Results.ValidationResult result = _validator.Validate(request);
+		bool actual = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(request,
+			new System.ComponentModel.DataAnnotations.ValidationContext(request), errors, validateAllProperties: true);
 
-		// Assert
-		Assert.False(result.IsValid);
-		Assert.Contains(result.Errors, e => e.ErrorMessage == UpdateReceiptRequestValidator.LocationMustNotExceed200Characters);
+		Assert.Equal(valid, actual);
+		if (!valid)
+		{
+			Assert.Contains(errors, error => error.MemberNames.Contains("Location"));
+		}
 	}
 
 	[Fact]

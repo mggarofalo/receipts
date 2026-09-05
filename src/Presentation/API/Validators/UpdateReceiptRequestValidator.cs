@@ -7,7 +7,6 @@ public class UpdateReceiptRequestValidator : AbstractValidator<UpdateReceiptRequ
 {
 	public const string IdMustNotBeEmpty = "ID must not be empty.";
 	public const string LocationMustNotBeEmpty = "Location must not be empty.";
-	public const string LocationMustNotExceed200Characters = "Location must not exceed 200 characters.";
 	public const string DateMustBePriorToCurrentDate = "Date must be prior to the current date";
 
 	public UpdateReceiptRequestValidator()
@@ -18,9 +17,7 @@ public class UpdateReceiptRequestValidator : AbstractValidator<UpdateReceiptRequ
 
 		RuleFor(x => x.Location)
 			.NotEmpty()
-			.WithMessage(LocationMustNotBeEmpty)
-			.MaximumLength(200)
-			.WithMessage(LocationMustNotExceed200Characters);
+			.WithMessage(LocationMustNotBeEmpty);
 
 		RuleFor(x => x.Date)
 			.Must(date => date.ToDateTime(TimeOnly.MinValue) <= DateTime.Today)
