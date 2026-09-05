@@ -11,6 +11,9 @@ public interface IReceiptRepository
 	Task<List<ReceiptEntity>> GetDeletedAsync(int offset, int limit, SortParams sort, CancellationToken cancellationToken);
 	Task<int> GetDeletedCountAsync(CancellationToken cancellationToken);
 	Task<List<ReceiptEntity>> CreateAsync(List<ReceiptEntity> entities, CancellationToken cancellationToken);
+	/// <summary>
+	/// Updates only location, date, and tax fields; preserves image and deletion metadata.
+	/// </summary>
 	Task UpdateAsync(List<ReceiptEntity> entities, CancellationToken cancellationToken);
 	Task UpdateImagePathsAsync(Guid id, string originalImagePath, string processedImagePath, CancellationToken cancellationToken);
 	Task DeleteAsync(List<Guid> ids, CancellationToken cancellationToken);

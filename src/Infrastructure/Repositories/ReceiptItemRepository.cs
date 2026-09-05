@@ -208,7 +208,24 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 		foreach (ReceiptItemEntity entity in entities)
 		{
 			ReceiptItemEntity existingEntity = existingEntities.Single(e => e.Id == entity.Id);
-			context.Entry(existingEntity).CurrentValues.SetValues(entity);
+			// Canonical identity describes the raw text. Ordinary edits preserve it; a text
+			// change invalidates both fields so the resolver can classify the new description.
+			if (!string.Equals(existingEntity.Description, entity.Description, StringComparison.Ordinal))
+			{
+				existingEntity.NormalizedDescriptionId = null;
+				existingEntity.NormalizedDescriptionMatchScore = null;
+			}
+
+			// Parent identity and deletion metadata are not writable through an item edit.
+			existingEntity.ReceiptItemCode = entity.ReceiptItemCode;
+			existingEntity.Description = entity.Description;
+			existingEntity.Quantity = entity.Quantity;
+			existingEntity.UnitPrice = entity.UnitPrice;
+			existingEntity.UnitPriceCurrency = entity.UnitPriceCurrency;
+			existingEntity.TotalAmount = entity.TotalAmount;
+			existingEntity.TotalAmountCurrency = entity.TotalAmountCurrency;
+			existingEntity.Category = entity.Category;
+			existingEntity.Subcategory = entity.Subcategory;
 		}
 
 		await context.SaveChangesAsync(cancellationToken);

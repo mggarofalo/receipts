@@ -246,7 +246,11 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 		foreach (ReceiptEntity entity in entities)
 		{
 			ReceiptEntity existingEntity = existingEntities.Single(e => e.Id == entity.Id);
-			context.Entry(existingEntity).CurrentValues.SetValues(entity);
+			// A mapped edit is not a replacement for server-owned image/deletion metadata.
+			existingEntity.Location = entity.Location;
+			existingEntity.Date = entity.Date;
+			existingEntity.TaxAmount = entity.TaxAmount;
+			existingEntity.TaxAmountCurrency = entity.TaxAmountCurrency;
 		}
 
 		await context.SaveChangesAsync(cancellationToken);
