@@ -39,6 +39,14 @@ the history of how it got there or values a service can regenerate:
 | Normalized-description embedding vectors | Large, regenerable derived data whose dimension is a build-time constant; repopulated by the embedding pipeline after restore. |
 | ASP.NET Identity users and authentication settings | Excluded for security reasons. |
 
+## Export consistency and file ownership
+
+Portable exports read all included PostgreSQL tables from one read-only Repeatable Read snapshot, established by the first source query. Concurrent transactions can continue writing; their later changes appear in a subsequent backup, rather than mixing old parent values with new child values in the current file. The destination SQLite transaction enforces foreign keys and completes before the file is returned.
+
+The export service disposes both database connections and transactions before returning its temporary file. A successful file belongs to the API/CLI caller. The API removes it after delivery; the CLI moves it to an explicit output path, or retains the returned path as its output when no destination is supplied. On failure or cancellation, the service disposes its resources and removes its incomplete file. The SQLite export connection is not pooled, so deleting a failed export does not depend on clearing unrelated connection pools.
+
+This source snapshot guarantee is verified against PostgreSQL; InMemory tests cover serialization behavior only. It follows [PostgreSQL Repeatable Read semantics](https://www.postgresql.org/docs/current/transaction-iso.html#XACT-REPEATABLE-READ).
+
 ## REST API
 
 Both endpoints require the **Admin** role.

@@ -1,8 +1,10 @@
+using System.Data;
 using System.Globalization;
 using Application.Interfaces.Services;
 using Infrastructure.Entities.Core;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Services;
@@ -16,16 +18,29 @@ public class BackupService(
 		string tempPath = Path.Combine(Path.GetTempPath(), $"receipts-backup-{DateTime.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}.db");
 		logger.LogInformation("Starting SQLite export to {Path}", tempPath);
 
-		await using ApplicationDbContext source = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-
-		string connectionString = $"Data Source={tempPath}";
-		await using SqliteConnection sqlite = new(connectionString);
-		await sqlite.OpenAsync(cancellationToken);
-
-		await using SqliteTransaction transaction = (SqliteTransaction)await sqlite.BeginTransactionAsync(cancellationToken);
-
 		try
 		{
+			await using ApplicationDbContext source = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+			// Every table must see the same source snapshot. A destination transaction alone
+			// cannot prevent mixing rows from different concurrent source commits.
+			await using IDbContextTransaction? sourceSnapshot = source.Database.IsNpgsql()
+				? await source.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken)
+				: null;
+			if (sourceSnapshot is not null)
+			{
+				await source.Database.ExecuteSqlRawAsync("SET TRANSACTION READ ONLY", cancellationToken);
+			}
+
+			SqliteConnectionStringBuilder connectionString = new()
+			{
+				DataSource = tempPath,
+				ForeignKeys = true,
+				Pooling = false,
+			};
+			await using SqliteConnection sqlite = new(connectionString.ToString());
+			await sqlite.OpenAsync(cancellationToken);
+			await using SqliteTransaction transaction = (SqliteTransaction)await sqlite.BeginTransactionAsync(cancellationToken);
+
 			// The set of exported tables is defined by the CreateSchemaAsync DDL below and the
 			// Export* calls that follow. The following tables are DELIBERATELY EXCLUDED from the
 			// backup (an intentional decision, not an oversight -- see RECEIPTS-802):
@@ -63,20 +78,23 @@ public class BackupService(
 			await ExportNormalizedDescriptionSettingsAsync(source, sqlite, cancellationToken);
 			await WriteMetadataAsync(sqlite, cancellationToken);
 
+
 			await transaction.CommitAsync(cancellationToken);
+			if (sourceSnapshot is not null)
+			{
+				await sourceSnapshot.CommitAsync(cancellationToken);
+			}
+
+			logger.LogInformation("SQLite export completed: {Path}", tempPath);
+			return tempPath;
 		}
 		catch
 		{
-			await transaction.RollbackAsync(cancellationToken);
-			if (File.Exists(tempPath))
-			{
-				File.Delete(tempPath);
-			}
+			// The using scopes dispose/roll back without the cancelled request token before
+			// this cleanup runs. Non-pooled SQLite connections release the file on disposal.
+			File.Delete(tempPath);
 			throw;
 		}
-
-		logger.LogInformation("SQLite export completed: {Path}", tempPath);
-		return tempPath;
 	}
 
 	internal static async Task CreateSchemaAsync(SqliteConnection sqlite, CancellationToken cancellationToken)
