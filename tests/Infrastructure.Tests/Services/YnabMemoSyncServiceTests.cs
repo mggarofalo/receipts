@@ -14,6 +14,8 @@ public class YnabMemoSyncServiceTests
 {
 	private readonly Mock<IYnabApiClient> _ynabClientMock = new();
 	private readonly Mock<IYnabBudgetSelectionService> _budgetSelectionMock = new();
+	private readonly Mock<IYnabAccountMappingService> _mappingServiceMock = new();
+	private static readonly Guid AccountId = Guid.NewGuid();
 	private readonly Mock<IYnabSyncRecordService> _syncRecordServiceMock = new();
 	private readonly Mock<ITransactionRepository> _transactionRepoMock = new();
 	private readonly Mock<IReceiptRepository> _receiptRepoMock = new();
@@ -34,9 +36,13 @@ public class YnabMemoSyncServiceTests
 			.Setup(r => r.UpsertAsync(It.IsAny<string>(), It.IsAny<long>(), It.IsAny<CancellationToken>()))
 			.Returns(Task.CompletedTask);
 
+		_mappingServiceMock.Setup(service => service.GetAllAsync(It.IsAny<CancellationToken>()))
+			.ReturnsAsync([new(Guid.NewGuid(), AccountId, "acc-1", "Mapped account", BudgetId, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow)]);
+
 		_service = new YnabMemoSyncService(
 			_ynabClientMock.Object,
 			_budgetSelectionMock.Object,
+			_mappingServiceMock.Object,
 			_syncRecordServiceMock.Object,
 			_transactionRepoMock.Object,
 			_receiptRepoMock.Object,
@@ -754,6 +760,8 @@ public class YnabMemoSyncServiceTests
 		{
 			Id = Guid.NewGuid(),
 			ReceiptId = receiptId,
+			CardId = Guid.NewGuid(),
+			Card = new() { AccountId = AccountId },
 			Amount = amount,
 			AmountCurrency = Currency.USD,
 			Date = DateOnly.FromDateTime(DateTime.Today),

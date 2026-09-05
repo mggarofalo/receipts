@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { act, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "@/test/test-utils";
 import { mockMutationResult } from "@/test/mock-hooks";
@@ -28,6 +28,8 @@ vi.mock("@/hooks/useYnab", () => ({
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  mockSyncMemosMutate.mockReset();
+  mockResolveSyncMutate.mockReset();
   const ynab = await import("@/hooks/useYnab");
   vi.mocked(ynab.useSyncYnabMemos).mockReturnValue(
     mockMutationResult({ mutate: mockSyncMemosMutate }),
@@ -194,4 +196,64 @@ describe("YnabMemoSyncCard", () => {
     // Summary badges appear inside the live region
     expect(liveRegion).toHaveTextContent("3 synced");
   });
+  it.each([1, 2])(
+    "requires an explicit choice for %i possible YNAB match(es)",
+    async (candidateCount) => {
+      const candidates = Array.from({ length: candidateCount }, (_, index) => ({
+        id: `ynab-${index + 1}`,
+        date: "2026-09-05",
+        amount: -12000,
+        payeeName: `Possible payee ${index + 1}`,
+        memo: "Existing memo",
+        accountId: "ynab-account",
+      }));
+      const reason =
+        "A unique match could not be confirmed because another local payment may claim this transaction.";
+      mockSyncMemosMutate.mockImplementation((_id, options) =>
+        options.onSuccess({
+          results: [
+            {
+              localTransactionId: "local-1",
+              receiptId: "receipt-1",
+              outcome: "Ambiguous",
+              error: reason,
+              ambiguousCandidates: candidates,
+            },
+          ],
+        }),
+      );
+      const user = userEvent.setup();
+      renderWithProviders(<YnabMemoSyncCard receiptId="receipt-1" />);
+      await user.click(screen.getByRole("button", { name: "Sync Memos" }));
+      expect(screen.getByText(reason)).toBeInTheDocument();
+      expect(mockResolveSyncMutate).not.toHaveBeenCalled();
+
+      await user.click(screen.getByRole("button", { name: "Resolve" }));
+      const dialog = screen.getByRole("dialog", {
+        name: "Resolve Ambiguous Match",
+      });
+      expect(dialog).toHaveAccessibleDescription(
+        "Automatic matching was inconclusive. Review the transaction details and select a match only if it is correct.",
+      );
+      expect(
+        within(dialog).getAllByRole("button", { name: "Select" }),
+      ).toHaveLength(candidateCount);
+      expect(mockResolveSyncMutate).not.toHaveBeenCalled();
+
+      await user.click(
+        within(dialog).getAllByRole("button", { name: "Select" })[0],
+      );
+      expect(mockResolveSyncMutate).toHaveBeenCalledExactlyOnceWith(
+        { localTransactionId: "local-1", ynabTransactionId: "ynab-1" },
+        expect.objectContaining({ onSuccess: expect.any(Function) }),
+      );
+      // A pending resolution keeps the candidate visible; success closes it and refreshes results.
+      expect(dialog).toBeInTheDocument();
+      await act(async () => {
+        mockResolveSyncMutate.mock.calls[0][1].onSuccess();
+      });
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(mockSyncMemosMutate).toHaveBeenCalledTimes(2);
+    },
+  );
 });

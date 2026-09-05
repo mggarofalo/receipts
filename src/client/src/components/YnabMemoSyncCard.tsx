@@ -267,7 +267,8 @@ export function YnabMemoSyncContent({
           <DialogHeader>
             <DialogTitle>Resolve Ambiguous Match</DialogTitle>
             <DialogDescription>
-              Multiple YNAB transactions match. Select the correct one.
+              Automatic matching was inconclusive. Review the transaction details and
+              select a match only if it is correct.
             </DialogDescription>
           </DialogHeader>
           {resolveTarget && (

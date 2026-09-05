@@ -246,3 +246,7 @@ Benefits:
 - No need to set up mock behaviors
 - Catches mapping errors in tests
 - Simpler test setup
+
+## YNAB memo matching ownership
+
+`YnabMemoSyncService` plans automatic matches using the selected budget, the authoritative card account and operation-wide target reservations. See [YNAB memo matching](ynab-memo-sync.md) for identity rules, explicit confirmation and the boundary with durable integration recovery.
