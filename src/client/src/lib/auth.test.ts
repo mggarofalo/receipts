@@ -2,7 +2,9 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   getAccessToken,
   getRefreshToken,
+  getSessionVersion,
   setTokens,
+  setRefreshedTokens,
   clearTokens,
   isAuthenticated,
   parseJwtPayload,
@@ -45,6 +47,41 @@ describe("token storage", () => {
 
   it("reports not authenticated when no access token", () => {
     expect(isAuthenticated()).toBe(false);
+  });
+
+  it("rotates tokens without replacing the current session", () => {
+    setTokens("access", "refresh");
+    const session = getSessionVersion();
+
+    expect(setRefreshedTokens(session, "refresh", "renewed-access", "renewed-refresh")).toBe(true);
+
+    expect(getAccessToken()).toBe("renewed-access");
+    expect(getRefreshToken()).toBe("renewed-refresh");
+    expect(getSessionVersion()).toBe(session);
+  });
+
+  it("rejects a stale refresh even if a later login receives identical credentials", () => {
+    setTokens("access", "refresh");
+    const oldSession = getSessionVersion();
+    clearTokens();
+    setTokens("access", "refresh");
+
+    expect(setRefreshedTokens(oldSession, "refresh", "obsolete-access", "obsolete-refresh")).toBe(false);
+
+    expect(getAccessToken()).toBe("access");
+    expect(getRefreshToken()).toBe("refresh");
+  });
+
+  it("rejects refresh completion after credentials were replaced outside this tab", () => {
+    setTokens("access", "refresh");
+    const session = getSessionVersion();
+    localStorage.setItem("receipts_access_token", "other-access");
+    localStorage.setItem("receipts_refresh_token", "other-refresh");
+
+    expect(setRefreshedTokens(session, "refresh", "obsolete-access", "obsolete-refresh")).toBe(false);
+
+    expect(getAccessToken()).toBe("other-access");
+    expect(getRefreshToken()).toBe("other-refresh");
   });
 });
 

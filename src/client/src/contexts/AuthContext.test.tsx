@@ -204,6 +204,69 @@ describe("AuthProvider", () => {
     expect(screen.getByTestId("user")).toHaveTextContent("null");
   });
 
+  it("ends the local session immediately while the remote logout is pending", async () => {
+    const token = makeJwt("user@test.com", "User");
+    mockedAuth.isAuthenticated.mockReturnValue(true);
+    mockedAuth.getAccessToken.mockReturnValue(token);
+    mockedAuth.parseJwtPayload.mockReturnValue({
+      userId: "user-id", email: "user@test.com", roles: ["User"], mustResetPassword: true,
+    });
+    let finishLogout!: () => void;
+    const remoteLogout = new Promise<void>((resolve) => { finishLogout = resolve; });
+    mockedClient.POST.mockImplementationOnce(() => remoteLogout);
+    render(<AuthProvider><TestConsumer /></AuthProvider>);
+
+    try {
+      await act(async () => { screen.getByTestId("logout").click(); });
+
+      expect(mockedAuth.clearTokens).toHaveBeenCalledOnce();
+      expect(screen.getByTestId("user")).toHaveTextContent("null");
+      expect(screen.getByTestId("must-reset")).toHaveTextContent("false");
+      expect(mockedClient.POST).toHaveBeenCalledWith("/api/auth/logout", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } finally {
+      await act(async () => { finishLogout(); await remoteLogout; });
+    }
+  });
+
+  it("waits for remote logout before submitting a new login", async () => {
+    const oldToken = makeJwt("alice@test.com", "User");
+    mockedAuth.isAuthenticated.mockReturnValue(true);
+    mockedAuth.getAccessToken.mockReturnValue(oldToken);
+    mockedAuth.parseJwtPayload.mockReturnValue({
+      userId: "alice-id", email: "alice@test.com", roles: ["User"], mustResetPassword: false,
+    });
+    let finishLogout!: () => void;
+    const remoteLogout = new Promise<void>((resolve) => { finishLogout = resolve; });
+    mockedClient.POST.mockImplementationOnce(() => remoteLogout);
+    const newToken = makeJwt("bob@test.com", "User");
+    mockedClient.POST.mockResolvedValueOnce({ data: { accessToken: newToken, refreshToken: "bob-refresh", mustResetPassword: false } });
+    render(<AuthProvider><TestConsumer /></AuthProvider>);
+
+    try {
+      await act(async () => { screen.getByTestId("logout").click(); });
+      mockedAuth.parseJwtPayload.mockReturnValue({
+        userId: "bob-id", email: "bob@test.com", roles: ["User"], mustResetPassword: false,
+      });
+      await act(async () => { screen.getByTestId("login").click(); });
+
+      expect(mockedClient.POST).toHaveBeenCalledTimes(1);
+      expect(screen.getByTestId("user")).toHaveTextContent("null");
+      expect(mockedAuth.setTokens).not.toHaveBeenCalled();
+
+      await act(async () => { finishLogout(); await remoteLogout; });
+
+      expect(mockedClient.POST).toHaveBeenNthCalledWith(2, "/api/auth/login", {
+        body: { email: "a@b.com", password: "pw" },
+      });
+      expect(mockedAuth.setTokens).toHaveBeenCalledWith(newToken, "bob-refresh");
+      expect(screen.getByTestId("user")).toHaveTextContent("bob@test.com");
+    } finally {
+      await act(async () => { finishLogout(); await remoteLogout; });
+    }
+  });
+
   it("login propagates timeout error to caller", async () => {
     const timeoutError = new DOMException("Signal timed out", "TimeoutError");
     mockedClient.POST.mockRejectedValueOnce(timeoutError);

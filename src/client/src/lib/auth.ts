@@ -1,6 +1,22 @@
 const LS_ACCESS_KEY = "receipts_access_token";
 const LS_REFRESH_KEY = "receipts_refresh_token";
 
+// Login, logout and password changes invalidate work from the previous session.
+// Rotating tokens within the same session keeps its version unchanged.
+let sessionVersion = 0;
+let observedRefreshToken: string | null | undefined;
+
+export function getSessionVersion(): number {
+  const currentRefreshToken = getRefreshToken();
+  // Another tab can replace credentials without calling this module's setters.
+  // Treat that as a boundary; only our own token rotation preserves the version.
+  if (observedRefreshToken !== undefined && observedRefreshToken !== currentRefreshToken) {
+    sessionVersion += 1;
+  }
+  observedRefreshToken = currentRefreshToken;
+  return sessionVersion;
+}
+
 type TokenRefreshListener = () => void;
 const tokenRefreshListeners = new Set<TokenRefreshListener>();
 
@@ -34,11 +50,30 @@ export function getRefreshToken(): string | null {
 }
 
 export function setTokens(accessToken: string, refreshToken: string): void {
+  sessionVersion += 1;
+  observedRefreshToken = refreshToken;
   localStorage.setItem(LS_ACCESS_KEY, accessToken);
   localStorage.setItem(LS_REFRESH_KEY, refreshToken);
 }
 
+export function setRefreshedTokens(
+  expectedSessionVersion: number,
+  expectedRefreshToken: string,
+  accessToken: string,
+  refreshToken: string,
+): boolean {
+  if (getSessionVersion() !== expectedSessionVersion || getRefreshToken() !== expectedRefreshToken) {
+    return false;
+  }
+  localStorage.setItem(LS_ACCESS_KEY, accessToken);
+  localStorage.setItem(LS_REFRESH_KEY, refreshToken);
+  observedRefreshToken = refreshToken;
+  return true;
+}
+
 export function clearTokens(): void {
+  sessionVersion += 1;
+  observedRefreshToken = null;
   localStorage.removeItem(LS_ACCESS_KEY);
   localStorage.removeItem(LS_REFRESH_KEY);
 }
