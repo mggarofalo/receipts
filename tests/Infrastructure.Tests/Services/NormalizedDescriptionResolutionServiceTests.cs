@@ -105,13 +105,16 @@ public class NormalizedDescriptionResolutionServiceTests
 		};
 	}
 
-	private static GetOrCreateResult NewResult(string canonicalName, double? matchScore)
+	private GetOrCreateResult NewResult(string canonicalName, double? matchScore)
 	{
 		NormalizedDescription domain = new(
 			Guid.NewGuid(),
 			canonicalName,
 			NormalizedDescriptionStatus.Active,
 			DateTimeOffset.UtcNow);
+		using ApplicationDbContext seed = _contextFactory.CreateDbContext();
+		seed.NormalizedDescriptions.Add(new() { Id = domain.Id, CanonicalName = domain.CanonicalName, Status = domain.Status, CreatedAt = domain.CreatedAt });
+		seed.SaveChanges();
 		return new GetOrCreateResult(domain, matchScore);
 	}
 

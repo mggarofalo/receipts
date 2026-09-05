@@ -3,7 +3,9 @@ using Application.Interfaces.Services;
 using Application.Models.NormalizedDescriptions;
 using Domain.NormalizedDescriptions;
 using Infrastructure.Entities.Core;
+using Infrastructure.Utilities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -104,9 +106,8 @@ public class NormalizedDescriptionResolutionService(
 
 	// Exposed internally so tests can invoke a single cycle directly without spinning the
 	// hosted-service loop (and tolerating the 10-second initial delay). The method is
-	// deliberately side-effect-bounded: either all grouped updates persist and the cycle
-	// returns a summary, or a failure bubbles out and no FKs are written (the SaveChanges
-	// call is single-shot across all items in the batch).
+	// deliberately side-effect-bounded: matching precedes a short guarded write transaction.
+	// Only unchanged snapshots are applied, with their automatic audit rows in the same commit.
 	internal async Task<ResolutionSummary> ProcessPendingResolutionsAsync(CancellationToken cancellationToken)
 	{
 		using IServiceScope scope = scopeFactory.CreateScope();
@@ -142,6 +143,8 @@ public class NormalizedDescriptionResolutionService(
 		// The comparison mirrors the unique functional index on lower("CanonicalName"), so this is
 		// an index probe per candidate rather than a scan.
 		List<ReceiptItemEntity> pending = await context.ReceiptItems
+			.AsNoTracking()
+			.IgnoreAutoIncludes()
 			.IgnoreQueryFilters()
 			.Where(r =>
 				r.DeletedAt == null &&
@@ -160,19 +163,26 @@ public class NormalizedDescriptionResolutionService(
 			return ResolutionSummary.Empty;
 		}
 
+		// Read source values and revision together before any expensive matching. A later
+		// edit/revert or link/unlink still changes PostgreSQL's row revision.
+		List<NormalizationWriteGuard.ItemSnapshot> snapshots = await NormalizationWriteGuard.ReadItemSnapshotsAsync(
+			context, pending.Select(item => item.Id).ToArray(), cancellationToken);
+		List<NormalizationWriteGuard.ItemSnapshot> eligible = snapshots.Where(item => item.DeletedAt is null
+			&& item.NormalizedDescriptionId is null && item.Description.Length >= MinDescriptionLength).ToList();
+
 		// Group by raw description so we only call GetOrCreateAsync once per unique text.
 		// The grouping collapses casing-equivalent duplicates (e.g., "Organic Milk" /
 		// "organic milk") only if they're literally identical — the service itself handles
 		// case-insensitive matching against canonical names when it sees them for the
 		// first time, so the first call in a group that sees "organic MILK" will still
 		// resolve to the same canonical entry as a later call with "ORGANIC milk".
-		var groups = pending
+		var groups = eligible
 			.GroupBy(r => r.Description)
 			.ToList();
 
-		int linked = 0;
 		int newEntriesCreated = 0;
-		int skipped = 0;
+		int skipped = pending.Count - eligible.Count;
+		List<PlannedResolution> planned = [];
 
 		foreach (var group in groups)
 		{
@@ -225,18 +235,14 @@ public class NormalizedDescriptionResolutionService(
 				newEntriesCreated++;
 			}
 
-			foreach (ReceiptItemEntity item in group)
+			foreach (NormalizationWriteGuard.ItemSnapshot item in group)
 			{
-				item.NormalizedDescriptionId = result.Description.Id;
-				item.NormalizedDescriptionMatchScore = result.MatchScore;
-				linked++;
+				planned.Add(new(item, result.Description.Id, result.Description.CanonicalName, result.MatchScore));
 			}
 		}
 
-		if (linked > 0)
-		{
-			await context.SaveChangesAsync(cancellationToken);
-		}
+		int linked = await ApplyResolutionsAsync(contextFactory, planned, cancellationToken);
+		skipped += planned.Count - linked;
 
 		ResolutionSummary summary = new(linked, newEntriesCreated, skipped);
 		logger.LogInformation(
@@ -246,6 +252,66 @@ public class NormalizedDescriptionResolutionService(
 			summary.Skipped);
 
 		return summary;
+	}
+
+	private sealed record PlannedResolution(NormalizationWriteGuard.ItemSnapshot Source,
+		Guid TargetId, string TargetName, double? MatchScore);
+
+	private static async Task<int> ApplyResolutionsAsync(IDbContextFactory<ApplicationDbContext> contextFactory,
+		List<PlannedResolution> planned, CancellationToken cancellationToken)
+	{
+		if (planned.Count == 0)
+		{
+			return 0;
+		}
+
+		await using ApplicationDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
+		await using IDbContextTransaction? transaction = context.Database.IsRelational()
+			? await context.Database.BeginTransactionAsync(cancellationToken) : null;
+		Guid[] targetIds = planned.Select(plan => plan.TargetId).Distinct().ToArray();
+		Guid[] itemIds = planned.Select(plan => plan.Source.Id).Distinct().ToArray();
+		await NormalizationWriteGuard.LockTargetsAsync(context, targetIds, cancellationToken);
+		await NormalizationWriteGuard.LockItemsAsync(context, itemIds, cancellationToken);
+		Dictionary<Guid, NormalizedDescriptionEntity> targets = await context.NormalizedDescriptions
+			.Where(target => targetIds.Contains(target.Id)).ToDictionaryAsync(target => target.Id, cancellationToken);
+		// A newly rejected exact source text takes precedence over a different fuzzy target.
+		// Rejection shares the write gate, so it cannot commit between this check and attachment.
+		string[] sourceNames = planned.Select(plan => plan.Source.Description.Trim().ToLowerInvariant()).Distinct().ToArray();
+		HashSet<string> rejectedNames = (await context.NormalizedDescriptions
+			.Where(target => target.Status == NormalizedDescriptionStatus.Rejected && sourceNames.Contains(target.CanonicalName.ToLower()))
+			.Select(target => target.CanonicalName.ToLower()).ToListAsync(cancellationToken)).ToHashSet(StringComparer.Ordinal);
+		Dictionary<Guid, ReceiptItemEntity> items = await context.ReceiptItems.IgnoreQueryFilters().IgnoreAutoIncludes()
+			.Where(item => itemIds.Contains(item.Id)).ToDictionaryAsync(item => item.Id, cancellationToken);
+		Dictionary<Guid, NormalizationWriteGuard.ItemSnapshot> current = (await NormalizationWriteGuard.ReadItemSnapshotsAsync(
+			context, itemIds, cancellationToken)).ToDictionary(item => item.Id);
+
+		int linked = 0;
+		foreach (PlannedResolution plan in planned)
+		{
+			if (rejectedNames.Contains(plan.Source.Description.Trim().ToLowerInvariant())
+				|| !current.TryGetValue(plan.Source.Id, out var snapshot) || !plan.Source.Matches(snapshot)
+				|| !items.TryGetValue(plan.Source.Id, out ReceiptItemEntity? item)
+				|| item.DeletedAt is not null || item.NormalizedDescriptionId is not null
+				|| !targets.TryGetValue(plan.TargetId, out NormalizedDescriptionEntity? target)
+				|| target.Status == NormalizedDescriptionStatus.Rejected
+				|| !string.Equals(target.CanonicalName, plan.TargetName, StringComparison.Ordinal))
+			{
+				continue;
+			}
+			item.NormalizedDescriptionId = target.Id;
+			item.NormalizedDescriptionMatchScore = plan.MatchScore;
+			linked++;
+		}
+
+		if (linked > 0)
+		{
+			await context.SaveChangesAsync(cancellationToken);
+		}
+		if (transaction is not null)
+		{
+			await transaction.CommitAsync(cancellationToken);
+		}
+		return linked;
 	}
 
 	internal readonly record struct ResolutionSummary(int Linked, int NewEntriesCreated, int Skipped)

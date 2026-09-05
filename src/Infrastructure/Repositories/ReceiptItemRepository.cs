@@ -4,7 +4,9 @@ using Application.Queries.Core.ReceiptItem.GetReceiptItemSuggestions;
 using Infrastructure.Entities.Core;
 using Infrastructure.Extensions;
 using Infrastructure.Interfaces.Repositories;
+using Infrastructure.Utilities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Infrastructure.Repositories;
 
@@ -199,7 +201,13 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 	public async Task UpdateAsync(List<ReceiptItemEntity> entities, CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
-		IEnumerable<Guid> ids = entities.Select(e => e.Id);
+		await using IDbContextTransaction? transaction = context.Database.IsRelational()
+			? await context.Database.BeginTransactionAsync(cancellationToken) : null;
+		Guid[] ids = entities.Select(entity => entity.Id).Distinct().ToArray();
+		// Read after locking: a worker may otherwise fill originally-null metadata before
+		// this edit saves, causing EF to omit its null clears and audit stale original values.
+		// Edits only preserve or clear links, so they need item locks, not canonical locks.
+		await NormalizationWriteGuard.LockItemsAsync(context, ids, cancellationToken);
 		List<ReceiptItemEntity> existingEntities = await context.ReceiptItems
 			.IgnoreAutoIncludes()
 			.Where(e => ids.Contains(e.Id))
@@ -229,6 +237,10 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 		}
 
 		await context.SaveChangesAsync(cancellationToken);
+		if (transaction is not null)
+		{
+			await transaction.CommitAsync(cancellationToken);
+		}
 	}
 
 	public async Task DeleteAsync(List<Guid> ids, CancellationToken cancellationToken)
