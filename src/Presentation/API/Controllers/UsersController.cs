@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using API.Authentication;
 using API.Generated.Dtos;
 using Application.Interfaces.Services;
 using Application.Models;
@@ -22,7 +23,8 @@ public class UsersController(
 	UserManager<ApplicationUser> userManager,
 	IAuthAuditService authAuditService,
 	IApiKeyService apiKeyService,
-	ILogger<UsersController> logger) : ControllerBase
+	ILogger<UsersController> logger,
+	IRoleManagementService roleManagementService) : ControllerBase
 {
 	[HttpGet]
 	[EndpointSummary("List all users with their roles")]
@@ -134,74 +136,26 @@ public class UsersController(
 
 	[HttpPut("{userId}")]
 	[EndpointSummary("Update a user (admin only)")]
-	// One BadRequest arm, not two: the signature previously distinguished a bare-string
-	// rejection from an Identity error list, and both are now the same problem document.
-	public async Task<Results<NoContent, NotFound, BadRequest<ProblemDetails>>> UpdateUser(string userId, [FromBody] UpdateUserRequest request)
+	public async Task<Results<NoContent, NotFound, BadRequest<ProblemDetails>, Conflict<ProblemDetails>>> UpdateUser(string userId, [FromBody] UpdateUserRequest request)
 	{
-		string? currentUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-
-		ApplicationUser? user = await userManager.FindByIdAsync(userId);
-		if (user is null)
+		string? actorId = RoleChangeActor.GetSubject(User);
+		if (actorId is null)
 		{
-			return TypedResults.NotFound();
+			return ApiProblem.BadRequest(RoleChangeActor.InvalidCredentials);
 		}
 
-		if (userId == currentUserId)
+		RoleChangeResult result = await roleManagementService.ChangeAsync(
+			userId, actorId,
+			RoleChangeMode.Replace, [request.Role],
+			new UserProfileUpdate(request.Email, request.FirstName, request.LastName, request.IsDisabled),
+			HttpContext.RequestAborted);
+		if (result.Status == RoleChangeStatus.Success && request.IsDisabled)
 		{
-			if (request.IsDisabled)
-			{
-				return ApiProblem.BadRequest("Cannot disable your own account.");
-			}
-
-			IList<string> currentRoles = await userManager.GetRolesAsync(user);
-			if (currentRoles.Contains("Admin") && request.Role != "Admin")
-			{
-				return ApiProblem.BadRequest("Cannot remove your own Admin role.");
-			}
+			// The committed lockout already denies API-key authentication. Also
+			// revoke the keys so re-enabling cannot reactivate those credentials.
+			await apiKeyService.RevokeAllForUserAsync(userId);
 		}
-
-		user.Email = request.Email;
-		user.UserName = request.Email;
-		user.FirstName = request.FirstName;
-		user.LastName = request.LastName;
-
-		// Disabled/enabled is signalled by LockoutEnd (MaxValue = disabled, null = enabled), never by
-		// LockoutEnabled. LockoutEnabled must stay true so failed-login lockout keeps working — setting it
-		// false here would permanently disable brute-force protection for the user, since IsLockedOutAsync
-		// short-circuits to false when LockoutEnabled is false (RECEIPTS-776).
-		user.LockoutEnabled = true;
-		user.LockoutEnd = request.IsDisabled ? DateTimeOffset.MaxValue : null;
-
-		IdentityResult updateResult = await userManager.UpdateAsync(user);
-		if (!updateResult.Succeeded)
-		{
-			return ApiProblem.BadRequest(updateResult.Errors.Select(e => e.Description));
-		}
-
-		if (request.IsDisabled)
-		{
-			// Disabling an account must also cut off any pre-existing API keys, otherwise
-			// they keep authenticating with the user's roles indefinitely (RECEIPTS-757).
-			await apiKeyService.RevokeAllForUserAsync(user.Id);
-
-			// Rotate the security stamp so any JWT access token issued before this disable fails
-			// per-request revalidation immediately, instead of surviving until it expires (RECEIPTS-800).
-			await userManager.UpdateSecurityStampAsync(user);
-		}
-
-		IList<string> roles = await userManager.GetRolesAsync(user);
-		if (roles.Count > 0)
-		{
-			await userManager.RemoveFromRolesAsync(user, roles);
-		}
-
-		IdentityResult roleResult = await userManager.AddToRoleAsync(user, request.Role);
-		if (!roleResult.Succeeded)
-		{
-			return ApiProblem.BadRequest(roleResult.Errors.Select(e => e.Description));
-		}
-
-		return TypedResults.NoContent();
+		return RoleChangeResponse.From(result);
 	}
 
 	[HttpDelete("{userId}")]

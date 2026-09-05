@@ -1,10 +1,14 @@
+using System.Security.Claims;
 using API.Controllers;
 using API.Generated.Dtos;
-using Common;
+using Application.Interfaces.Services;
+using Application.Models;
 using FluentAssertions;
 using Infrastructure.Entities;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -14,6 +18,7 @@ namespace Presentation.API.Tests.Controllers;
 public class UserRolesControllerTests
 {
 	private readonly Mock<UserManager<ApplicationUser>> _userManagerMock;
+	private readonly Mock<IRoleManagementService> _roleManagementServiceMock = new();
 	private readonly UserRolesController _controller;
 
 	public UserRolesControllerTests()
@@ -30,7 +35,16 @@ public class UserRolesControllerTests
 			new Mock<IServiceProvider>().Object,
 			new Mock<ILogger<UserManager<ApplicationUser>>>().Object);
 
-		_controller = new UserRolesController(_userManagerMock.Object);
+		_controller = new UserRolesController(_userManagerMock.Object, _roleManagementServiceMock.Object)
+		{
+			ControllerContext = new ControllerContext
+			{
+				HttpContext = new DefaultHttpContext
+				{
+					User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "actor"), new Claim(ClaimTypes.Role, "Admin")], "test")),
+				},
+			},
+		};
 	}
 
 	private static ApplicationUser CreateTestUser(string id = "user-123")
@@ -63,69 +77,34 @@ public class UserRolesControllerTests
 		Assert.IsType<NotFound>(result.Result);
 	}
 
-	// ── AssignUserRole ──────────────────────────────────────
-
-	[Fact]
-	public async Task AssignUserRole_ReturnsNoContent_WhenSuccessful()
+	[Theory]
+	[InlineData(RoleChangeMode.Add, RoleChangeStatus.Success, 204)]
+	[InlineData(RoleChangeMode.Add, RoleChangeStatus.NotFound, 404)]
+	[InlineData(RoleChangeMode.Add, RoleChangeStatus.Invalid, 400)]
+	[InlineData(RoleChangeMode.Add, RoleChangeStatus.Conflict, 409)]
+	[InlineData(RoleChangeMode.Remove, RoleChangeStatus.Success, 204)]
+	[InlineData(RoleChangeMode.Remove, RoleChangeStatus.NotFound, 404)]
+	[InlineData(RoleChangeMode.Remove, RoleChangeStatus.Invalid, 400)]
+	[InlineData(RoleChangeMode.Remove, RoleChangeStatus.Conflict, 409)]
+	public async Task RoleWrite_ForwardsActorRoleAndCancellation_AndMapsServiceResult(RoleChangeMode mode, RoleChangeStatus status, int expectedStatus)
 	{
-		ApplicationUser user = CreateTestUser();
-		_userManagerMock.Setup(m => m.FindByIdAsync(user.Id)).ReturnsAsync(user);
-		_userManagerMock.Setup(m => m.AddToRoleAsync(user, "Admin")).ReturnsAsync(IdentityResult.Success);
+		using CancellationTokenSource cancellation = new();
+		_controller.HttpContext.RequestAborted = cancellation.Token;
+		_roleManagementServiceMock.Setup(s => s.ChangeAsync("target", "actor", mode,
+			It.Is<IReadOnlyCollection<string>>(roles => roles.SequenceEqual(new[] { "Admin" })), null, cancellation.Token))
+			.ReturnsAsync(new RoleChangeResult(status, ["Role policy rejected this change"]));
 
-		Results<NoContent, BadRequest<ProblemDetails>, NotFound> result = await _controller.AssignUserRole(user.Id, "Admin");
+		var result = mode == RoleChangeMode.Add
+			? await _controller.AssignUserRole("target", "Admin")
+			: await _controller.RemoveUserRole("target", "Admin");
 
-		Assert.IsType<NoContent>(result.Result);
-	}
-
-	[Fact]
-	public async Task AssignUserRole_ReturnsBadRequest_WhenRoleIsInvalid()
-	{
-		Results<NoContent, BadRequest<ProblemDetails>, NotFound> result = await _controller.AssignUserRole("user-123", "InvalidRole");
-
-		BadRequest<ProblemDetails> badRequest = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
-		badRequest.Value!.Detail.Should().Contain("Invalid role");
-	}
-
-	[Fact]
-	public async Task AssignUserRole_ReturnsNotFound_WhenUserDoesNotExist()
-	{
-		_userManagerMock.Setup(m => m.FindByIdAsync("missing")).ReturnsAsync((ApplicationUser?)null);
-
-		Results<NoContent, BadRequest<ProblemDetails>, NotFound> result = await _controller.AssignUserRole("missing", "Admin");
-
-		Assert.IsType<NotFound>(result.Result);
-	}
-
-	// ── RemoveUserRole ──────────────────────────────────────
-
-	[Fact]
-	public async Task RemoveUserRole_ReturnsNoContent_WhenSuccessful()
-	{
-		ApplicationUser user = CreateTestUser();
-		_userManagerMock.Setup(m => m.FindByIdAsync(user.Id)).ReturnsAsync(user);
-		_userManagerMock.Setup(m => m.RemoveFromRoleAsync(user, "Admin")).ReturnsAsync(IdentityResult.Success);
-
-		Results<NoContent, BadRequest<ProblemDetails>, NotFound> result = await _controller.RemoveUserRole(user.Id, "Admin");
-
-		Assert.IsType<NoContent>(result.Result);
-	}
-
-	[Fact]
-	public async Task RemoveUserRole_ReturnsBadRequest_WhenRoleIsInvalid()
-	{
-		Results<NoContent, BadRequest<ProblemDetails>, NotFound> result = await _controller.RemoveUserRole("user-123", "InvalidRole");
-
-		BadRequest<ProblemDetails> badRequest = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
-		badRequest.Value!.Detail.Should().Contain("Invalid role");
-	}
-
-	[Fact]
-	public async Task RemoveUserRole_ReturnsNotFound_WhenUserDoesNotExist()
-	{
-		_userManagerMock.Setup(m => m.FindByIdAsync("missing")).ReturnsAsync((ApplicationUser?)null);
-
-		Results<NoContent, BadRequest<ProblemDetails>, NotFound> result = await _controller.RemoveUserRole("missing", "Admin");
-
-		Assert.IsType<NotFound>(result.Result);
+		((IStatusCodeHttpResult)result.Result).StatusCode.Should().Be(expectedStatus);
+		if (status is RoleChangeStatus.Invalid or RoleChangeStatus.Conflict)
+		{
+			((IValueHttpResult<ProblemDetails>)result.Result).Value!.Detail.Should().Contain("Role policy rejected this change");
+		}
+		_roleManagementServiceMock.VerifyAll();
+		_userManagerMock.Verify(m => m.AddToRoleAsync(It.IsAny<ApplicationUser>(), It.IsAny<string>()), Times.Never);
+		_userManagerMock.Verify(m => m.RemoveFromRoleAsync(It.IsAny<ApplicationUser>(), It.IsAny<string>()), Times.Never);
 	}
 }
