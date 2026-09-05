@@ -156,6 +156,7 @@ public static class InfrastructureService
 			.AddScoped<IAuditService, AuditService>()
 			.AddScoped<IAuthAuditService, AuthAuditService>()
 			.AddScoped<IUserService, UserService>()
+			.AddScoped<IRoleManagementService, RoleManagementService>()
 			.AddScoped<ITrashService, TrashService>()
 			.AddScoped<IDashboardService, DashboardService>()
 			.AddScoped<IReportService, ReportService>()

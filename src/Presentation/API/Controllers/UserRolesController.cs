@@ -1,6 +1,8 @@
+using API.Authentication;
 using API.Generated.Dtos;
+using Application.Interfaces.Services;
+using Application.Models;
 using Asp.Versioning;
-using Common;
 using Infrastructure.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -15,7 +17,8 @@ namespace API.Controllers;
 [Produces("application/json")]
 [Authorize(Policy = "RequireAdmin")]
 public class UserRolesController(
-	UserManager<ApplicationUser> userManager) : ControllerBase
+	UserManager<ApplicationUser> userManager,
+	IRoleManagementService roleManagementService) : ControllerBase
 {
 	[HttpGet]
 	[EndpointSummary("List roles for a user")]
@@ -36,39 +39,33 @@ public class UserRolesController(
 
 	[HttpPost("{role}")]
 	[EndpointSummary("Assign role to user")]
-	public async Task<Results<NoContent, BadRequest<ProblemDetails>, NotFound>> AssignUserRole([FromRoute] string userId, [FromRoute] string role)
+	public async Task<Results<NoContent, NotFound, BadRequest<ProblemDetails>, Conflict<ProblemDetails>>> AssignUserRole([FromRoute] string userId, [FromRoute] string role)
 	{
-		if (!AppRoles.All.Contains(role))
+		string? actorId = RoleChangeActor.GetSubject(User);
+		if (actorId is null)
 		{
-			return ApiProblem.BadRequest($"Invalid role '{role}'. Valid roles: {string.Join(", ", AppRoles.All)}");
+			return ApiProblem.BadRequest(RoleChangeActor.InvalidCredentials);
 		}
 
-		ApplicationUser? user = await userManager.FindByIdAsync(userId);
-		if (user is null)
-		{
-			return TypedResults.NotFound();
-		}
-
-		await userManager.AddToRoleAsync(user, role);
-		return TypedResults.NoContent();
+		RoleChangeResult result = await roleManagementService.ChangeAsync(
+			userId, actorId,
+			RoleChangeMode.Add, [role], cancellationToken: HttpContext.RequestAborted);
+		return RoleChangeResponse.From(result);
 	}
 
 	[HttpDelete("{role}")]
 	[EndpointSummary("Remove role from user")]
-	public async Task<Results<NoContent, BadRequest<ProblemDetails>, NotFound>> RemoveUserRole([FromRoute] string userId, [FromRoute] string role)
+	public async Task<Results<NoContent, NotFound, BadRequest<ProblemDetails>, Conflict<ProblemDetails>>> RemoveUserRole([FromRoute] string userId, [FromRoute] string role)
 	{
-		if (!AppRoles.All.Contains(role))
+		string? actorId = RoleChangeActor.GetSubject(User);
+		if (actorId is null)
 		{
-			return ApiProblem.BadRequest($"Invalid role '{role}'. Valid roles: {string.Join(", ", AppRoles.All)}");
+			return ApiProblem.BadRequest(RoleChangeActor.InvalidCredentials);
 		}
 
-		ApplicationUser? user = await userManager.FindByIdAsync(userId);
-		if (user is null)
-		{
-			return TypedResults.NotFound();
-		}
-
-		await userManager.RemoveFromRoleAsync(user, role);
-		return TypedResults.NoContent();
+		RoleChangeResult result = await roleManagementService.ChangeAsync(
+			userId, actorId,
+			RoleChangeMode.Remove, [role], cancellationToken: HttpContext.RequestAborted);
+		return RoleChangeResponse.From(result);
 	}
 }

@@ -22,6 +22,7 @@ public class UsersControllerTests
 	private readonly Mock<IAuthAuditService> _authAuditServiceMock;
 	private readonly Mock<IApiKeyService> _apiKeyServiceMock;
 	private readonly Mock<ILogger<UsersController>> _loggerMock;
+	private readonly Mock<IRoleManagementService> _roleManagementServiceMock = new();
 	private readonly UsersController _controller;
 
 	public UsersControllerTests()
@@ -48,17 +49,19 @@ public class UsersControllerTests
 			_userManagerMock.Object,
 			_authAuditServiceMock.Object,
 			_apiKeyServiceMock.Object,
-			_loggerMock.Object);
+			_loggerMock.Object,
+			_roleManagementServiceMock.Object);
 
 		_controller.ControllerContext = new ControllerContext
 		{
 			HttpContext = new DefaultHttpContext()
 		};
+		SetupUserClaims("admin-1");
 	}
 
 	private void SetupUserClaims(string userId)
 	{
-		List<Claim> claims = [new Claim(ClaimTypes.NameIdentifier, userId)];
+		List<Claim> claims = [new Claim(ClaimTypes.NameIdentifier, userId), new Claim(ClaimTypes.Role, "Admin")];
 		ClaimsIdentity identity = new(claims, "TestAuth");
 		ClaimsPrincipal principal = new(identity);
 		_controller.ControllerContext.HttpContext.User = principal;
@@ -191,227 +194,59 @@ public class UsersControllerTests
 		badRequest.Value!.Detail.Should().Contain("Role not found");
 	}
 
-	// ── UpdateUser ──────────────────────────────────────────
-
+	// Role/profile policy and Identity atomicity are exercised with PostgreSQL in
+	// RoleManagementTests. These tests check the controller boundary and key side effect.
 	[Fact]
-	public async Task UpdateUser_ReturnsNoContent_WhenSuccessful()
+	public async Task UpdateUser_ForwardsActorProfileAndCancellation_AsOneRoleChange()
 	{
 		SetupUserClaims("admin-1");
-		ApplicationUser user = CreateTestUser("user-123");
-		_userManagerMock.Setup(m => m.FindByIdAsync("user-123")).ReturnsAsync(user);
-		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
-		_userManagerMock.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "User" });
-		_userManagerMock.Setup(m => m.RemoveFromRolesAsync(user, It.IsAny<IEnumerable<string>>())).ReturnsAsync(IdentityResult.Success);
-		_userManagerMock.Setup(m => m.AddToRoleAsync(user, "Admin")).ReturnsAsync(IdentityResult.Success);
+		using CancellationTokenSource cancellation = new();
+		_controller.HttpContext.RequestAborted = cancellation.Token;
+		UserProfileUpdate profile = new("updated@example.com", "Up", "Dated", false);
+		_roleManagementServiceMock.Setup(s => s.ChangeAsync("user-123", "admin-1", RoleChangeMode.Replace,
+			It.Is<IReadOnlyCollection<string>>(roles => roles.SequenceEqual(new[] { "Admin" })), profile, cancellation.Token))
+			.ReturnsAsync(RoleChangeResult.Success);
 
-		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result = await _controller.UpdateUser(
-			"user-123",
-			new UpdateUserRequest { Email = "updated@example.com", FirstName = "Up", LastName = "Dated", Role = "Admin", IsDisabled = false });
+		var result = await _controller.UpdateUser("user-123", new UpdateUserRequest
+		{
+			Email = profile.Email,
+			FirstName = profile.FirstName,
+			LastName = profile.LastName,
+			Role = "Admin",
+			IsDisabled = false,
+		});
 
 		Assert.IsType<NoContent>(result.Result);
-	}
-
-	[Fact]
-	public async Task UpdateUser_RevokesAllApiKeys_WhenDisabling()
-	{
-		SetupUserClaims("admin-1");
-		ApplicationUser user = CreateTestUser("user-123");
-		_userManagerMock.Setup(m => m.FindByIdAsync("user-123")).ReturnsAsync(user);
-		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
-		_userManagerMock.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "User" });
-		_userManagerMock.Setup(m => m.RemoveFromRolesAsync(user, It.IsAny<IEnumerable<string>>())).ReturnsAsync(IdentityResult.Success);
-		_userManagerMock.Setup(m => m.AddToRoleAsync(user, "User")).ReturnsAsync(IdentityResult.Success);
-
-		await _controller.UpdateUser(
-			"user-123",
-			new UpdateUserRequest { Email = "a@b.com", FirstName = "A", LastName = "B", Role = "User", IsDisabled = true });
-
-		_apiKeyServiceMock.Verify(s => s.RevokeAllForUserAsync("user-123", It.IsAny<CancellationToken>()), Times.Once);
-	}
-
-	[Fact]
-	public async Task UpdateUser_RotatesSecurityStamp_WhenDisabling()
-	{
-		SetupUserClaims("admin-1");
-		ApplicationUser user = CreateTestUser("user-123");
-		_userManagerMock.Setup(m => m.FindByIdAsync("user-123")).ReturnsAsync(user);
-		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
-		_userManagerMock.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "User" });
-		_userManagerMock.Setup(m => m.RemoveFromRolesAsync(user, It.IsAny<IEnumerable<string>>())).ReturnsAsync(IdentityResult.Success);
-		_userManagerMock.Setup(m => m.AddToRoleAsync(user, "User")).ReturnsAsync(IdentityResult.Success);
-		_userManagerMock.Setup(m => m.UpdateSecurityStampAsync(user)).ReturnsAsync(IdentityResult.Success);
-
-		await _controller.UpdateUser(
-			"user-123",
-			new UpdateUserRequest { Email = "a@b.com", FirstName = "A", LastName = "B", Role = "User", IsDisabled = true });
-
-		// Rotating the stamp kills any JWT access token issued before the disable (RECEIPTS-800).
-		_userManagerMock.Verify(m => m.UpdateSecurityStampAsync(user), Times.Once);
-	}
-
-	[Fact]
-	public async Task UpdateUser_DoesNotRotateSecurityStamp_WhenNotDisabling()
-	{
-		SetupUserClaims("admin-1");
-		ApplicationUser user = CreateTestUser("user-123");
-		_userManagerMock.Setup(m => m.FindByIdAsync("user-123")).ReturnsAsync(user);
-		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
-		_userManagerMock.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "User" });
-		_userManagerMock.Setup(m => m.RemoveFromRolesAsync(user, It.IsAny<IEnumerable<string>>())).ReturnsAsync(IdentityResult.Success);
-		_userManagerMock.Setup(m => m.AddToRoleAsync(user, "User")).ReturnsAsync(IdentityResult.Success);
-
-		await _controller.UpdateUser(
-			"user-123",
-			new UpdateUserRequest { Email = "a@b.com", FirstName = "A", LastName = "B", Role = "User", IsDisabled = false });
-
-		_userManagerMock.Verify(m => m.UpdateSecurityStampAsync(It.IsAny<ApplicationUser>()), Times.Never);
-	}
-
-	[Fact]
-	public async Task UpdateUser_DoesNotRevokeApiKeys_WhenNotDisabling()
-	{
-		SetupUserClaims("admin-1");
-		ApplicationUser user = CreateTestUser("user-123");
-		_userManagerMock.Setup(m => m.FindByIdAsync("user-123")).ReturnsAsync(user);
-		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
-		_userManagerMock.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "User" });
-		_userManagerMock.Setup(m => m.RemoveFromRolesAsync(user, It.IsAny<IEnumerable<string>>())).ReturnsAsync(IdentityResult.Success);
-		_userManagerMock.Setup(m => m.AddToRoleAsync(user, "User")).ReturnsAsync(IdentityResult.Success);
-
-		await _controller.UpdateUser(
-			"user-123",
-			new UpdateUserRequest { Email = "a@b.com", FirstName = "A", LastName = "B", Role = "User", IsDisabled = false });
-
+		_roleManagementServiceMock.VerifyAll();
+		_userManagerMock.Verify(m => m.UpdateAsync(It.IsAny<ApplicationUser>()), Times.Never);
 		_apiKeyServiceMock.Verify(s => s.RevokeAllForUserAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
 	}
 
-	[Fact]
-	public async Task UpdateUser_KeepsLockoutEnabledTrue_WhenEnabling_SoFailedLoginLockoutStillWorks()
+	[Theory]
+	[InlineData(RoleChangeStatus.Success, 204)]
+	[InlineData(RoleChangeStatus.NotFound, 404)]
+	[InlineData(RoleChangeStatus.Invalid, 400)]
+	[InlineData(RoleChangeStatus.Conflict, 409)]
+	public async Task UpdateUser_MapsResult_AndRevokesKeysOnlyAfterSuccessfulDisable(RoleChangeStatus status, int expectedStatus)
 	{
-		SetupUserClaims("admin-1");
-		ApplicationUser user = CreateTestUser("user-123");
-		// Previously disabled: enabling must NOT turn off the lockout machinery.
-		user.LockoutEnabled = true;
-		user.LockoutEnd = DateTimeOffset.MaxValue;
-		_userManagerMock.Setup(m => m.FindByIdAsync("user-123")).ReturnsAsync(user);
-		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
-		_userManagerMock.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "User" });
-		_userManagerMock.Setup(m => m.RemoveFromRolesAsync(user, It.IsAny<IEnumerable<string>>())).ReturnsAsync(IdentityResult.Success);
-		_userManagerMock.Setup(m => m.AddToRoleAsync(user, "User")).ReturnsAsync(IdentityResult.Success);
+		_roleManagementServiceMock.Setup(s => s.ChangeAsync(It.IsAny<string>(), It.IsAny<string>(), RoleChangeMode.Replace,
+			It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<UserProfileUpdate>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new RoleChangeResult(status, ["Role update rejected"]));
 
-		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result = await _controller.UpdateUser(
-			"user-123",
-			new UpdateUserRequest { Email = "a@b.com", FirstName = "A", LastName = "B", Role = "User", IsDisabled = false });
+		var result = await _controller.UpdateUser("user-123", new UpdateUserRequest
+		{
+			Email = "updated@example.com",
+			Role = "User",
+			IsDisabled = true,
+		});
 
-		Assert.IsType<NoContent>(result.Result);
-		// LockoutEnabled stays true, so AccessFailedAsync/IsLockedOutAsync can still lock this account on
-		// failed logins. Enable is signalled purely by clearing LockoutEnd.
-		user.LockoutEnabled.Should().BeTrue();
-		user.LockoutEnd.Should().BeNull();
-		// IsDisabled invariant: an enabled user (LockoutEnd null) reads as not disabled.
-		(user.LockoutEnabled && user.LockoutEnd > DateTimeOffset.UtcNow).Should().BeFalse();
-	}
-
-	[Fact]
-	public async Task UpdateUser_Disable_SetsLockoutEndToMaxValue_AndKeepsLockoutEnabled()
-	{
-		SetupUserClaims("admin-1");
-		ApplicationUser user = CreateTestUser("user-123");
-		_userManagerMock.Setup(m => m.FindByIdAsync("user-123")).ReturnsAsync(user);
-		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
-		_userManagerMock.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "User" });
-		_userManagerMock.Setup(m => m.RemoveFromRolesAsync(user, It.IsAny<IEnumerable<string>>())).ReturnsAsync(IdentityResult.Success);
-		_userManagerMock.Setup(m => m.AddToRoleAsync(user, "User")).ReturnsAsync(IdentityResult.Success);
-
-		await _controller.UpdateUser(
-			"user-123",
-			new UpdateUserRequest { Email = "a@b.com", FirstName = "A", LastName = "B", Role = "User", IsDisabled = true });
-
-		user.LockoutEnabled.Should().BeTrue();
-		user.LockoutEnd.Should().Be(DateTimeOffset.MaxValue);
-		// IsDisabled invariant: a disabled user (LockoutEnd = MaxValue) reads as disabled.
-		(user.LockoutEnabled && user.LockoutEnd > DateTimeOffset.UtcNow).Should().BeTrue();
-	}
-
-	[Fact]
-	public async Task UpdateUser_ReturnsNotFound_WhenUserDoesNotExist()
-	{
-		SetupUserClaims("admin-1");
-		_userManagerMock.Setup(m => m.FindByIdAsync("missing")).ReturnsAsync((ApplicationUser?)null);
-
-		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result = await _controller.UpdateUser(
-			"missing",
-			new UpdateUserRequest { Email = "a@b.com", FirstName = "A", LastName = "B", Role = "User", IsDisabled = false });
-
-		Assert.IsType<NotFound>(result.Result);
-	}
-
-	[Fact]
-	public async Task UpdateUser_ReturnsBadRequest_WhenSelfDisable()
-	{
-		SetupUserClaims("user-123");
-		ApplicationUser user = CreateTestUser("user-123");
-		_userManagerMock.Setup(m => m.FindByIdAsync("user-123")).ReturnsAsync(user);
-
-		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result = await _controller.UpdateUser(
-			"user-123",
-			new UpdateUserRequest { Email = "a@b.com", FirstName = "A", LastName = "B", Role = "Admin", IsDisabled = true });
-
-		BadRequest<ProblemDetails> badRequest = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
-		badRequest.Value!.Detail.Should().Contain("Cannot disable your own account");
-	}
-
-	[Fact]
-	public async Task UpdateUser_ReturnsBadRequest_WhenSelfRemoveAdmin()
-	{
-		SetupUserClaims("user-123");
-		ApplicationUser user = CreateTestUser("user-123");
-		_userManagerMock.Setup(m => m.FindByIdAsync("user-123")).ReturnsAsync(user);
-		_userManagerMock.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "Admin" });
-
-		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result = await _controller.UpdateUser(
-			"user-123",
-			new UpdateUserRequest { Email = "a@b.com", FirstName = "A", LastName = "B", Role = "User", IsDisabled = false });
-
-		BadRequest<ProblemDetails> badRequest = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
-		badRequest.Value!.Detail.Should().Contain("Cannot remove your own Admin role");
-	}
-
-	[Fact]
-	public async Task UpdateUser_ReturnsBadRequest_WhenUpdateFails()
-	{
-		SetupUserClaims("admin-1");
-		ApplicationUser user = CreateTestUser("user-123");
-		_userManagerMock.Setup(m => m.FindByIdAsync("user-123")).ReturnsAsync(user);
-		_userManagerMock.Setup(m => m.UpdateAsync(user))
-			.ReturnsAsync(IdentityResult.Failed(new IdentityError { Description = "Update failed" }));
-
-		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result = await _controller.UpdateUser(
-			"user-123",
-			new UpdateUserRequest { Email = "a@b.com", FirstName = "A", LastName = "B", Role = "User", IsDisabled = false });
-
-		BadRequest<ProblemDetails> badRequest = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
-		badRequest.Value!.Detail.Should().Contain("Update failed");
-	}
-
-	[Fact]
-	public async Task UpdateUser_ReturnsBadRequest_WhenRoleAssignmentFails()
-	{
-		SetupUserClaims("admin-1");
-		ApplicationUser user = CreateTestUser("user-123");
-		_userManagerMock.Setup(m => m.FindByIdAsync("user-123")).ReturnsAsync(user);
-		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
-		_userManagerMock.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "User" });
-		_userManagerMock.Setup(m => m.RemoveFromRolesAsync(user, It.IsAny<IEnumerable<string>>())).ReturnsAsync(IdentityResult.Success);
-		_userManagerMock.Setup(m => m.AddToRoleAsync(user, "Admin"))
-			.ReturnsAsync(IdentityResult.Failed(new IdentityError { Description = "Role failed" }));
-
-		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result = await _controller.UpdateUser(
-			"user-123",
-			new UpdateUserRequest { Email = "a@b.com", FirstName = "A", LastName = "B", Role = "Admin", IsDisabled = false });
-
-		BadRequest<ProblemDetails> badRequest = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
-		badRequest.Value!.Detail.Should().Contain("Role failed");
+		((IStatusCodeHttpResult)result.Result).StatusCode.Should().Be(expectedStatus);
+		if (status is RoleChangeStatus.Invalid or RoleChangeStatus.Conflict)
+		{
+			((IValueHttpResult<ProblemDetails>)result.Result).Value!.Detail.Should().Contain("Role update rejected");
+		}
+		_apiKeyServiceMock.Verify(s => s.RevokeAllForUserAsync("user-123", It.IsAny<CancellationToken>()),
+			status == RoleChangeStatus.Success ? Times.Once() : Times.Never());
 	}
 
 	// ── DeactivateUser ──────────────────────────────────────

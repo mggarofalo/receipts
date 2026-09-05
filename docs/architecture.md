@@ -69,6 +69,16 @@ sum(item.TotalAmount) + Receipt.TaxAmount + sum(adjustment.Amount) == sum(transa
 
 See the [Correctness Hardening module](https://plane.wallingford.me/dev/projects/aaac8dc9-bc4c-42db-ac99-eee7864c78e9/modules/1addfa25-4ce8-44f7-b9e7-44b3d3a27d69) in Plane for the full design history.
 
+### Role management and authorization revocation
+
+`IRoleManagementService` owns Add, Remove, and Replace operations for existing users. Both role routes and the user profile PUT use this operation. A profile supplied with replacement roles participates in the same transaction, so a rejected role change cannot leave a partial profile update.
+
+The PostgreSQL implementation locks the shared Admin role row before reading membership and making policy decisions. All three operations use that coordinator; locking only the target user would allow two administrators to demote each other concurrently. Every Identity result is checked, and effective membership changes and the security-stamp update commit together. No-op membership changes preserve existing sessions. Disabling an account still rotates its stamp and revokes its API keys.
+
+Both routes require an unambiguous authenticated administrator subject and prohibit removing that caller's own Admin role. When a JWT and API key both authenticate different users, these operations reject the request; one identity's subject cannot be combined with another's administrator authority. Role changes also preserve at least one Admin membership. This is a membership guarantee: the existing account disable/deactivate policies remain separate, and the role operation does not promise that an administrator is currently unlocked or enabled. Initial role assignment remains part of the separate user-creation flow.
+
+After a role change, an old JWT fails the existing per-request stamp check with 401. A fresh JWT contains current roles. API keys continue reading current roles on every request: demotion leaves the key usable for ordinarily authenticated endpoints but denies Admin endpoints with 403. Role changes do not revoke the key itself. Policy/Identity validation failures return 400 ProblemDetails; concurrency conflicts return 409 ProblemDetails; missing users remain bodiless 404 responses.
+
 ## Database
 
 PostgreSQL with EF Core + pgvector extension. Connection configured via environment variables:

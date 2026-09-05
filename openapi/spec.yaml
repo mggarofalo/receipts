@@ -3767,8 +3767,18 @@ paths:
           description: No Content
         "400":
           description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
         "404":
           description: Not Found
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
     delete:
       operationId: DeactivateUser
       tags: [Users]
@@ -3870,8 +3880,18 @@ paths:
           description: No Content
         "400":
           description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
         "404":
           description: Not Found
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
     delete:
       operationId: RemoveUserRole
       tags: [UserRoles]
@@ -3895,8 +3915,18 @@ paths:
           description: No Content
         "400":
           description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
         "404":
           description: Not Found
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
 
   # ──────────────────────────────────────────────
   # Reports
