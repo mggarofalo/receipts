@@ -8,7 +8,9 @@ using Infrastructure.Configurations;
 using Infrastructure.Entities.Audit;
 using Infrastructure.Entities.Core;
 using Infrastructure.Mapping;
+using Infrastructure.Utilities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Pgvector;
 
 namespace Infrastructure.Services;
@@ -423,7 +425,16 @@ public class NormalizedDescriptionService(
 			],
 			now);
 
+		// Matching above owns no database locks. Serialize only the final write phase,
+		// before EF can update children and then delete their canonical parent.
+		await using IDbContextTransaction? transaction = context.Database.IsRelational()
+			? await context.Database.BeginTransactionAsync(cancellationToken) : null;
+		await NormalizationWriteGuard.LockTargetsAsync(context, [keepId, discardId], cancellationToken);
 		await context.SaveChangesAsync(cancellationToken);
+		if (transaction is not null)
+		{
+			await transaction.CommitAsync(cancellationToken);
+		}
 
 		// The returned count keeps its established meaning — live items re-linked — so the
 		// admin-facing "N items re-linked" number still matches what a report would show.
@@ -623,6 +634,10 @@ public class NormalizedDescriptionService(
 	public async Task<bool> UpdateStatusAsync(Guid id, NormalizedDescriptionStatus status, CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
+		await using IDbContextTransaction? transaction = context.Database.IsRelational()
+			? await context.Database.BeginTransactionAsync(cancellationToken) : null;
+		// Serialize with automatic attachment before reading status or scanning children.
+		await NormalizationWriteGuard.LockTargetsAsync(context, [id], cancellationToken);
 		NormalizedDescriptionEntity? entity = await context.NormalizedDescriptions
 			.FirstOrDefaultAsync(e => e.Id == id, cancellationToken);
 		if (entity is null || entity.Status == status)
@@ -639,6 +654,10 @@ public class NormalizedDescriptionService(
 		}
 
 		await context.SaveChangesAsync(cancellationToken);
+		if (transaction is not null)
+		{
+			await transaction.CommitAsync(cancellationToken);
+		}
 		return true;
 	}
 
@@ -663,11 +682,13 @@ public class NormalizedDescriptionService(
 		NormalizedDescriptionStatus previous,
 		CancellationToken cancellationToken)
 	{
-		List<ReceiptItemEntity> items = await context.ReceiptItems
-			.IgnoreQueryFilters()
-			.IgnoreAutoIncludes()
-			.Where(r => r.NormalizedDescriptionId == entity.Id)
-			.ToListAsync(cancellationToken);
+		IQueryable<ReceiptItemEntity> itemQuery = context.Database.IsNpgsql()
+			? context.ReceiptItems.FromSqlInterpolated($"""
+				SELECT * FROM receipts."ReceiptItems" WHERE "NormalizedDescriptionId" = {entity.Id}
+				ORDER BY "Id" FOR UPDATE
+				""")
+			: context.ReceiptItems.Where(item => item.NormalizedDescriptionId == entity.Id);
+		List<ReceiptItemEntity> items = await itemQuery.IgnoreQueryFilters().IgnoreAutoIncludes().ToListAsync(cancellationToken);
 
 		int unlinkedItemCount = 0;
 		foreach (ReceiptItemEntity item in items)
@@ -692,10 +713,13 @@ public class NormalizedDescriptionService(
 		// much bigger surprise than an unlinked one. An unlinked template simply re-links on its
 		// next use — which, if the text is still tombstoned, GetOrCreateForTemplateAsync treats as
 		// the user contradicting the rejection on purpose.
-		List<ItemTemplateEntity> templates = await context.ItemTemplates
-			.IgnoreQueryFilters()
-			.Where(t => t.NormalizedDescriptionId == entity.Id)
-			.ToListAsync(cancellationToken);
+		IQueryable<ItemTemplateEntity> templateQuery = context.Database.IsNpgsql()
+			? context.ItemTemplates.FromSqlInterpolated($"""
+				SELECT * FROM library."ItemTemplates" WHERE "NormalizedDescriptionId" = {entity.Id}
+				ORDER BY "Id" FOR UPDATE
+				""")
+			: context.ItemTemplates.Where(template => template.NormalizedDescriptionId == entity.Id);
+		List<ItemTemplateEntity> templates = await templateQuery.IgnoreQueryFilters().ToListAsync(cancellationToken);
 
 		foreach (ItemTemplateEntity template in templates)
 		{
@@ -1239,6 +1263,9 @@ public class NormalizedDescriptionService(
 	public async Task<RequeuePendingResult?> RequeuePendingAsync(string expectedFingerprint, CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
+		await using IDbContextTransaction? transaction = context.Database.IsRelational()
+			? await context.Database.BeginTransactionAsync(cancellationToken) : null;
+		await NormalizationWriteGuard.AcquireWriteGateAsync(context, cancellationToken);
 
 		List<NormalizedDescriptionEntity> pending = await context.NormalizedDescriptions
 			.Where(e => e.Status == NormalizedDescriptionStatus.PendingReview)
@@ -1264,6 +1291,7 @@ public class NormalizedDescriptionService(
 		}
 
 		List<Guid> pendingIds = [.. pending.Select(e => e.Id)];
+		await NormalizationWriteGuard.LockTargetsAsync(context, pendingIds.ToArray(), cancellationToken);
 
 		// IgnoreQueryFilters so trashed items are repointed as well. The FK is DeleteBehavior.SetNull,
 		// so a trashed row left pointing at a deleted description would have its link nulled by the
@@ -1331,6 +1359,10 @@ public class NormalizedDescriptionService(
 		// land, or none do. A partial commit would strand items pointing at deleted rows, or record
 		// a requeue that did not happen.
 		await context.SaveChangesAsync(cancellationToken);
+		if (transaction is not null)
+		{
+			await transaction.CommitAsync(cancellationToken);
+		}
 
 		return new RequeuePendingResult(pending.Count, unlinkedItemCount, clearedMatchScoreCount);
 	}

@@ -250,3 +250,7 @@ Benefits:
 ## YNAB memo matching ownership
 
 `YnabMemoSyncService` plans automatic matches using the selected budget, the authoritative card account and operation-wide target reservations. See [YNAB memo matching](ynab-memo-sync.md) for identity rules, explicit confirmation and the boundary with durable integration recovery.
+
+## Normalization write ownership
+
+Automatic receipt-item normalization uses source snapshots and a short guarded write phase, preserving newer edits and atomic audit records. See [Normalization write ownership](normalization-ownership.md) for row revisions, canonical rejection and lock ordering, plus the separate template follow-up.
