@@ -59,7 +59,7 @@ public class BackupServiceTests : IDisposable
 		await using SqliteCommand versionCmd = conn.CreateCommand();
 		versionCmd.CommandText = "SELECT value FROM backup_metadata WHERE key='export_version'";
 		string? version = (string?)await versionCmd.ExecuteScalarAsync();
-		version.Should().Be("4");
+		version.Should().Be("5");
 	}
 
 	[Fact]
@@ -338,6 +338,7 @@ public class BackupServiceTests : IDisposable
 		tables.Should().Contain("receipt_items");
 		tables.Should().Contain("transactions");
 		tables.Should().Contain("adjustments");
+		tables.Should().Contain("accepted_duplicate_pairs");
 	}
 
 	[Fact]

@@ -146,7 +146,7 @@ public class BackupControllerTests : IDisposable
 	public async Task ImportBackup_ValidExtensions_CallsImportService(string extension)
 	{
 		// Arrange
-		BackupImportResult importResult = new(1, 0, 1, 0, 2, 0, 3, 0, 0, 0, 5, 0, 10, 0, 5, 0, 2, 0);
+		BackupImportResult importResult = new(1, 0, 1, 0, 2, 0, 3, 0, 0, 0, 5, 0, 10, 0, 5, 0, 2, 0, AcceptedDuplicatePairsCreated: 2, AcceptedDuplicatePairsUpdated: 3);
 		_importServiceMock
 			.Setup(s => s.ImportFromSqliteAsync(It.IsAny<Stream>(), It.IsAny<CancellationToken>()))
 			.ReturnsAsync(importResult);
@@ -170,8 +170,10 @@ public class BackupControllerTests : IDisposable
 		response.ReceiptItemsCreated.Should().Be(10);
 		response.TransactionsCreated.Should().Be(5);
 		response.AdjustmentsCreated.Should().Be(2);
-		response.TotalCreated.Should().Be(29);
-		response.TotalUpdated.Should().Be(0);
+		response.AcceptedDuplicatePairsCreated.Should().Be(2);
+		response.AcceptedDuplicatePairsUpdated.Should().Be(3);
+		response.TotalCreated.Should().Be(31);
+		response.TotalUpdated.Should().Be(3);
 	}
 
 	[Fact]

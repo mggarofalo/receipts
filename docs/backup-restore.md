@@ -4,23 +4,24 @@ The application supports portable SQLite backups for disaster recovery, migratio
 
 ## What gets backed up
 
-The export (current format `export_version = 4`) includes your domain data plus YNAB
+The export (current format `export_version = 5`) includes your domain data plus YNAB
 configuration/state and normalized-description settings:
 
 - Accounts
 - Cards
 - Categories
 - Subcategories
-- Item Templates
+- Item Templates, including declared canonical-description links
 - Receipts (including image file **paths** — see below)
-- Receipt Items
+- Receipt Items, including canonical-description links and recorded match scores
 - Transactions
 - Adjustments
 - YNAB configuration and state: selected budget, account mappings, category mappings, and
   sync records (current per-transaction sync state)
-- Normalized descriptions and their settings
+- Normalized descriptions, display labels, review/rejection status, recorded neighbour context, and settings
+- Accepted duplicate pairs whose two receipts are included in the export
 
-Soft-deleted records are **excluded** from exports.
+Soft-deleted records are **excluded** from exports. An accepted pair may survive a receipt's soft deletion in the live database, but a portable backup excludes that pair if either receipt is excluded. Export does not alter the source acceptance.
 
 Receipt image **binaries** are stored outside the database and are **not** included — only
 their file paths are backed up. Back the image files up separately.
@@ -36,8 +37,22 @@ the history of how it got there or values a service can regenerate:
 | `AuditLogs`, `AuthAuditLogs` | Append-only audit/activity logs. Re-importing historical log rows onto another instance would misrepresent when actions actually occurred there. |
 | `YnabSyncEvents` | The YNAB sync activity log — the same class of data as the audit logs (an append-only history of push attempts, **not** state). Distinct from `YnabSyncRecords`, the current sync state, which **is** included above. |
 | `YnabServerKnowledge` | The YNAB delta-sync cursor. It is re-fetchable from YNAB on the next sync (regenerable derived data, like the omitted embedding vectors), so restoring a stale value would only risk a bad delta window. |
-| Normalized-description embedding vectors | Large, regenerable derived data whose dimension is a build-time constant; repopulated by the embedding pipeline after restore. |
+| Normalized-description embedding vectors | Regenerable derived data whose dimension is a build-time constant; see the vector recovery limitation below. |
 | ASP.NET Identity users and authentication settings | Excluded for security reasons. |
+
+## Format compatibility and curation
+
+Format v5 preserves user decisions separately from vectors: canonical item/template assignments, human display labels, rejected-description tombstones, neighbour comparison history, and accepted duplicate pairs. Canonical rows are restored before item/template references and before their self-referencing neighbour links. A removed neighbour can legitimately leave a historical score with no remaining neighbour ID; that history is preserved.
+
+Import remains an **upsert**, not a replacement of the target database. Records missing from a file are not deleted from the target. For an accepted pair already present under a different local ID, the existing ID is retained and its acceptance timestamp is updated. A fresh restore preserves the exported pair ID. Reusing a pair ID for different receipts is rejected, and constraint failures roll back the complete import. Restoring exchanged canonical names or display labels between included rows is supported; audit history records the original and final values. Names that conflict with an unrelated target row still reject the import.
+
+Version 5 curation references must resolve within the backup itself: item/template links and neighbour IDs require included canonical rows, and accepted pairs require both included receipts. Existing target data cannot supply a missing curation dependency.
+
+Version 5 fields are authoritative, including explicit nulls. Versions 1–4 still import using their original schemas. On a fresh target, fields those formats never carried default to null and no acceptance rows are invented. On an existing target, absent labels, template declarations, and acceptance rows are retained. An item retains an absent canonical link/score only while its raw description is unchanged; importing different text clears that stale classification. A changed canonical matching name also invalidates its existing vector/model version and, for legacy files without replacement evidence, its neighbour comparison history.
+
+Missing version metadata means legacy version 1. Malformed or unsupported version values are rejected. Version 5 requires its complete table inventory; missing tables cannot silently turn a restore into partial recovery. Use an importer that explicitly supports the file's format version.
+
+Canonical embedding vectors are not in the portable file. Freshly restored canonical rows have no vectors; existing vectors survive only when their matching text is unchanged. Automatic canonical-vector rebuilding is separate recovery work (RECEIPTS-959). Until that rebuilding is available, similarity search can be incomplete even though restored grouping, labels, and curation remain available.
 
 ## Export consistency and file ownership
 
@@ -82,6 +97,7 @@ Response:
   "receiptItemsCreated": 30, "receiptItemsUpdated": 5,
   "transactionsCreated": 10, "transactionsUpdated": 0,
   "adjustmentsCreated": 3, "adjustmentsUpdated": 0,
+  "acceptedDuplicatePairsCreated": 0, "acceptedDuplicatePairsUpdated": 0,
   "totalCreated": 67, "totalUpdated": 9
 }
 ```

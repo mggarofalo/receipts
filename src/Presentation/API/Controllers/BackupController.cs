@@ -114,6 +114,8 @@ public class BackupController(
 				TransactionsUpdated = result.TransactionsUpdated,
 				AdjustmentsCreated = result.AdjustmentsCreated,
 				AdjustmentsUpdated = result.AdjustmentsUpdated,
+				AcceptedDuplicatePairsCreated = result.AcceptedDuplicatePairsCreated,
+				AcceptedDuplicatePairsUpdated = result.AcceptedDuplicatePairsUpdated,
 				TotalCreated = result.TotalCreated,
 				TotalUpdated = result.TotalUpdated,
 			});

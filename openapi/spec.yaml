@@ -8127,6 +8127,12 @@ components:
         adjustmentsUpdated:
           type: integer
           format: int32
+        acceptedDuplicatePairsCreated:
+          type: integer
+          format: int32
+        acceptedDuplicatePairsUpdated:
+          type: integer
+          format: int32
         totalCreated:
           type: integer
           format: int32
