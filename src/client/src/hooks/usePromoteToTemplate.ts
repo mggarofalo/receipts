@@ -1,5 +1,7 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
+import { useSessionMutation } from "@/hooks/useSessionMutation";
 import client from "@/lib/api-client";
+import { assertSessionCurrent, getSessionVersion } from "@/lib/auth";
 import { toast } from "sonner";
 
 export interface PromoteToTemplateInput {
@@ -40,10 +42,11 @@ export interface PromoteToTemplateResult {
  */
 export function usePromoteToTemplate() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (
       input: PromoteToTemplateInput,
     ): Promise<PromoteToTemplateResult> => {
+      const sessionVersion = getSessionVersion();
       const name = input.name.trim();
 
       // The /similar endpoint enforces a 2-character minimum on the query,
@@ -73,6 +76,8 @@ export function usePromoteToTemplate() {
         if (isDuplicate) return { created: false, name };
       }
 
+      // An aborted wrapper cannot stop this function resuming after a late duplicate lookup.
+      assertSessionCurrent(sessionVersion);
       const { error } = await client.POST("/api/item-templates", {
         body: {
           name,

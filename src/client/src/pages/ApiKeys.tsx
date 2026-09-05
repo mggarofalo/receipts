@@ -1,7 +1,9 @@
 import { useState, useCallback } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSessionMutation } from "@/hooks/useSessionMutation";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { usePermission } from "@/hooks/usePermission";
+import { useAuth } from "@/hooks/useAuth";
 import { useOpenNewItem } from "@/hooks/useOpenNewItem";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -98,6 +100,7 @@ function ApiKeys() {
   usePageTitle("API Keys");
   const queryClient = useQueryClient();
   const { isAdmin } = usePermission();
+  const { user } = useAuth();
   const [createOpen, setCreateOpen] = useState(false);
   const [createdKey, setCreatedKey] = useState<string | null>(null);
   const [revokeId, setRevokeId] = useState<string | null>(null);
@@ -105,7 +108,7 @@ function ApiKeys() {
   const anyDialogOpen = createOpen || createdKey !== null || revokeId !== null;
 
   const { data: apiKeys = [], isLoading } = useQuery({
-    queryKey: ["apiKeys"],
+    queryKey: ["apiKeys", user?.userId],
     queryFn: async () => {
       const { data, error } = await client.GET("/api/apikeys");
       if (error) throw error;
@@ -113,7 +116,7 @@ function ApiKeys() {
     },
   });
 
-  const createMutation = useMutation({
+  const createMutation = useSessionMutation({
     mutationFn: async (values: CreateKeyFormValues) => {
       const { data, error } = await client.POST("/api/apikeys", {
         body: {
@@ -137,7 +140,7 @@ function ApiKeys() {
     },
   });
 
-  const revokeMutation = useMutation({
+  const revokeMutation = useSessionMutation({
     mutationFn: async (id: string) => {
       const { error } = await client.DELETE("/api/apikeys/{id}", {
         params: { path: { id } },

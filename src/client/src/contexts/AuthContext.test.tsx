@@ -15,7 +15,8 @@ vi.mock("@/lib/api-client", () => {
   return { default: mockClient };
 });
 
-vi.mock("@/lib/auth", () => ({
+vi.mock("@/lib/auth", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/auth")>(),
   isAuthenticated: vi.fn(() => false),
   getAccessToken: vi.fn(() => null),
   parseJwtPayload: vi.fn(() => null),
@@ -57,12 +58,24 @@ function TestConsumer() {
 }
 
 describe("AuthProvider", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    const realAuth = await vi.importActual<typeof import("@/lib/auth")>("@/lib/auth");
+    realAuth.clearTokens();
     vi.clearAllMocks();
     mockedAuth.isAuthenticated.mockReturnValue(false);
     mockedAuth.getAccessToken.mockReturnValue(null);
     mockedAuth.parseJwtPayload.mockReturnValue(null);
     mockedAuth.addTokenRefreshListener.mockReturnValue(vi.fn());
+    mockedAuth.setTokens.mockImplementation((accessToken, refreshToken) => {
+      mockedAuth.getAccessToken.mockReturnValue(accessToken);
+      mockedAuth.isAuthenticated.mockReturnValue(true);
+      realAuth.setTokens(accessToken, refreshToken);
+    });
+    mockedAuth.clearTokens.mockImplementation(() => {
+      mockedAuth.getAccessToken.mockReturnValue(null);
+      mockedAuth.isAuthenticated.mockReturnValue(false);
+      realAuth.clearTokens();
+    });
   });
 
   it("provides initial null user when no token is stored", () => {

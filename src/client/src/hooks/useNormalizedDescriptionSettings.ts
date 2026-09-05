@@ -1,4 +1,5 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSessionMutation } from "@/hooks/useSessionMutation";
 import client from "@/lib/api-client";
 import { toast } from "sonner";
 
@@ -17,7 +18,7 @@ export function useSettings() {
 
 export function useUpdateSettingsMutation() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async ({
       autoAcceptThreshold,
       pendingReviewThreshold,
@@ -44,7 +45,7 @@ export function useUpdateSettingsMutation() {
 }
 
 export function useTestMatchMutation() {
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async ({
       description,
       topN = 5,
@@ -76,7 +77,7 @@ export function useTestMatchMutation() {
 }
 
 export function usePreviewImpactMutation() {
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async ({
       autoAcceptThreshold,
       pendingReviewThreshold,

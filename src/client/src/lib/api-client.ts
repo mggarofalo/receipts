@@ -5,6 +5,8 @@ import {
   getAccessToken,
   getRefreshToken,
   getSessionVersion,
+  getSessionSignal,
+  assertSessionCurrent,
   setRefreshedTokens,
   clearTokens,
   notifyTokenRefresh,
@@ -43,7 +45,7 @@ async function refreshTokens(sessionVersion: number, refreshToken: string): Prom
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ refreshToken }),
-      signal: AbortSignal.timeout(API_TIMEOUT_MS),
+      signal: AbortSignal.any([AbortSignal.timeout(API_TIMEOUT_MS), getSessionSignal()]),
     });
     if (!res.ok) return false;
 
@@ -81,12 +83,6 @@ export function attemptTokenRefresh(): Promise<boolean> {
   return pending.promise;
 }
 
-function requireCurrentSession(sessionVersion: number): void {
-  if (getSessionVersion() !== sessionVersion) {
-    throw new DOMException("The authenticated session changed", "AbortError");
-  }
-}
-
 // Cancelling one request must not cancel the shared refresh needed by others.
 function waitForRefresh(promise: Promise<boolean>, signal: AbortSignal): Promise<boolean> {
   signal.throwIfAborted();
@@ -107,19 +103,25 @@ function waitForRefresh(promise: Promise<boolean>, signal: AbortSignal): Promise
 }
 
 async function fetchWithTokenRefresh(request: Request): Promise<Response> {
-  const signal = AbortSignal.any([AbortSignal.timeout(API_TIMEOUT_MS), request.signal]);
-  const isAuthRequest = new URL(request.url).pathname.startsWith("/api/auth/");
-  if (isAuthRequest) return fetch(request, { signal });
-
+  const pathname = new URL(request.url).pathname;
+  const isLogout = pathname === "/api/auth/logout";
   const sessionVersion = requestSessions.get(request) ?? getSessionVersion();
-  requireCurrentSession(sessionVersion);
+  if (!isLogout) assertSessionCurrent(sessionVersion);
+  const signal = AbortSignal.any([
+    AbortSignal.timeout(API_TIMEOUT_MS),
+    request.signal,
+    ...(isLogout ? [] : [getSessionSignal()]),
+  ]);
+  // Keep the session signal attached to the native response body, so logout
+  // also cancels JSON still streaming after fetch has delivered its headers.
+  if (pathname.startsWith("/api/auth/")) return fetch(request, { signal });
   // Fetch consumes body streams. Save the replay before the first dispatch,
   // after request middleware has applied all headers and serialization.
   const replay = request.clone();
   try {
     const response = await fetch(request, { signal });
     signal.throwIfAborted();
-    requireCurrentSession(sessionVersion);
+    assertSessionCurrent(sessionVersion);
     if (response.status !== 401) return response;
 
     // A concurrent request may already have rotated the credentials by the
@@ -128,12 +130,21 @@ async function fetchWithTokenRefresh(request: Request): Promise<Response> {
     const alreadyRefreshed = token !== null && request.headers.get("Authorization") !== `Bearer ${token}`;
     const refreshed = alreadyRefreshed || await waitForRefresh(attemptTokenRefresh(), signal);
     signal.throwIfAborted();
-    requireCurrentSession(sessionVersion);
+    assertSessionCurrent(sessionVersion);
     if (!refreshed) {
+      // Detach the rejection body before ending its owning session. Clearing
+      // credentials aborts every other response still streaming for that user.
+      const expiredResponse = new Response(await response.arrayBuffer(), {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+      });
+      signal.throwIfAborted();
+      assertSessionCurrent(sessionVersion);
       clearTokens();
       setLoginFlash("Your session expired. Please sign in again.");
       window.location.href = "/login";
-      return response;
+      return expiredResponse;
     }
 
     if (response.body) void response.body.cancel().catch(() => {});
@@ -143,7 +154,7 @@ async function fetchWithTokenRefresh(request: Request): Promise<Response> {
     // ordinary response middleware, including password-change and 5xx policy.
     const retriedResponse = await fetch(replay, { signal });
     signal.throwIfAborted();
-    requireCurrentSession(sessionVersion);
+    assertSessionCurrent(sessionVersion);
     return retriedResponse;
   } finally {
     // Do not retain the unused side of a cloned upload after a normal response.
@@ -161,11 +172,14 @@ const authMiddleware: Middleware = {
     if (token) request.headers.set("Authorization", `Bearer ${token}`);
     return request;
   },
-  async onResponse({ response }) {
+  async onResponse({ request, response }) {
     if (response.status === 403) {
       try {
         const body = await response.clone().json();
-        if (body?.detail === "Password change required") notifyPasswordChangeRequired();
+        if (
+          requestSessions.get(request) === getSessionVersion() &&
+          body?.detail === "Password change required"
+        ) notifyPasswordChangeRequired();
       } catch {
         // A bodiless authorization rejection has no password-change reason.
       }
@@ -189,8 +203,13 @@ const signalRConnectionMiddleware: Middleware = {
 // fall back to toasts (RECEIPTS-740). The "first vs subsequent" decision
 // lives in the subscriber (RootLayout) — this middleware only publishes.
 const serverErrorMiddleware: Middleware = {
-  async onResponse({ response }) {
-    if (response.status >= 500 && response.status < 600) {
+  async onResponse({ request, response }) {
+    // Logout deliberately finishes with its captured credentials after local
+    // cleanup. Its response must not publish errors into a later session.
+    if (
+      requestSessions.get(request) === getSessionVersion() &&
+      response.status >= 500 && response.status < 600
+    ) {
       notifyServerError(response.status);
     }
     return response;

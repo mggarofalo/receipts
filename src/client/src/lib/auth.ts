@@ -5,13 +5,50 @@ const LS_REFRESH_KEY = "receipts_refresh_token";
 // Rotating tokens within the same session keeps its version unchanged.
 let sessionVersion = 0;
 let observedRefreshToken: string | null | undefined;
+let sessionController = new AbortController();
+const sessionChangeListeners = new Set<() => void>();
+
+function advanceSession(): void {
+  sessionVersion += 1;
+  const previousController = sessionController;
+  sessionController = new AbortController();
+  previousController.abort(new DOMException("The authenticated session changed", "AbortError"));
+  sessionChangeListeners.forEach((listener) => listener());
+}
+
+export function addSessionChangeListener(listener: () => void): () => void {
+  sessionChangeListeners.add(listener);
+  return () => sessionChangeListeners.delete(listener);
+}
+
+export function getSessionSignal(): AbortSignal {
+  getSessionVersion();
+  return sessionController.signal;
+}
+
+export function isAbortError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "name" in error && error.name === "AbortError";
+}
+
+export function assertSessionCurrent(expectedVersion: number): void {
+  if (getSessionVersion() !== expectedVersion) {
+    throw new DOMException("The authenticated session changed", "AbortError");
+  }
+}
+
+export function synchronizeStoredSession(event: StorageEvent): void {
+  if (event.key === null || event.key === LS_ACCESS_KEY || event.key === LS_REFRESH_KEY) {
+    getSessionVersion();
+  }
+}
 
 export function getSessionVersion(): number {
   const currentRefreshToken = getRefreshToken();
   // Another tab can replace credentials without calling this module's setters.
   // Treat that as a boundary; only our own token rotation preserves the version.
   if (observedRefreshToken !== undefined && observedRefreshToken !== currentRefreshToken) {
-    sessionVersion += 1;
+    observedRefreshToken = currentRefreshToken;
+    advanceSession();
   }
   observedRefreshToken = currentRefreshToken;
   return sessionVersion;
@@ -50,10 +87,10 @@ export function getRefreshToken(): string | null {
 }
 
 export function setTokens(accessToken: string, refreshToken: string): void {
-  sessionVersion += 1;
   observedRefreshToken = refreshToken;
   localStorage.setItem(LS_ACCESS_KEY, accessToken);
   localStorage.setItem(LS_REFRESH_KEY, refreshToken);
+  advanceSession();
 }
 
 export function setRefreshedTokens(
@@ -72,10 +109,10 @@ export function setRefreshedTokens(
 }
 
 export function clearTokens(): void {
-  sessionVersion += 1;
   observedRefreshToken = null;
   localStorage.removeItem(LS_ACCESS_KEY);
   localStorage.removeItem(LS_REFRESH_KEY);
+  advanceSession();
 }
 
 export function isAuthenticated(): boolean {

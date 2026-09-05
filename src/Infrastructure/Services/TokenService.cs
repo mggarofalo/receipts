@@ -11,7 +11,7 @@ namespace Infrastructure.Services;
 
 public class TokenService(IConfiguration configuration) : ITokenService
 {
-	public string GenerateAccessToken(string userId, string email, IList<string> roles, bool mustResetPassword, string securityStamp)
+	public string GenerateAccessToken(string userId, string email, IList<string> roles, bool mustResetPassword, string securityStamp, Guid? refreshSessionId = null)
 	{
 		string key = configuration[ConfigurationVariables.JwtKey] ?? "build-time-placeholder-key-32-chars!!";
 		string issuer = configuration[ConfigurationVariables.JwtIssuer] ?? "receipts-api";
@@ -30,6 +30,11 @@ public class TokenService(IConfiguration configuration) : ITokenService
 			new Claim(AuthClaimTypes.SecurityStamp, securityStamp),
 			.. roles.Select(r => new Claim(ClaimTypes.Role, r)),
 		];
+
+		if (refreshSessionId is not null)
+		{
+			claims.Add(new Claim(AuthClaimTypes.RefreshSessionId, refreshSessionId.Value.ToString()));
+		}
 
 		if (mustResetPassword)
 		{

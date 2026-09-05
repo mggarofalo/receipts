@@ -1,3 +1,4 @@
+import { assertSessionCurrent, getSessionVersion, isAbortError } from "@/lib/auth";
 import {
   Fragment,
   useCallback,
@@ -141,20 +142,24 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     [shortcutsCtx],
   );
 
+  const [sessionVersion] = useState(getSessionVersion);
   const syncYnab = useCallback(() => {
     void (async () => {
       try {
+        assertSessionCurrent(sessionVersion);
         const { ids } = await fetchAllReceiptIds();
+        assertSessionCurrent(sessionVersion);
         if (ids.length === 0) {
           toast.info("No receipts to sync");
           return;
         }
         bulkPushYnabMutate(ids);
-      } catch {
+      } catch (error) {
+        if (isAbortError(error)) return;
         toast.error("Failed to load receipts for YNAB sync");
       }
     })();
-  }, [bulkPushYnabMutate]);
+  }, [bulkPushYnabMutate, sessionVersion]);
 
   const exportBackup = useCallback(() => {
     backupExportMutate();

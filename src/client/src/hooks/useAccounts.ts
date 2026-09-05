@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useStableQuery } from "@/hooks/useStableQuery";
-import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueries, useQueryClient } from "@tanstack/react-query";
+import { useSessionMutation } from "@/hooks/useSessionMutation";
 import client from "@/lib/api-client";
 import { toast } from "sonner";
 
@@ -163,7 +164,7 @@ export interface CardSummary {
 
 export function useCreateAccount() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (body: {
       name: string;
       isActive: boolean;
@@ -181,7 +182,7 @@ export function useCreateAccount() {
 
 export function useUpdateAccount() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (body: {
       id: string;
       name: string;
@@ -208,7 +209,7 @@ export interface DeleteAccountConflict {
 
 export function useDeleteAccount() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (id: string) => {
       const { error, response } = await client.DELETE("/api/accounts/{id}", {
         params: { path: { id } },

@@ -123,6 +123,20 @@ All API data flows through TanStack Query hooks in `src/client/src/hooks/`. Neve
 - Optimistic updates use `onMutate` with rollback in `onError` (see `useDeleteReceipts`)
 - Composite mutations invalidate all affected query families (see `useCreateCompleteReceipt`)
 
+### Authenticated session lifetime
+
+`AuthProvider` owns the `QueryClientProvider`. Login, logout, failed refresh, and external credential replacement establish a new session generation: abort the old session's requests, cancel and clear its cache, create a fresh query client, and remount the authenticated subtree. Ordinary refresh-token rotation keeps the current generation. Do not add a second application-wide query client outside this boundary.
+
+Use `useSessionMutation` for authenticated mutations. It preserves TanStack Query's mutation API while preventing obsolete work from dispatching with replacement credentials or running completion callbacks in the new session. Keep downloads, toasts, navigation, and other completion effects in guarded callbacks; a `mutationFn` should perform the operation and return its result. If a mutation makes several requests, capture its starting generation and check it before each subsequent request after an asynchronous gap. Optimistic updates must use the query client captured by that hook.
+
+Code awaiting `mutateAsync` can still receive cancellation. Suppress `isAbortError(error)` in caller-owned error handlers. Before caller-owned success effects after an asynchronous gap, use `assertSessionCurrent` with the generation captured when the operation started. Raw authenticated `fetch` calls must include `getSessionSignal()` alongside their caller signal. Cancellation prevents stale client effects; it cannot undo a write already accepted by the server.
+
+Private user queries include the user ID in their keys (API keys and personal authentication history). Physical cache replacement also isolates shared receipt data and optimistic writes. `useSignalR` follows the same generation, stops obsolete connections, and discards their callbacks and buffered toasts.
+
+Server logout conditionally revokes the refresh-token family captured in the signed JWT. A delayed logout cannot revoke a later login's family. This preserves the deliberate policy that an already-issued access JWT remains valid until expiry unless a separate security-stamp operation revokes it; local session cleanup is immediate.
+
+Session regressions should compose the real `AuthProvider`, query client, hooks, and transport. Mocking the provider or mutation wrapper cannot demonstrate isolation across account changes.
+
 ## Context
 
 The project has two contexts: `AuthContext` and `ShortcutsContext`. Before creating a new context, exhaust these alternatives:

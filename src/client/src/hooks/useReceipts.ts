@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useStableQuery } from "@/hooks/useStableQuery";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSessionMutation } from "@/hooks/useSessionMutation";
 import client from "@/lib/api-client";
 import { toast } from "sonner";
 import type { components } from "@/generated/api";
@@ -114,7 +115,7 @@ export function useReceipt(id: string | null) {
 
 export function useCreateReceipt() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (body: {
       description?: string | null;
       location: string;
@@ -134,7 +135,7 @@ export function useCreateReceipt() {
 
 export function useUpdateReceipt() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (body: {
       id: string;
       description?: string | null;
@@ -158,7 +159,7 @@ export function useUpdateReceipt() {
 
 export function useDeleteReceipts() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (ids: string[]) => {
       const { error } = await client.DELETE("/api/receipts", { body: ids });
       if (error) throw error;
@@ -207,7 +208,7 @@ export function useDeletedReceipts(offset = 0, limit = 50, sortBy?: string | nul
 
 export function useCreateCompleteReceipt() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (body: CreateCompleteReceiptRequest) => {
       const { data, error } = await client.POST("/api/receipts/complete", { body });
       if (error) throw error;
@@ -245,7 +246,7 @@ export function useLocationSuggestions(query: string) {
 
 export function useRestoreReceipt() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (id: string) => {
       const { error } = await client.POST("/api/receipts/{id}/restore", {
         params: { path: { id } },

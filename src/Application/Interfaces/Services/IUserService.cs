@@ -23,4 +23,8 @@ public interface IUserService
 	/// hashing used for API keys so a leaked database or backup does not expose usable refresh tokens.
 	/// </summary>
 	string HashRefreshToken(string refreshToken);
+
+	/// <summary>Atomically revokes only the captured family, fencing concurrent Identity updates.
+	/// A null family matches only legacy sessions. Access-token security stamps are unchanged.</summary>
+	Task RevokeRefreshSessionAsync(string userId, Guid? refreshSessionId, CancellationToken cancellationToken = default);
 }

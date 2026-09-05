@@ -151,8 +151,10 @@ describe("authMiddleware.onRequest", () => {
 });
 
 describe("authMiddleware.onResponse", () => {
-  const callOnResponse = (request: Request, response: Response) =>
-    authMiddleware.onResponse!(makeParams(request, response));
+  const callOnResponse = async (request: Request, response: Response) => {
+    await authMiddleware.onRequest!(makeParams(request));
+    return authMiddleware.onResponse!(makeParams(request, response));
+  };
 
   it("passes through non-401 non-403 responses", async () => {
     const request = makeRequest();
@@ -198,8 +200,6 @@ describe("authMiddleware.onResponse", () => {
     expect(result).toBe(response);
     expect(mockedAuth.notifyPasswordChangeRequired).not.toHaveBeenCalled();
   });
-
-
 });
 
 describe("errorNormalizationMiddleware.onResponse", () => {
@@ -359,8 +359,8 @@ describe("signalRConnectionMiddleware.onRequest", () => {
 
     const result = await signalRMiddleware.onRequest!(makeParams(request));
 
-    expect(
-      (result as Request).headers.has("X-SignalR-Connection-Id"),
-    ).toBe(false);
+    expect((result as Request).headers.has("X-SignalR-Connection-Id")).toBe(
+      false,
+    );
   });
 });

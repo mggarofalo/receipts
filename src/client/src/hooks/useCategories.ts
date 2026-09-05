@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useStableQuery } from "@/hooks/useStableQuery";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSessionMutation } from "@/hooks/useSessionMutation";
 import client from "@/lib/api-client";
 import { toast } from "sonner";
 
@@ -82,7 +83,7 @@ export function useCategory(id: string | null) {
 
 export function useCreateCategory() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (body: {
       name: string;
       description?: string | null;
@@ -107,7 +108,7 @@ export function useCreateCategory() {
 
 export function useUpdateCategory() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (body: {
       id: string;
       name: string;
@@ -135,7 +136,7 @@ export interface DeleteCategoryConflict {
 
 export function useDeleteCategory() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (id: string) => {
       const { error, response } = await client.DELETE("/api/categories/{id}", {
         params: { path: { id } },
@@ -180,7 +181,7 @@ export function useDeletedCategories(offset = 0, limit = 50, sortBy?: string | n
 
 export function useRestoreCategory() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (id: string) => {
       const { error } = await client.POST("/api/categories/{id}/restore", {
         params: { path: { id } },

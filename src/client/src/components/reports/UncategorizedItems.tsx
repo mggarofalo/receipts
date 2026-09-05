@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
+import { useSessionMutation } from "@/hooks/useSessionMutation";
 import {
   useUncategorizedItemsReport,
   type UncategorizedItemsParams,
@@ -167,7 +168,7 @@ export default function UncategorizedItems() {
     [subcategories],
   );
 
-  const bulkUpdateMutation = useMutation({
+  const bulkUpdateMutation = useSessionMutation({
     mutationFn: async ({
       items,
       category,

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using API.Configuration;
+using API.Controllers;
 using Application.Interfaces.Services;
 using FluentAssertions;
 using Infrastructure.Entities;
@@ -66,13 +67,16 @@ public class JwtSecurityStampRevalidationEndToEndTests
 	// collaborators are registered as no-op mocks. A request carrying only a Bearer token makes the
 	// ApiKey handler return NoResult, leaving JwtBearer + security-stamp revalidation to decide the
 	// outcome: a valid token yields 200 and a failed revalidation (context.Fail) yields 401.
-	private static WebApplication BuildHost(UserManager<ApplicationUser> userManager)
+	private static WebApplication BuildHost(UserManager<ApplicationUser> userManager, IUserService? userService = null)
 	{
 		WebApplicationBuilder appBuilder = WebApplication.CreateBuilder();
 		appBuilder.WebHost.UseTestServer();
 
 		appBuilder.Services.AddAuthServices(BuildConfiguration());
 		appBuilder.Services.AddScoped(_ => userManager);
+		appBuilder.Services.AddSingleton(userService ?? Mock.Of<IUserService>());
+		appBuilder.Services.AddSingleton<ITokenService>(new TokenService(BuildConfiguration()));
+		appBuilder.Services.AddControllers().AddApplicationPart(typeof(AuthController).Assembly);
 		// Collaborators the ApiKey scheme handler needs to be constructible under the "ApiOrJwt" policy.
 		appBuilder.Services.AddSingleton(Mock.Of<IApiKeyService>());
 		appBuilder.Services.AddSingleton(Mock.Of<IAuthAuditService>());
@@ -82,6 +86,7 @@ public class JwtSecurityStampRevalidationEndToEndTests
 		app.UseAuthentication();
 		app.UseAuthorization();
 
+		app.MapControllers();
 		app.MapGet("/secure", () => Results.Ok("authorized")).RequireAuthorization();
 
 		return app;
@@ -158,5 +163,27 @@ public class JwtSecurityStampRevalidationEndToEndTests
 
 		// Assert
 		response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+	}
+
+	[Fact]
+	public async Task Logout_RealBearerPipeline_PassesSignedFamilyToRevocationAndLeavesAccessTokenValid()
+	{
+		Guid family = Guid.NewGuid();
+		ApplicationUser user = new() { Id = "logout-user", Email = "test@example.com", SecurityStamp = "stable-stamp" };
+		Mock<UserManager<ApplicationUser>> manager = CreateUserManagerMock();
+		manager.Setup(m => m.FindByIdAsync(user.Id)).ReturnsAsync(user);
+		Mock<IUserService> sessions = new();
+		await using WebApplication app = BuildHost(manager.Object, sessions.Object);
+		await app.StartAsync();
+		string token = new TokenService(BuildConfiguration()).GenerateAccessToken(user.Id, user.Email, [], false, user.SecurityStamp, family);
+		using HttpClient client = app.GetTestClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+		using HttpResponseMessage logout = await client.PostAsync("/api/auth/logout", null);
+		logout.StatusCode.Should().Be(HttpStatusCode.NoContent);
+		sessions.Verify(service => service.RevokeRefreshSessionAsync(user.Id, family, It.IsAny<CancellationToken>()), Times.Once);
+		using HttpResponseMessage access = await client.GetAsync("/secure");
+		access.StatusCode.Should().Be(HttpStatusCode.OK);
+		manager.Verify(m => m.UpdateSecurityStampAsync(It.IsAny<ApplicationUser>()), Times.Never);
 	}
 }

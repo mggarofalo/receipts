@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useStableQuery } from "@/hooks/useStableQuery";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSessionMutation } from "@/hooks/useSessionMutation";
 import client from "@/lib/api-client";
 import { toast } from "sonner";
 // Some schemas exceed TypeScript's type-resolution depth when accessed via
@@ -82,7 +83,7 @@ export function useSelectedYnabBudget() {
 
 export function useSelectYnabBudget() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (budgetId: string) => {
       const { error } = await client.PUT("/api/ynab/settings/budget", {
         body: { budgetId },
@@ -133,7 +134,7 @@ export function useYnabAccountMappings(enabled = true) {
 
 export function useCreateYnabAccountMapping() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (body: {
       receiptsAccountId: string;
       ynabAccountId: string;
@@ -155,7 +156,7 @@ export function useCreateYnabAccountMapping() {
 
 export function useUpdateYnabAccountMapping() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (params: {
       id: string;
       ynabAccountId: string;
@@ -181,7 +182,7 @@ export function useUpdateYnabAccountMapping() {
 
 export function useDeleteYnabAccountMapping() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (id: string) => {
       const { error } = await client.DELETE("/api/ynab/account-mappings/{id}", {
         params: { path: { id } },
@@ -273,7 +274,7 @@ export function useUnmappedCategories(enabled = true) {
 
 export function useCreateYnabCategoryMapping() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (body: {
       receiptsCategory: string;
       ynabCategoryId: string;
@@ -298,7 +299,7 @@ export function useCreateYnabCategoryMapping() {
 
 export function useUpdateYnabCategoryMapping() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async ({
       id,
       ...body
@@ -358,7 +359,7 @@ type ClearStaleMappingsResponse = {
 
 export function useClearStaleMappings() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async () => {
       const { data, error } = await client.DELETE(
         "/api/ynab/stale-mappings" as never,
@@ -379,7 +380,7 @@ export function useClearStaleMappings() {
 
 export function useDeleteYnabCategoryMapping() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (id: string) => {
       const { error } = await client.DELETE(
         "/api/ynab/category-mappings/{id}",
@@ -450,7 +451,7 @@ type BulkPushYnabTransactionsResponse = {
 
 export function useSyncYnabMemos() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (receiptId: string) => {
       const { data, error } = await client.POST("/api/ynab/sync-memos", {
         body: { receiptId },
@@ -478,7 +479,7 @@ export function useSyncYnabMemos() {
 
 export function useSyncYnabMemosBulk() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (receiptIds: string[]) => {
       const { data, error } = await client.POST("/api/ynab/sync-memos/bulk", {
         body: { receiptIds },
@@ -501,7 +502,7 @@ export function useSyncYnabMemosBulk() {
 
 export function useResolveYnabMemoSync() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (params: {
       localTransactionId: string;
       ynabTransactionId: string;
@@ -597,7 +598,7 @@ export function useYnabSplitComparison(
 
 export function usePushYnabTransactions() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (receiptId: string) => {
       const { data, error } = await client.POST("/api/ynab/push-transactions", {
         body: { receiptId },
@@ -624,7 +625,7 @@ export function usePushYnabTransactions() {
 
 export function useBulkPushYnabTransactions() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (receiptIds: string[]) => {
       const { data, error } = await client.POST(
         "/api/ynab/push-transactions/bulk",

@@ -1,8 +1,8 @@
 import { useState, useRef } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useSessionMutation } from "@/hooks/useSessionMutation";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { useBackupExport } from "@/hooks/useBackup";
-import { getAccessToken } from "@/lib/auth";
+import { getAccessToken, getSessionSignal } from "@/lib/auth";
 import { showSuccess, showError } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { PageHead } from "@/components/primitives";
@@ -46,9 +46,10 @@ function BackupRestore() {
 
   const exportMutation = useBackupExport();
 
-  const importMutation = useMutation({
+  const importMutation = useSessionMutation({
     mutationFn: async (file: File) => {
       const token = getAccessToken();
+      const sessionSignal = getSessionSignal();
       const formData = new FormData();
       formData.append("file", file);
 
@@ -58,7 +59,7 @@ function BackupRestore() {
           Authorization: `Bearer ${token}`,
         },
         body: formData,
-        signal: AbortSignal.timeout(300_000), // 5-minute timeout for large imports
+        signal: AbortSignal.any([sessionSignal, AbortSignal.timeout(300_000)]), // 5-minute timeout for large imports
       });
 
       if (!res.ok) {

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement, type ReactNode } from "react";
+import { AuthContext, type AuthContextValue } from "@/contexts/auth-context";
 
 vi.mock("@/lib/api-client", () => ({
   default: {
@@ -27,8 +28,13 @@ function createWrapper() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
+  const auth: AuthContextValue = {
+    user: { userId: "test-user", email: "user@example.com", roles: ["User"], mustResetPassword: false },
+    isLoading: false, mustResetPassword: false,
+    login: async () => {}, logout: async () => {}, changePassword: async () => {},
+  };
   return function Wrapper({ children }: { children: ReactNode }) {
-    return createElement(QueryClientProvider, { client: queryClient }, children);
+    return createElement(QueryClientProvider, { client: queryClient }, createElement(AuthContext.Provider, { value: auth }, children));
   };
 }
 

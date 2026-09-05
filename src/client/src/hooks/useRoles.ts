@@ -1,8 +1,8 @@
 import {
   useQuery,
-  useMutation,
   useQueryClient,
 } from "@tanstack/react-query";
+import { useSessionMutation } from "@/hooks/useSessionMutation";
 import client from "@/lib/api-client";
 import { toast } from "sonner";
 
@@ -23,7 +23,7 @@ export function useUserRoles(userId: string | null) {
 
 export function useAssignRole() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async ({ userId, role }: { userId: string; role: string }) => {
       const { error } = await client.POST(
         "/api/users/{userId}/roles/{role}",
@@ -40,7 +40,7 @@ export function useAssignRole() {
 
 export function useRemoveRole() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async ({ userId, role }: { userId: string; role: string }) => {
       const { error } = await client.DELETE(
         "/api/users/{userId}/roles/{role}",

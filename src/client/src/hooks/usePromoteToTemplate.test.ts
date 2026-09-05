@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement, type ReactNode } from "react";
 
@@ -18,6 +18,7 @@ vi.mock("sonner", () => ({
 
 import client from "@/lib/api-client";
 import { toast } from "sonner";
+import { clearTokens, setTokens } from "@/lib/auth";
 import { usePromoteToTemplate } from "./usePromoteToTemplate";
 
 function createWrapper(queryClient?: QueryClient) {
@@ -67,6 +68,36 @@ beforeEach(() => {
 });
 
 describe("usePromoteToTemplate", () => {
+  it("does not create a template when a delayed duplicate lookup outlives its session", async () => {
+    let finishLookup!: (value: { data: never[] }) => void;
+    const lookup = new Promise<{ data: never[] }>((resolve) => {
+      finishLookup = resolve;
+    });
+    (client.GET as Mock).mockReturnValue(lookup);
+    setTokens("Alice-access", "Alice-refresh");
+    const { result } = renderHook(() => usePromoteToTemplate(), {
+      wrapper: createWrapper(),
+    });
+    let pending!: Promise<unknown>;
+    await act(async () => {
+      pending = result.current
+        .mutateAsync({ name: "Alice private template" })
+        .catch((error: unknown) => error);
+    });
+    await waitFor(() => expect(client.GET).toHaveBeenCalledOnce());
+
+    await act(async () => {
+      setTokens("Bob-access", "Bob-refresh");
+      finishLookup({ data: [] });
+      expect(await pending).toMatchObject({ name: "AbortError" });
+    });
+
+    expect(client.POST).not.toHaveBeenCalled();
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(toast.error).not.toHaveBeenCalled();
+    clearTokens();
+  });
+
   it("creates a template when no duplicate template exists", async () => {
     (client.GET as Mock).mockResolvedValue({
       data: [similarItem({ name: "Milk", source: "history" })],

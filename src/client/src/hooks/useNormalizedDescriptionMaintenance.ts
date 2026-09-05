@@ -1,4 +1,5 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSessionMutation } from "@/hooks/useSessionMutation";
 import client from "@/lib/api-client";
 import { parseProblemDetails, toApiError } from "@/lib/problem-details";
 import { toast } from "sonner";
@@ -27,7 +28,7 @@ export function useRequeuePendingPreview() {
 
 export function useRequeuePendingMutation() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async ({
       expectedFingerprint,
     }: {

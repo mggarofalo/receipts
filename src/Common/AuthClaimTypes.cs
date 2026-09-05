@@ -12,4 +12,7 @@ public static class AuthClaimTypes
 	/// revalidation immediately, so a session cannot outlive the state change that should have ended it.
 	/// </summary>
 	public const string SecurityStamp = "security_stamp";
+
+	/// <summary>Identifies a refresh-token family; rotation preserves it and a new login replaces it.</summary>
+	public const string RefreshSessionId = "refresh_session_id";
 }

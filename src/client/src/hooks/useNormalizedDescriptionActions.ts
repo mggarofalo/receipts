@@ -1,4 +1,5 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
+import { useSessionMutation } from "@/hooks/useSessionMutation";
 import client from "@/lib/api-client";
 import { toApiError } from "@/lib/problem-details";
 import { toast } from "sonner";
@@ -32,7 +33,7 @@ function statusToastMessage(status: NormalizedDescriptionStatus): string {
 
 export function useMergeMutation() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async ({
       id,
       discardId,
@@ -77,7 +78,7 @@ export function useMergeMutation() {
 
 export function useSplitMutation() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async ({
       id,
       receiptItemIds,
@@ -112,7 +113,7 @@ export function useSplitMutation() {
 
 export function useRenameMutation() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async ({
       id,
       displayLabel,
@@ -155,7 +156,7 @@ export function useRenameMutation() {
  */
 export function useLinkTemplateMutation() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async ({
       id,
       itemTemplateId,
@@ -203,7 +204,7 @@ export function useLinkTemplateMutation() {
 
 export function useUpdateStatusMutation() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async ({
       id,
       status,

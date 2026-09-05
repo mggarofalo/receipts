@@ -1,9 +1,21 @@
-import { screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "@/test/test-utils";
 import { mockMutationResult } from "@/test/mock-hooks";
 import "@/test/setup-combobox-polyfills";
 import NewReceiptPage from "./NewReceiptPage";
+import { http, HttpResponse } from "msw";
+import { setupServer } from "msw/node";
+import { AuthProvider } from "@/contexts/AuthContext";
+import { AppearanceProvider } from "@/contexts/AppearanceContext";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { MemoryRouter } from "react-router";
+import { createAppQueryClient } from "@/lib/query-client";
+import { clearTokens, getAccessToken, setTokens } from "@/lib/auth";
+import type { QueryClient } from "@tanstack/react-query";
+
+vi.hoisted(() => vi.stubEnv("VITE_API_URL", "http://new-receipt.session.test"));
+afterAll(() => vi.unstubAllEnvs());
 
 vi.mock("@/hooks/usePageTitle", () => ({
   usePageTitle: vi.fn(),
@@ -167,6 +179,58 @@ vi.mock("./BalanceSidebar", () => ({
 }));
 
 describe("NewReceiptPage", () => {
+  it("does not toast or navigate from a real pending receipt write after the session changes", async () => {
+    const { toast } = await import("sonner");
+    const mockedHooks = await import("@/hooks/useReceipts");
+    const actualHooks = await vi.importActual<typeof import("@/hooks/useReceipts")>("@/hooks/useReceipts");
+    const originalImplementation = vi.mocked(mockedHooks.useCreateCompleteReceipt).getMockImplementation()!;
+    vi.mocked(mockedHooks.useCreateCompleteReceipt).mockImplementation(actualHooks.useCreateCompleteReceipt);
+    let finishResponse!: () => void;
+    let markStarted!: () => void;
+    const responseGate = new Promise<void>((resolve) => { finishResponse = resolve; });
+    const requestStarted = new Promise<void>((resolve) => { markStarted = resolve; });
+    const server = setupServer(http.post("*/api/receipts/complete", async () => {
+      markStarted();
+      await responseGate;
+      return HttpResponse.json({ receipt: { id: "Alice-receipt" }, items: [], transactions: [], adjustments: [] });
+    }));
+    server.listen({ onUnhandledRequest: "error" });
+    const token = (user: string) => `e30.${btoa(JSON.stringify({ sub: user, email: user, role: "User" }))}.sig`;
+    setTokens(token("Alice"), "Alice-refresh");
+    const clients: QueryClient[] = [];
+    const factory = () => { const client = createAppQueryClient(); clients.push(client); return client; };
+    const view = render(<AuthProvider queryClientFactory={factory}><MemoryRouter><AppearanceProvider><TooltipProvider><NewReceiptPage /></TooltipProvider></AppearanceProvider></MemoryRouter></AuthProvider>);
+    try {
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("combobox"));
+      await user.click(await screen.findByText("Walmart"));
+      const dateInput = screen.getByPlaceholderText("MM/DD/YYYY");
+      await user.click(dateInput);
+      await user.type(dateInput, "01/15/2024");
+      await user.click(screen.getAllByText("Add Transaction")[0]);
+      await user.click(screen.getAllByText("Add Item")[0]);
+      await user.click(screen.getAllByText("Submit Receipt")[0]);
+      await requestStarted;
+      const oldMutation = clients[0].getMutationCache().getAll()[0];
+
+      await act(async () => { clearTokens(); setTokens(token("Bob"), "Bob-refresh"); finishResponse(); });
+      await waitFor(() => expect(oldMutation.state.status).not.toBe("pending"));
+
+      expect(oldMutation.state.error).toMatchObject({ name: "AbortError" });
+      expect(toast.error).not.toHaveBeenCalled();
+      expect(toast.success).not.toHaveBeenCalled();
+      expect(mockNavigate).not.toHaveBeenCalled();
+      expect(getAccessToken()).toBe(token("Bob"));
+    } finally {
+      view.unmount();
+      finishResponse();
+      server.close();
+      clients.forEach((client) => client.clear());
+      clearTokens();
+      vi.mocked(mockedHooks.useCreateCompleteReceipt).mockImplementation(originalImplementation);
+    }
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     mockBlocker.state = "unblocked";
