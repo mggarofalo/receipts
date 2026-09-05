@@ -15,7 +15,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Infrastructure;
 
-public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
+public partial class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 {
 	private const string PostgreSQL = "Npgsql.EntityFrameworkCore.PostgreSQL";
 	private const string InMemory = "Microsoft.EntityFrameworkCore.InMemory";
@@ -53,7 +53,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 	}
 
 	/// <summary>
-	/// When <see langword="false"/>, <see cref="SaveChangesAsync"/> skips audit-log generation.
+	/// When <see langword="false"/>, <see cref="SaveChangesAsync(CancellationToken)"/> skips audit-log generation.
 	/// Defaults to <see langword="true"/>. Bulk-seeding paths set this to <see langword="false"/>
 	/// so a one-time sample-data import does not emit thousands of null-attributed audit rows.
 	/// </summary>
@@ -171,42 +171,6 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 		AuditLogs.Add(auditLog);
 	}
 
-	public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
-	{
-		HandleSoftDelete();
-
-		List<AuditEntry> auditEntries = AuditingEnabled ? CollectAuditEntries() : [];
-		HashSet<string> touchedDescriptions = CollectTouchedReceiptItemDescriptions();
-
-		int result = await base.SaveChangesAsync(cancellationToken);
-
-		if (auditEntries.Count > 0)
-		{
-			foreach (AuditEntry entry in auditEntries)
-			{
-				// For Created entities, fill in the generated ID after save
-				if (entry.AuditLog.Action == AuditAction.Create && entry.TrackedEntry is not null)
-				{
-					object? idValue = entry.TrackedEntry.Property("Id").CurrentValue;
-					if (idValue is not null)
-					{
-						entry.AuditLog.EntityId = idValue.ToString()!;
-					}
-				}
-			}
-
-			AuditLogs.AddRange(auditEntries.Select(e => e.AuditLog));
-			await base.SaveChangesAsync(cancellationToken);
-		}
-
-		if (touchedDescriptions.Count > 0)
-		{
-			await ReconcileDistinctDescriptionsAsync(touchedDescriptions, cancellationToken);
-		}
-
-		return result;
-	}
-
 	private HashSet<string> CollectTouchedReceiptItemDescriptions()
 	{
 		HashSet<string> touched = [];
@@ -253,54 +217,6 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 			{
 				set.Add(value);
 			}
-		}
-	}
-
-	private async Task ReconcileDistinctDescriptionsAsync(HashSet<string> descriptions, CancellationToken cancellationToken)
-	{
-		// Skip providers that don't support the pg_trgm machinery — keeps InMemory tests simple.
-		if (Database.ProviderName != PostgreSQL)
-		{
-			return;
-		}
-
-		// Reconcile the ENTIRE touched set in two set-based round trips (one INSERT, one DELETE)
-		// instead of a pair of round trips per description. Raw SQL keeps the reconciliation
-		// atomic and idempotent under concurrent saves: the INSERT's ON CONFLICT DO NOTHING and
-		// the DELETE's NOT EXISTS guard both race-safely converge on the invariant "a
-		// DistinctDescriptions row exists iff an active ReceiptItem with that description exists".
-		// The touched descriptions are passed as a single text[] parameter and expanded with
-		// unnest / = ANY, so the number of round trips is constant regardless of set size.
-		string[] descriptionArray = [.. descriptions];
-
-		// INSERT a row for every touched description that still has at least one active
-		// ReceiptItem. ON CONFLICT keeps it idempotent (and race-safe on the PK).
-		int rowsInserted = await Database.ExecuteSqlRawAsync(
-			"""
-			INSERT INTO "matching"."DistinctDescriptions" ("Description")
-			SELECT d
-			FROM unnest({0}::text[]) AS d
-			WHERE EXISTS (SELECT 1 FROM "receipts"."ReceiptItems" AS ri WHERE ri."Description" = d AND ri."DeletedAt" IS NULL)
-			ON CONFLICT ("Description") DO NOTHING;
-			""",
-			[descriptionArray],
-			cancellationToken);
-
-		// DELETE any touched description that no longer has an active ReceiptItem. The NOT EXISTS
-		// guard makes it race-safe: a concurrent insert of a receipt item with that description
-		// leaves the subquery non-empty, so the DELETE becomes a no-op for that row.
-		int rowsDeleted = await Database.ExecuteSqlRawAsync(
-			"""
-			DELETE FROM "matching"."DistinctDescriptions" AS dd
-			WHERE dd."Description" = ANY({0}::text[])
-			  AND NOT EXISTS (SELECT 1 FROM "receipts"."ReceiptItems" AS ri WHERE ri."Description" = dd."Description" AND ri."DeletedAt" IS NULL);
-			""",
-			[descriptionArray],
-			cancellationToken);
-
-		if (rowsInserted > 0 || rowsDeleted > 0)
-		{
-			_descriptionChangeSignal?.NotifyDirty();
 		}
 	}
 
