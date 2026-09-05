@@ -27,14 +27,12 @@ public class CompleteReceiptService(
 		ReceiptEntity receiptEntity = receiptMapper.ToEntity(receipt);
 		receiptEntity.Id = Guid.NewGuid();
 
-		// Map transactions, assigning FK, AccountId, and CardId.
-		// Both AccountId and CardId are carried through until AccountId is dropped in a follow-up (RECEIPTS-553).
+		// Transactions store only the originating card; its parent determines the account.
 		List<TransactionEntity> transactionEntities = transactions.Select(t =>
 		{
 			TransactionEntity entity = transactionMapper.ToEntity(t);
 			entity.Id = Guid.NewGuid();
 			entity.ReceiptId = receiptEntity.Id;
-			entity.AccountId = t.AccountId;
 			entity.CardId = t.CardId;
 			return entity;
 		}).ToList();
@@ -62,7 +60,12 @@ public class CompleteReceiptService(
 		context.Set<ReceiptItemEntity>().AddRange(itemEntities);
 		context.Set<AdjustmentEntity>().AddRange(adjustmentEntities);
 
+		// Load required response state before committing, so a failed read cannot leave
+		// a saved transaction behind a failed create response. Tracking fixes up the cards.
+		List<Guid> cardIds = transactionEntities.Select(entity => entity.CardId).Distinct().ToList();
+		await context.Cards.IgnoreAutoIncludes().Where(card => cardIds.Contains(card.Id)).LoadAsync(cancellationToken);
 		await context.SaveChangesAsync(cancellationToken);
+
 
 		// Map back to domain
 		Receipt createdReceipt = receiptMapper.ToDomain(receiptEntity);

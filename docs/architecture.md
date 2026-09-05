@@ -84,7 +84,17 @@ After a role change, an old JWT fails the existing per-request stamp check with 
 PostgreSQL with EF Core + pgvector extension. Connection configured via environment variables:
 - `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`
 
-Migrations run automatically on API startup via `IDatabaseMigratorService`.
+The API does not self-migrate. Aspire and deployment orchestration run `src/Tools/DbMigrator` before starting it. The tool delegates to `IDatabaseMigratorService`, which surfaces PostgreSQL migration notices in the deployment log.
+
+### Transaction account ownership
+
+`Transaction.CardId` is the stored relationship. All transaction account reads resolve through `Card.AccountId`, including receipt filters, dashboards, YNAB mapping, account deletion guards and trashed history. Reassigning a card deliberately moves that history to its new parent account. Account merges move cards and their integration mappings; they count affected transactions for semantic audit records without rewriting transaction rows.
+
+Create/update requests accept the card, amount and date. Response `accountId` remains available as a derived value. Infrastructure read mapping requires a loaded or projected card, including responses from ordinary, balance-guarded and complete-receipt creation. A domain response's `AccountId` is ignored on persistence writes.
+
+`CARD_CHANGE_QUERY_KEYS` owns the browser dependencies of card edits and merges. Local mutations and remote card notifications use the same list to refresh transaction/trip account data, dashboard account aggregates, YNAB split comparisons and account-filtered receipt lists. Inactive cached transaction and trash queries become stale too. A no-op merge retains its existing no-invalidation behavior.
+
+The `DropTransactionAccountId` migration locks both tables, checks agreement across active and trashed transactions, and rejects any divergence with its count before removing the redundant column. Its downgrade reconstructs the account from each card. Portable backups retain their existing card identities and require no format change for this migration.
 
 ### Transaction and audit ownership
 

@@ -178,7 +178,6 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 
 	// Filter receipts down to those with at least one transaction matching the supplied
 	// accountId / cardId. Account filter matches transactions through Card.AccountId.
-	// Transaction.AccountId is still carried additively (drop is a separate later phase).
 	private static IQueryable<ReceiptEntity> ApplyTransactionFilters(ApplicationDbContext context, IQueryable<ReceiptEntity> query, Guid? accountId, Guid? cardId)
 	{
 		if (cardId.HasValue)

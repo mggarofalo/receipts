@@ -96,8 +96,8 @@ describe("useTransactions", () => {
     expect(result.current.fetchStatus).toBe("idle");
   });
 
-  it("create mutation calls POST and shows toast on success", async () => {
-    const body = { amount: 200, date: "2025-03-01" };
+  it("create mutation sends card identity without a stale form account", async () => {
+    const body = { amount: 200, date: "2025-03-01", accountId: "stale-account", cardId: "card-1" };
     const created = { id: "2", ...body };
     (client.POST as Mock).mockResolvedValue({ data: created, error: undefined });
 
@@ -107,17 +107,17 @@ describe("useTransactions", () => {
 
     await result.current.mutateAsync({
       receiptId: "r-1",
-      body: { ...body, accountId: "acc-1", cardId: "card-1" },
+      body,
     });
 
     expect(client.POST).toHaveBeenCalledWith(
       "/api/receipts/{receiptId}/transactions",
-      { params: { path: { receiptId: "r-1" } }, body: { ...body, accountId: "acc-1", cardId: "card-1" } },
+      { params: { path: { receiptId: "r-1" } }, body: { amount: 200, date: "2025-03-01", cardId: "card-1" } },
     );
     expect(toast.success).toHaveBeenCalledWith("Transaction created");
   });
 
-  it("update mutation calls PUT and shows toast on success", async () => {
+  it("update mutation sends card identity without a stale form account", async () => {
     const body = { id: "1", amount: 250, date: "2025-03-02", accountId: "acc-1", cardId: "card-1" };
     (client.PUT as Mock).mockResolvedValue({ error: undefined });
 
@@ -131,7 +131,7 @@ describe("useTransactions", () => {
 
     expect(client.PUT).toHaveBeenCalledWith(
       "/api/transactions/{id}",
-      { params: { path: { id: "1" } }, body },
+      { params: { path: { id: "1" } }, body: { id: "1", amount: 250, date: "2025-03-02", cardId: "card-1" } },
     );
     expect(toast.success).toHaveBeenCalledWith("Transaction updated");
   });
@@ -190,7 +190,7 @@ describe("useTransactions", () => {
       wrapper: createWrapper(),
     });
 
-    result.current.mutate({ receiptId: "r-1", body: { amount: 100, date: "2025-01-01", accountId: "acc-1", cardId: "card-1" } });
+    result.current.mutate({ receiptId: "r-1", body: { amount: 100, date: "2025-01-01", cardId: "card-1" } });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(toast.error).not.toHaveBeenCalled();
@@ -203,7 +203,7 @@ describe("useTransactions", () => {
       wrapper: createWrapper(),
     });
 
-    result.current.mutate({ receiptId: "r-1", body: [{ amount: 100, date: "2025-01-01", accountId: "acc-1", cardId: "card-1" }] });
+    result.current.mutate({ receiptId: "r-1", body: [{ amount: 100, date: "2025-01-01", cardId: "card-1" }] });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(toast.error).not.toHaveBeenCalled();
@@ -225,9 +225,14 @@ describe("useTransactions", () => {
       wrapper: Wrapper,
     });
 
-    result.current.mutate({ receiptId: "r-1", body: [{ amount: 100, date: "2025-01-01", accountId: "acc-1", cardId: "card-1" }] });
+    const body = [{ amount: 100, date: "2025-01-01", accountId: "stale-account", cardId: "card-1" }];
+    result.current.mutate({ receiptId: "r-1", body });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(client.POST).toHaveBeenCalledWith(
+      "/api/receipts/{receiptId}/transactions/batch",
+      { params: { path: { receiptId: "r-1" } }, body: [{ amount: 100, date: "2025-01-01", cardId: "card-1" }] },
+    );
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["transactions"] });
   });
 
@@ -238,7 +243,7 @@ describe("useTransactions", () => {
       wrapper: createWrapper(),
     });
 
-    result.current.mutate({ body: { id: "1", amount: 100, date: "2025-01-01", accountId: "acc-1", cardId: "card-1" } });
+    result.current.mutate({ body: { id: "1", amount: 100, date: "2025-01-01", cardId: "card-1" } });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(toast.error).not.toHaveBeenCalled();
@@ -387,7 +392,7 @@ describe("useTransactions", () => {
       wrapper: Wrapper,
     });
 
-    result.current.mutate({ receiptId: "r-1", body: { amount: 100, date: "2025-01-01", accountId: "acc-1", cardId: "card-1" } });
+    result.current.mutate({ receiptId: "r-1", body: { amount: 100, date: "2025-01-01", cardId: "card-1" } });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["trips"] });
@@ -409,7 +414,7 @@ describe("useTransactions", () => {
       wrapper: Wrapper,
     });
 
-    result.current.mutate({ body: { id: "1", amount: 100, date: "2025-01-01", accountId: "acc-1", cardId: "card-1" } });
+    result.current.mutate({ body: { id: "1", amount: 100, date: "2025-01-01", cardId: "card-1" } });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["trips"] });

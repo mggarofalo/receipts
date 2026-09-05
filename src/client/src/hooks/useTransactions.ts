@@ -3,6 +3,7 @@ import { useStableQuery } from "@/hooks/useStableQuery";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSessionMutation } from "@/hooks/useSessionMutation";
 import client from "@/lib/api-client";
+import type { components } from "@/generated/api";
 import { toast } from "sonner";
 
 export function useTransactions(offset = 0, limit = 50, sortBy?: string | null, sortDirection?: string | null) {
@@ -58,11 +59,11 @@ export function useCreateTransaction() {
       body,
     }: {
       receiptId: string;
-      body: { amount: number; date: string; accountId: string; cardId: string };
+      body: components["schemas"]["CreateTransactionRequest"];
     }) => {
       const { data, error } = await client.POST(
         "/api/receipts/{receiptId}/transactions",
-        { params: { path: { receiptId } }, body },
+        { params: { path: { receiptId } }, body: { cardId: body.cardId, amount: body.amount, date: body.date } },
       );
       if (error) throw error;
       return data;
@@ -83,11 +84,11 @@ export function useCreateTransactionsBatch() {
       body,
     }: {
       receiptId: string;
-      body: { amount: number; date: string; accountId: string; cardId: string }[];
+      body: components["schemas"]["CreateTransactionRequest"][];
     }) => {
       const { data, error } = await client.POST(
         "/api/receipts/{receiptId}/transactions/batch",
-        { params: { path: { receiptId } }, body },
+        { params: { path: { receiptId } }, body: body.map(({ cardId, amount, date }) => ({ cardId, amount, date })) },
       );
       if (error) throw error;
       return data;
@@ -104,11 +105,11 @@ export function useUpdateTransaction() {
     mutationFn: async ({
       body,
     }: {
-      body: { id: string; amount: number; date: string; accountId: string; cardId: string };
+      body: components["schemas"]["UpdateTransactionRequest"];
     }) => {
       const { error } = await client.PUT("/api/transactions/{id}", {
         params: { path: { id: body.id } },
-        body,
+        body: { id: body.id, cardId: body.cardId, amount: body.amount, date: body.date },
       });
       if (error) throw error;
     },

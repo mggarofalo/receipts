@@ -341,7 +341,7 @@ describe("ReceiptTransactionsCard", () => {
     expect(submitButton).toBeInTheDocument();
   });
 
-  it("renders edit form with update button in edit dialog", async () => {
+  it("submits an edit using the card without serializing the displayed account", async () => {
     const { useUpdateTransaction } = await import(
       "@/hooks/useTransactions"
     );
@@ -366,7 +366,11 @@ describe("ReceiptTransactionsCard", () => {
     const submitButton = screen.getByRole("button", {
       name: "Update Transaction",
     });
-    expect(submitButton).toBeInTheDocument();
+    await user.click(submitButton);
+    await vi.waitFor(() => expect(mockUpdateMutate).toHaveBeenCalledWith(
+      { body: { id: "txn-1", cardId: "card-1", amount: 50, date: "2024-01-15" } },
+      expect.objectContaining({ onSuccess: expect.any(Function) }),
+    ));
   });
 
   it("cancels delete dialog without deleting", async () => {

@@ -146,7 +146,6 @@ public class TransactionsController(IMediator mediator, TransactionMapper mapper
 	public async Task<Ok<TransactionResponse>> CreateTransaction([FromBody] CreateTransactionRequest model, [FromRoute] Guid receiptId, CancellationToken cancellationToken = default)
 	{
 		Transaction transaction = mapper.ToDomain(model);
-		transaction.AccountId = model.AccountId;
 		CreateTransactionCommand command = new([transaction], receiptId);
 		List<Transaction> transactions = await mediator.Send(command, cancellationToken);
 		await notifier.NotifyCreated("transaction", transactions[0].Id);
@@ -160,7 +159,6 @@ public class TransactionsController(IMediator mediator, TransactionMapper mapper
 		List<Transaction> transactions = [.. models.Select(m =>
 		{
 			Transaction t = mapper.ToDomain(m);
-			t.AccountId = m.AccountId;
 			return t;
 		})];
 
@@ -179,7 +177,6 @@ public class TransactionsController(IMediator mediator, TransactionMapper mapper
 		// Route id is authoritative; ignore any mismatched body id (RECEIPTS-793).
 		model.Id = id;
 		Transaction transaction = mapper.ToDomain(model);
-		transaction.AccountId = model.AccountId;
 		UpdateTransactionCommand command = new([transaction]);
 		bool result = await mediator.Send(command, cancellationToken);
 
@@ -200,7 +197,6 @@ public class TransactionsController(IMediator mediator, TransactionMapper mapper
 		List<Transaction> transactions = [.. models.Select(m =>
 		{
 			Transaction t = mapper.ToDomain(m);
-			t.AccountId = m.AccountId;
 			return t;
 		})];
 

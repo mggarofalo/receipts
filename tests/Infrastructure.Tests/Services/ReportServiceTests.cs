@@ -28,8 +28,9 @@ public class ReportServiceTests
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Item 1", Quantity = 1, UnitPrice = 10.00m, TotalAmount = 10.00m, Category = "Food" });
 
 			context.Transactions.Add(
-				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, AccountId = accountId, Amount = 11.00m, Date = date });
+				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, CardId = accountId, Amount = 11.00m, Date = date });
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -66,8 +67,9 @@ public class ReportServiceTests
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Item 1", Quantity = 1, UnitPrice = 10.00m, TotalAmount = 10.00m, Category = "Food" });
 
 			context.Transactions.Add(
-				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, AccountId = accountId, Amount = 15.00m, Date = date });
+				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, CardId = accountId, Amount = 15.00m, Date = date });
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -117,8 +119,9 @@ public class ReportServiceTests
 				new AdjustmentEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Type = Common.AdjustmentType.Discount, Amount = 2.00m });
 
 			context.Transactions.Add(
-				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, AccountId = accountId, Amount = 10.00m, Date = date });
+				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, CardId = accountId, Amount = 10.00m, Date = date });
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -157,6 +160,7 @@ public class ReportServiceTests
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Item 1", Quantity = 1, UnitPrice = 10.00m, TotalAmount = 10.00m, Category = "Food" });
 
 			// No transaction — would normally be out of balance
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -191,10 +195,11 @@ public class ReportServiceTests
 				new ReceiptEntity { Id = receiptId1, Location = "A", Date = day1, TaxAmount = 0m });
 
 			context.Transactions.AddRange(
-				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId1, AccountId = accountId, Amount = 99.00m, Date = day1 },
-				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId2, AccountId = accountId, Amount = 99.00m, Date = day2 });
+				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId1, CardId = accountId, Amount = 99.00m, Date = day1 },
+				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId2, CardId = accountId, Amount = 99.00m, Date = day2 });
 
 			// No items — so expected=0, transaction=99 => diff=-99 for both
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -232,14 +237,15 @@ public class ReportServiceTests
 			context.ReceiptItems.Add(
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId1, Description = "Item", Quantity = 1, UnitPrice = 10.00m, TotalAmount = 10.00m, Category = "Food" });
 			context.Transactions.Add(
-				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId1, AccountId = accountId, Amount = 5.00m, Date = date });
+				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId1, CardId = accountId, Amount = 5.00m, Date = date });
 
 			// Receipt 2: items=20, transaction=5 => diff=15
 			context.ReceiptItems.Add(
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId2, Description = "Item", Quantity = 1, UnitPrice = 20.00m, TotalAmount = 20.00m, Category = "Food" });
 			context.Transactions.Add(
-				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId2, AccountId = accountId, Amount = 5.00m, Date = date });
+				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId2, CardId = accountId, Amount = 5.00m, Date = date });
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -275,9 +281,10 @@ public class ReportServiceTests
 					new ReceiptEntity { Id = receiptId, Location = $"Store {i}", Date = date, TaxAmount = 0m });
 
 				context.Transactions.Add(
-					new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, AccountId = accountId, Amount = 99.00m, Date = date });
+					new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, CardId = accountId, Amount = 99.00m, Date = date });
 			}
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -321,14 +328,15 @@ public class ReportServiceTests
 			context.ReceiptItems.Add(
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId1, Description = "Item", Quantity = 1, UnitPrice = 10.00m, TotalAmount = 10.00m, Category = "Food" });
 			context.Transactions.Add(
-				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId1, AccountId = accountId, Amount = 5.00m, Date = date });
+				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId1, CardId = accountId, Amount = 5.00m, Date = date });
 
 			// Receipt 2: items=5, transaction=10 => diff=-5 (negative)
 			context.ReceiptItems.Add(
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId2, Description = "Item", Quantity = 1, UnitPrice = 5.00m, TotalAmount = 5.00m, Category = "Food" });
 			context.Transactions.Add(
-				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId2, AccountId = accountId, Amount = 10.00m, Date = date });
+				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId2, CardId = accountId, Amount = 10.00m, Date = date });
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -365,8 +373,9 @@ public class ReportServiceTests
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Deleted", Quantity = 1, UnitPrice = 5.00m, TotalAmount = 5.00m, Category = "Food", DeletedAt = DateTimeOffset.UtcNow });
 
 			context.Transactions.Add(
-				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, AccountId = accountId, Amount = 11.00m, Date = date });
+				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, CardId = accountId, Amount = 11.00m, Date = date });
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -398,8 +407,9 @@ public class ReportServiceTests
 				new ReceiptEntity { Id = receiptId, Location = "Empty Store", Date = date, TaxAmount = 0m });
 
 			context.Transactions.Add(
-				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, AccountId = accountId, Amount = 5.00m, Date = date });
+				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, CardId = accountId, Amount = 5.00m, Date = date });
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -435,6 +445,7 @@ public class ReportServiceTests
 			context.ReceiptItems.Add(
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Item 1", Quantity = 1, UnitPrice = 10.00m, TotalAmount = 10.00m, Category = "Food" });
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -470,6 +481,7 @@ public class ReportServiceTests
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Milk", Quantity = 1, UnitPrice = 3.50m, TotalAmount = 3.50m, Category = "Dairy" },
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Bread", Quantity = 1, UnitPrice = 2.00m, TotalAmount = 2.00m, Category = "Bakery" });
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -505,6 +517,7 @@ public class ReportServiceTests
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Cheese", Quantity = 1, UnitPrice = 5.00m, TotalAmount = 5.00m, Category = "Dairy" },
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Bread", Quantity = 1, UnitPrice = 2.00m, TotalAmount = 2.00m, Category = "Bakery" });
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -539,6 +552,7 @@ public class ReportServiceTests
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Milk", Quantity = 1, UnitPrice = 3.00m, TotalAmount = 3.00m, Category = "Dairy" },
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Milk", Quantity = 1, UnitPrice = 3.00m, TotalAmount = 3.00m, Category = "Dairy", DeletedAt = DateTimeOffset.UtcNow });
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -572,6 +586,7 @@ public class ReportServiceTests
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Item B", Quantity = 1, UnitPrice = 2.00m, TotalAmount = 2.00m, Category = "Cat2" },
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Item C", Quantity = 1, UnitPrice = 3.00m, TotalAmount = 3.00m, Category = "Cat3" });
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -602,6 +617,7 @@ public class ReportServiceTests
 			context.ReceiptItems.Add(
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Milk", Quantity = 1, UnitPrice = 3.00m, TotalAmount = 3.00m, Category = "Dairy" });
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -634,6 +650,7 @@ public class ReportServiceTests
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Milk", Quantity = 1, UnitPrice = 3.00m, TotalAmount = 3.00m, Category = "Dairy" },
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Milk", Quantity = 1, UnitPrice = 4.00m, TotalAmount = 4.00m, Category = "Beverages" });
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -681,6 +698,7 @@ public class ReportServiceTests
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receipt1, Description = "2% Milk", Quantity = 1, UnitPrice = 3.49m, TotalAmount = 3.49m, Category = "Dairy", NormalizedDescriptionId = normalizedId },
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receipt2, Description = "Skim Milk", Quantity = 1, UnitPrice = 3.29m, TotalAmount = 3.29m, Category = "Dairy", NormalizedDescriptionId = normalizedId });
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -725,6 +743,7 @@ public class ReportServiceTests
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Milk", Quantity = 1, UnitPrice = 3.49m, TotalAmount = 3.49m, Category = "Dairy", NormalizedDescriptionId = normalizedId },
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Milk (unlinked)", Quantity = 1, UnitPrice = 99.99m, TotalAmount = 99.99m, Category = "Dairy", NormalizedDescriptionId = null });
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -772,6 +791,7 @@ public class ReportServiceTests
 				// Only matches the "Milk" normalizedDescription filter, not the description filter.
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "2% Milk", Quantity = 1, UnitPrice = 3.49m, TotalAmount = 3.49m, Category = "Dairy", NormalizedDescriptionId = milkNormalizedId });
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -855,6 +875,7 @@ public class ReportServiceTests
 					NormalizedDescriptionId = null,
 				});
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -949,6 +970,7 @@ public class ReportServiceTests
 					NormalizedDescriptionId = normalizedId,
 				});
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -1048,6 +1070,7 @@ public class ReportServiceTests
 					NormalizedDescriptionId = normalizedId,
 				});
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -1121,6 +1144,7 @@ public class ReportServiceTests
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = r2, Description = "coffee", Quantity = 1, UnitPrice = 4m, TotalAmount = 4m, Category = "Beverages", NormalizedDescriptionId = normalizedId },
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = r3, Description = "coffee", Quantity = 1, UnitPrice = 4m, TotalAmount = 4m, Category = "Beverages", NormalizedDescriptionId = normalizedId });
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -1167,6 +1191,7 @@ public class ReportServiceTests
 				// Soft-deleted uncategorized — excluded by the DeletedAt == null filter.
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Ghost", Quantity = 1, UnitPrice = 9m, TotalAmount = 9m, Category = "Uncategorized", DeletedAt = DateTimeOffset.UtcNow });
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -1209,6 +1234,7 @@ public class ReportServiceTests
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "High", Quantity = 1, UnitPrice = 9m, TotalAmount = 9m, Category = "Uncategorized" },
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Mid", Quantity = 1, UnitPrice = 5m, TotalAmount = 5m, Category = "Uncategorized" });
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -1241,6 +1267,7 @@ public class ReportServiceTests
 			AddReceiptWithTransaction(context, "Store B", new DateOnly(2025, 1, 3), accountId, 20m);
 			AddReceiptWithTransaction(context, "Store C", new DateOnly(2025, 1, 4), accountId, 10m);
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -1304,6 +1331,7 @@ public class ReportServiceTests
 				});
 			}
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -1347,9 +1375,10 @@ public class ReportServiceTests
 				context.Receipts.Add(
 					new ReceiptEntity { Id = receiptId, Location = $"Store {i}", Date = sameDate, TaxAmount = 0m });
 				context.Transactions.Add(
-					new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, AccountId = accountId, Amount = 50m, Date = sameDate });
+					new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, CardId = accountId, Amount = 50m, Date = sameDate });
 			}
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -1390,6 +1419,7 @@ public class ReportServiceTests
 				AddReceiptWithTransaction(context, loc, date, accountId, 10m);
 			}
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -1420,7 +1450,7 @@ public class ReportServiceTests
 		context.Receipts.Add(
 			new ReceiptEntity { Id = receiptId, Location = location, Date = date, TaxAmount = 0m });
 		context.Transactions.Add(
-			new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, AccountId = accountId, Amount = amount, Date = date });
+			new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, CardId = accountId, Amount = amount, Date = date });
 	}
 
 	// ── GetDuplicatesAsync + duplicate-group acceptance (RECEIPTS-834) ────────────────
@@ -1446,6 +1476,7 @@ public class ReportServiceTests
 			SeedReceipt(context, receiptB, "Store A", date, accountId, 10.00m);
 			// Same day, different location — no partner, so no group.
 			SeedReceipt(context, lone, "Store B", date, accountId, 10.00m);
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -1482,6 +1513,7 @@ public class ReportServiceTests
 		{
 			SeedReceipt(context, receiptA, "Store A", date, accountId, 10.00m);
 			SeedReceipt(context, receiptB, "Store A", date, accountId, 10.00m);
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -1531,6 +1563,7 @@ public class ReportServiceTests
 			SeedReceipt(context, acceptedB, "Store A", acceptedDate, accountId, 10.00m);
 			SeedReceipt(context, openA, "Store B", openDate, accountId, 20.00m);
 			SeedReceipt(context, openB, "Store B", openDate, accountId, 20.00m);
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -1572,6 +1605,7 @@ public class ReportServiceTests
 		{
 			SeedReceipt(context, receiptA, "Store A", date, accountId, 10.00m);
 			SeedReceipt(context, receiptB, "Store A", date, accountId, 10.00m);
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -1635,6 +1669,7 @@ public class ReportServiceTests
 		{
 			SeedReceipt(context, receiptA, "Store A", date, accountId, 10.00m);
 			SeedReceipt(context, receiptB, "Store A", date, accountId, 10.00m);
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -1645,6 +1680,7 @@ public class ReportServiceTests
 		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
 		{
 			SeedReceipt(context, receiptC, "Store A", date, accountId, 10.00m);
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -1678,6 +1714,7 @@ public class ReportServiceTests
 			SeedReceipt(context, receiptA, "Store A", date, accountId, 10.00m);
 			SeedReceipt(context, receiptB, "Store A", date, accountId, 10.00m);
 			SeedReceipt(context, receiptC, "Store A", date, accountId, 10.00m);
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -1722,6 +1759,7 @@ public class ReportServiceTests
 		{
 			SeedReceipt(context, receiptA, "Store A", date, accountId, 10.00m);
 			SeedReceipt(context, receiptB, "Store A", date, accountId, 10.00m);
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -1742,6 +1780,7 @@ public class ReportServiceTests
 				.IgnoreQueryFilters()
 				.SingleAsync(r => r.Id == receiptB);
 			restored.DeletedAt = null;
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -1773,6 +1812,7 @@ public class ReportServiceTests
 		{
 			SeedReceipt(context, receiptA, "Store A", date, accountId, 10.00m);
 			SeedReceipt(context, receiptB, "Store A", date, accountId, 10.00m);
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -1808,6 +1848,7 @@ public class ReportServiceTests
 		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
 		{
 			SeedReceipt(context, receiptA, "Store A", date, accountId, 10.00m);
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -1836,6 +1877,7 @@ public class ReportServiceTests
 		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
 		{
 			SeedReceipt(context, receiptA, "Store A", new DateOnly(2025, 6, 1), accountId, 10.00m);
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -1870,6 +1912,7 @@ public class ReportServiceTests
 		{
 			SeedReceipt(context, receiptA, "Store A", date, accountId, 10.00m);
 			SeedReceipt(context, receiptB, "Store A", date, accountId, 10.00m);
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -1900,6 +1943,7 @@ public class ReportServiceTests
 		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
 		{
 			SeedReceipt(context, receiptA, "Store A", date, accountId, 10.00m);
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -1940,6 +1984,7 @@ public class ReportServiceTests
 			SeedReceipt(context, receiptA, "Store A", date, accountId, 10.00m);
 			SeedReceipt(context, receiptB, "Store A", date, accountId, 10.00m);
 			SeedReceipt(context, receiptC, "Store A", date, accountId, 10.00m);
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -1980,6 +2025,7 @@ public class ReportServiceTests
 			SeedReceipt(context, receiptA, "Store A", date, accountId, 10.00m);
 			SeedReceipt(context, receiptB, "Store A", date, accountId, 10.00m);
 			SeedReceipt(context, receiptC, "Store A", date, accountId, 10.00m);
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -2023,6 +2069,7 @@ public class ReportServiceTests
 		{
 			SeedReceipt(context, receiptA, "Store A", date, accountId, 10.00m);
 			SeedReceipt(context, receiptB, "Store A", date, accountId, 10.00m);
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -2056,6 +2103,7 @@ public class ReportServiceTests
 		{
 			SeedReceipt(context, receiptA, "Store A", date, accountId, 10.00m);
 			SeedReceipt(context, receiptB, "Store A", date, accountId, 10.00m);
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -2106,6 +2154,7 @@ public class ReportServiceTests
 		{
 			SeedReceipt(context, receiptA, "Store A", earlier, accountId, 12.34m);
 			SeedReceipt(context, receiptB, "Store B", later, accountId, 56.78m);
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -2168,6 +2217,7 @@ public class ReportServiceTests
 		{
 			SeedReceipt(context, receiptA, "Store A", date, accountId, 10.00m);
 			SeedReceipt(context, receiptB, "Store A", date, accountId, 10.00m);
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -2209,6 +2259,7 @@ public class ReportServiceTests
 			SeedReceipt(context, receiptA, "Store A", date, accountId, 10.00m);
 			SeedReceipt(context, receiptB, "Store B", date, accountId, 20.00m);
 			SeedReceipt(context, receiptC, "Store C", date, accountId, 30.00m);
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -2248,6 +2299,7 @@ public class ReportServiceTests
 			SeedReceipt(context, receiptA, "Store A", date, accountId, 10.00m);
 			SeedReceipt(context, receiptB, "Store A", date, accountId, 10.00m);
 			SeedReceipt(context, receiptC, "Store A", date, accountId, 10.00m);
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -2311,6 +2363,7 @@ public class ReportServiceTests
 			SeedReceipt(context, receiptB, "Store A", date, accountId, 10.00m);
 			SeedReceipt(context, receiptC, "Store A", date, accountId, 10.50m);
 			SeedReceipt(context, receiptD, "Store A", date, accountId, 10.50m);
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -2374,6 +2427,7 @@ public class ReportServiceTests
 			SeedReceipt(context, receiptB, "Store A", new DateOnly(2025, 6, 1), accountId, 10.00m);
 			SeedReceipt(context, receiptC, "Store C", new DateOnly(2025, 7, 1), accountId, 20.00m);
 			SeedReceipt(context, receiptD, "Store C", new DateOnly(2025, 7, 1), accountId, 20.00m);
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -2424,6 +2478,7 @@ public class ReportServiceTests
 			SeedReceipt(context, receiptB, "Store A", date, accountId, 10.00m);
 			SeedReceipt(context, receiptC, "Store D", date, accountId, 30.00m);
 			SeedReceipt(context, receiptD, "Store D", date, accountId, 30.00m);
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -2468,6 +2523,7 @@ public class ReportServiceTests
 				SeedReceipt(context, receiptId, "Store A", date, accountId, 10.00m);
 			}
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -2524,6 +2580,7 @@ public class ReportServiceTests
 				SeedReceipt(context, receiptId, "Store A", date, accountId, 10.00m);
 			}
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -2567,7 +2624,7 @@ public class ReportServiceTests
 		context.Receipts.Add(
 			new ReceiptEntity { Id = receiptId, Location = location, Date = date, TaxAmount = 0m });
 		context.Transactions.Add(
-			new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, AccountId = accountId, Amount = amount, Date = date });
+			new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, CardId = accountId, Amount = amount, Date = date });
 	}
 
 	private static async Task SoftDeleteReceiptAsync(
@@ -2576,6 +2633,18 @@ public class ReportServiceTests
 		await using ApplicationDbContext context = contextFactory.CreateDbContext();
 		ReceiptEntity receipt = await context.Receipts.SingleAsync(r => r.Id == receiptId);
 		context.Receipts.Remove(receipt);
+		SeedOriginatingCards(context);
 		await context.SaveChangesAsync();
 	}
+	private static void SeedOriginatingCards(ApplicationDbContext context)
+	{
+		foreach (Guid cardId in context.ChangeTracker.Entries<TransactionEntity>().Select(entry => entry.Entity.CardId).Distinct().ToList())
+		{
+			if (context.Cards.Find(cardId) is null)
+			{
+				context.Cards.Add(new CardEntity { Id = cardId, AccountId = cardId, Name = "Report card", CardCode = "1234" });
+			}
+		}
+	}
+
 }

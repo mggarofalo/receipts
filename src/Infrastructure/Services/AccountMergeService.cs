@@ -70,21 +70,16 @@ public class AccountMergeService(
 			await using IDbContextTransaction dbTransaction = await context.Database.BeginTransactionAsync(cancellationToken);
 
 			// Phase 1: repoint dependents + repoint/replace mapping + write audit. No account deletes yet.
-			// IgnoreQueryFilters so soft-deleted (trashed) transactions repoint too — otherwise the
-			// Phase-2 account delete would strand them and (pre-fix) cascade-destroy them.
-			List<TransactionEntity> transactionsToMove = await context.Transactions
+			// History follows the cards, including trashed transactions. Capture semantic
+			// audit counts before moving the cards, without rewriting transaction rows.
+			Dictionary<Guid, int> transactionCountBySource = await context.Transactions
 				.IgnoreQueryFilters()
 				.IgnoreAutoIncludes()
-				.Where(t => sourceAccountIds.Contains(t.AccountId))
-				.ToListAsync(cancellationToken);
-			Dictionary<Guid, int> transactionCountBySource = transactionsToMove
-				.GroupBy(t => t.AccountId)
-				.ToDictionary(g => g.Key, g => g.Count());
-			foreach (TransactionEntity transaction in transactionsToMove)
-			{
-				transaction.AccountId = targetAccountId;
-			}
-			movedTransactionCount = transactionsToMove.Count;
+				.Where(transaction => sourceAccountIds.Contains(transaction.Card!.AccountId))
+				.GroupBy(transaction => transaction.Card!.AccountId)
+				.Select(group => new { AccountId = group.Key, Count = group.Count() })
+				.ToDictionaryAsync(group => group.AccountId, group => group.Count, cancellationToken);
+			movedTransactionCount = transactionCountBySource.Values.Sum();
 
 			List<CardEntity> sourceCards = await context.Cards
 				.Where(c => distinctCardIds.Contains(c.Id))
@@ -150,8 +145,8 @@ public class AccountMergeService(
 			await context.SaveChangesAsync(cancellationToken);
 
 			// Phase 2: delete the now-orphaned source accounts in the SAME context/transaction.
-			// With Transactions.AccountId now Restrict, this DELETE succeeds only because every
-			// transaction (active and soft-deleted) was repointed to the target above.
+			// Every source card now belongs to the target, so active and trashed
+			// transaction history follows without retaining a source-account FK.
 			List<AccountEntity> orphanedAccounts = await context.Accounts
 				.Where(a => sourceAccountIds.Contains(a.Id))
 				.ToListAsync(cancellationToken);
@@ -204,11 +199,11 @@ public class AccountMergeService(
 		int transactionsToRepoint = await context.Transactions
 			.IgnoreQueryFilters()
 			.IgnoreAutoIncludes()
-			.CountAsync(t => sourceAccountIds.Contains(t.AccountId) && t.DeletedAt == null, cancellationToken);
+			.CountAsync(t => sourceAccountIds.Contains(t.Card!.AccountId) && t.DeletedAt == null, cancellationToken);
 		int trashedTransactionsToRepoint = await context.Transactions
 			.IgnoreQueryFilters()
 			.IgnoreAutoIncludes()
-			.CountAsync(t => sourceAccountIds.Contains(t.AccountId) && t.DeletedAt != null, cancellationToken);
+			.CountAsync(t => sourceAccountIds.Contains(t.Card!.AccountId) && t.DeletedAt != null, cancellationToken);
 
 		List<MergeCardsPreviewAccount> accountsToRemove =
 		[

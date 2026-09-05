@@ -706,14 +706,6 @@ public partial class BackupImportService(
 		// column value is the originating Card's Id.
 		string cardColumn = exportVersion < 2 ? "account_id" : "card_id";
 
-		// Resolve Transaction.AccountId by joining the Card's parent Account at import time.
-		// The backup transactions table does not carry a separate account_id column (v3
-		// introduced accounts as a distinct table but did not denormalize onto transactions).
-		// Cards have already been upserted above; Card.AccountId is non-nullable post-575.
-		Dictionary<Guid, Guid> cardAccountIdByCardId = await context.Cards
-			.AsNoTracking()
-			.ToDictionaryAsync(c => c.Id, c => c.AccountId, cancellationToken);
-
 		int created = 0, updated = 0;
 		await using SqliteCommand cmd = sqlite.CreateCommand();
 		cmd.CommandText = $"SELECT id, receipt_id, {cardColumn}, amount, amount_currency, date FROM transactions";
@@ -728,19 +720,12 @@ public partial class BackupImportService(
 			Currency amountCurrency = Enum.Parse<Currency>(reader.GetString(4));
 			DateOnly date = DateOnly.Parse(reader.GetString(5), CultureInfo.InvariantCulture);
 
-			// Fall back to cardId when the Card is missing from the lookup (shouldn't happen
-			// in practice — Cards are upserted before Transactions — but defensive).
-			Guid accountId = cardAccountIdByCardId.TryGetValue(cardId, out Guid parent)
-				? parent
-				: cardId;
-
 			TransactionEntity? existing = await context.Transactions
 				.IgnoreQueryFilters()
 				.FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
 			if (existing is not null)
 			{
 				existing.ReceiptId = receiptId;
-				existing.AccountId = accountId;
 				existing.CardId = cardId;
 				existing.Amount = amount;
 				existing.AmountCurrency = amountCurrency;
@@ -754,7 +739,6 @@ public partial class BackupImportService(
 				{
 					Id = id,
 					ReceiptId = receiptId,
-					AccountId = accountId,
 					CardId = cardId,
 					Amount = amount,
 					AmountCurrency = amountCurrency,

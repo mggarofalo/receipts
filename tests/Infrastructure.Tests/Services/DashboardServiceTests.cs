@@ -29,10 +29,11 @@ public class DashboardServiceTests
 				new ReceiptEntity { Id = receiptId2, Location = "Store B", Date = day2, TaxAmount = 0 });
 
 			context.Transactions.AddRange(
-				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId1, AccountId = accountId, Amount = 50.00m, Date = day1 },
-				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId1, AccountId = accountId, Amount = 25.00m, Date = day1 },
-				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId2, AccountId = accountId, Amount = 100.00m, Date = day2 });
+				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId1, CardId = accountId, Amount = 50.00m, Date = day1 },
+				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId1, CardId = accountId, Amount = 25.00m, Date = day1 },
+				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId2, CardId = accountId, Amount = 100.00m, Date = day2 });
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -90,10 +91,11 @@ public class DashboardServiceTests
 				new ReceiptEntity { Id = receiptId, Location = "Store", Date = date, TaxAmount = 0 });
 
 			context.Transactions.AddRange(
-				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, AccountId = accountId, Amount = 10.00m, Date = date },
-				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, AccountId = accountId, Amount = 20.00m, Date = date },
-				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, AccountId = accountId, Amount = 30.00m, Date = date });
+				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, CardId = accountId, Amount = 10.00m, Date = date },
+				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, CardId = accountId, Amount = 20.00m, Date = date },
+				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, CardId = accountId, Amount = 30.00m, Date = date });
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -133,10 +135,11 @@ public class DashboardServiceTests
 				new ReceiptEntity { Id = receiptId3, Location = "Store C", Date = new DateOnly(2025, 7, 20), TaxAmount = 0 });
 
 			context.Transactions.AddRange(
-				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId1, AccountId = accountId, Amount = 100.00m, Date = new DateOnly(2025, 1, 15) },
-				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId2, AccountId = accountId, Amount = 200.00m, Date = new DateOnly(2025, 4, 10) },
-				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId3, AccountId = accountId, Amount = 300.00m, Date = new DateOnly(2025, 7, 20) });
+				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId1, CardId = accountId, Amount = 100.00m, Date = new DateOnly(2025, 1, 15) },
+				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId2, CardId = accountId, Amount = 200.00m, Date = new DateOnly(2025, 4, 10) },
+				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId3, CardId = accountId, Amount = 300.00m, Date = new DateOnly(2025, 7, 20) });
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -178,9 +181,10 @@ public class DashboardServiceTests
 				new ReceiptEntity { Id = receiptId2, Location = "Store B", Date = new DateOnly(2025, 2, 15), TaxAmount = 0 });
 
 			context.Transactions.AddRange(
-				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId1, AccountId = accountId, Amount = 50.00m, Date = new DateOnly(2025, 1, 10) },
-				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId2, AccountId = accountId, Amount = 75.00m, Date = new DateOnly(2025, 2, 15) });
+				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId1, CardId = accountId, Amount = 50.00m, Date = new DateOnly(2025, 1, 10) },
+				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId2, CardId = accountId, Amount = 75.00m, Date = new DateOnly(2025, 2, 15) });
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -220,9 +224,10 @@ public class DashboardServiceTests
 				new ReceiptEntity { Id = receiptId2, Location = "Store B", Date = new DateOnly(2025, 3, 10), TaxAmount = 0 });
 
 			context.Transactions.AddRange(
-				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId1, AccountId = accountId, Amount = 100.00m, Date = new DateOnly(2024, 6, 15) },
-				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId2, AccountId = accountId, Amount = 200.00m, Date = new DateOnly(2025, 3, 10) });
+				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId1, CardId = accountId, Amount = 100.00m, Date = new DateOnly(2024, 6, 15) },
+				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId2, CardId = accountId, Amount = 200.00m, Date = new DateOnly(2025, 3, 10) });
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -260,6 +265,7 @@ public class DashboardServiceTests
 				new ReceiptEntity { Id = receiptId1, Location = "Store A", Date = new DateOnly(2022, 3, 1), TaxAmount = 0 },
 				new ReceiptEntity { Id = receiptId2, Location = "Store B", Date = new DateOnly(2025, 1, 15), TaxAmount = 0 });
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -310,10 +316,11 @@ public class DashboardServiceTests
 				new ReceiptEntity { Id = receiptId3, Location = "Target", Date = new DateOnly(2025, 3, 10), TaxAmount = 0 });
 
 			context.Transactions.AddRange(
-				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId1, AccountId = accountId, Amount = 50.00m, Date = new DateOnly(2025, 3, 1) },
-				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId2, AccountId = accountId, Amount = 75.00m, Date = new DateOnly(2025, 3, 15) },
-				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId3, AccountId = accountId, Amount = 100.00m, Date = new DateOnly(2025, 3, 10) });
+				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId1, CardId = accountId, Amount = 50.00m, Date = new DateOnly(2025, 3, 1) },
+				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId2, CardId = accountId, Amount = 75.00m, Date = new DateOnly(2025, 3, 15) },
+				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId3, CardId = accountId, Amount = 100.00m, Date = new DateOnly(2025, 3, 10) });
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -376,9 +383,10 @@ public class DashboardServiceTests
 				new ReceiptEntity { Id = receiptId2, Location = "Big Store", Date = new DateOnly(2025, 3, 10), TaxAmount = 0 });
 
 			context.Transactions.AddRange(
-				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId1, AccountId = accountId, Amount = 10.00m, Date = new DateOnly(2025, 3, 1) },
-				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId2, AccountId = accountId, Amount = 500.00m, Date = new DateOnly(2025, 3, 10) });
+				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId1, CardId = accountId, Amount = 10.00m, Date = new DateOnly(2025, 3, 1) },
+				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId2, CardId = accountId, Amount = 500.00m, Date = new DateOnly(2025, 3, 10) });
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -434,11 +442,12 @@ public class DashboardServiceTests
 			{
 				Id = Guid.NewGuid(),
 				ReceiptId = receiptId,
-				AccountId = accountId,
+				CardId = accountId,
 				Amount = 42.00m,
 				Date = new DateOnly(2025, 5, 1),
 			});
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -485,9 +494,10 @@ public class DashboardServiceTests
 				new ReceiptEntity { Id = receiptId2, Location = "Store B", Date = new DateOnly(2025, 6, 2), TaxAmount = 0 });
 
 			context.Transactions.AddRange(
-				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId1, AccountId = survivingAccountId, Amount = 10.00m, Date = new DateOnly(2025, 6, 1) },
-				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId2, AccountId = survivingAccountId, Amount = 20.00m, Date = new DateOnly(2025, 6, 2) });
+				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId1, CardId = survivingAccountId, Amount = 10.00m, Date = new DateOnly(2025, 6, 1) },
+				new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receiptId2, CardId = survivingAccountId, Amount = 20.00m, Date = new DateOnly(2025, 6, 2) });
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -526,4 +536,15 @@ public class DashboardServiceTests
 
 		contextFactory.ResetDatabase();
 	}
+	private static void SeedOriginatingCards(ApplicationDbContext context)
+	{
+		foreach (Guid cardId in context.ChangeTracker.Entries<TransactionEntity>().Select(entry => entry.Entity.CardId).Distinct().ToList())
+		{
+			if (context.Cards.Find(cardId) is null)
+			{
+				context.Cards.Add(new CardEntity { Id = cardId, AccountId = cardId, Name = "Report card", CardCode = "1234" });
+			}
+		}
+	}
+
 }

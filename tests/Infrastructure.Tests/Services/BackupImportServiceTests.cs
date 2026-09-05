@@ -382,7 +382,7 @@ public class BackupImportServiceTests : IDisposable
 		TransactionEntity? imported = await assertCtx.Transactions.FindAsync(txId);
 		imported.Should().NotBeNull();
 		imported!.CardId.Should().Be(cardId);
-		imported.AccountId.Should().Be(accountId, "AccountId must be derived from Card.AccountId, not reused from card_id");
+		imported.Card!.AccountId.Should().Be(accountId, "AccountId must be derived from Card.AccountId, not reused from card_id");
 	}
 
 	[Fact]

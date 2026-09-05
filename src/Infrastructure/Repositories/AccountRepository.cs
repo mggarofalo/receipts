@@ -26,7 +26,7 @@ public class AccountRepository(IDbContextFactory<ApplicationDbContext> contextFa
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		return await context.Transactions
 			.Where(t => t.Id == transactionId)
-			.Select(t => t.Account)
+			.Select(t => t.Card!.ParentAccount)
 			.FirstOrDefaultAsync(cancellationToken);
 	}
 
@@ -129,10 +129,9 @@ public class AccountRepository(IDbContextFactory<ApplicationDbContext> contextFa
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		// IgnoreQueryFilters() so soft-deleted (trashed) transactions count too — the
-		// Transactions.AccountId FK is Restrict, and a hard account delete would fail (or,
-		// worse, historically cascade-destroy) rows the soft-delete filter would hide.
+		// card and account Restrict FKs protect history regardless of its visibility.
 		return await context.Transactions
 			.IgnoreQueryFilters()
-			.CountAsync(t => t.AccountId == accountId, cancellationToken);
+			.CountAsync(t => t.Card!.AccountId == accountId, cancellationToken);
 	}
 }

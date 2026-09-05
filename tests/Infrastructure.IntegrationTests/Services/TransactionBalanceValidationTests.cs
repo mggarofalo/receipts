@@ -157,7 +157,6 @@ public class TransactionBalanceValidationTests(PostgresFixture fixture)
 			{
 				Id = txId,
 				ReceiptId = receiptId,
-				AccountId = accountId,
 				CardId = cardId,
 				Amount = 50m,
 				AmountCurrency = Common.Currency.USD,
@@ -256,7 +255,6 @@ public class TransactionBalanceValidationTests(PostgresFixture fixture)
 		{
 			Id = id,
 			ReceiptId = receiptId,
-			AccountId = accountId,
 			CardId = cardId,
 			Amount = amount,
 			AmountCurrency = Common.Currency.USD,

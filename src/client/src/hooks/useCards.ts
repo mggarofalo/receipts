@@ -3,6 +3,7 @@ import { useStableQuery } from "@/hooks/useStableQuery";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSessionMutation } from "@/hooks/useSessionMutation";
 import client from "@/lib/api-client";
+import { CARD_CHANGE_QUERY_KEYS } from "@/lib/query-invalidation";
 import { toApiError } from "@/lib/problem-details";
 import { toast } from "sonner";
 import type { components } from "@/generated/api";
@@ -113,7 +114,9 @@ export function useUpdateCard() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["cards"] });
+      for (const queryKey of CARD_CHANGE_QUERY_KEYS) {
+        queryClient.invalidateQueries({ queryKey });
+      }
       toast.success("Card updated");
     },
   });
@@ -327,7 +330,9 @@ export function useMergeCards() {
         return;
       }
 
-      queryClient.invalidateQueries({ queryKey: ["cards"] });
+      for (const queryKey of CARD_CHANGE_QUERY_KEYS) {
+        queryClient.invalidateQueries({ queryKey });
+      }
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       toast.success("Cards merged", { description: describeMergeImpact(impact) });
     },

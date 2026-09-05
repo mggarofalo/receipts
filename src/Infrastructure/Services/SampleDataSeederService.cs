@@ -246,10 +246,7 @@ public static class SampleDataSeederService
 			transactionAmount = 0.01m; // Transaction requires a non-zero amount.
 		}
 
-		Transaction transaction = new(NextGuid(rng), card.Id, new Money(transactionAmount), date)
-		{
-			AccountId = card.AccountId,
-		};
+		Transaction transaction = new(NextGuid(rng), card.Id, new Money(transactionAmount), date);
 		TransactionEntity transactionEntity = transactionMapper.ToEntity(transaction);
 		transactionEntity.ReceiptId = receipt.Id; // FK is intentionally not mapped — set it here.
 		data.Transactions.Add(transactionEntity);

@@ -14,7 +14,7 @@ public class TransactionEntityTests
 		// Arrange
 		Guid id = Guid.NewGuid();
 		Guid receiptId = Guid.NewGuid();
-		Guid accountId = Guid.NewGuid();
+		Guid cardId = Guid.NewGuid();
 		decimal amount = 100.50m;
 		Currency currency = Currency.USD;
 		DateOnly date = DateOnly.FromDateTime(DateTime.Today);
@@ -24,7 +24,7 @@ public class TransactionEntityTests
 		{
 			Id = id,
 			ReceiptId = receiptId,
-			AccountId = accountId,
+			CardId = cardId,
 			Amount = amount,
 			AmountCurrency = currency,
 			Date = date
@@ -33,7 +33,7 @@ public class TransactionEntityTests
 		// Assert
 		Assert.Equal(id, transaction.Id);
 		Assert.Equal(receiptId, transaction.ReceiptId);
-		Assert.Equal(accountId, transaction.AccountId);
+		Assert.Equal(cardId, transaction.CardId);
 		Assert.Equal(amount, transaction.Amount);
 		Assert.Equal(currency, transaction.AmountCurrency);
 		Assert.Equal(date, transaction.Date);
@@ -67,15 +67,18 @@ public class TransactionEntityTests
 	}
 
 	[Fact]
-	public async Task VirtualAccountEntity_IsNavigable()
+	public async Task Account_IsNavigableThroughOriginatingCard()
 	{
 		// Arrange
 		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		AccountEntity account = AccountEntityGenerator.Generate();
+		CardEntity card = CardEntityGenerator.Generate();
+		card.AccountId = account.Id;
 		ReceiptEntity receipt = ReceiptEntityGenerator.Generate();
-		TransactionEntity transaction = TransactionEntityGenerator.Generate(receipt.Id, account.Id);
+		TransactionEntity transaction = TransactionEntityGenerator.Generate(receipt.Id, account.Id, card.Id);
 
+		await context.Cards.AddAsync(card);
 		await context.Accounts.AddAsync(account);
 		await context.Receipts.AddAsync(receipt);
 		await context.Transactions.AddAsync(transaction);
@@ -87,8 +90,8 @@ public class TransactionEntityTests
 		// Act & Assert
 		Assert.NotNull(loadedAccount);
 		Assert.NotNull(loadedTransaction);
-		Assert.NotNull(loadedTransaction.Account);
-		Assert.Equal(loadedAccount, loadedTransaction.Account);
+		Assert.NotNull(loadedTransaction.Card!.ParentAccount);
+		Assert.Equal(loadedAccount, loadedTransaction.Card!.ParentAccount);
 
 		contextFactory.ResetDatabase();
 	}

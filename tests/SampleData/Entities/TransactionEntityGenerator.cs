@@ -12,7 +12,6 @@ public static class TransactionEntityGenerator
 		{
 			Id = Guid.NewGuid(),
 			ReceiptId = receiptId ?? Guid.NewGuid(),
-			AccountId = resolvedAccountId,
 			CardId = cardId ?? resolvedAccountId,
 			Amount = 100m,
 			AmountCurrency = Currency.USD,

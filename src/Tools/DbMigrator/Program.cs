@@ -1,3 +1,4 @@
+using Application.Interfaces;
 using Application.Interfaces.Services;
 using Infrastructure;
 using Infrastructure.Services;
@@ -42,19 +43,17 @@ builder.Services.AddDbContextFactory<ApplicationDbContext>(options =>
 // null accessor is correct. (IDescriptionChangeSignal stays unregistered — the ctor parameter is optional
 // and migrations never call SaveChangesAsync.)
 builder.Services.AddSingleton<ICurrentUserAccessor, NullCurrentUserAccessor>();
+builder.Services.AddTransient<IDatabaseMigratorService, DatabaseMigratorService>();
 
 IHost host = builder.Build();
 try
 {
 	await host.StartAsync();
 
-	IDbContextFactory<ApplicationDbContext> factory = host.Services.GetRequiredService<IDbContextFactory<ApplicationDbContext>>();
-	await using ApplicationDbContext context = await factory.CreateDbContextAsync();
-
 	ILogger logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("DbMigrator");
 	logger.LogInformation("Applying EF Core migrations...");
 
-	await context.Database.MigrateAsync();
+	await host.Services.GetRequiredService<IDatabaseMigratorService>().MigrateAsync();
 
 	logger.LogInformation("Migrations applied successfully.");
 

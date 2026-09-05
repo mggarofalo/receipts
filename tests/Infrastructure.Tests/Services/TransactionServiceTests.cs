@@ -50,7 +50,7 @@ public class TransactionServiceTests
 		// Arrange
 		List<Transaction> models = TransactionGenerator.GenerateList(2);
 		Guid receiptId = Guid.NewGuid();
-		List<TransactionEntity> createdEntities = TransactionEntityGenerator.GenerateList(2);
+		List<TransactionEntity> createdEntities = GenerateReadEntities(2);
 
 		_mockRepository.Setup(r => r.CreateAsync(It.IsAny<List<TransactionEntity>>(), It.IsAny<CancellationToken>())).ReturnsAsync(createdEntities);
 
@@ -94,7 +94,7 @@ public class TransactionServiceTests
 	public async Task GetAllAsync_ReturnsAllTransactions()
 	{
 		// Arrange
-		List<TransactionEntity> entities = TransactionEntityGenerator.GenerateList(3);
+		List<TransactionEntity> entities = GenerateReadEntities(3);
 
 		_mockRepository.Setup(r => r.GetCountAsync(It.IsAny<CancellationToken>())).ReturnsAsync(entities.Count);
 		_mockRepository.Setup(r => r.GetAllAsync(0, 50, It.IsAny<SortParams>(), It.IsAny<CancellationToken>())).ReturnsAsync(entities);
@@ -114,7 +114,7 @@ public class TransactionServiceTests
 	{
 		// Arrange
 		Guid id = Guid.NewGuid();
-		TransactionEntity entity = TransactionEntityGenerator.Generate();
+		TransactionEntity entity = GenerateReadEntities(1)[0];
 
 		_mockRepository.Setup(r => r.GetByIdAsync(id, It.IsAny<CancellationToken>())).ReturnsAsync(entity);
 
@@ -145,7 +145,7 @@ public class TransactionServiceTests
 	{
 		// Arrange
 		Guid receiptId = Guid.NewGuid();
-		List<TransactionEntity> entities = TransactionEntityGenerator.GenerateList(2);
+		List<TransactionEntity> entities = GenerateReadEntities(2);
 
 		_mockRepository.Setup(r => r.GetByReceiptIdCountAsync(receiptId, It.IsAny<CancellationToken>())).ReturnsAsync(entities.Count);
 		_mockRepository.Setup(r => r.GetByReceiptIdAsync(receiptId, 0, 50, It.IsAny<SortParams>(), It.IsAny<CancellationToken>())).ReturnsAsync(entities);
@@ -212,11 +212,11 @@ public class TransactionServiceTests
 		// Arrange
 		Guid receiptId = Guid.NewGuid();
 		List<AccountEntity> accountEntities = AccountEntityGenerator.GenerateList(3);
-		List<TransactionEntity> transactionEntities = TransactionEntityGenerator.GenerateList(3, receiptId);
+		List<TransactionEntity> transactionEntities = GenerateReadEntities(3, receiptId);
 		for (int i = 0; i < transactionEntities.Count; i++)
 		{
-			transactionEntities[i].AccountId = accountEntities[i].Id;
-			transactionEntities[i].Account = accountEntities[i];
+			transactionEntities[i].Card!.AccountId = accountEntities[i].Id;
+			transactionEntities[i].Card!.ParentAccount = accountEntities[i];
 		}
 
 		_mockRepository.Setup(r => r.GetWithAccountByReceiptIdAsync(receiptId, It.IsAny<CancellationToken>()))
@@ -239,11 +239,11 @@ public class TransactionServiceTests
 	{
 		// Arrange
 		Guid receiptId = Guid.NewGuid();
-		List<TransactionEntity> transactionEntities = TransactionEntityGenerator.GenerateList(2, receiptId);
+		List<TransactionEntity> transactionEntities = GenerateReadEntities(2, receiptId);
 		AccountEntity account = AccountEntityGenerator.Generate();
-		transactionEntities[0].Account = account;
-		transactionEntities[0].AccountId = account.Id;
-		transactionEntities[1].Account = null;
+		transactionEntities[0].Card!.ParentAccount = account;
+		transactionEntities[0].Card!.AccountId = account.Id;
+		transactionEntities[1].Card!.ParentAccount = null;
 
 		_mockRepository.Setup(r => r.GetWithAccountByReceiptIdAsync(receiptId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(transactionEntities);
@@ -270,4 +270,15 @@ public class TransactionServiceTests
 		// Assert
 		result.Should().BeEmpty();
 	}
+	private static List<TransactionEntity> GenerateReadEntities(int count, Guid? receiptId = null)
+	{
+		List<TransactionEntity> entities = TransactionEntityGenerator.GenerateList(count, receiptId);
+		foreach (TransactionEntity entity in entities)
+		{
+			entity.Card = CardEntityGenerator.Generate();
+			entity.Card.Id = entity.CardId;
+		}
+		return entities;
+	}
+
 }

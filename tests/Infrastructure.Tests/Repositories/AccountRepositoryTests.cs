@@ -55,6 +55,7 @@ public class AccountRepositoryTests
 		AccountEntity accountEntity = AccountEntityGenerator.Generate();
 		await context.Accounts.AddAsync(accountEntity);
 		TransactionEntity transactionEntity = TransactionEntityGenerator.Generate(accountId: accountEntity.Id);
+		context.Cards.Add(new CardEntity { Id = transactionEntity.CardId, AccountId = accountEntity.Id });
 		await context.Transactions.AddAsync(transactionEntity);
 		await context.SaveChangesAsync(CancellationToken.None);
 
@@ -321,6 +322,7 @@ public class AccountRepositoryTests
 		using ApplicationDbContext context = _contextFactory.CreateDbContext();
 		AccountEntity account = AccountEntityGenerator.Generate();
 		AccountEntity otherAccount = AccountEntityGenerator.Generate();
+		context.Cards.AddRange(new CardEntity { Id = account.Id, AccountId = account.Id }, new CardEntity { Id = otherAccount.Id, AccountId = otherAccount.Id });
 
 		TransactionEntity activeTx = TransactionEntityGenerator.Generate(accountId: account.Id);
 		TransactionEntity softDeletedTx = TransactionEntityGenerator.Generate(accountId: account.Id);
