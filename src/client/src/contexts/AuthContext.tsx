@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import client from "@/lib/api-client";
 import {
@@ -20,6 +20,7 @@ function getInitialUser(): JwtPayload | null {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const pendingLogout = useRef<Promise<void> | null>(null);
   const [user, setUser] = useState<JwtPayload | null>(getInitialUser);
   const [mustResetPassword, setMustResetPassword] = useState(
     () => getInitialUser()?.mustResetPassword ?? false,
@@ -42,6 +43,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
+    // A delayed logout revokes the server's current refresh token. Finish that
+    // request before allowing this tab to establish a replacement session.
+    await pendingLogout.current;
     const { data, error } = await client.POST("/api/auth/login", {
       body: { email, password },
     });
@@ -56,14 +60,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
-    try {
-      await client.POST("/api/auth/logout");
-    } catch {
-      // Best effort — clear tokens regardless
-    }
+    const token = getAccessToken();
+    // End the local session before waiting for best-effort server revocation.
     clearTokens();
     setUser(null);
     setMustResetPassword(false);
+    const completion = client.POST("/api/auth/logout", {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    }).then(
+      () => {},
+      () => {}, // Local logout succeeds even if server revocation is unavailable.
+    );
+    pendingLogout.current = completion;
+    try {
+      await completion;
+    } finally {
+      if (pendingLogout.current === completion) pendingLogout.current = null;
+    }
   }, []);
 
   const changePassword = useCallback(

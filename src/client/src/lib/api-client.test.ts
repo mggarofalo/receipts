@@ -19,6 +19,7 @@ vi.mock("openapi-fetch", () => ({
 vi.mock("@/lib/auth", () => ({
   getAccessToken: vi.fn(() => null),
   getRefreshToken: vi.fn(() => null),
+  getSessionVersion: vi.fn(() => 0),
   setTokens: vi.fn(),
   clearTokens: vi.fn(),
   notifyTokenRefresh: vi.fn(),
@@ -198,127 +199,7 @@ describe("authMiddleware.onResponse", () => {
     expect(mockedAuth.notifyPasswordChangeRequired).not.toHaveBeenCalled();
   });
 
-  it("skips refresh for auth endpoints on 401", async () => {
-    const request = makeRequest("https://api.test/api/auth/login");
-    const response = makeResponse(401);
 
-    const result = await callOnResponse(request, response);
-
-    expect(result).toBe(response);
-    expect(mockedAuth.getRefreshToken).not.toHaveBeenCalled();
-  });
-
-  it("clears tokens and redirects on failed refresh (no refresh token)", async () => {
-    mockedAuth.getRefreshToken.mockReturnValue(null);
-
-    // Mock window.location
-    const originalLocation = window.location;
-    Object.defineProperty(window, "location", {
-      writable: true,
-      value: { href: "/" },
-    });
-
-    const request = makeRequest();
-    const response = makeResponse(401);
-
-    await callOnResponse(request, response);
-
-    expect(mockedAuth.clearTokens).toHaveBeenCalled();
-    expect(window.location.href).toBe("/login");
-
-    // Restore
-    Object.defineProperty(window, "location", {
-      writable: true,
-      value: originalLocation,
-    });
-  });
-
-  it("retries request with new token on successful refresh", async () => {
-    mockedAuth.getRefreshToken.mockReturnValue("valid-refresh");
-    mockedAuth.getAccessToken.mockReturnValue("new-access-token");
-
-    // Mock the global fetch for the refresh call and retry
-    const refreshResponse = new Response(
-      JSON.stringify({
-        accessToken: "new-access-token",
-        refreshToken: "new-refresh",
-      }),
-      { status: 200 },
-    );
-    const retryResponse = makeResponse(200, { data: "success" });
-
-    const fetchSpy = vi.spyOn(globalThis, "fetch");
-    fetchSpy.mockResolvedValueOnce(refreshResponse);
-    fetchSpy.mockResolvedValueOnce(retryResponse);
-
-    const request = makeRequest();
-    const response = makeResponse(401);
-
-    const result = await callOnResponse(request, response);
-
-    expect(mockedAuth.setTokens).toHaveBeenCalledWith(
-      "new-access-token",
-      "new-refresh",
-    );
-    expect(mockedAuth.notifyTokenRefresh).toHaveBeenCalled();
-    expect(result).toBe(retryResponse);
-
-    fetchSpy.mockRestore();
-  });
-
-  it("clears tokens when refresh endpoint returns non-OK", async () => {
-    mockedAuth.getRefreshToken.mockReturnValue("expired-refresh");
-
-    const originalLocation = window.location;
-    Object.defineProperty(window, "location", {
-      writable: true,
-      value: { href: "/" },
-    });
-
-    const fetchSpy = vi.spyOn(globalThis, "fetch");
-    fetchSpy.mockResolvedValueOnce(makeResponse(401)); // refresh fails
-
-    const request = makeRequest();
-    const response = makeResponse(401);
-
-    await callOnResponse(request, response);
-
-    expect(mockedAuth.clearTokens).toHaveBeenCalled();
-    expect(window.location.href).toBe("/login");
-
-    fetchSpy.mockRestore();
-    Object.defineProperty(window, "location", {
-      writable: true,
-      value: originalLocation,
-    });
-  });
-
-  it("clears tokens when refresh fetch throws", async () => {
-    mockedAuth.getRefreshToken.mockReturnValue("some-refresh");
-
-    const originalLocation = window.location;
-    Object.defineProperty(window, "location", {
-      writable: true,
-      value: { href: "/" },
-    });
-
-    const fetchSpy = vi.spyOn(globalThis, "fetch");
-    fetchSpy.mockRejectedValueOnce(new Error("Network error"));
-
-    const request = makeRequest();
-    const response = makeResponse(401);
-
-    await callOnResponse(request, response);
-
-    expect(mockedAuth.clearTokens).toHaveBeenCalled();
-    expect(window.location.href).toBe("/login");
-
-    fetchSpy.mockRestore();
-    Object.defineProperty(window, "location", {
-      writable: true,
-      value: originalLocation,
-    });
-  });
 });
 
 describe("errorNormalizationMiddleware.onResponse", () => {

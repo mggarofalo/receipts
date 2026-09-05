@@ -4,7 +4,8 @@ import type { paths } from "@/generated/api";
 import {
   getAccessToken,
   getRefreshToken,
-  setTokens,
+  getSessionVersion,
+  setRefreshedTokens,
   clearTokens,
   notifyTokenRefresh,
   notifyPasswordChangeRequired,
@@ -19,16 +20,14 @@ import { toApiError } from "@/lib/problem-details";
 const baseUrl = import.meta.env.VITE_API_URL ?? "";
 const API_TIMEOUT_MS = 30_000;
 
-const client = createClient<paths>({
-  baseUrl,
-  fetch: (input: Request) => {
-    const timeoutSignal = AbortSignal.timeout(API_TIMEOUT_MS);
-    const signal = input.signal
-      ? AbortSignal.any([timeoutSignal, input.signal])
-      : timeoutSignal;
-    return fetch(input, { signal });
-  },
-});
+interface PendingRefresh {
+  sessionVersion: number;
+  refreshToken: string;
+  promise: Promise<boolean>;
+}
+
+let pendingRefresh: PendingRefresh | null = null;
+const requestSessions = new WeakMap<Request, number>();
 
 export function isTimeoutError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "TimeoutError";
@@ -38,12 +37,7 @@ export function isNetworkError(error: unknown): boolean {
   return error instanceof TypeError && error.message.includes("fetch");
 }
 
-let refreshPromise: Promise<boolean> | null = null;
-
-export async function attemptTokenRefresh(): Promise<boolean> {
-  const refreshToken = getRefreshToken();
-  if (!refreshToken) return false;
-
+async function refreshTokens(sessionVersion: number, refreshToken: string): Promise<boolean> {
   try {
     const res = await fetch(`${baseUrl}/api/auth/refresh`, {
       method: "POST",
@@ -54,7 +48,12 @@ export async function attemptTokenRefresh(): Promise<boolean> {
     if (!res.ok) return false;
 
     const data = await res.json();
-    setTokens(data.accessToken, data.refreshToken);
+    if (
+      typeof data?.accessToken !== "string" || !data.accessToken ||
+      typeof data?.refreshToken !== "string" || !data.refreshToken ||
+      !setRefreshedTokens(sessionVersion, refreshToken, data.accessToken, data.refreshToken)
+    ) return false;
+
     notifyTokenRefresh();
     return true;
   } catch {
@@ -62,64 +61,116 @@ export async function attemptTokenRefresh(): Promise<boolean> {
   }
 }
 
-const authMiddleware: Middleware = {
-  async onRequest({ request }) {
-    const token = getAccessToken();
-    if (token) {
-      request.headers.set("Authorization", `Bearer ${token}`);
-    }
-    return request;
-  },
-  async onResponse({ request, response }) {
-    if (response.status === 403) {
-      const cloned = response.clone();
-      try {
-        const body = await cloned.json();
-        if (body?.detail === "Password change required") {
-          notifyPasswordChangeRequired();
-        }
-      } catch {
-        // Not JSON — ignore
-      }
-      return response;
-    }
+export function attemptTokenRefresh(): Promise<boolean> {
+  const sessionVersion = getSessionVersion();
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) return Promise.resolve(false);
 
+  if (pendingRefresh?.sessionVersion === sessionVersion && pendingRefresh.refreshToken === refreshToken) {
+    return pendingRefresh.promise;
+  }
+
+  const pending: PendingRefresh = {
+    sessionVersion,
+    refreshToken,
+    promise: refreshTokens(sessionVersion, refreshToken).finally(() => {
+      if (pendingRefresh === pending) pendingRefresh = null;
+    }),
+  };
+  pendingRefresh = pending;
+  return pending.promise;
+}
+
+function requireCurrentSession(sessionVersion: number): void {
+  if (getSessionVersion() !== sessionVersion) {
+    throw new DOMException("The authenticated session changed", "AbortError");
+  }
+}
+
+// Cancelling one request must not cancel the shared refresh needed by others.
+function waitForRefresh(promise: Promise<boolean>, signal: AbortSignal): Promise<boolean> {
+  signal.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const onAbort = () => reject(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
+}
+
+async function fetchWithTokenRefresh(request: Request): Promise<Response> {
+  const signal = AbortSignal.any([AbortSignal.timeout(API_TIMEOUT_MS), request.signal]);
+  const isAuthRequest = new URL(request.url).pathname.startsWith("/api/auth/");
+  if (isAuthRequest) return fetch(request, { signal });
+
+  const sessionVersion = requestSessions.get(request) ?? getSessionVersion();
+  requireCurrentSession(sessionVersion);
+  // Fetch consumes body streams. Save the replay before the first dispatch,
+  // after request middleware has applied all headers and serialization.
+  const replay = request.clone();
+  try {
+    const response = await fetch(request, { signal });
+    signal.throwIfAborted();
+    requireCurrentSession(sessionVersion);
     if (response.status !== 401) return response;
 
-    // Avoid refresh loop for auth endpoints
-    const url = new URL(request.url);
-    if (url.pathname.startsWith("/api/auth/")) return response;
-
-    // Deduplicate concurrent refresh attempts
-    if (!refreshPromise) {
-      refreshPromise = attemptTokenRefresh().finally(() => {
-        refreshPromise = null;
-      });
-    }
-
-    const refreshed = await refreshPromise;
+    // A concurrent request may already have rotated the credentials by the
+    // time this response arrives. Reuse them instead of rotating again.
+    const token = getAccessToken();
+    const alreadyRefreshed = token !== null && request.headers.get("Authorization") !== `Bearer ${token}`;
+    const refreshed = alreadyRefreshed || await waitForRefresh(attemptTokenRefresh(), signal);
+    signal.throwIfAborted();
+    requireCurrentSession(sessionVersion);
     if (!refreshed) {
       clearTokens();
-      // Surface a session-scoped flash on /login so the user sees *why*
-      // they're back there rather than wondering. RECEIPTS-740.
       setLoginFlash("Your session expired. Please sign in again.");
       window.location.href = "/login";
       return response;
     }
 
-    // Retry original request with new token
+    if (response.body) void response.body.cancel().catch(() => {});
     const newToken = getAccessToken();
-    const retryRequest = new Request(request, {
-      headers: new Headers(request.headers),
-    });
-    if (newToken) {
-      retryRequest.headers.set("Authorization", `Bearer ${newToken}`);
+    if (newToken) replay.headers.set("Authorization", `Bearer ${newToken}`);
+    // This transport retries once. The final response then traverses every
+    // ordinary response middleware, including password-change and 5xx policy.
+    const retriedResponse = await fetch(replay, { signal });
+    signal.throwIfAborted();
+    requireCurrentSession(sessionVersion);
+    return retriedResponse;
+  } finally {
+    // Do not retain the unused side of a cloned upload after a normal response.
+    if (replay.body && !replay.bodyUsed) void replay.body.cancel().catch(() => {});
+  }
+}
+
+const client = createClient<paths>({ baseUrl, fetch: fetchWithTokenRefresh });
+
+const authMiddleware: Middleware = {
+  async onRequest({ request }) {
+    // Bind identity before openapi-fetch yields between request middleware.
+    requestSessions.set(request, getSessionVersion());
+    const token = getAccessToken();
+    if (token) request.headers.set("Authorization", `Bearer ${token}`);
+    return request;
+  },
+  async onResponse({ response }) {
+    if (response.status === 403) {
+      try {
+        const body = await response.clone().json();
+        if (body?.detail === "Password change required") notifyPasswordChangeRequired();
+      } catch {
+        // A bodiless authorization rejection has no password-change reason.
+      }
     }
-    const timeoutSignal = AbortSignal.timeout(API_TIMEOUT_MS);
-    const retrySignal = retryRequest.signal
-      ? AbortSignal.any([timeoutSignal, retryRequest.signal])
-      : timeoutSignal;
-    return fetch(retryRequest, { signal: retrySignal });
+    return response;
   },
 };
 
@@ -180,7 +231,7 @@ const NULL_BODY_STATUSES = new Set([204, 205, 304]);
  *
  * Registered FIRST so it runs LAST: openapi-fetch invokes `onResponse` in
  * reverse registration order, and this must observe the final response, after
- * `authMiddleware` has had its chance to replace a 401 with a successful retry.
+ * the transport has resolved any token refresh and retry.
  */
 const errorNormalizationMiddleware: Middleware = {
   async onResponse({ response }) {
