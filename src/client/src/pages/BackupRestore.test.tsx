@@ -2,6 +2,11 @@ import { screen } from "@testing-library/react";
 import { renderWithQueryClient } from "@/test/test-utils";
 import BackupRestore from "./BackupRestore";
 
+vi.mock("@/hooks/useSessionMutation", async () => {
+  const { useMutation } = await import("@tanstack/react-query");
+  return { useSessionMutation: useMutation };
+});
+
 vi.mock("@/hooks/usePageTitle", () => ({
   usePageTitle: vi.fn(),
 }));
@@ -23,7 +28,8 @@ vi.mock("@/lib/toast", () => ({
   showError: vi.fn(),
 }));
 
-vi.mock("@/lib/auth", () => ({
+vi.mock("@/lib/auth", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/auth")>(),
   getAccessToken: vi.fn(() => "mock-token"),
 }));
 
@@ -271,11 +277,11 @@ describe("BackupRestore", () => {
   });
 
   it("calls export mutation when Export Backup is clicked", async () => {
-    const mockMutate = vi.fn();
+    const mockMutate = vi.fn().mockResolvedValue(undefined);
     const { useMutation } = await import("@tanstack/react-query");
     vi.mocked(useMutation).mockImplementation((() => ({
-      mutate: mockMutate,
-      mutateAsync: vi.fn(),
+      mutate: vi.fn(),
+      mutateAsync: mockMutate,
       isPending: false,
     })) as unknown as typeof useMutation);
 
@@ -325,53 +331,8 @@ describe("BackupRestore", () => {
     expect(importBtn).toBeDisabled();
   });
 
-  it("shows success toast when export mutation succeeds", async () => {
-    const user = (await import("@testing-library/user-event")).default.setup();
-    const { useMutation } = await import("@tanstack/react-query");
-    const { showSuccess } = await import("@/lib/toast");
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    vi.mocked(useMutation).mockImplementation(((opts: any) => ({
-      mutate: vi.fn(() => {
-        if (opts?.onSuccess) {
-          opts.onSuccess(undefined, undefined, undefined);
-        }
-      }),
-      mutateAsync: vi.fn(),
-      isPending: false,
-    })) as unknown as typeof useMutation);
-
-    renderWithQueryClient(<BackupRestore />);
-    await user.click(screen.getByRole("button", { name: /export backup/i }));
-
-    await vi.waitFor(() => {
-      expect(showSuccess).toHaveBeenCalledWith("Backup exported successfully.");
-    });
-  });
-
-  it("shows error toast when export mutation fails", async () => {
-    const user = (await import("@testing-library/user-event")).default.setup();
-    const { useMutation } = await import("@tanstack/react-query");
-    const { showError } = await import("@/lib/toast");
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    vi.mocked(useMutation).mockImplementation(((opts: any) => ({
-      mutate: vi.fn(() => {
-        if (opts?.onError) {
-          opts.onError(new Error("Export failed (500)."), undefined, undefined);
-        }
-      }),
-      mutateAsync: vi.fn(),
-      isPending: false,
-    })) as unknown as typeof useMutation);
-
-    renderWithQueryClient(<BackupRestore />);
-    await user.click(screen.getByRole("button", { name: /export backup/i }));
-
-    await vi.waitFor(() => {
-      expect(showError).toHaveBeenCalledWith("Export failed (500).");
-    });
-  });
+  // Export success/error notifications are owned by useBackupExport and are
+  // covered using the real hook in useBackup.test.ts.
 
   it("shows success toast when import mutation succeeds", async () => {
     const user = (await import("@testing-library/user-event")).default.setup();

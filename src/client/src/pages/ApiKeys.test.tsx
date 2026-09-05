@@ -3,6 +3,13 @@ import { renderWithQueryClient } from "@/test/test-utils";
 import { mockQueryResult } from "@/test/mock-hooks";
 import ApiKeys from "./ApiKeys";
 
+// Page tests control mutation results at the hook boundary. Session ownership
+// and cancellation are exercised with the real hook in AuthContext.session.
+vi.mock("@/hooks/useSessionMutation", async () => {
+  const { useMutation } = await import("@tanstack/react-query");
+  return { useSessionMutation: useMutation };
+});
+
 vi.mock("@/hooks/usePageTitle", () => ({
   usePageTitle: vi.fn(),
 }));

@@ -24,6 +24,8 @@ let server: Server;
 let requests: ReceivedRequest[];
 let refreshGate: ReturnType<typeof deferred>;
 let unauthorizedGate: ReturnType<typeof deferred> | undefined;
+let responseBodyGate: ReturnType<typeof deferred> | undefined;
+let responseGate: ReturnType<typeof deferred> | undefined;
 let refreshStatus: number;
 let disconnectRefresh: boolean;
 let finalStatus: number;
@@ -55,15 +57,20 @@ beforeEach(async () => {
   cleanupListeners = [];
   refreshGate = deferred();
   unauthorizedGate = undefined;
+  responseBodyGate = undefined;
+  responseGate = undefined;
   refreshStatus = 200;
   disconnectRefresh = false;
   finalStatus = 200;
   finalBody = { data: [], total: 0, offset: 0, limit: 50 };
   localStorage.clear();
-  vi.stubGlobal("window", {
-    location: { href: "/receipts" },
-    sessionStorage: localStorage,
-  });
+  vi.stubGlobal(
+    "window",
+    Object.assign(new EventTarget(), {
+      location: { href: "/receipts" },
+      sessionStorage: localStorage,
+    }),
+  );
 
   server = createServer(async (request, response) => {
     let body = "";
@@ -92,7 +99,16 @@ beforeEach(async () => {
       if (request.url === "/api/receipts") await unauthorizedGate?.promise;
       sendJson(response, 401, { status: 401 });
     } else {
-      sendJson(response, finalStatus, finalBody);
+      await responseGate?.promise;
+      if (responseBodyGate) {
+        const body = JSON.stringify(finalBody);
+        response.writeHead(finalStatus, { "Content-Type": "application/json" });
+        response.write(body.slice(0, 1));
+        await responseBodyGate.promise;
+        response.end(body.slice(1));
+      } else {
+        sendJson(response, finalStatus, finalBody);
+      }
     }
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -109,6 +125,8 @@ beforeEach(async () => {
 afterEach(async () => {
   refreshGate.resolve();
   unauthorizedGate?.resolve();
+  responseBodyGate?.resolve();
+  responseGate?.resolve();
   cleanupListeners.forEach((unsubscribe) => unsubscribe());
   server.closeAllConnections();
   await new Promise<void>((resolve, reject) =>
@@ -119,6 +137,107 @@ afterEach(async () => {
 });
 
 describe("authenticated replay over native HTTP", () => {
+  it.each(["GET", "POST"] as const)(
+    "aborts an old %s while its successful JSON body is still streaming",
+    async (method) => {
+      auth.setTokens("alice-access", "alice-refresh");
+      responseBodyGate = deferred();
+      const headersObserved = deferred();
+      client.use({
+        onResponse: () => {
+          headersObserved.resolve();
+        },
+      });
+      const pending = (
+        method === "GET"
+          ? client.GET("/api/cards")
+          : client.POST("/api/receipts", { body: receipt })
+      ).then(
+        (result) => ({ result, error: undefined }),
+        (error: unknown) => ({ result: undefined, error }),
+      );
+      await headersObserved.promise;
+      auth.clearTokens();
+      auth.setTokens("bob-access", "bob-refresh");
+      responseBodyGate.resolve();
+
+      const outcome = await pending;
+
+      expect(outcome.error).toMatchObject({ name: "AbortError" });
+      expect(outcome.result).toBeUndefined();
+      expect(auth.getAccessToken()).toBe("bob-access");
+    },
+  );
+
+  it.each(["login", "change-password"] as const)(
+    "does not deliver an old %s completion to a replacement session",
+    async (operation) => {
+      auth.setTokens("alice-access", "alice-refresh");
+      responseGate = deferred();
+      finalBody = {
+        accessToken: "obsolete-access",
+        refreshToken: "obsolete-refresh",
+      };
+      const pending = (
+        operation === "login"
+          ? client.POST("/api/auth/login", {
+              body: { email: "Alice", password: "password" },
+            })
+          : client.POST("/api/auth/change-password", {
+              body: { currentPassword: "old", newPassword: "new" },
+            })
+      ).then(
+        (result) => ({ result, error: undefined }),
+        (error: unknown) => ({ result: undefined, error }),
+      );
+      await vi.waitFor(() => expect(requests).toHaveLength(1));
+      auth.clearTokens();
+      auth.setTokens("bob-access", "bob-refresh");
+      responseGate.resolve();
+
+      const outcome = await pending;
+
+      expect(outcome.error).toMatchObject({ name: "AbortError" });
+      expect(auth.getAccessToken()).toBe("bob-access");
+    },
+  );
+
+  it.each([500, 503, 403])(
+    "does not publish an old logout %s failure into a replacement session",
+    async (status) => {
+      auth.setTokens("alice-access", "alice-refresh");
+      const token = auth.getAccessToken();
+      auth.clearTokens();
+      responseGate = deferred();
+      finalStatus = status;
+      finalBody = {
+        status,
+        detail:
+          status === 403 ? "Password change required" : "Old logout failed",
+      };
+      const serverError = vi.fn();
+      const passwordRequired = vi.fn();
+      cleanupListeners.push(
+        errorBus.addServerErrorListener(serverError),
+        auth.addPasswordChangeRequiredListener(passwordRequired),
+      );
+      const pending = client
+        .POST("/api/auth/logout", {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        .catch(() => undefined);
+      await vi.waitFor(() => expect(requests).toHaveLength(1));
+
+      auth.setTokens("bob-access", "bob-refresh");
+      responseGate.resolve();
+      await pending;
+
+      expect(serverError).not.toHaveBeenCalled();
+      expect(passwordRequired).not.toHaveBeenCalled();
+      expect(auth.getAccessToken()).toBe("bob-access");
+    },
+  );
+
   it("does not dispatch a mutation if login changes before transport starts", async () => {
     const pending = client.POST("/api/receipts", { body: receipt }).then(
       (result) => ({ result, error: undefined }),

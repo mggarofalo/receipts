@@ -37,9 +37,11 @@ vi.mock("sonner", () => ({
 
 vi.mock("@/lib/signalr-toast-buffer", () => ({
   bufferToast: vi.fn(),
+  clearBufferedToasts: vi.fn(),
 }));
 
-vi.mock("@/lib/auth", () => ({
+vi.mock("@/lib/auth", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/auth")>(),
   getAccessToken: vi.fn().mockReturnValue("mock-token"),
   parseJwtPayload: vi.fn().mockReturnValue({
     userId: "current-user-id",
@@ -60,7 +62,7 @@ import { toast } from "sonner";
 import { bufferToast } from "@/lib/signalr-toast-buffer";
 import { act } from "@testing-library/react";
 import { setConnectionId, getConnectionId } from "@/lib/signalr-connection";
-import { getAccessToken, parseJwtPayload } from "@/lib/auth";
+import { clearTokens, getAccessToken, parseJwtPayload, setTokens } from "@/lib/auth";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -87,6 +89,49 @@ function getOnHandler(eventName: string): ((...args: unknown[]) => void) | undef
 }
 
 describe("useSignalR", () => {
+  it("ignores an old EntityChanged callback after its owner unmounts", async () => {
+    const queryClient = vi.mocked(useQueryClient)();
+    const { unmount } = await renderEnabled();
+    const handler = getOnHandler("EntityChanged")!;
+    unmount();
+    vi.clearAllMocks();
+
+    act(() => { handler({ entityType: "receipt", changeType: "created", id: "Alice-receipt" }); });
+
+    expect(queryClient.invalidateQueries).not.toHaveBeenCalled();
+    expect(bufferToast).not.toHaveBeenCalled();
+  });
+
+  it("does not restore a disposed connection ID when start finishes late", async () => {
+    let finishStart!: () => void;
+    mockConnection.start.mockImplementationOnce(() => new Promise<void>((resolve) => { finishStart = resolve; }));
+    const { unmount } = renderHook(() => useSignalR(true));
+    unmount();
+    vi.mocked(setConnectionId).mockClear();
+
+    await act(async () => { finishStart(); });
+
+    expect(setConnectionId).not.toHaveBeenCalledWith("mock-conn-id");
+  });
+
+  it("stops the old session immediately and ignores its queued reconnect callback", async () => {
+    setTokens("Alice-access", "Alice-refresh");
+    await renderEnabled();
+    const reconnected = mockConnection.onreconnected.mock.calls[0][0] as () => void;
+    const handler = getOnHandler("EntityChanged")!;
+    const queryClient = vi.mocked(useQueryClient)();
+    vi.clearAllMocks();
+
+    act(() => { clearTokens(); setTokens("Bob-access", "Bob-refresh"); });
+    expect(mockConnection.stop).toHaveBeenCalled();
+    vi.mocked(setConnectionId).mockClear();
+    act(() => { reconnected(); handler({ entityType: "receipt", changeType: "created", id: "Alice-receipt" }); });
+
+    expect(setConnectionId).not.toHaveBeenCalledWith("mock-conn-id");
+    expect(queryClient.invalidateQueries).not.toHaveBeenCalled();
+    expect(bufferToast).not.toHaveBeenCalled();
+  });
+
   it("returns disconnected when not enabled", () => {
     const { result } = renderHook(() => useSignalR(false));
 

@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useStableQuery } from "@/hooks/useStableQuery";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSessionMutation } from "@/hooks/useSessionMutation";
 import client from "@/lib/api-client";
 import { toApiError } from "@/lib/problem-details";
 import { toast } from "sonner";
@@ -77,7 +78,7 @@ export function useCard(id: string | null) {
 
 export function useCreateCard() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (body: {
       cardCode: string;
       name: string;
@@ -97,7 +98,7 @@ export function useCreateCard() {
 
 export function useUpdateCard() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (body: {
       id: string;
       cardCode: string;
@@ -126,7 +127,7 @@ export interface DeleteCardConflict {
 
 export function useDeleteCard() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (id: string) => {
       const { error, response } = await client.DELETE("/api/cards/{id}", {
         params: { path: { id } },
@@ -273,7 +274,7 @@ export function useMergeCardsPreview(input: MergeCardsPreviewInput | null) {
 
 export function useMergeCards() {
   const queryClient = useQueryClient();
-  return useMutation<MergeCardsImpact, MergeCardsConflict | unknown, MergeCardsInput>({
+  return useSessionMutation<MergeCardsImpact, MergeCardsConflict | unknown, MergeCardsInput>({
     mutationFn: async (input) => {
       const { data, error, response } = await client.POST("/api/cards/merge", {
         body: {

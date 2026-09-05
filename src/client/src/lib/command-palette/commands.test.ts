@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { COMMANDS, REPORT_COMMANDS } from "./commands";
 import type { CommandContext } from "./types";
+import { clearTokens, getAccessToken, setTokens } from "@/lib/auth";
 
 function makeCtx(overrides: Partial<CommandContext> = {}): CommandContext {
   return {
@@ -18,6 +19,23 @@ function makeCtx(overrides: Partial<CommandContext> = {}): CommandContext {
 }
 
 describe("command registry", () => {
+  it("does not navigate a replacement identity to login when old remote logout completes", async () => {
+    setTokens("Alice-access", "Alice-refresh");
+    let finishLogout!: () => void;
+    const remoteLogout = new Promise<void>((resolve) => { finishLogout = resolve; });
+    const ctx = makeCtx({ logout: vi.fn(() => { clearTokens(); return remoteLogout; }) });
+    const completion = COMMANDS.find((command) => command.id === "pref:sign-out")!.run(ctx);
+    localStorage.setItem("receipts_access_token", "Bob-access");
+    localStorage.setItem("receipts_refresh_token", "Bob-refresh");
+
+    finishLogout();
+    await completion;
+
+    expect(ctx.navigate).not.toHaveBeenCalled();
+    expect(getAccessToken()).toBe("Bob-access");
+    clearTokens();
+  });
+
   it("has unique command ids", () => {
     const ids = COMMANDS.map((c) => c.id);
     expect(new Set(ids).size).toBe(ids.length);

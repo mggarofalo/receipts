@@ -107,4 +107,22 @@ public class TokenServiceTests
 		JsonWebToken jwt = new JsonWebTokenHandler().ReadJsonWebToken(token);
 		jwt.GetClaim("security_stamp").Value.Should().Be("stamp-xyz-789");
 	}
+
+	[Fact]
+	public void GenerateAccessToken_EmbedsRefreshFamilyWithoutChangingSecurityStamp()
+	{
+		Guid family = Guid.NewGuid();
+		string token = _tokenService.GenerateAccessToken("user", "test@example.com", [], false, "unchanged-stamp", family);
+		var jwt = new Microsoft.IdentityModel.JsonWebTokens.JsonWebToken(token);
+		jwt.GetClaim(Common.AuthClaimTypes.RefreshSessionId).Value.Should().Be(family.ToString());
+		jwt.GetClaim(Common.AuthClaimTypes.SecurityStamp).Value.Should().Be("unchanged-stamp");
+	}
+
+	[Fact]
+	public void GenerateAccessToken_LegacySession_OmitsRefreshFamily()
+	{
+		string token = _tokenService.GenerateAccessToken("user", "test@example.com", [], false, "stamp");
+		var jwt = new Microsoft.IdentityModel.JsonWebTokens.JsonWebToken(token);
+		jwt.Claims.Should().NotContain(c => c.Type == Common.AuthClaimTypes.RefreshSessionId);
+	}
 }

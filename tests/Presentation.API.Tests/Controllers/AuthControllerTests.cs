@@ -61,7 +61,7 @@ public class AuthControllerTests
 
 	private void SetupUserClaims(string userId)
 	{
-		List<Claim> claims = [new Claim(ClaimTypes.NameIdentifier, userId)];
+		List<Claim> claims = [new Claim(ClaimTypes.NameIdentifier, userId), new Claim(Common.AuthClaimTypes.SecurityStamp, "stamp-1")];
 		ClaimsIdentity identity = new(claims, "TestAuth");
 		ClaimsPrincipal principal = new(identity);
 		_controller.ControllerContext.HttpContext.User = principal;
@@ -74,7 +74,7 @@ public class AuthControllerTests
 			Id = id,
 			Email = email,
 			UserName = email,
-			RefreshToken = "valid-refresh-token",
+			RefreshToken = "hashed:valid-refresh-token",
 			RefreshTokenExpiresAt = DateTimeOffset.UtcNow.AddDays(30),
 			MustResetPassword = false,
 			CreatedAt = DateTimeOffset.UtcNow,
@@ -91,12 +91,14 @@ public class AuthControllerTests
 	{
 		// Arrange
 		ApplicationUser user = CreateTestUser();
+		Guid previousFamily = Guid.NewGuid();
+		user.RefreshSessionId = previousFamily;
 		_userManagerMock.Setup(m => m.FindByEmailAsync("test@example.com")).ReturnsAsync(user);
 		_userManagerMock.Setup(m => m.CheckPasswordAsync(user, "password")).ReturnsAsync(true);
 		_userManagerMock.Setup(m => m.IsLockedOutAsync(user)).ReturnsAsync(false);
 		_userManagerMock.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "Admin", "User" });
 		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
-		_tokenServiceMock.Setup(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false, It.IsAny<string>())).Returns("access-token");
+		_tokenServiceMock.Setup(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false, It.IsAny<string>(), It.IsAny<Guid?>())).Returns("access-token");
 		_tokenServiceMock.Setup(t => t.GenerateRefreshToken()).Returns("refresh-token");
 
 		// Act
@@ -107,8 +109,11 @@ public class AuthControllerTests
 		TokenResponse response = okResult.Value!;
 		response.TokenType.Should().Be("Bearer");
 		response.Scope.Should().Be("Admin User");
+		user.RefreshSessionId.Should().NotBeNull().And.NotBe(previousFamily);
+		_tokenServiceMock.Verify(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false, It.IsAny<string>(), user.RefreshSessionId), Times.Once);
 		response.AccessToken.Should().Be("access-token");
 		response.RefreshToken.Should().Be("refresh-token");
+		user.RefreshSessionId.Should().NotBeNull();
 		response.ExpiresIn.Should().Be(3600);
 	}
 
@@ -220,7 +225,7 @@ public class AuthControllerTests
 		_userManagerMock.Setup(m => m.ResetAccessFailedCountAsync(user)).ReturnsAsync(IdentityResult.Success);
 		_userManagerMock.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "User" });
 		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
-		_tokenServiceMock.Setup(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false, It.IsAny<string>())).Returns("access-token");
+		_tokenServiceMock.Setup(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false, It.IsAny<string>(), It.IsAny<Guid?>())).Returns("access-token");
 		_tokenServiceMock.Setup(t => t.GenerateRefreshToken()).Returns("refresh-token");
 
 		// Act
@@ -242,7 +247,7 @@ public class AuthControllerTests
 		_userManagerMock.Setup(m => m.IsLockedOutAsync(user)).ReturnsAsync(false);
 		_userManagerMock.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "User" });
 		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
-		_tokenServiceMock.Setup(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false, It.IsAny<string>())).Returns("access-token");
+		_tokenServiceMock.Setup(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false, It.IsAny<string>(), It.IsAny<Guid?>())).Returns("access-token");
 		_tokenServiceMock.Setup(t => t.GenerateRefreshToken()).Returns("plaintext-refresh");
 
 		// Act
@@ -265,7 +270,7 @@ public class AuthControllerTests
 		_userManagerMock.Setup(m => m.IsLockedOutAsync(user)).ReturnsAsync(false);
 		_userManagerMock.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "User" });
 		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
-		_tokenServiceMock.Setup(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false, "stamp-1")).Returns("access-token");
+		_tokenServiceMock.Setup(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false, "stamp-1", It.IsAny<Guid?>())).Returns("access-token");
 		_tokenServiceMock.Setup(t => t.GenerateRefreshToken()).Returns("refresh-token");
 
 		// Act
@@ -273,7 +278,7 @@ public class AuthControllerTests
 
 		// Assert — the live stamp is baked into the token, and it is NOT needlessly rotated.
 		Assert.IsType<Ok<TokenResponse>>(result.Result);
-		_tokenServiceMock.Verify(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false, "stamp-1"), Times.Once);
+		_tokenServiceMock.Verify(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false, "stamp-1", It.IsAny<Guid?>()), Times.Once);
 		_userManagerMock.Verify(m => m.UpdateSecurityStampAsync(It.IsAny<ApplicationUser>()), Times.Never);
 	}
 
@@ -289,7 +294,7 @@ public class AuthControllerTests
 		_userManagerMock.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "User" });
 		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
 		_userManagerMock.Setup(m => m.UpdateSecurityStampAsync(user)).ReturnsAsync(IdentityResult.Success);
-		_tokenServiceMock.Setup(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false, It.IsAny<string>())).Returns("access-token");
+		_tokenServiceMock.Setup(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false, It.IsAny<string>(), It.IsAny<Guid?>())).Returns("access-token");
 		_tokenServiceMock.Setup(t => t.GenerateRefreshToken()).Returns("refresh-token");
 
 		// Act
@@ -307,11 +312,13 @@ public class AuthControllerTests
 	{
 		// Arrange
 		ApplicationUser user = CreateTestUser();
+		Guid family = Guid.NewGuid();
+		user.RefreshSessionId = family;
 		_userServiceMock.Setup(s => s.FindUserIdByRefreshTokenAsync("valid-refresh-token", It.IsAny<CancellationToken>())).ReturnsAsync(user.Id);
 		_userManagerMock.Setup(m => m.FindByIdAsync(user.Id)).ReturnsAsync(user);
 		_userManagerMock.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "User" });
 		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
-		_tokenServiceMock.Setup(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false, It.IsAny<string>())).Returns("new-access-token");
+		_tokenServiceMock.Setup(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false, It.IsAny<string>(), It.IsAny<Guid?>())).Returns("new-access-token");
 		_tokenServiceMock.Setup(t => t.GenerateRefreshToken()).Returns("new-refresh-token");
 
 		// Act
@@ -322,6 +329,8 @@ public class AuthControllerTests
 		TokenResponse response = okResult.Value!;
 		response.TokenType.Should().Be("Bearer");
 		response.Scope.Should().Be("User");
+		user.RefreshSessionId.Should().Be(family);
+		_tokenServiceMock.Verify(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false, "stamp-1", family), Times.Once);
 	}
 
 	[Fact]
@@ -332,7 +341,7 @@ public class AuthControllerTests
 		_userServiceMock.Setup(s => s.FindUserIdByRefreshTokenAsync("valid-refresh-token", It.IsAny<CancellationToken>())).ReturnsAsync(user.Id);
 		_userManagerMock.Setup(m => m.FindByIdAsync(user.Id)).ReturnsAsync(user);
 		_userManagerMock.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "User" });
-		_tokenServiceMock.Setup(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false, It.IsAny<string>())).Returns("new-access-token");
+		_tokenServiceMock.Setup(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false, It.IsAny<string>(), It.IsAny<Guid?>())).Returns("new-access-token");
 		_tokenServiceMock.Setup(t => t.GenerateRefreshToken()).Returns("new-refresh-token");
 		_userManagerMock.Setup(m => m.UpdateAsync(user))
 			.ReturnsAsync(IdentityResult.Failed(new IdentityError { Code = "ConcurrencyFailure", Description = "Optimistic concurrency failure." }));
@@ -351,12 +360,14 @@ public class AuthControllerTests
 	{
 		// Arrange
 		ApplicationUser user = CreateTestUser();
+		Guid previousFamily = Guid.NewGuid();
+		user.RefreshSessionId = previousFamily;
 		SetupUserClaims(user.Id);
 		_userManagerMock.Setup(m => m.FindByIdAsync(user.Id)).ReturnsAsync(user);
 		_userManagerMock.Setup(m => m.ChangePasswordAsync(user, "old", "new")).ReturnsAsync(IdentityResult.Success);
 		_userManagerMock.Setup(m => m.GetRolesAsync(user)).ReturnsAsync(new List<string> { "Admin" });
 		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
-		_tokenServiceMock.Setup(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false, It.IsAny<string>())).Returns("access-token");
+		_tokenServiceMock.Setup(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false, It.IsAny<string>(), It.IsAny<Guid?>())).Returns("access-token");
 		_tokenServiceMock.Setup(t => t.GenerateRefreshToken()).Returns("refresh-token");
 
 		// Act
@@ -367,6 +378,8 @@ public class AuthControllerTests
 		TokenResponse response = okResult.Value!;
 		response.TokenType.Should().Be("Bearer");
 		response.Scope.Should().Be("Admin");
+		user.RefreshSessionId.Should().NotBeNull().And.NotBe(previousFamily);
+		_tokenServiceMock.Verify(t => t.GenerateAccessToken(user.Id, user.Email!, It.IsAny<IList<string>>(), false, It.IsAny<string>(), user.RefreshSessionId), Times.Once);
 	}
 
 	[Fact]
@@ -517,6 +530,7 @@ public class AuthControllerTests
 		// Arrange
 		SetupUserClaims("user-123");
 		ApplicationUser user = CreateTestUser();
+		user.RefreshToken = "hashed:valid-refresh";
 		_userServiceMock.Setup(s => s.FindUserIdByRefreshTokenAsync("valid-refresh", It.IsAny<CancellationToken>())).ReturnsAsync(user.Id);
 		_userManagerMock.Setup(m => m.FindByIdAsync(user.Id)).ReturnsAsync(user);
 
@@ -550,7 +564,7 @@ public class AuthControllerTests
 	// ── Logout ──────────────────────────────────────────────
 
 	[Fact]
-	public async Task Logout_ReturnsNoContent_AndClearsRefreshToken()
+	public async Task Logout_LegacySession_RevokesOnlyLegacyFamily()
 	{
 		// Arrange
 		ApplicationUser user = CreateTestUser();
@@ -563,9 +577,8 @@ public class AuthControllerTests
 
 		// Assert
 		Assert.IsType<NoContent>(result.Result);
-		user.RefreshToken.Should().BeNull();
-		user.RefreshTokenExpiresAt.Should().BeNull();
-		_userManagerMock.Verify(m => m.UpdateAsync(user), Times.Once);
+		_userServiceMock.Verify(s => s.RevokeRefreshSessionAsync(user.Id, null, It.IsAny<CancellationToken>()), Times.Once);
+		_userManagerMock.Verify(m => m.UpdateAsync(It.IsAny<ApplicationUser>()), Times.Never);
 	}
 
 	[Fact]
@@ -576,5 +589,92 @@ public class AuthControllerTests
 
 		// Assert
 		Assert.IsType<UnauthorizedHttpResult>(result.Result);
+	}
+
+	[Fact]
+	public async Task Logout_UsesCapturedFamilyInsteadOfLatestUserSession()
+	{
+		Guid capturedFamily = Guid.NewGuid();
+		SetupUserClaims("user-123");
+		((ClaimsIdentity)_controller.User.Identity!).AddClaim(new(Common.AuthClaimTypes.RefreshSessionId, capturedFamily.ToString()));
+
+		Assert.IsType<NoContent>((await _controller.Logout()).Result);
+
+		_userServiceMock.Verify(s => s.RevokeRefreshSessionAsync("user-123", capturedFamily, It.IsAny<CancellationToken>()), Times.Once);
+		_userManagerMock.Verify(m => m.FindByIdAsync(It.IsAny<string>()), Times.Never);
+		_userManagerMock.Verify(m => m.UpdateAsync(It.IsAny<ApplicationUser>()), Times.Never);
+	}
+
+	[Theory]
+	[InlineData("ApiKey")]
+	[InlineData("OtherAuthentication")]
+	public async Task Logout_NonSessionIdentity_DoesNotRevokeBrowserSession(string authenticationType)
+	{
+		_controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(
+			[new Claim(ClaimTypes.NameIdentifier, "user-123")], authenticationType));
+
+		Assert.IsType<NoContent>((await _controller.Logout()).Result);
+
+		_userServiceMock.Verify(s => s.RevokeRefreshSessionAsync(It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()), Times.Never);
+	}
+
+	[Fact]
+	public async Task Logout_MixedPrincipal_UsesSubjectFromSessionIdentity()
+	{
+		SetupUserClaims("jwt-user");
+		_controller.HttpContext.User = new ClaimsPrincipal(new[]
+		{
+			new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "api-key-user")], "ApiKey"),
+			(ClaimsIdentity)_controller.User.Identity!,
+		});
+
+		Assert.IsType<NoContent>((await _controller.Logout()).Result);
+
+		_userServiceMock.Verify(s => s.RevokeRefreshSessionAsync("jwt-user", null, It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	[Theory]
+	[InlineData("")]
+	[InlineData("invalid-family")]
+	public async Task Logout_MalformedFamily_CannotRevokeLegacySession(string family)
+	{
+		SetupUserClaims("user-123");
+		((ClaimsIdentity)_controller.User.Identity!).AddClaim(new(Common.AuthClaimTypes.RefreshSessionId, family));
+
+		Assert.IsType<UnauthorizedHttpResult>((await _controller.Logout()).Result);
+		_userServiceMock.Verify(s => s.RevokeRefreshSessionAsync(It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()), Times.Never);
+	}
+
+	[Theory]
+	[InlineData(null)]
+	[InlineData("hashed:new-login-token")]
+	public async Task RefreshToken_ChangedBetweenLookupAndLoad_CannotReplaceNewSession(string? storedToken)
+	{
+		ApplicationUser user = CreateTestUser();
+		user.RefreshToken = storedToken;
+		_userServiceMock.Setup(s => s.FindUserIdByRefreshTokenAsync("valid-refresh-token", It.IsAny<CancellationToken>())).ReturnsAsync(user.Id);
+		_userManagerMock.Setup(m => m.FindByIdAsync(user.Id)).ReturnsAsync(user);
+
+		Assert.IsType<UnauthorizedHttpResult>((await _controller.RefreshToken(
+			new RefreshTokenRequest { RefreshToken = "valid-refresh-token" }, CancellationToken.None)).Result);
+
+		_userManagerMock.Verify(m => m.UpdateAsync(It.IsAny<ApplicationUser>()), Times.Never);
+		_tokenServiceMock.Verify(t => t.GenerateRefreshToken(), Times.Never);
+	}
+
+	[Theory]
+	[InlineData(null)]
+	[InlineData("hashed:newer-refresh")]
+	public async Task RevokeToken_ChangedBetweenLookupAndLoad_DoesNotRevokeReplacement(string? storedToken)
+	{
+		ApplicationUser user = CreateTestUser();
+		user.RefreshToken = storedToken;
+		_userServiceMock.Setup(s => s.FindUserIdByRefreshTokenAsync("old-refresh", It.IsAny<CancellationToken>())).ReturnsAsync(user.Id);
+		_userManagerMock.Setup(m => m.FindByIdAsync(user.Id)).ReturnsAsync(user);
+
+		await _controller.RevokeToken(new TokenRevocationRequest { Token = "old-refresh" }, CancellationToken.None);
+
+		user.RefreshToken.Should().Be(storedToken);
+		_userManagerMock.Verify(m => m.UpdateAsync(It.IsAny<ApplicationUser>()), Times.Never);
 	}
 }

@@ -2,9 +2,9 @@ import { useMemo } from "react";
 import { useStableQuery } from "@/hooks/useStableQuery";
 import {
   useQuery,
-  useMutation,
   useQueryClient,
 } from "@tanstack/react-query";
+import { useSessionMutation } from "@/hooks/useSessionMutation";
 import client, { attemptTokenRefresh } from "@/lib/api-client";
 import { toast } from "sonner";
 
@@ -47,7 +47,7 @@ export function useUser(userId: string | null) {
 
 export function useCreateUser() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (body: {
       email: string;
       password: string;
@@ -68,7 +68,7 @@ export function useCreateUser() {
 
 export function useUpdateUser(currentUserId?: string) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async ({
       userId,
       body,
@@ -101,7 +101,7 @@ export function useUpdateUser(currentUserId?: string) {
 
 export function useDeleteUser() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (userId: string) => {
       const { error } = await client.DELETE("/api/users/{userId}", {
         params: { path: { userId } },
@@ -117,7 +117,7 @@ export function useDeleteUser() {
 
 export function useResetUserPassword() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async ({
       userId,
       newPassword,

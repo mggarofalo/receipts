@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useAuth } from "@/hooks/useAuth";
 import { useStableQuery } from "@/hooks/useStableQuery";
 import { useQuery } from "@tanstack/react-query";
 import client from "@/lib/api-client";
@@ -9,8 +10,9 @@ export function useMyAuthAuditLog(
   sortBy?: string | null,
   sortDirection?: string | null,
 ) {
+  const { user } = useAuth();
   const query = useQuery({
-    queryKey: ["auth-audit", "me", offset, limit, sortBy, sortDirection],
+    queryKey: ["auth-audit", "me", user?.userId, offset, limit, sortBy, sortDirection],
     queryFn: async () => {
       const { data, error } = await client.GET("/api/auth/audit/me", {
         params: {

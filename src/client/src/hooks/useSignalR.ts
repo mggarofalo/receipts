@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as signalR from "@microsoft/signalr";
 import { useQueryClient } from "@tanstack/react-query";
-import { getAccessToken, parseJwtPayload } from "@/lib/auth";
-import { bufferToast, type ToastOrigin } from "@/lib/signalr-toast-buffer";
+import { getAccessToken, parseJwtPayload, getSessionVersion, addSessionChangeListener } from "@/lib/auth";
+import { bufferToast, clearBufferedToasts, type ToastOrigin } from "@/lib/signalr-toast-buffer";
 import {
   setConnectionId,
   getConnectionId,
@@ -99,9 +99,12 @@ export function useSignalR(enabled: boolean) {
       return;
     }
 
+    const sessionVersion = getSessionVersion();
+    let active = true;
+    const isCurrent = () => active && getSessionVersion() === sessionVersion;
     const connection = new signalR.HubConnectionBuilder()
       .withUrl("/hubs/entities", {
-        accessTokenFactory: () => getAccessToken() ?? "",
+        accessTokenFactory: () => isCurrent() ? getAccessToken() ?? "" : "",
       })
       .withAutomaticReconnect()
       .configureLogging(
@@ -109,7 +112,19 @@ export function useSignalR(enabled: boolean) {
       )
       .build();
 
+    const stop = () => {
+      if (!active) return;
+      active = false;
+      connectionRef.current = null;
+      setConnectionId(null);
+      clearBufferedToasts();
+      setConnectionState("disconnected");
+      void connection.stop().catch(() => {});
+    };
+    const unsubscribe = addSessionChangeListener(stop);
+
     connection.onreconnecting(() => {
+      if (!isCurrent()) return;
       setConnectionState("reconnecting");
       if (import.meta.env.DEV) {
         console.debug("[SignalR] Reconnecting...");
@@ -117,6 +132,7 @@ export function useSignalR(enabled: boolean) {
     });
 
     connection.onreconnected(() => {
+      if (!isCurrent()) return;
       setConnectionState("connected");
       setConnectionId(connection.connectionId ?? null);
       if (import.meta.env.DEV) {
@@ -125,6 +141,7 @@ export function useSignalR(enabled: boolean) {
     });
 
     connection.onclose(() => {
+      if (!isCurrent()) return;
       setConnectionState("disconnected");
       setConnectionId(null);
       if (import.meta.env.DEV) {
@@ -135,6 +152,7 @@ export function useSignalR(enabled: boolean) {
     connection.on(
       "EntityChanged",
       (notification: EntityChangeNotification) => {
+        if (!isCurrent()) return;
         if (import.meta.env.DEV) {
           console.debug("[SignalR] EntityChanged", notification);
         }
@@ -168,6 +186,10 @@ export function useSignalR(enabled: boolean) {
     connection
       .start()
       .then(() => {
+        if (!isCurrent()) {
+          void connection.stop().catch(() => {});
+          return;
+        }
         setConnectionState("connected");
         setConnectionId(connection.connectionId ?? null);
         if (import.meta.env.DEV) {
@@ -175,6 +197,7 @@ export function useSignalR(enabled: boolean) {
         }
       })
       .catch((err: unknown) => {
+        if (!isCurrent()) return;
         if (import.meta.env.DEV) {
           console.debug("[SignalR] Connection error:", err);
         }
@@ -182,9 +205,8 @@ export function useSignalR(enabled: boolean) {
       });
 
     return () => {
-      connectionRef.current = null;
-      setConnectionId(null);
-      connection.stop();
+      unsubscribe();
+      stop();
     };
   }, [enabled, queryClient]);
 

@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useStableQuery } from "@/hooks/useStableQuery";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSessionMutation } from "@/hooks/useSessionMutation";
 import client from "@/lib/api-client";
 import { toast } from "sonner";
 
@@ -40,7 +41,7 @@ export function useItemTemplate(id: string | null) {
 
 export function useCreateItemTemplate() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (body: {
       name: string;
       description?: string | null;
@@ -64,7 +65,7 @@ export function useCreateItemTemplate() {
 
 export function useUpdateItemTemplate() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (body: {
       id: string;
       name: string;
@@ -89,7 +90,7 @@ export function useUpdateItemTemplate() {
 
 export function useDeleteItemTemplates() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (ids: string[]) => {
       const { error } = await client.DELETE("/api/item-templates", {
         body: ids,
@@ -127,7 +128,7 @@ export function useDeleteItemTemplates() {
 
 export function useHideItemTemplate() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (id: string) => {
       const { error } = await client.DELETE("/api/item-templates", {
         body: [id],
@@ -180,7 +181,7 @@ export function useDeletedItemTemplates(offset = 0, limit = 50, sortBy?: string 
 
 export function useRestoreItemTemplate() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (id: string) => {
       const { error } = await client.POST("/api/item-templates/{id}/restore", {
         params: { path: { id } },

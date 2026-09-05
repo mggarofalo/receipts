@@ -1,3 +1,4 @@
+import { assertSessionCurrent, getSessionVersion, isAbortError } from "@/lib/auth";
 import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import client from "@/lib/api-client";
@@ -82,6 +83,7 @@ export function MergeCardsDialog({
   const { data: accountsData } = useAllAccounts(true);
   const createAccount = useCreateAccount();
   const mergeCards = useMergeCards();
+  const [sessionVersion] = useState(getSessionVersion);
 
   /**
    * Deletes an account this dialog created but did not end up merging into.
@@ -94,11 +96,13 @@ export function MergeCardsDialog({
    */
   async function discardCreatedAccount(accountId: string) {
     try {
+      assertSessionCurrent(sessionVersion);
       const { error } = await client.DELETE("/api/accounts/{id}", {
         params: { path: { id: accountId } },
       });
       if (error) throw error;
-    } catch {
+    } catch (error) {
+      if (isAbortError(error)) return;
       toast.error(
         "Couldn't remove the empty account created for this merge. You may need to delete it manually.",
       );

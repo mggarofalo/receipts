@@ -1,3 +1,4 @@
+import { assertSessionCurrent, getSessionVersion, isAbortError } from "@/lib/auth";
 import { useState, useCallback, useMemo, useEffect, useRef, useId } from "react";
 import { useNavigate, useBlocker } from "react-router";
 import { useForm } from "react-hook-form";
@@ -241,6 +242,7 @@ export default function NewReceiptPage() {
     try {
       addLocation(headerValues.location);
 
+      const sessionVersion = getSessionVersion();
       const result = await createCompleteReceiptAsync({
         receipt: {
           location: headerValues.location,
@@ -268,6 +270,7 @@ export default function NewReceiptPage() {
         })),
       });
 
+      assertSessionCurrent(sessionVersion);
       const receiptId = (result as { receipt: { id: string } }).receipt.id;
 
       // Mark saved BEFORE navigating so the unsaved-work blocker lets the
@@ -276,6 +279,7 @@ export default function NewReceiptPage() {
       toast.success("Receipt created successfully!");
       navigate(`/receipts/${receiptId}`);
     } catch (error) {
+      if (isAbortError(error)) return;
       const message =
         extractErrorMessage(error) ?? "Failed to create receipt.";
       setSubmitErrorSummary(message);

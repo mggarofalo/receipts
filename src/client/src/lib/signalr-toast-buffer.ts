@@ -79,14 +79,17 @@ export function bufferToast(
   }
 }
 
-/** Exposed for testing — clears pending state without flushing. */
-export function _resetForTesting(): void {
+/** Drop notifications belonging to a session that has ended. */
+export function clearBufferedToasts(): void {
   if (flushTimer !== null) {
     clearTimeout(flushTimer);
     flushTimer = null;
   }
   buffer.clear();
 }
+
+/** @deprecated Use clearBufferedToasts for lifecycle cleanup. */
+export const _resetForTesting = clearBufferedToasts;
 
 /** Exposed for testing — triggers an immediate flush. */
 export function _flushForTesting(): void {

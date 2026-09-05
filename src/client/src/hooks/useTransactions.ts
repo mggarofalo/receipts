@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useStableQuery } from "@/hooks/useStableQuery";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSessionMutation } from "@/hooks/useSessionMutation";
 import client from "@/lib/api-client";
 import { toast } from "sonner";
 
@@ -51,7 +52,7 @@ export function useTransactionsByReceiptId(receiptId: string | null, offset = 0,
 
 export function useCreateTransaction() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async ({
       receiptId,
       body,
@@ -76,7 +77,7 @@ export function useCreateTransaction() {
 
 export function useCreateTransactionsBatch() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async ({
       receiptId,
       body,
@@ -99,7 +100,7 @@ export function useCreateTransactionsBatch() {
 
 export function useUpdateTransaction() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async ({
       body,
     }: {
@@ -121,7 +122,7 @@ export function useUpdateTransaction() {
 
 export function useDeleteTransactions() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (ids: string[]) => {
       const { error } = await client.DELETE("/api/transactions", {
         body: ids,
@@ -173,7 +174,7 @@ export function useDeletedTransactions(offset = 0, limit = 50, sortBy?: string |
 
 export function useRestoreTransaction() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (id: string) => {
       const { error } = await client.POST("/api/transactions/{id}/restore", {
         params: { path: { id } },

@@ -1,3 +1,4 @@
+import { getSessionVersion } from "@/lib/auth";
 import { useCallback, useState, useMemo } from "react";
 import {
   Link,
@@ -141,8 +142,10 @@ export function Layout() {
   );
 
   const handleLogout = useCallback(async () => {
-    await logout();
-    navigate("/login");
+    const completion = logout();
+    const signedOutVersion = getSessionVersion();
+    await completion;
+    if (getSessionVersion() === signedOutVersion) navigate("/login");
   }, [logout, navigate]);
 
   const conn = CONNECTION[connectionState];

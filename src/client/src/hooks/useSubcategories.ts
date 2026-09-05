@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useStableQuery } from "@/hooks/useStableQuery";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSessionMutation } from "@/hooks/useSessionMutation";
 import client from "@/lib/api-client";
 import { toast } from "sonner";
 
@@ -99,7 +100,7 @@ export function useAllSubcategoriesByCategoryId(categoryId: string | null, isAct
 
 export function useCreateSubcategory() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (body: {
       name: string;
       categoryId: string;
@@ -126,7 +127,7 @@ export function useCreateSubcategory() {
 
 export function useUpdateSubcategory() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (body: {
       id: string;
       name: string;
@@ -162,7 +163,7 @@ export interface DeleteSubcategoryConflict {
 
 export function useDeleteSubcategory() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (id: string) => {
       const { error, response } = await client.DELETE("/api/subcategories/{id}", {
         params: { path: { id } },
@@ -211,7 +212,7 @@ export function useDeletedSubcategories(offset = 0, limit = 50, sortBy?: string 
 
 export function useRestoreSubcategory() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (id: string) => {
       const { error } = await client.POST("/api/subcategories/{id}/restore", {
         params: { path: { id } },

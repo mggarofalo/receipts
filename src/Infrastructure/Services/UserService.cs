@@ -77,6 +77,19 @@ public class UserService(ApplicationDbContext dbContext) : IUserService
 			.FirstOrDefaultAsync(cancellationToken);
 	}
 
+	public async Task RevokeRefreshSessionAsync(string userId, Guid? refreshSessionId, CancellationToken cancellationToken = default)
+	{
+		// ExecuteUpdate bypasses Identity's change tracker. Changing its concurrency stamp atomically
+		// prevents an already-loaded refresh request from restoring the revoked token with UpdateAsync.
+		string concurrencyStamp = Guid.NewGuid().ToString();
+		await dbContext.Users
+			.Where(u => u.Id == userId && u.RefreshSessionId == refreshSessionId && u.RefreshToken != null)
+			.ExecuteUpdateAsync(setters => setters
+				.SetProperty(u => u.RefreshToken, (string?)null)
+				.SetProperty(u => u.RefreshTokenExpiresAt, (DateTimeOffset?)null)
+				.SetProperty(u => u.ConcurrencyStamp, concurrencyStamp), cancellationToken);
+	}
+
 	public string HashRefreshToken(string refreshToken)
 	{
 		byte[] bytes = SHA256.HashData(Encoding.UTF8.GetBytes(refreshToken));

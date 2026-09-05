@@ -1,5 +1,6 @@
 import { useCallback } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSessionMutation } from "@/hooks/useSessionMutation";
 import { toast } from "sonner";
 import client from "@/lib/api-client";
 
@@ -38,7 +39,7 @@ function useInvalidateDuplicates() {
 /** Accept a group: record every pair of its receipts as "not a duplicate". */
 export function useAcceptDuplicateGroup() {
   const invalidate = useInvalidateDuplicates();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (receiptIds: string[]) => {
       const { data, error } = await client.POST(
         "/api/reports/duplicates/accepted",
@@ -57,7 +58,7 @@ export function useAcceptDuplicateGroup() {
 /** Undo an acceptance so the group is reported again. */
 export function useUnacceptDuplicateGroup() {
   const invalidate = useInvalidateDuplicates();
-  return useMutation({
+  return useSessionMutation({
     mutationFn: async (receiptIds: string[]) => {
       const { data, error } = await client.POST(
         "/api/reports/duplicates/accepted/remove",

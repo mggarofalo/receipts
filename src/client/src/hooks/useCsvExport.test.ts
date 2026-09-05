@@ -1,6 +1,7 @@
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { createQueryWrapper } from "@/test/test-utils";
 import { useCsvExport } from "./useCsvExport";
+import { clearTokens, setTokens } from "@/lib/auth";
 
 vi.mock("@/lib/export-csv", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/export-csv")>();
@@ -21,7 +22,10 @@ const mockShowError = vi.mocked(showError);
 describe("useCsvExport", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    setTokens("Alice-access", "Alice-refresh");
   });
+
+  afterEach(() => clearTokens());
 
   it("builds and downloads a csv from static rows", async () => {
     const { result } = renderHook(() => useCsvExport(), {
@@ -109,5 +113,26 @@ describe("useCsvExport", () => {
       "slow.csv",
       "Value\r\ndone\r\n",
     );
+  });
+
+  it.each(["success", "failure"] as const)("does not download or toast a prior session's delayed %s", async (outcome) => {
+    let resolveRows!: (rows: string[][]) => void;
+    let rejectRows!: (error: Error) => void;
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => { markStarted = resolve; });
+    const pending = new Promise<string[][]>((resolve, reject) => { resolveRows = resolve; rejectRows = reject; });
+    const { result } = renderHook(() => useCsvExport(), { wrapper: createQueryWrapper() });
+    await act(async () => {
+      result.current.exportCsv({ filename: "Alice-private.csv", headers: ["Secret"], rows: () => { markStarted(); return pending; } });
+      await started;
+    });
+    act(() => { clearTokens(); setTokens("Bob-access", "Bob-refresh"); });
+    await act(async () => {
+      if (outcome === "success") resolveRows([["Alice-only financial data"]]);
+      else rejectRows(new Error("Alice export failed"));
+    });
+    await waitFor(() => expect(result.current.isExporting).toBe(false));
+    expect(mockDownloadCsv).not.toHaveBeenCalled();
+    expect(mockShowError).not.toHaveBeenCalled();
   });
 });

@@ -79,7 +79,8 @@ public class AuthController(
 
 		IList<string> roles = await userManager.GetRolesAsync(user);
 		string securityStamp = await EnsureSecurityStampAsync(user);
-		string accessToken = tokenService.GenerateAccessToken(user.Id, user.Email!, roles, user.MustResetPassword, securityStamp);
+		user.RefreshSessionId = Guid.NewGuid();
+		string accessToken = tokenService.GenerateAccessToken(user.Id, user.Email!, roles, user.MustResetPassword, securityStamp, user.RefreshSessionId);
 		string refreshToken = tokenService.GenerateRefreshToken();
 
 		// Persist only the hash of the refresh token; the plaintext is returned to the client below and
@@ -119,7 +120,10 @@ public class AuthController(
 		string? userId = await userService.FindUserIdByRefreshTokenAsync(request.RefreshToken, cancellationToken);
 		ApplicationUser? user = userId is not null ? await userManager.FindByIdAsync(userId) : null;
 
+		// The token may have been replaced or revoked between the hash lookup and loading the user.
+		// UpdateAsync then fences any replacement after this load using Identity's ConcurrencyStamp.
 		if (user is null
+			|| user.RefreshToken != userService.HashRefreshToken(request.RefreshToken)
 			|| user.RefreshTokenExpiresAt is null
 			|| user.RefreshTokenExpiresAt < DateTimeOffset.UtcNow)
 		{
@@ -128,7 +132,7 @@ public class AuthController(
 
 		IList<string> roles = await userManager.GetRolesAsync(user);
 		string securityStamp = await EnsureSecurityStampAsync(user);
-		string accessToken = tokenService.GenerateAccessToken(user.Id, user.Email!, roles, user.MustResetPassword, securityStamp);
+		string accessToken = tokenService.GenerateAccessToken(user.Id, user.Email!, roles, user.MustResetPassword, securityStamp, user.RefreshSessionId);
 		string newRefreshToken = tokenService.GenerateRefreshToken();
 
 		user.RefreshToken = userService.HashRefreshToken(newRefreshToken);
@@ -165,22 +169,32 @@ public class AuthController(
 			return TypedResults.Unauthorized();
 		}
 
-		ApplicationUser? user = await userManager.FindByIdAsync(userId);
-		if (user is not null)
+		// API keys and other non-session identities do not own the user's browser refresh session.
+		// Select claims from one JWT identity so a mixed API-key/Bearer principal cannot cross users.
+		ClaimsIdentity? sessionIdentity = User.Identities.FirstOrDefault(identity =>
+			identity.IsAuthenticated && identity.HasClaim(claim => claim.Type == AuthClaimTypes.SecurityStamp));
+		if (sessionIdentity is null)
 		{
-			// Clear the refresh token so the session cannot be renewed. We intentionally do NOT rotate the
-			// security stamp on logout: the stamp is global to the user, so rotating it would invalidate
-			// access tokens on every device and turn a single-device logout into a global sign-out. The
-			// already-issued access token is therefore best-effort here — it stays valid until it expires
-			// (<= 1h), and the cleared refresh token prevents renewal past that. Immediate stamp rotation is
-			// reserved for deactivate/disable/password-reset, where killing all sessions at once is intended
-			// (RECEIPTS-800).
-			user.RefreshToken = null;
-			user.RefreshTokenExpiresAt = null;
-			await userManager.UpdateAsync(user);
+			return TypedResults.NoContent();
 		}
 
-		await LogAuthEventAsync(nameof(AuthEventType.Logout), userId, user?.Email, true);
+		string? sessionUserId = sessionIdentity.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+		string? familyClaim = sessionIdentity.FindFirst(AuthClaimTypes.RefreshSessionId)?.Value;
+		Guid? familyId = null;
+		if (sessionUserId is null || (familyClaim is not null && !Guid.TryParse(familyClaim, out _)))
+		{
+			return TypedResults.Unauthorized();
+		}
+		if (familyClaim is not null)
+		{
+			familyId = Guid.Parse(familyClaim);
+		}
+
+		// An old logout must not revoke a newer login, even when the old HTTP request finishes late.
+		// Keep SecurityStamp unchanged: access JWTs deliberately survive logout until expiry (800).
+		await userService.RevokeRefreshSessionAsync(sessionUserId, familyId, HttpContext.RequestAborted);
+		await LogAuthEventAsync(nameof(AuthEventType.Logout), sessionUserId,
+			sessionIdentity.FindFirst(ClaimTypes.Email)?.Value, true);
 
 		return TypedResults.NoContent();
 	}
@@ -220,7 +234,8 @@ public class AuthController(
 		// before this call. The new token below carries the fresh stamp so this session keeps working.
 		IList<string> roles = await userManager.GetRolesAsync(user);
 		string securityStamp = await EnsureSecurityStampAsync(user);
-		string accessToken = tokenService.GenerateAccessToken(user.Id, user.Email!, roles, false, securityStamp);
+		user.RefreshSessionId = Guid.NewGuid();
+		string accessToken = tokenService.GenerateAccessToken(user.Id, user.Email!, roles, false, securityStamp, user.RefreshSessionId);
 		string refreshToken = tokenService.GenerateRefreshToken();
 
 		user.RefreshToken = userService.HashRefreshToken(refreshToken);
@@ -305,7 +320,8 @@ public class AuthController(
 		if (userId is not null)
 		{
 			ApplicationUser? user = await userManager.FindByIdAsync(userId);
-			if (user is not null)
+			// The token lookup and entity load are separate queries; never revoke a replacement token.
+			if (user is not null && user.RefreshToken == userService.HashRefreshToken(request.Token))
 			{
 				// Revoking the refresh token stops renewal but intentionally does NOT rotate the security
 				// stamp: the stamp is global to the user, so rotating it would sign the user out of every

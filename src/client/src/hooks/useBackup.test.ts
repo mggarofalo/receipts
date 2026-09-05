@@ -1,11 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { renderHook, act } from "@testing-library/react";
+import { renderHook, act, cleanup } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement, type ReactNode } from "react";
 
-vi.mock("@/lib/auth", () => ({
-  getAccessToken: vi.fn(() => "mock-token"),
-}));
+import { clearTokens, setTokens } from "@/lib/auth";
 
 vi.mock("@/lib/toast", () => ({
   showSuccess: vi.fn(),
@@ -32,6 +30,7 @@ describe("useBackupExport", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    setTokens("mock-token", "Alice-refresh");
     // Minimal URL mocks — jsdom doesn't implement blob URLs.
     globalThis.URL.createObjectURL = vi.fn(() => "blob:mock");
     globalThis.URL.revokeObjectURL = vi.fn();
@@ -47,6 +46,8 @@ describe("useBackupExport", () => {
   });
 
   afterEach(() => {
+    cleanup();
+    clearTokens();
     globalThis.fetch = originalFetch;
     globalThis.URL.createObjectURL = originalCreateObjectURL;
     globalThis.URL.revokeObjectURL = originalRevokeObjectURL;
@@ -78,9 +79,10 @@ describe("useBackupExport", () => {
     // mutateAsync awaits the mutationFn; onSuccess/onError run synchronously
     // after resolution, so showSuccess/URL spies are observable immediately.
     await act(async () => {
-      await result.current.mutateAsync();
+      expect(await result.current.mutateAsync()).toBeUndefined();
     });
 
+    expect(result.current.data).toBeUndefined();
     expect(showSuccess).toHaveBeenCalledWith("Backup exported successfully.");
     expect(showError).not.toHaveBeenCalled();
     expect(globalThis.URL.createObjectURL).toHaveBeenCalledWith(fakeBlob);
@@ -119,5 +121,56 @@ describe("useBackupExport", () => {
       await result.current.mutateAsync().catch(() => {});
     });
     expect(showError).toHaveBeenCalledWith("Export failed (500).");
+  });
+
+  it.each(["success", "failure"] as const)("aborts response-body ownership and suppresses a prior session's delayed %s", async (outcome) => {
+    let resolveBlob!: (blob: Blob) => void;
+    let rejectBlob!: (error: Error) => void;
+    let markBodyStarted!: () => void;
+    const bodyStarted = new Promise<void>((resolve) => { markBodyStarted = resolve; });
+    const body = new Promise<Blob>((resolve, reject) => { resolveBlob = resolve; rejectBlob = reject; });
+    let requestSignal: AbortSignal | null | undefined;
+    globalThis.fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      requestSignal = init?.signal;
+      return {
+        ok: true, status: 200, headers: new Headers(),
+        // Let this boundary settle after abort: even an adapter ignoring cancellation cannot download.
+        blob: () => { markBodyStarted(); return body; },
+      };
+    }) as unknown as typeof fetch;
+    const onSuccess = vi.fn();
+    const onError = vi.fn();
+    const onSettled = vi.fn();
+    const { result } = renderHook(() => useBackupExport(), { wrapper: createWrapper() });
+    let completion!: Promise<unknown>;
+    await act(async () => {
+      completion = result.current.mutateAsync(undefined, { onSuccess, onError, onSettled }).catch((error: unknown) => error);
+      await bodyStarted;
+    });
+    act(() => { clearTokens(); setTokens("Bob-access", "Bob-refresh"); });
+    expect(requestSignal?.aborted).toBe(true);
+    await act(async () => {
+      if (outcome === "success") resolveBlob(new Blob(["Alice private backup"]));
+      else rejectBlob(new Error("Alice backup failed"));
+      expect(await completion).toMatchObject({ name: "AbortError" });
+    });
+    expect(globalThis.URL.createObjectURL).not.toHaveBeenCalled();
+    for (const callback of [showSuccess, showError, onSuccess, onError, onSettled]) expect(callback).not.toHaveBeenCalled();
+  });
+
+  it("keeps public void results and per-call callback data while downloading normally", async () => {
+    globalThis.fetch = vi.fn(async () => ({ ok: true, status: 200, headers: new Headers(), blob: async () => new Blob(["backup"]) })) as unknown as typeof fetch;
+    const onSuccess = vi.fn();
+    const onSettled = vi.fn();
+    const { result } = renderHook(() => useBackupExport(), { wrapper: createWrapper() });
+    await act(async () => {
+      expect(await result.current.mutateAsync(undefined, { onSuccess, onSettled })).toBeUndefined();
+    });
+    expect(onSuccess).toHaveBeenCalledOnce();
+    expect(onSuccess.mock.calls[0][0]).toBeUndefined();
+    expect(onSettled).toHaveBeenCalledOnce();
+    expect(onSettled.mock.calls[0][0]).toBeUndefined();
+    expect(result.current.data).toBeUndefined();
+    expect(globalThis.URL.createObjectURL).toHaveBeenCalledOnce();
   });
 });

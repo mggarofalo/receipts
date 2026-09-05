@@ -1,3 +1,4 @@
+import { getSessionVersion, isAbortError } from "@/lib/auth";
 import {
   ArrowRightLeft,
   BarChart3,
@@ -387,12 +388,16 @@ export const COMMANDS: Command[] = [
     keywords: ["logout", "exit"],
     run: async (ctx) => {
       ctx.close();
+      let signedOutVersion = getSessionVersion();
       try {
-        await ctx.logout();
+        const completion = ctx.logout();
+        signedOutVersion = getSessionVersion();
+        await completion;
       } catch (err) {
+        if (isAbortError(err) || getSessionVersion() !== signedOutVersion) return;
         console.error("Logout failed; navigating to login anyway.", err);
       }
-      ctx.navigate("/login");
+      if (getSessionVersion() === signedOutVersion) ctx.navigate("/login");
     },
   },
 
