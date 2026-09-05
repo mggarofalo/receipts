@@ -93,7 +93,6 @@ export function ReceiptTransactionsCard({
         receiptId,
         body: {
           cardId: values.cardId,
-          accountId: values.accountId,
           amount: values.amount,
           date: values.date,
         },
@@ -116,7 +115,6 @@ export function ReceiptTransactionsCard({
         body: {
           id: editTxn.transaction.id,
           cardId: values.cardId,
-          accountId: values.accountId,
           amount: values.amount,
           date: values.date,
         },

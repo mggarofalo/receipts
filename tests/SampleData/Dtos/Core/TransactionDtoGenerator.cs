@@ -10,7 +10,6 @@ public static class TransactionDtoGenerator
 		{
 			Amount = 100.00,
 			Date = DateOnly.FromDateTime(DateTime.Today),
-			AccountId = Guid.NewGuid(),
 			CardId = Guid.NewGuid()
 		};
 	}
@@ -27,7 +26,6 @@ public static class TransactionDtoGenerator
 			Id = Guid.NewGuid(),
 			Amount = 100.00,
 			Date = DateOnly.FromDateTime(DateTime.Today),
-			AccountId = Guid.NewGuid(),
 			CardId = Guid.NewGuid()
 		};
 	}

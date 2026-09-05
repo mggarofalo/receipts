@@ -3780,8 +3780,6 @@ export interface components {
             amount: number;
             /** Format: date */
             date: string;
-            /** Format: uuid */
-            accountId: string;
             /**
              * Format: uuid
              * @description Originating card. The card's parent account is derivable via Card.AccountId.
@@ -3795,8 +3793,6 @@ export interface components {
             amount: number;
             /** Format: date */
             date: string;
-            /** Format: uuid */
-            accountId: string;
             /**
              * Format: uuid
              * @description Originating card. The card's parent account is derivable via Card.AccountId.
@@ -3808,7 +3804,10 @@ export interface components {
             id: string;
             /** Format: uuid */
             receiptId: string;
-            /** Format: uuid */
+            /**
+             * Format: uuid
+             * @description Current parent account of the originating card; derived, never stored on the transaction.
+             */
             accountId: string;
             /**
              * Format: uuid

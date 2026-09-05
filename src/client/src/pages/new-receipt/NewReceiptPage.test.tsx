@@ -461,11 +461,11 @@ describe("NewReceiptPage", () => {
             location: "Walmart",
           }),
           transactions: [
-            expect.objectContaining({
+            {
               cardId: "card-1",
-              accountId: "acct-1",
               amount: 55,
-            }),
+              date: "2024-01-15",
+            },
           ],
           items: [
             expect.objectContaining({

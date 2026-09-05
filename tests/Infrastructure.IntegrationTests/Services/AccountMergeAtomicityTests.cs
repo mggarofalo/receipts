@@ -8,10 +8,7 @@ using SampleData.Entities;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-// Postgres-only coverage for the RECEIPTS-801 fix (PR #605): the Transactions.AccountId FK is
-// DeleteBehavior.Restrict, and AccountMergeService runs Phase 1 (repoint) and Phase 2 (delete
-// orphaned source accounts) inside ONE transaction so a Phase-2 failure rolls back Phase 1. The
-// InMemory unit suite cannot prove either — it enforces no FKs and no-ops BeginTransaction.
+// Real PostgreSQL verifies the account-card-transaction FK chain and atomic account merges.
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 public class AccountMergeAtomicityTests(PostgresFixture fixture)
@@ -19,9 +16,7 @@ public class AccountMergeAtomicityTests(PostgresFixture fixture)
 	[Fact]
 	public async Task HardDeleteAccount_WithReferencingTransaction_IsRejectedByRestrictFk_AndTransactionSurvives()
 	{
-		// Arrange — the account under test is referenced ONLY by a transaction (its card lives on a
-		// different account), so the delete can fail on exactly one constraint: the Transactions
-		// AccountId Restrict FK. AccountEntity is not soft-deletable, so Remove() is a real hard DELETE.
+		// The originating card protects its account; transaction history survives rejected deletes.
 		Guid accountUnderTestId = Guid.NewGuid();
 		Guid transactionId = Guid.NewGuid();
 		{
@@ -30,16 +25,15 @@ public class AccountMergeAtomicityTests(PostgresFixture fixture)
 			AccountEntity accountUnderTest = AccountEntityGenerator.Generate();
 			accountUnderTest.Id = accountUnderTestId;
 
-			AccountEntity cardOwnerAccount = AccountEntityGenerator.Generate();
 			CardEntity card = CardEntityGenerator.Generate();
-			card.AccountId = cardOwnerAccount.Id;
+			card.AccountId = accountUnderTest.Id;
 
 			ReceiptEntity receipt = ReceiptEntityGenerator.Generate();
 
 			TransactionEntity transaction = TransactionEntityGenerator.Generate(receipt.Id, accountUnderTestId, card.Id);
 			transaction.Id = transactionId;
 
-			setup.Accounts.AddRange(accountUnderTest, cardOwnerAccount);
+			setup.Accounts.Add(accountUnderTest);
 			setup.Cards.Add(card);
 			setup.Receipts.Add(receipt);
 			await setup.SaveChangesAsync();
@@ -55,11 +49,11 @@ public class AccountMergeAtomicityTests(PostgresFixture fixture)
 
 		Func<Task> act = async () => await deleteContext.SaveChangesAsync();
 
-		// Assert — Postgres rejects the delete with FK violation SQLSTATE 23503 on the transaction FK.
+		// Assert — Postgres rejects the delete with FK violation SQLSTATE 23503 on the card FK.
 		DbUpdateException dbEx = (await act.Should().ThrowAsync<DbUpdateException>()).Which;
 		PostgresException pg = dbEx.InnerException.Should().BeOfType<PostgresException>().Which;
 		pg.SqlState.Should().Be(PostgresErrorCodes.ForeignKeyViolation); // "23503"
-		pg.ConstraintName.Should().Be("FK_Transactions_Accounts_AccountId");
+		pg.ConstraintName.Should().Be("FK_Cards_Accounts_AccountId");
 
 		// Assert — the transaction was NOT cascade-deleted; both rows still exist.
 		await using ApplicationDbContext verify = fixture.CreateDbContext();
@@ -123,11 +117,11 @@ public class AccountMergeAtomicityTests(PostgresFixture fixture)
 		verifiedCard2.AccountId.Should().Be(source2.Id, "Phase-1 card repoint must roll back");
 
 		List<TransactionEntity> verifiedTxns = await verify.Transactions
-			.IgnoreAutoIncludes().AsNoTracking()
+			.IgnoreAutoIncludes().Include(t => t.Card).AsNoTracking()
 			.Where(t => t.Id == tx1.Id || t.Id == tx2.Id)
 			.ToListAsync();
-		verifiedTxns.Single(t => t.Id == tx1.Id).AccountId.Should().Be(source1.Id, "Phase-1 transaction repoint must roll back");
-		verifiedTxns.Single(t => t.Id == tx2.Id).AccountId.Should().Be(source2.Id, "Phase-1 transaction repoint must roll back");
+		verifiedTxns.Single(t => t.Id == tx1.Id).Card!.AccountId.Should().Be(source1.Id, "transaction ownership must follow the rolled-back card");
+		verifiedTxns.Single(t => t.Id == tx2.Id).Card!.AccountId.Should().Be(source2.Id, "transaction ownership must follow the rolled-back card");
 
 		List<Guid> seededAccountIds = [target.Id, source1.Id, source2.Id];
 		List<Guid> survivingAccounts = await verify.Accounts.AsNoTracking()

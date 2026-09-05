@@ -4,6 +4,7 @@ public class Transaction
 {
 	public Guid Id { get; set; }
 	public Guid ReceiptId { get; set; }
+	/// <summary>Derived from the originating card on reads; ignored by persistence writes.</summary>
 	public Guid AccountId { get; set; }
 	public Guid CardId { get; set; }
 	public Money Amount { get; set; }

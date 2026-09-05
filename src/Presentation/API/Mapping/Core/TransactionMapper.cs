@@ -20,10 +20,7 @@ public partial class TransactionMapper
 			source.CardId,
 			new Money((decimal)source.Amount, Currency.USD),
 			source.Date
-		)
-		{
-			AccountId = source.AccountId,
-		};
+		);
 	}
 
 	public Transaction ToDomain(UpdateTransactionRequest source)
@@ -33,10 +30,7 @@ public partial class TransactionMapper
 			source.CardId,
 			new Money((decimal)source.Amount, Currency.USD),
 			source.Date
-		)
-		{
-			AccountId = source.AccountId,
-		};
+		);
 	}
 
 	private double MapDecimalToDouble(decimal value) => (double)value;

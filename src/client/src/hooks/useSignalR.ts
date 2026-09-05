@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as signalR from "@microsoft/signalr";
 import { useQueryClient } from "@tanstack/react-query";
+import { CARD_CHANGE_QUERY_KEYS } from "@/lib/query-invalidation";
 import { getAccessToken, parseJwtPayload, getSessionVersion, addSessionChangeListener } from "@/lib/auth";
 import { bufferToast, clearBufferedToasts, type ToastOrigin } from "@/lib/signalr-toast-buffer";
 import {
@@ -23,7 +24,7 @@ interface EntityChangeNotification {
   connectionId?: string | null;
 }
 
-const queryKeyMap: Record<string, string[][]> = {
+const queryKeyMap: Record<string, readonly (readonly string[])[]> = {
   receipt: [
     ["receipts"],
     ["receipt-items"],
@@ -51,7 +52,7 @@ const queryKeyMap: Record<string, string[][]> = {
     ["ynab", "split-comparison"],
     ["ynab", "receipt-sync-statuses"],
   ],
-  card: [["cards"], ["transaction-accounts"]],
+  card: CARD_CHANGE_QUERY_KEYS,
   category: [["categories"]],
   subcategory: [["subcategories"]],
   "item-template": [["itemTemplates"]],

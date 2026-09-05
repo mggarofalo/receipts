@@ -213,7 +213,6 @@ public class ReceiptsController(
 		List<Transaction> transactions = [.. model.Transactions.Select(m =>
 		{
 			Transaction t = transactionMapper.ToDomain(m);
-			t.AccountId = m.AccountId;
 			return t;
 		})];
 

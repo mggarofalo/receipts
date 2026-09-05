@@ -18,7 +18,9 @@ public class TransactionRepository(IDbContextFactory<ApplicationDbContext> conte
 	public async Task<TransactionEntity?> GetByIdAsync(Guid id, CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
-		return await context.Transactions.FindAsync([id], cancellationToken);
+		return await context.Transactions
+			.Include(transaction => transaction.Card)
+			.FirstOrDefaultAsync(transaction => transaction.Id == id, cancellationToken);
 	}
 
 	public async Task<List<TransactionEntity>> GetByReceiptIdAsync(Guid receiptId, int offset, int limit, SortParams sort, CancellationToken cancellationToken)
@@ -35,7 +37,7 @@ public class TransactionRepository(IDbContextFactory<ApplicationDbContext> conte
 			{
 				Id = t.Id,
 				ReceiptId = t.ReceiptId,
-				AccountId = t.AccountId,
+				Card = new CardEntity { Id = t.CardId, AccountId = t.Card!.AccountId },
 				CardId = t.CardId,
 				Amount = t.Amount,
 				AmountCurrency = t.AmountCurrency,
@@ -49,7 +51,8 @@ public class TransactionRepository(IDbContextFactory<ApplicationDbContext> conte
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		return await context.Transactions
 			.IgnoreAutoIncludes()
-			.Include(t => t.Account)
+			.Include(t => t.Card)
+			.ThenInclude(card => card!.ParentAccount)
 			.Where(t => t.ReceiptId == receiptId)
 			.AsNoTracking()
 			.OrderBy(e => e.Id)
@@ -77,7 +80,7 @@ public class TransactionRepository(IDbContextFactory<ApplicationDbContext> conte
 			{
 				Id = t.Id,
 				ReceiptId = t.ReceiptId,
-				AccountId = t.AccountId,
+				Card = new CardEntity { Id = t.CardId, AccountId = t.Card!.AccountId },
 				CardId = t.CardId,
 				Amount = t.Amount,
 				AmountCurrency = t.AmountCurrency,
@@ -99,7 +102,7 @@ public class TransactionRepository(IDbContextFactory<ApplicationDbContext> conte
 			{
 				Id = t.Id,
 				ReceiptId = t.ReceiptId,
-				AccountId = t.AccountId,
+				Card = new CardEntity { Id = t.CardId, AccountId = t.Card!.AccountId },
 				CardId = t.CardId,
 				Amount = t.Amount,
 				AmountCurrency = t.AmountCurrency,
@@ -124,7 +127,12 @@ public class TransactionRepository(IDbContextFactory<ApplicationDbContext> conte
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		context.Transactions.AddRange(entities);
+		// Load required response state before committing, so a failed read cannot leave
+		// a saved transaction behind a failed create response. Tracking fixes up the cards.
+		List<Guid> cardIds = entities.Select(entity => entity.CardId).Distinct().ToList();
+		await context.Cards.IgnoreAutoIncludes().Where(card => cardIds.Contains(card.Id)).LoadAsync(cancellationToken);
 		await context.SaveChangesAsync(cancellationToken);
+
 		return entities;
 	}
 

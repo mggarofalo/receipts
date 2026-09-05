@@ -38,7 +38,7 @@ public class DashboardService(IDbContextFactory<ApplicationDbContext> contextFac
 		var mostUsedAccountData = await context.Transactions
 			.AsNoTracking()
 			.Where(t => receiptIds.Contains(t.ReceiptId))
-			.GroupBy(t => t.Account!.Name)
+			.GroupBy(t => t.Card!.ParentAccount!.Name)
 			.Select(g => new { AccountName = g.Key, Count = g.Count() })
 			.OrderByDescending(g => g.Count)
 			.FirstOrDefaultAsync(cancellationToken);
@@ -181,17 +181,14 @@ public class DashboardService(IDbContextFactory<ApplicationDbContext> contextFac
 		var accountSpending = await context.Transactions
 			.AsNoTracking()
 			.Where(t => receiptIds.Contains(t.ReceiptId))
-			.GroupBy(t => t.AccountId)
+			.GroupBy(t => t.Card!.AccountId)
 			.Select(g => new { AccountId = g.Key, Amount = g.Sum(t => t.Amount) })
 			.OrderByDescending(g => g.Amount)
 			.ToListAsync(cancellationToken);
 
 		decimal total = accountSpending.Sum(a => a.Amount);
 
-		// Fetch account names in a single query. Transactions.AccountId references
-		// the logical Accounts table (RECEIPTS-543 Stage 2), so we look up names
-		// there — Cards joined coincidentally when seeded 1:1, but breaks once
-		// Cards get merged and their source Accounts are deleted.
+		// Resolve the names of the cards' current parent accounts in one query.
 		List<Guid> accountIds = accountSpending.Select(a => a.AccountId).ToList();
 		Dictionary<Guid, string> accountNames = await context.Accounts
 			.AsNoTracking()

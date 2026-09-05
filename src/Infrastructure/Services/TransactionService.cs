@@ -96,11 +96,11 @@ public class TransactionService(
 		return
 		[
 			.. entities
-				.Where(e => e.Account != null)
+				.Where(e => e.Card?.ParentAccount != null)
 				.Select(e => new TransactionAccount
 				{
 					Transaction = mapper.ToDomain(e),
-					Account = accountMapper.ToDomain(e.Account!)
+					Account = accountMapper.ToDomain(e.Card!.ParentAccount!)
 				})
 		];
 	}
@@ -125,7 +125,12 @@ public class TransactionService(
 			}
 
 			context.Transactions.AddRange(entities);
+			// Load required response state before committing, so a failed read cannot leave
+			// a saved transaction behind a failed create response. Tracking fixes up the cards.
+			List<Guid> cardIds = entities.Select(entity => entity.CardId).Distinct().ToList();
+			await context.Cards.IgnoreAutoIncludes().Where(card => cardIds.Contains(card.Id)).LoadAsync(token);
 			await context.SaveChangesAsync(token);
+
 			return entities.Select(mapper.ToDomain).ToList();
 		}, cancellationToken);
 	}
@@ -192,7 +197,7 @@ public class TransactionService(
 
 			// Re-read children INSIDE the lock so a waiter observes the lock holder's committed
 			// state. IgnoreAutoIncludes keeps these to the amount columns the balance equation
-			// needs (no Account / Card / Receipt navigations).
+			// needs; existing transaction read models also need their card account identity.
 			List<ReceiptItemEntity> items = await context.ReceiptItems
 				.IgnoreAutoIncludes().AsNoTracking()
 				.Where(i => i.ReceiptId == receiptId)
@@ -205,6 +210,7 @@ public class TransactionService(
 
 			List<TransactionEntity> existingTransactions = await context.Transactions
 				.IgnoreAutoIncludes().AsNoTracking()
+				.Include(transaction => transaction.Card)
 				.Where(t => t.ReceiptId == receiptId)
 				.ToListAsync(cancellationToken);
 

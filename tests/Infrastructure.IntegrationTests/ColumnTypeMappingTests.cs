@@ -94,7 +94,7 @@ public class ColumnTypeMappingTests(PostgresFixture fixture)
 
 		loaded.Should().NotBeNull();
 		loaded!.ReceiptId.Should().Be(receipt.Id);
-		loaded.AccountId.Should().Be(account.Id);
+		loaded.Card!.AccountId.Should().Be(account.Id);
 		loaded.CardId.Should().Be(card.Id);
 		loaded.Amount.Should().Be(transaction.Amount);
 		loaded.AmountCurrency.Should().Be(Currency.USD);

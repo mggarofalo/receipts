@@ -43,13 +43,14 @@ public class ReportServiceHealthSummaryTests
 			// Balanced: items 10 + tax 1 = 11, transaction 11.
 			context.Receipts.Add(new ReceiptEntity { Id = balancedId, Location = "Store A", Date = date, TaxAmount = 1.00m });
 			context.ReceiptItems.Add(new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = balancedId, Description = "Item", Quantity = 1, UnitPrice = 10.00m, TotalAmount = 10.00m, Category = "Food" });
-			context.Transactions.Add(new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = balancedId, AccountId = accountId, Amount = 11.00m, Date = date });
+			context.Transactions.Add(new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = balancedId, CardId = accountId, Amount = 11.00m, Date = date });
 
 			// Unbalanced: items 10 + tax 1 = 11, transaction 15.
 			context.Receipts.Add(new ReceiptEntity { Id = unbalancedId, Location = "Store B", Date = date.AddDays(1), TaxAmount = 1.00m });
 			context.ReceiptItems.Add(new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = unbalancedId, Description = "Item", Quantity = 1, UnitPrice = 10.00m, TotalAmount = 10.00m, Category = "Food" });
-			context.Transactions.Add(new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = unbalancedId, AccountId = accountId, Amount = 15.00m, Date = date.AddDays(1) });
+			context.Transactions.Add(new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = unbalancedId, CardId = accountId, Amount = 15.00m, Date = date.AddDays(1) });
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -82,6 +83,7 @@ public class ReportServiceHealthSummaryTests
 			// Soft-deleted uncategorized item — must not be counted.
 			context.ReceiptItems.Add(new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = Guid.NewGuid(), Description = "Ghost", Quantity = 1, UnitPrice = 1.00m, TotalAmount = 1.00m, Category = "Uncategorized", DeletedAt = DateTimeOffset.UtcNow });
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -123,6 +125,7 @@ public class ReportServiceHealthSummaryTests
 			// A lone receipt is not a group.
 			context.Receipts.Add(new ReceiptEntity { Id = Guid.NewGuid(), Location = "Store C", Date = date, TaxAmount = 0m });
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -151,6 +154,7 @@ public class ReportServiceHealthSummaryTests
 			context.ReceiptItems.Add(new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "B", Quantity = 1, UnitPrice = 1m, TotalAmount = 1m, Category = "Uncategorized" });
 			context.ReceiptItems.Add(new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "C", Quantity = 1, UnitPrice = 1m, TotalAmount = 1m, Category = "Food" });
 
+			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
 
@@ -164,4 +168,15 @@ public class ReportServiceHealthSummaryTests
 
 		contextFactory.ResetDatabase();
 	}
+	private static void SeedOriginatingCards(ApplicationDbContext context)
+	{
+		foreach (Guid cardId in context.ChangeTracker.Entries<TransactionEntity>().Select(entry => entry.Entity.CardId).Distinct().ToList())
+		{
+			if (context.Cards.Find(cardId) is null)
+			{
+				context.Cards.Add(new CardEntity { Id = cardId, AccountId = cardId, Name = "Report card", CardCode = "1234" });
+			}
+		}
+	}
+
 }

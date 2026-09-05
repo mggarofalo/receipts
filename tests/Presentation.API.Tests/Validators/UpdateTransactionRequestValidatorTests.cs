@@ -16,7 +16,6 @@ public class UpdateTransactionRequestValidatorTests
 			Id = Guid.NewGuid(),
 			Amount = 100,
 			Date = DateOnly.FromDateTime(DateTime.Today),
-			AccountId = Guid.NewGuid(),
 			CardId = Guid.NewGuid()
 		};
 
@@ -36,7 +35,6 @@ public class UpdateTransactionRequestValidatorTests
 			Id = Guid.Empty,
 			Amount = 100,
 			Date = DateOnly.FromDateTime(DateTime.Today),
-			AccountId = Guid.NewGuid(),
 			CardId = Guid.NewGuid()
 		};
 
@@ -57,7 +55,6 @@ public class UpdateTransactionRequestValidatorTests
 			Id = Guid.NewGuid(),
 			Amount = 0,
 			Date = DateOnly.FromDateTime(DateTime.Today),
-			AccountId = Guid.NewGuid(),
 			CardId = Guid.NewGuid()
 		};
 
@@ -78,7 +75,6 @@ public class UpdateTransactionRequestValidatorTests
 			Id = Guid.NewGuid(),
 			Amount = 100,
 			Date = DateOnly.FromDateTime(DateTime.Today.AddDays(1)),
-			AccountId = Guid.NewGuid(),
 			CardId = Guid.NewGuid()
 		};
 
@@ -91,27 +87,6 @@ public class UpdateTransactionRequestValidatorTests
 	}
 
 	[Fact]
-	public void Should_Fail_When_AccountIdIsEmpty()
-	{
-		// Arrange
-		UpdateTransactionRequest request = new()
-		{
-			Id = Guid.NewGuid(),
-			Amount = 100,
-			Date = DateOnly.FromDateTime(DateTime.Today),
-			AccountId = Guid.Empty,
-			CardId = Guid.NewGuid()
-		};
-
-		// Act
-		FluentValidation.Results.ValidationResult result = _validator.Validate(request);
-
-		// Assert
-		Assert.False(result.IsValid);
-		Assert.Contains(result.Errors, e => e.ErrorMessage == UpdateTransactionRequestValidator.AccountIdMustNotBeEmpty);
-	}
-
-	[Fact]
 	public void Should_Fail_When_CardIdIsEmpty()
 	{
 		// Arrange
@@ -120,7 +95,6 @@ public class UpdateTransactionRequestValidatorTests
 			Id = Guid.NewGuid(),
 			Amount = 100,
 			Date = DateOnly.FromDateTime(DateTime.Today),
-			AccountId = Guid.NewGuid(),
 			CardId = Guid.Empty
 		};
 

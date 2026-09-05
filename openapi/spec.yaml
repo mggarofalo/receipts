@@ -7412,7 +7412,7 @@ components:
 
     CreateTransactionRequest:
       type: object
-      required: [amount, date, accountId, cardId]
+      required: [amount, date, cardId]
       properties:
         amount:
           type: number
@@ -7420,9 +7420,6 @@ components:
         date:
           type: string
           format: date
-        accountId:
-          type: string
-          format: uuid
         cardId:
           type: string
           format: uuid
@@ -7430,7 +7427,7 @@ components:
 
     UpdateTransactionRequest:
       type: object
-      required: [id, amount, date, accountId, cardId]
+      required: [id, amount, date, cardId]
       properties:
         id:
           type: string
@@ -7441,9 +7438,6 @@ components:
         date:
           type: string
           format: date
-        accountId:
-          type: string
-          format: uuid
         cardId:
           type: string
           format: uuid
@@ -7462,6 +7456,7 @@ components:
         accountId:
           type: string
           format: uuid
+          description: "Current parent account of the originating card; derived, never stored on the transaction."
         cardId:
           type: string
           format: uuid

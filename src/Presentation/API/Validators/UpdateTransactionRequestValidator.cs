@@ -8,7 +8,6 @@ public class UpdateTransactionRequestValidator : AbstractValidator<UpdateTransac
 	public const string IdMustNotBeEmpty = "ID must not be empty.";
 	public const string AmountMustBeNonZero = "Amount must be non-zero.";
 	public const string DateMustBePriorToCurrentDate = "Date must be prior to the current date";
-	public const string AccountIdMustNotBeEmpty = "Account ID must not be empty.";
 	public const string CardIdMustNotBeEmpty = "Card ID must not be empty.";
 
 	public UpdateTransactionRequestValidator()
@@ -24,10 +23,6 @@ public class UpdateTransactionRequestValidator : AbstractValidator<UpdateTransac
 		RuleFor(x => x.Date)
 			.Must(date => date.ToDateTime(TimeOnly.MinValue) <= DateTime.Today)
 			.WithMessage(DateMustBePriorToCurrentDate);
-
-		RuleFor(x => x.AccountId)
-			.NotEqual(Guid.Empty)
-			.WithMessage(AccountIdMustNotBeEmpty);
 
 		RuleFor(x => x.CardId)
 			.NotEqual(Guid.Empty)

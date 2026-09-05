@@ -47,7 +47,7 @@ public class TransactionRepositoryTests
 
 		// Assert
 		Assert.NotNull(actual);
-		actual.Should().BeEquivalentTo(entity, opt => opt.Excluding(member => member.Name == nameof(TransactionEntity.Receipt) || member.Name == nameof(TransactionEntity.Account) || member.Name == nameof(TransactionEntity.Card)));
+		actual.Should().BeEquivalentTo(entity, opt => opt.Excluding(member => member.Name == nameof(TransactionEntity.Receipt) || member.Name == nameof(TransactionEntity.Card)));
 
 		_contextFactory.ResetDatabase();
 	}
@@ -88,7 +88,7 @@ public class TransactionRepositoryTests
 		List<TransactionEntity> actual = await repository.GetByReceiptIdAsync(receipt.Id, 0, 50, SortParams.Default, CancellationToken.None);
 
 		// Assert
-		actual.Should().BeEquivalentTo(entities, opt => opt.Excluding(member => member.Name == nameof(TransactionEntity.Receipt) || member.Name == nameof(TransactionEntity.Account)));
+		actual.Should().BeEquivalentTo(entities, opt => opt.Excluding(member => member.Name == nameof(TransactionEntity.Receipt) || member.Name == nameof(TransactionEntity.Card)));
 
 		_contextFactory.ResetDatabase();
 	}
@@ -112,7 +112,7 @@ public class TransactionRepositoryTests
 		List<TransactionEntity> actual = await repository.GetAllAsync(0, 50, SortParams.Default, CancellationToken.None);
 
 		// Assert
-		actual.Should().BeEquivalentTo(entities, opt => opt.Excluding(member => member.Name == nameof(TransactionEntity.Receipt) || member.Name == nameof(TransactionEntity.Account)));
+		actual.Should().BeEquivalentTo(entities, opt => opt.Excluding(member => member.Name == nameof(TransactionEntity.Receipt) || member.Name == nameof(TransactionEntity.Card)));
 
 		_contextFactory.ResetDatabase();
 	}
@@ -169,7 +169,7 @@ public class TransactionRepositoryTests
 		List<TransactionEntity> updatedEntities = await verifyContext.Transactions.ToListAsync();
 
 		// Assert
-		updatedEntities.Should().BeEquivalentTo(entities, opt => opt.Excluding(member => member.Name == nameof(TransactionEntity.Receipt) || member.Name == nameof(TransactionEntity.Account) || member.Name == nameof(TransactionEntity.Card)));
+		updatedEntities.Should().BeEquivalentTo(entities, opt => opt.Excluding(member => member.Name == nameof(TransactionEntity.Receipt) || member.Name == nameof(TransactionEntity.Card)));
 
 		_contextFactory.ResetDatabase();
 	}
@@ -406,12 +406,12 @@ public class TransactionRepositoryTests
 		actual.Should().HaveCount(expectedTransactionCount);
 		actual.Should().AllSatisfy(t =>
 		{
-			t.Account.Should().NotBeNull();
-			t.Account!.Id.Should().Be(account.Id);
+			t.Card!.ParentAccount.Should().NotBeNull();
+			t.Card!.ParentAccount!.Id.Should().Be(account.Id);
 		});
 		actual.Should().BeEquivalentTo(entities, opt => opt
 			.Excluding(member => member.Name == nameof(TransactionEntity.Receipt))
-			.Excluding(member => member.Name == nameof(TransactionEntity.Account)));
+			.Excluding(member => member.Name == nameof(TransactionEntity.Card)));
 
 		_contextFactory.ResetDatabase();
 	}

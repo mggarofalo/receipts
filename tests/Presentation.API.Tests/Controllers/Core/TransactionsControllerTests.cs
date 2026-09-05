@@ -321,7 +321,7 @@ public class TransactionsControllerTests
 		// Arrange
 		Guid receiptId = Guid.NewGuid();
 		List<CreateTransactionRequest> controllerInput = TransactionDtoGenerator.GenerateCreateRequestList(2);
-		controllerInput.ForEach(m => m.AccountId = controllerInput[0].AccountId);
+		controllerInput.ForEach(m => m.CardId = controllerInput[0].CardId);
 		List<Transaction> mediatorReturn = TransactionGenerator.GenerateList(2);
 		List<TransactionResponse> expectedControllerReturn = [.. mediatorReturn.Select(_mapper.ToResponse)];
 
@@ -340,18 +340,18 @@ public class TransactionsControllerTests
 	}
 
 	[Fact]
-	public async Task CreateTransactions_WithMultipleAccountIds_ReturnsOkResult_WithAggregatedResults()
+	public async Task CreateTransactions_WithMultipleCardIds_ReturnsOkResult_WithAggregatedResults()
 	{
 		// Arrange
 		Guid receiptId = Guid.NewGuid();
-		Guid accountId1 = Guid.NewGuid();
-		Guid accountId2 = Guid.NewGuid();
+		Guid cardId1 = Guid.NewGuid();
+		Guid cardId2 = Guid.NewGuid();
 
 		List<CreateTransactionRequest> controllerInput = TransactionDtoGenerator.GenerateCreateRequestList(4);
-		controllerInput[0].AccountId = accountId1;
-		controllerInput[1].AccountId = accountId1;
-		controllerInput[2].AccountId = accountId2;
-		controllerInput[3].AccountId = accountId2;
+		controllerInput[0].CardId = cardId1;
+		controllerInput[1].CardId = cardId1;
+		controllerInput[2].CardId = cardId2;
+		controllerInput[3].CardId = cardId2;
 
 		List<Transaction> mediatorReturn = TransactionGenerator.GenerateList(4);
 
@@ -373,18 +373,18 @@ public class TransactionsControllerTests
 	}
 
 	[Fact]
-	public async Task CreateTransactions_WithMultipleAccountIds_ThrowsException_WhenCommandFails()
+	public async Task CreateTransactions_WithMultipleCardIds_ThrowsException_WhenCommandFails()
 	{
 		// Arrange
 		Guid receiptId = Guid.NewGuid();
-		Guid accountId1 = Guid.NewGuid();
-		Guid accountId2 = Guid.NewGuid();
+		Guid cardId1 = Guid.NewGuid();
+		Guid cardId2 = Guid.NewGuid();
 
 		List<CreateTransactionRequest> controllerInput = TransactionDtoGenerator.GenerateCreateRequestList(4);
-		controllerInput[0].AccountId = accountId1;
-		controllerInput[1].AccountId = accountId1;
-		controllerInput[2].AccountId = accountId2;
-		controllerInput[3].AccountId = accountId2;
+		controllerInput[0].CardId = cardId1;
+		controllerInput[1].CardId = cardId1;
+		controllerInput[2].CardId = cardId2;
+		controllerInput[3].CardId = cardId2;
 
 		_mediatorMock.Setup(m => m.Send(
 			It.Is<CreateTransactionCommand>(c => c.Transactions.Count == 4 && c.ReceiptId == receiptId),
@@ -404,7 +404,7 @@ public class TransactionsControllerTests
 		// Arrange
 		Guid receiptId = Guid.NewGuid();
 		List<CreateTransactionRequest> controllerInput = TransactionDtoGenerator.GenerateCreateRequestList(2);
-		controllerInput.ForEach(m => m.AccountId = controllerInput[0].AccountId);
+		controllerInput.ForEach(m => m.CardId = controllerInput[0].CardId);
 
 		_mediatorMock.Setup(m => m.Send(
 			It.Is<CreateTransactionCommand>(c => c.Transactions.Count == controllerInput.Count && c.ReceiptId == receiptId),
@@ -480,7 +480,7 @@ public class TransactionsControllerTests
 	{
 		// Arrange
 		List<UpdateTransactionRequest> controllerInput = TransactionDtoGenerator.GenerateUpdateRequestList(2);
-		controllerInput.ForEach(m => m.AccountId = controllerInput[0].AccountId);
+		controllerInput.ForEach(m => m.CardId = controllerInput[0].CardId);
 
 		_mediatorMock.Setup(m => m.Send(
 			It.Is<UpdateTransactionCommand>(c => c.Transactions.Count == controllerInput.Count),
@@ -495,17 +495,17 @@ public class TransactionsControllerTests
 	}
 
 	[Fact]
-	public async Task UpdateTransactions_WithMultipleAccountIds_ReturnsNoContent_WhenBatchSucceeds()
+	public async Task UpdateTransactions_WithMultipleCardIds_ReturnsNoContent_WhenBatchSucceeds()
 	{
 		// Arrange
-		Guid accountId1 = Guid.NewGuid();
-		Guid accountId2 = Guid.NewGuid();
+		Guid cardId1 = Guid.NewGuid();
+		Guid cardId2 = Guid.NewGuid();
 
 		List<UpdateTransactionRequest> controllerInput = TransactionDtoGenerator.GenerateUpdateRequestList(4);
-		controllerInput[0].AccountId = accountId1;
-		controllerInput[1].AccountId = accountId1;
-		controllerInput[2].AccountId = accountId2;
-		controllerInput[3].AccountId = accountId2;
+		controllerInput[0].CardId = cardId1;
+		controllerInput[1].CardId = cardId1;
+		controllerInput[2].CardId = cardId2;
+		controllerInput[3].CardId = cardId2;
 
 		_mediatorMock.Setup(m => m.Send(
 			It.Is<UpdateTransactionCommand>(c => c.Transactions.Count == 4),
@@ -521,17 +521,17 @@ public class TransactionsControllerTests
 	}
 
 	[Fact]
-	public async Task UpdateTransactions_WithMultipleAccountIds_ReturnsNotFound_WhenBatchReturnsFalse()
+	public async Task UpdateTransactions_WithMultipleCardIds_ReturnsNotFound_WhenBatchReturnsFalse()
 	{
 		// Arrange
-		Guid accountId1 = Guid.NewGuid();
-		Guid accountId2 = Guid.NewGuid();
+		Guid cardId1 = Guid.NewGuid();
+		Guid cardId2 = Guid.NewGuid();
 
 		List<UpdateTransactionRequest> controllerInput = TransactionDtoGenerator.GenerateUpdateRequestList(4);
-		controllerInput[0].AccountId = accountId1;
-		controllerInput[1].AccountId = accountId1;
-		controllerInput[2].AccountId = accountId2;
-		controllerInput[3].AccountId = accountId2;
+		controllerInput[0].CardId = cardId1;
+		controllerInput[1].CardId = cardId1;
+		controllerInput[2].CardId = cardId2;
+		controllerInput[3].CardId = cardId2;
 
 		_mediatorMock.Setup(m => m.Send(
 			It.Is<UpdateTransactionCommand>(c => c.Transactions.Count == 4),
@@ -550,7 +550,7 @@ public class TransactionsControllerTests
 	{
 		// Arrange
 		List<UpdateTransactionRequest> controllerInput = TransactionDtoGenerator.GenerateUpdateRequestList(2);
-		controllerInput.ForEach(m => m.AccountId = controllerInput[0].AccountId);
+		controllerInput.ForEach(m => m.CardId = controllerInput[0].CardId);
 
 		_mediatorMock.Setup(m => m.Send(
 			It.Is<UpdateTransactionCommand>(c => c.Transactions.Count == controllerInput.Count),
@@ -569,7 +569,7 @@ public class TransactionsControllerTests
 	{
 		// Arrange
 		List<UpdateTransactionRequest> controllerInput = TransactionDtoGenerator.GenerateUpdateRequestList(2);
-		controllerInput.ForEach(m => m.AccountId = controllerInput[0].AccountId);
+		controllerInput.ForEach(m => m.CardId = controllerInput[0].CardId);
 
 		_mediatorMock.Setup(m => m.Send(
 			It.Is<UpdateTransactionCommand>(c => c.Transactions.Count == controllerInput.Count),

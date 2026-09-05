@@ -119,7 +119,7 @@ public class BackupRoundTripFidelityTests : IDisposable
 				{
 					Id = txId,
 					ReceiptId = receiptId,
-					AccountId = accountId,
+
 					CardId = accountId,
 					Amount = 99.99m,
 					AmountCurrency = Currency.USD,
@@ -196,7 +196,7 @@ public class BackupRoundTripFidelityTests : IDisposable
 			{
 				Id = txId,
 				ReceiptId = receiptId,
-				AccountId = accountId,
+
 				CardId = accountId,
 				Amount = 10m,
 				AmountCurrency = Currency.USD,

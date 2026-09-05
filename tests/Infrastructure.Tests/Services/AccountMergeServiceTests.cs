@@ -68,7 +68,7 @@ public class AccountMergeServiceTests : IDisposable
 
 		CardEntity loneCard = CardEntityGenerator.Generate();
 		loneCard.AccountId = source.Id;
-		TransactionEntity tx = TransactionEntityGenerator.Generate(accountId: source.Id);
+		TransactionEntity tx = TransactionEntityGenerator.Generate(cardId: loneCard.Id);
 
 		using (ApplicationDbContext seed = CreateContext())
 		{
@@ -199,14 +199,16 @@ public class AccountMergeServiceTests : IDisposable
 		CardEntity cardOnSource2 = CardEntityGenerator.Generate();
 		cardOnSource2.AccountId = source2.Id;
 
-		TransactionEntity txOnSource1 = TransactionEntityGenerator.Generate(accountId: source1.Id);
-		TransactionEntity txOnSource2 = TransactionEntityGenerator.Generate(accountId: source2.Id);
-		TransactionEntity txOnTarget = TransactionEntityGenerator.Generate(accountId: target.Id);
+		TransactionEntity txOnSource1 = TransactionEntityGenerator.Generate(cardId: cardOnSource1.Id);
+		TransactionEntity txOnSource2 = TransactionEntityGenerator.Generate(cardId: cardOnSource2.Id);
+		CardEntity cardOnTarget = CardEntityGenerator.Generate();
+		cardOnTarget.AccountId = target.Id;
+		TransactionEntity txOnTarget = TransactionEntityGenerator.Generate(cardId: cardOnTarget.Id);
 
 		using (ApplicationDbContext seed = CreateContext())
 		{
 			seed.Accounts.AddRange(target, source1, source2);
-			seed.Cards.AddRange(cardOnSource1, cardOnSource2);
+			seed.Cards.AddRange(cardOnSource1, cardOnSource2, cardOnTarget);
 			seed.Transactions.AddRange(txOnSource1, txOnSource2, txOnTarget);
 			await seed.SaveChangesAsync();
 		}
@@ -217,7 +219,7 @@ public class AccountMergeServiceTests : IDisposable
 			int preCount = await preAssert.Transactions.IgnoreQueryFilters().CountAsync();
 			int preAccountCount = await preAssert.Accounts.CountAsync();
 			int preCardCount = await preAssert.Cards.CountAsync();
-			(preCount, preAccountCount, preCardCount).Should().Be((3, 3, 2), "initial seed state");
+			(preCount, preAccountCount, preCardCount).Should().Be((3, 3, 3), "initial seed state");
 		}
 
 		MergeCardsResult result = await _service.MergeCardsAsync(
@@ -240,9 +242,9 @@ public class AccountMergeServiceTests : IDisposable
 		// IgnoreAutoIncludes avoids the InMemory provider filtering out rows whose
 		// auto-included Receipt does not exist in the seed data.
 		List<TransactionEntity> transactions = await assert.Transactions
-			.IgnoreAutoIncludes().AsNoTracking().ToListAsync();
+			.IgnoreAutoIncludes().Include(t => t.Card).AsNoTracking().ToListAsync();
 		transactions.Should().HaveCount(3);
-		transactions.Should().OnlyContain(t => t.AccountId == target.Id);
+		transactions.Should().OnlyContain(t => t.Card!.AccountId == target.Id);
 
 		List<AccountEntity> remainingAccounts = await assert.Accounts.AsNoTracking().ToListAsync();
 		remainingAccounts.Select(a => a.Id).Should().BeEquivalentTo([target.Id]);
@@ -270,8 +272,8 @@ public class AccountMergeServiceTests : IDisposable
 		CardEntity cardOnTarget = CardEntityGenerator.Generate();
 		cardOnTarget.AccountId = target.Id;
 
-		TransactionEntity activeTx = TransactionEntityGenerator.Generate(accountId: source.Id);
-		TransactionEntity softDeletedTx = TransactionEntityGenerator.Generate(accountId: source.Id);
+		TransactionEntity activeTx = TransactionEntityGenerator.Generate(cardId: cardOnSource.Id);
+		TransactionEntity softDeletedTx = TransactionEntityGenerator.Generate(cardId: cardOnSource.Id);
 		softDeletedTx.DeletedAt = DateTimeOffset.UtcNow;
 
 		using (ApplicationDbContext seed = CreateContext())
@@ -301,12 +303,13 @@ public class AccountMergeServiceTests : IDisposable
 		List<TransactionEntity> allTransactions = await assert.Transactions
 			.IgnoreQueryFilters()
 			.IgnoreAutoIncludes()
+			.Include(t => t.Card)
 			.AsNoTracking()
 			.ToListAsync();
 
 		// Nothing was lost: both transactions still exist and both now belong to the target.
 		allTransactions.Should().HaveCount(2);
-		allTransactions.Should().OnlyContain(t => t.AccountId == target.Id);
+		allTransactions.Should().OnlyContain(t => t.Card!.AccountId == target.Id);
 
 		// The soft-deleted transaction is still soft-deleted — merely repointed, not resurrected.
 		allTransactions.Single(t => t.Id == softDeletedTx.Id).DeletedAt.Should().NotBeNull();
@@ -522,8 +525,8 @@ public class AccountMergeServiceTests : IDisposable
 		card1.AccountId = source1.Id;
 		card2.AccountId = source2.Id;
 
-		List<TransactionEntity> source1Txns = TransactionEntityGenerator.GenerateList(2, accountId: source1.Id);
-		List<TransactionEntity> source2Txns = TransactionEntityGenerator.GenerateList(3, accountId: source2.Id);
+		List<TransactionEntity> source1Txns = TransactionEntityGenerator.GenerateList(2, cardId: card1.Id);
+		List<TransactionEntity> source2Txns = TransactionEntityGenerator.GenerateList(3, cardId: card2.Id);
 
 		using (ApplicationDbContext seed = CreateContext())
 		{
@@ -631,10 +634,10 @@ public class AccountMergeServiceTests : IDisposable
 		CardEntity cardOnTarget = CardEntityGenerator.Generate();
 		cardOnTarget.AccountId = target.Id;
 
-		TransactionEntity liveTx = TransactionEntityGenerator.Generate(accountId: source.Id);
-		TransactionEntity trashedTx = TransactionEntityGenerator.Generate(accountId: source.Id);
+		TransactionEntity liveTx = TransactionEntityGenerator.Generate(cardId: cardOnSource.Id);
+		TransactionEntity trashedTx = TransactionEntityGenerator.Generate(cardId: cardOnSource.Id);
 		trashedTx.DeletedAt = DateTimeOffset.UtcNow;
-		TransactionEntity txOnTarget = TransactionEntityGenerator.Generate(accountId: target.Id);
+		TransactionEntity txOnTarget = TransactionEntityGenerator.Generate(cardId: cardOnTarget.Id);
 
 		using (ApplicationDbContext seed = CreateContext())
 		{
@@ -668,7 +671,7 @@ public class AccountMergeServiceTests : IDisposable
 		(await assert.Cards.AsNoTracking().SingleAsync(c => c.Id == cardOnSource.Id))
 			.AccountId.Should().Be(source.Id);
 		(await assert.Transactions.IgnoreQueryFilters().IgnoreAutoIncludes().AsNoTracking()
-			.CountAsync(t => t.AccountId == source.Id)).Should().Be(2);
+			.CountAsync(t => t.Card!.AccountId == source.Id)).Should().Be(2);
 		(await assert.AuditLogs.AsNoTracking().CountAsync(a => a.Action == AuditAction.Merge))
 			.Should().Be(0);
 	}
@@ -801,7 +804,7 @@ public class AccountMergeServiceTests : IDisposable
 		CardEntity card2 = CardEntityGenerator.Generate();
 		card1.AccountId = source1.Id;
 		card2.AccountId = source2.Id;
-		TransactionEntity tx = TransactionEntityGenerator.Generate(accountId: source1.Id);
+		TransactionEntity tx = TransactionEntityGenerator.Generate(cardId: card1.Id);
 
 		using (ApplicationDbContext seed = CreateContext())
 		{

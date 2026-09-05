@@ -251,7 +251,6 @@ export default function NewReceiptPage() {
         },
         transactions: transactions.map((txn) => ({
           cardId: txn.cardId,
-          accountId: txn.accountId,
           amount: txn.amount,
           date: txn.date,
         })),
