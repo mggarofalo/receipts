@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { renderWithProviders } from "@/test/test-utils";
+import { renderWithQueryClient } from "@/test/test-utils";
 import "@/test/setup-combobox-polyfills";
 import { ReceiptTransactionForm } from "./ReceiptTransactionForm";
 
@@ -17,6 +17,14 @@ vi.mock("@/hooks/useAccounts", () => ({
     ],
     isLoading: false,
   })),
+  useAccountCards: vi.fn((accountId: string | null) => ({
+    data: [
+      { id: "card-1", name: "Visa 4321", cardCode: "V4321", isActive: true, accountId: "acct-1" },
+      { id: "card-2", name: "Amex 7777", cardCode: "A7777", isActive: true, accountId: "acct-2" },
+    ].filter(card => card.accountId === accountId),
+    isLoading: false,
+    isError: false,
+  })),
 }));
 
 vi.mock("@/hooks/useCards", () => ({
@@ -31,7 +39,7 @@ vi.mock("@/hooks/useCards", () => ({
 
 describe("ReceiptTransactionForm", () => {
   it("renders the Card, Account, Amount, and Date fields", () => {
-    renderWithProviders(
+    renderWithQueryClient(
       <ReceiptTransactionForm
         mode="create"
         onSubmit={vi.fn()}
@@ -47,7 +55,7 @@ describe("ReceiptTransactionForm", () => {
   it("blocks submit when Card is empty", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
-    renderWithProviders(
+    renderWithQueryClient(
       <ReceiptTransactionForm
         mode="create"
         onSubmit={onSubmit}
@@ -61,10 +69,10 @@ describe("ReceiptTransactionForm", () => {
     expect(await screen.findByText("Card is required")).toBeInTheDocument();
   });
 
-  it("auto-fills Account when a Card with a parent account is selected", async () => {
+  it("submits a card selected within its account", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
-    renderWithProviders(
+    renderWithQueryClient(
       <ReceiptTransactionForm
         mode="create"
         onSubmit={onSubmit}
@@ -73,8 +81,9 @@ describe("ReceiptTransactionForm", () => {
       />,
     );
 
-    const [cardCombobox] = screen.getAllByRole("combobox");
-    await user.click(cardCombobox);
+    await user.click(screen.getByRole("combobox", { name: /^Account/ }));
+    await user.click(await screen.findByText("Checking"));
+    await user.click(screen.getByRole("combobox", { name: /^Card/ }));
     await user.click(await screen.findByText("Visa 4321"));
 
     await user.click(screen.getByRole("button", { name: /add transaction/i }));
@@ -89,10 +98,10 @@ describe("ReceiptTransactionForm", () => {
     );
   });
 
-  it("allows saving in edit mode when the Card field is empty (legacy rows)", async () => {
+  it("requires a card when editing as well as creating", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
-    renderWithProviders(
+    renderWithQueryClient(
       <ReceiptTransactionForm
         mode="edit"
         onSubmit={onSubmit}
@@ -103,18 +112,14 @@ describe("ReceiptTransactionForm", () => {
 
     await user.click(screen.getByRole("button", { name: /update transaction/i }));
 
-    expect(onSubmit.mock.calls[0][0]).toEqual(
-      expect.objectContaining({
-        cardId: "",
-        accountId: "acct-1",
-      }),
-    );
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(await screen.findByText("Card is required")).toBeInTheDocument();
   });
 
-  it("leaves Account alone when the selected Card has no parent account", async () => {
+  it("selects a card scoped to the existing account", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
-    renderWithProviders(
+    renderWithQueryClient(
       <ReceiptTransactionForm
         mode="create"
         onSubmit={onSubmit}
@@ -123,7 +128,7 @@ describe("ReceiptTransactionForm", () => {
       />,
     );
 
-    const [cardCombobox] = screen.getAllByRole("combobox");
+    const cardCombobox = screen.getByRole("combobox", { name: /^Card/ });
     await user.click(cardCombobox);
     await user.click(await screen.findByText("Amex 7777"));
 
@@ -138,7 +143,7 @@ describe("ReceiptTransactionForm", () => {
   });
 
   it("routes server errors through FormMessage so they have role=alert and are field-associated", async () => {
-    renderWithProviders(
+    renderWithQueryClient(
       <ReceiptTransactionForm
         mode="create"
         onSubmit={vi.fn()}
@@ -147,13 +152,11 @@ describe("ReceiptTransactionForm", () => {
       />,
     );
 
-    // The error element must have role="alert" (set by FormMessage per RECEIPTS-686)
-    // and carry data-slot="form-message", meaning it went through FormMessage
-    // (not a bare <p className="text-destructive">).
+    // Server errors remain announced and associated with their input.
     await waitFor(() => {
       const errorEl = screen.getByText("Server-side card error");
       expect(errorEl).toHaveAttribute("role", "alert");
-      expect(errorEl).toHaveAttribute("data-slot", "form-message");
+      expect(screen.getByRole("combobox", { name: /^Card/ })).toHaveAttribute("aria-describedby", expect.stringContaining(errorEl.id));
     });
   });
 });

@@ -13,6 +13,14 @@ vi.mock("@/hooks/useAccounts", () => ({
     ],
     isLoading: false,
   })),
+  useAccountCards: vi.fn((accountId: string | null) => ({
+    data: [
+      { id: "card-1", name: "Visa 4321", cardCode: "V4321", isActive: true, accountId: "acc-1" },
+      { id: "card-2", name: "Amex 7777", cardCode: "A7777", isActive: true, accountId: "acc-2" },
+    ].filter(card => card.accountId === accountId),
+    isLoading: false,
+    isError: false,
+  })),
 }));
 
 vi.mock("@/hooks/useCards", () => ({

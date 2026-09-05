@@ -1,22 +1,17 @@
-import {
-  useMemo,
-  useCallback,
-  useRef,
-  useEffect,
-} from "react";
+import { useMemo, useCallback, useRef, useEffect } from "react";
 import { generateId } from "@/lib/id";
-import { useForm } from "react-hook-form";
+import { useForm, useController } from "react-hook-form";
 import { z } from "zod/v4";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useFormShortcuts } from "@/hooks/useFormShortcuts";
-import { useAllAccounts } from "@/hooks/useAccounts";
-import { useAllCards } from "@/hooks/useCards";
-import { accountToOption, cardToOption } from "@/lib/combobox-options";
+import { useAllAccounts, useAccountCards } from "@/hooks/useAccounts";
+import { accountToOption } from "@/lib/combobox-options";
 import { formatCurrency } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DateInput } from "@/components/ui/date-input";
-import { Combobox } from "@/components/ui/combobox";
+import { AccountCardSelector } from "@/components/AccountCardSelector";
+import { useAccountCardSelection } from "@/hooks/useAccountCardSelection";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import {
   Form,
@@ -67,19 +62,13 @@ export function TransactionsSection({
   const formRef = useRef<HTMLFormElement>(null);
   const sectionRef = useRef<HTMLDivElement>(null);
   const focusScopeActiveRef = useRef(false);
-  const cardRef = useRef<HTMLButtonElement>(null);
-  const { data: accounts } = useAllAccounts(true);
-  const { data: cards } = useAllCards(true);
+  const accountRef = useRef<HTMLButtonElement>(null);
+  const { data: accounts } = useAllAccounts();
   useFormShortcuts({ formRef });
 
   const accountOptions = useMemo(
     () => (accounts ?? []).map(accountToOption),
     [accounts],
-  );
-
-  const cardOptions = useMemo(
-    () => (cards ?? []).map(cardToOption),
-    [cards],
   );
 
   const accountNameMap = useMemo(() => {
@@ -89,18 +78,6 @@ export function TransactionsSection({
     }
     return map;
   }, [accountOptions]);
-
-  const cardNameMap = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const c of cards ?? []) map.set(c.id, c.name);
-    return map;
-  }, [cards]);
-
-  const cardById = useMemo(() => {
-    const map = new Map<string, { id: string; accountId?: string | null }>();
-    for (const c of cards ?? []) map.set(c.id, c);
-    return map;
-  }, [cards]);
 
   const form = useForm<TxnFormValues>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -113,13 +90,11 @@ export function TransactionsSection({
     },
   });
 
-  function handleCardChange(value: string) {
-    form.setValue("cardId", value, { shouldValidate: true });
-    const card = cardById.get(value);
-    if (card?.accountId) {
-      form.setValue("accountId", card.accountId, { shouldValidate: true });
-    }
-  }
+  const account = useController({ control: form.control, name: "accountId" });
+  const card = useController({ control: form.control, name: "cardId" });
+  const selection = useAccountCardSelection({ accountId: account.field.value, cardId: card.field.value });
+  const validateSelection = selection.validate;
+
 
   // Sync the date field when the receipt date changes and the field is empty
   const prevDefaultDateRef = useRef(defaultDate);
@@ -141,6 +116,11 @@ export function TransactionsSection({
 
   const handleAdd = useCallback(
     (values: TxnFormValues) => {
+      const message = validateSelection(values);
+      if (message) {
+        form.setError("cardId", { type: "validate", message });
+        return;
+      }
       const newTxn: ReceiptTransaction = {
         id: generateId(),
         ...values,
@@ -149,14 +129,14 @@ export function TransactionsSection({
       (document.activeElement as HTMLElement)?.blur?.();
       form.reset({ cardId: "", accountId: "", amount: 0, date: defaultDate });
     },
-    [form, defaultDate, transactions, onChange],
+    [form, defaultDate, transactions, onChange, validateSelection],
   );
 
-  // Focus card field after adding a transaction for rapid entry
+  // Focus account field after adding a transaction for rapid entry
   const prevCountRef = useRef(transactions.length);
   useEffect(() => {
     if (transactions.length > prevCountRef.current) {
-      cardRef.current?.focus();
+      accountRef.current?.focus();
     }
     prevCountRef.current = transactions.length;
   }, [transactions.length]);
@@ -239,49 +219,27 @@ export function TransactionsSection({
             onSubmit={form.handleSubmit(handleAdd)}
             className="flex flex-wrap items-end gap-4"
           >
-            <FormField
-              control={form.control}
-              name="cardId"
-              render={({ field }) => (
-                <FormItem className="min-w-[160px] flex-1">
-                  <FormLabel required>Card</FormLabel>
-                  <FormControl>
-                    <Combobox
-                      ref={cardRef}
-                      options={cardOptions}
-                      value={field.value}
-                      onValueChange={handleCardChange}
-                      placeholder="Select card..."
-                      searchPlaceholder="Search cards..."
-                      emptyMessage="No cards found."
-                      aria-required="true"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="accountId"
-              render={({ field }) => (
-                <FormItem className="min-w-[160px] flex-1">
-                  <FormLabel required>Account</FormLabel>
-                  <FormControl>
-                    <Combobox
-                      options={accountOptions}
-                      value={field.value}
-                      onValueChange={field.onChange}
-                      placeholder="Select account..."
-                      searchPlaceholder="Search accounts..."
-                      emptyMessage="No accounts found."
-                      aria-required="true"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
+            <AccountCardSelector
+              selection={selection}
+              onChange={(value) => {
+                account.field.onChange(value.accountId);
+                card.field.onChange(value.cardId);
+                form.clearErrors("cardId");
+              }}
+              accountInput={{
+                ref: (element) => {
+                  account.field.ref(element);
+                  accountRef.current = element;
+                },
+                onBlur: account.field.onBlur,
+                error: account.fieldState.error?.message,
+              }}
+              cardInput={{
+                ref: card.field.ref,
+                onBlur: card.field.onBlur,
+                error: card.fieldState.error?.message,
+              }}
+              fieldClassName="min-w-[160px] flex-1"
             />
 
             <FormField
@@ -312,7 +270,12 @@ export function TransactionsSection({
               )}
             />
 
-            <Button type="submit" variant="secondary" size="sm" className="mb-0.5 shrink-0">
+            <Button
+              type="submit"
+              variant="secondary"
+              size="sm"
+              className="mb-0.5 shrink-0"
+            >
               <Plus className="mr-1 h-4 w-4" />
               Add
             </Button>
@@ -336,7 +299,10 @@ export function TransactionsSection({
               {transactions.map((txn) => (
                 <TableRow key={txn.id}>
                   <TableCell>
-                    {cardNameMap.get(txn.cardId) ?? ""}
+                    <TransactionCardName
+                      accountId={txn.accountId}
+                      cardId={txn.cardId}
+                    />
                   </TableCell>
                   <TableCell>
                     {accountNameMap.get(txn.accountId) ?? txn.accountId}
@@ -361,4 +327,15 @@ export function TransactionsSection({
       </CardContent>
     </Card>
   );
+}
+
+function TransactionCardName({
+  accountId,
+  cardId,
+}: {
+  accountId: string;
+  cardId: string;
+}) {
+  const { data: cards } = useAccountCards(accountId);
+  return cards?.find((card) => card.id === cardId)?.name ?? cardId;
 }
