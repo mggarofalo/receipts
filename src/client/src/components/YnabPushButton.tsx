@@ -11,12 +11,14 @@ interface YnabPushButtonProps {
   receiptId: string;
   hasTransactions: boolean;
   persistedSyncStatus?: ReceiptYnabSyncStatusValue;
+  syncStatusUnavailable?: boolean;
 }
 
 export function YnabPushButton({
   receiptId,
   hasTransactions,
   persistedSyncStatus,
+  syncStatusUnavailable = false,
 }: YnabPushButtonProps) {
   const pushMutation = usePushYnabTransactions();
 
@@ -46,7 +48,7 @@ export function YnabPushButton({
           variant="outline"
           size="sm"
           onClick={handlePush}
-          disabled={pushMutation.isPending || isSynced || !hasTransactions}
+          disabled={pushMutation.isPending || isSynced || !hasTransactions || syncStatusUnavailable}
         >
           {pushMutation.isPending ? (
             <>
@@ -62,7 +64,9 @@ export function YnabPushButton({
           )}
         </Button>
 
-        <YnabSyncBadge status={effectiveStatus} />
+        {syncStatusUnavailable && !mutationSucceeded ? (
+          <span className="text-sm text-muted-foreground">Sync status unavailable</span>
+        ) : <YnabSyncBadge status={effectiveStatus} />}
       </div>
 
       {/* aria-live region so screen readers announce push outcomes */}

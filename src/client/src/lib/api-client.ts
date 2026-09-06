@@ -14,6 +14,7 @@ import {
   notifyServerError,
   setLoginFlash,
 } from "@/lib/server-error-bus";
+import { getRequestErrorPresentation } from "@/lib/request-error-policy";
 import { toApiError } from "@/lib/problem-details";
 
 import { apiBaseUrl, apiUrl, API_TIMEOUT_MS } from "@/lib/api-config";
@@ -137,6 +138,7 @@ const serverErrorMiddleware: Middleware = {
     // cleanup. Its response must not publish errors into a later session.
     if (
       requestSessions.get(request) === getSessionVersion() &&
+      getRequestErrorPresentation(request) === "global" &&
       response.status >= 500 && response.status < 600
     ) {
       notifyServerError(response.status);

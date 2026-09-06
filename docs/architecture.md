@@ -268,3 +268,5 @@ Category suggestions and their historical receipt-label contracts are documented
 Client mutation and remote-event projection ownership is described in [Query invalidation](query-invalidation.md).
 
 Connection startup, catch-up and shared HTTP/hub token refresh are described in [Realtime recovery](realtime-recovery.md).
+
+Request and cache error presentation ownership is described in [Request errors](request-errors.md).

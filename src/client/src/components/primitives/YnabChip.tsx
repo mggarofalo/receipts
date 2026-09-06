@@ -1,7 +1,7 @@
 import { forwardRef, type ComponentPropsWithoutRef } from "react";
 import { cn } from "@/lib/utils";
 
-export type YnabStatus = "synced" | "pending" | "error" | "none";
+export type YnabStatus = "synced" | "pending" | "error" | "none" | "loading" | "unavailable";
 
 const STATUS: Record<
   YnabStatus,
@@ -10,6 +10,8 @@ const STATUS: Record<
   synced: { label: "YNAB", chip: "chip pos", ariaLabel: "YNAB: synced" },
   pending: { label: "Pending", chip: "chip warn", ariaLabel: "YNAB: pending" },
   error: { label: "Error", chip: "chip neg", ariaLabel: "YNAB: error" },
+  loading: { label: "Checking YNAB", chip: "chip", ariaLabel: "YNAB: checking sync status" },
+  unavailable: { label: "YNAB unavailable", chip: "chip warn", ariaLabel: "YNAB: sync status unavailable" },
   none: { label: "", chip: "", ariaLabel: "" },
 };
 

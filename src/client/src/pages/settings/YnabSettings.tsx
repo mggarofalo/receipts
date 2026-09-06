@@ -1,3 +1,4 @@
+import { RequestFailure } from "@/components/RequestFailure";
 import { useMemo } from "react";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { useAllAccounts } from "@/hooks/useAccounts";
@@ -69,10 +70,13 @@ export default function YnabSettings() {
     isConnected,
     lastSuccessfulSyncUtc,
     isLoading: connectionLoading,
+    isError: connectionError,
+    refetch: retryConnection,
+    isFetching: connectionFetching,
   } = useYnabConnectionStatus();
 
   const { budgets, isLoading: budgetsLoading, isError: budgetsError } = useYnabBudgets();
-  const { selectedBudgetId, isLoading: settingsLoading } = useSelectedYnabBudget();
+  const { selectedBudgetId, isLoading: settingsLoading, isError: settingsError, refetch: retrySettings, isFetching: settingsFetching } = useSelectedYnabBudget();
   const selectBudget = useSelectYnabBudget();
 
   // Only fetch YNAB data when configured (budgets query succeeded)
@@ -135,6 +139,7 @@ export default function YnabSettings() {
   );
 
   function handleBudgetChange(budgetId: string) {
+    if (settingsError || selectBudget.isPending) return;
     selectBudget.mutate(budgetId);
   }
 
@@ -219,7 +224,11 @@ export default function YnabSettings() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {connectionLoading ? (
+          {connectionError ? <RequestFailure
+            message="YNAB connection status is unavailable."
+            retry={() => { void retryConnection(); }}
+            isRetrying={connectionFetching}
+          /> : connectionLoading ? (
             <div className="flex items-center gap-2">
               <Spinner className="h-4 w-4" />
               <span className="text-sm text-muted-foreground">Checking connection...</span>
@@ -295,6 +304,11 @@ export default function YnabSettings() {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {settingsError && <RequestFailure
+            message="The selected YNAB budget is unavailable. Any selection shown is last known."
+            retry={() => { void retrySettings(); }}
+            isRetrying={settingsFetching}
+          />}
           {isLoading ? (
             <div className="flex items-center gap-2">
               <Spinner className="h-4 w-4" />
@@ -304,14 +318,14 @@ export default function YnabSettings() {
             <Select
               value={selectedBudgetId ?? ""}
               onValueChange={handleBudgetChange}
-              disabled={selectBudget.isPending}
+              disabled={selectBudget.isPending || settingsError}
             >
               <SelectTrigger className="w-full max-w-sm">
                 <SelectValue placeholder="Select a budget" />
               </SelectTrigger>
               <SelectContent>
                 {budgets.map((budget) => (
-                  <SelectItem key={budget.id} value={budget.id}>
+                  <SelectItem key={budget.id} value={budget.id} disabled={settingsError || selectBudget.isPending}>
                     {budget.name}
                   </SelectItem>
                 ))}
@@ -334,6 +348,8 @@ export default function YnabSettings() {
               <Spinner className="h-4 w-4" />
               <span className="text-sm text-muted-foreground">Loading accounts...</span>
             </div>
+          ) : settingsError ? (
+            <p className="text-sm text-muted-foreground">Retry the selected budget above before changing mappings.</p>
           ) : !selectedBudgetId ? (
             <p className="text-sm text-muted-foreground">
               Select a budget above to map accounts.
@@ -420,6 +436,8 @@ export default function YnabSettings() {
                 Loading categories...
               </span>
             </div>
+          ) : settingsError ? (
+            <p className="text-sm text-muted-foreground">Retry the selected budget above before changing mappings.</p>
           ) : !selectedBudgetId ? (
             <p className="text-sm text-muted-foreground">
               Select a budget above to map categories.

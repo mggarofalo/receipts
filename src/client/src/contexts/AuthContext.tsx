@@ -17,6 +17,7 @@ import {
 import type { JwtPayload } from "@/lib/auth";
 import { AuthContext } from "@/contexts/auth-context";
 import { createAppQueryClient } from "@/lib/query-client";
+import { localErrorPolicy } from "@/lib/request-error-policy";
 import { clearServerErrorPageFlag } from "@/lib/server-error-bus";
 import { clearBufferedToasts } from "@/lib/signalr-toast-buffer";
 
@@ -96,7 +97,7 @@ export function AuthProvider({ children, queryClientFactory = createAppQueryClie
     await pendingLogout.current;
     assertSessionCurrent(version);
     if (operation !== authOperation.current) throw new DOMException("Login superseded", "AbortError");
-    const { data, error } = await client.POST("/api/auth/login", { body: { email, password } });
+    const { data, error } = await client.POST("/api/auth/login", { ...localErrorPolicy.request, body: { email, password } });
     assertSessionCurrent(version);
     if (operation !== authOperation.current) throw new DOMException("Login superseded", "AbortError");
     if (error) throw error;

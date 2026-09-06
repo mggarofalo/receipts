@@ -86,10 +86,12 @@ vi.mock("@/hooks/useYnab", () => ({
     isConfigured: true,
     isConnected: true,
     isLoading: false,
+    isError: false,
   })),
   useSelectedYnabBudget: vi.fn(() => ({
     selectedBudgetId: "budget-1",
     isLoading: false,
+    isError: false,
   })),
 }));
 
@@ -156,6 +158,7 @@ describe("ReceiptDetail", () => {
       isConfigured: true,
       isConnected: true,
       isLoading: false,
+      isError: false,
     } as ReturnType<typeof useYnabConnectionStatus>);
     vi.mocked(useReceiptYnabSyncStatuses).mockReturnValue({
       statusMap: new Map(),
@@ -164,6 +167,7 @@ describe("ReceiptDetail", () => {
     vi.mocked(useSelectedYnabBudget).mockReturnValue({
       selectedBudgetId: "budget-1",
       isLoading: false,
+      isError: false,
     } as ReturnType<typeof useSelectedYnabBudget>);
   });
 
@@ -233,6 +237,7 @@ describe("ReceiptDetail", () => {
         data: undefined,
         isLoading: false,
         isError: true,
+        error: { status: 404, detail: "Receipt not found" },
       }),
     );
 
@@ -394,6 +399,8 @@ describe("ReceiptDetail", () => {
       receiptId: "r1",
       hasTransactions: false,
       isAvailable: true,
+      isUnavailable: false,
+      syncStatusUnavailable: false,
       persistedSyncStatus: undefined,
     });
   });

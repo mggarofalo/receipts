@@ -1,3 +1,4 @@
+import { RequestFailure } from "@/components/RequestFailure";
 import { sumAmounts } from "@/lib/receipt-arithmetic";
 import { Fragment, useState, useMemo, useEffect, useCallback } from "react";
 import { generateId } from "@/lib/id";
@@ -112,9 +113,13 @@ function syncStatusToChip(status: string | undefined | null): YnabStatus {
 function ReceiptInlineDetails({
   receipt,
   ynabStatus,
+  ynabUnavailable,
+  ynabLoading,
 }: {
   receipt: ReceiptListItem;
   ynabStatus: string | undefined;
+  ynabUnavailable: boolean;
+  ynabLoading: boolean;
 }) {
   const {
     data: trip,
@@ -189,7 +194,7 @@ function ReceiptInlineDetails({
       : receipt.balanceState === "outOfBalance"
         ? "Out of balance"
         : "Balanced";
-  const ynabChipStatus = syncStatusToChip(ynabStatus);
+  const ynabChipStatus = ynabUnavailable ? "unavailable" : ynabLoading ? "loading" : syncStatusToChip(ynabStatus);
   const equationAccessibleLabel = `${equationTerms
     .map((term) =>
       `${term.operator === "−" ? "minus " : term.operator === "+" ? "plus " : ""}${term.label} ${formatCurrency(term.amount)}`,
@@ -259,7 +264,7 @@ function ReceiptInlineDetails({
             {receipt.categorySummary || "Uncategorized"}
           </strong>
           <div className="receipt-inline-pills">
-            <YnabChip status={ynabChipStatus} />
+            <YnabChip status={ynabChipStatus} title={ynabUnavailable && ynabStatus ? `Last known: ${ynabStatus}` : undefined} />
             <span className="sr-only">
               YNAB: {ynabChipStatus === "none" ? "not synced" : ynabChipStatus}
             </span>
@@ -365,7 +370,7 @@ function Receipts() {
   );
 
   const receiptIds = useMemo(() => data.map((r) => r.id), [data]);
-  const { statusMap: syncStatusMap } = useReceiptYnabSyncStatuses(receiptIds);
+  const { statusMap: syncStatusMap, isError: syncStatusError, isLoading: syncStatusLoading, refetch: retrySyncStatuses, isFetching: syncStatusFetching } = useReceiptYnabSyncStatuses(receiptIds);
 
   const {
     filters: savedFilters,
@@ -464,6 +469,11 @@ function Receipts() {
           </>
         }
       />
+      {syncStatusError && <RequestFailure
+        message="YNAB sync status is unavailable. Any displayed status is last known."
+        retry={() => { void retrySyncStatuses(); }}
+        isRetrying={syncStatusFetching}
+      />}
 
       <div className="filter-strip">
         <div style={{ flex: 1, minWidth: 240 }}>
@@ -804,9 +814,8 @@ function Receipts() {
                                   : "Balanced"}
                             </span>
                             <YnabChip
-                              status={syncStatusToChip(
-                                syncStatusMap.get(receipt.id),
-                              )}
+                              status={syncStatusError ? "unavailable" : syncStatusLoading ? "loading" : syncStatusToChip(syncStatusMap.get(receipt.id))}
+                              title={syncStatusError && syncStatusMap.get(receipt.id) ? `Last known: ${syncStatusMap.get(receipt.id)}` : undefined}
                             />
                           </div>
                         </td>
@@ -839,6 +848,8 @@ function Receipts() {
                             <ReceiptInlineDetails
                               receipt={receipt}
                               ynabStatus={syncStatusMap.get(receipt.id)}
+                              ynabUnavailable={syncStatusError}
+                              ynabLoading={syncStatusLoading}
                             />
                           </td>
                         </tr>
