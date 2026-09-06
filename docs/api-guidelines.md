@@ -71,3 +71,7 @@ Template updates resolve canonical metadata asynchronously before their final au
 ## Template price precision
 
 Template default prices retain four decimal places and must fit the same storage range as receipt-item unit prices. Create/update validation rejects values at or above the upper limit, including values rounded to that limit by the existing JSON-number-to-decimal conversion. Null remains allowed. See [Unit-price precision](unit-price-precision.md) for input/display behavior, migration safeguards and legacy-backup handling.
+
+## Category deletion conflicts
+
+Category and subcategory deletion use historical name snapshots, including trash, to protect suggestions still in use. Subcategory usage is scoped to the current parent category name as well as the child name. Its typed 409 `ProblemDetails` includes an item count and a capped distinct receipt sample; `isDeleted` marks examples that cannot use the ordinary receipt detail route. See [Category snapshots](category-snapshots.md) for matching, diagnostic and concurrency limits.

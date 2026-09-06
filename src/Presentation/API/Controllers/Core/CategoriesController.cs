@@ -185,7 +185,7 @@ public class CategoriesController(IMediator mediator, CategoryMapper mapper, ILo
 
 	[HttpDelete(RouteDelete)]
 	[EndpointSummary("Soft-delete a category")]
-	[EndpointDescription("Soft-deletes a category and cascade soft-deletes its subcategories. Returns 409 Conflict if receipt items reference this category or any of its subcategories.")]
+	[EndpointDescription("Soft-deletes a category and cascade soft-deletes its subcategories. Returns 409 Conflict if receipt items, including trash, use the current category name. Historical category and subcategory labels are unchanged.")]
 	public async Task<Results<NoContent, NotFound, Conflict<ProblemDetails>>> DeleteCategory([FromRoute] Guid id, CancellationToken cancellationToken = default)
 	{
 		Category? category = await mediator.Send(new GetCategoryByIdQuery(id), cancellationToken);
@@ -202,16 +202,6 @@ public class CategoriesController(IMediator mediator, CategoryMapper mapper, ILo
 			return ApiProblem.Conflict(
 				$"Cannot delete — {receiptItemCount} receipt item(s) use this category",
 				new Dictionary<string, object?> { ["receiptItemCount"] = receiptItemCount });
-		}
-
-		List<string> subcategoryNames = await categoryService.GetSubcategoryNamesAsync(id, cancellationToken);
-		int subReceiptItemCount = await categoryService.GetReceiptItemCountBySubcategoryNamesAsync(subcategoryNames, cancellationToken);
-		if (subReceiptItemCount > 0)
-		{
-			logger.LogWarning("Category {Id} cannot be deleted — {Count} receipt items reference its subcategories", id, subReceiptItemCount);
-			return ApiProblem.Conflict(
-				$"Cannot delete — {subReceiptItemCount} receipt item(s) use subcategories of this category",
-				new Dictionary<string, object?> { ["receiptItemCount"] = subReceiptItemCount });
 		}
 
 		DeleteCategoryCommand command = new([id]);

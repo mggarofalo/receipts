@@ -195,25 +195,5 @@ public class CategoryRepository(IDbContextFactory<ApplicationDbContext> contextF
 			.CountAsync(ri => ri.Category == categoryName, cancellationToken);
 	}
 
-	public async Task<List<string>> GetSubcategoryNamesAsync(Guid categoryId, CancellationToken cancellationToken)
-	{
-		using ApplicationDbContext context = contextFactory.CreateDbContext();
-		return await context.Subcategories
-			.Where(s => s.CategoryId == categoryId)
-			.Select(s => s.Name)
-			.ToListAsync(cancellationToken);
-	}
 
-	public async Task<int> GetReceiptItemCountBySubcategoryNamesAsync(List<string> subcategoryNames, CancellationToken cancellationToken)
-	{
-		if (subcategoryNames.Count == 0)
-		{
-			return 0;
-		}
-
-		using ApplicationDbContext context = contextFactory.CreateDbContext();
-		return await context.ReceiptItems
-			.IgnoreQueryFilters()
-			.CountAsync(ri => ri.Subcategory != null && subcategoryNames.Contains(ri.Subcategory), cancellationToken);
-	}
 }

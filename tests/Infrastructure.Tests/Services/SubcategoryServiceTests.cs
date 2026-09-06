@@ -91,4 +91,14 @@ public class SubcategoryServiceTests
 		// Assert
 		actual.Should().BeFalse();
 	}
+	[Fact]
+	public async Task GetUsageAsync_ForwardsParentNameLimitAndCancellation_AndRetainsTrashDiagnostics()
+	{
+		Guid categoryId = Guid.NewGuid();
+		using CancellationTokenSource cancellation = new();
+		SubcategoryUsage expected = new(3, [new(Guid.NewGuid(), new DateOnly(2024, 1, 1), "Trashed receipt", true)]);
+		_mockRepository.Setup(repository => repository.GetUsageAsync(categoryId, "Shared", 20, cancellation.Token)).ReturnsAsync(expected);
+		(await _service.GetUsageAsync(categoryId, "Shared", 20, cancellation.Token)).Should().BeSameAs(expected);
+		_mockRepository.VerifyAll();
+	}
 }

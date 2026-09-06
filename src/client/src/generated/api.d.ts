@@ -228,7 +228,7 @@ export interface paths {
         post?: never;
         /**
          * Soft-delete a category
-         * @description Soft-deletes a category and cascade soft-deletes its subcategories. Returns 409 Conflict if receipt items reference this category or any of its subcategories.
+         * @description Soft-deletes a category and cascade soft-deletes its subcategories. Returns 409 Conflict if receipt items, including trash, use the current category name. Historical category and subcategory labels are unchanged.
          */
         delete: operations["DeleteCategory"];
         options?: never;
@@ -320,7 +320,7 @@ export interface paths {
         post?: never;
         /**
          * Soft-delete a subcategory
-         * @description Soft-deletes a subcategory. Returns 409 Conflict if receipt items reference this subcategory.
+         * @description Soft-deletes a subcategory. Returns 409 Conflict if receipt items, including trash, use its current parent category name and subcategory name. Historical labels are unchanged.
          */
         delete: operations["DeleteSubcategory"];
         options?: never;
@@ -5201,16 +5201,13 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Conflict — receipt items reference this category or its subcategories */
+            /** @description Conflict — receipt items use this category name. ProblemDetails includes receiptItemCount (matching items, including trash) as an extension. */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        message?: string;
-                        receiptItemCount?: number;
-                    };
+                    "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
         };
@@ -5481,23 +5478,13 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Conflict — receipt items reference this subcategory */
+            /** @description Conflict — receipt items use this category/subcategory name pair. ProblemDetails extensions include receiptItemCount (matching items, including trash) and affectedReceipts (up to 20 distinct matching receipts, including trash, ordered by date descending then ID ascending). Each receipt has id (UUID), date (ISO date), location (string), and isDeleted (boolean). Deleted receipts are not available at the ordinary receipt detail route. The sample length is not an item count. */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        message: string;
-                        receiptItemCount: number;
-                        affectedReceipts: {
-                            /** Format: uuid */
-                            id: string;
-                            /** Format: date */
-                            date: string;
-                            location: string;
-                        }[];
-                    };
+                    "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
         };

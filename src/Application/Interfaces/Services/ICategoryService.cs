@@ -10,6 +10,4 @@ public interface ICategoryService : ISoftDeletableService<Category>
 	Task UpdateAsync(List<Category> models, CancellationToken cancellationToken);
 	Task<int> GetSubcategoryCountAsync(Guid categoryId, CancellationToken cancellationToken);
 	Task<int> GetReceiptItemCountByCategoryNameAsync(string categoryName, CancellationToken cancellationToken);
-	Task<List<string>> GetSubcategoryNamesAsync(Guid categoryId, CancellationToken cancellationToken);
-	Task<int> GetReceiptItemCountBySubcategoryNamesAsync(List<string> subcategoryNames, CancellationToken cancellationToken);
 }

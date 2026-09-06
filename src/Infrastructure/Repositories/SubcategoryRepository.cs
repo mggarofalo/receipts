@@ -208,24 +208,30 @@ public class SubcategoryRepository(IDbContextFactory<ApplicationDbContext> conte
 		return conflict ? deleted.Name : null;
 	}
 
-	public async Task<int> GetReceiptItemCountBySubcategoryNameAsync(string subcategoryName, CancellationToken cancellationToken)
+	public async Task<SubcategoryUsage> GetUsageAsync(Guid categoryId, string subcategoryName, int receiptLimit, CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
-		return await context.ReceiptItems
+		// Resolve this parent by identity, even when hidden by soft deletion. Names on
+		// receipt items remain historical snapshots and are never rewritten here.
+		string categoryName = await context.Categories
 			.IgnoreQueryFilters()
-			.CountAsync(ri => ri.Subcategory == subcategoryName, cancellationToken);
-	}
+			.Where(category => category.Id == categoryId)
+			.Select(category => category.Name)
+			.SingleAsync(cancellationToken);
 
-	public async Task<List<(Guid ReceiptId, DateOnly Date, string Location)>> GetAffectedReceiptsBySubcategoryNameAsync(string subcategoryName, int limit, CancellationToken cancellationToken)
-	{
-		using ApplicationDbContext context = contextFactory.CreateDbContext();
-		return await context.ReceiptItems
-			.Where(ri => ri.Subcategory == subcategoryName)
-			.Select(ri => ri.Receipt!)
-			.Distinct()
-			.OrderByDescending(r => r.Date)
-			.Take(limit)
-			.Select(r => ValueTuple.Create(r.Id, r.Date, r.Location))
+		IQueryable<ReceiptItemEntity> matchingItems = context.ReceiptItems
+			.IgnoreQueryFilters()
+			.Where(item => item.Category == categoryName && item.Subcategory == subcategoryName);
+		int receiptItemCount = await matchingItems.CountAsync(cancellationToken);
+		List<SubcategoryAffectedReceipt> affectedReceipts = await context.Receipts
+			.IgnoreQueryFilters()
+			.Where(receipt => matchingItems.Any(item => item.ReceiptId == receipt.Id))
+			.OrderByDescending(receipt => receipt.Date)
+			.ThenBy(receipt => receipt.Id)
+			.Take(receiptLimit)
+			.Select(receipt => new SubcategoryAffectedReceipt(receipt.Id, receipt.Date, receipt.Location, receipt.DeletedAt != null))
 			.ToListAsync(cancellationToken);
+
+		return new SubcategoryUsage(receiptItemCount, affectedReceipts);
 	}
 }
