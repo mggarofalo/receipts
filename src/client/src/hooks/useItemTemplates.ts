@@ -1,3 +1,4 @@
+import { invalidateDomainChange, queryKeys } from "@/lib/query-invalidation";
 import { useMemo } from "react";
 import { useStableQuery } from "@/hooks/useStableQuery";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -11,7 +12,7 @@ export function useItemTemplates(offset = 0, limit = 50, sortBy?: string | null,
   // separate cache entry from the empty one (RECEIPTS-930).
   const search = q?.trim() || undefined;
   const query = useQuery({
-    queryKey: ["itemTemplates", "list", offset, limit, sortBy, sortDirection, search],
+    queryKey: [...queryKeys.itemTemplates, "list", offset, limit, sortBy, sortDirection, search],
     enabled,
     queryFn: async () => {
       const { data, error } = await client.GET("/api/item-templates", {
@@ -27,7 +28,7 @@ export function useItemTemplates(offset = 0, limit = 50, sortBy?: string | null,
 
 export function useItemTemplate(id: string | null) {
   return useQuery({
-    queryKey: ["itemTemplates", id],
+    queryKey: [...queryKeys.itemTemplates, id],
     enabled: !!id,
     queryFn: async () => {
       const { data, error } = await client.GET("/api/item-templates/{id}", {
@@ -57,7 +58,7 @@ export function useCreateItemTemplate() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["itemTemplates"] });
+      invalidateDomainChange(queryClient, "item-template", "created");
       toast.success("Item template created");
     },
   });
@@ -82,7 +83,7 @@ export function useUpdateItemTemplate() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["itemTemplates"] });
+      invalidateDomainChange(queryClient, "item-template");
       toast.success("Item template updated");
     },
   });
@@ -98,8 +99,8 @@ export function useDeleteItemTemplates() {
       if (error) throw error;
     },
     onMutate: async (ids) => {
-      await queryClient.cancelQueries({ queryKey: ["itemTemplates"] });
-      const previous = queryClient.getQueriesData<{ data: { id: string }[]; total: number }>({ queryKey: ["itemTemplates", "list"] });
+      await queryClient.cancelQueries({ queryKey: [...queryKeys.itemTemplates] });
+      const previous = queryClient.getQueriesData<{ data: { id: string }[]; total: number }>({ queryKey: [...queryKeys.itemTemplates, "list"] });
       for (const [key] of previous) {
         queryClient.setQueryData(key, (old: { data: { id: string }[]; total: number; offset: number; limit: number } | undefined) => {
           if (!old?.data) return old;
@@ -115,10 +116,7 @@ export function useDeleteItemTemplates() {
       }
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["itemTemplates"] });
-      queryClient.invalidateQueries({
-        queryKey: ["itemTemplates", "deleted"],
-      });
+      invalidateDomainChange(queryClient, "item-template");
     },
     onSuccess: () => {
       toast.success("Item template(s) deleted");
@@ -136,8 +134,8 @@ export function useHideItemTemplate() {
       if (error) throw error;
     },
     onMutate: async (id) => {
-      await queryClient.cancelQueries({ queryKey: ["itemTemplates"] });
-      const previous = queryClient.getQueriesData<{ data: { id: string }[]; total: number }>({ queryKey: ["itemTemplates", "list"] });
+      await queryClient.cancelQueries({ queryKey: [...queryKeys.itemTemplates] });
+      const previous = queryClient.getQueriesData<{ data: { id: string }[]; total: number }>({ queryKey: [...queryKeys.itemTemplates, "list"] });
       for (const [key] of previous) {
         queryClient.setQueryData(key, (old: { data: { id: string }[]; total: number; offset: number; limit: number } | undefined) => {
           if (!old?.data) return old;
@@ -153,10 +151,7 @@ export function useHideItemTemplate() {
       }
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["itemTemplates"] });
-      queryClient.invalidateQueries({
-        queryKey: ["itemTemplates", "deleted"],
-      });
+      invalidateDomainChange(queryClient, "item-template");
     },
     onSuccess: () => {
       toast.success("Template hidden. You can restore it from the recycle bin.");
@@ -166,7 +161,7 @@ export function useHideItemTemplate() {
 
 export function useDeletedItemTemplates(offset = 0, limit = 50, sortBy?: string | null, sortDirection?: string | null) {
   const query = useQuery({
-    queryKey: ["itemTemplates", "deleted", offset, limit, sortBy, sortDirection],
+    queryKey: [...queryKeys.itemTemplates, "deleted", offset, limit, sortBy, sortDirection],
     queryFn: async () => {
       const { data, error } = await client.GET("/api/item-templates/deleted", {
         params: { query: { offset, limit, sortBy: sortBy ?? undefined, sortDirection: (sortDirection ?? undefined) as "asc" | "desc" | undefined } },
@@ -189,10 +184,7 @@ export function useRestoreItemTemplate() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["itemTemplates"] });
-      queryClient.invalidateQueries({
-        queryKey: ["itemTemplates", "deleted"],
-      });
+      invalidateDomainChange(queryClient, "item-template");
       toast.success("Item template restored");
     },
   });

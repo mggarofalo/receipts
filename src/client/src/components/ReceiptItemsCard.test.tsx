@@ -270,10 +270,7 @@ describe("ReceiptItemsCard", () => {
     ).toBeInTheDocument();
     const confirmDelete = screen.getByRole("button", { name: "Delete" });
     await user.click(confirmDelete);
-    expect(mockDeleteMutate).toHaveBeenCalledWith(
-      ["item-1"],
-      expect.objectContaining({ onSuccess: expect.any(Function) }),
-    );
+    expect(mockDeleteMutate).toHaveBeenCalledWith(["item-1"]);
   });
 
   it("opens create dialog when Add Item is clicked", async () => {

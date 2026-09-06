@@ -254,9 +254,9 @@ describe("useReceiptItems", () => {
 
   it("batch create mutation invalidates cache on success", async () => {
     const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+      defaultOptions: { queries: { retry: false, gcTime: Infinity } },
     });
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    queryClient.setQueryData(["receipt-items"], { data: [], total: 0, offset: 0, limit: 50 });
 
     function Wrapper({ children }: { children: ReactNode }) {
       return createElement(QueryClientProvider, { client: queryClient }, children);
@@ -271,7 +271,7 @@ describe("useReceiptItems", () => {
     result.current.mutate({ receiptId: "r-1", body: [{ receiptItemCode: "RI-1", description: "X", quantity: 1, unitPrice: 1, category: "C", subcategory: "S" }] });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["receipt-items"] });
+    expect(queryClient.getQueryState(["receipt-items"])?.isInvalidated).toBe(true);
   });
 
   it("update mutation does not toast on failure (surfaced by the global handler)", async () => {
@@ -395,9 +395,10 @@ describe("useReceiptItems", () => {
 
   it("delete mutation invalidates both list and deleted query keys on settled", async () => {
     const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+      defaultOptions: { queries: { retry: false, gcTime: Infinity } },
     });
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    queryClient.setQueryData(["receipt-items"], { data: [], total: 0, offset: 0, limit: 50 });
+    queryClient.setQueryData(["receipt-items", "deleted"], { data: [], total: 0, offset: 0, limit: 50 });
 
     function Wrapper({ children }: { children: ReactNode }) {
       return createElement(QueryClientProvider, { client: queryClient }, children);
@@ -412,7 +413,7 @@ describe("useReceiptItems", () => {
     result.current.mutate(["1"]);
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["receipt-items"] });
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["receipt-items", "deleted"] });
+    expect(queryClient.getQueryState(["receipt-items"])?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(["receipt-items", "deleted"])?.isInvalidated).toBe(true);
   });
 });

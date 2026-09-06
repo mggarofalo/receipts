@@ -1,3 +1,4 @@
+import { queryKeys } from "@/lib/query-invalidation";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import client from "@/lib/api-client";
 
@@ -8,7 +9,7 @@ export interface DateRange {
 
 export function useDashboardSummary(dateRange: DateRange) {
   return useQuery({
-    queryKey: ["dashboard", "summary", dateRange.startDate, dateRange.endDate],
+    queryKey: [...queryKeys.dashboard, "summary", dateRange.startDate, dateRange.endDate],
     placeholderData: keepPreviousData,
     queryFn: async () => {
       const { data, error } = await client.GET("/api/dashboard/summary", {
@@ -31,7 +32,7 @@ export function useDashboardSpendingOverTime(
 ) {
   return useQuery({
     queryKey: [
-      "dashboard",
+      ...queryKeys.dashboard,
       "spending-over-time",
       dateRange.startDate,
       dateRange.endDate,
@@ -59,7 +60,7 @@ export function useDashboardSpendingOverTime(
 
 export function useDashboardEarliestReceiptYear() {
   return useQuery({
-    queryKey: ["dashboard", "earliest-receipt-year"],
+    queryKey: [...queryKeys.dashboard, "earliest-receipt-year"],
     staleTime: Infinity,
     queryFn: async () => {
       const { data, error } = await client.GET(
@@ -77,7 +78,7 @@ export function useDashboardSpendingByCategory(
 ) {
   return useQuery({
     queryKey: [
-      "dashboard",
+      ...queryKeys.dashboard,
       "spending-by-category",
       dateRange.startDate,
       dateRange.endDate,
@@ -106,7 +107,7 @@ export function useDashboardSpendingByCategory(
 export function useDashboardSpendingByStore(dateRange: DateRange) {
   return useQuery({
     queryKey: [
-      "dashboard",
+      ...queryKeys.dashboard,
       "spending-by-store",
       dateRange.startDate,
       dateRange.endDate,
@@ -133,7 +134,7 @@ export function useDashboardSpendingByStore(dateRange: DateRange) {
 export function useDashboardSpendingByAccount(dateRange: DateRange) {
   return useQuery({
     queryKey: [
-      "dashboard",
+      ...queryKeys.dashboard,
       "spending-by-account",
       dateRange.startDate,
       dateRange.endDate,

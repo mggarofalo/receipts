@@ -1,7 +1,7 @@
-import { assertSessionCurrent, getSessionVersion, isAbortError } from "@/lib/auth";
+import { isAbortError } from "@/lib/auth";
 import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import client from "@/lib/api-client";
+import { useMergeAccountMaintenance } from "@/hooks/useMergeAccountMaintenance";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -83,7 +83,7 @@ export function MergeCardsDialog({
   const { data: accountsData } = useAllAccounts(true);
   const createAccount = useCreateAccount();
   const mergeCards = useMergeCards();
-  const [sessionVersion] = useState(getSessionVersion);
+  const accountMaintenance = useMergeAccountMaintenance();
 
   /**
    * Deletes an account this dialog created but did not end up merging into.
@@ -96,11 +96,7 @@ export function MergeCardsDialog({
    */
   async function discardCreatedAccount(accountId: string) {
     try {
-      assertSessionCurrent(sessionVersion);
-      const { error } = await client.DELETE("/api/accounts/{id}", {
-        params: { path: { id: accountId } },
-      });
-      if (error) throw error;
+      await accountMaintenance.discardAccount(accountId);
     } catch (error) {
       if (isAbortError(error)) return;
       toast.error(
@@ -305,11 +301,7 @@ export function MergeCardsDialog({
     }
 
     if (pendingCreatedAccountNameRef.current !== name) {
-      const { error } = await client.PUT("/api/accounts/{id}", {
-        params: { path: { id: pendingId } },
-        body: { id: pendingId, name, isActive: true },
-      });
-      if (error) throw error;
+      await accountMaintenance.renameAccount(pendingId, name);
       pendingCreatedAccountNameRef.current = name;
     }
 

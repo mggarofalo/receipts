@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as signalR from "@microsoft/signalr";
 import { useQueryClient } from "@tanstack/react-query";
-import { CARD_CHANGE_QUERY_KEYS } from "@/lib/query-invalidation";
+import { invalidateDomainChange, isDomainChange } from "@/lib/query-invalidation";
 import { getAccessToken, parseJwtPayload, getSessionVersion, addSessionChangeListener } from "@/lib/auth";
 import { bufferToast, clearBufferedToasts, type ToastOrigin } from "@/lib/signalr-toast-buffer";
 import {
@@ -24,46 +24,13 @@ interface EntityChangeNotification {
   connectionId?: string | null;
 }
 
-const queryKeyMap: Record<string, readonly (readonly string[])[]> = {
-  receipt: [
-    ["receipts"],
-    ["receipt-items"],
-    ["transactions"],
-    ["adjustments"],
-    ["receipts-with-items"],
-    ["trips"],
-    ["reports"],
-    ["ynab", "split-comparison"],
-    ["ynab", "receipt-sync-statuses"],
-  ],
-  "receipt-item": [["receipt-items"], ["receipts-with-items"], ["trips"]],
-  transaction: [
-    ["transactions"],
-    ["receipts-with-items"],
-    ["trips"],
-    ["transaction-accounts"],
-  ],
-  adjustment: [
-    ["adjustments"],
-    ["receipts"],
-    ["receipts-with-items"],
-    ["trips"],
-    ["reports"],
-    ["ynab", "split-comparison"],
-    ["ynab", "receipt-sync-statuses"],
-  ],
-  card: CARD_CHANGE_QUERY_KEYS,
-  category: [["categories"]],
-  subcategory: [["subcategories"]],
-  "item-template": [["itemTemplates"]],
-};
-
 const displayNameMap: Record<string, string> = {
   receipt: "receipt",
   "receipt-item": "receipt item",
   transaction: "transaction",
   adjustment: "adjustment",
   card: "card",
+  account: "account",
   category: "category",
   subcategory: "subcategory",
   "item-template": "item template",
@@ -158,11 +125,12 @@ export function useSignalR(enabled: boolean) {
           console.debug("[SignalR] EntityChanged", notification);
         }
 
-        const keys = queryKeyMap[notification.entityType];
-        if (keys) {
-          for (const queryKey of keys) {
-            queryClient.invalidateQueries({ queryKey, refetchType: "active" });
-          }
+        if (isDomainChange(notification.entityType)) {
+          invalidateDomainChange(
+            queryClient,
+            notification.entityType,
+            notification.changeType === "created" ? "created" : "changed",
+          );
         }
 
         const token = getAccessToken();

@@ -1,3 +1,4 @@
+import { invalidateDomainChange, queryKeys } from "@/lib/query-invalidation";
 import { useMemo } from "react";
 import { useStableQuery } from "@/hooks/useStableQuery";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -8,7 +9,7 @@ import { toast } from "sonner";
 
 export function useTransactions(offset = 0, limit = 50, sortBy?: string | null, sortDirection?: string | null) {
   const query = useQuery({
-    queryKey: ["transactions", "list", offset, limit, sortBy, sortDirection],
+    queryKey: [...queryKeys.transactions, "list", offset, limit, sortBy, sortDirection],
     queryFn: async () => {
       const { data, error } = await client.GET("/api/transactions", {
         params: { query: { offset, limit, sortBy: sortBy ?? undefined, sortDirection: (sortDirection ?? undefined) as "asc" | "desc" | undefined } },
@@ -23,7 +24,7 @@ export function useTransactions(offset = 0, limit = 50, sortBy?: string | null, 
 
 export function useTransaction(id: string | null) {
   return useQuery({
-    queryKey: ["transactions", id],
+    queryKey: [...queryKeys.transactions, id],
     enabled: !!id,
     queryFn: async () => {
       const { data, error } = await client.GET("/api/transactions/{id}", {
@@ -37,7 +38,7 @@ export function useTransaction(id: string | null) {
 
 export function useTransactionsByReceiptId(receiptId: string | null, offset = 0, limit = 200, sortBy?: string | null, sortDirection?: string | null) {
   const query = useQuery({
-    queryKey: ["transactions", "by-receipt", receiptId, offset, limit, sortBy, sortDirection],
+    queryKey: [...queryKeys.transactions, "by-receipt", receiptId, offset, limit, sortBy, sortDirection],
     enabled: !!receiptId,
     queryFn: async () => {
       const { data, error } = await client.GET("/api/transactions", {
@@ -69,8 +70,7 @@ export function useCreateTransaction() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["trips"] });
+      invalidateDomainChange(queryClient, "transaction");
       toast.success("Transaction created");
     },
   });
@@ -94,7 +94,7 @@ export function useCreateTransactionsBatch() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      invalidateDomainChange(queryClient, "transaction");
     },
   });
 }
@@ -114,8 +114,7 @@ export function useUpdateTransaction() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["trips"] });
+      invalidateDomainChange(queryClient, "transaction");
       toast.success("Transaction updated");
     },
   });
@@ -131,8 +130,8 @@ export function useDeleteTransactions() {
       if (error) throw error;
     },
     onMutate: async (ids) => {
-      await queryClient.cancelQueries({ queryKey: ["transactions"] });
-      const previous = queryClient.getQueriesData<{ data: { id: string }[]; total: number }>({ queryKey: ["transactions", "list"] });
+      await queryClient.cancelQueries({ queryKey: [...queryKeys.transactions] });
+      const previous = queryClient.getQueriesData<{ data: { id: string }[]; total: number }>({ queryKey: [...queryKeys.transactions, "list"] });
       for (const [key] of previous) {
         queryClient.setQueryData(key, (old: { data: { id: string }[]; total: number; offset: number; limit: number } | undefined) => {
           if (!old?.data) return old;
@@ -148,9 +147,7 @@ export function useDeleteTransactions() {
       }
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["transactions", "deleted"] });
-      queryClient.invalidateQueries({ queryKey: ["trips"] });
+      invalidateDomainChange(queryClient, "transaction");
     },
     onSuccess: () => {
       toast.success("Transaction(s) deleted");
@@ -160,7 +157,7 @@ export function useDeleteTransactions() {
 
 export function useDeletedTransactions(offset = 0, limit = 50, sortBy?: string | null, sortDirection?: string | null) {
   const query = useQuery({
-    queryKey: ["transactions", "deleted", offset, limit, sortBy, sortDirection],
+    queryKey: [...queryKeys.transactions, "deleted", offset, limit, sortBy, sortDirection],
     queryFn: async () => {
       const { data, error } = await client.GET("/api/transactions/deleted", {
         params: { query: { offset, limit, sortBy: sortBy ?? undefined, sortDirection: (sortDirection ?? undefined) as "asc" | "desc" | undefined } },
@@ -183,9 +180,7 @@ export function useRestoreTransaction() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["transactions", "deleted"] });
-      queryClient.invalidateQueries({ queryKey: ["trips"] });
+      invalidateDomainChange(queryClient, "transaction");
       toast.success("Transaction restored");
     },
   });

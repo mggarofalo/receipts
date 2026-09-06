@@ -1,7 +1,6 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router";
-import { useQueryClient } from "@tanstack/react-query";
-import { useSessionMutation } from "@/hooks/useSessionMutation";
+import { useCategorizeReceiptItems } from "@/hooks/useCategorizeReceiptItems";
 import {
   useUncategorizedItemsReport,
   type UncategorizedItemsParams,
@@ -60,21 +59,8 @@ function parseUncategorizedItemsParams(
   };
 }
 
-interface UncategorizedItemData {
-  id: string;
-  receiptId: string;
-  receiptItemCode?: string | null;
-  description: string;
-  quantity: number;
-  unitPrice: number;
-  totalAmount: number;
-  category: string;
-  subcategory?: string | null;
-}
-
 export default function UncategorizedItems() {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const [urlParams, updateParams] = useReportSearchParams(
     parseUncategorizedItemsParams,
   );
@@ -168,47 +154,8 @@ export default function UncategorizedItems() {
     [subcategories],
   );
 
-  const bulkUpdateMutation = useSessionMutation({
-    mutationFn: async ({
-      items,
-      category,
-      subcategory,
-    }: {
-      items: UncategorizedItemData[];
-      category: string;
-      subcategory: string | null;
-    }) => {
-      const grouped = new Map<string, UncategorizedItemData[]>();
-      for (const item of items) {
-        const group = grouped.get(item.receiptId) ?? [];
-        group.push(item);
-        grouped.set(item.receiptId, group);
-      }
-
-      const promises = Array.from(grouped.values()).map((groupItems) =>
-        client.PUT("/api/receipt-items/batch", {
-          body: groupItems.map((item) => ({
-            id: item.id,
-            receiptItemCode: item.receiptItemCode ?? null,
-            description: item.description,
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-            category,
-            subcategory: subcategory || null,
-          })),
-        }),
-      );
-
-      const results = await Promise.all(promises);
-      for (const result of results) {
-        if (result.error) throw result.error;
-      }
-    },
+  const bulkUpdateMutation = useCategorizeReceiptItems({
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["reports", "uncategorized-items"],
-      });
-      queryClient.invalidateQueries({ queryKey: ["receipt-items"] });
       setSelectedIds(new Set());
       setSelectedCategory("");
       setSelectedSubcategory("");
@@ -270,7 +217,7 @@ export default function UncategorizedItems() {
 
     const itemsToUpdate = data.items.filter((item) =>
       selectedIds.has(item.id),
-    ) as UncategorizedItemData[];
+    );
 
     bulkUpdateMutation.mutate({
       items: itemsToUpdate,

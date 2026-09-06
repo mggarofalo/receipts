@@ -69,9 +69,12 @@ describe("usePurgeTrash", () => {
     (client.POST as Mock).mockResolvedValue({ error: null });
 
     const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+      defaultOptions: { queries: { retry: false, gcTime: Infinity } },
     });
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    queryClient.setQueryData(["accounts", "deleted"], { data: [], total: 0, offset: 0, limit: 50 });
+    queryClient.setQueryData(["receipts", "deleted"], { data: [], total: 0, offset: 0, limit: 50 });
+    queryClient.setQueryData(["receipt-items", "deleted"], { data: [], total: 0, offset: 0, limit: 50 });
+    queryClient.setQueryData(["transactions", "deleted"], { data: [], total: 0, offset: 0, limit: 50 });
 
     function Wrapper({ children }: { children: ReactNode }) {
       return createElement(
@@ -89,17 +92,9 @@ describe("usePurgeTrash", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: ["accounts", "deleted"],
-    });
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: ["receipts", "deleted"],
-    });
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: ["receipt-items", "deleted"],
-    });
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: ["transactions", "deleted"],
-    });
+    expect(queryClient.getQueryState(["accounts", "deleted"])?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(["receipts", "deleted"])?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(["receipt-items", "deleted"])?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(["transactions", "deleted"])?.isInvalidated).toBe(true);
   });
 });

@@ -1,3 +1,4 @@
+import { invalidateDomainChange, queryKeys } from "@/lib/query-invalidation";
 import { useMemo } from "react";
 import { useStableQuery } from "@/hooks/useStableQuery";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -9,7 +10,7 @@ export function useCategories(offset = 0, limit = 50, sortBy?: string | null, so
   const { enabled = true, q } = options;
   const search = q?.trim() || undefined;
   const query = useQuery({
-    queryKey: ["categories", "list", offset, limit, sortBy, sortDirection, isActive, search],
+    queryKey: [...queryKeys.categories, "list", offset, limit, sortBy, sortDirection, isActive, search],
     enabled,
     queryFn: async () => {
       const { data, error } = await client.GET("/api/categories", {
@@ -35,7 +36,7 @@ export function useCategories(offset = 0, limit = 50, sortBy?: string | null, so
  */
 export function useAllCategories(isActive?: boolean | null) {
   return useQuery({
-    queryKey: ["categories", "all", isActive ?? undefined],
+    queryKey: [...queryKeys.categories, "all", isActive ?? undefined],
     queryFn: async ({ signal }) => {
       const pageSize = 500;
       const fetchPage = async (offset: number) => {
@@ -69,7 +70,7 @@ export function useAllCategories(isActive?: boolean | null) {
 
 export function useCategory(id: string | null) {
   return useQuery({
-    queryKey: ["categories", id],
+    queryKey: [...queryKeys.categories, id],
     enabled: !!id,
     queryFn: async () => {
       const { data, error } = await client.GET("/api/categories/{id}", {
@@ -94,7 +95,7 @@ export function useCreateCategory() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["categories"] });
+      invalidateDomainChange(queryClient, "category");
       toast.success("Category created");
     },
     onError: (err) => {
@@ -122,7 +123,7 @@ export function useUpdateCategory() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["categories"] });
+      invalidateDomainChange(queryClient, "category");
       toast.success("Category updated");
     },
   });
@@ -150,8 +151,7 @@ export function useDeleteCategory() {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["categories"] });
-      queryClient.invalidateQueries({ queryKey: ["categories", "deleted"] });
+      invalidateDomainChange(queryClient, "category");
       toast.success("Category deleted");
     },
     onError: (error: unknown) => {
@@ -166,7 +166,7 @@ export function useDeleteCategory() {
 
 export function useDeletedCategories(offset = 0, limit = 50, sortBy?: string | null, sortDirection?: string | null) {
   const query = useQuery({
-    queryKey: ["categories", "deleted", offset, limit, sortBy, sortDirection],
+    queryKey: [...queryKeys.categories, "deleted", offset, limit, sortBy, sortDirection],
     queryFn: async () => {
       const { data, error } = await client.GET("/api/categories/deleted", {
         params: { query: { offset, limit, sortBy: sortBy ?? undefined, sortDirection: (sortDirection ?? undefined) as "asc" | "desc" | undefined } },
@@ -189,8 +189,7 @@ export function useRestoreCategory() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["categories"] });
-      queryClient.invalidateQueries({ queryKey: ["categories", "deleted"] });
+      invalidateDomainChange(queryClient, "category");
       toast.success("Category restored");
     },
   });

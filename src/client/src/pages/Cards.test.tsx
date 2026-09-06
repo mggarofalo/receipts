@@ -1,6 +1,6 @@
 import "@/test/setup-combobox-polyfills";
 import { screen } from "@testing-library/react";
-import { renderWithProviders } from "@/test/test-utils";
+import { renderWithQueryClient } from "@/test/test-utils";
 import { mockQueryResult, mockMutationResult } from "@/test/mock-hooks";
 import { mockCardResponse } from "@/test/mock-api";
 import Cards from "./Cards";
@@ -118,7 +118,7 @@ describe("Cards", () => {
   });
 
   it("renders the page heading", () => {
-    renderWithProviders(<Cards />);
+    renderWithQueryClient(<Cards />);
     expect(
       screen.getByRole("heading", { name: /cards/i }),
     ).toBeInTheDocument();
@@ -131,7 +131,7 @@ describe("Cards", () => {
       isLoading: true,
     }));
 
-    const { container } = renderWithProviders(<Cards />);
+    const { container } = renderWithQueryClient(<Cards />);
     expect(container.querySelector("[data-slot='skeleton']")).toBeInTheDocument();
   });
 
@@ -143,21 +143,21 @@ describe("Cards", () => {
       isLoading: false,
     }));
 
-    renderWithProviders(<Cards />);
+    renderWithQueryClient(<Cards />);
     expect(
       screen.getByText(/no cards yet/i),
     ).toBeInTheDocument();
   });
 
   it("renders the New Card button", () => {
-    renderWithProviders(<Cards />);
+    renderWithQueryClient(<Cards />);
     expect(
       screen.getByRole("button", { name: /new card/i }),
     ).toBeInTheDocument();
   });
 
   it("renders the search input", () => {
-    renderWithProviders(<Cards />);
+    renderWithQueryClient(<Cards />);
     expect(
       screen.getByPlaceholderText(/search cards/i),
     ).toBeInTheDocument();
@@ -186,7 +186,7 @@ describe("Cards", () => {
       isLoading: false,
     }));
 
-    renderWithProviders(<Cards />);
+    renderWithQueryClient(<Cards />);
     expect(screen.getByText("Checking")).toBeInTheDocument();
     expect(screen.getByText("Savings")).toBeInTheDocument();
     expect(screen.getByText("CARD-001")).toBeInTheDocument();
@@ -194,7 +194,7 @@ describe("Cards", () => {
 
   it("opens create dialog when New Card button is clicked", async () => {
     const user = (await import("@testing-library/user-event")).default.setup();
-    renderWithProviders(<Cards />);
+    renderWithQueryClient(<Cards />);
 
     await user.click(screen.getByRole("button", { name: /new card/i }));
 
@@ -226,7 +226,7 @@ describe("Cards", () => {
       isLoading: false,
     }));
 
-    renderWithProviders(<Cards />);
+    renderWithQueryClient(<Cards />);
     await user.click(screen.getByRole("button", { name: /edit/i }));
 
     expect(
@@ -236,7 +236,7 @@ describe("Cards", () => {
 
   it("closes create dialog when Cancel is clicked", async () => {
     const user = (await import("@testing-library/user-event")).default.setup();
-    renderWithProviders(<Cards />);
+    renderWithQueryClient(<Cards />);
     await user.click(screen.getByRole("button", { name: /new card/i }));
     expect(screen.getByRole("heading", { name: /create card/i })).toBeInTheDocument();
 
@@ -273,7 +273,7 @@ describe("Cards", () => {
       setPageSize: vi.fn(),
     });
 
-    renderWithProviders(<Cards />);
+    renderWithQueryClient(<Cards />);
     await user.click(screen.getByRole("button", { name: /edit/i }));
     expect(screen.getByRole("heading", { name: /edit card/i })).toBeInTheDocument();
 
@@ -285,7 +285,7 @@ describe("Cards", () => {
 
   it("opens create dialog on shortcut:new-item event", async () => {
     const { act } = await import("@testing-library/react");
-    renderWithProviders(<Cards />);
+    renderWithQueryClient(<Cards />);
 
     act(() => {
       window.dispatchEvent(new Event("shortcut:new-item"));
@@ -298,7 +298,7 @@ describe("Cards", () => {
   });
 
   it("opens create dialog when navigated with openNew state", async () => {
-    renderWithProviders(<Cards />, {
+    renderWithQueryClient(<Cards />, {
       route: { pathname: "/cards", state: { openNew: true } },
     });
 
@@ -317,7 +317,7 @@ describe("Cards", () => {
       isPending: false,
     }));
 
-    renderWithProviders(<Cards />);
+    renderWithQueryClient(<Cards />);
     await user.click(screen.getByRole("button", { name: /new card/i }));
 
     await user.type(screen.getByLabelText(/card code/i), "CARD-NEW");
@@ -365,7 +365,7 @@ describe("Cards", () => {
       setPageSize: vi.fn(),
     });
 
-    renderWithProviders(<Cards />);
+    renderWithQueryClient(<Cards />);
     await user.click(screen.getByRole("button", { name: /edit/i }));
 
     const nameInput = screen.getByLabelText(/^name/i);
@@ -395,7 +395,7 @@ describe("Cards", () => {
       clearSearch: vi.fn(),
     }));
 
-    renderWithProviders(<Cards />);
+    renderWithQueryClient(<Cards />);
     expect(screen.getByText(/try fewer keywords/i)).toBeInTheDocument();
   });
 
@@ -421,7 +421,7 @@ describe("Cards", () => {
       isLoading: false,
     }));
 
-    renderWithProviders(<Cards />);
+    renderWithQueryClient(<Cards />);
     expect(screen.getByText("Checking")).toBeInTheDocument();
 
     const activeTab = screen.getByRole("tab", { name: "Active" });
@@ -442,7 +442,7 @@ describe("Cards", () => {
       isLoading: false,
     }));
 
-    renderWithProviders(<Cards />);
+    renderWithQueryClient(<Cards />);
     await user.click(screen.getByRole("tab", { name: "All" }));
 
     expect(localStorage.getItem("cards-status-filter")).toBe("all");
@@ -471,7 +471,7 @@ describe("Cards", () => {
       isLoading: false,
     }));
 
-    renderWithProviders(<Cards />);
+    renderWithQueryClient(<Cards />);
     const switches = screen.getAllByRole("switch");
     expect(switches).toHaveLength(2);
     expect(switches[0]).toHaveAttribute("aria-checked", "true");
@@ -508,7 +508,7 @@ describe("Cards", () => {
       isLoading: false,
     }));
 
-    renderWithProviders(<Cards />);
+    renderWithQueryClient(<Cards />);
     const switchEl = screen.getByRole("switch");
     await user.click(switchEl);
 
@@ -545,7 +545,7 @@ describe("Cards", () => {
       isLoading: false,
     }));
 
-    renderWithProviders(<Cards />);
+    renderWithQueryClient(<Cards />);
     const switchEl = screen.getByRole("switch");
     await user.click(switchEl);
 
@@ -575,7 +575,7 @@ describe("Cards", () => {
       isLoading: false,
     }));
 
-    renderWithProviders(<Cards />);
+    renderWithQueryClient(<Cards />);
     await user.click(screen.getByRole("tab", { name: "Inactive" }));
 
     expect(useCards).toHaveBeenCalledWith(
@@ -606,7 +606,7 @@ describe("Cards", () => {
       isLoading: false,
     }));
 
-    renderWithProviders(<Cards />);
+    renderWithQueryClient(<Cards />);
     expect(screen.getByText("Primary Checking")).toBeInTheDocument();
   });
 
@@ -640,7 +640,7 @@ describe("Cards", () => {
       isLoading: false,
     }));
 
-    renderWithProviders(<Cards />);
+    renderWithQueryClient(<Cards />);
     await user.click(screen.getByRole("switch"));
 
     expect(mockMutate).toHaveBeenCalledWith(
@@ -661,7 +661,7 @@ describe("Cards", () => {
       isPending: false,
     }));
 
-    renderWithProviders(<Cards />);
+    renderWithQueryClient(<Cards />);
     await user.click(screen.getByRole("button", { name: /new card/i }));
 
     await user.type(screen.getByLabelText(/card code/i), "CARD-NEW");
@@ -701,7 +701,7 @@ describe("Cards", () => {
       isLoading: false,
     }));
 
-    renderWithProviders(<Cards />);
+    renderWithQueryClient(<Cards />);
 
     const mergeButton = screen.getByRole("button", { name: /merge selected cards/i });
     // Nothing selected is still nothing to merge.
@@ -742,7 +742,7 @@ describe("Cards", () => {
         isLoading: false,
       }));
 
-      renderWithProviders(<Cards />);
+      renderWithQueryClient(<Cards />);
       return user;
     }
 

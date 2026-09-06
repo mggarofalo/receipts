@@ -254,11 +254,12 @@ describe("usePromoteToTemplate", () => {
     });
     const queryClient = new QueryClient({
       defaultOptions: {
-        queries: { retry: false, gcTime: 0 },
+        queries: { retry: false, gcTime: Infinity },
         mutations: { retry: false },
       },
     });
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    queryClient.setQueryData(["itemTemplates"], { data: [], total: 0, offset: 0, limit: 50 });
+    queryClient.setQueryData(["similarItems"], { data: [], total: 0, offset: 0, limit: 50 });
 
     const { result } = renderHook(() => usePromoteToTemplate(), {
       wrapper: createWrapper(queryClient),
@@ -267,12 +268,8 @@ describe("usePromoteToTemplate", () => {
     result.current.mutate({ name: "Milk" });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: ["itemTemplates"],
-    });
-    expect(invalidateSpy).not.toHaveBeenCalledWith({
-      queryKey: ["similarItems"],
-    });
+    expect(queryClient.getQueryState(["itemTemplates"])?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(["similarItems"])?.isInvalidated).toBe(false);
   });
 
   it("does not invalidate caches when the duplicate guard skips creation", async () => {

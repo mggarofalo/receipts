@@ -1,9 +1,9 @@
+import { invalidateDomainChange, queryKeys } from "@/lib/query-invalidation";
 import { useMemo } from "react";
 import { useStableQuery } from "@/hooks/useStableQuery";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSessionMutation } from "@/hooks/useSessionMutation";
 import client from "@/lib/api-client";
-import { CARD_CHANGE_QUERY_KEYS } from "@/lib/query-invalidation";
 import { toApiError } from "@/lib/problem-details";
 import { toast } from "sonner";
 import type { components } from "@/generated/api";
@@ -14,7 +14,7 @@ export function useCards(offset = 0, limit = 50, sortBy?: string | null, sortDir
   const { enabled = true, q } = options;
   const search = q?.trim() || undefined;
   const query = useQuery({
-    queryKey: ["cards", "list", offset, limit, sortBy, sortDirection, isActive, search],
+    queryKey: [...queryKeys.cards, "list", offset, limit, sortBy, sortDirection, isActive, search],
     enabled,
     queryFn: async () => {
       const { data, error } = await client.GET("/api/cards", {
@@ -31,7 +31,7 @@ export function useCards(offset = 0, limit = 50, sortBy?: string | null, sortDir
 /** Fetches the complete card list for pickers and entity lookups. */
 export function useAllCards(isActive?: boolean | null) {
   return useQuery({
-    queryKey: ["cards", "all", isActive ?? undefined],
+    queryKey: [...queryKeys.cards, "all", isActive ?? undefined],
     queryFn: async ({ signal }) => {
       const pageSize = 500;
       const fetchPage = async (offset: number) => {
@@ -65,7 +65,7 @@ export function useAllCards(isActive?: boolean | null) {
 
 export function useCard(id: string | null) {
   return useQuery({
-    queryKey: ["cards", id],
+    queryKey: [...queryKeys.cards, id],
     enabled: !!id,
     queryFn: async () => {
       const { data, error } = await client.GET("/api/cards/{id}", {
@@ -91,7 +91,7 @@ export function useCreateCard() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["cards"] });
+      invalidateDomainChange(queryClient, "card");
       toast.success("Card created");
     },
   });
@@ -114,9 +114,7 @@ export function useUpdateCard() {
       if (error) throw error;
     },
     onSuccess: () => {
-      for (const queryKey of CARD_CHANGE_QUERY_KEYS) {
-        queryClient.invalidateQueries({ queryKey });
-      }
+      invalidateDomainChange(queryClient, "card");
       toast.success("Card updated");
     },
   });
@@ -144,7 +142,7 @@ export function useDeleteCard() {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["cards"] });
+      invalidateDomainChange(queryClient, "card");
       toast.success("Card deleted");
     },
     onError: (error: unknown) => {
@@ -247,7 +245,7 @@ export interface MergeCardsPreviewInput {
 export function useMergeCardsPreview(input: MergeCardsPreviewInput | null) {
   return useQuery({
     queryKey: [
-      "cards",
+      ...queryKeys.cards,
       "mergePreview",
       input?.targetAccountId ?? null,
       [...(input?.sourceCardIds ?? [])].sort().join(","),
@@ -330,10 +328,7 @@ export function useMergeCards() {
         return;
       }
 
-      for (const queryKey of CARD_CHANGE_QUERY_KEYS) {
-        queryClient.invalidateQueries({ queryKey });
-      }
-      queryClient.invalidateQueries({ queryKey: ["accounts"] });
+      invalidateDomainChange(queryClient, "card");
       toast.success("Cards merged", { description: describeMergeImpact(impact) });
     },
     onError: (error: unknown) => {
