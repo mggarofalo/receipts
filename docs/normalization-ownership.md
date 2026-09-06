@@ -28,6 +28,22 @@ The gate is deliberately narrow in duration and specific to canonical write coor
 
 Nonrelational unit fixtures exercise source-value and target guards. Real PostgreSQL tests establish revision, lock ordering, default-search-path, competing-writer and audit behavior. They coordinate matching and database lock waits rather than relying on timing sleeps.
 
-## Remaining template ownership work
+## Template declarations and updates
 
-`ItemTemplateService` performs separate asynchronous canonical resolution. Its newer-curation checks, and explicit trusted template-derived metadata assignment in single/batch item creation, remain a focused RECEIPTS-963 follow-up. This worker change does not restore that lost create stamp or add template hints to complete-receipt creation. The issue remains open until those paths and their regressions are completed.
+`ItemTemplateService` resolves the requested template name through `GetOrCreateForTemplateAsync` before committing template fields. It captures an opaque per-template revision first. The repository then takes the short canonical write gate, locks proposed targets and templates, and validates every requested source revision before assigning any tracked values. A changed, deleted or missing source conflicts the whole update; no requested template fields or update audits are partially saved.
+
+The repository applies an explicit editable-field whitelist and only a valid server-resolved canonical result. A target that was removed, renamed or rejected during resolution is not attached. The existing classifier-failure fallback remains an unlinked template, and cancellation during canonical work still happens before template fields are saved. Template fields, their accepted canonical link and audits share one final commit.
+
+`PUT /api/item-templates/{id}` returns a typed 409 RFC 9457 problem with the reason in `detail` when this source revision changed. The client keeps the dialog and draft open and displays that reason; retry is deliberate. Initial missing templates still return 404. This protects the server's asynchronous resolution window, not every stale browser draft: requests do not carry a public version or ETag.
+
+Creating or updating a template deliberately declares its name and may reinstate a previously rejected canonical entry through the existing resolver policy. A later rejection is respected at the final template write. Canonical registry creation or reinstatement uses its pre-existing separate context and can commit before a later template conflict or cancellation; it is not included in the template-field atomicity claim.
+
+## Receipt items entered from templates
+
+Single and batch receipt-item creation carry optional, positionally aligned template hints through an explicit service/repository overload. The generic item mapper continues to ignore caller canonical IDs and scores. The create handler keeps the parent-existence check and passes provenance onward; it no longer mutates a domain item with metadata that the mapper discards.
+
+The repository resolves current active templates and valid canonical targets inside the short write transaction. It locks canonical targets before hinted templates and rereads the actual template FK after a lock wait. If the target set changed, it releases the transaction and retries, up to three attempts, without reversing that lock order. Repeated churn falls back to unlinked only for hints whose current target cannot be validated; it does not prevent saving the receipt. Unknown, deleted and unlinked templates retain their existing fallback. Hint alignment is validated at direct service and repository boundaries too.
+
+Accepted hints stamp the canonical ID with a null score: a template declaration is not a measured similarity. Canonical display/name equality with the template is not required on this entry path, because a deliberate canonical merge can leave the template linked to a differently named survivor. Current locked template identity wins. Ordinary no-hint creation is unchanged, and complete-receipt creation does not gain template hints.
+
+Real PostgreSQL creation-chain and controlled matching/lock-wait tests cover these boundaries. The frontend conflict test uses the actual page, mutation hook, app query client, error presentation and a controlled HTTP response, including same-draft retry after 409.

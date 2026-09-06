@@ -19,6 +19,8 @@ public class ItemTemplateServiceTests
 
 	public ItemTemplateServiceTests()
 	{
+		_mockRepository.Setup(repository => repository.GetUpdateRevisionsAsync(It.IsAny<List<Guid>>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync((List<Guid> ids, CancellationToken _) => ids.ToDictionary(id => id, _ => "captured-revision"));
 		_service = new ItemTemplateService(
 			_mockRepository.Object,
 			new ItemTemplateMapper(),
@@ -63,8 +65,8 @@ public class ItemTemplateServiceTests
 
 		List<ItemTemplateEntity> captured = [];
 		_mockRepository
-			.Setup(r => r.UpdateAsync(It.IsAny<List<ItemTemplateEntity>>(), It.IsAny<CancellationToken>()))
-			.Callback<List<ItemTemplateEntity>, CancellationToken>((entities, _) => captured = entities)
+			.Setup(r => r.UpdateAsync(It.IsAny<List<ItemTemplateEntity>>(), It.IsAny<IReadOnlyDictionary<Guid, string>>(), It.IsAny<CancellationToken>()))
+			.Callback<List<ItemTemplateEntity>, IReadOnlyDictionary<Guid, string>, CancellationToken>((entities, _, _) => captured = entities)
 			.Returns(Task.CompletedTask);
 
 		await _service.UpdateAsync(

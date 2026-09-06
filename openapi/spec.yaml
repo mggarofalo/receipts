@@ -1163,6 +1163,12 @@ paths:
               $ref: "#/components/headers/X-Resource-Id"
         "404":
           description: Not Found
+        "409":
+          description: The item template changed during the update
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
 
   /api/item-templates:
     get:

@@ -106,16 +106,17 @@ public class ItemTemplateService(
 
 	public async Task UpdateAsync(List<ItemTemplate> models, CancellationToken cancellationToken)
 	{
-		// Re-resolved on every update rather than only when the name changed. The name is what the
-		// canonical entry is keyed on, and comparing against the stored name would need a read per
-		// template to find out whether it moved — GetOrCreateForTemplateAsync already answers
-		// "which entry is this name?" with a single indexed lookup, and returns the existing row
-		// unchanged when nothing moved. Renaming a template therefore re-points it at the entry
-		// for its new name; the old entry is left alone, since other receipt items may still be
-		// grouped under it and deleting it would silently move their spending.
+		List<Guid> ids = models.Select(model => model.Id).Distinct().ToList();
+		Dictionary<Guid, string> revisions = await repository.GetUpdateRevisionsAsync(ids, cancellationToken);
+		if (revisions.Count != ids.Count)
+		{
+			throw new ConcurrencyConflictException("An item template changed or was deleted. Reload it and try again.");
+		}
+		// Keep matching outside write locks, but bind its result to the state observed here.
+		// Cancellation still precedes any template-field commit.
 		await LinkCanonicalEntriesAsync(models, cancellationToken);
 		List<ItemTemplateEntity> entities = [.. models.Select(mapper.ToEntity)];
-		await repository.UpdateAsync(entities, cancellationToken);
+		await repository.UpdateAsync(entities, revisions, cancellationToken);
 	}
 
 	public async Task<bool> RestoreAsync(Guid id, CancellationToken cancellationToken)

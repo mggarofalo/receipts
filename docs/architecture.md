@@ -253,4 +253,4 @@ Benefits:
 
 ## Normalization write ownership
 
-Automatic receipt-item normalization uses source snapshots and a short guarded write phase, preserving newer edits and atomic audit records. See [Normalization write ownership](normalization-ownership.md) for row revisions, canonical rejection and lock ordering, plus the separate template follow-up.
+Automatic receipt-item normalization uses source snapshots and a short guarded write phase, preserving newer edits and atomic audit records. See [Normalization write ownership](normalization-ownership.md) for row revisions, canonical rejection, lock ordering, guarded template updates and trusted creation hints.

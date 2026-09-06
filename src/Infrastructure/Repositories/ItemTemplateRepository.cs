@@ -1,9 +1,13 @@
 using System.Linq.Expressions;
+using Application.Exceptions;
 using Application.Models;
+using Domain.NormalizedDescriptions;
 using Infrastructure.Entities.Core;
 using Infrastructure.Extensions;
 using Infrastructure.Interfaces.Repositories;
+using Infrastructure.Utilities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Infrastructure.Repositories;
 
@@ -89,27 +93,84 @@ public class ItemTemplateRepository(IDbContextFactory<ApplicationDbContext> cont
 	public async Task<List<ItemTemplateEntity>> CreateAsync(List<ItemTemplateEntity> entities, CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
+		await using IDbContextTransaction? transaction = context.Database.IsRelational()
+			? await context.Database.BeginTransactionAsync(cancellationToken) : null;
+		await NormalizationWriteGuard.AcquireWriteGateAsync(context, cancellationToken);
+		Dictionary<Guid, NormalizedDescriptionEntity> targets = await LoadTargetsAsync(context, entities, cancellationToken);
+		foreach (ItemTemplateEntity entity in entities)
+		{
+			entity.NormalizedDescriptionId = ValidTarget(entity, targets);
+		}
 		context.ItemTemplates.AddRange(entities);
 		await context.SaveChangesAsync(cancellationToken);
+		if (transaction is not null)
+		{
+			await transaction.CommitAsync(cancellationToken);
+		}
 		return entities;
 	}
 
-	public async Task UpdateAsync(List<ItemTemplateEntity> entities, CancellationToken cancellationToken)
+	public async Task<Dictionary<Guid, string>> GetUpdateRevisionsAsync(List<Guid> ids, CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
-		IEnumerable<Guid> ids = entities.Select(e => e.Id);
-		List<ItemTemplateEntity> existingEntities = await context.ItemTemplates
-			.Where(e => ids.Contains(e.Id))
-			.ToListAsync(cancellationToken);
+		return await TemplateWriteGuard.ReadRevisionsAsync(context, ids.Distinct().ToArray(), cancellationToken);
+	}
+
+	public async Task UpdateAsync(List<ItemTemplateEntity> entities, IReadOnlyDictionary<Guid, string> expectedRevisions,
+		CancellationToken cancellationToken)
+	{
+		using ApplicationDbContext context = contextFactory.CreateDbContext();
+		await using IDbContextTransaction? transaction = context.Database.IsRelational()
+			? await context.Database.BeginTransactionAsync(cancellationToken) : null;
+		await NormalizationWriteGuard.AcquireWriteGateAsync(context, cancellationToken);
+		Dictionary<Guid, NormalizedDescriptionEntity> targets = await LoadTargetsAsync(context, entities, cancellationToken);
+		Guid[] ids = entities.Select(entity => entity.Id).Distinct().ToArray();
+		await TemplateWriteGuard.LockTemplatesAsync(context, ids, cancellationToken);
+		Dictionary<Guid, string> currentRevisions = await TemplateWriteGuard.ReadRevisionsAsync(context, ids, cancellationToken);
+		List<ItemTemplateEntity> current = await context.ItemTemplates.Where(entity => ids.Contains(entity.Id)).ToListAsync(cancellationToken);
+
+		// Validate the whole operation before touching any tracked value or adding an audit.
+		if (ids.Any(id => !expectedRevisions.TryGetValue(id, out string? expected)
+			|| !currentRevisions.TryGetValue(id, out string? actual)
+			|| !string.Equals(expected, actual, StringComparison.Ordinal)))
+		{
+			throw new ConcurrencyConflictException("An item template changed while it was being updated. Reload it and try again.");
+		}
 
 		foreach (ItemTemplateEntity entity in entities)
 		{
-			ItemTemplateEntity existingEntity = existingEntities.Single(e => e.Id == entity.Id);
-			context.Entry(existingEntity).CurrentValues.SetValues(entity);
+			ItemTemplateEntity stored = current.Single(item => item.Id == entity.Id);
+			stored.Name = entity.Name;
+			stored.DefaultCategory = entity.DefaultCategory;
+			stored.DefaultSubcategory = entity.DefaultSubcategory;
+			stored.DefaultUnitPrice = entity.DefaultUnitPrice;
+			stored.DefaultUnitPriceCurrency = entity.DefaultUnitPriceCurrency;
+			stored.DefaultItemCode = entity.DefaultItemCode;
+			stored.Description = entity.Description;
+			stored.NormalizedDescriptionId = ValidTarget(entity, targets);
 		}
 
 		await context.SaveChangesAsync(cancellationToken);
+		if (transaction is not null)
+		{
+			await transaction.CommitAsync(cancellationToken);
+		}
 	}
+
+	private static async Task<Dictionary<Guid, NormalizedDescriptionEntity>> LoadTargetsAsync(
+		ApplicationDbContext context, List<ItemTemplateEntity> entities, CancellationToken cancellationToken)
+	{
+		Guid[] ids = entities.Where(entity => entity.NormalizedDescriptionId.HasValue)
+			.Select(entity => entity.NormalizedDescriptionId!.Value).Distinct().ToArray();
+		await NormalizationWriteGuard.LockTargetsAsync(context, ids, cancellationToken);
+		return await context.NormalizedDescriptions.Where(target => ids.Contains(target.Id))
+			.ToDictionaryAsync(target => target.Id, cancellationToken);
+	}
+
+	private static Guid? ValidTarget(ItemTemplateEntity entity, Dictionary<Guid, NormalizedDescriptionEntity> targets)
+		=> entity.NormalizedDescriptionId is { } id && targets.TryGetValue(id, out NormalizedDescriptionEntity? target)
+			&& target.Status != NormalizedDescriptionStatus.Rejected
+			&& string.Equals(target.CanonicalName, entity.Name.Trim(), StringComparison.OrdinalIgnoreCase) ? id : null;
 
 	public async Task DeleteAsync(List<Guid> ids, CancellationToken cancellationToken)
 	{

@@ -23,6 +23,24 @@ public class ReceiptItemService(IReceiptItemRepository repository, ReceiptItemMa
 		return [.. createdReceiptItemEntities.Select(mapper.ToDomain)];
 	}
 
+	public async Task<List<ReceiptItem>> CreateAsync(List<ReceiptItem> models, Guid receiptId,
+		IReadOnlyList<Guid?> templateIds, CancellationToken cancellationToken)
+	{
+		ArgumentNullException.ThrowIfNull(templateIds);
+		if (templateIds.Count != 0 && templateIds.Count != models.Count)
+		{
+			throw new ArgumentException("Template IDs must align with receipt items.", nameof(templateIds));
+		}
+		Guid?[] hints = templateIds.ToArray();
+		List<ReceiptItemEntity> entities = [.. models.Select(mapper.ToEntity)];
+		foreach (ReceiptItemEntity entity in entities)
+		{
+			entity.ReceiptId = receiptId;
+		}
+		List<ReceiptItemEntity> created = await repository.CreateAsync(entities, hints, cancellationToken);
+		return [.. created.Select(mapper.ToDomain)];
+	}
+
 	public async Task DeleteAsync(List<Guid> ids, CancellationToken cancellationToken)
 	{
 		await repository.DeleteAsync(ids, cancellationToken);
