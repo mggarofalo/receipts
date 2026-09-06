@@ -1,3 +1,4 @@
+import { RequestFailure } from "@/components/RequestFailure";
 import { useState, useMemo, useCallback, useRef } from "react";
 import {
   useItemTemplates,
@@ -81,11 +82,8 @@ function ItemTemplates() {
     setPageSize,
     resetPage,
   } = useServerPagination({ sortBy, sortDirection });
-  const {
-    data: itemTemplatesData,
-    total: serverTotal,
-    isLoading,
-  } = useItemTemplates(offset, limit, sortBy, sortDirection);
+  const templatesQuery = useItemTemplates(offset, limit, sortBy, sortDirection);
+  const { data: itemTemplatesData, total: serverTotal, isLoading, isError } = templatesQuery;
   const createItemTemplate = useCreateItemTemplate();
   const updateItemTemplate = useUpdateItemTemplate();
   const deleteItemTemplates = useDeleteItemTemplates();
@@ -162,15 +160,11 @@ function ItemTemplates() {
       selected,
     });
 
-  if (isLoading) {
-    return <TableSkeleton columns={6} />;
-  }
-
   return (
     <>
       <PageHead
         title="Item templates"
-        sub={`${serverTotal} total`}
+        sub={itemTemplatesData ? `${serverTotal} total` : isError ? "Templates unavailable" : "Loading templates…"}
         actions={
           <>
             {selected.size > 0 && (
@@ -193,6 +187,13 @@ function ItemTemplates() {
           </>
         }
       />
+      {isError && (
+        <RequestFailure
+          message="Item templates unavailable. Cached rows, selections and editor drafts are retained."
+          retry={() => { void templatesQuery.refetch(); }}
+          isRetrying={templatesQuery.isFetching}
+        />
+      )}
       <div className="filter-strip">
         <div style={{ flex: 1, minWidth: 240 }}>
           <FuzzySearchInput
@@ -211,7 +212,8 @@ function ItemTemplates() {
         searchTerm={search}
       />
 
-      {filteredResults.length === 0 ? (
+      {isLoading ? <TableSkeleton columns={6} /> : filteredResults.length === 0 ? (
+        isError ? null :
         search ? (
           <NoResults
             searchTerm={search}

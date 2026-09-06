@@ -1,3 +1,4 @@
+import { RequestFailure } from "@/components/RequestFailure";
 import { useId, useMemo, useState } from "react";
 import {
   useNormalizedDescriptions,
@@ -652,7 +653,7 @@ function LinkTemplateDialog({ source, onClose }: LinkTemplateDialogProps) {
   // the browser can only ever find what was loaded, so a template past the page size read as "no
   // such template exists" while the notice below told you to refine a search that could not reach
   // it — the same failure RECEIPTS-878 removed from merge, rebuilt.
-  const { data, total, isLoading, isError } = useItemTemplates(
+  const { data, total, isLoading, isError, isSuccess, isFetching, refetch } = useItemTemplates(
     0,
     TEMPLATE_PICKER_PAGE_SIZE,
     "name",
@@ -669,6 +670,10 @@ function LinkTemplateDialog({ source, onClose }: LinkTemplateDialogProps) {
     () => templates.find((t) => t.id === templateId),
     [templates, templateId],
   );
+
+  const isDebouncing = search.trim() !== debouncedSearch.trim();
+  const canChooseTemplate = source !== null && isSuccess && !isFetching && !isDebouncing && !link.isPending;
+  const canConfirm = canChooseTemplate && selected !== undefined;
 
   // The server resolves a template's entry by exact, case-insensitive match on the matched text.
   // Same comparison here, so the dialog can name the actual outcome.
@@ -687,7 +692,7 @@ function LinkTemplateDialog({ source, onClose }: LinkTemplateDialogProps) {
   }
 
   function handleConfirm() {
-    if (!source || !templateId) return;
+    if (!source || !templateId || !canConfirm) return;
     link.mutate(
       { id: source.id, itemTemplateId: templateId },
       { onSuccess: () => handleClose() },
@@ -722,20 +727,16 @@ function LinkTemplateDialog({ source, onClose }: LinkTemplateDialogProps) {
             />
           </div>
           <div className="max-h-64 overflow-y-auto rounded border">
-            {isLoading ? (
+            {isLoading || isDebouncing ? (
               <Skeleton className="h-24 w-full rounded" />
             ) : isError ? (
-              // Distinguished from "you have no templates", which is what a failed fetch used to
-              // render. That is not a cosmetic difference: it told an admin who owns templates that
-              // they own none, and pointed them at creating one — which would link to a second
-              // canonical entry and produce exactly the split bucket this feature removes.
-              <p
-                className="p-4 text-sm text-destructive"
-                data-testid="link-template-error"
-              >
-                Could not load your item templates. Nothing has been changed — close this and try
-                again.
-              </p>
+              <div className="p-4" data-testid="link-template-error">
+                <RequestFailure
+                  message="Item templates unavailable. Retry to verify the target before linking."
+                  retry={() => { if (source && !isDebouncing) void refetch(); }}
+                  isRetrying={isFetching}
+                />
+              </div>
             ) : templates.length === 0 ? (
               <p
                 className="p-4 text-sm text-muted-foreground"
@@ -755,7 +756,8 @@ function LinkTemplateDialog({ source, onClose }: LinkTemplateDialogProps) {
                         name="link-template-target"
                         value={t.id}
                         checked={templateId === t.id}
-                        onChange={() => setTemplateId(t.id)}
+                        disabled={!canChooseTemplate}
+                        onChange={() => { if (canChooseTemplate) setTemplateId(t.id); }}
                       />
                       <span className="font-medium">{t.name}</span>
                       {/* The defaults are what makes a template a template, and they are what
@@ -783,7 +785,7 @@ function LinkTemplateDialog({ source, onClose }: LinkTemplateDialogProps) {
               typing to narrow it down.
             </p>
           )}
-          {selected && (
+          {selected && canChooseTemplate && (
             <p className="text-sm" data-testid="link-template-consequence">
               {willConsolidate ? (
                 <>
@@ -814,7 +816,7 @@ function LinkTemplateDialog({ source, onClose }: LinkTemplateDialogProps) {
           </Button>
           <Button
             onClick={handleConfirm}
-            disabled={!templateId || link.isPending}
+            disabled={!canConfirm}
           >
             {link.isPending ? "Linking…" : "Link"}
           </Button>

@@ -1,4 +1,4 @@
-import { toastErrorPolicy } from "@/lib/request-error-policy";
+import { localErrorPolicy, toastErrorPolicy } from "@/lib/request-error-policy";
 import { invalidateDomainChange, queryKeys } from "@/lib/query-invalidation";
 import { useMemo } from "react";
 import { useStableQuery } from "@/hooks/useStableQuery";
@@ -13,10 +13,13 @@ export function useItemTemplates(offset = 0, limit = 50, sortBy?: string | null,
   // separate cache entry from the empty one (RECEIPTS-930).
   const search = q?.trim() || undefined;
   const query = useQuery({
+    ...localErrorPolicy.query,
     queryKey: [...queryKeys.itemTemplates, "list", offset, limit, sortBy, sortDirection, search],
     enabled,
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/api/item-templates", {
+        ...localErrorPolicy.request,
+        signal,
         params: { query: { offset, limit, sortBy: sortBy ?? undefined, sortDirection: (sortDirection ?? undefined) as "asc" | "desc" | undefined, q: search } },
       });
       if (error) throw error;

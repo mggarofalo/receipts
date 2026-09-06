@@ -39,6 +39,9 @@ export interface EntityResultGroup {
   heading: string;
   icon: ComponentType<SVGProps<SVGSVGElement>>;
   items: EntityResultItem[];
+  failure?: { message: string; retry: () => void; isRetrying: boolean };
+  isLoading?: boolean;
+  scopeNotice?: string;
 }
 
 interface AccountLike { id: string; name: string }
@@ -84,13 +87,17 @@ export function useEntityResults({
   const cards = useCards(0, SMALL_LIMIT, undefined, undefined, undefined, referenceOptions);
   const categories = useCategories(0, SMALL_LIMIT, undefined, undefined, undefined, referenceOptions);
   const subcategories = useSubcategories(0, SMALL_LIMIT, undefined, undefined, undefined, referenceOptions);
-  // Item templates and admin users do not yet expose the same reference-list
-  // search contract. Keep their single page within the API ceiling; cmdk can
-  // only filter the returned page until those endpoints gain server search.
+  // Template q searches names only; palette tokens also include description,
+  // category and the "template" prefix. Preserve those matches within the
+  // existing page ceiling until the server exposes the same search contract.
+  // Admin users likewise retain their existing bounded page.
   const itemTemplates = useItemTemplates(0, SMALL_LIMIT, undefined, undefined, { enabled: hasQuery });
   const receipts = useReceipts(0, LARGE_LIMIT, null, null, null, null, entitySearch, { enabled: hasQuery });
   const receiptItems = useReceiptItems(0, LARGE_LIMIT, null, null, entitySearch, { enabled: hasQuery });
   const users = useUsers(0, SMALL_LIMIT, undefined, undefined, { enabled: isAdmin && hasQuery });
+
+  const { refetch: retryItemTemplates } = itemTemplates;
+  const templateSearchLoading = open && rawSearch !== undefined && itemTemplates.data === undefined && (!hasQuery || itemTemplates.isFetching);
 
   return useMemo<EntityResultGroup[]>(() => {
     const groups: EntityResultGroup[] = [];
@@ -161,11 +168,20 @@ export function useEntityResults({
 
     const itemTemplateData =
       (itemTemplates.data as ItemTemplateLike[] | undefined) ?? [];
-    if (itemTemplateData.length) {
+    if (itemTemplateData.length || templateSearchLoading || (hasQuery && itemTemplates.isError)) {
       groups.push({
         id: "item-templates",
         heading: "Item Templates",
         icon: Package,
+        failure: hasQuery && itemTemplates.isError ? {
+          message: "Template search unavailable. Cached matches may be incomplete.",
+          retry: () => { if (hasQuery) void retryItemTemplates(); },
+          isRetrying: itemTemplates.isFetching,
+        } : undefined,
+        isLoading: templateSearchLoading,
+        scopeNotice: hasQuery && itemTemplates.total > itemTemplateData.length
+          ? `Template search covers the first ${itemTemplateData.length} of ${itemTemplates.total} templates.`
+          : undefined,
         items: itemTemplateData.map((t) => ({
           id: t.id,
           label: t.name,
@@ -243,6 +259,12 @@ export function useEntityResults({
     categories.data,
     subcategories.data,
     itemTemplates.data,
+    itemTemplates.total,
+    itemTemplates.isError,
+    itemTemplates.isFetching,
+    retryItemTemplates,
+    hasQuery,
+    templateSearchLoading,
     receipts.data,
     receiptItems.data,
     users.data,

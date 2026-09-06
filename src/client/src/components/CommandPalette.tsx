@@ -1,3 +1,4 @@
+import { RequestFailure } from "@/components/RequestFailure";
 import { assertSessionCurrent, getSessionVersion, isAbortError } from "@/lib/auth";
 import {
   Fragment,
@@ -323,9 +324,29 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         value={query}
         onValueChange={setQuery}
       />
+      {showEntities && entityGroups.some((group) => group.failure || group.scopeNotice) && (
+        <div className="space-y-2 border-b px-3 py-2">
+          {entityGroups.map((group) => (
+            <Fragment key={group.id}>
+              {group.failure && (
+                <RequestFailure
+                  message={group.failure.message}
+                  retry={group.failure.retry}
+                  isRetrying={group.failure.isRetrying}
+                />
+              )}
+              {group.scopeNotice && <p className="text-xs text-muted-foreground">{group.scopeNotice}</p>}
+            </Fragment>
+          ))}
+        </div>
+      )}
       <CommandList>
         <CommandEmpty>
-          No matches. Try a different word or press Esc to close.
+          {showEntities && entityGroups.some((group) => group.failure)
+            ? "Some search results are unavailable. Retry or try another search."
+            : showEntities && entityGroups.some((group) => group.isLoading)
+              ? "Loading template results…"
+              : "No matches. Try a different word or press Esc to close."}
         </CommandEmpty>
 
         {showTopSections && pinnedCommands.length > 0 && (

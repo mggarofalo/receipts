@@ -108,7 +108,8 @@ export function ReceiptItemForm({
   });
   const categoriesQuery = useAllCategories(true);
   const { data: categories } = categoriesQuery;
-  const { data: itemTemplatesData } = useItemTemplates();
+  const templatesQuery = useItemTemplates();
+  const { data: itemTemplatesData } = templatesQuery;
   const templates = useMemo(
     () => (itemTemplatesData as ItemTemplate[] | undefined) ?? [],
     [itemTemplatesData],
@@ -651,7 +652,7 @@ export function ReceiptItemForm({
                 >
                   <Command>
                     <CommandList id={descriptionListId}>
-                      <CommandEmpty>No suggestions found.</CommandEmpty>
+                      <CommandEmpty>{templatesQuery.isError ? "Template suggestions unavailable." : templatesQuery.isLoading ? "Loading template suggestions…" : "No suggestions found."}</CommandEmpty>
                       {descriptionHistoryMatches.length > 0 && (
                         <CommandGroup heading="Recent Descriptions">
                           {descriptionHistoryMatches.slice(0, 5).map((opt) => (
@@ -700,6 +701,13 @@ export function ReceiptItemForm({
                 </PopoverContent>
               </Popover>
               <FormMessage />
+              {templatesQuery.isError && (
+                <RequestFailure
+                  message="Template suggestions unavailable. You can enter the item manually."
+                  retry={() => { void templatesQuery.refetch(); }}
+                  isRetrying={templatesQuery.isFetching}
+                />
+              )}
             </FormItem>
           )}
         />

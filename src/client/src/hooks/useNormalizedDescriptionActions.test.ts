@@ -160,6 +160,7 @@ describe("useLinkTemplateMutation", () => {
     expect(mockClient.POST).toHaveBeenCalledWith(
       "/api/normalized-descriptions/{id}/link-template",
       {
+        middleware: expect.any(Array),
         params: { path: { id: "n-1" } },
         body: { itemTemplateId: "t-1" },
       },

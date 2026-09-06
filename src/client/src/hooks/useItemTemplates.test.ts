@@ -64,6 +64,8 @@ describe("useItemTemplates", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual(templates);
     expect(client.GET).toHaveBeenCalledWith("/api/item-templates", {
+      middleware: expect.any(Array),
+      signal: expect.any(AbortSignal),
       params: { query: { offset: 0, limit: 50 } },
     });
   });
@@ -301,6 +303,8 @@ describe("useItemTemplates", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(client.GET).toHaveBeenCalledWith("/api/item-templates", {
+      middleware: expect.any(Array),
+      signal: expect.any(AbortSignal),
       params: { query: { offset: 0, limit: 50, sortBy: "name", sortDirection: "asc" } },
     });
   });
