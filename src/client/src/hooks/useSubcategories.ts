@@ -1,4 +1,4 @@
-import { toastErrorPolicy } from "@/lib/request-error-policy";
+import { localErrorPolicy, toastErrorPolicy } from "@/lib/request-error-policy";
 import { invalidateDomainChange, queryKeys } from "@/lib/query-invalidation";
 import { useMemo } from "react";
 import { useStableQuery } from "@/hooks/useStableQuery";
@@ -66,12 +66,14 @@ export function useSubcategoriesByCategoryId(categoryId: string | null, offset =
  */
 export function useAllSubcategoriesByCategoryId(categoryId: string | null, isActive?: boolean | null) {
   return useQuery({
+    ...localErrorPolicy.query,
     queryKey: [...queryKeys.subcategories, "byCategory", "all", categoryId, isActive ?? undefined],
     enabled: !!categoryId,
     queryFn: async ({ signal }) => {
       const pageSize = 500;
       const fetchPage = async (offset: number) => {
         const { data, error } = await client.GET("/api/subcategories", {
+          ...localErrorPolicy.request,
           params: {
             query: {
               categoryId: categoryId!,

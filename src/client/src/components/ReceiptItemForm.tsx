@@ -15,10 +15,7 @@ import {
 } from "@/hooks/useSubcategories";
 import { useItemTemplates } from "@/hooks/useItemTemplates";
 import { useReceiptItemSuggestions } from "@/hooks/useReceiptItemSuggestions";
-import {
-  itemDescriptionHistory,
-  itemCodeHistory,
-} from "@/lib/field-history";
+import { itemDescriptionHistory, itemCodeHistory } from "@/lib/field-history";
 import { receiptToOption } from "@/lib/combobox-options";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -109,7 +106,8 @@ export function ReceiptItemForm({
   const { data: receipts, isLoading: receiptsLoading } = useAllReceipts({
     enabled: !hideReceiptField,
   });
-  const { data: categories } = useAllCategories(true);
+  const categoriesQuery = useAllCategories(true);
+  const { data: categories } = categoriesQuery;
   const { data: itemTemplatesData } = useItemTemplates();
   const templates = useMemo(
     () => (itemTemplatesData as ItemTemplate[] | undefined) ?? [],
@@ -133,7 +131,9 @@ export function ReceiptItemForm({
   const categoryOptions = useMemo(
     () =>
       (
-        (categories as { id: string; name: string; isActive: boolean }[] | undefined) ?? []
+        (categories as
+          | { id: string; name: string; isActive: boolean }[]
+          | undefined) ?? []
       )
         .filter((c) => c.isActive)
         .map((c) => ({
@@ -167,11 +167,11 @@ export function ReceiptItemForm({
       form.clearErrors();
       return;
     }
-    (Object.entries(serverErrors) as [keyof ReceiptItemSchemaValues, string][]).forEach(
-      ([field, message]) => {
-        form.setError(field, { type: "server", message });
-      },
-    );
+    (
+      Object.entries(serverErrors) as [keyof ReceiptItemSchemaValues, string][]
+    ).forEach(([field, message]) => {
+      form.setError(field, { type: "server", message });
+    });
   }, [serverErrors, form]);
 
   // eslint-disable-next-line react-hooks/incompatible-library
@@ -182,14 +182,17 @@ export function ReceiptItemForm({
     return categories?.find((c) => c.name === watchedCategory)?.id ?? null;
   }, [categories, watchedCategory]);
 
-  const { data: subcategoriesData } =
-    useAllSubcategoriesByCategoryId(selectedCategoryId, true);
+  const subcategoriesQuery =
+    useAllSubcategoriesByCategoryId(selectedCategoryId);
+  const { data: subcategoriesData } = subcategoriesQuery;
   const createSubcategory = useCreateSubcategory();
 
   const subcategoryOptions = useMemo(
     () =>
       (
-        (subcategoriesData as { id: string; name: string; isActive: boolean }[] | undefined) ?? []
+        (subcategoriesData as
+          | { id: string; name: string; isActive: boolean }[]
+          | undefined) ?? []
       )
         .filter((s) => s.isActive)
         .map((s) => ({
@@ -225,7 +228,8 @@ export function ReceiptItemForm({
   const [itemCodeInput, setItemCodeInput] = useState(
     defaultValues?.receiptItemCode ?? "",
   );
-  const [itemCodeAutocompleteOpen, setItemCodeAutocompleteOpen] = useState(false);
+  const [itemCodeAutocompleteOpen, setItemCodeAutocompleteOpen] =
+    useState(false);
   const itemCodeListId = "item-code-autocomplete-list";
 
   const { data: itemCodeSuggestions, isFetching: isFetchingItemCodeSuggestions, isError: itemCodeSuggestionsError, isDebouncing: itemCodeDebouncing, refetch: retryItemCodeSuggestions } =
@@ -254,14 +258,18 @@ export function ReceiptItemForm({
       } else if (e.key === "ArrowDown" && isItemCodePopoverOpen) {
         e.preventDefault();
         const list = document.getElementById(itemCodeListId);
-        const firstItem = list?.querySelector("[cmdk-item]") as HTMLElement | null;
+        const firstItem = list?.querySelector(
+          "[cmdk-item]",
+        ) as HTMLElement | null;
         firstItem?.focus();
       }
     },
     [isItemCodePopoverOpen, itemCodeListId],
   );
 
-  function applySuggestion(suggestion: NonNullable<typeof itemCodeSuggestions>[number]) {
+  function applySuggestion(
+    suggestion: NonNullable<typeof itemCodeSuggestions>[number],
+  ) {
     form.setValue("receiptItemCode", suggestion.itemCode);
     setItemCodeInput(suggestion.itemCode);
     form.setValue("description", suggestion.description);
@@ -286,20 +294,40 @@ export function ReceiptItemForm({
 
     const isCustomSubcategory =
       values.subcategory &&
-      !subcategoryOptions.some((opt) => opt.value === values.subcategory);
+      !subcategoriesData?.some(
+        (subcategory) => subcategory.name === values.subcategory,
+      );
 
-    if (isCustomSubcategory && selectedCategoryId) {
-      await createSubcategory.mutateAsync({
-        name: values.subcategory,
-        categoryId: selectedCategoryId,
-        isActive: true,
-      });
+    // Only complete, settled lookups can establish that a taxonomy name is new.
+    // Manual receipt labels remain valid while these optional reads are unavailable.
+    if (
+      isCustomSubcategory &&
+      selectedCategoryId &&
+      categoriesQuery.isSuccess &&
+      !categoriesQuery.isFetching &&
+      subcategoriesQuery.isSuccess &&
+      !subcategoriesQuery.isFetching
+    ) {
+      try {
+        await createSubcategory.mutateAsync({
+          name: values.subcategory,
+          categoryId: selectedCategoryId,
+          isActive: true,
+        });
+      } catch {
+        // The mutation owns feedback. Keep the draft and stop this submission;
+        // React Hook Form rethrows an unhandled onValid rejection.
+        return;
+      }
     }
 
     onSubmit(values);
   }
 
-  const computedTotal = calculateLineTotal(watchedQuantity ?? 0, watchedUnitPrice ?? 0);
+  const computedTotal = calculateLineTotal(
+    watchedQuantity ?? 0,
+    watchedUnitPrice ?? 0,
+  );
 
   // Fuse.js autocomplete for description
   const fuse = useMemo(
@@ -345,7 +373,9 @@ export function ReceiptItemForm({
         e.preventDefault();
         // Move focus into the first item in the CommandList
         const list = document.getElementById(descriptionListId);
-        const firstItem = list?.querySelector("[cmdk-item]") as HTMLElement | null;
+        const firstItem = list?.querySelector(
+          "[cmdk-item]",
+        ) as HTMLElement | null;
         firstItem?.focus();
       }
     },
@@ -459,19 +489,28 @@ export function ReceiptItemForm({
                           setItemCodeAutocompleteOpen(true);
                         }}
                         onFocus={() => {
-                          if (itemCodeInput.length >= 1 || itemCodeHistoryMatches.length > 0) {
+                          if (
+                            itemCodeInput.length >= 1 ||
+                            itemCodeHistoryMatches.length > 0
+                          ) {
                             setItemCodeAutocompleteOpen(true);
                           }
                         }}
                         onKeyDown={handleItemCodeKeyDown}
                         autoComplete="off"
                       />
-                      {isFetchingItemCodeSuggestions && itemCodeInput.length >= 1 && (
-                        <>
-                          <Loader2 className="absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" aria-hidden="true" />
-                          <span className="sr-only" role="status">Loading suggestions...</span>
-                        </>
-                      )}
+                      {isFetchingItemCodeSuggestions &&
+                        itemCodeInput.length >= 1 && (
+                          <>
+                            <Loader2
+                              className="absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground"
+                              aria-hidden="true"
+                            />
+                            <span className="sr-only" role="status">
+                              Loading suggestions...
+                            </span>
+                          </>
+                        )}
                     </div>
                   </FormControl>
                 </PopoverAnchor>
@@ -501,42 +540,43 @@ export function ReceiptItemForm({
                           ))}
                         </CommandGroup>
                       )}
-                      {itemCodeSuggestions && itemCodeSuggestions.length > 0 && (
-                        <CommandGroup heading="Suggestions">
-                          {itemCodeSuggestions.map((suggestion) => (
-                            <CommandItem
-                              key={`${suggestion.itemCode}-${suggestion.matchType}`}
-                              value={`${suggestion.itemCode} ${suggestion.description}`}
-                              onSelect={() => applySuggestion(suggestion)}
-                            >
-                              <div className="flex w-full items-center justify-between">
-                                <div className="flex flex-col gap-0.5">
-                                  <span className="font-medium font-mono">
-                                    {suggestion.itemCode}
-                                  </span>
-                                  <span className="text-xs text-muted-foreground">
-                                    {suggestion.description}
-                                    {suggestion.category
-                                      ? ` · ${suggestion.category}`
-                                      : ""}
-                                    {suggestion.unitPrice != null
-                                      ? ` · ${formatUnitPrice(Number(suggestion.unitPrice))}`
-                                      : ""}
-                                  </span>
+                      {itemCodeSuggestions &&
+                        itemCodeSuggestions.length > 0 && (
+                          <CommandGroup heading="Suggestions">
+                            {itemCodeSuggestions.map((suggestion) => (
+                              <CommandItem
+                                key={`${suggestion.itemCode}-${suggestion.matchType}`}
+                                value={`${suggestion.itemCode} ${suggestion.description}`}
+                                onSelect={() => applySuggestion(suggestion)}
+                              >
+                                <div className="flex w-full items-center justify-between">
+                                  <div className="flex flex-col gap-0.5">
+                                    <span className="font-medium font-mono">
+                                      {suggestion.itemCode}
+                                    </span>
+                                    <span className="text-xs text-muted-foreground">
+                                      {suggestion.description}
+                                      {suggestion.category
+                                        ? ` · ${suggestion.category}`
+                                        : ""}
+                                      {suggestion.unitPrice != null
+                                        ? ` · ${formatUnitPrice(Number(suggestion.unitPrice))}`
+                                        : ""}
+                                    </span>
+                                  </div>
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[10px] px-1.5 py-0"
+                                  >
+                                    {suggestion.matchType === "location"
+                                      ? "Location"
+                                      : "Global"}
+                                  </Badge>
                                 </div>
-                                <Badge
-                                  variant="outline"
-                                  className="text-[10px] px-1.5 py-0"
-                                >
-                                  {suggestion.matchType === "location"
-                                    ? "Location"
-                                    : "Global"}
-                                </Badge>
-                              </div>
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      )}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        )}
                     </CommandList>
                   </Command>
                 </PopoverContent>
@@ -591,7 +631,10 @@ export function ReceiptItemForm({
                         setAutocompleteOpen(true);
                       }}
                       onFocus={() => {
-                        if (descriptionInput.length >= 2 || descriptionHistoryMatches.length > 0) {
+                        if (
+                          descriptionInput.length >= 2 ||
+                          descriptionHistoryMatches.length > 0
+                        ) {
                           setAutocompleteOpen(true);
                         }
                       }}
@@ -676,9 +719,25 @@ export function ReceiptItemForm({
                     onValueChange={handleCategoryChange}
                     placeholder="Select category..."
                     searchPlaceholder="Search categories..."
+                    emptyMessage={
+                      categoriesQuery.isError
+                        ? "Category choices unavailable."
+                        : categoriesQuery.isLoading
+                          ? "Loading category choices…"
+                          : "No categories found."
+                    }
                   />
                 </FormControl>
                 <FormMessage />
+                {categoriesQuery.isError && (
+                  <RequestFailure
+                    message="Category choices unavailable. Cached choices and existing values are retained."
+                    retry={() => {
+                      void categoriesQuery.refetch();
+                    }}
+                    isRetrying={categoriesQuery.isFetching}
+                  />
+                )}
               </FormItem>
             )}
           />
@@ -696,11 +755,27 @@ export function ReceiptItemForm({
                     onValueChange={field.onChange}
                     placeholder="Select subcategory..."
                     searchPlaceholder="Search subcategories..."
+                    emptyMessage={
+                      subcategoriesQuery.isError
+                        ? "Subcategory choices unavailable."
+                        : subcategoriesQuery.isLoading
+                          ? "Loading subcategory choices…"
+                          : "No subcategories found."
+                    }
                     allowCustom
                     disabled={!watchedCategory}
                   />
                 </FormControl>
                 <FormMessage />
+                {subcategoriesQuery.isError && selectedCategoryId && (
+                  <RequestFailure
+                    message="Subcategory choices unavailable. Cached choices and existing values are retained."
+                    retry={() => {
+                      if (selectedCategoryId) void subcategoriesQuery.refetch();
+                    }}
+                    isRetrying={subcategoriesQuery.isFetching}
+                  />
+                )}
               </FormItem>
             )}
           />

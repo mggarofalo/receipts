@@ -1,3 +1,4 @@
+import { RequestFailure } from "@/components/RequestFailure";
 import { useRef } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod/v4";
@@ -48,16 +49,20 @@ export function SubcategoryForm({
   useFormShortcuts({ formRef });
   const { options: subcategoryNameOptions, add: addSubcategoryName } =
     useFieldHistory(subcategoryNameHistory);
-  const { data: categories } = useAllCategories();
+  const categoriesQuery = useAllCategories();
+  const { data: categories } = categoriesQuery;
 
-  const categoryOptions = (
-    categories as { id: string; name: string; isActive: boolean }[] | undefined
-  )
-    ?.filter((c) => c.isActive)
-    .map((c) => ({
-      value: c.id,
-      label: c.name,
-    })) ?? [];
+  const categoryOptions =
+    (
+      categories as
+        | { id: string; name: string; isActive: boolean }[]
+        | undefined
+    )
+      ?.filter((c) => c.isActive)
+      .map((c) => ({
+        value: c.id,
+        label: c.name,
+      })) ?? [];
 
   const form = useForm<SubcategoryFormValues>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -117,9 +122,25 @@ export function SubcategoryForm({
                   onValueChange={field.onChange}
                   placeholder="Select a category..."
                   searchPlaceholder="Search categories..."
+                  emptyMessage={
+                    categoriesQuery.isError
+                      ? "Category choices unavailable."
+                      : categoriesQuery.isLoading
+                        ? "Loading category choices…"
+                        : "No categories found."
+                  }
                 />
               </FormControl>
               <FormMessage />
+              {categoriesQuery.isError && (
+                <RequestFailure
+                  message="Category choices unavailable. Cached choices and your selection are retained."
+                  retry={() => {
+                    void categoriesQuery.refetch();
+                  }}
+                  isRetrying={categoriesQuery.isFetching}
+                />
+              )}
             </FormItem>
           )}
         />
@@ -163,7 +184,9 @@ export function SubcategoryForm({
           </Button>
           <SubmitButton
             isSubmitting={isSubmitting ?? false}
-            label={mode === "create" ? "Create Subcategory" : "Update Subcategory"}
+            label={
+              mode === "create" ? "Create Subcategory" : "Update Subcategory"
+            }
             loadingLabel="Saving..."
           />
         </div>

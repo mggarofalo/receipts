@@ -213,6 +213,7 @@ describe("useAllSubcategoriesByCategoryId", () => {
       params: {
         query: { categoryId: "cat-1", offset: 0, limit: 500, sortBy: "name", sortDirection: "asc", isActive: true },
       },
+      middleware: expect.any(Array),
       signal: expect.any(AbortSignal),
     });
   });
