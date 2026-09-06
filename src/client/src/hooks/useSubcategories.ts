@@ -152,6 +152,8 @@ export interface AffectedReceipt {
   id: string;
   date: string;
   location: string;
+  /** Optional for compatibility with servers predating trash-inclusive examples. */
+  isDeleted?: boolean;
 }
 
 export interface DeleteSubcategoryConflict {

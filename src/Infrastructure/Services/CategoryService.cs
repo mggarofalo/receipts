@@ -113,13 +113,5 @@ public class CategoryService(ICategoryRepository repository, CategoryMapper mapp
 		return await repository.GetReceiptItemCountByCategoryNameAsync(categoryName, cancellationToken);
 	}
 
-	public async Task<List<string>> GetSubcategoryNamesAsync(Guid categoryId, CancellationToken cancellationToken)
-	{
-		return await repository.GetSubcategoryNamesAsync(categoryId, cancellationToken);
-	}
 
-	public async Task<int> GetReceiptItemCountBySubcategoryNamesAsync(List<string> subcategoryNames, CancellationToken cancellationToken)
-	{
-		return await repository.GetReceiptItemCountBySubcategoryNamesAsync(subcategoryNames, cancellationToken);
-	}
 }

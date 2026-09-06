@@ -200,7 +200,7 @@ public class SubcategoriesController(IMediator mediator, SubcategoryMapper mappe
 
 	[HttpDelete(RouteDelete)]
 	[EndpointSummary("Soft-delete a subcategory")]
-	[EndpointDescription("Soft-deletes a subcategory. Returns 409 Conflict if receipt items reference this subcategory.")]
+	[EndpointDescription("Soft-deletes a subcategory. Returns 409 Conflict if receipt items, including trash, use its current parent category name and subcategory name. Historical labels are unchanged.")]
 	public async Task<Results<NoContent, NotFound, Conflict<ProblemDetails>>> DeleteSubcategory([FromRoute] Guid id, CancellationToken cancellationToken = default)
 	{
 		Subcategory? subcategory = await mediator.Send(new GetSubcategoryByIdQuery(id), cancellationToken);
@@ -210,11 +210,11 @@ public class SubcategoriesController(IMediator mediator, SubcategoryMapper mappe
 			return TypedResults.NotFound();
 		}
 
-		int receiptItemCount = await subcategoryService.GetReceiptItemCountBySubcategoryNameAsync(subcategory.Name, cancellationToken);
+		SubcategoryUsage usage = await subcategoryService.GetUsageAsync(subcategory.CategoryId, subcategory.Name, 20, cancellationToken);
+		int receiptItemCount = usage.ReceiptItemCount;
 		if (receiptItemCount > 0)
 		{
 			logger.LogWarning("Subcategory {Id} cannot be deleted — {Count} receipt items reference it", id, receiptItemCount);
-			List<(Guid ReceiptId, DateOnly Date, string Location)> affected = await subcategoryService.GetAffectedReceiptsBySubcategoryNameAsync(subcategory.Name, 20, cancellationToken);
 			// The count and the sample of affected receipts ride as ProblemDetails extensions,
 			// which serialise at the top level of the body — the same place the client already
 			// reads them from. Only the prose moves, from `message` to `detail`.
@@ -223,7 +223,7 @@ public class SubcategoriesController(IMediator mediator, SubcategoryMapper mappe
 				new Dictionary<string, object?>
 				{
 					["receiptItemCount"] = receiptItemCount,
-					["affectedReceipts"] = affected.Select(r => new { id = r.ReceiptId, date = r.Date.ToString("yyyy-MM-dd"), location = r.Location }).ToList(),
+					["affectedReceipts"] = usage.AffectedReceipts.Select(r => new { id = r.ReceiptId, date = r.Date.ToString("yyyy-MM-dd"), location = r.Location, isDeleted = r.IsDeleted }).ToList(),
 				});
 		}
 

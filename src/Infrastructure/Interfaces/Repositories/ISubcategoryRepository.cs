@@ -18,6 +18,5 @@ public interface ISubcategoryRepository
 	Task DeleteAsync(List<Guid> ids, CancellationToken cancellationToken);
 	Task<bool> RestoreAsync(Guid id, CancellationToken cancellationToken);
 	Task<string?> GetRestoreConflictNameAsync(Guid id, CancellationToken cancellationToken);
-	Task<int> GetReceiptItemCountBySubcategoryNameAsync(string subcategoryName, CancellationToken cancellationToken);
-	Task<List<(Guid ReceiptId, DateOnly Date, string Location)>> GetAffectedReceiptsBySubcategoryNameAsync(string subcategoryName, int limit, CancellationToken cancellationToken);
+	Task<SubcategoryUsage> GetUsageAsync(Guid categoryId, string subcategoryName, int receiptLimit, CancellationToken cancellationToken);
 }

@@ -388,8 +388,8 @@ public class SubcategoriesControllerTests
 			It.IsAny<CancellationToken>()))
 			.ReturnsAsync(subcategory);
 
-		_subcategoryServiceMock.Setup(s => s.GetReceiptItemCountBySubcategoryNameAsync(subcategory.Name, It.IsAny<CancellationToken>()))
-			.ReturnsAsync(0);
+		_subcategoryServiceMock.Setup(s => s.GetUsageAsync(subcategory.CategoryId, subcategory.Name, 20, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new SubcategoryUsage(0, []));
 
 		_mediatorMock.Setup(m => m.Send(
 			It.Is<DeleteSubcategoryCommand>(c => c.Ids.Contains(subcategory.Id)),
@@ -432,21 +432,24 @@ public class SubcategoriesControllerTests
 			It.IsAny<CancellationToken>()))
 			.ReturnsAsync(subcategory);
 
-		_subcategoryServiceMock.Setup(s => s.GetReceiptItemCountBySubcategoryNameAsync(subcategory.Name, It.IsAny<CancellationToken>()))
-			.ReturnsAsync(5);
-
-		_subcategoryServiceMock.Setup(s => s.GetAffectedReceiptsBySubcategoryNameAsync(subcategory.Name, 20, It.IsAny<CancellationToken>()))
-			.ReturnsAsync(new List<(Guid ReceiptId, DateOnly Date, string Location)>
-			{
-				(Guid.NewGuid(), new DateOnly(2026, 1, 15), "Store A"),
-				(Guid.NewGuid(), new DateOnly(2026, 2, 20), "Store B"),
-			});
+		_subcategoryServiceMock.Setup(s => s.GetUsageAsync(subcategory.CategoryId, subcategory.Name, 20, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new SubcategoryUsage(5, [
+				new(Guid.NewGuid(), new DateOnly(2026, 1, 15), "Store A", false),
+				new(Guid.NewGuid(), new DateOnly(2026, 2, 20), "Store B", true),
+			]));
 
 		// Act
 		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.DeleteSubcategory(subcategory.Id);
 
 		// Assert
-		Assert.IsType<Conflict<ProblemDetails>>(result.Result);
+		var conflict = Assert.IsType<Conflict<ProblemDetails>>(result.Result);
+		conflict.Value!.Detail.Should().Contain("5 receipt item(s)");
+		conflict.Value.Extensions["receiptItemCount"].Should().Be(5);
+		var examples = System.Text.Json.JsonSerializer.SerializeToElement(conflict.Value.Extensions["affectedReceipts"]);
+		examples.GetArrayLength().Should().Be(2);
+		examples[0].GetProperty("isDeleted").GetBoolean().Should().BeFalse();
+		examples[1].GetProperty("isDeleted").GetBoolean().Should().BeTrue();
+		_notifierMock.Verify(instance => instance.NotifyDeleted("subcategory", subcategory.Id), Times.Never);
 	}
 
 	[Fact]
@@ -460,8 +463,8 @@ public class SubcategoriesControllerTests
 			It.IsAny<CancellationToken>()))
 			.ReturnsAsync(subcategory);
 
-		_subcategoryServiceMock.Setup(s => s.GetReceiptItemCountBySubcategoryNameAsync(subcategory.Name, It.IsAny<CancellationToken>()))
-			.ReturnsAsync(0);
+		_subcategoryServiceMock.Setup(s => s.GetUsageAsync(subcategory.CategoryId, subcategory.Name, 20, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new SubcategoryUsage(0, []));
 
 		_mediatorMock.Setup(m => m.Send(
 			It.Is<DeleteSubcategoryCommand>(c => c.Ids.Contains(subcategory.Id)),

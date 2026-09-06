@@ -598,26 +598,29 @@ function Subcategories() {
               <p className="text-sm text-muted-foreground">
                 <strong>{conflictData.subcategoryName}</strong> cannot be deleted because{" "}
                 {conflictData.receiptItemCount} receipt item(s) use this subcategory.
-                Re-categorize the items on these receipts first:
+                Counts include items in trash. Re-categorize matching items first;
+                restore trashed items or receipts before editing them.
               </p>
               <ul className="max-h-64 space-y-1 overflow-y-auto text-sm">
                 {conflictData.affectedReceipts.map((receipt) => (
                   <li key={receipt.id}>
-                    <Link
-                      to={`/receipts/${receipt.id}`}
-                      className="text-primary hover:underline"
-                      onClick={() => setConflictData(null)}
-                    >
-                      {receipt.date} &mdash; {receipt.location}
-                    </Link>
+                    {receipt.isDeleted ? (
+                      <span>{receipt.date} &mdash; {receipt.location} (in trash)</span>
+                    ) : (
+                      <Link
+                        to={`/receipts/${receipt.id}`}
+                        className="text-primary hover:underline"
+                        onClick={() => setConflictData(null)}
+                      >
+                        {receipt.date} &mdash; {receipt.location}
+                      </Link>
+                    )}
                   </li>
                 ))}
               </ul>
-              {conflictData.receiptItemCount > conflictData.affectedReceipts.length && (
-                <p className="text-xs text-muted-foreground">
-                  and {conflictData.receiptItemCount - conflictData.affectedReceipts.length} more receipt(s)
-                </p>
-              )}
+              <p className="text-xs text-muted-foreground">
+                Showing up to 20 affected receipts. A receipt can contain multiple matching items.
+              </p>
               <div className="flex justify-end">
                 <Button variant="outline" onClick={() => setConflictData(null)}>
                   Close

@@ -262,3 +262,5 @@ Automatic receipt-item normalization uses source snapshots and a short guarded w
 ## Receipt arithmetic ownership
 
 The client centralizes decimal line rounding, amount sums and balance comparisons in one pure helper while retaining authoritative server aggregates. See [Receipt arithmetic](receipt-arithmetic.md) for calculation order, submission and reconciliation thresholds, and transport limits.
+
+Category suggestions and their historical receipt-label contracts are documented in [Category snapshots](category-snapshots.md).

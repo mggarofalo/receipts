@@ -371,12 +371,6 @@ public class CategoriesControllerTests
 		_categoryServiceMock.Setup(s => s.GetReceiptItemCountByCategoryNameAsync(category.Name, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(0);
 
-		_categoryServiceMock.Setup(s => s.GetSubcategoryNamesAsync(category.Id, It.IsAny<CancellationToken>()))
-			.ReturnsAsync([]);
-
-		_categoryServiceMock.Setup(s => s.GetReceiptItemCountBySubcategoryNamesAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()))
-			.ReturnsAsync(0);
-
 		_mediatorMock.Setup(m => m.Send(
 			It.Is<DeleteCategoryCommand>(c => c.Ids.Contains(category.Id)),
 			It.IsAny<CancellationToken>()))
@@ -421,30 +415,6 @@ public class CategoriesControllerTests
 	}
 
 	[Fact]
-	public async Task DeleteCategory_ReturnsConflict_WhenReceiptItemsReferenceSubcategoryNames()
-	{
-		Category category = CategoryGenerator.Generate();
-
-		_mediatorMock.Setup(m => m.Send(
-			It.Is<GetCategoryByIdQuery>(q => q.Id == category.Id),
-			It.IsAny<CancellationToken>()))
-			.ReturnsAsync(category);
-
-		_categoryServiceMock.Setup(s => s.GetReceiptItemCountByCategoryNameAsync(category.Name, It.IsAny<CancellationToken>()))
-			.ReturnsAsync(0);
-
-		_categoryServiceMock.Setup(s => s.GetSubcategoryNamesAsync(category.Id, It.IsAny<CancellationToken>()))
-			.ReturnsAsync(["Produce", "Dairy"]);
-
-		_categoryServiceMock.Setup(s => s.GetReceiptItemCountBySubcategoryNamesAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()))
-			.ReturnsAsync(3);
-
-		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.DeleteCategory(category.Id);
-
-		Assert.IsType<Conflict<ProblemDetails>>(result.Result);
-	}
-
-	[Fact]
 	public async Task DeleteCategory_ThrowsException_WhenMediatorFails()
 	{
 		Category category = CategoryGenerator.Generate();
@@ -455,12 +425,6 @@ public class CategoriesControllerTests
 			.ReturnsAsync(category);
 
 		_categoryServiceMock.Setup(s => s.GetReceiptItemCountByCategoryNameAsync(category.Name, It.IsAny<CancellationToken>()))
-			.ReturnsAsync(0);
-
-		_categoryServiceMock.Setup(s => s.GetSubcategoryNamesAsync(category.Id, It.IsAny<CancellationToken>()))
-			.ReturnsAsync([]);
-
-		_categoryServiceMock.Setup(s => s.GetReceiptItemCountBySubcategoryNamesAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()))
 			.ReturnsAsync(0);
 
 		_mediatorMock.Setup(m => m.Send(

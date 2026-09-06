@@ -119,13 +119,9 @@ public class SubcategoryService(ISubcategoryRepository repository, SubcategoryMa
 		}
 	}
 
-	public async Task<int> GetReceiptItemCountBySubcategoryNameAsync(string subcategoryName, CancellationToken cancellationToken)
+	public async Task<SubcategoryUsage> GetUsageAsync(Guid categoryId, string subcategoryName, int receiptLimit, CancellationToken cancellationToken)
 	{
-		return await repository.GetReceiptItemCountBySubcategoryNameAsync(subcategoryName, cancellationToken);
+		return await repository.GetUsageAsync(categoryId, subcategoryName, receiptLimit, cancellationToken);
 	}
 
-	public async Task<List<(Guid ReceiptId, DateOnly Date, string Location)>> GetAffectedReceiptsBySubcategoryNameAsync(string subcategoryName, int limit, CancellationToken cancellationToken)
-	{
-		return await repository.GetAffectedReceiptsBySubcategoryNameAsync(subcategoryName, limit, cancellationToken);
-	}
 }
