@@ -1,3 +1,4 @@
+import { sumAmounts, calculateReceiptBalance } from "@/lib/receipt-arithmetic";
 import { useState } from "react";
 import { Link, useParams, Navigate } from "react-router";
 import { useTripByReceiptId } from "@/hooks/useTrips";
@@ -66,11 +67,9 @@ function ReceiptDetail() {
     return <Navigate to="/receipts" replace />;
   }
 
-  const transactionsTotal =
-    trip?.transactions?.reduce(
-      (sum: number, ta) => sum + Number(ta.transaction.amount ?? 0),
-      0,
-    ) ?? 0;
+  const transactionsTotal = sumAmounts(
+    trip?.transactions?.map((entry) => Number(entry.transaction.amount ?? 0)) ?? [],
+  );
 
   const subtotal = Number(trip?.receipt?.subtotal ?? 0);
   const adjustmentTotal = Number(trip?.receipt?.adjustmentTotal ?? 0);
@@ -112,7 +111,7 @@ function ReceiptDetail() {
   const transactionsImbalanced =
     trip != null &&
     trip.transactions.length > 0 &&
-    Math.abs(expectedTotal - transactionsTotal) >= 0.005;
+    calculateReceiptBalance(expectedTotal, transactionsTotal).hasVisibleDiscrepancy;
 
   const yChip: "synced" | "pending" | "error" | "none" =
     persistedYnabStatus === "Synced"

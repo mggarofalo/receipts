@@ -85,6 +85,18 @@ vi.mock("@/hooks/useReceiptItemSuggestions", () => ({
 }));
 
 describe("ReceiptItemForm", () => {
+  it("previews a fractional midpoint line using the server rounding policy", () => {
+    render(
+      <ReceiptItemForm
+        mode="edit"
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        defaultValues={{ quantity: 0.5, unitPrice: 2.01 }}
+      />,
+    );
+    expect(screen.getByText("Total: $1.01")).toBeInTheDocument();
+  });
+
   const defaultProps = {
     mode: "create" as const,
     onSubmit: vi.fn(),

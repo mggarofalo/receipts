@@ -1,3 +1,4 @@
+import { calculateLineTotal } from "@/lib/receipt-arithmetic";
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod/v4";
@@ -297,7 +298,7 @@ export function ReceiptItemForm({
     onSubmit(values);
   }
 
-  const computedTotal = (watchedQuantity ?? 0) * (watchedUnitPrice ?? 0);
+  const computedTotal = calculateLineTotal(watchedQuantity ?? 0, watchedUnitPrice ?? 0);
 
   // Fuse.js autocomplete for description
   const fuse = useMemo(

@@ -1,3 +1,4 @@
+import { calculateReceiptBalance } from "@/lib/receipt-arithmetic";
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/components/primitives";
 import { Combobox } from "@/components/ui/combobox";
@@ -55,8 +56,11 @@ export function ReconcileSheet({
   const triggerRef = useRef<Element | null>(null);
 
   // Amount needed so that receiptTotal + adjustment === transactionsTotal.
-  const delta = Math.round((transactionsTotal - receiptTotal) * 100) / 100;
-  const balanced = Math.abs(delta) < 0.005;
+  const {
+    reconciliationAdjustment: delta,
+    isReconciled: balanced,
+    isValid,
+  } = calculateReceiptBalance(receiptTotal, transactionsTotal);
 
   // Reset the form each time the sheet opens (previous-prop render pattern).
   const [wasOpen, setWasOpen] = useState(open);
@@ -83,7 +87,7 @@ export function ReconcileSheet({
   const needsDescription = type.trim().toLowerCase() === "other";
   const descriptionMissing = needsDescription && description.trim() === "";
   const canSubmit =
-    !balanced && type.trim() !== "" && !descriptionMissing && !isSubmitting;
+    isValid && !balanced && type.trim() !== "" && !descriptionMissing && !isSubmitting;
 
   function handleSheetKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
     if (e.key === "Escape") {

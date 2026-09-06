@@ -33,4 +33,8 @@
     <ProjectReference Include="..\SampleData\SampleData.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="../../test-data/receipt-arithmetic.json" Link="test-data/receipt-arithmetic.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

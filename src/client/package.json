@@ -33,6 +33,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "date-fns": "^4.1.0",
+    "decimal.js": "10.6.0",
     "diff-match-patch": "^1.0.5",
     "fuse.js": "^7.1.0",
     "lucide-react": "^0.575.0",

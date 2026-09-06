@@ -1,3 +1,4 @@
+import { sumAmounts } from "@/lib/receipt-arithmetic";
 import { useMemo, useState } from "react";
 import { generateId } from "@/lib/id";
 import { formatCurrency } from "@/lib/format";
@@ -46,7 +47,7 @@ export function AdjustmentsSection({
   const { adjustmentTypeLabels } = useEnumMetadata();
 
   const total = useMemo(
-    () => adjustments.reduce((sum, adjustment) => sum + adjustment.amount, 0),
+    () => sumAmounts(adjustments.map((adjustment) => adjustment.amount)),
     [adjustments],
   );
 

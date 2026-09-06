@@ -1,3 +1,4 @@
+import { calculateReceiptBalance } from "@/lib/receipt-arithmetic";
 import {
   Card,
   CardContent,
@@ -26,7 +27,7 @@ export function BalanceSummaryCard({
 }: BalanceSummaryCardProps) {
   const isBalanced =
     transactionsTotal != null
-      ? Math.abs(expectedTotal - transactionsTotal) < 0.005
+      ? !calculateReceiptBalance(expectedTotal, transactionsTotal).hasVisibleDiscrepancy
       : true;
 
   return (

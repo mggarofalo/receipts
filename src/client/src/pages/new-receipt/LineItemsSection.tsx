@@ -1,3 +1,4 @@
+import { calculateSubtotal, calculateLineTotal } from "@/lib/receipt-arithmetic";
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { generateId } from "@/lib/id";
 import { useForm } from "react-hook-form";
@@ -275,12 +276,7 @@ export function LineItemsSection({
   );
 
   const subtotal = useMemo(
-    () =>
-      items.reduce(
-        (sum, item) =>
-          sum + Math.round(item.quantity * item.unitPrice * 100) / 100,
-        0,
-      ),
+    () => calculateSubtotal(items),
     [items],
   );
 
@@ -971,7 +967,7 @@ export function LineItemsSection({
                       />
                     </TableCell>
                     <TableCell>
-                      {formatCurrency(editDraft.quantity * editDraft.unitPrice)}
+                      {formatCurrency(calculateLineTotal(editDraft.quantity, editDraft.unitPrice))}
                     </TableCell>
                     <TableCell>
                       <div className="flex min-w-[12rem] flex-col gap-1">
@@ -1045,7 +1041,7 @@ export function LineItemsSection({
                     <TableCell>{item.quantity}</TableCell>
                     <TableCell>{formatUnitPrice(item.unitPrice)}</TableCell>
                     <TableCell>
-                      {formatCurrency(item.quantity * item.unitPrice)}
+                      {formatCurrency(calculateLineTotal(item.quantity, item.unitPrice))}
                     </TableCell>
                     <TableCell>
                       {item.category}

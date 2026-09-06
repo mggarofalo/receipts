@@ -1,3 +1,4 @@
+import { calculateLineTotal } from "@/lib/receipt-arithmetic";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -240,7 +241,7 @@ export function ReceiptItemsCard({
                         {formatUnitPrice(item.unitPrice)}
                       </TableCell>
                       <TableCell className="text-right">
-                        {formatCurrency(item.quantity * item.unitPrice)}
+                        {formatCurrency(calculateLineTotal(item.quantity, item.unitPrice))}
                       </TableCell>
                       <TableCell>{item.category}</TableCell>
                       <TableCell>{item.subcategory ?? ""}</TableCell>
