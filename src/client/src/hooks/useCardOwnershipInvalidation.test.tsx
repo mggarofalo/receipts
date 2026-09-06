@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const transport = vi.hoisted(() => ({ GET: vi.fn(), PUT: vi.fn(), POST: vi.fn() }));
 const connection = vi.hoisted(() => ({
   start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined),
+  state: "Disconnected", off: vi.fn(),
   on: vi.fn(), onreconnecting: vi.fn(), onreconnected: vi.fn(), onclose: vi.fn(), connectionId: "local-connection",
 }));
 vi.mock("@/lib/api-client", () => ({ default: transport }));
@@ -19,6 +20,7 @@ vi.mock("@microsoft/signalr", () => ({
     build() { return connection; }
   },
   LogLevel: { Debug: 1, None: 6 },
+  HubConnectionState: { Disconnected: "Disconnected", Connecting: "Connecting", Connected: "Connected", Reconnecting: "Reconnecting", Disconnecting: "Disconnecting" },
 }));
 
 import { useAllCards, useUpdateCard, useMergeCards } from "./useCards";
@@ -29,7 +31,12 @@ import { useYnabSplitComparison } from "./useYnab";
 import { useReceipts } from "./useReceipts";
 import { useSignalR } from "./useSignalR";
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  connection.state = "Disconnected";
+  connection.start.mockImplementation(async () => { connection.state = "Connected"; });
+  connection.stop.mockImplementation(async () => { connection.state = "Disconnected"; });
+});
 
 describe("card ownership cache dependencies", () => {
   it.each(["local", "remote", "merge"] as const)("refreshes mounted ownership views after a %s card update", async (origin) => {
@@ -80,6 +87,15 @@ describe("card ownership cache dependencies", () => {
     ];
     await waitFor(() => expect(visibleOwners()).toEqual(Array(6).fill("account-before")));
     expect(result.current.receipts.data).toHaveLength(1);
+    if (origin === "remote") {
+      // Initial connection repairs every supported projection. Re-prime inactive
+      // rows afterward so these assertions isolate the subsequent card event.
+      await waitFor(() => expect(queryClient.getQueryState(["categories"])?.isInvalidated).toBe(true));
+      queryClient.setQueryData(["transactions", "deleted", 0, 50], { data: [{ accountId: "account-before" }] });
+      queryClient.setQueryData(["categories"], ["Food"]);
+      queryClient.setQueryData(["dashboard", "spending-over-time"], { buckets: [] });
+      queryClient.setQueryData(["ynab", "connection-status"], { configured: true });
+    }
     if (origin === "local") {
       await act(async () => { await result.current.update.mutateAsync({ id: "card", cardCode: "1234", name: "Card", isActive: true, accountId: "account-after" }); });
       expect(connection.start).not.toHaveBeenCalled();

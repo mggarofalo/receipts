@@ -266,3 +266,5 @@ The client centralizes decimal line rounding, amount sums and balance comparison
 Category suggestions and their historical receipt-label contracts are documented in [Category snapshots](category-snapshots.md).
 
 Client mutation and remote-event projection ownership is described in [Query invalidation](query-invalidation.md).
+
+Connection startup, catch-up and shared HTTP/hub token refresh are described in [Realtime recovery](realtime-recovery.md).
