@@ -253,6 +253,10 @@ it.each(["local", "remote", "same-session"] as const)(
         );
       } else {
         await waitFor(() => expect(hub.start).toHaveBeenCalled());
+        await waitFor(() => expect(queryClient.isFetching()).toBe(0));
+        // Unknown reconnect repairs destination settings; establish a fresh value
+        // before checking that this later ordinary item event leaves it alone.
+        queryClient.setQueryData(["ynab", "budgets"], { data: [] });
         price = 20;
         const handler = hub.on.mock.calls.find(
           ([event]) => event === "EntityChanged",

@@ -45,6 +45,7 @@ const server = setupServer(
   ),
   ...[
     "accounts",
+    "receipts",
     "ynab/accounts",
     "ynab/account-mappings",
     "ynab/categories",

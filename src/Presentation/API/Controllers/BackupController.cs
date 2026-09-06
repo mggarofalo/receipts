@@ -1,4 +1,5 @@
 using API.Generated.Dtos;
+using API.Services;
 using Application.Interfaces.Services;
 using Application.Models;
 using Asp.Versioning;
@@ -15,7 +16,8 @@ namespace API.Controllers;
 public class BackupController(
 	IBackupService backupService,
 	IBackupImportService importService,
-	ILogger<BackupController> logger) : ControllerBase
+	ILogger<BackupController> logger,
+	IEntityChangeNotifier notifier) : ControllerBase
 {
 	private const long MaxFileSizeBytes = 100 * 1024 * 1024; // 100 MB
 
@@ -89,6 +91,10 @@ public class BackupController(
 		{
 			await using Stream stream = file.OpenReadStream();
 			BackupImportResult result = await importService.ImportFromSqliteAsync(stream, HttpContext.RequestAborted);
+
+			// The service has committed. Even zero counters or a now-cancelled request
+			// must refresh other sessions; settings are not represented in every counter.
+			await notifier.NotifyAllChanged("backup-import", "updated");
 
 			logger.LogInformation(
 				"Backup import completed: {TotalCreated} created, {TotalUpdated} updated",

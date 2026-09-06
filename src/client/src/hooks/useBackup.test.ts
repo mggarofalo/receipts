@@ -1,3 +1,4 @@
+vi.hoisted(() => vi.stubEnv("VITE_API_URL", "http://backup-hook.test"));
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act, cleanup } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -56,21 +57,10 @@ describe("useBackupExport", () => {
 
   it("downloads the blob and toasts success on 200", async () => {
     const fakeBlob = { size: 12, type: "application/octet-stream" } as Blob;
-    // Hand-rolled response rather than `new Response(blob, ...)` — node's
-    // undici Response requires the init body to expose `.stream()`, which
-    // jsdom's Blob doesn't in CI, causing a TypeError before the mutationFn
-    // can observe the response.
-    globalThis.fetch = vi.fn(async () => ({
-      ok: true,
-      status: 200,
-      headers: {
-        get: (name: string) =>
-          name.toLowerCase() === "content-disposition"
-            ? 'attachment; filename="my-backup.sqlite"'
-            : null,
-      },
-      blob: async () => fakeBlob,
-    })) as unknown as typeof fetch;
+    // Preserve the native Response contract, overriding only the downloadable body boundary.
+    globalThis.fetch = vi.fn(async () => Object.assign(new Response("backup", {
+      headers: { "Content-Disposition": 'attachment; filename="my-backup.sqlite"' },
+    }), { blob: async () => fakeBlob }));
 
     const { result } = renderHook(() => useBackupExport(), {
       wrapper: createWrapper(),
@@ -90,10 +80,7 @@ describe("useBackupExport", () => {
   });
 
   it("toasts a permission error on 403", async () => {
-    globalThis.fetch = vi.fn(async () => ({
-      ok: false,
-      status: 403,
-    })) as unknown as typeof fetch;
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({ status: 403 }), { status: 403, headers: { "Content-Type": "application/json" } }));
 
     const { result } = renderHook(() => useBackupExport(), {
       wrapper: createWrapper(),
@@ -108,10 +95,7 @@ describe("useBackupExport", () => {
   });
 
   it("toasts a generic error on other failures", async () => {
-    globalThis.fetch = vi.fn(async () => ({
-      ok: false,
-      status: 500,
-    })) as unknown as typeof fetch;
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({ status: 500 }), { status: 500, headers: { "Content-Type": "application/json" } }));
 
     const { result } = renderHook(() => useBackupExport(), {
       wrapper: createWrapper(),
@@ -131,12 +115,11 @@ describe("useBackupExport", () => {
     const body = new Promise<Blob>((resolve, reject) => { resolveBlob = resolve; rejectBlob = reject; });
     let requestSignal: AbortSignal | null | undefined;
     globalThis.fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-      requestSignal = init?.signal;
-      return {
-        ok: true, status: 200, headers: new Headers(),
-        // Let this boundary settle after abort: even an adapter ignoring cancellation cannot download.
+      requestSignal = init?.signal ?? (_input instanceof Request ? _input.signal : undefined);
+      return Object.assign(new Response("backup"), {
+        // Let this body adapter settle after abort to prove guarded download ownership.
         blob: () => { markBodyStarted(); return body; },
-      };
+      });
     }) as unknown as typeof fetch;
     const onSuccess = vi.fn();
     const onError = vi.fn();
@@ -159,7 +142,7 @@ describe("useBackupExport", () => {
   });
 
   it("keeps public void results and per-call callback data while downloading normally", async () => {
-    globalThis.fetch = vi.fn(async () => ({ ok: true, status: 200, headers: new Headers(), blob: async () => new Blob(["backup"]) })) as unknown as typeof fetch;
+    globalThis.fetch = vi.fn(async () => Object.assign(new Response("backup"), { blob: async () => new Blob(["backup"]) }));
     const onSuccess = vi.fn();
     const onSettled = vi.fn();
     const { result } = renderHook(() => useBackupExport(), { wrapper: createWrapper() });

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as signalR from "@microsoft/signalr";
 import { useQueryClient } from "@tanstack/react-query";
-import { invalidateDomainChange, invalidateAfterReconnect, isDomainChange } from "@/lib/query-invalidation";
+import { invalidateDomainChange, invalidateAfterReconnect, invalidateAfterBackupImport, isDomainChange } from "@/lib/query-invalidation";
 import { getAccessToken, parseJwtPayload, getSessionVersion, addSessionChangeListener } from "@/lib/auth";
 import { apiUrl } from "@/lib/api-config";
 import { getConnectionAccessToken } from "@/lib/token-refresh";
@@ -36,6 +36,7 @@ const displayNameMap: Record<string, string> = {
   category: "category",
   subcategory: "subcategory",
   "item-template": "item template",
+  "backup-import": "backup",
 };
 
 function classifyOrigin(
@@ -175,7 +176,9 @@ export function useSignalR(enabled: boolean) {
         console.debug("[SignalR] EntityChanged", notification);
       }
 
-      if (isDomainChange(notification.entityType)) {
+      if (notification.entityType === "backup-import") {
+        void invalidateAfterBackupImport(queryClient, isCurrent).catch(() => {});
+      } else if (isDomainChange(notification.entityType)) {
         invalidateDomainChange(
           queryClient,
           notification.entityType,
