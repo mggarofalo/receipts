@@ -120,3 +120,30 @@ export function invalidateDomainChange(
     void queryClient.invalidateQueries({ queryKey, refetchType: "active" });
   }
 }
+
+// Reconnection repairs unknown missed changes, independent of individual event
+// exceptions (such as a known template creation retaining similarity results).
+const RECONNECT_QUERY_KEYS = Array.from(
+  new Map(Object.values(DOMAIN_CHANGE_QUERY_KEYS).flat().map(
+    (queryKey) => [JSON.stringify(queryKey), queryKey],
+  )).values(),
+);
+
+export async function invalidateAfterReconnect(
+  queryClient: QueryClient,
+  isCurrentConnection: () => boolean,
+) {
+  // TanStack reuses an in-flight first read even when invalidateQueries requests
+  // cancellation. Its old result would clear invalidation (including Infinity
+  // freshness). Cancel these reads explicitly before asking for current data.
+  if (!isCurrentConnection()) return;
+  await Promise.all(RECONNECT_QUERY_KEYS.map((queryKey) => queryClient.cancelQueries({
+    queryKey,
+    type: "active",
+    predicate: (query) => query.state.data === undefined && query.state.fetchStatus !== "idle",
+  })));
+  if (!isCurrentConnection()) return;
+  for (const queryKey of RECONNECT_QUERY_KEYS) {
+    void queryClient.invalidateQueries({ queryKey, refetchType: "active" });
+  }
+}

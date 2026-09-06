@@ -3,13 +3,10 @@ import type { Middleware } from "openapi-fetch";
 import type { paths } from "@/generated/api";
 import {
   getAccessToken,
-  getRefreshToken,
   getSessionVersion,
   getSessionSignal,
   assertSessionCurrent,
-  setRefreshedTokens,
   clearTokens,
-  notifyTokenRefresh,
   notifyPasswordChangeRequired,
 } from "@/lib/auth";
 import { getConnectionId } from "@/lib/signalr-connection";
@@ -19,16 +16,11 @@ import {
 } from "@/lib/server-error-bus";
 import { toApiError } from "@/lib/problem-details";
 
-const baseUrl = import.meta.env.VITE_API_URL ?? "";
-const API_TIMEOUT_MS = 30_000;
+import { apiBaseUrl, apiUrl, API_TIMEOUT_MS } from "@/lib/api-config";
+import { attemptTokenRefresh, waitForRefresh } from "@/lib/token-refresh";
 
-interface PendingRefresh {
-  sessionVersion: number;
-  refreshToken: string;
-  promise: Promise<boolean>;
-}
+export { attemptTokenRefresh } from "@/lib/token-refresh";
 
-let pendingRefresh: PendingRefresh | null = null;
 const requestSessions = new WeakMap<Request, number>();
 
 export function isTimeoutError(error: unknown): boolean {
@@ -39,72 +31,9 @@ export function isNetworkError(error: unknown): boolean {
   return error instanceof TypeError && error.message.includes("fetch");
 }
 
-async function refreshTokens(sessionVersion: number, refreshToken: string): Promise<boolean> {
-  try {
-    const res = await fetch(`${baseUrl}/api/auth/refresh`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refreshToken }),
-      signal: AbortSignal.any([AbortSignal.timeout(API_TIMEOUT_MS), getSessionSignal()]),
-    });
-    if (!res.ok) return false;
-
-    const data = await res.json();
-    if (
-      typeof data?.accessToken !== "string" || !data.accessToken ||
-      typeof data?.refreshToken !== "string" || !data.refreshToken ||
-      !setRefreshedTokens(sessionVersion, refreshToken, data.accessToken, data.refreshToken)
-    ) return false;
-
-    notifyTokenRefresh();
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export function attemptTokenRefresh(): Promise<boolean> {
-  const sessionVersion = getSessionVersion();
-  const refreshToken = getRefreshToken();
-  if (!refreshToken) return Promise.resolve(false);
-
-  if (pendingRefresh?.sessionVersion === sessionVersion && pendingRefresh.refreshToken === refreshToken) {
-    return pendingRefresh.promise;
-  }
-
-  const pending: PendingRefresh = {
-    sessionVersion,
-    refreshToken,
-    promise: refreshTokens(sessionVersion, refreshToken).finally(() => {
-      if (pendingRefresh === pending) pendingRefresh = null;
-    }),
-  };
-  pendingRefresh = pending;
-  return pending.promise;
-}
-
-// Cancelling one request must not cancel the shared refresh needed by others.
-function waitForRefresh(promise: Promise<boolean>, signal: AbortSignal): Promise<boolean> {
-  signal.throwIfAborted();
-  return new Promise((resolve, reject) => {
-    const onAbort = () => reject(signal.reason);
-    signal.addEventListener("abort", onAbort, { once: true });
-    promise.then(
-      (value) => {
-        signal.removeEventListener("abort", onAbort);
-        resolve(value);
-      },
-      (error: unknown) => {
-        signal.removeEventListener("abort", onAbort);
-        reject(error);
-      },
-    );
-  });
-}
-
 async function fetchWithTokenRefresh(request: Request): Promise<Response> {
   const pathname = new URL(request.url).pathname;
-  const isLogout = pathname === "/api/auth/logout";
+  const isLogout = pathname === new URL(apiUrl("/api/auth/logout"), request.url).pathname;
   const sessionVersion = requestSessions.get(request) ?? getSessionVersion();
   if (!isLogout) assertSessionCurrent(sessionVersion);
   const signal = AbortSignal.any([
@@ -114,7 +43,7 @@ async function fetchWithTokenRefresh(request: Request): Promise<Response> {
   ]);
   // Keep the session signal attached to the native response body, so logout
   // also cancels JSON still streaming after fetch has delivered its headers.
-  if (pathname.startsWith("/api/auth/")) return fetch(request, { signal });
+  if (pathname.startsWith(new URL(apiUrl("/api/auth/"), request.url).pathname)) return fetch(request, { signal });
   // Fetch consumes body streams. Save the replay before the first dispatch,
   // after request middleware has applied all headers and serialization.
   const replay = request.clone();
@@ -162,7 +91,7 @@ async function fetchWithTokenRefresh(request: Request): Promise<Response> {
   }
 }
 
-const client = createClient<paths>({ baseUrl, fetch: fetchWithTokenRefresh });
+const client = createClient<paths>({ baseUrl: apiBaseUrl, fetch: fetchWithTokenRefresh });
 
 const authMiddleware: Middleware = {
   async onRequest({ request }) {

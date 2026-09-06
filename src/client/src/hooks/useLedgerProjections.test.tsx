@@ -27,6 +27,8 @@ const hub = vi.hoisted(() => ({
   start: vi.fn().mockResolvedValue(undefined),
   stop: vi.fn().mockResolvedValue(undefined),
   on: vi.fn(),
+  off: vi.fn(),
+  state: "Disconnected",
   onreconnecting: vi.fn(),
   onreconnected: vi.fn(),
   onclose: vi.fn(),
@@ -53,6 +55,7 @@ vi.mock("@microsoft/signalr", () => ({
     }
   },
   LogLevel: { Debug: 1, None: 6 },
+  HubConnectionState: { Disconnected: "Disconnected", Connecting: "Connecting", Connected: "Connected", Reconnecting: "Reconnecting", Disconnecting: "Disconnecting" },
 }));
 
 vi.hoisted(() => vi.stubEnv("VITE_API_URL", "http://ledger-projections.test"));
@@ -60,6 +63,9 @@ beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
 afterAll(() => server.close());
 beforeEach(() => {
   vi.clearAllMocks();
+  hub.state = "Disconnected";
+  hub.start.mockImplementation(async () => { hub.state = "Connected"; });
+  hub.stop.mockImplementation(async () => { hub.state = "Disconnected"; });
   localStorage.clear();
   clearTokens();
 });

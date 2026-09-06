@@ -2,9 +2,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook } from "@testing-library/react";
 
 const mockConnection = {
+  state: "Disconnected",
   start: vi.fn().mockResolvedValue(undefined),
   stop: vi.fn().mockResolvedValue(undefined),
   on: vi.fn(),
+  off: vi.fn(),
   onreconnecting: vi.fn(),
   onreconnected: vi.fn(),
   onclose: vi.fn(),
@@ -23,11 +25,13 @@ vi.mock("@microsoft/signalr", () => ({
     return mockBuilder;
   }),
   LogLevel: { Debug: 1, Critical: 5, None: 6 },
+  HubConnectionState: { Disconnected: "Disconnected", Connecting: "Connecting", Connected: "Connected", Reconnecting: "Reconnecting", Disconnecting: "Disconnecting" },
 }));
 
 vi.mock("@tanstack/react-query", () => ({
   useQueryClient: vi.fn().mockReturnValue({
     invalidateQueries: vi.fn(),
+    cancelQueries: vi.fn().mockResolvedValue(undefined),
   }),
 }));
 
@@ -42,7 +46,7 @@ vi.mock("@/lib/signalr-toast-buffer", () => ({
 
 vi.mock("@/lib/auth", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/auth")>(),
-  getAccessToken: vi.fn().mockReturnValue("mock-token"),
+  getAccessToken: vi.fn().mockImplementation(() => `header.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 }))}.signature`),
   parseJwtPayload: vi.fn().mockReturnValue({
     userId: "current-user-id",
     email: "user@example.com",
@@ -66,8 +70,13 @@ import { clearTokens, getAccessToken, parseJwtPayload, setTokens } from "@/lib/a
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // Restore start to resolve by default (individual tests may override)
-  mockConnection.start.mockResolvedValue(undefined);
+  clearTokens();
+  vi.mocked(getAccessToken).mockImplementation(() => `header.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 }))}.signature`);
+  mockConnection.state = "Disconnected";
+  // Callback tests use a native-state-aware SDK boundary; lifecycle scheduling
+  // and distinct StrictMode instances are exercised by recovery.test.tsx.
+  mockConnection.start.mockImplementation(async () => { mockConnection.state = "Connected"; });
+  mockConnection.stop.mockImplementation(async () => { mockConnection.state = "Disconnected"; });
   mockConnection.connectionId = "mock-conn-id";
   vi.mocked(getConnectionId).mockReturnValue("mock-conn-id");
 });
@@ -77,6 +86,9 @@ async function renderEnabled() {
   const hookReturn = renderHook(() => useSignalR(true));
   // Flush the microtask so start().then() executes
   await act(async () => {});
+  // Initial connection catch-up is tested with real projections in recovery.test.
+  // Keep these event-specific assertions independent of that earlier repair.
+  vi.mocked(vi.mocked(useQueryClient)().invalidateQueries).mockClear();
   return hookReturn;
 }
 
@@ -139,8 +151,8 @@ describe("useSignalR", () => {
     expect(mockConnection.start).not.toHaveBeenCalled();
   });
 
-  it("starts connection when enabled", () => {
-    renderHook(() => useSignalR(true));
+  it("starts connection when enabled", async () => {
+    await renderEnabled();
 
     expect(mockBuilder.withUrl).toHaveBeenCalledWith(
       "/hubs/entities",
@@ -152,8 +164,8 @@ describe("useSignalR", () => {
     expect(mockConnection.start).toHaveBeenCalled();
   });
 
-  it("registers EntityChanged event handler", () => {
-    renderHook(() => useSignalR(true));
+  it("registers EntityChanged event handler", async () => {
+    await renderEnabled();
 
     const registeredEvents = mockConnection.on.mock.calls.map(
       (call: unknown[]) => call[0],
@@ -161,8 +173,8 @@ describe("useSignalR", () => {
     expect(registeredEvents).toContain("EntityChanged");
   });
 
-  it("registers reconnecting and close handlers", () => {
-    renderHook(() => useSignalR(true));
+  it("registers reconnecting and close handlers", async () => {
+    await renderEnabled();
 
     expect(mockConnection.onreconnecting).toHaveBeenCalled();
     expect(mockConnection.onreconnected).toHaveBeenCalled();
@@ -199,26 +211,28 @@ describe("useSignalR", () => {
   });
 
   describe("accessTokenFactory", () => {
-    it("returns token when getAccessToken returns a value", () => {
-      renderHook(() => useSignalR(true));
+    it("returns an unexpired token asynchronously", async () => {
+      await renderEnabled();
 
       const withUrlCall = mockBuilder.withUrl.mock.calls[0];
-      const options = withUrlCall[1] as { accessTokenFactory: () => string };
+      const options = withUrlCall[1] as { accessTokenFactory: () => Promise<string> };
       const result = options.accessTokenFactory();
 
-      expect(result).toBe("mock-token");
+      await expect(result).resolves.toBe(getAccessToken());
+      await act(async () => {});
     });
 
-    it("returns empty string when getAccessToken returns null", () => {
-      vi.mocked(getAccessToken).mockReturnValueOnce(null);
+    it("rejects token acquisition when no access or refresh token exists", async () => {
+      vi.mocked(getAccessToken).mockReturnValue(null);
 
-      renderHook(() => useSignalR(true));
+      await renderEnabled();
 
       const withUrlCall = mockBuilder.withUrl.mock.calls[0];
-      const options = withUrlCall[1] as { accessTokenFactory: () => string };
+      const options = withUrlCall[1] as { accessTokenFactory: () => Promise<string> };
       const result = options.accessTokenFactory();
 
-      expect(result).toBe("");
+      await expect(result).rejects.toThrow("Unable to obtain an unexpired connection token");
+      await act(async () => {});
     });
   });
 
@@ -242,6 +256,7 @@ describe("useSignalR", () => {
 
       const reconnectedCb = mockConnection.onreconnected.mock.calls[0][0] as () => void;
       act(() => {
+        mockConnection.state = "Connected";
         reconnectedCb();
       });
 
@@ -554,6 +569,7 @@ describe("useSignalR", () => {
       const reconnectingCb = mockConnection.onreconnecting.mock.calls[0][0] as () => void;
 
       act(() => {
+        mockConnection.state = "Reconnecting";
         reconnectingCb();
       });
 
@@ -566,6 +582,7 @@ describe("useSignalR", () => {
       // Simulate reconnecting first
       const reconnectingCb = mockConnection.onreconnecting.mock.calls[0][0] as () => void;
       act(() => {
+        mockConnection.state = "Reconnecting";
         reconnectingCb();
       });
       expect(result.current.connectionState).toBe("reconnecting");
@@ -573,6 +590,7 @@ describe("useSignalR", () => {
       // Now reconnected
       const reconnectedCb = mockConnection.onreconnected.mock.calls[0][0] as () => void;
       act(() => {
+        mockConnection.state = "Connected";
         reconnectedCb();
       });
 
@@ -586,6 +604,7 @@ describe("useSignalR", () => {
       const closeCb = mockConnection.onclose.mock.calls[0][0] as () => void;
 
       act(() => {
+        mockConnection.state = "Disconnected";
         closeCb();
       });
 
@@ -599,6 +618,7 @@ describe("useSignalR", () => {
 
       const closeCb = mockConnection.onclose.mock.calls[0][0] as () => void;
       act(() => {
+        mockConnection.state = "Disconnected";
         closeCb();
       });
 
@@ -613,6 +633,7 @@ describe("useSignalR", () => {
 
       const reconnectedCb = mockConnection.onreconnected.mock.calls[0][0] as () => void;
       act(() => {
+        mockConnection.state = "Connected";
         reconnectedCb();
       });
 
@@ -664,6 +685,7 @@ describe("useSignalR", () => {
 
       const reconnectingCb = mockConnection.onreconnecting.mock.calls[0][0] as () => void;
       act(() => {
+        mockConnection.state = "Reconnecting";
         reconnectingCb();
       });
 
@@ -678,6 +700,7 @@ describe("useSignalR", () => {
 
       const reconnectedCb = mockConnection.onreconnected.mock.calls[0][0] as () => void;
       act(() => {
+        mockConnection.state = "Connected";
         reconnectedCb();
       });
 
@@ -692,6 +715,7 @@ describe("useSignalR", () => {
 
       const closeCb = mockConnection.onclose.mock.calls[0][0] as () => void;
       act(() => {
+        mockConnection.state = "Disconnected";
         closeCb();
       });
 
