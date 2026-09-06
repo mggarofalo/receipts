@@ -1,5 +1,22 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { formatCurrency, formatDecimal, parseCurrencyInput, camelToTitle, capitalize, evaluateMathExpression, formatDate, formatShortDate, parseDateValue } from "./format";
+import { formatCurrency, formatUnitPrice, formatDecimal, parseCurrencyInput, camelToTitle, capitalize, evaluateMathExpression, formatDate, formatShortDate, parseDateValue } from "./format";
+
+describe("unit-price display", () => {
+  it.each([
+    [3.459, "$3.459"],
+    [7.1234, "$7.1234"],
+    [4.5, "$4.50"],
+    [0, "$0.00"],
+  ] as const)(
+    "formats %s as %s without padding or discarding subcents",
+    (price, display) => {
+      expect(formatUnitPrice(price)).toBe(display);
+    },
+  );
+  it("keeps ordinary totals rounded to cents", () => {
+    expect(formatCurrency(3.459 * 2)).toBe("$6.92");
+  });
+});
 
 describe("formatCurrency", () => {
   it("formats a positive number as USD", () => {

@@ -23,7 +23,7 @@ import { getMatchIndices } from "@/lib/search-highlight";
 import { SortableTableHead } from "@/components/SortableTableHead";
 import { NoResults } from "@/components/NoResults";
 import { Pagination } from "@/components/Pagination";
-import { formatCurrency } from "@/lib/format";
+import { formatUnitPrice } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Icon, PageHead } from "@/components/primitives";
 import {
@@ -316,7 +316,7 @@ function ItemTemplates() {
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {template.defaultUnitPrice != null ? (
-                          formatCurrency(template.defaultUnitPrice)
+                          formatUnitPrice(template.defaultUnitPrice)
                         ) : (
                           <span className="italic">--</span>
                         )}

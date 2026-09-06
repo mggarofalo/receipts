@@ -11,17 +11,17 @@ function collapseDoubleDots(s: string): string {
 }
 
 /**
- * For plain-number input, limit to 2 fractional digits and collapse double dots.
+ * For plain-number input, limit to the configured fractional digits and collapse double dots.
  * Returns null when the input contains math operators (caller should skip).
  */
-function sanitizePlainNumber(raw: string): string | null {
+function sanitizePlainNumber(raw: string, precision: 2 | 4): string | null {
   // If it contains math operators or parens, it's an expression — don't sanitize
   if (/[+\-*/()]/.test(raw.replace(/^-/, ""))) return null;
 
   let sanitized = collapseDoubleDots(raw);
   const parts = sanitized.split(".");
-  if (parts.length > 1 && parts[1].length > 2) {
-    sanitized = `${parts[0]}.${parts[1].slice(0, 2)}`;
+  if (parts.length > 1 && parts[1].length > precision) {
+    sanitized = `${parts[0]}.${parts[1].slice(0, precision)}`;
   }
   return sanitized;
 }
@@ -32,6 +32,8 @@ interface CurrencyInputProps
   onChange: (value: number) => void;
   onBlur?: () => void;
   symbol?: string;
+  /** Unit prices support four decimals; ordinary money inputs retain cents. */
+  precision?: 2 | 4;
 }
 
 export function CurrencyInput({
@@ -40,11 +42,12 @@ export function CurrencyInput({
   onBlur,
   onKeyDown,
   symbol = "$",
+  precision = 2,
   className,
   ...props
 }: CurrencyInputProps) {
   const [text, setText] = useState(() =>
-    value === 0 ? "" : formatDecimal(value),
+    value === 0 ? "" : formatDecimal(value, precision),
   );
   const inputRef = useRef<HTMLInputElement>(null);
   const [focused, setFocused] = useState(false);
@@ -60,24 +63,26 @@ export function CurrencyInput({
   // This is the React-recommended pattern for adjusting state when a prop changes:
   // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
   const [prevValue, setPrevValue] = useState(value);
-  if (value !== prevValue) {
+  const [prevPrecision, setPrevPrecision] = useState(precision);
+  if (value !== prevValue || precision !== prevPrecision) {
     setPrevValue(value);
+    setPrevPrecision(precision);
     // Only sync text for external changes (value differs from what we last emitted).
     // This avoids formatting partial input while the user is typing (e.g. "1" -> "1.00").
-    if (value !== lastEmitted) {
-      setText(value === 0 ? "" : formatDecimal(value));
+    if (value !== lastEmitted || precision !== prevPrecision) {
+      setText(value === 0 ? "" : formatDecimal(value, precision));
       setLastEmitted(value);
     }
   }
 
   // When not focused, show empty string for zero so placeholder is visible
-  const displayValue = focused ? text : value === 0 ? "" : formatDecimal(value);
+  const displayValue = focused ? text : value === 0 ? "" : formatDecimal(value, precision);
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     // Allow math-expression characters while typing; strip everything else
     const raw = e.target.value.replace(EXPRESSION_CHARS, "");
 
-    const plain = sanitizePlainNumber(raw);
+    const plain = sanitizePlainNumber(raw, precision);
     if (plain !== null) {
       // Plain number path — sanitize before setting state (BUG-001, BUG-002)
       setText(plain);
@@ -101,16 +106,19 @@ export function CurrencyInput({
     if (value === 0) {
       setText("");
     } else {
-      setText(formatDecimal(value));
+      setText(formatDecimal(value, precision));
       setTimeout(() => inputRef.current?.select(), 0);
     }
   }
 
   function commitExpression() {
     const evaluated = evaluateMathExpression(text);
+    const scale = 10 ** precision;
     const final =
-      isNaN(evaluated) || !isFinite(evaluated) ? 0 : Math.round(evaluated * 100) / 100;
-    setText(final === 0 ? "" : formatDecimal(final));
+      isNaN(evaluated) || !isFinite(evaluated)
+        ? 0
+        : Math.round(evaluated * scale) / scale;
+    setText(final === 0 ? "" : formatDecimal(final, precision));
     setLastEmitted(final);
     onChange(final);
     committedRef.current = true;
@@ -146,7 +154,7 @@ export function CurrencyInput({
     // Allow math expressions in pasted content too
     const cleaned = pasted.replace(EXPRESSION_CHARS, "");
 
-    const plain = sanitizePlainNumber(cleaned);
+    const plain = sanitizePlainNumber(cleaned, precision);
     if (plain !== null) {
       // Plain number — sanitize and update immediately
       setText(plain);
@@ -170,7 +178,7 @@ export function CurrencyInput({
         inputMode="decimal"
         autoComplete="off"
         value={displayValue}
-        placeholder="0.00"
+        placeholder={formatDecimal(0, precision)}
         onChange={handleChange}
         onFocus={handleFocus}
         onBlur={handleBlur}

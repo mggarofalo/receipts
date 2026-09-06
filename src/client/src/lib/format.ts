@@ -7,6 +7,16 @@ export function formatCurrency(amount: number): string {
   }).format(amount);
 }
 
+/** Format a unit price without hiding supported sub-cent precision. */
+export function formatUnitPrice(amount: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  }).format(amount);
+}
+
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 /**

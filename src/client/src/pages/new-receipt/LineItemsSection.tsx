@@ -14,7 +14,7 @@ import {
 } from "@/hooks/useSimilarItems";
 import { useReceiptItemSuggestions } from "@/hooks/useReceiptItemSuggestions";
 import { usePromoteToTemplate } from "@/hooks/usePromoteToTemplate";
-import { formatCurrency } from "@/lib/format";
+import { formatUnitPrice, formatCurrency } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -610,7 +610,7 @@ export function LineItemsSection({
                                         ? ` · ${suggestion.category}`
                                         : ""}
                                       {suggestion.unitPrice != null
-                                        ? ` · ${formatCurrency(Number(suggestion.unitPrice))}`
+                                        ? ` · ${formatUnitPrice(Number(suggestion.unitPrice))}`
                                         : ""}
                                     </span>
                                   </div>
@@ -720,7 +720,7 @@ export function LineItemsSection({
                                           ? ` / ${item.defaultSubcategory}`
                                           : ""}
                                         {item.defaultUnitPrice != null
-                                          ? ` · ${formatCurrency(Number(item.defaultUnitPrice))}`
+                                          ? ` · ${formatUnitPrice(Number(item.defaultUnitPrice))}`
                                           : ""}
                                       </span>
                                     )}
@@ -898,7 +898,7 @@ export function LineItemsSection({
                   <FormItem className="min-w-[150px]">
                     <FormLabel required>Unit Price</FormLabel>
                     <FormControl>
-                      <CurrencyInput {...field} />
+                      <CurrencyInput {...field} precision={4} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -960,6 +960,7 @@ export function LineItemsSection({
                     </TableCell>
                     <TableCell>
                       <CurrencyInput
+                        precision={4}
                         value={editDraft.unitPrice}
                         onChange={(v) =>
                           setEditDraft((d) => ({ ...d, unitPrice: v }))
@@ -1042,7 +1043,7 @@ export function LineItemsSection({
                       {item.description}
                     </TableCell>
                     <TableCell>{item.quantity}</TableCell>
-                    <TableCell>{formatCurrency(item.unitPrice)}</TableCell>
+                    <TableCell>{formatUnitPrice(item.unitPrice)}</TableCell>
                     <TableCell>
                       {formatCurrency(item.quantity * item.unitPrice)}
                     </TableCell>

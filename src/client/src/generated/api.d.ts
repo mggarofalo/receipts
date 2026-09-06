@@ -3121,7 +3121,10 @@ export interface components {
             description?: string | null;
             defaultCategory?: string | null;
             defaultSubcategory?: string | null;
-            /** Format: double */
+            /**
+             * Format: double
+             * @description Optional unit price with up to four decimal places; must remain below the storage limit after conversion to decimal.
+             */
             defaultUnitPrice?: number | null;
             defaultItemCode?: string | null;
         };
@@ -3132,7 +3135,10 @@ export interface components {
             description?: string | null;
             defaultCategory?: string | null;
             defaultSubcategory?: string | null;
-            /** Format: double */
+            /**
+             * Format: double
+             * @description Optional unit price with up to four decimal places; must remain below the storage limit after conversion to decimal.
+             */
             defaultUnitPrice?: number | null;
             defaultItemCode?: string | null;
         };

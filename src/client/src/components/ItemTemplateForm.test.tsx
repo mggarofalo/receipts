@@ -52,6 +52,26 @@ describe("ItemTemplateForm", () => {
     vi.clearAllMocks();
   });
 
+  it("preserves a subcent default price when an existing template field is focused and blurred", async () => {
+    const user = userEvent.setup();
+    render(
+      <ItemTemplateForm
+        {...defaultProps}
+        mode="edit"
+        defaultValues={{ name: "Gasoline", defaultUnitPrice: 3.459 }}
+      />,
+    );
+    await user.click(screen.getByLabelText("Default Unit Price (optional)"));
+    await user.tab();
+    await user.click(screen.getByRole("button", { name: /update template/i }));
+    await waitFor(() =>
+      expect(defaultProps.onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({ defaultUnitPrice: 3.459 }),
+        expect.anything(),
+      ),
+    );
+  });
+
   it("renders in create mode with empty fields and correct submit button text", () => {
     render(<ItemTemplateForm {...defaultProps} />);
 

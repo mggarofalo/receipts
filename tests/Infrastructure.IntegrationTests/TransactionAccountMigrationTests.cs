@@ -18,7 +18,7 @@ public class TransactionAccountMigrationTests(PostgresFixture fixture) : IClassF
 	public async Task DivergentOwnership_RejectsMigrationWithoutDataLoss_ThenLogsSuccessfulRetry(bool trashed)
 	{
 		await using ApplicationDbContext context = fixture.CreateDbContext();
-		string previous = context.Database.GetMigrations().Reverse().Skip(1).First();
+		string previous = context.Database.GetMigrations().TakeWhile(id => id != "20260905215220_DropTransactionAccountId").Last();
 		IMigrator migrator = context.GetService<IMigrator>();
 		await migrator.MigrateAsync(previous);
 		Guid account = Guid.NewGuid(), other = Guid.NewGuid(), card = Guid.NewGuid(), receipt = Guid.NewGuid(), transaction = Guid.NewGuid();
@@ -49,7 +49,7 @@ public class TransactionAccountMigrationTests(PostgresFixture fixture) : IClassF
 	public async Task Down_BackfillsActiveAndTrashedOwnershipFromCurrentCard_AndRestoresConstraints()
 	{
 		await using ApplicationDbContext context = fixture.CreateDbContext();
-		string previous = context.Database.GetMigrations().Reverse().Skip(1).First();
+		string previous = context.Database.GetMigrations().TakeWhile(id => id != "20260905215220_DropTransactionAccountId").Last();
 		IMigrator migrator = context.GetService<IMigrator>();
 		await migrator.MigrateAsync(previous);
 		Guid account = Guid.NewGuid(), replacement = Guid.NewGuid(), card = Guid.NewGuid(), receipt = Guid.NewGuid(), active = Guid.NewGuid(), trashed = Guid.NewGuid();

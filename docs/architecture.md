@@ -86,6 +86,10 @@ PostgreSQL with EF Core + pgvector extension. Connection configured via environm
 
 The API does not self-migrate. Aspire and deployment orchestration run `src/Tools/DbMigrator` before starting it. The tool delegates to `IDatabaseMigratorService`, which surfaces PostgreSQL migration notices in the deployment log.
 
+### Unit-price precision
+
+Template defaults and receipt-item unit prices retain four decimal places; reconciled money totals retain cents. See [Unit-price precision](unit-price-precision.md) for input/display behavior, guarded migration and rollback, and portable-backup compatibility.
+
 ### Transaction account ownership
 
 `Transaction.CardId` is the stored relationship. All transaction account reads resolve through `Card.AccountId`, including receipt filters, dashboards, YNAB mapping, account deletion guards and trashed history. Reassigning a card deliberately moves that history to its new parent account. Account merges move cards and their integration mappings; they count affected transactions for semantic audit records without rewriting transaction rows.

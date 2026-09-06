@@ -67,3 +67,7 @@ All endpoints are rate-limited at the application level (see [docs/deployment.md
 ## Template update conflicts
 
 Template updates resolve canonical metadata asynchronously before their final audited commit. If the stored template changes during that work, `PUT /api/item-templates/{id}` returns 409 `ProblemDetails` as `application/json`, matching the typed `ApiProblem` helpers, with a reason in `detail`; no requested template fields are partially applied. This is a server-side operation revision check, not a public ETag contract. The client retains the edit draft for a deliberate reload/retry. See [normalization ownership](normalization-ownership.md) for the separate canonical-registry side effects and receipt-item hint contract.
+
+## Template price precision
+
+Template default prices retain four decimal places and must fit the same storage range as receipt-item unit prices. Create/update validation rejects values at or above the upper limit, including values rounded to that limit by the existing JSON-number-to-decimal conversion. Null remains allowed. See [Unit-price precision](unit-price-precision.md) for input/display behavior, migration safeguards and legacy-backup handling.

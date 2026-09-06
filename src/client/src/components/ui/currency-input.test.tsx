@@ -26,6 +26,68 @@ function ControlledCurrencyInput({
   );
 }
 
+describe("CurrencyInput unit-price precision", () => {
+  it.each(["type", "paste"] as const)(
+    "preserves four decimal places through %s and blur",
+    async (method) => {
+      const user = userEvent.setup();
+      const onChange = vi.fn();
+      render(<ControlledCurrencyInput precision={4} onChange={onChange} />);
+      const input = screen.getByRole("textbox");
+      await user.click(input);
+      if (method === "type") await user.type(input, "7.1234");
+      else await user.paste("$7.1234");
+      await user.tab();
+      expect(onChange).toHaveBeenLastCalledWith(7.1234);
+      expect(Number((input as HTMLInputElement).value)).toBe(7.1234);
+    },
+  );
+
+  it("preserves prefilled and externally reset subcent prices on focus and blur", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <CurrencyInput precision={4} value={3.459} onChange={onChange} />,
+    );
+    const input = screen.getByRole("textbox");
+    expect(Number((input as HTMLInputElement).value)).toBe(3.459);
+    await user.click(input);
+    await user.tab();
+    expect(onChange).toHaveBeenLastCalledWith(3.459);
+    rerender(
+      <CurrencyInput precision={4} value={8.7654} onChange={onChange} />,
+    );
+    await user.click(input);
+    await user.tab();
+    expect(onChange).toHaveBeenLastCalledWith(8.7654);
+  });
+
+  it("commits expressions at unit-price precision without changing default money precision", async () => {
+    const user = userEvent.setup();
+    const price = vi.fn();
+    const money = vi.fn();
+    render(
+      <>
+        <ControlledCurrencyInput
+          aria-label="Unit price"
+          precision={4}
+          onChange={price}
+        />
+        <ControlledCurrencyInput aria-label="Payment" onChange={money} />
+      </>,
+    );
+    for (const label of ["Unit price", "Payment"]) {
+      await user.click(screen.getByLabelText(label));
+      await user.paste("7 / 2 + 0.0001");
+      await user.keyboard("{Enter}");
+      await user.tab();
+    }
+    expect(price).toHaveBeenLastCalledWith(3.5001);
+    expect(money).toHaveBeenLastCalledWith(3.5);
+    expect(screen.getByLabelText("Payment")).toHaveValue("3.50");
+  });
+});
+
 describe("CurrencyInput", () => {
   const defaultProps = {
     value: 0,

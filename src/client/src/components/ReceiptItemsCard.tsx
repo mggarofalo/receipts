@@ -37,7 +37,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
-import { formatCurrency } from "@/lib/format";
+import { formatUnitPrice, formatCurrency } from "@/lib/format";
 import { Pencil } from "lucide-react";
 
 interface ReceiptItem {
@@ -237,7 +237,7 @@ export function ReceiptItemsCard({
                         {item.quantity}
                       </TableCell>
                       <TableCell className="text-right">
-                        {formatCurrency(item.unitPrice)}
+                        {formatUnitPrice(item.unitPrice)}
                       </TableCell>
                       <TableCell className="text-right">
                         {formatCurrency(item.quantity * item.unitPrice)}

@@ -4,6 +4,8 @@ import userEvent from "@testing-library/user-event";
 import { ReceiptItemForm } from "./ReceiptItemForm";
 import { useAllReceipts } from "@/hooks/useReceipts";
 
+const templateFixture = vi.hoisted(() => ({ unitPrice: 3.99 }));
+
 vi.mock("@/hooks/useFormShortcuts", () => ({
   useFormShortcuts: vi.fn(),
 }));
@@ -49,7 +51,7 @@ vi.mock("@/hooks/useItemTemplates", () => ({
         name: "Milk",
         defaultCategory: "Groceries",
         defaultSubcategory: "Dairy",
-        defaultUnitPrice: 3.99,
+        defaultUnitPrice: templateFixture.unitPrice,
         defaultItemCode: "MLK-001",
       },
     ],
@@ -92,6 +94,7 @@ describe("ReceiptItemForm", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+    templateFixture.unitPrice = 3.99;
   });
 
   it("renders in create mode with correct submit button text and all field labels", () => {
@@ -275,6 +278,32 @@ describe("ReceiptItemForm", () => {
     const group = screen.getByText("Item Templates").closest("[cmdk-group]")!;
     await user.click(within(group as HTMLElement).getByText("Milk"));
   }
+
+  it("retains the exact template unit price through picker prefill, focus, blur and submission", async () => {
+    const user = userEvent.setup();
+    templateFixture.unitPrice = 3.459;
+    render(
+      <ReceiptItemForm
+        {...defaultProps}
+        defaultValues={{
+          receiptId: "r-1",
+          quantity: 1,
+          unitPrice: 0,
+          category: "Groceries",
+          subcategory: "Dairy",
+        }}
+      />,
+    );
+    await pickMilkTemplate(user);
+    await user.click(screen.getByLabelText(/^Unit Price/));
+    await user.tab();
+    await user.click(screen.getByRole("button", { name: /create item/i }));
+    await waitFor(() =>
+      expect(defaultProps.onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({ unitPrice: 3.459, itemTemplateId: "tmpl-1" }),
+      ),
+    );
+  });
 
   it("submits the template id when a line is entered from a template", async () => {
     const user = userEvent.setup();

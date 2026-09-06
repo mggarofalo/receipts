@@ -22,6 +22,8 @@ public class UpdateItemTemplateRequestValidator : AbstractValidator<UpdateItemTe
 		RuleFor(x => x.DefaultUnitPrice)
 			.GreaterThan(0)
 			.WithMessage(DefaultUnitPriceMustBePositive)
+			.Must(ItemTemplatePriceValidation.FitsColumn)
+			.WithMessage(ItemTemplatePriceValidation.OutOfRange)
 			.When(x => x.DefaultUnitPrice.HasValue);
 	}
 }
