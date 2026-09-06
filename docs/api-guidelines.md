@@ -63,3 +63,7 @@ The API supports two authentication schemes, both valid on all protected endpoin
 ### Rate Limiting
 
 All endpoints are rate-limited at the application level (see [docs/deployment.md](deployment.md#application-rate-limiting) for thresholds). Rate limit violations return HTTP 429 with a `Retry-After` header and are logged to the auth audit trail.
+
+## Template update conflicts
+
+Template updates resolve canonical metadata asynchronously before their final audited commit. If the stored template changes during that work, `PUT /api/item-templates/{id}` returns 409 `ProblemDetails` as `application/json`, matching the typed `ApiProblem` helpers, with a reason in `detail`; no requested template fields are partially applied. This is a server-side operation revision check, not a public ETag contract. The client retains the edit draft for a deliberate reload/retry. See [normalization ownership](normalization-ownership.md) for the separate canonical-registry side effects and receipt-item hint contract.

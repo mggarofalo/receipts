@@ -5,6 +5,7 @@ using Application.Commands.ItemTemplate.Create;
 using Application.Commands.ItemTemplate.Delete;
 using Application.Commands.ItemTemplate.Restore;
 using Application.Commands.ItemTemplate.Update;
+using Application.Exceptions;
 using Application.Models;
 using Application.Queries.Core.ItemTemplate;
 using Application.Queries.Core.ItemTemplate.GetCategoryRecommendations;
@@ -144,12 +145,20 @@ public class ItemTemplatesController(IMediator mediator, ItemTemplateMapper mapp
 
 	[HttpPut(RouteUpdate)]
 	[EndpointSummary("Update a single item template")]
-	public async Task<Results<NoContent, NotFound>> UpdateItemTemplate([FromRoute] Guid id, [FromBody] UpdateItemTemplateRequest model, CancellationToken cancellationToken = default)
+	public async Task<Results<NoContent, NotFound, Conflict<ProblemDetails>>> UpdateItemTemplate([FromRoute] Guid id, [FromBody] UpdateItemTemplateRequest model, CancellationToken cancellationToken = default)
 	{
 		// Route id is authoritative; ignore any mismatched body id (RECEIPTS-793).
 		model.Id = id;
 		UpdateItemTemplateCommand command = new([mapper.ToDomain(model)]);
-		bool result = await mediator.Send(command, cancellationToken);
+		bool result;
+		try
+		{
+			result = await mediator.Send(command, cancellationToken);
+		}
+		catch (ConcurrencyConflictException ex)
+		{
+			return ApiProblem.Conflict(ex.Message);
+		}
 
 		if (!result)
 		{

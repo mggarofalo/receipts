@@ -6,6 +6,7 @@ using Application.Commands.ItemTemplate.Create;
 using Application.Commands.ItemTemplate.Delete;
 using Application.Commands.ItemTemplate.Restore;
 using Application.Commands.ItemTemplate.Update;
+using Application.Exceptions;
 using Application.Models;
 using Application.Queries.Core.ItemTemplate;
 using Application.Queries.Core.ItemTemplate.GetHistoryCandidates;
@@ -251,7 +252,7 @@ public class ItemTemplatesControllerTests
 			It.IsAny<CancellationToken>()))
 			.ReturnsAsync(true);
 
-		Results<NoContent, NotFound> result = await _controller.UpdateItemTemplate(controllerInput.Id, controllerInput);
+		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.UpdateItemTemplate(controllerInput.Id, controllerInput);
 
 		Assert.IsType<NoContent>(result.Result);
 	}
@@ -266,9 +267,21 @@ public class ItemTemplatesControllerTests
 			It.IsAny<CancellationToken>()))
 			.ReturnsAsync(false);
 
-		Results<NoContent, NotFound> result = await _controller.UpdateItemTemplate(controllerInput.Id, controllerInput);
+		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.UpdateItemTemplate(controllerInput.Id, controllerInput);
 
 		Assert.IsType<NotFound>(result.Result);
+	}
+
+	[Fact]
+	public async Task UpdateItemTemplate_ConflictReturnsReasonAndDoesNotBroadcastSuccess()
+	{
+		UpdateItemTemplateRequest input = ItemTemplateDtoGenerator.GenerateUpdateRequest();
+		_mediatorMock.Setup(mediator => mediator.Send(It.IsAny<UpdateItemTemplateCommand>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new ConcurrencyConflictException("Reload the changed template."));
+		var result = await _controller.UpdateItemTemplate(input.Id, input);
+		Conflict<ProblemDetails> conflict = Assert.IsType<Conflict<ProblemDetails>>(result.Result);
+		conflict.Value!.Detail.Should().Be("Reload the changed template.");
+		_notifierMock.Verify(notifier => notifier.NotifyUpdated(It.IsAny<string>(), It.IsAny<Guid>()), Times.Never);
 	}
 
 	[Fact]

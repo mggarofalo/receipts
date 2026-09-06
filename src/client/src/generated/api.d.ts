@@ -5736,6 +5736,15 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description The item template changed during the update */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
         };
     };
     GetAllItemTemplates: {

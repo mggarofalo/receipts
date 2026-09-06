@@ -12,6 +12,7 @@ public interface IReceiptItemService : ISoftDeletableService<ReceiptItem>
 	Task<PagedResult<ReceiptItem>> GetAllAsync(int offset, int limit, SortParams sort, string? q, Guid? normalizedDescriptionId, CancellationToken cancellationToken);
 	Task<PagedResult<ReceiptItem>> GetByReceiptIdAsync(Guid receiptId, int offset, int limit, SortParams sort, CancellationToken cancellationToken);
 	Task<List<ReceiptItem>> CreateAsync(List<ReceiptItem> models, Guid receiptId, CancellationToken cancellationToken);
+	Task<List<ReceiptItem>> CreateAsync(List<ReceiptItem> models, Guid receiptId, IReadOnlyList<Guid?> templateIds, CancellationToken cancellationToken);
 	Task UpdateAsync(List<ReceiptItem> models, Guid receiptId, CancellationToken cancellationToken);
 	Task<List<ReceiptItemSuggestion>> GetSuggestionsAsync(string itemCode, string? location, int limit, CancellationToken cancellationToken);
 }

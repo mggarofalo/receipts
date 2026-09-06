@@ -1,6 +1,7 @@
 using System.Linq.Expressions;
 using Application.Models;
 using Application.Queries.Core.ReceiptItem.GetReceiptItemSuggestions;
+using Domain.NormalizedDescriptions;
 using Infrastructure.Entities.Core;
 using Infrastructure.Extensions;
 using Infrastructure.Interfaces.Repositories;
@@ -196,6 +197,73 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 		context.ReceiptItems.AddRange(entities);
 		await context.SaveChangesAsync(cancellationToken);
 		return entities;
+	}
+
+	public async Task<List<ReceiptItemEntity>> CreateAsync(List<ReceiptItemEntity> entities,
+		IReadOnlyList<Guid?> templateIds, CancellationToken cancellationToken)
+	{
+		ArgumentNullException.ThrowIfNull(templateIds);
+		if (templateIds.Count != 0 && templateIds.Count != entities.Count)
+		{
+			throw new ArgumentException("Template IDs must align with receipt items.", nameof(templateIds));
+		}
+		if (templateIds.Count == 0)
+		{
+			return await CreateAsync(entities, cancellationToken);
+		}
+
+		Guid?[] hints = templateIds.ToArray();
+		Guid[] ids = hints.Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToArray();
+		for (int attempt = 0; ; attempt++)
+		{
+			cancellationToken.ThrowIfCancellationRequested();
+			using ApplicationDbContext context = contextFactory.CreateDbContext();
+			await using IDbContextTransaction? transaction = context.Database.IsRelational()
+				? await context.Database.BeginTransactionAsync(cancellationToken) : null;
+			await NormalizationWriteGuard.AcquireWriteGateAsync(context, cancellationToken);
+			List<Guid> targetList = await context.ItemTemplates.AsNoTracking()
+				.Where(template => ids.Contains(template.Id) && template.NormalizedDescriptionId != null)
+				.Select(template => template.NormalizedDescriptionId!.Value).Distinct().ToListAsync(cancellationToken);
+			Guid[] targetIds = targetList.ToArray();
+			await NormalizationWriteGuard.LockTargetsAsync(context, targetIds, cancellationToken);
+			await TemplateWriteGuard.LockTemplatesAsync(context, ids, cancellationToken);
+
+			// A nonparticipating writer may have changed the FK while we waited for a template.
+			// Read it again, and retry without reversing the canonical→template lock order.
+			Dictionary<Guid, ItemTemplateEntity> templates = await context.ItemTemplates
+				.Where(template => ids.Contains(template.Id)).ToDictionaryAsync(template => template.Id, cancellationToken);
+			bool targetsChanged = templates.Values.Any(template => template.NormalizedDescriptionId is { } targetId
+				&& !targetIds.Contains(targetId));
+			if (targetsChanged && attempt < 2)
+			{
+				continue;
+			}
+
+			Dictionary<Guid, NormalizedDescriptionEntity> targets = await context.NormalizedDescriptions
+				.Where(target => targetIds.Contains(target.Id) && target.Status != NormalizedDescriptionStatus.Rejected)
+				.ToDictionaryAsync(target => target.Id, cancellationToken);
+			for (int i = 0; i < entities.Count; i++)
+			{
+				ReceiptItemEntity entity = entities[i];
+				entity.NormalizedDescriptionId = null;
+				entity.NormalizedDescriptionMatchScore = null;
+				if (hints[i] is { } templateId && templates.TryGetValue(templateId, out ItemTemplateEntity? template)
+					&& template.NormalizedDescriptionId is { } targetId && targets.ContainsKey(targetId))
+				{
+					entity.NormalizedDescriptionId = targetId;
+				}
+			}
+
+			// Stale/unknown/deleted/unlinked hints are convenience fallbacks. Even repeated
+			// concurrent relinking must not prevent the receipt itself from being saved.
+			context.ReceiptItems.AddRange(entities);
+			await context.SaveChangesAsync(cancellationToken);
+			if (transaction is not null)
+			{
+				await transaction.CommitAsync(cancellationToken);
+			}
+			return entities;
+		}
 	}
 
 	public async Task UpdateAsync(List<ReceiptItemEntity> entities, CancellationToken cancellationToken)

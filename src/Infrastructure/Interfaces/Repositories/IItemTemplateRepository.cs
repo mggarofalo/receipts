@@ -14,7 +14,8 @@ public interface IItemTemplateRepository
 	Task<List<ItemTemplateEntity>> GetDeletedAsync(int offset, int limit, SortParams sort, CancellationToken cancellationToken);
 	Task<int> GetDeletedCountAsync(CancellationToken cancellationToken);
 	Task<List<ItemTemplateEntity>> CreateAsync(List<ItemTemplateEntity> entities, CancellationToken cancellationToken);
-	Task UpdateAsync(List<ItemTemplateEntity> entities, CancellationToken cancellationToken);
+	Task<Dictionary<Guid, string>> GetUpdateRevisionsAsync(List<Guid> ids, CancellationToken cancellationToken);
+	Task UpdateAsync(List<ItemTemplateEntity> entities, IReadOnlyDictionary<Guid, string> expectedRevisions, CancellationToken cancellationToken);
 	Task DeleteAsync(List<Guid> ids, CancellationToken cancellationToken);
 	Task<bool> ExistsAsync(Guid id, CancellationToken cancellationToken);
 	Task<int> GetCountAsync(CancellationToken cancellationToken);
