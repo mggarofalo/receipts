@@ -180,6 +180,7 @@ describe("AuthProvider", () => {
     });
 
     expect(mockedClient.POST).toHaveBeenCalledWith("/api/auth/login", {
+      middleware: expect.any(Array),
       body: { email: "a@b.com", password: "pw" },
     });
     expect(mockedAuth.setTokens).toHaveBeenCalledWith(token, "rt-123");
@@ -271,6 +272,7 @@ describe("AuthProvider", () => {
       await act(async () => { finishLogout(); await remoteLogout; });
 
       expect(mockedClient.POST).toHaveBeenNthCalledWith(2, "/api/auth/login", {
+        middleware: expect.any(Array),
         body: { email: "a@b.com", password: "pw" },
       });
       expect(mockedAuth.setTokens).toHaveBeenCalledWith(newToken, "bob-refresh");

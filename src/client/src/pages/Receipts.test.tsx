@@ -125,7 +125,7 @@ describe("Receipts", () => {
     }));
 
     const { useReceiptYnabSyncStatuses } = await import("@/hooks/useYnab");
-    vi.mocked(useReceiptYnabSyncStatuses).mockReturnValue(mockQueryResult({ statusMap }));
+    vi.mocked(useReceiptYnabSyncStatuses).mockReturnValue(mockQueryResult({ statusMap, isLoading: false, isSuccess: true, status: "success" }));
   }
 
   it("renders the page heading", () => {
@@ -967,6 +967,9 @@ describe("Receipts", () => {
 
     const { useReceiptYnabSyncStatuses } = await import("@/hooks/useYnab");
     vi.mocked(useReceiptYnabSyncStatuses).mockReturnValue(mockQueryResult({
+      isLoading: false,
+      isSuccess: true,
+      status: "success",
       statusMap: new Map([
         ["r1", "Synced"],
         ["r2", "Failed"],

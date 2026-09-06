@@ -62,10 +62,12 @@ describe("YnabReceiptCard", () => {
       receiptId: "receipt-42",
       hasTransactions: false,
       persistedSyncStatus: "Failed",
+      syncStatusUnavailable: false,
     });
     expect(mockMemoCard).toHaveBeenCalledWith({
       receiptId: "receipt-42",
       embedded: true,
+      disabled: false,
     });
     expect(mockSplitCard).toHaveBeenCalledWith({
       receiptId: "receipt-42",

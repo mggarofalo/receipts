@@ -6,6 +6,8 @@ import { z } from "zod";
 import { useAuth } from "@/hooks/useAuth";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { isTimeoutError, isNetworkError } from "@/lib/api-client";
+import { isAbortError } from "@/lib/auth";
+import { parseProblemDetails } from "@/lib/problem-details";
 import { consumeLoginFlash } from "@/lib/server-error-bus";
 import { SubmitButton } from "@/components/ui/submit-button";
 import {
@@ -57,9 +59,15 @@ function Login() {
     try {
       await login(values.email, values.password);
     } catch (err) {
-      if (isTimeoutError(err)) {
+      if (isAbortError(err)) return;
+      const status = parseProblemDetails(err)?.status;
+      if (status === 429) {
+        setError("Too many sign-in attempts. Please wait and try again.");
+      } else if (typeof status === "number" && status >= 500) {
+        setError("Sign in is temporarily unavailable. Please try again.");
+      } else if (isTimeoutError(err)) {
         setError("Request timed out. Please check your connection and try again.");
-      } else if (isNetworkError(err)) {
+      } else if (isNetworkError(err) || err instanceof TypeError) {
         setError("Unable to reach the server. Please check your connection and try again.");
       } else {
         setError("Invalid email or password. Please try again.");

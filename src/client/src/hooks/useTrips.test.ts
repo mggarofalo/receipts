@@ -45,7 +45,7 @@ describe("useTripByReceiptId", () => {
 
     expect(client.GET).toHaveBeenCalledWith(
       "/api/trips",
-      { params: { query: { receiptId: "r1" } } },
+      { middleware: expect.any(Array), params: { query: { receiptId: "r1" } } },
     );
     expect(result.current.data).toEqual(mockTrip);
   });

@@ -1,3 +1,4 @@
+import { RequestFailure } from "@/components/RequestFailure";
 import { useCallback, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { usePageTitle } from "@/hooks/usePageTitle";
@@ -46,6 +47,9 @@ export default function Ynab() {
     isConnected,
     lastSuccessfulSyncUtc,
     isLoading: connectionLoading,
+    isError: connectionError,
+    refetch: retryConnection,
+    isFetching: connectionFetching,
   } = useYnabConnectionStatus();
   const { rateLimitStatus } = useYnabRateLimitStatus(isConfigured);
   const { data: status } = useYnabStatus();
@@ -82,7 +86,7 @@ export default function Ynab() {
     return Math.round((status.pushSuccessLast30d / status.pushCountLast30d) * 100);
   }, [status]);
 
-  if (!connectionLoading && !isConfigured) {
+  if (!connectionLoading && !connectionError && !isConfigured) {
     return (
       <>
         <PageHead title="YNAB status" sub="Integration health and recent sync activity" />
@@ -116,7 +120,11 @@ export default function Ynab() {
               <CardDescription>Token status and last sync.</CardDescription>
             </CardHeader>
             <CardContent>
-              {connectionLoading ? (
+              {connectionError ? <RequestFailure
+                message="YNAB connection status is unavailable."
+                retry={() => { void retryConnection(); }}
+                isRetrying={connectionFetching}
+              /> : connectionLoading ? (
                 <div className="flex items-center gap-2">
                   <Spinner className="h-4 w-4" />
                   <span className="text-sm text-muted-foreground">

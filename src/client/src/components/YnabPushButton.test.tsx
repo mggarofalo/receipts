@@ -224,3 +224,12 @@ describe("YnabPushButton", () => {
     expect(liveRegion?.contains(alert)).toBe(true);
   });
 });
+
+it("blocks a receipt with transactions while its persisted sync state is unknown", async () => {
+  renderWithProviders(<YnabPushButton receiptId="r-unknown" hasTransactions syncStatusUnavailable />);
+  const button = screen.getByRole("button", { name: "Push to YNAB" });
+  expect(button).toBeDisabled();
+  expect(screen.getByText("Sync status unavailable")).toBeVisible();
+  await userEvent.click(button);
+  expect(mockPushMutate).not.toHaveBeenCalled();
+});

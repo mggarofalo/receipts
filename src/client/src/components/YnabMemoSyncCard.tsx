@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { RequestFailure } from "@/components/RequestFailure";
+import { useLayoutEffect, useRef, useState } from "react";
 import {
   useSyncYnabMemos,
   useResolveYnabMemoSync,
@@ -37,6 +38,7 @@ import { Spinner } from "@/components/ui/spinner";
 interface YnabMemoSyncCardProps {
   receiptId: string;
   embedded?: boolean;
+  disabled?: boolean;
 }
 
 function outcomeLabel(outcome: string): string {
@@ -91,22 +93,36 @@ function formatMilliunits(amount: number): string {
 export function YnabMemoSyncCard({
   receiptId,
   embedded = false,
+  disabled = false,
 }: YnabMemoSyncCardProps) {
-  const { isConfigured, isLoading: connectionLoading } =
+  const { isConfigured, isLoading: connectionLoading, isError: connectionError, refetch: retryConnection, isFetching: connectionFetching } =
     useYnabConnectionStatus();
-  const { selectedBudgetId } = useSelectedYnabBudget();
+  const { selectedBudgetId, isError: budgetError, refetch: retryBudget, isFetching: budgetFetching } = useSelectedYnabBudget();
 
-  if (connectionLoading || !isConfigured || !selectedBudgetId) {
-    return null;
-  }
-
-  return <YnabMemoSyncContent receiptId={receiptId} embedded={embedded} />;
+  const unavailable = disabled || connectionError || budgetError;
+  return <>
+    {unavailable && <RequestFailure
+      message="YNAB is temporarily unavailable."
+      retry={() => { void retryConnection(); void retryBudget(); }}
+      isRetrying={connectionFetching || budgetFetching}
+    />}
+    {!connectionLoading && isConfigured && selectedBudgetId && (
+      <fieldset disabled={unavailable} className="min-w-0">
+        <YnabMemoSyncContent receiptId={receiptId} embedded={embedded} disabled={unavailable} />
+      </fieldset>
+    )}
+  </>;
 }
 
 export function YnabMemoSyncContent({
   receiptId,
   embedded = false,
+  disabled = false,
 }: YnabMemoSyncCardProps) {
+  // An earlier mutation callback must consult the latest committed availability,
+  // before launching another write. Commit synchronously before external callbacks run.
+  const disabledRef = useRef(disabled);
+  useLayoutEffect(() => { disabledRef.current = disabled; }, [disabled]);
   const syncMemos = useSyncYnabMemos();
   const resolveSync = useResolveYnabMemoSync();
   const [results, setResults] = useState<YnabMemoSyncResult[] | undefined>();
@@ -117,6 +133,7 @@ export function YnabMemoSyncContent({
   const summary = useMemoSyncSummary(results);
 
   function handleSync() {
+    if (disabled) return;
     syncMemos.mutate(receiptId, {
       onSuccess: (data) => {
         setResults(data?.results as YnabMemoSyncResult[] | undefined);
@@ -125,7 +142,7 @@ export function YnabMemoSyncContent({
   }
 
   function handleResolve(ynabTransactionId: string) {
-    if (!resolveTarget) return;
+    if (disabled || !resolveTarget) return;
     resolveSync.mutate(
       {
         localTransactionId: resolveTarget.localTransactionId,
@@ -134,7 +151,8 @@ export function YnabMemoSyncContent({
       {
         onSuccess: () => {
           setResolveTarget(null);
-          // Re-sync to refresh results
+          // Preserve the completed resolution, but wait for recovery before a new write.
+          if (disabledRef.current) return;
           syncMemos.mutate(receiptId, {
             onSuccess: (data) => {
               setResults(data?.results as YnabMemoSyncResult[] | undefined);
@@ -160,7 +178,7 @@ export function YnabMemoSyncContent({
             </div>
             <Button
               onClick={handleSync}
-              disabled={syncMemos.isPending}
+              disabled={disabled || syncMemos.isPending}
               size="sm"
             >
               {syncMemos.isPending ? (
@@ -232,6 +250,7 @@ export function YnabMemoSyncContent({
                       <Button
                         variant="outline"
                         size="sm"
+                        disabled={disabled}
                         onClick={() =>
                           setResolveTarget({
                             localTransactionId: result.localTransactionId,
@@ -298,7 +317,7 @@ export function YnabMemoSyncContent({
                         <Button
                           size="sm"
                           variant="outline"
-                          disabled={resolveSync.isPending}
+                          disabled={disabled || resolveSync.isPending}
                           onClick={() => handleResolve(candidate.id)}
                         >
                           Select

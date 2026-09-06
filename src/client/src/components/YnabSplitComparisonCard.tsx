@@ -1,3 +1,5 @@
+import { RequestFailure } from "@/components/RequestFailure";
+import { extractErrorMessage } from "@/lib/problem-details";
 import { useMemo } from "react";
 import { Link } from "react-router";
 import {
@@ -47,9 +49,14 @@ export function YnabSplitComparisonCard({
   // The split-comparison endpoint is YNAB-gated (503 when YNAB is not set up).
   // Only query — and only render the card — once we know YNAB is configured;
   // otherwise the card would surface a spurious 503 on every receipt detail.
-  const { isConfigured, isLoading: connectionLoading } =
+  const { isConfigured, isLoading: connectionLoading, isError: connectionError, refetch: retryConnection, isFetching: connectionFetching } =
     useYnabConnectionStatus();
 
+  if (connectionError) return <RequestFailure
+    message="YNAB connection status is unavailable."
+    retry={() => { void retryConnection(); }}
+    isRetrying={connectionFetching}
+  />;
   if (connectionLoading || !isConfigured) return null;
 
   return (
@@ -61,7 +68,7 @@ export function YnabSplitComparisonContent({
   receiptId,
   embedded = false,
 }: YnabSplitComparisonCardProps) {
-  const { data, isLoading, error } = useYnabSplitComparison(receiptId, true);
+  const { data, isLoading, error, refetch, isFetching } = useYnabSplitComparison(receiptId, true);
 
   // Derived values — memoized so downstream render stays stable regardless of
   // which branch we render. Safe because we only derive from `data`.
@@ -105,12 +112,11 @@ export function YnabSplitComparisonContent({
             <Skeleton className="h-4 w-5/6" />
           </div>
         ) : error ? (
-          <Alert variant="destructive">
-            <AlertDescription>
-              Could not load split comparison:{" "}
-              {error instanceof Error ? error.message : String(error)}
-            </AlertDescription>
-          </Alert>
+          <RequestFailure
+            message={`Could not load split comparison. ${extractErrorMessage(error) ?? "Please try again."}`}
+            retry={() => { void refetch(); }}
+            isRetrying={isFetching}
+          />
         ) : !data ? null : !data.canComputeExpected ? (
           <UnavailableState
             reason={data.expectedUnavailableReason}

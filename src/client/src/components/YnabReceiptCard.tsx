@@ -15,6 +15,8 @@ interface YnabReceiptCardProps {
   receiptId: string;
   hasTransactions: boolean;
   isAvailable: boolean;
+  isUnavailable?: boolean;
+  syncStatusUnavailable?: boolean;
   persistedSyncStatus?: ReceiptYnabSyncStatusValue;
 }
 
@@ -27,6 +29,8 @@ export function YnabReceiptCard({
   receiptId,
   hasTransactions,
   isAvailable,
+  isUnavailable = false,
+  syncStatusUnavailable = false,
   persistedSyncStatus,
 }: YnabReceiptCardProps) {
   if (!isAvailable) return null;
@@ -40,7 +44,8 @@ export function YnabReceiptCard({
           splits with YNAB.
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-5">
+      <CardContent>
+        <fieldset disabled={isUnavailable} className="min-w-0 space-y-5">
         <section aria-labelledby="ynab-transaction-sync-heading">
           <div className="mb-3 space-y-1">
             <h3
@@ -57,13 +62,15 @@ export function YnabReceiptCard({
             receiptId={receiptId}
             hasTransactions={hasTransactions}
             persistedSyncStatus={persistedSyncStatus}
+            syncStatusUnavailable={syncStatusUnavailable}
           />
         </section>
 
         <Separator />
-        <YnabMemoSyncContent receiptId={receiptId} embedded />
+        <YnabMemoSyncContent receiptId={receiptId} embedded disabled={isUnavailable} />
         <Separator />
         <YnabSplitComparisonContent receiptId={receiptId} embedded />
+        </fieldset>
       </CardContent>
     </Card>
   );

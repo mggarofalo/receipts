@@ -83,7 +83,7 @@ describe("useYnab", () => {
     expect(result.current.isConfigured).toBe(true);
     expect(result.current.isConnected).toBe(true);
     expect(result.current.lastSuccessfulSyncUtc).toBe("2026-04-05T12:00:00Z");
-    expect(client.GET).toHaveBeenCalledWith("/api/ynab/connection-status", {});
+    expect(client.GET).toHaveBeenCalledWith("/api/ynab/connection-status", { middleware: expect.any(Array) });
   });
 
   it("useYnabConnectionStatus returns defaults when data is undefined", async () => {
@@ -1108,21 +1108,23 @@ describe("useYnab", () => {
     expect(result.current.statusMap.get("r2")).toBe("Failed");
     expect(result.current.statusMap.get("r3")).toBe("NotSynced");
     expect(client.GET).toHaveBeenCalledWith("/api/ynab/receipt-sync-statuses", {
+      middleware: expect.any(Array),
       params: { query: { receiptIds: ["r1", "r2", "r3"] } },
     });
   });
 
-  it("useReceiptYnabSyncStatuses returns empty map on error", async () => {
+  it("useReceiptYnabSyncStatuses exposes a failed lookup instead of reporting a successful empty map", async () => {
     (client.GET as Mock).mockResolvedValue({
       data: undefined,
-      error: "Server error",
+      error: { status: 503, detail: "Sync status unavailable" },
     });
 
     const { result } = renderHook(() => useReceiptYnabSyncStatuses(["r1"]), {
       wrapper: createWrapper(),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.error).toEqual({ status: 503, detail: "Sync status unavailable" });
     expect(result.current.statusMap.size).toBe(0);
   });
 
@@ -1305,7 +1307,7 @@ describe("useYnab", () => {
     expect(result.current.data).toEqual(response);
     expect(client.GET).toHaveBeenCalledWith(
       "/api/ynab/receipts/{receiptId}/split-comparison",
-      { params: { path: { receiptId: "receipt-1" } } },
+      { middleware: expect.any(Array), params: { path: { receiptId: "receipt-1" } } },
     );
   });
 

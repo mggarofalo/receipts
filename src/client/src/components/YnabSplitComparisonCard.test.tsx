@@ -85,7 +85,7 @@ describe("YnabSplitComparisonCard", () => {
         isLoading: false,
         isPending: false,
         isError: true,
-        error: new Error("Boom"),
+        error: { status: 503, detail: "Boom" },
       }),
     );
 

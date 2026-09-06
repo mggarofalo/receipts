@@ -2,6 +2,8 @@ import { useMemo } from "react";
 import { useStableQuery } from "@/hooks/useStableQuery";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSessionMutation } from "@/hooks/useSessionMutation";
+import { localErrorPolicy } from "@/lib/request-error-policy";
+import { parseProblemDetails } from "@/lib/problem-details";
 import client from "@/lib/api-client";
 import { toast } from "sonner";
 // Some schemas exceed TypeScript's type-resolution depth when accessed via
@@ -22,12 +24,13 @@ type StaleMappingsResponse = {
 
 export function useYnabConnectionStatus() {
   const query = useQuery({
+    ...localErrorPolicy.query,
     queryKey: ["ynab", "connection-status"],
     staleTime: 5 * 60 * 1000, // 5 min — matches backend budget cache TTL
     queryFn: async () => {
       const { data, error } = await client.GET(
         "/api/ynab/connection-status" as never,
-        {} as never,
+        { ...localErrorPolicy.request } as never,
       );
       if (error) throw error;
       return data as unknown as YnabConnectionStatusResponse;
@@ -64,9 +67,10 @@ export function useYnabBudgets() {
 
 export function useSelectedYnabBudget() {
   const query = useQuery({
+    ...localErrorPolicy.query,
     queryKey: ["ynab", "settings", "budget"],
     queryFn: async () => {
-      const { data, error } = await client.GET("/api/ynab/settings/budget");
+      const { data, error } = await client.GET("/api/ynab/settings/budget", localErrorPolicy.request);
       if (error) throw error;
       return data;
     },
@@ -580,11 +584,13 @@ export function useYnabSplitComparison(
   enabled = true,
 ) {
   return useQuery({
+    ...localErrorPolicy.query,
     queryKey: ["ynab", "split-comparison", receiptId],
     queryFn: async (): Promise<ReceiptYnabSplitComparisonResponse> => {
       const { data, error } = await client.GET(
         "/api/ynab/receipts/{receiptId}/split-comparison" as never,
         {
+          ...localErrorPolicy.request,
           params: { path: { receiptId } },
         } as never,
       );
@@ -741,16 +747,18 @@ export function useReceiptYnabSyncStatuses(
   enabled = true,
 ) {
   const query = useQuery({
+    ...localErrorPolicy.query,
     queryKey: ["ynab", "receipt-sync-statuses", receiptIds],
     queryFn: async (): Promise<ReceiptYnabSyncStatusListResponse> => {
       if (receiptIds.length === 0) return { data: [] };
       const res = await client.GET(
         "/api/ynab/receipt-sync-statuses" as "/api/ynab/budgets",
         {
+          ...localErrorPolicy.request,
           params: { query: { receiptIds } } as never,
         },
       );
-      if (res.error) return { data: [] };
+      if (res.error) throw res.error;
       return res.data as unknown as ReceiptYnabSyncStatusListResponse;
     },
     enabled: enabled && receiptIds.length > 0,
@@ -769,19 +777,22 @@ export function useReceiptYnabSyncStatuses(
 
 export function useYnabSyncStatus(transactionId: string | null) {
   return useQuery({
+    ...localErrorPolicy.query,
     queryKey: ["ynab", "sync-status", transactionId],
     queryFn: async () => {
       if (!transactionId) return null;
       const { data, error } = await client.GET(
         "/api/ynab/sync-status/{transactionId}",
         {
+          ...localErrorPolicy.request,
           params: {
             path: { transactionId },
             query: { syncType: "TransactionPush" as const },
           },
         } as never,
       );
-      if (error) return null;
+      if (parseProblemDetails(error)?.status === 404) return null;
+      if (error) throw error;
       return data;
     },
     enabled: !!transactionId,

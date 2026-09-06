@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/dialog";
 import { ChangeHistory } from "@/components/ChangeHistory";
 import { CardSkeleton } from "@/components/ui/card-skeleton";
+import { RequestFailure } from "@/components/RequestFailure";
 import { YnabReceiptCard } from "@/components/YnabReceiptCard";
 import { ReconcileSheet } from "@/components/ReconcileSheet";
 import { Icon, PageHead, YnabChip } from "@/components/primitives";
@@ -37,26 +38,29 @@ function ReceiptDetail() {
   usePageTitle("Receipt Detail");
   const { id } = useParams<{ id: string }>();
 
-  const { data: trip, isLoading, isError } = useTripByReceiptId(id ?? null);
+  const { data: trip, isLoading, isError, error: receiptError, refetch, isFetching } = useTripByReceiptId(id ?? null);
+  const receiptStatus = parseProblemDetails(receiptError)?.status;
+  const receiptNotFound = isError && receiptStatus === 404;
   const updateReceipt = useUpdateReceipt();
   const createAdjustment = useCreateAdjustment();
   // YNAB-gated rendering — when no PAT is configured, the YNAB push and chip
   // surfaces can't do anything useful (RECEIPTS-731). The split-comparison
   // and memo-sync cards self-gate; the push Card and PageHead chip below
   // share this signal.
-  const { isConfigured: ynabConfigured, isLoading: ynabConnectionLoading } =
+  const { isConfigured: ynabConfigured, isLoading: ynabConnectionLoading, isError: ynabConnectionError, refetch: retryConnection, isFetching: connectionFetching } =
     useYnabConnectionStatus();
-  const { selectedBudgetId, isLoading: ynabBudgetLoading } =
+  const { selectedBudgetId, isLoading: ynabBudgetLoading, isError: ynabBudgetError, refetch: retryBudget, isFetching: budgetFetching } =
     useSelectedYnabBudget();
   const ynabReady =
     !ynabConnectionLoading &&
     !ynabBudgetLoading &&
     ynabConfigured &&
     selectedBudgetId != null;
-  const { statusMap: ynabStatusMap } = useReceiptYnabSyncStatuses(
+  const { statusMap: ynabStatusMap, isError: ynabStatusError, isLoading: ynabStatusLoading, refetch: retryStatus, isFetching: statusFetching } = useReceiptYnabSyncStatuses(
     id ? [id] : [],
     ynabReady,
   );
+  const ynabUnavailable = ynabConnectionError || ynabBudgetError;
   const persistedYnabStatus = id ? ynabStatusMap.get(id) : undefined;
 
   const [editOpen, setEditOpen] = useState(false);
@@ -113,7 +117,8 @@ function ReceiptDetail() {
     trip.transactions.length > 0 &&
     calculateReceiptBalance(expectedTotal, transactionsTotal).hasVisibleDiscrepancy;
 
-  const yChip: "synced" | "pending" | "error" | "none" =
+  const yChip =
+    ynabUnavailable || ynabStatusError ? "unavailable" : ynabStatusLoading ? "loading" :
     persistedYnabStatus === "Synced"
       ? "synced"
       : persistedYnabStatus === "Pending"
@@ -147,7 +152,7 @@ function ReceiptDetail() {
               >
                 <Icon.Edit /> Edit
               </button>
-              {ynabReady && <YnabChip status={yChip} />}
+              {(ynabReady || ynabUnavailable) && <YnabChip status={yChip} title={ynabStatusError && persistedYnabStatus ? `Last known: ${persistedYnabStatus}` : undefined} />}
             </>
           )
         }
@@ -172,9 +177,16 @@ function ReceiptDetail() {
           <div className="icon-frame">
             <Icon.AlertTriangle />
           </div>
-          <h3>Receipt not found</h3>
-          <p>No receipt matches this ID. It may have been deleted.</p>
+          <h3>{receiptNotFound ? "Receipt not found" : trip ? "Could not refresh receipt" : "Receipt unavailable"}</h3>
+          <p>{receiptNotFound
+            ? "No receipt matches this ID. It may have been deleted."
+            : receiptStatus === 403
+              ? "You do not have permission to load this receipt."
+              : "Could not load receipt details. Please try again."}</p>
           <div className="actions">
+            {!receiptNotFound && <button type="button" className="btn primary" disabled={isFetching} onClick={() => void refetch()}>
+              {isFetching ? "Retrying…" : "Retry"}
+            </button>}
             <Link to="/receipts" className="btn primary">
               Back to receipts
             </Link>
@@ -182,7 +194,7 @@ function ReceiptDetail() {
         </div>
       )}
 
-      {trip && (
+      {trip && !receiptNotFound && (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           {(allWarnings.length > 0 || transactionsImbalanced) && (
             <div className="warn-banner" role="status" aria-live="polite">
@@ -264,10 +276,21 @@ function ReceiptDetail() {
             transactionsTotal={transactionsTotal}
           />
 
+          {ynabUnavailable ? <RequestFailure
+            message="YNAB is temporarily unavailable. Receipt editing is still available."
+            retry={() => { void retryConnection(); void retryBudget(); }}
+            isRetrying={connectionFetching || budgetFetching}
+          /> : ynabStatusError ? <RequestFailure
+            message="YNAB sync status is unavailable. Any displayed status is last known."
+            retry={() => { void retryStatus(); }}
+            isRetrying={statusFetching}
+          /> : null}
           <YnabReceiptCard
             receiptId={id}
             hasTransactions={trip.transactions.length > 0}
             isAvailable={ynabReady}
+            isUnavailable={ynabUnavailable}
+            syncStatusUnavailable={ynabStatusError || ynabStatusLoading}
             persistedSyncStatus={persistedYnabStatus}
           />
 
