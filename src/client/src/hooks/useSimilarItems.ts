@@ -1,3 +1,6 @@
+import { useMemo } from "react";
+import { useStableQuery } from "@/hooks/useStableQuery";
+import { localErrorPolicy } from "@/lib/request-error-policy";
 import { useQuery } from "@tanstack/react-query";
 import client from "@/lib/api-client";
 import { useDebouncedValue } from "./useDebouncedValue";
@@ -10,7 +13,8 @@ export function useSimilarItems(
   const enabled =
     (options?.enabled ?? true) && debouncedQuery.length >= 2;
 
-  return useQuery({
+  const queryResult = useQuery({
+    ...localErrorPolicy.query,
     queryKey: [
       "similarItems",
       debouncedQuery,
@@ -22,6 +26,7 @@ export function useSimilarItems(
       const { data, error } = await client.GET(
         "/api/item-templates/similar",
         {
+          ...localErrorPolicy.request,
           params: {
             query: {
               q: debouncedQuery,
@@ -37,6 +42,9 @@ export function useSimilarItems(
     },
     staleTime: 30_000,
   });
+  const base = useStableQuery(queryResult);
+  const isDebouncing = debouncedQuery !== query;
+  return useMemo(() => ({ ...base, isDebouncing }), [base, isDebouncing]);
 }
 
 export function useCategoryRecommendations(
@@ -47,7 +55,8 @@ export function useCategoryRecommendations(
   const enabled =
     (options?.enabled ?? true) && debouncedDescription.length >= 2;
 
-  return useQuery({
+  const queryResult = useQuery({
+    ...localErrorPolicy.query,
     queryKey: [
       "categoryRecommendations",
       debouncedDescription,
@@ -58,6 +67,7 @@ export function useCategoryRecommendations(
       const { data, error } = await client.GET(
         "/api/item-templates/category-suggestions",
         {
+          ...localErrorPolicy.request,
           params: {
             query: {
               q: debouncedDescription,
@@ -72,4 +82,7 @@ export function useCategoryRecommendations(
     },
     staleTime: 30_000,
   });
+  const base = useStableQuery(queryResult);
+  const isDebouncing = debouncedDescription !== description;
+  return useMemo(() => ({ ...base, isDebouncing }), [base, isDebouncing]);
 }

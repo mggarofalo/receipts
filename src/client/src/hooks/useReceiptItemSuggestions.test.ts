@@ -64,6 +64,7 @@ describe("useReceiptItemSuggestions", () => {
     expect(result.current.data).toEqual(suggestions);
     expect(client.GET).toHaveBeenCalledWith("/api/receipt-items/suggestions", {
       params: { query: { itemCode: "M", location: "Walmart", limit: 10 } },
+      middleware: expect.any(Array),
       signal: expect.any(AbortSignal),
     });
   });
@@ -88,6 +89,7 @@ describe("useReceiptItemSuggestions", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(client.GET).toHaveBeenCalledWith("/api/receipt-items/suggestions", {
       params: { query: { itemCode: "MILK", location: undefined, limit: 10 } },
+      middleware: expect.any(Array),
       signal: expect.any(AbortSignal),
     });
   });
@@ -103,6 +105,7 @@ describe("useReceiptItemSuggestions", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(client.GET).toHaveBeenCalledWith("/api/receipt-items/suggestions", {
       params: { query: { itemCode: "MILK", location: "Walmart", limit: 5 } },
+      middleware: expect.any(Array),
       signal: expect.any(AbortSignal),
     });
   });

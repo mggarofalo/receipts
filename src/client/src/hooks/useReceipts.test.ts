@@ -501,6 +501,8 @@ describe("useLocationSuggestions", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual(locations);
     expect(client.GET).toHaveBeenCalledWith("/api/receipts/locations", {
+      middleware: expect.any(Array),
+      signal: expect.any(AbortSignal),
       params: { query: { q: undefined, limit: 20 } },
     });
   });
@@ -517,6 +519,8 @@ describe("useLocationSuggestions", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(client.GET).toHaveBeenCalledWith("/api/receipts/locations", {
+      middleware: expect.any(Array),
+      signal: expect.any(AbortSignal),
       params: { query: { q: "Wal", limit: 20 } },
     });
   });

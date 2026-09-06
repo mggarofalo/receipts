@@ -1,3 +1,4 @@
+import { RequestFailure } from "@/components/RequestFailure";
 import { calculateLineTotal } from "@/lib/receipt-arithmetic";
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { useForm } from "react-hook-form";
@@ -227,7 +228,7 @@ export function ReceiptItemForm({
   const [itemCodeAutocompleteOpen, setItemCodeAutocompleteOpen] = useState(false);
   const itemCodeListId = "item-code-autocomplete-list";
 
-  const { data: itemCodeSuggestions, isFetching: isFetchingItemCodeSuggestions } =
+  const { data: itemCodeSuggestions, isFetching: isFetchingItemCodeSuggestions, isError: itemCodeSuggestionsError, isDebouncing: itemCodeDebouncing, refetch: retryItemCodeSuggestions } =
     useReceiptItemSuggestions(itemCodeInput, resolvedLocation, {
       enabled: itemCodeAutocompleteOpen && itemCodeInput.length >= 1,
     });
@@ -541,6 +542,13 @@ export function ReceiptItemForm({
                 </PopoverContent>
               </Popover>
               <FormMessage />
+              {itemCodeSuggestionsError && itemCodeInput.length >= 1 && !itemCodeDebouncing && (
+                <RequestFailure
+                  message="Item code suggestions unavailable. You can enter the item manually."
+                  retry={() => { void retryItemCodeSuggestions(); }}
+                  isRetrying={isFetchingItemCodeSuggestions}
+                />
+              )}
             </FormItem>
           )}
         />

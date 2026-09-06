@@ -43,6 +43,16 @@ The transaction sync-status endpoint's documented 404 means no record and may re
 
 ## Remaining adoption
 
-This first RECEIPTS-950 step establishes the contract and receipt/status consumers. Budget/account/category lists, mapping and stale-mapping diagnostics, rate-limit/status/event panels, and YNAB select/mapping/memo/resolve/push/bulk actions retain their existing global policy until their visible local owners are completed in the next focused step. The non-YNAB report and editor suggestion reads also need explicit classification before claiming that every optional request is local. Suppressing a shared hook requires checking every consumer, so failed requests cannot become silent.
+RECEIPTS-950 now covers receipt/status reads, receipt mutations and the optional suggestion families described below. Taxonomy and template catalogs, receipt pickers, account/card choices, remaining YNAB lists and diagnostics, and YNAB settings/actions still require complete shared-consumer ownership. Other report reads need explicit classification before claiming that every optional request is local. Suppressing a shared hook requires checking every consumer, so failed requests cannot become silent.
 
 Backup import/export also use this local policy on the shared refresh/replay transport. Their hooks own transfer feedback while the page retains confirmation and file state. Both retain a five-minute transport deadline; see [Backup & restore](backup-restore.md). Error routes and render boundaries remain available throughout the remaining adoption.
+
+## Optional receipt suggestions
+
+Location history, item-code suggestions, similar descriptions, category recommendations and template-history candidates use the paired local read policy. All consumers own a visible error/retry state. Location history retains local MRU entries and cached API choices; failure never clears a typed location. A failed suggestion lookup leaves manual valid entry and cached choices usable. Successful empty results remain distinct from unavailable results.
+
+Debounced suggestion hooks expose `isDebouncing` alongside their stable query fields. Error owners hide obsolete retry controls while the input is changing and enforce current length thresholds; category recommendations also require that no category has been chosen. This matters because imperative `refetch` bypasses `enabled`. A user may explicitly retry a valid item/description lookup while its popover is closed; visibility controls automatic lookup, not the validity of that manual read. The retry control lives beside the field and does not reopen the popover or change the typed value.
+
+The query identities, debounce delays, location scoping and suggestion freshness remain unchanged. Query cancellation is passed through to the shared transport, including location lookup. Template history keeps its existing failure/retry and widening/focus behavior. Promotion's known template-created similarity exception remains intact.
+
+Taxonomy and template catalogs, receipt pickers, account/card choices and remaining YNAB settings/actions still require their complete shared-consumer owners. This suggestion phase does not classify those failures or authorize automatic taxonomy creation after a failed lookup.

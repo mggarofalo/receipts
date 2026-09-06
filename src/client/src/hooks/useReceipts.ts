@@ -228,9 +228,12 @@ export function useCreateCompleteReceipt() {
 
 export function useLocationSuggestions(query: string) {
   return useQuery({
+    ...localErrorPolicy.query,
     queryKey: [...queryKeys.receipts, "locations", query],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/api/receipts/locations", {
+        ...localErrorPolicy.request,
+        signal,
         params: { query: { q: query || undefined, limit: 20 } },
       });
       if (error) throw error;

@@ -1,3 +1,4 @@
+import { RequestFailure } from "@/components/RequestFailure";
 import { useRef } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod/v4";
@@ -50,7 +51,7 @@ export function ReceiptForm({
 }: ReceiptFormProps) {
   const formRef = useRef<HTMLFormElement>(null);
   useFormShortcuts({ formRef });
-  const { options: locationOptions, add: addLocation } = useLocationHistory();
+  const { options: locationOptions, add: addLocation, isError: locationsError, isFetching: locationsFetching, refetch: retryLocations } = useLocationHistory();
 
   const form = useForm<ReceiptFormValues>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -87,12 +88,19 @@ export function ReceiptForm({
                   onValueChange={field.onChange}
                   placeholder="Select or type a location..."
                   searchPlaceholder="Search locations..."
-                  emptyMessage="No saved locations."
+                  emptyMessage={locationsError ? "Location suggestions unavailable." : locationsFetching ? "Loading location suggestions..." : "No saved locations."}
                   allowCustom
                   aria-required="true"
                 />
               </FormControl>
               <FormMessage />
+              {locationsError && (
+                <RequestFailure
+                  message="Location suggestions unavailable. You can enter a location manually."
+                  retry={() => { void retryLocations(); }}
+                  isRetrying={locationsFetching}
+                />
+              )}
             </FormItem>
           )}
         />

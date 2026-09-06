@@ -8,7 +8,7 @@ export function useLocationHistory() {
   const { entries: localEntries, options: _localOptions, add, clear } =
     useFieldHistory(locationHistory);
 
-  const { data: apiLocations } = useLocationSuggestions("");
+  const { data: apiLocations, isError, isFetching, refetch } = useLocationSuggestions("");
 
   const options: ComboboxOption[] = useMemo(() => {
     const seen = new Set<string>();
@@ -38,7 +38,7 @@ export function useLocationHistory() {
   }, [localEntries, apiLocations]);
 
   return useMemo(
-    () => ({ locations: localEntries, options, add, clear }),
-    [localEntries, options, add, clear],
+    () => ({ locations: localEntries, options, add, clear, isError, isFetching, refetch }),
+    [localEntries, options, add, clear, isError, isFetching, refetch],
   );
 }

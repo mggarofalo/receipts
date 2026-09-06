@@ -1,3 +1,4 @@
+import { RequestFailure } from "@/components/RequestFailure";
 import { calculateSubtotal, calculateLineTotal } from "@/lib/receipt-arithmetic";
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { generateId } from "@/lib/id";
@@ -135,6 +136,9 @@ export function LineItemsSection({
   const {
     data: itemCodeSuggestions,
     isFetching: isFetchingItemCodeSuggestions,
+    isError: itemCodeSuggestionsError,
+    isDebouncing: itemCodeDebouncing,
+    refetch: retryItemCodeSuggestions,
   } = useReceiptItemSuggestions(itemCode ?? "", location, {
     enabled: showItemCodeSuggestions && (itemCode ?? "").length >= 1,
   });
@@ -144,6 +148,7 @@ export function LineItemsSection({
   const hasNoItemCodeResultsMessage =
     (itemCode ?? "").length >= 1 &&
     !isFetchingItemCodeSuggestions &&
+    !itemCodeSuggestionsError &&
     itemCodeSuggestions &&
     itemCodeSuggestions.length === 0;
   const isItemCodeSuggestionsOpen =
@@ -204,7 +209,7 @@ export function LineItemsSection({
     ],
   );
 
-  const { data: similarItems, isFetching: isFetchingSimilar } = useSimilarItems(
+  const { data: similarItems, isFetching: isFetchingSimilar, isError: similarItemsError, isDebouncing: similarItemsDebouncing, refetch: retrySimilarItems } = useSimilarItems(
     description,
     { enabled: showSuggestions },
   );
@@ -213,12 +218,13 @@ export function LineItemsSection({
   const hasNoResultsMessage =
     description.length >= 2 &&
     !isFetchingSimilar &&
+    !similarItemsError &&
     similarItems &&
     similarItems.length === 0;
   const isSuggestionsOpen =
     showSuggestions && (hasResults || hasNoResultsMessage);
 
-  const { data: categoryRecs } = useCategoryRecommendations(description, {
+  const { data: categoryRecs, isError: categoryRecsError, isFetching: categoryRecsFetching, isDebouncing: categoryRecsDebouncing, refetch: retryCategoryRecs } = useCategoryRecommendations(description, {
     enabled: description.length >= 2 && !selectedCategory,
   });
 
@@ -626,6 +632,13 @@ export function LineItemsSection({
                       </PopoverContent>
                     </Popover>
                     <FormMessage />
+                    {itemCodeSuggestionsError && (itemCode ?? "").length >= 1 && !itemCodeDebouncing && (
+                      <RequestFailure
+                        message="Item code suggestions unavailable. You can enter the item manually."
+                        retry={() => { void retryItemCodeSuggestions(); }}
+                        isRetrying={isFetchingItemCodeSuggestions}
+                      />
+                    )}
                   </FormItem>
                 )}
               />
@@ -780,6 +793,13 @@ export function LineItemsSection({
                       </PopoverContent>
                     </Popover>
                     <FormMessage />
+                    {similarItemsError && description.length >= 2 && !similarItemsDebouncing && (
+                      <RequestFailure
+                        message="Description suggestions unavailable. You can enter the item manually."
+                        retry={() => { void retrySimilarItems(); }}
+                        isRetrying={isFetchingSimilar}
+                      />
+                    )}
                   </FormItem>
                 )}
               />
@@ -830,6 +850,13 @@ export function LineItemsSection({
                         </div>
                       )}
                     <FormMessage />
+                    {categoryRecsError && description.length >= 2 && !selectedCategory && !categoryRecsDebouncing && (
+                      <RequestFailure
+                        message="Category suggestions unavailable. You can choose a category manually."
+                        retry={() => { void retryCategoryRecs(); }}
+                        isRetrying={categoryRecsFetching}
+                      />
+                    )}
                   </FormItem>
                 )}
               />

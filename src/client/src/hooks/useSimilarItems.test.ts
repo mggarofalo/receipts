@@ -56,6 +56,7 @@ describe("useSimilarItems", () => {
     expect(result.current.data).toEqual(items);
     expect(client.GET).toHaveBeenCalledWith("/api/item-templates/similar", {
       params: { query: { q: "mi", limit: 5, threshold: 0.3 } },
+      middleware: expect.any(Array),
       signal: expect.any(AbortSignal),
     });
   });
@@ -80,6 +81,7 @@ describe("useSimilarItems", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(client.GET).toHaveBeenCalledWith("/api/item-templates/similar", {
       params: { query: { q: "milk", limit: 10, threshold: 0.5 } },
+      middleware: expect.any(Array),
       signal: expect.any(AbortSignal),
     });
   });
@@ -110,6 +112,7 @@ describe("useCategoryRecommendations", () => {
       "/api/item-templates/category-suggestions",
       {
         params: { query: { q: "milk", limit: 5 } },
+        middleware: expect.any(Array),
         signal: expect.any(AbortSignal),
       },
     );
