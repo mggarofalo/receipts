@@ -98,7 +98,8 @@ export function LineItemsSection({
   const suggestionsListId = "new-receipt-suggestions-list";
   // Index of the keyboard-highlighted row in the description lookup.
   const [descriptionActiveIndex, setDescriptionActiveIndex] = useState(0);
-  const { data: categories } = useAllCategories(true);
+  const categoriesQuery = useAllCategories(true);
+  const { data: categories } = categoriesQuery;
 
   const categoryOptions = useMemo(
     () =>
@@ -236,18 +237,22 @@ export function LineItemsSection({
     [categories, selectedCategory],
   );
 
-  const { data: subcategories } = useAllSubcategoriesByCategoryId(
+  const subcategoriesQuery = useAllSubcategoriesByCategoryId(
     selectedCategoryObj?.id ?? null,
-    true,
   );
+  const { data: subcategories } = subcategoriesQuery;
   const createSubcategory = useCreateSubcategory();
   const pendingSubcategories = useRef(new Set<string>());
 
   const subcategoryOptions = useMemo(
     () =>
-      ((subcategories as { id: string; name: string }[] | undefined) ?? []).map(
-        (s) => ({ value: s.name, label: s.name }),
-      ),
+      (
+        (subcategories as
+          | { id: string; name: string; isActive: boolean }[]
+          | undefined) ?? []
+      )
+        .filter((subcategory) => subcategory.isActive)
+        .map((s) => ({ value: s.name, label: s.name })),
     [subcategories],
   );
 
@@ -257,12 +262,14 @@ export function LineItemsSection({
     (
       next: string,
       categoryId: string | undefined,
-      existing: { value: string }[],
+      existing: { name: string }[],
+      canCreate: boolean,
       setValue: (v: string) => void,
     ) => {
       setValue(next);
-      const isExisting = existing.some((o) => o.value === next);
+      const isExisting = existing.some((o) => o.name === next);
       if (
+        canCreate &&
         !isExisting &&
         next &&
         categoryId &&
@@ -273,7 +280,6 @@ export function LineItemsSection({
           { categoryId, name: next, isActive: true },
           {
             onSettled: () => pendingSubcategories.current.delete(next),
-            onError: () => setValue(""),
           },
         );
       }
@@ -281,10 +287,7 @@ export function LineItemsSection({
     [createSubcategory],
   );
 
-  const subtotal = useMemo(
-    () => calculateSubtotal(items),
-    [items],
-  );
+  const subtotal = useMemo(() => calculateSubtotal(items), [items]);
 
   const applySuggestion = useCallback(
     (suggestion: NonNullable<typeof similarItems>[number]) => {
@@ -440,16 +443,20 @@ export function LineItemsSection({
     [categories, editDraft.category],
   );
 
-  const { data: editSubcategories } = useAllSubcategoriesByCategoryId(
+  const editSubcategoriesQuery = useAllSubcategoriesByCategoryId(
     editCategoryObj?.id ?? null,
-    true,
   );
+  const { data: editSubcategories } = editSubcategoriesQuery;
 
   const editSubcategoryOptions = useMemo(
     () =>
       (
-        (editSubcategories as { id: string; name: string }[] | undefined) ?? []
-      ).map((s) => ({ value: s.name, label: s.name })),
+        (editSubcategories as
+          | { id: string; name: string; isActive: boolean }[]
+          | undefined) ?? []
+      )
+        .filter((subcategory) => subcategory.isActive)
+        .map((s) => ({ value: s.name, label: s.name })),
     [editSubcategories],
   );
 
@@ -521,6 +528,15 @@ export function LineItemsSection({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
+        {categoriesQuery.isError && (
+          <RequestFailure
+            message="Category choices unavailable. Cached choices and existing values are retained."
+            retry={() => {
+              void categoriesQuery.refetch();
+            }}
+            isRetrying={categoriesQuery.isFetching}
+          />
+        )}
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleAdd)} className="space-y-4">
             {/* Row 1: Item Code, Description, Category */}
@@ -820,7 +836,13 @@ export function LineItemsSection({
                         }}
                         placeholder="Select category..."
                         searchPlaceholder="Search categories..."
-                        emptyMessage="No categories found."
+                        emptyMessage={
+                          categoriesQuery.isError
+                            ? "Category choices unavailable."
+                            : categoriesQuery.isLoading
+                              ? "Loading category choices…"
+                              : "No categories found."
+                        }
                         aria-required="true"
                       />
                     </FormControl>
@@ -878,18 +900,38 @@ export function LineItemsSection({
                           handleSubcategorySelect(
                             v,
                             selectedCategoryObj?.id,
-                            subcategoryOptions,
+                            subcategories ?? [],
+                            categoriesQuery.isSuccess &&
+                              !categoriesQuery.isFetching &&
+                              subcategoriesQuery.isSuccess &&
+                              !subcategoriesQuery.isFetching,
                             field.onChange,
                           )
                         }
                         placeholder="Select subcategory..."
                         searchPlaceholder="Search subcategories..."
-                        emptyMessage="No subcategories found."
+                        emptyMessage={
+                          subcategoriesQuery.isError
+                            ? "Subcategory choices unavailable."
+                            : subcategoriesQuery.isLoading
+                              ? "Loading subcategory choices…"
+                              : "No subcategories found."
+                        }
                         allowCustom
                         disabled={!selectedCategory}
                       />
                     </FormControl>
                     <FormMessage />
+                    {selectedCategoryObj?.id && subcategoriesQuery.isError && (
+                      <RequestFailure
+                        message="Subcategory choices unavailable. You can keep or enter a receipt label manually."
+                        retry={() => {
+                          if (selectedCategoryObj?.id)
+                            void subcategoriesQuery.refetch();
+                        }}
+                        isRetrying={subcategoriesQuery.isFetching}
+                      />
+                    )}
                   </FormItem>
                 )}
               />
@@ -994,7 +1036,12 @@ export function LineItemsSection({
                       />
                     </TableCell>
                     <TableCell>
-                      {formatCurrency(calculateLineTotal(editDraft.quantity, editDraft.unitPrice))}
+                      {formatCurrency(
+                        calculateLineTotal(
+                          editDraft.quantity,
+                          editDraft.unitPrice,
+                        ),
+                      )}
                     </TableCell>
                     <TableCell>
                       <div className="flex min-w-[12rem] flex-col gap-1">
@@ -1010,7 +1057,13 @@ export function LineItemsSection({
                           }
                           placeholder="Category..."
                           searchPlaceholder="Search categories..."
-                          emptyMessage="No categories found."
+                          emptyMessage={
+                            categoriesQuery.isError
+                              ? "Category choices unavailable."
+                              : categoriesQuery.isLoading
+                                ? "Loading category choices…"
+                                : "No categories found."
+                          }
                           className="h-8"
                           aria-label="Edit category"
                         />
@@ -1021,7 +1074,11 @@ export function LineItemsSection({
                             handleSubcategorySelect(
                               v,
                               editCategoryObj?.id,
-                              editSubcategoryOptions,
+                              editSubcategories ?? [],
+                              categoriesQuery.isSuccess &&
+                                !categoriesQuery.isFetching &&
+                                editSubcategoriesQuery.isSuccess &&
+                                !editSubcategoriesQuery.isFetching,
                               (next) =>
                                 setEditDraft((d) => ({
                                   ...d,
@@ -1031,12 +1088,29 @@ export function LineItemsSection({
                           }
                           placeholder="Subcategory..."
                           searchPlaceholder="Search subcategories..."
-                          emptyMessage="No subcategories found."
+                          emptyMessage={
+                            editSubcategoriesQuery.isError
+                              ? "Subcategory choices unavailable."
+                              : editSubcategoriesQuery.isLoading
+                                ? "Loading subcategory choices…"
+                                : "No subcategories found."
+                          }
                           allowCustom
                           disabled={!editDraft.category}
                           className="h-8"
                           aria-label="Edit subcategory"
                         />
+                        {editCategoryObj?.id &&
+                          editSubcategoriesQuery.isError && (
+                            <RequestFailure
+                              message="Subcategory choices unavailable. You can keep or enter a receipt label manually."
+                              retry={() => {
+                                if (editCategoryObj?.id)
+                                  void editSubcategoriesQuery.refetch();
+                              }}
+                              isRetrying={editSubcategoriesQuery.isFetching}
+                            />
+                          )}
                       </div>
                     </TableCell>
                     <TableCell>
@@ -1068,7 +1142,9 @@ export function LineItemsSection({
                     <TableCell>{item.quantity}</TableCell>
                     <TableCell>{formatUnitPrice(item.unitPrice)}</TableCell>
                     <TableCell>
-                      {formatCurrency(calculateLineTotal(item.quantity, item.unitPrice))}
+                      {formatCurrency(
+                        calculateLineTotal(item.quantity, item.unitPrice),
+                      )}
                     </TableCell>
                     <TableCell>
                       {item.category}

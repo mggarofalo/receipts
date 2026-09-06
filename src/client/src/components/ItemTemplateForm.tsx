@@ -1,3 +1,4 @@
+import { RequestFailure } from "@/components/RequestFailure";
 import { useRef } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod/v4";
@@ -52,13 +53,17 @@ export function ItemTemplateForm({
   const formRef = useRef<HTMLFormElement>(null);
   useFormShortcuts({ formRef });
 
-  const { data: categories } = useAllCategories(true);
+  const categoriesQuery = useAllCategories(true);
+  const { data: categories } = categoriesQuery;
   const categoryOptions =
-    (categories as { id: string; name: string; isActive: boolean }[] | undefined)
-      ?.map((c) => ({
-        value: c.name,
-        label: c.name,
-      })) ?? [];
+    (
+      categories as
+        | { id: string; name: string; isActive: boolean }[]
+        | undefined
+    )?.map((c) => ({
+      value: c.name,
+      label: c.name,
+    })) ?? [];
 
   const form = useForm<ItemTemplateFormValues>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -78,19 +83,27 @@ export function ItemTemplateForm({
   const watchedCategory = form.watch("defaultCategory");
 
   const selectedCategoryId =
-    (categories as { id: string; name: string; isActive: boolean }[] | undefined)?.find(
-      (c) => c.name === watchedCategory,
-    )?.id ?? null;
+    (
+      categories as
+        | { id: string; name: string; isActive: boolean }[]
+        | undefined
+    )?.find((c) => c.name === watchedCategory)?.id ?? null;
 
-  const { data: subcategoriesData } =
-    useAllSubcategoriesByCategoryId(selectedCategoryId, true);
+  const subcategoriesQuery = useAllSubcategoriesByCategoryId(
+    selectedCategoryId,
+    true,
+  );
+  const { data: subcategoriesData } = subcategoriesQuery;
 
   const subcategoryOptions =
-    (subcategoriesData as { id: string; name: string; isActive: boolean }[] | undefined)
-      ?.map((s) => ({
-        value: s.name,
-        label: s.name,
-      })) ?? [];
+    (
+      subcategoriesData as
+        | { id: string; name: string; isActive: boolean }[]
+        | undefined
+    )?.map((s) => ({
+      value: s.name,
+      label: s.name,
+    })) ?? [];
 
   return (
     <Form {...form}>
@@ -143,9 +156,25 @@ export function ItemTemplateForm({
                     onValueChange={field.onChange}
                     placeholder="Select category..."
                     searchPlaceholder="Search categories..."
+                    emptyMessage={
+                      categoriesQuery.isError
+                        ? "Category choices unavailable."
+                        : categoriesQuery.isLoading
+                          ? "Loading category choices…"
+                          : "No categories found."
+                    }
                   />
                 </FormControl>
                 <FormMessage />
+                {categoriesQuery.isError && (
+                  <RequestFailure
+                    message="Category choices unavailable. Cached choices and existing values are retained."
+                    retry={() => {
+                      void categoriesQuery.refetch();
+                    }}
+                    isRetrying={categoriesQuery.isFetching}
+                  />
+                )}
               </FormItem>
             )}
           />
@@ -163,11 +192,27 @@ export function ItemTemplateForm({
                     onValueChange={field.onChange}
                     placeholder="Select subcategory..."
                     searchPlaceholder="Search subcategories..."
+                    emptyMessage={
+                      subcategoriesQuery.isError
+                        ? "Subcategory choices unavailable."
+                        : subcategoriesQuery.isLoading
+                          ? "Loading subcategory choices…"
+                          : "No subcategories found."
+                    }
                     allowCustom
                     disabled={!watchedCategory}
                   />
                 </FormControl>
                 <FormMessage />
+                {subcategoriesQuery.isError && selectedCategoryId && (
+                  <RequestFailure
+                    message="Subcategory choices unavailable. Cached choices and existing values are retained."
+                    retry={() => {
+                      if (selectedCategoryId) void subcategoriesQuery.refetch();
+                    }}
+                    isRetrying={subcategoriesQuery.isFetching}
+                  />
+                )}
               </FormItem>
             )}
           />

@@ -1,3 +1,4 @@
+import { RequestFailure } from "@/components/RequestFailure";
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router";
 import { useCategorizeReceiptItems } from "@/hooks/useCategorizeReceiptItems";
@@ -79,7 +80,8 @@ export default function UncategorizedItems() {
 
   const { data, isLoading, isError } = useUncategorizedItemsReport(params);
   const { exportCsv, isExporting } = useCsvExport();
-  const { data: categories, isLoading: categoriesLoading } = useAllCategories(true);
+  const categoriesQuery = useAllCategories(true);
+  const { data: categories } = categoriesQuery;
 
   function handleExport() {
     exportCsv({
@@ -142,8 +144,11 @@ export default function UncategorizedItems() {
     return found?.id ?? null;
   }, [categories, selectedCategory]);
 
-  const { data: subcategories, isLoading: subcategoriesLoading } =
-    useAllSubcategoriesByCategoryId(selectedCategoryId, true);
+  const subcategoriesQuery = useAllSubcategoriesByCategoryId(
+    selectedCategoryId,
+    true,
+  );
+  const { data: subcategories } = subcategoriesQuery;
 
   const subcategoryOptions: ComboboxOption[] = useMemo(
     () =>
@@ -212,9 +217,7 @@ export default function UncategorizedItems() {
   function handleApply() {
     if (!data?.items || selectedIds.size === 0 || !selectedCategory) return;
 
-    const itemsToUpdate = data.items.filter((item) =>
-      selectedIds.has(item.id),
-    );
+    const itemsToUpdate = data.items.filter((item) => selectedIds.has(item.id));
 
     bulkUpdateMutation.mutate({
       items: itemsToUpdate,
@@ -228,7 +231,9 @@ export default function UncategorizedItems() {
     setSelectedSubcategory("");
   }
 
-  const totalPages = data ? Math.ceil(Number(data.totalCount ?? 0) / pageSize) : 0;
+  const totalPages = data
+    ? Math.ceil(Number(data.totalCount ?? 0) / pageSize)
+    : 0;
   const allOnPageSelected =
     data?.items &&
     data.items.length > 0 &&
@@ -282,6 +287,25 @@ export default function UncategorizedItems() {
         </Button>
       </div>
 
+      {categoriesQuery.isError && (
+        <RequestFailure
+          message="Category choices unavailable. Cached choices and your selection are retained."
+          retry={() => {
+            void categoriesQuery.refetch();
+          }}
+          isRetrying={categoriesQuery.isFetching}
+        />
+      )}
+      {selectedCategoryId && subcategoriesQuery.isError && (
+        <RequestFailure
+          message="Subcategory choices unavailable. Cached choices and your selection are retained."
+          retry={() => {
+            if (selectedCategoryId) void subcategoriesQuery.refetch();
+          }}
+          isRetrying={subcategoriesQuery.isFetching}
+        />
+      )}
+
       {selectedIds.size > 0 && (
         <div className="flex items-center gap-3 rounded-lg border bg-muted/50 p-3">
           <span className="text-sm font-medium">
@@ -293,7 +317,13 @@ export default function UncategorizedItems() {
             onValueChange={handleCategoryChange}
             placeholder="Select category..."
             searchPlaceholder="Search categories..."
-            loading={categoriesLoading}
+            emptyMessage={
+              categoriesQuery.isError
+                ? "Category choices unavailable."
+                : categoriesQuery.isLoading
+                  ? "Loading category choices…"
+                  : "No categories found."
+            }
             className="w-48"
           />
           <Combobox
@@ -303,7 +333,13 @@ export default function UncategorizedItems() {
             placeholder="Subcategory (optional)"
             searchPlaceholder="Search subcategories..."
             disabled={!selectedCategory}
-            loading={subcategoriesLoading}
+            emptyMessage={
+              subcategoriesQuery.isError
+                ? "Subcategory choices unavailable."
+                : subcategoriesQuery.isLoading
+                  ? "Loading subcategory choices…"
+                  : "No subcategories found."
+            }
             className="w-48"
           />
           <Button
@@ -330,10 +366,30 @@ export default function UncategorizedItems() {
                 aria-label="Select all items on this page"
               />
             </TableHead>
-            <SortableTableHead column="description" label="Description" currentSortBy={sortBy} currentSortDirection={sortDirection} onToggleSort={handleSort} />
-            <SortableTableHead column="itemCode" label="Item Code" currentSortBy={sortBy} currentSortDirection={sortDirection} onToggleSort={handleSort} />
+            <SortableTableHead
+              column="description"
+              label="Description"
+              currentSortBy={sortBy}
+              currentSortDirection={sortDirection}
+              onToggleSort={handleSort}
+            />
+            <SortableTableHead
+              column="itemCode"
+              label="Item Code"
+              currentSortBy={sortBy}
+              currentSortDirection={sortDirection}
+              onToggleSort={handleSort}
+            />
             <TableHead>Receipt</TableHead>
-            <SortableTableHead column="total" label="Total" currentSortBy={sortBy} currentSortDirection={sortDirection} onToggleSort={handleSort} className="text-right" align="right" />
+            <SortableTableHead
+              column="total"
+              label="Total"
+              currentSortBy={sortBy}
+              currentSortDirection={sortDirection}
+              onToggleSort={handleSort}
+              className="text-right"
+              align="right"
+            />
             <TableHead>Subcategory</TableHead>
           </TableRow>
         </TableHeader>

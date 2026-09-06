@@ -1,4 +1,4 @@
-import { toastErrorPolicy } from "@/lib/request-error-policy";
+import { localErrorPolicy, toastErrorPolicy } from "@/lib/request-error-policy";
 import { invalidateDomainChange, queryKeys } from "@/lib/query-invalidation";
 import { useMemo } from "react";
 import { useStableQuery } from "@/hooks/useStableQuery";
@@ -37,11 +37,13 @@ export function useCategories(offset = 0, limit = 50, sortBy?: string | null, so
  */
 export function useAllCategories(isActive?: boolean | null) {
   return useQuery({
+    ...localErrorPolicy.query,
     queryKey: [...queryKeys.categories, "all", isActive ?? undefined],
     queryFn: async ({ signal }) => {
       const pageSize = 500;
       const fetchPage = async (offset: number) => {
         const { data, error } = await client.GET("/api/categories", {
+          ...localErrorPolicy.request,
           params: {
             query: {
               offset,

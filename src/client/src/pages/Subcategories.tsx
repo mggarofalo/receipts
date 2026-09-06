@@ -1,3 +1,4 @@
+import { RequestFailure } from "@/components/RequestFailure";
 import { Fragment, useState, useMemo, useCallback } from "react";
 import { generateId } from "@/lib/id";
 import { Link } from "react-router";
@@ -103,12 +104,13 @@ function Subcategories() {
   const filteredSubcatQuery = useSubcategoriesByCategoryId(linkParams.categoryId ?? null, offset, limit, sortBy, sortDirection, isActiveParam);
   const activeSubcatQuery = linkParams.categoryId ? filteredSubcatQuery : allSubcatQuery;
   const { data: subcategoriesData, total: serverTotal, isLoading: subcategoriesLoading } = activeSubcatQuery;
-  const { data: categoriesData, isLoading: categoriesLoading } = useAllCategories();
+  const categoriesQuery = useAllCategories();
+  const { data: categoriesData } = categoriesQuery;
   const createSubcategory = useCreateSubcategory();
   const updateSubcategory = useUpdateSubcategory();
   const deleteSubcategory = useDeleteSubcategory();
   const { isAdmin } = usePermission();
-  const isLoading = subcategoriesLoading || categoriesLoading;
+  const isLoading = subcategoriesLoading;
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editSubcategory, setEditSubcategory] =
@@ -284,6 +286,13 @@ function Subcategories() {
           </>
         }
       />
+      {categoriesQuery.isError && (
+        <RequestFailure
+          message="Category names and filters unavailable. Cached names and your filters are retained."
+          retry={() => { void categoriesQuery.refetch(); }}
+          isRetrying={categoriesQuery.isFetching}
+        />
+      )}
       <div className="filter-strip">
         <div style={{ flex: 1, minWidth: 240 }}>
           <FuzzySearchInput

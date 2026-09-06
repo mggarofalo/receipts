@@ -43,7 +43,7 @@ The transaction sync-status endpoint's documented 404 means no record and may re
 
 ## Remaining adoption
 
-RECEIPTS-950 now covers receipt/status reads, receipt mutations and the optional suggestion families described below. Taxonomy and template catalogs, receipt pickers, account/card choices, remaining YNAB lists and diagnostics, and YNAB settings/actions still require complete shared-consumer ownership. Other report reads need explicit classification before claiming that every optional request is local. Suppressing a shared hook requires checking every consumer, so failed requests cannot become silent.
+RECEIPTS-950 now covers receipt/status reads, receipt mutations, optional suggestion families and complete taxonomy lookups described below. Template catalogs, receipt pickers, account/card choices, remaining YNAB lists and diagnostics, and YNAB settings/actions still require complete shared-consumer ownership. Other report reads need explicit classification before claiming that every optional request is local. Suppressing a shared hook requires checking every consumer, so failed requests cannot become silent.
 
 Backup import/export also use this local policy on the shared refresh/replay transport. Their hooks own transfer feedback while the page retains confirmation and file state. Both retain a five-minute transport deadline; see [Backup & restore](backup-restore.md). Error routes and render boundaries remain available throughout the remaining adoption.
 
@@ -55,4 +55,12 @@ Debounced suggestion hooks expose `isDebouncing` alongside their stable query fi
 
 The query identities, debounce delays, location scoping and suggestion freshness remain unchanged. Query cancellation is passed through to the shared transport, including location lookup. Template history keeps its existing failure/retry and widening/focus behavior. Promotion's known template-created similarity exception remains intact.
 
-Taxonomy and template catalogs, receipt pickers, account/card choices and remaining YNAB settings/actions still require their complete shared-consumer owners. This suggestion phase does not classify those failures or authorize automatic taxonomy creation after a failed lookup.
+Template catalogs, receipt pickers, account/card choices and remaining YNAB settings/actions still require their complete shared-consumer owners. Automatic taxonomy creation has the separate ownership rules below.
+
+## Taxonomy lookup ownership
+
+The complete category and parent-scoped subcategory lookup hooks use the paired local policy. Receipt item/template forms, the subcategory form/page, new-receipt line items and the uncategorized-items report own unavailable/retry feedback. Cached choices and selected historical labels remain visible during failure. Required category IDs do not become free-text IDs, and existing permissions for custom receipt labels are unchanged. Retrying a category-name lookup keeps the subcategory page and its dialogs mounted.
+
+Automatic subcategory creation is owned by ReceiptItemForm submission and LineItemsSection add/edit selection. These consumers read all subcategories for the current parent, including inactive rows, while displaying only active choices. The complete result is necessary because inactive names still participate in the database uniqueness rule. A category lookup and its current parent-scoped subcategory lookup must both succeed and finish fetching before the UI can infer that a name is new. A pending or failed lookup permits valid manual receipt text but does not start a taxonomy write. A later retry never schedules deferred creation. A rejected automatic create reports its error without clearing the manual label; a delayed failure cannot erase a newer category or row draft. ReceiptItemForm catches only the awaited automatic-create rejection and stops that submission, leaving feedback to the mutation owner. Local presentation does not consume `mutateAsync` rejections, and React Hook Form rethrows rejected submit callbacks.
+
+Other consumers retain their active-only lookup contract. Retry controls for scoped lookups require the current parent identity; switching parent cannot retry the old disabled query. This policy prevents automatic creation based on unavailable or incomplete lookup evidence; it does not make the client lookup and the server create transaction atomic against another user's simultaneous creation.

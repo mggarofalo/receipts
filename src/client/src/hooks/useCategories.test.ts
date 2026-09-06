@@ -119,6 +119,7 @@ describe("useCategories", () => {
     expect(client.GET).toHaveBeenCalledTimes(1);
     expect(client.GET).toHaveBeenCalledWith("/api/categories", {
       params: { query: { offset: 0, limit: 500, sortBy: "name", sortDirection: "asc" } },
+      middleware: expect.any(Array),
       signal: expect.any(AbortSignal),
     });
   });
@@ -143,6 +144,7 @@ describe("useCategories", () => {
     expect(client.GET).toHaveBeenCalledTimes(2);
     expect(client.GET).toHaveBeenLastCalledWith("/api/categories", {
       params: { query: { offset: 500, limit: 500, sortBy: "name", sortDirection: "asc", isActive: true } },
+      middleware: expect.any(Array),
       signal: expect.any(AbortSignal),
     });
   });
