@@ -1,3 +1,4 @@
+import { RequestFailure } from "@/components/RequestFailure";
 import { calculateSubtotal, sumAmounts, calculateReceiptBalance } from "@/lib/receipt-arithmetic";
 import { assertSessionCurrent, getSessionVersion, isAbortError } from "@/lib/auth";
 import { useState, useCallback, useMemo, useEffect, useRef, useId } from "react";
@@ -63,7 +64,7 @@ export default function NewReceiptPage() {
   usePageTitle("New Receipt");
   const navigate = useNavigate();
   const locationRef = useRef<HTMLButtonElement>(null);
-  const { options: locationOptions, add: addLocation } = useLocationHistory();
+  const { options: locationOptions, add: addLocation, isError: locationsError, isFetching: locationsFetching, refetch: retryLocations } = useLocationHistory();
 
   const [transactions, setTransactions] = useState<ReceiptTransaction[]>([]);
   const [items, setItems] = useState<ReceiptLineItem[]>([]);
@@ -329,12 +330,19 @@ export default function NewReceiptPage() {
                         onValueChange={field.onChange}
                         placeholder="e.g. Walmart, Target, Costco"
                         searchPlaceholder="Search locations..."
-                        emptyMessage="No saved locations."
+                        emptyMessage={locationsError ? "Location suggestions unavailable." : locationsFetching ? "Loading location suggestions..." : "No saved locations."}
                         allowCustom
                         aria-required="true"
                       />
                     </FormControl>
                     <FormMessage />
+                    {locationsError && (
+                      <RequestFailure
+                        message="Location suggestions unavailable. You can enter a location manually."
+                        retry={() => { void retryLocations(); }}
+                        isRetrying={locationsFetching}
+                      />
+                    )}
                   </FormItem>
                 )}
               />

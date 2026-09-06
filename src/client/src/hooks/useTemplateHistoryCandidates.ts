@@ -1,3 +1,4 @@
+import { localErrorPolicy } from "@/lib/request-error-policy";
 import { useMemo } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useStableQuery } from "@/hooks/useStableQuery";
@@ -19,6 +20,7 @@ export function useTemplateHistoryCandidates(
 ) {
   const { enabled = true } = options;
   const query = useQuery({
+    ...localErrorPolicy.query,
     queryKey: ["itemTemplates", "historyCandidates", offset, limit, minCount],
     enabled,
     // Widening the page changes the query key. Without this the section would
@@ -29,6 +31,7 @@ export function useTemplateHistoryCandidates(
       const { data, error } = await client.GET(
         "/api/item-templates/history-candidates",
         {
+          ...localErrorPolicy.request,
           params: { query: { offset, limit, minCount } },
           signal,
         },
