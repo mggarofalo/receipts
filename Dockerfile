@@ -9,6 +9,8 @@ RUN npm ci
 
 # Copy OpenAPI spec (needed for type generation) and client source
 COPY openapi/spec.yaml /openapi/spec.yaml
+# The client typecheck includes tests sharing the backend arithmetic contract.
+COPY test-data/receipt-arithmetic.json /test-data/receipt-arithmetic.json
 COPY src/client/ ./
 
 # Inject version info and Sentry config after npm ci so the install layer stays cached
