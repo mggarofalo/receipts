@@ -97,7 +97,7 @@ describe("card ownership cache dependencies", () => {
     await waitFor(() => expect(result.current.receipts.data).toHaveLength(0));
     expect(queryClient.getQueryState(["transactions", "deleted", 0, 50])?.isInvalidated).toBe(true);
     expect(queryClient.getQueryState(["categories"])?.isInvalidated).toBe(false);
-    expect(queryClient.getQueryState(["dashboard", "spending-over-time"])?.isInvalidated).toBe(false);
+    expect(queryClient.getQueryState(["dashboard", "spending-over-time"])?.isInvalidated).toBe(true);
     expect(queryClient.getQueryState(["ynab", "connection-status"])?.isInvalidated).toBe(false);
     unmount();
     queryClient.clear();

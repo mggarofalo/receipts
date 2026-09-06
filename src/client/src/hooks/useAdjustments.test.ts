@@ -30,20 +30,22 @@ import {
 } from "./useAdjustments";
 
 function createWrapper(queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    defaultOptions: { queries: { retry: false, gcTime: Infinity } },
   })) {
   return function Wrapper({ children }: { children: ReactNode }) {
     return createElement(QueryClientProvider, { client: queryClient }, children);
   };
 }
 
-function expectReceiptDependentsInvalidated(invalidateSpy: ReturnType<typeof vi.spyOn>) {
-  expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["receipts"] });
-  expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["receipts-with-items"] });
-  expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["trips"] });
-  expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["reports"] });
-  expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["ynab", "split-comparison"] });
-  expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["ynab", "receipt-sync-statuses"] });
+const cachedAdjustmentDependents = [["receipts"], ["receipts-with-items"], ["trips"], ["reports"], ["ynab", "split-comparison"], ["ynab", "receipt-sync-statuses"], ["adjustments"], ["adjustments", "deleted"]];
+
+function expectReceiptDependentsInvalidated(queryClient: QueryClient) {
+  expect(queryClient.getQueryState(["receipts"])?.isInvalidated).toBe(true);
+  expect(queryClient.getQueryState(["receipts-with-items"])?.isInvalidated).toBe(true);
+  expect(queryClient.getQueryState(["trips"])?.isInvalidated).toBe(true);
+  expect(queryClient.getQueryState(["reports"])?.isInvalidated).toBe(true);
+  expect(queryClient.getQueryState(["ynab", "split-comparison"])?.isInvalidated).toBe(true);
+  expect(queryClient.getQueryState(["ynab", "receipt-sync-statuses"])?.isInvalidated).toBe(true);
 }
 
 beforeEach(() => {
@@ -109,7 +111,7 @@ describe("useAdjustments", () => {
     (client.POST as Mock).mockResolvedValue({ data: created, error: undefined });
 
     const queryClient = new QueryClient();
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    for (const key of cachedAdjustmentDependents) queryClient.setQueryData(key, { data: [], total: 0, offset: 0, limit: 50 });
     const { result } = renderHook(() => useCreateAdjustment(), {
       wrapper: createWrapper(queryClient),
     });
@@ -121,7 +123,7 @@ describe("useAdjustments", () => {
       body,
     });
     expect(toast.success).toHaveBeenCalledWith("Adjustment created");
-    expectReceiptDependentsInvalidated(invalidateSpy);
+    expectReceiptDependentsInvalidated(queryClient);
   });
 
   it("update mutation calls PUT and shows toast on success", async () => {
@@ -134,7 +136,7 @@ describe("useAdjustments", () => {
     (client.PUT as Mock).mockResolvedValue({ error: undefined });
 
     const queryClient = new QueryClient();
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    for (const key of cachedAdjustmentDependents) queryClient.setQueryData(key, { data: [], total: 0, offset: 0, limit: 50 });
     const { result } = renderHook(() => useUpdateAdjustment(), {
       wrapper: createWrapper(queryClient),
     });
@@ -146,7 +148,7 @@ describe("useAdjustments", () => {
       body,
     });
     expect(toast.success).toHaveBeenCalledWith("Adjustment updated");
-    expectReceiptDependentsInvalidated(invalidateSpy);
+    expectReceiptDependentsInvalidated(queryClient);
   });
 
   it("delete mutation calls DELETE", async () => {
@@ -183,7 +185,7 @@ describe("useAdjustments", () => {
     (client.POST as Mock).mockResolvedValue({ error: undefined });
 
     const queryClient = new QueryClient();
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    for (const key of cachedAdjustmentDependents) queryClient.setQueryData(key, { data: [], total: 0, offset: 0, limit: 50 });
     const { result } = renderHook(() => useRestoreAdjustment(), {
       wrapper: createWrapper(queryClient),
     });
@@ -194,7 +196,7 @@ describe("useAdjustments", () => {
       params: { path: { id: "1" } },
     });
     expect(toast.success).toHaveBeenCalledWith("Adjustment restored");
-    expectReceiptDependentsInvalidated(invalidateSpy);
+    expectReceiptDependentsInvalidated(queryClient);
   });
 
   // --- Branch coverage: error callbacks ---
@@ -331,9 +333,9 @@ describe("useAdjustments", () => {
 
   it("delete mutation invalidates adjustments, deleted, receipts-with-items, and trips on settled", async () => {
     const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+      defaultOptions: { queries: { retry: false, gcTime: Infinity } },
     });
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    for (const key of cachedAdjustmentDependents) queryClient.setQueryData(key, { data: [], total: 0, offset: 0, limit: 50 });
 
     function Wrapper({ children }: { children: ReactNode }) {
       return createElement(QueryClientProvider, { client: queryClient }, children);
@@ -348,10 +350,10 @@ describe("useAdjustments", () => {
     result.current.mutate(["1"]);
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["adjustments"] });
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["adjustments", "deleted"] });
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["receipts-with-items"] });
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["trips"] });
-    expectReceiptDependentsInvalidated(invalidateSpy);
+    expect(queryClient.getQueryState(["adjustments"])?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(["adjustments", "deleted"])?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(["receipts-with-items"])?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(["trips"])?.isInvalidated).toBe(true);
+    expectReceiptDependentsInvalidated(queryClient);
   });
 });

@@ -1,28 +1,17 @@
+import { invalidateDomainChange, queryKeys } from "@/lib/query-invalidation";
 import { useMemo } from "react";
 import { useStableQuery } from "@/hooks/useStableQuery";
 import {
   useQuery,
   useQueryClient,
-  type QueryClient,
 } from "@tanstack/react-query";
 import { useSessionMutation } from "@/hooks/useSessionMutation";
 import client from "@/lib/api-client";
 import { toast } from "sonner";
 
-function invalidateAdjustmentDependents(queryClient: QueryClient) {
-  queryClient.invalidateQueries({ queryKey: ["receipts"] });
-  queryClient.invalidateQueries({ queryKey: ["receipts-with-items"] });
-  queryClient.invalidateQueries({ queryKey: ["trips"] });
-  queryClient.invalidateQueries({ queryKey: ["reports"] });
-  queryClient.invalidateQueries({ queryKey: ["ynab", "split-comparison"] });
-  queryClient.invalidateQueries({
-    queryKey: ["ynab", "receipt-sync-statuses"],
-  });
-}
-
 export function useAdjustments(offset = 0, limit = 50, sortBy?: string | null, sortDirection?: string | null) {
   const query = useQuery({
-    queryKey: ["adjustments", "list", offset, limit, sortBy, sortDirection],
+    queryKey: [...queryKeys.adjustments, "list", offset, limit, sortBy, sortDirection],
     queryFn: async () => {
       const { data, error } = await client.GET("/api/adjustments", {
         params: { query: { offset, limit, sortBy: sortBy ?? undefined, sortDirection: (sortDirection ?? undefined) as "asc" | "desc" | undefined } },
@@ -37,7 +26,7 @@ export function useAdjustments(offset = 0, limit = 50, sortBy?: string | null, s
 
 export function useAdjustment(id: string | null) {
   return useQuery({
-    queryKey: ["adjustments", id],
+    queryKey: [...queryKeys.adjustments, id],
     enabled: !!id,
     queryFn: async () => {
       const { data, error } = await client.GET("/api/adjustments/{id}", {
@@ -51,7 +40,7 @@ export function useAdjustment(id: string | null) {
 
 export function useAdjustmentsByReceiptId(receiptId: string | null, offset = 0, limit = 200, sortBy?: string | null, sortDirection?: string | null) {
   const query = useQuery({
-    queryKey: ["adjustments", "by-receipt", receiptId, offset, limit, sortBy, sortDirection],
+    queryKey: [...queryKeys.adjustments, "by-receipt", receiptId, offset, limit, sortBy, sortDirection],
     enabled: !!receiptId,
     queryFn: async () => {
       const { data, error } = await client.GET("/api/adjustments", {
@@ -87,8 +76,7 @@ export function useCreateAdjustment() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["adjustments"] });
-      invalidateAdjustmentDependents(queryClient);
+      invalidateDomainChange(queryClient, "adjustment");
       toast.success("Adjustment created");
     },
   });
@@ -114,8 +102,7 @@ export function useUpdateAdjustment() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["adjustments"] });
-      invalidateAdjustmentDependents(queryClient);
+      invalidateDomainChange(queryClient, "adjustment");
       toast.success("Adjustment updated");
     },
   });
@@ -131,8 +118,8 @@ export function useDeleteAdjustments() {
       if (error) throw error;
     },
     onMutate: async (ids) => {
-      await queryClient.cancelQueries({ queryKey: ["adjustments"] });
-      const previous = queryClient.getQueriesData<{ data: { id: string }[]; total: number }>({ queryKey: ["adjustments", "list"] });
+      await queryClient.cancelQueries({ queryKey: [...queryKeys.adjustments] });
+      const previous = queryClient.getQueriesData<{ data: { id: string }[]; total: number }>({ queryKey: [...queryKeys.adjustments, "list"] });
       for (const [key] of previous) {
         queryClient.setQueryData(key, (old: { data: { id: string }[]; total: number; offset: number; limit: number } | undefined) => {
           if (!old?.data) return old;
@@ -148,9 +135,7 @@ export function useDeleteAdjustments() {
       }
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["adjustments"] });
-      queryClient.invalidateQueries({ queryKey: ["adjustments", "deleted"] });
-      invalidateAdjustmentDependents(queryClient);
+      invalidateDomainChange(queryClient, "adjustment");
     },
     onSuccess: () => {
       toast.success("Adjustment(s) deleted");
@@ -160,7 +145,7 @@ export function useDeleteAdjustments() {
 
 export function useDeletedAdjustments(offset = 0, limit = 50, sortBy?: string | null, sortDirection?: string | null) {
   const query = useQuery({
-    queryKey: ["adjustments", "deleted", offset, limit, sortBy, sortDirection],
+    queryKey: [...queryKeys.adjustments, "deleted", offset, limit, sortBy, sortDirection],
     queryFn: async () => {
       const { data, error } = await client.GET("/api/adjustments/deleted", {
         params: { query: { offset, limit, sortBy: sortBy ?? undefined, sortDirection: (sortDirection ?? undefined) as "asc" | "desc" | undefined } },
@@ -183,9 +168,7 @@ export function useRestoreAdjustment() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["adjustments"] });
-      queryClient.invalidateQueries({ queryKey: ["adjustments", "deleted"] });
-      invalidateAdjustmentDependents(queryClient);
+      invalidateDomainChange(queryClient, "adjustment");
       toast.success("Adjustment restored");
     },
   });

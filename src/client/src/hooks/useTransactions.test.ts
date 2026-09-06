@@ -211,9 +211,9 @@ describe("useTransactions", () => {
 
   it("batch create mutation invalidates cache on success", async () => {
     const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+      defaultOptions: { queries: { retry: false, gcTime: Infinity } },
     });
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    queryClient.setQueryData(["transactions"], { data: [], total: 0, offset: 0, limit: 50 });
 
     function Wrapper({ children }: { children: ReactNode }) {
       return createElement(QueryClientProvider, { client: queryClient }, children);
@@ -233,7 +233,7 @@ describe("useTransactions", () => {
       "/api/receipts/{receiptId}/transactions/batch",
       { params: { path: { receiptId: "r-1" } }, body: [{ amount: 100, date: "2025-01-01", cardId: "card-1" }] },
     );
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["transactions"] });
+    expect(queryClient.getQueryState(["transactions"])?.isInvalidated).toBe(true);
   });
 
   it("update mutation does not toast on failure (surfaced by the global handler)", async () => {
@@ -355,9 +355,10 @@ describe("useTransactions", () => {
 
   it("delete mutation invalidates both list and deleted query keys on settled", async () => {
     const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+      defaultOptions: { queries: { retry: false, gcTime: Infinity } },
     });
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    queryClient.setQueryData(["transactions"], { data: [], total: 0, offset: 0, limit: 50 });
+    queryClient.setQueryData(["transactions", "deleted"], { data: [], total: 0, offset: 0, limit: 50 });
 
     function Wrapper({ children }: { children: ReactNode }) {
       return createElement(QueryClientProvider, { client: queryClient }, children);
@@ -372,15 +373,15 @@ describe("useTransactions", () => {
     result.current.mutate(["1"]);
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["transactions"] });
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["transactions", "deleted"] });
+    expect(queryClient.getQueryState(["transactions"])?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(["transactions", "deleted"])?.isInvalidated).toBe(true);
   });
 
   it("create mutation invalidates trips query on success", async () => {
     const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+      defaultOptions: { queries: { retry: false, gcTime: Infinity } },
     });
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    queryClient.setQueryData(["trips"], { data: [], total: 0, offset: 0, limit: 50 });
 
     function Wrapper({ children }: { children: ReactNode }) {
       return createElement(QueryClientProvider, { client: queryClient }, children);
@@ -395,14 +396,14 @@ describe("useTransactions", () => {
     result.current.mutate({ receiptId: "r-1", body: { amount: 100, date: "2025-01-01", cardId: "card-1" } });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["trips"] });
+    expect(queryClient.getQueryState(["trips"])?.isInvalidated).toBe(true);
   });
 
   it("update mutation invalidates trips query on success", async () => {
     const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+      defaultOptions: { queries: { retry: false, gcTime: Infinity } },
     });
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    queryClient.setQueryData(["trips"], { data: [], total: 0, offset: 0, limit: 50 });
 
     function Wrapper({ children }: { children: ReactNode }) {
       return createElement(QueryClientProvider, { client: queryClient }, children);
@@ -417,14 +418,14 @@ describe("useTransactions", () => {
     result.current.mutate({ body: { id: "1", amount: 100, date: "2025-01-01", cardId: "card-1" } });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["trips"] });
+    expect(queryClient.getQueryState(["trips"])?.isInvalidated).toBe(true);
   });
 
   it("delete mutation invalidates trips query on settled", async () => {
     const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+      defaultOptions: { queries: { retry: false, gcTime: Infinity } },
     });
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    queryClient.setQueryData(["trips"], { data: [], total: 0, offset: 0, limit: 50 });
 
     function Wrapper({ children }: { children: ReactNode }) {
       return createElement(QueryClientProvider, { client: queryClient }, children);
@@ -439,14 +440,14 @@ describe("useTransactions", () => {
     result.current.mutate(["1"]);
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["trips"] });
+    expect(queryClient.getQueryState(["trips"])?.isInvalidated).toBe(true);
   });
 
   it("restore mutation invalidates trips query on success", async () => {
     const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+      defaultOptions: { queries: { retry: false, gcTime: Infinity } },
     });
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    queryClient.setQueryData(["trips"], { data: [], total: 0, offset: 0, limit: 50 });
 
     function Wrapper({ children }: { children: ReactNode }) {
       return createElement(QueryClientProvider, { client: queryClient }, children);
@@ -461,6 +462,6 @@ describe("useTransactions", () => {
     result.current.mutate("1");
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["trips"] });
+    expect(queryClient.getQueryState(["trips"])?.isInvalidated).toBe(true);
   });
 });

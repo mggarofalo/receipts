@@ -1,3 +1,4 @@
+import { invalidateDomainChange, queryKeys } from "@/lib/query-invalidation";
 import { useMemo } from "react";
 import { useStableQuery } from "@/hooks/useStableQuery";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -9,7 +10,7 @@ export function useSubcategories(offset = 0, limit = 50, sortBy?: string | null,
   const { enabled = true, q } = options;
   const search = q?.trim() || undefined;
   const query = useQuery({
-    queryKey: ["subcategories", "list", offset, limit, sortBy, sortDirection, isActive, search],
+    queryKey: [...queryKeys.subcategories, "list", offset, limit, sortBy, sortDirection, isActive, search],
     enabled,
     queryFn: async () => {
       const { data, error } = await client.GET("/api/subcategories", {
@@ -25,7 +26,7 @@ export function useSubcategories(offset = 0, limit = 50, sortBy?: string | null,
 
 export function useSubcategory(id: string | null) {
   return useQuery({
-    queryKey: ["subcategories", id],
+    queryKey: [...queryKeys.subcategories, id],
     enabled: !!id,
     queryFn: async () => {
       const { data, error } = await client.GET("/api/subcategories/{id}", {
@@ -39,7 +40,7 @@ export function useSubcategory(id: string | null) {
 
 export function useSubcategoriesByCategoryId(categoryId: string | null, offset = 0, limit = 200, sortBy?: string | null, sortDirection?: string | null, isActive?: boolean | null) {
   const query = useQuery({
-    queryKey: ["subcategories", "byCategory", categoryId, offset, limit, sortBy, sortDirection, isActive],
+    queryKey: [...queryKeys.subcategories, "byCategory", categoryId, offset, limit, sortBy, sortDirection, isActive],
     enabled: !!categoryId,
     queryFn: async () => {
       const { data, error } = await client.GET("/api/subcategories", {
@@ -64,7 +65,7 @@ export function useSubcategoriesByCategoryId(categoryId: string | null, offset =
  */
 export function useAllSubcategoriesByCategoryId(categoryId: string | null, isActive?: boolean | null) {
   return useQuery({
-    queryKey: ["subcategories", "byCategory", "all", categoryId, isActive ?? undefined],
+    queryKey: [...queryKeys.subcategories, "byCategory", "all", categoryId, isActive ?? undefined],
     enabled: !!categoryId,
     queryFn: async ({ signal }) => {
       const pageSize = 500;
@@ -114,7 +115,7 @@ export function useCreateSubcategory() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["subcategories"] });
+      invalidateDomainChange(queryClient, "subcategory");
       toast.success("Subcategory created");
     },
     onError: (err) => {
@@ -142,7 +143,7 @@ export function useUpdateSubcategory() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["subcategories"] });
+      invalidateDomainChange(queryClient, "subcategory");
       toast.success("Subcategory updated");
     },
   });
@@ -179,8 +180,7 @@ export function useDeleteSubcategory() {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["subcategories"] });
-      queryClient.invalidateQueries({ queryKey: ["subcategories", "deleted"] });
+      invalidateDomainChange(queryClient, "subcategory");
       toast.success("Subcategory deleted");
     },
     onError: (error: unknown) => {
@@ -199,7 +199,7 @@ export function useDeleteSubcategory() {
 
 export function useDeletedSubcategories(offset = 0, limit = 50, sortBy?: string | null, sortDirection?: string | null) {
   const query = useQuery({
-    queryKey: ["subcategories", "deleted", offset, limit, sortBy, sortDirection],
+    queryKey: [...queryKeys.subcategories, "deleted", offset, limit, sortBy, sortDirection],
     queryFn: async () => {
       const { data, error } = await client.GET("/api/subcategories/deleted", {
         params: { query: { offset, limit, sortBy: sortBy ?? undefined, sortDirection: (sortDirection ?? undefined) as "asc" | "desc" | undefined } },
@@ -222,8 +222,7 @@ export function useRestoreSubcategory() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["subcategories"] });
-      queryClient.invalidateQueries({ queryKey: ["subcategories", "deleted"] });
+      invalidateDomainChange(queryClient, "subcategory");
       toast.success("Subcategory restored");
     },
   });

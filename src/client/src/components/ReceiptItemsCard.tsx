@@ -1,6 +1,5 @@
 import { calculateLineTotal } from "@/lib/receipt-arithmetic";
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import {
   useCreateReceiptItem,
   useUpdateReceiptItem,
@@ -65,7 +64,6 @@ export function ReceiptItemsCard({
   subtotal,
   location,
 }: ReceiptItemsCardProps) {
-  const queryClient = useQueryClient();
   const createReceiptItem = useCreateReceiptItem();
   const updateReceiptItem = useUpdateReceiptItem();
   const deleteReceiptItems = useDeleteReceiptItems();
@@ -75,10 +73,6 @@ export function ReceiptItemsCard({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [serverErrors, setServerErrors] = useState<Record<string, string>>({});
-
-  function invalidateTrip() {
-    queryClient.invalidateQueries({ queryKey: ["trips", receiptId] });
-  }
 
   function handleCreate(values: ReceiptItemFormValues) {
     setServerErrors({});
@@ -101,7 +95,6 @@ export function ReceiptItemsCard({
       {
         onSuccess: () => {
           setCreateOpen(false);
-          invalidateTrip();
         },
         onError: (error) => {
           const problem = parseProblemDetails(error);
@@ -129,7 +122,6 @@ export function ReceiptItemsCard({
       {
         onSuccess: () => {
           setEditItem(null);
-          invalidateTrip();
         },
         onError: (error) => {
           const problem = parseProblemDetails(error);
@@ -350,9 +342,7 @@ export function ReceiptItemsCard({
                 const ids = [...selectedItems];
                 setSelectedItems(new Set());
                 setDeleteOpen(false);
-                deleteReceiptItems.mutate(ids, {
-                  onSuccess: () => invalidateTrip(),
-                });
+                deleteReceiptItems.mutate(ids);
               }}
             >
               {deleteReceiptItems.isPending && <Spinner size="sm" />}

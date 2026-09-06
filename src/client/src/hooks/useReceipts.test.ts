@@ -46,7 +46,18 @@ beforeEach(() => {
 describe("useReceipts", () => {
   it("complete create invalidates every receipt aggregate and downstream cache", async () => {
     const queryClient = new QueryClient();
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    const cachedKeys = [
+      ["receipts"],
+      ["transactions"],
+      ["receipt-items"],
+      ["adjustments"],
+      ["receipts-with-items"],
+      ["trips"],
+      ["reports"],
+      ["ynab", "split-comparison"],
+      ["ynab", "receipt-sync-statuses"],
+    ];
+    for (const queryKey of cachedKeys) queryClient.setQueryData(queryKey, { data: [] });
     (client.POST as Mock).mockResolvedValue({
       data: { receipt: { id: "r-1" }, transactions: [], items: [], adjustments: [] },
       error: undefined,
@@ -65,18 +76,8 @@ describe("useReceipts", () => {
     expect(client.POST).toHaveBeenCalledWith("/api/receipts/complete", {
       body: expect.objectContaining({ adjustments: [] }),
     });
-    for (const queryKey of [
-      ["receipts"],
-      ["transactions"],
-      ["receipt-items"],
-      ["adjustments"],
-      ["receipts-with-items"],
-      ["trips"],
-      ["reports"],
-      ["ynab", "split-comparison"],
-      ["ynab", "receipt-sync-statuses"],
-    ]) {
-      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey });
+    for (const queryKey of cachedKeys) {
+      expect(queryClient.getQueryState(queryKey)?.isInvalidated).toBe(true);
     }
   });
   it("list query returns data on success", async () => {
@@ -406,9 +407,10 @@ describe("useReceipts", () => {
 
   it("delete mutation invalidates both list and deleted query keys on settled", async () => {
     const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+      defaultOptions: { queries: { retry: false, gcTime: Infinity } },
     });
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    queryClient.setQueryData(["receipts"], { data: [], total: 0, offset: 0, limit: 50 });
+    queryClient.setQueryData(["receipts", "deleted"], { data: [], total: 0, offset: 0, limit: 50 });
 
     function Wrapper({ children }: { children: ReactNode }) {
       return createElement(QueryClientProvider, { client: queryClient }, children);
@@ -423,8 +425,8 @@ describe("useReceipts", () => {
     result.current.mutate(["1"]);
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["receipts"] });
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["receipts", "deleted"] });
+    expect(queryClient.getQueryState(["receipts"])?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(["receipts", "deleted"])?.isInvalidated).toBe(true);
   });
 });
 

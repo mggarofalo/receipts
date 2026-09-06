@@ -1,3 +1,4 @@
+import { invalidateDomainChange, queryKeys } from "@/lib/query-invalidation";
 import { useMemo } from "react";
 import { useStableQuery } from "@/hooks/useStableQuery";
 import { useQuery, useQueries, useQueryClient } from "@tanstack/react-query";
@@ -9,7 +10,7 @@ export function useAccounts(offset = 0, limit = 50, sortBy?: string | null, sort
   const { enabled = true, q } = options;
   const search = q?.trim() || undefined;
   const query = useQuery({
-    queryKey: ["accounts", "list", offset, limit, sortBy, sortDirection, isActive, search],
+    queryKey: [...queryKeys.accounts, "list", offset, limit, sortBy, sortDirection, isActive, search],
     enabled,
     queryFn: async () => {
       const { data, error } = await client.GET("/api/accounts", {
@@ -26,7 +27,7 @@ export function useAccounts(offset = 0, limit = 50, sortBy?: string | null, sort
 /** Fetches the complete account list for pickers and entity lookups. */
 export function useAllAccounts(isActive?: boolean | null) {
   return useQuery({
-    queryKey: ["accounts", "all", isActive ?? undefined],
+    queryKey: [...queryKeys.accounts, "all", isActive ?? undefined],
     queryFn: async ({ signal }) => {
       const pageSize = 500;
       const fetchPage = async (offset: number) => {
@@ -60,7 +61,7 @@ export function useAllAccounts(isActive?: boolean | null) {
 
 export function useAccount(id: string | null) {
   return useQuery({
-    queryKey: ["accounts", id],
+    queryKey: [...queryKeys.accounts, id],
     enabled: !!id,
     queryFn: async () => {
       const { data, error } = await client.GET("/api/accounts/{id}", {
@@ -77,7 +78,7 @@ export function useAccountCards(accountId: string | null) {
   // useMergeCards) that invalidate ["cards"] also invalidate these per-account
   // card lists via React Query's prefix matching.
   const query = useQuery({
-    queryKey: ["cards", "byAccount", accountId],
+    queryKey: [...queryKeys.cards, "byAccount", accountId],
     enabled: !!accountId,
     queryFn: async () => {
       const { data, error } = await client.GET("/api/accounts/{id}/cards", {
@@ -113,7 +114,7 @@ export function useAccountCards(accountId: string | null) {
 export function useAccountsCards(accountIds: string[]) {
   const results = useQueries({
     queries: accountIds.map((accountId) => ({
-      queryKey: ["cards", "byAccount", accountId],
+      queryKey: [...queryKeys.cards, "byAccount", accountId],
       queryFn: async () => {
         const { data, error } = await client.GET("/api/accounts/{id}/cards", {
           params: { path: { id: accountId } },
@@ -129,10 +130,11 @@ export function useAccountsCards(accountIds: string[]) {
 
   // useQueries hands back a fresh array (and fresh result objects) every render, so
   // memoising on `results` would rebuild the map each time and defeat every downstream
-  // memo. Key on the resolved ids instead — the only part the dialog reacts to.
-  const signature = accountIds
-    .map((id, i) => `${id}:${(results[i]?.data ?? []).map((c) => c.id).join("|")}`)
-    .join(";");
+  // memo. Track every projected field while retaining stable identity on unchanged data.
+  const signature = JSON.stringify(accountIds.map((id, i) => [
+    id,
+    (results[i]?.data ?? []).map((card) => [card.id, card.name, card.cardCode]),
+  ]));
 
   const cardsByAccountId = useMemo(() => {
     const map = new Map<string, CardSummary[]>();
@@ -175,7 +177,7 @@ export function useCreateAccount() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["accounts"] });
+      invalidateDomainChange(queryClient, "account");
       toast.success("Account created");
     },
   });
@@ -196,7 +198,7 @@ export function useUpdateAccount() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["accounts"] });
+      invalidateDomainChange(queryClient, "account");
       toast.success("Account updated");
     },
   });
@@ -224,7 +226,7 @@ export function useDeleteAccount() {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["accounts"] });
+      invalidateDomainChange(queryClient, "account");
       toast.success("Account deleted");
     },
     onError: (error: unknown) => {

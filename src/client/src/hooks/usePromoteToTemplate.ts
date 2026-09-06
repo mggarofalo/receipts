@@ -1,3 +1,4 @@
+import { invalidateDomainChange } from "@/lib/query-invalidation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSessionMutation } from "@/hooks/useSessionMutation";
 import client from "@/lib/api-client";
@@ -31,8 +32,9 @@ export interface PromoteToTemplateResult {
  * dragged down by its not-yet-generated embedding (async, up to ~40s lag),
  * letting it rank outside the query's result window. See RECEIPTS-866.
  *
- * On successful creation, only the `itemTemplates` cache is invalidated —
- * deliberately NOT `similarItems`. Invalidating it would force an immediate
+ * On successful creation, the shared policy refreshes templates and canonical
+ * registry projections, deliberately retaining similarity caches. Invalidating
+ * `similarItems` would force an immediate
  * refetch while the new template still has no embedding, which (for the
  * same reason as the duplicate-guard risk above) can rank the
  * just-promoted item low enough to drop off a small result window
@@ -100,7 +102,7 @@ export function usePromoteToTemplate() {
     },
     onSuccess: (result) => {
       if (result.created) {
-        queryClient.invalidateQueries({ queryKey: ["itemTemplates"] });
+        invalidateDomainChange(queryClient, "item-template", "created");
         toast.success(`Saved "${result.name}" as a template`);
       } else {
         toast.info(`A template named "${result.name}" already exists`);

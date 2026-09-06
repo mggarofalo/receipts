@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement, type ReactNode } from "react";
 
@@ -23,6 +23,7 @@ import {
   useAllAccounts,
   useAccount,
   useAccountCards,
+  useAccountsCards,
   useCreateAccount,
   useUpdateAccount,
   useDeleteAccount,
@@ -42,6 +43,30 @@ beforeEach(() => {
 });
 
 describe("useAccounts", () => {
+  it("keeps card-summary results stable for unchanged projections and updates changed name/code", async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0, staleTime: Infinity } } });
+    let card = { id: "card", accountId: "account", name: "Original", cardCode: "1234", isActive: true };
+    (client.GET as Mock).mockImplementation(async () => ({ data: [{ ...card }], error: undefined }));
+    const wrapper = ({ children }: { children: ReactNode }) => createElement(QueryClientProvider, { client: queryClient }, children);
+    const { result, rerender, unmount } = renderHook(({ ids }) => useAccountsCards(ids), { wrapper, initialProps: { ids: ["account"] } });
+    try {
+      await waitFor(() => expect(result.current.cardsByAccountId.get("account")?.[0]?.name).toBe("Original"));
+      const original = result.current;
+      rerender({ ids: ["account"] });
+      expect(result.current).toBe(original);
+      card = { ...card, isActive: false };
+      await act(async () => queryClient.invalidateQueries({ queryKey: ["cards"] }));
+      expect(result.current).toBe(original);
+      card = { ...card, name: "Renamed", cardCode: "9876" };
+      await act(async () => queryClient.invalidateQueries({ queryKey: ["cards"] }));
+      await waitFor(() => expect(result.current.cardsByAccountId.get("account")?.[0]).toEqual({ id: "card", accountId: "account", name: "Renamed", cardCode: "9876" }));
+      expect(result.current).not.toBe(original);
+      const renamed = result.current;
+      rerender({ ids: ["account"] });
+      expect(result.current).toBe(renamed);
+    } finally { unmount(); queryClient.clear(); }
+  });
+
   it("list query returns data on success", async () => {
     const accounts = [{ id: "a1", name: "Apple Card", isActive: true }];
     (client.GET as Mock).mockResolvedValue({

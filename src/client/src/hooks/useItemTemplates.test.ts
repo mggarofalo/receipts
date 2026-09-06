@@ -318,9 +318,10 @@ describe("useItemTemplates", () => {
 
   it("delete mutation invalidates both list and deleted query keys on settled", async () => {
     const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+      defaultOptions: { queries: { retry: false, gcTime: Infinity } },
     });
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    queryClient.setQueryData(["itemTemplates"], { data: [], total: 0, offset: 0, limit: 50 });
+    queryClient.setQueryData(["itemTemplates", "deleted"], { data: [], total: 0, offset: 0, limit: 50 });
 
     function Wrapper({ children }: { children: ReactNode }) {
       return createElement(QueryClientProvider, { client: queryClient }, children);
@@ -335,8 +336,8 @@ describe("useItemTemplates", () => {
     result.current.mutate(["1"]);
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["itemTemplates"] });
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["itemTemplates", "deleted"] });
+    expect(queryClient.getQueryState(["itemTemplates"])?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(["itemTemplates", "deleted"])?.isInvalidated).toBe(true);
   });
 
   // --- useHideItemTemplate ---
@@ -405,9 +406,10 @@ describe("useItemTemplates", () => {
 
   it("hide mutation invalidates both list and deleted query keys on settled", async () => {
     const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+      defaultOptions: { queries: { retry: false, gcTime: Infinity } },
     });
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    queryClient.setQueryData(["itemTemplates"], { data: [], total: 0, offset: 0, limit: 50 });
+    queryClient.setQueryData(["itemTemplates", "deleted"], { data: [], total: 0, offset: 0, limit: 50 });
 
     function Wrapper({ children }: { children: ReactNode }) {
       return createElement(QueryClientProvider, { client: queryClient }, children);
@@ -422,7 +424,7 @@ describe("useItemTemplates", () => {
     result.current.mutate("template-1");
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["itemTemplates"] });
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["itemTemplates", "deleted"] });
+    expect(queryClient.getQueryState(["itemTemplates"])?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(["itemTemplates", "deleted"])?.isInvalidated).toBe(true);
   });
 });

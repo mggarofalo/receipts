@@ -1,3 +1,4 @@
+import { invalidateDomainChange, queryKeys } from "@/lib/query-invalidation";
 import { useMemo } from "react";
 import { useStableQuery } from "@/hooks/useStableQuery";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -29,7 +30,7 @@ export function useReceipts(
   const exactLocation = location || undefined;
   const query = useQuery({
     queryKey: [
-      "receipts",
+      ...queryKeys.receipts,
       "list",
       offset,
       limit,
@@ -67,7 +68,7 @@ export function useReceipts(
 /** Fetches the complete receipt list for pickers. */
 export function useAllReceipts(options: { enabled?: boolean } = {}) {
   return useQuery({
-    queryKey: ["receipts", "all"],
+    queryKey: [...queryKeys.receipts, "all"],
     enabled: options.enabled ?? true,
     queryFn: async ({ signal }) => {
       const pageSize = 500;
@@ -101,7 +102,7 @@ export function useAllReceipts(options: { enabled?: boolean } = {}) {
 
 export function useReceipt(id: string | null) {
   return useQuery({
-    queryKey: ["receipts", id],
+    queryKey: [...queryKeys.receipts, id],
     enabled: !!id,
     queryFn: async () => {
       const { data, error } = await client.GET("/api/receipts/{id}", {
@@ -127,7 +128,7 @@ export function useCreateReceipt() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["receipts"] });
+      invalidateDomainChange(queryClient, "receipt");
       toast.success("Receipt created");
     },
   });
@@ -150,8 +151,7 @@ export function useUpdateReceipt() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["receipts"] });
-      queryClient.invalidateQueries({ queryKey: ["trips"] });
+      invalidateDomainChange(queryClient, "receipt");
       toast.success("Receipt updated");
     },
   });
@@ -165,8 +165,8 @@ export function useDeleteReceipts() {
       if (error) throw error;
     },
     onMutate: async (ids) => {
-      await queryClient.cancelQueries({ queryKey: ["receipts"] });
-      const previous = queryClient.getQueriesData<{ data: { id: string }[]; total: number }>({ queryKey: ["receipts", "list"] });
+      await queryClient.cancelQueries({ queryKey: [...queryKeys.receipts] });
+      const previous = queryClient.getQueriesData<{ data: { id: string }[]; total: number }>({ queryKey: [...queryKeys.receipts, "list"] });
       for (const [key] of previous) {
         queryClient.setQueryData(key, (old: { data: { id: string }[]; total: number; offset: number; limit: number } | undefined) => {
           if (!old?.data) return old;
@@ -182,8 +182,7 @@ export function useDeleteReceipts() {
       }
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["receipts"] });
-      queryClient.invalidateQueries({ queryKey: ["receipts", "deleted"] });
+      invalidateDomainChange(queryClient, "receipt");
     },
     onSuccess: () => {
       toast.success("Receipt(s) deleted");
@@ -193,7 +192,7 @@ export function useDeleteReceipts() {
 
 export function useDeletedReceipts(offset = 0, limit = 50, sortBy?: string | null, sortDirection?: string | null) {
   const query = useQuery({
-    queryKey: ["receipts", "deleted", offset, limit, sortBy, sortDirection],
+    queryKey: [...queryKeys.receipts, "deleted", offset, limit, sortBy, sortDirection],
     queryFn: async () => {
       const { data, error } = await client.GET("/api/receipts/deleted", {
         params: { query: { offset, limit, sortBy: sortBy ?? undefined, sortDirection: (sortDirection ?? undefined) as "asc" | "desc" | undefined } },
@@ -215,24 +214,14 @@ export function useCreateCompleteReceipt() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["receipts"] });
-      queryClient.invalidateQueries({ queryKey: ["transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["receipt-items"] });
-      queryClient.invalidateQueries({ queryKey: ["adjustments"] });
-      queryClient.invalidateQueries({ queryKey: ["receipts-with-items"] });
-      queryClient.invalidateQueries({ queryKey: ["trips"] });
-      queryClient.invalidateQueries({ queryKey: ["reports"] });
-      queryClient.invalidateQueries({ queryKey: ["ynab", "split-comparison"] });
-      queryClient.invalidateQueries({
-        queryKey: ["ynab", "receipt-sync-statuses"],
-      });
+      invalidateDomainChange(queryClient, "receipt");
     },
   });
 }
 
 export function useLocationSuggestions(query: string) {
   return useQuery({
-    queryKey: ["receipts", "locations", query],
+    queryKey: [...queryKeys.receipts, "locations", query],
     queryFn: async () => {
       const { data, error } = await client.GET("/api/receipts/locations", {
         params: { query: { q: query || undefined, limit: 20 } },
@@ -254,8 +243,7 @@ export function useRestoreReceipt() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["receipts"] });
-      queryClient.invalidateQueries({ queryKey: ["receipts", "deleted"] });
+      invalidateDomainChange(queryClient, "receipt");
       toast.success("Receipt restored");
     },
   });
