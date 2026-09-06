@@ -36,6 +36,51 @@ function renderSheet(
 }
 
 describe("ReconcileSheet", () => {
+  it.each([
+    [0.99, -0.01],
+    [1.01, 0.01],
+  ])(
+    "offers the deliberate signed cent correction for payment %s",
+    async (transactionsTotal, amount) => {
+      const user = userEvent.setup();
+      const { onCreateAdjustment } = renderSheet({
+        receiptTotal: 1,
+        transactionsTotal,
+      });
+      expect(
+        screen.queryByText(/receipt is balanced/i),
+      ).not.toBeInTheDocument();
+      await user.click(
+        screen.getByRole("combobox", { name: /adjustment type/i }),
+      );
+      await user.click(await screen.findByRole("option", { name: "Discount" }));
+      await user.click(
+        screen.getByRole("button", { name: /create adjustment/i }),
+      );
+      expect(onCreateAdjustment).toHaveBeenCalledWith({
+        type: "discount",
+        amount,
+        description: null,
+      });
+    },
+  );
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+    "cannot submit a nonfinite receipt total %s even after choosing a type",
+    async (receiptTotal) => {
+      const user = userEvent.setup();
+      const { onCreateAdjustment } = renderSheet({ receiptTotal });
+      await user.click(
+        screen.getByRole("combobox", { name: /adjustment type/i }),
+      );
+      await user.click(await screen.findByRole("option", { name: "Discount" }));
+      const create = screen.getByRole("button", { name: /create adjustment/i });
+      expect(create).toBeDisabled();
+      await user.click(create);
+      expect(onCreateAdjustment).not.toHaveBeenCalled();
+    },
+  );
+
   it("does not render when closed", () => {
     const { container } = render(
       <ReconcileSheet

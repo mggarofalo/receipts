@@ -82,6 +82,18 @@ describe("ReceiptItemsCard", () => {
     expect(screen.getAllByText("$6.92")).toHaveLength(2);
   });
 
+  it("rounds the line preview but preserves the authoritative server subtotal", () => {
+    renderWithQueryClient(
+      <ReceiptItemsCard
+        receiptId="receipt-1"
+        items={[{ ...mockItems[0], quantity: 0.5, unitPrice: 2.01 }]}
+        subtotal={1.02}
+      />,
+    );
+    expect(screen.getByText("$1.01")).toBeInTheDocument();
+    expect(screen.getByText("$1.02")).toBeInTheDocument();
+  });
+
   it("renders empty state when there are no items", () => {
     renderWithQueryClient(
       <ReceiptItemsCard

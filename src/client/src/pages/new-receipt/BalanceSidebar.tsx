@@ -1,3 +1,4 @@
+import { sumAmounts, calculateReceiptBalance } from "@/lib/receipt-arithmetic";
 import { formatCurrency } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,10 +29,12 @@ export function BalanceSidebar({
   onSubmit,
   onCancel,
 }: BalanceSidebarProps) {
-  const expectedTotal = subtotal + taxAmount + adjustmentTotal;
-  const balanceDiff = Math.abs(expectedTotal - transactionTotal);
-  const isBalanced = balanceDiff < 0.01;
-  const isOver = expectedTotal > transactionTotal;
+  const expectedTotal = sumAmounts([subtotal, taxAmount, adjustmentTotal]);
+  const {
+    absoluteDifference: balanceDiff,
+    isWithinCreationTolerance: isBalanced,
+    expectedExceedsPayments: isOver,
+  } = calculateReceiptBalance(expectedTotal, transactionTotal);
 
   return (
     <div className="sticky top-6 space-y-4">

@@ -60,6 +60,21 @@ vi.mock("@/hooks/usePromoteToTemplate", () => ({
 }));
 
 describe("LineItemsSection", () => {
+  it("shows rounded midpoint lines and sums the rounded lines in the subtotal", () => {
+    const items = [0, 1].map((index) => ({
+      id: `line-${index}`,
+      receiptItemCode: "",
+      description: `Half item ${index}`,
+      quantity: 0.5,
+      unitPrice: 2.01,
+      category: "Food",
+      subcategory: "",
+    }));
+    renderWithProviders(<LineItemsSection items={items} onChange={vi.fn()} />);
+    expect(screen.getAllByText("$1.01")).toHaveLength(2);
+    expect(screen.getByText("Subtotal: $2.02")).toBeInTheDocument();
+  });
+
   const defaultProps = {
     items: [] as ReceiptLineItem[],
     onChange: vi.fn(),

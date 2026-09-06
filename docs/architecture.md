@@ -258,3 +258,7 @@ Benefits:
 ## Normalization write ownership
 
 Automatic receipt-item normalization uses source snapshots and a short guarded write phase, preserving newer edits and atomic audit records. See [Normalization write ownership](normalization-ownership.md) for row revisions, canonical rejection, lock ordering, guarded template updates and trusted creation hints.
+
+## Receipt arithmetic ownership
+
+The client centralizes decimal line rounding, amount sums and balance comparisons in one pure helper while retaining authoritative server aggregates. See [Receipt arithmetic](receipt-arithmetic.md) for calculation order, submission and reconciliation thresholds, and transport limits.

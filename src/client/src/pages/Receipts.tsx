@@ -1,3 +1,4 @@
+import { sumAmounts } from "@/lib/receipt-arithmetic";
 import { Fragment, useState, useMemo, useEffect, useCallback } from "react";
 import { generateId } from "@/lib/id";
 import { Link } from "react-router";
@@ -158,11 +159,9 @@ function ReceiptInlineDetails({
   const expectedTotal = Number(
     trip?.receipt?.expectedTotal ?? receipt.expectedTotal,
   );
-  const transactionTotal =
-    trip?.transactions?.reduce(
-      (sum, transaction) => sum + Number(transaction.transaction.amount ?? 0),
-      0,
-    ) ?? receipt.transactionTotal;
+  const transactionTotal = trip?.transactions
+    ? sumAmounts(trip.transactions.map((entry) => Number(entry.transaction.amount ?? 0)))
+    : receipt.transactionTotal;
   const equationTerms = [
     { label: "Subtotal", amount: subtotal, operator: "" },
     ...(Math.abs(taxAmount) >= 0.005

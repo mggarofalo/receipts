@@ -1,3 +1,4 @@
+import { calculateSubtotal, sumAmounts, calculateReceiptBalance } from "@/lib/receipt-arithmetic";
 import { assertSessionCurrent, getSessionVersion, isAbortError } from "@/lib/auth";
 import { useState, useCallback, useMemo, useEffect, useRef, useId } from "react";
 import { useNavigate, useBlocker } from "react-router";
@@ -95,31 +96,27 @@ export default function NewReceiptPage() {
   }, []);
 
   const subtotal = useMemo(
-    () =>
-      items.reduce(
-        (sum, item) =>
-          sum + Math.round(item.quantity * item.unitPrice * 100) / 100,
-        0,
-      ),
+    () => calculateSubtotal(items),
     [items],
   );
 
   const transactionTotal = useMemo(
-    () => transactions.reduce((sum, t) => sum + t.amount, 0),
+    () => sumAmounts(transactions.map((transaction) => transaction.amount)),
     [transactions],
   );
 
   const adjustmentTotal = useMemo(
-    () => adjustments.reduce((sum, adjustment) => sum + adjustment.amount, 0),
+    () => sumAmounts(adjustments.map((adjustment) => adjustment.amount)),
     [adjustments],
   );
 
-  // Mirrors BalanceSidebar's internal balance math so the sticky action bar
-  // can show the same status and gate its Submit button.
-  const expectedTotal = subtotal + taxAmount + adjustmentTotal;
-  const balanceDiff = Math.abs(expectedTotal - transactionTotal);
-  const isBalanced = balanceDiff < 0.01;
-  const isOver = expectedTotal > transactionTotal;
+  // Both submit buttons use the same decimal arithmetic and backend tolerance.
+  const expectedTotal = sumAmounts([subtotal, taxAmount, adjustmentTotal]);
+  const {
+    absoluteDifference: balanceDiff,
+    isWithinCreationTolerance: isBalanced,
+    expectedExceedsPayments: isOver,
+  } = calculateReceiptBalance(expectedTotal, transactionTotal);
 
   const hasData =
     location !== "" ||

@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "two-positive-midpoint-lines",
+      "lines": [{ "quantity": 0.5, "unitPrice": 2.01, "total": 1.01 }, { "quantity": 0.5, "unitPrice": 2.01, "total": 1.01 }],
+      "tax": 0, "adjustments": [], "payments": [2.02],
+      "subtotal": 2.02, "adjustmentTotal": 0, "expectedTotal": 2.02, "paymentTotal": 2.02,
+      "absoluteDifference": 0, "expectedExceedsPayments": false, "isWithinCreationTolerance": true,
+      "hasVisibleDiscrepancy": false, "reconciliationAdjustment": 0, "isReconciled": true
+    },
+    {
+      "id": "round-each-small-line-before-summing",
+      "lines": [{ "quantity": 0.5, "unitPrice": 0.01, "total": 0.01 }, { "quantity": 0.5, "unitPrice": 0.01, "total": 0.01 }],
+      "tax": 0, "adjustments": [], "payments": [0.02],
+      "subtotal": 0.02, "adjustmentTotal": 0, "expectedTotal": 0.02, "paymentTotal": 0.02,
+      "absoluteDifference": 0, "expectedExceedsPayments": false, "isWithinCreationTolerance": true,
+      "hasVisibleDiscrepancy": false, "reconciliationAdjustment": 0, "isReconciled": true
+    },
+    {
+      "id": "four-place-operands",
+      "lines": [{ "quantity": 1.2345, "unitPrice": 7.8912, "total": 9.74 }, { "quantity": 0.0001, "unitPrice": 99.9999, "total": 0.01 }],
+      "tax": 0.23, "adjustments": [-0.05, 0.02], "payments": [3.3, 3.3, 3.35],
+      "subtotal": 9.75, "adjustmentTotal": -0.03, "expectedTotal": 9.95, "paymentTotal": 9.95,
+      "absoluteDifference": 0, "expectedExceedsPayments": false, "isWithinCreationTolerance": true,
+      "hasVisibleDiscrepancy": false, "reconciliationAdjustment": 0, "isReconciled": true
+    },
+    {
+      "id": "repeated-fractional-payments",
+      "lines": [{ "quantity": 1, "unitPrice": 0.3, "total": 0.3 }],
+      "tax": 0, "adjustments": [], "payments": [0.1, 0.1, 0.1],
+      "subtotal": 0.3, "adjustmentTotal": 0, "expectedTotal": 0.3, "paymentTotal": 0.3,
+      "absoluteDifference": 0, "expectedExceedsPayments": false, "isWithinCreationTolerance": true,
+      "hasVisibleDiscrepancy": false, "reconciliationAdjustment": 0, "isReconciled": true
+    },
+    {
+      "id": "tax-and-signed-adjustments",
+      "lines": [{ "quantity": 1, "unitPrice": 12.34, "total": 12.34 }],
+      "tax": 1.23, "adjustments": [-0.57, 0.1], "payments": [10, 3.1],
+      "subtotal": 12.34, "adjustmentTotal": -0.47, "expectedTotal": 13.1, "paymentTotal": 13.1,
+      "absoluteDifference": 0, "expectedExceedsPayments": false, "isWithinCreationTolerance": true,
+      "hasVisibleDiscrepancy": false, "reconciliationAdjustment": 0, "isReconciled": true
+    },
+    {
+      "id": "exact-balance",
+      "lines": [{ "quantity": 1, "unitPrice": 1, "total": 1 }],
+      "tax": 0, "adjustments": [], "payments": [1],
+      "subtotal": 1, "adjustmentTotal": 0, "expectedTotal": 1, "paymentTotal": 1,
+      "absoluteDifference": 0, "expectedExceedsPayments": false, "isWithinCreationTolerance": true,
+      "hasVisibleDiscrepancy": false, "reconciliationAdjustment": 0, "isReconciled": true
+    },
+    {
+      "id": "one-cent-less-payment",
+      "lines": [{ "quantity": 1, "unitPrice": 1, "total": 1 }],
+      "tax": 0, "adjustments": [], "payments": [0.99],
+      "subtotal": 1, "adjustmentTotal": 0, "expectedTotal": 1, "paymentTotal": 0.99,
+      "absoluteDifference": 0.01, "expectedExceedsPayments": true, "isWithinCreationTolerance": true,
+      "hasVisibleDiscrepancy": true, "reconciliationAdjustment": -0.01, "isReconciled": false
+    },
+    {
+      "id": "one-cent-more-payment",
+      "lines": [{ "quantity": 1, "unitPrice": 1, "total": 1 }],
+      "tax": 0, "adjustments": [], "payments": [1.01],
+      "subtotal": 1, "adjustmentTotal": 0, "expectedTotal": 1, "paymentTotal": 1.01,
+      "absoluteDifference": 0.01, "expectedExceedsPayments": false, "isWithinCreationTolerance": true,
+      "hasVisibleDiscrepancy": true, "reconciliationAdjustment": 0.01, "isReconciled": false
+    },
+    {
+      "id": "two-cents-less-payment",
+      "lines": [{ "quantity": 1, "unitPrice": 1, "total": 1 }],
+      "tax": 0, "adjustments": [], "payments": [0.98],
+      "subtotal": 1, "adjustmentTotal": 0, "expectedTotal": 1, "paymentTotal": 0.98,
+      "absoluteDifference": 0.02, "expectedExceedsPayments": true, "isWithinCreationTolerance": false,
+      "hasVisibleDiscrepancy": true, "reconciliationAdjustment": -0.02, "isReconciled": false
+    },
+    {
+      "id": "two-cents-more-payment",
+      "lines": [{ "quantity": 1, "unitPrice": 1, "total": 1 }],
+      "tax": 0, "adjustments": [], "payments": [1.02],
+      "subtotal": 1, "adjustmentTotal": 0, "expectedTotal": 1, "paymentTotal": 1.02,
+      "absoluteDifference": 0.02, "expectedExceedsPayments": false, "isWithinCreationTolerance": false,
+      "hasVisibleDiscrepancy": true, "reconciliationAdjustment": 0.02, "isReconciled": false
+    }
+  ]
+}

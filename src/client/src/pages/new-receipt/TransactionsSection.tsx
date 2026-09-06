@@ -1,3 +1,4 @@
+import { sumAmounts } from "@/lib/receipt-arithmetic";
 import { useMemo, useCallback, useRef, useEffect } from "react";
 import { generateId } from "@/lib/id";
 import { useForm, useController } from "react-hook-form";
@@ -110,7 +111,7 @@ export function TransactionsSection({
   }, [defaultDate, form]);
 
   const runningTotal = useMemo(
-    () => transactions.reduce((sum, t) => sum + t.amount, 0),
+    () => sumAmounts(transactions.map((transaction) => transaction.amount)),
     [transactions],
   );
 
