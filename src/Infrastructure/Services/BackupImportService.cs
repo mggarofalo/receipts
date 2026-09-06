@@ -492,6 +492,13 @@ public partial class BackupImportService(
 			string? defaultCategory = reader.IsDBNull(2) ? null : reader.GetString(2);
 			string? defaultSubcategory = reader.IsDBNull(3) ? null : reader.GetString(3);
 			decimal? defaultUnitPrice = reader.IsDBNull(4) ? null : reader.GetDecimal(4);
+			// Legacy backups may contain defaults that fit the former numeric(18,2) column.
+			// PostgreSQL rounds to scale before checking range; validate without changing the value.
+			if (defaultUnitPrice.HasValue
+				&& Math.Abs(decimal.Round(defaultUnitPrice.Value, 4, MidpointRounding.AwayFromZero)) >= 100_000_000_000_000m)
+			{
+				throw new InvalidOperationException($"Backup item template {id} has a default unit price outside the supported range. The import was rolled back.");
+			}
 			Currency? defaultUnitPriceCurrency = reader.IsDBNull(5) ? null : Enum.Parse<Currency>(reader.GetString(5));
 			string? defaultItemCode = reader.IsDBNull(6) ? null : reader.GetString(6);
 			string? description = reader.IsDBNull(7) ? null : reader.GetString(7);

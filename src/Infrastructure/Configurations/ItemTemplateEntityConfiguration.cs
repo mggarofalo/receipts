@@ -19,6 +19,11 @@ public class ItemTemplateEntityConfiguration : IEntityTypeConfiguration<ItemTemp
 			.IsRequired()
 			.ValueGeneratedOnAdd();
 
+		// Unit-price defaults must retain the same sub-cent precision as receipt items.
+		// Totals and other money fields keep the global two-decimal convention.
+		builder.Property(e => e.DefaultUnitPrice)
+			.HasColumnType("decimal(18,4)");
+
 		builder.HasIndex(e => e.Name)
 			.IsUnique()
 			.HasFilter("\"DeletedAt\" IS NULL");

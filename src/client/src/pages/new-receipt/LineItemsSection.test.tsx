@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "@/test/test-utils";
 import { mockQueryResult, mockMutationResult } from "@/test/mock-hooks";
@@ -211,6 +211,53 @@ describe("LineItemsSection", () => {
     expect(cell).toHaveClass("whitespace-normal");
     expect(cell).toHaveClass("break-words");
     expect(cell).toHaveClass("max-w-[32ch]");
+  });
+
+  it("adds a new receipt line with four-decimal unit price", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<LineItemsSection {...defaultProps} />);
+    await user.type(
+      screen.getByPlaceholderText("Item description"),
+      "Gasoline",
+    );
+    await user.click(screen.getByRole("combobox", { name: /^Category/ }));
+    await user.click(screen.getByRole("option", { name: "Food" }));
+    await user.click(screen.getByLabelText(/^Unit Price/));
+    await user.paste("3.459");
+    await user.tab();
+    await user.click(screen.getByRole("button", { name: /add item/i }));
+    await waitFor(() =>
+      expect(defaultProps.onChange).toHaveBeenCalledWith([
+        expect.objectContaining({ unitPrice: 3.459, description: "Gasoline" }),
+      ]),
+    );
+  });
+
+  it("displays subcent unit prices and preserves them through inline focus, blur and save", async () => {
+    const user = userEvent.setup();
+    const items: ReceiptLineItem[] = [
+      {
+        id: "precision",
+        receiptItemCode: "",
+        description: "Gasoline",
+        quantity: 2,
+        unitPrice: 3.459,
+        category: "Food",
+        subcategory: "",
+      },
+    ];
+    renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
+    expect(screen.getByText("$3.459")).toBeInTheDocument();
+    expect(screen.getByText("$6.92")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /edit/i }));
+    await user.click(screen.getByLabelText("Edit unit price"));
+    await user.tab();
+    await user.click(screen.getByRole("button", { name: /save/i }));
+    await waitFor(() =>
+      expect(defaultProps.onChange).toHaveBeenCalledWith([
+        expect.objectContaining({ unitPrice: 3.459 }),
+      ]),
+    );
   });
 
   // --- Inline editing tests ---

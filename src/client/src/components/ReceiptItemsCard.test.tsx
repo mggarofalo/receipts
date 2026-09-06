@@ -70,6 +70,18 @@ const mockItems = [
 ];
 
 describe("ReceiptItemsCard", () => {
+  it("shows subcent unit price while the line total and subtotal stay at cents", () => {
+    renderWithQueryClient(
+      <ReceiptItemsCard
+        receiptId="receipt-1"
+        items={[{ ...mockItems[0], unitPrice: 3.459 }]}
+        subtotal={6.92}
+      />,
+    );
+    expect(screen.getByText("$3.459")).toBeInTheDocument();
+    expect(screen.getAllByText("$6.92")).toHaveLength(2);
+  });
+
   it("renders empty state when there are no items", () => {
     renderWithQueryClient(
       <ReceiptItemsCard

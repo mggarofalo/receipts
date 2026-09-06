@@ -6431,6 +6431,8 @@ components:
             - number
             - "null"
           format: double
+          exclusiveMaximum: 100000000000000
+          description: Optional unit price with up to four decimal places; must remain below the storage limit after conversion to decimal.
         defaultItemCode:
           type:
             - string
@@ -6462,6 +6464,8 @@ components:
             - number
             - "null"
           format: double
+          exclusiveMaximum: 100000000000000
+          description: Optional unit price with up to four decimal places; must remain below the storage limit after conversion to decimal.
         defaultItemCode:
           type:
             - string

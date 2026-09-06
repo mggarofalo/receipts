@@ -44,7 +44,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Spinner } from "@/components/ui/spinner";
-import { formatCurrency } from "@/lib/format";
+import { formatUnitPrice, formatCurrency } from "@/lib/format";
 import { Loader2 } from "lucide-react";
 
 interface ItemTemplate {
@@ -518,7 +518,7 @@ export function ReceiptItemForm({
                                       ? ` · ${suggestion.category}`
                                       : ""}
                                     {suggestion.unitPrice != null
-                                      ? ` · ${formatCurrency(Number(suggestion.unitPrice))}`
+                                      ? ` · ${formatUnitPrice(Number(suggestion.unitPrice))}`
                                       : ""}
                                   </span>
                                 </div>
@@ -725,7 +725,7 @@ export function ReceiptItemForm({
               <FormItem className="min-w-[150px] flex-1">
                 <FormLabel>Unit Price</FormLabel>
                 <FormControl>
-                  <CurrencyInput {...field} />
+                  <CurrencyInput {...field} precision={4} />
                 </FormControl>
                 <FormMessage />
               </FormItem>

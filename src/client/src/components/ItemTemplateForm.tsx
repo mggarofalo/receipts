@@ -181,6 +181,7 @@ export function ItemTemplateForm({
               <FormLabel>Default Unit Price (optional)</FormLabel>
               <FormControl>
                 <CurrencyInput
+                  precision={4}
                   value={field.value ?? 0}
                   onChange={field.onChange}
                 />

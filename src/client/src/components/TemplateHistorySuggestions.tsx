@@ -18,7 +18,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Spinner } from "@/components/ui/spinner";
-import { formatCurrency, formatShortDate } from "@/lib/format";
+import { formatUnitPrice, formatShortDate } from "@/lib/format";
 
 type HistoryCandidate =
   components["schemas"]["ItemTemplateHistoryCandidateResponse"];
@@ -228,7 +228,7 @@ export function TemplateHistorySuggestions({
                         </TableCell>
                         <TableCell className="text-muted-foreground">
                           {candidate.suggestedUnitPrice != null ? (
-                            formatCurrency(candidate.suggestedUnitPrice)
+                            formatUnitPrice(candidate.suggestedUnitPrice)
                           ) : (
                             <span className="italic">--</span>
                           )}

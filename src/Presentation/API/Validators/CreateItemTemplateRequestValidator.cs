@@ -17,6 +17,8 @@ public class CreateItemTemplateRequestValidator : AbstractValidator<CreateItemTe
 		RuleFor(x => x.DefaultUnitPrice)
 			.GreaterThan(0)
 			.WithMessage(DefaultUnitPriceMustBePositive)
+			.Must(ItemTemplatePriceValidation.FitsColumn)
+			.WithMessage(ItemTemplatePriceValidation.OutOfRange)
 			.When(x => x.DefaultUnitPrice.HasValue);
 	}
 }
