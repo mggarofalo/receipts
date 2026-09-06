@@ -180,7 +180,7 @@ describe("useCategories", () => {
 
     await result.current.mutateAsync(newCategory);
 
-    expect(client.POST).toHaveBeenCalledWith("/api/categories", { body: newCategory });
+    expect(client.POST).toHaveBeenCalledWith("/api/categories", { middleware: expect.any(Array), body: newCategory });
     expect(toast.success).toHaveBeenCalledWith("Category created");
   });
 

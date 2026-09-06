@@ -7,10 +7,11 @@ import { handleGlobalError } from "@/lib/global-error-handler";
 export function createAppQueryClient(): QueryClient {
   const sessionVersion = getSessionVersion();
   const onError = (error: unknown, meta?: Record<string, unknown>) => {
-    if (getSessionVersion() !== sessionVersion || getCacheErrorPresentation(meta) === "local") return;
-    // The transport's error bridge owns HTTP 5xx, including its first-error route.
-    // The cache owns other default errors; a caller with local UI selects both policies.
-    if (!isHttpServerError(error)) handleGlobalError(error);
+    const presentation = getCacheErrorPresentation(meta);
+    if (getSessionVersion() !== sessionVersion || presentation === "local") return;
+    // Global HTTP 5xx belongs to the transport bridge. Explicit toast mutations
+    // suppress that bridge and let this cache present every failure once.
+    if (presentation === "toast" || !isHttpServerError(error)) handleGlobalError(error);
   };
   return new QueryClient({
     defaultOptions: {

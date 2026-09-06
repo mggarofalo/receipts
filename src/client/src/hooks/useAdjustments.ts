@@ -1,3 +1,4 @@
+import { toastErrorPolicy } from "@/lib/request-error-policy";
 import { invalidateDomainChange, queryKeys } from "@/lib/query-invalidation";
 import { useMemo } from "react";
 import { useStableQuery } from "@/hooks/useStableQuery";
@@ -57,6 +58,7 @@ export function useAdjustmentsByReceiptId(receiptId: string | null, offset = 0, 
 export function useCreateAdjustment() {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
     mutationFn: async ({
       receiptId,
       body,
@@ -70,7 +72,7 @@ export function useCreateAdjustment() {
     }) => {
       const { data, error } = await client.POST(
         "/api/receipts/{receiptId}/adjustments",
-        { params: { path: { receiptId } }, body },
+        { ...toastErrorPolicy.request, params: { path: { receiptId } }, body },
       );
       if (error) throw error;
       return data;
@@ -85,6 +87,7 @@ export function useCreateAdjustment() {
 export function useUpdateAdjustment() {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
     mutationFn: async ({
       body,
     }: {
@@ -96,6 +99,7 @@ export function useUpdateAdjustment() {
       };
     }) => {
       const { error } = await client.PUT("/api/adjustments/{id}", {
+        ...toastErrorPolicy.request,
         params: { path: { id: body.id } },
         body,
       });
@@ -111,8 +115,10 @@ export function useUpdateAdjustment() {
 export function useDeleteAdjustments() {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
     mutationFn: async (ids: string[]) => {
       const { error } = await client.DELETE("/api/adjustments", {
+        ...toastErrorPolicy.request,
         body: ids,
       });
       if (error) throw error;
@@ -161,8 +167,10 @@ export function useDeletedAdjustments(offset = 0, limit = 50, sortBy?: string | 
 export function useRestoreAdjustment() {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
     mutationFn: async (id: string) => {
       const { error } = await client.POST("/api/adjustments/{id}/restore", {
+        ...toastErrorPolicy.request,
         params: { path: { id } },
       });
       if (error) throw error;

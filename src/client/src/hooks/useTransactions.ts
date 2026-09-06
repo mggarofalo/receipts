@@ -1,3 +1,4 @@
+import { toastErrorPolicy } from "@/lib/request-error-policy";
 import { invalidateDomainChange, queryKeys } from "@/lib/query-invalidation";
 import { useMemo } from "react";
 import { useStableQuery } from "@/hooks/useStableQuery";
@@ -55,6 +56,7 @@ export function useTransactionsByReceiptId(receiptId: string | null, offset = 0,
 export function useCreateTransaction() {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
     mutationFn: async ({
       receiptId,
       body,
@@ -64,7 +66,7 @@ export function useCreateTransaction() {
     }) => {
       const { data, error } = await client.POST(
         "/api/receipts/{receiptId}/transactions",
-        { params: { path: { receiptId } }, body: { cardId: body.cardId, amount: body.amount, date: body.date } },
+        { ...toastErrorPolicy.request, params: { path: { receiptId } }, body: { cardId: body.cardId, amount: body.amount, date: body.date } },
       );
       if (error) throw error;
       return data;
@@ -79,6 +81,7 @@ export function useCreateTransaction() {
 export function useCreateTransactionsBatch() {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
     mutationFn: async ({
       receiptId,
       body,
@@ -88,7 +91,7 @@ export function useCreateTransactionsBatch() {
     }) => {
       const { data, error } = await client.POST(
         "/api/receipts/{receiptId}/transactions/batch",
-        { params: { path: { receiptId } }, body: body.map(({ cardId, amount, date }) => ({ cardId, amount, date })) },
+        { ...toastErrorPolicy.request, params: { path: { receiptId } }, body: body.map(({ cardId, amount, date }) => ({ cardId, amount, date })) },
       );
       if (error) throw error;
       return data;
@@ -102,12 +105,14 @@ export function useCreateTransactionsBatch() {
 export function useUpdateTransaction() {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
     mutationFn: async ({
       body,
     }: {
       body: components["schemas"]["UpdateTransactionRequest"];
     }) => {
       const { error } = await client.PUT("/api/transactions/{id}", {
+        ...toastErrorPolicy.request,
         params: { path: { id: body.id } },
         body: { id: body.id, cardId: body.cardId, amount: body.amount, date: body.date },
       });
@@ -123,8 +128,10 @@ export function useUpdateTransaction() {
 export function useDeleteTransactions() {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
     mutationFn: async (ids: string[]) => {
       const { error } = await client.DELETE("/api/transactions", {
+        ...toastErrorPolicy.request,
         body: ids,
       });
       if (error) throw error;
@@ -173,8 +180,10 @@ export function useDeletedTransactions(offset = 0, limit = 50, sortBy?: string |
 export function useRestoreTransaction() {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
     mutationFn: async (id: string) => {
       const { error } = await client.POST("/api/transactions/{id}/restore", {
+        ...toastErrorPolicy.request,
         params: { path: { id } },
       });
       if (error) throw error;

@@ -127,7 +127,9 @@ it.each(["transport failure", "success"] as const)(
       await act(async () => release());
       if (outcome === "transport failure") {
         await waitFor(() =>
-          expect(failure).toHaveBeenCalledWith("Failed to update items"),
+          expect(failure).toHaveBeenCalledExactlyOnceWith(
+            "Network error. Please check your connection and try again.",
+          ),
         );
         await waitFor(() =>
           expect(screen.queryByText("Bananas")).not.toBeInTheDocument(),

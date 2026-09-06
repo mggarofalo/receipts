@@ -1,3 +1,4 @@
+import { toastErrorPolicy } from "@/lib/request-error-policy";
 import { invalidateDomainChange, queryKeys } from "@/lib/query-invalidation";
 import { useMemo } from "react";
 import { useStableQuery } from "@/hooks/useStableQuery";
@@ -102,6 +103,7 @@ export function useAllSubcategoriesByCategoryId(categoryId: string | null, isAct
 export function useCreateSubcategory() {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
     mutationFn: async (body: {
       name: string;
       categoryId: string;
@@ -109,6 +111,7 @@ export function useCreateSubcategory() {
       isActive: boolean;
     }) => {
       const { data, error } = await client.POST("/api/subcategories", {
+        ...toastErrorPolicy.request,
         body,
       });
       if (error) throw error;

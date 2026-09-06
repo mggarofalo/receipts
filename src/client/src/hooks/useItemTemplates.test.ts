@@ -108,7 +108,7 @@ describe("useItemTemplates", () => {
 
     await result.current.mutateAsync(newTemplate);
 
-    expect(client.POST).toHaveBeenCalledWith("/api/item-templates", {
+    expect(client.POST).toHaveBeenCalledWith("/api/item-templates", { middleware: expect.any(Array),
       body: newTemplate,
     });
     expect(toast.success).toHaveBeenCalledWith("Item template created");
@@ -132,7 +132,7 @@ describe("useItemTemplates", () => {
 
     await result.current.mutateAsync(updated);
 
-    expect(client.PUT).toHaveBeenCalledWith("/api/item-templates/{id}", {
+    expect(client.PUT).toHaveBeenCalledWith("/api/item-templates/{id}", { middleware: expect.any(Array),
       params: { path: { id: "1" } },
       body: updated,
     });
@@ -148,7 +148,7 @@ describe("useItemTemplates", () => {
 
     await result.current.mutateAsync(["1", "2"]);
 
-    expect(client.DELETE).toHaveBeenCalledWith("/api/item-templates", {
+    expect(client.DELETE).toHaveBeenCalledWith("/api/item-templates", { middleware: expect.any(Array),
       body: ["1", "2"],
     });
     expect(toast.success).toHaveBeenCalledWith("Item template(s) deleted");
@@ -178,7 +178,7 @@ describe("useItemTemplates", () => {
 
     await result.current.mutateAsync("1");
 
-    expect(client.POST).toHaveBeenCalledWith("/api/item-templates/{id}/restore", {
+    expect(client.POST).toHaveBeenCalledWith("/api/item-templates/{id}/restore", { middleware: expect.any(Array),
       params: { path: { id: "1" } },
     });
     expect(toast.success).toHaveBeenCalledWith("Item template restored");
@@ -351,7 +351,7 @@ describe("useItemTemplates", () => {
 
     await result.current.mutateAsync("template-1");
 
-    expect(client.DELETE).toHaveBeenCalledWith("/api/item-templates", {
+    expect(client.DELETE).toHaveBeenCalledWith("/api/item-templates", { middleware: expect.any(Array),
       body: ["template-1"],
     });
     expect(toast.success).toHaveBeenCalledWith(
