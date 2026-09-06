@@ -121,7 +121,19 @@ Requires database connection via `POSTGRES_*` environment variables or Aspire co
 The **Backup & Restore** page is available at `/admin/backup` (admin users only). It provides:
 
 - **Export**: One-click download with progress spinner
-- **Import**: File picker with size display, confirmation dialog, and per-entity result summary
+- **Import**: File picker with size display, confirmation dialog, and created/updated totals
+
+## Transfer and refresh ownership
+
+Both browser transfers use the shared API client, including authentication, native 401 refresh/replay, connection-origin headers and session cancellation. Each has one five-minute deadline covering the initial request, any refresh wait/replay and response-body consumption. Ordinary requests retain their 30-second deadline. Import serializes one FormData upload; replay preserves its filename, boundary and bytes. Export keeps its Blob internal to the download action and preserves the public void result and callbacks.
+
+`useBackupImport` owns the import mutation, local feedback and restored-query repair. The page owns the file picker and confirmation dialog. A rejected import retains the selected file for retry; success clears it. Both transfer hooks select the paired local request/cache error policy, so a failed transfer does not navigate away or produce duplicate generic feedback. A timeout or connection loss can occur after the server committed; there is no automatic retry of an uncertain import.
+
+The API enqueues a `backup-import` change only after the import service returns its committed result. It does so even when the response counters are zero or the request is cancelled immediately after commit: restored settings may have changed and other sessions still need refresh. Validation and precommit failures, cancellation before commit, and export do not emit this event. The existing notifier queues delivery; it does not await a hub send or provide a durable event log.
+
+Local success repairs the current session's restored-data queries even without SignalR. The remote event uses the same repair union, including ledger, taxonomy, templates, normalization settings and all YNAB queries. Authentication, users, roles and API-key queries are excluded. Repair cancels matching in-flight reads before invalidating, including reads still running after navigation. An old result therefore cannot clear staleness and remain infinitely fresh after restore. It marks inactive entries stale and refetches active ones once through a union predicate. Session guards apply after asynchronous cancellation as well as at entry. Reconnection uses this same primitive for unknown missed changes.
+
+Refreshing active YNAB queries may read the remote service; restore does not issue remote YNAB writes. Some optional read error owners remain tracked in RECEIPTS-950. Cache repair does not rebuild excluded vectors or image binaries, and it does not establish the still-pending synchronous producer and background completion guarantees in RECEIPTS-948/959/964.
 
 ## Operational notes
 

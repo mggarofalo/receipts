@@ -1,10 +1,14 @@
 import { useCallback, useMemo } from "react";
 import type { MutateOptions, UseMutateAsyncFunction, UseMutateFunction, UseMutationResult } from "@tanstack/react-query";
 import { useSessionMutation } from "@/hooks/useSessionMutation";
-import { assertSessionCurrent, getAccessToken, getSessionSignal, getSessionVersion } from "@/lib/auth";
+import { assertSessionCurrent, getSessionVersion } from "@/lib/auth";
 import { showSuccess, showError } from "@/lib/toast";
 
-const baseUrl = import.meta.env.VITE_API_URL ?? "";
+import client from "@/lib/api-client";
+import { localErrorPolicy } from "@/lib/request-error-policy";
+import { requestTimeout } from "@/lib/request-timeout";
+
+const transferMiddleware = [...localErrorPolicy.request.middleware, requestTimeout(300_000)];
 
 interface ExportedBackup {
   blob: Blob;
@@ -23,25 +27,21 @@ function exportCallbacks(callbacks?: MutateOptions<void, Error, void, unknown>):
 
 export function useBackupExport(): UseMutationResult<void, Error, void, unknown> {
   const mutation = useSessionMutation<ExportedBackup, Error>({
+    ...localErrorPolicy.mutation,
     mutationFn: async () => {
-      const token = getAccessToken();
-      const sessionSignal = getSessionSignal();
-      const res = await fetch(`${baseUrl}/api/backup/export`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        signal: AbortSignal.any([sessionSignal, AbortSignal.timeout(300_000)]),
+      const { data: blob, response } = await client.POST("/api/backup/export", {
+        middleware: transferMiddleware,
+        parseAs: "blob",
       });
 
-      if (!res.ok) {
-        if (res.status === 403)
+      if (!response.ok) {
+        if (response.status === 403)
           throw new Error("You do not have permission to export backups.");
-        throw new Error(`Export failed (${res.status}).`);
+        throw new Error(`Export failed (${response.status}).`);
       }
+      if (!blob) throw new Error("Export returned no backup file.");
 
-      const blob = await res.blob();
-      const disposition = res.headers.get("Content-Disposition");
+      const disposition = response.headers.get("Content-Disposition");
       let filename = `receipts-backup-${new Date().toISOString().slice(0, 10)}.sqlite`;
       if (disposition) {
         const match = disposition.match(/filename="?([^";\n]+)"?/);

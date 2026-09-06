@@ -1,9 +1,7 @@
 import { useState, useRef } from "react";
-import { useSessionMutation } from "@/hooks/useSessionMutation";
+import { useBackupImport } from "@/hooks/useBackupImport";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { useBackupExport } from "@/hooks/useBackup";
-import { getAccessToken, getSessionSignal } from "@/lib/auth";
-import { showSuccess, showError } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { PageHead } from "@/components/primitives";
 import {
@@ -26,8 +24,6 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Spinner } from "@/components/ui/spinner";
 import { DatabaseBackup, Upload, Download, AlertTriangle } from "lucide-react";
 
-const baseUrl = import.meta.env.VITE_API_URL ?? "";
-
 function formatFileSize(bytes: number): string {
   if (bytes === 0) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];
@@ -46,48 +42,7 @@ function BackupRestore() {
 
   const exportMutation = useBackupExport();
 
-  const importMutation = useSessionMutation({
-    mutationFn: async (file: File) => {
-      const token = getAccessToken();
-      const sessionSignal = getSessionSignal();
-      const formData = new FormData();
-      formData.append("file", file);
-
-      const res = await fetch(`${baseUrl}/api/backup/import`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        body: formData,
-        signal: AbortSignal.any([sessionSignal, AbortSignal.timeout(300_000)]), // 5-minute timeout for large imports
-      });
-
-      if (!res.ok) {
-        if (res.status === 400)
-          throw new Error("Invalid or corrupt backup file.");
-        if (res.status === 403)
-          throw new Error("You do not have permission to import backups.");
-        throw new Error(`Import failed (${res.status}).`);
-      }
-
-      return res.json() as Promise<{
-        totalCreated: number;
-        totalUpdated: number;
-      }>;
-    },
-    onSuccess: (data) => {
-      showSuccess(
-        `Import complete: ${data.totalCreated} created, ${data.totalUpdated} updated.`,
-      );
-      setSelectedFile(null);
-      setConfirmImportOpen(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    },
-    onError: (error: Error) => {
-      showError(error.message);
-      setConfirmImportOpen(false);
-    },
-  });
+  const importMutation = useBackupImport();
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0] ?? null;
@@ -101,7 +56,14 @@ function BackupRestore() {
 
   function handleConfirmImport() {
     if (!selectedFile) return;
-    importMutation.mutate(selectedFile);
+    importMutation.mutate(selectedFile, {
+      onSuccess: () => {
+        setSelectedFile(null);
+        setConfirmImportOpen(false);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      },
+      onError: () => setConfirmImportOpen(false),
+    });
   }
 
   return (

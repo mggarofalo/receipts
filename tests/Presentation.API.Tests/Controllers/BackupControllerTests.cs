@@ -1,5 +1,6 @@
 using API.Controllers;
 using API.Generated.Dtos;
+using API.Services;
 using Application.Interfaces.Services;
 using Application.Models;
 using FluentAssertions;
@@ -24,7 +25,7 @@ public class BackupControllerTests : IDisposable
 		_backupServiceMock = new Mock<IBackupService>();
 		_importServiceMock = new Mock<IBackupImportService>();
 		_loggerMock = ControllerTestHelpers.GetLoggerMock<BackupController>();
-		_controller = new BackupController(_backupServiceMock.Object, _importServiceMock.Object, _loggerMock.Object);
+		_controller = new BackupController(_backupServiceMock.Object, _importServiceMock.Object, _loggerMock.Object, Mock.Of<IEntityChangeNotifier>());
 		_controller.ControllerContext = new ControllerContext
 		{
 			HttpContext = new DefaultHttpContext()

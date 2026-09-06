@@ -17,7 +17,8 @@ import {
 import { getRequestErrorPresentation } from "@/lib/request-error-policy";
 import { toApiError } from "@/lib/problem-details";
 
-import { apiBaseUrl, apiUrl, API_TIMEOUT_MS } from "@/lib/api-config";
+import { apiBaseUrl, apiUrl } from "@/lib/api-config";
+import { getRequestTimeoutMs } from "@/lib/request-timeout";
 import { attemptTokenRefresh, waitForRefresh } from "@/lib/token-refresh";
 
 export { attemptTokenRefresh } from "@/lib/token-refresh";
@@ -38,7 +39,7 @@ async function fetchWithTokenRefresh(request: Request): Promise<Response> {
   const sessionVersion = requestSessions.get(request) ?? getSessionVersion();
   if (!isLogout) assertSessionCurrent(sessionVersion);
   const signal = AbortSignal.any([
-    AbortSignal.timeout(API_TIMEOUT_MS),
+    AbortSignal.timeout(getRequestTimeoutMs(request)),
     request.signal,
     ...(isLogout ? [] : [getSessionSignal()]),
   ]);

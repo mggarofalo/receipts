@@ -1,3 +1,4 @@
+vi.hoisted(() => vi.stubEnv("VITE_API_URL", "http://backup-session.test"));
 import { act, cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -40,15 +41,22 @@ describe("BackupRestore session ownership", () => {
       let requestSignal: AbortSignal | null | undefined;
       const fetchMock = vi.fn(
         async (_input: RequestInfo | URL, init?: RequestInit) => {
-          requestSignal = init?.signal;
-          return {
-            ok: true,
-            status: 200,
-            json: () => {
-              bodyStarted.resolve();
-              return responseBody.promise;
+          requestSignal =
+            init?.signal ??
+            (_input instanceof Request ? _input.signal : undefined);
+          return Object.assign(
+            new Response("{}", {
+              headers: { "Content-Type": "application/json" },
+            }),
+            {
+              text: () => {
+                bodyStarted.resolve();
+                return responseBody.promise.then((value) =>
+                  JSON.stringify(value),
+                );
+              },
             },
-          };
+          );
         },
       );
       vi.stubGlobal("fetch", fetchMock);
@@ -65,9 +73,9 @@ describe("BackupRestore session ownership", () => {
       await user.click(screen.getByRole("button", { name: "Confirm Import" }));
       await bodyStarted.promise;
       expect(fetchMock).toHaveBeenCalledOnce();
-      expect(fetchMock.mock.calls[0][1]?.headers).toEqual({
-        Authorization: "Bearer Alice-access",
-      });
+      expect(
+        (fetchMock.mock.calls[0][0] as Request).headers.get("Authorization"),
+      ).toBe("Bearer Alice-access");
       if (outcome !== "current") {
         act(() => {
           clearTokens();

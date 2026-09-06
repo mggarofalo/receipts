@@ -1,4 +1,4 @@
-import type { QueryClient } from "@tanstack/react-query";
+import { matchQuery, type Query, type QueryClient, type QueryKey } from "@tanstack/react-query";
 
 // Preserve cache identities while sharing their prefixes between reads and writes.
 export const queryKeys = {
@@ -21,6 +21,7 @@ export const queryKeys = {
   similarItems: ["similarItems"],
   categoryRecommendations: ["categoryRecommendations"],
   normalizedDescriptions: ["normalized-descriptions"],
+  ynab: ["ynab"],
   ynabSplitComparison: ["ynab", "split-comparison"],
   ynabReceiptSyncStatuses: ["ynab", "receipt-sync-statuses"],
   ynabSyncStatus: ["ynab", "sync-status"],
@@ -75,6 +76,16 @@ const TEMPLATE_CHANGE_QUERY_KEYS = [
   queryKeys.categoryRecommendations,
 ] as const;
 
+// Portable restore can change destination settings as well as ledger rows.
+const BACKUP_IMPORT_QUERY_KEYS = [
+  ...LEDGER_CHANGE_QUERY_KEYS,
+  ...CARD_CHANGE_QUERY_KEYS,
+  queryKeys.categories,
+  queryKeys.subcategories,
+  ...TEMPLATE_CHANGE_QUERY_KEYS,
+  queryKeys.ynab,
+] as const;
+
 const DOMAIN_CHANGE_QUERY_KEYS = {
   receipt: LEDGER_CHANGE_QUERY_KEYS,
   "receipt-item": LEDGER_CHANGE_QUERY_KEYS,
@@ -85,6 +96,7 @@ const DOMAIN_CHANGE_QUERY_KEYS = {
   category: [queryKeys.categories, queryKeys.subcategories],
   subcategory: [queryKeys.subcategories],
   "item-template": TEMPLATE_CHANGE_QUERY_KEYS,
+  "backup-import": BACKUP_IMPORT_QUERY_KEYS,
   "trash-purge": [
     ...LEDGER_CHANGE_QUERY_KEYS,
     ...CARD_CHANGE_QUERY_KEYS,
@@ -129,21 +141,36 @@ const RECONNECT_QUERY_KEYS = Array.from(
   )).values(),
 );
 
-export async function invalidateAfterReconnect(
+/** Cancel potentially stale reads, then repair this domain union once. */
+async function repairDomainQueries(
+  queryClient: QueryClient,
+  prefixes: readonly QueryKey[],
+  isCurrent: () => boolean,
+) {
+  const matches = (query: Query) => prefixes.some((queryKey) => matchQuery({ queryKey }, query));
+  // First reads can be reused by invalidation, and inactive reads can continue
+  // after navigation. Either old result would clear staleness (including Infinity
+  // freshness). Cancel all matching in-flight reads before asking for current data.
+  if (!isCurrent()) return;
+  await queryClient.cancelQueries({
+    predicate: (query) => matches(query) && query.state.fetchStatus !== "idle",
+  });
+  if (!isCurrent()) return;
+  // A union predicate prevents ancestor/child prefixes (especially YNAB) from
+  // repeatedly cancelling and restarting the same active refetch.
+  await queryClient.invalidateQueries({ predicate: matches, refetchType: "active" });
+}
+
+export function invalidateAfterReconnect(
   queryClient: QueryClient,
   isCurrentConnection: () => boolean,
 ) {
-  // TanStack reuses an in-flight first read even when invalidateQueries requests
-  // cancellation. Its old result would clear invalidation (including Infinity
-  // freshness). Cancel these reads explicitly before asking for current data.
-  if (!isCurrentConnection()) return;
-  await Promise.all(RECONNECT_QUERY_KEYS.map((queryKey) => queryClient.cancelQueries({
-    queryKey,
-    type: "active",
-    predicate: (query) => query.state.data === undefined && query.state.fetchStatus !== "idle",
-  })));
-  if (!isCurrentConnection()) return;
-  for (const queryKey of RECONNECT_QUERY_KEYS) {
-    void queryClient.invalidateQueries({ queryKey, refetchType: "active" });
-  }
+  return repairDomainQueries(queryClient, RECONNECT_QUERY_KEYS, isCurrentConnection);
+}
+
+export function invalidateAfterBackupImport(
+  queryClient: QueryClient,
+  isCurrentSession: () => boolean,
+) {
+  return repairDomainQueries(queryClient, BACKUP_IMPORT_QUERY_KEYS, isCurrentSession);
 }
