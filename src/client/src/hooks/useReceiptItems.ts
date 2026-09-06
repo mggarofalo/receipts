@@ -1,3 +1,4 @@
+import { toastErrorPolicy } from "@/lib/request-error-policy";
 import { invalidateDomainChange, queryKeys } from "@/lib/query-invalidation";
 import { useMemo } from "react";
 import { useStableQuery } from "@/hooks/useStableQuery";
@@ -90,6 +91,7 @@ export function useReceiptItemsByReceiptId(receiptId: string | null, offset = 0,
 export function useCreateReceiptItem() {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
     mutationFn: async ({
       receiptId,
       body,
@@ -108,7 +110,7 @@ export function useCreateReceiptItem() {
     }) => {
       const { data, error } = await client.POST(
         "/api/receipts/{receiptId}/receipt-items",
-        { params: { path: { receiptId } }, body },
+        { ...toastErrorPolicy.request, params: { path: { receiptId } }, body },
       );
       if (error) throw error;
       return data;
@@ -123,6 +125,7 @@ export function useCreateReceiptItem() {
 export function useCreateReceiptItemsBatch() {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
     mutationFn: async ({
       receiptId,
       body,
@@ -139,7 +142,7 @@ export function useCreateReceiptItemsBatch() {
     }) => {
       const { data, error } = await client.POST(
         "/api/receipts/{receiptId}/receipt-items/batch",
-        { params: { path: { receiptId } }, body },
+        { ...toastErrorPolicy.request, params: { path: { receiptId } }, body },
       );
       if (error) throw error;
       return data;
@@ -153,6 +156,7 @@ export function useCreateReceiptItemsBatch() {
 export function useUpdateReceiptItem() {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
     mutationFn: async ({
       body,
     }: {
@@ -167,6 +171,7 @@ export function useUpdateReceiptItem() {
       };
     }) => {
       const { error } = await client.PUT("/api/receipt-items/{id}", {
+        ...toastErrorPolicy.request,
         params: { path: { id: body.id } },
         body,
       });
@@ -182,8 +187,10 @@ export function useUpdateReceiptItem() {
 export function useDeleteReceiptItems() {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
     mutationFn: async (ids: string[]) => {
       const { error } = await client.DELETE("/api/receipt-items", {
+        ...toastErrorPolicy.request,
         body: ids,
       });
       if (error) throw error;
@@ -232,8 +239,10 @@ export function useDeletedReceiptItems(offset = 0, limit = 50, sortBy?: string |
 export function useRestoreReceiptItem() {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
     mutationFn: async (id: string) => {
       const { error } = await client.POST("/api/receipt-items/{id}/restore", {
+        ...toastErrorPolicy.request,
         params: { path: { id } },
       });
       if (error) throw error;

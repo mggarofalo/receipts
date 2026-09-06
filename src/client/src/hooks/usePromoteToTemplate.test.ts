@@ -122,10 +122,10 @@ describe("usePromoteToTemplate", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    expect(client.GET).toHaveBeenCalledWith("/api/item-templates/similar", {
+    expect(client.GET).toHaveBeenCalledWith("/api/item-templates/similar", { middleware: expect.any(Array),
       params: { query: { q: "Milk", limit: 20, threshold: 0.3 } },
     });
-    expect(client.POST).toHaveBeenCalledWith("/api/item-templates", {
+    expect(client.POST).toHaveBeenCalledWith("/api/item-templates", { middleware: expect.any(Array),
       body: {
         name: "Milk",
         defaultCategory: "Food",
@@ -205,7 +205,7 @@ describe("usePromoteToTemplate", () => {
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(client.POST).toHaveBeenCalledWith("/api/item-templates", {
+    expect(client.POST).toHaveBeenCalledWith("/api/item-templates", { middleware: expect.any(Array),
       body: {
         name: "Bread",
         defaultCategory: "Food",
@@ -344,7 +344,7 @@ describe("usePromoteToTemplate", () => {
     result.current.mutate({ name: "  Milk  " });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(client.GET).toHaveBeenCalledWith("/api/item-templates/similar", {
+    expect(client.GET).toHaveBeenCalledWith("/api/item-templates/similar", { middleware: expect.any(Array),
       params: { query: { q: "Milk", limit: 20, threshold: 0.3 } },
     });
     expect(client.POST).toHaveBeenCalledWith(

@@ -1,3 +1,4 @@
+import { toastErrorPolicy } from "@/lib/request-error-policy";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSessionMutation } from "@/hooks/useSessionMutation";
 import type { components } from "@/generated/api";
@@ -19,6 +20,7 @@ interface CategorizeReceiptItemsCallbacks {
 export function useCategorizeReceiptItems(callbacks: CategorizeReceiptItemsCallbacks = {}) {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
     mutationFn: async ({ items, category, subcategory }: CategorizeReceiptItemsInput) => {
       const grouped = new Map<string, CategorizeReceiptItemsInput["items"]>();
       for (const item of items) {
@@ -31,6 +33,7 @@ export function useCategorizeReceiptItems(callbacks: CategorizeReceiptItemsCallb
       // finishes committing. Keep every request observed and await all settlements.
       const results = await Promise.allSettled(Array.from(grouped.values(), async (groupItems) => {
         const { error } = await client.PUT("/api/receipt-items/batch", {
+        ...toastErrorPolicy.request,
           body: groupItems.map((item) => ({
             id: item.id,
             receiptItemCode: item.receiptItemCode ?? null,

@@ -1,6 +1,6 @@
 # Request error presentation
 
-`request-error-policy.ts` makes error presentation explicit while keeping one API client and one session-owned QueryClient. The default is `global`: HTTP 5xx responses use the existing error bridge, which opens the first-error route and toasts later operations. QueryCache and MutationCache present other default failures. They skip HTTP 5xx because the bridge already owns them. The default query policy also stops automatic HTTP 5xx retries, which would otherwise present the same operation again. Network retries retain their existing default.
+`request-error-policy.ts` makes error presentation explicit while keeping one API client and one session-owned QueryClient. The default is `global`: HTTP 5xx responses use the existing error bridge, which opens the first-error route and toasts later operations. QueryCache and MutationCache present other default failures. For global operations they skip HTTP 5xx because the bridge already owns them. The default query policy also stops automatic HTTP 5xx retries, which would otherwise present the same operation again. Network retries retain their existing default.
 
 A feature with its own inline error or toast selects `localErrorPolicy.request` for its HTTP call and the matching `localErrorPolicy.query` or `.mutation` options for its cache operation. The request middleware suppresses the 5xx bridge; metadata suppresses generic cache feedback. Local query options use manual retry. Direct calls such as login only need the request options because their form owns the error and no query/mutation cache is involved.
 
@@ -21,7 +21,17 @@ useQuery({
 
 An `onError` callback alone does not select local ownership: field-validation callbacks often depend on generic feedback for other errors. `useSessionMutation` carries explicit metadata through its existing session guards.
 
-Request policy is held in a WeakMap keyed by the original Request. It adds no wire header and survives native 401 refresh/replay because response middleware still receives that original request. A future middleware that replaces Request objects must preserve both presentation and session bindings. Local presentation preserves authentication, password-change handling, cancellation, normalization and typed failures. It never turns a failed request into successful empty data. A manually manufactured HTTP 5xx error inside a cache operation also needs an explicit local presenter, because the default cache treats HTTP 5xx as transport-owned.
+Request policy is held in a WeakMap keyed by the original Request. It adds no wire header and survives native 401 refresh/replay because response middleware still receives that original request. A future middleware that replaces Request objects must preserve both presentation and session bindings. Local presentation preserves authentication, password-change handling, cancellation, normalization and typed failures. It never turns a failed request into successful empty data. A manually manufactured HTTP 5xx error inside a cache operation also needs an explicit local or toast presenter, because the default cache treats HTTP 5xx as transport-owned.
+
+## Mutation toast ownership
+
+`toastErrorPolicy.request` and `.mutation` keep the current editor mounted and let the session's MutationCache present one actionable error, including HTTP 5xx. Transport still returns the same typed error to field-validation callbacks. The request policy suppresses the global 5xx bridge; it does not suppress authentication, replay, cancellation or password-change handling. A hook must pair both options and apply the request option to every constituent call, including a preliminary GET inside a mutation. An `onError` callback alone does not identify an owner.
+
+Receipt, receipt-item, transaction, adjustment and item-template mutation hooks use this policy, including batch operations, trash restoration and promotion. In-form category/subcategory creation shares the same toast owner with its management page. Promotion keeps its deliberate similarity-cache creation exception. Optimistic rollback, settlement invalidation and success callbacks retain their existing ownership. Mutation retry behavior is unchanged; a failure is not an instruction to replay a possibly committed write.
+
+Grouped report categorization also uses the cache toast owner. Its page owns successful selection cleanup, while the hook awaits every independently committed group and repairs projections on settlement. A partial failure retains selection and shows the server error once; it does not imply all groups rolled back.
+
+The complete-receipt creation page already owns an inline error summary and its toast. Its hook therefore selects the fully local policy, so the same failure does not produce a second cache toast or trigger the unsaved-work navigation blocker.
 
 ## Current feature owners
 

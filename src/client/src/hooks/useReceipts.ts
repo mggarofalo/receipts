@@ -1,3 +1,4 @@
+import { localErrorPolicy, toastErrorPolicy } from "@/lib/request-error-policy";
 import { invalidateDomainChange, queryKeys } from "@/lib/query-invalidation";
 import { useMemo } from "react";
 import { useStableQuery } from "@/hooks/useStableQuery";
@@ -117,13 +118,14 @@ export function useReceipt(id: string | null) {
 export function useCreateReceipt() {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
     mutationFn: async (body: {
       description?: string | null;
       location: string;
       date: string;
       taxAmount: number;
     }) => {
-      const { data, error } = await client.POST("/api/receipts", { body });
+      const { data, error } = await client.POST("/api/receipts", { ...toastErrorPolicy.request, body });
       if (error) throw error;
       return data;
     },
@@ -137,6 +139,7 @@ export function useCreateReceipt() {
 export function useUpdateReceipt() {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
     mutationFn: async (body: {
       id: string;
       description?: string | null;
@@ -145,6 +148,7 @@ export function useUpdateReceipt() {
       taxAmount: number;
     }) => {
       const { error } = await client.PUT("/api/receipts/{id}", {
+        ...toastErrorPolicy.request,
         params: { path: { id: body.id } },
         body,
       });
@@ -160,8 +164,9 @@ export function useUpdateReceipt() {
 export function useDeleteReceipts() {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
     mutationFn: async (ids: string[]) => {
-      const { error } = await client.DELETE("/api/receipts", { body: ids });
+      const { error } = await client.DELETE("/api/receipts", { ...toastErrorPolicy.request, body: ids });
       if (error) throw error;
     },
     onMutate: async (ids) => {
@@ -208,8 +213,10 @@ export function useDeletedReceipts(offset = 0, limit = 50, sortBy?: string | nul
 export function useCreateCompleteReceipt() {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    // The creation page owns its inline summary and error toast.
+    ...localErrorPolicy.mutation,
     mutationFn: async (body: CreateCompleteReceiptRequest) => {
-      const { data, error } = await client.POST("/api/receipts/complete", { body });
+      const { data, error } = await client.POST("/api/receipts/complete", { ...localErrorPolicy.request, body });
       if (error) throw error;
       return data;
     },
@@ -236,8 +243,10 @@ export function useLocationSuggestions(query: string) {
 export function useRestoreReceipt() {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
     mutationFn: async (id: string) => {
       const { error } = await client.POST("/api/receipts/{id}/restore", {
+        ...toastErrorPolicy.request,
         params: { path: { id } },
       });
       if (error) throw error;

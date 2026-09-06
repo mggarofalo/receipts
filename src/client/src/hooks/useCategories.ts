@@ -1,3 +1,4 @@
+import { toastErrorPolicy } from "@/lib/request-error-policy";
 import { invalidateDomainChange, queryKeys } from "@/lib/query-invalidation";
 import { useMemo } from "react";
 import { useStableQuery } from "@/hooks/useStableQuery";
@@ -85,12 +86,13 @@ export function useCategory(id: string | null) {
 export function useCreateCategory() {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
     mutationFn: async (body: {
       name: string;
       description?: string | null;
       isActive: boolean;
     }) => {
-      const { data, error } = await client.POST("/api/categories", { body });
+      const { data, error } = await client.POST("/api/categories", { ...toastErrorPolicy.request, body });
       if (error) throw error;
       return data;
     },

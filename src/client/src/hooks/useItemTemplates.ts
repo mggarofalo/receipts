@@ -1,3 +1,4 @@
+import { toastErrorPolicy } from "@/lib/request-error-policy";
 import { invalidateDomainChange, queryKeys } from "@/lib/query-invalidation";
 import { useMemo } from "react";
 import { useStableQuery } from "@/hooks/useStableQuery";
@@ -43,6 +44,7 @@ export function useItemTemplate(id: string | null) {
 export function useCreateItemTemplate() {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
     mutationFn: async (body: {
       name: string;
       description?: string | null;
@@ -52,6 +54,7 @@ export function useCreateItemTemplate() {
       defaultItemCode?: string | null;
     }) => {
       const { data, error } = await client.POST("/api/item-templates", {
+        ...toastErrorPolicy.request,
         body,
       });
       if (error) throw error;
@@ -67,6 +70,7 @@ export function useCreateItemTemplate() {
 export function useUpdateItemTemplate() {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
     mutationFn: async (body: {
       id: string;
       name: string;
@@ -77,6 +81,7 @@ export function useUpdateItemTemplate() {
       defaultItemCode?: string | null;
     }) => {
       const { error } = await client.PUT("/api/item-templates/{id}", {
+        ...toastErrorPolicy.request,
         params: { path: { id: body.id } },
         body,
       });
@@ -92,8 +97,10 @@ export function useUpdateItemTemplate() {
 export function useDeleteItemTemplates() {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
     mutationFn: async (ids: string[]) => {
       const { error } = await client.DELETE("/api/item-templates", {
+        ...toastErrorPolicy.request,
         body: ids,
       });
       if (error) throw error;
@@ -127,8 +134,10 @@ export function useDeleteItemTemplates() {
 export function useHideItemTemplate() {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
     mutationFn: async (id: string) => {
       const { error } = await client.DELETE("/api/item-templates", {
+        ...toastErrorPolicy.request,
         body: [id],
       });
       if (error) throw error;
@@ -177,8 +186,10 @@ export function useDeletedItemTemplates(offset = 0, limit = 50, sortBy?: string 
 export function useRestoreItemTemplate() {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
     mutationFn: async (id: string) => {
       const { error } = await client.POST("/api/item-templates/{id}/restore", {
+        ...toastErrorPolicy.request,
         params: { path: { id } },
       });
       if (error) throw error;

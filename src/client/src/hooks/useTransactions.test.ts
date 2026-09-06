@@ -112,7 +112,7 @@ describe("useTransactions", () => {
 
     expect(client.POST).toHaveBeenCalledWith(
       "/api/receipts/{receiptId}/transactions",
-      { params: { path: { receiptId: "r-1" } }, body: { amount: 200, date: "2025-03-01", cardId: "card-1" } },
+      { middleware: expect.any(Array), params: { path: { receiptId: "r-1" } }, body: { amount: 200, date: "2025-03-01", cardId: "card-1" } },
     );
     expect(toast.success).toHaveBeenCalledWith("Transaction created");
   });
@@ -131,7 +131,7 @@ describe("useTransactions", () => {
 
     expect(client.PUT).toHaveBeenCalledWith(
       "/api/transactions/{id}",
-      { params: { path: { id: "1" } }, body: { id: "1", amount: 250, date: "2025-03-02", cardId: "card-1" } },
+      { middleware: expect.any(Array), params: { path: { id: "1" } }, body: { id: "1", amount: 250, date: "2025-03-02", cardId: "card-1" } },
     );
     expect(toast.success).toHaveBeenCalledWith("Transaction updated");
   });
@@ -145,7 +145,7 @@ describe("useTransactions", () => {
 
     await result.current.mutateAsync(["1", "2"]);
 
-    expect(client.DELETE).toHaveBeenCalledWith("/api/transactions", {
+    expect(client.DELETE).toHaveBeenCalledWith("/api/transactions", { middleware: expect.any(Array),
       body: ["1", "2"],
     });
     expect(toast.success).toHaveBeenCalledWith("Transaction(s) deleted");
@@ -175,7 +175,7 @@ describe("useTransactions", () => {
 
     await result.current.mutateAsync("1");
 
-    expect(client.POST).toHaveBeenCalledWith("/api/transactions/{id}/restore", {
+    expect(client.POST).toHaveBeenCalledWith("/api/transactions/{id}/restore", { middleware: expect.any(Array),
       params: { path: { id: "1" } },
     });
     expect(toast.success).toHaveBeenCalledWith("Transaction restored");
@@ -231,7 +231,7 @@ describe("useTransactions", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(client.POST).toHaveBeenCalledWith(
       "/api/receipts/{receiptId}/transactions/batch",
-      { params: { path: { receiptId: "r-1" } }, body: [{ amount: 100, date: "2025-01-01", cardId: "card-1" }] },
+      { middleware: expect.any(Array), params: { path: { receiptId: "r-1" } }, body: [{ amount: 100, date: "2025-01-01", cardId: "card-1" }] },
     );
     expect(queryClient.getQueryState(["transactions"])?.isInvalidated).toBe(true);
   });

@@ -147,7 +147,7 @@ describe("useReceiptItems", () => {
 
     await result.current.mutateAsync({ receiptId: "r-1", body });
 
-    expect(client.POST).toHaveBeenCalledWith("/api/receipts/{receiptId}/receipt-items", {
+    expect(client.POST).toHaveBeenCalledWith("/api/receipts/{receiptId}/receipt-items", { middleware: expect.any(Array),
       params: { path: { receiptId: "r-1" } },
       body,
     });
@@ -172,7 +172,7 @@ describe("useReceiptItems", () => {
 
     await result.current.mutateAsync({ body });
 
-    expect(client.PUT).toHaveBeenCalledWith("/api/receipt-items/{id}", {
+    expect(client.PUT).toHaveBeenCalledWith("/api/receipt-items/{id}", { middleware: expect.any(Array),
       params: { path: { id: body.id } },
       body,
     });
@@ -188,7 +188,7 @@ describe("useReceiptItems", () => {
 
     await result.current.mutateAsync(["1"]);
 
-    expect(client.DELETE).toHaveBeenCalledWith("/api/receipt-items", {
+    expect(client.DELETE).toHaveBeenCalledWith("/api/receipt-items", { middleware: expect.any(Array),
       body: ["1"],
     });
     expect(toast.success).toHaveBeenCalledWith("Receipt item(s) deleted");
@@ -218,7 +218,7 @@ describe("useReceiptItems", () => {
 
     await result.current.mutateAsync("1");
 
-    expect(client.POST).toHaveBeenCalledWith("/api/receipt-items/{id}/restore", {
+    expect(client.POST).toHaveBeenCalledWith("/api/receipt-items/{id}/restore", { middleware: expect.any(Array),
       params: { path: { id: "1" } },
     });
     expect(toast.success).toHaveBeenCalledWith("Receipt item restored");

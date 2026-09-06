@@ -1,3 +1,4 @@
+import { toastErrorPolicy } from "@/lib/request-error-policy";
 import { invalidateDomainChange } from "@/lib/query-invalidation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSessionMutation } from "@/hooks/useSessionMutation";
@@ -45,6 +46,7 @@ export interface PromoteToTemplateResult {
 export function usePromoteToTemplate() {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
     mutationFn: async (
       input: PromoteToTemplateInput,
     ): Promise<PromoteToTemplateResult> => {
@@ -66,7 +68,7 @@ export function usePromoteToTemplate() {
         // tabs promoting the same name at once).
         const { data: similar, error: similarError } = await client.GET(
           "/api/item-templates/similar",
-          { params: { query: { q: name, limit: 20, threshold: 0.3 } } },
+          { ...toastErrorPolicy.request, params: { query: { q: name, limit: 20, threshold: 0.3 } } },
         );
         if (similarError) throw similarError;
 
@@ -81,6 +83,7 @@ export function usePromoteToTemplate() {
       // An aborted wrapper cannot stop this function resuming after a late duplicate lookup.
       assertSessionCurrent(sessionVersion);
       const { error } = await client.POST("/api/item-templates", {
+        ...toastErrorPolicy.request,
         body: {
           name,
           defaultCategory: input.defaultCategory || null,

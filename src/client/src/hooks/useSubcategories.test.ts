@@ -158,7 +158,7 @@ describe("useSubcategories", () => {
 
     await result.current.mutateAsync(newSub);
 
-    expect(client.POST).toHaveBeenCalledWith("/api/subcategories", { body: newSub });
+    expect(client.POST).toHaveBeenCalledWith("/api/subcategories", { middleware: expect.any(Array), body: newSub });
     expect(toast.success).toHaveBeenCalledWith("Subcategory created");
   });
 

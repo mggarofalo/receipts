@@ -1,7 +1,7 @@
 import type { Middleware } from "openapi-fetch";
 import { parseProblemDetails } from "@/lib/problem-details";
 
-export type ErrorPresentation = "global" | "local";
+export type ErrorPresentation = "global" | "local" | "toast";
 export interface ErrorMetadata extends Record<string, unknown> {
   errorPresentation?: ErrorPresentation;
 }
@@ -13,7 +13,8 @@ export function getRequestErrorPresentation(request: Request): ErrorPresentation
 }
 
 export function getCacheErrorPresentation(meta?: Record<string, unknown>): ErrorPresentation {
-  return meta?.errorPresentation === "local" ? "local" : "global";
+  return meta?.errorPresentation === "local" || meta?.errorPresentation === "toast"
+    ? meta.errorPresentation : "global";
 }
 
 export function isHttpServerError(error: unknown): boolean {
@@ -36,4 +37,18 @@ export const localErrorPolicy = {
   request: { middleware: [localRequestMiddleware] },
   query: { meta: localMetadata, retry: false as const },
   mutation: { meta: localMetadata },
+};
+
+const toastRequestMiddleware: Middleware = {
+  onRequest({ request }) {
+    requestPresentations.set(request, "toast");
+    return request;
+  },
+};
+const toastMetadata: ErrorMetadata = { errorPresentation: "toast" };
+
+/** Keep the editor mounted while the session cache presents one actionable error. */
+export const toastErrorPolicy = {
+  request: { middleware: [toastRequestMiddleware] },
+  mutation: { meta: toastMetadata },
 };

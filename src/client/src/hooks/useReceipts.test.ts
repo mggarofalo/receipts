@@ -73,7 +73,7 @@ describe("useReceipts", () => {
       adjustments: [],
     });
 
-    expect(client.POST).toHaveBeenCalledWith("/api/receipts/complete", {
+    expect(client.POST).toHaveBeenCalledWith("/api/receipts/complete", { middleware: expect.any(Array),
       body: expect.objectContaining({ adjustments: [] }),
     });
     for (const queryKey of cachedKeys) {
@@ -135,7 +135,7 @@ describe("useReceipts", () => {
 
     await result.current.mutateAsync(newReceipt);
 
-    expect(client.POST).toHaveBeenCalledWith("/api/receipts", { body: newReceipt });
+    expect(client.POST).toHaveBeenCalledWith("/api/receipts", { middleware: expect.any(Array), body: newReceipt });
     expect(toast.success).toHaveBeenCalledWith("Receipt created");
   });
 
@@ -154,7 +154,7 @@ describe("useReceipts", () => {
 
     await result.current.mutateAsync(updated);
 
-    expect(client.PUT).toHaveBeenCalledWith("/api/receipts/{id}", {
+    expect(client.PUT).toHaveBeenCalledWith("/api/receipts/{id}", { middleware: expect.any(Array),
       params: { path: { id: "1" } },
       body: updated,
     });
@@ -170,7 +170,7 @@ describe("useReceipts", () => {
 
     await result.current.mutateAsync(["1", "2"]);
 
-    expect(client.DELETE).toHaveBeenCalledWith("/api/receipts", {
+    expect(client.DELETE).toHaveBeenCalledWith("/api/receipts", { middleware: expect.any(Array),
       body: ["1", "2"],
     });
     expect(toast.success).toHaveBeenCalledWith("Receipt(s) deleted");
@@ -200,7 +200,7 @@ describe("useReceipts", () => {
 
     await result.current.mutateAsync("1");
 
-    expect(client.POST).toHaveBeenCalledWith("/api/receipts/{id}/restore", {
+    expect(client.POST).toHaveBeenCalledWith("/api/receipts/{id}/restore", { middleware: expect.any(Array),
       params: { path: { id: "1" } },
     });
     expect(toast.success).toHaveBeenCalledWith("Receipt restored");

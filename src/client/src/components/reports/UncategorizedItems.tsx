@@ -161,9 +161,6 @@ export default function UncategorizedItems() {
       setSelectedSubcategory("");
       toast.success("Items categorized successfully");
     },
-    onError: () => {
-      toast.error("Failed to update items");
-    },
   });
 
   function handleSort(column: string) {
