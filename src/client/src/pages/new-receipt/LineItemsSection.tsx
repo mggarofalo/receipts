@@ -687,6 +687,15 @@ export function LineItemsSection({
                                 setShowSuggestions(true);
                               }}
                               onFocus={() => setShowSuggestions(true)}
+                              onBlur={() => {
+                                field.onBlur();
+                                // While suggestions are mounted, Popover owns pointer
+                                // interactions with its portalled content. Before they
+                                // arrive there is no outside layer to clear this flag;
+                                // release ownership when focus has already moved on so a
+                                // late response cannot open over the next field.
+                                if (!isSuggestionsOpen) setShowSuggestions(false);
+                              }}
                               onKeyDown={handleDescriptionKeyDown}
                             />
                             <span
