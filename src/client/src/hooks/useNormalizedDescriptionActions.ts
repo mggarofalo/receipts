@@ -1,3 +1,4 @@
+import { toastErrorPolicy } from "@/lib/request-error-policy";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSessionMutation } from "@/hooks/useSessionMutation";
 import client from "@/lib/api-client";
@@ -157,6 +158,7 @@ export function useRenameMutation() {
 export function useLinkTemplateMutation() {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
     mutationFn: async ({
       id,
       itemTemplateId,
@@ -167,6 +169,7 @@ export function useLinkTemplateMutation() {
       const { data, error, response } = await client.POST(
         "/api/normalized-descriptions/{id}/link-template",
         {
+          ...toastErrorPolicy.request,
           params: { path: { id } },
           body: { itemTemplateId },
         },

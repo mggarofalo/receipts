@@ -43,7 +43,7 @@ The transaction sync-status endpoint's documented 404 means no record and may re
 
 ## Remaining adoption
 
-RECEIPTS-950 now covers receipt/status reads, receipt mutations, optional suggestion families and complete taxonomy lookups described below. Template catalogs, receipt pickers, account/card choices, remaining YNAB lists and diagnostics, and YNAB settings/actions still require complete shared-consumer ownership. Other report reads need explicit classification before claiming that every optional request is local. Suppressing a shared hook requires checking every consumer, so failed requests cannot become silent.
+RECEIPTS-950 now covers receipt/status reads, receipt mutations, optional suggestion families and complete taxonomy and template catalog lookups described below. Receipt pickers, account/card choices, remaining YNAB lists and diagnostics, and YNAB settings/actions still require complete shared-consumer ownership. Other report reads need explicit classification before claiming that every optional request is local. Suppressing a shared hook requires checking every consumer, so failed requests cannot become silent.
 
 Backup import/export also use this local policy on the shared refresh/replay transport. Their hooks own transfer feedback while the page retains confirmation and file state. Both retain a five-minute transport deadline; see [Backup & restore](backup-restore.md). Error routes and render boundaries remain available throughout the remaining adoption.
 
@@ -55,7 +55,7 @@ Debounced suggestion hooks expose `isDebouncing` alongside their stable query fi
 
 The query identities, debounce delays, location scoping and suggestion freshness remain unchanged. Query cancellation is passed through to the shared transport, including location lookup. Template history keeps its existing failure/retry and widening/focus behavior. Promotion's known template-created similarity exception remains intact.
 
-Template catalogs, receipt pickers, account/card choices and remaining YNAB settings/actions still require their complete shared-consumer owners. Automatic taxonomy creation has the separate ownership rules below.
+Receipt pickers, account/card choices and remaining YNAB settings/actions still require their complete shared-consumer owners. Automatic taxonomy creation has the separate ownership rules below.
 
 ## Taxonomy lookup ownership
 
@@ -64,3 +64,13 @@ The complete category and parent-scoped subcategory lookup hooks use the paired 
 Automatic subcategory creation is owned by ReceiptItemForm submission and LineItemsSection add/edit selection. These consumers read all subcategories for the current parent, including inactive rows, while displaying only active choices. The complete result is necessary because inactive names still participate in the database uniqueness rule. A category lookup and its current parent-scoped subcategory lookup must both succeed and finish fetching before the UI can infer that a name is new. A pending or failed lookup permits valid manual receipt text but does not start a taxonomy write. A later retry never schedules deferred creation. A rejected automatic create reports its error without clearing the manual label; a delayed failure cannot erase a newer category or row draft. ReceiptItemForm catches only the awaited automatic-create rejection and stops that submission, leaving feedback to the mutation owner. Local presentation does not consume `mutateAsync` rejections, and React Hook Form rethrows rejected submit callbacks.
 
 Other consumers retain their active-only lookup contract. Retry controls for scoped lookups require the current parent identity; switching parent cannot retry the old disabled query. This policy prevents automatic creation based on unavailable or incomplete lookup evidence; it does not make the client lookup and the server create transaction atomic against another user's simultaneous creation.
+
+## Template catalog ownership
+
+The shared item-template list uses local request/query presentation in the receipt item form, catalog page, canonical-template link dialog and command palette. Receipt description hints retain manual entry and template provenance rules. Catalog failure and no-data retry keep the page frame and create/edit dialogs mounted; unsuccessful reads do not claim an empty catalog. Queries pass their cancellation signal to the shared transport.
+
+The link dialog keeps its search and selected ID but requires a successful, settled current search result containing the target before selection or confirmation. Raw/debounced search differences, failed reads and targets absent from the current page prevent a new link. Both the control and the handler enforce this rule; stale consequence text is hidden. Link mutation failures use the existing toast owner and keep the dialog open. Successful linking/consolidation behavior is unchanged; broader curation invalidation remains RECEIPTS-948.
+
+Palette template errors and scope notices render outside cmdk's filtered result list so an unmatched term cannot hide recovery controls. Cached matches remain usable; an unavailable or loading template group cannot claim successful empty results. Retry requires an open palette with settled nonempty input. Other palette query families still require their own classification.
+
+Palette template matching intentionally retains its existing name, description, category and entity-prefix tokens within the 500-row ceiling. The server's available `q` filter searches names only, so switching to it would remove existing matches. Extending server search is deferred until its contract preserves these tokens. When more rows exist than were loaded, the palette states the search scope. Receipt picker work (including RECEIPTS-932), account/card choices and remaining YNAB owners remain separate required adoption.

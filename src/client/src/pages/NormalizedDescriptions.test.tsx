@@ -47,10 +47,13 @@ vi.mock("@/hooks/useNormalizedDescriptionActions", () => ({
 }));
 
 vi.mock("@/hooks/useItemTemplates", () => ({
-  useItemTemplates: vi.fn(() => ({
+  useItemTemplates: vi.fn(() => mockQueryResult({
     data: itemTemplates,
     total: itemTemplates.length,
     isLoading: false,
+    isPending: false,
+    isSuccess: true,
+    status: "success",
   })),
 }));
 
@@ -279,12 +282,14 @@ function wireDefaults() {
   );
   vi.mocked(useRequeuePendingMutation).mockReturnValue(mockMutationResult());
   vi.mocked(useLinkTemplateMutation).mockReturnValue(mockMutationResult());
-  vi.mocked(useItemTemplates).mockReturnValue({
+  vi.mocked(useItemTemplates).mockReturnValue(mockQueryResult({
     data: itemTemplates,
     total: itemTemplates.length,
     isLoading: false,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } as any);
+    isPending: false,
+    isSuccess: true,
+    status: "success",
+  }));
   vi.mocked(useLinkedReceiptItems).mockReturnValue({
     data: [],
     total: 0,
@@ -1338,13 +1343,15 @@ describe("NormalizedDescriptions template evidence and linking", () => {
     // The empty state instructs the admin to create a template. Rendering it on a fetch failure
     // tells someone who owns templates that they own none, and the template they then create
     // links to a second canonical entry — the exact split this feature removes.
-    vi.mocked(useItemTemplates).mockReturnValue({
+    vi.mocked(useItemTemplates).mockReturnValue(mockQueryResult({
       data: undefined,
       total: 0,
       isLoading: false,
       isError: true,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any);
+    isPending: false,
+    isSuccess: false,
+    status: "error",
+  }));
 
     const user = userEvent.setup();
     renderWithQueryClient(<NormalizedDescriptions />);
@@ -1353,7 +1360,7 @@ describe("NormalizedDescriptions template evidence and linking", () => {
 
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByTestId("link-template-error")).toHaveTextContent(
-      /could not load your item templates/i,
+      /item templates unavailable/i,
     );
     expect(
       within(dialog).queryByTestId("link-template-empty"),
@@ -1361,12 +1368,14 @@ describe("NormalizedDescriptions template evidence and linking", () => {
   });
 
   it("says when it is showing only part of the matching templates", async () => {
-    vi.mocked(useItemTemplates).mockReturnValue({
+    vi.mocked(useItemTemplates).mockReturnValue(mockQueryResult({
       data: itemTemplates,
       total: 250,
       isLoading: false,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any);
+    isPending: false,
+    isSuccess: true,
+    status: "success",
+  }));
 
     const user = userEvent.setup();
     renderWithQueryClient(<NormalizedDescriptions />);
@@ -1395,12 +1404,14 @@ describe("NormalizedDescriptions template evidence and linking", () => {
   });
 
   it("points at the Item Templates page when there are none to link", async () => {
-    vi.mocked(useItemTemplates).mockReturnValue({
+    vi.mocked(useItemTemplates).mockReturnValue(mockQueryResult({
       data: [],
       total: 0,
       isLoading: false,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any);
+    isPending: false,
+    isSuccess: true,
+    status: "success",
+  }));
 
     const user = userEvent.setup();
     renderWithQueryClient(<NormalizedDescriptions />);
