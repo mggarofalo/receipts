@@ -2,7 +2,10 @@ import { RequestFailure } from "@/components/RequestFailure";
 import { useCallback, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { usePageTitle } from "@/hooks/usePageTitle";
-import { useYnabConnectionStatus, useYnabRateLimitStatus } from "@/hooks/useYnab";
+import {
+  useYnabConnectionStatus,
+  useYnabRateLimitStatus,
+} from "@/hooks/useYnab";
 import { useYnabStatus } from "@/hooks/useYnabStatus";
 import { useYnabEvents } from "@/hooks/useYnabEvents";
 import { useServerPagination } from "@/hooks/useServerPagination";
@@ -51,7 +54,12 @@ export default function Ynab() {
     refetch: retryConnection,
     isFetching: connectionFetching,
   } = useYnabConnectionStatus();
-  const { rateLimitStatus } = useYnabRateLimitStatus(isConfigured);
+  const {
+    rateLimitStatus,
+    isError: rateLimitError,
+    refetch: retryRateLimit,
+    isFetching: rateLimitFetching,
+  } = useYnabRateLimitStatus(isConfigured);
   const { data: status } = useYnabStatus();
 
   const [outcome, setOutcome] = useState<"all" | "success" | "failure">("all");
@@ -73,7 +81,11 @@ export default function Ynab() {
     [resetPage],
   );
 
-  const { data: events, total, isLoading } = useYnabEvents({
+  const {
+    data: events,
+    total,
+    isLoading,
+  } = useYnabEvents({
     offset: pagination.offset,
     limit: pagination.limit,
     sortBy,
@@ -83,13 +95,18 @@ export default function Ynab() {
 
   const successRate = useMemo(() => {
     if (!status || status.pushCountLast30d === 0) return null;
-    return Math.round((status.pushSuccessLast30d / status.pushCountLast30d) * 100);
+    return Math.round(
+      (status.pushSuccessLast30d / status.pushCountLast30d) * 100,
+    );
   }, [status]);
 
   if (!connectionLoading && !connectionError && !isConfigured) {
     return (
       <>
-        <PageHead title="YNAB status" sub="Integration health and recent sync activity" />
+        <PageHead
+          title="YNAB status"
+          sub="Integration health and recent sync activity"
+        />
         <EmptyState
           icon={Icon.Link}
           title="YNAB is not configured"
@@ -97,7 +114,10 @@ export default function Ynab() {
             <>
               Set the <code>YNAB_PAT</code> environment variable to enable the
               integration, then choose a budget in{" "}
-              <Link to="/settings/ynab" className="text-primary hover:underline">
+              <Link
+                to="/settings/ynab"
+                className="text-primary hover:underline"
+              >
                 YNAB settings
               </Link>
               .
@@ -110,7 +130,10 @@ export default function Ynab() {
 
   return (
     <>
-      <PageHead title="YNAB status" sub="Integration health and recent sync activity" />
+      <PageHead
+        title="YNAB status"
+        sub="Integration health and recent sync activity"
+      />
       <div className="space-y-6">
         <div className="grid gap-4 md:grid-cols-3">
           {/* Connection */}
@@ -120,11 +143,15 @@ export default function Ynab() {
               <CardDescription>Token status and last sync.</CardDescription>
             </CardHeader>
             <CardContent>
-              {connectionError ? <RequestFailure
-                message="YNAB connection status is unavailable."
-                retry={() => { void retryConnection(); }}
-                isRetrying={connectionFetching}
-              /> : connectionLoading ? (
+              {connectionError ? (
+                <RequestFailure
+                  message="YNAB connection status is unavailable."
+                  retry={() => {
+                    void retryConnection();
+                  }}
+                  isRetrying={connectionFetching}
+                />
+              ) : connectionLoading ? (
                 <div className="flex items-center gap-2">
                   <Spinner className="h-4 w-4" />
                   <span className="text-sm text-muted-foreground">
@@ -164,14 +191,19 @@ export default function Ynab() {
             <CardContent>
               <div className="space-y-2 text-sm">
                 <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Last 24h / 7d / 30d</span>
+                  <span className="text-muted-foreground">
+                    Last 24h / 7d / 30d
+                  </span>
                   <span className="font-medium">
-                    {status?.pushCountLast24h ?? 0} / {status?.pushCountLast7d ?? 0} /{" "}
+                    {status?.pushCountLast24h ?? 0} /{" "}
+                    {status?.pushCountLast7d ?? 0} /{" "}
                     {status?.pushCountLast30d ?? 0}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Success rate (30d)</span>
+                  <span className="text-muted-foreground">
+                    Success rate (30d)
+                  </span>
                   <span className="font-medium">
                     {successRate === null ? "—" : `${successRate}%`}
                   </span>
@@ -196,14 +228,26 @@ export default function Ynab() {
           <Card>
             <CardHeader>
               <CardTitle>API rate limit</CardTitle>
-              <CardDescription>YNAB allows 200 requests per hour.</CardDescription>
+              <CardDescription>
+                YNAB allows 200 requests per hour.
+              </CardDescription>
             </CardHeader>
             <CardContent>
+              {rateLimitError && (
+                <RequestFailure
+                  message="YNAB rate-limit status is unavailable. Any usage shown is last known."
+                  retry={() => {
+                    void retryRateLimit();
+                  }}
+                  isRetrying={rateLimitFetching}
+                />
+              )}
               {rateLimitStatus ? (
                 <div className="space-y-3">
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground">
-                      {rateLimitStatus.requestsUsed} / {rateLimitStatus.maxRequests} used
+                      {rateLimitStatus.requestsUsed} /{" "}
+                      {rateLimitStatus.maxRequests} used
                     </span>
                     <span className="font-medium">
                       {rateLimitStatus.remainingRequests} left
@@ -231,8 +275,8 @@ export default function Ynab() {
                   {rateLimitStatus.remainingRequests <= 20 && (
                     <Alert variant="destructive">
                       <AlertDescription>
-                        API quota is running low. Pushes may be throttled until the
-                        window resets.
+                        API quota is running low. Pushes may be throttled until
+                        the window resets.
                       </AlertDescription>
                     </Alert>
                   )}

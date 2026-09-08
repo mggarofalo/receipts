@@ -1,9 +1,10 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useStableQuery } from "@/hooks/useStableQuery";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSessionMutation } from "@/hooks/useSessionMutation";
-import { localErrorPolicy } from "@/lib/request-error-policy";
+import { localErrorPolicy, toastErrorPolicy } from "@/lib/request-error-policy";
 import { parseProblemDetails } from "@/lib/problem-details";
+import { assertSessionCurrent, getSessionVersion } from "@/lib/auth";
 import client from "@/lib/api-client";
 import type { components } from "@/generated/api";
 import { toast } from "sonner";
@@ -22,15 +23,26 @@ type StaleMappingsResponse = {
   currentBudgetId?: string | null;
 };
 
+const budgetDependentYnabQueryKeys = [
+  ["ynab", "accounts"],
+  ["ynab", "account-mappings"],
+  ["ynab", "categories"],
+  ["ynab", "category-mappings"],
+  ["ynab", "stale-mappings"],
+  ["ynab", "split-comparison"],
+  ["ynab", "receipt-sync-statuses"],
+  ["ynab", "sync-status"],
+] as const;
+
 export function useYnabConnectionStatus() {
   const query = useQuery({
     ...localErrorPolicy.query,
     queryKey: ["ynab", "connection-status"],
     staleTime: 5 * 60 * 1000, // 5 min — matches backend budget cache TTL
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET(
         "/api/ynab/connection-status" as never,
-        { ...localErrorPolicy.request } as never,
+        { ...localErrorPolicy.request, signal } as never,
       );
       if (error) throw error;
       return data as unknown as YnabConnectionStatusResponse;
@@ -50,13 +62,16 @@ export function useYnabConnectionStatus() {
 
 export function useYnabBudgets() {
   const query = useQuery({
+    ...localErrorPolicy.query,
     queryKey: ["ynab", "budgets"],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/api/ynab/budgets");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/api/ynab/budgets", {
+        ...localErrorPolicy.request,
+        signal,
+      });
       if (error) throw error;
       return data;
     },
-    retry: false,
   });
   const base = useStableQuery(query);
   return useMemo(
@@ -69,8 +84,11 @@ export function useSelectedYnabBudget() {
   const query = useQuery({
     ...localErrorPolicy.query,
     queryKey: ["ynab", "settings", "budget"],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/api/ynab/settings/budget", localErrorPolicy.request);
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/api/ynab/settings/budget", {
+        ...localErrorPolicy.request,
+        signal,
+      });
       if (error) throw error;
       return data;
     },
@@ -87,29 +105,53 @@ export function useSelectedYnabBudget() {
 
 export function useSelectYnabBudget() {
   const queryClient = useQueryClient();
+  const [sessionVersion] = useState(getSessionVersion);
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
+    onMutate: async () => {
+      await Promise.all(
+        budgetDependentYnabQueryKeys.map((queryKey) =>
+          queryClient.cancelQueries({ queryKey }),
+        ),
+      );
+    },
     mutationFn: async (budgetId: string) => {
       const { error } = await client.PUT("/api/ynab/settings/budget", {
+        ...toastErrorPolicy.request,
         body: { budgetId },
       });
       if (error) throw error;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["ynab"] });
+    onSuccess: async (_, budgetId) => {
+      queryClient.setQueryData(["ynab", "settings", "budget"], {
+        selectedBudgetId: budgetId,
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["ynab"],
+        refetchType: "none",
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["ynab", "settings", "budget"],
+        exact: true,
+      });
+      assertSessionCurrent(sessionVersion);
       toast.success("YNAB budget selected");
     },
   });
 }
 
-export function useYnabAccounts(enabled = true) {
+export function useYnabAccounts(enabled = true, budgetId?: string | null) {
   const query = useQuery({
-    queryKey: ["ynab", "accounts"],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/api/ynab/accounts");
+    ...localErrorPolicy.query,
+    queryKey: budgetId ? ["ynab", "accounts", budgetId] : ["ynab", "accounts"],
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/api/ynab/accounts", {
+        ...localErrorPolicy.request,
+        signal,
+      });
       if (error) throw error;
       return data;
     },
-    retry: false,
     enabled,
   });
   const base = useStableQuery(query);
@@ -119,11 +161,20 @@ export function useYnabAccounts(enabled = true) {
   );
 }
 
-export function useYnabAccountMappings(enabled = true) {
+export function useYnabAccountMappings(
+  enabled = true,
+  budgetId?: string | null,
+) {
   const query = useQuery({
-    queryKey: ["ynab", "account-mappings"],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/api/ynab/account-mappings");
+    ...localErrorPolicy.query,
+    queryKey: budgetId
+      ? ["ynab", "account-mappings", budgetId]
+      : ["ynab", "account-mappings"],
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/api/ynab/account-mappings", {
+        ...localErrorPolicy.request,
+        signal,
+      });
       if (error) throw error;
       return data;
     },
@@ -139,6 +190,7 @@ export function useYnabAccountMappings(enabled = true) {
 export function useCreateYnabAccountMapping() {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
     mutationFn: async (body: {
       receiptsAccountId: string;
       ynabAccountId: string;
@@ -146,6 +198,7 @@ export function useCreateYnabAccountMapping() {
       ynabBudgetId: string;
     }) => {
       const { data, error } = await client.POST("/api/ynab/account-mappings", {
+        ...toastErrorPolicy.request,
         body,
       });
       if (error) throw error;
@@ -161,6 +214,7 @@ export function useCreateYnabAccountMapping() {
 export function useUpdateYnabAccountMapping() {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
     mutationFn: async (params: {
       id: string;
       ynabAccountId: string;
@@ -168,6 +222,7 @@ export function useUpdateYnabAccountMapping() {
       ynabBudgetId: string;
     }) => {
       const { error } = await client.PUT("/api/ynab/account-mappings/{id}", {
+        ...toastErrorPolicy.request,
         params: { path: { id: params.id } },
         body: {
           ynabAccountId: params.ynabAccountId,
@@ -187,8 +242,10 @@ export function useUpdateYnabAccountMapping() {
 export function useDeleteYnabAccountMapping() {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
     mutationFn: async (id: string) => {
       const { error } = await client.DELETE("/api/ynab/account-mappings/{id}", {
+        ...toastErrorPolicy.request,
         params: { path: { id } },
       });
       if (error) throw error;
@@ -200,15 +257,20 @@ export function useDeleteYnabAccountMapping() {
   });
 }
 
-export function useYnabCategories(enabled = true) {
+export function useYnabCategories(enabled = true, budgetId?: string | null) {
   const query = useQuery({
-    queryKey: ["ynab", "categories"],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/api/ynab/categories");
+    ...localErrorPolicy.query,
+    queryKey: budgetId
+      ? ["ynab", "categories", budgetId]
+      : ["ynab", "categories"],
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/api/ynab/categories", {
+        ...localErrorPolicy.request,
+        signal,
+      });
       if (error) throw error;
       return data;
     },
-    retry: false,
     enabled,
   });
   const base = useStableQuery(query);
@@ -220,10 +282,12 @@ export function useYnabCategories(enabled = true) {
 
 export function useDistinctReceiptItemCategories(enabled = true) {
   const query = useQuery({
+    ...localErrorPolicy.query,
     queryKey: ["receipt-items", "distinct-categories"],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET(
         "/api/receipt-items/distinct-categories",
+        { ...localErrorPolicy.request, signal },
       );
       if (error) throw error;
       return data;
@@ -237,11 +301,20 @@ export function useDistinctReceiptItemCategories(enabled = true) {
   );
 }
 
-export function useYnabCategoryMappings(enabled = true) {
+export function useYnabCategoryMappings(
+  enabled = true,
+  budgetId?: string | null,
+) {
   const query = useQuery({
-    queryKey: ["ynab", "category-mappings"],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/api/ynab/category-mappings");
+    ...localErrorPolicy.query,
+    queryKey: budgetId
+      ? ["ynab", "category-mappings", budgetId]
+      : ["ynab", "category-mappings"],
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/api/ynab/category-mappings", {
+        ...localErrorPolicy.request,
+        signal,
+      });
       if (error) throw error;
       return data;
     },
@@ -254,12 +327,19 @@ export function useYnabCategoryMappings(enabled = true) {
   );
 }
 
-export function useUnmappedCategories(enabled = true) {
+export function useUnmappedCategories(
+  enabled = true,
+  budgetId?: string | null,
+) {
   const query = useQuery({
-    queryKey: ["ynab", "category-mappings", "unmapped"],
-    queryFn: async () => {
+    ...localErrorPolicy.query,
+    queryKey: budgetId
+      ? ["ynab", "category-mappings", "unmapped", budgetId]
+      : ["ynab", "category-mappings", "unmapped"],
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET(
         "/api/ynab/category-mappings/unmapped",
+        { ...localErrorPolicy.request, signal },
       );
       if (error) throw error;
       return data;
@@ -279,6 +359,7 @@ export function useUnmappedCategories(enabled = true) {
 export function useCreateYnabCategoryMapping() {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
     mutationFn: async (body: {
       receiptsCategory: string;
       ynabCategoryId: string;
@@ -287,6 +368,7 @@ export function useCreateYnabCategoryMapping() {
       ynabBudgetId: string;
     }) => {
       const { data, error } = await client.POST("/api/ynab/category-mappings", {
+        ...toastErrorPolicy.request,
         body,
       });
       if (error) throw error;
@@ -304,6 +386,7 @@ export function useCreateYnabCategoryMapping() {
 export function useUpdateYnabCategoryMapping() {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
     mutationFn: async ({
       id,
       ...body
@@ -315,6 +398,7 @@ export function useUpdateYnabCategoryMapping() {
       ynabBudgetId: string;
     }) => {
       const { error } = await client.PUT("/api/ynab/category-mappings/{id}", {
+        ...toastErrorPolicy.request,
         params: { path: { id } },
         body,
       });
@@ -329,13 +413,16 @@ export function useUpdateYnabCategoryMapping() {
   });
 }
 
-export function useStaleMappings(enabled = true) {
+export function useStaleMappings(enabled = true, budgetId?: string | null) {
   const query = useQuery({
-    queryKey: ["ynab", "stale-mappings"],
-    queryFn: async () => {
+    ...localErrorPolicy.query,
+    queryKey: budgetId
+      ? ["ynab", "stale-mappings", budgetId]
+      : ["ynab", "stale-mappings"],
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET(
         "/api/ynab/stale-mappings" as never,
-        {} as never,
+        { ...localErrorPolicy.request, signal } as never,
       );
       if (error) throw error;
       return data as unknown as StaleMappingsResponse;
@@ -364,10 +451,11 @@ type ClearStaleMappingsResponse = {
 export function useClearStaleMappings() {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
     mutationFn: async () => {
       const { data, error } = await client.DELETE(
         "/api/ynab/stale-mappings" as never,
-        {} as never,
+        toastErrorPolicy.request as never,
       );
       if (error) throw error;
       return data as unknown as ClearStaleMappingsResponse;
@@ -385,10 +473,11 @@ export function useClearStaleMappings() {
 export function useDeleteYnabCategoryMapping() {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
     mutationFn: async (id: string) => {
       const { error } = await client.DELETE(
         "/api/ynab/category-mappings/{id}",
-        { params: { path: { id } } },
+        { ...toastErrorPolicy.request, params: { path: { id } } },
       );
       if (error) throw error;
     },
@@ -401,8 +490,7 @@ export function useDeleteYnabCategoryMapping() {
   });
 }
 
-export type YnabMemoSyncOutcome =
-  components["schemas"]["YnabMemoSyncOutcome"];
+export type YnabMemoSyncOutcome = components["schemas"]["YnabMemoSyncOutcome"];
 export type YnabTransactionCandidateDto =
   components["schemas"]["YnabTransactionCandidate"];
 export type YnabMemoSyncResult =
@@ -444,7 +532,9 @@ export function useSyncYnabMemos() {
         queryKey: ["ynab", "receipt-sync-statuses"],
       });
       queryClient.invalidateQueries({ queryKey: ["ynab", "split-comparison"] });
-      const synced = data?.results?.filter((r) => r.outcome === "synced").length;
+      const synced = data?.results?.filter(
+        (r) => r.outcome === "synced",
+      ).length;
       if (synced && synced > 0) {
         toast.success(`Synced ${synced} transaction memo(s) to YNAB`);
       } else {
@@ -469,7 +559,9 @@ export function useSyncYnabMemosBulk() {
       queryClient.invalidateQueries({
         queryKey: ["ynab", "receipt-sync-statuses"],
       });
-      const synced = data?.results?.filter((r) => r.outcome === "synced").length;
+      const synced = data?.results?.filter(
+        (r) => r.outcome === "synced",
+      ).length;
       toast.success(`Synced ${synced ?? 0} transaction memo(s) to YNAB`);
     },
   });
@@ -770,11 +862,12 @@ type YnabRateLimitStatusResponse = {
 
 export function useYnabRateLimitStatus(enabled = true) {
   const query = useQuery({
+    ...localErrorPolicy.query,
     queryKey: ["ynab", "rate-limit-status"],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET(
         "/api/ynab/rate-limit-status" as never,
-        {} as never,
+        { ...localErrorPolicy.request, signal } as never,
       );
       if (error) throw error;
       return data as unknown as YnabRateLimitStatusResponse;

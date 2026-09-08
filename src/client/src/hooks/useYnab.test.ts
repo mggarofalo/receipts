@@ -17,6 +17,8 @@ vi.mock("sonner", () => ({
 }));
 
 import client from "@/lib/api-client";
+import createClient, { type Middleware } from "openapi-fetch";
+import { getRequestErrorPresentation } from "@/lib/request-error-policy";
 import { toast } from "sonner";
 import {
   useYnabConnectionStatus,
@@ -48,6 +50,39 @@ import {
   useReceiptYnabSyncStatuses,
   useYnabSplitComparison,
 } from "./useYnab";
+
+// Verify what the supplied middleware does on a real SDK Request, without
+// coupling these endpoint assertions to a particular middleware object identity.
+async function expectRequestOwnership(
+  method: Mock,
+  path: string,
+  presentation: "local" | "toast",
+) {
+  const call = method.mock.calls.find(([url]) => url === path);
+  const options = call?.[1] as {
+    middleware?: Middleware[];
+    signal?: AbortSignal;
+  };
+  expect(options.middleware).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ onRequest: expect.any(Function) }),
+    ]),
+  );
+  if (presentation === "local")
+    expect(options.signal).toBeInstanceOf(AbortSignal);
+  let observed: string | undefined;
+  const probe = createClient<{
+    "/probe": { get: { responses: { 204: { content?: never } } } };
+  }>({
+    baseUrl: "http://request-policy.test",
+    fetch: async (request) => {
+      observed = getRequestErrorPresentation(request);
+      return new Response(null, { status: 204 });
+    },
+  });
+  await probe.GET("/probe", { middleware: options.middleware });
+  expect(observed).toBe(presentation);
+}
 
 function createWrapper() {
   const queryClient = new QueryClient({
@@ -83,7 +118,18 @@ describe("useYnab", () => {
     expect(result.current.isConfigured).toBe(true);
     expect(result.current.isConnected).toBe(true);
     expect(result.current.lastSuccessfulSyncUtc).toBe("2026-04-05T12:00:00Z");
-    expect(client.GET).toHaveBeenCalledWith("/api/ynab/connection-status", { middleware: expect.any(Array) });
+    expect(client.GET).toHaveBeenCalledWith(
+      "/api/ynab/connection-status",
+      expect.objectContaining({
+        middleware: expect.any(Array),
+        signal: expect.any(AbortSignal),
+      }),
+    );
+    await expectRequestOwnership(
+      client.GET as Mock,
+      "/api/ynab/connection-status",
+      "local",
+    );
   });
 
   it("useYnabConnectionStatus returns defaults when data is undefined", async () => {
@@ -118,7 +164,18 @@ describe("useYnab", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.budgets).toEqual(budgets);
-    expect(client.GET).toHaveBeenCalledWith("/api/ynab/budgets");
+    expect(client.GET).toHaveBeenCalledWith(
+      "/api/ynab/budgets",
+      expect.objectContaining({
+        middleware: expect.any(Array),
+        signal: expect.any(AbortSignal),
+      }),
+    );
+    await expectRequestOwnership(
+      client.GET as Mock,
+      "/api/ynab/budgets",
+      "local",
+    );
   });
 
   it("useYnabBudgets returns empty array when data is undefined", async () => {
@@ -173,13 +230,22 @@ describe("useYnab", () => {
 
     await result.current.mutateAsync("budget-123");
 
-    expect(client.PUT).toHaveBeenCalledWith("/api/ynab/settings/budget", {
-      body: { budgetId: "budget-123" },
-    });
+    expect(client.PUT).toHaveBeenCalledWith(
+      "/api/ynab/settings/budget",
+      expect.objectContaining({
+        body: { budgetId: "budget-123" },
+        middleware: expect.any(Array),
+      }),
+    );
+    await expectRequestOwnership(
+      client.PUT as Mock,
+      "/api/ynab/settings/budget",
+      "toast",
+    );
     expect(toast.success).toHaveBeenCalledWith("YNAB budget selected");
   });
 
-  it("useSelectYnabBudget does not toast on failure (surfaced by the global handler)", async () => {
+  it("useSelectYnabBudget does not add a hook toast on failure (owned by the mutation cache)", async () => {
     (client.PUT as Mock).mockResolvedValue({ error: "Failed" });
 
     const { result } = renderHook(() => useSelectYnabBudget(), {
@@ -223,7 +289,18 @@ describe("useYnab", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.accounts).toEqual(accounts);
-    expect(client.GET).toHaveBeenCalledWith("/api/ynab/accounts");
+    expect(client.GET).toHaveBeenCalledWith(
+      "/api/ynab/accounts",
+      expect.objectContaining({
+        middleware: expect.any(Array),
+        signal: expect.any(AbortSignal),
+      }),
+    );
+    await expectRequestOwnership(
+      client.GET as Mock,
+      "/api/ynab/accounts",
+      "local",
+    );
   });
 
   it("useYnabAccounts returns empty array on error", async () => {
@@ -261,7 +338,18 @@ describe("useYnab", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.mappings).toEqual(mappings);
-    expect(client.GET).toHaveBeenCalledWith("/api/ynab/account-mappings");
+    expect(client.GET).toHaveBeenCalledWith(
+      "/api/ynab/account-mappings",
+      expect.objectContaining({
+        middleware: expect.any(Array),
+        signal: expect.any(AbortSignal),
+      }),
+    );
+    await expectRequestOwnership(
+      client.GET as Mock,
+      "/api/ynab/account-mappings",
+      "local",
+    );
   });
 
   it("useCreateYnabAccountMapping calls POST and shows toast", async () => {
@@ -281,14 +369,23 @@ describe("useYnab", () => {
       ynabBudgetId: "b1",
     });
 
-    expect(client.POST).toHaveBeenCalledWith("/api/ynab/account-mappings", {
-      body: {
-        receiptsAccountId: "a1",
-        ynabAccountId: "y1",
-        ynabAccountName: "Checking",
-        ynabBudgetId: "b1",
-      },
-    });
+    expect(client.POST).toHaveBeenCalledWith(
+      "/api/ynab/account-mappings",
+      expect.objectContaining({
+        body: {
+          receiptsAccountId: "a1",
+          ynabAccountId: "y1",
+          ynabAccountName: "Checking",
+          ynabBudgetId: "b1",
+        },
+        middleware: expect.any(Array),
+      }),
+    );
+    await expectRequestOwnership(
+      client.POST as Mock,
+      "/api/ynab/account-mappings",
+      "toast",
+    );
     expect(toast.success).toHaveBeenCalledWith("Account mapping created");
   });
 
@@ -306,14 +403,23 @@ describe("useYnab", () => {
       ynabBudgetId: "b1",
     });
 
-    expect(client.PUT).toHaveBeenCalledWith("/api/ynab/account-mappings/{id}", {
-      params: { path: { id: "m1" } },
-      body: {
-        ynabAccountId: "y2",
-        ynabAccountName: "Savings",
-        ynabBudgetId: "b1",
-      },
-    });
+    expect(client.PUT).toHaveBeenCalledWith(
+      "/api/ynab/account-mappings/{id}",
+      expect.objectContaining({
+        params: { path: { id: "m1" } },
+        body: {
+          ynabAccountId: "y2",
+          ynabAccountName: "Savings",
+          ynabBudgetId: "b1",
+        },
+        middleware: expect.any(Array),
+      }),
+    );
+    await expectRequestOwnership(
+      client.PUT as Mock,
+      "/api/ynab/account-mappings/{id}",
+      "toast",
+    );
     expect(toast.success).toHaveBeenCalledWith("Account mapping updated");
   });
 
@@ -328,14 +434,20 @@ describe("useYnab", () => {
 
     expect(client.DELETE).toHaveBeenCalledWith(
       "/api/ynab/account-mappings/{id}",
-      {
+      expect.objectContaining({
         params: { path: { id: "m1" } },
-      },
+        middleware: expect.any(Array),
+      }),
+    );
+    await expectRequestOwnership(
+      client.DELETE as Mock,
+      "/api/ynab/account-mappings/{id}",
+      "toast",
     );
     expect(toast.success).toHaveBeenCalledWith("Account mapping removed");
   });
 
-  it("useCreateYnabAccountMapping does not toast on failure (surfaced by the global handler)", async () => {
+  it("useCreateYnabAccountMapping does not add a hook toast on failure (owned by the mutation cache)", async () => {
     (client.POST as Mock).mockResolvedValue({ error: "Failed" });
 
     const { result } = renderHook(() => useCreateYnabAccountMapping(), {
@@ -384,7 +496,18 @@ describe("useYnab", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.categories).toEqual(categories);
-    expect(client.GET).toHaveBeenCalledWith("/api/ynab/categories");
+    expect(client.GET).toHaveBeenCalledWith(
+      "/api/ynab/categories",
+      expect.objectContaining({
+        middleware: expect.any(Array),
+        signal: expect.any(AbortSignal),
+      }),
+    );
+    await expectRequestOwnership(
+      client.GET as Mock,
+      "/api/ynab/categories",
+      "local",
+    );
   });
 
   it("useYnabCategories returns empty array on error", async () => {
@@ -416,6 +539,15 @@ describe("useYnab", () => {
     expect(result.current.categories).toEqual(categories);
     expect(client.GET).toHaveBeenCalledWith(
       "/api/receipt-items/distinct-categories",
+      expect.objectContaining({
+        middleware: expect.any(Array),
+        signal: expect.any(AbortSignal),
+      }),
+    );
+    await expectRequestOwnership(
+      client.GET as Mock,
+      "/api/receipt-items/distinct-categories",
+      "local",
     );
   });
 
@@ -443,7 +575,18 @@ describe("useYnab", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.mappings).toEqual(mappings);
-    expect(client.GET).toHaveBeenCalledWith("/api/ynab/category-mappings");
+    expect(client.GET).toHaveBeenCalledWith(
+      "/api/ynab/category-mappings",
+      expect.objectContaining({
+        middleware: expect.any(Array),
+        signal: expect.any(AbortSignal),
+      }),
+    );
+    await expectRequestOwnership(
+      client.GET as Mock,
+      "/api/ynab/category-mappings",
+      "local",
+    );
   });
 
   it("useUnmappedCategories returns unmapped list on success", async () => {
@@ -461,6 +604,15 @@ describe("useYnab", () => {
     expect(result.current.unmappedCategories).toEqual(unmappedCategories);
     expect(client.GET).toHaveBeenCalledWith(
       "/api/ynab/category-mappings/unmapped",
+      expect.objectContaining({
+        middleware: expect.any(Array),
+        signal: expect.any(AbortSignal),
+      }),
+    );
+    await expectRequestOwnership(
+      client.GET as Mock,
+      "/api/ynab/category-mappings/unmapped",
+      "local",
     );
   });
 
@@ -482,15 +634,24 @@ describe("useYnab", () => {
       ynabBudgetId: "budget-1",
     });
 
-    expect(client.POST).toHaveBeenCalledWith("/api/ynab/category-mappings", {
-      body: {
-        receiptsCategory: "Groceries",
-        ynabCategoryId: "cat-1",
-        ynabCategoryName: "Groceries",
-        ynabCategoryGroupName: "Needs",
-        ynabBudgetId: "budget-1",
-      },
-    });
+    expect(client.POST).toHaveBeenCalledWith(
+      "/api/ynab/category-mappings",
+      expect.objectContaining({
+        body: {
+          receiptsCategory: "Groceries",
+          ynabCategoryId: "cat-1",
+          ynabCategoryName: "Groceries",
+          ynabCategoryGroupName: "Needs",
+          ynabBudgetId: "budget-1",
+        },
+        middleware: expect.any(Array),
+      }),
+    );
+    await expectRequestOwnership(
+      client.POST as Mock,
+      "/api/ynab/category-mappings",
+      "toast",
+    );
     expect(toast.success).toHaveBeenCalledWith("Category mapping created");
   });
 
@@ -511,7 +672,7 @@ describe("useYnab", () => {
 
     expect(client.PUT).toHaveBeenCalledWith(
       "/api/ynab/category-mappings/{id}",
-      {
+      expect.objectContaining({
         params: { path: { id: "m-1" } },
         body: {
           ynabCategoryId: "cat-2",
@@ -519,7 +680,13 @@ describe("useYnab", () => {
           ynabCategoryGroupName: "Needs",
           ynabBudgetId: "budget-1",
         },
-      },
+        middleware: expect.any(Array),
+      }),
+    );
+    await expectRequestOwnership(
+      client.PUT as Mock,
+      "/api/ynab/category-mappings/{id}",
+      "toast",
     );
     expect(toast.success).toHaveBeenCalledWith("Category mapping updated");
   });
@@ -535,14 +702,20 @@ describe("useYnab", () => {
 
     expect(client.DELETE).toHaveBeenCalledWith(
       "/api/ynab/category-mappings/{id}",
-      {
+      expect.objectContaining({
         params: { path: { id: "m-1" } },
-      },
+        middleware: expect.any(Array),
+      }),
+    );
+    await expectRequestOwnership(
+      client.DELETE as Mock,
+      "/api/ynab/category-mappings/{id}",
+      "toast",
     );
     expect(toast.success).toHaveBeenCalledWith("Category mapping deleted");
   });
 
-  it("useCreateYnabCategoryMapping does not toast on failure (surfaced by the global handler)", async () => {
+  it("useCreateYnabCategoryMapping does not add a hook toast on failure (owned by the mutation cache)", async () => {
     (client.POST as Mock).mockResolvedValue({ error: "Conflict" });
 
     const { result } = renderHook(() => useCreateYnabCategoryMapping(), {
@@ -614,7 +787,7 @@ describe("useYnab", () => {
     expect(toast.info).toHaveBeenCalledWith("No transactions were synced");
   });
 
-  it("useSyncYnabMemos does not toast on failure (surfaced by the global handler)", async () => {
+  it("useSyncYnabMemos does not add a hook toast on failure (owned by the mutation cache)", async () => {
     (client.POST as Mock).mockResolvedValue({ error: "Server error" });
 
     const { result } = renderHook(() => useSyncYnabMemos(), {
@@ -664,7 +837,7 @@ describe("useYnab", () => {
     );
   });
 
-  it("useSyncYnabMemosBulk does not toast on failure (surfaced by the global handler)", async () => {
+  it("useSyncYnabMemosBulk does not add a hook toast on failure (owned by the mutation cache)", async () => {
     (client.POST as Mock).mockResolvedValue({ error: "Server error" });
 
     const { result } = renderHook(() => useSyncYnabMemosBulk(), {
@@ -705,7 +878,7 @@ describe("useYnab", () => {
     expect(toast.success).toHaveBeenCalledWith("YNAB memo sync resolved");
   });
 
-  it("useResolveYnabMemoSync does not toast on failure (surfaced by the global handler)", async () => {
+  it("useResolveYnabMemoSync does not add a hook toast on failure (owned by the mutation cache)", async () => {
     (client.POST as Mock).mockResolvedValue({ error: "Server error" });
 
     const { result } = renderHook(() => useResolveYnabMemoSync(), {
@@ -847,7 +1020,7 @@ describe("useYnab", () => {
     );
   });
 
-  it("usePushYnabTransactions does not toast on failure (surfaced by the global handler) response", async () => {
+  it("usePushYnabTransactions does not add a hook toast on failure (owned by the mutation cache) response", async () => {
     const pushResult = {
       success: false,
       pushedTransactions: [],
@@ -1124,7 +1297,10 @@ describe("useYnab", () => {
     });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(result.current.error).toEqual({ status: 503, detail: "Sync status unavailable" });
+    expect(result.current.error).toEqual({
+      status: 503,
+      detail: "Sync status unavailable",
+    });
     expect(result.current.statusMap.size).toBe(0);
   });
 
@@ -1171,7 +1347,18 @@ describe("useYnab", () => {
     expect(result.current.staleAccountMappingCount).toBe(2);
     expect(result.current.staleCategoryMappingCount).toBe(3);
     expect(result.current.hasStaleMappings).toBe(true);
-    expect(client.GET).toHaveBeenCalledWith("/api/ynab/stale-mappings", {});
+    expect(client.GET).toHaveBeenCalledWith(
+      "/api/ynab/stale-mappings",
+      expect.objectContaining({
+        middleware: expect.any(Array),
+        signal: expect.any(AbortSignal),
+      }),
+    );
+    await expectRequestOwnership(
+      client.GET as Mock,
+      "/api/ynab/stale-mappings",
+      "local",
+    );
   });
 
   it("useStaleMappings returns hasStaleMappings false when no stale mappings", async () => {
@@ -1220,11 +1407,19 @@ describe("useYnab", () => {
 
     await result.current.mutateAsync();
 
-    expect(client.DELETE).toHaveBeenCalledWith("/api/ynab/stale-mappings", {});
+    expect(client.DELETE).toHaveBeenCalledWith(
+      "/api/ynab/stale-mappings",
+      expect.objectContaining({ middleware: expect.any(Array) }),
+    );
+    await expectRequestOwnership(
+      client.DELETE as Mock,
+      "/api/ynab/stale-mappings",
+      "toast",
+    );
     expect(toast.success).toHaveBeenCalledWith("Cleared 5 stale mapping(s)");
   });
 
-  it("useClearStaleMappings does not toast on failure (surfaced by the global handler)", async () => {
+  it("useClearStaleMappings does not add a hook toast on failure (owned by the mutation cache)", async () => {
     (client.DELETE as Mock).mockResolvedValue({
       data: undefined,
       error: "Server error",
@@ -1257,7 +1452,18 @@ describe("useYnab", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.rateLimitStatus).toEqual(rateLimitData);
-    expect(client.GET).toHaveBeenCalledWith("/api/ynab/rate-limit-status", {});
+    expect(client.GET).toHaveBeenCalledWith(
+      "/api/ynab/rate-limit-status",
+      expect.objectContaining({
+        middleware: expect.any(Array),
+        signal: expect.any(AbortSignal),
+      }),
+    );
+    await expectRequestOwnership(
+      client.GET as Mock,
+      "/api/ynab/rate-limit-status",
+      "local",
+    );
   });
 
   it("useYnabRateLimitStatus returns null when data is undefined", async () => {
@@ -1307,7 +1513,10 @@ describe("useYnab", () => {
     expect(result.current.data).toEqual(response);
     expect(client.GET).toHaveBeenCalledWith(
       "/api/ynab/receipts/{receiptId}/split-comparison",
-      { middleware: expect.any(Array), params: { path: { receiptId: "receipt-1" } } },
+      {
+        middleware: expect.any(Array),
+        params: { path: { receiptId: "receipt-1" } },
+      },
     );
   });
 
