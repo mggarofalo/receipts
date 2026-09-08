@@ -150,8 +150,15 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       let ids: string[];
       try {
         assertSessionCurrent(sessionVersion);
-        ({ ids } = await fetchAllReceiptIds());
+        const receiptPage = await fetchAllReceiptIds();
+        ids = receiptPage.ids;
         assertSessionCurrent(sessionVersion);
+        if (ids.length !== receiptPage.total) {
+          toast.error(
+            `Only ${ids.length.toLocaleString()} of ${receiptPage.total.toLocaleString()} receipts could be loaded. No receipts were pushed.`,
+          );
+          return;
+        }
       } catch (error) {
         if (isAbortError(error)) return;
         toast.error("Failed to load receipts for YNAB sync");

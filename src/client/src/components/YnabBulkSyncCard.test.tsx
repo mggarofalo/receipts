@@ -282,7 +282,7 @@ describe("YnabBulkSyncCard", () => {
     );
   });
 
-  it("shows truncation warning when receipt IDs are truncated", async () => {
+  it("shows the count mismatch and blocks bulk writes when receipt IDs are truncated", async () => {
     const { useAllReceiptIds } = await import("@/hooks/useYnab");
     vi.mocked(useAllReceiptIds).mockReturnValue(
       mockQueryResult({
@@ -296,15 +296,20 @@ describe("YnabBulkSyncCard", () => {
     renderWithProviders(<YnabBulkSyncCard />);
 
     expect(
-      screen.getByText(/Only 500 of 750 receipts could be loaded/),
+      screen.getByText(/Loaded 500 receipt IDs, but the server reported 750 receipts/),
     ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Push All to YNAB" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Sync All Memos" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeEnabled();
+    expect(mockBulkPushMutate).not.toHaveBeenCalled();
+    expect(mockBulkMemoSyncMutate).not.toHaveBeenCalled();
   });
 
   it("does not show truncation warning when all receipts loaded", () => {
     renderWithProviders(<YnabBulkSyncCard />);
 
     expect(
-      screen.queryByText(/receipts could be loaded/),
+      screen.queryByRole("alert"),
     ).not.toBeInTheDocument();
   });
 
