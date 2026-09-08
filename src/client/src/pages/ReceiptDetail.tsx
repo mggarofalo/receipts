@@ -8,6 +8,7 @@ import {
   useReceiptYnabSyncStatuses,
   useSelectedYnabBudget,
   useYnabConnectionStatus,
+  type ReceiptYnabSyncStatusValue,
 } from "@/hooks/useYnab";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { parseProblemDetails, extractFieldErrors } from "@/lib/problem-details";
@@ -33,6 +34,19 @@ import { RequestFailure } from "@/components/RequestFailure";
 import { YnabReceiptCard } from "@/components/YnabReceiptCard";
 import { ReconcileSheet } from "@/components/ReconcileSheet";
 import { Icon, PageHead, YnabChip } from "@/components/primitives";
+
+function ynabStatusLabel(status: ReceiptYnabSyncStatusValue): string {
+  switch (status) {
+    case "notSynced":
+      return "Not Synced";
+    case "pending":
+      return "Pending";
+    case "synced":
+      return "Synced";
+    case "failed":
+      return "Failed";
+  }
+}
 
 function ReceiptDetail() {
   usePageTitle("Receipt Detail");
@@ -119,11 +133,11 @@ function ReceiptDetail() {
 
   const yChip =
     ynabUnavailable || ynabStatusError ? "unavailable" : ynabStatusLoading ? "loading" :
-    persistedYnabStatus === "Synced"
+    persistedYnabStatus === "synced"
       ? "synced"
-      : persistedYnabStatus === "Pending"
+      : persistedYnabStatus === "pending"
         ? "pending"
-        : persistedYnabStatus === "Failed"
+        : persistedYnabStatus === "failed"
           ? "error"
           : "none";
 
@@ -152,7 +166,7 @@ function ReceiptDetail() {
               >
                 <Icon.Edit /> Edit
               </button>
-              {(ynabReady || ynabUnavailable) && <YnabChip status={yChip} title={ynabStatusError && persistedYnabStatus ? `Last known: ${persistedYnabStatus}` : undefined} />}
+              {(ynabReady || ynabUnavailable) && <YnabChip status={yChip} title={ynabStatusError && persistedYnabStatus ? `Last known: ${ynabStatusLabel(persistedYnabStatus)}` : undefined} />}
             </>
           )
         }

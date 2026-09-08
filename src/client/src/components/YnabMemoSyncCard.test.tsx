@@ -174,7 +174,7 @@ describe("YnabMemoSyncCard", () => {
         results: [
           {
             localTransactionId: "tx-1",
-            outcome: "Synced",
+            outcome: "synced",
             error: null,
             ambiguousCandidates: null,
           },
@@ -215,7 +215,7 @@ describe("YnabMemoSyncCard", () => {
             {
               localTransactionId: "local-1",
               receiptId: "receipt-1",
-              outcome: "Ambiguous",
+              outcome: "ambiguous",
               error: reason,
               ambiguousCandidates: candidates,
             },

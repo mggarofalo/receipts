@@ -367,7 +367,7 @@ describe("ReceiptDetail", () => {
     // this the chip self-renders null on "none" and the assertion below
     // would be vacuous, hiding any regression to the new gate.
     vi.mocked(useReceiptYnabSyncStatuses).mockReturnValue({
-      statusMap: new Map([["r1", "Synced"]]),
+      statusMap: new Map([["r1", "synced"]]),
       isLoading: false,
     } as ReturnType<typeof useReceiptYnabSyncStatuses>);
 

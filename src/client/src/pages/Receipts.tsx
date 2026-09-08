@@ -45,6 +45,7 @@ import { Info } from "lucide-react";
 import {
   useReceiptYnabSyncStatuses,
   useBulkPushYnabTransactions,
+  type ReceiptYnabSyncStatusValue,
 } from "@/hooks/useYnab";
 import { BulkActionsBar } from "@/components/BulkActionsBar";
 import { useTripByReceiptId } from "@/hooks/useTrips";
@@ -95,19 +96,38 @@ const HIGHLIGHT_PARAMS = [
   "location",
 ] as const;
 
-function syncStatusToChip(status: string | undefined | null): YnabStatus {
+function syncStatusToChip(
+  status: ReceiptYnabSyncStatusValue | undefined,
+): YnabStatus {
   switch (status) {
-    case "Synced":
-    case "AlreadySynced":
+    case "synced":
       return "synced";
-    case "Pending":
+    case "pending":
       return "pending";
-    case "Failed":
-    case "Error":
+    case "failed":
       return "error";
     default:
       return "none";
   }
+}
+
+function syncStatusLabel(status: ReceiptYnabSyncStatusValue): string {
+  switch (status) {
+    case "notSynced":
+      return "Not Synced";
+    case "pending":
+      return "Pending";
+    case "synced":
+      return "Synced";
+    case "failed":
+      return "Failed";
+  }
+}
+
+function lastKnownSyncStatusTitle(
+  status: ReceiptYnabSyncStatusValue | undefined,
+): string | undefined {
+  return status ? `Last known: ${syncStatusLabel(status)}` : undefined;
 }
 
 function ReceiptInlineDetails({
@@ -117,7 +137,7 @@ function ReceiptInlineDetails({
   ynabLoading,
 }: {
   receipt: ReceiptListItem;
-  ynabStatus: string | undefined;
+  ynabStatus: ReceiptYnabSyncStatusValue | undefined;
   ynabUnavailable: boolean;
   ynabLoading: boolean;
 }) {
@@ -264,7 +284,7 @@ function ReceiptInlineDetails({
             {receipt.categorySummary || "Uncategorized"}
           </strong>
           <div className="receipt-inline-pills">
-            <YnabChip status={ynabChipStatus} title={ynabUnavailable && ynabStatus ? `Last known: ${ynabStatus}` : undefined} />
+            <YnabChip status={ynabChipStatus} title={ynabUnavailable ? lastKnownSyncStatusTitle(ynabStatus) : undefined} />
             <span className="sr-only">
               YNAB: {ynabChipStatus === "none" ? "not synced" : ynabChipStatus}
             </span>
@@ -815,7 +835,7 @@ function Receipts() {
                             </span>
                             <YnabChip
                               status={syncStatusError ? "unavailable" : syncStatusLoading ? "loading" : syncStatusToChip(syncStatusMap.get(receipt.id))}
-                              title={syncStatusError && syncStatusMap.get(receipt.id) ? `Last known: ${syncStatusMap.get(receipt.id)}` : undefined}
+                              title={syncStatusError ? lastKnownSyncStatusTitle(syncStatusMap.get(receipt.id)) : undefined}
                             />
                           </div>
                         </td>

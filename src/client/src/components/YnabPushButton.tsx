@@ -34,12 +34,12 @@ export function YnabPushButton({
   // Otherwise fall back to the status fetched on page load.
   const effectiveStatus: ReceiptYnabSyncStatusValue | undefined =
     mutationSucceeded
-      ? "Synced"
+      ? "synced"
       : mutationFailed
-        ? "Failed"
+        ? "failed"
         : persistedSyncStatus;
 
-  const isSynced = effectiveStatus === "Synced";
+  const isSynced = effectiveStatus === "synced";
 
   return (
     <div className="space-y-3">

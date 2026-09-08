@@ -11,13 +11,10 @@ public static class OpenApiConfiguration
 	{
 		services.AddOpenApi(options =>
 		{
-			// The built-in ASP.NET Core OpenAPI generator emits enum schemas using the
-			// raw C# member names (PascalCase). The API is configured to serialize enum
-			// values using JsonNamingPolicy.CamelCase (see ApplicationConfiguration), so
-			// the wire format is camelCase. Without this transformer, the generated
-			// openapi/generated/API.json drifts from openapi/spec.yaml and the runtime
-			// wire format. Rewrite every enum value to camelCase so the generated spec
-			// faithfully reflects the runtime.
+			// The built-in ASP.NET Core OpenAPI generator emits enum schemas using raw C#
+			// member names. Runtime serialization uses the scoped generated-DTO metadata
+			// policy in ApplicationConfiguration. Rewrite schema values to the same
+			// camelCase contract; schema agreement alone does not validate response bytes.
 			options.AddSchemaTransformer((schema, context, cancellationToken) =>
 			{
 				if (schema.Enum is { Count: > 0 })

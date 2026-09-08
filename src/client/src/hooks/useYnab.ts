@@ -5,10 +5,10 @@ import { useSessionMutation } from "@/hooks/useSessionMutation";
 import { localErrorPolicy } from "@/lib/request-error-policy";
 import { parseProblemDetails } from "@/lib/problem-details";
 import client from "@/lib/api-client";
+import type { components } from "@/generated/api";
 import { toast } from "sonner";
-// Some schemas exceed TypeScript's type-resolution depth when accessed via
-// components["schemas"] due to the large union of 150+ schemas.  We define
-// them inline (matching the generated api.d.ts) so property access is sound.
+// A few unrelated schemas still use narrow local projections where the
+// generated graph exceeds TypeScript's type-resolution depth.
 
 type YnabConnectionStatusResponse = {
   isConfigured: boolean;
@@ -402,36 +402,11 @@ export function useDeleteYnabCategoryMapping() {
 }
 
 export type YnabMemoSyncOutcome =
-  | "Synced"
-  | "AlreadySynced"
-  | "NoMatch"
-  | "Ambiguous"
-  | "CurrencySkipped"
-  | "ReconciledSkipped"
-  | "Failed";
-
-export type YnabTransactionCandidateDto = {
-  id: string;
-  date: string;
-  amount: number;
-  memo?: null | string;
-  payeeName?: null | string;
-  accountId: string;
-};
-
-export type YnabMemoSyncResult = {
-  localTransactionId: string;
-  receiptId: string;
-  outcome: YnabMemoSyncOutcome;
-  ynabTransactionId?: null | string;
-  error?: null | string;
-  ambiguousCandidates?: null | YnabTransactionCandidateDto[];
-};
-
-type YnabMemoSyncResponse = {
-  results: YnabMemoSyncResult[];
-};
-
+  components["schemas"]["YnabMemoSyncOutcome"];
+export type YnabTransactionCandidateDto =
+  components["schemas"]["YnabTransactionCandidate"];
+export type YnabMemoSyncResult =
+  components["schemas"]["YnabMemoSyncResultItem"];
 type PushedTransactionInfo = {
   localTransactionId: string;
   ynabTransactionId: string;
@@ -461,7 +436,7 @@ export function useSyncYnabMemos() {
         body: { receiptId },
       });
       if (error) throw error;
-      return data as unknown as YnabMemoSyncResponse;
+      return data;
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["ynab", "sync-status"] });
@@ -469,9 +444,7 @@ export function useSyncYnabMemos() {
         queryKey: ["ynab", "receipt-sync-statuses"],
       });
       queryClient.invalidateQueries({ queryKey: ["ynab", "split-comparison"] });
-      const synced = data?.results?.filter(
-        (r) => r.outcome === "Synced",
-      ).length;
+      const synced = data?.results?.filter((r) => r.outcome === "synced").length;
       if (synced && synced > 0) {
         toast.success(`Synced ${synced} transaction memo(s) to YNAB`);
       } else {
@@ -489,16 +462,14 @@ export function useSyncYnabMemosBulk() {
         body: { receiptIds },
       });
       if (error) throw error;
-      return data as unknown as YnabMemoSyncResponse;
+      return data;
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["ynab", "sync-status"] });
       queryClient.invalidateQueries({
         queryKey: ["ynab", "receipt-sync-statuses"],
       });
-      const synced = data?.results?.filter(
-        (r) => r.outcome === "Synced",
-      ).length;
+      const synced = data?.results?.filter((r) => r.outcome === "synced").length;
       toast.success(`Synced ${synced ?? 0} transaction memo(s) to YNAB`);
     },
   });
@@ -533,17 +504,17 @@ export function useMemoSyncSummary(results: YnabMemoSyncResult[] | undefined) {
   return useMemo(() => {
     if (!results) return null;
     return {
-      synced: results.filter((r) => r.outcome === "Synced").length,
-      alreadySynced: results.filter((r) => r.outcome === "AlreadySynced")
+      synced: results.filter((r) => r.outcome === "synced").length,
+      alreadySynced: results.filter((r) => r.outcome === "alreadySynced")
         .length,
-      noMatch: results.filter((r) => r.outcome === "NoMatch").length,
-      ambiguous: results.filter((r) => r.outcome === "Ambiguous").length,
-      currencySkipped: results.filter((r) => r.outcome === "CurrencySkipped")
+      noMatch: results.filter((r) => r.outcome === "noMatch").length,
+      ambiguous: results.filter((r) => r.outcome === "ambiguous").length,
+      currencySkipped: results.filter((r) => r.outcome === "currencySkipped")
         .length,
       reconciledSkipped: results.filter(
-        (r) => r.outcome === "ReconciledSkipped",
+        (r) => r.outcome === "reconciledSkipped",
       ).length,
-      failed: results.filter((r) => r.outcome === "Failed").length,
+      failed: results.filter((r) => r.outcome === "failed").length,
       total: results.length,
     };
   }, [results]);
@@ -729,18 +700,11 @@ export function useAllReceiptIds(enabled = true) {
 }
 
 export type ReceiptYnabSyncStatusValue =
-  | "NotSynced"
-  | "Pending"
-  | "Synced"
-  | "Failed";
-export type ReceiptYnabSyncStatus = {
-  receiptId: string;
-  syncStatus: ReceiptYnabSyncStatusValue;
-};
-
-type ReceiptYnabSyncStatusListResponse = {
-  data: ReceiptYnabSyncStatus[];
-};
+  components["schemas"]["ReceiptYnabSyncStatusValue"];
+export type ReceiptYnabSyncStatus =
+  components["schemas"]["ReceiptYnabSyncStatus"];
+type ReceiptYnabSyncStatusListResponse =
+  components["schemas"]["ReceiptYnabSyncStatusListResponse"];
 
 export function useReceiptYnabSyncStatuses(
   receiptIds: string[],
@@ -751,15 +715,12 @@ export function useReceiptYnabSyncStatuses(
     queryKey: ["ynab", "receipt-sync-statuses", receiptIds],
     queryFn: async (): Promise<ReceiptYnabSyncStatusListResponse> => {
       if (receiptIds.length === 0) return { data: [] };
-      const res = await client.GET(
-        "/api/ynab/receipt-sync-statuses" as "/api/ynab/budgets",
-        {
-          ...localErrorPolicy.request,
-          params: { query: { receiptIds } } as never,
-        },
-      );
-      if (res.error) throw res.error;
-      return res.data as unknown as ReceiptYnabSyncStatusListResponse;
+      const res = await client.GET("/api/ynab/receipt-sync-statuses", {
+        ...localErrorPolicy.request,
+        params: { query: { receiptIds } },
+      });
+      if ("error" in res) throw res.error;
+      return res.data;
     },
     enabled: enabled && receiptIds.length > 0,
     retry: false,
@@ -787,9 +748,9 @@ export function useYnabSyncStatus(transactionId: string | null) {
           ...localErrorPolicy.request,
           params: {
             path: { transactionId },
-            query: { syncType: "TransactionPush" as const },
+            query: { syncType: "transactionPush" },
           },
-        } as never,
+        },
       );
       if (parseProblemDetails(error)?.status === 404) return null;
       if (error) throw error;

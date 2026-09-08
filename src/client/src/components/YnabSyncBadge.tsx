@@ -6,10 +6,10 @@ const STATUS_CONFIG: Record<
   ReceiptYnabSyncStatusValue,
   { label: string; variant: "default" | "secondary" | "destructive" | "outline"; icon: typeof CheckCircle }
 > = {
-  Synced: { label: "Synced", variant: "default", icon: CheckCircle },
-  Pending: { label: "Pending", variant: "secondary", icon: Clock },
-  Failed: { label: "Failed", variant: "destructive", icon: XCircle },
-  NotSynced: { label: "Not Synced", variant: "outline", icon: Minus },
+  synced: { label: "Synced", variant: "default", icon: CheckCircle },
+  pending: { label: "Pending", variant: "secondary", icon: Clock },
+  failed: { label: "Failed", variant: "destructive", icon: XCircle },
+  notSynced: { label: "Not Synced", variant: "outline", icon: Minus },
 };
 
 interface YnabSyncBadgeProps {

@@ -18,7 +18,7 @@ const server = setupServer(
           { status: 503, detail: "Sync status unavailable" },
           { status: 503 },
         )
-      : HttpResponse.json({ data: [{ receiptId: id, syncStatus: "Synced" }] }),
+      : HttpResponse.json({ data: [{ receiptId: id, syncStatus: "synced" }] }),
   ),
   http.get("*/api/ynab/sync-status/:id", () =>
     HttpResponse.json(
@@ -57,7 +57,7 @@ it("retains the last successful receipt sync status and exposes a failed refetch
   const { result } = renderHook(() => useReceiptYnabSyncStatuses([id]), {
     wrapper,
   });
-  await waitFor(() => expect(result.current.statusMap.get(id)).toBe("Synced"));
+  await waitFor(() => expect(result.current.statusMap.get(id)).toBe("synced"));
   failed = true;
   await act(async () => {
     await client.invalidateQueries({
@@ -65,7 +65,7 @@ it("retains the last successful receipt sync status and exposes a failed refetch
     });
   });
   expect(result.current.isError).toBe(true);
-  expect(result.current.statusMap.get(id)).toBe("Synced");
+  expect(result.current.statusMap.get(id)).toBe("synced");
 });
 
 it("does not turn transaction sync503 into a successful no-record result", async () => {

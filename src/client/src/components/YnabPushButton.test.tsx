@@ -58,7 +58,7 @@ describe("YnabPushButton", () => {
       <YnabPushButton
         receiptId="r1"
         hasTransactions={true}
-        persistedSyncStatus="Synced"
+        persistedSyncStatus="synced"
       />,
     );
 
@@ -73,7 +73,7 @@ describe("YnabPushButton", () => {
       <YnabPushButton
         receiptId="r1"
         hasTransactions={true}
-        persistedSyncStatus="Failed"
+        persistedSyncStatus="failed"
       />,
     );
 
@@ -86,7 +86,7 @@ describe("YnabPushButton", () => {
       <YnabPushButton
         receiptId="r1"
         hasTransactions={true}
-        persistedSyncStatus="NotSynced"
+        persistedSyncStatus="notSynced"
       />,
     );
 
@@ -121,7 +121,7 @@ describe("YnabPushButton", () => {
       <YnabPushButton
         receiptId="r1"
         hasTransactions={true}
-        persistedSyncStatus="NotSynced"
+        persistedSyncStatus="notSynced"
       />,
     );
 
@@ -152,7 +152,7 @@ describe("YnabPushButton", () => {
       <YnabPushButton
         receiptId="r1"
         hasTransactions={true}
-        persistedSyncStatus="Synced"
+        persistedSyncStatus="synced"
       />,
     );
 

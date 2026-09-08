@@ -293,7 +293,7 @@ it.each(["connection", "budget"] as const)(
             {
               localTransactionId: "local-1",
               receiptId,
-              outcome: "Ambiguous",
+              outcome: "ambiguous",
               ambiguousCandidates: [
                 {
                   id: "remote-1",
@@ -375,7 +375,7 @@ function configuredYnabStatuses(
     http.get("*/api/ynab/receipt-sync-statuses", async () => {
       await beforeResponse();
       return status() === 200
-        ? HttpResponse.json({ data: [{ receiptId, syncStatus: "Synced" }] })
+        ? HttpResponse.json({ data: [{ receiptId, syncStatus: "synced" }] })
         : HttpResponse.json(
             { status: status(), detail: "Sync unavailable" },
             { status: status() },
@@ -523,7 +523,7 @@ it("does not start an automatic memo resync when prerequisites fail while an aut
           {
             localTransactionId: "local-1",
             receiptId,
-            outcome: "Ambiguous",
+            outcome: "ambiguous",
             ambiguousCandidates: [
               {
                 id: "remote-1",

@@ -570,7 +570,7 @@ describe("useYnab", () => {
         {
           localTransactionId: "tx-1",
           receiptId: "r-1",
-          outcome: "Synced",
+          outcome: "synced",
           ynabTransactionId: "yt-1",
         },
       ],
@@ -597,7 +597,7 @@ describe("useYnab", () => {
   it("useSyncYnabMemos shows info toast when no transactions synced", async () => {
     const syncResults = {
       results: [
-        { localTransactionId: "tx-1", receiptId: "r-1", outcome: "NoMatch" },
+        { localTransactionId: "tx-1", receiptId: "r-1", outcome: "noMatch" },
       ],
     };
     (client.POST as Mock).mockResolvedValue({
@@ -634,13 +634,13 @@ describe("useYnab", () => {
         {
           localTransactionId: "tx-1",
           receiptId: "r-1",
-          outcome: "Synced",
+          outcome: "synced",
           ynabTransactionId: "yt-1",
         },
         {
           localTransactionId: "tx-2",
           receiptId: "r-2",
-          outcome: "Synced",
+          outcome: "synced",
           ynabTransactionId: "yt-2",
         },
       ],
@@ -682,7 +682,7 @@ describe("useYnab", () => {
     const resolved = {
       localTransactionId: "tx-1",
       receiptId: "r-1",
-      outcome: "Synced",
+      outcome: "synced",
       ynabTransactionId: "yt-1",
     };
     (client.POST as Mock).mockResolvedValue({
@@ -729,30 +729,30 @@ describe("useYnab", () => {
       {
         localTransactionId: "tx-1",
         receiptId: "r-1",
-        outcome: "Synced" as const,
+        outcome: "synced" as const,
         ynabTransactionId: "yt-1",
       },
       {
         localTransactionId: "tx-2",
         receiptId: "r-1",
-        outcome: "AlreadySynced" as const,
+        outcome: "alreadySynced" as const,
         ynabTransactionId: "yt-2",
       },
       {
         localTransactionId: "tx-3",
         receiptId: "r-1",
-        outcome: "NoMatch" as const,
+        outcome: "noMatch" as const,
       },
       {
         localTransactionId: "tx-4",
         receiptId: "r-1",
-        outcome: "Ambiguous" as const,
+        outcome: "ambiguous" as const,
         ambiguousCandidates: [],
       },
       {
         localTransactionId: "tx-5",
         receiptId: "r-1",
-        outcome: "Failed" as const,
+        outcome: "failed" as const,
         error: "err",
       },
     ];
@@ -778,14 +778,14 @@ describe("useYnab", () => {
       {
         localTransactionId: "tx-1",
         receiptId: "r-1",
-        outcome: "ReconciledSkipped" as const,
+        outcome: "reconciledSkipped" as const,
         ynabTransactionId: "yt-1",
         error: "reconciled",
       },
       {
         localTransactionId: "tx-2",
         receiptId: "r-1",
-        outcome: "Synced" as const,
+        outcome: "synced" as const,
         ynabTransactionId: "yt-2",
       },
     ];
@@ -1088,14 +1088,14 @@ describe("useYnab", () => {
   it("useReceiptYnabSyncStatuses returns status map on success", async () => {
     const statuses = {
       data: [
-        { receiptId: "r1", syncStatus: "Synced" },
-        { receiptId: "r2", syncStatus: "Failed" },
-        { receiptId: "r3", syncStatus: "NotSynced" },
+        { receiptId: "r1", syncStatus: "synced" },
+        { receiptId: "r2", syncStatus: "failed" },
+        { receiptId: "r3", syncStatus: "notSynced" },
       ],
     };
     (client.GET as Mock).mockResolvedValue({
       data: statuses,
-      error: undefined,
+      response: Response.json(statuses),
     });
 
     const { result } = renderHook(
@@ -1104,9 +1104,9 @@ describe("useYnab", () => {
     );
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.statusMap.get("r1")).toBe("Synced");
-    expect(result.current.statusMap.get("r2")).toBe("Failed");
-    expect(result.current.statusMap.get("r3")).toBe("NotSynced");
+    expect(result.current.statusMap.get("r1")).toBe("synced");
+    expect(result.current.statusMap.get("r2")).toBe("failed");
+    expect(result.current.statusMap.get("r3")).toBe("notSynced");
     expect(client.GET).toHaveBeenCalledWith("/api/ynab/receipt-sync-statuses", {
       middleware: expect.any(Array),
       params: { query: { receiptIds: ["r1", "r2", "r3"] } },

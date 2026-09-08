@@ -7956,6 +7956,7 @@ components:
           type: string
 
     OAuthErrorResponseError:
+      type: string
       enum:
         - invalid_request
         - invalid_client
@@ -7976,6 +7977,7 @@ components:
             - type: "null"
 
     TokenIntrospectionRequestTokenTypeHint:
+      type: string
       enum:
         - accessToken
         - refreshToken
@@ -8013,6 +8015,7 @@ components:
             - type: "null"
 
     TokenRevocationRequestTokenTypeHint:
+      type: string
       enum:
         - accessToken
         - refreshToken
@@ -8336,9 +8339,11 @@ components:
           format: date-time
 
     YnabSyncRecordResponseSyncType:
+      type: string
       enum: [memoUpdate, transactionPush]
 
     YnabSyncRecordResponseSyncStatus:
+      type: string
       enum: [pending, synced, failed]
 
     ReceiptYnabSyncStatus:
@@ -8835,9 +8840,11 @@ components:
           description: Timestamp of the oldest tracked request, null if no requests
 
     YnabMemoSyncOutcome:
+      type: string
       enum: [synced, alreadySynced, noMatch, ambiguous, currencySkipped, reconciledSkipped, failed]
 
     YnabSyncType:
+      type: string
       enum: [memoUpdate, transactionPush]
 
   headers:
