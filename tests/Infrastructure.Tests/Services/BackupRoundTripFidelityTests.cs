@@ -77,12 +77,12 @@ public class BackupRoundTripFidelityTests : IDisposable
 	public async Task RoundTrip_UnderGermanCulture_PreservesDecimalValues()
 	{
 		CultureInfo previousCulture = CultureInfo.CurrentCulture;
-		CultureInfo? previousDefault = CultureInfo.DefaultThreadCurrentCulture;
 		CultureInfo german = CultureInfo.GetCultureInfo("de-DE");
 		try
 		{
+			// CurrentCulture flows across awaits; changing the process default would leak
+			// German formatting into unrelated tests running in parallel (RECEIPTS-980).
 			CultureInfo.CurrentCulture = german;
-			CultureInfo.DefaultThreadCurrentCulture = german;
 
 			Guid accountId = Guid.NewGuid();
 			Guid receiptId = Guid.NewGuid();
@@ -158,7 +158,6 @@ public class BackupRoundTripFidelityTests : IDisposable
 		finally
 		{
 			CultureInfo.CurrentCulture = previousCulture;
-			CultureInfo.DefaultThreadCurrentCulture = previousDefault;
 		}
 	}
 

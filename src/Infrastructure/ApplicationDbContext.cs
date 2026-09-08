@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Application.Interfaces.Services;
 using Common;
@@ -110,17 +111,25 @@ public partial class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 				.Property(e => e.Embedding)
 				.HasColumnType(null)
 				.HasConversion(
-					v => string.Join(';', v.ToArray()),
-					v => new Pgvector.Vector(v.Split(';').Select(float.Parse).ToArray()));
+					v => SerializeVector(v),
+					v => DeserializeVector(v));
 
 			modelBuilder.Entity<NormalizedDescriptionEntity>()
 				.Property(e => e.Embedding)
 				.HasColumnType(null)
 				.HasConversion(
-					v => v == null ? null : string.Join(';', v.ToArray()),
-					v => string.IsNullOrEmpty(v) ? null : new Pgvector.Vector(v.Split(';').Select(float.Parse).ToArray()));
+					v => v == null ? null : SerializeVector(v),
+					v => string.IsNullOrEmpty(v) ? null : DeserializeVector(v));
 		}
 	}
+
+	private static string SerializeVector(Pgvector.Vector vector) =>
+		string.Join(';', vector.ToArray().Select(value => value.ToString("R", CultureInfo.InvariantCulture)));
+
+	private static Pgvector.Vector DeserializeVector(string value) =>
+		new(value.Split(';')
+			.Select(component => float.Parse(component, NumberStyles.Float, CultureInfo.InvariantCulture))
+			.ToArray());
 
 	// Builds an audit entry for an operation whose MEANING cannot be recovered from the row changes
 	// CollectAuditEntries produces on its own (RECEIPTS-890). A normalized-description merge, for
