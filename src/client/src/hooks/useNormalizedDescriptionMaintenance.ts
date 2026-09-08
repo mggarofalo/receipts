@@ -3,6 +3,8 @@ import { useSessionMutation } from "@/hooks/useSessionMutation";
 import client from "@/lib/api-client";
 import { parseProblemDetails, toApiError } from "@/lib/problem-details";
 import { toast } from "sonner";
+import { repairDomainChange } from "@/lib/query-invalidation";
+import { getSessionVersion } from "@/lib/auth";
 
 export const requeuePreviewQueryKey = [
   "normalized-descriptions",
@@ -42,10 +44,6 @@ export function useRequeuePendingMutation() {
       return data;
     },
     onSuccess: (data) => {
-      // The queue, the registry and every receipt item's normalized name all just
-      // changed underneath the cache.
-      queryClient.invalidateQueries({ queryKey: ["normalized-descriptions"] });
-      queryClient.invalidateQueries({ queryKey: ["receipt-items"] });
       const deleted = data?.deletedDescriptionCount ?? 0;
       const unlinked = data?.unlinkedItemCount ?? 0;
       if (deleted === 0) {
@@ -67,6 +65,14 @@ export function useRequeuePendingMutation() {
       if (parseProblemDetails(error)?.status === 409) {
         queryClient.invalidateQueries({ queryKey: requeuePreviewQueryKey });
       }
+    },
+    onSettled: () => {
+      const sessionVersion = getSessionVersion();
+      return repairDomainChange(
+        queryClient,
+        "normalized-description",
+        () => getSessionVersion() === sessionVersion,
+      );
     },
   });
 }

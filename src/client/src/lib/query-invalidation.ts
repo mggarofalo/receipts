@@ -21,6 +21,9 @@ export const queryKeys = {
   similarItems: ["similarItems"],
   categoryRecommendations: ["categoryRecommendations"],
   normalizedDescriptions: ["normalized-descriptions"],
+  normalizedDescriptionSettings: ["normalized-descriptions", "settings"],
+  reportDuplicates: ["reports", "duplicates"],
+  acceptedDuplicates: ["reports", "accepted-duplicates"],
   ynab: ["ynab"],
   ynabSplitComparison: ["ynab", "split-comparison"],
   ynabReceiptSyncStatuses: ["ynab", "receipt-sync-statuses"],
@@ -76,6 +79,26 @@ const TEMPLATE_CHANGE_QUERY_KEYS = [
   queryKeys.categoryRecommendations,
 ] as const;
 
+// Curation changes are visible anywhere a canonical label or link is projected.
+// Keep this separate from the monetary ledger union: renaming or reviewing a
+// description does not change receipt totals or dashboard ranges.
+const NORMALIZED_DESCRIPTION_CHANGE_QUERY_KEYS = [
+  queryKeys.normalizedDescriptions,
+  queryKeys.receiptItems,
+  queryKeys.receiptsWithItems,
+  queryKeys.trips,
+  queryKeys.reports,
+  // Link/reject/merge operations can also repoint the server-side template
+  // association. The current template wire shape omits that field, but retaining
+  // this existing repair keeps dependent template evidence ready for contract growth.
+  queryKeys.itemTemplates,
+] as const;
+
+const DUPLICATE_ACCEPTANCE_CHANGE_QUERY_KEYS = [
+  queryKeys.reportDuplicates,
+  queryKeys.acceptedDuplicates,
+] as const;
+
 // Portable restore can change destination settings as well as ledger rows.
 const BACKUP_IMPORT_QUERY_KEYS = [
   ...LEDGER_CHANGE_QUERY_KEYS,
@@ -96,6 +119,9 @@ const DOMAIN_CHANGE_QUERY_KEYS = {
   category: [queryKeys.categories, queryKeys.subcategories],
   subcategory: [queryKeys.subcategories],
   "item-template": TEMPLATE_CHANGE_QUERY_KEYS,
+  "normalized-description": NORMALIZED_DESCRIPTION_CHANGE_QUERY_KEYS,
+  "normalized-description-settings": [queryKeys.normalizedDescriptionSettings],
+  "duplicate-acceptance": DUPLICATE_ACCEPTANCE_CHANGE_QUERY_KEYS,
   "backup-import": BACKUP_IMPORT_QUERY_KEYS,
   "trash-purge": [
     ...LEDGER_CHANGE_QUERY_KEYS,
@@ -112,6 +138,23 @@ export function isDomainChange(value: string): value is DomainChange {
   return Object.hasOwn(DOMAIN_CHANGE_QUERY_KEYS, value);
 }
 
+function projectionKeysForChange(
+  change: DomainChange,
+  operation: "created" | "changed",
+): readonly QueryKey[] {
+  if (change !== "item-template" || operation !== "created") {
+    return DOMAIN_CHANGE_QUERY_KEYS[change];
+  }
+
+  // A new template may not have its embedding yet (RECEIPTS-866). Keep mounted
+  // similarity results until the embedding-completion producer repairs them.
+  return DOMAIN_CHANGE_QUERY_KEYS[change].filter(
+    (queryKey) =>
+      queryKey !== queryKeys.similarItems &&
+      queryKey !== queryKeys.categoryRecommendations,
+  );
+}
+
 /** Refresh mounted projections and mark inactive entries stale in this session. */
 export function invalidateDomainChange(
   queryClient: QueryClient,
@@ -119,18 +162,26 @@ export function invalidateDomainChange(
   operation: "created" | "changed" = "changed",
 ) {
   const seen = new Set<string>();
-  for (const queryKey of DOMAIN_CHANGE_QUERY_KEYS[change]) {
-    // Promotion deliberately retains mounted similarity results until their normal
-    // freshness expires: a new template may not have its embedding yet (RECEIPTS-866).
-    if (change === "item-template" && operation === "created" &&
-      (queryKey === queryKeys.similarItems || queryKey === queryKeys.categoryRecommendations)) {
-      continue;
-    }
+  for (const queryKey of projectionKeysForChange(change, operation)) {
     const identity = JSON.stringify(queryKey);
     if (seen.has(identity)) continue;
     seen.add(identity);
     void queryClient.invalidateQueries({ queryKey, refetchType: "active" });
   }
+}
+
+/** Cancel stale reads before repairing a known domain projection family. */
+export function repairDomainChange(
+  queryClient: QueryClient,
+  change: DomainChange,
+  isCurrent: () => boolean,
+  operation: "created" | "changed" = "changed",
+) {
+  return repairDomainQueries(
+    queryClient,
+    projectionKeysForChange(change, operation),
+    isCurrent,
+  );
 }
 
 // Reconnection repairs unknown missed changes, independent of individual event

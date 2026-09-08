@@ -18,7 +18,7 @@ public class ReportsControllerTests
 	public ReportsControllerTests()
 	{
 		_mediatorMock = new Mock<IMediator>();
-		_controller = new ReportsController(_mediatorMock.Object);
+		_controller = new ReportsController(_mediatorMock.Object, Mock.Of<global::API.Services.IEntityChangeNotifier>());
 	}
 
 	[Fact]

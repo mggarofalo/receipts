@@ -1,4 +1,5 @@
 using API.Generated.Dtos;
+using API.Services;
 using Application.Commands.NormalizedDescription.LinkTemplate;
 using Application.Commands.NormalizedDescription.Merge;
 using Application.Commands.NormalizedDescription.Rename;
@@ -35,7 +36,7 @@ namespace API.Controllers;
 [Route("api/normalized-descriptions")]
 [Produces("application/json")]
 [Authorize(Policy = "RequireAdmin")]
-public class NormalizedDescriptionsController(IMediator mediator) : ControllerBase
+public class NormalizedDescriptionsController(IMediator mediator, IEntityChangeNotifier notifier) : ControllerBase
 {
 	public const string RouteSettings = "settings";
 	public const string RoutePreview = "settings/preview";
@@ -106,6 +107,7 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 
 		UpdateNormalizedDescriptionSettingsCommand command = new(request.AutoAcceptThreshold, request.PendingReviewThreshold);
 		NormalizedDescriptionSettings result = await mediator.Send(command, cancellationToken);
+		await notifier.NotifyAllChanged("normalized-description-settings", "updated");
 		return TypedResults.Ok(ToResponse(result));
 	}
 
@@ -313,6 +315,7 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 			// row the admin thought they were consolidating was still there (RECEIPTS-891).
 			return ApiProblem.NotFound(ex.Message);
 		}
+		await notifier.NotifyAllChanged("normalized-description", "updated");
 
 		return TypedResults.Ok(new MergeNormalizedDescriptionsResponse { ItemsRelinkedCount = itemsRelinkedCount });
 	}
@@ -349,6 +352,9 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 		try
 		{
 			NormalizedDescriptionDetail created = await mediator.Send(command, cancellationToken);
+			// Queue cache repair before response hydration: the command may already have
+			// committed even when mapping the response later fails.
+			await notifier.NotifyAllChanged("normalized-description", "updated");
 			return TypedResults.Ok(ToResponse(created));
 		}
 		catch (KeyNotFoundException)
@@ -394,6 +400,7 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 
 		UpdateNormalizedDescriptionStatusCommand command = new(id, domainStatus);
 		await mediator.Send(command, cancellationToken);
+		await notifier.NotifyAllChanged("normalized-description", "updated");
 		return TypedResults.NoContent();
 	}
 
@@ -414,6 +421,7 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 		try
 		{
 			NormalizedDescriptionDetail renamed = await mediator.Send(command, cancellationToken);
+			await notifier.NotifyAllChanged("normalized-description", "updated");
 			return TypedResults.Ok(ToResponse(renamed));
 		}
 		catch (KeyNotFoundException ex)
@@ -456,6 +464,7 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 		try
 		{
 			LinkTemplateResult result = await mediator.Send(command, cancellationToken);
+			await notifier.NotifyAllChanged("normalized-description", "updated");
 			return TypedResults.Ok(new LinkItemTemplateResponse
 			{
 				Description = ToResponse(result.Survivor),
@@ -518,6 +527,7 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 		{
 			return ApiProblem.Conflict(PendingSetChanged);
 		}
+		await notifier.NotifyAllChanged("normalized-description", "updated");
 
 		return TypedResults.Ok(new RequeuePendingResponse
 		{

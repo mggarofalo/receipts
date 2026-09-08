@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { renderHook } from "@testing-library/react";
+import { renderHook, waitFor } from "@testing-library/react";
 
 const mockConnection = {
   state: "Disconnected",
@@ -28,11 +28,9 @@ vi.mock("@microsoft/signalr", () => ({
   HubConnectionState: { Disconnected: "Disconnected", Connecting: "Connecting", Connected: "Connected", Reconnecting: "Reconnecting", Disconnecting: "Disconnecting" },
 }));
 
-vi.mock("@tanstack/react-query", () => ({
-  useQueryClient: vi.fn().mockReturnValue({
-    invalidateQueries: vi.fn(),
-    cancelQueries: vi.fn().mockResolvedValue(undefined),
-  }),
+vi.mock("@tanstack/react-query", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@tanstack/react-query")>(),
+  useQueryClient: vi.fn(),
 }));
 
 vi.mock("sonner", () => ({
@@ -61,15 +59,31 @@ vi.mock("@/lib/signalr-connection", () => ({
 }));
 
 import { useSignalR } from "./useSignalR";
-import { useQueryClient } from "@tanstack/react-query";
+import { QueryClient, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { bufferToast } from "@/lib/signalr-toast-buffer";
 import { act } from "@testing-library/react";
 import { setConnectionId, getConnectionId } from "@/lib/signalr-connection";
 import { clearTokens, getAccessToken, parseJwtPayload, setTokens } from "@/lib/auth";
 
+let eventClient: QueryClient;
+const eventCacheKeys = [
+  ["receipts"], ["receipts-with-items"], ["trips"], ["receipt-items"],
+  ["transactions"], ["adjustments"], ["reports"], ["cards"], ["transaction-accounts"],
+  ["ynab", "split-comparison"], ["ynab", "receipt-sync-statuses"],
+];
+async function expectEventInvalidation(client: QueryClient, prefix: string[]) {
+  await waitFor(() => expect(client.getQueryState([...prefix, "cached-view"])?.isInvalidated).toBe(true));
+  expect(client.getQueryState(["api-keys", "private"])?.isInvalidated).toBe(false);
+  expect(client.getQueryState(["ynab", "budgets"])?.isInvalidated).toBe(false);
+}
+afterEach(() => eventClient.clear());
 beforeEach(() => {
   vi.clearAllMocks();
+  eventClient = new QueryClient({ defaultOptions: { queries: { gcTime: Infinity } } });
+  vi.spyOn(eventClient, "invalidateQueries");
+  vi.spyOn(eventClient, "cancelQueries");
+  vi.mocked(useQueryClient).mockReturnValue(eventClient);
   clearTokens();
   vi.mocked(getAccessToken).mockImplementation(() => `header.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 }))}.signature`);
   mockConnection.state = "Disconnected";
@@ -89,6 +103,13 @@ async function renderEnabled() {
   // Initial connection catch-up is tested with real projections in recovery.test.
   // Keep these event-specific assertions independent of that earlier repair.
   vi.mocked(vi.mocked(useQueryClient)().invalidateQueries).mockClear();
+  for (const prefix of eventCacheKeys) {
+    const key = [...prefix, "cached-view"];
+    eventClient.setQueryData(key, { cached: true });
+    expect(eventClient.getQueryState(key)?.isInvalidated).toBe(false);
+  }
+  eventClient.setQueryData(["api-keys", "private"], { private: true });
+  eventClient.setQueryData(["ynab", "budgets"], { data: [] });
   return hookReturn;
 }
 
@@ -273,22 +294,13 @@ describe("useSignalR", () => {
       const handler = getOnHandler("EntityChanged");
       expect(handler).toBeDefined();
 
-      act(() => {
+      await act(async () => {
         handler!({ entityType: "receipt", changeType: "created", id: "abc-123", count: 1, userId: "other-user-id", authMethod: "jwt", connectionId: "other-conn" });
       });
 
-      expect(mockQueryClient.invalidateQueries).toHaveBeenCalledWith({
-        queryKey: ["receipts"],
-        refetchType: "active",
-      });
-      expect(mockQueryClient.invalidateQueries).toHaveBeenCalledWith({
-        queryKey: ["receipts-with-items"],
-        refetchType: "active",
-      });
-      expect(mockQueryClient.invalidateQueries).toHaveBeenCalledWith({
-        queryKey: ["trips"],
-        refetchType: "active",
-      });
+      await expectEventInvalidation(mockQueryClient, ["receipts"]);
+      await expectEventInvalidation(mockQueryClient, ["receipts-with-items"]);
+      await expectEventInvalidation(mockQueryClient, ["trips"]);
       for (const queryKey of [
         ["receipt-items"],
         ["transactions"],
@@ -297,10 +309,7 @@ describe("useSignalR", () => {
         ["ynab", "split-comparison"],
         ["ynab", "receipt-sync-statuses"],
       ]) {
-        expect(mockQueryClient.invalidateQueries).toHaveBeenCalledWith({
-          queryKey,
-          refetchType: "active",
-        });
+        await expectEventInvalidation(mockQueryClient, queryKey);
       }
       expect(bufferToast).toHaveBeenCalledWith("receipt", "created", 1, "other-user");
       expect(toast.info).not.toHaveBeenCalled();
@@ -314,18 +323,12 @@ describe("useSignalR", () => {
       const handler = getOnHandler("EntityChanged");
       expect(handler).toBeDefined();
 
-      act(() => {
+      await act(async () => {
         handler!({ entityType: "card", changeType: "updated", id: "abc-123", count: 1, userId: "other-user-id", authMethod: "jwt", connectionId: "other-conn" });
       });
 
-      expect(mockQueryClient.invalidateQueries).toHaveBeenCalledWith({
-        queryKey: ["cards"],
-        refetchType: "active",
-      });
-      expect(mockQueryClient.invalidateQueries).toHaveBeenCalledWith({
-        queryKey: ["transaction-accounts"],
-        refetchType: "active",
-      });
+      await expectEventInvalidation(mockQueryClient, ["cards"]);
+      await expectEventInvalidation(mockQueryClient, ["transaction-accounts"]);
       expect(bufferToast).toHaveBeenCalledWith("card", "updated", 1, "other-user");
       expect(toast.info).not.toHaveBeenCalled();
     });
@@ -338,26 +341,14 @@ describe("useSignalR", () => {
       const handler = getOnHandler("EntityChanged");
       expect(handler).toBeDefined();
 
-      act(() => {
+      await act(async () => {
         handler!({ entityType: "transaction", changeType: "deleted", id: "abc-123", count: 1, userId: "other-user-id", authMethod: "jwt", connectionId: "other-conn" });
       });
 
-      expect(mockQueryClient.invalidateQueries).toHaveBeenCalledWith({
-        queryKey: ["transactions"],
-        refetchType: "active",
-      });
-      expect(mockQueryClient.invalidateQueries).toHaveBeenCalledWith({
-        queryKey: ["receipts-with-items"],
-        refetchType: "active",
-      });
-      expect(mockQueryClient.invalidateQueries).toHaveBeenCalledWith({
-        queryKey: ["trips"],
-        refetchType: "active",
-      });
-      expect(mockQueryClient.invalidateQueries).toHaveBeenCalledWith({
-        queryKey: ["transaction-accounts"],
-        refetchType: "active",
-      });
+      await expectEventInvalidation(mockQueryClient, ["transactions"]);
+      await expectEventInvalidation(mockQueryClient, ["receipts-with-items"]);
+      await expectEventInvalidation(mockQueryClient, ["trips"]);
+      await expectEventInvalidation(mockQueryClient, ["transaction-accounts"]);
       expect(bufferToast).toHaveBeenCalledWith("transaction", "deleted", 1, "other-user");
       expect(toast.info).not.toHaveBeenCalled();
     });
@@ -367,7 +358,7 @@ describe("useSignalR", () => {
       await renderEnabled();
       const handler = getOnHandler("EntityChanged");
 
-      act(() => {
+      await act(async () => {
         handler!({ entityType: "adjustment", changeType: "updated", id: "adj-1", count: 1, userId: "other-user-id", authMethod: "jwt", connectionId: "other-conn" });
       });
 
@@ -380,10 +371,7 @@ describe("useSignalR", () => {
         ["ynab", "split-comparison"],
         ["ynab", "receipt-sync-statuses"],
       ]) {
-        expect(mockQueryClient.invalidateQueries).toHaveBeenCalledWith({
-          queryKey,
-          refetchType: "active",
-        });
+        await expectEventInvalidation(mockQueryClient, queryKey);
       }
     });
 
@@ -423,12 +411,12 @@ describe("useSignalR", () => {
       const handler = getOnHandler("EntityChanged");
       expect(handler).toBeDefined();
 
-      act(() => {
+      await act(async () => {
         handler!({ entityType: "receipt", changeType: "created", id: "abc", count: 1, userId: "current-user-id", authMethod: "jwt", connectionId: "mock-conn-id" });
       });
 
       // Queries still invalidated
-      expect(mockQueryClient.invalidateQueries).toHaveBeenCalled();
+      await expectEventInvalidation(mockQueryClient, ["receipts"]);
       // But no toast
       expect(bufferToast).not.toHaveBeenCalled();
     });

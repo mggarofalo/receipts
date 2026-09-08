@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as signalR from "@microsoft/signalr";
 import { useQueryClient } from "@tanstack/react-query";
-import { invalidateDomainChange, invalidateAfterReconnect, invalidateAfterBackupImport, isDomainChange } from "@/lib/query-invalidation";
+import { invalidateAfterReconnect, invalidateAfterBackupImport, isDomainChange, repairDomainChange } from "@/lib/query-invalidation";
 import { getAccessToken, parseJwtPayload, getSessionVersion, addSessionChangeListener } from "@/lib/auth";
 import { apiUrl } from "@/lib/api-config";
 import { getConnectionAccessToken } from "@/lib/token-refresh";
@@ -36,6 +36,9 @@ const displayNameMap: Record<string, string> = {
   category: "category",
   subcategory: "subcategory",
   "item-template": "item template",
+  "normalized-description": "normalized description",
+  "normalized-description-settings": "normalization settings",
+  "duplicate-acceptance": "duplicate acceptance",
   "backup-import": "backup",
 };
 
@@ -179,11 +182,12 @@ export function useSignalR(enabled: boolean) {
       if (notification.entityType === "backup-import") {
         void invalidateAfterBackupImport(queryClient, isCurrent).catch(() => {});
       } else if (isDomainChange(notification.entityType)) {
-        invalidateDomainChange(
+        void repairDomainChange(
           queryClient,
           notification.entityType,
+          isCurrent,
           notification.changeType === "created" ? "created" : "changed",
-        );
+        ).catch(() => {});
       }
 
       const token = getAccessToken();
