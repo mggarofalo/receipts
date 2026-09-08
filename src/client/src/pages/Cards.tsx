@@ -1,3 +1,4 @@
+import { RequestFailure } from "@/components/RequestFailure";
 import { useState, useMemo, useCallback } from "react";
 import { Link } from "react-router";
 import {
@@ -83,7 +84,8 @@ function Cards() {
   });
   const isActiveParam = statusFilter === "all" ? undefined : statusFilter === "true";
   const { data: cardsData, total: serverTotal, isLoading } = useCards(offset, limit, sortBy, sortDirection, isActiveParam);
-  const { data: accountsData } = useAllAccounts();
+  const accountsQuery = useAllAccounts();
+  const { data: accountsData } = accountsQuery;
   const accountsById = useMemo(() => {
     const map = new Map<string, string>();
     for (const a of (accountsData as { id: string; name: string }[] | undefined) ?? []) {
@@ -276,6 +278,7 @@ function Cards() {
           </>
         }
       />
+      {accountsQuery.isError && <RequestFailure message="Account names are unavailable. Any names shown are last known." retry={() => { void accountsQuery.refetch(); }} isRetrying={accountsQuery.isFetching} />}
       <div className="filter-strip">
         <div style={{ flex: 1, minWidth: 240 }}>
           <FuzzySearchInput

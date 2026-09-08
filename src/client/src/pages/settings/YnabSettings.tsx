@@ -82,7 +82,9 @@ export default function YnabSettings() {
   // Only fetch YNAB data when configured (budgets query succeeded)
   const ynabReady = !budgetsLoading && !budgetsError;
 
-  const { data: receiptsAccounts, isLoading: accountsLoading } = useAllAccounts();
+  const receiptsAccountsQuery = useAllAccounts();
+  const { data: receiptsAccounts, isLoading: accountsLoading } = receiptsAccountsQuery;
+  const receiptAccountsUnavailable = !receiptsAccountsQuery.isSuccess || receiptsAccountsQuery.isFetching;
   const { accounts: ynabAccounts, isLoading: ynabAccountsLoading } = useYnabAccounts(ynabReady);
   const { mappings: accountMappings, isLoading: accountMappingsLoading } = useYnabAccountMappings(ynabReady);
   const createAccountMapping = useCreateYnabAccountMapping();
@@ -144,6 +146,7 @@ export default function YnabSettings() {
   }
 
   function handleYnabAccountChange(receiptsAccountId: string, ynabAccountId: string) {
+    if (receiptAccountsUnavailable || !receiptsAccounts?.some((account) => account.id === receiptsAccountId)) return;
     const existingMapping = accountMappings.find(
       (m) => m.receiptsAccountId === receiptsAccountId,
     );
@@ -343,6 +346,7 @@ export default function YnabSettings() {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {receiptsAccountsQuery.isError && <RequestFailure message="Receipts accounts are unavailable. Any accounts shown are last known." retry={() => { void receiptsAccountsQuery.refetch(); }} isRetrying={receiptsAccountsQuery.isFetching} />}
           {mappingSectionLoading ? (
             <div className="flex items-center gap-2">
               <Spinner className="h-4 w-4" />
@@ -354,7 +358,7 @@ export default function YnabSettings() {
             <p className="text-sm text-muted-foreground">
               Select a budget above to map accounts.
             </p>
-          ) : !receiptsAccounts || receiptsAccounts.length === 0 ? (
+          ) : receiptsAccountsQuery.isError && !receiptsAccounts?.length ? null : !receiptsAccounts || receiptsAccounts.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               No receipts accounts found. Create accounts first.
             </p>
@@ -380,6 +384,7 @@ export default function YnabSettings() {
                         handleYnabAccountChange(account.id!, value)
                       }
                       disabled={
+                        receiptAccountsUnavailable ||
                         createAccountMapping.isPending ||
                         updateAccountMapping.isPending ||
                         deleteAccountMapping.isPending
@@ -389,11 +394,12 @@ export default function YnabSettings() {
                         <SelectValue placeholder="Select a YNAB account" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value={UNMAPPED_VALUE}>
+                        <SelectItem value={UNMAPPED_VALUE} disabled={receiptAccountsUnavailable}>
                           <span className="text-muted-foreground">Not mapped</span>
                         </SelectItem>
                         {ynabAccounts.map((ynabAccount) => (
                           <SelectItem
+                            disabled={receiptAccountsUnavailable}
                             key={ynabAccount.id}
                             value={ynabAccount.id}
                           >
@@ -406,8 +412,8 @@ export default function YnabSettings() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => deleteAccountMapping.mutate(mapping.id)}
-                        disabled={deleteAccountMapping.isPending}
+                        onClick={() => handleYnabAccountChange(account.id!, UNMAPPED_VALUE)}
+                        disabled={receiptAccountsUnavailable || deleteAccountMapping.isPending}
                       >
                         Remove
                       </Button>

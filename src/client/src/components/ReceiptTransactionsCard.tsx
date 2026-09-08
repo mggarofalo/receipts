@@ -1,3 +1,4 @@
+import { RequestFailure } from "@/components/RequestFailure";
 import { useMemo, useState } from "react";
 import {
   useCreateTransaction,
@@ -72,7 +73,8 @@ export function ReceiptTransactionsCard({
   const updateTransaction = useUpdateTransaction();
   const deleteTransactions = useDeleteTransactions();
 
-  const { data: cards } = useAllCards();
+  const cardsQuery = useAllCards();
+  const { data: cards } = cardsQuery;
 
   const cardNameMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -161,6 +163,7 @@ export function ReceiptTransactionsCard({
           </div>
         </CardHeader>
         <CardContent>
+          {cardsQuery.isError && <RequestFailure message="Card names are unavailable. Any names shown are last known." retry={() => { void cardsQuery.refetch(); }} isRetrying={cardsQuery.isFetching} />}
           {transactions.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               No transactions for this receipt.

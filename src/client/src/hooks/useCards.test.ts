@@ -3,7 +3,8 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement, type ReactNode } from "react";
 
-vi.mock("@/lib/api-client", () => ({
+vi.mock("@/lib/api-client", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/api-client")>(),
   default: {
     GET: vi.fn(),
     POST: vi.fn(),
@@ -143,7 +144,8 @@ describe("useCards", () => {
 
     await result.current.mutateAsync(newCard);
 
-    expect(client.POST).toHaveBeenCalledWith("/api/cards", { body: newCard });
+    expect(client.POST).toHaveBeenCalledWith("/api/cards", {
+      middleware: expect.any(Array), body: newCard });
     expect(toast.success).toHaveBeenCalledWith("Card created");
   });
 
@@ -158,6 +160,7 @@ describe("useCards", () => {
     await result.current.mutateAsync(updated);
 
     expect(client.PUT).toHaveBeenCalledWith("/api/cards/{id}", {
+      middleware: expect.any(Array),
       params: { path: { id: "1" } },
       body: updated,
     });
@@ -241,6 +244,7 @@ describe("useCards", () => {
     });
 
     expect(client.POST).toHaveBeenCalledWith("/api/cards/merge", {
+      middleware: expect.any(Array),
       body: {
         targetAccountId: "target",
         sourceCardIds: ["c1", "c2"],
@@ -321,7 +325,7 @@ describe("useCards", () => {
     });
   });
 
-  it("merge mutation does not toast on non-409 failure (surfaced by the global handler)", async () => {
+  it("merge mutation presents non-conflict failure once through its local hook owner", async () => {
     (client.POST as Mock).mockResolvedValue({
       error: { message: "boom" },
       response: { status: 500, ok: false },
@@ -335,9 +339,7 @@ describe("useCards", () => {
       result.current.mutateAsync({ targetAccountId: "t", sourceCardIds: ["c1", "c2"] }),
     ).rejects.toThrow();
 
-    await waitFor(() => {
-      expect(toast.error).not.toHaveBeenCalled();
-    });
+    expect(toast.error).toHaveBeenCalledTimes(1);
   });
 
   // A merge is destructive — it deletes the emptied source accounts — so the one
@@ -461,6 +463,7 @@ describe("useAllCards", () => {
     expect(result.current.data).toHaveLength(600);
     expect(client.GET).toHaveBeenCalledTimes(2);
     expect(client.GET).toHaveBeenLastCalledWith("/api/cards", {
+      middleware: expect.any(Array),
       params: {
         query: {
           offset: 500,
@@ -500,6 +503,8 @@ describe("useMergeCardsPreview", () => {
 
     await waitFor(() => expect(result.current.data).toEqual(PREVIEW));
     expect(client.POST).toHaveBeenCalledWith("/api/cards/merge/preview", {
+      middleware: expect.any(Array),
+      signal: expect.any(AbortSignal),
       body: {
         targetAccountId: "t",
         sourceCardIds: ["c1", "c2"],
@@ -524,6 +529,8 @@ describe("useMergeCardsPreview", () => {
 
     await waitFor(() => expect(result.current.data).toEqual(PREVIEW));
     expect(client.POST).toHaveBeenCalledWith("/api/cards/merge/preview", {
+      middleware: expect.any(Array),
+      signal: expect.any(AbortSignal),
       body: {
         targetAccountId: null,
         sourceCardIds: ["c1"],
@@ -547,9 +554,9 @@ describe("useMergeCardsPreview", () => {
     await waitFor(() => expect(client.POST).not.toHaveBeenCalled());
   });
 
-  it("resolves to undefined on failure rather than toasting over an unsubmitted dialog", async () => {
-    // A preview is speculative: the user has not asked for anything yet, so a failure
-    // must stay quiet. The dialog holds submit, and the merge still validates.
+  it("exposes preview failure to its local owner without toasting over an unsubmitted dialog", async () => {
+    // A failed preview is owned by the dialog. It cannot become accepted data
+    // or emit a toast for an unsubmitted merge.
     (client.POST as Mock).mockResolvedValue({
       data: undefined,
       error: { status: 403 },
@@ -561,11 +568,9 @@ describe("useMergeCardsPreview", () => {
       { wrapper: createWrapper() },
     );
 
-    await waitFor(() => expect(result.current.isFetching).toBe(false));
-    // null, not undefined: React Query treats an undefined result as an error, which
-    // would turn this quiet failure into the noisy one the hook is avoiding.
-    expect(result.current.data).toBeNull();
-    expect(result.current.isError).toBe(false);
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.data).toBeUndefined();
+    expect(result.current.error).toMatchObject({ status: 403 });
     expect(toast.error).not.toHaveBeenCalled();
   });
 });

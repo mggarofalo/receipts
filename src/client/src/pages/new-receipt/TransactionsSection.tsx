@@ -1,3 +1,4 @@
+import { RequestFailure } from "@/components/RequestFailure";
 import { sumAmounts } from "@/lib/receipt-arithmetic";
 import { useMemo, useCallback, useRef, useEffect } from "react";
 import { generateId } from "@/lib/id";
@@ -337,6 +338,9 @@ function TransactionCardName({
   accountId: string;
   cardId: string;
 }) {
-  const { data: cards } = useAccountCards(accountId);
-  return cards?.find((card) => card.id === cardId)?.name ?? cardId;
+  const cardsQuery = useAccountCards(accountId);
+  return <>
+    {cardsQuery.data?.find((card) => card.id === cardId)?.name ?? cardId}
+    {cardsQuery.isError && <RequestFailure message="This account’s card names are unavailable." retry={() => { if (accountId) void cardsQuery.refetch(); }} isRetrying={cardsQuery.isFetching} />}
+  </>;
 }

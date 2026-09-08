@@ -1,9 +1,11 @@
 import { invalidateDomainChange, queryKeys } from "@/lib/query-invalidation";
 import { useMemo } from "react";
 import { useStableQuery } from "@/hooks/useStableQuery";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSessionMutation } from "@/hooks/useSessionMutation";
 import client from "@/lib/api-client";
+import { localErrorPolicy, toastErrorPolicy } from "@/lib/request-error-policy";
+import { handleGlobalError } from "@/lib/global-error-handler";
 import { toApiError } from "@/lib/problem-details";
 import { toast } from "sonner";
 import type { components } from "@/generated/api";
@@ -31,6 +33,7 @@ export function useCards(offset = 0, limit = 50, sortBy?: string | null, sortDir
 /** Fetches the complete card list for pickers and entity lookups. */
 export function useAllCards(isActive?: boolean | null) {
   return useQuery({
+    ...localErrorPolicy.query,
     queryKey: [...queryKeys.cards, "all", isActive ?? undefined],
     queryFn: async ({ signal }) => {
       const pageSize = 500;
@@ -46,6 +49,7 @@ export function useAllCards(isActive?: boolean | null) {
             },
           },
           signal,
+          ...localErrorPolicy.request,
         });
         if (error) throw error;
         return data;
@@ -80,13 +84,14 @@ export function useCard(id: string | null) {
 export function useCreateCard() {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
     mutationFn: async (body: {
       cardCode: string;
       name: string;
       isActive: boolean;
       accountId: string;
     }) => {
-      const { data, error } = await client.POST("/api/cards", { body });
+      const { data, error } = await client.POST("/api/cards", { body, ...toastErrorPolicy.request });
       if (error) throw error;
       return data;
     },
@@ -100,6 +105,7 @@ export function useCreateCard() {
 export function useUpdateCard() {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
     mutationFn: async (body: {
       id: string;
       cardCode: string;
@@ -110,6 +116,7 @@ export function useUpdateCard() {
       const { error } = await client.PUT("/api/cards/{id}", {
         params: { path: { id: body.id } },
         body,
+        ...toastErrorPolicy.request,
       });
       if (error) throw error;
     },
@@ -235,15 +242,12 @@ export interface MergeCardsPreviewInput {
  * line of prose (RECEIPTS-889). Disabled until a target is chosen, because the impact
  * is meaningless without one.
  *
- * Failures resolve to `null` rather than throwing: a preview that cannot be fetched
- * must not toast an error over a dialog the user has not submitted yet. The dialog
- * holds submit while this is unresolved, and the merge itself still validates.
- *
- * `null` and not `undefined` — React Query rejects an undefined query result outright,
- * which would turn a quiet failure into the error state this is avoiding.
+ * The dialog owns preview failures inline. Submission stays disabled until an
+ * accepted preview is available; the merge itself still validates live data.
  */
-export function useMergeCardsPreview(input: MergeCardsPreviewInput | null) {
-  return useQuery({
+export function mergeCardsPreviewQueryOptions(input: MergeCardsPreviewInput | null) {
+  return queryOptions({
+    ...localErrorPolicy.query,
     queryKey: [
       ...queryKeys.cards,
       "mergePreview",
@@ -259,25 +263,33 @@ export function useMergeCardsPreview(input: MergeCardsPreviewInput | null) {
     // before they changed the selection would describe a merge they are not running.
     staleTime: 0,
     retry: false,
-    queryFn: async (): Promise<MergeCardsPreview | null> => {
-      const { data, response } = await client.POST("/api/cards/merge/preview", {
+    queryFn: async ({ signal }): Promise<MergeCardsPreview | null> => {
+      const { data, error, response } = await client.POST("/api/cards/merge/preview", {
+        signal,
+        ...localErrorPolicy.request,
         body: {
           targetAccountId: input!.targetAccountId ?? null,
           sourceCardIds: input!.sourceCardIds,
           ynabMappingWinnerAccountId: input!.ynabMappingWinnerAccountId ?? null,
         },
       });
-      if (!response.ok) return null;
+      if (!response.ok) throw toApiError(response.status, error);
       return data ?? null;
     },
   });
 }
 
+export function useMergeCardsPreview(input: MergeCardsPreviewInput | null) {
+  return useQuery(mergeCardsPreviewQueryOptions(input));
+}
+
 export function useMergeCards() {
   const queryClient = useQueryClient();
   return useSessionMutation<MergeCardsImpact, MergeCardsConflict | unknown, MergeCardsInput>({
+    ...localErrorPolicy.mutation,
     mutationFn: async (input) => {
       const { data, error, response } = await client.POST("/api/cards/merge", {
+        ...localErrorPolicy.request,
         body: {
           targetAccountId: input.targetAccountId,
           sourceCardIds: input.sourceCardIds,
@@ -337,7 +349,7 @@ export function useMergeCards() {
         // Caller handles conflict via onError or by inspecting mutation state.
         return;
       }
-      // Non-conflict failures fall through to the global error handler.
+      handleGlobalError(error);
     },
   });
 }

@@ -76,11 +76,13 @@ it.each(["rename", "discard"] as const)(
       expect(result.current.maintenance).toBe(stable);
       if (operation === "rename")
         expect(transport.PUT).toHaveBeenCalledWith("/api/accounts/{id}", {
+          middleware: expect.any(Array),
           params: { path: { id: "account" } },
           body: { id: "account", name: "Final", isActive: true },
         });
       else
         expect(transport.DELETE).toHaveBeenCalledWith("/api/accounts/{id}", {
+          middleware: expect.any(Array),
           params: { path: { id: "account" } },
         });
     } finally {

@@ -1,3 +1,4 @@
+import { RequestFailure } from "@/components/RequestFailure";
 import { Fragment, useState, useMemo, useCallback } from "react";
 import { Link } from "react-router";
 import {
@@ -64,13 +65,16 @@ const HIGHLIGHT_PARAMS = ["highlight"] as const;
 const getAccountId = (a: AccountRow) => a.id;
 
 function AccountCardsRow({ accountId }: { accountId: string }) {
-  const { data, isLoading } = useAccountCards(accountId);
+  const { data, isLoading, isError, isFetching, refetch } = useAccountCards(accountId);
+  const failure = isError ? <RequestFailure message="This account’s cards are unavailable. Any cards shown are last known." retry={() => { void refetch(); }} isRetrying={isFetching} /> : null;
 
   if (isLoading) {
     return (
       <div className="text-sm text-muted-foreground">Loading cards…</div>
     );
   }
+
+  if (isError && !data?.length) return failure;
 
   if (!data || data.length === 0) {
     return (
@@ -82,6 +86,7 @@ function AccountCardsRow({ accountId }: { accountId: string }) {
 
   return (
     <div className="space-y-1">
+      {failure}
       <div className="text-xs font-medium text-muted-foreground">
         Cards ({data.length})
       </div>
