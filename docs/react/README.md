@@ -22,3 +22,9 @@ The hook loads every account page, offers active accounts/cards for new choices,
 Every submit consumer must call the hook's `validate(values)` before submitting or adding a row. It reads the latest successful scoped cache data, including data received during asynchronous form validation. Rendering an error or filtering dropdown options is not sufficient to enforce the pair. Keep required-card validation in both create and edit forms. Do not silently rewrite user selections from an Effect.
 
 After RECEIPTS-852, the account is selection/display state in these forms. Transaction write requests send `cardId`, amount and date; the server derives account ownership from the card. The shared card-change invalidation contract refreshes both scoped choices and affected transaction views. A zero-card account offers an explanation and a link to the existing card-creation flow; it does not imply that flow automatically preselects the account.
+
+## Receipt picker
+
+`ReceiptPicker` is the receipt-item form's domain-specific paginated combobox. Keep server pagination, debounced Location search, loaded-option date matching and selected-detail hydration in this boundary; the general `Combobox` must remain free of receipt query state. The trigger forwards its native props and ref so `FormControl` can supply its accessible name and validation relationships.
+
+The picker loads only while open. Near-bottom scroll and the explicit load-more button request one page at a time. Search results use keys distinct from unfiltered browse pages, and an unloaded date match is never inferred from the Location-only API. The selected receipt detail is keyed independently and remains available when search changes or the picker closes. Failure owners sit outside command filtering so the typed search cannot hide retry.
