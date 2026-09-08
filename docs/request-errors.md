@@ -43,7 +43,7 @@ The transaction sync-status endpoint's documented 404 means no record and may re
 
 ## Remaining adoption
 
-RECEIPTS-950 now covers receipt/status reads, receipt mutations, optional suggestion families, complete taxonomy and template catalog lookups, and account/card choices described below. Receipt pickers, remaining YNAB lists and diagnostics, and YNAB settings/actions still require complete shared-consumer ownership. Other report reads need explicit classification before claiming that every optional request is local. Suppressing a shared hook requires checking every consumer, so failed requests cannot become silent.
+RECEIPTS-950 now covers receipt/status reads, receipt mutations, optional suggestion families, complete taxonomy and template catalog lookups, account/card choices, and receipt pickers described below. Remaining YNAB lists, diagnostics, settings and actions still require complete shared-consumer ownership. Other report reads need explicit classification before claiming that every optional request is local. Suppressing a shared hook requires checking every consumer, so failed requests cannot become silent.
 
 Backup import/export also use this local policy on the shared refresh/replay transport. Their hooks own transfer feedback while the page retains confirmation and file state. Both retain a five-minute transport deadline; see [Backup & restore](backup-restore.md). Error routes and render boundaries remain available throughout the remaining adoption.
 
@@ -55,7 +55,7 @@ Debounced suggestion hooks expose `isDebouncing` alongside their stable query fi
 
 The query identities, debounce delays, location scoping and suggestion freshness remain unchanged. Query cancellation is passed through to the shared transport, including location lookup. Template history keeps its existing failure/retry and widening/focus behavior. Promotion's known template-created similarity exception remains intact.
 
-Receipt pickers and remaining YNAB settings/actions still require their complete shared-consumer owners. Automatic taxonomy creation has the separate ownership rules below.
+Remaining YNAB settings/actions still require their complete shared-consumer owners. Automatic taxonomy creation has the separate ownership rules below.
 
 ## Taxonomy lookup ownership
 
@@ -73,7 +73,7 @@ The link dialog keeps its search and selected ID but requires a successful, sett
 
 Palette template errors and scope notices render outside cmdk's filtered result list so an unmatched term cannot hide recovery controls. Cached matches remain usable; an unavailable or loading template group cannot claim successful empty results. Retry requires an open palette with settled nonempty input. Other palette query families still require their own classification.
 
-Palette template matching intentionally retains its existing name, description, category and entity-prefix tokens within the 500-row ceiling. The server's available `q` filter searches names only, so switching to it would remove existing matches. Extending server search is deferred until its contract preserves these tokens. When more rows exist than were loaded, the palette states the search scope. Receipt picker work (including RECEIPTS-932) and remaining YNAB owners remain separate required adoption.
+Palette template matching intentionally retains its existing name, description, category and entity-prefix tokens within the 500-row ceiling. The server's available `q` filter searches names only, so switching to it would remove existing matches. Extending server search is deferred until its contract preserves these tokens. When more rows exist than were loaded, the palette states the search scope. Remaining YNAB owners require separate adoption.
 
 ## Account and card lookups
 
@@ -88,3 +88,12 @@ Account preparation and merge dispatch are separate operations. The dialog check
 Account/card create and update mutations use one cache-owned toast. Merge keeps caller-owned conflict handling and a single explicit non-conflict presenter. Raw account cleanup and rename suppress global transport presentation and retain their own feedback. Account/card delete hooks remain outside this adoption because their conflict presenters need separate classification.
 
 YNAB account mapping also requires a successful, settled receipts-account lookup before a target change or removal. Both already-open menu items and their handlers enforce the rule. This does not establish completeness of the remaining remote-account or mapping queries; their adoption remains required.
+## Receipt picker
+
+Receipt-item forms use a dedicated bounded receipt picker rather than loading every receipt page before rendering. Opening the picker fetches 50 recent receipts. Scrolling near the list end or activating the keyboard-accessible load-more control fetches one additional page. A failed later page retains the loaded choices and exposes an explicit retry; no observer or empty viewport automatically drains the remaining history.
+
+Search combines two scopes. Already loaded labels and raw ISO dates retain the existing local fuzzy matching. While unfiltered history remains incomplete, a debounced server query searches all receipt locations. The picker discloses this scope because the current API does not search dates in unloaded history. A successful remote empty result therefore does not claim that no receipt date matches outside the loaded pages. Once unfiltered history is complete, local matching is sufficient and remote search stops.
+
+The current receipt ID and its detail query are independent of picker pages and search text. Selecting a loaded row may seed the explicit receipt-detail shape only when no detail is cached; the seed is stale so the locally owned detail query verifies it without enumerating history. A list row never overwrites newer detail data. Detail failure keeps the raw ID and every item field, exposes retry, and never invents an empty location. An explicit location prop retains precedence. A hidden receipt field issues no picker or detail request.
+
+Browse, search and detail requests pair local transport and cache policies and consume cancellation signals. Query keys separate finite lists, picker browse pages, each normalized search and receipt detail shapes. Old search results may remain cached but cannot replace current options. These client pages are offset-based and deduplicate rows by ID; they do not establish a database snapshot against concurrent receipt insertion or deletion.

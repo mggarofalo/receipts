@@ -7,7 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import Fuse from "fuse.js";
 import { useFormShortcuts } from "@/hooks/useFormShortcuts";
 import { useFieldHistory } from "@/hooks/useFieldHistory";
-import { useAllReceipts } from "@/hooks/useReceipts";
+import { useReceipt } from "@/hooks/useReceipts";
 import { useAllCategories } from "@/hooks/useCategories";
 import {
   useAllSubcategoriesByCategoryId,
@@ -16,7 +16,7 @@ import {
 import { useItemTemplates } from "@/hooks/useItemTemplates";
 import { useReceiptItemSuggestions } from "@/hooks/useReceiptItemSuggestions";
 import { itemDescriptionHistory, itemCodeHistory } from "@/lib/field-history";
-import { receiptToOption } from "@/lib/combobox-options";
+import { ReceiptPicker } from "@/components/ReceiptPicker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Combobox } from "@/components/ui/combobox";
@@ -103,9 +103,6 @@ export function ReceiptItemForm({
   const { options: itemCodeOptions, add: addItemCodeHistory } =
     useFieldHistory(itemCodeHistory);
 
-  const { data: receipts, isLoading: receiptsLoading } = useAllReceipts({
-    enabled: !hideReceiptField,
-  });
   const categoriesQuery = useAllCategories(true);
   const { data: categories } = categoriesQuery;
   const templatesQuery = useItemTemplates();
@@ -113,20 +110,6 @@ export function ReceiptItemForm({
   const templates = useMemo(
     () => (itemTemplatesData as ItemTemplate[] | undefined) ?? [],
     [itemTemplatesData],
-  );
-
-  const receiptOptions = useMemo(
-    () =>
-      (
-        (receipts as
-          | {
-              id: string;
-              location: string;
-              date: string;
-            }[]
-          | undefined) ?? []
-      ).map(receiptToOption),
-    [receipts],
   );
 
   const categoryOptions = useMemo(
@@ -216,14 +199,14 @@ export function ReceiptItemForm({
 
   // Resolve location: use prop if provided, otherwise derive from selected receipt
   const watchedReceiptId = form.watch("receiptId");
+  const receiptQuery = useReceipt(watchedReceiptId || null, {
+    enabled: !hideReceiptField,
+  });
   const resolvedLocation = useMemo(() => {
     if (location) return location;
-    if (!watchedReceiptId || !receipts) return null;
-    const receipt = (receipts as { id: string; location: string }[])?.find(
-      (r) => r.id === watchedReceiptId,
-    );
-    return receipt?.location ?? null;
-  }, [location, watchedReceiptId, receipts]);
+    if (!watchedReceiptId) return null;
+    return receiptQuery.data?.location ?? null;
+  }, [location, watchedReceiptId, receiptQuery.data]);
 
   // Item code autocomplete state
   const [itemCodeInput, setItemCodeInput] = useState(
@@ -443,18 +426,23 @@ export function ReceiptItemForm({
               <FormItem>
                 <FormLabel required>Receipt</FormLabel>
                 <FormControl>
-                  <Combobox
-                    options={receiptOptions}
+                  <ReceiptPicker
                     value={field.value}
+                    selectedReceipt={receiptQuery.data}
                     onValueChange={field.onChange}
-                    placeholder="Select a receipt..."
-                    searchPlaceholder="Search receipts..."
-                    emptyMessage="No receipts found."
                     disabled={mode === "edit"}
-                    loading={receiptsLoading}
                     aria-required="true"
                   />
                 </FormControl>
+                {receiptQuery.isError && (
+                  <RequestFailure
+                    message="The selected receipt is unavailable. Your item details have been kept."
+                    retry={() => {
+                      if (watchedReceiptId) void receiptQuery.refetch();
+                    }}
+                    isRetrying={receiptQuery.isFetching}
+                  />
+                )}
                 <FormMessage />
               </FormItem>
             )}

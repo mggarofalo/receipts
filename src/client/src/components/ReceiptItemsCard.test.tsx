@@ -3,13 +3,13 @@ import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ReceiptItemsCard } from "./ReceiptItemsCard";
 import { renderWithQueryClient } from "@/test/test-utils";
-import { mockMutationResult } from "@/test/mock-hooks";
+import { mockMutationResult, mockQueryResult } from "@/test/mock-hooks";
+import { useReceipt } from "@/hooks/useReceipts";
 
 vi.mock("@/hooks/useReceipts", () => ({
-  useAllReceipts: vi.fn(() => ({
-    data: [],
-    isLoading: false,
-  })),
+  // Both dialogs hide the receipt field; model a disabled detail query without
+  // inventing receipt data or replacing the picker/query behavior globally.
+  useReceipt: vi.fn(() => mockQueryResult({ isLoading: false })),
 }));
 
 vi.mock("@/hooks/useCategories", () => ({
@@ -288,6 +288,7 @@ describe("ReceiptItemsCard", () => {
     expect(
       screen.getByText("Add Item", { selector: "[id]" }),
     ).toBeInTheDocument();
+    expect(useReceipt).toHaveBeenLastCalledWith("receipt-1", { enabled: false });
   });
 
   it("opens edit dialog when Edit button is clicked", async () => {
@@ -302,6 +303,7 @@ describe("ReceiptItemsCard", () => {
     const editButtons = screen.getAllByRole("button", { name: /edit/i });
     await user.click(editButtons[0]);
     expect(screen.getByText("Edit Item")).toBeInTheDocument();
+    expect(useReceipt).toHaveBeenLastCalledWith("receipt-1", { enabled: false });
   });
 
   it("renders create form with submit button in create dialog", async () => {

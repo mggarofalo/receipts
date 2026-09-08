@@ -2,7 +2,10 @@ import "@/test/setup-combobox-polyfills";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ReceiptItemForm } from "./ReceiptItemForm";
-import { useAllReceipts } from "@/hooks/useReceipts";
+import { useReceipt } from "@/hooks/useReceipts";
+import { Combobox } from "@/components/ui/combobox";
+import type { ComponentProps } from "react";
+import type { ReceiptPicker } from "./ReceiptPicker";
 
 const templateFixture = vi.hoisted(() => ({ unitPrice: 3.99 }));
 
@@ -11,13 +14,23 @@ vi.mock("@/hooks/useFormShortcuts", () => ({
 }));
 
 vi.mock("@/hooks/useReceipts", () => ({
-  useAllReceipts: vi.fn(() => ({
-    data: [
-      { id: "r-1", location: "Walmart", date: "2024-01-15" },
-    ],
-    total: 1,
+  useReceipt: vi.fn((id: string | null) => ({
+    data: id ? { id, location: "Walmart", date: "2024-01-15", taxAmount: 0 } : undefined,
     isLoading: false,
+    isError: false,
+    isFetching: false,
+    refetch: vi.fn(),
   })),
+}));
+
+// These form-unit cases isolate field validation/submission; the dedicated picker
+// has actual QueryClient/MSW integration coverage in ReceiptPicker.errors.test.tsx.
+vi.mock("./ReceiptPicker", () => ({
+  ReceiptPicker: ({ selectedReceipt, ...props }: ComponentProps<typeof ReceiptPicker>) => (
+    <Combobox {...props} options={[
+      { value: selectedReceipt?.id ?? "r-1", label: "Walmart", sublabel: "Walmart — 2024-01-15" },
+    ]} placeholder="Select a receipt..." />
+  ),
 }));
 
 vi.mock("@/hooks/useCategories", () => ({
@@ -126,7 +139,7 @@ describe("ReceiptItemForm", () => {
   it("disables the receipt query when the receipt field is hidden", () => {
     render(<ReceiptItemForm {...defaultProps} hideReceiptField />);
 
-    expect(useAllReceipts).toHaveBeenCalledWith({ enabled: false });
+    expect(useReceipt).toHaveBeenCalledWith(null, { enabled: false });
     expect(screen.queryByText(/^Receipt/)).not.toBeInTheDocument();
   });
 
