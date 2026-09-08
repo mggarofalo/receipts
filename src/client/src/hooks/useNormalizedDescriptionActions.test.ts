@@ -1,5 +1,6 @@
 import { renderHook, waitFor } from "@testing-library/react";
-import { QueryClient } from "@tanstack/react-query";
+import { createElement, type ReactNode } from "react";
+import { QueryClientProvider, QueryClient } from "@tanstack/react-query";
 import { createQueryWrapper } from "@/test/test-utils";
 import {
   useLinkTemplateMutation,
@@ -214,19 +215,24 @@ describe("useLinkTemplateMutation", () => {
   });
 
   it("invalidates the template cache the evidence is read from", async () => {
-    const invalidateSpy = vi.spyOn(QueryClient.prototype, "invalidateQueries");
+    const queryClient = new QueryClient({ defaultOptions: { queries: { gcTime: Infinity } } });
+    for (const queryKey of [["itemTemplates", "template-1"], ["reports", "spending-by-normalized-description"], ["api-keys", "private"]]) {
+      queryClient.setQueryData(queryKey, { cached: true });
+      expect(queryClient.getQueryState(queryKey)?.isInvalidated).toBe(false);
+    }
     mockClient.POST.mockResolvedValue(linkResponse(true, 1));
 
     const { result } = renderHook(() => useLinkTemplateMutation(), {
-      wrapper: createQueryWrapper(),
+      wrapper: ({ children }: { children: ReactNode }) => createElement(QueryClientProvider, { client: queryClient }, children),
     });
     result.current.mutate({ id: "n-1", itemTemplateId: "t-1" });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["itemTemplates"] });
+    await waitFor(() => expect(queryClient.getQueryState(["itemTemplates", "template-1"])?.isInvalidated).toBe(true));
     // Consolidating moves spend between buckets exactly as a merge does.
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["reports"] });
-    invalidateSpy.mockRestore();
+    await waitFor(() => expect(queryClient.getQueryState(["reports", "spending-by-normalized-description"])?.isInvalidated).toBe(true));
+    expect(queryClient.getQueryState(["api-keys", "private"])?.isInvalidated).toBe(false);
+    queryClient.clear();
   });
 
   it("does not report a 404 as a success", async () => {
@@ -359,7 +365,11 @@ describe("useRenameMutation", () => {
   // The report groups by display name, so a rename relabels a bucket. Without this the report
   // serves its cache and the rename looks like it did nothing (RECEIPTS-876).
   it("invalidates the reports cache", async () => {
-    const invalidateSpy = vi.spyOn(QueryClient.prototype, "invalidateQueries");
+    const queryClient = new QueryClient({ defaultOptions: { queries: { gcTime: Infinity } } });
+    for (const queryKey of [["itemTemplates", "template-1"], ["reports", "spending-by-normalized-description"], ["api-keys", "private"]]) {
+      queryClient.setQueryData(queryKey, { cached: true });
+      expect(queryClient.getQueryState(queryKey)?.isInvalidated).toBe(false);
+    }
     mockClient.PATCH.mockResolvedValue({
       data: { id: "n-1", displayLabel: "Milk", displayName: "Milk" },
       error: undefined,
@@ -368,13 +378,14 @@ describe("useRenameMutation", () => {
     } as any);
 
     const { result } = renderHook(() => useRenameMutation(), {
-      wrapper: createQueryWrapper(),
+      wrapper: ({ children }: { children: ReactNode }) => createElement(QueryClientProvider, { client: queryClient }, children),
     });
     result.current.mutate({ id: "n-1", displayLabel: "Milk" });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["reports"] });
-    invalidateSpy.mockRestore();
+    await waitFor(() => expect(queryClient.getQueryState(["reports", "spending-by-normalized-description"])?.isInvalidated).toBe(true));
+    expect(queryClient.getQueryState(["api-keys", "private"])?.isInvalidated).toBe(false);
+    queryClient.clear();
   });
 
   it("propagates a 409 name collision", async () => {
@@ -427,7 +438,11 @@ describe("useUpdateStatusMutation", () => {
   // the "Unreviewed" badge. Without this invalidation the report serves its cached copy and
   // approval once again changes nothing the user can see.
   it("invalidates the reports cache so the spending report drops the badge", async () => {
-    const invalidateSpy = vi.spyOn(QueryClient.prototype, "invalidateQueries");
+    const queryClient = new QueryClient({ defaultOptions: { queries: { gcTime: Infinity } } });
+    for (const queryKey of [["itemTemplates", "template-1"], ["reports", "spending-by-normalized-description"], ["api-keys", "private"]]) {
+      queryClient.setQueryData(queryKey, { cached: true });
+      expect(queryClient.getQueryState(queryKey)?.isInvalidated).toBe(false);
+    }
     mockClient.PATCH.mockResolvedValue({
       data: undefined,
       error: undefined,
@@ -436,13 +451,14 @@ describe("useUpdateStatusMutation", () => {
     } as any);
 
     const { result } = renderHook(() => useUpdateStatusMutation(), {
-      wrapper: createQueryWrapper(),
+      wrapper: ({ children }: { children: ReactNode }) => createElement(QueryClientProvider, { client: queryClient }, children),
     });
     result.current.mutate({ id: "n-1", status: "active" });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["reports"] });
-    invalidateSpy.mockRestore();
+    await waitFor(() => expect(queryClient.getQueryState(["reports", "spending-by-normalized-description"])?.isInvalidated).toBe(true));
+    expect(queryClient.getQueryState(["api-keys", "private"])?.isInvalidated).toBe(false);
+    queryClient.clear();
   });
 
   // RECEIPTS-874: Approve is the one action with no confirmation dialog, so this toast is the

@@ -1,4 +1,5 @@
 using API.Generated.Dtos;
+using API.Services;
 using Application.Commands.Reports;
 using Application.Queries.Aggregates.Reports;
 using Asp.Versioning;
@@ -15,7 +16,7 @@ namespace API.Controllers.Aggregates;
 [Route("api/reports")]
 [Produces("application/json")]
 [Authorize]
-public class ReportsController(IMediator mediator) : ControllerBase
+public class ReportsController(IMediator mediator, IEntityChangeNotifier notifier) : ControllerBase
 {
 	[HttpGet("health-summary")]
 	[EndpointSummary("Get data-quality health summary")]
@@ -306,6 +307,7 @@ public class ReportsController(IMediator mediator) : ControllerBase
 		{
 			int acceptedPairCount = await mediator.Send(
 				new AcceptDuplicateGroupCommand(DistinctReceiptIds(request)), cancellationToken);
+			await notifier.NotifyAllChanged("duplicate-acceptance", "updated");
 			return TypedResults.Ok(new AcceptDuplicateGroupResponse { AcceptedPairCount = acceptedPairCount });
 		}
 		catch (KeyNotFoundException ex)
@@ -327,6 +329,7 @@ public class ReportsController(IMediator mediator) : ControllerBase
 		// accept call exceeding the cap.
 		int removedPairCount = await mediator.Send(
 			new UnacceptDuplicateGroupCommand([.. request.ReceiptIds.Distinct()]), cancellationToken);
+		await notifier.NotifyAllChanged("duplicate-acceptance", "updated");
 		return TypedResults.Ok(new UnacceptDuplicateGroupResponse { RemovedPairCount = removedPairCount });
 	}
 

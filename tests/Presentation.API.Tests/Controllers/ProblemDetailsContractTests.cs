@@ -76,7 +76,7 @@ public class ProblemDetailsContractTests
 			.Setup(m => m.Send(It.IsAny<AcceptDuplicateGroupCommand>(), It.IsAny<CancellationToken>()))
 			.ThrowsAsync(new KeyNotFoundException("Receipt 123 not found"));
 
-		ReportsController controller = new(mediator.Object);
+		ReportsController controller = new(mediator.Object, Mock.Of<global::API.Services.IEntityChangeNotifier>());
 
 		Results<Ok<AcceptDuplicateGroupResponse>, NotFound<ProblemDetails>> result =
 			await controller.AcceptDuplicateGroup(

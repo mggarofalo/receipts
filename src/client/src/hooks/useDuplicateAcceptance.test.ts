@@ -123,7 +123,11 @@ describe("useAcceptDuplicateGroup", () => {
   it("invalidates the duplicate report and accepted-groups caches on success", async () => {
     mockClient.POST.mockResolvedValue(apiSuccess({ acceptedPairCount: 1 }));
     const queryClient = createQueryClient();
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    queryClient.setDefaultOptions({ queries: { gcTime: Infinity, retry: false } });
+    for (const queryKey of [["reports", "duplicates", "cached-filter"], ACCEPTED_DUPLICATES_QUERY_KEY, ["reports", "spending"]]) {
+      queryClient.setQueryData(queryKey, { cached: true });
+      expect(queryClient.getQueryState(queryKey)?.isInvalidated).toBe(false);
+    }
 
     const { result } = renderHook(() => useAcceptDuplicateGroup(), {
       wrapper: wrapperFor(queryClient),
@@ -132,12 +136,9 @@ describe("useAcceptDuplicateGroup", () => {
     result.current.mutate(["id-1", "id-2"]);
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: ["reports", "duplicates"],
-    });
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: ACCEPTED_DUPLICATES_QUERY_KEY,
-    });
+    await waitFor(() => expect(queryClient.getQueryState(["reports", "duplicates", "cached-filter"])?.isInvalidated).toBe(true));
+    await waitFor(() => expect(queryClient.getQueryState(ACCEPTED_DUPLICATES_QUERY_KEY)?.isInvalidated).toBe(true));
+    expect(queryClient.getQueryState(["reports", "spending"])?.isInvalidated).toBe(false);
   });
 
   it("fires a success toast", async () => {
@@ -196,7 +197,11 @@ describe("useUnacceptDuplicateGroup", () => {
   it("invalidates the duplicate report and accepted-groups caches on success", async () => {
     mockClient.POST.mockResolvedValue(apiSuccess({ removedPairCount: 1 }));
     const queryClient = createQueryClient();
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    queryClient.setDefaultOptions({ queries: { gcTime: Infinity, retry: false } });
+    for (const queryKey of [["reports", "duplicates", "cached-filter"], ACCEPTED_DUPLICATES_QUERY_KEY, ["reports", "spending"]]) {
+      queryClient.setQueryData(queryKey, { cached: true });
+      expect(queryClient.getQueryState(queryKey)?.isInvalidated).toBe(false);
+    }
 
     const { result } = renderHook(() => useUnacceptDuplicateGroup(), {
       wrapper: wrapperFor(queryClient),
@@ -205,12 +210,9 @@ describe("useUnacceptDuplicateGroup", () => {
     result.current.mutate(["id-1", "id-2"]);
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: ["reports", "duplicates"],
-    });
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: ACCEPTED_DUPLICATES_QUERY_KEY,
-    });
+    await waitFor(() => expect(queryClient.getQueryState(["reports", "duplicates", "cached-filter"])?.isInvalidated).toBe(true));
+    await waitFor(() => expect(queryClient.getQueryState(ACCEPTED_DUPLICATES_QUERY_KEY)?.isInvalidated).toBe(true));
+    expect(queryClient.getQueryState(["reports", "spending"])?.isInvalidated).toBe(false);
   });
 
   it("fires a success toast", async () => {

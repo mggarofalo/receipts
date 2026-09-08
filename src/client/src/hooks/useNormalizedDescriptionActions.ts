@@ -1,13 +1,24 @@
 import { toastErrorPolicy } from "@/lib/request-error-policy";
+import { repairDomainChange } from "@/lib/query-invalidation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSessionMutation } from "@/hooks/useSessionMutation";
 import client from "@/lib/api-client";
 import { toApiError } from "@/lib/problem-details";
 import { toast } from "sonner";
 import type { components } from "@/generated/api";
+import { getSessionVersion } from "@/lib/auth";
 
 type NormalizedDescriptionStatus =
   components["schemas"]["NormalizedDescriptionStatus"];
+
+function repairNormalizedDescriptionChange(queryClient: ReturnType<typeof useQueryClient>) {
+  const sessionVersion = getSessionVersion();
+  return repairDomainChange(
+    queryClient,
+    "normalized-description",
+    () => getSessionVersion() === sessionVersion,
+  );
+}
 
 /**
  * Each message names what actually changed, not which column was written.
@@ -58,11 +69,6 @@ export function useMergeMutation() {
       return data;
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["normalized-descriptions"] });
-      queryClient.invalidateQueries({ queryKey: ["receipt-items"] });
-      // Re-pointing items moves spend from one bucket to another, so any cached
-      // spending-by-description page is now wrong.
-      queryClient.invalidateQueries({ queryKey: ["reports"] });
       const count = data?.itemsRelinkedCount ?? 0;
       if (count > 0) {
         toast.success(`Merged — ${count} item${count === 1 ? "" : "s"} re-linked`);
@@ -74,6 +80,7 @@ export function useMergeMutation() {
         toast.success("Merged — no items needed re-linking");
       }
     },
+    onSettled: () => repairNormalizedDescriptionChange(queryClient),
   });
 }
 
@@ -100,15 +107,12 @@ export function useSplitMutation() {
       return data;
     },
     onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["normalized-descriptions"] });
-      queryClient.invalidateQueries({ queryKey: ["receipt-items"] });
-      // A split creates a new bucket and shrinks the one it came out of.
-      queryClient.invalidateQueries({ queryKey: ["reports"] });
       const count = variables.receiptItemIds.length;
       toast.success(
         `${count} ${count === 1 ? "item" : "items"} split into "${variables.canonicalName}"`,
       );
     },
+    onSettled: () => repairNormalizedDescriptionChange(queryClient),
   });
 }
 
@@ -133,17 +137,13 @@ export function useRenameMutation() {
       return data;
     },
     onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["normalized-descriptions"] });
-      // The spending report groups by display name, so a rename relabels a bucket
-      // (RECEIPTS-876). Without this the report keeps showing the old raw receipt text and the
-      // rename looks like it did nothing.
-      queryClient.invalidateQueries({ queryKey: ["reports"] });
       toast.success(
         variables.displayLabel === null
           ? "Name cleared — showing the matched text again"
           : `Renamed to "${variables.displayLabel}"`,
       );
     },
+    onSettled: () => repairNormalizedDescriptionChange(queryClient),
   });
 }
 
@@ -178,14 +178,6 @@ export function useLinkTemplateMutation() {
       return data;
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["normalized-descriptions"] });
-      queryClient.invalidateQueries({ queryKey: ["receipt-items"] });
-      // The template's foreign key moved, so any cached template row is stale — and it is the
-      // column the review queue now reads its evidence from.
-      queryClient.invalidateQueries({ queryKey: ["itemTemplates"] });
-      // Consolidating moves spend between buckets, exactly as a merge does.
-      queryClient.invalidateQueries({ queryKey: ["reports"] });
-
       const name = data?.description?.displayName ?? "the template's entry";
       if (!data?.merged) {
         toast.success(`Linked to the template — nothing was moved or deleted`);
@@ -202,6 +194,7 @@ export function useLinkTemplateMutation() {
             `Consolidated into "${name}" — no live items needed re-linking`,
       );
     },
+    onSettled: () => repairNormalizedDescriptionChange(queryClient),
   });
 }
 
@@ -227,15 +220,8 @@ export function useUpdateStatusMutation() {
       if (!response.ok) throw toApiError(response.status, error);
     },
     onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["normalized-descriptions"] });
-      // Approval's whole point is that the spending report stops rendering this bucket as
-      // provisional (RECEIPTS-875). Without this the report keeps its cached copy and the
-      // badge lingers, which is precisely the "approve changes nothing you can see"
-      // complaint the issue is about.
-      queryClient.invalidateQueries({ queryKey: ["reports"] });
-      // Rejecting unlinks every receipt item, so their spend moves to "(Not Normalized)".
-      queryClient.invalidateQueries({ queryKey: ["receipt-items"] });
       toast.success(statusToastMessage(variables.status));
     },
+    onSettled: () => repairNormalizedDescriptionChange(queryClient),
   });
 }

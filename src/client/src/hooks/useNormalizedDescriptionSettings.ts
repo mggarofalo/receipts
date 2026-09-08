@@ -2,6 +2,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSessionMutation } from "@/hooks/useSessionMutation";
 import client from "@/lib/api-client";
 import { toast } from "sonner";
+import { repairDomainChange } from "@/lib/query-invalidation";
+import { getSessionVersion } from "@/lib/auth";
 
 export function useSettings() {
   return useQuery({
@@ -36,10 +38,13 @@ export function useUpdateSettingsMutation() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["normalized-descriptions", "settings"],
-      });
       toast.success("Settings saved");
+      const sessionVersion = getSessionVersion();
+      return repairDomainChange(
+        queryClient,
+        "normalized-description-settings",
+        () => getSessionVersion() === sessionVersion,
+      );
     },
   });
 }
