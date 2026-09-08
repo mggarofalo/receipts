@@ -7,7 +7,8 @@ import { YnabMemoSyncCard } from "./YnabMemoSyncCard";
 const mockSyncMemosMutate = vi.fn();
 const mockResolveSyncMutate = vi.fn();
 
-vi.mock("@/hooks/useYnab", () => ({
+vi.mock("@/hooks/useYnab", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/useYnab")>()),
   useSyncYnabMemos: vi.fn(() =>
     mockMutationResult({ mutate: mockSyncMemosMutate }),
   ),
@@ -250,7 +251,12 @@ describe("YnabMemoSyncCard", () => {
       // A pending resolution keeps the candidate visible; success closes it and refreshes results.
       expect(dialog).toBeInTheDocument();
       await act(async () => {
-        mockResolveSyncMutate.mock.calls[0][1].onSuccess();
+        mockResolveSyncMutate.mock.calls[0][1].onSuccess({
+          localTransactionId: "local-1",
+          receiptId: "receipt-1",
+          outcome: "synced",
+          ynabTransactionId: "ynab-1",
+        });
       });
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
       expect(mockSyncMemosMutate).toHaveBeenCalledTimes(2);

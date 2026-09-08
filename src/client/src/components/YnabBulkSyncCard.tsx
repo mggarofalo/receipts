@@ -36,7 +36,6 @@ export function YnabBulkSyncCard() {
   }
 
   function handleBulkMemoSync() {
-    setMemoResults(undefined);
     bulkMemoSync.mutate(receiptIds, {
       onSuccess: (data) => {
         setMemoResults(data?.results);
@@ -165,6 +164,16 @@ export function YnabBulkSyncCard() {
                   {memoSummary.ambiguous > 0 && (
                     <Badge variant="outline">
                       {memoSummary.ambiguous} ambiguous
+                    </Badge>
+                  )}
+                  {memoSummary.currencySkipped > 0 && (
+                    <Badge variant="secondary">
+                      {memoSummary.currencySkipped} currency skipped
+                    </Badge>
+                  )}
+                  {memoSummary.reconciledSkipped > 0 && (
+                    <Badge variant="secondary">
+                      {memoSummary.reconciledSkipped} reconciled
                     </Badge>
                   )}
                   {memoSummary.failed > 0 && (

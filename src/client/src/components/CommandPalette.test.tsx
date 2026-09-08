@@ -58,7 +58,7 @@ vi.mock("@/hooks/useUsers", () => ({
   useUsers: vi.fn(() => mockQueryResult()),
 }));
 
-const bulkPushMutate = vi.fn();
+const bulkPushMutateAsync = vi.fn(async () => ({ results: [] }));
 const backupExportMutate = vi.fn();
 const purgeTrashMutateAsync = vi.fn(async () => {});
 const fetchAllReceiptIdsMock = vi.fn(async () => ({ ids: ["r1", "r2"], total: 2 }));
@@ -75,7 +75,10 @@ function ControlledPalette() {
 
 vi.mock("@/hooks/useYnab", () => ({
   fetchAllReceiptIds: () => fetchAllReceiptIdsMock(),
-  useBulkPushYnabTransactions: () => ({ mutate: bulkPushMutate, isPending: false }),
+  useBulkPushYnabTransactions: () => ({
+    mutateAsync: bulkPushMutateAsync,
+    isPending: false,
+  }),
 }));
 
 vi.mock("@/hooks/useBackup", () => ({
@@ -88,7 +91,7 @@ vi.mock("@/hooks/useTrash", () => ({
 
 beforeEach(async () => {
   navigateMock.mockClear();
-  bulkPushMutate.mockClear();
+  bulkPushMutateAsync.mockClear();
   backupExportMutate.mockClear();
   purgeTrashMutateAsync.mockClear();
   fetchAllReceiptIdsMock.mockClear();
@@ -603,7 +606,7 @@ describe("CommandPalette", () => {
       expect(fetchAllReceiptIdsMock).toHaveBeenCalled();
     });
     await waitFor(() => {
-      expect(bulkPushMutate).toHaveBeenCalledWith(["r1", "r2"]);
+      expect(bulkPushMutateAsync).toHaveBeenCalledWith(["r1", "r2"]);
     });
   });
 
@@ -617,7 +620,7 @@ describe("CommandPalette", () => {
     await waitFor(() => {
       expect(fetchAllReceiptIdsMock).toHaveBeenCalled();
     });
-    expect(bulkPushMutate).not.toHaveBeenCalled();
+    expect(bulkPushMutateAsync).not.toHaveBeenCalled();
   });
 
   it("Export Backup fires the export mutation and closes the palette", async () => {

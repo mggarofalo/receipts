@@ -55,6 +55,7 @@ import {
   togglePinned,
 } from "@/lib/command-palette/command-history";
 import { cn } from "@/lib/utils";
+import { extractErrorMessage } from "@/lib/problem-details";
 
 const ENTITY_GROUP_VISIBLE_LIMIT = 8;
 
@@ -121,7 +122,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 
   // Destructure stable callbacks — TanStack Query guarantees mutate/mutateAsync
   // are stable refs, but the surrounding mutation object is not.
-  const { mutate: bulkPushYnabMutate } = useBulkPushYnabTransactions();
+  const { mutateAsync: bulkPushYnabMutateAsync } = useBulkPushYnabTransactions();
   const { mutate: backupExportMutate } = useBackupExport();
   const { mutateAsync: purgeTrashMutateAsync, isPending: purgeTrashPending } =
     usePurgeTrash();
@@ -146,21 +147,32 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const [sessionVersion] = useState(getSessionVersion);
   const syncYnab = useCallback(() => {
     void (async () => {
+      let ids: string[];
       try {
         assertSessionCurrent(sessionVersion);
-        const { ids } = await fetchAllReceiptIds();
+        ({ ids } = await fetchAllReceiptIds());
         assertSessionCurrent(sessionVersion);
-        if (ids.length === 0) {
-          toast.info("No receipts to sync");
-          return;
-        }
-        bulkPushYnabMutate(ids);
       } catch (error) {
         if (isAbortError(error)) return;
         toast.error("Failed to load receipts for YNAB sync");
+        return;
+      }
+
+      if (ids.length === 0) {
+        toast.info("No receipts to sync");
+        return;
+      }
+
+      try {
+        await bulkPushYnabMutateAsync(ids);
+      } catch (error) {
+        if (isAbortError(error)) return;
+        toast.error(
+          extractErrorMessage(error) ?? "Failed to push receipts to YNAB",
+        );
       }
     })();
-  }, [bulkPushYnabMutate, sessionVersion]);
+  }, [bulkPushYnabMutateAsync, sessionVersion]);
 
   const exportBackup = useCallback(() => {
     backupExportMutate();

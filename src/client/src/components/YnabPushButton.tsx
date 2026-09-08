@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { YnabSyncBadge } from "@/components/YnabSyncBadge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { extractErrorMessage } from "@/lib/problem-details";
 
 interface YnabPushButtonProps {
   receiptId: string;
@@ -71,6 +72,14 @@ export function YnabPushButton({
 
       {/* aria-live region so screen readers announce push outcomes */}
       <div aria-live="polite" aria-atomic="true">
+        {pushMutation.isError && (
+          <Alert variant="destructive" role="alert">
+            <AlertDescription>
+              {extractErrorMessage(pushMutation.error) ??
+                "Failed to push transactions to YNAB. Please try again."}
+            </AlertDescription>
+          </Alert>
+        )}
         {result && !result.success && result.error && (
           <Alert variant="destructive" role="alert">
             <AlertDescription>{result.error}</AlertDescription>
