@@ -5,6 +5,7 @@ import {
   useResolveYnabMemoSync,
   useMemoSyncSummary,
   useYnabConnectionStatus,
+  isCompletedYnabMemoResolution,
   type YnabMemoSyncOutcome,
   type YnabMemoSyncResult,
   type YnabTransactionCandidateDto,
@@ -35,6 +36,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Spinner } from "@/components/ui/spinner";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { extractErrorMessage } from "@/lib/problem-details";
 
 interface YnabMemoSyncCardProps {
   receiptId: string;
@@ -134,7 +137,7 @@ export function YnabMemoSyncContent({
   const summary = useMemoSyncSummary(results);
 
   function handleSync() {
-    if (disabled) return;
+    if (disabled || resolveTarget || syncMemos.isPending || resolveSync.isPending) return;
     syncMemos.mutate(receiptId, {
       onSuccess: (data) => {
         setResults(data?.results);
@@ -143,14 +146,15 @@ export function YnabMemoSyncContent({
   }
 
   function handleResolve(ynabTransactionId: string) {
-    if (disabled || !resolveTarget) return;
+    if (disabled || !resolveTarget || syncMemos.isPending || resolveSync.isPending) return;
     resolveSync.mutate(
       {
         localTransactionId: resolveTarget.localTransactionId,
         ynabTransactionId,
       },
       {
-        onSuccess: () => {
+        onSuccess: (data) => {
+          if (!isCompletedYnabMemoResolution(data)) return;
           setResolveTarget(null);
           // Preserve the completed resolution, but wait for recovery before a new write.
           if (disabledRef.current) return;
@@ -165,7 +169,8 @@ export function YnabMemoSyncContent({
   }
 
   function openResolve(result: YnabMemoSyncResult) {
-    if (!result.ambiguousCandidates) return;
+    if (!result.ambiguousCandidates || syncMemos.isPending || resolveSync.isPending) return;
+    resolveSync.reset();
     setResolveTarget({
       localTransactionId: result.localTransactionId,
       candidates: result.ambiguousCandidates,
@@ -187,7 +192,7 @@ export function YnabMemoSyncContent({
             </div>
             <Button
               onClick={handleSync}
-              disabled={disabled || syncMemos.isPending}
+              disabled={disabled || !!resolveTarget || syncMemos.isPending || resolveSync.isPending}
               size="sm"
             >
               {syncMemos.isPending ? (
@@ -201,6 +206,17 @@ export function YnabMemoSyncContent({
             </Button>
           </div>
         </CardHeader>
+
+        {syncMemos.isError && (
+          <CardContent>
+            <Alert variant="destructive" role="alert">
+              <AlertDescription>
+                {extractErrorMessage(syncMemos.error) ??
+                  "Failed to sync memos to YNAB. Please try again."}
+              </AlertDescription>
+            </Alert>
+          </CardContent>
+        )}
 
         {results && results.length > 0 && (
           <CardContent>
@@ -283,7 +299,13 @@ export function YnabMemoSyncContent({
       {/* Resolve Ambiguous Dialog */}
       <Dialog
         open={!!resolveTarget}
-        onOpenChange={(open) => !open && setResolveTarget(null)}
+        onOpenChange={(open) => {
+          if (!open) {
+            if (resolveSync.isPending) return;
+            setResolveTarget(null);
+            resolveSync.reset();
+          }
+        }}
       >
         <DialogContent className="max-w-2xl">
           <DialogHeader>
@@ -293,6 +315,21 @@ export function YnabMemoSyncContent({
               select a match only if it is correct.
             </DialogDescription>
           </DialogHeader>
+          {resolveSync.isError && (
+            <Alert variant="destructive" role="alert">
+              <AlertDescription>
+                {extractErrorMessage(resolveSync.error) ??
+                  "Failed to resolve YNAB memo sync. Please try again."}
+              </AlertDescription>
+            </Alert>
+          )}
+          {resolveSync.data && !isCompletedYnabMemoResolution(resolveSync.data) && (
+            <Alert variant="destructive" role="alert">
+              <AlertDescription>
+                {resolveSync.data.error ?? "YNAB memo sync was not resolved."}
+              </AlertDescription>
+            </Alert>
+          )}
           {resolveTarget && (
             <div className="rounded-md border">
               <Table>
@@ -320,7 +357,7 @@ export function YnabMemoSyncContent({
                         <Button
                           size="sm"
                           variant="outline"
-                          disabled={disabled || resolveSync.isPending}
+                          disabled={disabled || syncMemos.isPending || resolveSync.isPending}
                           onClick={() => handleResolve(candidate.id)}
                         >
                           Select

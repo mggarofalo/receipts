@@ -219,6 +219,7 @@ beforeEach(() => {
   suggestionRequests = [];
   vi.spyOn(toast, "success");
   vi.spyOn(toast, "info");
+  vi.spyOn(toast, "warning");
 });
 afterEach(() => {
   cleanup();
@@ -344,8 +345,9 @@ it("counts actual camel-case single memo outcomes and preserves friendly labels"
     "Currency skipped",
   ])
     expect(screen.getByText(label)).toBeVisible();
-  expect(toast.success).toHaveBeenCalledWith(
-    "Synced 2 transaction memo(s) to YNAB",
+  expect(toast.success).not.toHaveBeenCalled();
+  expect(toast.warning).toHaveBeenCalledWith(
+    "Synced 2 transaction memo(s) to YNAB; 1 failed",
   );
   expect(toast.info).not.toHaveBeenCalledWith("No transactions were synced");
 });

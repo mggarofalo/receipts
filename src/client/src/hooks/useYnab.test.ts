@@ -57,6 +57,7 @@ async function expectRequestOwnership(
   method: Mock,
   path: string,
   presentation: "local" | "toast",
+  requiresSignal = presentation === "local",
 ) {
   const call = method.mock.calls.find(([url]) => url === path);
   const options = call?.[1] as {
@@ -68,8 +69,7 @@ async function expectRequestOwnership(
       expect.objectContaining({ onRequest: expect.any(Function) }),
     ]),
   );
-  if (presentation === "local")
-    expect(options.signal).toBeInstanceOf(AbortSignal);
+  if (requiresSignal) expect(options.signal).toBeInstanceOf(AbortSignal);
   let observed: string | undefined;
   const probe = createClient<{
     "/probe": { get: { responses: { 204: { content?: never } } } };
@@ -760,8 +760,15 @@ describe("useYnab", () => {
     await result.current.mutateAsync("r-1");
 
     expect(client.POST).toHaveBeenCalledWith("/api/ynab/sync-memos", {
+      middleware: expect.any(Array),
       body: { receiptId: "r-1" },
     });
+    await expectRequestOwnership(
+      client.POST as Mock,
+      "/api/ynab/sync-memos",
+      "local",
+      false,
+    );
     expect(toast.success).toHaveBeenCalledWith(
       "Synced 1 transaction memo(s) to YNAB",
     );
@@ -787,7 +794,7 @@ describe("useYnab", () => {
     expect(toast.info).toHaveBeenCalledWith("No transactions were synced");
   });
 
-  it("useSyncYnabMemos does not add a hook toast on failure (owned by the mutation cache)", async () => {
+  it("useSyncYnabMemos does not add a hook toast on transport failure (owned by the component)", async () => {
     (client.POST as Mock).mockResolvedValue({ error: "Server error" });
 
     const { result } = renderHook(() => useSyncYnabMemos(), {
@@ -830,14 +837,21 @@ describe("useYnab", () => {
     await result.current.mutateAsync(["r-1", "r-2"]);
 
     expect(client.POST).toHaveBeenCalledWith("/api/ynab/sync-memos/bulk", {
+      middleware: expect.any(Array),
       body: { receiptIds: ["r-1", "r-2"] },
     });
+    await expectRequestOwnership(
+      client.POST as Mock,
+      "/api/ynab/sync-memos/bulk",
+      "local",
+      false,
+    );
     expect(toast.success).toHaveBeenCalledWith(
       "Synced 2 transaction memo(s) to YNAB",
     );
   });
 
-  it("useSyncYnabMemosBulk does not add a hook toast on failure (owned by the mutation cache)", async () => {
+  it("useSyncYnabMemosBulk does not add a hook toast on transport failure (owned by the component)", async () => {
     (client.POST as Mock).mockResolvedValue({ error: "Server error" });
 
     const { result } = renderHook(() => useSyncYnabMemosBulk(), {
@@ -873,12 +887,19 @@ describe("useYnab", () => {
     });
 
     expect(client.POST).toHaveBeenCalledWith("/api/ynab/sync-memos/resolve", {
+      middleware: expect.any(Array),
       body: { localTransactionId: "tx-1", ynabTransactionId: "yt-1" },
     });
+    await expectRequestOwnership(
+      client.POST as Mock,
+      "/api/ynab/sync-memos/resolve",
+      "local",
+      false,
+    );
     expect(toast.success).toHaveBeenCalledWith("YNAB memo sync resolved");
   });
 
-  it("useResolveYnabMemoSync does not add a hook toast on failure (owned by the mutation cache)", async () => {
+  it("useResolveYnabMemoSync does not add a hook toast on transport failure (owned by the component)", async () => {
     (client.POST as Mock).mockResolvedValue({ error: "Server error" });
 
     const { result } = renderHook(() => useResolveYnabMemoSync(), {
@@ -1013,14 +1034,21 @@ describe("useYnab", () => {
     await result.current.mutateAsync("receipt-123");
 
     expect(client.POST).toHaveBeenCalledWith("/api/ynab/push-transactions", {
+      middleware: expect.any(Array),
       body: { receiptId: "receipt-123" },
     });
+    await expectRequestOwnership(
+      client.POST as Mock,
+      "/api/ynab/push-transactions",
+      "local",
+      false,
+    );
     expect(toast.success).toHaveBeenCalledWith(
       "Pushed 1 transaction(s) to YNAB",
     );
   });
 
-  it("usePushYnabTransactions does not add a hook toast on failure (owned by the mutation cache) response", async () => {
+  it("usePushYnabTransactions does not add a hook toast on transport failure (owned by the component) response", async () => {
     const pushResult = {
       success: false,
       pushedTransactions: [],
@@ -1089,8 +1117,15 @@ describe("useYnab", () => {
     expect(client.POST).toHaveBeenCalledWith(
       "/api/ynab/push-transactions/bulk",
       {
+        middleware: expect.any(Array),
         body: { receiptIds: ["r1", "r2"] },
       },
+    );
+    await expectRequestOwnership(
+      client.POST as Mock,
+      "/api/ynab/push-transactions/bulk",
+      "local",
+      false,
     );
     // Partial success must NOT read as a plain success (RECEIPTS-783).
     expect(toast.success).not.toHaveBeenCalled();

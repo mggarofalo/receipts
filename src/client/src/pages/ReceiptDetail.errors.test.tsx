@@ -541,7 +541,12 @@ it("does not start an automatic memo resync when prerequisites fail while an aut
     http.post("*/api/ynab/sync-memos/resolve", async () => {
       resolveCalls++;
       await pending;
-      return HttpResponse.json({ success: true });
+      return HttpResponse.json({
+        localTransactionId: "local-1",
+        receiptId,
+        outcome: "synced",
+        ynabTransactionId: "remote-1",
+      });
     }),
   );
   try {

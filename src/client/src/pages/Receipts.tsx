@@ -42,6 +42,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Info } from "lucide-react";
+import { toast } from "sonner";
+import { extractErrorMessage } from "@/lib/problem-details";
 import {
   useReceiptYnabSyncStatuses,
   useBulkPushYnabTransactions,
@@ -911,6 +913,12 @@ function Receipts() {
                     for (const id of succeededIds) next.delete(id);
                     return next;
                   });
+                },
+                onError: (error) => {
+                  toast.error(
+                    extractErrorMessage(error) ??
+                      "Failed to push selected receipts to YNAB",
+                  );
                 },
               });
             }}
