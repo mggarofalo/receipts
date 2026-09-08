@@ -788,38 +788,46 @@ export function useBulkPushYnabTransactions() {
 
 const ALL_RECEIPTS_PAGE_SIZE = 500;
 
-export async function fetchAllReceiptIds(): Promise<{
+export async function fetchAllReceiptIds(signal?: AbortSignal): Promise<{
   ids: string[];
   total: number;
 }> {
-  const ids: string[] = [];
+  const ids = new Set<string>();
   let offset = 0;
-  let total = 0;
+  let rowsRead = 0;
+  let expectedTotal: number | undefined;
 
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   while (true) {
     const { data, error } = await client.GET("/api/receipts", {
+      ...localErrorPolicy.request,
+      signal,
       params: { query: { offset, limit: ALL_RECEIPTS_PAGE_SIZE } },
     });
     if (error) throw error;
-    total = Number(data?.total ?? 0);
+    const pageTotal = Number(data?.total ?? 0);
+    if (expectedTotal !== undefined && pageTotal !== expectedTotal) {
+      throw new Error("The receipt list changed while it was being loaded");
+    }
+    expectedTotal = pageTotal;
     const page = data?.data ?? [];
     for (const r of page) {
-      if (r.id) ids.push(r.id);
+      if (r.id) ids.add(r.id);
     }
-    if (page.length < ALL_RECEIPTS_PAGE_SIZE || ids.length >= total) {
+    rowsRead += page.length;
+    if (page.length < ALL_RECEIPTS_PAGE_SIZE || rowsRead >= expectedTotal) {
       break;
     }
-    offset += ALL_RECEIPTS_PAGE_SIZE;
+    offset = rowsRead;
   }
 
-  return { ids, total };
+  return { ids: Array.from(ids), total: expectedTotal ?? 0 };
 }
 
 export function useAllReceiptIds(enabled = true) {
   const query = useQuery({
+    ...localErrorPolicy.query,
     queryKey: ["receipts", "all-ids"],
-    queryFn: fetchAllReceiptIds,
+    queryFn: ({ signal }) => fetchAllReceiptIds(signal),
     enabled,
   });
   const base = useStableQuery(query);
@@ -828,7 +836,8 @@ export function useAllReceiptIds(enabled = true) {
       ...base,
       receiptIds: query.data?.ids ?? [],
       totalReceipts: query.data?.total ?? 0,
-      isTruncated: (query.data?.total ?? 0) > (query.data?.ids.length ?? 0),
+      isTruncated:
+        query.data !== undefined && query.data.total !== query.data.ids.length,
     }),
     [base, query.data],
   );

@@ -60,7 +60,13 @@ export default function Ynab() {
     refetch: retryRateLimit,
     isFetching: rateLimitFetching,
   } = useYnabRateLimitStatus(isConfigured);
-  const { data: status } = useYnabStatus();
+  const {
+    data: status,
+    isLoading: statusLoading,
+    isError: statusError,
+    refetch: retryStatus,
+    isFetching: statusFetching,
+  } = useYnabStatus();
 
   const [outcome, setOutcome] = useState<"all" | "success" | "failure">("all");
 
@@ -85,6 +91,9 @@ export default function Ynab() {
     data: events,
     total,
     isLoading,
+    isError: eventsError,
+    refetch: retryEvents,
+    isFetching: eventsFetching,
   } = useYnabEvents({
     offset: pagination.offset,
     limit: pagination.limit,
@@ -189,15 +198,24 @@ export default function Ynab() {
               <CardDescription>Transactions pushed to YNAB.</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-2 text-sm">
+              {statusError && (
+                <RequestFailure
+                  message="YNAB push activity is unavailable. Any statistics shown are last known."
+                  retry={() => {
+                    void retryStatus();
+                  }}
+                  isRetrying={statusFetching}
+                />
+              )}
+              {status ? (
+                <div className="space-y-2 text-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">
                     Last 24h / 7d / 30d
                   </span>
                   <span className="font-medium">
-                    {status?.pushCountLast24h ?? 0} /{" "}
-                    {status?.pushCountLast7d ?? 0} /{" "}
-                    {status?.pushCountLast30d ?? 0}
+                      {status.pushCountLast24h} / {status.pushCountLast7d} /{" "}
+                      {status.pushCountLast30d}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
@@ -210,17 +228,29 @@ export default function Ynab() {
                 </div>
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
                   <span>
-                    {status?.lastPushSuccessAt
+                    {status.lastPushSuccessAt
                       ? `Last success ${formatRelativeTime(status.lastPushSuccessAt)}`
                       : "No successful pushes"}
                   </span>
                 </div>
-                {status?.lastPushFailureAt && (
+                  {status.lastPushFailureAt && (
                   <div className="text-xs text-destructive">
                     Last failure {formatRelativeTime(status.lastPushFailureAt)}
                   </div>
                 )}
-              </div>
+                </div>
+              ) : statusLoading ? (
+                <div className="flex items-center gap-2">
+                  <Spinner className="h-4 w-4" />
+                  <span className="text-sm text-muted-foreground">
+                    Loading push activity...
+                  </span>
+                </div>
+              ) : !statusError ? (
+                <span className="text-sm text-muted-foreground">
+                  No push activity data yet.
+                </span>
+              ) : null}
             </CardContent>
           </Card>
 
@@ -304,22 +334,36 @@ export default function Ynab() {
             />
           </div>
 
-          <YnabEventsTable
-            events={events}
-            isLoading={isLoading}
-            sortBy={sortBy}
-            sortDirection={sortDirection}
-            onToggleSort={toggleSort}
-          />
+          {eventsError && (
+            <RequestFailure
+              message="Recent YNAB activity is unavailable. Any events shown are last known."
+              retry={() => {
+                void retryEvents();
+              }}
+              isRetrying={eventsFetching}
+            />
+          )}
 
-          <Pagination
-            currentPage={pagination.currentPage}
-            totalItems={total}
-            pageSize={pagination.pageSize}
-            totalPages={pagination.totalPages(total)}
-            onPageChange={(page) => pagination.setPage(page, total)}
-            onPageSizeChange={pagination.setPageSize}
-          />
+          {(!eventsError || events.length > 0) && (
+            <YnabEventsTable
+              events={events}
+              isLoading={isLoading}
+              sortBy={sortBy}
+              sortDirection={sortDirection}
+              onToggleSort={toggleSort}
+            />
+          )}
+
+          {(!eventsError || events.length > 0) && (
+            <Pagination
+              currentPage={pagination.currentPage}
+              totalItems={total}
+              pageSize={pagination.pageSize}
+              totalPages={pagination.totalPages(total)}
+              onPageChange={(page) => pagination.setPage(page, total)}
+              onPageSizeChange={pagination.setPageSize}
+            />
+          )}
         </div>
       </div>
     </>

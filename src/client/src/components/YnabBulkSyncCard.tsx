@@ -17,10 +17,18 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Spinner } from "@/components/ui/spinner";
+import { RequestFailure } from "@/components/RequestFailure";
 
 export function YnabBulkSyncCard() {
-  const { receiptIds, totalReceipts, isTruncated, isLoading: receiptsLoading } =
-    useAllReceiptIds();
+  const {
+    receiptIds,
+    totalReceipts,
+    isTruncated,
+    isLoading: receiptsLoading,
+    isError: receiptsError,
+    refetch: retryReceipts,
+    isFetching: receiptsFetching,
+  } = useAllReceiptIds();
   const bulkPush = useBulkPushYnabTransactions();
   const bulkMemoSync = useSyncYnabMemosBulk();
   const [memoResults, setMemoResults] = useState<
@@ -28,7 +36,9 @@ export function YnabBulkSyncCard() {
   >();
   const memoSummary = useMemoSyncSummary(memoResults);
 
-  const noReceipts = totalReceipts === 0 && !receiptsLoading;
+  const receiptsUnavailable = receiptsError || isTruncated;
+  const noReceipts =
+    totalReceipts === 0 && !receiptsLoading && !receiptsUnavailable;
   const isBusy = bulkPush.isPending || bulkMemoSync.isPending;
 
   function handleBulkPush() {
@@ -62,13 +72,28 @@ export function YnabBulkSyncCard() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {receiptsUnavailable && (
+          <RequestFailure
+            message={
+              isTruncated
+                ? `Loaded ${receiptIds.length.toLocaleString()} receipt IDs, but the server reported ${totalReceipts.toLocaleString()} receipts. Bulk YNAB actions are disabled.`
+                : "The receipt list is unavailable. Bulk YNAB actions are disabled until all receipts can be loaded."
+            }
+            retry={() => {
+              void retryReceipts();
+            }}
+            isRetrying={receiptsFetching}
+          />
+        )}
         {/* Push All to YNAB */}
         <div className="space-y-2">
           <div className="flex items-center gap-3">
             <Button
               variant="outline"
               onClick={handleBulkPush}
-              disabled={isBusy || noReceipts || receiptsLoading}
+              disabled={
+                isBusy || noReceipts || receiptsLoading || receiptsUnavailable
+              }
             >
               {bulkPush.isPending ? (
                 <>
@@ -132,7 +157,9 @@ export function YnabBulkSyncCard() {
             <Button
               variant="outline"
               onClick={handleBulkMemoSync}
-              disabled={isBusy || noReceipts || receiptsLoading}
+              disabled={
+                isBusy || noReceipts || receiptsLoading || receiptsUnavailable
+              }
             >
               {bulkMemoSync.isPending ? (
                 <>
@@ -195,16 +222,6 @@ export function YnabBulkSyncCard() {
             </Alert>
           )}
         </div>
-
-        {isTruncated && (
-          <Alert>
-            <AlertDescription>
-              Only {receiptIds.length.toLocaleString()} of{" "}
-              {totalReceipts.toLocaleString()} receipts could be loaded. Some
-              receipts will not be included in the bulk sync.
-            </AlertDescription>
-          </Alert>
-        )}
 
         {noReceipts && (
           <p className="text-sm text-muted-foreground">

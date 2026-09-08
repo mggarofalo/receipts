@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useStableQuery } from "@/hooks/useStableQuery";
 import { useQuery } from "@tanstack/react-query";
 import client from "@/lib/api-client";
+import { localErrorPolicy } from "@/lib/request-error-policy";
 
 // Defined inline (matching the generated api.d.ts) — see useYnabStatus for why.
 export type YnabSyncEventResponse = {
@@ -45,6 +46,7 @@ export function useYnabEvents(filters: YnabEventFilters = {}) {
   } = filters;
 
   const query = useQuery({
+    ...localErrorPolicy.query,
     queryKey: [
       "ynab",
       "events",
@@ -56,8 +58,10 @@ export function useYnabEvents(filters: YnabEventFilters = {}) {
       dateFrom,
       dateTo,
     ],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/api/ynab/events" as never, {
+        ...localErrorPolicy.request,
+        signal,
         params: {
           query: {
             offset,

@@ -1224,8 +1224,11 @@ describe("useYnab", () => {
     expect(result.current.totalReceipts).toBe(2);
     expect(result.current.isTruncated).toBe(false);
     expect(client.GET).toHaveBeenCalledWith("/api/receipts", {
+      middleware: expect.any(Array),
+      signal: expect.any(AbortSignal),
       params: { query: { offset: 0, limit: 500 } },
     });
+    await expectRequestOwnership(client.GET as Mock, "/api/receipts", "local");
   });
 
   it("useAllReceiptIds paginates through multiple pages", async () => {
@@ -1260,9 +1263,14 @@ describe("useYnab", () => {
     expect(result.current.isTruncated).toBe(false);
     expect(client.GET).toHaveBeenCalledTimes(2);
     expect(client.GET).toHaveBeenCalledWith("/api/receipts", {
+      middleware: expect.any(Array),
+      signal: expect.any(AbortSignal),
       params: { query: { offset: 0, limit: 500 } },
     });
+    await expectRequestOwnership(client.GET as Mock, "/api/receipts", "local");
     expect(client.GET).toHaveBeenCalledWith("/api/receipts", {
+      middleware: expect.any(Array),
+      signal: expect.any(AbortSignal),
       params: { query: { offset: 500, limit: 500 } },
     });
   });
