@@ -1,21 +1,66 @@
+import type { Mock } from "vitest";
 import { screen } from "@testing-library/react";
 import { renderWithProviders } from "@/test/test-utils";
 import { mockQueryResult, mockMutationResult } from "@/test/mock-hooks";
 import YnabSettings from "./YnabSettings";
+
+// Match a settled useStableQuery projection and its successful wire payload;
+// loading/error fixtures remain genuinely unverified instead of claiming success.
+function settingsQuery(
+  fields: Record<string, unknown>,
+  wireCategories = false,
+) {
+  const loading = fields.isLoading === true;
+  const error = fields.isError === true;
+  const collection = ["budgets", "accounts", "mappings", "categories"].find(
+    (key) => key in fields,
+  );
+  const payload =
+    fields.data ??
+    (collection
+      ? { [wireCategories ? "categories" : "data"]: fields[collection] }
+      : "selectedBudgetId" in fields
+        ? { selectedBudgetId: fields.selectedBudgetId }
+        : "unmappedCategories" in fields
+          ? { unmappedCategories: fields.unmappedCategories }
+          : "rateLimitStatus" in fields
+            ? fields.rateLimitStatus
+            : "isConfigured" in fields
+              ? {
+                  isConfigured: fields.isConfigured,
+                  isConnected: fields.isConnected,
+                  lastSuccessfulSyncUtc: fields.lastSuccessfulSyncUtc,
+                }
+              : {
+                  staleAccountMappingCount: fields.staleAccountMappingCount,
+                  staleCategoryMappingCount: fields.staleCategoryMappingCount,
+                });
+  return mockQueryResult({
+    data: loading || error ? undefined : payload,
+    isLoading: loading,
+    isPending: loading,
+    isFetching: loading,
+    isSuccess: !loading && !error,
+    isError: error,
+    isFetched: !loading,
+    status: loading ? "pending" : error ? "error" : "success",
+    fetchStatus: loading ? "fetching" : "idle",
+    error: error ? new Error("Lookup unavailable") : null,
+    ...fields,
+  });
+}
 
 vi.mock("@/hooks/usePageTitle", () => ({
   usePageTitle: vi.fn(),
 }));
 
 vi.mock("@/hooks/useAccounts", () => ({
-  useAllAccounts: vi.fn(() =>
-    mockQueryResult({ data: [], isLoading: false }),
-  ),
+  useAllAccounts: vi.fn(() => settingsQuery({ data: [], isLoading: false })),
 }));
 
 vi.mock("@/hooks/useYnab", () => ({
   useYnabConnectionStatus: vi.fn(() =>
-    mockQueryResult({
+    settingsQuery({
       isConfigured: false,
       isConnected: false,
       lastSuccessfulSyncUtc: null,
@@ -23,41 +68,41 @@ vi.mock("@/hooks/useYnab", () => ({
     }),
   ),
   useYnabBudgets: vi.fn(() =>
-    mockQueryResult({ budgets: [], isLoading: false, isError: false }),
+    settingsQuery({
+      budgets: [{ id: "budget-1", name: "Budget" }],
+      isLoading: false,
+      isError: false,
+    }),
   ),
   useSelectedYnabBudget: vi.fn(() =>
-    mockQueryResult({ selectedBudgetId: null, isLoading: false }),
+    settingsQuery({ selectedBudgetId: null, isLoading: false }),
   ),
   useSelectYnabBudget: vi.fn(() => mockMutationResult()),
   useYnabAccounts: vi.fn(() =>
-    mockQueryResult({ accounts: [], isLoading: false }),
+    settingsQuery({ accounts: [], isLoading: false }),
   ),
   useYnabAccountMappings: vi.fn(() =>
-    mockQueryResult({ mappings: [], isLoading: false }),
+    settingsQuery({ mappings: [], isLoading: false }),
   ),
   useCreateYnabAccountMapping: vi.fn(() => mockMutationResult()),
   useUpdateYnabAccountMapping: vi.fn(() => mockMutationResult()),
   useDeleteYnabAccountMapping: vi.fn(() => mockMutationResult()),
   useYnabCategories: vi.fn(() =>
-    mockQueryResult({ categories: [], isLoading: false }),
+    settingsQuery({ categories: [], isLoading: false }),
   ),
   useDistinctReceiptItemCategories: vi.fn(() =>
-    mockQueryResult({ categories: [], isLoading: false }),
+    settingsQuery({ categories: [], isLoading: false }),
   ),
   useYnabCategoryMappings: vi.fn(() =>
-    mockQueryResult({ mappings: [], isLoading: false }),
+    settingsQuery({ mappings: [], isLoading: false }),
   ),
-  useUnmappedCategories: vi.fn(() =>
-    mockQueryResult({ unmappedCategories: [] }),
-  ),
+  useUnmappedCategories: vi.fn(() => settingsQuery({ unmappedCategories: [] })),
   useCreateYnabCategoryMapping: vi.fn(() => mockMutationResult()),
   useUpdateYnabCategoryMapping: vi.fn(() => mockMutationResult()),
   useDeleteYnabCategoryMapping: vi.fn(() => mockMutationResult()),
-  useYnabRateLimitStatus: vi.fn(() =>
-    mockQueryResult({ rateLimitStatus: null }),
-  ),
+  useYnabRateLimitStatus: vi.fn(() => settingsQuery({ rateLimitStatus: null })),
   useStaleMappings: vi.fn(() =>
-    mockQueryResult({
+    settingsQuery({
       staleAccountMappingCount: 0,
       staleCategoryMappingCount: 0,
       hasStaleMappings: false,
@@ -67,14 +112,46 @@ vi.mock("@/hooks/useYnab", () => ({
 }));
 
 vi.mock("@/components/YnabBulkSyncCard", () => ({
-  YnabBulkSyncCard: () => <div data-testid="ynab-bulk-sync-card">Bulk YNAB Sync</div>,
+  YnabBulkSyncCard: () => (
+    <div data-testid="ynab-bulk-sync-card">Bulk YNAB Sync</div>
+  ),
 }));
+
+beforeEach(async () => {
+  const hooks = await import("@/hooks/useYnab");
+  const defaults = {
+    useYnabConnectionStatus: {
+      isConfigured: true,
+      isConnected: true,
+      lastSuccessfulSyncUtc: null,
+    },
+    useYnabBudgets: { budgets: [{ id: "budget-1", name: "Budget" }] },
+    useSelectedYnabBudget: { selectedBudgetId: "budget-1" },
+    useYnabAccounts: { accounts: [] },
+    useYnabAccountMappings: { mappings: [] },
+    useYnabCategories: { categories: [] },
+    useDistinctReceiptItemCategories: { categories: [] },
+    useYnabCategoryMappings: { mappings: [] },
+    useUnmappedCategories: { unmappedCategories: [] },
+    useYnabRateLimitStatus: { rateLimitStatus: null },
+    useStaleMappings: {
+      staleAccountMappingCount: 0,
+      staleCategoryMappingCount: 0,
+      hasStaleMappings: false,
+    },
+  };
+  for (const [name, fields] of Object.entries(defaults)) {
+    (hooks[name as keyof typeof hooks] as Mock).mockReturnValue(
+      settingsQuery(fields, name === "useDistinctReceiptItemCategories"),
+    );
+  }
+});
 
 describe("YnabSettings – Connection Status", () => {
   it("shows 'Connected' badge when configured and connected", async () => {
     const { useYnabConnectionStatus } = await import("@/hooks/useYnab");
     vi.mocked(useYnabConnectionStatus).mockReturnValue(
-      mockQueryResult({
+      settingsQuery({
         isConfigured: true,
         isConnected: true,
         lastSuccessfulSyncUtc: null,
@@ -92,7 +169,7 @@ describe("YnabSettings – Connection Status", () => {
     const { useYnabConnectionStatus } = await import("@/hooks/useYnab");
     const recentDate = new Date(Date.now() - 5 * 60000).toISOString();
     vi.mocked(useYnabConnectionStatus).mockReturnValue(
-      mockQueryResult({
+      settingsQuery({
         isConfigured: true,
         isConnected: true,
         lastSuccessfulSyncUtc: recentDate,
@@ -109,7 +186,7 @@ describe("YnabSettings – Connection Status", () => {
   it("shows 'Not Configured' badge when PAT is missing", async () => {
     const { useYnabConnectionStatus } = await import("@/hooks/useYnab");
     vi.mocked(useYnabConnectionStatus).mockReturnValue(
-      mockQueryResult({
+      settingsQuery({
         isConfigured: false,
         isConnected: false,
         lastSuccessfulSyncUtc: null,
@@ -125,7 +202,7 @@ describe("YnabSettings – Connection Status", () => {
   it("shows 'Disconnected' badge when configured but connection fails", async () => {
     const { useYnabConnectionStatus } = await import("@/hooks/useYnab");
     vi.mocked(useYnabConnectionStatus).mockReturnValue(
-      mockQueryResult({
+      settingsQuery({
         isConfigured: true,
         isConnected: false,
         lastSuccessfulSyncUtc: null,
@@ -141,7 +218,7 @@ describe("YnabSettings – Connection Status", () => {
   it("shows loading spinner while checking connection", async () => {
     const { useYnabConnectionStatus } = await import("@/hooks/useYnab");
     vi.mocked(useYnabConnectionStatus).mockReturnValue(
-      mockQueryResult({
+      settingsQuery({
         isConfigured: false,
         isConnected: false,
         lastSuccessfulSyncUtc: null,
@@ -157,9 +234,17 @@ describe("YnabSettings – Connection Status", () => {
 
 describe("YnabSettings – Category Mapping", () => {
   it("hides the mapping cards when YNAB is not configured", async () => {
+    const { useYnabConnectionStatus } = await import("@/hooks/useYnab");
+    vi.mocked(useYnabConnectionStatus).mockReturnValue(
+      settingsQuery({
+        isConfigured: false,
+        isConnected: false,
+        lastSuccessfulSyncUtc: null,
+      }),
+    );
     const { useYnabBudgets } = await import("@/hooks/useYnab");
     vi.mocked(useYnabBudgets).mockReturnValue(
-      mockQueryResult({ budgets: [], isLoading: false, isError: true }),
+      settingsQuery({ budgets: [], isLoading: false, isError: true }),
     );
 
     renderWithProviders(<YnabSettings />);
@@ -173,14 +258,17 @@ describe("YnabSettings – Category Mapping", () => {
   });
 
   it("shows 'Select a budget above to map categories.' when selectedBudgetId is null and not in error state", async () => {
-    const { useYnabBudgets, useSelectedYnabBudget } = await import(
-      "@/hooks/useYnab"
-    );
+    const { useYnabBudgets, useSelectedYnabBudget } =
+      await import("@/hooks/useYnab");
     vi.mocked(useYnabBudgets).mockReturnValue(
-      mockQueryResult({ budgets: [], isLoading: false, isError: false }),
+      settingsQuery({
+        budgets: [{ id: "budget-1", name: "Budget" }],
+        isLoading: false,
+        isError: false,
+      }),
     );
     vi.mocked(useSelectedYnabBudget).mockReturnValue(
-      mockQueryResult({ selectedBudgetId: null, isLoading: false }),
+      settingsQuery({ selectedBudgetId: null, isLoading: false }),
     );
 
     renderWithProviders(<YnabSettings />);
@@ -191,22 +279,23 @@ describe("YnabSettings – Category Mapping", () => {
   });
 
   it("shows loading spinner when categoryMappingLoading is true", async () => {
-    const {
-      useYnabBudgets,
-      useSelectedYnabBudget,
-      useYnabCategories,
-    } = await import("@/hooks/useYnab");
+    const { useYnabBudgets, useSelectedYnabBudget, useYnabCategories } =
+      await import("@/hooks/useYnab");
     vi.mocked(useYnabBudgets).mockReturnValue(
-      mockQueryResult({ budgets: [], isLoading: false, isError: false }),
+      settingsQuery({
+        budgets: [{ id: "budget-1", name: "Budget" }],
+        isLoading: false,
+        isError: false,
+      }),
     );
     vi.mocked(useSelectedYnabBudget).mockReturnValue(
-      mockQueryResult({
+      settingsQuery({
         selectedBudgetId: "budget-1",
         isLoading: false,
       }),
     );
     vi.mocked(useYnabCategories).mockReturnValue(
-      mockQueryResult({ categories: [], isLoading: true }),
+      settingsQuery({ categories: [], isLoading: true }),
     );
 
     renderWithProviders(<YnabSettings />);
@@ -222,19 +311,23 @@ describe("YnabSettings – Category Mapping", () => {
       useDistinctReceiptItemCategories,
     } = await import("@/hooks/useYnab");
     vi.mocked(useYnabBudgets).mockReturnValue(
-      mockQueryResult({ budgets: [], isLoading: false, isError: false }),
+      settingsQuery({
+        budgets: [{ id: "budget-1", name: "Budget" }],
+        isLoading: false,
+        isError: false,
+      }),
     );
     vi.mocked(useSelectedYnabBudget).mockReturnValue(
-      mockQueryResult({
+      settingsQuery({
         selectedBudgetId: "budget-1",
         isLoading: false,
       }),
     );
     vi.mocked(useYnabCategories).mockReturnValue(
-      mockQueryResult({ categories: [], isLoading: false }),
+      settingsQuery({ categories: [], isLoading: false }),
     );
     vi.mocked(useDistinctReceiptItemCategories).mockReturnValue(
-      mockQueryResult({ categories: [], isLoading: false }),
+      settingsQuery({ categories: [], isLoading: false }, true),
     );
 
     renderWithProviders(<YnabSettings />);
@@ -247,14 +340,17 @@ describe("YnabSettings – Category Mapping", () => {
   });
 
   it("shows bulk sync card when YNAB is configured and budget is selected", async () => {
-    const { useYnabBudgets, useSelectedYnabBudget } = await import(
-      "@/hooks/useYnab"
-    );
+    const { useYnabBudgets, useSelectedYnabBudget } =
+      await import("@/hooks/useYnab");
     vi.mocked(useYnabBudgets).mockReturnValue(
-      mockQueryResult({ budgets: [{ id: "b1", name: "Budget" }], isLoading: false, isError: false }),
+      settingsQuery({
+        budgets: [{ id: "b1", name: "Budget" }],
+        isLoading: false,
+        isError: false,
+      }),
     );
     vi.mocked(useSelectedYnabBudget).mockReturnValue(
-      mockQueryResult({ selectedBudgetId: "b1", isLoading: false }),
+      settingsQuery({ selectedBudgetId: "b1", isLoading: false }),
     );
 
     renderWithProviders(<YnabSettings />);
@@ -263,9 +359,17 @@ describe("YnabSettings – Category Mapping", () => {
   });
 
   it("hides bulk sync card when YNAB is not configured", async () => {
+    const { useYnabConnectionStatus } = await import("@/hooks/useYnab");
+    vi.mocked(useYnabConnectionStatus).mockReturnValue(
+      settingsQuery({
+        isConfigured: false,
+        isConnected: false,
+        lastSuccessfulSyncUtc: null,
+      }),
+    );
     const { useYnabBudgets } = await import("@/hooks/useYnab");
     vi.mocked(useYnabBudgets).mockReturnValue(
-      mockQueryResult({ budgets: [], isLoading: false, isError: true }),
+      settingsQuery({ budgets: [], isLoading: false, isError: true }),
     );
 
     renderWithProviders(<YnabSettings />);
@@ -274,14 +378,17 @@ describe("YnabSettings – Category Mapping", () => {
   });
 
   it("hides bulk sync card when no budget is selected", async () => {
-    const { useYnabBudgets, useSelectedYnabBudget } = await import(
-      "@/hooks/useYnab"
-    );
+    const { useYnabBudgets, useSelectedYnabBudget } =
+      await import("@/hooks/useYnab");
     vi.mocked(useYnabBudgets).mockReturnValue(
-      mockQueryResult({ budgets: [{ id: "b1", name: "Budget" }], isLoading: false, isError: false }),
+      settingsQuery({
+        budgets: [{ id: "b1", name: "Budget" }],
+        isLoading: false,
+        isError: false,
+      }),
     );
     vi.mocked(useSelectedYnabBudget).mockReturnValue(
-      mockQueryResult({ selectedBudgetId: null, isLoading: false }),
+      settingsQuery({ selectedBudgetId: null, isLoading: false }),
     );
 
     renderWithProviders(<YnabSettings />);
@@ -299,16 +406,20 @@ describe("YnabSettings – Category Mapping", () => {
       useUnmappedCategories,
     } = await import("@/hooks/useYnab");
     vi.mocked(useYnabBudgets).mockReturnValue(
-      mockQueryResult({ budgets: [], isLoading: false, isError: false }),
+      settingsQuery({
+        budgets: [{ id: "budget-1", name: "Budget" }],
+        isLoading: false,
+        isError: false,
+      }),
     );
     vi.mocked(useSelectedYnabBudget).mockReturnValue(
-      mockQueryResult({
+      settingsQuery({
         selectedBudgetId: "budget-1",
         isLoading: false,
       }),
     );
     vi.mocked(useYnabCategories).mockReturnValue(
-      mockQueryResult({
+      settingsQuery({
         categories: [
           {
             id: "ynab-cat-1",
@@ -320,16 +431,19 @@ describe("YnabSettings – Category Mapping", () => {
       }),
     );
     vi.mocked(useDistinctReceiptItemCategories).mockReturnValue(
-      mockQueryResult({
-        categories: ["Food", "Transport"],
-        isLoading: false,
-      }),
+      settingsQuery(
+        {
+          categories: ["Food", "Transport"],
+          isLoading: false,
+        },
+        true,
+      ),
     );
     vi.mocked(useYnabCategoryMappings).mockReturnValue(
-      mockQueryResult({ mappings: [], isLoading: false }),
+      settingsQuery({ mappings: [], isLoading: false }),
     );
     vi.mocked(useUnmappedCategories).mockReturnValue(
-      mockQueryResult({ unmappedCategories: ["Food", "Transport"] }),
+      settingsQuery({ unmappedCategories: ["Food", "Transport"] }),
     );
 
     renderWithProviders(<YnabSettings />);
@@ -341,14 +455,17 @@ describe("YnabSettings – Category Mapping", () => {
 
 describe("YnabSettings – Rate Limit Card", () => {
   it("renders rate limit card when YNAB is configured and status is available", async () => {
-    const { useYnabBudgets, useYnabRateLimitStatus } = await import(
-      "@/hooks/useYnab"
-    );
+    const { useYnabBudgets, useYnabRateLimitStatus } =
+      await import("@/hooks/useYnab");
     vi.mocked(useYnabBudgets).mockReturnValue(
-      mockQueryResult({ budgets: [], isLoading: false, isError: false }),
+      settingsQuery({
+        budgets: [{ id: "budget-1", name: "Budget" }],
+        isLoading: false,
+        isError: false,
+      }),
     );
     vi.mocked(useYnabRateLimitStatus).mockReturnValue(
-      mockQueryResult({
+      settingsQuery({
         rateLimitStatus: {
           remainingRequests: 150,
           maxRequests: 200,
@@ -367,14 +484,21 @@ describe("YnabSettings – Rate Limit Card", () => {
   });
 
   it("does not render rate limit card when YNAB is not configured", async () => {
-    const { useYnabBudgets, useYnabRateLimitStatus } = await import(
-      "@/hooks/useYnab"
+    const { useYnabConnectionStatus } = await import("@/hooks/useYnab");
+    vi.mocked(useYnabConnectionStatus).mockReturnValue(
+      settingsQuery({
+        isConfigured: false,
+        isConnected: false,
+        lastSuccessfulSyncUtc: null,
+      }),
     );
+    const { useYnabBudgets, useYnabRateLimitStatus } =
+      await import("@/hooks/useYnab");
     vi.mocked(useYnabBudgets).mockReturnValue(
-      mockQueryResult({ budgets: [], isLoading: false, isError: true }),
+      settingsQuery({ budgets: [], isLoading: false, isError: true }),
     );
     vi.mocked(useYnabRateLimitStatus).mockReturnValue(
-      mockQueryResult({ rateLimitStatus: null }),
+      settingsQuery({ rateLimitStatus: null }),
     );
 
     renderWithProviders(<YnabSettings />);
@@ -383,14 +507,17 @@ describe("YnabSettings – Rate Limit Card", () => {
   });
 
   it("shows warning when quota is low", async () => {
-    const { useYnabBudgets, useYnabRateLimitStatus } = await import(
-      "@/hooks/useYnab"
-    );
+    const { useYnabBudgets, useYnabRateLimitStatus } =
+      await import("@/hooks/useYnab");
     vi.mocked(useYnabBudgets).mockReturnValue(
-      mockQueryResult({ budgets: [], isLoading: false, isError: false }),
+      settingsQuery({
+        budgets: [{ id: "budget-1", name: "Budget" }],
+        isLoading: false,
+        isError: false,
+      }),
     );
     vi.mocked(useYnabRateLimitStatus).mockReturnValue(
-      mockQueryResult({
+      settingsQuery({
         rateLimitStatus: {
           remainingRequests: 10,
           maxRequests: 200,
@@ -403,20 +530,21 @@ describe("YnabSettings – Rate Limit Card", () => {
 
     renderWithProviders(<YnabSettings />);
 
-    expect(
-      screen.getByText(/API quota is running low/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/API quota is running low/)).toBeInTheDocument();
   });
 
   it("rate limit bar has role=progressbar with correct aria attributes", async () => {
-    const { useYnabBudgets, useYnabRateLimitStatus } = await import(
-      "@/hooks/useYnab"
-    );
+    const { useYnabBudgets, useYnabRateLimitStatus } =
+      await import("@/hooks/useYnab");
     vi.mocked(useYnabBudgets).mockReturnValue(
-      mockQueryResult({ budgets: [], isLoading: false, isError: false }),
+      settingsQuery({
+        budgets: [{ id: "budget-1", name: "Budget" }],
+        isLoading: false,
+        isError: false,
+      }),
     );
     vi.mocked(useYnabRateLimitStatus).mockReturnValue(
-      mockQueryResult({
+      settingsQuery({
         rateLimitStatus: {
           remainingRequests: 150,
           maxRequests: 200,
@@ -438,14 +566,17 @@ describe("YnabSettings – Rate Limit Card", () => {
   });
 
   it("rate limit bar aria-valuenow reflects current usage", async () => {
-    const { useYnabBudgets, useYnabRateLimitStatus } = await import(
-      "@/hooks/useYnab"
-    );
+    const { useYnabBudgets, useYnabRateLimitStatus } =
+      await import("@/hooks/useYnab");
     vi.mocked(useYnabBudgets).mockReturnValue(
-      mockQueryResult({ budgets: [], isLoading: false, isError: false }),
+      settingsQuery({
+        budgets: [{ id: "budget-1", name: "Budget" }],
+        isLoading: false,
+        isError: false,
+      }),
     );
     vi.mocked(useYnabRateLimitStatus).mockReturnValue(
-      mockQueryResult({
+      settingsQuery({
         rateLimitStatus: {
           remainingRequests: 10,
           maxRequests: 200,
@@ -469,13 +600,17 @@ describe("YnabSettings – Stale Mappings", () => {
     const { useYnabBudgets, useSelectedYnabBudget, useStaleMappings } =
       await import("@/hooks/useYnab");
     vi.mocked(useYnabBudgets).mockReturnValue(
-      mockQueryResult({ budgets: [], isLoading: false, isError: false }),
+      settingsQuery({
+        budgets: [{ id: "budget-1", name: "Budget" }],
+        isLoading: false,
+        isError: false,
+      }),
     );
     vi.mocked(useSelectedYnabBudget).mockReturnValue(
-      mockQueryResult({ selectedBudgetId: "budget-1", isLoading: false }),
+      settingsQuery({ selectedBudgetId: "budget-1", isLoading: false }),
     );
     vi.mocked(useStaleMappings).mockReturnValue(
-      mockQueryResult({
+      settingsQuery({
         staleAccountMappingCount: 2,
         staleCategoryMappingCount: 0,
         hasStaleMappings: true,
@@ -492,13 +627,17 @@ describe("YnabSettings – Stale Mappings", () => {
     const { useYnabBudgets, useSelectedYnabBudget, useStaleMappings } =
       await import("@/hooks/useYnab");
     vi.mocked(useYnabBudgets).mockReturnValue(
-      mockQueryResult({ budgets: [], isLoading: false, isError: false }),
+      settingsQuery({
+        budgets: [{ id: "budget-1", name: "Budget" }],
+        isLoading: false,
+        isError: false,
+      }),
     );
     vi.mocked(useSelectedYnabBudget).mockReturnValue(
-      mockQueryResult({ selectedBudgetId: "budget-1", isLoading: false }),
+      settingsQuery({ selectedBudgetId: "budget-1", isLoading: false }),
     );
     vi.mocked(useStaleMappings).mockReturnValue(
-      mockQueryResult({
+      settingsQuery({
         staleAccountMappingCount: 0,
         staleCategoryMappingCount: 3,
         hasStaleMappings: true,
@@ -515,13 +654,17 @@ describe("YnabSettings – Stale Mappings", () => {
     const { useYnabBudgets, useSelectedYnabBudget, useStaleMappings } =
       await import("@/hooks/useYnab");
     vi.mocked(useYnabBudgets).mockReturnValue(
-      mockQueryResult({ budgets: [], isLoading: false, isError: false }),
+      settingsQuery({
+        budgets: [{ id: "budget-1", name: "Budget" }],
+        isLoading: false,
+        isError: false,
+      }),
     );
     vi.mocked(useSelectedYnabBudget).mockReturnValue(
-      mockQueryResult({ selectedBudgetId: "budget-1", isLoading: false }),
+      settingsQuery({ selectedBudgetId: "budget-1", isLoading: false }),
     );
     vi.mocked(useStaleMappings).mockReturnValue(
-      mockQueryResult({
+      settingsQuery({
         staleAccountMappingCount: 2,
         staleCategoryMappingCount: 3,
         hasStaleMappings: true,
@@ -538,13 +681,17 @@ describe("YnabSettings – Stale Mappings", () => {
     const { useYnabBudgets, useSelectedYnabBudget, useStaleMappings } =
       await import("@/hooks/useYnab");
     vi.mocked(useYnabBudgets).mockReturnValue(
-      mockQueryResult({ budgets: [], isLoading: false, isError: false }),
+      settingsQuery({
+        budgets: [{ id: "budget-1", name: "Budget" }],
+        isLoading: false,
+        isError: false,
+      }),
     );
     vi.mocked(useSelectedYnabBudget).mockReturnValue(
-      mockQueryResult({ selectedBudgetId: "budget-1", isLoading: false }),
+      settingsQuery({ selectedBudgetId: "budget-1", isLoading: false }),
     );
     vi.mocked(useStaleMappings).mockReturnValue(
-      mockQueryResult({
+      settingsQuery({
         staleAccountMappingCount: 0,
         staleCategoryMappingCount: 0,
         hasStaleMappings: false,
@@ -555,4 +702,24 @@ describe("YnabSettings – Stale Mappings", () => {
 
     expect(screen.queryByText("Clear stale mappings")).not.toBeInTheDocument();
   });
+});
+
+it("renders unavailable budget feedback without claiming the configured integration is absent", async () => {
+  const { useYnabBudgets } = await import("@/hooks/useYnab");
+  vi.mocked(useYnabBudgets).mockReturnValue(
+    settingsQuery({ budgets: [], isError: true }),
+  );
+  renderWithProviders(<YnabSettings />);
+  expect(screen.getByText("Connected")).toBeInTheDocument();
+  expect(
+    screen.getByText(
+      "YNAB budgets are unavailable. Any choices shown are last known.",
+    ),
+  ).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+  expect(screen.queryByText("Not Configured")).not.toBeInTheDocument();
+  expect(screen.getByText("Budget Selection")).toBeInTheDocument();
+  // Bulk sync retains its existing selected-budget contract; this test owns
+  // budget lookup feedback, not that separate action workflow.
+  expect(screen.getByTestId("ynab-bulk-sync-card")).toBeInTheDocument();
 });
