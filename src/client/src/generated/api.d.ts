@@ -4056,13 +4056,13 @@ export interface components {
             error_description?: string;
             error_uri?: string;
         };
-        /** @enum {unknown} */
+        /** @enum {string} */
         OAuthErrorResponseError: "invalid_request" | "invalid_client" | "invalid_grant" | "unauthorized_client" | "unsupported_grant_type" | "invalid_scope";
         TokenIntrospectionRequest: {
             token: string;
             tokenTypeHint?: components["schemas"]["TokenIntrospectionRequestTokenTypeHint"] | null;
         };
-        /** @enum {unknown} */
+        /** @enum {string} */
         TokenIntrospectionRequestTokenTypeHint: "accessToken" | "refreshToken";
         TokenIntrospectionResponse: {
             active: boolean;
@@ -4079,7 +4079,7 @@ export interface components {
             token: string;
             tokenTypeHint?: components["schemas"]["TokenRevocationRequestTokenTypeHint"] | null;
         };
-        /** @enum {unknown} */
+        /** @enum {string} */
         TokenRevocationRequestTokenTypeHint: "accessToken" | "refreshToken";
         AdminResetPasswordRequest: {
             newPassword: string;
@@ -4237,9 +4237,9 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         };
-        /** @enum {unknown} */
+        /** @enum {string} */
         YnabSyncRecordResponseSyncType: "memoUpdate" | "transactionPush";
-        /** @enum {unknown} */
+        /** @enum {string} */
         YnabSyncRecordResponseSyncStatus: "pending" | "synced" | "failed";
         ReceiptYnabSyncStatus: {
             /** Format: uuid */
@@ -4464,9 +4464,9 @@ export interface components {
              */
             oldestRequestAt?: null | string;
         };
-        /** @enum {unknown} */
+        /** @enum {string} */
         YnabMemoSyncOutcome: "synced" | "alreadySynced" | "noMatch" | "ambiguous" | "currencySkipped" | "reconciledSkipped" | "failed";
-        /** @enum {unknown} */
+        /** @enum {string} */
         YnabSyncType: "memoUpdate" | "transactionPush";
     };
     responses: never;

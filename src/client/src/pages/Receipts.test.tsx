@@ -320,9 +320,9 @@ describe("Receipts", () => {
       mockReceiptListItemResponse({ id: "mismatch", balanceState: "outOfBalance" }),
     ];
     await mockReceiptTable(items, new Map([
-      ["balanced", "Synced"],
-      ["missing", "Pending"],
-      ["mismatch", "Failed"],
+      ["balanced", "synced"],
+      ["missing", "pending"],
+      ["mismatch", "failed"],
     ]));
 
     renderWithProviders(<Receipts />);
@@ -481,7 +481,7 @@ describe("Receipts", () => {
       paymentSummary: "Checking · Visa",
       categorySummary: "Grocery",
     });
-    await mockReceiptTable([receipt], new Map([["r1", "Synced"]]));
+    await mockReceiptTable([receipt], new Map([["r1", "synced"]]));
     const items = Array.from({ length: 6 }, (_, index) => ({
       id: `item-${index}`,
       description: `Item ${index + 1}`,
@@ -971,8 +971,8 @@ describe("Receipts", () => {
       isSuccess: true,
       status: "success",
       statusMap: new Map([
-        ["r1", "Synced"],
-        ["r2", "Failed"],
+        ["r1", "synced"],
+        ["r2", "failed"],
       ]),
     }));
 

@@ -49,18 +49,18 @@ public static class ApplicationConfiguration
 			{
 				options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
 				options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
+				GeneratedDtoJsonContract.Apply(options.JsonSerializerOptions);
 			});
 
 		// Mirror the MVC JSON options onto the Microsoft.AspNetCore.Http.Json options so
-		// that minimal-API endpoints and the runtime schema pipeline share the same
-		// camelCase enum policy. The built-in OpenAPI document generator
-		// (Microsoft.AspNetCore.OpenApi) does not consult this for enum value names — it
-		// enumerates C# member names directly — so we also install a schema transformer
-		// below to rewrite enum values to camelCase at build time.
+		// that typed IResult responses and controller-bound JSON share the same camelCase
+		// enum policy. Generated DTO properties carry their own converters, so both option
+		// families also remove that generated override at the scoped metadata boundary.
 		services.ConfigureHttpJsonOptions(options =>
 		{
 			options.SerializerOptions.PropertyNameCaseInsensitive = true;
 			options.SerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
+			GeneratedDtoJsonContract.Apply(options.SerializerOptions);
 		});
 
 		services.AddResponseCompression(options =>

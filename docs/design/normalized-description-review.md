@@ -167,20 +167,13 @@ RECEIPTS-892 applied to merges; the split path reuses the same helper.
 found in the most recent 200 items", was a statement about the query, and was shown even when
 the entry did have linked items.
 
-### Wire-format caveat
+### Wire-format compatibility
 
-The spec documents this enum lowercase (`active`, `pendingReview`) and the generated TypeScript
-union agrees, but the API currently serializes it PascalCase. NSwag decorates every generated
-enum property with a property-level
-`[JsonConverter(typeof(JsonStringEnumConverter<T>))]` built from its parameterless constructor —
-no naming policy — and a property-level converter outranks the
-`JsonStringEnumConverter(JsonNamingPolicy.CamelCase)` registered globally in
-`ApplicationConfiguration`. So the global policy never gets a say.
-
-That is **RECEIPTS-884**, tracked separately. Until it is fixed, client-side status comparisons
-go through `src/client/src/lib/normalized-description-status.ts`, which compares
-case-insensitively. Those predicates keep working under either casing, so fixing RECEIPTS-884
-will not silently invert them.
+The spec documents this enum lowercase (`active`, `pendingReview`) and generated TypeScript
+uses those literals. Before RECEIPTS-884, some NSwag-generated response properties carried a
+parameterless property converter that overrode the API's camel-case policy and emitted PascalCase.
+The API now removes that specific override at its generated-DTO metadata boundary for both JSON
+options families. Tolerant client comparisons remain for historical responses and cached data.
 
 ## The registry is paged, searched server-side, and no longer read-only (RECEIPTS-879)
 

@@ -8,6 +8,20 @@ The canonical API contract lives in `openapi/spec.yaml` (OpenAPI 3.1.0). All API
 
 **npm scripts:** `npm run lint:spec`, `npm run check:drift`, `npm run check:breaking -- origin/main`
 
+### Typed enum wire values
+
+Enum literals in `openapi/spec.yaml` are the response wire contract. Generated
+DTO properties may carry an NSwag property converter that would otherwise
+override the API's camel-case enum policy, so the API removes that override at
+the generated-DTO JSON metadata boundary for both MVC and typed `IResult`
+serialization. Raw response tests verify the resulting bytes; schema drift
+alone cannot prove runtime serialization.
+
+This policy applies to typed generated DTO enum properties. It does not rewrite
+query contracts, OAuth literals, metadata labels, currency codes, diagnostic
+strings, audit values, persistence, or arbitrary strings that resemble enums.
+Generated request DTOs retain case-insensitive and numeric enum input behavior.
+
 ## Validation Ownership
 
 Schema-expressible constraints belong in `openapi/spec.yaml`. Generated DTO DataAnnotations enforce them through MVC model validation; for example, receipt location length is 1–200 characters. Keep whitespace-only rejection and rules relative to today's date in the API FluentValidation validators. Do not duplicate a generated length limit in a handwritten validator.

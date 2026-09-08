@@ -8,7 +8,7 @@ describe("YnabSyncBadge", () => {
   });
 
   it("renders Synced badge", () => {
-    render(<YnabSyncBadge status="Synced" />);
+    render(<YnabSyncBadge status="synced" />);
     expect(screen.getByText("Synced")).toBeInTheDocument();
     expect(
       screen.getByLabelText("YNAB sync status: Synced"),
@@ -16,17 +16,17 @@ describe("YnabSyncBadge", () => {
   });
 
   it("renders Pending badge", () => {
-    render(<YnabSyncBadge status="Pending" />);
+    render(<YnabSyncBadge status="pending" />);
     expect(screen.getByText("Pending")).toBeInTheDocument();
   });
 
   it("renders Failed badge", () => {
-    render(<YnabSyncBadge status="Failed" />);
+    render(<YnabSyncBadge status="failed" />);
     expect(screen.getByText("Failed")).toBeInTheDocument();
   });
 
   it("renders Not Synced badge", () => {
-    render(<YnabSyncBadge status="NotSynced" />);
+    render(<YnabSyncBadge status="notSynced" />);
     expect(screen.getByText("Not Synced")).toBeInTheDocument();
   });
 });

@@ -35,7 +35,7 @@ describe("YnabReceiptCard", () => {
         receiptId="receipt-1"
         hasTransactions
         isAvailable
-        persistedSyncStatus="Synced"
+        persistedSyncStatus="synced"
       />,
     );
 
@@ -54,14 +54,14 @@ describe("YnabReceiptCard", () => {
         receiptId="receipt-42"
         hasTransactions={false}
         isAvailable
-        persistedSyncStatus="Failed"
+        persistedSyncStatus="failed"
       />,
     );
 
     expect(mockPushButton).toHaveBeenCalledWith({
       receiptId: "receipt-42",
       hasTransactions: false,
-      persistedSyncStatus: "Failed",
+      persistedSyncStatus: "failed",
       syncStatusUnavailable: false,
     });
     expect(mockMemoCard).toHaveBeenCalledWith({

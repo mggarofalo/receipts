@@ -39,7 +39,7 @@ export function YnabBulkSyncCard() {
     setMemoResults(undefined);
     bulkMemoSync.mutate(receiptIds, {
       onSuccess: (data) => {
-        setMemoResults(data?.results as YnabMemoSyncResult[] | undefined);
+        setMemoResults(data?.results);
       },
     });
   }

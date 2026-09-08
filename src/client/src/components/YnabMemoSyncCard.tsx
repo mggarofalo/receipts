@@ -5,6 +5,7 @@ import {
   useResolveYnabMemoSync,
   useMemoSyncSummary,
   useYnabConnectionStatus,
+  type YnabMemoSyncOutcome,
   type YnabMemoSyncResult,
   type YnabTransactionCandidateDto,
 } from "@/hooks/useYnab";
@@ -41,21 +42,21 @@ interface YnabMemoSyncCardProps {
   disabled?: boolean;
 }
 
-function outcomeLabel(outcome: string): string {
+function outcomeLabel(outcome: YnabMemoSyncOutcome): string {
   switch (outcome) {
-    case "Synced":
+    case "synced":
       return "Synced";
-    case "AlreadySynced":
+    case "alreadySynced":
       return "Already synced";
-    case "NoMatch":
+    case "noMatch":
       return "No match";
-    case "Ambiguous":
+    case "ambiguous":
       return "Ambiguous";
-    case "CurrencySkipped":
+    case "currencySkipped":
       return "Currency skipped";
-    case "ReconciledSkipped":
+    case "reconciledSkipped":
       return "Reconciled";
-    case "Failed":
+    case "failed":
       return "Failed";
     default:
       return outcome;
@@ -63,20 +64,20 @@ function outcomeLabel(outcome: string): string {
 }
 
 function outcomeBadgeVariant(
-  outcome: string,
+  outcome: YnabMemoSyncOutcome,
 ): "default" | "secondary" | "destructive" | "outline" {
   switch (outcome) {
-    case "Synced":
+    case "synced":
       return "default";
-    case "AlreadySynced":
+    case "alreadySynced":
       return "secondary";
-    case "Ambiguous":
+    case "ambiguous":
       return "outline";
-    case "NoMatch":
-    case "CurrencySkipped":
-    case "ReconciledSkipped":
+    case "noMatch":
+    case "currencySkipped":
+    case "reconciledSkipped":
       return "secondary";
-    case "Failed":
+    case "failed":
       return "destructive";
     default:
       return "outline";
@@ -136,7 +137,7 @@ export function YnabMemoSyncContent({
     if (disabled) return;
     syncMemos.mutate(receiptId, {
       onSuccess: (data) => {
-        setResults(data?.results as YnabMemoSyncResult[] | undefined);
+        setResults(data?.results);
       },
     });
   }
@@ -155,12 +156,20 @@ export function YnabMemoSyncContent({
           if (disabledRef.current) return;
           syncMemos.mutate(receiptId, {
             onSuccess: (data) => {
-              setResults(data?.results as YnabMemoSyncResult[] | undefined);
+              setResults(data?.results);
             },
           });
         },
       },
     );
+  }
+
+  function openResolve(result: YnabMemoSyncResult) {
+    if (!result.ambiguousCandidates) return;
+    setResolveTarget({
+      localTransactionId: result.localTransactionId,
+      candidates: result.ambiguousCandidates,
+    });
   }
 
   return (
@@ -245,19 +254,13 @@ export function YnabMemoSyncContent({
                       </span>
                     )}
                   </div>
-                  {result.outcome === "Ambiguous" &&
+                  {result.outcome === "ambiguous" &&
                     result.ambiguousCandidates && (
                       <Button
                         variant="outline"
                         size="sm"
                         disabled={disabled}
-                        onClick={() =>
-                          setResolveTarget({
-                            localTransactionId: result.localTransactionId,
-                            candidates:
-                              result.ambiguousCandidates as YnabTransactionCandidateDto[],
-                          })
-                        }
+                        onClick={() => openResolve(result)}
                       >
                         Resolve
                       </Button>
