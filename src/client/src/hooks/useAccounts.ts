@@ -1,9 +1,10 @@
 import { invalidateDomainChange, queryKeys } from "@/lib/query-invalidation";
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { useStableQuery } from "@/hooks/useStableQuery";
 import { useQuery, useQueries, useQueryClient } from "@tanstack/react-query";
 import { useSessionMutation } from "@/hooks/useSessionMutation";
 import client from "@/lib/api-client";
+import { localErrorPolicy, toastErrorPolicy } from "@/lib/request-error-policy";
 import { toast } from "sonner";
 
 export function useAccounts(offset = 0, limit = 50, sortBy?: string | null, sortDirection?: string | null, isActive?: boolean | null, options: { enabled?: boolean; q?: string } = {}) {
@@ -27,6 +28,7 @@ export function useAccounts(offset = 0, limit = 50, sortBy?: string | null, sort
 /** Fetches the complete account list for pickers and entity lookups. */
 export function useAllAccounts(isActive?: boolean | null) {
   return useQuery({
+    ...localErrorPolicy.query,
     queryKey: [...queryKeys.accounts, "all", isActive ?? undefined],
     queryFn: async ({ signal }) => {
       const pageSize = 500;
@@ -42,6 +44,7 @@ export function useAllAccounts(isActive?: boolean | null) {
             },
           },
           signal,
+          ...localErrorPolicy.request,
         });
         if (error) throw error;
         return data;
@@ -78,26 +81,20 @@ export function useAccountCards(accountId: string | null) {
   // useMergeCards) that invalidate ["cards"] also invalidate these per-account
   // card lists via React Query's prefix matching.
   const query = useQuery({
+    ...localErrorPolicy.query,
     queryKey: [...queryKeys.cards, "byAccount", accountId],
     enabled: !!accountId,
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/api/accounts/{id}/cards", {
         params: { path: { id: accountId! } },
+        signal,
+        ...localErrorPolicy.request,
       });
       if (error) throw error;
       return data;
     },
   });
-  return useMemo(
-    () => ({
-      data: query.data,
-      isLoading: query.isLoading,
-      isError: query.isError,
-      error: query.error,
-      refetch: query.refetch,
-    }),
-    [query.data, query.isLoading, query.isError, query.error, query.refetch],
-  );
+  return useStableQuery(query);
 }
 
 /**
@@ -112,12 +109,22 @@ export function useAccountCards(accountId: string | null) {
  * between the two hooks and one `["cards"]` invalidation still clears both.
  */
 export function useAccountsCards(accountIds: string[]) {
+  const queryClient = useQueryClient();
+  const accountIdsKey = JSON.stringify(accountIds);
+  const refetch = useCallback(() => Promise.all(
+    (JSON.parse(accountIdsKey) as string[]).map((id) => queryClient.refetchQueries({
+      queryKey: [...queryKeys.cards, "byAccount", id], exact: true,
+    }, { cancelRefetch: false })),
+  ), [queryClient, accountIdsKey]);
   const results = useQueries({
     queries: accountIds.map((accountId) => ({
+      ...localErrorPolicy.query,
       queryKey: [...queryKeys.cards, "byAccount", accountId],
-      queryFn: async () => {
+      queryFn: async ({ signal }) => {
         const { data, error } = await client.GET("/api/accounts/{id}/cards", {
           params: { path: { id: accountId } },
+          signal,
+          ...localErrorPolicy.request,
         });
         if (error) throw error;
         return data;
@@ -127,12 +134,15 @@ export function useAccountsCards(accountIds: string[]) {
 
   const isLoading = results.some((r) => r.isLoading);
   const isError = results.some((r) => r.isError);
+  const isFetching = results.some((r) => r.isFetching);
+  const isSuccess = results.every((r) => r.isSuccess);
 
   // useQueries hands back a fresh array (and fresh result objects) every render, so
   // memoising on `results` would rebuild the map each time and defeat every downstream
   // memo. Track every projected field while retaining stable identity on unchanged data.
   const signature = JSON.stringify(accountIds.map((id, i) => [
     id,
+    results[i]?.data !== undefined,
     (results[i]?.data ?? []).map((card) => [card.id, card.name, card.cardCode]),
   ]));
 
@@ -152,8 +162,8 @@ export function useAccountsCards(accountIds: string[]) {
   }, [signature]);
 
   return useMemo(
-    () => ({ cardsByAccountId, isLoading, isError }),
-    [cardsByAccountId, isLoading, isError],
+    () => ({ cardsByAccountId, isLoading, isError, isFetching, isSuccess, refetch }),
+    [cardsByAccountId, isLoading, isError, isFetching, isSuccess, refetch],
   );
 }
 
@@ -168,11 +178,12 @@ export interface CardSummary {
 export function useCreateAccount() {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
     mutationFn: async (body: {
       name: string;
       isActive: boolean;
     }) => {
-      const { data, error } = await client.POST("/api/accounts", { body });
+      const { data, error } = await client.POST("/api/accounts", { body, ...toastErrorPolicy.request });
       if (error) throw error;
       return data;
     },
@@ -186,6 +197,7 @@ export function useCreateAccount() {
 export function useUpdateAccount() {
   const queryClient = useQueryClient();
   return useSessionMutation({
+    ...toastErrorPolicy.mutation,
     mutationFn: async (body: {
       id: string;
       name: string;
@@ -194,6 +206,7 @@ export function useUpdateAccount() {
       const { error } = await client.PUT("/api/accounts/{id}", {
         params: { path: { id: body.id } },
         body,
+        ...toastErrorPolicy.request,
       });
       if (error) throw error;
     },

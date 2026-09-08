@@ -266,6 +266,11 @@ describe.each(["detail", "wizard"] as const)("%s cascade recovery", (kind) => {
     expect(attempts).toBe(2);
   });
   it("ignores a late response for the previous account", async () => {
+    let requestSignal: AbortSignal | undefined;
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
     let release!: () => void;
     const pending = new Promise<void>((resolve) => {
       release = resolve;
@@ -273,7 +278,9 @@ describe.each(["detail", "wizard"] as const)("%s cascade recovery", (kind) => {
     server.use(
       http.get(
         "http://selector.test/api/accounts/account-1/cards",
-        async () => {
+        async ({ request }) => {
+          requestSignal = request.signal;
+          markStarted();
           await pending;
           return HttpResponse.json([cards[0]]);
         },
@@ -284,14 +291,20 @@ describe.each(["detail", "wizard"] as const)("%s cascade recovery", (kind) => {
       const { queryClient } = mount(kind);
       queryClient.setQueryDefaults(["cards"], { gcTime: Infinity });
       await select(user, "Account", "Account 1");
+      await started;
       expect(screen.getByRole("combobox", { name: /^Card/ })).toBeDisabled();
       await select(user, "Account", "Account 2");
       await select(user, "Card", "Second card");
-      release();
-      await waitFor(() =>
-        expect(
-          queryClient.getQueryData(["cards", "byAccount", "account-1"]),
-        ).toEqual([cards[0]]),
+      expect(requestSignal?.aborted).toBe(true);
+      await act(async () => {
+        release();
+        await pending;
+      });
+      expect(
+        queryClient.getQueryData(["cards", "byAccount", "account-1"]),
+      ).toBeUndefined();
+      expect(screen.getByRole("combobox", { name: /^Card/ })).toHaveTextContent(
+        "Second card",
       );
       await user.click(screen.getByRole("combobox", { name: /^Card/ }));
       expect(

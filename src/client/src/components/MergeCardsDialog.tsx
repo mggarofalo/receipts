@@ -1,5 +1,9 @@
+import { RequestFailure } from "@/components/RequestFailure";
+import { handleGlobalError } from "@/lib/global-error-handler";
 import { isAbortError } from "@/lib/auth";
-import { useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/query-invalidation";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useMergeAccountMaintenance } from "@/hooks/useMergeAccountMaintenance";
 import { Button } from "@/components/ui/button";
@@ -25,6 +29,7 @@ import { AlertCircle } from "lucide-react";
 import {
   useMergeCards,
   useMergeCardsPreview,
+  mergeCardsPreviewQueryOptions,
   isMergeCardsConflict,
   type MergeCardsConflict,
   type YnabMappingConflict,
@@ -61,6 +66,12 @@ export function MergeCardsDialog({
   onMergeComplete,
   onIncludeCards,
 }: MergeCardsDialogProps) {
+  const queryClient = useQueryClient();
+  const mountedRef = useRef(false);
+  const mergeInFlightRef = useRef(false);
+  const attemptInFlightRef = useRef(false);
+  const ownershipRef = useRef({ generation: 0, key: "", open: false, failed: false });
+  const [preparing, setPreparing] = useState(false);
   const [targetMode, setTargetMode] = useState<TargetMode>("existing");
   const [targetAccountId, setTargetAccountId] = useState<string>("");
   const [newAccountName, setNewAccountName] = useState<string>("");
@@ -80,7 +91,9 @@ export function MergeCardsDialog({
   // silently lands on an account still carrying the original name.
   const pendingCreatedAccountNameRef = useRef<string | null>(null);
 
-  const { data: accountsData } = useAllAccounts(true);
+  const accountsQuery = useAllAccounts(true);
+  const { data: accountsData } = accountsQuery;
+  const accountsReady = accountsQuery.isSuccess && !accountsQuery.isFetching;
   const createAccount = useCreateAccount();
   const mergeCards = useMergeCards();
   const accountMaintenance = useMergeAccountMaintenance();
@@ -94,7 +107,7 @@ export function MergeCardsDialog({
    * leaked permanently, and saying nothing leaves the user unable to even know
    * to clean it up. Resolves rather than rejects so no caller needs a .catch.
    */
-  async function discardCreatedAccount(accountId: string) {
+  const discardCreatedAccount = useCallback(async (accountId: string) => {
     try {
       await accountMaintenance.discardAccount(accountId);
     } catch (error) {
@@ -103,10 +116,14 @@ export function MergeCardsDialog({
         "Couldn't remove the empty account created for this merge. You may need to delete it manually.",
       );
     }
-  }
+  }, [accountMaintenance]);
 
   function handleOpenChange(next: boolean) {
     if (!next) {
+      // Once the merge is dispatched its target must not be deleted by close cleanup.
+      if (mergeInFlightRef.current) return;
+      ownershipRef.current.generation += 1;
+      ownershipRef.current.open = false;
       const leaked = pendingCreatedAccountIdRef.current;
       if (leaked) {
         pendingCreatedAccountIdRef.current = null;
@@ -122,6 +139,21 @@ export function MergeCardsDialog({
     }
     onOpenChange(next);
   }
+
+  useLayoutEffect(() => {
+    const owner = ownershipRef.current;
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      owner.generation += 1;
+      const pendingId = pendingCreatedAccountIdRef.current;
+      if (pendingId && !mergeInFlightRef.current) {
+        pendingCreatedAccountIdRef.current = null;
+        pendingCreatedAccountNameRef.current = null;
+        void discardCreatedAccount(pendingId);
+      }
+    };
+  }, [discardCreatedAccount]);
 
   const accounts = accountsData ?? [];
   // Keyed on accountsData, not the `?? []` above: that fallback builds a fresh array
@@ -139,15 +171,17 @@ export function MergeCardsDialog({
   const sourceAccountIds = useMemo(() => {
     const ids = new Set<string>();
     for (const card of selectedCards) {
-      if (card.accountId && card.accountId !== targetAccountId) ids.add(card.accountId);
+      if (card.accountId && (targetMode === "new" || card.accountId !== targetAccountId)) ids.add(card.accountId);
     }
     return [...ids].sort();
-  }, [selectedCards, targetAccountId]);
+  }, [selectedCards, targetAccountId, targetMode]);
 
   // The full card set of each of those accounts — not just what happens to be on the
   // current page of /cards, which is the reason this could not be checked before.
-  const { cardsByAccountId, isLoading: sourceCardsLoading } =
-    useAccountsCards(sourceAccountIds);
+  const sourceCardsQuery = useAccountsCards(sourceAccountIds);
+  const { cardsByAccountId, isLoading: sourceCardsLoading } = sourceCardsQuery;
+  const sourcesReady = sourceCardsQuery.isSuccess && !sourceCardsQuery.isFetching &&
+    sourceAccountIds.every((id) => cardsByAccountId.has(id));
 
   /**
    * What this dialog will actually submit: the caller's selection plus anything the
@@ -227,7 +261,7 @@ export function MergeCardsDialog({
   const targetIsReady =
     targetMode === "existing" ? targetAccountId !== "" : newAccountName.trim().length > 0;
   const previewInput =
-    targetIsReady &&
+    open && accountsReady && sourcesReady && targetIsReady &&
     effectiveCards.length > 0 &&
     !hasIncompleteSelection &&
     !wouldChangeNothing &&
@@ -238,9 +272,31 @@ export function MergeCardsDialog({
           ynabMappingWinnerAccountId: winnerAccountId,
         }
       : null;
-  const { data: preview, isFetching: previewLoading } = useMergeCardsPreview(previewInput);
+  const previewQuery = useMergeCardsPreview(previewInput);
+  const { data: preview, isFetching: previewLoading } = previewQuery;
+
+  // Compare committed inputs, including card ownership, across each async stage.
+  // A close/reopen or change away and back still invalidates the original attempt.
+  const inputKey = JSON.stringify([
+    targetMode, targetAccountId, newAccountName.trim(), winnerAccountId,
+    effectiveCards.map((card) => [card.id, card.accountId]).sort(),
+  ]);
+  useLayoutEffect(() => {
+    const owner = ownershipRef.current;
+    if (owner.key !== inputKey || owner.open !== open) owner.generation += 1;
+    owner.key = inputKey;
+    owner.open = open;
+    owner.failed = accountsQuery.isError || sourceCardsQuery.isError || previewQuery.isError;
+    if (!open && !mergeInFlightRef.current) {
+      const pendingId = pendingCreatedAccountIdRef.current;
+      pendingCreatedAccountIdRef.current = null;
+      pendingCreatedAccountNameRef.current = null;
+      if (pendingId) void discardCreatedAccount(pendingId);
+    }
+  }, [inputKey, open, accountsQuery.isError, sourceCardsQuery.isError, previewQuery.isError, discardCreatedAccount]);
 
   function includeMissingCards() {
+    if (!sourcesReady) return;
     setIncludedCardIds((prev) => [...new Set([...prev, ...missingCardIds])]);
     // Tell the page too, so any of these it *is* showing tick their checkbox and the
     // "Merge (n)" count stays truthful. It cannot hold the ones it is not showing,
@@ -251,11 +307,12 @@ export function MergeCardsDialog({
   const isSubmitDisabled =
     // One card is enough (RECEIPTS-887). What actually has to hold is that the merge
     // would move something, and `wouldChangeNothing` below is the check for that.
+    !open || !accountsReady || !sourcesReady ||
     effectiveCards.length < 1 ||
     (targetMode === "existing" && !targetAccountId) ||
     (targetMode === "new" && newAccountName.trim().length === 0) ||
     mergeCards.isPending ||
-    createAccount.isPending ||
+    createAccount.isPending || preparing ||
     wouldChangeNothing ||
     // Submitting would earn a 400 the user cannot act on. Hold it until the
     // selection is whole, or until they include the rest with one click.
@@ -266,10 +323,9 @@ export function MergeCardsDialog({
     // Same reasoning one step later: while the impact is still being computed the
     // user would be confirming something they have not been shown (RECEIPTS-889).
     previewLoading ||
-    // In "New account" mode submit is what *creates* the account, so it must not be
-    // reachable until the preview has confirmed the merge would be accepted. A merge
-    // rejected after creation strands an empty account nobody can find (RECEIPTS-902).
-    (targetMode === "new" && !preview) ||
+    // Every irreversible merge needs a current preview. New targets additionally
+    // depend on that proof before the account is created (RECEIPTS-902).
+    (!previewInput || !previewQuery.isSuccess || !preview) ||
     (conflict !== null && !winnerAccountId);
 
   /**
@@ -301,7 +357,12 @@ export function MergeCardsDialog({
     }
 
     if (pendingCreatedAccountNameRef.current !== name) {
-      await accountMaintenance.renameAccount(pendingId, name);
+      try {
+        await accountMaintenance.renameAccount(pendingId, name);
+      } catch (error) {
+        if (!isAbortError(error)) handleGlobalError(error);
+        throw error;
+      }
       pendingCreatedAccountNameRef.current = name;
     }
 
@@ -310,52 +371,107 @@ export function MergeCardsDialog({
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
-
-    let resolvedTargetId = targetAccountId;
-
-    // The conflict-resolution retry deliberately does NOT come through here:
-    // the conflict handler below switches targetMode to "existing" and pins
-    // targetAccountId to the created account, so resolvedTargetId already
-    // carries it. Keying reuse off the ref instead is what made an ordinary
-    // failed retry indistinguishable from conflict resolution.
-    if (targetMode === "new") {
-      try {
-        const created = await resolveNewAccountTarget(newAccountName.trim());
-        if (!created) return;
-        resolvedTargetId = created;
-      } catch {
-        // Surfaced by the global error handler.
-        return;
-      }
-    }
-
+    if (isSubmitDisabled || attemptInFlightRef.current) return;
+    const generation = ownershipRef.current.generation;
+    const stillOwned = () => mountedRef.current && ownershipRef.current.open &&
+      ownershipRef.current.generation === generation;
+    attemptInFlightRef.current = true;
+    setPreparing(true);
     try {
-      await mergeCards.mutateAsync({
-        targetAccountId: resolvedTargetId,
-        sourceCardIds: effectiveCards.map((c) => c.id),
-        ynabMappingWinnerAccountId: winnerAccountId,
-      });
-      // The created account is only legitimately owned if the merge actually
-      // landed on it. If the user created one and then switched to an existing
-      // target, clearing the ref unconditionally would leak it.
-      const createdId = pendingCreatedAccountIdRef.current;
-      pendingCreatedAccountIdRef.current = null;
-      pendingCreatedAccountNameRef.current = null;
-      if (createdId && createdId !== resolvedTargetId) {
-        void discardCreatedAccount(createdId);
-      }
-      handleOpenChange(false);
-      onMergeComplete?.();
-    } catch (err) {
-      if (isMergeCardsConflict(err)) {
-        setConflict(err);
-        if (targetMode === "new") {
-          setTargetAccountId(resolvedTargetId);
-          setTargetMode("existing");
+      let resolvedTargetId = targetAccountId;
+
+      // The conflict-resolution retry deliberately does NOT come through here:
+      // the conflict handler below switches targetMode to "existing" and pins
+      // targetAccountId to the created account, so resolvedTargetId already
+      // carries it. Keying reuse off the ref instead is what made an ordinary
+      // failed retry indistinguishable from conflict resolution.
+      if (targetMode === "new") {
+        try {
+          const created = await resolveNewAccountTarget(newAccountName.trim());
+          if (!created) return;
+          resolvedTargetId = created;
+          if (!stillOwned()) {
+            // A closed/unmounted dialog cannot retain a late-created empty target.
+            // An open dialog with changed inputs keeps it for deliberate retry/cleanup.
+            if (!mountedRef.current || !ownershipRef.current.open) {
+              if (pendingCreatedAccountIdRef.current === created) {
+                pendingCreatedAccountIdRef.current = null;
+                pendingCreatedAccountNameRef.current = null;
+                void discardCreatedAccount(created);
+              }
+            }
+            return;
+          }
+          if (ownershipRef.current.failed) return;
+          // Account preparation invalidates these reads. Settle them before dependent
+          // work, keeping their existing requests instead of cancelling/restarting them.
+          const [accountsResult] = await Promise.all([
+            accountsQuery.refetch({ cancelRefetch: false }),
+            sourceCardsQuery.refetch(),
+          ]);
+          if (!stillOwned() || !accountsResult.isSuccess) return;
+          const chosenIds = new Set(effectiveCards.map((card) => card.id));
+          const sourcesComplete = () => sourceAccountIds.every((id) => {
+            const state = queryClient.getQueryState<{ id: string }[]>([...queryKeys.cards, "byAccount", id]);
+            return state?.status === "success" && state.fetchStatus === "idle" &&
+              state.data !== undefined && state.data.every((card) => chosenIds.has(card.id));
+          });
+          if (!sourcesComplete()) return;
+          // Use the captured preview input: this observer may temporarily be disabled
+          // while source reads refresh, so its live refetch can point at a different key.
+          const verifiedPreview = await queryClient.fetchQuery(mergeCardsPreviewQueryOptions(previewInput));
+          if (!stillOwned() || !verifiedPreview || !sourcesComplete() || ownershipRef.current.failed) return;
+        } catch {
+          // Creation owns its cache toast; rename owns its caller toast.
+          return;
         }
-        return;
       }
-      // non-conflict errors are surfaced via toast in the hook
+
+      try {
+        mergeInFlightRef.current = true;
+        await mergeCards.mutateAsync({
+          targetAccountId: resolvedTargetId,
+          sourceCardIds: effectiveCards.map((c) => c.id),
+          ynabMappingWinnerAccountId: winnerAccountId,
+        });
+        // The created account is only legitimately owned if the merge actually
+        // landed on it. If the user created one and then switched to an existing
+        // target, clearing the ref unconditionally would leak it.
+        const createdId = pendingCreatedAccountIdRef.current;
+        pendingCreatedAccountIdRef.current = null;
+        pendingCreatedAccountNameRef.current = null;
+        if (createdId && createdId !== resolvedTargetId) {
+          void discardCreatedAccount(createdId);
+        }
+        mergeInFlightRef.current = false;
+        if (!mountedRef.current) return;
+        handleOpenChange(false);
+        onMergeComplete?.();
+      } catch (err) {
+        if (!mountedRef.current || !stillOwned()) return;
+        if (isMergeCardsConflict(err)) {
+          setConflict(err);
+          if (targetMode === "new") {
+            setTargetAccountId(resolvedTargetId);
+            setTargetMode("existing");
+          }
+          return;
+        }
+        // non-conflict errors are surfaced via toast in the hook
+      } finally {
+        mergeInFlightRef.current = false;
+        // Navigation can unmount the dialog while a dispatched merge is pending.
+        // A failed merge still leaves its prepared target owned by this dialog.
+        if (!mountedRef.current || !ownershipRef.current.open) {
+          const pendingId = pendingCreatedAccountIdRef.current;
+          pendingCreatedAccountIdRef.current = null;
+          pendingCreatedAccountNameRef.current = null;
+          if (pendingId) void discardCreatedAccount(pendingId);
+        }
+      }
+    } finally {
+      attemptInFlightRef.current = false;
+      if (mountedRef.current) setPreparing(false);
     }
   }
 
@@ -431,6 +547,21 @@ export function MergeCardsDialog({
             </Alert>
           )}
 
+          {accountsQuery.isError && <RequestFailure
+            message="Accounts are unavailable. Retry before merging."
+            retry={() => { if (open) void accountsQuery.refetch(); }}
+            isRetrying={accountsQuery.isFetching}
+          />}
+          {sourceCardsQuery.isError && <RequestFailure
+            message="Source cards are unavailable. Retry to verify the complete selection before merging."
+            retry={() => { if (open) void sourceCardsQuery.refetch(); }}
+            isRetrying={sourceCardsQuery.isFetching}
+          />}
+          {previewInput && previewQuery.isError && <RequestFailure
+            message="The merge preview is unavailable. Retry before merging."
+            retry={() => { if (previewInput) void previewQuery.refetch(); }}
+            isRetrying={previewLoading}
+          />}
           <fieldset className="space-y-2" disabled={conflict !== null}>
             <legend className="text-sm font-medium">Target account</legend>
             <div className="flex items-center gap-4 text-sm">
@@ -459,13 +590,13 @@ export function MergeCardsDialog({
             {targetMode === "existing" ? (
               <div className="space-y-1">
                 <Label htmlFor="target-account">Select account</Label>
-                <Select value={targetAccountId} onValueChange={setTargetAccountId}>
+                <Select value={targetAccountId} onValueChange={(id) => { if (accountsReady && accounts.some((account) => account.id === id)) setTargetAccountId(id); }} disabled={!accountsReady}>
                   <SelectTrigger id="target-account" aria-label="Target account">
                     <SelectValue placeholder="Choose an account" />
                   </SelectTrigger>
                   <SelectContent>
                     {accounts.map((a) => (
-                      <SelectItem key={a.id} value={a.id}>
+                      <SelectItem key={a.id} value={a.id} disabled={!accountsReady}>
                         {a.name}
                       </SelectItem>
                     ))}
@@ -502,7 +633,7 @@ export function MergeCardsDialog({
             </p>
           )}
 
-          {!previewLoading && preview && !preview.conflicts && (
+          {previewInput && !previewLoading && previewQuery.isSuccess && preview && !preview.conflicts && (
             <Alert>
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>

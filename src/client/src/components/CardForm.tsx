@@ -1,3 +1,4 @@
+import { RequestFailure } from "@/components/RequestFailure";
 import { useMemo, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod/v4";
@@ -62,7 +63,8 @@ export function CardForm({
 }: CardFormProps) {
   const formRef = useRef<HTMLFormElement>(null);
   useFormShortcuts({ formRef });
-  const { data: accounts } = useAllAccounts(true);
+  const accountsQuery = useAllAccounts(true);
+  const { data: accounts } = accountsQuery;
 
   const accountOptions = useMemo(() => {
     const active = (accounts as { id: string; name: string }[] | undefined) ?? [];
@@ -120,6 +122,7 @@ export function CardForm({
           render={({ field }) => (
             <FormItem>
               <FormLabel required>Account</FormLabel>
+              {accountsQuery.isError && <RequestFailure message="Accounts are unavailable. Your card details have been kept." retry={() => { void accountsQuery.refetch(); }} isRetrying={accountsQuery.isFetching} />}
               <FormControl>
                 <Combobox
                   options={accountOptions}
@@ -127,7 +130,7 @@ export function CardForm({
                   onValueChange={field.onChange}
                   placeholder="Select an account..."
                   searchPlaceholder="Search accounts..."
-                  emptyMessage="No active accounts."
+                  emptyMessage={accountsQuery.isLoading ? "Loading accounts…" : accountsQuery.isError ? "Accounts are unavailable." : "No active accounts."}
                   aria-label="Account"
                   aria-required="true"
                 />

@@ -162,6 +162,7 @@ describe("useAllAccounts", () => {
     expect(result.current.data).toHaveLength(600);
     expect(client.GET).toHaveBeenCalledTimes(2);
     expect(client.GET).toHaveBeenLastCalledWith("/api/accounts", {
+      middleware: expect.any(Array),
       params: {
         query: {
           offset: 500,
@@ -211,6 +212,8 @@ describe("useAccountCards", () => {
 
     await waitFor(() => expect(result.current.data).toEqual(cards));
     expect(client.GET).toHaveBeenCalledWith("/api/accounts/{id}/cards", {
+      middleware: expect.any(Array),
+      signal: expect.any(AbortSignal),
       params: { path: { id: "a1" } },
     });
   });
@@ -244,6 +247,7 @@ describe("useCreateAccount", () => {
     await result.current.mutateAsync({ name: "Apple Card", isActive: true });
 
     expect(client.POST).toHaveBeenCalledWith("/api/accounts", {
+      middleware: expect.any(Array),
       body: { name: "Apple Card", isActive: true },
     });
     expect(toast.success).toHaveBeenCalledWith("Account created");
@@ -274,6 +278,7 @@ describe("useUpdateAccount", () => {
     await result.current.mutateAsync({ id: "a1", name: "Apple", isActive: false });
 
     expect(client.PUT).toHaveBeenCalledWith("/api/accounts/{id}", {
+      middleware: expect.any(Array),
       params: { path: { id: "a1" } },
       body: { id: "a1", name: "Apple", isActive: false },
     });

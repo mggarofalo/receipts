@@ -16,10 +16,15 @@ beforeAll(() => {
   }
 });
 
-vi.mock("@/lib/api-client", () => ({
+const businessPost = vi.hoisted(() => vi.fn());
+
+vi.mock("@/lib/api-client", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/api-client")>(),
   default: {
     GET: vi.fn(),
-    POST: vi.fn(),
+    POST: vi.fn((path: string, options: unknown) => path === "/api/cards/merge/preview"
+      ? Promise.resolve({ data: DEFAULT_PREVIEW, response: { status: 200, ok: true } })
+      : businessPost(path, options)),
     PUT: vi.fn(),
     DELETE: vi.fn(),
   },
@@ -30,9 +35,11 @@ vi.mock("sonner", () => ({
 }));
 
 // The impact preview (RECEIPTS-889) is its own POST, and letting it share the
-// client.POST mock with the merge call would make every test's call ordering depend
+// business POST mock with the merge call would make every test's call ordering depend
 // on when the preview happened to fire. The hook's own behaviour is covered in
 // useCards.test.ts; here it is stubbed, and the tests that care set it explicitly.
+// Captured-input revalidation still uses the real query-options factory and query
+// client. Its SDK preview response is routed separately from queued business writes.
 vi.mock("@/hooks/useCards", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/hooks/useCards")>();
   return {
@@ -40,19 +47,7 @@ vi.mock("@/hooks/useCards", async (importOriginal) => {
     // Mirrors the real hook's `enabled`: no input, no preview. "New account" mode
     // holds submit until a preview arrives (RECEIPTS-902), so a stub that always
     // answered `undefined` would wedge every test that creates an account.
-    useMergeCardsPreview: vi.fn((input: unknown) => ({
-      data: input
-        ? {
-            accountsToRemove: [],
-            cardsToMove: 1,
-            transactionsToRepoint: 0,
-            trashedTransactionsToRepoint: 0,
-            survivingYnabMapping: null,
-            conflicts: null,
-          }
-        : undefined,
-      isFetching: false,
-    })),
+    useMergeCardsPreview: vi.fn((input: unknown) => previewResult(input ? DEFAULT_PREVIEW : undefined)),
   };
 });
 
@@ -107,14 +102,18 @@ const DEFAULT_PREVIEW = {
   conflicts: null,
 };
 
+function previewResult(data: unknown, isFetching = false) {
+  return {
+    data, isFetching, isSuccess: data !== undefined, isError: false,
+    refetch: vi.fn(async () => ({ data, isSuccess: data !== undefined, isError: false })),
+  } as unknown as ReturnType<typeof useMergeCardsPreview>;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   // clearAllMocks resets recorded calls but keeps implementations, so a mockReturnValue
   // set by one test would follow the next one into a state it never asked for.
-  vi.mocked(useMergeCardsPreview).mockImplementation(((input: unknown) => ({
-    data: input ? DEFAULT_PREVIEW : undefined,
-    isFetching: false,
-  })) as unknown as typeof useMergeCardsPreview);
+  vi.mocked(useMergeCardsPreview).mockImplementation((input) => previewResult(input ? DEFAULT_PREVIEW : undefined));
   cardsByAccount = {
     "a-source": [
       { id: "c1", name: "Primary Visa", cardCode: "1234" },
@@ -164,7 +163,7 @@ describe("MergeCardsDialog", () => {
 
   it("submits merge request with selected target and closes on success", async () => {
     const user = userEvent.setup();
-    (client.POST as Mock).mockResolvedValue({
+    businessPost.mockResolvedValue({
       data: { accountsRemoved: 1, cardsMoved: 2, transactionsRepointed: 3 },
       error: undefined,
       response: { status: 200, ok: true },
@@ -183,7 +182,8 @@ describe("MergeCardsDialog", () => {
     await user.click(submit);
 
     await vi.waitFor(() => {
-      expect(client.POST).toHaveBeenCalledWith("/api/cards/merge", {
+      expect(businessPost).toHaveBeenCalledWith("/api/cards/merge", {
+      middleware: expect.any(Array),
         body: {
           targetAccountId: "a1",
           sourceCardIds: ["c1", "c2"],
@@ -200,7 +200,7 @@ describe("MergeCardsDialog", () => {
     const user = userEvent.setup();
 
     // First POST: create account (for target). Second POST: merge → 409 conflict.
-    (client.POST as Mock)
+    businessPost
       .mockResolvedValueOnce({
         data: { id: "new-acc-1", name: "Fresh Account", isActive: true },
         error: undefined,
@@ -229,6 +229,7 @@ describe("MergeCardsDialog", () => {
 
     await vi.waitFor(() => {
       expect(client.DELETE).toHaveBeenCalledWith("/api/accounts/{id}", {
+      middleware: expect.any(Array),
         params: { path: { id: "new-acc-1" } },
       });
     });
@@ -237,7 +238,7 @@ describe("MergeCardsDialog", () => {
 
   it("shows conflict alert on 409 and resubmits with winner", async () => {
     const user = userEvent.setup();
-    (client.POST as Mock).mockResolvedValueOnce({
+    businessPost.mockResolvedValueOnce({
       error: {
         message: "conflict",
         conflicts: [
@@ -268,7 +269,7 @@ describe("MergeCardsDialog", () => {
     await user.click(screen.getByLabelText(/Src A/));
     expect(resubmit).not.toBeDisabled();
 
-    (client.POST as Mock).mockResolvedValueOnce({
+    businessPost.mockResolvedValueOnce({
       data: { accountsRemoved: 1, cardsMoved: 2, transactionsRepointed: 3 },
       error: undefined,
       response: { status: 200, ok: true },
@@ -276,9 +277,9 @@ describe("MergeCardsDialog", () => {
     await user.click(resubmit);
 
     await vi.waitFor(() => {
-      expect((client.POST as Mock).mock.calls).toHaveLength(2);
+      expect(businessPost.mock.calls).toHaveLength(2);
     });
-    const secondCall = (client.POST as Mock).mock.calls[1];
+    const secondCall = businessPost.mock.calls[1];
     expect(secondCall[1].body.ynabMappingWinnerAccountId).toBe("srcA");
   });
 
@@ -299,7 +300,7 @@ describe("MergeCardsDialog", () => {
     };
 
     async function createThenFailMerge(user: ReturnType<typeof userEvent.setup>) {
-      (client.POST as Mock)
+      businessPost
         .mockResolvedValueOnce(created)
         .mockResolvedValueOnce(mergeRejected);
 
@@ -309,7 +310,7 @@ describe("MergeCardsDialog", () => {
 
       // The dialog must stay open on a rejected merge so the user can correct it.
       await vi.waitFor(() => {
-        expect((client.POST as Mock).mock.calls).toHaveLength(2);
+        expect(businessPost.mock.calls).toHaveLength(2);
       });
     }
 
@@ -322,7 +323,7 @@ describe("MergeCardsDialog", () => {
       await user.clear(nameInput);
       await user.type(nameInput, "Corrected Account");
 
-      (client.POST as Mock).mockResolvedValueOnce({
+      businessPost.mockResolvedValueOnce({
         data: { accountsRemoved: 1, cardsMoved: 2, transactionsRepointed: 3 },
         error: undefined,
         response: { status: 200, ok: true },
@@ -332,18 +333,19 @@ describe("MergeCardsDialog", () => {
       // The correction is applied to the account we already made...
       await vi.waitFor(() => {
         expect(client.PUT).toHaveBeenCalledWith("/api/accounts/{id}", {
+      middleware: expect.any(Array),
           params: { path: { id: "new-acc-1" } },
           body: { id: "new-acc-1", name: "Corrected Account", isActive: true },
         });
       });
 
       // ...rather than leaking a second one.
-      const createCalls = (client.POST as Mock).mock.calls.filter(
+      const createCalls = businessPost.mock.calls.filter(
         ([url]) => url === "/api/accounts",
       );
       expect(createCalls).toHaveLength(1);
 
-      const merges = (client.POST as Mock).mock.calls.filter(
+      const merges = businessPost.mock.calls.filter(
         ([url]) => url === "/api/cards/merge",
       );
       expect(merges[merges.length - 1][1].body.targetAccountId).toBe("new-acc-1");
@@ -355,7 +357,7 @@ describe("MergeCardsDialog", () => {
       renderDialog();
       await createThenFailMerge(user);
 
-      (client.POST as Mock).mockResolvedValueOnce({
+      businessPost.mockResolvedValueOnce({
         data: { accountsRemoved: 1, cardsMoved: 2, transactionsRepointed: 3 },
         error: undefined,
         response: { status: 200, ok: true },
@@ -363,7 +365,7 @@ describe("MergeCardsDialog", () => {
       await user.click(screen.getByRole("button", { name: /^merge$/i }));
 
       await vi.waitFor(() => {
-        const merges = (client.POST as Mock).mock.calls.filter(
+        const merges = businessPost.mock.calls.filter(
           ([url]) => url === "/api/cards/merge",
         );
         expect(merges).toHaveLength(2);
@@ -381,7 +383,7 @@ describe("MergeCardsDialog", () => {
       await user.click(screen.getByLabelText("Target account"));
       await user.click(await screen.findByRole("option", { name: "Account One" }));
 
-      (client.POST as Mock).mockResolvedValueOnce({
+      businessPost.mockResolvedValueOnce({
         data: { accountsRemoved: 1, cardsMoved: 2, transactionsRepointed: 3 },
         error: undefined,
         response: { status: 200, ok: true },
@@ -392,6 +394,7 @@ describe("MergeCardsDialog", () => {
       // account the dialog had created but never used.
       await vi.waitFor(() => {
         expect(client.DELETE).toHaveBeenCalledWith("/api/accounts/{id}", {
+      middleware: expect.any(Array),
           params: { path: { id: "new-acc-1" } },
         });
       });
@@ -437,7 +440,7 @@ describe("MergeCardsDialog", () => {
         await screen.findByText(/every selected card already belongs to this account/i),
       ).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /^merge$/i })).toBeDisabled();
-      expect(client.POST).not.toHaveBeenCalled();
+      expect(businessPost).not.toHaveBeenCalled();
     });
 
     it("still allows the merge when only some of the cards are already on the target", async () => {
@@ -513,7 +516,7 @@ describe("MergeCardsDialog", () => {
       // The specific cards, not just a count — they may not be on screen to select.
       expect(screen.getByText(/5678 Reissued Visa, 9012 Spare Visa/)).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /^merge$/i })).toBeDisabled();
-      expect(client.POST).not.toHaveBeenCalled();
+      expect(businessPost).not.toHaveBeenCalled();
     });
 
     it("offers to include the remaining cards and hands their ids back to the caller", async () => {
@@ -582,9 +585,7 @@ describe("MergeCardsDialog", () => {
     };
 
     function stubPreview(data: unknown, isFetching = false) {
-      vi.mocked(useMergeCardsPreview).mockReturnValue({ data, isFetching } as ReturnType<
-        typeof useMergeCardsPreview
-      >);
+      vi.mocked(useMergeCardsPreview).mockReturnValue(previewResult(data, isFetching));
     }
 
     async function openWithTarget() {
@@ -658,27 +659,24 @@ describe("MergeCardsDialog", () => {
         );
       });
       // Nothing has been created: the whole point is that validation comes first.
-      expect(client.POST).not.toHaveBeenCalled();
+      expect(businessPost).not.toHaveBeenCalled();
     });
 
     it("will not submit — and so will not create an account — until the preview lands", async () => {
-      vi.mocked(useMergeCardsPreview).mockReturnValue({
-        data: undefined,
-        isFetching: true,
-      } as ReturnType<typeof useMergeCardsPreview>);
+      vi.mocked(useMergeCardsPreview).mockReturnValue(previewResult(undefined, true));
 
       await chooseNewAccount();
 
       // Submit is what creates the account here, so it must stay shut until the server
       // has said the merge would be accepted.
       expect(screen.getByRole("button", { name: /^merge$/i })).toBeDisabled();
-      expect(client.POST).not.toHaveBeenCalled();
+      expect(businessPost).not.toHaveBeenCalled();
     });
 
     it("creates the account and merges once the preview has accepted the selection", async () => {
       const user = await chooseNewAccount();
 
-      (client.POST as Mock)
+      businessPost
         .mockResolvedValueOnce({
           data: { id: "new-acc-1", name: "Fresh Account", isActive: true },
           error: undefined,
@@ -693,13 +691,13 @@ describe("MergeCardsDialog", () => {
       await user.click(screen.getByRole("button", { name: /^merge$/i }));
 
       await vi.waitFor(() => {
-        const merges = (client.POST as Mock).mock.calls.filter(
+        const merges = businessPost.mock.calls.filter(
           ([url]) => url === "/api/cards/merge",
         );
         expect(merges).toHaveLength(1);
       });
       // Creation happened, and it happened after validation rather than before it.
-      const [firstUrl] = (client.POST as Mock).mock.calls[0];
+      const [firstUrl] = businessPost.mock.calls[0];
       expect(firstUrl).toBe("/api/accounts");
       // Nothing to clean up: the merge landed on the account that was created for it.
       expect(client.DELETE).not.toHaveBeenCalled();

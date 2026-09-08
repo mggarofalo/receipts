@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { localErrorPolicy } from "@/lib/request-error-policy";
 import client from "@/lib/api-client";
 import { assertSessionCurrent, getSessionVersion } from "@/lib/auth";
 import { invalidateDomainChange } from "@/lib/query-invalidation";
@@ -28,6 +29,7 @@ export function useMergeAccountMaintenance() {
   const discardAccount = useCallback((id: string) => execute(async () => {
     const { error } = await client.DELETE("/api/accounts/{id}", {
       params: { path: { id } },
+      ...localErrorPolicy.request,
     });
     if (error) throw error;
   }), [execute]);
@@ -35,6 +37,7 @@ export function useMergeAccountMaintenance() {
   const renameAccount = useCallback((id: string, name: string) => execute(async () => {
     const { error } = await client.PUT("/api/accounts/{id}", {
       params: { path: { id } },
+      ...localErrorPolicy.request,
       body: { id, name, isActive: true },
     });
     if (error) throw error;
