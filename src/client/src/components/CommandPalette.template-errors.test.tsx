@@ -5,6 +5,7 @@ import { useState } from "react";
 import {
   act,
   cleanup,
+  fireEvent,
   render,
   screen,
   waitFor,
@@ -218,7 +219,7 @@ it("hides obsolete template Retry while input debounces or clears and does not r
   await user.type(input, "quux");
   await screen.findByRole("alert");
   const initialReads = templateRequests.length;
-  await user.type(input, "-changed");
+  fireEvent.change(input, { target: { value: "quux-changed" } });
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   expect(templateRequests).toHaveLength(initialReads);
   await screen.findByRole("alert");
