@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  QueryClient,
+  QueryClientProvider,
+  QueryObserver,
+} from "@tanstack/react-query";
 import { createElement, type ReactNode } from "react";
 
 vi.mock("@/lib/api-client", () => ({
@@ -84,10 +88,11 @@ async function expectRequestOwnership(
   expect(observed).toBe(presentation);
 }
 
-function createWrapper() {
-  const queryClient = new QueryClient({
+function createWrapper(
+  queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
-  });
+  }),
+) {
   return function Wrapper({ children }: { children: ReactNode }) {
     return createElement(
       QueryClientProvider,
@@ -147,6 +152,83 @@ describe("useYnab", () => {
     expect(result.current.isConnected).toBe(false);
     expect(result.current.lastSuccessfulSyncUtc).toBeNull();
   });
+
+  it.each([
+    {
+      outcome: "successful",
+      response: {
+        data: { isConfigured: true, isConnected: true },
+        error: undefined,
+      },
+      terminalState: "isSuccess" as const,
+    },
+    {
+      outcome: "rejected",
+      response: { data: undefined, error: "failed after event commit" },
+      terminalState: "isError" as const,
+    },
+  ])(
+    "useYnabConnectionStatus repairs only active event projections after a $outcome response",
+    async ({ response, terminalState }) => {
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+      });
+      const eventsKey = ["ynab", "events", { page: 2 }] as const;
+      const statusKey = ["ynab", "status"] as const;
+      const unrelatedKey = ["ynab", "account-mappings"] as const;
+      const eventsQuery = vi.fn().mockResolvedValue({ source: "events-refetch" });
+      const statusQuery = vi.fn().mockResolvedValue({ source: "status-refetch" });
+      const unrelatedQuery = vi
+        .fn()
+        .mockResolvedValue({ source: "unrelated-refetch" });
+      const activeQueries = [
+        { key: eventsKey, queryFn: eventsQuery },
+        { key: statusKey, queryFn: statusQuery },
+        { key: unrelatedKey, queryFn: unrelatedQuery },
+      ];
+      const unsubscribes = activeQueries.map(({ key, queryFn }) => {
+        queryClient.setQueryData(key, { source: "cached" });
+        return new QueryObserver(queryClient, {
+          queryKey: key,
+          queryFn,
+          staleTime: Infinity,
+        }).subscribe(() => undefined);
+      });
+      const cancelSpy = vi.spyOn(queryClient, "cancelQueries");
+      const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+      (client.GET as Mock).mockResolvedValue(response);
+
+      const { result, unmount } = renderHook(
+        () => useYnabConnectionStatus(),
+        { wrapper: createWrapper(queryClient) },
+      );
+
+      await waitFor(() => expect(result.current[terminalState]).toBe(true));
+      await waitFor(() => {
+        expect(eventsQuery).toHaveBeenCalledTimes(1);
+        expect(statusQuery).toHaveBeenCalledTimes(1);
+      });
+      expect(unrelatedQuery).not.toHaveBeenCalled();
+      expect(queryClient.getQueryData(eventsKey)).toEqual({
+        source: "events-refetch",
+      });
+      expect(queryClient.getQueryData(statusKey)).toEqual({
+        source: "status-refetch",
+      });
+      expect(queryClient.getQueryData(unrelatedKey)).toEqual({
+        source: "cached",
+      });
+      expect(queryClient.getQueryState(unrelatedKey)?.isInvalidated).toBe(
+        false,
+      );
+      expect(cancelSpy).toHaveBeenCalledTimes(1);
+      expect(invalidateSpy).toHaveBeenCalledTimes(1);
+
+      unmount();
+      unsubscribes.forEach((unsubscribe) => unsubscribe());
+      queryClient.clear();
+    },
+  );
 
   it("useYnabBudgets returns budgets on success", async () => {
     const budgets = [
@@ -1582,5 +1664,94 @@ describe("useYnab", () => {
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(result.current.error).toBeDefined();
+  });
+
+  it("repairs the YNAB root after budget selection rejects", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    queryClient.setQueryData(["ynab", "budgets"], { cached: true });
+    queryClient.setQueryData(["ynab", "settings", "budget"], { cached: true });
+    (client.PUT as Mock).mockResolvedValue({ error: "failed after write" });
+    const { result } = renderHook(() => useSelectYnabBudget(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await expect(result.current.mutateAsync("budget-1")).rejects.toThrow();
+
+    expect(queryClient.getQueryState(["ynab", "budgets"])?.isInvalidated).toBe(
+      true,
+    );
+    expect(
+      queryClient.getQueryState(["ynab", "settings", "budget"])?.isInvalidated,
+    ).toBe(true);
+  });
+
+  it("repairs mapping projections after a stale-clear request rejects", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const keys = [
+      ["ynab", "account-mappings"],
+      ["ynab", "category-mappings"],
+      ["ynab", "category-mappings", "unmapped"],
+      ["ynab", "stale-mappings"],
+      ["ynab", "split-comparison"],
+    ];
+    keys.forEach((key) => queryClient.setQueryData(key, { cached: true }));
+    (client.DELETE as Mock).mockResolvedValue({
+      error: "failed after partial delete",
+    });
+    const { result } = renderHook(() => useClearStaleMappings(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await expect(result.current.mutateAsync()).rejects.toThrow();
+
+    keys.forEach((key) =>
+      expect(queryClient.getQueryState(key)?.isInvalidated).toBe(true),
+    );
+  });
+
+  async function rejectedSyncRepair(
+    useMutation: () => { mutateAsync: (input: string) => Promise<unknown> },
+    path: string,
+  ) {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const keys = [
+      ["ynab", "sync-status"],
+      ["ynab", "receipt-sync-statuses"],
+      ["ynab", "split-comparison"],
+      ["ynab", "connection-status"],
+      ["ynab", "events"],
+      ["ynab", "status"],
+    ];
+    keys.forEach((key) => queryClient.setQueryData(key, { cached: true }));
+    (client.POST as Mock).mockResolvedValue({
+      error: "failed after partial writes",
+    });
+    const { result } = renderHook(() => useMutation(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await expect(result.current.mutateAsync("receipt-1")).rejects.toThrow();
+
+    expect(client.POST).toHaveBeenCalledWith(path, expect.anything());
+    keys.forEach((key) =>
+      expect(queryClient.getQueryState(key)?.isInvalidated).toBe(true),
+    );
+  }
+
+  it("repairs the combined sync projections after a rejected memo request", async () => {
+    await rejectedSyncRepair(useSyncYnabMemos, "/api/ynab/sync-memos");
+  });
+
+  it("repairs the combined sync projections after a rejected push request", async () => {
+    await rejectedSyncRepair(
+      usePushYnabTransactions,
+      "/api/ynab/push-transactions",
+    );
   });
 });

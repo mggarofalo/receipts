@@ -25,12 +25,16 @@ export const queryKeys = {
   reportDuplicates: ["reports", "duplicates"],
   acceptedDuplicates: ["reports", "accepted-duplicates"],
   ynab: ["ynab"],
+  ynabConnectionStatus: ["ynab", "connection-status"],
   ynabSplitComparison: ["ynab", "split-comparison"],
   ynabReceiptSyncStatuses: ["ynab", "receipt-sync-statuses"],
   ynabSyncStatus: ["ynab", "sync-status"],
+  ynabCategoryMappings: ["ynab", "category-mappings"],
   ynabUnmappedCategories: ["ynab", "category-mappings", "unmapped"],
   ynabStaleMappings: ["ynab", "stale-mappings"],
   ynabAccountMappings: ["ynab", "account-mappings"],
+  ynabEvents: ["ynab", "events"],
+  ynabStatus: ["ynab", "status"],
 } as const;
 
 // Refresh receipt-derived projections without invalidating unrelated YNAB query
@@ -99,6 +103,25 @@ const DUPLICATE_ACCEPTANCE_CHANGE_QUERY_KEYS = [
   queryKeys.acceptedDuplicates,
 ] as const;
 
+const YNAB_MAPPING_CHANGE_QUERY_KEYS = [
+  queryKeys.ynabAccountMappings,
+  queryKeys.ynabCategoryMappings,
+  queryKeys.ynabStaleMappings,
+  queryKeys.ynabSplitComparison,
+] as const;
+
+const YNAB_SYNC_RECORD_CHANGE_QUERY_KEYS = [
+  queryKeys.ynabSyncStatus,
+  queryKeys.ynabReceiptSyncStatuses,
+  queryKeys.ynabSplitComparison,
+  queryKeys.ynabConnectionStatus,
+] as const;
+
+const YNAB_SYNC_EVENT_CHANGE_QUERY_KEYS = [
+  queryKeys.ynabEvents,
+  queryKeys.ynabStatus,
+] as const;
+
 // Portable restore can change destination settings as well as ledger rows.
 const BACKUP_IMPORT_QUERY_KEYS = [
   ...LEDGER_CHANGE_QUERY_KEYS,
@@ -122,6 +145,10 @@ const DOMAIN_CHANGE_QUERY_KEYS = {
   "normalized-description": NORMALIZED_DESCRIPTION_CHANGE_QUERY_KEYS,
   "normalized-description-settings": [queryKeys.normalizedDescriptionSettings],
   "duplicate-acceptance": DUPLICATE_ACCEPTANCE_CHANGE_QUERY_KEYS,
+  "ynab-budget": [queryKeys.ynab],
+  "ynab-mapping": YNAB_MAPPING_CHANGE_QUERY_KEYS,
+  "ynab-sync-record": YNAB_SYNC_RECORD_CHANGE_QUERY_KEYS,
+  "ynab-sync-event": YNAB_SYNC_EVENT_CHANGE_QUERY_KEYS,
   "backup-import": BACKUP_IMPORT_QUERY_KEYS,
   "trash-purge": [
     ...LEDGER_CHANGE_QUERY_KEYS,
@@ -177,9 +204,19 @@ export function repairDomainChange(
   isCurrent: () => boolean,
   operation: "created" | "changed" = "changed",
 ) {
+  return repairDomainChanges(queryClient, [change], isCurrent, operation);
+}
+
+/** Repair the union for one committed operation without duplicate refetches. */
+export function repairDomainChanges(
+  queryClient: QueryClient,
+  changes: readonly DomainChange[],
+  isCurrent: () => boolean,
+  operation: "created" | "changed" = "changed",
+) {
   return repairDomainQueries(
     queryClient,
-    projectionKeysForChange(change, operation),
+    changes.flatMap((change) => projectionKeysForChange(change, operation)),
     isCurrent,
   );
 }

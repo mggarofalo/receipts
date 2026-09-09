@@ -71,6 +71,8 @@ const eventCacheKeys = [
   ["receipts"], ["receipts-with-items"], ["trips"], ["receipt-items"],
   ["transactions"], ["adjustments"], ["reports"], ["cards"], ["transaction-accounts"],
   ["ynab", "split-comparison"], ["ynab", "receipt-sync-statuses"],
+  ["ynab", "account-mappings"], ["ynab", "category-mappings"], ["ynab", "stale-mappings"],
+  ["ynab", "sync-status"], ["ynab", "connection-status"], ["ynab", "events"], ["ynab", "status"],
 ];
 async function expectEventInvalidation(client: QueryClient, prefix: string[]) {
   await waitFor(() => expect(client.getQueryState([...prefix, "cached-view"])?.isInvalidated).toBe(true));
@@ -373,6 +375,86 @@ describe("useSignalR", () => {
       ]) {
         await expectEventInvalidation(mockQueryClient, queryKey);
       }
+    });
+
+    it.each([
+      ["ynab-mapping", ["ynab", "category-mappings"]],
+      ["ynab-sync-record", ["ynab", "receipt-sync-statuses"]],
+      ["ynab-sync-event", ["ynab", "events"]],
+    ] as const)(
+      "repairs %s projections before presenting a remote event",
+      async (entityType, queryKey) => {
+        const mockQueryClient = vi.mocked(useQueryClient)();
+        await renderEnabled();
+        const handler = getOnHandler("EntityChanged");
+
+        await act(async () => {
+          await handler!({
+            entityType,
+            changeType: "updated",
+            id: "change-id",
+            count: 1,
+            userId: "other-user-id",
+            authMethod: "jwt",
+            connectionId: "other-conn",
+          });
+        });
+
+        await waitFor(() =>
+          expect(
+            mockQueryClient.getQueryState([...queryKey, "cached-view"])
+              ?.isInvalidated,
+          ).toBe(true),
+        );
+        expect(bufferToast).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it("repairs the complete YNAB root for a budget event", async () => {
+      const mockQueryClient = vi.mocked(useQueryClient)();
+      await renderEnabled();
+      const handler = getOnHandler("EntityChanged");
+
+      await act(async () => {
+        await handler!({
+          entityType: "ynab-budget",
+          changeType: "updated",
+          connectionId: "other-conn",
+        });
+      });
+
+      for (const queryKey of [
+        ["ynab", "budgets"],
+        ["ynab", "account-mappings", "cached-view"],
+      ]) {
+        await waitFor(() =>
+          expect(mockQueryClient.getQueryState(queryKey)?.isInvalidated).toBe(
+            true,
+          ),
+        );
+      }
+    });
+
+    it("repairs a same-session YNAB event without buffering a toast", async () => {
+      const mockQueryClient = vi.mocked(useQueryClient)();
+      await renderEnabled();
+      const handler = getOnHandler("EntityChanged");
+
+      await act(async () => {
+        await handler!({
+          entityType: "ynab-sync-event",
+          changeType: "created",
+          connectionId: "mock-conn-id",
+        });
+      });
+
+      await waitFor(() =>
+        expect(
+          mockQueryClient.getQueryState(["ynab", "events", "cached-view"])
+            ?.isInvalidated,
+        ).toBe(true),
+      );
+      expect(bufferToast).not.toHaveBeenCalled();
     });
 
     it("buffers toast with display name for receipt-item", async () => {

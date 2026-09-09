@@ -185,7 +185,8 @@ public static class InfrastructureService
 		services.AddScoped<IYnabSyncEventService>(sp => new YnabSyncEventService(
 			sp.GetRequiredService<IDbContextFactory<ApplicationDbContext>>(),
 			sp.GetRequiredService<ICurrentUserAccessor>(),
-			sp.GetService<TimeProvider>() ?? TimeProvider.System));
+			sp.GetService<TimeProvider>() ?? TimeProvider.System,
+			sp.GetRequiredService<ICommittedChangePublisher>()));
 
 		services.AddMemoryCache();
 

@@ -35,26 +35,30 @@ public class YnabCategoryMappingRepository(IDbContextFactory<ApplicationDbContex
 		return entity;
 	}
 
-	public async Task UpdateAsync(YnabCategoryMappingEntity entity, CancellationToken cancellationToken)
+	public async Task<bool> UpdateAsync(YnabCategoryMappingEntity entity, CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		YnabCategoryMappingEntity? existing = await context.YnabCategoryMappings.FindAsync([entity.Id], cancellationToken);
-		if (existing is not null)
+		if (existing is null)
 		{
-			context.Entry(existing).CurrentValues.SetValues(entity);
-			await context.SaveChangesAsync(cancellationToken);
+			return false;
 		}
+
+		context.Entry(existing).CurrentValues.SetValues(entity);
+		return await context.SaveChangesAsync(cancellationToken) > 0;
 	}
 
-	public async Task DeleteAsync(Guid id, CancellationToken cancellationToken)
+	public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		YnabCategoryMappingEntity? entity = await context.YnabCategoryMappings.FindAsync([id], cancellationToken);
-		if (entity is not null)
+		if (entity is null)
 		{
-			context.YnabCategoryMappings.Remove(entity);
-			await context.SaveChangesAsync(cancellationToken);
+			return false;
 		}
+
+		context.YnabCategoryMappings.Remove(entity);
+		return await context.SaveChangesAsync(cancellationToken) > 0;
 	}
 
 	public async Task<List<string>> GetDistinctReceiptItemCategoriesAsync(CancellationToken cancellationToken)

@@ -1,5 +1,6 @@
 using Application.Interfaces.Services;
 using Application.Models;
+using Application.Models.CommittedChanges;
 using Application.Models.Ynab;
 using Common;
 using FluentAssertions;
@@ -15,11 +16,12 @@ public class YnabSyncEventServiceTests
 {
 	private readonly IDbContextFactory<ApplicationDbContext> _factory = DbContextHelpers.CreateInMemoryContextFactory();
 	private readonly Mock<ICurrentUserAccessor> _currentUserMock = new();
+	private readonly Mock<ICommittedChangePublisher> _publisherMock = new();
 
 	private YnabSyncEventService CreateService(string? userId = "user-1")
 	{
 		_currentUserMock.Setup(a => a.UserId).Returns(userId);
-		return new YnabSyncEventService(_factory, _currentUserMock.Object, TimeProvider.System);
+		return new YnabSyncEventService(_factory, _currentUserMock.Object, TimeProvider.System, _publisherMock.Object);
 	}
 
 	private async Task SeedAsync(params YnabSyncEventEntity[] events)
@@ -41,6 +43,14 @@ public class YnabSyncEventServiceTests
 	[Fact]
 	public async Task WriteAsync_PersistsEvent_WithCurrentUser()
 	{
+		_publisherMock.Setup(p => p.PublishAsync(It.IsAny<CommittedEntityChange>()))
+			.Callback(() =>
+			{
+				using ApplicationDbContext committed = _factory.CreateDbContext();
+				committed.YnabSyncEvents.Should().ContainSingle(
+					"the event must be visible before its cache-coherence signal is published");
+			})
+			.Returns(Task.CompletedTask);
 		YnabSyncEventService service = CreateService("user-42");
 		Guid receiptId = Guid.NewGuid();
 
@@ -53,6 +63,10 @@ public class YnabSyncEventServiceTests
 		saved.Success.Should().BeTrue();
 		saved.ReceiptId.Should().Be(receiptId);
 		saved.HttpStatus.Should().Be(201);
+		_publisherMock.Verify(p => p.PublishAsync(It.Is<CommittedEntityChange>(change =>
+			change.EntityType == CommittedEntityType.YnabSyncEvent
+			&& change.ChangeType == CommittedChangeType.Created
+			&& change.EntityId == saved.Id)), Times.Once);
 	}
 
 	[Fact]
