@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Application.Interfaces.Services;
 using Application.Models;
+using Application.Models.CommittedChanges;
 using Application.Models.NormalizedDescriptions;
 using Domain.NormalizedDescriptions;
 using Infrastructure.Configurations;
@@ -19,8 +20,20 @@ public class NormalizedDescriptionService(
 	IDbContextFactory<ApplicationDbContext> contextFactory,
 	IEmbeddingService embeddingService,
 	NormalizedDescriptionMapper mapper,
-	NormalizedDescriptionSettingsMapper settingsMapper) : INormalizedDescriptionService
+	NormalizedDescriptionSettingsMapper settingsMapper,
+	ICommittedChangePublisher committedChangePublisher) : INormalizedDescriptionService
 {
+	// Direct-construction overload for isolated tests and tools that have no connected clients.
+	// Dependency injection resolves the publisher-aware constructor in every configured host.
+	public NormalizedDescriptionService(
+		IDbContextFactory<ApplicationDbContext> contextFactory,
+		IEmbeddingService embeddingService,
+		NormalizedDescriptionMapper mapper,
+		NormalizedDescriptionSettingsMapper settingsMapper)
+		: this(contextFactory, embeddingService, mapper, settingsMapper, new NullCommittedChangePublisher())
+	{
+	}
+
 	// The thresholds used when no settings row exists yet. These match the migration seed so
 	// that pre-migration code paths (tests that don't seed, integration tests spinning up a
 	// fresh schema) still see the same decision boundaries as production would at rest.
@@ -179,6 +192,10 @@ public class NormalizedDescriptionService(
 					],
 					DateTimeOffset.UtcNow);
 				await context.SaveChangesAsync(cancellationToken);
+				await committedChangePublisher.PublishAsync(new(
+					CommittedEntityType.NormalizedDescription,
+					CommittedChangeType.Updated,
+					existing.Id));
 			}
 			// A PendingReview row is left pending-but-linked rather than auto-approved. The
 			// template says what the item is called; it does not say the resolver's *grouping* of
@@ -435,6 +452,9 @@ public class NormalizedDescriptionService(
 		{
 			await transaction.CommitAsync(cancellationToken);
 		}
+		await committedChangePublisher.PublishAsync(new(
+			CommittedEntityType.NormalizedDescription,
+			CommittedChangeType.Updated));
 
 		// The returned count keeps its established meaning — live items re-linked — so the
 		// admin-facing "N items re-linked" number still matches what a report would show.
@@ -611,7 +631,13 @@ public class NormalizedDescriptionService(
 			}
 		}
 
-		await context.SaveChangesAsync(cancellationToken);
+		int changed = await context.SaveChangesAsync(cancellationToken);
+		if (changed > 0)
+		{
+			await committedChangePublisher.PublishAsync(new(
+				CommittedEntityType.NormalizedDescription,
+				CommittedChangeType.Updated));
+		}
 
 		// Re-read through the same projection the list endpoint uses so the caller gets a truthful
 		// LinkedItemCount for the row it just created, rather than a count derived from the
@@ -658,6 +684,10 @@ public class NormalizedDescriptionService(
 		{
 			await transaction.CommitAsync(cancellationToken);
 		}
+		await committedChangePublisher.PublishAsync(new(
+			CommittedEntityType.NormalizedDescription,
+			CommittedChangeType.Updated,
+			id));
 		return true;
 	}
 
@@ -795,7 +825,14 @@ public class NormalizedDescriptionService(
 
 		try
 		{
-			await context.SaveChangesAsync(cancellationToken);
+			int changed = await context.SaveChangesAsync(cancellationToken);
+			if (changed > 0)
+			{
+				await committedChangePublisher.PublishAsync(new(
+					CommittedEntityType.NormalizedDescription,
+					CommittedChangeType.Updated,
+					id));
+			}
 		}
 		catch (DbUpdateException)
 		{
@@ -948,6 +985,10 @@ public class NormalizedDescriptionService(
 			],
 			DateTimeOffset.UtcNow);
 		await context.SaveChangesAsync(cancellationToken);
+		await committedChangePublisher.PublishAsync(new(
+			CommittedEntityType.NormalizedDescription,
+			CommittedChangeType.Updated,
+			canonicalId));
 
 		// Re-read through the shared projection so the caller gets a truthful LinkedItemCount and
 		// the template evidence it just created, rather than numbers assembled from the pieces
@@ -1065,6 +1106,10 @@ public class NormalizedDescriptionService(
 		entity.UpdatedAt = DateTimeOffset.UtcNow;
 
 		await context.SaveChangesAsync(cancellationToken);
+		await committedChangePublisher.PublishAsync(new(
+			CommittedEntityType.NormalizedDescriptionSettings,
+			CommittedChangeType.Updated,
+			entity.Id));
 		return settingsMapper.ToDomain(entity);
 	}
 
@@ -1363,6 +1408,9 @@ public class NormalizedDescriptionService(
 		{
 			await transaction.CommitAsync(cancellationToken);
 		}
+		await committedChangePublisher.PublishAsync(new(
+			CommittedEntityType.NormalizedDescription,
+			CommittedChangeType.Deleted));
 
 		return new RequeuePendingResult(pending.Count, unlinkedItemCount, clearedMatchScoreCount);
 	}
@@ -1455,6 +1503,10 @@ public class NormalizedDescriptionService(
 		try
 		{
 			await context.SaveChangesAsync(cancellationToken);
+			await committedChangePublisher.PublishAsync(new(
+				CommittedEntityType.NormalizedDescriptionSettings,
+				CommittedChangeType.Created,
+				entity.Id));
 		}
 		catch (DbUpdateException)
 		{
@@ -1698,6 +1750,10 @@ public class NormalizedDescriptionService(
 		try
 		{
 			await context.SaveChangesAsync(cancellationToken);
+			await committedChangePublisher.PublishAsync(new(
+				CommittedEntityType.NormalizedDescription,
+				CommittedChangeType.Created,
+				entity.Id));
 		}
 		catch (DbUpdateException)
 		{

@@ -37,6 +37,7 @@ public static class ProgramService
 
 		services.AddSignalR();
 		services.AddSingleton<IEntityChangeNotifier, EntityChangeNotifier>();
+		services.AddSingleton<ICommittedChangePublisher, CommittedChangePublisher>();
 
 		return services;
 	}

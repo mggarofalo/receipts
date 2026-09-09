@@ -33,7 +33,7 @@ public class NormalizedDescriptionsControllerTests
 	public NormalizedDescriptionsControllerTests()
 	{
 		_mediatorMock = new Mock<IMediator>();
-		_controller = new NormalizedDescriptionsController(_mediatorMock.Object, Mock.Of<global::API.Services.IEntityChangeNotifier>());
+		_controller = new NormalizedDescriptionsController(_mediatorMock.Object);
 	}
 
 	// ── GET settings ────────────────────────────────────────────
