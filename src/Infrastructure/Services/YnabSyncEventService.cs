@@ -1,6 +1,7 @@
 using System.Linq.Expressions;
 using Application.Interfaces.Services;
 using Application.Models;
+using Application.Models.CommittedChanges;
 using Application.Models.Ynab;
 using Common;
 using Infrastructure.Entities.Core;
@@ -12,8 +13,17 @@ namespace Infrastructure.Services;
 public class YnabSyncEventService(
 	IDbContextFactory<ApplicationDbContext> contextFactory,
 	ICurrentUserAccessor currentUserAccessor,
-	TimeProvider timeProvider) : IYnabSyncEventService
+	TimeProvider timeProvider,
+	ICommittedChangePublisher committedChangePublisher) : IYnabSyncEventService
 {
+	public YnabSyncEventService(
+		IDbContextFactory<ApplicationDbContext> contextFactory,
+		ICurrentUserAccessor currentUserAccessor,
+		TimeProvider timeProvider)
+		: this(contextFactory, currentUserAccessor, timeProvider, new NullCommittedChangePublisher())
+	{
+	}
+
 	private static readonly Dictionary<string, Expression<Func<YnabSyncEventEntity, object>>> AllowedSortColumns = new(StringComparer.OrdinalIgnoreCase)
 	{
 		["occurredAt"] = e => e.OccurredAt,
@@ -35,7 +45,7 @@ public class YnabSyncEventService(
 		CancellationToken cancellationToken = default)
 	{
 		await using ApplicationDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
-		context.YnabSyncEvents.Add(new YnabSyncEventEntity
+		YnabSyncEventEntity entity = new()
 		{
 			Id = Guid.NewGuid(),
 			UserId = currentUserAccessor.UserId,
@@ -47,8 +57,13 @@ public class YnabSyncEventService(
 			Success = success,
 			ErrorMessage = errorMessage,
 			RequestId = requestId,
-		});
+		};
+		context.YnabSyncEvents.Add(entity);
 		await context.SaveChangesAsync(cancellationToken);
+		await committedChangePublisher.PublishAsync(new CommittedEntityChange(
+			CommittedEntityType.YnabSyncEvent,
+			CommittedChangeType.Created,
+			entity.Id));
 	}
 
 	public async Task<PagedResult<YnabSyncEventDto>> GetRecentAsync(

@@ -4,6 +4,10 @@ public enum CommittedEntityType
 {
 	NormalizedDescription,
 	NormalizedDescriptionSettings,
+	YnabBudget,
+	YnabMapping,
+	YnabSyncRecord,
+	YnabSyncEvent,
 }
 
 public enum CommittedChangeType

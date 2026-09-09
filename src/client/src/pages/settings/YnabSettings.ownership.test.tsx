@@ -254,7 +254,7 @@ function renderSettings(queryClientFactory = () => queryClient) {
   );
 }
 
-it("preserves the initial connection request while a settled budget selector changes budget", async () => {
+it("restarts the initial connection request after a committed budget change", async () => {
   heldPath = "ynab/connection-status";
   const successToast = vi.spyOn(toast, "success");
   renderSettings();
@@ -293,7 +293,7 @@ it("preserves the initial connection request while a settled budget selector cha
     });
     expect(screen.getByText("Checking connection...")).toBeInTheDocument();
     expect(screen.queryByText("Not Configured")).not.toBeInTheDocument();
-    expect(readRequests.filter((path) => path === heldPath)).toHaveLength(1);
+    expect(readRequests.filter((path) => path === heldPath)).toHaveLength(2);
   } finally {
     await act(async () => {
       gate.resolve();
@@ -308,7 +308,7 @@ it("preserves the initial connection request while a settled budget selector cha
   expect(screen.queryByText("Not Configured")).not.toBeInTheDocument();
   expect(router.state.location.pathname).toBe("/settings/ynab");
   expect(errorToast).not.toHaveBeenCalled();
-  expect(readRequests.filter((path) => path === heldPath)).toHaveLength(1);
+  expect(readRequests.filter((path) => path === heldPath)).toHaveLength(2);
   expect(writes).toHaveLength(1);
 });
 
@@ -370,7 +370,7 @@ it("invalidates a fresh inactive split comparison after budget change without ea
 });
 
 it.each([false, true])(
-  "finishes held budget revalidation only for its owning session (session changed: %s)",
+  "finishes held budget repair only for its owning session (session changed: %s)",
   async (changeSession) => {
     let holdRevalidation = false;
     let factoryCalls = 0;
@@ -413,7 +413,9 @@ it.each([false, true])(
       .getAll()
       .find((entry) => entry.state.status === "pending")!;
     expect(mutation).toBeDefined();
-    expect(successToast).not.toHaveBeenCalled();
+    expect(successToast).toHaveBeenCalledExactlyOnceWith(
+      "YNAB budget selected",
+    );
     if (changeSession) {
       // Real token publication remounts AuthProvider's subtree and replaces its
       // QueryClient. The next user's server budget is deliberately different.
@@ -431,7 +433,7 @@ it.each([false, true])(
       await gate.promise;
     });
     await waitFor(() =>
-      expect(mutation.state.status).toBe(changeSession ? "error" : "success"),
+      expect(mutation.state.status).toBe("success"),
     );
     await waitFor(() => expect(queryClient.isFetching()).toBe(0));
     expect(queryClient.getQueryData(["ynab", "settings", "budget"])).toEqual({
@@ -446,7 +448,9 @@ it.each([false, true])(
     ]);
     expect(errorToast).not.toHaveBeenCalled();
     if (changeSession) {
-      expect(successToast).not.toHaveBeenCalled();
+      expect(successToast).toHaveBeenCalledExactlyOnceWith(
+        "YNAB budget selected",
+      );
       expect(queryClient.getMutationCache().getAll()).toEqual([]);
     } else {
       expect(successToast).toHaveBeenCalledExactlyOnceWith(

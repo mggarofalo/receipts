@@ -1,3 +1,5 @@
+using Application.Interfaces.Services;
+using Application.Models.CommittedChanges;
 using Application.Models.Ynab;
 using Common;
 using FluentAssertions;
@@ -11,6 +13,7 @@ namespace Infrastructure.Tests.Services;
 public class YnabSyncRecordServiceTests
 {
 	private readonly Mock<IYnabSyncRecordRepository> _repositoryMock = new();
+	private readonly Mock<ICommittedChangePublisher> _publisherMock = new();
 	private readonly YnabSyncRecordService _service;
 
 	private static readonly Guid Receipt1 = Guid.NewGuid();
@@ -19,8 +22,42 @@ public class YnabSyncRecordServiceTests
 
 	public YnabSyncRecordServiceTests()
 	{
-		_service = new YnabSyncRecordService(_repositoryMock.Object);
+		_service = new YnabSyncRecordService(_repositoryMock.Object, _publisherMock.Object);
 	}
+
+	[Fact]
+	public async Task CreateAsync_PublishesCreatedRecord()
+	{
+		Guid id = Guid.NewGuid();
+		_repositoryMock.Setup(r => r.CreateAsync(It.IsAny<YnabSyncRecordEntity>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync((YnabSyncRecordEntity row, CancellationToken _) => { row.Id = id; return row; });
+
+		_ = await _service.CreateAsync(Guid.NewGuid(), "budget", YnabSyncType.TransactionPush, CancellationToken.None);
+
+		VerifyPublished(CommittedChangeType.Created, id, Times.Once());
+	}
+
+	[Theory]
+	[InlineData(true)]
+	[InlineData(false)]
+	public async Task UpdateStatusAsync_PublishesOnlyWhenRepositoryUpdated(bool updated)
+	{
+		Guid id = Guid.NewGuid();
+		_repositoryMock.Setup(r => r.GetByIdAsync(id, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new YnabSyncRecordEntity { Id = id, YnabBudgetId = "budget" });
+		_repositoryMock.Setup(r => r.UpdateAsync(It.IsAny<YnabSyncRecordEntity>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(updated);
+
+		await _service.UpdateStatusAsync(id, YnabSyncStatus.Synced, "remote", null, CancellationToken.None);
+
+		VerifyPublished(CommittedChangeType.Updated, id, updated ? Times.Once() : Times.Never());
+	}
+
+	private void VerifyPublished(CommittedChangeType type, Guid id, Times times) =>
+		_publisherMock.Verify(p => p.PublishAsync(It.Is<CommittedEntityChange>(change =>
+			change.EntityType == CommittedEntityType.YnabSyncRecord
+			&& change.ChangeType == type
+			&& change.EntityId == id)), times);
 
 	[Fact]
 	public async Task GetSyncStatusesByReceiptIdsAsync_NoSyncRecords_ReturnsNotSyncedForAll()

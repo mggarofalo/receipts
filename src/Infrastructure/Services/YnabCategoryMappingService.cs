@@ -1,5 +1,6 @@
 using Application.Exceptions;
 using Application.Interfaces.Services;
+using Application.Models.CommittedChanges;
 using Application.Models.Ynab;
 using Infrastructure.Entities.Core;
 using Infrastructure.Interfaces.Repositories;
@@ -8,8 +9,15 @@ using Npgsql;
 
 namespace Infrastructure.Services;
 
-public class YnabCategoryMappingService(IYnabCategoryMappingRepository repository) : IYnabCategoryMappingService
+public class YnabCategoryMappingService(
+	IYnabCategoryMappingRepository repository,
+	ICommittedChangePublisher committedChangePublisher) : IYnabCategoryMappingService
 {
+	public YnabCategoryMappingService(IYnabCategoryMappingRepository repository)
+		: this(repository, new NullCommittedChangePublisher())
+	{
+	}
+
 	public async Task<List<YnabCategoryMappingDto>> GetAllAsync(CancellationToken cancellationToken)
 	{
 		List<YnabCategoryMappingEntity> entities = await repository.GetAllAsync(cancellationToken);
@@ -51,6 +59,10 @@ public class YnabCategoryMappingService(IYnabCategoryMappingRepository repositor
 		try
 		{
 			YnabCategoryMappingEntity created = await repository.CreateAsync(entity, cancellationToken);
+			await committedChangePublisher.PublishAsync(new CommittedEntityChange(
+				CommittedEntityType.YnabMapping,
+				CommittedChangeType.Created,
+				created.Id));
 			return ToDto(created);
 		}
 		catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
@@ -79,12 +91,24 @@ public class YnabCategoryMappingService(IYnabCategoryMappingRepository repositor
 		entity.YnabBudgetId = ynabBudgetId;
 		entity.UpdatedAt = DateTimeOffset.UtcNow;
 
-		await repository.UpdateAsync(entity, cancellationToken);
+		if (await repository.UpdateAsync(entity, cancellationToken))
+		{
+			await committedChangePublisher.PublishAsync(new CommittedEntityChange(
+				CommittedEntityType.YnabMapping,
+				CommittedChangeType.Updated,
+				id));
+		}
 	}
 
 	public async Task DeleteAsync(Guid id, CancellationToken cancellationToken)
 	{
-		await repository.DeleteAsync(id, cancellationToken);
+		if (await repository.DeleteAsync(id, cancellationToken))
+		{
+			await committedChangePublisher.PublishAsync(new CommittedEntityChange(
+				CommittedEntityType.YnabMapping,
+				CommittedChangeType.Deleted,
+				id));
+		}
 	}
 
 	public async Task<int> CountStaleMappingsAsync(string currentBudgetId, CancellationToken cancellationToken)
@@ -94,7 +118,15 @@ public class YnabCategoryMappingService(IYnabCategoryMappingRepository repositor
 
 	public async Task<int> DeleteStaleMappingsAsync(string currentBudgetId, CancellationToken cancellationToken)
 	{
-		return await repository.DeleteByBudgetIdNotAsync(currentBudgetId, cancellationToken);
+		int deleted = await repository.DeleteByBudgetIdNotAsync(currentBudgetId, cancellationToken);
+		if (deleted > 0)
+		{
+			await committedChangePublisher.PublishAsync(new CommittedEntityChange(
+				CommittedEntityType.YnabMapping,
+				CommittedChangeType.Deleted));
+		}
+
+		return deleted;
 	}
 
 	public async Task<List<string>> GetDistinctReceiptItemCategoriesAsync(CancellationToken cancellationToken)

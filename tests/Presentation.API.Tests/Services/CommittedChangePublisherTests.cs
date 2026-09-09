@@ -42,6 +42,10 @@ public class CommittedChangePublisherTests
 	[Theory]
 	[InlineData(CommittedEntityType.NormalizedDescription, CommittedChangeType.Updated, "normalized-description", "updated")]
 	[InlineData(CommittedEntityType.NormalizedDescriptionSettings, CommittedChangeType.Created, "normalized-description-settings", "created")]
+	[InlineData(CommittedEntityType.YnabBudget, CommittedChangeType.Updated, "ynab-budget", "updated")]
+	[InlineData(CommittedEntityType.YnabMapping, CommittedChangeType.Deleted, "ynab-mapping", "deleted")]
+	[InlineData(CommittedEntityType.YnabSyncRecord, CommittedChangeType.Created, "ynab-sync-record", "created")]
+	[InlineData(CommittedEntityType.YnabSyncEvent, CommittedChangeType.Created, "ynab-sync-event", "created")]
 	public async Task PublishAsync_EntityIdAbsent_PublishesNeutralCollectionRepair(
 		CommittedEntityType entityType,
 		CommittedChangeType changeType,

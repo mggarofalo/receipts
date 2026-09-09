@@ -28,26 +28,30 @@ public class YnabAccountMappingRepository(IDbContextFactory<ApplicationDbContext
 		return entity;
 	}
 
-	public async Task UpdateAsync(YnabAccountMappingEntity entity, CancellationToken cancellationToken)
+	public async Task<bool> UpdateAsync(YnabAccountMappingEntity entity, CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		YnabAccountMappingEntity? existing = await context.YnabAccountMappings.FindAsync([entity.Id], cancellationToken);
-		if (existing is not null)
+		if (existing is null)
 		{
-			context.Entry(existing).CurrentValues.SetValues(entity);
-			await context.SaveChangesAsync(cancellationToken);
+			return false;
 		}
+
+		context.Entry(existing).CurrentValues.SetValues(entity);
+		return await context.SaveChangesAsync(cancellationToken) > 0;
 	}
 
-	public async Task DeleteAsync(Guid id, CancellationToken cancellationToken)
+	public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		YnabAccountMappingEntity? entity = await context.YnabAccountMappings.FindAsync([id], cancellationToken);
-		if (entity is not null)
+		if (entity is null)
 		{
-			context.YnabAccountMappings.Remove(entity);
-			await context.SaveChangesAsync(cancellationToken);
+			return false;
 		}
+
+		context.YnabAccountMappings.Remove(entity);
+		return await context.SaveChangesAsync(cancellationToken) > 0;
 	}
 
 	public async Task<int> CountByBudgetIdNotAsync(string currentBudgetId, CancellationToken cancellationToken)

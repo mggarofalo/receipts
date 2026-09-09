@@ -28,15 +28,17 @@ public class YnabSyncRecordRepository(IDbContextFactory<ApplicationDbContext> co
 			.FirstOrDefaultAsync(e => e.LocalTransactionId == localTransactionId && e.SyncType == syncType, cancellationToken);
 	}
 
-	public async Task UpdateAsync(YnabSyncRecordEntity entity, CancellationToken cancellationToken)
+	public async Task<bool> UpdateAsync(YnabSyncRecordEntity entity, CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		YnabSyncRecordEntity? existing = await context.YnabSyncRecords.FindAsync([entity.Id], cancellationToken);
-		if (existing is not null)
+		if (existing is null)
 		{
-			context.Entry(existing).CurrentValues.SetValues(entity);
-			await context.SaveChangesAsync(cancellationToken);
+			return false;
 		}
+
+		context.Entry(existing).CurrentValues.SetValues(entity);
+		return await context.SaveChangesAsync(cancellationToken) > 0;
 	}
 
 	public async Task DeleteAsync(Guid id, CancellationToken cancellationToken)

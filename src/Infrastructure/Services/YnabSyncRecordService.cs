@@ -1,4 +1,5 @@
 using Application.Interfaces.Services;
+using Application.Models.CommittedChanges;
 using Application.Models.Ynab;
 using Common;
 using Infrastructure.Entities.Core;
@@ -6,8 +7,15 @@ using Infrastructure.Interfaces.Repositories;
 
 namespace Infrastructure.Services;
 
-public class YnabSyncRecordService(IYnabSyncRecordRepository repository) : IYnabSyncRecordService
+public class YnabSyncRecordService(
+	IYnabSyncRecordRepository repository,
+	ICommittedChangePublisher committedChangePublisher) : IYnabSyncRecordService
 {
+	public YnabSyncRecordService(IYnabSyncRecordRepository repository)
+		: this(repository, new NullCommittedChangePublisher())
+	{
+	}
+
 	public async Task<YnabSyncRecordDto> CreateAsync(Guid localTransactionId, string ynabBudgetId, YnabSyncType syncType, CancellationToken cancellationToken)
 	{
 		DateTimeOffset now = DateTimeOffset.UtcNow;
@@ -22,6 +30,10 @@ public class YnabSyncRecordService(IYnabSyncRecordRepository repository) : IYnab
 		};
 
 		YnabSyncRecordEntity created = await repository.CreateAsync(entity, cancellationToken);
+		await committedChangePublisher.PublishAsync(new CommittedEntityChange(
+			CommittedEntityType.YnabSyncRecord,
+			CommittedChangeType.Created,
+			created.Id));
 		return ToDto(created);
 	}
 
@@ -49,7 +61,13 @@ public class YnabSyncRecordService(IYnabSyncRecordRepository repository) : IYnab
 			entity.SyncedAtUtc = DateTimeOffset.UtcNow;
 		}
 
-		await repository.UpdateAsync(entity, cancellationToken);
+		if (await repository.UpdateAsync(entity, cancellationToken))
+		{
+			await committedChangePublisher.PublishAsync(new CommittedEntityChange(
+				CommittedEntityType.YnabSyncRecord,
+				CommittedChangeType.Updated,
+				id));
+		}
 	}
 
 	public async Task<List<ReceiptYnabSyncStatusDto>> GetSyncStatusesByReceiptIdsAsync(List<Guid> receiptIds, CancellationToken cancellationToken)

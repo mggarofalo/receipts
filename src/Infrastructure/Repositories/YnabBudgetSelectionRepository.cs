@@ -15,13 +15,18 @@ public class YnabBudgetSelectionRepository(IDbContextFactory<ApplicationDbContex
 		return entity?.BudgetId;
 	}
 
-	public async Task SetSelectedBudgetIdAsync(string budgetId, CancellationToken cancellationToken)
+	public async Task<bool> SetSelectedBudgetIdAsync(string budgetId, CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		YnabSelectedBudgetEntity? existing = await context.YnabSelectedBudgets.FindAsync([SingletonId], cancellationToken);
 
 		if (existing is not null)
 		{
+			if (string.Equals(existing.BudgetId, budgetId, StringComparison.Ordinal))
+			{
+				return false;
+			}
+
 			existing.BudgetId = budgetId;
 			existing.UpdatedAt = DateTimeOffset.UtcNow;
 		}
@@ -35,6 +40,6 @@ public class YnabBudgetSelectionRepository(IDbContextFactory<ApplicationDbContex
 			});
 		}
 
-		await context.SaveChangesAsync(cancellationToken);
+		return await context.SaveChangesAsync(cancellationToken) > 0;
 	}
 }

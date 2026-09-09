@@ -11,6 +11,10 @@ public sealed class CommittedChangePublisher(IEntityChangeNotifier notifier) : I
 		{
 			CommittedEntityType.NormalizedDescription => "normalized-description",
 			CommittedEntityType.NormalizedDescriptionSettings => "normalized-description-settings",
+			CommittedEntityType.YnabBudget => "ynab-budget",
+			CommittedEntityType.YnabMapping => "ynab-mapping",
+			CommittedEntityType.YnabSyncRecord => "ynab-sync-record",
+			CommittedEntityType.YnabSyncEvent => "ynab-sync-event",
 			_ => throw new ArgumentOutOfRangeException(nameof(change), change.EntityType, "Unknown committed entity type."),
 		};
 

@@ -39,6 +39,10 @@ const displayNameMap: Record<string, string> = {
   "normalized-description": "normalized description",
   "normalized-description-settings": "normalization settings",
   "duplicate-acceptance": "duplicate acceptance",
+  "ynab-budget": "YNAB budget",
+  "ynab-mapping": "YNAB mapping",
+  "ynab-sync-record": "YNAB sync",
+  "ynab-sync-event": "YNAB sync event",
   "backup-import": "backup",
 };
 
