@@ -102,6 +102,9 @@ public static class InfrastructureService
 		// is stateless, and the real CurrentUserAccessor reads IHttpContextAccessor lazily on each property
 		// access, so a singleton lifetime still observes the current request correctly.
 		services.TryAddSingleton<ICurrentUserAccessor, NullCurrentUserAccessor>();
+		// Long-running hosts replace this with a transport adapter before infrastructure is
+		// registered. CLI tools and isolated harnesses have no connected clients to repair.
+		services.TryAddSingleton<ICommittedChangePublisher, NullCommittedChangePublisher>();
 
 		services
 			.AddIdentityCore<ApplicationUser>(options =>

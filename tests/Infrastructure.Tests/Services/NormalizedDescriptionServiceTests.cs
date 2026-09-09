@@ -1,5 +1,6 @@
 using Application.Interfaces.Services;
 using Application.Models;
+using Application.Models.CommittedChanges;
 using Application.Models.NormalizedDescriptions;
 using Common;
 using Domain.NormalizedDescriptions;
@@ -20,6 +21,7 @@ public class NormalizedDescriptionServiceTests
 {
 	private readonly IDbContextFactory<ApplicationDbContext> _contextFactory;
 	private readonly Mock<IEmbeddingService> _embeddingServiceMock;
+	private readonly Mock<ICommittedChangePublisher> _committedChangePublisherMock;
 	private readonly NormalizedDescriptionMapper _mapper;
 	private readonly NormalizedDescriptionSettingsMapper _settingsMapper;
 
@@ -28,6 +30,10 @@ public class NormalizedDescriptionServiceTests
 		(_contextFactory, MockCurrentUserAccessor accessor) = DbContextWithUserHelpers.CreateInMemoryContextFactoryWithUser();
 		accessor.UserId = "test-user";
 		_embeddingServiceMock = new Mock<IEmbeddingService>();
+		_committedChangePublisherMock = new Mock<ICommittedChangePublisher>();
+		_committedChangePublisherMock
+			.Setup(p => p.PublishAsync(It.IsAny<CommittedEntityChange>()))
+			.Returns(Task.CompletedTask);
 		_mapper = new NormalizedDescriptionMapper();
 		_settingsMapper = new NormalizedDescriptionSettingsMapper();
 	}
@@ -63,7 +69,7 @@ public class NormalizedDescriptionServiceTests
 		}
 
 		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, _committedChangePublisherMock.Object);
 
 		// Act — query with different casing; it should short-circuit without generating an embedding.
 		GetOrCreateResult result = await service.GetOrCreateAsync("organic MILK", CancellationToken.None);
@@ -77,6 +83,9 @@ public class NormalizedDescriptionServiceTests
 		_embeddingServiceMock.Verify(
 			e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
 			Times.Never);
+		_committedChangePublisherMock.Verify(
+			p => p.PublishAsync(It.IsAny<CommittedEntityChange>()),
+			Times.Never);
 	}
 
 	[Fact]
@@ -84,7 +93,16 @@ public class NormalizedDescriptionServiceTests
 	{
 		// Arrange
 		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(false);
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		_committedChangePublisherMock
+			.Setup(p => p.PublishAsync(It.IsAny<CommittedEntityChange>()))
+			.Callback(() =>
+			{
+				using ApplicationDbContext committed = _contextFactory.CreateDbContext();
+				committed.NormalizedDescriptions.Should().ContainSingle(
+					"publication must happen only after the inserted row is durably visible");
+			})
+			.Returns(Task.CompletedTask);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, _committedChangePublisherMock.Object);
 
 		// Act
 		GetOrCreateResult result = await service.GetOrCreateAsync("New Item", CancellationToken.None);
@@ -101,6 +119,11 @@ public class NormalizedDescriptionServiceTests
 		_embeddingServiceMock.Verify(
 			e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
 			Times.Never);
+		_committedChangePublisherMock.Verify(p => p.PublishAsync(
+			It.Is<CommittedEntityChange>(change =>
+				change.EntityType == CommittedEntityType.NormalizedDescription
+				&& change.ChangeType == CommittedChangeType.Created
+				&& change.EntityId == result.Description.Id)), Times.Once);
 	}
 
 	[Fact]
@@ -238,11 +261,14 @@ public class NormalizedDescriptionServiceTests
 	public async Task GetOrCreateAsync_EmptyOrWhitespace_Throws()
 	{
 		// Arrange
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, _committedChangePublisherMock.Object);
 
 		// Act + Assert
 		await service.Invoking(s => s.GetOrCreateAsync("   ", CancellationToken.None))
 			.Should().ThrowAsync<ArgumentException>();
+		_committedChangePublisherMock.Verify(
+			p => p.PublishAsync(It.IsAny<CommittedEntityChange>()),
+			Times.Never);
 	}
 
 	[Fact]
@@ -265,7 +291,7 @@ public class NormalizedDescriptionServiceTests
 			await seed.SaveChangesAsync();
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, _committedChangePublisherMock.Object);
 
 		// Act
 		int moved = await service.MergeAsync(keepId, discardId, CancellationToken.None);
@@ -281,6 +307,11 @@ public class NormalizedDescriptionServiceTests
 			.Select(r => r.NormalizedDescriptionId)
 			.ToListAsync();
 		linkedIds.Should().OnlyContain(id => id == keepId);
+		_committedChangePublisherMock.Verify(p => p.PublishAsync(
+			It.Is<CommittedEntityChange>(change =>
+				change.EntityType == CommittedEntityType.NormalizedDescription
+				&& change.ChangeType == CommittedChangeType.Updated
+				&& change.EntityId == null)), Times.Once);
 	}
 
 	// RECEIPTS-892. A merge repoints items at the surviving row but used to leave
@@ -540,7 +571,8 @@ public class NormalizedDescriptionServiceTests
 		}
 
 		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(false);
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(
+			_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, _committedChangePublisherMock.Object);
 
 		// Act — the name is the caller's now, so pass the raw text the old signature derived.
 		NormalizedDescriptionDetail created = await service.SplitAsync([itemId], "Specific Raw Text", CancellationToken.None);
@@ -562,6 +594,43 @@ public class NormalizedDescriptionServiceTests
 	}
 
 	[Fact]
+	public async Task SplitAsync_InsertCommitsBeforeLaterRescoreFailure_StillPublishesCreatedRow()
+	{
+		Guid sourceId = Guid.NewGuid();
+		Guid itemId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(BuildDescription(sourceId, "Source", NormalizedDescriptionStatus.Active));
+			seed.ReceiptItems.Add(BuildReceiptItem(itemId, Guid.NewGuid(), "raw item", sourceId));
+			await seed.SaveChangesAsync();
+		}
+
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
+		_embeddingServiceMock
+			.Setup(e => e.GenerateEmbeddingAsync("New Canonical", It.IsAny<CancellationToken>()))
+			.ReturnsAsync(CreateFakeEmbedding());
+		_embeddingServiceMock
+			.Setup(e => e.GenerateEmbeddingAsync("raw item", It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new InvalidOperationException("rescore failed"));
+		NormalizedDescriptionService service = new(
+			_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, _committedChangePublisherMock.Object);
+
+		await service.Invoking(s => s.SplitAsync([itemId], "New Canonical", CancellationToken.None))
+			.Should().ThrowAsync<InvalidOperationException>()
+			.WithMessage("rescore failed");
+
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		Guid createdId = await verify.NormalizedDescriptions
+			.Where(row => row.CanonicalName == "New Canonical")
+			.Select(row => row.Id)
+			.SingleAsync();
+		_committedChangePublisherMock.Verify(p => p.PublishAsync(
+			It.Is<CommittedEntityChange>(change =>
+				change.ChangeType == CommittedChangeType.Created
+				&& change.EntityId == createdId)), Times.Once);
+	}
+
+	[Fact]
 	public async Task UpdateStatusAsync_ChangesPendingReviewToActive()
 	{
 		// Arrange
@@ -578,7 +647,7 @@ public class NormalizedDescriptionServiceTests
 			await seed.SaveChangesAsync();
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, _committedChangePublisherMock.Object);
 
 		// Act
 		bool changed = await service.UpdateStatusAsync(id, NormalizedDescriptionStatus.Active, CancellationToken.None);
@@ -588,6 +657,10 @@ public class NormalizedDescriptionServiceTests
 		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
 		NormalizedDescriptionEntity stored = await verify.NormalizedDescriptions.SingleAsync(e => e.Id == id);
 		stored.Status.Should().Be(NormalizedDescriptionStatus.Active);
+		_committedChangePublisherMock.Verify(p => p.PublishAsync(
+			It.Is<CommittedEntityChange>(change =>
+				change.ChangeType == CommittedChangeType.Updated
+				&& change.EntityId == id)), Times.Once);
 	}
 
 	[Fact]
@@ -607,13 +680,16 @@ public class NormalizedDescriptionServiceTests
 			await seed.SaveChangesAsync();
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, _committedChangePublisherMock.Object);
 
 		// Act
 		bool changed = await service.UpdateStatusAsync(id, NormalizedDescriptionStatus.Active, CancellationToken.None);
 
 		// Assert
 		changed.Should().BeFalse();
+		_committedChangePublisherMock.Verify(
+			p => p.PublishAsync(It.IsAny<CommittedEntityChange>()),
+			Times.Never);
 	}
 
 	[Fact]
@@ -835,13 +911,17 @@ public class NormalizedDescriptionServiceTests
 			await seed.SaveChangesAsync();
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(
+			_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, _committedChangePublisherMock.Object);
 
 		NormalizedDescription result = await service.GetOrCreateForTemplateAsync("GALLON OF MILK", CancellationToken.None);
 
 		// A second row would collide with the unique index on lower("CanonicalName") and, worse,
 		// split one item's spending across two buckets.
 		result.Id.Should().Be(existingId);
+		_committedChangePublisherMock.Verify(
+			publisher => publisher.PublishAsync(It.IsAny<CommittedEntityChange>()),
+			Times.Never);
 	}
 
 	[Fact]
@@ -887,7 +967,8 @@ public class NormalizedDescriptionServiceTests
 			await seed.SaveChangesAsync();
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(
+			_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, _committedChangePublisherMock.Object);
 
 		NormalizedDescription result = await service.GetOrCreateForTemplateAsync("Gallon of Milk", CancellationToken.None);
 
@@ -901,6 +982,11 @@ public class NormalizedDescriptionServiceTests
 		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
 		verify.NormalizedDescriptions.Single(n => n.Id == rejectedId).Status
 			.Should().Be(NormalizedDescriptionStatus.Active);
+		_committedChangePublisherMock.Verify(publisher => publisher.PublishAsync(
+			It.Is<CommittedEntityChange>(change =>
+				change.EntityType == CommittedEntityType.NormalizedDescription
+				&& change.ChangeType == CommittedChangeType.Updated
+				&& change.EntityId == rejectedId)), Times.Once);
 	}
 
 	[Fact]
@@ -919,7 +1005,8 @@ public class NormalizedDescriptionServiceTests
 			await seed.SaveChangesAsync();
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(
+			_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, _committedChangePublisherMock.Object);
 
 		NormalizedDescription result = await service.GetOrCreateForTemplateAsync("Gallon of Milk", CancellationToken.None);
 
@@ -928,6 +1015,9 @@ public class NormalizedDescriptionServiceTests
 		// grouping is exactly what review is for.
 		result.Id.Should().Be(pendingId);
 		result.Status.Should().Be(NormalizedDescriptionStatus.PendingReview);
+		_committedChangePublisherMock.Verify(
+			publisher => publisher.PublishAsync(It.IsAny<CommittedEntityChange>()),
+			Times.Never);
 	}
 
 	[Theory]
@@ -1153,7 +1243,7 @@ public class NormalizedDescriptionServiceTests
 			await seed.SaveChangesAsync();
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, _committedChangePublisherMock.Object);
 
 		LinkTemplateResult result = await service.LinkTemplateAsync(pendingId, templateId, CancellationToken.None);
 
@@ -1163,6 +1253,21 @@ public class NormalizedDescriptionServiceTests
 		result.Survivor.Description.CanonicalName.Should().Be("Gallon of Milk");
 		result.Survivor.Description.Status.Should().Be(NormalizedDescriptionStatus.Active);
 		result.Survivor.LinkedTemplateName.Should().Be("Gallon of Milk");
+
+		List<CommittedEntityChange> publications = _committedChangePublisherMock.Invocations
+			.Select(invocation => (CommittedEntityChange)invocation.Arguments[0])
+			.ToList();
+		publications.Should().ContainSingle(change =>
+			change.ChangeType == CommittedChangeType.Created
+			&& change.EntityId == result.Survivor.Description.Id);
+		publications.Should().Contain(change =>
+			change.ChangeType == CommittedChangeType.Updated
+			&& change.EntityId == null,
+			"the merge is a separately committed stage");
+		publications.Should().Contain(change =>
+			change.ChangeType == CommittedChangeType.Updated
+			&& change.EntityId == result.Survivor.Description.Id,
+			"the template-link save commits after the merge");
 	}
 
 	[Fact]
@@ -1562,7 +1667,7 @@ public class NormalizedDescriptionServiceTests
 	public async Task GetSettingsAsync_NoRow_BootstrapsSingletonWithInitialDefaults()
 	{
 		// Arrange — no seed row. On InMemory we hit the self-heal path.
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, _committedChangePublisherMock.Object);
 
 		// Act
 		NormalizedDescriptionSettings result = await service.GetSettingsAsync(CancellationToken.None);
@@ -1571,6 +1676,11 @@ public class NormalizedDescriptionServiceTests
 		result.AutoAcceptThreshold.Should().Be(NormalizedDescriptionService.InitialAutoAcceptThreshold);
 		result.PendingReviewThreshold.Should().Be(NormalizedDescriptionService.InitialPendingReviewThreshold);
 		result.Id.Should().Be(new Guid("00000000-0000-0000-0000-000000000001"));
+		_committedChangePublisherMock.Verify(p => p.PublishAsync(
+			It.Is<CommittedEntityChange>(change =>
+				change.EntityType == CommittedEntityType.NormalizedDescriptionSettings
+				&& change.ChangeType == CommittedChangeType.Created
+				&& change.EntityId == result.Id)), Times.Once);
 	}
 
 	[Fact]
@@ -1603,7 +1713,7 @@ public class NormalizedDescriptionServiceTests
 	public async Task UpdateSettingsAsync_ValidBounds_PersistsAndReturnsNewValues()
 	{
 		// Arrange
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, _committedChangePublisherMock.Object);
 		DateTimeOffset before = DateTimeOffset.UtcNow.AddSeconds(-1);
 
 		// Act
@@ -1618,6 +1728,15 @@ public class NormalizedDescriptionServiceTests
 		NormalizedDescriptionSettingsEntity stored = await verify.NormalizedDescriptionSettings.SingleAsync();
 		stored.AutoAcceptThreshold.Should().Be(0.95);
 		stored.PendingReviewThreshold.Should().Be(0.5);
+		_committedChangePublisherMock.Verify(p => p.PublishAsync(
+			It.Is<CommittedEntityChange>(change =>
+				change.EntityType == CommittedEntityType.NormalizedDescriptionSettings
+				&& change.ChangeType == CommittedChangeType.Created)), Times.Once);
+		_committedChangePublisherMock.Verify(p => p.PublishAsync(
+			It.Is<CommittedEntityChange>(change =>
+				change.EntityType == CommittedEntityType.NormalizedDescriptionSettings
+				&& change.ChangeType == CommittedChangeType.Updated
+				&& change.EntityId == updated.Id)), Times.Once);
 	}
 
 	[Theory]
@@ -1629,10 +1748,13 @@ public class NormalizedDescriptionServiceTests
 	[InlineData(0.8, 0.8)] // pending == auto (must be strictly less)
 	public async Task UpdateSettingsAsync_InvalidBounds_Throws(double autoAccept, double pendingReview)
 	{
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, _committedChangePublisherMock.Object);
 
 		await service.Invoking(s => s.UpdateSettingsAsync(autoAccept, pendingReview, CancellationToken.None))
 			.Should().ThrowAsync<ArgumentException>();
+		_committedChangePublisherMock.Verify(
+			p => p.PublishAsync(It.IsAny<CommittedEntityChange>()),
+			Times.Never);
 	}
 
 	[Fact]
@@ -2257,7 +2379,7 @@ public class NormalizedDescriptionServiceTests
 			await seed.SaveChangesAsync();
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, _committedChangePublisherMock.Object);
 
 		RequeuePendingResult? result = await service.RequeuePendingAsync(FingerprintOf(pendingId), CancellationToken.None);
 
@@ -2280,6 +2402,11 @@ public class NormalizedDescriptionServiceTests
 			.SingleAsync(r => r.Description == "eggs");
 		untouched.NormalizedDescriptionId.Should().Be(activeId);
 		untouched.NormalizedDescriptionMatchScore.Should().Be(0.98);
+		_committedChangePublisherMock.Verify(p => p.PublishAsync(
+			It.Is<CommittedEntityChange>(change =>
+				change.EntityType == CommittedEntityType.NormalizedDescription
+				&& change.ChangeType == CommittedChangeType.Deleted
+				&& change.EntityId == null)), Times.Once);
 	}
 
 	[Fact]
@@ -2353,7 +2480,7 @@ public class NormalizedDescriptionServiceTests
 			await seed.SaveChangesAsync();
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, _committedChangePublisherMock.Object);
 
 		// Re-runnable by design — running it twice must not be an error the second time.
 		RequeuePendingResult? result = await service.RequeuePendingAsync(FingerprintOf(), CancellationToken.None);
@@ -2362,6 +2489,9 @@ public class NormalizedDescriptionServiceTests
 		result!.DeletedDescriptionCount.Should().Be(0);
 		result.UnlinkedItemCount.Should().Be(0);
 		result.ClearedMatchScoreCount.Should().Be(0);
+		_committedChangePublisherMock.Verify(
+			p => p.PublishAsync(It.IsAny<CommittedEntityChange>()),
+			Times.Never);
 
 		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
 		verify.NormalizedDescriptions.Should().ContainSingle();

@@ -106,13 +106,6 @@ public class CurationProducerNotificationTests
 	}
 
 	[Theory]
-	[InlineData("merge")]
-	[InlineData("split")]
-	[InlineData("rename")]
-	[InlineData("link")]
-	[InlineData("status")]
-	[InlineData("settings")]
-	[InlineData("requeue")]
 	[InlineData("accept")]
 	[InlineData("unaccept")]
 	public async Task SuccessfulProducer_QueuesOneNeutralRepairOnlyAfterCommandCompletion(string operation)
@@ -138,29 +131,25 @@ public class CurationProducerNotificationTests
 	}
 
 	[Theory]
+	[InlineData("merge")]
 	[InlineData("split")]
 	[InlineData("rename")]
 	[InlineData("link")]
-	public async Task CompletedCommand_ResponseProjectionFails_StillQueuesRepair(string operation)
+	[InlineData("status")]
+	[InlineData("settings")]
+	[InlineData("requeue")]
+	public async Task SuccessfulNormalizedProducer_DoesNotDuplicateServiceOwnedPublication(string operation)
 	{
-		Func<Task> invoke = Configure(operation, invalidProjection: true);
+		Func<Task> invoke = Configure(operation);
 		Task running = invoke();
 		await _started.Task.WaitAsync(TimeSpan.FromSeconds(5));
-		_notifier.Invocations.Should().BeEmpty();
 		_complete.SetResult(true);
-		Exception? error = await Record.ExceptionAsync(() => running);
+
+		await running;
+
 		_commandCompleted.Should().BeTrue();
-		if (error is null)
-		{
-			IStatusCodeHttpResult result = ResponseStatus();
-			result.StatusCode.Should().BeOneOf(400, 409);
-		}
-		else
-		{
-			error.Should().BeOfType<InvalidOperationException>().Which.Message.Should().Contain("Unhandled status value");
-		}
-		_notifier.Verify(n => n.NotifyAllChanged("normalized-description", "updated"), Times.Once);
-		_notifier.VerifyNoOtherCalls();
+		ResponseStatus().StatusCode.Should().BeOneOf(200, 204);
+		_notifier.Invocations.Should().BeEmpty();
 	}
 
 	[Theory]
