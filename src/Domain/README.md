@@ -18,6 +18,7 @@ Core domain models with zero dependencies on other layers.
 
 Receipt-item category and subcategory values are historical string snapshots. Their tables
 provide suggestions rather than canonical foreign keys; see
-[Category snapshots](../../docs/category-snapshots.md). Receipt balance is guaranteed when
-transactions are written and during complete-receipt creation, not after every unrelated
-child edit; see [Receipt arithmetic](../../docs/receipt-arithmetic.md).
+[Category snapshots](../../docs/category-snapshots.md). Receipt balance is checked for
+transaction create/update and for complete-receipt creation when transactions are present,
+not after delete, restore, or every unrelated child edit; see
+[Receipt arithmetic](../../docs/receipt-arithmetic.md).

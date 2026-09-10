@@ -140,7 +140,9 @@ dotnet run --project src/Tools/DbSeeder/DbSeeder.csproj
 
 If the variables are absent, the seeder logs a warning and seeds only roles (no admin user). The seed is not recorded in `__SeedHistory` when admin config is missing, so you can re-run the seeder with the correct variables later.
 
-> **Tip:** The `src/Tools/DbSeeder/appsettings.Development.json` file provides these defaults automatically when running with `DOTNET_ENVIRONMENT=Development` (the default for `dotnet run`).
+> **Tip:** The `src/Tools/DbSeeder/appsettings.Development.json` file provides these defaults when
+> you explicitly set `DOTNET_ENVIRONMENT=Development`; this tool has no launch profile that sets it
+> automatically for `dotnet run`.
 
 ## Build and Test
 
