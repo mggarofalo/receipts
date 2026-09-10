@@ -64,10 +64,9 @@ public class JwtSecurityStampRevalidationEndToEndTests
 	// Builds a minimal host wired with the REAL auth pipeline from AddAuthServices (the same
 	// JwtBearer TokenValidationParameters, OnTokenValidated handler, and default "ApiOrJwt" policy the
 	// app uses) plus a mock UserManager for the OnTokenValidated handler to resolve. The default policy
-	// lists both the JwtBearer and ApiKey schemes, so the ApiKey handler is constructed too — its
-	// collaborators are registered as no-op mocks. A request carrying only a Bearer token makes the
-	// ApiKey handler return NoResult, leaving JwtBearer + security-stamp revalidation to decide the
-	// outcome: a valid token yields 200 and a failed revalidation (context.Fail) yields 401.
+	// authenticates through the policy scheme, which selects JwtBearer for a request carrying only a
+	// Bearer token. JwtBearer plus security-stamp revalidation therefore decides the outcome: a valid
+	// token yields 200 and a failed revalidation (context.Fail) yields 401.
 	private static WebApplication BuildHost(UserManager<ApplicationUser> userManager, IUserService? userService = null)
 	{
 		WebApplicationBuilder appBuilder = ConfiguredApiTestHost.CreateBuilder(JwtConfig);
@@ -77,7 +76,7 @@ public class JwtSecurityStampRevalidationEndToEndTests
 		appBuilder.Services.AddSingleton(userService ?? Mock.Of<IUserService>());
 		appBuilder.Services.AddSingleton<ITokenService>(new TokenService(appBuilder.Configuration));
 		appBuilder.Services.AddControllers().AddApplicationPart(typeof(AuthController).Assembly);
-		// Collaborators the ApiKey scheme handler needs to be constructible under the "ApiOrJwt" policy.
+		// Collaborators needed if the policy scheme selects the API-key handler for a request.
 		appBuilder.Services.AddSingleton(Mock.Of<IApiKeyService>());
 		appBuilder.Services.AddSingleton(Mock.Of<IAuthAuditService>());
 

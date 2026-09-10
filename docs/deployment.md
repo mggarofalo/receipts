@@ -306,14 +306,29 @@ The API enforces rate limiting at the application level (defense-in-depth with C
 
 | Policy | Endpoints | Limit | Window |
 |--------|-----------|-------|--------|
-| Global | All endpoints | 100 requests | 1 minute (sliding) |
+| Global | All requests, including 401/403 responses | 100 requests | 1 minute (sliding) |
 | `auth` | Login | 5 requests | 1 minute |
 | `auth-sensitive` | Refresh, change password | 10 requests | 1 minute |
 | `api-key` | API key operations | 10 requests | 1 minute |
 
 Rate limits are configurable in `appsettings.json` under the `RateLimiting` section — no code changes required.
 
-Clients receive HTTP 429 with a `Retry-After` header when limits are exceeded. All rate limit violations are logged to the auth audit trail.
+Authentication runs before admission control so API-key identity and exemptions are available,
+but rate limiting runs before authorization so rejected protected traffic still consumes the
+global budget. The global and anonymous authentication limits are partitioned by client IP;
+authenticated sensitive/API-key policies are partitioned by user ID. API keys created with
+`BypassRateLimit=true` are exempt from both global and named policies; ordinary API keys, JWTs,
+and anonymous requests are not.
+
+Client IP is taken from forwarded headers only when the immediate proxy is in the trusted
+`172.16.0.0/12` Docker network. Keep the app port private behind Nginx Proxy Manager (as above);
+if the proxy network changes, update `KnownIPNetworks` in `Program.cs` or every request may share
+the proxy address for rate-limit partitioning. Never trust forwarded headers from arbitrary
+internet clients.
+
+Clients receive an RFC 9457 problem document with HTTP 429, a `Retry-After` header, and matching
+`retryAfterSeconds` body metadata when limits are exceeded. All rate-limit violations are logged
+to the auth audit trail.
 
 ### Fail2ban (recommended)
 

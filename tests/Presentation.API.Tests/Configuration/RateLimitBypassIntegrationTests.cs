@@ -5,10 +5,12 @@ using API.Configuration;
 using Application.Interfaces.Services;
 using FluentAssertions;
 using Infrastructure.Entities;
+using Infrastructure.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Moq;
@@ -27,7 +29,11 @@ public class RateLimitBypassIntegrationTests
 {
 	private const string BypassApiKey = "bypass-test-key";
 	private const string NormalApiKey = "normal-test-key";
+	private const string SecondUserApiKey = "second-user-test-key";
+	private const string InvalidApiKey = "invalid-test-key";
 	private const string TestUserId = "test-user-id";
+	private const string SecondUserId = "second-user-id";
+	private const string TestSecurityStamp = "current-security-stamp";
 
 	private static readonly Dictionary<string, string?> TestConfig = new()
 	{
@@ -90,6 +96,66 @@ public class RateLimitBypassIntegrationTests
 	}
 
 	[Fact]
+	public async Task ProtectedRequest_WithoutCredentials_Returns401UntilGlobalLimitThen429()
+	{
+		using IHost host = CreateHost();
+		await host.StartAsync();
+		using HttpClient client = host.GetTestClient();
+
+		HttpResponseMessage response1 = await client.GetAsync("/api/protected");
+		HttpResponseMessage response2 = await client.GetAsync("/api/protected");
+		HttpResponseMessage response3 = await client.GetAsync("/api/protected");
+
+		response1.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+		response2.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+		response3.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+	}
+
+	[Fact]
+	public async Task ProtectedRequest_WithValidApiKeyOnly_Returns200UntilGlobalLimitThen429()
+	{
+		using IHost host = CreateHost();
+		await host.StartAsync();
+		using HttpClient client = CreateApiKeyClient(host, NormalApiKey);
+
+		HttpResponseMessage response1 = await client.GetAsync("/api/protected");
+		HttpResponseMessage response2 = await client.GetAsync("/api/protected");
+		HttpResponseMessage response3 = await client.GetAsync("/api/protected");
+
+		response1.StatusCode.Should().Be(HttpStatusCode.OK);
+		response2.StatusCode.Should().Be(HttpStatusCode.OK);
+		response3.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+	}
+
+	[Fact]
+	public async Task ProtectedRequest_WithValidJwtOnly_IsAuthorized()
+	{
+		using IHost host = CreateHost(globalPermitLimit: 100);
+		await host.StartAsync();
+		using HttpClient client = CreateJwtClient(host, MintToken(TestUserId));
+
+		HttpResponseMessage response = await client.GetAsync("/api/protected");
+
+		response.StatusCode.Should().Be(HttpStatusCode.OK);
+	}
+
+	[Fact]
+	public async Task ForbiddenRequest_WithAuthentication_Returns403UntilGlobalLimitThen429()
+	{
+		using IHost host = CreateHost();
+		await host.StartAsync();
+		using HttpClient client = CreateApiKeyClient(host, NormalApiKey);
+
+		HttpResponseMessage response1 = await client.GetAsync("/api/admin-only");
+		HttpResponseMessage response2 = await client.GetAsync("/api/admin-only");
+		HttpResponseMessage response3 = await client.GetAsync("/api/admin-only");
+
+		response1.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+		response2.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+		response3.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+	}
+
+	[Fact]
 	public async Task AnonymousRequest_ExceedsGlobalLimit_Gets429()
 	{
 		using IHost host = CreateHost();
@@ -127,9 +193,59 @@ public class RateLimitBypassIntegrationTests
 		await AssertRateLimitProblemAsync(rejection, "/api/test-anon");
 	}
 
-	private static IHost CreateHost()
+	[Theory]
+	[InlineData("/api/auth-sensitive")]
+	[InlineData("/api/api-key-sensitive")]
+	public async Task IdentityAwarePolicy_UsesSeparateBudgetsPerAuthenticatedUser(string path)
 	{
-		WebApplicationBuilder appBuilder = ConfiguredApiTestHost.CreateBuilder(TestConfig);
+		using IHost host = CreateHost(globalPermitLimit: 100);
+		await host.StartAsync();
+		using HttpClient firstUser = CreateApiKeyClient(host, NormalApiKey);
+		using HttpClient secondUser = CreateApiKeyClient(host, SecondUserApiKey);
+
+		HttpResponseMessage firstUserResponse1 = await firstUser.GetAsync(path);
+		HttpResponseMessage firstUserResponse2 = await firstUser.GetAsync(path);
+		HttpResponseMessage firstUserResponse3 = await firstUser.GetAsync(path);
+		HttpResponseMessage secondUserResponse1 = await secondUser.GetAsync(path);
+		HttpResponseMessage secondUserResponse2 = await secondUser.GetAsync(path);
+		HttpResponseMessage secondUserResponse3 = await secondUser.GetAsync(path);
+
+		firstUserResponse1.StatusCode.Should().Be(HttpStatusCode.OK);
+		firstUserResponse2.StatusCode.Should().Be(HttpStatusCode.OK);
+		firstUserResponse3.StatusCode.Should().Be(HttpStatusCode.TooManyRequests,
+			"requests from the same authenticated user share one named-policy budget");
+		secondUserResponse1.StatusCode.Should().Be(HttpStatusCode.OK,
+			"a different user behind the same IP has an independent named-policy budget");
+		secondUserResponse2.StatusCode.Should().Be(HttpStatusCode.OK);
+		secondUserResponse3.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+	}
+
+	[Fact]
+	public async Task AuthSensitivePolicy_ValidJwtWithInvalidApiKey_FailsClosedAndUsesIpFallbackBudget()
+	{
+		using IHost host = CreateHost(globalPermitLimit: 100);
+		await host.StartAsync();
+		using HttpClient firstJwtSubject = CreateJwtClient(host, MintToken(TestUserId), InvalidApiKey);
+		using HttpClient secondJwtSubject = CreateJwtClient(host, MintToken(SecondUserId), InvalidApiKey);
+
+		HttpResponseMessage firstSubjectResponse = await firstJwtSubject.GetAsync("/api/auth-sensitive");
+		HttpResponseMessage secondSubjectResponse1 = await secondJwtSubject.GetAsync("/api/auth-sensitive");
+		HttpResponseMessage secondSubjectResponse2 = await secondJwtSubject.GetAsync("/api/auth-sensitive");
+
+		firstSubjectResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
+			"an API-key header selects API-key authentication even when the bearer token is valid");
+		secondSubjectResponse1.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+		secondSubjectResponse2.StatusCode.Should().Be(HttpStatusCode.TooManyRequests,
+			"failed mixed-header authentication has no user identity, so both JWT subjects share the IP fallback budget");
+	}
+
+	private static IHost CreateHost(int globalPermitLimit = 2)
+	{
+		Dictionary<string, string?> configuration = new(TestConfig)
+		{
+			["RateLimiting:Global:PermitLimit"] = globalPermitLimit.ToString(),
+		};
+		WebApplicationBuilder appBuilder = ConfiguredApiTestHost.CreateBuilder(configuration);
 
 		// Register the real auth + rate limiting services
 		appBuilder.Services.AddAuthServices(appBuilder.Configuration);
@@ -143,6 +259,9 @@ public class RateLimitBypassIntegrationTests
 		apiKeyService
 			.Setup(s => s.GetUserIdByApiKeyAsync(NormalApiKey))
 			.ReturnsAsync(new ApiKeyValidationResult(TestUserId, Guid.NewGuid(), false));
+		apiKeyService
+			.Setup(s => s.GetUserIdByApiKeyAsync(SecondUserApiKey))
+			.ReturnsAsync(new ApiKeyValidationResult(SecondUserId, Guid.NewGuid(), false));
 		appBuilder.Services.AddSingleton(apiKeyService.Object);
 
 		// Mock other dependencies required by ApiKeyAuthenticationHandler
@@ -158,8 +277,46 @@ public class RateLimitBypassIntegrationTests
 			.AllowAnonymous();
 		app.MapGet("/api/test-anon", () => Results.Ok("OK"))
 			.AllowAnonymous();
+		app.MapGet("/api/protected", () => Results.Ok("OK"))
+			.RequireAuthorization();
+		app.MapGet("/api/admin-only", () => Results.Ok("OK"))
+			.RequireAuthorization("RequireAdmin");
+		app.MapGet("/api/auth-sensitive", () => Results.Ok("OK"))
+			.RequireAuthorization()
+			.RequireRateLimiting("auth-sensitive");
+		app.MapGet("/api/api-key-sensitive", () => Results.Ok("OK"))
+			.RequireAuthorization()
+			.RequireRateLimiting("api-key");
 
 		return app;
+	}
+
+	private static HttpClient CreateApiKeyClient(IHost host, string apiKey)
+	{
+		HttpClient client = host.GetTestClient();
+		client.DefaultRequestHeaders.Add("X-API-Key", apiKey);
+		return client;
+	}
+
+	private static HttpClient CreateJwtClient(IHost host, string token, string? apiKey = null)
+	{
+		HttpClient client = host.GetTestClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+		if (apiKey is not null)
+		{
+			client.DefaultRequestHeaders.Add("X-API-Key", apiKey);
+		}
+
+		return client;
+	}
+
+	private static string MintToken(string userId)
+	{
+		IConfiguration configuration = new ConfigurationBuilder()
+			.AddInMemoryCollection(TestConfig)
+			.Build();
+		return new TokenService(configuration)
+			.GenerateAccessToken(userId, $"{userId}@test.com", ["User"], false, TestSecurityStamp);
 	}
 
 	private static UserManager<ApplicationUser> CreateMockUserManager()
@@ -168,11 +325,19 @@ public class RateLimitBypassIntegrationTests
 		Mock<UserManager<ApplicationUser>> manager = new(
 			store.Object, null!, null!, null!, null!, null!, null!, null!, null!);
 		manager
-			.Setup(m => m.FindByIdAsync(TestUserId))
-			.ReturnsAsync(new ApplicationUser { Id = TestUserId, Email = "test@test.com" });
+			.Setup(m => m.FindByIdAsync(It.IsAny<string>()))
+			.ReturnsAsync((string userId) => new ApplicationUser
+			{
+				Id = userId,
+				Email = $"{userId}@test.com",
+				SecurityStamp = TestSecurityStamp,
+			});
+		manager
+			.Setup(m => m.IsLockedOutAsync(It.IsAny<ApplicationUser>()))
+			.ReturnsAsync(false);
 		manager
 			.Setup(m => m.GetRolesAsync(It.IsAny<ApplicationUser>()))
-			.ReturnsAsync(new List<string> { "Admin" });
+			.ReturnsAsync(new List<string> { "User" });
 		return manager.Object;
 	}
 
