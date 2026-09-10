@@ -25,6 +25,14 @@ describe("YnabSyncBadge", () => {
     expect(screen.getByText("Failed")).toBeInTheDocument();
   });
 
+  it("renders an ambiguous outcome as needing review", () => {
+    render(<YnabSyncBadge status="unknown" />);
+    expect(screen.getByText("Needs Review")).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("YNAB sync status: Needs Review"),
+    ).toBeInTheDocument();
+  });
+
   it("renders Not Synced badge", () => {
     render(<YnabSyncBadge status="notSynced" />);
     expect(screen.getByText("Not Synced")).toBeInTheDocument();

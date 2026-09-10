@@ -48,6 +48,7 @@ public class PushYnabTransactionsImportIdStabilityTests
 
 	public PushYnabTransactionsImportIdStabilityTests()
 	{
+		_syncRecordServiceMock.SetupPushOperationDefaults();
 		_handler = new PushYnabTransactionsCommandHandler(
 			_receiptServiceMock.Object,
 			_receiptItemServiceMock.Object,
@@ -148,8 +149,9 @@ public class PushYnabTransactionsImportIdStabilityTests
 		capturedImportId.Should().EndWith(":2");
 
 		// tx2's own record is stamped Synced with its OWN (distinct) YNAB transaction.
-		_syncRecordServiceMock.Verify(s => s.UpdateStatusAsync(
-			_syncRecord2Id, YnabSyncStatus.Synced, "ynab-tx-2", null, It.IsAny<CancellationToken>()), Times.Once);
+		_syncRecordServiceMock.Verify(s => s.CompletePushOperationAsync(
+			It.IsAny<Guid>(), It.IsAny<Guid>(), YnabSyncStatus.Synced, "ynab-tx-2", null,
+			It.IsAny<CancellationToken>()), Times.Once);
 	}
 
 	[Fact]
@@ -174,12 +176,14 @@ public class PushYnabTransactionsImportIdStabilityTests
 		result.Error.Should().Contain("ynab-tx-1");
 
 		// tx2 must NOT be bound to tx1's YNAB transaction.
-		_syncRecordServiceMock.Verify(s => s.UpdateStatusAsync(
-			_syncRecord2Id, YnabSyncStatus.Synced, "ynab-tx-1", null, It.IsAny<CancellationToken>()), Times.Never);
+		_syncRecordServiceMock.Verify(s => s.CompletePushOperationAsync(
+			It.IsAny<Guid>(), It.IsAny<Guid>(), YnabSyncStatus.Synced, "ynab-tx-1", null,
+			It.IsAny<CancellationToken>()), Times.Never);
 		result.PushedTransactions.Should().NotContain(p => p.YnabTransactionId == "ynab-tx-1");
 
 		// tx2's record is marked Failed with an explanatory error.
-		_syncRecordServiceMock.Verify(s => s.UpdateStatusAsync(
-			_syncRecord2Id, YnabSyncStatus.Failed, null, It.Is<string>(m => m.Contains("ynab-tx-1")), It.IsAny<CancellationToken>()), Times.Once);
+		_syncRecordServiceMock.Verify(s => s.CompletePushOperationAsync(
+			It.IsAny<Guid>(), It.IsAny<Guid>(), YnabSyncStatus.Failed, null,
+			It.Is<string>(message => message.Contains("ynab-tx-1")), It.IsAny<CancellationToken>()), Times.Once);
 	}
 }

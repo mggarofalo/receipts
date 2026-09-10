@@ -33,6 +33,7 @@ public class PushYnabTransactionsFailedRetryTests
 
 	public PushYnabTransactionsFailedRetryTests()
 	{
+		_syncRecordServiceMock.SetupPushOperationDefaults();
 		_handler = new PushYnabTransactionsCommandHandler(
 			_receiptServiceMock.Object,
 			_receiptItemServiceMock.Object,
@@ -126,13 +127,12 @@ public class PushYnabTransactionsFailedRetryTests
 		result.PushedTransactions.Should().HaveCount(1);
 		result.PushedTransactions[0].YnabTransactionId.Should().Be("ynab-tx-1");
 
-		_syncRecordServiceMock.Verify(s => s.CreateAsync(
-			It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<YnabSyncType>(), It.IsAny<CancellationToken>()), Times.Never);
-
-		_syncRecordServiceMock.Verify(s => s.UpdateStatusAsync(
-			_existingSyncRecordId, YnabSyncStatus.Pending, null, null, It.IsAny<CancellationToken>()), Times.Once);
-		_syncRecordServiceMock.Verify(s => s.UpdateStatusAsync(
-			_existingSyncRecordId, YnabSyncStatus.Synced, "ynab-tx-1", null, It.IsAny<CancellationToken>()), Times.Once);
+		_syncRecordServiceMock.Verify(s => s.PreparePushOperationAsync(
+			_transactionId, _budgetId, It.IsAny<YnabCreateTransactionRequest>(), It.IsAny<string>(),
+			It.IsAny<CancellationToken>()), Times.Once);
+		_syncRecordServiceMock.Verify(s => s.CompletePushOperationAsync(
+			It.IsAny<Guid>(), It.IsAny<Guid>(), YnabSyncStatus.Synced, "ynab-tx-1", null,
+			It.IsAny<CancellationToken>()), Times.Once);
 	}
 
 	[Fact]
@@ -152,17 +152,16 @@ public class PushYnabTransactionsFailedRetryTests
 		result.Success.Should().BeTrue();
 		result.PushedTransactions.Should().HaveCount(1);
 
-		_syncRecordServiceMock.Verify(s => s.CreateAsync(
-			It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<YnabSyncType>(), It.IsAny<CancellationToken>()), Times.Never);
-
-		_syncRecordServiceMock.Verify(s => s.UpdateStatusAsync(
-			_existingSyncRecordId, YnabSyncStatus.Pending, null, null, It.IsAny<CancellationToken>()), Times.Once);
-		_syncRecordServiceMock.Verify(s => s.UpdateStatusAsync(
-			_existingSyncRecordId, YnabSyncStatus.Synced, "ynab-tx-1", null, It.IsAny<CancellationToken>()), Times.Once);
+		_syncRecordServiceMock.Verify(s => s.PreparePushOperationAsync(
+			_transactionId, _budgetId, It.IsAny<YnabCreateTransactionRequest>(), It.IsAny<string>(),
+			It.IsAny<CancellationToken>()), Times.Once);
+		_syncRecordServiceMock.Verify(s => s.CompletePushOperationAsync(
+			It.IsAny<Guid>(), It.IsAny<Guid>(), YnabSyncStatus.Synced, "ynab-tx-1", null,
+			It.IsAny<CancellationToken>()), Times.Once);
 	}
 
 	[Fact]
-	public async Task Handle_ExistingFailedSyncRecord_YnabApiFails_MarksRowFailedAgain()
+	public async Task Handle_ExistingFailedSyncRecord_AmbiguousYnabFailure_MarksOperationUnknown()
 	{
 		SetupHappyPathPipeline();
 
@@ -178,12 +177,9 @@ public class PushYnabTransactionsFailedRetryTests
 		result.Success.Should().BeFalse();
 		result.Error.Should().Contain("network timeout");
 
-		_syncRecordServiceMock.Verify(s => s.CreateAsync(
-			It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<YnabSyncType>(), It.IsAny<CancellationToken>()), Times.Never);
-
-		_syncRecordServiceMock.Verify(s => s.UpdateStatusAsync(
-			_existingSyncRecordId, YnabSyncStatus.Pending, null, null, It.IsAny<CancellationToken>()), Times.Once);
-		_syncRecordServiceMock.Verify(s => s.UpdateStatusAsync(
-			_existingSyncRecordId, YnabSyncStatus.Failed, null, It.Is<string>(msg => msg.Contains("network timeout")), It.IsAny<CancellationToken>()), Times.Once);
+		_syncRecordServiceMock.Verify(s => s.CompletePushOperationAsync(
+			It.IsAny<Guid>(), It.IsAny<Guid>(), YnabSyncStatus.Unknown, null,
+			It.Is<string>(message => message.Contains("network timeout") && message.Contains("may have accepted")),
+			It.IsAny<CancellationToken>()), Times.Once);
 	}
 }

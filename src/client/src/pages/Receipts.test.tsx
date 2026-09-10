@@ -318,21 +318,23 @@ describe("Receipts", () => {
       mockReceiptListItemResponse({ id: "balanced", balanceState: "balanced" }),
       mockReceiptListItemResponse({ id: "missing", balanceState: "noTransactions" }),
       mockReceiptListItemResponse({ id: "mismatch", balanceState: "outOfBalance" }),
+      mockReceiptListItemResponse({ id: "ambiguous", balanceState: "balanced" }),
     ];
     await mockReceiptTable(items, new Map([
       ["balanced", "synced"],
       ["missing", "pending"],
       ["mismatch", "failed"],
+      ["ambiguous", "unknown"],
     ]));
 
     renderWithProviders(<Receipts />);
 
-    expect(screen.getByLabelText("Balance: balanced")).toHaveTextContent("Balanced");
+    expect(screen.getAllByLabelText("Balance: balanced")).toHaveLength(2);
     expect(screen.getByLabelText("Balance: no transactions")).toHaveTextContent("No transactions");
     expect(screen.getByLabelText("Balance: out of balance")).toHaveTextContent("Out of balance");
     expect(screen.getByLabelText("YNAB: synced")).toHaveTextContent("YNAB");
     expect(screen.getByLabelText("YNAB: pending")).toHaveTextContent("Pending");
-    expect(screen.getByLabelText("YNAB: error")).toHaveTextContent("Error");
+    expect(screen.getAllByLabelText("YNAB: error")).toHaveLength(2);
   });
 
   it("lazy-loads on mouse expansion, exposes valid detail-row relationships, and reopens cached data", async () => {

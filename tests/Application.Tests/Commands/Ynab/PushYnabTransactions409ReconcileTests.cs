@@ -34,6 +34,7 @@ public class PushYnabTransactions409ReconcileTests
 
 	public PushYnabTransactions409ReconcileTests()
 	{
+		_syncRecordServiceMock.SetupPushOperationDefaults();
 		_handler = new PushYnabTransactionsCommandHandler(
 			_receiptServiceMock.Object,
 			_receiptItemServiceMock.Object,
@@ -124,8 +125,9 @@ public class PushYnabTransactions409ReconcileTests
 		result.PushedTransactions[0].LocalTransactionId.Should().Be(_transactionId);
 		result.Error.Should().BeNull();
 
-		_syncRecordServiceMock.Verify(s => s.UpdateStatusAsync(
-			_syncRecordId, YnabSyncStatus.Synced, "ynab-tx-recovered", null, It.IsAny<CancellationToken>()), Times.Once);
+		_syncRecordServiceMock.Verify(s => s.CompletePushOperationAsync(
+			It.IsAny<Guid>(), It.IsAny<Guid>(), YnabSyncStatus.Synced, "ynab-tx-recovered", null,
+			It.IsAny<CancellationToken>()), Times.Once);
 	}
 
 	[Fact]
@@ -144,8 +146,9 @@ public class PushYnabTransactions409ReconcileTests
 			new PushYnabTransactionsCommand(_receiptId), CancellationToken.None);
 
 		result.Success.Should().BeFalse();
-		_syncRecordServiceMock.Verify(s => s.UpdateStatusAsync(
-			_syncRecordId, YnabSyncStatus.Failed, null, It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+		_syncRecordServiceMock.Verify(s => s.CompletePushOperationAsync(
+			It.IsAny<Guid>(), It.IsAny<Guid>(), YnabSyncStatus.Failed, null, It.IsAny<string>(),
+			It.IsAny<CancellationToken>()), Times.Once);
 	}
 
 	[Fact]
@@ -165,7 +168,8 @@ public class PushYnabTransactions409ReconcileTests
 
 		result.Success.Should().BeFalse();
 		result.Error.Should().Contain("lookup failed");
-		_syncRecordServiceMock.Verify(s => s.UpdateStatusAsync(
-			_syncRecordId, YnabSyncStatus.Failed, null, It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+		_syncRecordServiceMock.Verify(s => s.CompletePushOperationAsync(
+			It.IsAny<Guid>(), It.IsAny<Guid>(), YnabSyncStatus.Unknown, null,
+			It.Is<string>(message => message.Contains("may have accepted")), It.IsAny<CancellationToken>()), Times.Once);
 	}
 }

@@ -46,6 +46,7 @@ public class PushYnabTransactionsImportIdIdempotencyTests
 
 	public PushYnabTransactionsImportIdIdempotencyTests()
 	{
+		_syncRecordServiceMock.SetupPushOperationDefaults();
 		_handler = new PushYnabTransactionsCommandHandler(
 			_receiptServiceMock.Object,
 			_receiptItemServiceMock.Object,
@@ -252,10 +253,12 @@ public class PushYnabTransactionsImportIdIdempotencyTests
 		result.PushedTransactions.Select(p => p.YnabTransactionId).Should().BeEquivalentTo(["ynab-own-1", "ynab-own-2"]);
 
 		// The conflicting split was stamped Synced to its own recovered id ...
-		_syncRecordServiceMock.Verify(s => s.UpdateStatusAsync(
-			It.IsAny<Guid>(), YnabSyncStatus.Synced, "ynab-own-2", null, It.IsAny<CancellationToken>()), Times.Once);
+		_syncRecordServiceMock.Verify(s => s.CompletePushOperationAsync(
+			It.IsAny<Guid>(), It.IsAny<Guid>(), YnabSyncStatus.Synced, "ynab-own-2", null,
+			It.IsAny<CancellationToken>()), Times.Once);
 		// ... and nothing was marked Failed (the guard did not over-reject).
-		_syncRecordServiceMock.Verify(s => s.UpdateStatusAsync(
-			It.IsAny<Guid>(), YnabSyncStatus.Failed, It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+		_syncRecordServiceMock.Verify(s => s.CompletePushOperationAsync(
+			It.IsAny<Guid>(), It.IsAny<Guid>(), YnabSyncStatus.Failed, It.IsAny<string>(),
+			It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
 	}
 }

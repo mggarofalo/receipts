@@ -98,6 +98,111 @@ public class YnabSyncRecordServiceTests
 	}
 
 	[Fact]
+	public async Task PreparePushOperationAsync_PersistsCompleteImmutableRequestBeforeReturningIt()
+	{
+		Guid transactionId = Guid.NewGuid();
+		YnabCreateTransactionRequest request = new(
+			"account-a",
+			new DateOnly(2026, 9, 10),
+			-12345,
+			"original memo",
+			"Original payee",
+			"category-a",
+			false,
+			[new YnabSubTransaction(-12345, "category-a", "split memo")],
+			"YNAB:original:1");
+		YnabSyncRecordEntity? proposed = null;
+		_repositoryMock.Setup(r => r.GetOrCreatePushOperationAsync(
+				It.IsAny<YnabSyncRecordEntity>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync((YnabSyncRecordEntity row, CancellationToken _) =>
+			{
+				proposed = row;
+				row.Id = Guid.NewGuid();
+				return new PreparedYnabPushOperation(row, true);
+			});
+
+		YnabPushOperation operation = await _service.PreparePushOperationAsync(
+			transactionId, SelectedBudgetId, request, "source-v1", CancellationToken.None);
+
+		proposed.Should().NotBeNull();
+		proposed!.LocalTransactionId.Should().Be(transactionId);
+		proposed.YnabBudgetId.Should().Be(SelectedBudgetId);
+		proposed.YnabAccountId.Should().Be("account-a");
+		proposed.ImportId.Should().Be("YNAB:original:1");
+		proposed.RequestPayloadJson.Should().NotBeNullOrWhiteSpace();
+		proposed.PayloadHash.Should().MatchRegex("^[0-9a-f]{64}$");
+		proposed.SourceVersion.Should().Be("source-v1");
+		proposed.SyncStatus.Should().Be(YnabSyncStatus.Pending);
+		operation.Request.Should().BeEquivalentTo(request);
+		operation.PayloadHash.Should().Be(proposed.PayloadHash);
+	}
+
+	[Fact]
+	public async Task PreparePushOperationAsync_LocalEdits_ReturnsPreviouslyPersistedSnapshot()
+	{
+		Guid transactionId = Guid.NewGuid();
+		YnabCreateTransactionRequest original = new(
+			"account-original", new DateOnly(2026, 9, 1), -1000, "original", "Original store",
+			"category-original", false, ImportId: "YNAB:original:1");
+		YnabCreateTransactionRequest edited = original with
+		{
+			AccountId = "account-edited",
+			Date = new DateOnly(2026, 9, 2),
+			Amount = -2000,
+			Memo = "edited",
+			ImportId = "YNAB:edited:1",
+		};
+		YnabSyncRecordEntity? persisted = null;
+		_repositoryMock.Setup(r => r.GetOrCreatePushOperationAsync(
+				It.IsAny<YnabSyncRecordEntity>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync((YnabSyncRecordEntity proposed, CancellationToken _) =>
+			{
+				if (persisted is null)
+				{
+					proposed.Id = Guid.NewGuid();
+					persisted = proposed;
+					return new PreparedYnabPushOperation(persisted, true);
+				}
+
+				return new PreparedYnabPushOperation(persisted, false);
+			});
+
+		YnabPushOperation first = await _service.PreparePushOperationAsync(
+			transactionId, SelectedBudgetId, original, "source-original", CancellationToken.None);
+		YnabPushOperation retry = await _service.PreparePushOperationAsync(
+			transactionId, SelectedBudgetId, edited, "source-edited", CancellationToken.None);
+
+		retry.SyncRecordId.Should().Be(first.SyncRecordId);
+		retry.Request.Should().BeEquivalentTo(original);
+		retry.SourceVersion.Should().Be("source-original");
+		retry.PayloadHash.Should().Be(first.PayloadHash);
+		VerifyPublished(CommittedChangeType.Created, first.SyncRecordId, Times.Once());
+	}
+
+	[Fact]
+	public async Task CompletePushOperationAsync_PublishesOnlyAfterClaimedUpdateCommits()
+	{
+		Guid id = Guid.NewGuid();
+		Guid claimToken = Guid.NewGuid();
+		_repositoryMock.SetupSequence(r => r.CompletePushOperationAsync(
+			id, claimToken, YnabSyncStatus.Unknown, null, "ambiguous response",
+			It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(false)
+			.ReturnsAsync(true);
+
+		bool rejected = await _service.CompletePushOperationAsync(
+			id, claimToken, YnabSyncStatus.Unknown, null, "ambiguous response", CancellationToken.None);
+		VerifyPublished(CommittedChangeType.Updated, id, Times.Never());
+
+		bool committed = await _service.CompletePushOperationAsync(
+			id, claimToken, YnabSyncStatus.Unknown, null, "ambiguous response", CancellationToken.None);
+
+		rejected.Should().BeFalse();
+		committed.Should().BeTrue();
+		VerifyPublished(CommittedChangeType.Updated, id, Times.Once());
+	}
+
+	[Fact]
 	public async Task GetSyncStatusesByReceiptIdsAsync_NoSyncRecords_ReturnsNotSyncedForAll()
 	{
 		// Arrange
@@ -177,6 +282,20 @@ public class YnabSyncRecordServiceTests
 
 		// Assert
 		result.Should().ContainSingle().Which.SyncStatus.Should().Be(ReceiptSyncStatusValue.Failed);
+	}
+
+	[Fact]
+	public async Task GetSyncStatusesByReceiptIdsAsync_UnknownOutcome_IsVisible()
+	{
+		List<Guid> receiptIds = [Receipt1];
+		_repositoryMock.Setup(r => r.GetByReceiptIdsAndBudgetAsync(
+				receiptIds, SelectedBudgetId, It.IsAny<CancellationToken>()))
+			.ReturnsAsync([CreateSyncRecord(Guid.NewGuid(), Receipt1, YnabSyncStatus.Unknown)]);
+
+		List<ReceiptYnabSyncStatusDto> result = await _service.GetSyncStatusesByReceiptIdsAndBudgetAsync(
+			receiptIds, SelectedBudgetId, CancellationToken.None);
+
+		result.Should().ContainSingle().Which.SyncStatus.Should().Be(ReceiptSyncStatusValue.Unknown);
 	}
 
 	[Fact]
