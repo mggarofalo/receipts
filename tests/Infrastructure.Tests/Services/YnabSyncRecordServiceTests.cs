@@ -98,6 +98,32 @@ public class YnabSyncRecordServiceTests
 	}
 
 	[Fact]
+	public async Task GetPushOperationIdentitiesByReceiptAsync_UsesDedicatedTombstoneAwareRepositoryQuery()
+	{
+		Guid transactionId = Guid.NewGuid();
+		_repositoryMock.Setup(r => r.GetPushOperationIdentitiesByReceiptAsync(
+				Receipt1, SelectedBudgetId, It.IsAny<CancellationToken>()))
+			.ReturnsAsync([
+				new YnabSyncRecordEntity
+				{
+					LocalTransactionId = transactionId,
+					YnabBudgetId = SelectedBudgetId,
+					SyncType = YnabSyncType.TransactionPush,
+					ImportId = "reserved-tombstone",
+					DeletedAt = DateTimeOffset.UtcNow,
+				},
+			]);
+
+		IReadOnlyList<YnabPushOperationIdentity> result = await _service.GetPushOperationIdentitiesByReceiptAsync(
+			Receipt1, SelectedBudgetId, CancellationToken.None);
+
+		result.Should().ContainSingle().Which.Should().Be(
+			new YnabPushOperationIdentity(transactionId, "reserved-tombstone"));
+		_repositoryMock.Verify(r => r.GetByReceiptIdsAndBudgetAsync(
+			It.IsAny<List<Guid>>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+	}
+
+	[Fact]
 	public async Task PreparePushOperationAsync_PersistsCompleteImmutableRequestBeforeReturningIt()
 	{
 		Guid transactionId = Guid.NewGuid();

@@ -11,6 +11,9 @@ internal static class YnabPushOperationMockExtensions
 	{
 		Dictionary<(Guid TransactionId, string BudgetId), YnabPushOperation> operations = [];
 		Dictionary<Guid, int> attempts = [];
+		service.Setup(s => s.GetPushOperationIdentitiesByReceiptAsync(
+				It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync([]);
 		service.Setup(s => s.PreparePushOperationAsync(
 				It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<YnabCreateTransactionRequest>(),
 				It.IsAny<string>(), It.IsAny<CancellationToken>()))

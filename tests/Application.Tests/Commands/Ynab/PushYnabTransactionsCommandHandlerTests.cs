@@ -2,10 +2,12 @@ using Application.Commands.Ynab.PushTransactions;
 using Application.Interfaces.Services;
 using Application.Models;
 using Application.Models.Ynab;
+using Application.Utilities;
 using Common;
 using Domain;
 using Domain.Aggregates;
 using FluentAssertions;
+using Infrastructure.Ynab;
 using Moq;
 
 namespace Application.Tests.Commands.Ynab;
@@ -124,6 +126,169 @@ public class PushYnabTransactionsCommandHandlerTests
 		result.Error.Should().BeNull();
 	}
 
+	[Theory]
+	[InlineData(true)]
+	[InlineData(false)]
+	public async Task Handle_DefiniteCreateRejection_IsFailedButRetryReconciliationAuthFailureIsUnknown(bool retry)
+	{
+		SetupHappyPath();
+		if (retry)
+		{
+			Guid operationId = Guid.NewGuid();
+			YnabCreateTransactionRequest snapshot = new(
+				_ynabAccountId, DateOnly.FromDateTime(DateTime.Today.AddDays(-1)), -11000,
+				"memo", "Store", "ynab-cat-1", false, ImportId: "YNAB:retry:1");
+			YnabPushOperation operation = new(
+				operationId, YnabSyncStatus.Unknown, snapshot, "source", "hash", 1, null, "prior ambiguity");
+			_syncRecordServiceMock.Setup(s => s.PreparePushOperationAsync(
+					_transactionId, _budgetId, It.IsAny<YnabCreateTransactionRequest>(), It.IsAny<string>(),
+					It.IsAny<CancellationToken>()))
+				.ReturnsAsync(operation);
+			_syncRecordServiceMock.Setup(s => s.TryClaimPushOperationAsync(operationId, It.IsAny<CancellationToken>()))
+				.ReturnsAsync(new YnabPushOperationClaim(operation with { AttemptCount = 2 }, Guid.NewGuid()));
+			_ynabApiClientMock.Setup(s => s.FindTransactionByImportIdAsync(
+					_budgetId, snapshot.AccountId, snapshot.ImportId!, snapshot.Date.AddDays(-1), It.IsAny<CancellationToken>()))
+				.ThrowsAsync(new YnabAuthException("token expired during reconciliation"));
+		}
+		else
+		{
+			_ynabApiClientMock.Setup(s => s.CreateTransactionAsync(
+					_budgetId, It.IsAny<YnabCreateTransactionRequest>(), It.IsAny<CancellationToken>()))
+				.ThrowsAsync(new YnabNotFoundException("destination account not found"));
+		}
+
+		PushYnabTransactionsResult result = await _handler.Handle(
+			new PushYnabTransactionsCommand(_receiptId), CancellationToken.None);
+
+		YnabSyncStatus expected = retry ? YnabSyncStatus.Unknown : YnabSyncStatus.Failed;
+		result.Success.Should().BeFalse();
+		result.OperationStatus.Should().Be(expected);
+		_syncRecordServiceMock.Verify(s => s.CompletePushOperationAsync(
+			It.IsAny<Guid>(), It.IsAny<Guid>(), expected, null, It.IsAny<string>(),
+			It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	[Theory]
+	[InlineData(YnabSyncStatus.Unknown, true)]
+	[InlineData(YnabSyncStatus.Pending, false)]
+	public async Task Handle_AmbiguousPredecessorThenDefiniteRetryRejection_RemainsUnknown(
+		YnabSyncStatus predecessorStatus,
+		bool useAuthRejection)
+	{
+		SetupHappyPath();
+		Guid operationId = Guid.NewGuid();
+		YnabCreateTransactionRequest snapshot = new(
+			_ynabAccountId, DateOnly.FromDateTime(DateTime.Today.AddDays(-1)), -11000,
+			"memo", "Store", "ynab-cat-1", false, ImportId: YnabImportId.Generate(_transactionId));
+		YnabPushOperation operation = new(
+			operationId, predecessorStatus, snapshot, "source", "hash", 1, null, "unresolved prior send");
+		_syncRecordServiceMock.Setup(s => s.PreparePushOperationAsync(
+				_transactionId, _budgetId, It.IsAny<YnabCreateTransactionRequest>(), It.IsAny<string>(),
+				It.IsAny<CancellationToken>()))
+			.ReturnsAsync(operation);
+		_syncRecordServiceMock.Setup(s => s.TryClaimPushOperationAsync(operationId, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new YnabPushOperationClaim(operation with { AttemptCount = 2 }, Guid.NewGuid()));
+		_ynabApiClientMock.Setup(s => s.FindTransactionByImportIdAsync(
+				_budgetId, snapshot.AccountId, snapshot.ImportId!, snapshot.Date.AddDays(-1), It.IsAny<CancellationToken>()))
+			.ReturnsAsync((string?)null);
+		Exception rejection = useAuthRejection
+			? new YnabAuthException("token expired")
+			: new YnabNotFoundException("destination account missing");
+		_ynabApiClientMock.Setup(s => s.CreateTransactionAsync(
+				_budgetId, snapshot, It.IsAny<CancellationToken>()))
+			.ThrowsAsync(rejection);
+
+		PushYnabTransactionsResult result = await _handler.Handle(
+			new PushYnabTransactionsCommand(_receiptId), CancellationToken.None);
+
+		result.Success.Should().BeFalse();
+		result.OperationStatus.Should().Be(YnabSyncStatus.Unknown);
+		_syncRecordServiceMock.Verify(s => s.CompletePushOperationAsync(
+			It.IsAny<Guid>(), It.IsAny<Guid>(), YnabSyncStatus.Unknown, null,
+			It.Is<string>(error => error.Contains("may have accepted")), It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	[Fact]
+	public async Task Handle_NewEqualSplit_UsesTransactionIdentityWhileLegacyReceiptIdsRemainReserved()
+	{
+		SetupHappyPath();
+		Guid transactionBId = Guid.NewGuid();
+		Guid insertedTransactionId = Guid.NewGuid();
+		DateOnly date = DateOnly.FromDateTime(DateTime.Today.AddDays(-1));
+		Domain.Core.Account account = new(_accountId, "Checking", true);
+		List<Domain.Core.Transaction> transactions = new[] { _transactionId, insertedTransactionId, transactionBId }
+			.Select(id => new Domain.Core.Transaction(id, Guid.NewGuid(), new Money(11.00m), date)
+			{
+				AccountId = _accountId,
+				ReceiptId = _receiptId,
+			})
+			.ToList();
+		_transactionServiceMock.Setup(s => s.GetTransactionAccountsByReceiptIdAsync(
+				_receiptId, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(transactions.Select(transaction => new TransactionAccount
+			{
+				Transaction = transaction,
+				Account = account,
+			}).ToList());
+		_syncRecordServiceMock.Setup(s => s.GetByTransactionTypeAndBudgetAsync(
+				It.IsAny<Guid>(), YnabSyncType.TransactionPush, _budgetId, It.IsAny<CancellationToken>()))
+			.ReturnsAsync((YnabSyncRecordDto?)null);
+		string importA = YnabImportId.Generate(-11000, date, _receiptId, 1);
+		string importB = YnabImportId.Generate(-11000, date, _receiptId, 2);
+		_syncRecordServiceMock.Setup(s => s.GetPushOperationIdentitiesByReceiptAsync(
+				_receiptId, _budgetId, It.IsAny<CancellationToken>()))
+			.ReturnsAsync([
+				new YnabPushOperationIdentity(_transactionId, importA),
+				new YnabPushOperationIdentity(transactionBId, importB),
+			]);
+		_splitCalculatorMock.Setup(s => s.ComputeWaterfallSplits(
+				It.IsAny<ReceiptWithItems>(), It.IsAny<List<Domain.Core.Transaction>>(),
+				It.IsAny<Dictionary<string, string>>()))
+			.Returns(new YnabSplitResult(transactions.Select(transaction =>
+				new YnabTransactionSplit(transaction.Id, -11000,
+					[new YnabSubTransactionSplit("ynab-cat-1", -11000)])).ToList()));
+		List<string> sentImportIds = [];
+		int remoteId = 0;
+		_ynabApiClientMock.Setup(s => s.CreateTransactionAsync(
+				_budgetId, It.IsAny<YnabCreateTransactionRequest>(), It.IsAny<CancellationToken>()))
+			.Callback<string, YnabCreateTransactionRequest, CancellationToken>((_, request, _) =>
+				sentImportIds.Add(request.ImportId!))
+			.ReturnsAsync(() => new YnabCreateTransactionResponse($"remote-{++remoteId}"));
+
+		PushYnabTransactionsResult result = await _handler.Handle(
+			new PushYnabTransactionsCommand(_receiptId), CancellationToken.None);
+
+		result.Success.Should().BeTrue();
+		sentImportIds.Should().Equal(
+			importA,
+			YnabImportId.Generate(insertedTransactionId),
+			importB);
+	}
+
+	[Fact]
+	public async Task Handle_DuplicatePersistedImportIdentity_BlocksBeforeClaimOrRemoteSend()
+	{
+		SetupHappyPath();
+		Guid otherTransactionId = Guid.NewGuid();
+		_syncRecordServiceMock.Setup(s => s.GetPushOperationIdentitiesByReceiptAsync(
+				_receiptId, _budgetId, It.IsAny<CancellationToken>()))
+			.ReturnsAsync([
+				new YnabPushOperationIdentity(_transactionId, "YNAB:duplicate:1"),
+				new YnabPushOperationIdentity(otherTransactionId, "YNAB:duplicate:1"),
+			]);
+
+		PushYnabTransactionsResult result = await _handler.Handle(
+			new PushYnabTransactionsCommand(_receiptId), CancellationToken.None);
+
+		result.Success.Should().BeFalse();
+		result.OperationStatus.Should().Be(YnabSyncStatus.Unknown);
+		result.Error.Should().Contain("same immutable YNAB import ID");
+		_syncRecordServiceMock.Verify(s => s.TryClaimPushOperationAsync(
+			It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+		_ynabApiClientMock.Verify(s => s.CreateTransactionAsync(
+			It.IsAny<string>(), It.IsAny<YnabCreateTransactionRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+	}
+
 	[Fact]
 	public async Task Handle_PersistsSnapshotBeforeSend_AndUsesPersistedRequestAsAuthority()
 	{
@@ -221,7 +386,7 @@ public class PushYnabTransactionsCommandHandlerTests
 		retry.PushedTransactions.Should().ContainSingle().Which.YnabTransactionId.Should().Be("ynab-accepted");
 		proposed.Should().HaveCount(2);
 		proposed[1].Amount.Should().Be(-22000);
-		proposed[1].ImportId.Should().NotBe(proposed[0].ImportId);
+		proposed[1].ImportId.Should().Be(proposed[0].ImportId);
 		_ynabApiClientMock.Verify(s => s.CreateTransactionAsync(
 			_budgetId, It.IsAny<YnabCreateTransactionRequest>(), It.IsAny<CancellationToken>()), Times.Once);
 	}
@@ -249,13 +414,13 @@ public class PushYnabTransactionsCommandHandlerTests
 			_handler.Handle(new PushYnabTransactionsCommand(_receiptId), CancellationToken.None).AsTask());
 
 		results.Should().ContainSingle(result => result.Success);
-		results.Should().ContainSingle(result => !result.Success && result.Error!.Contains("already in progress"));
+		results.Should().ContainSingle(result => !result.Success && result.Error!.Contains("claim changed"));
 		_ynabApiClientMock.Verify(s => s.CreateTransactionAsync(
 			_budgetId, It.IsAny<YnabCreateTransactionRequest>(), It.IsAny<CancellationToken>()), Times.Once);
 	}
 
 	[Fact]
-	public async Task Handle_RemoteAcceptedButCompletionPersistenceFails_RetryReconcilesWithoutSecondSend()
+	public async Task Handle_RemoteAcceptedButClaimCompletionIsLost_RetryReconcilesWithoutSecondSend()
 	{
 		SetupHappyPath();
 		Guid operationId = Guid.NewGuid();
@@ -270,22 +435,28 @@ public class PushYnabTransactionsCommandHandlerTests
 		_syncRecordServiceMock.Setup(s => s.TryClaimPushOperationAsync(operationId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(() => new YnabPushOperationClaim(
 				operation! with { AttemptCount = ++attempts }, Guid.NewGuid()));
-		int completions = 0;
-		_syncRecordServiceMock.Setup(s => s.CompletePushOperationAsync(
-				operationId, It.IsAny<Guid>(), YnabSyncStatus.Synced, It.IsAny<string>(), null,
-				It.IsAny<CancellationToken>()))
-			.Returns(() => Interlocked.Increment(ref completions) == 1
-				? Task.FromException<bool>(new IOException("status commit failed"))
-				: Task.FromResult(true));
+		_syncRecordServiceMock.SetupSequence(s => s.CompletePushOperationAsync(
+				It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<YnabSyncStatus>(), It.IsAny<string?>(),
+				It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(false)
+			.ReturnsAsync(true)
+			.ReturnsAsync(true);
 
 		PushYnabTransactionsResult first = await _handler.Handle(
 			new PushYnabTransactionsCommand(_receiptId), CancellationToken.None);
 		first.Success.Should().BeTrue();
-		first.Error.Should().Contain("status commit failed");
+		first.Error.Should().Contain("claim was lost");
 		_ynabApiClientMock.Setup(s => s.FindTransactionByImportIdAsync(
 				_budgetId, It.IsAny<string>(), It.IsAny<string>(), It.IsAny<DateOnly>(),
 				It.IsAny<CancellationToken>()))
 			.ReturnsAsync("ynab-tx-1");
+		_syncRecordServiceMock.SetupSequence(s => s.GetByTransactionTypeAndBudgetAsync(
+				_transactionId, YnabSyncType.TransactionPush, _budgetId, It.IsAny<CancellationToken>()))
+			.ReturnsAsync((YnabSyncRecordDto?)null)
+			.ReturnsAsync(new YnabSyncRecordDto(
+				operationId, _transactionId, "ynab-tx-1", _budgetId, _ynabAccountId,
+				YnabSyncType.TransactionPush, YnabSyncStatus.Synced, DateTimeOffset.UtcNow, null,
+				DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
 
 		PushYnabTransactionsResult retry = await _handler.Handle(
 			new PushYnabTransactionsCommand(_receiptId), CancellationToken.None);
@@ -629,15 +800,16 @@ public class PushYnabTransactionsCommandHandlerTests
 	}
 
 	[Fact]
-	public async Task Handle_StatusUpdateFailsAfterYnabSuccess_ReturnsSuccessWithWarning()
+	public async Task Handle_StatusUpdateLosesClaimAfterYnabSuccess_ReturnsUnknownWarning()
 	{
 		// If completing the durable claim throws after YNAB accepted the transaction,
 		// the result should be Success=true with a warning, not Failed
 		SetupHappyPath();
-		_syncRecordServiceMock.Setup(s => s.CompletePushOperationAsync(
-				It.IsAny<Guid>(), It.IsAny<Guid>(), YnabSyncStatus.Synced, "ynab-tx-1", null,
-				It.IsAny<CancellationToken>()))
-			.ThrowsAsync(new InvalidOperationException("DB timeout on status update"));
+		_syncRecordServiceMock.SetupSequence(s => s.CompletePushOperationAsync(
+				It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<YnabSyncStatus>(), It.IsAny<string?>(),
+				It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(false)
+			.ReturnsAsync(true);
 
 		PushYnabTransactionsResult result = await _handler.Handle(
 			new PushYnabTransactionsCommand(_receiptId), CancellationToken.None);
@@ -645,7 +817,41 @@ public class PushYnabTransactionsCommandHandlerTests
 		result.Success.Should().BeTrue();
 		result.PushedTransactions.Should().HaveCount(1);
 		result.Error.Should().Contain("sync record update failed");
-		result.Error.Should().Contain("DB timeout on status update");
+		result.Error.Should().Contain("claim was lost");
+		result.OperationStatus.Should().Be(YnabSyncStatus.Unknown);
+	}
+
+	[Fact]
+	public async Task Handle_ClaimUnavailableButAuthoritativeRecordIsSynced_ReturnsSyncedWithoutRemoteSend()
+	{
+		SetupHappyPath();
+		Guid operationId = Guid.NewGuid();
+		YnabCreateTransactionRequest snapshot = new(
+			_ynabAccountId, DateOnly.FromDateTime(DateTime.Today.AddDays(-1)), -11000,
+			"memo", "Store", "ynab-cat-1", false, ImportId: YnabImportId.Generate(_transactionId));
+		YnabPushOperation operation = new(
+			operationId, YnabSyncStatus.Pending, snapshot, "source", "hash", 0, null, null);
+		_syncRecordServiceMock.Setup(s => s.PreparePushOperationAsync(
+				_transactionId, _budgetId, It.IsAny<YnabCreateTransactionRequest>(), It.IsAny<string>(),
+				It.IsAny<CancellationToken>()))
+			.ReturnsAsync(operation);
+		_syncRecordServiceMock.Setup(s => s.TryClaimPushOperationAsync(operationId, It.IsAny<CancellationToken>()))
+			.ReturnsAsync((YnabPushOperationClaim?)null);
+		_syncRecordServiceMock.SetupSequence(s => s.GetByTransactionTypeAndBudgetAsync(
+				_transactionId, YnabSyncType.TransactionPush, _budgetId, It.IsAny<CancellationToken>()))
+			.ReturnsAsync((YnabSyncRecordDto?)null)
+			.ReturnsAsync(new YnabSyncRecordDto(
+				operationId, _transactionId, "ynab-authoritative", _budgetId, _ynabAccountId,
+				YnabSyncType.TransactionPush, YnabSyncStatus.Synced, DateTimeOffset.UtcNow, null,
+				DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
+
+		PushYnabTransactionsResult result = await _handler.Handle(
+			new PushYnabTransactionsCommand(_receiptId), CancellationToken.None);
+
+		result.Success.Should().BeTrue();
+		result.OperationStatus.Should().Be(YnabSyncStatus.Synced);
+		_ynabApiClientMock.Verify(s => s.CreateTransactionAsync(
+			It.IsAny<string>(), It.IsAny<YnabCreateTransactionRequest>(), It.IsAny<CancellationToken>()), Times.Never);
 	}
 
 	[Fact]
@@ -665,7 +871,7 @@ public class PushYnabTransactionsCommandHandlerTests
 	}
 
 	[Fact]
-	public async Task Handle_HappyPath_PassesImportIdWithReceiptPrefixToCreateTransaction()
+	public async Task Handle_HappyPath_PassesStableTransactionImportIdToCreateTransaction()
 	{
 		SetupHappyPath();
 		YnabCreateTransactionRequest? capturedRequest = null;
@@ -678,16 +884,11 @@ public class PushYnabTransactionsCommandHandlerTests
 
 		capturedRequest.Should().NotBeNull();
 		capturedRequest!.ImportId.Should().NotBeNullOrEmpty();
-		capturedRequest.ImportId.Should().StartWith("YNAB:");
-
-		// Import ID should contain the receipt prefix (first 6 hex chars of receipt ID)
-		string receiptPrefix = _receiptId.ToString("N")[..6];
-		string expected = $"YNAB:-11000:{DateTime.Today.AddDays(-1):yyyy-MM-dd}:{receiptPrefix}:1";
-		capturedRequest.ImportId.Should().Be(expected);
+		capturedRequest.ImportId.Should().Be(YnabImportId.Generate(_transactionId));
 	}
 
 	[Fact]
-	public async Task Handle_MultipleSplitsWithSameAmountAndDate_IncrementsOccurrence()
+	public async Task Handle_MultipleSplitsWithSameAmountAndDate_UsesDistinctTransactionIdentities()
 	{
 		SetupHappyPath();
 
@@ -727,8 +928,8 @@ public class PushYnabTransactionsCommandHandlerTests
 		await _handler.Handle(new PushYnabTransactionsCommand(_receiptId), CancellationToken.None);
 
 		capturedRequests.Should().HaveCount(2);
-		capturedRequests[0].ImportId.Should().EndWith(":1");
-		capturedRequests[1].ImportId.Should().EndWith(":2");
+		capturedRequests[0].ImportId.Should().Be(YnabImportId.Generate(_transactionId));
+		capturedRequests[1].ImportId.Should().Be(YnabImportId.Generate(transactionId2));
 	}
 
 	[Fact]

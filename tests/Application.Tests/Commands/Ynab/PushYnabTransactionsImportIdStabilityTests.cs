@@ -111,6 +111,12 @@ public class PushYnabTransactionsImportIdStabilityTests
 			.ReturnsAsync(new YnabSyncRecordDto(_syncRecord1Id, _tx1Id, "ynab-tx-1", _budgetId, _ynabAccountId, YnabSyncType.TransactionPush, YnabSyncStatus.Synced, DateTimeOffset.UtcNow, null, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
 		_syncRecordServiceMock.Setup(s => s.GetByTransactionTypeAndBudgetAsync(_tx2Id, YnabSyncType.TransactionPush, _budgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new YnabSyncRecordDto(_syncRecord2Id, _tx2Id, null, _budgetId, null, YnabSyncType.TransactionPush, YnabSyncStatus.Failed, null, "previous failure", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
+		_syncRecordServiceMock.Setup(s => s.GetPushOperationIdentitiesByReceiptAsync(
+				_receiptId, _budgetId, It.IsAny<CancellationToken>()))
+			.ReturnsAsync([
+				new YnabPushOperationIdentity(_tx1Id, YnabImportId.Generate(Milliunits, _date, _receiptId, 1)),
+				new YnabPushOperationIdentity(_tx2Id, YnabImportId.Generate(Milliunits, _date, _receiptId, 2)),
+			]);
 
 		// tx1 first, tx2 second — same amount and date.
 		_splitCalculatorMock.Setup(s => s.ComputeWaterfallSplits(It.IsAny<ReceiptWithItems>(), It.IsAny<List<Domain.Core.Transaction>>(), It.IsAny<Dictionary<string, string>>()))
@@ -185,5 +191,29 @@ public class PushYnabTransactionsImportIdStabilityTests
 		_syncRecordServiceMock.Verify(s => s.CompletePushOperationAsync(
 			It.IsAny<Guid>(), It.IsAny<Guid>(), YnabSyncStatus.Failed, null,
 			It.Is<string>(message => message.Contains("ynab-tx-1")), It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	[Fact]
+	public async Task Retry_DuplicateRecoveryWithStaleClaim_ReturnsClaimChangedInsteadOfDuplicateFailure()
+	{
+		SetupRetryPipeline();
+		_syncRecordServiceMock.Setup(s => s.CompletePushOperationAsync(
+				It.IsAny<Guid>(), It.IsAny<Guid>(), YnabSyncStatus.Failed, null,
+				It.IsAny<string>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(false);
+		_ynabApiClientMock.Setup(s => s.CreateTransactionAsync(
+				_budgetId, It.IsAny<YnabCreateTransactionRequest>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new HttpRequestException("conflict", null, HttpStatusCode.Conflict));
+		_ynabApiClientMock.Setup(s => s.FindTransactionByImportIdAsync(
+				_budgetId, _ynabAccountId, It.IsAny<string>(), It.IsAny<DateOnly>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync("ynab-tx-1");
+
+		PushYnabTransactionsResult result = await _handler.Handle(
+			new PushYnabTransactionsCommand(_receiptId), CancellationToken.None);
+
+		result.Success.Should().BeFalse();
+		result.Error.Should().Contain("claim changed");
+		result.Error.Should().NotContain("already bound");
+		result.PushedTransactions.Should().BeEmpty();
 	}
 }

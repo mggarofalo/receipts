@@ -130,8 +130,61 @@ public class PushYnabTransactions409ReconcileTests
 			It.IsAny<CancellationToken>()), Times.Once);
 	}
 
+	[Theory]
+	[InlineData(YnabSyncStatus.Synced, "ynab-tx-recovered", true)]
+	[InlineData(YnabSyncStatus.Pending, null, false)]
+	public async Task Handle_ReconciledTransactionWithStaleClaim_TrustsOnlyAuthoritativeSameId(
+		YnabSyncStatus authoritativeStatus,
+		string? authoritativeYnabTransactionId,
+		bool expectedSuccess)
+	{
+		SetupHappyPath();
+		YnabSyncRecordDto authoritative = new(
+			_syncRecordId,
+			_transactionId,
+			authoritativeYnabTransactionId,
+			_budgetId,
+			_ynabAccountId,
+			YnabSyncType.TransactionPush,
+			authoritativeStatus,
+			null,
+			null,
+			DateTimeOffset.UtcNow,
+			DateTimeOffset.UtcNow);
+		_syncRecordServiceMock.SetupSequence(s => s.GetByTransactionTypeAndBudgetAsync(
+				_transactionId, YnabSyncType.TransactionPush, _budgetId, It.IsAny<CancellationToken>()))
+			.ReturnsAsync((YnabSyncRecordDto?)null)
+			.ReturnsAsync(authoritative)
+			.ReturnsAsync(authoritative);
+		_syncRecordServiceMock.Setup(s => s.CompletePushOperationAsync(
+				It.IsAny<Guid>(), It.IsAny<Guid>(), YnabSyncStatus.Synced, "ynab-tx-recovered", null,
+				It.IsAny<CancellationToken>()))
+			.ReturnsAsync(false);
+		_ynabApiClientMock.Setup(s => s.CreateTransactionAsync(
+				_budgetId, It.IsAny<YnabCreateTransactionRequest>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new HttpRequestException("conflict", null, HttpStatusCode.Conflict));
+		_ynabApiClientMock.Setup(s => s.FindTransactionByImportIdAsync(
+				_budgetId, _ynabAccountId, It.IsAny<string>(), It.IsAny<DateOnly>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync("ynab-tx-recovered");
+
+		PushYnabTransactionsResult result = await _handler.Handle(
+			new PushYnabTransactionsCommand(_receiptId), CancellationToken.None);
+
+		result.Success.Should().Be(expectedSuccess);
+		if (expectedSuccess)
+		{
+			result.PushedTransactions.Should().ContainSingle()
+				.Which.YnabTransactionId.Should().Be("ynab-tx-recovered");
+		}
+		else
+		{
+			result.PushedTransactions.Should().BeEmpty();
+			result.Error.Should().Contain("claim changed");
+		}
+	}
+
 	[Fact]
-	public async Task Handle_CreateTransaction409_ImportIdNotFound_ReturnsFailure()
+	public async Task Handle_CreateTransaction409_ImportIdNotFound_RemainsUnknownBecauseAcceptanceIsAmbiguous()
 	{
 		SetupHappyPath();
 
@@ -146,8 +199,9 @@ public class PushYnabTransactions409ReconcileTests
 			new PushYnabTransactionsCommand(_receiptId), CancellationToken.None);
 
 		result.Success.Should().BeFalse();
+		result.OperationStatus.Should().Be(YnabSyncStatus.Unknown);
 		_syncRecordServiceMock.Verify(s => s.CompletePushOperationAsync(
-			It.IsAny<Guid>(), It.IsAny<Guid>(), YnabSyncStatus.Failed, null, It.IsAny<string>(),
+			It.IsAny<Guid>(), It.IsAny<Guid>(), YnabSyncStatus.Unknown, null, It.IsAny<string>(),
 			It.IsAny<CancellationToken>()), Times.Once);
 	}
 

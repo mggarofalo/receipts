@@ -18,6 +18,75 @@ namespace Infrastructure.IntegrationTests;
 public class MigrationSafetyTests(PostgresFixture fixture)
 {
 	[Fact]
+	public async Task PersistImmutablePushOperations_TombstonedLegacyAttemptsRemainUnknownAfterRestore()
+	{
+		const string priorMigration = "20260910081448_ScopeYnabDestinationIdentity";
+		AccountEntity account = AccountEntityGenerator.Generate();
+		CardEntity card = CardEntityGenerator.Generate();
+		card.AccountId = account.Id;
+		ReceiptEntity receipt = ReceiptEntityGenerator.Generate();
+		TransactionEntity transaction = TransactionEntityGenerator.Generate(receipt.Id, account.Id, card.Id);
+		Guid pendingRecordId = Guid.NewGuid();
+		Guid failedRecordId = Guid.NewGuid();
+
+		await using ApplicationDbContext context = fixture.CreateDbContext();
+		IMigrator migrator = context.GetInfrastructure().GetRequiredService<IMigrator>();
+		try
+		{
+			context.AddRange(account, card, receipt, transaction);
+			await context.SaveChangesAsync();
+			context.ChangeTracker.Clear();
+			await migrator.MigrateAsync(priorMigration);
+			await context.Database.ExecuteSqlRawAsync(
+				"""
+				INSERT INTO ynab."YnabSyncRecords"
+					("Id", "LocalTransactionId", "YnabBudgetId", "SyncType", "SyncStatus",
+					 "LastError", "CreatedAt", "UpdatedAt", "DeletedAt")
+				VALUES
+					({0}, {2}, '11111111-1111-1111-1111-111111111111', 'TransactionPush', 'Pending',
+					 NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+					({1}, {2}, '22222222-2222-2222-2222-222222222222', 'TransactionPush', 'Failed',
+					 'legacy failure', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+				""",
+				pendingRecordId, failedRecordId, transaction.Id);
+
+			await migrator.MigrateAsync();
+
+			List<string> migratedStatuses = await context.Database.SqlQueryRaw<string>(
+				"""
+				SELECT "SyncStatus" AS "Value"
+				FROM ynab."YnabSyncRecords"
+				WHERE "Id" IN ({0}, {1})
+				ORDER BY "Id"
+				""",
+				pendingRecordId, failedRecordId).ToListAsync();
+			migratedStatuses.Should().OnlyContain(status => status == YnabSyncStatus.Unknown.ToString());
+
+			await context.Database.ExecuteSqlRawAsync(
+				"""UPDATE ynab."YnabSyncRecords" SET "DeletedAt" = NULL WHERE "Id" IN ({0}, {1});""",
+				pendingRecordId, failedRecordId);
+
+			List<YnabSyncRecordEntity> restored = await context.YnabSyncRecords
+				.Where(row => row.Id == pendingRecordId || row.Id == failedRecordId)
+				.ToListAsync();
+			restored.Should().HaveCount(2);
+			restored.Should().OnlyContain(row => row.SyncStatus == YnabSyncStatus.Unknown);
+			restored.Should().OnlyContain(row => row.LastError != null && row.LastError.Contains("predates immutable operation tracking"));
+		}
+		finally
+		{
+			await migrator.MigrateAsync();
+			await using ApplicationDbContext cleanup = fixture.CreateDbContext();
+			await cleanup.YnabSyncRecords.IgnoreQueryFilters()
+				.Where(row => row.Id == pendingRecordId || row.Id == failedRecordId).ExecuteDeleteAsync();
+			await cleanup.Transactions.IgnoreQueryFilters().Where(row => row.Id == transaction.Id).ExecuteDeleteAsync();
+			await cleanup.Receipts.IgnoreQueryFilters().Where(row => row.Id == receipt.Id).ExecuteDeleteAsync();
+			await cleanup.Cards.IgnoreQueryFilters().Where(row => row.Id == card.Id).ExecuteDeleteAsync();
+			await cleanup.Accounts.IgnoreQueryFilters().Where(row => row.Id == account.Id).ExecuteDeleteAsync();
+		}
+	}
+
+	[Fact]
 	public async Task ScopeYnabDestinationIdentity_PreservesExistingRowsAndScopesUniqueIndexesByBudget()
 	{
 		const string priorMigration = "20260905190000_AddRefreshSessionId";

@@ -16,6 +16,46 @@ namespace Infrastructure.IntegrationTests;
 public class YnabPushOperationConcurrencyTests(PostgresFixture fixture)
 {
 	[Fact]
+	public async Task GetOrCreatePushOperation_ConcurrentSameRemoteIdentityForDifferentTransactions_AllowsOneWinner()
+	{
+		(Guid _, Guid firstTransactionId, Guid secondTransactionId) = await SeedReceiptWithTwoTransactionsAsync();
+		YnabSyncRecordEntity first = Operation(firstTransactionId, "shared-import", "payload-first", "hash-first");
+		YnabSyncRecordEntity second = Operation(secondTransactionId, "shared-import", "payload-second", "hash-second");
+
+		Exception?[] errors = await Task.WhenAll(
+			Record.ExceptionAsync(() => Repository().GetOrCreatePushOperationAsync(first, CancellationToken.None)),
+			Record.ExceptionAsync(() => Repository().GetOrCreatePushOperationAsync(second, CancellationToken.None)));
+
+		errors.Count(error => error is null).Should().Be(1);
+		errors.OfType<DbUpdateException>().Should().ContainSingle();
+		await using ApplicationDbContext read = fixture.CreateDbContext();
+		(await read.YnabSyncRecords.IgnoreQueryFilters().CountAsync(row =>
+			row.YnabBudgetId == "budget-operation-tests" &&
+			row.YnabAccountId == "account-1" &&
+			row.ImportId == "shared-import")).Should().Be(1);
+	}
+
+	[Fact]
+	public async Task GetPushOperationIdentitiesByReceipt_IncludesTombstonedOperations()
+	{
+		(Guid receiptId, Guid transactionId, Guid _) = await SeedReceiptWithTwoTransactionsAsync();
+		YnabSyncRecordRepository repository = Repository();
+		PreparedYnabPushOperation prepared = await repository.GetOrCreatePushOperationAsync(
+			Operation(transactionId, "reserved-after-delete", "payload", "hash"), CancellationToken.None);
+		await using (ApplicationDbContext delete = fixture.CreateDbContext())
+		{
+			await delete.YnabSyncRecords.Where(row => row.Id == prepared.Record.Id)
+				.ExecuteUpdateAsync(setters => setters.SetProperty(row => row.DeletedAt, DateTimeOffset.UtcNow));
+		}
+
+		List<YnabSyncRecordEntity> identities = await repository.GetPushOperationIdentitiesByReceiptAsync(
+			receiptId, "budget-operation-tests", CancellationToken.None);
+
+		identities.Should().ContainSingle().Which.ImportId.Should().Be("reserved-after-delete");
+		identities[0].DeletedAt.Should().NotBeNull();
+	}
+
+	[Fact]
 	public async Task GetOrCreatePushOperation_ConcurrentDifferentPayloads_PersistsOneImmutableWinner()
 	{
 		Guid transactionId = await SeedTransactionAsync();
@@ -150,6 +190,23 @@ public class YnabPushOperationConcurrencyTests(PostgresFixture fixture)
 		context.Transactions.Add(transaction);
 		await context.SaveChangesAsync();
 		return transaction.Id;
+	}
+
+	private async Task<(Guid ReceiptId, Guid FirstTransactionId, Guid SecondTransactionId)> SeedReceiptWithTwoTransactionsAsync()
+	{
+		AccountEntity account = AccountEntityGenerator.Generate();
+		CardEntity card = CardEntityGenerator.Generate();
+		card.Id = account.Id;
+		card.AccountId = account.Id;
+		ReceiptEntity receipt = ReceiptEntityGenerator.Generate();
+		TransactionEntity first = TransactionEntityGenerator.Generate(receipt.Id, account.Id);
+		TransactionEntity second = TransactionEntityGenerator.Generate(receipt.Id, account.Id);
+		await using ApplicationDbContext context = fixture.CreateDbContext();
+		context.AddRange(account, card, receipt);
+		await context.SaveChangesAsync();
+		context.AddRange(first, second);
+		await context.SaveChangesAsync();
+		return (receipt.Id, first.Id, second.Id);
 	}
 
 	private static YnabSyncRecordEntity Operation(

@@ -1093,6 +1093,7 @@ describe("useYnab", () => {
   it("usePushYnabTransactions calls POST and shows success toast", async () => {
     const pushResult = {
       success: true,
+      operationStatus: "synced" as const,
       pushedTransactions: [
         {
           localTransactionId: "tx-1",
@@ -1133,6 +1134,7 @@ describe("useYnab", () => {
   it("usePushYnabTransactions does not add a hook toast on transport failure (owned by the component) response", async () => {
     const pushResult = {
       success: false,
+      operationStatus: "failed" as const,
       pushedTransactions: [],
       unmappedCategories: ["Electronics"],
       error: "Unmapped categories found.",
@@ -1150,6 +1152,33 @@ describe("useYnab", () => {
 
     expect(toast.error).toHaveBeenCalledWith("Unmapped categories found.");
   });
+
+  it.each(["unknown", "pending"] as const)(
+    "usePushYnabTransactions warns for a retryable %s operation instead of reporting success or failure",
+    async (operationStatus) => {
+      (client.POST as Mock).mockResolvedValue({
+        data: {
+          success: false,
+          operationStatus,
+          pushedTransactions: [],
+          unmappedCategories: null,
+          error: "Refresh status before retrying",
+        },
+        error: undefined,
+      });
+      const { result } = renderHook(() => usePushYnabTransactions(), {
+        wrapper: createWrapper(),
+      });
+
+      await result.current.mutateAsync("receipt-123");
+
+      expect(toast.warning).toHaveBeenCalledWith(
+        "Refresh status before retrying",
+      );
+      expect(toast.success).not.toHaveBeenCalled();
+      expect(toast.error).not.toHaveBeenCalled();
+    },
+  );
 
   it("usePushYnabTransactions does not toast on network failure (surfaced by the global handler)", async () => {
     (client.POST as Mock).mockResolvedValue({
@@ -1172,12 +1201,13 @@ describe("useYnab", () => {
       results: [
         {
           receiptId: "r1",
-          result: { success: true, pushedTransactions: [], error: null },
+          result: { success: true, operationStatus: "synced" as const, pushedTransactions: [], error: null },
         },
         {
           receiptId: "r2",
           result: {
             success: false,
+            operationStatus: "failed" as const,
             pushedTransactions: [],
             error: "Unmapped categories",
             unmappedCategories: ["Gas", "Dining"],
@@ -1223,6 +1253,7 @@ describe("useYnab", () => {
           receiptId: "r1",
           result: {
             success: false,
+            operationStatus: "failed" as const,
             pushedTransactions: [],
             error: "Unmapped categories",
             unmappedCategories: ["Gas"],
@@ -1232,6 +1263,7 @@ describe("useYnab", () => {
           receiptId: "r2",
           result: {
             success: false,
+            operationStatus: "failed" as const,
             pushedTransactions: [],
             error: "Unmapped categories",
             unmappedCategories: ["Gas", "Fuel"],
@@ -1263,11 +1295,11 @@ describe("useYnab", () => {
       results: [
         {
           receiptId: "r1",
-          result: { success: true, pushedTransactions: [], error: null },
+          result: { success: true, operationStatus: "synced" as const, pushedTransactions: [], error: null },
         },
         {
           receiptId: "r2",
-          result: { success: true, pushedTransactions: [], error: null },
+          result: { success: true, operationStatus: "synced" as const, pushedTransactions: [], error: null },
         },
       ],
     };
@@ -1286,6 +1318,39 @@ describe("useYnab", () => {
     expect(toast.warning).not.toHaveBeenCalled();
     expect(toast.error).not.toHaveBeenCalled();
   });
+
+  it.each(["unknown", "pending"] as const)(
+    "useBulkPushYnabTransactions warns when success=true but operation status is %s",
+    async (operationStatus) => {
+      (client.POST as Mock).mockResolvedValue({
+        data: {
+          results: [
+            {
+              receiptId: "r1",
+              result: {
+                success: true,
+                operationStatus,
+                pushedTransactions: [],
+                error: "Remote result needs review",
+              },
+            },
+          ],
+        },
+        error: undefined,
+      });
+      const { result } = renderHook(() => useBulkPushYnabTransactions(), {
+        wrapper: createWrapper(),
+      });
+
+      await result.current.mutateAsync(["r1"]);
+
+      expect(toast.warning).toHaveBeenCalledWith(
+        "Pushed 0/1 receipt(s); 1 need review.",
+      );
+      expect(toast.success).not.toHaveBeenCalled();
+      expect(toast.error).not.toHaveBeenCalled();
+    },
+  );
 
   it("useAllReceiptIds returns receipt IDs from a single page", async () => {
     const receipts = [

@@ -139,7 +139,7 @@ const server = setupServer(
   ),
   http.post("*/api/ynab/push-transactions", async ({ request }) => {
     pushBodies.push(await request.json());
-    return HttpResponse.json({ success: true, pushedTransactions: [] });
+    return HttpResponse.json({ success: true, operationStatus: "synced", pushedTransactions: [] });
   }),
   http.post("*/api/ynab/sync-memos", () => {
     memoCalls++;
