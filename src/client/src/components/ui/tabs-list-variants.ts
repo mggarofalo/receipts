@@ -5,7 +5,7 @@ import { cva } from "class-variance-authority";
 // page ~10px past 375px, and a horizontally-scrolling page detaches every fixed element from the
 // content and fights vertical scrolling on touch. Guarded by tests/visual/page-overflow.spec.ts.
 export const tabsListVariants = cva(
-  "rounded-lg p-[3px] group-data-[orientation=horizontal]/tabs:h-9 data-[variant=line]:rounded-none group/tabs-list text-muted-foreground inline-flex w-fit max-w-full overflow-x-auto items-center justify-center group-data-[orientation=vertical]/tabs:h-fit group-data-[orientation=vertical]/tabs:flex-col",
+  "rounded-lg p-1 group-data-[orientation=horizontal]/tabs:h-9 data-[variant=line]:rounded-none group/tabs-list text-muted-foreground inline-flex w-fit max-w-full overflow-x-auto items-center justify-center group-data-[orientation=vertical]/tabs:h-fit group-data-[orientation=vertical]/tabs:flex-col",
   {
     variants: {
       variant: {
