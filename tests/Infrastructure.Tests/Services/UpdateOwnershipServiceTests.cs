@@ -1,3 +1,4 @@
+using Application.Models.Images;
 using Common;
 using Domain;
 using Domain.Core;
@@ -37,7 +38,9 @@ public class UpdateOwnershipServiceTests
 			stored.OriginalImagePath.Should().Be("original.jpg");
 			stored.ProcessedImagePath.Should().Be("processed.png");
 		}
-		await service.UpdateImagePathsAsync(id, "replacement.jpg", "replacement.png", CancellationToken.None);
+		ReceiptImageSet? previous = await service.ReplaceImagePathsAsync(
+			id, new ReceiptImageSet("replacement.jpg", "replacement.png"), CancellationToken.None);
+		previous.Should().Be(new ReceiptImageSet("original.jpg", "processed.png"));
 		await using ApplicationDbContext verify = factory.CreateDbContext();
 		ReceiptEntity replacement = await verify.Receipts.SingleAsync();
 		replacement.OriginalImagePath.Should().Be("replacement.jpg");

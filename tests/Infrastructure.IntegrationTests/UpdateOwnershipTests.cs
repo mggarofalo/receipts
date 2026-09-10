@@ -6,6 +6,7 @@ using API.Generated.Dtos;
 using API.Middleware;
 using API.Services;
 using Application.Interfaces.Services;
+using Application.Models.Images;
 using Application.Services;
 using Domain;
 using Domain.Core;
@@ -31,6 +32,46 @@ namespace Infrastructure.IntegrationTests;
 [Trait("Prerequisite", "Postgres")]
 public class UpdateOwnershipTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
+	[Fact]
+	public async Task ReplaceImagePathsAsync_ConcurrentSwaps_ReturnActualSerializedPredecessors()
+	{
+		Guid id = Guid.NewGuid();
+		ReceiptImageSet initial = new("initial/original.jpg", "initial/processed.png");
+		ReceiptImageSet first = new("first/original.jpg", "first/processed.png");
+		ReceiptImageSet second = new("second/original.jpg", "second/processed.png");
+		await using (ApplicationDbContext seed = fixture.CreateDbContext())
+		{
+			seed.Receipts.Add(new ReceiptEntity
+			{
+				Id = id,
+				Location = "Concurrent swap",
+				Date = new DateOnly(2026, 9, 10),
+				OriginalImagePath = initial.OriginalImagePath,
+				ProcessedImagePath = initial.ProcessedImagePath,
+			});
+			await seed.SaveChangesAsync();
+		}
+		ReceiptRepository repository = new(new ContextFactory(fixture));
+		Task<ReceiptImageSet?> firstSwap = repository.ReplaceImagePathsAsync(id, first, CancellationToken.None);
+		Task<ReceiptImageSet?> secondSwap = repository.ReplaceImagePathsAsync(id, second, CancellationToken.None);
+
+		ReceiptImageSet?[] predecessors = await Task.WhenAll(firstSwap, secondSwap);
+
+		predecessors.Should().Contain(initial);
+		await using ApplicationDbContext read = fixture.CreateDbContext();
+		ReceiptEntity stored = await read.Receipts.SingleAsync(x => x.Id == id);
+		ReceiptImageSet final = new(stored.OriginalImagePath!, stored.ProcessedImagePath!);
+		if (final == first)
+		{
+			predecessors.Should().Contain(second);
+		}
+		else
+		{
+			final.Should().Be(second);
+			predecessors.Should().Contain(first);
+		}
+	}
+
 	[Theory]
 	[InlineData(1)]
 	[InlineData(2)]

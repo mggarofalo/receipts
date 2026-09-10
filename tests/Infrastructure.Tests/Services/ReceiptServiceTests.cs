@@ -1,4 +1,5 @@
 using Application.Models;
+using Application.Models.Images;
 using Domain.Core;
 using FluentAssertions;
 using Infrastructure.Entities.Core;
@@ -187,5 +188,19 @@ public class ReceiptServiceTests
 
 		// Assert
 		_mockRepository.Verify(r => r.UpdateAsync(It.IsAny<List<ReceiptEntity>>(), It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	[Fact]
+	public async Task ReplaceImagePathsAsync_ReturnsRepositoryPreviousSet()
+	{
+		Guid id = Guid.NewGuid();
+		ReceiptImageSet replacement = new("new/original.jpg", "new/processed.png");
+		ReceiptImageSet previous = new("old/original.jpg", "old/processed.png");
+		_mockRepository.Setup(r => r.ReplaceImagePathsAsync(id, replacement, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(previous);
+
+		ReceiptImageSet? result = await _service.ReplaceImagePathsAsync(id, replacement, CancellationToken.None);
+
+		result.Should().Be(previous);
 	}
 }

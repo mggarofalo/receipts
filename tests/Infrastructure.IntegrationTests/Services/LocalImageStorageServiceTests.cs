@@ -1,197 +1,171 @@
+using Application.Models.Images;
 using FluentAssertions;
 using Infrastructure.Services;
 using Microsoft.Extensions.Configuration;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-// Exercises the REAL LocalImageStorageService (RECEIPTS-806) against a real temp directory — no mock,
-// no Postgres. Validates the temp-then-rename atomic write introduced to replace the previous in-place
-// File.WriteAllBytesAsync(finalPath, ...) (FileMode.Create = truncate-then-write):
-//
-//   * a successful (re-)upload replaces the file and returns the correct relative path, and
-//   * a re-upload whose write/promote fails leaves the pre-existing image byte-for-byte intact
-//     (never truncated/corrupted) and leaves no orphaned temp file behind.
-//
-// This is filesystem-only, so it needs no PostgresFixture; it uses an isolated temp dir under
-// Path.GetTempPath() and cleans it up on dispose.
 [Trait("Category", "Integration")]
 public sealed class LocalImageStorageServiceTests : IDisposable
 {
-	private readonly string _root;
+	private readonly string _root = Path.Combine(Path.GetTempPath(), "receipts-964-" + Guid.NewGuid().ToString("N"));
+	private readonly IConfiguration _configuration;
 	private readonly LocalImageStorageService _service;
 
 	public LocalImageStorageServiceTests()
 	{
-		_root = Path.Combine(Path.GetTempPath(), "receipts-806-" + Guid.NewGuid().ToString("N"));
 		Directory.CreateDirectory(_root);
-
-		IConfiguration configuration = new ConfigurationBuilder()
-			.AddInMemoryCollection(new Dictionary<string, string?>
-			{
-				["ImageStorage:Path"] = _root,
-			})
-			.Build();
-
-		_service = new LocalImageStorageService(configuration);
+		_configuration = new ConfigurationBuilder().AddInMemoryCollection(
+			new Dictionary<string, string?> { ["ImageStorage:Path"] = _root }).Build();
+		_service = new LocalImageStorageService(_configuration);
 	}
 
 	public void Dispose()
 	{
-		try
+		try { Directory.Delete(_root, recursive: true); }
+		catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or DirectoryNotFoundException) { }
+	}
+
+	[Fact]
+	public async Task SaveImageSetAsync_PublishesImmutableCompleteVersion()
+	{
+		Guid id = Guid.NewGuid();
+		byte[] original = [1, 2, 3];
+		byte[] processed = [4, 5, 6];
+
+		ReceiptImageSet set = await _service.SaveImageSetAsync(id, original, ".jpg", processed, CancellationToken.None);
+
+		Path.GetDirectoryName(set.OriginalImagePath).Should().Be(Path.GetDirectoryName(set.ProcessedImagePath));
+		Path.GetFileName(Path.GetDirectoryName(set.OriginalImagePath)).Should().StartWith("set-");
+		(await File.ReadAllBytesAsync(Path.Combine(_root, set.OriginalImagePath))).Should().Equal(original);
+		(await File.ReadAllBytesAsync(Path.Combine(_root, set.ProcessedImagePath))).Should().Equal(processed);
+		Directory.EnumerateDirectories(Path.Combine(_root, id.ToString()), ".staging-*").Should().BeEmpty();
+	}
+
+	[Fact]
+	public async Task SaveImageSetAsync_ProcessedWriteFails_PreservesPriorSetAndPublishesNoPartialVersion()
+	{
+		Guid id = Guid.NewGuid();
+		ReceiptImageSet prior = await _service.SaveImageSetAsync(id, [1], ".jpg", [2], CancellationToken.None);
+		int writes = 0;
+		LocalImageStorageService failing = new(_configuration, async (path, bytes, ct) =>
 		{
-			if (Directory.Exists(_root))
+			if (++writes == 2)
 			{
-				Directory.Delete(_root, recursive: true);
+				throw new IOException("processed write failed");
 			}
-		}
-		catch (IOException)
+
+			await File.WriteAllBytesAsync(path, bytes, ct);
+		});
+
+		Func<Task> act = async () => await failing.SaveImageSetAsync(id, [3], ".jpg", [4], CancellationToken.None);
+
+		await act.Should().ThrowAsync<IOException>();
+		(await File.ReadAllBytesAsync(Path.Combine(_root, prior.OriginalImagePath))).Should().Equal([1]);
+		(await File.ReadAllBytesAsync(Path.Combine(_root, prior.ProcessedImagePath))).Should().Equal([2]);
+		Directory.EnumerateDirectories(Path.Combine(_root, id.ToString())).Should().ContainSingle();
+		Directory.EnumerateDirectories(Path.Combine(_root, id.ToString()), ".staging-*").Should().BeEmpty();
+	}
+
+	[Fact]
+	public async Task SaveImageSetAsync_ConcurrentSaves_NeverMixVariants()
+	{
+		Guid id = Guid.NewGuid();
+		Task<ReceiptImageSet>[] saves = Enumerable.Range(1, 12)
+			.Select(value => _service.SaveImageSetAsync(id, [(byte)value], ".jpg", [(byte)(value + 100)], CancellationToken.None))
+			.ToArray();
+
+		ReceiptImageSet[] sets = await Task.WhenAll(saves);
+
+		sets.Select(x => Path.GetDirectoryName(x.OriginalImagePath)).Should().OnlyHaveUniqueItems();
+		foreach (ReceiptImageSet set in sets)
 		{
-			// Best-effort test cleanup — a leftover temp dir must not fail the suite.
+			byte original = (await File.ReadAllBytesAsync(Path.Combine(_root, set.OriginalImagePath))).Single();
+			byte processed = (await File.ReadAllBytesAsync(Path.Combine(_root, set.ProcessedImagePath))).Single();
+			processed.Should().Be((byte)(original + 100));
+			Path.GetDirectoryName(set.OriginalImagePath).Should().Be(Path.GetDirectoryName(set.ProcessedImagePath));
 		}
-		catch (UnauthorizedAccessException)
-		{
-			// Best-effort test cleanup — a leftover temp dir must not fail the suite.
-		}
-	}
-
-	private static byte[] Bytes(byte fill, int length)
-	{
-		byte[] bytes = new byte[length];
-		Array.Fill(bytes, fill);
-		return bytes;
-	}
-
-	private string ReceiptDir(Guid receiptId) => Path.Combine(_root, receiptId.ToString());
-
-	private IReadOnlyList<string> TempFilesIn(Guid receiptId)
-	{
-		string dir = ReceiptDir(receiptId);
-		return Directory.Exists(dir)
-			? Directory.EnumerateFiles(dir, "*.tmp").ToList()
-			: [];
 	}
 
 	[Fact]
-	public async Task SaveOriginalAsync_ReUploadSameExtension_ReplacesFileAndReturnsRelativePath()
+	public async Task SaveImageSetAsync_ExtensionTraversal_IsRejectedBeforeCreatingReceiptDirectory()
 	{
-		// Arrange
-		Guid receiptId = Guid.NewGuid();
-		byte[] first = Bytes(0x11, 256);
-		byte[] second = Bytes(0x22, 128);
+		Guid id = Guid.NewGuid();
 
-		// Act — save, then re-upload with the same extension.
-		string firstPath = await _service.SaveOriginalAsync(receiptId, first, ".png", CancellationToken.None);
-		string secondPath = await _service.SaveOriginalAsync(receiptId, second, ".png", CancellationToken.None);
+		Func<Task> act = async () => await _service.SaveImageSetAsync(
+			id, [1], $"{Path.DirectorySeparatorChar}outside", [2], CancellationToken.None);
 
-		// Assert — relative path is stable and correct, and the file holds the new bytes.
-		string expected = Path.Combine(receiptId.ToString(), "original.png");
-		firstPath.Should().Be(expected);
-		secondPath.Should().Be(expected);
-
-		string absolute = Path.Combine(_root, secondPath);
-		byte[] onDisk = await File.ReadAllBytesAsync(absolute);
-		onDisk.Should().Equal(second, "a successful re-upload replaces the original in place");
-
-		TempFilesIn(receiptId).Should().BeEmpty("the temp file is renamed into place, never left behind");
+		await act.Should().ThrowAsync<ArgumentException>();
+		Directory.Exists(Path.Combine(_root, id.ToString())).Should().BeFalse();
 	}
 
 	[Fact]
-	public async Task SaveOriginalAsync_WriteCancelledMidReUpload_LeavesExistingOriginalIntact()
+	public async Task CleanupUnreferencedAsync_LegacyLayoutPreservesReferencedFileWithoutDeletingVersionDirectory()
 	{
-		// Arrange — an existing, good original.
-		Guid receiptId = Guid.NewGuid();
-		byte[] original = Bytes(0x11, 256);
-		await _service.SaveOriginalAsync(receiptId, original, ".png", CancellationToken.None);
+		Guid id = Guid.NewGuid();
+		ReceiptImageSet current = await _service.SaveImageSetAsync(id, [1], ".jpg", [2], CancellationToken.None);
+		string receiptDirectory = Path.Combine(_root, id.ToString());
+		string referencedLegacy = Path.Combine(receiptDirectory, "original.jpg");
+		string orphanLegacy = Path.Combine(receiptDirectory, "processed.png");
+		await File.WriteAllBytesAsync(referencedLegacy, [3]);
+		await File.WriteAllBytesAsync(orphanLegacy, [4]);
+		File.SetLastWriteTimeUtc(referencedLegacy, DateTime.UtcNow.AddHours(-3));
+		File.SetLastWriteTimeUtc(orphanLegacy, DateTime.UtcNow.AddHours(-3));
 
-		// Act — a re-upload whose write is forced to fail (cancelled token). The old in-place write
-		// opened the existing original with FileMode.Create (truncating it) before writing; the atomic
-		// temp-then-rename never touches the existing file unless the whole write succeeds.
-		byte[] replacement = Bytes(0x22, 512);
-		using CancellationTokenSource cts = new();
-		await cts.CancelAsync();
+		await _service.CleanupUnreferencedAsync(
+			new HashSet<string> { Path.Combine(id.ToString(), "original.jpg"), current.OriginalImagePath, current.ProcessedImagePath },
+			DateTimeOffset.UtcNow.AddHours(-1), CancellationToken.None);
 
-		Func<Task> act = async () =>
-			await _service.SaveOriginalAsync(receiptId, replacement, ".png", cts.Token);
-
-		// Assert — the call fails and the pre-existing original is byte-for-byte intact.
-		await act.Should().ThrowAsync<OperationCanceledException>();
-
-		string absolute = Path.Combine(_root, receiptId.ToString(), "original.png");
-		byte[] onDisk = await File.ReadAllBytesAsync(absolute);
-		onDisk.Should().Equal(original, "a failed re-upload must not truncate or corrupt the existing original");
-
-		TempFilesIn(receiptId).Should().BeEmpty("a failed write must not leave an orphaned temp file");
+		File.Exists(referencedLegacy).Should().BeTrue();
+		File.Exists(orphanLegacy).Should().BeFalse();
+		File.Exists(Path.Combine(_root, current.OriginalImagePath)).Should().BeTrue();
 	}
 
 	[Fact]
-	public async Task SaveOriginalAsync_PromoteFails_CleansUpTempAndPropagates()
+	public async Task CleanupUnreferencedAsync_ReparsePointSet_IsSkippedWithoutTouchingTarget()
 	{
-		// Arrange — occupy the final promote target with a *directory* so the atomic
-		// File.Move(temp -> original.png) fails AFTER the temp file has already been written. This is
-		// the "point at a path that will fail" failure mode: it deterministically drives the catch/
-		// cleanup path that an in-place FileMode.Create write never exercised.
-		Guid receiptId = Guid.NewGuid();
-		string dir = ReceiptDir(receiptId);
-		string blockingDir = Path.Combine(dir, "original.png");
-		Directory.CreateDirectory(blockingDir);
-		// Make it non-empty so the rename fails identically across platforms.
-		await File.WriteAllBytesAsync(Path.Combine(blockingDir, "marker"), Bytes(0x33, 8));
+		Guid id = Guid.NewGuid();
+		string external = Path.Combine(_root, "external");
+		Directory.CreateDirectory(external);
+		string marker = Path.Combine(external, "keep.txt");
+		await File.WriteAllTextAsync(marker, "keep");
+		string receiptDirectory = Path.Combine(_root, id.ToString());
+		Directory.CreateDirectory(receiptDirectory);
+		string link = Path.Combine(receiptDirectory, "set-linked");
+		Directory.CreateSymbolicLink(link, external);
 
-		// Act
-		Func<Task> act = async () =>
-			await _service.SaveOriginalAsync(receiptId, Bytes(0x44, 64), ".png", CancellationToken.None);
+		ImageCleanupResult result = await _service.CleanupUnreferencedAsync(
+			new HashSet<string>(), DateTimeOffset.UtcNow.AddHours(1), CancellationToken.None);
 
-		// Assert — the failure propagates, the temp file is cleaned up, and the blocking dir is intact.
-		await act.Should().ThrowAsync<Exception>();
-
-		TempFilesIn(receiptId).Should().BeEmpty("a failed promote must delete the temp file it created");
-		Directory.Exists(blockingDir).Should().BeTrue("the failed write must not disturb what already occupied the path");
+		File.Exists(marker).Should().BeTrue();
+		Directory.Exists(link).Should().BeTrue();
+		result.FailedEntries.Should().Be(1, "skipped unsafe entries are observable for retry/operations");
 	}
 
 	[Fact]
-	public async Task SaveProcessedAsync_ReUpload_ReplacesFileAndReturnsRelativePath()
+	public async Task CleanupUnreferencedAsync_PreservesReferencedAndRecent_RemovesOldOrphansAndRetriesIdempotently()
 	{
-		// Arrange
-		Guid receiptId = Guid.NewGuid();
-		byte[] first = Bytes(0x55, 200);
-		byte[] second = Bytes(0x66, 64);
+		Guid liveId = Guid.NewGuid();
+		Guid purgedId = Guid.NewGuid();
+		ReceiptImageSet live = await _service.SaveImageSetAsync(liveId, [1], ".jpg", [2], CancellationToken.None);
+		ReceiptImageSet oldOrphan = await _service.SaveImageSetAsync(liveId, [3], ".jpg", [4], CancellationToken.None);
+		ReceiptImageSet recent = await _service.SaveImageSetAsync(liveId, [5], ".jpg", [6], CancellationToken.None);
+		ReceiptImageSet purged = await _service.SaveImageSetAsync(purgedId, [7], ".jpg", [8], CancellationToken.None);
+		DateTime old = DateTime.UtcNow.AddHours(-3);
+		Directory.SetLastWriteTimeUtc(Path.Combine(_root, Path.GetDirectoryName(oldOrphan.OriginalImagePath)!), old);
+		Directory.SetLastWriteTimeUtc(Path.Combine(_root, Path.GetDirectoryName(purged.OriginalImagePath)!), old);
 
-		// Act
-		string firstPath = await _service.SaveProcessedAsync(receiptId, first, CancellationToken.None);
-		string secondPath = await _service.SaveProcessedAsync(receiptId, second, CancellationToken.None);
+		ImageCleanupResult result = await _service.CleanupUnreferencedAsync(
+			new HashSet<string> { live.OriginalImagePath, live.ProcessedImagePath },
+			DateTimeOffset.UtcNow.AddHours(-1), CancellationToken.None);
 
-		// Assert
-		string expected = Path.Combine(receiptId.ToString(), "processed.png");
-		firstPath.Should().Be(expected);
-		secondPath.Should().Be(expected);
-
-		byte[] onDisk = await File.ReadAllBytesAsync(Path.Combine(_root, secondPath));
-		onDisk.Should().Equal(second, "a successful re-save replaces the processed image in place");
-
-		TempFilesIn(receiptId).Should().BeEmpty("the temp file is renamed into place, never left behind");
-	}
-
-	[Fact]
-	public async Task SaveProcessedAsync_WriteCancelled_LeavesExistingProcessedIntact()
-	{
-		// Arrange
-		Guid receiptId = Guid.NewGuid();
-		byte[] original = Bytes(0x55, 200);
-		await _service.SaveProcessedAsync(receiptId, original, CancellationToken.None);
-
-		// Act — re-save with a cancelled token.
-		using CancellationTokenSource cts = new();
-		await cts.CancelAsync();
-
-		Func<Task> act = async () =>
-			await _service.SaveProcessedAsync(receiptId, Bytes(0x66, 400), cts.Token);
-
-		// Assert
-		await act.Should().ThrowAsync<OperationCanceledException>();
-
-		byte[] onDisk = await File.ReadAllBytesAsync(Path.Combine(_root, receiptId.ToString(), "processed.png"));
-		onDisk.Should().Equal(original, "a failed re-save must not truncate or corrupt the existing processed image");
-
-		TempFilesIn(receiptId).Should().BeEmpty("a failed write must not leave an orphaned temp file");
+		result.Should().Be(new ImageCleanupResult(2, 1));
+		File.Exists(Path.Combine(_root, live.OriginalImagePath)).Should().BeTrue();
+		File.Exists(Path.Combine(_root, recent.OriginalImagePath)).Should().BeTrue();
+		File.Exists(Path.Combine(_root, oldOrphan.OriginalImagePath)).Should().BeFalse();
+		Directory.Exists(Path.Combine(_root, purgedId.ToString())).Should().BeFalse();
+		(await _service.CleanupUnreferencedAsync(
+			new HashSet<string> { live.OriginalImagePath, live.ProcessedImagePath },
+			DateTimeOffset.UtcNow.AddHours(-1), CancellationToken.None)).Should().Be(new ImageCleanupResult(0, 0));
 	}
 }
