@@ -23,12 +23,16 @@ internal sealed class EmbeddingInferenceQueue : IDisposable
 	private static readonly Counter<long> Cancelled = Meter.CreateCounter<long>(
 		"receipts.embedding.queue.cancelled",
 		description: "Queued embedding work cancelled before inference.");
+	private static readonly Counter<long> Rejected = Meter.CreateCounter<long>(
+		"receipts.embedding.queue.rejected",
+		description: "Embedding work rejected because its bounded lane is full.");
 
 	private readonly Channel<WorkItem> _requests;
 	private readonly Channel<WorkItem> _background;
 	private readonly Func<string, float[]> _infer;
 	private readonly CancellationTokenSource _shutdown = new();
 	private readonly SemaphoreSlim _available = new(0);
+	private readonly object _lifecycleLock = new();
 	private readonly Task _processor;
 	private int _disposed;
 
@@ -62,34 +66,35 @@ internal sealed class EmbeddingInferenceQueue : IDisposable
 			AllowSynchronousContinuations = false,
 		});
 
-	private async Task<float[]> EnqueueAsync(
+	private Task<float[]> EnqueueAsync(
 		Channel<WorkItem> channel,
 		string text,
 		string priority,
 		CancellationToken cancellationToken)
 	{
-		ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
-		cancellationToken.ThrowIfCancellationRequested();
+		lock (_lifecycleLock)
+		{
+			ObjectDisposedException.ThrowIf(_disposed != 0, this);
+			cancellationToken.ThrowIfCancellationRequested();
 
-		WorkItem item = new(text, priority, cancellationToken);
-		QueueDepth.Add(1, new KeyValuePair<string, object?>("priority", priority));
-		bool wasWritten = false;
-		try
-		{
-			await channel.Writer.WriteAsync(item, cancellationToken).ConfigureAwait(false);
-			wasWritten = true;
-			_available.Release();
-			return await item.Completion.Task.ConfigureAwait(false);
-		}
-		catch
-		{
-			if (!wasWritten)
+			WorkItem item = new(text, priority, cancellationToken);
+			KeyValuePair<string, object?> priorityTag = new("priority", priority);
+			QueueDepth.Add(1, priorityTag);
+			if (!channel.Writer.TryWrite(item))
 			{
-				QueueDepth.Add(-1, new KeyValuePair<string, object?>("priority", priority));
+				QueueDepth.Add(-1, priorityTag);
 				item.Dispose();
+				if (cancellationToken.IsCancellationRequested)
+				{
+					return Task.FromCanceled<float[]>(cancellationToken);
+				}
+
+				Rejected.Add(1, priorityTag);
+				return Task.FromException<float[]>(new EmbeddingQueueFullException(priority));
 			}
 
-			throw;
+			_available.Release();
+			return item.Completion.Task;
 		}
 	}
 
@@ -171,14 +176,19 @@ internal sealed class EmbeddingInferenceQueue : IDisposable
 
 	public void Dispose()
 	{
-		if (Interlocked.Exchange(ref _disposed, 1) != 0)
+		lock (_lifecycleLock)
 		{
-			return;
+			if (_disposed != 0)
+			{
+				return;
+			}
+
+			_disposed = 1;
+			_requests.Writer.TryComplete();
+			_background.Writer.TryComplete();
+			_shutdown.Cancel();
 		}
 
-		_requests.Writer.TryComplete();
-		_background.Writer.TryComplete();
-		_shutdown.Cancel();
 		try
 		{
 			_processor.GetAwaiter().GetResult();
@@ -219,3 +229,6 @@ internal sealed class EmbeddingInferenceQueue : IDisposable
 		public void Dispose() => _cancellationRegistration.Dispose();
 	}
 }
+
+internal sealed class EmbeddingQueueFullException(string priority)
+	: InvalidOperationException($"The bounded embedding {priority} queue is full.");

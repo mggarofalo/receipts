@@ -7,7 +7,7 @@ using Microsoft.ML.Tokenizers;
 
 namespace Infrastructure.Services;
 
-public sealed class OnnxEmbeddingService : IEmbeddingService, IEmbeddingModelRuntime, IDisposable
+public sealed class OnnxEmbeddingService : IEmbeddingService, IEmbeddingModelRuntime, IBackgroundEmbeddingService, IDisposable
 {
 	public const string ModelName = "bge-large-en-v1.5";
 	public const int EmbeddingDimension = 1024;
@@ -44,6 +44,7 @@ public sealed class OnnxEmbeddingService : IEmbeddingService, IEmbeddingModelRun
 
 	private volatile LoadedModel? _loaded;
 	private volatile bool _disposed;
+	private volatile bool _isReady;
 
 	public OnnxEmbeddingService(IOptions<EmbeddingModelOptions> options, ILogger<OnnxEmbeddingService> logger)
 	{
@@ -59,24 +60,27 @@ public sealed class OnnxEmbeddingService : IEmbeddingService, IEmbeddingModelRun
 	}
 
 	/// <summary>
-	/// True when the verified model files are available. This check never loads the model
-	/// or waits for inference capacity. The model is provisioned onto a volume at runtime
-	/// rather than shipped in the image (RECEIPTS-929), so on a fresh deployment this is
-	/// false until <see cref="EmbeddingModelProvisioningService"/> finishes the download.
-	/// Every caller already guards on this and degrades gracefully.
+	/// True only after explicit warmup or inference has loaded the model successfully. Reading
+	/// this property never loads the model or waits for inference capacity, so guarded callers
+	/// continue to degrade gracefully after a failed warmup.
 	/// </summary>
-	public bool IsConfigured
-	{
-		get => !_disposed && (_loaded is not null || EmbeddingModelProvisioningService.IsProvisioned(_modelDirectory));
-	}
+	public bool IsConfigured => IsReady;
+
+	public bool IsProvisioned => !_disposed && EmbeddingModelProvisioningService.IsProvisioned(_modelDirectory);
 
 	public bool IsLoaded => !_disposed && _loaded is not null;
+	public bool IsReady => !_disposed && _isReady;
 
 	public Task WarmUpAsync(CancellationToken cancellationToken) =>
-		_inferenceQueue.EnqueueRequestAsync("receipts embedding warmup", cancellationToken);
+		_inferenceQueue.EnqueueBackgroundAsync("receipts embedding warmup", cancellationToken);
 
 	public Task<float[]> GenerateEmbeddingAsync(string text, CancellationToken cancellationToken) =>
 		_inferenceQueue.EnqueueRequestAsync(text, cancellationToken);
+
+	Task<float[]> IBackgroundEmbeddingService.GenerateBackgroundEmbeddingAsync(
+		string text,
+		CancellationToken cancellationToken) =>
+		_inferenceQueue.EnqueueBackgroundAsync(text, cancellationToken);
 
 	public async Task<List<float[]>> GenerateEmbeddingsAsync(List<string> texts, CancellationToken cancellationToken)
 	{
@@ -101,7 +105,9 @@ public sealed class OnnxEmbeddingService : IEmbeddingService, IEmbeddingModelRun
 					$"The ONNX embedding model is not available at {Path.GetDirectoryName(_modelPath)}. " +
 					$"Check {nameof(IEmbeddingService)}.{nameof(IsConfigured)} before generating embeddings.");
 
-			return GenerateEmbeddingCore(model, text);
+			float[] embedding = GenerateEmbeddingCore(model, text);
+			_isReady = true;
+			return embedding;
 		}
 	}
 
@@ -217,6 +223,7 @@ public sealed class OnnxEmbeddingService : IEmbeddingService, IEmbeddingModelRun
 		{
 			_loaded?.Session.Dispose();
 			_loaded = null;
+			_isReady = false;
 			_disposed = true;
 		}
 	}
