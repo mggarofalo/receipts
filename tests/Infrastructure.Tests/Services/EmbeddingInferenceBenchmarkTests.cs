@@ -10,6 +10,7 @@ namespace Infrastructure.Tests.Services;
 
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Model")]
+[Collection("Embedding model performance")]
 public class EmbeddingInferenceBenchmarkTests(ITestOutputHelper output)
 {
 	[Fact]
@@ -25,8 +26,9 @@ public class EmbeddingInferenceBenchmarkTests(ITestOutputHelper output)
 				BackgroundQueueCapacity = 8,
 			}),
 			NullLogger<OnnxEmbeddingService>.Instance);
-		service.IsConfigured.Should().BeTrue(
+		service.IsProvisioned.Should().BeTrue(
 			$"the pinned model and verified marker must exist at {modelDirectory}");
+		service.IsConfigured.Should().BeFalse("this service instance has not warmed up yet");
 
 		using Process process = Process.GetCurrentProcess();
 		process.Refresh();
@@ -35,6 +37,9 @@ public class EmbeddingInferenceBenchmarkTests(ITestOutputHelper output)
 		Stopwatch cold = Stopwatch.StartNew();
 		await service.WarmUpAsync(CancellationToken.None);
 		cold.Stop();
+		service.IsLoaded.Should().BeTrue();
+		service.IsReady.Should().BeTrue();
+		service.IsConfigured.Should().BeTrue();
 		process.Refresh();
 		long privateMemoryAfter = process.PrivateMemorySize64;
 		long workingSetAfter = process.WorkingSet64;
@@ -45,15 +50,19 @@ public class EmbeddingInferenceBenchmarkTests(ITestOutputHelper output)
 			warmLatencies.Add(await MeasureRequestAsync(service, $"warm latency sample {i}"));
 		}
 
-		List<string> backgroundTexts = Enumerable.Range(0, 24)
+		List<string> backgroundTexts = Enumerable.Range(0, 48)
 			.Select(index => $"background receipt item description {index}")
 			.ToList();
 		Task<List<float[]>> backgroundBatch = service.GenerateEmbeddingsAsync(
 			backgroundTexts,
 			CancellationToken.None);
+		backgroundBatch.IsCompleted.Should().BeFalse(
+			"request measurements must begin while background inference remains queued");
 		List<double> contendedRequestLatencies = [];
 		for (int i = 0; i < 20; i++)
 		{
+			backgroundBatch.IsCompleted.Should().BeFalse(
+				$"request sample {i} must overlap remaining background work");
 			contendedRequestLatencies.Add(
 				await MeasureRequestAsync(service, $"interactive receipt lookup {i}"));
 		}
@@ -96,3 +105,6 @@ public class EmbeddingInferenceBenchmarkTests(ITestOutputHelper output)
 		return ordered[index];
 	}
 }
+
+[CollectionDefinition("Embedding model performance", DisableParallelization = true)]
+public sealed class EmbeddingModelPerformanceCollection;

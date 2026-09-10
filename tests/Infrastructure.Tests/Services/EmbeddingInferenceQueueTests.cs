@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Reflection;
 using FluentAssertions;
 using Infrastructure.Services;
@@ -9,7 +10,7 @@ public class EmbeddingInferenceQueueTests
 	private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(5);
 
 	[Fact]
-	public async Task BackgroundLane_WhenCapacityIsFull_BackpressuresAdditionalWriter()
+	public async Task BackgroundLane_WhenCapacityIsFull_RejectsPromptlyAtStrictBound()
 	{
 		using ManualResetEventSlim inferenceStarted = new();
 		using ManualResetEventSlim releaseInference = new();
@@ -30,15 +31,15 @@ public class EmbeddingInferenceQueueTests
 		Task<float[]> active = queue.EnqueueBackgroundAsync("active", CancellationToken.None);
 		inferenceStarted.Wait(Timeout).Should().BeTrue();
 		Task<float[]> buffered = queue.EnqueueBackgroundAsync("buffered", CancellationToken.None);
-		using CancellationTokenSource blockedCancellation = new();
-		Task<float[]> blocked = queue.EnqueueBackgroundAsync("blocked", blockedCancellation.Token);
+		long started = Stopwatch.GetTimestamp();
+		Task<float[]> rejected = queue.EnqueueBackgroundAsync("rejected", CancellationToken.None);
 
 		GetBufferedCount(queue, "_background").Should().Be(1,
-			"the configured capacity is one even while another producer waits");
-		blocked.IsCompleted.Should().BeFalse();
+			"the configured capacity is a strict bound while one inference is active");
+		rejected.IsCompleted.Should().BeTrue("full-lane admission must fail rather than wait");
+		await Assert.ThrowsAsync<EmbeddingQueueFullException>(() => rejected);
+		Stopwatch.GetElapsedTime(started).Should().BeLessThan(TimeSpan.FromSeconds(1));
 
-		await blockedCancellation.CancelAsync();
-		await Assert.ThrowsAnyAsync<OperationCanceledException>(() => blocked);
 		releaseInference.Set();
 		await Task.WhenAll(active, buffered).WaitAsync(Timeout);
 	}

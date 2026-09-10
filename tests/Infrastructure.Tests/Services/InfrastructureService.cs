@@ -420,6 +420,8 @@ public class InfrastructureServiceTests
 		OnnxEmbeddingService concrete = serviceProvider.GetRequiredService<OnnxEmbeddingService>();
 		runtime.Should().BeSameAs(concrete);
 		embeddingService.Should().BeSameAs(concrete);
+		runtime.IsProvisioned.Should().BeFalse();
+		runtime.IsReady.Should().BeFalse();
 	}
 
 	#endregion

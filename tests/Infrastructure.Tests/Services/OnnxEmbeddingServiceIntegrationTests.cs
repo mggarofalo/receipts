@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Reflection;
 using FluentAssertions;
 using Infrastructure.Services;
 using Infrastructure.Tests.Fixtures;
@@ -10,16 +11,45 @@ namespace Infrastructure.Tests.Services;
 public class OnnxEmbeddingServiceIntegrationTests : IClassFixture<OnnxEmbeddingServiceFixture>
 {
 	private readonly OnnxEmbeddingService _service;
+	private readonly string _modelDirectory;
 
 	public OnnxEmbeddingServiceIntegrationTests(OnnxEmbeddingServiceFixture fixture)
 	{
 		_service = fixture.Service;
+		_modelDirectory = fixture.ModelDirectory;
 	}
 
 	[Fact]
-	public void IsConfigured_ReturnsTrue()
+	public async Task WarmUp_TransitionsProvisionedModelToConfigured()
 	{
+		_service.IsProvisioned.Should().BeTrue();
+
+		await _service.WarmUpAsync(CancellationToken.None);
+
+		_service.IsLoaded.Should().BeTrue();
+		_service.IsReady.Should().BeTrue();
 		_service.IsConfigured.Should().BeTrue();
+	}
+
+	[Fact]
+	public async Task FailedInference_CanLeaveSessionLoadedWithoutAdvertisingReadiness()
+	{
+		using OnnxEmbeddingService service = new(
+			Microsoft.Extensions.Options.Options.Create(new EmbeddingModelOptions { ModelPath = _modelDirectory }),
+			Microsoft.Extensions.Logging.Abstractions.NullLogger<OnnxEmbeddingService>.Instance);
+
+		MethodInfo tryLoad = typeof(OnnxEmbeddingService).GetMethod(
+			"TryLoad",
+			BindingFlags.Instance | BindingFlags.NonPublic)!;
+		object loadedModel = tryLoad.Invoke(service, null)!;
+		PropertyInfo sessionProperty = loadedModel.GetType().GetProperty("Session")!;
+		((IDisposable)sessionProperty.GetValue(loadedModel)!).Dispose();
+		Func<Task> act = () => service.GenerateEmbeddingAsync("inference after session failure", CancellationToken.None);
+
+		await act.Should().ThrowAsync<Exception>();
+		service.IsLoaded.Should().BeTrue("a loaded session remains distinguishable from successful inference");
+		service.IsReady.Should().BeFalse("no inference completed successfully");
+		service.IsConfigured.Should().BeFalse();
 	}
 
 	[Fact]

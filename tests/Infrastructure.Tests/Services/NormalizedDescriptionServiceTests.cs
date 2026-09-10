@@ -1893,6 +1893,58 @@ public class NormalizedDescriptionServiceTests
 	}
 
 	[Fact]
+	public async Task TestMatchAsync_EmbeddingQueueFull_ReturnsEmbeddingUnavailableOutcome()
+	{
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
+		_embeddingServiceMock
+			.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new EmbeddingQueueFullException("request"));
+		NormalizedDescriptionService service = new(
+			_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		MatchTestResult result = await service.TestMatchAsync(
+			"Brand New Item", topN: 5, null, null, CancellationToken.None);
+
+		result.SimulatedOutcome.Should().Be(MatchTestOutcomes.EmbeddingUnavailable);
+		result.SimulatedTargetId.Should().BeNull();
+		result.Candidates.Should().BeEmpty();
+	}
+
+	[Fact]
+	public async Task TestMatchAsync_EmbeddingCancellation_IsNotSwallowedAsBackpressure()
+	{
+		using CancellationTokenSource cancellation = new();
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
+		_embeddingServiceMock
+			.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), cancellation.Token))
+			.ThrowsAsync(new OperationCanceledException(cancellation.Token));
+		NormalizedDescriptionService service = new(
+			_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		Func<Task> act = () => service.TestMatchAsync(
+			"Brand New Item", topN: 5, null, null, cancellation.Token);
+
+		await act.Should().ThrowAsync<OperationCanceledException>();
+	}
+
+	[Fact]
+	public async Task TestMatchAsync_UsesInteractiveRequestLane()
+	{
+		LaneRecordingEmbeddingService embeddingService = new()
+		{
+			ForegroundResult = CreateFakeEmbedding(),
+		};
+		NormalizedDescriptionService service = new(
+			_contextFactory, embeddingService, _mapper, _settingsMapper);
+
+		await service.TestMatchAsync(
+			"Interactive Item", topN: 5, null, null, CancellationToken.None);
+
+		embeddingService.ForegroundCalls.Should().Be(1);
+		embeddingService.BackgroundCalls.Should().Be(0);
+	}
+
+	[Fact]
 	public async Task TestMatchAsync_AutoAcceptBranch_WithOverride()
 	{
 		// Arrange — seed a candidate the fake ANN returns at similarity = 0.9.
@@ -2166,6 +2218,40 @@ public class NormalizedDescriptionServiceTests
 
 		result.Description.NearestNeighbourId.Should().BeNull();
 		result.Description.NearestNeighbourSimilarity.Should().BeNull();
+	}
+
+	[Fact]
+	public async Task GetOrCreateAsync_UsesBackgroundLaneForResolverInference()
+	{
+		LaneRecordingEmbeddingService embeddingService = new()
+		{
+			BackgroundResult = CreateFakeEmbedding(),
+		};
+		NormalizedDescriptionService service = new(
+			_contextFactory, embeddingService, _mapper, _settingsMapper);
+
+		await service.GetOrCreateAsync("Background Item", CancellationToken.None);
+
+		embeddingService.BackgroundCalls.Should().Be(1);
+		embeddingService.ForegroundCalls.Should().Be(0);
+	}
+
+	[Fact]
+	public async Task GetOrCreateAsync_BackgroundQueueFull_PropagatesWithoutPersistingFallbackRow()
+	{
+		LaneRecordingEmbeddingService embeddingService = new()
+		{
+			BackgroundException = new EmbeddingQueueFullException("background"),
+		};
+		NormalizedDescriptionService service = new(
+			_contextFactory, embeddingService, _mapper, _settingsMapper);
+
+		Func<Task> act = () => service.GetOrCreateAsync("Retry Later", CancellationToken.None);
+
+		await act.Should().ThrowAsync<EmbeddingQueueFullException>();
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		verify.NormalizedDescriptions.Should().BeEmpty(
+			"the resolver must retry instead of persisting a no-vector duplicate");
 	}
 
 	// ── RECEIPTS-880: last seen ───────────────────────────────────────────────
@@ -3396,6 +3482,34 @@ public class NormalizedDescriptionServiceTests
 		}
 
 		return embedding;
+	}
+
+	private sealed class LaneRecordingEmbeddingService : IEmbeddingService, IBackgroundEmbeddingService
+	{
+		public bool IsConfigured => true;
+		public float[] ForegroundResult { get; init; } = [];
+		public float[] BackgroundResult { get; init; } = [];
+		public Exception? BackgroundException { get; init; }
+		public int ForegroundCalls { get; private set; }
+		public int BackgroundCalls { get; private set; }
+
+		public Task<float[]> GenerateEmbeddingAsync(string text, CancellationToken cancellationToken)
+		{
+			ForegroundCalls++;
+			return Task.FromResult(ForegroundResult);
+		}
+
+		public Task<float[]> GenerateBackgroundEmbeddingAsync(string text, CancellationToken cancellationToken)
+		{
+			BackgroundCalls++;
+			return BackgroundException is null
+				? Task.FromResult(BackgroundResult)
+				: Task.FromException<float[]>(BackgroundException);
+		}
+
+		public Task<List<float[]>> GenerateEmbeddingsAsync(
+			List<string> texts,
+			CancellationToken cancellationToken) => throw new NotSupportedException();
 	}
 
 	// Test subclass that overrides the ANN search to deterministically return a seeded match.

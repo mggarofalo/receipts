@@ -71,24 +71,34 @@ public class OnnxEmbeddingServiceUnavailableTests : IDisposable
 	}
 
 	[Fact]
-	public void IsConfigured_VerifiedFiles_DoesNotLoadOnnxOrLogAnError()
+	public void Readiness_VerifiedFiles_AreProvisionedButNotConfiguredUntilLoaded()
 	{
-		Directory.CreateDirectory(_emptyDirectory);
-		foreach (EmbeddingModelFile file in EmbeddingModelOptions.Files)
-		{
-			using FileStream stream = File.Create(Path.Combine(_emptyDirectory, file.FileName));
-			stream.SetLength(file.SizeBytes);
-		}
-
-		File.WriteAllText(
-			Path.Combine(_emptyDirectory, EmbeddingModelOptions.MarkerFileName),
-			EmbeddingModelOptions.VerifiedMarker);
+		WriteInvalidProvisionedModel();
 		ErrorCountingLogger logger = new();
 		using OnnxEmbeddingService service = CreateService(logger);
 
-		service.IsConfigured.Should().BeTrue();
+		service.IsProvisioned.Should().BeTrue();
+		service.IsReady.Should().BeFalse();
+		service.IsConfigured.Should().BeFalse();
 		service.IsLoaded.Should().BeFalse("availability checks must not allocate an ONNX session");
 		logger.ErrorCount.Should().Be(0);
+	}
+
+	[Fact]
+	public async Task WarmUp_InvalidProvisionedModel_LeavesServiceUnconfigured()
+	{
+		WriteInvalidProvisionedModel();
+		ErrorCountingLogger logger = new();
+		using OnnxEmbeddingService service = CreateService(logger);
+
+		Func<Task> act = () => service.WarmUpAsync(CancellationToken.None);
+
+		await act.Should().ThrowAsync<InvalidOperationException>();
+		service.IsProvisioned.Should().BeTrue();
+		service.IsLoaded.Should().BeFalse();
+		service.IsReady.Should().BeFalse();
+		service.IsConfigured.Should().BeFalse("a failed load must not advertise semantic readiness");
+		logger.ErrorCount.Should().Be(1);
 	}
 
 	[Fact]
@@ -150,6 +160,20 @@ public class OnnxEmbeddingServiceUnavailableTests : IDisposable
 		}
 
 		GC.SuppressFinalize(this);
+	}
+
+	private void WriteInvalidProvisionedModel()
+	{
+		Directory.CreateDirectory(_emptyDirectory);
+		foreach (EmbeddingModelFile file in EmbeddingModelOptions.Files)
+		{
+			using FileStream stream = File.Create(Path.Combine(_emptyDirectory, file.FileName));
+			stream.SetLength(file.SizeBytes);
+		}
+
+		File.WriteAllText(
+			Path.Combine(_emptyDirectory, EmbeddingModelOptions.MarkerFileName),
+			EmbeddingModelOptions.VerifiedMarker);
 	}
 
 	private sealed class ErrorCountingLogger : ILogger<OnnxEmbeddingService>
