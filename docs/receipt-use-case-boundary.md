@@ -12,6 +12,8 @@ workers send that command through Mediator instead of calling Infrastructure.
 | Balance policy and decision to persist | `CreateCompleteReceiptCommandHandler` in Application |
 | Atomic persistence port | `ICompleteReceiptWriter` in Application |
 | Domain-to-EF mapping, generated identities, and one durable save | `CompleteReceiptWriter` in Infrastructure |
+| Committed receipt notification | Presentation, after the command succeeds |
+| Affected client projections | Receipt lists/details and dependent aggregates through the receipt notification contract |
 
 The handler validates the complete receipt before it invokes the writer. The writer
 contract represents one atomic commit: receipt, transactions, items, adjustments,
