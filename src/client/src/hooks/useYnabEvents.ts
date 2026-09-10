@@ -2,27 +2,11 @@ import { useMemo } from "react";
 import { useStableQuery } from "@/hooks/useStableQuery";
 import { useQuery } from "@tanstack/react-query";
 import client from "@/lib/api-client";
+import type { components } from "@/generated/api";
 import { localErrorPolicy } from "@/lib/request-error-policy";
 
-// Defined inline (matching the generated api.d.ts) — see useYnabStatus for why.
-export type YnabSyncEventResponse = {
-  id: string;
-  occurredAt: string;
-  eventType: string;
-  receiptId?: string | null;
-  transactionId?: string | null;
-  httpStatus?: number | null;
-  success: boolean;
-  errorMessage?: string | null;
-  requestId?: string | null;
-};
-
-type YnabSyncEventListResponse = {
-  data: YnabSyncEventResponse[];
-  total: number;
-  offset: number;
-  limit: number;
-};
+export type YnabSyncEventResponse =
+  components["schemas"]["YnabSyncEventResponse"];
 
 export interface YnabEventFilters {
   offset?: number;
@@ -59,7 +43,7 @@ export function useYnabEvents(filters: YnabEventFilters = {}) {
       dateTo,
     ],
     queryFn: async ({ signal }) => {
-      const { data, error } = await client.GET("/api/ynab/events" as never, {
+      const { data, error } = await client.GET("/api/ynab/events", {
         ...localErrorPolicy.request,
         signal,
         params: {
@@ -73,9 +57,9 @@ export function useYnabEvents(filters: YnabEventFilters = {}) {
             dateTo: dateTo ?? undefined,
           },
         },
-      } as never);
+      });
       if (error) throw error;
-      return data as unknown as YnabSyncEventListResponse;
+      return data;
     },
   });
 
