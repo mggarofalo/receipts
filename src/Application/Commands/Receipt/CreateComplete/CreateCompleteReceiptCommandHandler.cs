@@ -7,7 +7,7 @@ using Mediator;
 namespace Application.Commands.Receipt.CreateComplete;
 
 public class CreateCompleteReceiptCommandHandler(
-	ICompleteReceiptService completeReceiptService) : IRequestHandler<CreateCompleteReceiptCommand, CreateCompleteReceiptResult>
+	ICompleteReceiptWriter writer) : IRequestHandler<CreateCompleteReceiptCommand, CreateCompleteReceiptResult>
 {
 	public async ValueTask<CreateCompleteReceiptResult> Handle(CreateCompleteReceiptCommand request, CancellationToken cancellationToken)
 	{
@@ -34,7 +34,7 @@ public class CreateCompleteReceiptCommandHandler(
 			}
 		}
 
-		return await completeReceiptService.CreateAsync(
+		return await writer.CreateAsync(
 			request.Receipt,
 			[.. request.Transactions],
 			[.. request.Items],

@@ -93,7 +93,7 @@ public class TransactionAccountHttpTests(PostgresFixture fixture) : IClassFixtur
 		builder.Services.AddSingleton<IDbContextFactory<ApplicationDbContext>>(new Factory(fixture));
 		builder.Services.AddScoped<ITransactionRepository, TransactionRepository>();
 		builder.Services.AddScoped<ITransactionService, TransactionService>();
-		builder.Services.AddScoped<ICompleteReceiptService, CompleteReceiptService>();
+		builder.Services.AddScoped<ICompleteReceiptWriter, CompleteReceiptWriter>();
 		builder.Services.AddSingleton<TransactionMapper>();
 		builder.Services.AddSingleton<AccountMapper>();
 		builder.Services.AddSingleton<ReceiptMapper>();

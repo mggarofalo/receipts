@@ -45,13 +45,6 @@ public class ReceiptService(
 		return new PagedResult<Receipt>([.. entities.Select(mapper.ToDomain)], total, offset, limit);
 	}
 
-	public async Task<PagedResult<ReceiptListItem>> GetAllAsync(int offset, int limit, SortParams sort, Guid? accountId, Guid? cardId, string? q, string? location, CancellationToken cancellationToken)
-	{
-		int total = await repository.GetCountAsync(accountId, cardId, q, location, cancellationToken);
-		List<ReceiptListItem> data = await repository.GetListAsync(offset, limit, sort, accountId, cardId, q, location, cancellationToken);
-		return new PagedResult<ReceiptListItem>(data, total, offset, limit);
-	}
-
 	public async Task<PagedResult<Receipt>> GetDeletedAsync(int offset, int limit, SortParams sort, CancellationToken cancellationToken)
 	{
 		int total = await repository.GetDeletedCountAsync(cancellationToken);

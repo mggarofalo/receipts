@@ -186,8 +186,8 @@ public class PersistenceContractTests(PostgresFixture fixture)
 		ReconciliationFault fault = new() { Armed = fail };
 		string location = $"Complete {Guid.NewGuid():N}";
 		string description = $"Complete item {Guid.NewGuid():N}";
-		CompleteReceiptService service = new(new Factory(Options(fault)), new ReceiptMapper(), new TransactionMapper(), new ReceiptItemMapper(), new AdjustmentMapper());
-		Func<Task> save = async () => await service.CreateAsync(
+		CompleteReceiptWriter writer = new(new Factory(Options(fault)), new ReceiptMapper(), new TransactionMapper(), new ReceiptItemMapper(), new AdjustmentMapper());
+		Func<Task> save = async () => await writer.CreateAsync(
 			new Receipt(Guid.NewGuid(), location, new(2024, 1, 1), new Money(0)), [],
 			[new ReceiptItem(Guid.NewGuid(), null, description, 1, new Money(10), new Money(10), "Food", null)],
 			[new Adjustment(Guid.NewGuid(), AdjustmentType.Discount, new Money(-2), "Discount")], CancellationToken.None);

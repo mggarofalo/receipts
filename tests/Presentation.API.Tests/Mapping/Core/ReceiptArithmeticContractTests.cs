@@ -46,7 +46,7 @@ public class ReceiptArithmeticContractTests
 		aggregate.ExpectedTotal.Amount.Should().Be(vector.ExpectedTotal);
 		trip.TransactionTotal.Amount.Should().Be(vector.PaymentTotal);
 		trip.Validate().Should().HaveCount(vector.IsWithinCreationTolerance ? 0 : 1);
-		Mock<ICompleteReceiptService> service = new();
+		Mock<ICompleteReceiptWriter> service = new();
 		CreateCompleteReceiptResult saved = new(receipt, transactions, items, adjustments);
 		service.Setup(instance => instance.CreateAsync(receipt, transactions, items, adjustments, It.IsAny<CancellationToken>())).ReturnsAsync(saved);
 		CreateCompleteReceiptCommandHandler handler = new(service.Object);
@@ -71,7 +71,7 @@ public class ReceiptArithmeticContractTests
 		ReceiptWithItems aggregate = new() { Receipt = receipt, Items = items, Adjustments = [] };
 		aggregate.Subtotal.Amount.Should().Be(2m, "persisted line totals remain authoritative even when a fresh API mapping would round each to1.01");
 		new Trip { Receipt = aggregate, Transactions = [] }.Validate().Should().BeEmpty();
-		Mock<ICompleteReceiptService> service = new();
+		Mock<ICompleteReceiptWriter> service = new();
 		service.Setup(instance => instance.CreateAsync(receipt, It.IsAny<List<Transaction>>(), items, It.IsAny<List<Adjustment>>(), It.IsAny<CancellationToken>())).ReturnsAsync(new CreateCompleteReceiptResult(receipt, [], items, []));
 		await new CreateCompleteReceiptCommandHandler(service.Object).Handle(new(receipt, [], items, []), CancellationToken.None);
 		service.Verify(instance => instance.CreateAsync(receipt, It.Is<List<Transaction>>(rows => rows.Count == 0), items, It.IsAny<List<Adjustment>>(), It.IsAny<CancellationToken>()), Times.Once);

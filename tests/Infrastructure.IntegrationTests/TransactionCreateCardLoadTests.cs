@@ -36,7 +36,7 @@ public class TransactionCreateCardLoadTests(PostgresFixture fixture) : IClassFix
 		}
 		Factory factory = new(new DbContextOptionsBuilder<ApplicationDbContext>(fixture.CreateOptions()).AddInterceptors(new CardReadFailure()).Options);
 		Func<Task> create = complete
-			? async () => await new CompleteReceiptService(factory, new(), new(), new(), new()).CreateAsync(new Receipt(Guid.Empty, location, new(2025, 1, 1), Money.Zero), [new Transaction(Guid.Empty, card, new Money(10), new(2025, 1, 1))], [], [], CancellationToken.None)
+			? async () => await new CompleteReceiptWriter(factory, new(), new(), new(), new()).CreateAsync(new Receipt(Guid.Empty, location, new(2025, 1, 1), Money.Zero), [new Transaction(Guid.Empty, card, new Money(10), new(2025, 1, 1))], [], [], CancellationToken.None)
 			: async () => await new TransactionRepository(factory).CreateAsync([new TransactionEntity { Id = Guid.NewGuid(), ReceiptId = receipt, CardId = card, Amount = 10, Date = new(2025, 1, 1) }], CancellationToken.None);
 		await create.Should().ThrowAsync<InvalidOperationException>().WithMessage("Injected originating card lookup failure");
 		await using ApplicationDbContext read = fixture.CreateDbContext();
