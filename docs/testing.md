@@ -21,6 +21,12 @@ dotnet test tests/Application.Tests/Application.Tests.csproj
 dotnet test --filter "FullyQualifiedName~TestMethodName"
 ```
 
+Ordinary build and test commands do not start the API host and do not require
+`Jwt:Key`. When checking the materialized server contract, run
+`dotnet run scripts/generate-api-contract.cs`; that command scopes a synthetic
+key to the non-serving extraction process. Normal API startup still fails fast
+when signing configuration is absent, blank, or shorter than 32 UTF-8 bytes.
+
 ### Code Coverage
 
 Coverage is collected via [coverlet](https://github.com/coverlet-coverage/coverlet) using the `XPlat Code Coverage` data collector and output in Cobertura XML format.

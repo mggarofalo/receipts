@@ -94,7 +94,7 @@ These are generated automatically and stored as files in the `secrets` volume:
 | File | Used As | Description |
 |------|---------|-------------|
 | `/secrets/pg_password` | `POSTGRES_PASSWORD` | PostgreSQL password |
-| `/secrets/jwt_key` | `Jwt__Key` | JWT signing key |
+| `/secrets/jwt_key` | `Jwt__Key` | JWT signing key (at least 32 UTF-8 bytes) |
 | `/secrets/admin_password` | `AdminSeed__Password` | Initial admin password |
 
 ### PUID / PGID

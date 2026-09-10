@@ -6,7 +6,7 @@ Guidance for AI agents working in this repository.
 
 ```bash
 dotnet restore Receipts.slnx   # .NET packages + configures git hooks
-npm install                     # OpenAPI tooling (Spectral, js-yaml, cross-env)
+npm ci                          # Pinned OpenAPI tooling (Spectral, js-yaml, cross-env)
 ```
 
 For full prerequisites and Aspire setup, see **[docs/development.md](docs/development.md)**.
@@ -51,6 +51,7 @@ This file is **checked into git** (via Track B of RECEIPTS-534). It is a materia
 
 ```bash
 dotnet build Receipts.slnx                                    # Build entire solution
+dotnet run scripts/generate-api-contract.cs                    # Materialize server OpenAPI output
 dotnet test Receipts.slnx --filter "Category!=Integration"    # Unit tests only (CI + pre-commit)
 dotnet test Receipts.slnx                                     # All tests (requires ONNX model)
 ```

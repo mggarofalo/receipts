@@ -6,6 +6,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <OpenApiGenerateDocuments>true</OpenApiGenerateDocuments>
+    <!-- Contract generation is explicit: ordinary builds and tests must never boot the API host
+         or require runtime secrets. Pass -p:GenerateApiContract=true from the dedicated
+         contract-generation workflow when a fresh server document is required. -->
+    <OpenApiGenerateDocumentsOnBuild Condition="'$(GenerateApiContract)' == 'true'">true</OpenApiGenerateDocumentsOnBuild>
+    <OpenApiGenerateDocumentsOnBuild Condition="'$(GenerateApiContract)' != 'true'">false</OpenApiGenerateDocumentsOnBuild>
     <OpenApiDocumentsDirectory>$(MSBuildThisFileDirectory)..\..\..\openapi\generated</OpenApiDocumentsDirectory>
   </PropertyGroup>
 

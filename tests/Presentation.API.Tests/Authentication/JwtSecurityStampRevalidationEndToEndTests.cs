@@ -16,6 +16,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
+using Presentation.API.Tests.Fixtures;
 
 namespace Presentation.API.Tests.Authentication;
 
@@ -69,13 +70,12 @@ public class JwtSecurityStampRevalidationEndToEndTests
 	// outcome: a valid token yields 200 and a failed revalidation (context.Fail) yields 401.
 	private static WebApplication BuildHost(UserManager<ApplicationUser> userManager, IUserService? userService = null)
 	{
-		WebApplicationBuilder appBuilder = WebApplication.CreateBuilder();
-		appBuilder.WebHost.UseTestServer();
+		WebApplicationBuilder appBuilder = ConfiguredApiTestHost.CreateBuilder(JwtConfig);
 
-		appBuilder.Services.AddAuthServices(BuildConfiguration());
+		appBuilder.Services.AddAuthServices(appBuilder.Configuration);
 		appBuilder.Services.AddScoped(_ => userManager);
 		appBuilder.Services.AddSingleton(userService ?? Mock.Of<IUserService>());
-		appBuilder.Services.AddSingleton<ITokenService>(new TokenService(BuildConfiguration()));
+		appBuilder.Services.AddSingleton<ITokenService>(new TokenService(appBuilder.Configuration));
 		appBuilder.Services.AddControllers().AddApplicationPart(typeof(AuthController).Assembly);
 		// Collaborators the ApiKey scheme handler needs to be constructible under the "ApiOrJwt" policy.
 		appBuilder.Services.AddSingleton(Mock.Of<IApiKeyService>());

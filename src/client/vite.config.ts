@@ -81,7 +81,7 @@ export default defineConfig({
     // with TLS validation off — to every host on the LAN.
     host: "127.0.0.1",
     proxy: {
-      "/api": {
+      "^/api(?:/|\\?|$)": {
         target: process.env.services__api__https__0 ?? process.env.services__api__http__0 ?? "https://localhost:5001",
         changeOrigin: true,
         secure: false,

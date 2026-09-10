@@ -5,9 +5,9 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Presentation.API.Tests.Fixtures;
 
 namespace Presentation.API.Tests.Configuration;
 
@@ -73,22 +73,17 @@ public class AuthMiddlewareOrderingTests
 
 	private static IHost CreateHostWithAuthPipeline(bool bypassRateLimit)
 	{
-		IConfiguration configuration = new ConfigurationBuilder()
-			.AddInMemoryCollection(RateLimitConfig)
-			.AddInMemoryCollection(new Dictionary<string, string?>
-			{
-				["Jwt:Key"] = "test-key-that-is-at-least-32-characters-long-for-hmac",
-				["Jwt:Issuer"] = "test-issuer",
-				["Jwt:Audience"] = "test-audience",
-			})
-			.Build();
-
-		WebApplicationBuilder appBuilder = WebApplication.CreateBuilder();
-		appBuilder.WebHost.UseTestServer();
+		Dictionary<string, string?> configuration = new(RateLimitConfig)
+		{
+			["Jwt:Key"] = "test-key-that-is-at-least-32-characters-long-for-hmac",
+			["Jwt:Issuer"] = "test-issuer",
+			["Jwt:Audience"] = "test-audience",
+		};
+		WebApplicationBuilder appBuilder = ConfiguredApiTestHost.CreateBuilder(configuration);
 
 		// Add only the services needed for auth + rate limiting
-		appBuilder.Services.AddAuthServices(configuration);
-		appBuilder.Services.AddApplicationServices(configuration);
+		appBuilder.Services.AddAuthServices(appBuilder.Configuration);
+		appBuilder.Services.AddApplicationServices(appBuilder.Configuration);
 
 		WebApplication app = appBuilder.Build();
 

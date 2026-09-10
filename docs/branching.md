@@ -117,10 +117,11 @@ Run these in order (or use `dotnet run scripts/worktree-setup.cs` to run them al
 
 ```bash
 dotnet restore Receipts.slnx          # NuGet packages + configures git hooks
-npm install                            # Root tooling (Spectral, js-yaml, cross-env)
-cd src/client && npm install && cd -   # React client dependencies
+npm ci                                 # Pinned root tooling (Spectral, js-yaml, cross-env)
+cd src/client && npm ci && cd -        # Pinned React client dependencies
 dotnet run scripts/download-onnx-model.cs  # ONNX embedding model (~1.34 GB, once per machine)
-dotnet build Receipts.slnx             # Compiles + generates DTOs and openapi/generated/API.json
+dotnet build Receipts.slnx             # Compiles without runtime secrets
+dotnet run scripts/generate-api-contract.cs  # Generates openapi/generated/API.json in extraction mode
 cd src/client && npm run generate:types:write && cd -  # TypeScript types from OpenAPI spec
 ```
 

@@ -7,10 +7,10 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Moq;
+using Presentation.API.Tests.Fixtures;
 
 namespace Presentation.API.Tests.Configuration;
 
@@ -107,16 +107,11 @@ public class RateLimitBypassIntegrationTests
 
 	private static IHost CreateHost()
 	{
-		IConfiguration configuration = new ConfigurationBuilder()
-			.AddInMemoryCollection(TestConfig)
-			.Build();
-
-		WebApplicationBuilder appBuilder = WebApplication.CreateBuilder();
-		appBuilder.WebHost.UseTestServer();
+		WebApplicationBuilder appBuilder = ConfiguredApiTestHost.CreateBuilder(TestConfig);
 
 		// Register the real auth + rate limiting services
-		appBuilder.Services.AddAuthServices(configuration);
-		appBuilder.Services.AddApplicationServices(configuration);
+		appBuilder.Services.AddAuthServices(appBuilder.Configuration);
+		appBuilder.Services.AddApplicationServices(appBuilder.Configuration);
 
 		// Mock IApiKeyService to return bypass/non-bypass results based on the key
 		Mock<IApiKeyService> apiKeyService = new();

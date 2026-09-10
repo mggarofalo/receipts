@@ -14,8 +14,14 @@ public static class AuthConfiguration
 
 	public static IServiceCollection AddAuthServices(this IServiceCollection services, IConfiguration configuration)
 	{
-		string jwtKey = configuration[ConfigurationVariables.JwtKey]
-			?? throw new InvalidOperationException($"Configuration value '{ConfigurationVariables.JwtKey}' is required.");
+		string? configuredJwtKey = configuration[ConfigurationVariables.JwtKey];
+		if (string.IsNullOrWhiteSpace(configuredJwtKey) || Encoding.UTF8.GetByteCount(configuredJwtKey) < 32)
+		{
+			throw new InvalidOperationException(
+				$"Configuration value '{ConfigurationVariables.JwtKey}' is required and must contain at least 32 UTF-8 bytes.");
+		}
+
+		string jwtKey = configuredJwtKey;
 		string jwtIssuer = configuration[ConfigurationVariables.JwtIssuer] ?? "receipts-api";
 		string jwtAudience = configuration[ConfigurationVariables.JwtAudience] ?? "receipts-app";
 
