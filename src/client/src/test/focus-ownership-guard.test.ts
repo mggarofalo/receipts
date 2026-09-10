@@ -49,7 +49,7 @@ function ownsOrSuppressesFocusIndicator(token: string): boolean {
   if (/^\[outline(?:-[^:]+)?:none\]$/.test(utility)) return true;
 
   const isIndicatorUtility =
-    /^(?:ring|border|outline)(?:-|$)/.test(utility) ||
+    /^(?:ring|border|outline|shadow|drop-shadow)(?:-|$)/.test(utility) ||
     /^\[(?:box-shadow|outline(?:-[^:]+)?|border(?:-[^:]+)?):/.test(
       utility,
     );
@@ -127,21 +127,37 @@ function sourceTokens(path: string, source: string): SourceToken[] {
 
 function focusViolations(file: string, path: string, source: string): string[] {
   const allowedOccurrences = new Map<string, number>();
+  const violations: string[] = [];
 
-  return sourceTokens(path, source)
+  sourceTokens(path, source)
     .filter(({ token }) => ownsOrSuppressesFocusIndicator(token))
-    .filter(({ token, propertyName }) => {
+    .forEach(({ line, token, propertyName }) => {
       const isCalendarProxy =
         file === "calendar.tsx" &&
         propertyName === "dropdown_root" &&
         calendarProxyUtilities.has(token);
-      if (!isCalendarProxy) return true;
+      if (isCalendarProxy) {
+        allowedOccurrences.set(
+          token,
+          (allowedOccurrences.get(token) ?? 0) + 1,
+        );
+      } else {
+        violations.push(`${file}:${line} ${token}`);
+      }
+    });
 
+  if (file === "calendar.tsx") {
+    calendarProxyUtilities.forEach((token) => {
       const occurrences = allowedOccurrences.get(token) ?? 0;
-      allowedOccurrences.set(token, occurrences + 1);
-      return occurrences >= 1;
-    })
-    .map(({ line, token }) => `${file}:${line} ${token}`);
+      if (occurrences !== 1) {
+        violations.push(
+          `${file} dropdown_root must contain ${token} exactly once (found ${occurrences})`,
+        );
+      }
+    });
+  }
+
+  return violations;
 }
 
 describe("shadcn focus ownership guard", () => {
@@ -177,6 +193,9 @@ describe("shadcn focus ownership guard", () => {
     "[&:focus-visible]:[box-shadow:0_0_0_2px_red]",
     "[&:focus]:[outline:2px_solid_red]",
     "group-focus:[border-color:red]",
+    "focus-visible:shadow-md",
+    "group-focus:drop-shadow-lg",
+    "focus-visible:shadow-md!",
   ])("recognizes forbidden focus utility %s", (utility) => {
     expect(ownsOrSuppressesFocusIndicator(utility)).toBe(true);
   });
@@ -191,13 +210,16 @@ describe("shadcn focus ownership guard", () => {
     "[outline:2px_solid_red]",
     "[border-color:red]",
     "hover:[box-shadow:0_0_0_2px_red]",
+    "shadow-md",
+    "drop-shadow-lg",
+    "hover:shadow-md",
   ])("allows non-focus decorative utility %s", (utility) => {
     expect(ownsOrSuppressesFocusIndicator(utility)).toBe(false);
   });
 
   it("scans every static segment of an interpolated template literal", () => {
     const source = `
-      const classes = \`group-focus:ring-2 sm:group-focus:ring-2 has-focus-visible:ring-2 group-has-focus:ring-2 \${first} peer-focus-visible:border-ring focus-visible:!ring-[3px] focus-visible:ring-[3px]! \${second} [&:focus-visible]:outline-2 [&:focus]:[box-shadow:0_0_0_2px_red] [outline:none]!\`;
+      const classes = \`group-focus:ring-2 sm:group-focus:ring-2 has-focus-visible:ring-2 group-has-focus:ring-2 focus-visible:shadow-md \${first} peer-focus-visible:border-ring focus-visible:!ring-[3px] focus-visible:ring-[3px]! group-focus:drop-shadow-lg \${second} [&:focus-visible]:outline-2 [&:focus]:[box-shadow:0_0_0_2px_red] [outline:none]!\`;
     `;
 
     expect(focusViolations("fixture.ts", "fixture.ts", source)).toEqual([
@@ -205,9 +227,11 @@ describe("shadcn focus ownership guard", () => {
       "fixture.ts:2 sm:group-focus:ring-2",
       "fixture.ts:2 has-focus-visible:ring-2",
       "fixture.ts:2 group-has-focus:ring-2",
+      "fixture.ts:2 focus-visible:shadow-md",
       "fixture.ts:2 peer-focus-visible:border-ring",
       "fixture.ts:2 focus-visible:!ring-[3px]",
       "fixture.ts:2 focus-visible:ring-[3px]!",
+      "fixture.ts:2 group-focus:drop-shadow-lg",
       "fixture.ts:2 [&:focus-visible]:outline-2",
       "fixture.ts:2 [&:focus]:[box-shadow:0_0_0_2px_red]",
       "fixture.ts:2 [outline:none]!",
@@ -223,8 +247,20 @@ describe("shadcn focus ownership guard", () => {
     `;
 
     expect(focusViolations("calendar.tsx", "calendar.tsx", source)).toEqual([
-      "calendar.tsx:3 has-focus:border-ring",
       "calendar.tsx:4 has-focus:ring-ring/50",
+      "calendar.tsx dropdown_root must contain has-focus:border-ring exactly once (found 2)",
+    ]);
+  });
+
+  it("requires every calendar dropdown proxy utility", () => {
+    const source = `
+      const classes = {
+        dropdown_root: cn("has-focus:border-ring has-focus:ring-ring/50"),
+      };
+    `;
+
+    expect(focusViolations("calendar.tsx", "calendar.tsx", source)).toEqual([
+      "calendar.tsx dropdown_root must contain has-focus:ring-[3px] exactly once (found 0)",
     ]);
   });
 
