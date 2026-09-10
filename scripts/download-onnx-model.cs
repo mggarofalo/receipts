@@ -18,6 +18,7 @@ const string Revision = "d4aa6901d3a41ba39fb536a557fa166f842b0e09";
 const string BaseUrl = "https://huggingface.co/BAAI/bge-large-en-v1.5/resolve";
 const string ModelDirectoryName = "BgeLargeEnV15";
 const string MarkerFileName = ".provisioned";
+const string VerifiedMarker = "sha256-v1:" + Revision;
 
 (string FileName, string RemotePath, long Size, string Sha256)[] files =
 [
@@ -38,6 +39,15 @@ string modelDir = !string.IsNullOrWhiteSpace(requestedDirectory)
 Directory.CreateDirectory(modelDir);
 Console.WriteLine($"Model directory: {modelDir}");
 
+string markerPath = Path.Combine(modelDir, MarkerFileName);
+bool trustExisting = !verifyExisting
+    && MarkerMatches(markerPath, VerifiedMarker)
+    && files.All(file =>
+    {
+        FileInfo existing = new(Path.Combine(modelDir, file.FileName));
+        return existing.Exists && existing.Length == file.Size;
+    });
+
 // HttpClient.Timeout stops applying once ResponseHeadersRead hands back the stream, so the
 // deadline is enforced per file with a CancellationTokenSource instead — same approach as
 // EmbeddingModelProvisioningService. Without it a stalled connection hangs forever, which
@@ -50,7 +60,7 @@ foreach ((string fileName, string remotePath, long size, string sha256) in files
     string finalPath = Path.Combine(modelDir, fileName);
 
     FileInfo existing = new(finalPath);
-    if (existing.Exists && existing.Length == size && !verifyExisting)
+    if (existing.Exists && existing.Length == size && trustExisting)
     {
         Console.WriteLine($"{fileName} already present and the expected size, skipping.");
         continue;
@@ -129,7 +139,7 @@ foreach ((string fileName, string remotePath, long size, string sha256) in files
 }
 
 // Matches what the app writes, so it will not re-verify on first start.
-await File.WriteAllTextAsync(Path.Combine(modelDir, MarkerFileName), Revision);
+await File.WriteAllTextAsync(markerPath, VerifiedMarker);
 
 Console.WriteLine($"ONNX model files ready at {modelDir}");
 return 0;
@@ -139,6 +149,19 @@ static async Task<string> ComputeSha256Async(string path)
     await using FileStream stream = new(path, FileMode.Open, FileAccess.Read, FileShare.Read);
     byte[] hash = await SHA256.HashDataAsync(stream);
     return Convert.ToHexStringLower(hash);
+}
+
+static bool MarkerMatches(string path, string expected)
+{
+    try
+    {
+        return File.Exists(path)
+            && string.Equals(File.ReadAllText(path).Trim(), expected, StringComparison.Ordinal);
+    }
+    catch (IOException)
+    {
+        return false;
+    }
 }
 
 static string ResolveDefaultDirectory()
