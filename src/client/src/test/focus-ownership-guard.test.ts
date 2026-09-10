@@ -7,11 +7,17 @@ import ts from "typescript";
 const testDirectory = dirname(fileURLToPath(import.meta.url));
 const uiDirectory = resolve(testDirectory, "../components/ui");
 
-const calendarProxyAllowlist = new Set([
-  "calendar.tsx:has-focus:border-ring",
-  "calendar.tsx:has-focus:ring-ring/50",
-  "calendar.tsx:has-focus:ring-[3px]",
+const calendarProxyUtilities = new Set([
+  "has-focus:border-ring",
+  "has-focus:ring-ring/50",
+  "has-focus:ring-[3px]",
 ]);
+
+type SourceToken = {
+  line: number;
+  token: string;
+  propertyName?: string;
+};
 
 function productionSourceFiles(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -25,19 +31,35 @@ function productionSourceFiles(directory: string): string[] {
 }
 
 function ownsOrSuppressesFocusIndicator(token: string): boolean {
-  if (/(?:^|:|!)outline-(?:none|hidden)$/.test(token)) return true;
+  const sections: string[] = [];
+  let sectionStart = 0;
+  let bracketDepth = 0;
+  for (let index = 0; index < token.length; index += 1) {
+    if (token[index] === "[") bracketDepth += 1;
+    if (token[index] === "]") bracketDepth -= 1;
+    if (token[index] === ":" && bracketDepth === 0) {
+      sections.push(token.slice(sectionStart, index));
+      sectionStart = index + 1;
+    }
+  }
+  sections.push(token.slice(sectionStart));
 
-  const focusOwnedUtility =
-    /(?:^|:)(?:focus|focus-visible|focus-within|has-focus):(?:[^\s:]+:)*(?:ring(?:-|$)|border(?:-|$)|outline(?:-|$))/;
-  if (focusOwnedUtility.test(token)) return true;
+  const utility = sections.at(-1)?.replace(/^!/, "") ?? "";
+  if (/^outline-(?:none|hidden)$/.test(utility)) return true;
+  if (!/^(?:ring|border|outline)(?:-|$)/.test(utility)) return false;
 
-  return (
-    token.includes("focused=true") &&
-    /:(?:ring(?:-|$)|border(?:-|$)|outline(?:-|$))/.test(token)
+  return sections.slice(0, -1).some(
+    (variant) =>
+      /^(?:focus|focus-visible|focus-within|has-focus)$/.test(variant) ||
+      /^(?:group|peer|in)-focus(?:-visible|-within)?(?:\/[^:]+)?$/.test(
+        variant,
+      ) ||
+      variant.includes(":focus") ||
+      variant.includes("focused=true"),
   );
 }
 
-function sourceTokens(path: string, source: string) {
+function sourceTokens(path: string, source: string): SourceToken[] {
   const sourceFile = ts.createSourceFile(
     path,
     source,
@@ -45,22 +67,69 @@ function sourceTokens(path: string, source: string) {
     true,
     path.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
   );
-  const tokens: Array<{ line: number; token: string }> = [];
+  const tokens: SourceToken[] = [];
+
+  function propertyName(node: ts.Node): string | undefined {
+    let ancestor = node.parent;
+    while (ancestor && !ts.isPropertyAssignment(ancestor)) {
+      ancestor = ancestor.parent;
+    }
+    return ancestor && ts.isPropertyAssignment(ancestor)
+      ? ancestor.name.getText(sourceFile).replace(/["']/g, "")
+      : undefined;
+  }
+
+  function recordLiteral(node: ts.TemplateLiteralLikeNode | ts.StringLiteral) {
+    const startLine = sourceFile.getLineAndCharacterOfPosition(node.getStart()).line;
+    node.text.split("\n").forEach((line, lineOffset) => {
+      line.split(/\s+/).forEach((token) => {
+        if (token) {
+          tokens.push({
+            line: startLine + lineOffset + 1,
+            token,
+            propertyName: propertyName(node),
+          });
+        }
+      });
+    });
+  }
 
   function visit(node: ts.Node) {
-    if (ts.isStringLiteralLike(node)) {
-      const startLine = sourceFile.getLineAndCharacterOfPosition(node.getStart()).line;
-      node.text.split("\n").forEach((line, lineOffset) => {
-        line.split(/\s+/).forEach((token) => {
-          if (token) tokens.push({ line: startLine + lineOffset + 1, token });
-        });
+    if (ts.isTemplateExpression(node)) {
+      recordLiteral(node.head);
+      node.templateSpans.forEach((span) => {
+        visit(span.expression);
+        recordLiteral(span.literal);
       });
+      return;
+    }
+    if (ts.isStringLiteralLike(node)) {
+      recordLiteral(node);
     }
     ts.forEachChild(node, visit);
   }
 
   visit(sourceFile);
   return tokens;
+}
+
+function focusViolations(file: string, path: string, source: string): string[] {
+  const allowedOccurrences = new Map<string, number>();
+
+  return sourceTokens(path, source)
+    .filter(({ token }) => ownsOrSuppressesFocusIndicator(token))
+    .filter(({ token, propertyName }) => {
+      const isCalendarProxy =
+        file === "calendar.tsx" &&
+        propertyName === "dropdown_root" &&
+        calendarProxyUtilities.has(token);
+      if (!isCalendarProxy) return true;
+
+      const occurrences = allowedOccurrences.get(token) ?? 0;
+      allowedOccurrences.set(token, occurrences + 1);
+      return occurrences >= 1;
+    })
+    .map(({ line, token }) => `${file}:${line} ${token}`);
 }
 
 describe("shadcn focus ownership guard", () => {
@@ -73,6 +142,15 @@ describe("shadcn focus ownership guard", () => {
     "outline-hidden",
     "has-focus:ring-[3px]",
     "group-data-[focused=true]/day:border-ring",
+    "group-focus:ring-2",
+    "group-focus-visible:ring-2",
+    "peer-focus:border-ring",
+    "peer-focus-visible:border-ring",
+    "in-focus:ring-2",
+    "sm:group-focus:ring-2",
+    "[&:focus-visible]:outline-2",
+    "focus-visible:!ring-[3px]",
+    "!outline-none",
   ])("recognizes forbidden focus utility %s", (utility) => {
     expect(ownsOrSuppressesFocusIndicator(utility)).toBe(true);
   });
@@ -87,15 +165,40 @@ describe("shadcn focus ownership guard", () => {
     expect(ownsOrSuppressesFocusIndicator(utility)).toBe(false);
   });
 
+  it("scans every static segment of an interpolated template literal", () => {
+    const source = `
+      const classes = \`group-focus:ring-2 sm:group-focus:ring-2 \${first} peer-focus-visible:border-ring focus-visible:!ring-[3px] \${second} [&:focus-visible]:outline-2\`;
+    `;
+
+    expect(focusViolations("fixture.ts", "fixture.ts", source)).toEqual([
+      "fixture.ts:2 group-focus:ring-2",
+      "fixture.ts:2 sm:group-focus:ring-2",
+      "fixture.ts:2 peer-focus-visible:border-ring",
+      "fixture.ts:2 focus-visible:!ring-[3px]",
+      "fixture.ts:2 [&:focus-visible]:outline-2",
+    ]);
+  });
+
+  it("allows each calendar dropdown proxy utility once and only in dropdown_root", () => {
+    const source = `
+      const classes = {
+        dropdown_root: cn("has-focus:border-ring has-focus:ring-ring/50 has-focus:ring-[3px] has-focus:border-ring"),
+        day: "has-focus:ring-ring/50",
+      };
+    `;
+
+    expect(focusViolations("calendar.tsx", "calendar.tsx", source)).toEqual([
+      "calendar.tsx:3 has-focus:border-ring",
+      "calendar.tsx:4 has-focus:ring-ring/50",
+    ]);
+  });
+
   it("keeps focus indication owned by the global rule", () => {
     const violations = productionSourceFiles(uiDirectory).flatMap((path) => {
       const source = readFileSync(path, "utf8");
       const file = relative(uiDirectory, path);
 
-      return sourceTokens(path, source)
-        .filter(({ token }) => ownsOrSuppressesFocusIndicator(token))
-        .filter(({ token }) => !calendarProxyAllowlist.has(`${file}:${token}`))
-        .map(({ line, token }) => `${file}:${line} ${token}`);
+      return focusViolations(file, path, source);
     });
 
     expect(
