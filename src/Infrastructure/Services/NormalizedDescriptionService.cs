@@ -1,3 +1,4 @@
+using System.Data;
 using System.Security.Cryptography;
 using System.Text;
 using Application.Interfaces.Services;
@@ -1659,6 +1660,65 @@ public class NormalizedDescriptionService(
 		public string Description { get; init; } = string.Empty;
 	}
 
+	public async Task<EmbeddingCoverage> GetEmbeddingCoverageAsync(CancellationToken cancellationToken)
+	{
+		using ApplicationDbContext context = contextFactory.CreateDbContext();
+		await using IDbContextTransaction? transaction = context.Database.IsRelational()
+			? await context.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken)
+			: null;
+		string fingerprint = OnnxEmbeddingService.EmbeddingSpaceFingerprint;
+
+		IQueryable<NormalizedDescriptionEntity> canonical = context.NormalizedDescriptions
+			.AsNoTracking()
+			.Where(entity =>
+				entity.Status != NormalizedDescriptionStatus.Rejected
+				&& entity.CanonicalName != string.Empty);
+		int canonicalTotal = await canonical.CountAsync(cancellationToken);
+		int canonicalReady = await canonical.CountAsync(
+			entity => entity.Embedding != null && entity.EmbeddingModelVersion == fingerprint,
+			cancellationToken);
+
+		IQueryable<ItemTemplateEntity> templates = context.ItemTemplates
+			.AsNoTracking()
+			.IgnoreQueryFilters()
+			.Where(entity => entity.DeletedAt == null && entity.Name.Length >= 2);
+		IQueryable<ReceiptItemEntity> receiptItems = context.ReceiptItems
+			.AsNoTracking()
+			.IgnoreAutoIncludes()
+			.IgnoreQueryFilters()
+			.Where(entity => entity.DeletedAt == null && entity.Description.Length >= 2);
+
+		int itemTotal = await templates.CountAsync(cancellationToken)
+			+ await receiptItems.CountAsync(cancellationToken);
+		int itemReady = await templates.CountAsync(
+			entity => context.ItemEmbeddings.Any(embedding =>
+				embedding.EntityType == "ItemTemplate"
+				&& embedding.EntityId == entity.Id
+				&& embedding.EntityText == entity.Name
+				&& embedding.ModelVersion == fingerprint),
+			cancellationToken)
+			+ await receiptItems.CountAsync(
+				entity => context.ItemEmbeddings.Any(embedding =>
+					embedding.EntityType == "ReceiptItem"
+					&& embedding.EntityId == entity.Id
+					&& embedding.EntityText == entity.Description
+					&& embedding.ModelVersion == fingerprint),
+				cancellationToken);
+
+		EmbeddingCoverage coverage = new(
+			fingerprint,
+			canonicalReady,
+			canonicalTotal,
+			itemReady,
+			itemTotal);
+		if (transaction is not null)
+		{
+			await transaction.CommitAsync(cancellationToken);
+		}
+
+		return coverage;
+	}
+
 	// Flat shape so the projection stays translatable — EF cannot project into a type with a
 	// non-default constructor's worth of nested objects. ToDetail() rebuilds the domain model.
 	private sealed class DetailRow
@@ -1740,7 +1800,7 @@ public class NormalizedDescriptionService(
 			CanonicalName = canonicalName,
 			Status = status,
 			Embedding = embedding,
-			EmbeddingModelVersion = embedding is null ? null : OnnxEmbeddingService.ModelName,
+			EmbeddingModelVersion = embedding is null ? null : OnnxEmbeddingService.EmbeddingSpaceFingerprint,
 			CreatedAt = DateTimeOffset.UtcNow,
 			NearestNeighbourId = nearestNeighbourId,
 			NearestNeighbourSimilarity = nearestNeighbourSimilarity,
@@ -1851,11 +1911,13 @@ public class NormalizedDescriptionService(
 			SELECT "Id" AS entity_id,
 			       (1.0 - ("Embedding" <=> {0}::vector)) AS similarity
 			FROM "matching"."NormalizedDescriptions"
-			WHERE "Id" = {1} AND "Embedding" IS NOT NULL
+			WHERE "Id" = {1}
+			  AND "Embedding" IS NOT NULL
+			  AND "EmbeddingModelVersion" = {2}
 			""";
 
 		AnnSearchRow? row = await context.Database
-			.SqlQueryRaw<AnnSearchRow>(sql, queryVector, targetId)
+			.SqlQueryRaw<AnnSearchRow>(sql, queryVector, targetId, OnnxEmbeddingService.EmbeddingSpaceFingerprint)
 			.FirstOrDefaultAsync(cancellationToken);
 
 		return row?.similarity;
@@ -1882,13 +1944,15 @@ public class NormalizedDescriptionService(
 			SELECT "Id" AS entity_id,
 			       (1.0 - ("Embedding" <=> {0}::vector)) AS similarity
 			FROM "matching"."NormalizedDescriptions"
-			WHERE "Embedding" IS NOT NULL AND "Status" <> 'Rejected'
+			WHERE "Embedding" IS NOT NULL
+			  AND "EmbeddingModelVersion" = {1}
+			  AND "Status" <> 'Rejected'
 			ORDER BY "Embedding" <=> {0}::vector
 			LIMIT 1
 			""";
 
 		AnnSearchRow? row = await context.Database
-			.SqlQueryRaw<AnnSearchRow>(sql, queryVector)
+			.SqlQueryRaw<AnnSearchRow>(sql, queryVector, OnnxEmbeddingService.EmbeddingSpaceFingerprint)
 			.FirstOrDefaultAsync(cancellationToken);
 
 		if (row is null)
@@ -1921,13 +1985,15 @@ public class NormalizedDescriptionService(
 			SELECT "Id" AS entity_id,
 			       (1.0 - ("Embedding" <=> {0}::vector)) AS similarity
 			FROM "matching"."NormalizedDescriptions"
-			WHERE "Embedding" IS NOT NULL AND "Status" <> 'Rejected'
+			WHERE "Embedding" IS NOT NULL
+			  AND "EmbeddingModelVersion" = {2}
+			  AND "Status" <> 'Rejected'
 			ORDER BY "Embedding" <=> {0}::vector
 			LIMIT {1}
 			""";
 
 		List<AnnSearchRow> rows = await context.Database
-			.SqlQueryRaw<AnnSearchRow>(sql, queryVector, topN)
+			.SqlQueryRaw<AnnSearchRow>(sql, queryVector, topN, OnnxEmbeddingService.EmbeddingSpaceFingerprint)
 			.ToListAsync(cancellationToken);
 
 		if (rows.Count == 0)

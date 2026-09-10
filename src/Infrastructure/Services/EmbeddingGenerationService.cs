@@ -1,5 +1,6 @@
 using Application.Interfaces.Services;
 using Application.Models.CommittedChanges;
+using Domain.NormalizedDescriptions;
 using Infrastructure.Entities.Core;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -23,6 +24,7 @@ public class EmbeddingGenerationService(
 	}
 
 	private const int BatchSize = 50;
+	private const string CanonicalEntityType = "NormalizedDescription";
 	private static readonly TimeSpan Interval = TimeSpan.FromSeconds(30);
 	private static readonly TimeSpan InitialDelay = TimeSpan.FromSeconds(10);
 
@@ -44,7 +46,7 @@ public class EmbeddingGenerationService(
 				int processed = await ProcessPendingEmbeddingsAsync(stoppingToken);
 				if (processed > 0)
 				{
-					logger.LogInformation("Generated embeddings for {Count} items", processed);
+					logger.LogInformation("Generated embeddings for {Count} semantic source rows", processed);
 				}
 			}
 			catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -101,15 +103,36 @@ public class EmbeddingGenerationService(
 			return 0;
 		}
 
-		string modelVersion = OnnxEmbeddingService.ModelName;
+		string modelVersion = OnnxEmbeddingService.EmbeddingSpaceFingerprint;
 		DateTimeOffset now = DateTimeOffset.UtcNow;
 
-		List<Guid> entityIds = accepted.Select(p => p.Item.EntityId).ToList();
+		List<GeneratedItem> canonical = accepted
+			.Where(generated => generated.Item.EntityType == CanonicalEntityType)
+			.ToList();
+		List<Guid> canonicalIds = canonical.Select(generated => generated.Item.EntityId).ToList();
+		Dictionary<Guid, NormalizedDescriptionEntity> canonicalMap = await context.NormalizedDescriptions
+			.Where(entity => canonicalIds.Contains(entity.Id))
+			.ToDictionaryAsync(entity => entity.Id, cancellationToken);
+		foreach (GeneratedItem generated in canonical)
+		{
+			if (!canonicalMap.TryGetValue(generated.Item.EntityId, out NormalizedDescriptionEntity? entity))
+			{
+				continue;
+			}
+
+			entity.Embedding = new Vector(generated.Embedding);
+			entity.EmbeddingModelVersion = modelVersion;
+		}
+
+		List<GeneratedItem> items = accepted
+			.Where(generated => generated.Item.EntityType != CanonicalEntityType)
+			.ToList();
+		List<Guid> entityIds = items.Select(p => p.Item.EntityId).ToList();
 		Dictionary<(string EntityType, Guid EntityId), ItemEmbeddingEntity> existingMap = await context.ItemEmbeddings
 			.Where(e => entityIds.Contains(e.EntityId))
 			.ToDictionaryAsync(e => (e.EntityType, e.EntityId), cancellationToken);
 
-		foreach (GeneratedItem generated in accepted)
+		foreach (GeneratedItem generated in items)
 		{
 			PendingItem item = generated.Item;
 
@@ -135,12 +158,23 @@ public class EmbeddingGenerationService(
 			}
 		}
 
+		// Vectors and their fingerprints are rebuildable projections, not user mutations.
+		// Auditing them would serialize 1,024 floats per row and make every model rollout grow
+		// the durable audit trail by the size of the entire corpus.
+		context.AuditingEnabled = false;
 		int changed = await context.SaveChangesAsync(cancellationToken);
 		if (transaction is not null)
 		{
 			await transaction.CommitAsync(cancellationToken);
 		}
-		if (changed > 0)
+		if (canonical.Count > 0 && changed > 0)
+		{
+			await committedChangePublisher.PublishAsync(new(
+				CommittedEntityType.NormalizedDescription,
+				CommittedChangeType.Updated,
+				SuppressToast: true));
+		}
+		if (items.Count > 0 && changed > 0)
 		{
 			await committedChangePublisher.PublishAsync(new(
 				CommittedEntityType.ItemEmbedding,
@@ -158,6 +192,17 @@ public class EmbeddingGenerationService(
 		if (!context.Database.IsNpgsql())
 		{
 			return;
+		}
+
+		Guid[] canonicalIds = pending.Where(item => item.EntityType == CanonicalEntityType)
+			.Select(item => item.EntityId).Distinct().Order().ToArray();
+		if (canonicalIds.Length > 0)
+		{
+			await context.Database.SqlQuery<Guid>($"""
+				SELECT "Id" AS "Value" FROM matching."NormalizedDescriptions"
+				WHERE "Id" = ANY ({canonicalIds})
+				ORDER BY "Id" FOR UPDATE
+				""").ToListAsync(cancellationToken);
 		}
 
 		Guid[] templateIds = pending.Where(item => item.EntityType == "ItemTemplate")
@@ -194,6 +239,12 @@ public class EmbeddingGenerationService(
 			throw new InvalidOperationException("Embedding provider returned a result count that does not match the requested batch.");
 		}
 
+		Guid[] canonicalIds = pending.Where(item => item.EntityType == CanonicalEntityType)
+			.Select(item => item.EntityId).Distinct().ToArray();
+		Dictionary<Guid, string> canonicalTexts = await context.NormalizedDescriptions.AsNoTracking()
+			.Where(item => canonicalIds.Contains(item.Id) && item.Status != NormalizedDescriptionStatus.Rejected)
+			.ToDictionaryAsync(item => item.Id, item => item.CanonicalName, cancellationToken);
+
 		Guid[] templateIds = pending.Where(item => item.EntityType == "ItemTemplate")
 			.Select(item => item.EntityId).Distinct().ToArray();
 		Dictionary<Guid, string> templateTexts = await context.ItemTemplates.IgnoreQueryFilters().AsNoTracking()
@@ -211,8 +262,12 @@ public class EmbeddingGenerationService(
 		for (int i = 0; i < pending.Count; i++)
 		{
 			PendingItem item = pending[i];
-			Dictionary<Guid, string> currentTexts = item.EntityType == "ItemTemplate"
-				? templateTexts : receiptItemTexts;
+			Dictionary<Guid, string> currentTexts = item.EntityType switch
+			{
+				CanonicalEntityType => canonicalTexts,
+				"ItemTemplate" => templateTexts,
+				_ => receiptItemTexts,
+			};
 			if (currentTexts.TryGetValue(item.EntityId, out string? currentText)
 				&& string.Equals(currentText, item.Text, StringComparison.Ordinal))
 			{
@@ -224,6 +279,28 @@ public class EmbeddingGenerationService(
 
 	private static async Task<List<PendingItem>> GetPendingItemsAsync(ApplicationDbContext context, CancellationToken cancellationToken)
 	{
+		string modelVersion = OnnxEmbeddingService.EmbeddingSpaceFingerprint;
+
+		// Canonical rows drive semantic classification, so restore them first. The model
+		// fingerprint comparison makes the queue resumable after either a restore or an
+		// embedding-space change without discarding durable names, statuses, or links.
+		List<PendingItem> pending = await context.NormalizedDescriptions
+			.AsNoTracking()
+			.Where(entity =>
+				entity.Status != NormalizedDescriptionStatus.Rejected
+				&& entity.CanonicalName != string.Empty
+				&& (entity.Embedding == null || entity.EmbeddingModelVersion != modelVersion))
+			.OrderBy(entity => entity.Id)
+			.Select(entity => new PendingItem(CanonicalEntityType, entity.Id, entity.CanonicalName))
+			.Take(BatchSize)
+			.ToListAsync(cancellationToken);
+
+		int remaining = BatchSize - pending.Count;
+		if (remaining <= 0)
+		{
+			return pending;
+		}
+
 		// Find ItemTemplates without embeddings or with stale text
 		List<PendingItem> templateItems = await context.ItemTemplates
 			.IgnoreQueryFilters()
@@ -236,16 +313,19 @@ public class EmbeddingGenerationService(
 			.SelectMany(
 				x => x.Embeddings.DefaultIfEmpty(),
 				(x, e) => new { x.Template, Embedding = e })
-			.Where(x => x.Embedding == null || x.Embedding.EntityText != x.Template.Name)
+			.Where(x => x.Embedding == null
+				|| x.Embedding.EntityText != x.Template.Name
+				|| x.Embedding.ModelVersion != modelVersion)
 			.OrderBy(x => x.Template.Id)
 			.Select(x => new PendingItem("ItemTemplate", x.Template.Id, x.Template.Name))
-			.Take(BatchSize)
+			.Take(remaining)
 			.ToListAsync(cancellationToken);
 
-		int remaining = BatchSize - templateItems.Count;
+		pending.AddRange(templateItems);
+		remaining = BatchSize - pending.Count;
 		if (remaining <= 0)
 		{
-			return templateItems;
+			return pending;
 		}
 
 		// Find ReceiptItems without embeddings or with stale text
@@ -260,14 +340,16 @@ public class EmbeddingGenerationService(
 			.SelectMany(
 				x => x.Embeddings.DefaultIfEmpty(),
 				(x, e) => new { x.ReceiptItem, Embedding = e })
-			.Where(x => x.Embedding == null || x.Embedding.EntityText != x.ReceiptItem.Description)
+			.Where(x => x.Embedding == null
+				|| x.Embedding.EntityText != x.ReceiptItem.Description
+				|| x.Embedding.ModelVersion != modelVersion)
 			.OrderBy(x => x.ReceiptItem.Id)
 			.Select(x => new PendingItem("ReceiptItem", x.ReceiptItem.Id, x.ReceiptItem.Description))
 			.Take(remaining)
 			.ToListAsync(cancellationToken);
 
-		templateItems.AddRange(receiptItems);
-		return templateItems;
+		pending.AddRange(receiptItems);
+		return pending;
 	}
 
 	private sealed record PendingItem(string EntityType, Guid EntityId, string Text);

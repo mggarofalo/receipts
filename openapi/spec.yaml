@@ -1484,6 +1484,27 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
+  /api/normalized-descriptions/embedding-coverage:
+    get:
+      operationId: GetNormalizedDescriptionEmbeddingCoverage
+      tags: [NormalizedDescriptions]
+      summary: Get semantic-vector rebuild coverage
+      description: |
+        Reports how many searchable canonical descriptions and source items carry vectors in
+        the current model/tokenizer/pooling embedding space. The background worker rebuilds
+        pending rows in bounded batches. Exact canonical-name matching remains available while
+        coverage is incomplete; ANN and hybrid search ignore obsolete fingerprints. Admin-only.
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmbeddingCoverageResponse"
+
   /api/normalized-descriptions/settings/preview:
     post:
       operationId: PreviewNormalizedDescriptionThresholdImpact
@@ -6681,6 +6702,36 @@ components:
           type: string
           format: date-time
           description: When the settings were last changed.
+
+    EmbeddingCoverageResponse:
+      type: object
+      required:
+        [fingerprint, canonicalReady, canonicalTotal, canonicalPending, itemReady, itemTotal, itemPending, isComplete]
+      properties:
+        fingerprint:
+          type: string
+          description: Full model, tokenizer, pooling, and normalization fingerprint admitted by semantic readers.
+        canonicalReady:
+          type: integer
+          format: int32
+        canonicalTotal:
+          type: integer
+          format: int32
+        canonicalPending:
+          type: integer
+          format: int32
+        itemReady:
+          type: integer
+          format: int32
+        itemTotal:
+          type: integer
+          format: int32
+        itemPending:
+          type: integer
+          format: int32
+        isComplete:
+          type: boolean
+          description: True only when every eligible canonical description and source item has a current vector.
 
     UpdateNormalizedDescriptionSettingsRequest:
       type: object
