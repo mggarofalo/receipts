@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using Application.Models;
+using Application.Models.Images;
 using Infrastructure.Entities.Core;
 using Infrastructure.Extensions;
 using Infrastructure.Interfaces.Repositories;
@@ -255,16 +256,41 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 		await context.SaveChangesAsync(cancellationToken);
 	}
 
-	public async Task UpdateImagePathsAsync(Guid id, string originalImagePath, string processedImagePath, CancellationToken cancellationToken)
+	public async Task<ReceiptImageSet?> ReplaceImagePathsAsync(
+		Guid id,
+		ReceiptImageSet imageSet,
+		CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
+		await using Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? transaction = context.Database.IsRelational()
+			? await context.Database.BeginTransactionAsync(cancellationToken)
+			: null;
+
+		if (context.Database.IsNpgsql())
+		{
+			await context.Database.SqlQuery<Guid>($"""
+				SELECT "Id" AS "Value" FROM receipts."Receipts"
+				WHERE "Id" = {id} FOR UPDATE
+				""").ToListAsync(cancellationToken);
+		}
+
 		ReceiptEntity entity = await context.Receipts.FindAsync([id], cancellationToken)
 			?? throw new KeyNotFoundException($"Receipt {id} not found.");
 
-		entity.OriginalImagePath = originalImagePath;
-		entity.ProcessedImagePath = processedImagePath;
+		ReceiptImageSet? previous = entity.OriginalImagePath is not null && entity.ProcessedImagePath is not null
+			? new(entity.OriginalImagePath, entity.ProcessedImagePath)
+			: null;
+
+		entity.OriginalImagePath = imageSet.OriginalImagePath;
+		entity.ProcessedImagePath = imageSet.ProcessedImagePath;
 
 		await context.SaveChangesAsync(cancellationToken);
+		if (transaction is not null)
+		{
+			await transaction.CommitAsync(cancellationToken);
+		}
+
+		return previous;
 	}
 
 	public async Task DeleteAsync(List<Guid> ids, CancellationToken cancellationToken)

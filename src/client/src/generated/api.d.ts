@@ -975,7 +975,7 @@ export interface paths {
         put?: never;
         /**
          * Upload an image for a receipt
-         * @description Accepts a JPEG or PNG image, saves the original, runs preprocessing (grayscale, adaptive threshold, deskew), and returns both image paths.
+         * @description Accepts a JPEG or PNG image, runs preprocessing (grayscale, adaptive threshold, deskew), atomically publishes the original and processed variants as one immutable set, and returns both image paths.
          */
         post: operations["UploadReceiptImage"];
         delete?: never;
