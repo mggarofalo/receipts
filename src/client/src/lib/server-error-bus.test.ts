@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { findStorageMethodOwner } from "@/test/storage-spy";
 import {
   addServerErrorListener,
   notifyServerError,
@@ -84,23 +85,25 @@ describe("server-error-bus", () => {
   describe("storage failures", () => {
     it("tolerates getItem throwing", () => {
       const spy = vi
-        .spyOn(window.sessionStorage.__proto__, "getItem")
+        .spyOn(findStorageMethodOwner(window.sessionStorage, "getItem"), "getItem")
         .mockImplementation(() => {
           throw new Error("denied");
         });
       expect(hasShownServerErrorPage()).toBe(false);
       expect(consumeLoginFlash()).toBeNull();
+      expect(spy).toHaveBeenCalled();
       spy.mockRestore();
     });
 
     it("tolerates setItem throwing", () => {
       const spy = vi
-        .spyOn(window.sessionStorage.__proto__, "setItem")
+        .spyOn(findStorageMethodOwner(window.sessionStorage, "setItem"), "setItem")
         .mockImplementation(() => {
           throw new Error("denied");
         });
       expect(() => markServerErrorPageShown()).not.toThrow();
       expect(() => setLoginFlash("x")).not.toThrow();
+      expect(spy).toHaveBeenCalled();
       spy.mockRestore();
     });
   });

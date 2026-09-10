@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Routes, Route, useLocation } from "react-router";
+import { findStorageMethodOwner } from "@/test/storage-spy";
 import {
   useLastRoutePersistence,
   isTrackableRoute,
@@ -101,11 +102,12 @@ describe("useLastRoutePersistence", () => {
 
   it("ignores localStorage read errors", () => {
     const spy = vi
-      .spyOn(window.localStorage.__proto__, "getItem")
+      .spyOn(findStorageMethodOwner(window.localStorage, "getItem"), "getItem")
       .mockImplementation(() => {
         throw new Error("denied");
       });
     expect(() => harness("/")).not.toThrow();
+    expect(spy).toHaveBeenCalled();
     spy.mockRestore();
   });
 });

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
+import { findStorageMethodOwner } from "@/test/storage-spy";
 import { usePersistedFilters } from "./usePersistedFilters";
 
 const KEY = "receipts:filters:receipts";
@@ -99,7 +100,7 @@ describe("usePersistedFilters", () => {
 
   it("does not throw when localStorage.setItem rejects", () => {
     const spy = vi
-      .spyOn(window.localStorage.__proto__, "setItem")
+      .spyOn(findStorageMethodOwner(window.localStorage, "setItem"), "setItem")
       .mockImplementation(() => {
         throw new Error("denied");
       });
@@ -109,6 +110,7 @@ describe("usePersistedFilters", () => {
         result.current[1]({ x: 1 });
       });
     }).not.toThrow();
+    expect(spy).toHaveBeenCalled();
     spy.mockRestore();
   });
 });

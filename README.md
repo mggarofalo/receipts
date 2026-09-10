@@ -110,13 +110,14 @@ For the full breakdown — layer responsibilities, the description-normalization
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
 - [Aspire CLI](https://aspire.dev/get-started/install-cli/) — `dotnet tool install --global Aspire.Cli`
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) — Aspire provisions PostgreSQL as a container
-- [Node.js](https://nodejs.org) — for the React client and OpenAPI tooling
+- [Node.js 24.21.0](https://nodejs.org) — exact runtime pinned in `.nvmrc`
 
 **Run it**
 
 ```bash
 git clone https://github.com/mggarofalo/Receipts.git
 cd Receipts
+nvm install 24.21.0 && nvm use 24.21.0
 npm ci
 aspire run --project src/Receipts.AppHost/Receipts.AppHost.csproj
 ```

@@ -1,5 +1,5 @@
 # Stage 1: Build React SPA
-FROM node:22-alpine AS client-build
+FROM node:24.21.0-alpine AS client-build
 WORKDIR /app/client
 
 # Copy only files needed for npm install first (layer caching)
