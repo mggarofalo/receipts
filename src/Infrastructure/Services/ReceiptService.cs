@@ -1,5 +1,6 @@
 using Application.Interfaces.Services;
 using Application.Models;
+using Application.Models.CommittedChanges;
 using Application.Models.Images;
 using Domain.Core;
 using Infrastructure.Entities.Core;
@@ -8,8 +9,14 @@ using Infrastructure.Mapping;
 
 namespace Infrastructure.Services;
 
-public class ReceiptService(IReceiptRepository repository, ReceiptMapper mapper) : IReceiptService
+public class ReceiptService(
+	IReceiptRepository repository,
+	ReceiptMapper mapper,
+	ICommittedChangePublisher? committedChangePublisher = null) : IReceiptService
 {
+	private readonly ICommittedChangePublisher _committedChangePublisher =
+		committedChangePublisher ?? new NullCommittedChangePublisher();
+
 	public async Task<List<Receipt>> CreateAsync(List<Receipt> models, CancellationToken cancellationToken)
 	{
 		List<ReceiptEntity> receiptEntities = [.. models.Select(mapper.ToEntity)];
@@ -19,7 +26,11 @@ public class ReceiptService(IReceiptRepository repository, ReceiptMapper mapper)
 
 	public async Task DeleteAsync(List<Guid> ids, CancellationToken cancellationToken)
 	{
-		await repository.DeleteAsync(ids, cancellationToken);
+		CascadeMutationResult result = await repository.DeleteAsync(ids, cancellationToken);
+		if (result.YnabSyncRecordsChanged > 0)
+		{
+			await PublishYnabSyncRecordCollectionChangeAsync(CommittedChangeType.Deleted);
+		}
 	}
 
 	public async Task<bool> ExistsAsync(Guid id, CancellationToken cancellationToken)
@@ -76,11 +87,22 @@ public class ReceiptService(IReceiptRepository repository, ReceiptMapper mapper)
 
 	public async Task<bool> RestoreAsync(Guid id, CancellationToken cancellationToken)
 	{
-		return await repository.RestoreAsync(id, cancellationToken);
+		CascadeMutationResult result = await repository.RestoreAsync(id, cancellationToken);
+		if (result.YnabSyncRecordsChanged > 0)
+		{
+			await PublishYnabSyncRecordCollectionChangeAsync(CommittedChangeType.Updated);
+		}
+		return result.EntityChanged;
 	}
 
 	public async Task<List<string>> GetDistinctLocationsAsync(string? query, int limit, CancellationToken cancellationToken)
 	{
 		return await repository.GetDistinctLocationsAsync(query, limit, cancellationToken);
 	}
+
+	private Task PublishYnabSyncRecordCollectionChangeAsync(CommittedChangeType changeType)
+		=> _committedChangePublisher.PublishAsync(new CommittedEntityChange(
+			CommittedEntityType.YnabSyncRecord,
+			changeType,
+			SuppressToast: true));
 }

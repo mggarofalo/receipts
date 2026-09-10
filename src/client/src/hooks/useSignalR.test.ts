@@ -59,7 +59,7 @@ vi.mock("@/lib/signalr-connection", () => ({
 }));
 
 import { useSignalR } from "./useSignalR";
-import { QueryClient, useQueryClient } from "@tanstack/react-query";
+import { QueryClient, QueryObserver, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { bufferToast } from "@/lib/signalr-toast-buffer";
 import { act } from "@testing-library/react";
@@ -380,6 +380,7 @@ describe("useSignalR", () => {
     it.each([
       ["ynab-mapping", ["ynab", "category-mappings"]],
       ["ynab-sync-record", ["ynab", "receipt-sync-statuses"]],
+      ["ynab-sync-record", ["ynab", "connection-status"]],
       ["ynab-sync-event", ["ynab", "events"]],
     ] as const)(
       "repairs %s projections before presenting a remote event",
@@ -409,6 +410,35 @@ describe("useSignalR", () => {
         expect(bufferToast).toHaveBeenCalledTimes(1);
       },
     );
+
+    it("remote sync cascade refetches an actively rendered connection summary", async () => {
+      const queryKey = ["ynab", "connection-status"] as const;
+      eventClient.setQueryData(queryKey, { lastSuccessfulSyncUtc: "old" });
+      const observer = new QueryObserver(eventClient, {
+        queryKey,
+        queryFn: vi.fn().mockResolvedValue({ lastSuccessfulSyncUtc: "new" }),
+        staleTime: Infinity,
+      });
+      const unsubscribe = observer.subscribe(() => {});
+      await renderEnabled();
+      const handler = getOnHandler("EntityChanged")!;
+
+      await act(async () => {
+        await handler({
+          entityType: "ynab-sync-record",
+          changeType: "deleted",
+          count: 1,
+          userId: "other-user-id",
+          authMethod: "jwt",
+          connectionId: "other-conn",
+        });
+      });
+
+      await waitFor(() =>
+        expect(eventClient.getQueryData(queryKey)).toEqual({ lastSuccessfulSyncUtc: "new" }),
+      );
+      unsubscribe();
+    });
 
     it("repairs the complete YNAB root for a budget event", async () => {
       const mockQueryClient = vi.mocked(useQueryClient)();

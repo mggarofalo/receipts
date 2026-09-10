@@ -1,5 +1,6 @@
 using Application.Interfaces.Services;
 using Application.Models;
+using Application.Models.CommittedChanges;
 using Domain.Aggregates;
 using Domain.Core;
 using Infrastructure.Entities.Core;
@@ -17,8 +18,12 @@ public class TransactionService(
 	IDbContextFactory<ApplicationDbContext> contextFactory,
 	ReceiptMapper receiptMapper,
 	ReceiptItemMapper receiptItemMapper,
-	AdjustmentMapper adjustmentMapper) : ITransactionService
+	AdjustmentMapper adjustmentMapper,
+	ICommittedChangePublisher? committedChangePublisher = null) : ITransactionService
 {
+	private readonly ICommittedChangePublisher _committedChangePublisher =
+		committedChangePublisher ?? new NullCommittedChangePublisher();
+
 	public async Task<List<Transaction>> CreateAsync(List<Transaction> models, Guid receiptId, CancellationToken cancellationToken)
 	{
 		List<TransactionEntity> transactionEntities = [.. models.Select(mapper.ToEntity)];
@@ -35,7 +40,11 @@ public class TransactionService(
 
 	public async Task DeleteAsync(List<Guid> ids, CancellationToken cancellationToken)
 	{
-		await repository.DeleteAsync(ids, cancellationToken);
+		CascadeMutationResult result = await repository.DeleteAsync(ids, cancellationToken);
+		if (result.YnabSyncRecordsChanged > 0)
+		{
+			await PublishYnabSyncRecordCollectionChangeAsync(CommittedChangeType.Deleted);
+		}
 	}
 
 	public async Task<bool> ExistsAsync(Guid id, CancellationToken cancellationToken)
@@ -107,8 +116,19 @@ public class TransactionService(
 
 	public async Task<bool> RestoreAsync(Guid id, CancellationToken cancellationToken)
 	{
-		return await repository.RestoreAsync(id, cancellationToken);
+		CascadeMutationResult result = await repository.RestoreAsync(id, cancellationToken);
+		if (result.YnabSyncRecordsChanged > 0)
+		{
+			await PublishYnabSyncRecordCollectionChangeAsync(CommittedChangeType.Updated);
+		}
+		return result.EntityChanged;
 	}
+
+	private Task PublishYnabSyncRecordCollectionChangeAsync(CommittedChangeType changeType)
+		=> _committedChangePublisher.PublishAsync(new CommittedEntityChange(
+			CommittedEntityType.YnabSyncRecord,
+			changeType,
+			SuppressToast: true));
 
 	public async Task<List<Transaction>> CreateWithBalanceValidationAsync(
 		List<Transaction> models,

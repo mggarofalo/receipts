@@ -1,5 +1,5 @@
 import { localErrorPolicy, toastErrorPolicy } from "@/lib/request-error-policy";
-import { invalidateDomainChange, queryKeys } from "@/lib/query-invalidation";
+import { invalidateDomainChange, queryKeys, repairDomainChange } from "@/lib/query-invalidation";
 import { useMemo } from "react";
 import { useStableQuery } from "@/hooks/useStableQuery";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -7,9 +7,19 @@ import { useSessionMutation } from "@/hooks/useSessionMutation";
 import client from "@/lib/api-client";
 import { toast } from "sonner";
 import type { components } from "@/generated/api";
+import { getSessionVersion } from "@/lib/auth";
 
 type CreateCompleteReceiptRequest =
   components["schemas"]["CreateCompleteReceiptRequest"];
+
+function repairYnabSyncRecordChange(queryClient: ReturnType<typeof useQueryClient>) {
+  const sessionVersion = getSessionVersion();
+  return repairDomainChange(
+    queryClient,
+    "ynab-sync-record",
+    () => getSessionVersion() === sessionVersion,
+  );
+}
 
 export function useReceipts(
   offset = 0,
@@ -159,6 +169,7 @@ export function useDeleteReceipts() {
     },
     onSuccess: () => {
       toast.success("Receipt(s) deleted");
+      return repairYnabSyncRecordChange(queryClient);
     },
   });
 }
@@ -225,6 +236,7 @@ export function useRestoreReceipt() {
     onSuccess: () => {
       invalidateDomainChange(queryClient, "receipt");
       toast.success("Receipt restored");
+      return repairYnabSyncRecordChange(queryClient);
     },
   });
 }
