@@ -12,20 +12,6 @@ import {
   repairDomainChanges,
   type DomainChange,
 } from "@/lib/query-invalidation";
-// A few unrelated schemas still use narrow local projections where the
-// generated graph exceeds TypeScript's type-resolution depth.
-
-type YnabConnectionStatusResponse = {
-  isConfigured: boolean;
-  isConnected: boolean;
-  lastSuccessfulSyncUtc?: string | null;
-};
-
-type StaleMappingsResponse = {
-  staleAccountMappingCount: number;
-  staleCategoryMappingCount: number;
-  currentBudgetId?: string | null;
-};
 
 const budgetDependentYnabQueryKeys = [
   ["ynab", "accounts"],
@@ -71,11 +57,11 @@ export function useYnabConnectionStatus() {
     queryFn: async ({ signal }) => {
       try {
         const { data, error } = await client.GET(
-          "/api/ynab/connection-status" as never,
-          { ...localErrorPolicy.request, signal } as never,
+          "/api/ynab/connection-status",
+          { ...localErrorPolicy.request, signal },
         );
         if (error) throw error;
-        return data as unknown as YnabConnectionStatusResponse;
+        return data;
       } finally {
         // This read appends a validation event before its final status lookup.
         // Repair its projections even when SignalR is unavailable or that later
@@ -446,12 +432,12 @@ export function useStaleMappings(enabled = true, budgetId?: string | null) {
       ? ["ynab", "stale-mappings", budgetId]
       : ["ynab", "stale-mappings"],
     queryFn: async ({ signal }) => {
-      const { data, error } = await client.GET(
-        "/api/ynab/stale-mappings" as never,
-        { ...localErrorPolicy.request, signal } as never,
-      );
+      const { data, error } = await client.GET("/api/ynab/stale-mappings", {
+        ...localErrorPolicy.request,
+        signal,
+      });
       if (error) throw error;
-      return data as unknown as StaleMappingsResponse;
+      return data;
     },
     enabled,
   });
@@ -469,22 +455,17 @@ export function useStaleMappings(enabled = true, budgetId?: string | null) {
   );
 }
 
-type ClearStaleMappingsResponse = {
-  deletedAccountMappings: number;
-  deletedCategoryMappings: number;
-};
-
 export function useClearStaleMappings() {
   const repairOnSettled = useYnabSettlementRepair(ynabMappingChanges);
   return useSessionMutation({
     ...toastErrorPolicy.mutation,
     mutationFn: async () => {
       const { data, error } = await client.DELETE(
-        "/api/ynab/stale-mappings" as never,
-        toastErrorPolicy.request as never,
+        "/api/ynab/stale-mappings",
+        toastErrorPolicy.request,
       );
       if (error) throw error;
-      return data as unknown as ClearStaleMappingsResponse;
+      return data;
     },
     onSuccess: (data) => {
       const total =
@@ -546,27 +527,6 @@ function showMemoSyncResultsToast(results: YnabMemoSyncResult[]): void {
     toast.info("No transactions were synced");
   }
 }
-type PushedTransactionInfo = {
-  localTransactionId: string;
-  ynabTransactionId: string;
-  milliunits: number;
-  subTransactionCount: number;
-};
-
-type PushYnabTransactionsResponse = {
-  success: boolean;
-  pushedTransactions: PushedTransactionInfo[];
-  unmappedCategories?: null | string[];
-  error?: null | string;
-};
-
-type BulkPushYnabTransactionsResponse = {
-  results: {
-    receiptId: string;
-    result: PushYnabTransactionsResponse;
-  }[];
-};
-
 export function useSyncYnabMemos() {
   const repairOnSettled = useYnabSettlementRepair(ynabSyncChanges);
   return useSessionMutation({
@@ -665,28 +625,11 @@ export function useMemoSyncSummary(results: YnabMemoSyncResult[] | undefined) {
   }, [results]);
 }
 
-export type SplitLineDto = {
-  ynabCategoryId: string;
-  categoryName: string;
-  milliunits: number;
-};
-
-export type TransactionSplitComparisonDto = {
-  localTransactionId: string;
-  accountName: string;
-  totalMilliunits: number;
-  expected: SplitLineDto[];
-  actual?: SplitLineDto[] | null;
-  actualFetchError?: string | null;
-  matches?: boolean | null;
-};
-
-export type ReceiptYnabSplitComparisonResponse = {
-  canComputeExpected: boolean;
-  expectedUnavailableReason?: string | null;
-  unmappedCategories: string[];
-  transactionComparisons: TransactionSplitComparisonDto[];
-};
+export type SplitLineDto = components["schemas"]["SplitLine"];
+export type TransactionSplitComparisonDto =
+  components["schemas"]["TransactionSplitComparison"];
+export type ReceiptYnabSplitComparisonResponse =
+  components["schemas"]["ReceiptYnabSplitComparisonResponse"];
 
 /**
  * Fetches the YNAB split comparison for a receipt.
@@ -703,15 +646,17 @@ export function useYnabSplitComparison(
     ...localErrorPolicy.query,
     queryKey: ["ynab", "split-comparison", receiptId],
     queryFn: async (): Promise<ReceiptYnabSplitComparisonResponse> => {
+      if (!receiptId) throw new Error("Receipt ID is required");
       const { data, error } = await client.GET(
-        "/api/ynab/receipts/{receiptId}/split-comparison" as never,
+        "/api/ynab/receipts/{receiptId}/split-comparison",
         {
           ...localErrorPolicy.request,
           params: { path: { receiptId } },
-        } as never,
+        },
       );
       if (error) throw error;
-      return data as unknown as ReceiptYnabSplitComparisonResponse;
+      if (!data) throw new Error("YNAB split comparison response was empty");
+      return data;
     },
     enabled: !!receiptId && enabled,
     retry: false,
@@ -728,7 +673,8 @@ export function usePushYnabTransactions() {
         body: { receiptId },
       });
       if (error) throw error;
-      return data as unknown as PushYnabTransactionsResponse;
+      if (!data) throw new Error("YNAB push response was empty");
+      return data;
     },
     onSuccess: (data) => {
       if (data?.success) {
@@ -753,7 +699,8 @@ export function useBulkPushYnabTransactions() {
         { ...localErrorPolicy.request, body: { receiptIds } },
       );
       if (error) throw error;
-      return data as unknown as BulkPushYnabTransactionsResponse;
+      if (!data) throw new Error("YNAB bulk push response was empty");
+      return data;
     },
     onSuccess: (data) => {
       const results = data?.results ?? [];
@@ -909,25 +856,17 @@ export function useYnabSyncStatus(transactionId: string | null) {
   });
 }
 
-type YnabRateLimitStatusResponse = {
-  remainingRequests: number;
-  maxRequests: number;
-  requestsUsed: number;
-  windowResetAt?: null | string;
-  oldestRequestAt?: null | string;
-};
-
 export function useYnabRateLimitStatus(enabled = true) {
   const query = useQuery({
     ...localErrorPolicy.query,
     queryKey: ["ynab", "rate-limit-status"],
     queryFn: async ({ signal }) => {
-      const { data, error } = await client.GET(
-        "/api/ynab/rate-limit-status" as never,
-        { ...localErrorPolicy.request, signal } as never,
-      );
+      const { data, error } = await client.GET("/api/ynab/rate-limit-status", {
+        ...localErrorPolicy.request,
+        signal,
+      });
       if (error) throw error;
-      return data as unknown as YnabRateLimitStatusResponse;
+      return data;
     },
     enabled,
     refetchInterval: 30_000,
