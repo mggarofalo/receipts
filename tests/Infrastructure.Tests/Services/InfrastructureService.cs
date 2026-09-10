@@ -330,6 +330,9 @@ public class InfrastructureServiceTests
 
 		// Assert
 		services.Should().NotContain(d => d.ServiceType == typeof(IHostedService));
+		services.Should().ContainSingle(d =>
+			d.ServiceType == typeof(IReceiptImageReconciliationLock)
+			&& d.ImplementationType == typeof(ReceiptImageReconciliationLockService));
 	}
 
 	[Fact]
@@ -355,6 +358,7 @@ public class InfrastructureServiceTests
 		hostedServiceTypes.Should().Contain(typeof(EmbeddingGenerationService));
 		hostedServiceTypes.Should().Contain(typeof(AuthAuditCleanupService));
 		hostedServiceTypes.Should().Contain(typeof(NormalizedDescriptionResolutionService));
+		hostedServiceTypes.Should().Contain(typeof(ReceiptImageCleanupService));
 	}
 
 	[Fact]

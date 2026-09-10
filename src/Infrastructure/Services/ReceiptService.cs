@@ -1,5 +1,6 @@
 using Application.Interfaces.Services;
 using Application.Models;
+using Application.Models.Images;
 using Domain.Core;
 using Infrastructure.Entities.Core;
 using Infrastructure.Interfaces.Repositories;
@@ -65,9 +66,12 @@ public class ReceiptService(IReceiptRepository repository, ReceiptMapper mapper)
 		await repository.UpdateAsync(receiptEntities, cancellationToken);
 	}
 
-	public async Task UpdateImagePathsAsync(Guid receiptId, string originalImagePath, string processedImagePath, CancellationToken cancellationToken)
+	public async Task<ReceiptImageSet?> ReplaceImagePathsAsync(
+		Guid receiptId,
+		ReceiptImageSet imageSet,
+		CancellationToken cancellationToken)
 	{
-		await repository.UpdateImagePathsAsync(receiptId, originalImagePath, processedImagePath, cancellationToken);
+		return await repository.ReplaceImagePathsAsync(receiptId, imageSet, cancellationToken);
 	}
 
 	public async Task<bool> RestoreAsync(Guid id, CancellationToken cancellationToken)

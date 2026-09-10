@@ -1,13 +1,35 @@
 using Application.Interfaces.Services;
+using Application.Models.Images;
 using Mediator;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Application.Commands.Receipt.UploadImage;
 
 public class UploadReceiptImageCommandHandler(
 	IReceiptService receiptService,
 	IImageStorageService imageStorageService,
-	IImageProcessingService imageProcessingService) : IRequestHandler<UploadReceiptImageCommand, UploadReceiptImageResult>
+	IImageProcessingService imageProcessingService,
+	IReceiptImageReconciliationLock reconciliationLock,
+	ILogger<UploadReceiptImageCommandHandler> logger) : IRequestHandler<UploadReceiptImageCommand, UploadReceiptImageResult>
 {
+	public UploadReceiptImageCommandHandler(
+		IReceiptService receiptService,
+		IImageStorageService imageStorageService,
+		IImageProcessingService imageProcessingService,
+		ILogger<UploadReceiptImageCommandHandler> logger)
+		: this(receiptService, imageStorageService, imageProcessingService, NoopReconciliationLock.Instance, logger)
+	{
+	}
+
+	public UploadReceiptImageCommandHandler(
+		IReceiptService receiptService,
+		IImageStorageService imageStorageService,
+		IImageProcessingService imageProcessingService)
+		: this(receiptService, imageStorageService, imageProcessingService, NoopReconciliationLock.Instance, NullLogger<UploadReceiptImageCommandHandler>.Instance)
+	{
+	}
+
 	public async ValueTask<UploadReceiptImageResult> Handle(UploadReceiptImageCommand request, CancellationToken cancellationToken)
 	{
 		bool exists = await receiptService.ExistsAsync(request.ReceiptId, cancellationToken);
@@ -27,19 +49,51 @@ public class UploadReceiptImageCommandHandler(
 		// preserved when a new upload is rejected.
 		ImageProcessingResult processed = await imageProcessingService.PreprocessAsync(
 			request.ImageBytes, request.ContentType, cancellationToken);
+		await using IAsyncDisposable reconciliationLease =
+			await reconciliationLock.AcquireAsync(cancellationToken);
 
-		// Validation passed — only now does anything reach disk. Both files are written from
-		// validated bytes, so there is no partially-written invalid state to clean up, and the
-		// receipt's pre-existing images are never deleted on a rejected upload.
-		string originalPath = await imageStorageService.SaveOriginalAsync(
-			request.ReceiptId, request.ImageBytes, request.FileExtension, cancellationToken);
+		// Publish both variants as one immutable directory version. The database switches its
+		// pair of references only after that directory is complete, so a processed-file or DB
+		// failure cannot expose a mixed set or damage the prior version.
+		ReceiptImageSet published = await imageStorageService.SaveImageSetAsync(
+			request.ReceiptId,
+			request.ImageBytes,
+			request.FileExtension,
+			processed.ProcessedBytes,
+			cancellationToken);
 
-		string processedPath = await imageStorageService.SaveProcessedAsync(
-			request.ReceiptId, processed.ProcessedBytes, cancellationToken);
+		try
+		{
+			await receiptService.ReplaceImagePathsAsync(
+				request.ReceiptId, published, cancellationToken);
+		}
+		catch (Exception ex)
+		{
+			// The immutable set is complete but not referenced. Do not guess whether the DB
+			// commit happened; the grace-period sweep reconciles storage from durable paths.
+			logger.LogWarning(ex, "Published an unreferenced image set for receipt {ReceiptId}; cleanup will retry", request.ReceiptId);
+			throw;
+		}
 
-		await receiptService.UpdateImagePathsAsync(
-			request.ReceiptId, originalPath, processedPath, cancellationToken);
+		// Deliberately defer deletion of the previous version to the reconciler. A backup
+		// import can legitimately restore an older path; deleting here after the database
+		// transaction commits would race that import and could remove its newly-current set.
 
-		return new UploadReceiptImageResult(originalPath, processedPath);
+		return new UploadReceiptImageResult(published.OriginalImagePath, published.ProcessedImagePath);
+	}
+
+	private sealed class NoopReconciliationLock : IReceiptImageReconciliationLock
+	{
+		public static readonly NoopReconciliationLock Instance = new();
+
+		public Task<IAsyncDisposable> AcquireAsync(CancellationToken cancellationToken)
+			=> Task.FromResult<IAsyncDisposable>(NoopLease.Instance);
+	}
+
+	private sealed class NoopLease : IAsyncDisposable
+	{
+		public static readonly NoopLease Instance = new();
+
+		public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 	}
 }

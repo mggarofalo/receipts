@@ -130,6 +130,7 @@ public static class InfrastructureService
 
 		services
 			.AddScoped<IReceiptService, ReceiptService>()
+			.AddScoped<IReceiptImageReconciliationLock, ReceiptImageReconciliationLockService>()
 			.AddScoped<IAccountService, AccountService>()
 			.AddScoped<IAccountMergeService, AccountMergeService>()
 			.AddScoped<ICardService, CardService>()
@@ -277,6 +278,7 @@ public static class InfrastructureService
 		services.AddHostedService<EmbeddingModelProvisioningService>();
 		services.AddHostedService<EmbeddingGenerationService>();
 		services.AddHostedService<AuthAuditCleanupService>();
+		services.AddHostedService<ReceiptImageCleanupService>();
 
 		// Resolver for RECEIPTS-578 — scans unresolved ReceiptItems, groups by description,
 		// and links each to a NormalizedDescription via NormalizedDescriptionService.

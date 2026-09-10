@@ -58,9 +58,12 @@ public partial class BackupImportService(
 	{
 		ValidateSqliteFile(sqlitePath);
 
+		await using IAsyncDisposable reconciliationLease =
+			await ReceiptImageReconciliationLock.AcquireLocalAsync(cancellationToken);
 		await using ApplicationDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
 		await using Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction =
 			await context.Database.BeginTransactionAsync(cancellationToken);
+		await ReceiptImageReconciliationLock.AcquireDatabaseAsync(context, cancellationToken);
 
 		try
 		{

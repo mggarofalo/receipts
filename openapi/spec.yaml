@@ -2264,8 +2264,9 @@ paths:
       tags: [Receipts]
       summary: Upload an image for a receipt
       description: >
-        Accepts a JPEG or PNG image, saves the original, runs preprocessing
-        (grayscale, adaptive threshold, deskew), and returns both image paths.
+        Accepts a JPEG or PNG image, runs preprocessing (grayscale, adaptive threshold,
+        deskew), atomically publishes the original and processed variants as one immutable
+        set, and returns both image paths.
       security:
         - BearerAuth: []
         - ApiKey: []
