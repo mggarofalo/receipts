@@ -18,6 +18,7 @@ namespace Infrastructure.IntegrationTests.Services;
 // connection can catch that regression.
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
 public class ReportServiceItemCostOverTimeTests(PostgresFixture fixture)
 {
 	[Fact]

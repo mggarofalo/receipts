@@ -121,6 +121,31 @@ jobs:
           header: coverage-backend
           path: TestResults/merged/SummaryGithub.md
 
+  postgres-test:
+    name: PostgreSQL Persistence
+    needs: [pr-title]
+    if: ${{ !cancelled() && (needs.pr-title.result == 'success' || needs.pr-title.result == 'skipped') && github.event.action != 'labeled' && github.event.action != 'unlabeled' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props', '**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Run PostgreSQL persistence tests
+        run: dotnet run scripts/run-prerequisite-tests.cs -- postgres
+
   frontend-test:
     name: Frontend Test (Shard ${{ matrix.shard }}/2)
     needs: [pr-title]

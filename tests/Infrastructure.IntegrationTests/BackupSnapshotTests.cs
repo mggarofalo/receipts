@@ -15,6 +15,7 @@ namespace Infrastructure.IntegrationTests;
 // Class-local fixture: backup reads every table, so unrelated integration-test data
 // must not become part of this test's source database.
 [Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
 public class BackupSnapshotTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	[Theory]

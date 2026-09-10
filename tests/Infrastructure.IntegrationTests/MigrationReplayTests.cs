@@ -11,6 +11,7 @@ namespace Infrastructure.IntegrationTests;
 // the (modified) migration at startup.
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
 public class MigrationReplayTests(PostgresFixture fixture)
 {
 	[Fact]

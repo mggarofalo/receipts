@@ -22,6 +22,7 @@ using Moq;
 namespace Infrastructure.IntegrationTests;
 
 [Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
 public class BackupImportNotificationHttpTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	[Theory]

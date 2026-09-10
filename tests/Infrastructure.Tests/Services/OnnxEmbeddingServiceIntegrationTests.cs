@@ -6,6 +6,7 @@ using Infrastructure.Tests.Fixtures;
 namespace Infrastructure.Tests.Services;
 
 [Trait("Category", "Integration")]
+[Trait("Prerequisite", "Model")]
 public class OnnxEmbeddingServiceIntegrationTests : IClassFixture<OnnxEmbeddingServiceFixture>
 {
 	private readonly OnnxEmbeddingService _service;

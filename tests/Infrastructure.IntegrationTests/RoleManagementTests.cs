@@ -31,6 +31,7 @@ namespace Infrastructure.IntegrationTests;
 /// and both production controllers participate; only audit delivery is stubbed.
 /// </summary>
 [Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
 public class RoleManagementTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>, IAsyncLifetime
 {
 	private WebApplication _app = null!;

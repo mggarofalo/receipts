@@ -18,6 +18,7 @@ namespace Infrastructure.IntegrationTests.Repositories;
 // would silently reintroduce the mismatch this filter exists to prevent.
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
 public class ReceiptRepositoryLocationFilterTests(PostgresFixture fixture)
 {
 	[Fact]

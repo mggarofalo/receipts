@@ -21,6 +21,7 @@ using SampleData.Entities;
 namespace Infrastructure.IntegrationTests.Services;
 
 [Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
 public partial class TemplateNormalizationOwnershipTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	[Theory]

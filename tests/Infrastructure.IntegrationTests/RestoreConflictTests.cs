@@ -16,6 +16,7 @@ namespace Infrastructure.IntegrationTests;
 // against real PostgreSQL, where the filtered unique index is actually enforced.
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
 public class RestoreConflictTests(PostgresFixture fixture)
 {
 	private sealed class FixtureContextFactory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>

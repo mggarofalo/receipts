@@ -106,8 +106,8 @@ those tables. Roll back code and database together.
   raw SQL against the reorganized schema: **37 of 37 pass** (including `MigrationSafetyTests`,
   which exercises the symmetric `Down`). The previously-failing `PurgeTrashServiceTests` was a
   pre-existing, unrelated FK-seed bug, fixed under RECEIPTS-747.
-- CI does **not** run integration tests (`dotnet test --filter "Category!=Integration"`), so this
-  migration's schema move is validated by the local Testcontainers run above, not by CI.
+- The ordinary unit lane excludes integration tests, while the dedicated `Prerequisite=Postgres`
+  CI gate validates this migration against Testcontainers PostgreSQL.
 - Test fixture `PostgresFixture` sets a `search_path` spanning all schemas (with `public` first) so
   the tests' hand-written raw SQL resolves table names regardless of which schema a table currently
   occupies — necessary because `MigrationSafetyTests` roll the database back to a pre-746 state

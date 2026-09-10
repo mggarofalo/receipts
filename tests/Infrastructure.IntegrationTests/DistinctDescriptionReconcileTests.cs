@@ -16,6 +16,7 @@ namespace Infrastructure.IntegrationTests;
 /// </summary>
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
 public class DistinctDescriptionReconcileTests(PostgresFixture fixture)
 {
 	[Fact]

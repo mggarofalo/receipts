@@ -53,7 +53,8 @@ This file is **checked into git** (via Track B of RECEIPTS-534). It is a materia
 dotnet build Receipts.slnx                                    # Build entire solution
 dotnet run scripts/generate-api-contract.cs                    # Materialize server OpenAPI output
 dotnet test Receipts.slnx --filter "Category!=Integration"    # Unit tests only (CI + pre-commit)
-dotnet test Receipts.slnx                                     # All tests (requires ONNX model)
+dotnet run scripts/run-prerequisite-tests.cs -- postgres      # Real PostgreSQL/pgvector tests (requires Docker)
+dotnet run scripts/run-prerequisite-tests.cs -- model         # Real ONNX tests (downloads/verifies pinned model)
 ```
 
 The API does not self-migrate or self-seed. See **[docs/development.md](docs/development.md#running-without-aspire)** for full commands including migrations, seeding, and single-project tests.
@@ -104,7 +105,7 @@ State management, Effects, component patterns, and custom hook conventions for t
 
 For principles on test quality, what to test vs. skip, and Goodhart's Law risks, see **[docs/agentic-testing.md](docs/agentic-testing.md)**.
 
-**Integration tests** use `[Trait("Category", "Integration")]` and are excluded from CI/pre-commit via `--filter "Category!=Integration"`.
+**Integration tests** use `[Trait("Category", "Integration")]` and are excluded from the unit-test step via `--filter "Category!=Integration"`. Tests with external prerequisites also declare `Prerequisite=Postgres` or `Prerequisite=Model`; PostgreSQL tests run in their own CI gate.
 
 **Never modify coverage thresholds or CI configuration** unless explicitly asked. Coverage gates are not part of feature implementation.
 

@@ -11,6 +11,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Infrastructure.IntegrationTests.Services;
 
 [Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
 public class CardAccountOwnershipTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	[Theory]

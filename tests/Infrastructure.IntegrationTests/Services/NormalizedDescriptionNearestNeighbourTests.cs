@@ -17,6 +17,7 @@ namespace Infrastructure.IntegrationTests.Services;
 // dangling reference, so both paths below would silently "pass" for the wrong reason.
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
 public class NormalizedDescriptionNearestNeighbourTests(PostgresFixture fixture)
 {
 	[Fact]

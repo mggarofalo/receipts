@@ -11,6 +11,7 @@ namespace Infrastructure.IntegrationTests;
 
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
 public class MigrationSafetyTests(PostgresFixture fixture)
 {
 	// RECEIPTS-574: the PromoteTransactionCardIdNotNull migration includes a pre-check

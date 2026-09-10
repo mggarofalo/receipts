@@ -6,6 +6,8 @@
 // script is a convenience: it warms the cache before the first run, and it is the supported
 // way to stage the model for an air-gapped deployment (copy the resulting directory across
 // and set Embeddings__ModelPath to point at it).
+// Pass --verify-existing to hash cached files against the pinned artifacts; the real-model
+// test lane uses this mode so it cannot silently exercise a same-sized substitute model.
 //
 // The constants below mirror src/Infrastructure/Services/EmbeddingModelOptions.cs, which is
 // the source of truth. Keep them in sync when bumping the pinned revision.
@@ -23,10 +25,14 @@ const string MarkerFileName = ".provisioned";
     ("vocab.txt", "vocab.txt", 231_508L, "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3"),
 ];
 
-string modelDir = args.Length > 0 && !string.IsNullOrWhiteSpace(args[0])
-    ? args[0]
-    : Environment.GetEnvironmentVariable("Embeddings__ModelPath") is { Length: > 0 } fromEnv
-        ? fromEnv
+bool verifyExisting = args.Contains("--verify-existing", StringComparer.Ordinal);
+string? requestedDirectory = args.FirstOrDefault(arg => !string.Equals(arg, "--verify-existing", StringComparison.Ordinal));
+string? configuredDirectory = Environment.GetEnvironmentVariable("Embeddings__ModelPath");
+
+string modelDir = !string.IsNullOrWhiteSpace(requestedDirectory)
+    ? requestedDirectory
+    : !string.IsNullOrWhiteSpace(configuredDirectory)
+        ? configuredDirectory
         : ResolveDefaultDirectory();
 
 Directory.CreateDirectory(modelDir);
@@ -44,10 +50,22 @@ foreach ((string fileName, string remotePath, long size, string sha256) in files
     string finalPath = Path.Combine(modelDir, fileName);
 
     FileInfo existing = new(finalPath);
-    if (existing.Exists && existing.Length == size)
+    if (existing.Exists && existing.Length == size && !verifyExisting)
     {
         Console.WriteLine($"{fileName} already present and the expected size, skipping.");
         continue;
+    }
+
+    if (existing.Exists && existing.Length == size)
+    {
+        string existingHash = await ComputeSha256Async(finalPath);
+        if (string.Equals(existingHash, sha256, StringComparison.OrdinalIgnoreCase))
+        {
+            Console.WriteLine($"{fileName} already present and SHA-256 verified.");
+            continue;
+        }
+
+        Console.WriteLine($"{fileName} has SHA-256 {existingHash}; replacing it with the pinned artifact.");
     }
 
     string tempPath = finalPath + ".tmp";
@@ -115,6 +133,13 @@ await File.WriteAllTextAsync(Path.Combine(modelDir, MarkerFileName), Revision);
 
 Console.WriteLine($"ONNX model files ready at {modelDir}");
 return 0;
+
+static async Task<string> ComputeSha256Async(string path)
+{
+    await using FileStream stream = new(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+    byte[] hash = await SHA256.HashDataAsync(stream);
+    return Convert.ToHexStringLower(hash);
+}
 
 static string ResolveDefaultDirectory()
 {

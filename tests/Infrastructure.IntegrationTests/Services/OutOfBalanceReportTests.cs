@@ -14,6 +14,7 @@ namespace Infrastructure.IntegrationTests.Services;
 // so it can never catch a translation regression; only a real relational provider throws.
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
 public class OutOfBalanceReportTests(PostgresFixture fixture)
 {
 	[Fact]
