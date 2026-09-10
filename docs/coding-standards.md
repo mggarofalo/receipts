@@ -34,15 +34,23 @@ Prefer **narrow projections** — always select the minimum required fields:
 
 ## Frontend / TypeScript
 
-### React Custom Hook Stability
+### React Custom Hook Dependencies
 
-All functions, objects, and arrays returned from custom hooks (`use*`) **must** be referentially stable:
+Stabilize callback, object, and array identities when a consumer relies on them in a dependency
+array; do not impose stable identity on every custom-hook return. Wrap returned callbacks in
+`useCallback` when they close over reactive values, memoize demonstrated object/array
+dependencies, and ensure reducers return the existing state reference when values have not
+changed.
 
-- Wrap returned functions in `useCallback`
-- Wrap returned objects/arrays in `useMemo`
-- Ensure reducers return the same state reference when values haven't changed (bail out with `return state`)
+TanStack Query result objects intentionally change identity and track the fields a consumer
+reads. Return the result directly when a custom hook does not add fields. Consumers must
+destructure the values they use and place those values—not the whole query result—in
+`useEffect`, `useMemo`, and `useCallback` dependency arrays. This preserves property-level
+subscriptions while preventing dependency loops.
 
-**Why:** Consumers may place hook return values in `useEffect`/`useMemo`/`useCallback` dependency arrays. Unstable references cause infinite render loops that are invisible in static review and pass individual test files but hang the full test suite.
+Memoized projections remain appropriate when a hook deliberately exposes a different public
+shape, but stability is not a blanket requirement. Add one only when a measured consumer needs
+it, and keep the projection's supported query capabilities explicit.
 
 ### TypeScript Conventions
 

@@ -67,7 +67,6 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
-    "@mggarofalo/eslint-plugin-react-hook-stability": "^0.2.0",
     "@playwright/test": "^1.60.0",
     "@sentry/vite-plugin": "^5.4.0",
     "@tailwindcss/vite": "^4.2.0",

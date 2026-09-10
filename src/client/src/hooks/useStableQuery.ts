@@ -2,7 +2,8 @@ import { useMemo } from "react";
 import type { UseQueryResult } from "@tanstack/react-query";
 
 /**
- * Projects a TanStack Query result into a referentially-stable object.
+ * Projects the historically supported subset of a TanStack Query result into a
+ * referentially-stable object for hooks that also expose derived top-level fields.
  *
  * Spreading `...query` into a memo makes eslint-plugin-react-hooks (v7) infer
  * the whole, per-render-fresh `query` object as the dependency, so the memo
@@ -10,8 +11,9 @@ import type { UseQueryResult } from "@tanstack/react-query";
  * specific fields lets the returned identity stay stable across renders while
  * still satisfying `react-hooks/preserve-manual-memoization`.
  *
- * List hooks wrap this and add their own derived fields (e.g. `data`/`total`),
- * depending on `[base, query.data]` so the derived object is stable too.
+ * Do not use this for pass-through hooks: returning the TanStack result preserves
+ * its complete API and property-level subscription tracking. Existing projections
+ * remain compatibility boundaries until their public result shapes are redesigned.
  */
 export function useStableQuery<TData, TError>(
   query: UseQueryResult<TData, TError>,

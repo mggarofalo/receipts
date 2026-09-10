@@ -94,7 +94,7 @@ export function useAccountCards(accountId: string | null) {
       return data;
     },
   });
-  return useStableQuery(query);
+  return query;
 }
 
 /**
