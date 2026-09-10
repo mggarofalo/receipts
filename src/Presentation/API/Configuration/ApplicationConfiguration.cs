@@ -4,12 +4,14 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using API.Filters;
+using API.Http;
 using API.Hubs;
 using API.Middleware;
 using API.Services;
 using API.Validators;
 using Application.Interfaces.Services;
 using FluentValidation;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.ResponseCompression;
 using Serilog;
@@ -37,6 +39,7 @@ public static class ApplicationConfiguration
 	public static IServiceCollection AddApplicationServices(this IServiceCollection services, IConfiguration configuration)
 	{
 		services.AddValidatorsFromAssemblyContaining<CreateReceiptRequestValidator>();
+		services.AddProblemDetails();
 
 		services.AddControllers(options =>
 			{
@@ -184,18 +187,29 @@ public static class ApplicationConfiguration
 					// Don't fail the response if audit logging fails
 				}
 
-				// Set Retry-After header
-				if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out TimeSpan retryAfter))
-				{
-					context.HttpContext.Response.Headers.RetryAfter = ((int)retryAfter.TotalSeconds).ToString();
-				}
-				else
-				{
-					context.HttpContext.Response.Headers.RetryAfter = "60";
-				}
-
+				int retryAfterSeconds = context.Lease.TryGetMetadata(MetadataName.RetryAfter, out TimeSpan retryAfter)
+					? Math.Max(1, (int)Math.Ceiling(retryAfter.TotalSeconds))
+					: 60;
+				context.HttpContext.Response.Headers.RetryAfter = retryAfterSeconds.ToString();
 				context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
-				await context.HttpContext.Response.WriteAsync("Rate limit exceeded. Try again later.", cancellationToken);
+
+				ProblemDetails problemDetails = new()
+				{
+					Status = StatusCodes.Status429TooManyRequests,
+					Title = "Too Many Requests",
+					Detail = "Rate limit exceeded. Try again later.",
+					Type = "https://www.rfc-editor.org/rfc/rfc6585#section-4",
+					Instance = context.HttpContext.Request.Path,
+					Extensions = { ["retryAfterSeconds"] = retryAfterSeconds },
+				};
+
+				IProblemDetailsService problemDetailsService = context.HttpContext.RequestServices
+					.GetRequiredService<IProblemDetailsService>();
+				await ApiProblemWriter.WriteAsync(
+					context.HttpContext,
+					problemDetailsService,
+					problemDetails,
+					cancellationToken);
 			};
 		});
 

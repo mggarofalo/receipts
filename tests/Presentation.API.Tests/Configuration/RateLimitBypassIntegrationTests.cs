@@ -1,4 +1,6 @@
 using System.Net;
+using System.Net.Http.Headers;
+using System.Text.Json;
 using API.Configuration;
 using Application.Interfaces.Services;
 using FluentAssertions;
@@ -83,6 +85,8 @@ public class RateLimitBypassIntegrationTests
 		responses.Skip(2).Should().Contain(r =>
 			r.StatusCode == HttpStatusCode.TooManyRequests,
 			"API key without BypassRateLimit should be rate limited");
+		HttpResponseMessage rejection = responses.First(r => r.StatusCode == HttpStatusCode.TooManyRequests);
+		await AssertRateLimitProblemAsync(rejection, "/api/test");
 	}
 
 	[Fact]
@@ -103,6 +107,24 @@ public class RateLimitBypassIntegrationTests
 		responses.Skip(2).Should().Contain(r =>
 			r.StatusCode == HttpStatusCode.TooManyRequests,
 			"Anonymous requests should still be rate limited");
+	}
+
+	[Fact]
+	public async Task AnonymousRequest_UnsupportedAccept_RateLimitStillReturnsProblemResponse()
+	{
+		using IHost host = CreateHost();
+		await host.StartAsync();
+		using HttpClient client = host.GetTestClient();
+		client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/xml"));
+
+		List<HttpResponseMessage> responses = [];
+		for (int i = 0; i < 5; i++)
+		{
+			responses.Add(await client.GetAsync("/api/test-anon"));
+		}
+
+		HttpResponseMessage rejection = responses.First(r => r.StatusCode == HttpStatusCode.TooManyRequests);
+		await AssertRateLimitProblemAsync(rejection, "/api/test-anon");
 	}
 
 	private static IHost CreateHost()
@@ -152,5 +174,23 @@ public class RateLimitBypassIntegrationTests
 			.Setup(m => m.GetRolesAsync(It.IsAny<ApplicationUser>()))
 			.ReturnsAsync(new List<string> { "Admin" });
 		return manager.Object;
+	}
+
+	private static async Task AssertRateLimitProblemAsync(HttpResponseMessage response, string instance)
+	{
+		response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+		response.Headers.TryGetValues("Retry-After", out IEnumerable<string>? retryAfterValues)
+			.Should().BeTrue();
+		int retryAfter = int.Parse(retryAfterValues!.Single());
+		retryAfter.Should().BeGreaterThan(0);
+
+		using JsonDocument body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+		body.RootElement.GetProperty("status").GetInt32().Should().Be(429);
+		body.RootElement.GetProperty("title").GetString().Should().Be("Too Many Requests");
+		body.RootElement.GetProperty("detail").GetString().Should().Be("Rate limit exceeded. Try again later.");
+		body.RootElement.GetProperty("type").GetString()
+			.Should().Be("https://www.rfc-editor.org/rfc/rfc6585#section-4");
+		body.RootElement.GetProperty("instance").GetString().Should().Be(instance);
+		body.RootElement.GetProperty("retryAfterSeconds").GetInt32().Should().Be(retryAfter);
 	}
 }
