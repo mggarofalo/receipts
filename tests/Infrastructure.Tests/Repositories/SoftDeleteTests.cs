@@ -2,6 +2,7 @@ using FluentAssertions;
 using Infrastructure.Entities.Core;
 using Infrastructure.Extensions;
 using Infrastructure.Interfaces;
+using Infrastructure.Interfaces.Repositories;
 using Infrastructure.Tests.Helpers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
@@ -461,10 +462,10 @@ public class SoftDeleteTests
 
 		// Act - restore the receipt
 		Infrastructure.Repositories.ReceiptRepository repository = new(contextFactory);
-		bool restored = await repository.RestoreAsync(receipt.Id, CancellationToken.None);
+		CascadeMutationResult restoreResult = await repository.RestoreAsync(receipt.Id, CancellationToken.None);
 
 		// Assert
-		restored.Should().BeTrue();
+		restoreResult.EntityChanged.Should().BeTrue();
 
 		using (ApplicationDbContext context = contextFactory.CreateDbContext())
 		{

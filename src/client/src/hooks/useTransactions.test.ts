@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, QueryObserver } from "@tanstack/react-query";
 import { createElement, type ReactNode } from "react";
 
 vi.mock("@/lib/api-client", () => ({
@@ -30,10 +30,9 @@ import {
   useRestoreTransaction,
 } from "./useTransactions";
 
-function createWrapper() {
-  const queryClient = new QueryClient({
+function createWrapper(queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
-  });
+  })) {
   return function Wrapper({ children }: { children: ReactNode }) {
     return createElement(QueryClientProvider, { client: queryClient }, children);
   };
@@ -179,6 +178,94 @@ describe("useTransactions", () => {
       params: { path: { id: "1" } },
     });
     expect(toast.success).toHaveBeenCalledWith("Transaction restored");
+  });
+
+  it("delete success refreshes same-session YNAB connection summary", async () => {
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+      });
+      queryClient.setQueryData(["ynab", "connection-status"], {
+        lastSuccessfulSyncUtc: "2026-09-10T12:00:00Z",
+      });
+      (client.DELETE as Mock).mockResolvedValue({ error: undefined });
+      (client.POST as Mock).mockResolvedValue({ error: undefined });
+      const { result } = renderHook(() => useDeleteTransactions(), {
+        wrapper: createWrapper(queryClient),
+      });
+
+      await result.current.mutateAsync(["1"]);
+
+      expect(
+        queryClient.getQueryState(["ynab", "connection-status"])
+          ?.isInvalidated,
+      ).toBe(true);
+  });
+
+  it("restore success refreshes same-session YNAB connection summary", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+    });
+    queryClient.setQueryData(["ynab", "connection-status"], {
+      lastSuccessfulSyncUtc: "2026-09-10T12:00:00Z",
+    });
+    (client.POST as Mock).mockResolvedValue({ error: undefined });
+    const { result } = renderHook(() => useRestoreTransaction(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await result.current.mutateAsync("1");
+
+    expect(
+      queryClient.getQueryState(["ynab", "connection-status"])?.isInvalidated,
+    ).toBe(true);
+  });
+
+  it("restore success refetches an actively rendered connection summary", async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const queryKey = ["ynab", "connection-status"] as const;
+    queryClient.setQueryData(queryKey, { lastSuccessfulSyncUtc: "old" });
+    const observer = new QueryObserver(queryClient, {
+      queryKey,
+      queryFn: vi.fn().mockResolvedValue({ lastSuccessfulSyncUtc: "new" }),
+      staleTime: Infinity,
+    });
+    const unsubscribe = observer.subscribe(() => {});
+    (client.POST as Mock).mockResolvedValue({ error: undefined });
+    const { result } = renderHook(() => useRestoreTransaction(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await result.current.mutateAsync("1");
+
+    await waitFor(() =>
+      expect(queryClient.getQueryData(queryKey)).toEqual({ lastSuccessfulSyncUtc: "new" }),
+    );
+    unsubscribe();
+  });
+
+  it("restore cancels a held initial connection read before fresh repair settles", async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const queryKey = ["ynab", "connection-status"] as const;
+    let resolveOld!: (value: { lastSuccessfulSyncUtc: string }) => void;
+    const queryFn = vi.fn()
+      .mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve; }))
+      .mockResolvedValue({ lastSuccessfulSyncUtc: "new" });
+    const observer = new QueryObserver(queryClient, { queryKey, queryFn });
+    const unsubscribe = observer.subscribe(() => {});
+    await waitFor(() => expect(queryFn).toHaveBeenCalledTimes(1));
+    (client.POST as Mock).mockResolvedValue({ error: undefined });
+    const { result } = renderHook(() => useRestoreTransaction(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await result.current.mutateAsync("1");
+    await waitFor(() =>
+      expect(queryClient.getQueryData(queryKey)).toEqual({ lastSuccessfulSyncUtc: "new" }),
+    );
+    resolveOld({ lastSuccessfulSyncUtc: "old" });
+    await Promise.resolve();
+    expect(queryClient.getQueryData(queryKey)).toEqual({ lastSuccessfulSyncUtc: "new" });
+    unsubscribe();
   });
 
   // --- Branch coverage: error callbacks ---

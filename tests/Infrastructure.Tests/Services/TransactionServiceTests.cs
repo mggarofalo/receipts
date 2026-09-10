@@ -1,4 +1,6 @@
+using Application.Interfaces.Services;
 using Application.Models;
+using Application.Models.CommittedChanges;
 using Domain.Aggregates;
 using Domain.Core;
 using FluentAssertions;
@@ -18,6 +20,7 @@ public class TransactionServiceTests
 	private readonly Mock<ITransactionRepository> _mockRepository;
 	private readonly TransactionMapper _mapper;
 	private readonly AccountMapper _accountMapper;
+	private readonly Mock<ICommittedChangePublisher> _publisher;
 	private readonly TransactionService _service;
 
 	public TransactionServiceTests()
@@ -25,6 +28,7 @@ public class TransactionServiceTests
 		_mockRepository = new Mock<ITransactionRepository>();
 		_mapper = new TransactionMapper();
 		_accountMapper = new AccountMapper();
+		_publisher = new Mock<ICommittedChangePublisher>(MockBehavior.Strict);
 
 		// The balance-validation methods (CreateWithBalanceValidationAsync / UpdateWith...) require
 		// a DbContext factory and the child-entity mappers, but every test in this class exercises
@@ -41,7 +45,8 @@ public class TransactionServiceTests
 			contextFactory.Object,
 			new ReceiptMapper(),
 			new ReceiptItemMapper(),
-			new AdjustmentMapper());
+			new AdjustmentMapper(),
+			_publisher.Object);
 	}
 
 	[Fact]
@@ -63,16 +68,61 @@ public class TransactionServiceTests
 	}
 
 	[Fact]
-	public async Task DeleteAsync_ValidIds_CallsRepositoryDeleteAsync()
+	public async Task DeleteAsync_CascadeChangedSyncRecords_PublishesSilentCollectionChange()
 	{
 		// Arrange
 		List<Guid> ids = [Guid.NewGuid(), Guid.NewGuid()];
+		_mockRepository.Setup(r => r.DeleteAsync(ids, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new CascadeMutationResult(true, 2));
+		_publisher.Setup(p => p.PublishAsync(It.IsAny<CommittedEntityChange>())).Returns(Task.CompletedTask);
 
 		// Act
 		await _service.DeleteAsync(ids, CancellationToken.None);
 
 		// Assert
 		_mockRepository.Verify(r => r.DeleteAsync(ids, It.IsAny<CancellationToken>()), Times.Once);
+		VerifyPublished(CommittedChangeType.Deleted, Times.Once());
+	}
+
+	[Fact]
+	public async Task DeleteAsync_NoChangedSyncRecords_DoesNotPublish()
+	{
+		_mockRepository.Setup(r => r.DeleteAsync(It.IsAny<List<Guid>>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new CascadeMutationResult(false, 0));
+
+		await _service.DeleteAsync([Guid.NewGuid()], CancellationToken.None);
+
+		_publisher.VerifyNoOtherCalls();
+	}
+
+	[Theory]
+	[InlineData(0, false)]
+	[InlineData(2, true)]
+	public async Task RestoreAsync_PublishesOnlyWhenDurableCascadeChangedSyncRecords(int changed, bool publish)
+	{
+		Guid id = Guid.NewGuid();
+		_mockRepository.Setup(r => r.RestoreAsync(id, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new CascadeMutationResult(true, changed));
+		if (publish)
+		{
+			_publisher.Setup(p => p.PublishAsync(It.IsAny<CommittedEntityChange>())).Returns(Task.CompletedTask);
+		}
+
+		(await _service.RestoreAsync(id, CancellationToken.None)).Should().BeTrue();
+
+		VerifyPublished(CommittedChangeType.Updated, publish ? Times.Once() : Times.Never());
+	}
+
+	[Fact]
+	public async Task DeleteAsync_RepositoryFailure_DoesNotPublish()
+	{
+		_mockRepository.Setup(r => r.DeleteAsync(It.IsAny<List<Guid>>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new InvalidOperationException("rolled back"));
+
+		Func<Task> act = async () => await _service.DeleteAsync([Guid.NewGuid()], CancellationToken.None);
+
+		await act.Should().ThrowAsync<InvalidOperationException>();
+		_publisher.VerifyNoOtherCalls();
 	}
 
 	[Fact]
@@ -270,6 +320,14 @@ public class TransactionServiceTests
 		// Assert
 		result.Should().BeEmpty();
 	}
+
+	private void VerifyPublished(CommittedChangeType changeType, Times times) =>
+		_publisher.Verify(p => p.PublishAsync(It.Is<CommittedEntityChange>(change =>
+			change.EntityType == CommittedEntityType.YnabSyncRecord
+			&& change.ChangeType == changeType
+			&& change.EntityId == null
+			&& change.SuppressToast)), times);
+
 	private static List<TransactionEntity> GenerateReadEntities(int count, Guid? receiptId = null)
 	{
 		List<TransactionEntity> entities = TransactionEntityGenerator.GenerateList(count, receiptId);

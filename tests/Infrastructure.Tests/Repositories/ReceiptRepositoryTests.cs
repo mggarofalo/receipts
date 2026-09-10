@@ -1,6 +1,7 @@
 using Application.Models;
 using FluentAssertions;
 using Infrastructure.Entities.Core;
+using Infrastructure.Interfaces.Repositories;
 using Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
 using SampleData.Entities;
@@ -9,6 +10,16 @@ namespace Infrastructure.Tests.Repositories;
 
 public class ReceiptRepositoryTests
 {
+	[Fact]
+	public async Task DeleteAsync_MissingReceipt_ReportsNoChangedSyncRecords()
+	{
+		ReceiptRepository repository = new(_contextFactory);
+
+		CascadeMutationResult result = await repository.DeleteAsync([Guid.NewGuid()], CancellationToken.None);
+
+		result.Should().Be(new CascadeMutationResult(false, 0));
+	}
+
 	private readonly IDbContextFactory<ApplicationDbContext> _contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
 
 	[Fact]
@@ -391,9 +402,10 @@ public class ReceiptRepositoryTests
 		ReceiptRepository repository = new(_contextFactory);
 
 		// Act — deleting the receipt must reach the transaction's sync record.
-		await repository.DeleteAsync([receipt.Id], CancellationToken.None);
+		CascadeMutationResult deleteResult = await repository.DeleteAsync([receipt.Id], CancellationToken.None);
 
 		// Assert — no active sync record survives; it was cascade soft-deleted.
+		deleteResult.Should().Be(new CascadeMutationResult(true, 1));
 		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
 		(await verify.YnabSyncRecords.AnyAsync()).Should().BeFalse("the active sync record must not linger after its receipt is deleted");
 
@@ -434,10 +446,10 @@ public class ReceiptRepositoryTests
 
 		// Act — delete then restore the receipt.
 		await repository.DeleteAsync([receipt.Id], CancellationToken.None);
-		bool restored = await repository.RestoreAsync(receipt.Id, CancellationToken.None);
+		CascadeMutationResult restoreResult = await repository.RestoreAsync(receipt.Id, CancellationToken.None);
 
 		// Assert — receipt, transaction, and sync record all active again.
-		restored.Should().BeTrue();
+		restoreResult.Should().Be(new CascadeMutationResult(true, 1));
 		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
 		(await verify.Receipts.AnyAsync(r => r.Id == receipt.Id)).Should().BeTrue();
 		(await verify.Transactions.AnyAsync(t => t.Id == transaction.Id)).Should().BeTrue();

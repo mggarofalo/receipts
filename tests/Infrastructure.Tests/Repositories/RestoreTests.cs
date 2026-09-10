@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Infrastructure.Entities.Core;
+using Infrastructure.Interfaces.Repositories;
 using Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
 using SampleData.Entities;
@@ -152,10 +153,10 @@ public class RestoreTests
 		ReceiptRepository repository = new(contextFactory);
 
 		// Act
-		bool result = await repository.RestoreAsync(receipt.Id, CancellationToken.None);
+		CascadeMutationResult result = await repository.RestoreAsync(receipt.Id, CancellationToken.None);
 
 		// Assert
-		Assert.True(result);
+		Assert.True(result.EntityChanged);
 
 		using (ApplicationDbContext context = contextFactory.CreateDbContext())
 		{
@@ -201,10 +202,10 @@ public class RestoreTests
 		ReceiptRepository repository = new(contextFactory);
 
 		// Act
-		bool result = await repository.RestoreAsync(receipt.Id, CancellationToken.None);
+		CascadeMutationResult result = await repository.RestoreAsync(receipt.Id, CancellationToken.None);
 
 		// Assert
-		Assert.True(result);
+		Assert.True(result.EntityChanged);
 
 		using (ApplicationDbContext context = contextFactory.CreateDbContext())
 		{
@@ -246,10 +247,10 @@ public class RestoreTests
 		ReceiptRepository repository = new(contextFactory);
 
 		// Act
-		bool result = await repository.RestoreAsync(receipt.Id, CancellationToken.None);
+		CascadeMutationResult result = await repository.RestoreAsync(receipt.Id, CancellationToken.None);
 
 		// Assert
-		Assert.True(result);
+		Assert.True(result.EntityChanged);
 
 		using (ApplicationDbContext context = contextFactory.CreateDbContext())
 		{

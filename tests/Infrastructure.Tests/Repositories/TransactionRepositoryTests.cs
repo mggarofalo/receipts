@@ -1,6 +1,7 @@
 using Application.Models;
 using FluentAssertions;
 using Infrastructure.Entities.Core;
+using Infrastructure.Interfaces.Repositories;
 using Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
 using SampleData.Entities;
@@ -9,6 +10,16 @@ namespace Infrastructure.Tests.Repositories;
 
 public class TransactionRepositoryTests
 {
+	[Fact]
+	public async Task DeleteAsync_MissingTransaction_ReportsNoChangedSyncRecords()
+	{
+		TransactionRepository repository = new(_contextFactory);
+
+		CascadeMutationResult result = await repository.DeleteAsync([Guid.NewGuid()], CancellationToken.None);
+
+		result.Should().Be(new CascadeMutationResult(false, 0));
+	}
+
 	private readonly IDbContextFactory<ApplicationDbContext> _contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
 
 	private async Task<(ReceiptEntity receipt, AccountEntity account)> CreateParentEntitiesAsync()
@@ -266,10 +277,11 @@ public class TransactionRepositoryTests
 		TransactionRepository repository = new(_contextFactory);
 
 		// Act — delete the transaction; both sync records cascade-soft-delete.
-		await repository.DeleteAsync([transaction.Id], CancellationToken.None);
+		CascadeMutationResult deleteResult = await repository.DeleteAsync([transaction.Id], CancellationToken.None);
 
 		using (ApplicationDbContext afterDelete = _contextFactory.CreateDbContext())
 		{
+			deleteResult.Should().Be(new CascadeMutationResult(true, 2));
 			(await afterDelete.YnabSyncRecords.AnyAsync()).Should().BeFalse("both sync records should be soft-deleted with their transaction");
 			List<YnabSyncRecordEntity> deleted = await afterDelete.YnabSyncRecords.IgnoreQueryFilters().ToListAsync();
 			deleted.Should().HaveCount(2);
@@ -281,10 +293,10 @@ public class TransactionRepositoryTests
 		}
 
 		// Act — restore the transaction; both sync records must come back active.
-		bool restored = await repository.RestoreAsync(transaction.Id, CancellationToken.None);
+		CascadeMutationResult restoreResult = await repository.RestoreAsync(transaction.Id, CancellationToken.None);
 
 		// Assert
-		restored.Should().BeTrue();
+		restoreResult.Should().Be(new CascadeMutationResult(true, 2));
 		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
 		(await verify.Transactions.AnyAsync(t => t.Id == transaction.Id)).Should().BeTrue();
 
