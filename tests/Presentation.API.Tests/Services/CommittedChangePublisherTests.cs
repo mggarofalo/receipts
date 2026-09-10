@@ -46,6 +46,8 @@ public class CommittedChangePublisherTests
 	[InlineData(CommittedEntityType.YnabMapping, CommittedChangeType.Deleted, "ynab-mapping", "deleted")]
 	[InlineData(CommittedEntityType.YnabSyncRecord, CommittedChangeType.Created, "ynab-sync-record", "created")]
 	[InlineData(CommittedEntityType.YnabSyncEvent, CommittedChangeType.Created, "ynab-sync-event", "created")]
+	[InlineData(CommittedEntityType.ReceiptItem, CommittedChangeType.Updated, "receipt-item", "updated")]
+	[InlineData(CommittedEntityType.ItemEmbedding, CommittedChangeType.Updated, "item-embedding", "updated")]
 	public async Task PublishAsync_EntityIdAbsent_PublishesNeutralCollectionRepair(
 		CommittedEntityType entityType,
 		CommittedChangeType changeType,
@@ -57,7 +59,23 @@ public class CommittedChangePublisherTests
 		await publisher.PublishAsync(new(entityType, changeType));
 
 		_notifier.Verify(
-			n => n.NotifyAllChanged(expectedEntityType, expectedChangeType),
+			n => n.NotifyAllChanged(expectedEntityType, expectedChangeType, false),
+			Times.Once);
+		_notifier.VerifyNoOtherCalls();
+	}
+
+	[Fact]
+	public async Task PublishAsync_SilentBroadChange_PreservesSuppressionFlag()
+	{
+		CommittedChangePublisher publisher = new(_notifier.Object);
+
+		await publisher.PublishAsync(new(
+			CommittedEntityType.ItemEmbedding,
+			CommittedChangeType.Updated,
+			SuppressToast: true));
+
+		_notifier.Verify(
+			n => n.NotifyAllChanged("item-embedding", "updated", true),
 			Times.Once);
 		_notifier.VerifyNoOtherCalls();
 	}

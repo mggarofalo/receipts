@@ -2,6 +2,8 @@ namespace Application.Models.CommittedChanges;
 
 public enum CommittedEntityType
 {
+	ReceiptItem,
+	ItemEmbedding,
 	NormalizedDescription,
 	NormalizedDescriptionSettings,
 	YnabBudget,
@@ -20,4 +22,5 @@ public enum CommittedChangeType
 public sealed record CommittedEntityChange(
 	CommittedEntityType EntityType,
 	CommittedChangeType ChangeType,
-	Guid? EntityId = null);
+	Guid? EntityId = null,
+	bool SuppressToast = false);

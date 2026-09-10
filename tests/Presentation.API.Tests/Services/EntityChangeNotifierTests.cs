@@ -184,6 +184,31 @@ public class EntityChangeNotifierTests : IDisposable
 	}
 
 	[Fact]
+	public async Task NotifyAllChanged_SilentAndVisibleEvents_DoNotCoalesce()
+	{
+		await _notifier.NotifyAllChanged("item-embedding", "updated", suppressToast: true);
+		await _notifier.NotifyAllChanged("item-embedding", "updated", suppressToast: false);
+
+		await _notifier.FlushAsync();
+
+		_clientMock.Verify(c => c.EntityChanged(
+			It.Is<EntityChangeNotification>(n =>
+				n.EntityType == "item-embedding"
+				&& n.ChangeType == "updated"
+				&& n.SuppressToast
+				&& n.Count == 1)),
+			Times.Once);
+		_clientMock.Verify(c => c.EntityChanged(
+			It.Is<EntityChangeNotification>(n =>
+				n.EntityType == "item-embedding"
+				&& n.ChangeType == "updated"
+				&& !n.SuppressToast
+				&& n.Count == 1)),
+			Times.Once);
+		_clientMock.Verify(c => c.EntityChanged(It.IsAny<EntityChangeNotification>()), Times.Exactly(2));
+	}
+
+	[Fact]
 	public async Task MultipleDifferentPairs_ProduceSeparateNotificationsOnFlush()
 	{
 		// Arrange
@@ -431,6 +456,27 @@ public class EntityChangeNotifierTests : IDisposable
 		delivered.Should().HaveCount(2);
 		delivered.Should().ContainSingle(n => n.EntityType == "receipt" && n.ChangeType == "created");
 		delivered.Should().ContainSingle(n => n.EntityType == "category" && n.ChangeType == "deleted");
+	}
+
+	[Fact]
+	public async Task FlushAsync_WhenSilentSendThrows_RequeuePreservesSuppressionAndSeparation()
+	{
+		bool fail = true;
+		var (hubContext, delivered) = BuildFailableHub(() => fail);
+		var loggerMock = new Mock<ILogger<EntityChangeNotifier>>();
+		using EntityChangeNotifier notifier = CreateNotifier(hubContext, loggerMock);
+		await notifier.NotifyAllChanged("item-embedding", "updated", suppressToast: true);
+		await notifier.NotifyAllChanged("item-embedding", "updated", suppressToast: false);
+
+		await notifier.FlushAsync();
+		fail = false;
+		await notifier.FlushAsync();
+
+		delivered.Should().HaveCount(2);
+		delivered.Should().ContainSingle(notification =>
+			notification.SuppressToast && notification.Count == 1);
+		delivered.Should().ContainSingle(notification =>
+			!notification.SuppressToast && notification.Count == 1);
 	}
 
 	[Fact]

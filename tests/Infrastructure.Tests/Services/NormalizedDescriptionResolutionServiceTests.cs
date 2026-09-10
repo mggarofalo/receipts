@@ -1,5 +1,6 @@
 using System.Threading.Channels;
 using Application.Interfaces.Services;
+using Application.Models.CommittedChanges;
 using Application.Models.NormalizedDescriptions;
 using Domain.NormalizedDescriptions;
 using FluentAssertions;
@@ -24,6 +25,7 @@ public class NormalizedDescriptionResolutionServiceTests
 	private readonly Mock<IServiceScope> _scopeMock;
 	private readonly Mock<IServiceProvider> _serviceProviderMock;
 	private readonly IDbContextFactory<ApplicationDbContext> _contextFactory;
+	private readonly Mock<ICommittedChangePublisher> _publisherMock = new();
 
 	public NormalizedDescriptionResolutionServiceTests()
 	{
@@ -63,6 +65,12 @@ public class NormalizedDescriptionResolutionServiceTests
 		_scopeFactoryMock.Object,
 		_signalMock.Object,
 		_loggerMock.Object);
+
+	private NormalizedDescriptionResolutionService CreatePublisherAwareService() => new(
+		_scopeFactoryMock.Object,
+		_signalMock.Object,
+		_loggerMock.Object,
+		_publisherMock.Object);
 
 	private async Task SeedReceiptAndItemsAsync(params ReceiptItemEntity[] items)
 	{
@@ -116,6 +124,80 @@ public class NormalizedDescriptionResolutionServiceTests
 		seed.NormalizedDescriptions.Add(new() { Id = domain.Id, CanonicalName = domain.CanonicalName, Status = domain.Status, CreatedAt = domain.CreatedAt });
 		seed.SaveChanges();
 		return new GetOrCreateResult(domain, matchScore);
+	}
+
+	[Fact]
+	public async Task ProcessPendingResolutionsAsync_CommittedLinks_PublishesBroadReceiptItemRepairAfterCommit()
+	{
+		ReceiptItemEntity item = BuildItem("Organic Milk");
+		await SeedReceiptAndItemsAsync(item);
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
+		GetOrCreateResult result = NewResult("Organic Milk", 0.94);
+		_normalizedServiceMock
+			.Setup(s => s.GetOrCreateAsync(item.Description, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(result);
+		_publisherMock
+			.Setup(p => p.PublishAsync(It.IsAny<CommittedEntityChange>()))
+			.Callback(() =>
+			{
+				using ApplicationDbContext committed = _contextFactory.CreateDbContext();
+				committed.ReceiptItems.IgnoreAutoIncludes().Single(r => r.Id == item.Id)
+					.NormalizedDescriptionId.Should().Be(result.Description.Id,
+						"the relationship must be durable before publication");
+			})
+			.Returns(Task.CompletedTask);
+
+		NormalizedDescriptionResolutionService.ResolutionSummary summary =
+			await CreatePublisherAwareService().ProcessPendingResolutionsAsync(CancellationToken.None);
+
+		summary.Linked.Should().Be(1);
+		_publisherMock.Verify(p => p.PublishAsync(It.Is<CommittedEntityChange>(change =>
+			change.EntityType == CommittedEntityType.ReceiptItem
+			&& change.ChangeType == CommittedChangeType.Updated
+			&& change.EntityId == null
+			&& change.SuppressToast)), Times.Once);
+	}
+
+	[Fact]
+	public async Task ProcessPendingResolutionsAsync_EmptyBatch_DoesNotPublish()
+	{
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
+
+		NormalizedDescriptionResolutionService.ResolutionSummary summary =
+			await CreatePublisherAwareService().ProcessPendingResolutionsAsync(CancellationToken.None);
+
+		summary.Linked.Should().Be(0);
+		_publisherMock.Verify(p => p.PublishAsync(It.IsAny<CommittedEntityChange>()), Times.Never);
+	}
+
+	[Fact]
+	public async Task ProcessPendingResolutionsAsync_UnconfiguredEmbeddingService_DoesNotPublish()
+	{
+		await SeedReceiptAndItemsAsync(BuildItem("Waiting Item"));
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(false);
+
+		NormalizedDescriptionResolutionService.ResolutionSummary summary =
+			await CreatePublisherAwareService().ProcessPendingResolutionsAsync(CancellationToken.None);
+
+		summary.Linked.Should().Be(0);
+		_publisherMock.Verify(p => p.PublishAsync(It.IsAny<CommittedEntityChange>()), Times.Never);
+	}
+
+	[Fact]
+	public async Task ProcessPendingResolutionsAsync_ResolutionFailure_DoesNotPublish()
+	{
+		ReceiptItemEntity item = BuildItem("Broken Resolution");
+		await SeedReceiptAndItemsAsync(item);
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
+		_normalizedServiceMock
+			.Setup(s => s.GetOrCreateAsync(item.Description, It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new InvalidOperationException("resolution failed"));
+
+		NormalizedDescriptionResolutionService.ResolutionSummary summary =
+			await CreatePublisherAwareService().ProcessPendingResolutionsAsync(CancellationToken.None);
+
+		summary.Linked.Should().Be(0);
+		_publisherMock.Verify(p => p.PublishAsync(It.IsAny<CommittedEntityChange>()), Times.Never);
 	}
 
 	// ── RECEIPTS-876: tombstoned text ──────────────────────────────────────────────────

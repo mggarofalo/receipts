@@ -15,6 +15,8 @@ const cacheKeys = {
   connectionStatus: ["ynab", "connection-status"],
   events: ["ynab", "events"],
   status: ["ynab", "status"],
+  similarItems: ["similarItems", "milk"],
+  categoryRecommendations: ["categoryRecommendations", "milk"],
   unrelated: ["receipts"],
 } satisfies Record<string, QueryKey>;
 
@@ -59,6 +61,10 @@ describe("YNAB committed-change invalidation", () => {
     {
       change: "ynab-sync-event",
       affected: [cacheKeys.events, cacheKeys.status],
+    },
+    {
+      change: "item-embedding",
+      affected: [cacheKeys.similarItems, cacheKeys.categoryRecommendations],
     },
   ])(
     "$change repairs exactly its projection family",

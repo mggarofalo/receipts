@@ -9,6 +9,8 @@ public sealed class CommittedChangePublisher(IEntityChangeNotifier notifier) : I
 	{
 		string entityType = change.EntityType switch
 		{
+			CommittedEntityType.ReceiptItem => "receipt-item",
+			CommittedEntityType.ItemEmbedding => "item-embedding",
 			CommittedEntityType.NormalizedDescription => "normalized-description",
 			CommittedEntityType.NormalizedDescriptionSettings => "normalized-description-settings",
 			CommittedEntityType.YnabBudget => "ynab-budget",
@@ -28,7 +30,7 @@ public sealed class CommittedChangePublisher(IEntityChangeNotifier notifier) : I
 
 		if (change.EntityId is not Guid id)
 		{
-			return notifier.NotifyAllChanged(entityType, changeType);
+			return notifier.NotifyAllChanged(entityType, changeType, change.SuppressToast);
 		}
 
 		return change.ChangeType switch

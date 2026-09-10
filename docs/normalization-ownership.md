@@ -12,7 +12,7 @@ Ordinary item updates also lock their item rows before the tracked read and hold
 
 Targets must still exist, retain the resolved canonical name and remain non-Rejected. An exact-name tombstone for the trimmed source text also blocks attachment to a different fuzzy target. Display-label changes remain cosmetic and do not invalidate matching.
 
-Only accepted items receive canonical ID and score changes. Their tracked `SaveChangesAsync` call writes the changes and automatic audit records atomically under RECEIPTS-956. Skipped snapshots add no link audit; the summary reports them as skipped. Changed unresolved items remain available for a fresh cycle, while rejected text follows the existing tombstone filter. A failure before commit rolls back accepted links and their audits together. Canonical entries created by earlier matching calls have their own existing persistence lifecycle.
+Only accepted items receive canonical ID and score changes. Their tracked `SaveChangesAsync` call writes the changes and automatic audit records atomically under RECEIPTS-956. After the guarded transaction commits at least one link, the worker publishes one broad, toast-suppressed receipt-item projection repair; it publishes nothing for an empty, skipped or failed batch. Skipped snapshots add no link audit; the summary reports them as skipped. Changed unresolved items remain available for a fresh cycle, while rejected text follows the existing tombstone filter. A failure before commit rolls back accepted links and their audits together. Canonical entries created by earlier matching calls have their own existing persistence lifecycle.
 
 ## Short write coordination
 

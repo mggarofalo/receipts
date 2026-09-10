@@ -122,6 +122,11 @@ const YNAB_SYNC_EVENT_CHANGE_QUERY_KEYS = [
   queryKeys.ynabStatus,
 ] as const;
 
+const ITEM_EMBEDDING_CHANGE_QUERY_KEYS = [
+  queryKeys.similarItems,
+  queryKeys.categoryRecommendations,
+] as const;
+
 // Portable restore can change destination settings as well as ledger rows.
 const BACKUP_IMPORT_QUERY_KEYS = [
   ...LEDGER_CHANGE_QUERY_KEYS,
@@ -142,6 +147,7 @@ const DOMAIN_CHANGE_QUERY_KEYS = {
   category: [queryKeys.categories, queryKeys.subcategories],
   subcategory: [queryKeys.subcategories],
   "item-template": TEMPLATE_CHANGE_QUERY_KEYS,
+  "item-embedding": ITEM_EMBEDDING_CHANGE_QUERY_KEYS,
   "normalized-description": NORMALIZED_DESCRIPTION_CHANGE_QUERY_KEYS,
   "normalized-description-settings": [queryKeys.normalizedDescriptionSettings],
   "duplicate-acceptance": DUPLICATE_ACCEPTANCE_CHANGE_QUERY_KEYS,
