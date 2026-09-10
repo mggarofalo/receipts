@@ -8,7 +8,7 @@ if [ "${PRECOMMIT_QUICK:-}" = "1" ]; then
   TOTAL=6
   echo "(quick mode — set PRECOMMIT_QUICK=0 or unset for full checks)"
 else
-  TOTAL=11
+  TOTAL=12
 fi
 STEP=0
 
@@ -38,7 +38,7 @@ fi
 
 if [ "${PRECOMMIT_QUICK:-}" != "1" ]; then
   next_step "Linting OpenAPI spec..."
-  NODE_OPTIONS="--disable-warning=DEP0040" npx spectral lint openapi/spec.yaml --fail-severity warn
+  npm run lint:spec
 fi
 
 next_step "Checking EF migration integrity..."
@@ -70,10 +70,10 @@ dotnet format Receipts.slnx --verify-no-changes
 
 if [ "${PRECOMMIT_QUICK:-}" != "1" ]; then
   next_step "Building with warnings-as-errors..."
-  # Provide a build-time JWT key so GenerateOpenApiDocuments can start the host.
-  # At runtime the real key is required via appsettings/Aspire configuration.
-  Jwt__Key=build-time-spec-extraction-only-not-for-runtime \
   dotnet build Receipts.slnx -p:TreatWarningsAsErrors=true --no-restore
+
+  next_step "Generating the server API contract..."
+  dotnet run scripts/generate-api-contract.cs
 
   next_step "Checking spec drift..."
   node scripts/check-drift.mjs
@@ -83,14 +83,14 @@ if [ "${PRECOMMIT_QUICK:-}" != "1" ]; then
 fi
 
 next_step "Checking TypeScript types..."
-npx tsc -b src/client/tsconfig.json --noEmit
+(cd src/client && npm exec -- tsc -b --noEmit)
 
 next_step "Linting React client..."
-npx eslint src/client/src
+(cd src/client && npm run lint)
 
 if [ "${PRECOMMIT_QUICK:-}" != "1" ]; then
   next_step "Running frontend tests (vitest)..."
-  (cd src/client && npx vitest run)
+  (cd src/client && npm test)
 fi
 
 echo "=== All checks passed ==="

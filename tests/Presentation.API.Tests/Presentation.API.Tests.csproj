@@ -32,6 +32,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Presentation\API\API.csproj" />
+    <ProjectReference Include="..\Presentation.SampleData\Presentation.SampleData.csproj" />
     <ProjectReference Include="..\SampleData\SampleData.csproj" />
   </ItemGroup>
 

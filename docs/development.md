@@ -29,7 +29,7 @@ dotnet tool install --global Aspire.Cli
 dotnet restore Receipts.slnx
 
 # Install Node dependencies (OpenAPI linting tools)
-npm install
+npm ci
 
 # Pre-download the ONNX embedding model (~1.34 GB)
 # Optional: the app fetches this itself on first start. Running it up front just means
@@ -137,6 +137,9 @@ If the variables are absent, the seeder logs a warning and seeds only roles (no 
 # Build entire solution
 dotnet build Receipts.slnx
 
+# Materialize openapi/generated/API.json in an isolated contract-generation process
+dotnet run scripts/generate-api-contract.cs
+
 # Run unit tests (same as CI)
 dotnet test Receipts.slnx --filter "Category!=Integration"
 
@@ -195,11 +198,12 @@ Every `git commit` runs the full quality pipeline automatically:
 0. **Prerequisites** — `dotnet run scripts/worktree-setup.cs -- --check`
 1. **OpenAPI spec lint** — `npx spectral lint openapi/spec.yaml`
 2. **Code format check** — `dotnet format --verify-no-changes`
-3. **Build with warnings-as-errors** — also regenerates DTOs and `openapi/generated/API.json`
-4. **Semantic drift check** — compares spec vs generated output for structural differences
-5. **Tests** — `dotnet test --no-build --filter "Category!=Integration"`
-6. **TypeScript types** — `npx tsc --noEmit`
-7. **ESLint** — `npx eslint src/client/src`
+3. **Build with warnings-as-errors** — compiles without starting the API or requiring runtime secrets
+4. **Server contract generation** — starts a non-serving extraction process with a scoped synthetic key
+5. **Semantic drift check** — compares spec vs generated output for structural differences
+6. **Tests** — `dotnet test --no-build --filter "Category!=Integration"`
+7. **TypeScript types** — uses the client-pinned compiler
+8. **ESLint** — uses the client-pinned ESLint version
 
 For faster iteration, quick mode runs only prerequisites, format, tsc, and eslint:
 ```bash
@@ -212,8 +216,9 @@ All API changes follow a spec-first workflow:
 
 1. Edit `openapi/spec.yaml` — this is the single source of truth
 2. `npm run lint:spec` — validate the spec
-3. `dotnet build` — regenerates DTOs and the built output
-4. `npm run check:drift` — verify spec and implementation stay in sync
+3. `dotnet build` — regenerates DTOs and compiles without runtime secrets
+4. `dotnet run scripts/generate-api-contract.cs` — materialize the server contract in extraction mode
+5. `npm run check:drift` — verify spec and implementation stay in sync
 
 See **[docs/api-guidelines.md](api-guidelines.md)** for the full spec-first workflow details.
 

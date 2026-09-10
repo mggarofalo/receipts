@@ -11,12 +11,12 @@ if (checkOnly)
 
     if (!Directory.Exists(Path.Combine(repoRoot, "node_modules")))
     {
-        missing.Add("node_modules/ — run: npm install");
+        missing.Add("node_modules/ — run: npm ci");
     }
 
     if (!Directory.Exists(Path.Combine(repoRoot, "src", "client", "node_modules")))
     {
-        missing.Add("src/client/node_modules/ — run: cd src/client && npm install");
+        missing.Add("src/client/node_modules/ — run: cd src/client && npm ci");
     }
 
     bool hasObj = Directory.GetDirectories(Path.Combine(repoRoot, "src"), "obj", SearchOption.AllDirectories).Length > 0;
@@ -27,7 +27,7 @@ if (checkOnly)
 
     if (!File.Exists(Path.Combine(repoRoot, "openapi", "generated", "API.json")))
     {
-        missing.Add("openapi/generated/API.json — run: dotnet build Receipts.slnx");
+        missing.Add("openapi/generated/API.json — run: dotnet run scripts/generate-api-contract.cs");
     }
 
     string generatedDir = Path.Combine(repoRoot, "src", "Presentation", "API", "Generated");
@@ -73,13 +73,16 @@ Console.WriteLine("==> Restoring NuGet packages and configuring git hooks...");
 await RunAsync("dotnet", ["restore", "Receipts.slnx"], repoRoot);
 
 Console.WriteLine("==> Installing root npm dependencies...");
-await RunAsync("npm", ["install"], repoRoot);
+await RunAsync("npm", ["ci"], repoRoot);
 
 Console.WriteLine("==> Installing client npm dependencies...");
-await RunAsync("npm", ["install"], Path.Combine(repoRoot, "src", "client"));
+await RunAsync("npm", ["ci"], Path.Combine(repoRoot, "src", "client"));
 
-Console.WriteLine("==> Building solution (generates DTOs and openapi/generated/API.json)...");
+Console.WriteLine("==> Building solution...");
 await RunAsync("dotnet", ["build", "Receipts.slnx"], repoRoot);
+
+Console.WriteLine("==> Generating the server OpenAPI contract...");
+await RunAsync("dotnet", ["run", Path.Combine(repoRoot, "scripts", "generate-api-contract.cs")], repoRoot);
 
 Console.WriteLine("==> Generating TypeScript types from OpenAPI spec...");
 await RunAsync("npm", ["run", "generate:types:write"], Path.Combine(repoRoot, "src", "client"));
@@ -87,7 +90,7 @@ await RunAsync("npm", ["run", "generate:types:write"], Path.Combine(repoRoot, "s
 Console.WriteLine("==> Worktree setup complete.");
 return 0;
 
-static async Task<int> RunAsync(string command, string[] arguments, string workingDirectory)
+static async Task RunAsync(string command, string[] arguments, string workingDirectory)
 {
     // On Windows, .cmd/.bat scripts (like npm) require shell execution
     // since Process.Start with UseShellExecute=false can't resolve them.
@@ -108,12 +111,14 @@ static async Task<int> RunAsync(string command, string[] arguments, string worki
     using Process? process = Process.Start(psi);
     if (process is null)
     {
-        Console.Error.WriteLine($"Error: Failed to start {command}");
-        return 1;
+        throw new InvalidOperationException($"Failed to start {command}.");
     }
 
     await process.WaitForExitAsync();
-    return process.ExitCode;
+    if (process.ExitCode != 0)
+    {
+        throw new InvalidOperationException($"{command} exited with code {process.ExitCode}.");
+    }
 }
 
 static string GetRepoRoot()

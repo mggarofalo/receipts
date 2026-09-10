@@ -117,7 +117,7 @@ For the full breakdown — layer responsibilities, the description-normalization
 ```bash
 git clone https://github.com/mggarofalo/Receipts.git
 cd Receipts
-npm install
+npm ci
 aspire run --project src/Receipts.AppHost/Receipts.AppHost.csproj
 ```
 

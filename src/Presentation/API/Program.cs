@@ -14,6 +14,7 @@ using Sentry;
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 builder.AddServiceDefaults();
 builder.AddApplicationConfiguration();
+bool isContractGeneration = Environment.GetEnvironmentVariable("RECEIPTS_CONTRACT_GENERATION") == "1";
 
 // Configure Sentry error tracking (disabled when SENTRY_DSN is empty/missing)
 builder.WebHost.UseSentry(o =>
@@ -25,7 +26,11 @@ builder.WebHost.UseSentry(o =>
 });
 
 // Persist DataProtection keys: use /data volume in containers, default location in development
-if (Directory.Exists("/data"))
+if (isContractGeneration)
+{
+	builder.Services.AddDataProtection().UseEphemeralDataProtectionProvider();
+}
+else if (Directory.Exists("/data"))
 {
 	builder.Services.AddDataProtection()
 		.PersistKeysToFileSystem(new DirectoryInfo("/data/DataProtection-Keys"));
@@ -36,7 +41,7 @@ else
 }
 
 // Register services
-builder.Services
+IServiceCollection services = builder.Services
 	.AddOpenApiServices()
 	.AddVersioningServices()
 	.AddApplicationServices(builder.Configuration)
@@ -44,10 +49,14 @@ builder.Services
 	.AddAuthServices(builder.Configuration)
 	.RegisterProgramServices()
 	.RegisterApplicationServices(builder.Configuration)
-	.RegisterInfrastructureServices(builder.Configuration)
-	// Background workers live only in the long-running host — the CLI tools deliberately
-	// skip them so a migration or seed run never loads the embedding model (RECEIPTS-929).
-	.AddInfrastructureBackgroundServices();
+	.RegisterInfrastructureServices(builder.Configuration);
+
+if (!isContractGeneration)
+{
+	// Background workers live only in the long-running host. Contract extraction skips
+	// them, and the CLI tools use a separate composition, so neither path loads the model.
+	services.AddInfrastructureBackgroundServices();
+}
 
 // Build application
 WebApplication app = builder.Build();

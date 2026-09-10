@@ -127,7 +127,10 @@ The 1.34 GB model is deliberately not shipped in the container image or copied i
 
 ## Test Project Structure
 
-Tests mirror src structure. `SampleData` project provides shared test fixtures across test projects.
+Tests mirror src structure. `SampleData` provides reusable domain and persistence
+fixtures without depending on the API host. API-generated request fixtures live in
+`Presentation.SampleData`, so lower-layer test builds do not pull in presentation
+startup or contract generation.
 
 ```
 tests/
@@ -137,6 +140,7 @@ tests/
   Infrastructure.Tests/
   Presentation.API.Tests/
   SampleData/
+  Presentation.SampleData/
 ```
 
 ## Object Mapping with Mapperly
