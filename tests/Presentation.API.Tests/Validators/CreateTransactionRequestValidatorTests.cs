@@ -5,7 +5,7 @@ namespace Presentation.API.Tests.Validators;
 
 public class CreateTransactionRequestValidatorTests
 {
-	private readonly CreateTransactionRequestValidator _validator = new();
+	private readonly CreateTransactionRequestValidator _validator = new(ValidatorTestClock.Policy);
 
 	[Fact]
 	public void Should_Pass_When_ValidTransaction()
@@ -14,7 +14,7 @@ public class CreateTransactionRequestValidatorTests
 		CreateTransactionRequest transaction = new()
 		{
 			Amount = 100,
-			Date = DateOnly.FromDateTime(DateTime.Today),
+			Date = ValidatorTestClock.Today,
 			CardId = Guid.NewGuid(),
 		};
 
@@ -32,7 +32,7 @@ public class CreateTransactionRequestValidatorTests
 		CreateTransactionRequest transaction = new()
 		{
 			Amount = 0,
-			Date = DateOnly.FromDateTime(DateTime.Today),
+			Date = ValidatorTestClock.Today,
 		};
 
 		// Act
@@ -47,7 +47,7 @@ public class CreateTransactionRequestValidatorTests
 	public void Should_Pass_When_DateIsInThePast()
 	{
 		// Arrange
-		DateOnly pastDate = DateOnly.FromDateTime(DateTime.Today.AddDays(-1));
+		DateOnly pastDate = ValidatorTestClock.Today.AddDays(-1);
 		CreateTransactionRequest transaction = new()
 		{
 			Amount = 100,
@@ -66,7 +66,7 @@ public class CreateTransactionRequestValidatorTests
 	public void Should_Pass_When_DateIsToday()
 	{
 		// Arrange
-		DateOnly today = DateOnly.FromDateTime(DateTime.Today);
+		DateOnly today = ValidatorTestClock.Today;
 		CreateTransactionRequest transaction = new()
 		{
 			Amount = 100,
@@ -88,7 +88,7 @@ public class CreateTransactionRequestValidatorTests
 		CreateTransactionRequest transaction = new()
 		{
 			Amount = 100,
-			Date = DateOnly.FromDateTime(DateTime.Today.AddDays(1)),
+			Date = ValidatorTestClock.Today.AddDays(1),
 		};
 
 		// Act
@@ -106,7 +106,7 @@ public class CreateTransactionRequestValidatorTests
 		CreateTransactionRequest transaction = new()
 		{
 			Amount = 100,
-			Date = DateOnly.FromDateTime(DateTime.Today),
+			Date = ValidatorTestClock.Today,
 			CardId = Guid.Empty,
 		};
 

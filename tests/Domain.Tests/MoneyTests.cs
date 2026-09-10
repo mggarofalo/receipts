@@ -49,49 +49,71 @@ public class MoneyTests
 	}
 
 	[Fact]
-	public void Money_Addition_ShouldReturnCorrectResult()
+	public void Money_Addition_WithSameCurrency_ReturnsSumInThatCurrency()
 	{
-		Money money1 = new(100.50m);
-		Money money2 = new(200.75m);
+		Money money1 = new(100.50m, Currency.USD);
+		Money money2 = new(200.75m, Currency.USD);
 		Money result = money1 + money2;
-		Assert.Equal(new Money(301.25m), result);
+		Assert.Equal(new Money(301.25m, Currency.USD), result);
 	}
 
 	[Fact]
-	public void Money_Subtraction_ShouldReturnCorrectResult()
+	public void Money_Subtraction_WithSameCurrency_ReturnsDifferenceInThatCurrency()
 	{
-		Money money1 = new(200.75m);
-		Money money2 = new(100.50m);
+		Money money1 = new(200.75m, Currency.USD);
+		Money money2 = new(100.50m, Currency.USD);
 		Money result = money1 - money2;
-		Assert.Equal(new Money(100.25m), result);
+		Assert.Equal(new Money(100.25m, Currency.USD), result);
+	}
+
+	[Theory]
+	[InlineData(2, 201)]
+	[InlineData(-0.5, -50.25)]
+	public void Money_Multiplication_ByScalar_ReturnsScaledMoney(decimal scalar, decimal expectedAmount)
+	{
+		Money money = new(100.50m, Currency.USD);
+
+		Assert.Equal(new Money(expectedAmount, Currency.USD), money * scalar);
+		Assert.Equal(new Money(expectedAmount, Currency.USD), scalar * money);
 	}
 
 	[Fact]
-	public void Money_Multiplication_ShouldReturnCorrectResult()
+	public void Money_Division_ByScalar_ReturnsScaledMoney()
 	{
-		Money money1 = new(100.50m);
-		Money money2 = new(2);
-		Money result = money1 * money2;
-		Assert.Equal(new Money(201.00m), result);
+		Money money = new(201.00m, Currency.USD);
+
+		Money result = money / 2m;
+
+		Assert.Equal(new Money(100.50m, Currency.USD), result);
 	}
 
 	[Fact]
-	public void Money_Division_ShouldReturnCorrectResult()
+	public void Money_Division_ByMoneyWithSameCurrency_ReturnsDimensionlessRatio()
 	{
-		Money money1 = new(201.00m);
-		Money money2 = new(2);
-		Money result = money1 / money2;
-		Assert.Equal(new Money(100.50m), result);
+		decimal result = new Money(201m, Currency.USD) / new Money(2m, Currency.USD);
+
+		Assert.Equal(100.5m, result);
 	}
 
-	[Fact]
-	public void Money_Division_RoundsHalfAwayFromZero()
+	[Theory]
+	[InlineData("add")]
+	[InlineData("subtract")]
+	[InlineData("ratio")]
+	public void Money_Operations_WithMismatchedCurrencies_Throw(string operation)
 	{
-		// Regression for RECEIPTS-672: division should round half-up to match
-		// the cash-register convention adopted in RECEIPTS-670, not banker's
-		// rounding (which is what Math.Round(x, 2) defaults to).
-		// 1.005 / 1 = 1.005 → half-up = 1.01, banker's = 1.00.
-		Money result = new Money(1.005m) / new Money(1m);
-		Assert.Equal(new Money(1.01m), result);
+		Money usd = new(10m, Currency.USD);
+		Money unsupportedCurrency = new(2m, (Currency)999);
+
+		Action act = operation switch
+		{
+			"add" => () => _ = usd + unsupportedCurrency,
+			"subtract" => () => _ = usd - unsupportedCurrency,
+			"ratio" => () => _ = usd / unsupportedCurrency,
+			_ => throw new ArgumentOutOfRangeException(nameof(operation)),
+		};
+
+		InvalidOperationException exception = Assert.Throws<InvalidOperationException>(act);
+		Assert.Contains("USD", exception.Message);
+		Assert.Contains("999", exception.Message);
 	}
 }

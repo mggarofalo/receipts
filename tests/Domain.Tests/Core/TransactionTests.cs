@@ -51,16 +51,18 @@ public class TransactionTests
 	}
 
 	[Fact]
-	public void Constructor_FutureDate_ThrowsArgumentException()
+	public void Constructor_DateFutureRelativeToMachineClock_HydratesTransaction()
 	{
 		// Arrange
 		Guid id = Guid.NewGuid();
 		Money amount = new(100.50m);
-		DateOnly date = DateOnly.FromDateTime(DateTime.Today.AddDays(1));
+		DateOnly date = new(2999, 12, 31);
 
-		// Act & Assert
-		ArgumentException exception = Assert.Throws<ArgumentException>(() => new Transaction(id, Guid.NewGuid(), amount, date));
-		Assert.StartsWith(Transaction.DateCannotBeInTheFuture, exception.Message);
+		// Act
+		Transaction transaction = new(id, Guid.NewGuid(), amount, date);
+
+		// Assert
+		Assert.Equal(date, transaction.Date);
 	}
 
 	[Fact]

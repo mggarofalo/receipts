@@ -5,7 +5,7 @@ namespace Presentation.API.Tests.Validators;
 
 public class CreateReceiptRequestValidatorTests
 {
-	private readonly CreateReceiptRequestValidator _validator = new();
+	private readonly CreateReceiptRequestValidator _validator = new(ValidatorTestClock.Policy);
 
 	[Fact]
 	public void Should_Pass_When_ValidReceipt()
@@ -14,7 +14,7 @@ public class CreateReceiptRequestValidatorTests
 		CreateReceiptRequest receipt = new()
 		{
 			Location = "Valid Location",
-			Date = DateOnly.FromDateTime(DateTime.Today)
+			Date = ValidatorTestClock.Today
 		};
 
 		// Act
@@ -54,7 +54,7 @@ public class CreateReceiptRequestValidatorTests
 		CreateReceiptRequest receipt = new()
 		{
 			Location = "Valid Location",
-			Date = DateOnly.FromDateTime(DateTime.Today.AddDays(1))
+			Date = ValidatorTestClock.Today.AddDays(1)
 		};
 
 		// Act
@@ -72,7 +72,7 @@ public class CreateReceiptRequestValidatorTests
 		CreateReceiptRequest receipt = new()
 		{
 			Location = "",
-			Date = DateOnly.FromDateTime(DateTime.Today)
+			Date = ValidatorTestClock.Today
 		};
 
 		// Act

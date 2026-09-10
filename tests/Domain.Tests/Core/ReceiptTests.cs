@@ -55,16 +55,18 @@ public class ReceiptTests
 	}
 
 	[Fact]
-	public void Constructor_FutureDate_ThrowsArgumentException()
+	public void Constructor_DateFutureRelativeToMachineClock_HydratesReceipt()
 	{
 		// Arrange
 		Guid id = Guid.NewGuid();
 		string location = "Test Store";
-		DateOnly date = DateOnly.FromDateTime(DateTime.Today.AddDays(1));
+		DateOnly date = new(2999, 12, 31);
 		Money taxAmount = new(5.00m);
 
-		// Act & Assert
-		ArgumentException exception = Assert.Throws<ArgumentException>(() => new Receipt(id, location, date, taxAmount));
-		Assert.StartsWith(Receipt.DateCannotBeInTheFuture, exception.Message);
+		// Act
+		Receipt receipt = new(id, location, date, taxAmount);
+
+		// Assert
+		Assert.Equal(date, receipt.Date);
 	}
 }

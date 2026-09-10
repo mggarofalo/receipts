@@ -7,7 +7,7 @@ namespace Presentation.API.Tests.Validators;
 
 public class CreateCompleteReceiptRequestValidatorTests
 {
-	private readonly CreateCompleteReceiptRequestValidator _validator = new();
+	private readonly CreateCompleteReceiptRequestValidator _validator = new(ValidatorTestClock.Policy);
 
 	[Fact]
 	public void Validate_WithValidAdjustment_Passes()
@@ -45,11 +45,38 @@ public class CreateCompleteReceiptRequestValidatorTests
 		result.IsValid.Should().BeTrue();
 	}
 
-	private static CreateCompleteReceiptRequest ValidRequest() => new()
+	[Fact]
+	public void Validate_UsesControlledAdmissionDateForReceiptAndTransactions()
 	{
-		Receipt = ReceiptDtoGenerator.GenerateCreateRequest(),
-		Transactions = TransactionDtoGenerator.GenerateCreateRequestList(1),
-		Items = ReceiptItemDtoGenerator.GenerateCreateRequestList(1),
-		Adjustments = [],
-	};
+		CreateCompleteReceiptRequest request = ValidRequest();
+		request.Receipt.Date = ValidatorTestClock.Today.AddDays(1);
+		request.Transactions.First().Date = ValidatorTestClock.Today.AddDays(1);
+
+		FluentValidation.Results.ValidationResult result = _validator.Validate(request);
+
+		result.Errors.Should().Contain(error =>
+			error.PropertyName == "Receipt.Date" &&
+			error.ErrorMessage == CreateReceiptRequestValidator.DateMustBePriorToCurrentDate);
+		result.Errors.Should().Contain(error =>
+			error.PropertyName == "Transactions[0].Date" &&
+			error.ErrorMessage == CreateTransactionRequestValidator.DateMustBePriorToCurrentDate);
+	}
+
+	private static CreateCompleteReceiptRequest ValidRequest()
+	{
+		CreateCompleteReceiptRequest request = new()
+		{
+			Receipt = ReceiptDtoGenerator.GenerateCreateRequest(),
+			Transactions = TransactionDtoGenerator.GenerateCreateRequestList(1),
+			Items = ReceiptItemDtoGenerator.GenerateCreateRequestList(1),
+			Adjustments = [],
+		};
+		request.Receipt.Date = ValidatorTestClock.Today;
+		foreach (CreateTransactionRequest transaction in request.Transactions)
+		{
+			transaction.Date = ValidatorTestClock.Today;
+		}
+
+		return request;
+	}
 }
