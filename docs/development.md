@@ -46,6 +46,7 @@ enabled because the client intentionally runs `patch-package` after installation
 install scripts are blocked unless listed in `allowScripts`: the client approves the locked
 `esbuild` and `@sentry/cli` installers, while optional `fsevents` and `msw` scripts are explicitly
 denied. Do not substitute `npm install` in setup or CI, as that can rewrite the lockfiles.
+See [npm dependency security](npm-dependency-security.md) for the audit and update policy.
 
 The model is stored per-machine, not per-checkout — `%LOCALAPPDATA%\Receipts\models` on
 Windows, `~/.local/share/Receipts/models` elsewhere — so every clone and worktree shares one
