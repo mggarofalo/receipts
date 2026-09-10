@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { createElement, type ReactNode } from "react";
+import { createElement, useEffect, type ReactNode } from "react";
 
 vi.mock("@/lib/api-client", () => ({
   default: {
@@ -232,6 +232,98 @@ describe("useAccountCards", () => {
     });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
+  });
+
+  it("preserves the raw pending, error, and refetch query capabilities", async () => {
+    const cards = [
+      { id: "c1", cardCode: "VISA1", name: "Physical A", isActive: true },
+    ];
+    let resolveRequest!: (value: {
+      data: typeof cards;
+      error: undefined;
+    }) => void;
+    (client.GET as Mock).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRequest = resolve;
+      }),
+    );
+    const expectedError = { message: "cards unavailable" };
+    const { result } = renderHook(() => useAccountCards("a1"), {
+      wrapper: createWrapper(),
+    });
+
+    expect(result.current.status).toBe("pending");
+    expect(result.current.isPending).toBe(true);
+    expect(result.current.error).toBeNull();
+    expect(result.current.refetch).toBeTypeOf("function");
+
+    await act(async () => resolveRequest({ data: cards, error: undefined }));
+    await waitFor(() => expect(result.current.data).toEqual(cards));
+
+    (client.GET as Mock).mockResolvedValue({
+      data: undefined,
+      error: expectedError,
+    });
+    await act(async () => {
+      await result.current.refetch();
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.status).toBe("error");
+    expect(result.current.error).toBe(expectedError);
+    expect(result.current.refetch).toBeTypeOf("function");
+  });
+
+  it("does not rerender or rerun a field-specific effect for unchanged refetch data", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false, gcTime: 0, staleTime: Infinity },
+      },
+    });
+    const cards = [
+      { id: "c1", cardCode: "VISA1", name: "Physical A", isActive: true },
+    ];
+    (client.GET as Mock).mockImplementation(async () => ({
+      data: cards.map((card) => ({ ...card })),
+      error: undefined,
+    }));
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client: queryClient }, children);
+    let renderCount = 0;
+    let effectCount = 0;
+    const { result, unmount } = renderHook(
+      () => {
+        renderCount += 1;
+        const { data, isError, refetch } = useAccountCards("a1");
+        useEffect(() => {
+          effectCount += 1;
+        }, [data, isError, refetch]);
+        return data;
+      },
+      { wrapper },
+    );
+
+    try {
+      await waitFor(() => expect(result.current).toEqual(cards));
+      const settledData = result.current;
+      const rendersBeforeUnchangedRefetch = renderCount;
+      const effectsBeforeUnchangedRefetch = effectCount;
+
+      await act(async () => {
+        await queryClient.refetchQueries({
+          queryKey: ["cards", "byAccount", "a1"],
+          exact: true,
+        });
+      });
+      await waitFor(() => expect(client.GET).toHaveBeenCalledTimes(2));
+
+      expect(result.current).toBe(settledData);
+      expect(renderCount).toBe(rendersBeforeUnchangedRefetch);
+      expect(effectCount).toBe(effectsBeforeUnchangedRefetch);
+    } finally {
+      unmount();
+      queryClient.clear();
+    }
   });
 });
 
