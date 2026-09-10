@@ -24,6 +24,7 @@ interface EntityChangeNotification {
   userId?: string | null;
   authMethod?: string | null;
   connectionId?: string | null;
+  suppressToast?: boolean;
 }
 
 const displayNameMap: Record<string, string> = {
@@ -36,6 +37,7 @@ const displayNameMap: Record<string, string> = {
   category: "category",
   subcategory: "subcategory",
   "item-template": "item template",
+  "item-embedding": "item embedding",
   "normalized-description": "normalized description",
   "normalized-description-settings": "normalization settings",
   "duplicate-acceptance": "duplicate acceptance",
@@ -193,6 +195,8 @@ export function useSignalR(enabled: boolean) {
           notification.changeType === "created" ? "created" : "changed",
         ).catch(() => {});
       }
+
+      if (notification.suppressToast) return;
 
       const token = getAccessToken();
       const jwt = token ? parseJwtPayload(token) : null;

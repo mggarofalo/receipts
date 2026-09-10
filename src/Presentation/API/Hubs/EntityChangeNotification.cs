@@ -7,4 +7,5 @@ public record EntityChangeNotification(
 	int Count = 1,
 	string? UserId = null,
 	string? AuthMethod = null,
-	string? ConnectionId = null);
+	string? ConnectionId = null,
+	bool SuppressToast = false);

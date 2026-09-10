@@ -1,9 +1,11 @@
 using Application.Interfaces.Services;
+using Application.Models.CommittedChanges;
 using FluentAssertions;
 using Infrastructure.Entities.Core;
 using Infrastructure.Services;
 using Infrastructure.Tests.Helpers;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -21,6 +23,7 @@ public class EmbeddingGenerationServiceTests
 	private readonly Mock<IServiceProvider> _serviceProviderMock;
 	private readonly IDbContextFactory<ApplicationDbContext> _contextFactory;
 	private readonly MockCurrentUserAccessor _userAccessor;
+	private readonly Mock<ICommittedChangePublisher> _publisherMock = new();
 
 	public EmbeddingGenerationServiceTests()
 	{
@@ -45,6 +48,198 @@ public class EmbeddingGenerationServiceTests
 		_scopeFactoryMock
 			.Setup(f => f.CreateScope())
 			.Returns(_scopeMock.Object);
+	}
+
+	private EmbeddingGenerationService CreatePublisherAwareService() => new(
+		_scopeFactoryMock.Object,
+		_loggerMock.Object,
+		_publisherMock.Object);
+
+	[Fact]
+	public async Task ProcessPendingEmbeddingsAsync_CommittedBatch_PublishesBroadRepairAfterSave()
+	{
+		Guid templateId = Guid.NewGuid();
+		await using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.ItemTemplates.Add(new ItemTemplateEntity { Id = templateId, Name = "Organic Milk" });
+			await seed.SaveChangesAsync();
+		}
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
+		_embeddingServiceMock
+			.Setup(e => e.GenerateEmbeddingsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync([CreateFakeEmbedding()]);
+		_publisherMock
+			.Setup(p => p.PublishAsync(It.IsAny<CommittedEntityChange>()))
+			.Callback(() =>
+			{
+				using ApplicationDbContext committed = _contextFactory.CreateDbContext();
+				committed.ItemEmbeddings.Should().ContainSingle(e =>
+					e.EntityType == "ItemTemplate" && e.EntityId == templateId,
+					"the embedding batch must be durable before publication");
+			})
+			.Returns(Task.CompletedTask);
+
+		int processed = await CreatePublisherAwareService()
+			.ProcessPendingEmbeddingsAsync(CancellationToken.None);
+
+		processed.Should().Be(1);
+		_publisherMock.Verify(p => p.PublishAsync(It.Is<CommittedEntityChange>(change =>
+			change.EntityType == CommittedEntityType.ItemEmbedding
+			&& change.ChangeType == CommittedChangeType.Updated
+			&& change.EntityId == null
+			&& change.SuppressToast)), Times.Once);
+	}
+
+	[Theory]
+	[InlineData("ItemTemplate")]
+	[InlineData("ReceiptItem")]
+	public async Task ProcessPendingEmbeddingsAsync_SourceChangesDuringGeneration_SkipsStaleInference(
+		string entityType)
+	{
+		Guid entityId = Guid.NewGuid();
+		await using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			if (entityType == "ItemTemplate")
+			{
+				seed.ItemTemplates.Add(new ItemTemplateEntity
+				{
+					Id = entityId,
+					Name = "Original Template",
+				});
+			}
+			else
+			{
+				Guid receiptId = Guid.NewGuid();
+				seed.Receipts.Add(new ReceiptEntity
+				{
+					Id = receiptId,
+					Date = new DateOnly(2026, 9, 9),
+					Location = "Test",
+					TaxAmount = 0,
+					TaxAmountCurrency = Common.Currency.USD,
+				});
+				seed.ReceiptItems.Add(new ReceiptItemEntity
+				{
+					Id = entityId,
+					ReceiptId = receiptId,
+					Description = "Original Item",
+					Quantity = 1,
+					UnitPrice = 1,
+					UnitPriceCurrency = Common.Currency.USD,
+					TotalAmount = 1,
+					TotalAmountCurrency = Common.Currency.USD,
+					Category = "Test",
+				});
+			}
+			await seed.SaveChangesAsync();
+		}
+		TaskCompletionSource generationStarted = new(
+			TaskCreationOptions.RunContinuationsAsynchronously);
+		TaskCompletionSource releaseGeneration = new(
+			TaskCreationOptions.RunContinuationsAsynchronously);
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
+		_embeddingServiceMock
+			.Setup(e => e.GenerateEmbeddingsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()))
+			.Returns(async () =>
+			{
+				generationStarted.SetResult();
+				await releaseGeneration.Task;
+				return [CreateFakeEmbedding()];
+			});
+		Task<int> processing = CreatePublisherAwareService()
+			.ProcessPendingEmbeddingsAsync(CancellationToken.None);
+		await generationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+		await using (ApplicationDbContext mutate = _contextFactory.CreateDbContext())
+		{
+			if (entityType == "ItemTemplate")
+			{
+				ItemTemplateEntity source = await mutate.ItemTemplates
+					.IgnoreQueryFilters()
+					.SingleAsync(item => item.Id == entityId);
+				source.Name = "Renamed While Generating";
+			}
+			else
+			{
+				ReceiptItemEntity source = await mutate.ReceiptItems
+					.IgnoreQueryFilters()
+					.SingleAsync(item => item.Id == entityId);
+				source.DeletedAt = DateTimeOffset.UtcNow;
+			}
+			await mutate.SaveChangesAsync();
+		}
+		releaseGeneration.SetResult();
+
+		int processed = await processing;
+
+		processed.Should().Be(0);
+		await using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		verify.ItemEmbeddings.Should().NotContain(e =>
+			e.EntityType == entityType && e.EntityId == entityId);
+		_publisherMock.Verify(p => p.PublishAsync(It.IsAny<CommittedEntityChange>()), Times.Never);
+	}
+
+	[Theory]
+	[InlineData(false)]
+	[InlineData(true)]
+	public async Task ProcessPendingEmbeddingsAsync_NoWritableBatch_DoesNotPublish(bool configured)
+	{
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(configured);
+
+		int processed = await CreatePublisherAwareService()
+			.ProcessPendingEmbeddingsAsync(CancellationToken.None);
+
+		processed.Should().Be(0);
+		_publisherMock.Verify(p => p.PublishAsync(It.IsAny<CommittedEntityChange>()), Times.Never);
+	}
+
+	[Fact]
+	public async Task ProcessPendingEmbeddingsAsync_GenerationFailure_DoesNotPublish()
+	{
+		await using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.ItemTemplates.Add(new ItemTemplateEntity { Id = Guid.NewGuid(), Name = "Broken Embedding" });
+			await seed.SaveChangesAsync();
+		}
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
+		_embeddingServiceMock
+			.Setup(e => e.GenerateEmbeddingsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new InvalidOperationException("generation failed"));
+
+		Func<Task> act = async () => await CreatePublisherAwareService()
+			.ProcessPendingEmbeddingsAsync(CancellationToken.None);
+
+		await act.Should().ThrowAsync<InvalidOperationException>();
+		_publisherMock.Verify(p => p.PublishAsync(It.IsAny<CommittedEntityChange>()), Times.Never);
+	}
+
+	[Fact]
+	public async Task ProcessPendingEmbeddingsAsync_SaveFailure_DoesNotPublish()
+	{
+		MockCurrentUserAccessor accessor = new() { UserId = "test-user" };
+		DbContextOptions<ApplicationDbContext> options = new DbContextOptionsBuilder<ApplicationDbContext>()
+			.UseInMemoryDatabase($"EmbeddingSaveFailure_{Guid.NewGuid()}")
+			.AddInterceptors(new EmbeddingSaveFailureInterceptor())
+			.Options;
+		IDbContextFactory<ApplicationDbContext> failingFactory =
+			new TestDbContextFactoryWithUser(options, accessor);
+		_serviceProviderMock
+			.Setup(sp => sp.GetService(typeof(IDbContextFactory<ApplicationDbContext>)))
+			.Returns(failingFactory);
+		await using (ApplicationDbContext seed = failingFactory.CreateDbContext())
+		{
+			seed.ItemTemplates.Add(new ItemTemplateEntity { Id = Guid.NewGuid(), Name = "Cannot Save" });
+			await seed.SaveChangesAsync();
+		}
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
+		_embeddingServiceMock
+			.Setup(e => e.GenerateEmbeddingsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync([CreateFakeEmbedding()]);
+
+		Func<Task> act = async () => await CreatePublisherAwareService()
+			.ProcessPendingEmbeddingsAsync(CancellationToken.None);
+
+		await act.Should().ThrowAsync<DbUpdateException>();
+		_publisherMock.Verify(p => p.PublishAsync(It.IsAny<CommittedEntityChange>()), Times.Never);
 	}
 
 	[Fact]
@@ -429,5 +624,24 @@ public class EmbeddingGenerationServiceTests
 		}
 
 		return embedding;
+	}
+
+	private sealed class EmbeddingSaveFailureInterceptor : SaveChangesInterceptor
+	{
+		public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+			DbContextEventData eventData,
+			InterceptionResult<int> result,
+			CancellationToken cancellationToken = default)
+		{
+			bool writesEmbedding = eventData.Context?.ChangeTracker
+				.Entries<ItemEmbeddingEntity>()
+				.Any(entry => entry.State is EntityState.Added or EntityState.Modified) == true;
+			if (writesEmbedding)
+			{
+				throw new DbUpdateException("embedding save failed");
+			}
+
+			return base.SavingChangesAsync(eventData, result, cancellationToken);
+		}
 	}
 }

@@ -12,7 +12,7 @@ public sealed class EntityChangeNotifier : IEntityChangeNotifier, IDisposable
 	private readonly IHubContext<EntityHub, IEntityHubClient> _hubContext;
 	private readonly IHttpContextAccessor _httpContextAccessor;
 	private readonly ILogger<EntityChangeNotifier> _logger;
-	private readonly ConcurrentDictionary<(string EntityType, string ChangeType, string? UserId, string? AuthMethod, string? ConnectionId), NotificationBucket> _pending = new();
+	private readonly ConcurrentDictionary<(string EntityType, string ChangeType, string? UserId, string? AuthMethod, string? ConnectionId, bool SuppressToast), NotificationBucket> _pending = new();
 	private readonly Timer _flushTimer;
 	private readonly TimeSpan _flushInterval;
 	private int _disposed;
@@ -62,14 +62,19 @@ public sealed class EntityChangeNotifier : IEntityChangeNotifier, IDisposable
 
 	public Task NotifyAllChanged(string entityType, string changeType)
 	{
-		Enqueue(entityType, changeType, id: null);
+		return NotifyAllChanged(entityType, changeType, suppressToast: false);
+	}
+
+	public Task NotifyAllChanged(string entityType, string changeType, bool suppressToast)
+	{
+		Enqueue(entityType, changeType, id: null, suppressToast);
 		return Task.CompletedTask;
 	}
 
-	private void Enqueue(string entityType, string changeType, Guid? id)
+	private void Enqueue(string entityType, string changeType, Guid? id, bool suppressToast = false)
 	{
 		var origin = CaptureOrigin();
-		var key = (entityType, changeType, origin.UserId, origin.AuthMethod, origin.ConnectionId);
+		var key = (entityType, changeType, origin.UserId, origin.AuthMethod, origin.ConnectionId, suppressToast);
 		_pending.AddOrUpdate(
 			key,
 			_ => new NotificationBucket(id),
@@ -120,22 +125,22 @@ public sealed class EntityChangeNotifier : IEntityChangeNotifier, IDisposable
 	internal async Task FlushAsync()
 	{
 		// Snapshot and remove all pending buckets atomically per key.
-		List<(string EntityType, string ChangeType, string? UserId, string? AuthMethod, string? ConnectionId, int Count)> toSend = [];
+		List<(string EntityType, string ChangeType, string? UserId, string? AuthMethod, string? ConnectionId, bool SuppressToast, int Count)> toSend = [];
 		foreach (var key in _pending.Keys)
 		{
 			if (_pending.TryRemove(key, out NotificationBucket? bucket))
 			{
-				toSend.Add((key.EntityType, key.ChangeType, key.UserId, key.AuthMethod, key.ConnectionId, bucket.Count));
+				toSend.Add((key.EntityType, key.ChangeType, key.UserId, key.AuthMethod, key.ConnectionId, key.SuppressToast, bucket.Count));
 			}
 		}
 
 		for (int i = 0; i < toSend.Count; i++)
 		{
-			var (entityType, changeType, userId, authMethod, connectionId, count) = toSend[i];
+			var (entityType, changeType, userId, authMethod, connectionId, suppressToast, count) = toSend[i];
 			try
 			{
 				await _hubContext.Clients.All.EntityChanged(
-					new EntityChangeNotification(entityType, changeType, null, count, userId, authMethod, connectionId));
+					new EntityChangeNotification(entityType, changeType, null, count, userId, authMethod, connectionId, suppressToast));
 			}
 			catch (Exception ex)
 			{
@@ -158,9 +163,9 @@ public sealed class EntityChangeNotifier : IEntityChangeNotifier, IDisposable
 		}
 	}
 
-	private void Requeue((string EntityType, string ChangeType, string? UserId, string? AuthMethod, string? ConnectionId, int Count) item)
+	private void Requeue((string EntityType, string ChangeType, string? UserId, string? AuthMethod, string? ConnectionId, bool SuppressToast, int Count) item)
 	{
-		var key = (item.EntityType, item.ChangeType, item.UserId, item.AuthMethod, item.ConnectionId);
+		var key = (item.EntityType, item.ChangeType, item.UserId, item.AuthMethod, item.ConnectionId, item.SuppressToast);
 		_pending.AddOrUpdate(
 			key,
 			_ => new NotificationBucket(item.Count),

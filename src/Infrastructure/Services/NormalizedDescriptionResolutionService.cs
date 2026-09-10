@@ -1,5 +1,6 @@
 using System.Threading.Channels;
 using Application.Interfaces.Services;
+using Application.Models.CommittedChanges;
 using Application.Models.NormalizedDescriptions;
 using Domain.NormalizedDescriptions;
 using Infrastructure.Entities.Core;
@@ -30,8 +31,17 @@ namespace Infrastructure.Services;
 public class NormalizedDescriptionResolutionService(
 	IServiceScopeFactory scopeFactory,
 	IDescriptionChangeSignal signal,
-	ILogger<NormalizedDescriptionResolutionService> logger) : BackgroundService
+	ILogger<NormalizedDescriptionResolutionService> logger,
+	ICommittedChangePublisher committedChangePublisher) : BackgroundService
 {
+	public NormalizedDescriptionResolutionService(
+		IServiceScopeFactory scopeFactory,
+		IDescriptionChangeSignal signal,
+		ILogger<NormalizedDescriptionResolutionService> logger)
+		: this(scopeFactory, signal, logger, new NullCommittedChangePublisher())
+	{
+	}
+
 	internal const int BatchSize = 50;
 	internal const int MinDescriptionLength = 2;
 	internal static readonly TimeSpan Interval = TimeSpan.FromSeconds(30);
@@ -243,6 +253,13 @@ public class NormalizedDescriptionResolutionService(
 
 		int linked = await ApplyResolutionsAsync(contextFactory, planned, cancellationToken);
 		skipped += planned.Count - linked;
+		if (linked > 0)
+		{
+			await committedChangePublisher.PublishAsync(new(
+				CommittedEntityType.ReceiptItem,
+				CommittedChangeType.Updated,
+				SuppressToast: true));
+		}
 
 		ResolutionSummary summary = new(linked, newEntriesCreated, skipped);
 		logger.LogInformation(
