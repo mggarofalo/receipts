@@ -19,6 +19,7 @@ public class YnabSyncRecordServiceTests
 	private static readonly Guid Receipt1 = Guid.NewGuid();
 	private static readonly Guid Receipt2 = Guid.NewGuid();
 	private static readonly Guid Receipt3 = Guid.NewGuid();
+	private const string SelectedBudgetId = "budget-1";
 
 	public YnabSyncRecordServiceTests()
 	{
@@ -60,15 +61,52 @@ public class YnabSyncRecordServiceTests
 			&& change.EntityId == id)), times);
 
 	[Fact]
+	public async Task GetByTransactionTypeAndBudgetAsync_UsesBudgetAsPartOfSyncIdentity()
+	{
+		Guid transactionId = Guid.NewGuid();
+		YnabSyncRecordEntity expected = new()
+		{
+			Id = Guid.NewGuid(),
+			LocalTransactionId = transactionId,
+			SyncType = YnabSyncType.TransactionPush,
+			YnabBudgetId = SelectedBudgetId,
+		};
+		_repositoryMock.Setup(r => r.GetByTransactionTypeAndBudgetAsync(
+			transactionId, YnabSyncType.TransactionPush, SelectedBudgetId, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(expected);
+
+		YnabSyncRecordDto? result = await _service.GetByTransactionTypeAndBudgetAsync(
+			transactionId, YnabSyncType.TransactionPush, SelectedBudgetId, CancellationToken.None);
+
+		result.Should().NotBeNull();
+		result!.Id.Should().Be(expected.Id);
+		result.YnabBudgetId.Should().Be(SelectedBudgetId);
+	}
+
+	[Fact]
+	public async Task GetLatestSuccessfulSyncTimestampAsync_QueriesSelectedBudgetOnly()
+	{
+		DateTimeOffset expected = DateTimeOffset.UtcNow;
+		_repositoryMock.Setup(r => r.GetLatestSuccessfulSyncTimestampAsync(
+			SelectedBudgetId, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(expected);
+
+		DateTimeOffset? result = await _service.GetLatestSuccessfulSyncTimestampAsync(
+			SelectedBudgetId, CancellationToken.None);
+
+		result.Should().Be(expected);
+	}
+
+	[Fact]
 	public async Task GetSyncStatusesByReceiptIdsAsync_NoSyncRecords_ReturnsNotSyncedForAll()
 	{
 		// Arrange
 		List<Guid> receiptIds = [Receipt1, Receipt2];
-		_repositoryMock.Setup(r => r.GetByReceiptIdsAsync(receiptIds, It.IsAny<CancellationToken>()))
+		_repositoryMock.Setup(r => r.GetByReceiptIdsAndBudgetAsync(receiptIds, SelectedBudgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync([]);
 
 		// Act
-		List<ReceiptYnabSyncStatusDto> result = await _service.GetSyncStatusesByReceiptIdsAsync(receiptIds, CancellationToken.None);
+		List<ReceiptYnabSyncStatusDto> result = await _service.GetSyncStatusesByReceiptIdsAndBudgetAsync(receiptIds, SelectedBudgetId, CancellationToken.None);
 
 		// Assert
 		result.Should().HaveCount(2);
@@ -82,14 +120,14 @@ public class YnabSyncRecordServiceTests
 		List<Guid> receiptIds = [Receipt1];
 		Guid txId = Guid.NewGuid();
 
-		_repositoryMock.Setup(r => r.GetByReceiptIdsAsync(receiptIds, It.IsAny<CancellationToken>()))
+		_repositoryMock.Setup(r => r.GetByReceiptIdsAndBudgetAsync(receiptIds, SelectedBudgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(
 			[
 				CreateSyncRecord(txId, Receipt1, YnabSyncStatus.Synced),
 			]);
 
 		// Act
-		List<ReceiptYnabSyncStatusDto> result = await _service.GetSyncStatusesByReceiptIdsAsync(receiptIds, CancellationToken.None);
+		List<ReceiptYnabSyncStatusDto> result = await _service.GetSyncStatusesByReceiptIdsAndBudgetAsync(receiptIds, SelectedBudgetId, CancellationToken.None);
 
 		// Assert
 		result.Should().ContainSingle().Which.SyncStatus.Should().Be(ReceiptSyncStatusValue.Synced);
@@ -103,7 +141,7 @@ public class YnabSyncRecordServiceTests
 		Guid tx1 = Guid.NewGuid();
 		Guid tx2 = Guid.NewGuid();
 
-		_repositoryMock.Setup(r => r.GetByReceiptIdsAsync(receiptIds, It.IsAny<CancellationToken>()))
+		_repositoryMock.Setup(r => r.GetByReceiptIdsAndBudgetAsync(receiptIds, SelectedBudgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(
 			[
 				CreateSyncRecord(tx1, Receipt1, YnabSyncStatus.Synced),
@@ -111,7 +149,7 @@ public class YnabSyncRecordServiceTests
 			]);
 
 		// Act
-		List<ReceiptYnabSyncStatusDto> result = await _service.GetSyncStatusesByReceiptIdsAsync(receiptIds, CancellationToken.None);
+		List<ReceiptYnabSyncStatusDto> result = await _service.GetSyncStatusesByReceiptIdsAndBudgetAsync(receiptIds, SelectedBudgetId, CancellationToken.None);
 
 		// Assert
 		result.Should().ContainSingle().Which.SyncStatus.Should().Be(ReceiptSyncStatusValue.Pending);
@@ -126,7 +164,7 @@ public class YnabSyncRecordServiceTests
 		Guid tx2 = Guid.NewGuid();
 		Guid tx3 = Guid.NewGuid();
 
-		_repositoryMock.Setup(r => r.GetByReceiptIdsAsync(receiptIds, It.IsAny<CancellationToken>()))
+		_repositoryMock.Setup(r => r.GetByReceiptIdsAndBudgetAsync(receiptIds, SelectedBudgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(
 			[
 				CreateSyncRecord(tx1, Receipt1, YnabSyncStatus.Synced),
@@ -135,7 +173,7 @@ public class YnabSyncRecordServiceTests
 			]);
 
 		// Act
-		List<ReceiptYnabSyncStatusDto> result = await _service.GetSyncStatusesByReceiptIdsAsync(receiptIds, CancellationToken.None);
+		List<ReceiptYnabSyncStatusDto> result = await _service.GetSyncStatusesByReceiptIdsAndBudgetAsync(receiptIds, SelectedBudgetId, CancellationToken.None);
 
 		// Assert
 		result.Should().ContainSingle().Which.SyncStatus.Should().Be(ReceiptSyncStatusValue.Failed);
@@ -149,7 +187,7 @@ public class YnabSyncRecordServiceTests
 		Guid tx1 = Guid.NewGuid();
 		Guid tx2 = Guid.NewGuid();
 
-		_repositoryMock.Setup(r => r.GetByReceiptIdsAsync(receiptIds, It.IsAny<CancellationToken>()))
+		_repositoryMock.Setup(r => r.GetByReceiptIdsAndBudgetAsync(receiptIds, SelectedBudgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(
 			[
 				CreateSyncRecord(tx1, Receipt1, YnabSyncStatus.Synced),
@@ -157,7 +195,7 @@ public class YnabSyncRecordServiceTests
 			]);
 
 		// Act
-		List<ReceiptYnabSyncStatusDto> result = await _service.GetSyncStatusesByReceiptIdsAsync(receiptIds, CancellationToken.None);
+		List<ReceiptYnabSyncStatusDto> result = await _service.GetSyncStatusesByReceiptIdsAndBudgetAsync(receiptIds, SelectedBudgetId, CancellationToken.None);
 
 		// Assert
 		result.Should().HaveCount(3);
@@ -171,11 +209,11 @@ public class YnabSyncRecordServiceTests
 	{
 		// Arrange
 		List<Guid> receiptIds = [];
-		_repositoryMock.Setup(r => r.GetByReceiptIdsAsync(receiptIds, It.IsAny<CancellationToken>()))
+		_repositoryMock.Setup(r => r.GetByReceiptIdsAndBudgetAsync(receiptIds, SelectedBudgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync([]);
 
 		// Act
-		List<ReceiptYnabSyncStatusDto> result = await _service.GetSyncStatusesByReceiptIdsAsync(receiptIds, CancellationToken.None);
+		List<ReceiptYnabSyncStatusDto> result = await _service.GetSyncStatusesByReceiptIdsAndBudgetAsync(receiptIds, SelectedBudgetId, CancellationToken.None);
 
 		// Assert
 		result.Should().BeEmpty();
@@ -197,11 +235,11 @@ public class YnabSyncRecordServiceTests
 			Transaction = null,
 		};
 
-		_repositoryMock.Setup(r => r.GetByReceiptIdsAsync(receiptIds, It.IsAny<CancellationToken>()))
+		_repositoryMock.Setup(r => r.GetByReceiptIdsAndBudgetAsync(receiptIds, SelectedBudgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync([orphanRecord]);
 
 		// Act
-		List<ReceiptYnabSyncStatusDto> result = await _service.GetSyncStatusesByReceiptIdsAsync(receiptIds, CancellationToken.None);
+		List<ReceiptYnabSyncStatusDto> result = await _service.GetSyncStatusesByReceiptIdsAndBudgetAsync(receiptIds, SelectedBudgetId, CancellationToken.None);
 
 		// Assert
 		result.Should().ContainSingle().Which.SyncStatus.Should().Be(ReceiptSyncStatusValue.NotSynced);

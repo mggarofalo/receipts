@@ -185,7 +185,7 @@ export interface paths {
         put?: never;
         /**
          * Merge cards into a target account
-         * @description Repoints the listed cards (and their transactions) to the target account and deletes any now-orphaned accounts. Requires the Admin role. Returns 409 Conflict if the source/target accounts have differing YNAB account mappings; resubmit with `ynabMappingWinnerAccountId` to resolve.
+         * @description Repoints the listed cards (and their transactions) to the target account and deletes any now-orphaned accounts. Requires the Admin role. Returns 409 Conflict when mappings differ within one YNAB budget; resubmit with `ynabMappingWinnerAccountId` to resolve. Conflicts in multiple budgets return 400 and require obsolete mappings to be removed first.
          */
         post: operations["MergeCards"];
         delete?: never;
@@ -2122,7 +2122,7 @@ export interface paths {
         };
         /**
          * Get YNAB connection status
-         * @description Returns whether YNAB is configured, whether the connection is active, and the last successful sync timestamp.
+         * @description Returns whether YNAB is configured, whether the connection is active, and the selected budget's last successful sync timestamp.
          */
         get: operations["GetYnabConnectionStatus"];
         put?: never;
@@ -2246,7 +2246,7 @@ export interface paths {
         };
         /**
          * List YNAB account mappings
-         * @description Returns all mappings between receipts accounts and YNAB accounts.
+         * @description Returns mappings between receipts accounts and YNAB accounts for the selected budget.
          */
         get: operations["GetYnabAccountMappings"];
         put?: never;
@@ -2334,7 +2334,7 @@ export interface paths {
         };
         /**
          * List all category mappings
-         * @description Returns all receipts-to-YNAB category mappings.
+         * @description Returns receipts-to-YNAB category mappings for the selected budget.
          */
         get: operations["GetYnabCategoryMappings"];
         put?: never;
@@ -3037,7 +3037,12 @@ export interface components {
              * @description Soft-deleted transactions that would be repointed too. Reported separately because they are invisible everywhere except the recycle bin, and a merge moves them just the same.
              */
             trashedTransactionsToRepoint: number;
-            /** @description Present only when a mapping would move from a source account to the target. */
+            /**
+             * Format: int32
+             * @description Number of destination-scoped YNAB mappings moved from source accounts.
+             */
+            ynabMappingsToMove: number;
+            /** @description Present only when exactly one mapping would move; use ynabMappingsToMove for the total. */
             survivingYnabMapping?: components["schemas"]["MergeCardsPreviewMapping"] | null;
             /** @description Present when the sources carry differing YNAB mappings and no winner was given. */
             conflicts?: components["schemas"]["YnabMappingConflict"][] | null;
@@ -4217,6 +4222,7 @@ export interface components {
             selectedBudgetId?: string | null;
         };
         SelectYnabBudgetRequest: {
+            /** Format: uuid */
             budgetId: string;
         };
         YnabSyncRecordResponse: {
@@ -4284,11 +4290,13 @@ export interface components {
             receiptsAccountId: string;
             ynabAccountId: string;
             ynabAccountName: string;
+            /** Format: uuid */
             ynabBudgetId: string;
         };
         UpdateYnabAccountMappingRequest: {
             ynabAccountId: string;
             ynabAccountName: string;
+            /** Format: uuid */
             ynabBudgetId: string;
         };
         YnabCategorySummary: {
@@ -4325,12 +4333,14 @@ export interface components {
             ynabCategoryId: string;
             ynabCategoryName: string;
             ynabCategoryGroupName: string;
+            /** Format: uuid */
             ynabBudgetId: string;
         };
         UpdateYnabCategoryMappingRequest: {
             ynabCategoryId: string;
             ynabCategoryName: string;
             ynabCategoryGroupName: string;
+            /** Format: uuid */
             ynabBudgetId: string;
         };
         StaleMappingsResponse: {
@@ -5047,7 +5057,7 @@ export interface operations {
                     "application/json": components["schemas"]["MergeCardsResponse"];
                 };
             };
-            /** @description Bad Request */
+            /** @description Bad Request — invalid merge selection, or conflicting mappings in multiple YNAB budgets that the single-winner request cannot resolve. Remove obsolete mappings until at most one budget conflicts, then retry. */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -5096,7 +5106,7 @@ export interface operations {
                     "application/json": components["schemas"]["MergeCardsPreviewResponse"];
                 };
             };
-            /** @description Bad Request */
+            /** @description Bad Request — invalid merge selection, or conflicting mappings in multiple YNAB budgets that must be reduced before the merge can be previewed. */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -9409,7 +9419,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
             };
         };
     };
@@ -9435,7 +9447,16 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Mapping not found */
+            /** @description Mapping budget does not match the selected budget */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Mapping not found in the selected budget */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -9560,12 +9581,23 @@ export interface operations {
                     "application/json": components["schemas"]["YnabCategoryMappingResponse"];
                 };
             };
-            /** @description Conflict — mapping for this receipts category already exists */
+            /** @description Mapping budget does not match the selected budget */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict — mapping for this receipts category already exists in the selected budget */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
             };
         };
     };
@@ -9591,7 +9623,16 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Mapping not found */
+            /** @description Mapping budget does not match the selected budget */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Mapping not found in the selected budget */
             404: {
                 headers: {
                     [name: string]: unknown;

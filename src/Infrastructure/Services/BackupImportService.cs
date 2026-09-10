@@ -1,6 +1,7 @@
 using System.Globalization;
 using Application.Interfaces.Services;
 using Application.Models;
+using Application.Utilities;
 using Common;
 using Infrastructure.Entities.Core;
 using Infrastructure.Interfaces;
@@ -835,7 +836,7 @@ public partial class BackupImportService(
 		while (await reader.ReadAsync(cancellationToken))
 		{
 			Guid id = Guid.Parse(reader.GetString(0));
-			string budgetId = reader.GetString(1);
+			string budgetId = YnabDestinationId.Canonicalize(reader.GetString(1));
 			DateTimeOffset updatedAt = ParseTimestamp(reader.GetString(2));
 
 			YnabSelectedBudgetEntity? existing = await context.YnabSelectedBudgets.FindAsync([id], cancellationToken);
@@ -881,7 +882,7 @@ public partial class BackupImportService(
 			Guid receiptsAccountId = Guid.Parse(reader.GetString(1));
 			string ynabAccountId = reader.GetString(2);
 			string ynabAccountName = reader.GetString(3);
-			string ynabBudgetId = reader.GetString(4);
+			string ynabBudgetId = YnabDestinationId.Canonicalize(reader.GetString(4));
 			DateTimeOffset createdAt = ParseTimestamp(reader.GetString(5));
 			DateTimeOffset updatedAt = ParseTimestamp(reader.GetString(6));
 
@@ -936,7 +937,7 @@ public partial class BackupImportService(
 			string ynabCategoryId = reader.GetString(2);
 			string ynabCategoryName = reader.GetString(3);
 			string ynabCategoryGroupName = reader.GetString(4);
-			string ynabBudgetId = reader.GetString(5);
+			string ynabBudgetId = YnabDestinationId.Canonicalize(reader.GetString(5));
 			DateTimeOffset createdAt = ParseTimestamp(reader.GetString(6));
 			DateTimeOffset updatedAt = ParseTimestamp(reader.GetString(7));
 
@@ -994,7 +995,7 @@ public partial class BackupImportService(
 			Guid id = Guid.Parse(reader.GetString(0));
 			Guid localTransactionId = Guid.Parse(reader.GetString(1));
 			string? ynabTransactionId = reader.IsDBNull(2) ? null : reader.GetString(2);
-			string ynabBudgetId = reader.GetString(3);
+			string ynabBudgetId = YnabDestinationId.Canonicalize(reader.GetString(3));
 			string? ynabAccountId = reader.IsDBNull(4) ? null : reader.GetString(4);
 			YnabSyncType syncType = Enum.Parse<YnabSyncType>(reader.GetString(5));
 			YnabSyncStatus syncStatus = Enum.Parse<YnabSyncStatus>(reader.GetString(6));

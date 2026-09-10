@@ -14,17 +14,31 @@ public class YnabCategoryMappingRepository(IDbContextFactory<ApplicationDbContex
 			.ToListAsync(cancellationToken);
 	}
 
+	public async Task<List<YnabCategoryMappingEntity>> GetByBudgetIdAsync(string ynabBudgetId, CancellationToken cancellationToken)
+	{
+		using ApplicationDbContext context = contextFactory.CreateDbContext();
+		return await context.YnabCategoryMappings
+			.Where(e => e.YnabBudgetId == ynabBudgetId)
+			.OrderBy(e => e.ReceiptsCategory)
+			.ToListAsync(cancellationToken);
+	}
+
 	public async Task<YnabCategoryMappingEntity?> GetByIdAsync(Guid id, CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		return await context.YnabCategoryMappings.FindAsync([id], cancellationToken);
 	}
 
-	public async Task<YnabCategoryMappingEntity?> GetByReceiptsCategoryAsync(string receiptsCategory, CancellationToken cancellationToken)
+	public async Task<YnabCategoryMappingEntity?> GetByReceiptsCategoryAndBudgetAsync(
+		string receiptsCategory,
+		string ynabBudgetId,
+		CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		return await context.YnabCategoryMappings
-			.FirstOrDefaultAsync(e => e.ReceiptsCategory == receiptsCategory, cancellationToken);
+			.FirstOrDefaultAsync(
+				e => e.ReceiptsCategory == receiptsCategory && e.YnabBudgetId == ynabBudgetId,
+				cancellationToken);
 	}
 
 	public async Task<YnabCategoryMappingEntity> CreateAsync(YnabCategoryMappingEntity entity, CancellationToken cancellationToken)

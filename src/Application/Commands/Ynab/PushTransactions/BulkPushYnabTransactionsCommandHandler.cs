@@ -4,13 +4,27 @@ using Mediator;
 
 namespace Application.Commands.Ynab.PushTransactions;
 
-public class BulkPushYnabTransactionsCommandHandler(IMediator mediator, IYnabRateLimitTracker rateLimitTracker) : IRequestHandler<BulkPushYnabTransactionsCommand, BulkPushYnabTransactionsResult>
+public class BulkPushYnabTransactionsCommandHandler(
+	IMediator mediator,
+	IYnabRateLimitTracker rateLimitTracker,
+	IYnabBudgetSelectionService budgetSelectionService) : IRequestHandler<BulkPushYnabTransactionsCommand, BulkPushYnabTransactionsResult>
 {
 	// Conservative estimate: each receipt push uses ~2 YNAB API calls
 	private const int EstimatedRequestsPerReceipt = 2;
 
 	public async ValueTask<BulkPushYnabTransactionsResult> Handle(BulkPushYnabTransactionsCommand request, CancellationToken cancellationToken)
 	{
+		// A bulk submission is one user operation. Capture its destination once so a
+		// concurrent settings change cannot split receipts across YNAB budgets.
+		string? budgetId = await budgetSelectionService.GetSelectedBudgetIdAsync(cancellationToken);
+		if (string.IsNullOrEmpty(budgetId))
+		{
+			return new BulkPushYnabTransactionsResult(
+				[.. request.ReceiptIds.Select(id => new ReceiptPushResult(
+					id,
+					PushYnabTransactionsResult.Failure("No YNAB budget selected.")))]);
+		}
+
 		int estimatedRequests = request.ReceiptIds.Count * EstimatedRequestsPerReceipt;
 		if (!rateLimitTracker.CanMakeRequests(estimatedRequests))
 		{
@@ -29,7 +43,7 @@ public class BulkPushYnabTransactionsCommandHandler(IMediator mediator, IYnabRat
 			try
 			{
 				PushYnabTransactionsResult result = await mediator.Send(
-					new PushYnabTransactionsCommand(receiptId), cancellationToken);
+					new PushYnabTransactionsCommand(receiptId, budgetId), cancellationToken);
 				results.Add(new ReceiptPushResult(receiptId, result));
 			}
 			catch (Exception ex)

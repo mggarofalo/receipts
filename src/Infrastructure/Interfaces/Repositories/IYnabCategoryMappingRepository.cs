@@ -5,8 +5,9 @@ namespace Infrastructure.Interfaces.Repositories;
 public interface IYnabCategoryMappingRepository
 {
 	Task<List<YnabCategoryMappingEntity>> GetAllAsync(CancellationToken cancellationToken);
+	Task<List<YnabCategoryMappingEntity>> GetByBudgetIdAsync(string ynabBudgetId, CancellationToken cancellationToken);
 	Task<YnabCategoryMappingEntity?> GetByIdAsync(Guid id, CancellationToken cancellationToken);
-	Task<YnabCategoryMappingEntity?> GetByReceiptsCategoryAsync(string receiptsCategory, CancellationToken cancellationToken);
+	Task<YnabCategoryMappingEntity?> GetByReceiptsCategoryAndBudgetAsync(string receiptsCategory, string ynabBudgetId, CancellationToken cancellationToken);
 	Task<YnabCategoryMappingEntity> CreateAsync(YnabCategoryMappingEntity entity, CancellationToken cancellationToken);
 	Task<bool> UpdateAsync(YnabCategoryMappingEntity entity, CancellationToken cancellationToken);
 	Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken);

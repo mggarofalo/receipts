@@ -485,6 +485,7 @@ describe("useMergeCardsPreview", () => {
     cardsToMove: 2,
     transactionsToRepoint: 37,
     trashedTransactionsToRepoint: 4,
+    ynabMappingsToMove: 2,
     survivingYnabMapping: null,
     conflicts: null,
   };

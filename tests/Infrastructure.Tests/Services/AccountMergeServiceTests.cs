@@ -364,6 +364,41 @@ public class AccountMergeServiceTests : IDisposable
 	}
 
 	[Fact]
+	public async Task MergeCardsAsync_MovesMappingsIndependentlyPerBudget()
+	{
+		AccountEntity target = AccountEntityGenerator.Generate();
+		AccountEntity source = AccountEntityGenerator.Generate();
+		CardEntity sourceCard = CardEntityGenerator.Generate();
+		sourceCard.AccountId = source.Id;
+		YnabAccountMappingEntity targetBudgetA = BuildMapping(
+			target.Id, "ynab-budget-A", "Target in budget A", "budget-A");
+		YnabAccountMappingEntity sourceBudgetB = BuildMapping(
+			source.Id, "ynab-budget-B", "Source in budget B", "budget-B");
+
+		using (ApplicationDbContext seed = CreateContext())
+		{
+			seed.Accounts.AddRange(target, source);
+			seed.Cards.Add(sourceCard);
+			seed.YnabAccountMappings.AddRange(targetBudgetA, sourceBudgetB);
+			await seed.SaveChangesAsync();
+		}
+
+		MergeCardsResult result = await _service.MergeCardsAsync(
+			target.Id,
+			[sourceCard.Id],
+			null,
+			CancellationToken.None);
+
+		result.Conflicts.Should().BeNull();
+		using ApplicationDbContext assert = CreateContext();
+		List<YnabAccountMappingEntity> mappings = await assert.YnabAccountMappings.AsNoTracking().ToListAsync();
+		mappings.Should().HaveCount(2);
+		mappings.Should().OnlyContain(mapping => mapping.ReceiptsAccountId == target.Id);
+		mappings.Select(mapping => (mapping.YnabBudgetId, mapping.YnabAccountId)).Should().BeEquivalentTo(
+			[("budget-A", "ynab-budget-A"), ("budget-B", "ynab-budget-B")]);
+	}
+
+	[Fact]
 	public async Task MergeCardsAsync_WithConflictingMappings_ReturnsConflictsWithoutMutation()
 	{
 		AccountEntity target = AccountEntityGenerator.Generate();
@@ -479,6 +514,114 @@ public class AccountMergeServiceTests : IDisposable
 		mappings.Should().ContainSingle();
 		mappings[0].YnabAccountId.Should().Be("ynab-winner");
 		mappings[0].ReceiptsAccountId.Should().Be(target.Id);
+	}
+
+	[Fact]
+	public async Task MergeCardsAsync_WithConflictsInMultipleBudgets_FailsClosedWithoutMutation()
+	{
+		AccountEntity target = AccountEntityGenerator.Generate();
+		AccountEntity source = AccountEntityGenerator.Generate();
+		CardEntity sourceCard = CardEntityGenerator.Generate();
+		sourceCard.AccountId = source.Id;
+		YnabAccountMappingEntity[] mappings =
+		[
+			BuildMapping(target.Id, "target-A", "Target A", "budget-A"),
+			BuildMapping(source.Id, "source-A", "Source A", "budget-A"),
+			BuildMapping(target.Id, "target-B", "Target B", "budget-B"),
+			BuildMapping(source.Id, "source-B", "Source B", "budget-B"),
+		];
+
+		using (ApplicationDbContext seed = CreateContext())
+		{
+			seed.Accounts.AddRange(target, source);
+			seed.Cards.Add(sourceCard);
+			seed.YnabAccountMappings.AddRange(mappings);
+			await seed.SaveChangesAsync();
+		}
+
+		Func<Task> act = () => _service.MergeCardsAsync(
+			target.Id, [sourceCard.Id], source.Id, CancellationToken.None);
+
+		await act.Should().ThrowAsync<ArgumentException>()
+			.WithMessage(AccountMergeService.MultipleYnabBudgetConflicts + "*");
+		using ApplicationDbContext assert = CreateContext();
+		(await assert.Accounts.AsNoTracking().CountAsync()).Should().Be(2);
+		(await assert.Cards.AsNoTracking().SingleAsync()).AccountId.Should().Be(source.Id);
+		(await assert.YnabAccountMappings.AsNoTracking().ToListAsync())
+			.Should().BeEquivalentTo(mappings, options => options.Excluding(mapping => mapping.Account));
+	}
+
+	[Fact]
+	public async Task MergeCardsAsync_ResolvedBudgetConflict_PreservesAllOtherBudgetMappings()
+	{
+		AccountEntity target = AccountEntityGenerator.Generate();
+		AccountEntity source = AccountEntityGenerator.Generate();
+		CardEntity sourceCard = CardEntityGenerator.Generate();
+		sourceCard.AccountId = source.Id;
+		using (ApplicationDbContext seed = CreateContext())
+		{
+			seed.Accounts.AddRange(target, source);
+			seed.Cards.Add(sourceCard);
+			seed.YnabAccountMappings.AddRange(
+				BuildMapping(target.Id, "target-A", "Target A", "budget-A"),
+				BuildMapping(source.Id, "source-A", "Source A", "budget-A"),
+				BuildMapping(source.Id, "source-B", "Source B", "budget-B"),
+				BuildMapping(target.Id, "target-C", "Target C", "budget-C"));
+			await seed.SaveChangesAsync();
+		}
+
+		MergeCardsPreview preview = await _service.PreviewMergeCardsAsync(
+			target.Id, [sourceCard.Id], null, CancellationToken.None);
+		preview.Conflicts.Should().HaveCount(2);
+		preview.Conflicts.Should().OnlyContain(conflict => conflict.YnabBudgetId == "budget-A");
+
+		MergeCardsResult result = await _service.MergeCardsAsync(
+			target.Id, [sourceCard.Id], source.Id, CancellationToken.None);
+
+		result.Conflicts.Should().BeNull();
+		using ApplicationDbContext assert = CreateContext();
+		List<YnabAccountMappingEntity> mappings = await assert.YnabAccountMappings.AsNoTracking().ToListAsync();
+		mappings.Should().HaveCount(3);
+		mappings.Should().OnlyContain(mapping => mapping.ReceiptsAccountId == target.Id);
+		mappings.Select(mapping => (mapping.YnabBudgetId, mapping.YnabAccountId)).Should().BeEquivalentTo(
+			[("budget-A", "source-A"), ("budget-B", "source-B"), ("budget-C", "target-C")]);
+	}
+
+	[Fact]
+	public async Task MergeCardsAsync_RefreshesMappingsBeforeWritesAndRejectsALateTargetConflict()
+	{
+		AccountEntity target = AccountEntityGenerator.Generate();
+		AccountEntity source = AccountEntityGenerator.Generate();
+		CardEntity sourceCard = CardEntityGenerator.Generate();
+		sourceCard.AccountId = source.Id;
+		YnabAccountMappingEntity sourceMapping = BuildMapping(
+			source.Id, "source-A", "Source A", "budget-A");
+		YnabAccountMappingEntity lateTargetMapping = BuildMapping(
+			target.Id, "target-A", "Target A", "budget-A");
+		using (ApplicationDbContext seed = CreateContext())
+		{
+			seed.Accounts.AddRange(target, source);
+			seed.Cards.Add(sourceCard);
+			seed.YnabAccountMappings.Add(sourceMapping);
+			await seed.SaveChangesAsync();
+		}
+
+		SnapshotMutationFactory factory = new(_options, _userAccessor, () =>
+		{
+			using ApplicationDbContext concurrent = CreateContext();
+			concurrent.YnabAccountMappings.Add(lateTargetMapping);
+			concurrent.SaveChanges();
+		});
+		AccountMergeService service = new(factory, _userAccessor);
+
+		MergeCardsResult result = await service.MergeCardsAsync(
+			target.Id, [sourceCard.Id], null, CancellationToken.None);
+
+		result.Conflicts.Should().HaveCount(2);
+		using ApplicationDbContext assert = CreateContext();
+		(await assert.Cards.AsNoTracking().SingleAsync()).AccountId.Should().Be(source.Id);
+		(await assert.Accounts.AsNoTracking().CountAsync()).Should().Be(2);
+		(await assert.YnabAccountMappings.AsNoTracking().CountAsync()).Should().Be(2);
 	}
 
 	[Fact]
@@ -735,6 +878,32 @@ public class AccountMergeServiceTests : IDisposable
 	}
 
 	[Fact]
+	public async Task PreviewMergeCardsAsync_ReportsEveryDestinationScopedMappingThatWouldMove()
+	{
+		AccountEntity target = AccountEntityGenerator.Generate();
+		AccountEntity source = AccountEntityGenerator.Generate();
+		CardEntity sourceCard = CardEntityGenerator.Generate();
+		sourceCard.AccountId = source.Id;
+
+		using (ApplicationDbContext seed = CreateContext())
+		{
+			seed.Accounts.AddRange(target, source);
+			seed.Cards.Add(sourceCard);
+			seed.YnabAccountMappings.AddRange(
+				BuildMapping(source.Id, "source-A", "Source A", "budget-A"),
+				BuildMapping(source.Id, "source-B", "Source B", "budget-B"));
+			await seed.SaveChangesAsync();
+		}
+
+		MergeCardsPreview preview = await _service.PreviewMergeCardsAsync(
+			target.Id, [sourceCard.Id], null, CancellationToken.None);
+
+		preview.Conflicts.Should().BeNull();
+		preview.YnabMappingsToMove.Should().Be(2);
+		preview.SurvivingYnabMapping.Should().BeNull("a singular survivor cannot represent two destination mappings");
+	}
+
+	[Fact]
 	public async Task PreviewMergeCardsAsync_WithConflictingMappings_ReportsTheConflictInsteadOfAnImpact()
 	{
 		AccountEntity target = AccountEntityGenerator.Generate();
@@ -879,14 +1048,18 @@ public class AccountMergeServiceTests : IDisposable
 		preview.Conflicts.Should().HaveCount(2);
 	}
 
-	private static YnabAccountMappingEntity BuildMapping(Guid accountId, string ynabAccountId, string ynabAccountName) =>
+	private static YnabAccountMappingEntity BuildMapping(
+		Guid accountId,
+		string ynabAccountId,
+		string ynabAccountName,
+		string budgetId = "budget-1") =>
 		new()
 		{
 			Id = Guid.NewGuid(),
 			ReceiptsAccountId = accountId,
 			YnabAccountId = ynabAccountId,
 			YnabAccountName = ynabAccountName,
-			YnabBudgetId = "budget-1",
+			YnabBudgetId = budgetId,
 			CreatedAt = DateTimeOffset.UtcNow,
 			UpdatedAt = DateTimeOffset.UtcNow,
 		};
@@ -897,5 +1070,25 @@ public class AccountMergeServiceTests : IDisposable
 		: IDbContextFactory<ApplicationDbContext>
 	{
 		public ApplicationDbContext CreateDbContext() => new(options, accessor);
+	}
+
+	private sealed class SnapshotMutationFactory(
+		DbContextOptions<ApplicationDbContext> options,
+		Application.Interfaces.Services.ICurrentUserAccessor accessor,
+		Action mutateBeforeTransactionalSnapshot)
+		: IDbContextFactory<ApplicationDbContext>
+	{
+		private int _createCount;
+
+		public ApplicationDbContext CreateDbContext()
+		{
+			_createCount++;
+			if (_createCount == 2)
+			{
+				mutateBeforeTransactionalSnapshot();
+			}
+
+			return new ApplicationDbContext(options, accessor);
+		}
 	}
 }

@@ -145,16 +145,19 @@ public class YnabMemoMatchingOwnershipTests
 	[InlineData(YnabSyncType.TransactionPush, "budget-2", "remote-payment")]
 	[InlineData(YnabSyncType.MemoUpdate, "budget-1", "different-payment")]
 	[InlineData(YnabSyncType.TransactionPush, "budget-1", "different-payment")]
-	public async Task ExistingDifferentBinding_IsNeverAutomaticallyReplaced(YnabSyncType type, string budget, string target)
+	public async Task ExistingBinding_IsScopedByBudgetAndNeverReplacedWithinTheSelectedBudget(YnabSyncType type, string budget, string target)
 	{
 		using Fixture fixture = new();
 		Guid receipt = fixture.AddReceipt();
 		fixture.Bind(fixture.Transactions[receipt][0], type, YnabSyncStatus.Pending, budget, target);
 		YnabSyncRecordDto original = fixture.Records.Values.Single();
 		var results = await fixture.Service.SyncMemosByReceiptAsync(receipt, CancellationToken.None);
-		results.Should().ContainSingle().Which.Outcome.Should().Be(YnabMemoSyncOutcome.Failed);
-		fixture.Records.Values.Should().ContainSingle().Which.Should().Be(original);
-		fixture.Http.Patches.Should().BeEmpty();
+		bool isPriorBudget = budget == "budget-2";
+		results.Should().ContainSingle().Which.Outcome.Should().Be(
+			isPriorBudget ? YnabMemoSyncOutcome.Synced : YnabMemoSyncOutcome.Failed);
+		fixture.Records.Values.Should().Contain(original);
+		fixture.Records.Should().HaveCount(isPriorBudget ? 2 : 1);
+		fixture.Http.Patches.Should().HaveCount(isPriorBudget ? 1 : 0);
 	}
 
 	[Fact]
@@ -269,7 +272,7 @@ public class YnabMemoMatchingOwnershipTests
 	[Theory]
 	[InlineData(false)]
 	[InlineData(true)]
-	public async Task ExplicitResolution_PreservesChoiceButCannotOverwriteForeignBudgetRecord(bool foreignBudget)
+	public async Task ExplicitResolution_PreservesChoiceAndCreatesASelectedBudgetRecordAlongsidePriorBudget(bool foreignBudget)
 	{
 		using Fixture fixture = new();
 		Guid receipt = fixture.AddReceipt();
@@ -282,11 +285,12 @@ public class YnabMemoMatchingOwnershipTests
 		}
 
 		var result = await fixture.Service.ResolveMemoSyncAsync(payment.Id, "remote-payment", CancellationToken.None);
-		result.Outcome.Should().Be(foreignBudget ? YnabMemoSyncOutcome.Failed : YnabMemoSyncOutcome.Synced);
-		fixture.Http.Patches.Should().HaveCount(foreignBudget ? 0 : 1);
+		result.Outcome.Should().Be(YnabMemoSyncOutcome.Synced);
+		fixture.Http.Patches.Should().ContainSingle();
 		if (foreignBudget)
 		{
-			fixture.Records.Values.Should().ContainSingle().Which.YnabBudgetId.Should().Be("budget-2");
+			fixture.Records.Values.Select(record => record.YnabBudgetId)
+				.Should().BeEquivalentTo(["budget-1", "budget-2"]);
 		}
 	}
 
@@ -305,7 +309,7 @@ public class YnabMemoMatchingOwnershipTests
 		public List<YnabAccountMappingDto> Mappings { get; } = [];
 		public Dictionary<Guid, ReceiptEntity> Receipts { get; } = [];
 		public Dictionary<Guid, List<TransactionEntity>> Transactions { get; } = [];
-		public Dictionary<(Guid TransactionId, YnabSyncType Type), YnabSyncRecordDto> Records { get; } = [];
+		public Dictionary<(Guid TransactionId, YnabSyncType Type, string BudgetId), YnabSyncRecordDto> Records { get; } = [];
 		public Handler Http { get; }
 		public YnabMemoSyncService Service { get; }
 		private readonly ServiceProvider _provider;
@@ -322,15 +326,21 @@ public class YnabMemoMatchingOwnershipTests
 			budget.Setup(service => service.GetSelectedBudgetIdAsync(It.IsAny<CancellationToken>())).ReturnsAsync(() => { BudgetReads++; return "budget-1"; });
 			Mock<IYnabAccountMappingService> mappings = new();
 			Mappings.Add(new(Guid.NewGuid(), AccountId, "mapped-account", "Mapped account", "budget-1", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
-			mappings.Setup(service => service.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(() => { MappingReads++; return Mappings; });
+			mappings.Setup(service => service.GetByBudgetIdAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+				.ReturnsAsync((string selectedBudget, CancellationToken _) =>
+				{
+					MappingReads++;
+					return Mappings.Where(mapping => mapping.YnabBudgetId == selectedBudget).ToList();
+				});
 			Mock<IReceiptRepository> receipts = new();
 			receipts.Setup(repository => repository.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync((Guid id, CancellationToken _) => Receipts.GetValueOrDefault(id));
 			Mock<ITransactionRepository> transactions = new();
 			transactions.Setup(repository => repository.GetWithAccountByReceiptIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync((Guid id, CancellationToken _) => Transactions.GetValueOrDefault(id) ?? []);
 			transactions.Setup(repository => repository.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync((Guid id, CancellationToken _) => Transactions.Values.SelectMany(list => list).FirstOrDefault(row => row.Id == id));
 			Mock<IYnabSyncRecordService> records = new();
-			records.Setup(service => service.GetByTransactionAndTypeAsync(It.IsAny<Guid>(), It.IsAny<YnabSyncType>(), It.IsAny<CancellationToken>())).ReturnsAsync((Guid id, YnabSyncType type, CancellationToken _) => Records.GetValueOrDefault((id, type)));
-			records.Setup(service => service.CreateAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<YnabSyncType>(), It.IsAny<CancellationToken>())).ReturnsAsync((Guid id, string selectedBudget, YnabSyncType type, CancellationToken _) => Records[(id, type)] = new(Guid.NewGuid(), id, null, selectedBudget, null, type, YnabSyncStatus.Pending, null, null, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
+			records.Setup(service => service.GetByTransactionTypeAndBudgetAsync(It.IsAny<Guid>(), It.IsAny<YnabSyncType>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+				.ReturnsAsync((Guid id, YnabSyncType type, string selectedBudget, CancellationToken _) => Records.GetValueOrDefault((id, type, selectedBudget)));
+			records.Setup(service => service.CreateAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<YnabSyncType>(), It.IsAny<CancellationToken>())).ReturnsAsync((Guid id, string selectedBudget, YnabSyncType type, CancellationToken _) => Records[(id, type, selectedBudget)] = new(Guid.NewGuid(), id, null, selectedBudget, null, type, YnabSyncStatus.Pending, null, null, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
 			records.Setup(service => service.UpdateStatusAsync(It.IsAny<Guid>(), It.IsAny<YnabSyncStatus>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>())).Callback((Guid id, YnabSyncStatus status, string? remoteId, string? error, CancellationToken _) =>
 			{
 				var entry = Records.Single(entry => entry.Value.Id == id);
@@ -361,7 +371,7 @@ public class YnabMemoMatchingOwnershipTests
 
 		public void Bind(TransactionEntity payment, YnabSyncType type, YnabSyncStatus status, string budget = "budget-1", string target = "remote-payment")
 		{
-			Records[(payment.Id, type)] = new(Guid.NewGuid(), payment.Id, target, budget, RemoteAccount, type, status, null, null, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+			Records[(payment.Id, type, budget)] = new(Guid.NewGuid(), payment.Id, target, budget, RemoteAccount, type, status, null, null, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
 		}
 
 		public void Dispose() { _provider.Dispose(); _httpClient.Dispose(); _cache.Dispose(); }

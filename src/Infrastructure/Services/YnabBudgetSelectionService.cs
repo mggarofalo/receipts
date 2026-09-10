@@ -1,5 +1,6 @@
 using Application.Interfaces.Services;
 using Application.Models.CommittedChanges;
+using Application.Utilities;
 using Infrastructure.Interfaces.Repositories;
 
 namespace Infrastructure.Services;
@@ -18,7 +19,8 @@ public class YnabBudgetSelectionService(
 
 	public async Task SetSelectedBudgetIdAsync(string budgetId, CancellationToken cancellationToken)
 	{
-		if (await repository.SetSelectedBudgetIdAsync(budgetId, cancellationToken))
+		string canonicalBudgetId = YnabDestinationId.Canonicalize(budgetId);
+		if (await repository.SetSelectedBudgetIdAsync(canonicalBudgetId, cancellationToken))
 		{
 			await committedChangePublisher.PublishAsync(new CommittedEntityChange(
 				CommittedEntityType.YnabBudget,

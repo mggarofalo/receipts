@@ -5,6 +5,7 @@ namespace Application.Interfaces.Services;
 public interface IYnabAccountMappingService
 {
 	Task<List<YnabAccountMappingDto>> GetAllAsync(CancellationToken cancellationToken);
+	Task<List<YnabAccountMappingDto>> GetByBudgetIdAsync(string ynabBudgetId, CancellationToken cancellationToken);
 	Task<YnabAccountMappingDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken);
 	Task<YnabAccountMappingDto> CreateAsync(Guid receiptsAccountId, string ynabAccountId, string ynabAccountName, string ynabBudgetId, CancellationToken cancellationToken);
 	Task UpdateAsync(Guid id, string ynabAccountId, string ynabAccountName, string ynabBudgetId, CancellationToken cancellationToken);

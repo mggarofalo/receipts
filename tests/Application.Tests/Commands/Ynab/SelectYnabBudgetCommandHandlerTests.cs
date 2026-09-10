@@ -23,4 +23,20 @@ public class SelectYnabBudgetCommandHandlerTests
 		result.Should().Be(Unit.Value);
 		mockService.Verify(s => s.SetSelectedBudgetIdAsync(budgetId, It.IsAny<CancellationToken>()), Times.Once);
 	}
+
+	[Fact]
+	public async Task Handle_CanonicalizesUuidBudgetIdBeforePersistingSelection()
+	{
+		Mock<IYnabBudgetSelectionService> mockService = new();
+		SelectYnabBudgetCommandHandler handler = new(mockService.Object);
+		Guid budgetId = Guid.NewGuid();
+
+		await handler.Handle(
+			new SelectYnabBudgetCommand($"  {{{budgetId.ToString("D").ToUpperInvariant()}}}  "),
+			CancellationToken.None);
+
+		mockService.Verify(s => s.SetSelectedBudgetIdAsync(
+			budgetId.ToString("D"),
+			It.IsAny<CancellationToken>()), Times.Once);
+	}
 }

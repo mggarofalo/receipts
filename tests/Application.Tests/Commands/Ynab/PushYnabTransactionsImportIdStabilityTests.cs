@@ -92,7 +92,7 @@ public class PushYnabTransactionsImportIdStabilityTests
 				new TransactionAccount { Transaction = tx2, Account = account },
 			]);
 
-		_categoryMappingServiceMock.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>()))
+		_categoryMappingServiceMock.Setup(s => s.GetByBudgetIdAsync(_budgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync([
 				new YnabCategoryMappingDto(Guid.NewGuid(), "Groceries", "ynab-cat-1", "Groceries", "Food", _budgetId, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow),
 			]);
@@ -100,15 +100,15 @@ public class PushYnabTransactionsImportIdStabilityTests
 		_budgetSelectionServiceMock.Setup(s => s.GetSelectedBudgetIdAsync(It.IsAny<CancellationToken>()))
 			.ReturnsAsync(_budgetId);
 
-		_accountMappingServiceMock.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>()))
+		_accountMappingServiceMock.Setup(s => s.GetByBudgetIdAsync(_budgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync([
 				new YnabAccountMappingDto(Guid.NewGuid(), _accountId, _ynabAccountId, "Checking", _budgetId, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow),
 			]);
 
 		// Retry state: tx1 already Synced to "ynab-tx-1"; tx2 previously Failed.
-		_syncRecordServiceMock.Setup(s => s.GetByTransactionAndTypeAsync(_tx1Id, YnabSyncType.TransactionPush, It.IsAny<CancellationToken>()))
+		_syncRecordServiceMock.Setup(s => s.GetByTransactionTypeAndBudgetAsync(_tx1Id, YnabSyncType.TransactionPush, _budgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new YnabSyncRecordDto(_syncRecord1Id, _tx1Id, "ynab-tx-1", _budgetId, _ynabAccountId, YnabSyncType.TransactionPush, YnabSyncStatus.Synced, DateTimeOffset.UtcNow, null, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
-		_syncRecordServiceMock.Setup(s => s.GetByTransactionAndTypeAsync(_tx2Id, YnabSyncType.TransactionPush, It.IsAny<CancellationToken>()))
+		_syncRecordServiceMock.Setup(s => s.GetByTransactionTypeAndBudgetAsync(_tx2Id, YnabSyncType.TransactionPush, _budgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new YnabSyncRecordDto(_syncRecord2Id, _tx2Id, null, _budgetId, null, YnabSyncType.TransactionPush, YnabSyncStatus.Failed, null, "previous failure", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
 
 		// tx1 first, tx2 second — same amount and date.

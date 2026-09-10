@@ -9,6 +9,7 @@ namespace Application.Queries.Core.Ynab;
 public class GetYnabConnectionStatusQueryHandler(
 	IYnabApiClient ynabApiClient,
 	IYnabSyncRecordService syncRecordService,
+	IYnabBudgetSelectionService budgetSelectionService,
 	IYnabSyncEventService ynabSyncEventService,
 	IYnabResponseContext ynabResponseContext,
 	ILogger<GetYnabConnectionStatusQueryHandler> logger) : IRequestHandler<GetYnabConnectionStatusQuery, YnabConnectionStatus>
@@ -60,7 +61,10 @@ public class GetYnabConnectionStatusQueryHandler(
 			}
 		}
 
-		DateTimeOffset? lastSync = await syncRecordService.GetLatestSuccessfulSyncTimestampAsync(cancellationToken);
+		string? budgetId = await budgetSelectionService.GetSelectedBudgetIdAsync(cancellationToken);
+		DateTimeOffset? lastSync = string.IsNullOrEmpty(budgetId)
+			? null
+			: await syncRecordService.GetLatestSuccessfulSyncTimestampAsync(budgetId, cancellationToken);
 
 		return new YnabConnectionStatus(isConfigured, isConnected, lastSync);
 	}

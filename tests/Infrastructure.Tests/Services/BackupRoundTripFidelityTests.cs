@@ -166,6 +166,9 @@ public class BackupRoundTripFidelityTests : IDisposable
 	[Fact]
 	public async Task RoundTrip_V4Tables_AndImagePaths_RoundTripFaithfully()
 	{
+		const string canonicalBudgetId = "11111111-1111-1111-1111-111111111111";
+		const string legacyBudgetId = "legacy-budget-name";
+		string nonCanonicalBudgetId = $"  {{{canonicalBudgetId.ToUpperInvariant()}}}  ";
 		Guid accountId = Guid.NewGuid();
 		Guid receiptId = Guid.NewGuid();
 		Guid txId = Guid.NewGuid();
@@ -173,6 +176,10 @@ public class BackupRoundTripFidelityTests : IDisposable
 		Guid acctMapId = Guid.NewGuid();
 		Guid catMapId = Guid.NewGuid();
 		Guid syncId = Guid.NewGuid();
+		Guid legacyBudgetRowId = Guid.NewGuid();
+		Guid legacyAcctMapId = Guid.NewGuid();
+		Guid legacyCatMapId = Guid.NewGuid();
+		Guid legacySyncId = Guid.NewGuid();
 		Guid normId = Guid.NewGuid();
 		Guid settingsId = Guid.NewGuid();
 		DateTimeOffset ts = new(2026, 1, 2, 3, 4, 5, TimeSpan.Zero);
@@ -201,14 +208,26 @@ public class BackupRoundTripFidelityTests : IDisposable
 				AmountCurrency = Currency.USD,
 				Date = new DateOnly(2024, 1, 15),
 			});
-			ctx.YnabSelectedBudgets.Add(new YnabSelectedBudgetEntity { Id = budgetRowId, BudgetId = "budget-123", UpdatedAt = ts });
+			ctx.YnabSelectedBudgets.AddRange(
+				new YnabSelectedBudgetEntity { Id = budgetRowId, BudgetId = nonCanonicalBudgetId, UpdatedAt = ts },
+				new YnabSelectedBudgetEntity { Id = legacyBudgetRowId, BudgetId = legacyBudgetId, UpdatedAt = ts });
 			ctx.YnabAccountMappings.Add(new YnabAccountMappingEntity
 			{
 				Id = acctMapId,
 				ReceiptsAccountId = accountId,
 				YnabAccountId = "ynab-acct-1",
 				YnabAccountName = "YNAB Checking",
-				YnabBudgetId = "budget-123",
+				YnabBudgetId = nonCanonicalBudgetId,
+				CreatedAt = ts,
+				UpdatedAt = ts,
+			});
+			ctx.YnabAccountMappings.Add(new YnabAccountMappingEntity
+			{
+				Id = legacyAcctMapId,
+				ReceiptsAccountId = accountId,
+				YnabAccountId = "legacy-ynab-acct",
+				YnabAccountName = "Legacy YNAB Checking",
+				YnabBudgetId = legacyBudgetId,
 				CreatedAt = ts,
 				UpdatedAt = ts,
 			});
@@ -219,7 +238,18 @@ public class BackupRoundTripFidelityTests : IDisposable
 				YnabCategoryId = "ynab-cat-1",
 				YnabCategoryName = "Groceries",
 				YnabCategoryGroupName = "Everyday",
-				YnabBudgetId = "budget-123",
+				YnabBudgetId = nonCanonicalBudgetId,
+				CreatedAt = ts,
+				UpdatedAt = ts,
+			});
+			ctx.YnabCategoryMappings.Add(new YnabCategoryMappingEntity
+			{
+				Id = legacyCatMapId,
+				ReceiptsCategory = "Legacy Food",
+				YnabCategoryId = "legacy-ynab-cat",
+				YnabCategoryName = "Legacy Groceries",
+				YnabCategoryGroupName = "Legacy",
+				YnabBudgetId = legacyBudgetId,
 				CreatedAt = ts,
 				UpdatedAt = ts,
 			});
@@ -228,12 +258,23 @@ public class BackupRoundTripFidelityTests : IDisposable
 				Id = syncId,
 				LocalTransactionId = txId,
 				YnabTransactionId = "ynab-txn-1",
-				YnabBudgetId = "budget-123",
+				YnabBudgetId = nonCanonicalBudgetId,
 				YnabAccountId = "ynab-acct-1",
 				SyncType = YnabSyncType.TransactionPush,
 				SyncStatus = YnabSyncStatus.Synced,
 				SyncedAtUtc = ts,
 				LastError = null,
+				CreatedAt = ts,
+				UpdatedAt = ts,
+			});
+			ctx.YnabSyncRecords.Add(new YnabSyncRecordEntity
+			{
+				Id = legacySyncId,
+				LocalTransactionId = txId,
+				YnabTransactionId = "legacy-ynab-txn",
+				YnabBudgetId = legacyBudgetId,
+				SyncType = YnabSyncType.MemoUpdate,
+				SyncStatus = YnabSyncStatus.Synced,
 				CreatedAt = ts,
 				UpdatedAt = ts,
 			});
@@ -256,10 +297,10 @@ public class BackupRoundTripFidelityTests : IDisposable
 
 		BackupImportResult result = await RoundTripAsync();
 
-		result.YnabSelectedBudgetsCreated.Should().Be(1);
-		result.YnabAccountMappingsCreated.Should().Be(1);
-		result.YnabCategoryMappingsCreated.Should().Be(1);
-		result.YnabSyncRecordsCreated.Should().Be(1);
+		result.YnabSelectedBudgetsCreated.Should().Be(2);
+		result.YnabAccountMappingsCreated.Should().Be(2);
+		result.YnabCategoryMappingsCreated.Should().Be(2);
+		result.YnabSyncRecordsCreated.Should().Be(2);
 		result.NormalizedDescriptionsCreated.Should().Be(1);
 		result.NormalizedDescriptionSettingsCreated.Should().Be(1);
 
@@ -270,20 +311,24 @@ public class BackupRoundTripFidelityTests : IDisposable
 		receipt.ProcessedImagePath.Should().Be("receipts/proc/abc.png");
 
 		YnabSelectedBudgetEntity budget = (await assert.YnabSelectedBudgets.FindAsync(budgetRowId))!;
-		budget.BudgetId.Should().Be("budget-123");
+		budget.BudgetId.Should().Be(canonicalBudgetId);
 		budget.UpdatedAt.Should().Be(ts);
+		(await assert.YnabSelectedBudgets.FindAsync(legacyBudgetRowId))!.BudgetId.Should().Be(legacyBudgetId);
 
 		YnabAccountMappingEntity acctMap = (await assert.YnabAccountMappings.FindAsync(acctMapId))!;
 		acctMap.ReceiptsAccountId.Should().Be(accountId);
 		acctMap.YnabAccountId.Should().Be("ynab-acct-1");
 		acctMap.YnabAccountName.Should().Be("YNAB Checking");
-		acctMap.YnabBudgetId.Should().Be("budget-123");
+		acctMap.YnabBudgetId.Should().Be(canonicalBudgetId);
+		(await assert.YnabAccountMappings.FindAsync(legacyAcctMapId))!.YnabBudgetId.Should().Be(legacyBudgetId);
 
 		YnabCategoryMappingEntity catMap = (await assert.YnabCategoryMappings.FindAsync(catMapId))!;
 		catMap.ReceiptsCategory.Should().Be("Food");
 		catMap.YnabCategoryId.Should().Be("ynab-cat-1");
 		catMap.YnabCategoryName.Should().Be("Groceries");
 		catMap.YnabCategoryGroupName.Should().Be("Everyday");
+		catMap.YnabBudgetId.Should().Be(canonicalBudgetId);
+		(await assert.YnabCategoryMappings.FindAsync(legacyCatMapId))!.YnabBudgetId.Should().Be(legacyBudgetId);
 
 		YnabSyncRecordEntity sync = (await assert.YnabSyncRecords.FindAsync(syncId))!;
 		sync.LocalTransactionId.Should().Be(txId);
@@ -292,6 +337,8 @@ public class BackupRoundTripFidelityTests : IDisposable
 		sync.SyncStatus.Should().Be(YnabSyncStatus.Synced);
 		sync.SyncedAtUtc.Should().Be(ts);
 		sync.DeletedAt.Should().BeNull();
+		sync.YnabBudgetId.Should().Be(canonicalBudgetId);
+		(await assert.YnabSyncRecords.FindAsync(legacySyncId))!.YnabBudgetId.Should().Be(legacyBudgetId);
 
 		NormalizedDescriptionEntity norm = (await assert.NormalizedDescriptions.FindAsync(normId))!;
 		norm.CanonicalName.Should().Be("milk");

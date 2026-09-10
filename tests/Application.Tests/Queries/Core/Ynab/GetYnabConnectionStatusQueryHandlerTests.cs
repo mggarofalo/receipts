@@ -10,15 +10,20 @@ public class GetYnabConnectionStatusQueryHandlerTests
 {
 	private readonly Mock<IYnabApiClient> _ynabClientMock;
 	private readonly Mock<IYnabSyncRecordService> _syncRecordServiceMock;
+	private readonly Mock<IYnabBudgetSelectionService> _budgetSelectionMock;
 	private readonly GetYnabConnectionStatusQueryHandler _handler;
 
 	public GetYnabConnectionStatusQueryHandlerTests()
 	{
 		_ynabClientMock = new Mock<IYnabApiClient>();
 		_syncRecordServiceMock = new Mock<IYnabSyncRecordService>();
+		_budgetSelectionMock = new Mock<IYnabBudgetSelectionService>();
+		_budgetSelectionMock.Setup(s => s.GetSelectedBudgetIdAsync(It.IsAny<CancellationToken>()))
+			.ReturnsAsync("budget-B");
 		_handler = new GetYnabConnectionStatusQueryHandler(
 			_ynabClientMock.Object,
 			_syncRecordServiceMock.Object,
+			_budgetSelectionMock.Object,
 			Mock.Of<Application.Interfaces.Services.IYnabSyncEventService>(),
 			Mock.Of<Application.Interfaces.Services.IYnabResponseContext>(),
 			Mock.Of<Microsoft.Extensions.Logging.ILogger<GetYnabConnectionStatusQueryHandler>>());
@@ -48,7 +53,7 @@ public class GetYnabConnectionStatusQueryHandlerTests
 		_ynabClientMock.Setup(c => c.IsConfigured).Returns(true);
 		_ynabClientMock.Setup(c => c.GetBudgetsAsync(It.IsAny<CancellationToken>()))
 			.ReturnsAsync([new YnabBudget("b1", "Budget 1")]);
-		_syncRecordServiceMock.Setup(s => s.GetLatestSuccessfulSyncTimestampAsync(It.IsAny<CancellationToken>()))
+		_syncRecordServiceMock.Setup(s => s.GetLatestSuccessfulSyncTimestampAsync("budget-B", It.IsAny<CancellationToken>()))
 			.ReturnsAsync(lastSync);
 
 		// Act
@@ -67,7 +72,7 @@ public class GetYnabConnectionStatusQueryHandlerTests
 		_ynabClientMock.Setup(c => c.IsConfigured).Returns(true);
 		_ynabClientMock.Setup(c => c.GetBudgetsAsync(It.IsAny<CancellationToken>()))
 			.ThrowsAsync(new HttpRequestException("YNAB auth failed"));
-		_syncRecordServiceMock.Setup(s => s.GetLatestSuccessfulSyncTimestampAsync(It.IsAny<CancellationToken>()))
+		_syncRecordServiceMock.Setup(s => s.GetLatestSuccessfulSyncTimestampAsync("budget-B", It.IsAny<CancellationToken>()))
 			.ReturnsAsync((DateTimeOffset?)null);
 
 		// Act
@@ -86,7 +91,7 @@ public class GetYnabConnectionStatusQueryHandlerTests
 		_ynabClientMock.Setup(c => c.IsConfigured).Returns(true);
 		_ynabClientMock.Setup(c => c.GetBudgetsAsync(It.IsAny<CancellationToken>()))
 			.ReturnsAsync([new YnabBudget("b1", "Budget 1")]);
-		_syncRecordServiceMock.Setup(s => s.GetLatestSuccessfulSyncTimestampAsync(It.IsAny<CancellationToken>()))
+		_syncRecordServiceMock.Setup(s => s.GetLatestSuccessfulSyncTimestampAsync("budget-B", It.IsAny<CancellationToken>()))
 			.ReturnsAsync((DateTimeOffset?)null);
 
 		// Act
@@ -96,5 +101,22 @@ public class GetYnabConnectionStatusQueryHandlerTests
 		result.IsConfigured.Should().BeTrue();
 		result.IsConnected.Should().BeTrue();
 		result.LastSuccessfulSyncUtc.Should().BeNull();
+	}
+
+	[Fact]
+	public async Task Handle_NoSelectedBudget_DoesNotProjectAnotherBudgetsLastSync()
+	{
+		_ynabClientMock.Setup(c => c.IsConfigured).Returns(true);
+		_ynabClientMock.Setup(c => c.GetBudgetsAsync(It.IsAny<CancellationToken>()))
+			.ReturnsAsync([new YnabBudget("b1", "Budget 1")]);
+		_budgetSelectionMock.Setup(s => s.GetSelectedBudgetIdAsync(It.IsAny<CancellationToken>()))
+			.ReturnsAsync((string?)null);
+
+		YnabConnectionStatus result = await _handler.Handle(
+			new GetYnabConnectionStatusQuery(), CancellationToken.None);
+
+		result.LastSuccessfulSyncUtc.Should().BeNull();
+		_syncRecordServiceMock.Verify(s => s.GetLatestSuccessfulSyncTimestampAsync(
+			It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
 	}
 }

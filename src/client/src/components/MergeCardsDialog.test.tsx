@@ -98,6 +98,7 @@ const DEFAULT_PREVIEW = {
   cardsToMove: 1,
   transactionsToRepoint: 0,
   trashedTransactionsToRepoint: 0,
+  ynabMappingsToMove: 0,
   survivingYnabMapping: null,
   conflicts: null,
 };
@@ -576,6 +577,7 @@ describe("MergeCardsDialog", () => {
       cardsToMove: 2,
       transactionsToRepoint: 37,
       trashedTransactionsToRepoint: 4,
+      ynabMappingsToMove: 3,
       survivingYnabMapping: {
         fromAccountId: "a-source",
         fromAccountName: "Source Account",
@@ -606,6 +608,7 @@ describe("MergeCardsDialog", () => {
       // Named, not just counted — the account is about to stop existing.
       expect(screen.getByText(/Deleted permanently:/)).toBeInTheDocument();
       expect(screen.getByText(/YNAB Source/)).toBeInTheDocument();
+      expect(screen.getByText(/3 destination-scoped YNAB mappings kept/)).toBeInTheDocument();
     });
 
     it("calls out trashed transactions, which are invisible everywhere else", async () => {

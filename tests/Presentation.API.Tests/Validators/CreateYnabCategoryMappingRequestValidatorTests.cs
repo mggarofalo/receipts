@@ -5,6 +5,7 @@ namespace Presentation.API.Tests.Validators;
 
 public class CreateYnabCategoryMappingRequestValidatorTests
 {
+	private static readonly Guid ValidBudgetId = Guid.Parse("11111111-1111-1111-1111-111111111111");
 	private readonly CreateYnabCategoryMappingRequestValidator _validator = new();
 
 	[Fact]
@@ -17,7 +18,7 @@ public class CreateYnabCategoryMappingRequestValidatorTests
 			YnabCategoryId = "cat-123",
 			YnabCategoryName = "Groceries",
 			YnabCategoryGroupName = "Immediate Obligations",
-			YnabBudgetId = "budget-1",
+			YnabBudgetId = ValidBudgetId,
 		};
 
 		// Act
@@ -37,7 +38,7 @@ public class CreateYnabCategoryMappingRequestValidatorTests
 			YnabCategoryId = "cat-123",
 			YnabCategoryName = "Groceries",
 			YnabCategoryGroupName = "Immediate Obligations",
-			YnabBudgetId = "budget-1",
+			YnabBudgetId = ValidBudgetId,
 		};
 
 		// Act
@@ -58,7 +59,7 @@ public class CreateYnabCategoryMappingRequestValidatorTests
 			YnabCategoryId = "",
 			YnabCategoryName = "Groceries",
 			YnabCategoryGroupName = "Immediate Obligations",
-			YnabBudgetId = "budget-1",
+			YnabBudgetId = ValidBudgetId,
 		};
 
 		// Act
@@ -79,7 +80,7 @@ public class CreateYnabCategoryMappingRequestValidatorTests
 			YnabCategoryId = "cat-123",
 			YnabCategoryName = "",
 			YnabCategoryGroupName = "Immediate Obligations",
-			YnabBudgetId = "budget-1",
+			YnabBudgetId = ValidBudgetId,
 		};
 
 		// Act
@@ -100,7 +101,7 @@ public class CreateYnabCategoryMappingRequestValidatorTests
 			YnabCategoryId = "cat-123",
 			YnabCategoryName = "Groceries",
 			YnabCategoryGroupName = "",
-			YnabBudgetId = "budget-1",
+			YnabBudgetId = ValidBudgetId,
 		};
 
 		// Act
@@ -121,7 +122,7 @@ public class CreateYnabCategoryMappingRequestValidatorTests
 			YnabCategoryId = "cat-123",
 			YnabCategoryName = "Groceries",
 			YnabCategoryGroupName = "Immediate Obligations",
-			YnabBudgetId = "",
+			YnabBudgetId = Guid.Empty,
 		};
 
 		// Act

@@ -37,9 +37,17 @@ public class YnabSyncRecordService(
 		return ToDto(created);
 	}
 
-	public async Task<YnabSyncRecordDto?> GetByTransactionAndTypeAsync(Guid localTransactionId, YnabSyncType syncType, CancellationToken cancellationToken)
+	public async Task<YnabSyncRecordDto?> GetByTransactionTypeAndBudgetAsync(
+		Guid localTransactionId,
+		YnabSyncType syncType,
+		string ynabBudgetId,
+		CancellationToken cancellationToken)
 	{
-		YnabSyncRecordEntity? entity = await repository.GetByTransactionAndTypeAsync(localTransactionId, syncType, cancellationToken);
+		YnabSyncRecordEntity? entity = await repository.GetByTransactionTypeAndBudgetAsync(
+			localTransactionId,
+			syncType,
+			ynabBudgetId,
+			cancellationToken);
 		return entity is null ? null : ToDto(entity);
 	}
 
@@ -70,9 +78,15 @@ public class YnabSyncRecordService(
 		}
 	}
 
-	public async Task<List<ReceiptYnabSyncStatusDto>> GetSyncStatusesByReceiptIdsAsync(List<Guid> receiptIds, CancellationToken cancellationToken)
+	public async Task<List<ReceiptYnabSyncStatusDto>> GetSyncStatusesByReceiptIdsAndBudgetAsync(
+		List<Guid> receiptIds,
+		string ynabBudgetId,
+		CancellationToken cancellationToken)
 	{
-		List<YnabSyncRecordEntity> syncRecords = await repository.GetByReceiptIdsAsync(receiptIds, cancellationToken);
+		List<YnabSyncRecordEntity> syncRecords = await repository.GetByReceiptIdsAndBudgetAsync(
+			receiptIds,
+			ynabBudgetId,
+			cancellationToken);
 
 		Dictionary<Guid, List<YnabSyncRecordEntity>> recordsByReceipt = [];
 		foreach (YnabSyncRecordEntity record in syncRecords)
@@ -151,8 +165,8 @@ public class YnabSyncRecordService(
 
 		return ReceiptSyncStatusValue.NotSynced;
 	}
-	public Task<DateTimeOffset?> GetLatestSuccessfulSyncTimestampAsync(CancellationToken cancellationToken)
-		=> repository.GetLatestSuccessfulSyncTimestampAsync(cancellationToken);
+	public Task<DateTimeOffset?> GetLatestSuccessfulSyncTimestampAsync(string ynabBudgetId, CancellationToken cancellationToken)
+		=> repository.GetLatestSuccessfulSyncTimestampAsync(ynabBudgetId, cancellationToken);
 
 	private static YnabSyncRecordDto ToDto(YnabSyncRecordEntity entity) => new(
 		entity.Id,

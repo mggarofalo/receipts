@@ -5,6 +5,7 @@ namespace Infrastructure.Interfaces.Repositories;
 public interface IYnabAccountMappingRepository
 {
 	Task<List<YnabAccountMappingEntity>> GetAllAsync(CancellationToken cancellationToken);
+	Task<List<YnabAccountMappingEntity>> GetByBudgetIdAsync(string ynabBudgetId, CancellationToken cancellationToken);
 	Task<YnabAccountMappingEntity?> GetByIdAsync(Guid id, CancellationToken cancellationToken);
 	Task<YnabAccountMappingEntity> CreateAsync(YnabAccountMappingEntity entity, CancellationToken cancellationToken);
 	Task<bool> UpdateAsync(YnabAccountMappingEntity entity, CancellationToken cancellationToken);

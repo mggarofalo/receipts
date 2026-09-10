@@ -915,7 +915,7 @@ it.each(["Account Mapping", "Category Mapping", "stale"])(
     try {
       const remove =
         title === "stale"
-          ? screen.getByRole("button", { name: "Clear stale mappings" })
+          ? screen.getByRole("button", { name: "Delete previous-budget mappings" })
           : within(
               screen
                 .getByText(title)

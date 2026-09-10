@@ -8,7 +8,7 @@ A local payment's account comes from `Transaction.Card.AccountId`. Exactly one m
 
 Candidates must match that remote account, the payment date and the negated milliunit amount. Reconciled candidates are excluded. Automatic assignment also requires exactly one candidate passing the existing payee comparison (normalized equality, containment or trigram similarity at the existing 0.3 threshold). Blank payees and a sole date/amount match without sufficient payee identity require explicit confirmation. Fuzzy payee comparison remains a heuristic, so a successful match is not proof of merchant identity.
 
-The existing USD-only and already-synced guards remain. An existing record for another budget is an unresolved binding, not evidence that the payment is synced to the selected budget.
+The existing USD-only and already-synced guards remain, but they apply only to the captured budget. A record for another budget is preserved as history and is not evidence that the payment is synced to the selected budget. The selected destination can create its own record for the same payment and operation type.
 
 ## Ownership within an operation
 
@@ -20,8 +20,8 @@ Reservations are established before both the remote PATCH and the existing-recei
 
 ## Explicit confirmation and recovery boundary
 
-The existing resolution flow lets the user choose a remote transaction explicitly and retains the reconciled-transaction guard. The dialog supports one candidate as well as several. Automatic account/payee matching does not silently override that deliberate selection. A memo record belonging to another budget cannot be overwritten through either path.
+The existing resolution flow lets the user choose a remote transaction explicitly and retains the reconciled-transaction guard. The dialog supports one candidate as well as several. Automatic account/payee matching does not silently override that deliberate selection. Neither path overwrites another budget's historical record.
 
-These reservations are in memory and cover participating payments in one request. They do not establish exclusive ownership across concurrent requests or all historical payments. Destination-scoped records, durable claims, retries and uncertain remote-write recovery are tracked in RECEIPTS-961 and RECEIPTS-962. Those issues remain release-candidate work; this matching change does not claim exactly-once delivery.
+These reservations are in memory and cover participating payments in one request. They do not establish exclusive ownership across concurrent requests or all historical payments. Destination-scoped records are enforced by the database and service lookups; durable claims, retries and uncertain remote-write recovery remain tracked in RECEIPTS-962. This matching flow does not claim exactly-once delivery.
 
 Tests use controlled services and fake HTTP responses, with no real YNAB writes. They assert outcomes and outbound target IDs for account mismatches, insufficient payee identity, competing payments, retained bindings and legitimate matches.

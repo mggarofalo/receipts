@@ -36,7 +36,7 @@ public class YnabCategoryMappingEntityConfiguration : IEntityTypeConfiguration<Y
 			.IsRequired()
 			.HasMaxLength(100);
 
-		builder.HasIndex(e => e.ReceiptsCategory)
+		builder.HasIndex(e => new { e.ReceiptsCategory, e.YnabBudgetId })
 			.IsUnique();
 	}
 }

@@ -21,6 +21,12 @@ public class YnabAccountMappingService(
 		return entities.Select(ToDto).ToList();
 	}
 
+	public async Task<List<YnabAccountMappingDto>> GetByBudgetIdAsync(string ynabBudgetId, CancellationToken cancellationToken)
+	{
+		List<YnabAccountMappingEntity> entities = await repository.GetByBudgetIdAsync(ynabBudgetId, cancellationToken);
+		return entities.Select(ToDto).ToList();
+	}
+
 	public async Task<YnabAccountMappingDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken)
 	{
 		YnabAccountMappingEntity? entity = await repository.GetByIdAsync(id, cancellationToken);
@@ -55,10 +61,13 @@ public class YnabAccountMappingService(
 		{
 			return;
 		}
+		if (!string.Equals(entity.YnabBudgetId, ynabBudgetId, StringComparison.Ordinal))
+		{
+			throw new ArgumentException("A mapping cannot be moved between YNAB budgets.", nameof(ynabBudgetId));
+		}
 
 		entity.YnabAccountId = ynabAccountId;
 		entity.YnabAccountName = ynabAccountName;
-		entity.YnabBudgetId = ynabBudgetId;
 		entity.UpdatedAt = DateTimeOffset.UtcNow;
 
 		if (await repository.UpdateAsync(entity, cancellationToken))

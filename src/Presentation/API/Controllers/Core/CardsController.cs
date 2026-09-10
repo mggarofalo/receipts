@@ -223,7 +223,7 @@ public class CardsController(IMediator mediator, CardMapper mapper, ILogger<Card
 	[HttpPost(RouteMerge)]
 	[Authorize(Policy = "RequireAdmin")]
 	[EndpointSummary("Merge cards into a target account")]
-	[EndpointDescription("Repoints the listed cards (and their transactions) to the target account and deletes any now-orphaned accounts. Requires the Admin role. Returns 409 Conflict if the source/target accounts have differing YNAB account mappings; resubmit with ynabMappingWinnerAccountId to resolve.")]
+	[EndpointDescription("Repoints the listed cards (and their transactions) to the target account and deletes any now-orphaned accounts. Requires the Admin role. One conflicting YNAB budget returns 409 and can be resolved with ynabMappingWinnerAccountId. Conflicts in multiple budgets return 400 and require obsolete mappings to be removed first.")]
 	public async Task<Results<Ok<MergeCardsResponse>, BadRequest<ProblemDetails>, NotFound, Conflict<MergeCardsConflictResponse>>> MergeCards([FromBody] MergeCardsRequest model, CancellationToken cancellationToken = default)
 	{
 		if (model.SourceCardIds is null || model.SourceCardIds.Count == 0)
@@ -301,7 +301,7 @@ public class CardsController(IMediator mediator, CardMapper mapper, ILogger<Card
 	[HttpPost(RouteMergePreview)]
 	[Authorize(Policy = "RequireAdmin")]
 	[EndpointSummary("Preview what a card merge would do")]
-	[EndpointDescription("Runs the merge's validation and reports its impact without writing anything. Requires the Admin role. Rejects exactly what the merge itself would reject.")]
+	[EndpointDescription("Runs the merge's validation and reports its impact without writing anything. Requires the Admin role. Conflicts in multiple YNAB budgets return 400 and require obsolete mappings to be removed first.")]
 	public async Task<Results<Ok<MergeCardsPreviewResponse>, BadRequest<ProblemDetails>, NotFound>> PreviewMergeCards(
 		[FromBody] MergeCardsPreviewRequest model,
 		CancellationToken cancellationToken = default)
@@ -351,6 +351,7 @@ public class CardsController(IMediator mediator, CardMapper mapper, ILogger<Card
 			CardsToMove = preview.CardsToMove,
 			TransactionsToRepoint = preview.TransactionsToRepoint,
 			TrashedTransactionsToRepoint = preview.TrashedTransactionsToRepoint,
+			YnabMappingsToMove = preview.YnabMappingsToMove,
 			SurvivingYnabMapping = preview.SurvivingYnabMapping is null ? null : new API.Generated.Dtos.MergeCardsPreviewMapping
 			{
 				FromAccountId = preview.SurvivingYnabMapping.FromAccountId,

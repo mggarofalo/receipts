@@ -1,5 +1,6 @@
 using Application.Interfaces.Services;
 using Application.Models.CommittedChanges;
+using FluentAssertions;
 using Infrastructure.Entities.Core;
 using Infrastructure.Interfaces.Repositories;
 using Infrastructure.Services;
@@ -32,7 +33,7 @@ public class YnabCategoryMappingServiceTests
 	{
 		Guid id = Guid.NewGuid();
 		_repository.Setup(r => r.GetByIdAsync(id, It.IsAny<CancellationToken>()))
-			.ReturnsAsync(new YnabCategoryMappingEntity { Id = id });
+			.ReturnsAsync(new YnabCategoryMappingEntity { Id = id, YnabBudgetId = "budget" });
 		_repository.Setup(r => r.UpdateAsync(It.IsAny<YnabCategoryMappingEntity>(), It.IsAny<CancellationToken>()))
 			.ReturnsAsync(updated);
 		YnabCategoryMappingService service = new(_repository.Object, _publisher.Object);
@@ -40,6 +41,22 @@ public class YnabCategoryMappingServiceTests
 		await service.UpdateAsync(id, "category", "Groceries", "Needs", "budget", CancellationToken.None);
 
 		VerifyPublished(CommittedChangeType.Updated, id, updated ? Times.Once() : Times.Never());
+	}
+
+	[Fact]
+	public async Task UpdateAsync_CannotMoveHistoricalMappingToAnotherBudget()
+	{
+		Guid id = Guid.NewGuid();
+		_repository.Setup(r => r.GetByIdAsync(id, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new YnabCategoryMappingEntity { Id = id, YnabBudgetId = "budget-A" });
+		YnabCategoryMappingService service = new(_repository.Object, _publisher.Object);
+
+		Func<Task> act = () => service.UpdateAsync(
+			id, "category-B", "Category B", "Group B", "budget-B", CancellationToken.None);
+
+		await act.Should().ThrowAsync<ArgumentException>()
+			.WithMessage("*cannot be moved between YNAB budgets*");
+		_repository.Verify(r => r.UpdateAsync(It.IsAny<YnabCategoryMappingEntity>(), It.IsAny<CancellationToken>()), Times.Never);
 	}
 
 	[Theory]

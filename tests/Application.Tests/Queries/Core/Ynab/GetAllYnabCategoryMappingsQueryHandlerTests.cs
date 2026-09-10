@@ -13,7 +13,10 @@ public class GetAllYnabCategoryMappingsQueryHandlerTests
 	{
 		// Arrange
 		Mock<IYnabCategoryMappingService> mockService = new();
-		GetAllYnabCategoryMappingsQueryHandler handler = new(mockService.Object);
+		Mock<IYnabBudgetSelectionService> budgetSelection = new();
+		budgetSelection.Setup(s => s.GetSelectedBudgetIdAsync(It.IsAny<CancellationToken>()))
+			.ReturnsAsync("budget-1");
+		GetAllYnabCategoryMappingsQueryHandler handler = new(mockService.Object, budgetSelection.Object);
 
 		List<YnabCategoryMappingDto> mappings =
 		[
@@ -21,7 +24,7 @@ public class GetAllYnabCategoryMappingsQueryHandlerTests
 			new(Guid.NewGuid(), "Electronics", "cat-2", "Technology", "Wants", "budget-1", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow),
 		];
 
-		mockService.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>()))
+		mockService.Setup(s => s.GetByBudgetIdAsync("budget-1", It.IsAny<CancellationToken>()))
 			.ReturnsAsync(mappings);
 
 		// Act
@@ -37,9 +40,12 @@ public class GetAllYnabCategoryMappingsQueryHandlerTests
 	{
 		// Arrange
 		Mock<IYnabCategoryMappingService> mockService = new();
-		GetAllYnabCategoryMappingsQueryHandler handler = new(mockService.Object);
+		Mock<IYnabBudgetSelectionService> budgetSelection = new();
+		budgetSelection.Setup(s => s.GetSelectedBudgetIdAsync(It.IsAny<CancellationToken>()))
+			.ReturnsAsync("budget-1");
+		GetAllYnabCategoryMappingsQueryHandler handler = new(mockService.Object, budgetSelection.Object);
 
-		mockService.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>()))
+		mockService.Setup(s => s.GetByBudgetIdAsync("budget-1", It.IsAny<CancellationToken>()))
 			.ReturnsAsync([]);
 
 		// Act

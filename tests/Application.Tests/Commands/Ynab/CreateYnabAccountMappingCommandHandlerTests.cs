@@ -8,17 +8,21 @@ namespace Application.Tests.Commands.Ynab;
 
 public class CreateYnabAccountMappingCommandHandlerTests
 {
+	private const string Budget1 = "11111111-1111-1111-1111-111111111111";
+	private const string Budget2 = "22222222-2222-2222-2222-222222222222";
 	private readonly Mock<IYnabAccountMappingService> _mappingServiceMock = new();
 	// RECEIPTS-751: the handler validates ReceiptsAccountId (an FK to Accounts) against
 	// IAccountService, not ICardService.
 	private readonly Mock<IAccountService> _accountServiceMock = new();
+	private readonly Mock<IYnabBudgetSelectionService> _budgetSelectionMock = new();
 	private readonly CreateYnabAccountMappingCommandHandler _handler;
 
 	public CreateYnabAccountMappingCommandHandlerTests()
 	{
 		_handler = new CreateYnabAccountMappingCommandHandler(
 			_mappingServiceMock.Object,
-			_accountServiceMock.Object);
+			_accountServiceMock.Object,
+			_budgetSelectionMock.Object);
 	}
 
 	[Fact]
@@ -28,7 +32,9 @@ public class CreateYnabAccountMappingCommandHandlerTests
 		Guid accountId = Guid.NewGuid();
 		string ynabAccountId = "ynab-acc-1";
 		string ynabAccountName = "My Checking";
-		string ynabBudgetId = "budget-1";
+		string ynabBudgetId = Budget1;
+		_budgetSelectionMock.Setup(s => s.GetSelectedBudgetIdAsync(It.IsAny<CancellationToken>()))
+			.ReturnsAsync(ynabBudgetId);
 
 		_accountServiceMock.Setup(s => s.ExistsAsync(accountId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(true);
@@ -60,10 +66,12 @@ public class CreateYnabAccountMappingCommandHandlerTests
 	{
 		// Arrange
 		Guid accountId = Guid.NewGuid();
+		_budgetSelectionMock.Setup(s => s.GetSelectedBudgetIdAsync(It.IsAny<CancellationToken>()))
+			.ReturnsAsync(Budget1);
 		_accountServiceMock.Setup(s => s.ExistsAsync(accountId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(false);
 
-		CreateYnabAccountMappingCommand command = new(accountId, "ynab-acc-1", "My Checking", "budget-1");
+		CreateYnabAccountMappingCommand command = new(accountId, "ynab-acc-1", "My Checking", Budget1);
 
 		// Act
 		Func<Task> act = async () => await _handler.Handle(command, CancellationToken.None);
@@ -88,7 +96,9 @@ public class CreateYnabAccountMappingCommandHandlerTests
 		Guid accountId = Guid.NewGuid();
 		string ynabAccountId = "ynab-acc-2";
 		string ynabAccountName = "New Account";
-		string ynabBudgetId = "budget-2";
+		string ynabBudgetId = Budget2;
+		_budgetSelectionMock.Setup(s => s.GetSelectedBudgetIdAsync(It.IsAny<CancellationToken>()))
+			.ReturnsAsync(ynabBudgetId);
 
 		// Account exists (no Card shares its id — the account/card-split scenario).
 		_accountServiceMock.Setup(s => s.ExistsAsync(accountId, It.IsAny<CancellationToken>()))
@@ -114,5 +124,30 @@ public class CreateYnabAccountMappingCommandHandlerTests
 		_mappingServiceMock.Verify(s => s.CreateAsync(
 			accountId, ynabAccountId, ynabAccountName, ynabBudgetId,
 			It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	[Fact]
+	public async Task Handle_CanonicalizesRequestBudgetForComparisonAndPersistence()
+	{
+		Guid accountId = Guid.NewGuid();
+		_budgetSelectionMock.Setup(s => s.GetSelectedBudgetIdAsync(It.IsAny<CancellationToken>()))
+			.ReturnsAsync(Budget1);
+		_accountServiceMock.Setup(s => s.ExistsAsync(accountId, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(true);
+		YnabAccountMappingDto expected = new(
+			Guid.NewGuid(), accountId, "ynab-account", "Checking", Budget1,
+			DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+		_mappingServiceMock.Setup(s => s.CreateAsync(
+			accountId, "ynab-account", "Checking", Budget1, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(expected);
+
+		YnabAccountMappingDto result = await _handler.Handle(
+			new CreateYnabAccountMappingCommand(
+				accountId, "ynab-account", "Checking", $"  {{{Budget1.ToUpperInvariant()}}}  "),
+			CancellationToken.None);
+
+		result.Should().BeSameAs(expected);
+		_mappingServiceMock.Verify(s => s.CreateAsync(
+			accountId, "ynab-account", "Checking", Budget1, It.IsAny<CancellationToken>()), Times.Once);
 	}
 }

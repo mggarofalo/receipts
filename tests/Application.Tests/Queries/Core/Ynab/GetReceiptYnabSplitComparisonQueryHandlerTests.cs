@@ -76,7 +76,7 @@ public class GetReceiptYnabSplitComparisonQueryHandlerTests
 		_transactionServiceMock.Setup(s => s.GetTransactionAccountsByReceiptIdAsync(_receiptId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(txAccounts);
 
-		_categoryMappingServiceMock.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>()))
+		_categoryMappingServiceMock.Setup(s => s.GetByBudgetIdAsync(_budgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync([
 				new YnabCategoryMappingDto(Guid.NewGuid(), "Groceries", "ynab-cat-1", "Groceries", "Food", _budgetId, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow),
 			]);
@@ -84,7 +84,7 @@ public class GetReceiptYnabSplitComparisonQueryHandlerTests
 		_budgetSelectionServiceMock.Setup(s => s.GetSelectedBudgetIdAsync(It.IsAny<CancellationToken>()))
 			.ReturnsAsync(_budgetId);
 
-		_accountMappingServiceMock.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>()))
+		_accountMappingServiceMock.Setup(s => s.GetByBudgetIdAsync(_budgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync([
 				new YnabAccountMappingDto(Guid.NewGuid(), _accountId, _ynabAccountId, "Checking", _budgetId, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow),
 			]);
@@ -99,7 +99,7 @@ public class GetReceiptYnabSplitComparisonQueryHandlerTests
 				new YnabCategory("ynab-cat-1", "Groceries", "group-1", "Food", false),
 			]);
 
-		_syncRecordServiceMock.Setup(s => s.GetByTransactionAndTypeAsync(_transactionId, YnabSyncType.TransactionPush, It.IsAny<CancellationToken>()))
+		_syncRecordServiceMock.Setup(s => s.GetByTransactionTypeAndBudgetAsync(_transactionId, YnabSyncType.TransactionPush, _budgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync((YnabSyncRecordDto?)null);
 	}
 
@@ -176,7 +176,7 @@ public class GetReceiptYnabSplitComparisonQueryHandlerTests
 	public async Task Handle_HappyPath_Synced_ReturnsExpectedAndActual_Matches()
 	{
 		SetupHappyPath();
-		_syncRecordServiceMock.Setup(s => s.GetByTransactionAndTypeAsync(_transactionId, YnabSyncType.TransactionPush, It.IsAny<CancellationToken>()))
+		_syncRecordServiceMock.Setup(s => s.GetByTransactionTypeAndBudgetAsync(_transactionId, YnabSyncType.TransactionPush, _budgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new YnabSyncRecordDto(Guid.NewGuid(), _transactionId, "ynab-tx-1", _budgetId, _ynabAccountId, YnabSyncType.TransactionPush, YnabSyncStatus.Synced, DateTimeOffset.UtcNow, null, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
 
 		_ynabApiClientMock.Setup(s => s.GetTransactionAsync(_budgetId, "ynab-tx-1", It.IsAny<CancellationToken>()))
@@ -210,7 +210,7 @@ public class GetReceiptYnabSplitComparisonQueryHandlerTests
 	public async Task Handle_HappyPath_Synced_ActualDiffersFromExpected_ReturnsMatchesFalse()
 	{
 		SetupHappyPath();
-		_syncRecordServiceMock.Setup(s => s.GetByTransactionAndTypeAsync(_transactionId, YnabSyncType.TransactionPush, It.IsAny<CancellationToken>()))
+		_syncRecordServiceMock.Setup(s => s.GetByTransactionTypeAndBudgetAsync(_transactionId, YnabSyncType.TransactionPush, _budgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new YnabSyncRecordDto(Guid.NewGuid(), _transactionId, "ynab-tx-1", _budgetId, _ynabAccountId, YnabSyncType.TransactionPush, YnabSyncStatus.Synced, DateTimeOffset.UtcNow, null, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
 
 		// YNAB returns a split with a different category than expected
@@ -243,7 +243,7 @@ public class GetReceiptYnabSplitComparisonQueryHandlerTests
 	public async Task Handle_HappyPath_Synced_YnabFetchThrows_SetsActualFetchError()
 	{
 		SetupHappyPath();
-		_syncRecordServiceMock.Setup(s => s.GetByTransactionAndTypeAsync(_transactionId, YnabSyncType.TransactionPush, It.IsAny<CancellationToken>()))
+		_syncRecordServiceMock.Setup(s => s.GetByTransactionTypeAndBudgetAsync(_transactionId, YnabSyncType.TransactionPush, _budgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new YnabSyncRecordDto(Guid.NewGuid(), _transactionId, "ynab-tx-1", _budgetId, _ynabAccountId, YnabSyncType.TransactionPush, YnabSyncStatus.Synced, DateTimeOffset.UtcNow, null, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
 
 		_ynabApiClientMock.Setup(s => s.GetTransactionAsync(_budgetId, "ynab-tx-1", It.IsAny<CancellationToken>()))
@@ -264,7 +264,7 @@ public class GetReceiptYnabSplitComparisonQueryHandlerTests
 	public async Task Handle_UnmappedAccount_ReturnsCannotCompute()
 	{
 		SetupHappyPath();
-		_accountMappingServiceMock.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>()))
+		_accountMappingServiceMock.Setup(s => s.GetByBudgetIdAsync(_budgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync([]);
 
 		ReceiptYnabSplitComparisonResult result = await _handler.Handle(

@@ -67,9 +67,17 @@ public class PushYnabTransactionsCommandHandler(
 			return new PushYnabTransactionsResult(false, [], Error: "Receipt has no transactions.");
 		}
 
-		// 2. Check all categories are mapped (fail-fast)
+		// 2. Resolve the destination before loading any destination-owned state.
+		string? budgetId = request.CapturedYnabBudgetId
+			?? await budgetSelectionService.GetSelectedBudgetIdAsync(cancellationToken);
+		if (string.IsNullOrEmpty(budgetId))
+		{
+			return new PushYnabTransactionsResult(false, [], Error: "No YNAB budget selected.");
+		}
+
+		// 3. Check all categories are mapped for the selected budget (fail-fast)
 		List<string> distinctCategories = items.Select(i => i.Category).Distinct().ToList();
-		List<YnabCategoryMappingDto> allMappings = await categoryMappingService.GetAllAsync(cancellationToken);
+		List<YnabCategoryMappingDto> allMappings = await categoryMappingService.GetByBudgetIdAsync(budgetId, cancellationToken);
 		Dictionary<string, string> categoryToYnabId = allMappings
 			.ToDictionary(m => m.ReceiptsCategory, m => m.YnabCategoryId);
 
@@ -79,15 +87,8 @@ public class PushYnabTransactionsCommandHandler(
 			return new PushYnabTransactionsResult(false, [], UnmappedCategories: unmapped, Error: "Unmapped categories found.");
 		}
 
-		// 3. Get selected budget
-		string? budgetId = await budgetSelectionService.GetSelectedBudgetIdAsync(cancellationToken);
-		if (string.IsNullOrEmpty(budgetId))
-		{
-			return new PushYnabTransactionsResult(false, [], Error: "No YNAB budget selected.");
-		}
-
 		// 4. Get account mappings for the transactions
-		List<YnabAccountMappingDto> accountMappingsList = await accountMappingService.GetAllAsync(cancellationToken);
+		List<YnabAccountMappingDto> accountMappingsList = await accountMappingService.GetByBudgetIdAsync(budgetId, cancellationToken);
 		Dictionary<Guid, string> accountToYnabId = accountMappingsList
 			.ToDictionary(m => m.ReceiptsAccountId, m => m.YnabAccountId);
 
@@ -107,8 +108,8 @@ public class PushYnabTransactionsCommandHandler(
 		Dictionary<Guid, YnabSyncRecordDto> existingSyncRecords = [];
 		foreach (Domain.Core.Transaction tx in transactions)
 		{
-			YnabSyncRecordDto? existingSync = await syncRecordService.GetByTransactionAndTypeAsync(
-				tx.Id, YnabSyncType.TransactionPush, cancellationToken);
+			YnabSyncRecordDto? existingSync = await syncRecordService.GetByTransactionTypeAndBudgetAsync(
+				tx.Id, YnabSyncType.TransactionPush, budgetId, cancellationToken);
 			if (existingSync is not null)
 			{
 				existingSyncRecords[tx.Id] = existingSync;

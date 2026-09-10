@@ -5,6 +5,7 @@ namespace Presentation.API.Tests.Validators;
 
 public class CreateYnabAccountMappingRequestValidatorTests
 {
+	private static readonly Guid ValidBudgetId = Guid.Parse("11111111-1111-1111-1111-111111111111");
 	private readonly CreateYnabAccountMappingRequestValidator _validator = new();
 
 	[Fact]
@@ -16,7 +17,7 @@ public class CreateYnabAccountMappingRequestValidatorTests
 			ReceiptsAccountId = Guid.NewGuid(),
 			YnabAccountId = "ynab-account-1",
 			YnabAccountName = "Checking",
-			YnabBudgetId = "budget-1",
+			YnabBudgetId = ValidBudgetId,
 		};
 
 		// Act
@@ -35,7 +36,7 @@ public class CreateYnabAccountMappingRequestValidatorTests
 			ReceiptsAccountId = Guid.Empty,
 			YnabAccountId = "ynab-account-1",
 			YnabAccountName = "Checking",
-			YnabBudgetId = "budget-1",
+			YnabBudgetId = ValidBudgetId,
 		};
 
 		// Act
@@ -55,7 +56,7 @@ public class CreateYnabAccountMappingRequestValidatorTests
 			ReceiptsAccountId = Guid.NewGuid(),
 			YnabAccountId = "",
 			YnabAccountName = "Checking",
-			YnabBudgetId = "budget-1",
+			YnabBudgetId = ValidBudgetId,
 		};
 
 		// Act
@@ -75,7 +76,7 @@ public class CreateYnabAccountMappingRequestValidatorTests
 			ReceiptsAccountId = Guid.NewGuid(),
 			YnabAccountId = "ynab-account-1",
 			YnabAccountName = "",
-			YnabBudgetId = "budget-1",
+			YnabBudgetId = ValidBudgetId,
 		};
 
 		// Act
@@ -95,7 +96,7 @@ public class CreateYnabAccountMappingRequestValidatorTests
 			ReceiptsAccountId = Guid.NewGuid(),
 			YnabAccountId = "ynab-account-1",
 			YnabAccountName = "Checking",
-			YnabBudgetId = "",
+			YnabBudgetId = Guid.Empty,
 		};
 
 		// Act

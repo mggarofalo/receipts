@@ -78,7 +78,7 @@ public class PushYnabTransactionsCommandHandlerTests
 		_transactionServiceMock.Setup(s => s.GetTransactionAccountsByReceiptIdAsync(_receiptId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(txAccounts);
 
-		_categoryMappingServiceMock.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>()))
+		_categoryMappingServiceMock.Setup(s => s.GetByBudgetIdAsync(_budgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync([
 				new YnabCategoryMappingDto(Guid.NewGuid(), "Groceries", "ynab-cat-1", "Groceries", "Food", _budgetId, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow),
 			]);
@@ -86,12 +86,12 @@ public class PushYnabTransactionsCommandHandlerTests
 		_budgetSelectionServiceMock.Setup(s => s.GetSelectedBudgetIdAsync(It.IsAny<CancellationToken>()))
 			.ReturnsAsync(_budgetId);
 
-		_accountMappingServiceMock.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>()))
+		_accountMappingServiceMock.Setup(s => s.GetByBudgetIdAsync(_budgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync([
 				new YnabAccountMappingDto(Guid.NewGuid(), _accountId, _ynabAccountId, "Checking", _budgetId, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow),
 			]);
 
-		_syncRecordServiceMock.Setup(s => s.GetByTransactionAndTypeAsync(_transactionId, YnabSyncType.TransactionPush, It.IsAny<CancellationToken>()))
+		_syncRecordServiceMock.Setup(s => s.GetByTransactionTypeAndBudgetAsync(_transactionId, YnabSyncType.TransactionPush, _budgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync((YnabSyncRecordDto?)null);
 
 		Guid syncRecordId = Guid.NewGuid();
@@ -121,6 +121,27 @@ public class PushYnabTransactionsCommandHandlerTests
 		result.PushedTransactions[0].YnabTransactionId.Should().Be("ynab-tx-1");
 		result.PushedTransactions[0].Milliunits.Should().Be(-11000);
 		result.Error.Should().BeNull();
+	}
+
+	[Fact]
+	public async Task Handle_WithCapturedBudget_DoesNotRereadSelectionAndScopesThePushToCapturedBudget()
+	{
+		SetupHappyPath();
+
+		PushYnabTransactionsResult result = await _handler.Handle(
+			new PushYnabTransactionsCommand(_receiptId, _budgetId), CancellationToken.None);
+
+		result.Success.Should().BeTrue();
+		_budgetSelectionServiceMock.Verify(
+			s => s.GetSelectedBudgetIdAsync(It.IsAny<CancellationToken>()), Times.Never);
+		_categoryMappingServiceMock.Verify(
+			s => s.GetByBudgetIdAsync(_budgetId, It.IsAny<CancellationToken>()), Times.Once);
+		_accountMappingServiceMock.Verify(
+			s => s.GetByBudgetIdAsync(_budgetId, It.IsAny<CancellationToken>()), Times.Once);
+		_syncRecordServiceMock.Verify(s => s.GetByTransactionTypeAndBudgetAsync(
+			_transactionId, YnabSyncType.TransactionPush, _budgetId, It.IsAny<CancellationToken>()), Times.Once);
+		_ynabApiClientMock.Verify(s => s.CreateTransactionAsync(
+			_budgetId, It.IsAny<YnabCreateTransactionRequest>(), It.IsAny<CancellationToken>()), Times.Once);
 	}
 
 	[Fact]
@@ -227,9 +248,11 @@ public class PushYnabTransactionsCommandHandlerTests
 		tx.AccountId = _accountId;
 		_transactionServiceMock.Setup(s => s.GetTransactionAccountsByReceiptIdAsync(_receiptId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync([new TransactionAccount { Transaction = tx, Account = new Domain.Core.Account(_accountId, "Checking", true) }]);
+		_budgetSelectionServiceMock.Setup(s => s.GetSelectedBudgetIdAsync(It.IsAny<CancellationToken>()))
+			.ReturnsAsync(_budgetId);
 
 		// Only "Groceries" is mapped, "Gas" is not
-		_categoryMappingServiceMock.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>()))
+		_categoryMappingServiceMock.Setup(s => s.GetByBudgetIdAsync(_budgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync([
 				new YnabCategoryMappingDto(Guid.NewGuid(), "Groceries", "ynab-cat-1", "Groceries", "Food", _budgetId, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow),
 			]);
@@ -246,7 +269,7 @@ public class PushYnabTransactionsCommandHandlerTests
 	public async Task Handle_AlreadySynced_SkipsTransactionAndSucceeds()
 	{
 		SetupHappyPath();
-		_syncRecordServiceMock.Setup(s => s.GetByTransactionAndTypeAsync(_transactionId, YnabSyncType.TransactionPush, It.IsAny<CancellationToken>()))
+		_syncRecordServiceMock.Setup(s => s.GetByTransactionTypeAndBudgetAsync(_transactionId, YnabSyncType.TransactionPush, _budgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new YnabSyncRecordDto(Guid.NewGuid(), _transactionId, "ynab-tx-old", _budgetId, null, YnabSyncType.TransactionPush, YnabSyncStatus.Synced, DateTimeOffset.UtcNow, null, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
 
 		PushYnabTransactionsResult result = await _handler.Handle(
@@ -256,6 +279,55 @@ public class PushYnabTransactionsCommandHandlerTests
 		result.Success.Should().BeTrue();
 		result.PushedTransactions.Should().BeEmpty();
 		_ynabApiClientMock.Verify(s => s.CreateTransactionAsync(It.IsAny<string>(), It.IsAny<YnabCreateTransactionRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+	}
+
+	[Fact]
+	public async Task Handle_PriorBudgetSyncAndMappings_DoNotSkipOrLeakIntoSelectedBudgetPush()
+	{
+		const string priorBudgetId = "budget-A";
+		SetupHappyPath();
+		_syncRecordServiceMock.Setup(s => s.GetByTransactionTypeAndBudgetAsync(
+			_transactionId, YnabSyncType.TransactionPush, priorBudgetId, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new YnabSyncRecordDto(
+				Guid.NewGuid(), _transactionId, "ynab-A-transaction", priorBudgetId, "ynab-A-account",
+				YnabSyncType.TransactionPush, YnabSyncStatus.Synced, DateTimeOffset.UtcNow, null,
+				DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
+		_categoryMappingServiceMock.Setup(s => s.GetByBudgetIdAsync(_budgetId, It.IsAny<CancellationToken>()))
+			.ReturnsAsync([
+				new YnabCategoryMappingDto(Guid.NewGuid(), "Groceries", "ynab-B-category", "Current groceries", "Current group", _budgetId, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow),
+			]);
+		_accountMappingServiceMock.Setup(s => s.GetByBudgetIdAsync(_budgetId, It.IsAny<CancellationToken>()))
+			.ReturnsAsync([
+				new YnabAccountMappingDto(Guid.NewGuid(), _accountId, "ynab-B-account", "Current checking", _budgetId, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow),
+			]);
+		_splitCalculatorMock.Setup(s => s.ComputeWaterfallSplits(
+			It.IsAny<ReceiptWithItems>(), It.IsAny<List<Domain.Core.Transaction>>(),
+			It.IsAny<Dictionary<string, string>>()))
+			.Returns(new YnabSplitResult([
+				new YnabTransactionSplit(_transactionId, -11000, [new YnabSubTransactionSplit("ynab-B-category", -11000)]),
+			]));
+		YnabCreateTransactionRequest? sent = null;
+		_ynabApiClientMock.Setup(s => s.CreateTransactionAsync(
+			_budgetId, It.IsAny<YnabCreateTransactionRequest>(), It.IsAny<CancellationToken>()))
+			.Callback<string, YnabCreateTransactionRequest, CancellationToken>((_, request, _) => sent = request)
+			.ReturnsAsync(new YnabCreateTransactionResponse("ynab-B-transaction"));
+
+		PushYnabTransactionsResult result = await _handler.Handle(
+			new PushYnabTransactionsCommand(_receiptId), CancellationToken.None);
+
+		result.Success.Should().BeTrue();
+		result.PushedTransactions.Should().ContainSingle();
+		sent.Should().NotBeNull();
+		sent!.AccountId.Should().Be("ynab-B-account");
+		sent.CategoryId.Should().Be("ynab-B-category");
+		_syncRecordServiceMock.Verify(s => s.GetByTransactionTypeAndBudgetAsync(
+			_transactionId, YnabSyncType.TransactionPush, _budgetId, It.IsAny<CancellationToken>()), Times.Once);
+		_syncRecordServiceMock.Verify(s => s.CreateAsync(
+			_transactionId, _budgetId, YnabSyncType.TransactionPush, It.IsAny<CancellationToken>()), Times.Once);
+		_categoryMappingServiceMock.Verify(s => s.GetByBudgetIdAsync(
+			_budgetId, It.IsAny<CancellationToken>()), Times.Once);
+		_accountMappingServiceMock.Verify(s => s.GetByBudgetIdAsync(
+			_budgetId, It.IsAny<CancellationToken>()), Times.Once);
 	}
 
 	[Fact]
@@ -280,10 +352,10 @@ public class PushYnabTransactionsCommandHandlerTests
 			]);
 
 		// TX1 is already synced
-		_syncRecordServiceMock.Setup(s => s.GetByTransactionAndTypeAsync(_transactionId, YnabSyncType.TransactionPush, It.IsAny<CancellationToken>()))
+		_syncRecordServiceMock.Setup(s => s.GetByTransactionTypeAndBudgetAsync(_transactionId, YnabSyncType.TransactionPush, _budgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new YnabSyncRecordDto(Guid.NewGuid(), _transactionId, "ynab-tx-old", _budgetId, null, YnabSyncType.TransactionPush, YnabSyncStatus.Synced, DateTimeOffset.UtcNow, null, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
 		// TX2 is not synced
-		_syncRecordServiceMock.Setup(s => s.GetByTransactionAndTypeAsync(transactionId2, YnabSyncType.TransactionPush, It.IsAny<CancellationToken>()))
+		_syncRecordServiceMock.Setup(s => s.GetByTransactionTypeAndBudgetAsync(transactionId2, YnabSyncType.TransactionPush, _budgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync((YnabSyncRecordDto?)null);
 
 		Guid syncRecordId2 = Guid.NewGuid();
@@ -330,7 +402,7 @@ public class PushYnabTransactionsCommandHandlerTests
 	public async Task Handle_UnmappedAccount_ReturnsError()
 	{
 		SetupHappyPath();
-		_accountMappingServiceMock.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>()))
+		_accountMappingServiceMock.Setup(s => s.GetByBudgetIdAsync(_budgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync([]);
 
 		PushYnabTransactionsResult result = await _handler.Handle(
@@ -451,7 +523,7 @@ public class PushYnabTransactionsCommandHandlerTests
 		_transactionServiceMock.Setup(s => s.GetTransactionAccountsByReceiptIdAsync(_receiptId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(txAccounts);
 
-		_syncRecordServiceMock.Setup(s => s.GetByTransactionAndTypeAsync(transactionId2, YnabSyncType.TransactionPush, It.IsAny<CancellationToken>()))
+		_syncRecordServiceMock.Setup(s => s.GetByTransactionTypeAndBudgetAsync(transactionId2, YnabSyncType.TransactionPush, _budgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync((YnabSyncRecordDto?)null);
 
 		_syncRecordServiceMock.Setup(s => s.CreateAsync(transactionId2, _budgetId, YnabSyncType.TransactionPush, It.IsAny<CancellationToken>()))
