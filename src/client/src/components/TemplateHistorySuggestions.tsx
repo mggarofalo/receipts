@@ -161,7 +161,7 @@ export function TemplateHistorySuggestions({
                 ref={triggerRef}
                 type="button"
                 aria-describedby={COUNT_ID}
-                className="flex items-center gap-2 rounded-md px-1 py-1 outline-none hover:underline focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
+                className="flex items-center gap-2 rounded-md px-1 py-1 hover:underline"
               >
                 <ChevronDown
                   aria-hidden="true"

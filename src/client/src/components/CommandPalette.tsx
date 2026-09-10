@@ -319,7 +319,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                 handleTogglePin(cmd.id);
               }}
               className={cn(
-                "rounded p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring transition-opacity",
+                "rounded p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-opacity",
                 pinned ? "opacity-100" : "opacity-40 hover:opacity-100",
               )}
             >

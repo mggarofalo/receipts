@@ -276,7 +276,7 @@ function Reports() {
                   <Link
                     key={report.slug}
                     to={`/reports?report=${report.slug}`}
-                    className="focus-visible:ring-ring rounded-xl focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+                    className="rounded-xl"
                   >
                     <Card className="h-full gap-3">
                       <CardHeader>
