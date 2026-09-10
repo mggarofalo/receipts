@@ -9,6 +9,21 @@ public class YnabImportIdTests
 	private static readonly string TestReceiptPrefix = TestReceiptId.ToString("N")[..6]; // "abcdef"
 
 	[Fact]
+	public void Generate_TransactionIdentity_IsGloballyStableAndExactly36Characters()
+	{
+		Guid transactionId = Guid.Parse("abcdef01-2345-6789-abcd-ef0123456789");
+
+		string first = YnabImportId.Generate(transactionId);
+		string repeated = YnabImportId.Generate(transactionId);
+		string other = YnabImportId.Generate(Guid.Parse("abcdef01-2345-6789-abcd-ef0123456788"));
+
+		first.Should().Be("YNABabcdef0123456789abcdef0123456789");
+		first.Should().HaveLength(36);
+		repeated.Should().Be(first);
+		other.Should().NotBe(first);
+	}
+
+	[Fact]
 	public void Generate_StandardInput_ReturnsExpectedFormat()
 	{
 		// Arrange

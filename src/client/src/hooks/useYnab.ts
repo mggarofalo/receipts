@@ -677,12 +677,24 @@ export function usePushYnabTransactions() {
       return data;
     },
     onSuccess: (data) => {
-      if (data?.success) {
+      if (
+        data.error &&
+        (data.success ||
+          data.operationStatus === "unknown" ||
+          data.operationStatus === "pending")
+      ) {
+        toast.warning(data.error);
+      } else if (
+        data.operationStatus === "unknown" ||
+        data.operationStatus === "pending"
+      ) {
+        toast.warning("YNAB push status needs review before retrying");
+      } else if (data.success) {
         toast.success(
           `Pushed ${data.pushedTransactions.length} transaction(s) to YNAB`,
         );
       } else {
-        toast.error(data?.error ?? "Failed to push transactions to YNAB");
+        toast.error(data.error ?? "Failed to push transactions to YNAB");
       }
     },
     onSettled: repairOnSettled,
@@ -707,8 +719,15 @@ export function useBulkPushYnabTransactions() {
       const total = results.length;
       if (total === 0) return;
 
-      const succeeded = results.filter((r) => r.result.success).length;
-      const failed = total - succeeded;
+      const succeeded = results.filter(
+        (r) => r.result.operationStatus === "synced",
+      ).length;
+      const needsReview = results.filter(
+        (r) =>
+          r.result.operationStatus === "unknown" ||
+          r.result.operationStatus === "pending",
+      ).length;
+      const failed = total - succeeded - needsReview;
 
       // Aggregate the distinct unmapped categories the server reported across
       // the failed receipts so the user knows exactly what to map (the same
@@ -720,7 +739,11 @@ export function useBulkPushYnabTransactions() {
         ? ` Unmapped categories: ${unmapped.join(", ")}. Map them in YNAB Settings.`
         : "";
 
-      if (succeeded === 0) {
+      if (needsReview > 0) {
+        toast.warning(
+          `Pushed ${succeeded}/${total} receipt(s); ${needsReview} need review${failed > 0 ? `; ${failed} failed` : ""}.${unmappedSuffix}`,
+        );
+      } else if (succeeded === 0) {
         // Every receipt failed — this is an error, not a success.
         toast.error(
           `Failed to push ${failed} receipt(s) to YNAB.${unmappedSuffix}`,

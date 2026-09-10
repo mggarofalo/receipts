@@ -318,21 +318,23 @@ describe("Receipts", () => {
       mockReceiptListItemResponse({ id: "balanced", balanceState: "balanced" }),
       mockReceiptListItemResponse({ id: "missing", balanceState: "noTransactions" }),
       mockReceiptListItemResponse({ id: "mismatch", balanceState: "outOfBalance" }),
+      mockReceiptListItemResponse({ id: "ambiguous", balanceState: "balanced" }),
     ];
     await mockReceiptTable(items, new Map([
       ["balanced", "synced"],
       ["missing", "pending"],
       ["mismatch", "failed"],
+      ["ambiguous", "unknown"],
     ]));
 
     renderWithProviders(<Receipts />);
 
-    expect(screen.getByLabelText("Balance: balanced")).toHaveTextContent("Balanced");
+    expect(screen.getAllByLabelText("Balance: balanced")).toHaveLength(2);
     expect(screen.getByLabelText("Balance: no transactions")).toHaveTextContent("No transactions");
     expect(screen.getByLabelText("Balance: out of balance")).toHaveTextContent("Out of balance");
     expect(screen.getByLabelText("YNAB: synced")).toHaveTextContent("YNAB");
     expect(screen.getByLabelText("YNAB: pending")).toHaveTextContent("Pending");
-    expect(screen.getByLabelText("YNAB: error")).toHaveTextContent("Error");
+    expect(screen.getAllByLabelText("YNAB: error")).toHaveLength(2);
   });
 
   it("lazy-loads on mouse expansion, exposes valid detail-row relationships, and reopens cached data", async () => {
@@ -1146,9 +1148,9 @@ describe("Receipts", () => {
     });
   });
 
-  // RECEIPTS-783: after a partial bulk YNAB push, only the succeeded receipts
-  // are deselected — failed ones stay selected so the user can retry.
-  it("keeps failed receipts selected after a partial bulk YNAB push", async () => {
+  // Only durably Synced receipts are deselected. A transport-level success with
+  // an Unknown operation remains selected so the user can review/retry it.
+  it("keeps success=true Unknown receipts selected after a partial bulk YNAB push", async () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const items = [
       mockReceiptResponse({ id: "1", location: "Walmart", date: "2024-01-15", taxAmount: 5.25 }),
@@ -1176,8 +1178,8 @@ describe("Receipts", () => {
       (_ids: string[], opts?: { onSuccess?: (data: unknown) => void }) => {
         opts?.onSuccess?.({
           results: [
-            { receiptId: "1", result: { success: true, pushedTransactions: [] } },
-            { receiptId: "2", result: { success: false, pushedTransactions: [], error: "nope" } },
+            { receiptId: "1", result: { success: true, operationStatus: "synced", pushedTransactions: [] } },
+            { receiptId: "2", result: { success: true, operationStatus: "unknown", pushedTransactions: [], error: "review" } },
           ],
         });
       },
@@ -1196,7 +1198,7 @@ describe("Receipts", () => {
     await user.click(screen.getByRole("button", { name: /push to ynab/i }));
 
     expect(bulkMutate).toHaveBeenCalledWith(["1", "2"], expect.any(Object));
-    // r1 pushed (cleared); r2 failed (still selected) → "1 of 2 receipt selected".
+    // r1 is durably synced (cleared); r2 remains Unknown (still selected).
     expect(
       screen.getByRole("region", { name: "Bulk actions" }),
     ).toHaveTextContent(/1 of 2 receipt selected/);

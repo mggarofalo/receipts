@@ -103,6 +103,7 @@ describe("YnabPushButton", () => {
         mutate: mockPushMutate,
         data: {
           success: true,
+          operationStatus: "synced",
           pushedTransactions: [
             {
               localTransactionId: "tx-1",
@@ -141,6 +142,7 @@ describe("YnabPushButton", () => {
         mutate: mockPushMutate,
         data: {
           success: false,
+          operationStatus: "failed",
           pushedTransactions: [],
           error: "YNAB 500",
           unmappedCategories: [],
@@ -182,6 +184,7 @@ describe("YnabPushButton", () => {
         mutate: mockPushMutate,
         data: {
           success: true,
+          operationStatus: "synced",
           pushedTransactions: [
             { localTransactionId: "tx-1", ynabTransactionId: "y-1", milliunits: -5000, subTransactionCount: 1 },
           ],
@@ -207,6 +210,7 @@ describe("YnabPushButton", () => {
         mutate: mockPushMutate,
         data: {
           success: false,
+          operationStatus: "failed",
           pushedTransactions: [],
           error: "Server error",
           unmappedCategories: [],
@@ -223,6 +227,48 @@ describe("YnabPushButton", () => {
     const liveRegion = document.querySelector("[aria-live='polite']");
     expect(liveRegion?.contains(alert)).toBe(true);
   });
+
+  it.each([
+    ["unknown", "Needs Review"],
+    ["pending", "Pending"],
+  ] as const)(
+    "renders a retryable %s result as a warning instead of success or Failed",
+    async (operationStatus, badgeLabel) => {
+      const ynab = await import("@/hooks/useYnab");
+      vi.mocked(ynab.usePushYnabTransactions).mockReturnValue(
+        mockMutationResult({
+          mutate: mockPushMutate,
+          data: {
+            success: false,
+            operationStatus,
+            pushedTransactions: [],
+            error: "Refresh status before retrying",
+            unmappedCategories: [],
+          },
+        }),
+      );
+
+      renderWithProviders(
+        <YnabPushButton
+          receiptId="r1"
+          hasTransactions
+          persistedSyncStatus="synced"
+        />,
+      );
+
+      expect(screen.getByRole("button", { name: /push to ynab/i })).toBeEnabled();
+      expect(
+        screen.getByLabelText(`YNAB sync status: ${badgeLabel}`),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByLabelText(/YNAB sync status: Failed/i),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByText(/transaction.*pushed/i)).not.toBeInTheDocument();
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Refresh status before retrying",
+      );
+    },
+  );
 });
 
 it("blocks a receipt with transactions while its persisted sync state is unknown", async () => {

@@ -46,6 +46,7 @@ public class PushYnabTransactionsImportIdIdempotencyTests
 
 	public PushYnabTransactionsImportIdIdempotencyTests()
 	{
+		_syncRecordServiceMock.SetupPushOperationDefaults();
 		_handler = new PushYnabTransactionsCommandHandler(
 			_receiptServiceMock.Object,
 			_receiptItemServiceMock.Object,
@@ -129,7 +130,7 @@ public class PushYnabTransactionsImportIdIdempotencyTests
 	// ── Test 3: 3+ same-amount / same-date splits keep unique occurrence suffixes ───────────────
 
 	[Fact]
-	public async Task Handle_ThreeSameAmountSameDateSplits_AssignsDistinctSequentialImportIds()
+	public async Task Handle_ThreeSameAmountSameDateSplits_AssignsDistinctTransactionImportIds()
 	{
 		// Three $50.00 transactions on the same date, one $150 category. Their import_ids share
 		// amount+date and so must be disambiguated by occurrence 1, 2 AND 3 — exercising suffix
@@ -146,21 +147,19 @@ public class PushYnabTransactionsImportIdIdempotencyTests
 		result.Success.Should().BeTrue();
 		result.Error.Should().BeNull();
 
-		const long milliunits = -50000; // $50 outflow, negated for YNAB
-		string occ1 = YnabImportId.Generate(milliunits, _date, _receiptId, 1);
-		string occ2 = YnabImportId.Generate(milliunits, _date, _receiptId, 2);
-		string occ3 = YnabImportId.Generate(milliunits, _date, _receiptId, 3);
-
 		capturedImportIds.Should().HaveCount(3);
 		capturedImportIds.Should().OnlyHaveUniqueItems("three identical amount+date splits must not collide on import_id");
-		capturedImportIds.Should().BeEquivalentTo([occ1, occ2, occ3]);
-		capturedImportIds.Should().Contain(id => id.EndsWith(":3"), "occurrence numbering must remain unique at index 3+");
+		capturedImportIds.Should().BeEquivalentTo([
+			YnabImportId.Generate(txA),
+			YnabImportId.Generate(txB),
+			YnabImportId.Generate(txC),
+		]);
 	}
 
 	// ── Test 4: first push — two-pass numbering matches the old single-pass ─────────────────────
 
 	[Fact]
-	public async Task Handle_FirstPush_TwoPassImportIdsMatchSinglePass()
+	public async Task Handle_FirstPush_UsesEachLocalTransactionAsStableIdentity()
 	{
 		// The RECEIPTS-752 fix moved import_id assignment into a first pass that counts EVERY split
 		// (including ones that will be skipped as already-synced) before pushing. On a first push
@@ -174,29 +173,6 @@ public class PushYnabTransactionsImportIdIdempotencyTests
 			SetupFreshPush([(tx1, 50.00m), (tx2, 50.00m), (tx3, 30.00m)], categoryTotal: 130.00m);
 		List<string> capturedImportIds = CaptureSuccessfulCreates();
 
-		// Independently compute the OLD single-pass import_ids: run the same real calculator, then walk
-		// its split order assigning occurrences as we go (exactly what the pre-fix handler did when
-		// nothing was skipped).
-		ReceiptWithItems receiptWithItems = new()
-		{
-			Receipt = new Domain.Core.Receipt(_receiptId, "Store", _date, new Money(0.00m)),
-			Items = [new(Guid.NewGuid(), null, "Item1", 1, new Money(130.00m), new Money(130.00m), "Groceries", null)],
-			Adjustments = [],
-		};
-		Dictionary<string, string> categoryToYnabId = new() { ["Groceries"] = "ynab-cat-1" };
-		YnabSplitResult splits = _splitCalculator.ComputeWaterfallSplits(receiptWithItems, transactions, categoryToYnabId);
-
-		Dictionary<(long, DateOnly), int> occurrences = [];
-		List<string> expectedSinglePass = [];
-		foreach (YnabTransactionSplit split in splits.TransactionSplits)
-		{
-			DateOnly txDate = transactions.First(t => t.Id == split.LocalTransactionId).Date;
-			(long, DateOnly) key = (split.TotalMilliunits, txDate);
-			int occurrence = occurrences.TryGetValue(key, out int current) ? current + 1 : 1;
-			occurrences[key] = occurrence;
-			expectedSinglePass.Add(YnabImportId.Generate(split.TotalMilliunits, txDate, _receiptId, occurrence));
-		}
-
 		PushYnabTransactionsResult result = await _handler.Handle(
 			new PushYnabTransactionsCommand(_receiptId), CancellationToken.None);
 
@@ -204,14 +180,11 @@ public class PushYnabTransactionsImportIdIdempotencyTests
 		result.Error.Should().BeNull();
 		capturedImportIds.Should().HaveCount(3);
 
-		// The two-pass first push produces exactly the single-pass import_id set (no drift), and the
-		// $50 pair still resolves to occurrences 1 and 2 while the $30 transaction is occurrence 1.
-		capturedImportIds.Should().BeEquivalentTo(expectedSinglePass);
 		capturedImportIds.Should().BeEquivalentTo(
 		[
-			YnabImportId.Generate(-50000, _date, _receiptId, 1),
-			YnabImportId.Generate(-50000, _date, _receiptId, 2),
-			YnabImportId.Generate(-30000, _date, _receiptId, 1),
+			YnabImportId.Generate(tx1),
+			YnabImportId.Generate(tx2),
+			YnabImportId.Generate(tx3),
 		]);
 	}
 
@@ -231,10 +204,10 @@ public class PushYnabTransactionsImportIdIdempotencyTests
 
 		// The occurrence-2 split conflicts; every other split creates cleanly.
 		_ynabApiClientMock
-			.Setup(s => s.CreateTransactionAsync(_budgetId, It.Is<YnabCreateTransactionRequest>(r => r.ImportId!.EndsWith(":2")), It.IsAny<CancellationToken>()))
+			.Setup(s => s.CreateTransactionAsync(_budgetId, It.Is<YnabCreateTransactionRequest>(r => r.ImportId == YnabImportId.Generate(txB)), It.IsAny<CancellationToken>()))
 			.ThrowsAsync(new HttpRequestException("conflict", null, HttpStatusCode.Conflict));
 		_ynabApiClientMock
-			.Setup(s => s.CreateTransactionAsync(_budgetId, It.Is<YnabCreateTransactionRequest>(r => !r.ImportId!.EndsWith(":2")), It.IsAny<CancellationToken>()))
+			.Setup(s => s.CreateTransactionAsync(_budgetId, It.Is<YnabCreateTransactionRequest>(r => r.ImportId != YnabImportId.Generate(txB)), It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new YnabCreateTransactionResponse("ynab-own-1"));
 
 		// Recovery resolves to the conflicting split's OWN distinct id (not the sibling's "ynab-own-1").
@@ -252,10 +225,12 @@ public class PushYnabTransactionsImportIdIdempotencyTests
 		result.PushedTransactions.Select(p => p.YnabTransactionId).Should().BeEquivalentTo(["ynab-own-1", "ynab-own-2"]);
 
 		// The conflicting split was stamped Synced to its own recovered id ...
-		_syncRecordServiceMock.Verify(s => s.UpdateStatusAsync(
-			It.IsAny<Guid>(), YnabSyncStatus.Synced, "ynab-own-2", null, It.IsAny<CancellationToken>()), Times.Once);
+		_syncRecordServiceMock.Verify(s => s.CompletePushOperationAsync(
+			It.IsAny<Guid>(), It.IsAny<Guid>(), YnabSyncStatus.Synced, "ynab-own-2", null,
+			It.IsAny<CancellationToken>()), Times.Once);
 		// ... and nothing was marked Failed (the guard did not over-reject).
-		_syncRecordServiceMock.Verify(s => s.UpdateStatusAsync(
-			It.IsAny<Guid>(), YnabSyncStatus.Failed, It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+		_syncRecordServiceMock.Verify(s => s.CompletePushOperationAsync(
+			It.IsAny<Guid>(), It.IsAny<Guid>(), YnabSyncStatus.Failed, It.IsAny<string>(),
+			It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
 	}
 }

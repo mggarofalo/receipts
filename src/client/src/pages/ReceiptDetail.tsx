@@ -45,6 +45,8 @@ function ynabStatusLabel(status: ReceiptYnabSyncStatusValue): string {
       return "Synced";
     case "failed":
       return "Failed";
+    case "unknown":
+      return "Needs Review";
   }
 }
 
@@ -139,6 +141,8 @@ function ReceiptDetail() {
         ? "pending"
         : persistedYnabStatus === "failed"
           ? "error"
+          : persistedYnabStatus === "unknown"
+            ? "error"
           : "none";
 
   return (

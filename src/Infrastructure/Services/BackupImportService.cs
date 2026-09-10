@@ -990,7 +990,9 @@ public partial class BackupImportService(
 
 		int created = 0, updated = 0;
 		await using SqliteCommand cmd = sqlite.CreateCommand();
-		cmd.CommandText = "SELECT id, local_transaction_id, ynab_transaction_id, ynab_budget_id, ynab_account_id, sync_type, sync_status, synced_at_utc, last_error, created_at, updated_at FROM ynab_sync_records";
+		cmd.CommandText = exportVersion >= 6
+			? "SELECT id, local_transaction_id, ynab_transaction_id, ynab_budget_id, ynab_account_id, import_id, request_payload_json, payload_hash, source_version, attempt_count, claim_token, claimed_at_utc, last_attempt_at_utc, sync_type, sync_status, synced_at_utc, last_error, created_at, updated_at FROM ynab_sync_records"
+			: "SELECT id, local_transaction_id, ynab_transaction_id, ynab_budget_id, ynab_account_id, sync_type, sync_status, synced_at_utc, last_error, created_at, updated_at FROM ynab_sync_records";
 		await using SqliteDataReader reader = await cmd.ExecuteReaderAsync(cancellationToken);
 
 		while (await reader.ReadAsync(cancellationToken))
@@ -1000,12 +1002,26 @@ public partial class BackupImportService(
 			string? ynabTransactionId = reader.IsDBNull(2) ? null : reader.GetString(2);
 			string ynabBudgetId = YnabDestinationId.Canonicalize(reader.GetString(3));
 			string? ynabAccountId = reader.IsDBNull(4) ? null : reader.GetString(4);
-			YnabSyncType syncType = Enum.Parse<YnabSyncType>(reader.GetString(5));
-			YnabSyncStatus syncStatus = Enum.Parse<YnabSyncStatus>(reader.GetString(6));
-			DateTimeOffset? syncedAtUtc = reader.IsDBNull(7) ? null : ParseTimestamp(reader.GetString(7));
-			string? lastError = reader.IsDBNull(8) ? null : reader.GetString(8);
-			DateTimeOffset createdAt = ParseTimestamp(reader.GetString(9));
-			DateTimeOffset updatedAt = ParseTimestamp(reader.GetString(10));
+			string? importId = exportVersion >= 6 && !reader.IsDBNull(5) ? reader.GetString(5) : null;
+			string? requestPayloadJson = exportVersion >= 6 && !reader.IsDBNull(6) ? reader.GetString(6) : null;
+			string? payloadHash = exportVersion >= 6 && !reader.IsDBNull(7) ? reader.GetString(7) : null;
+			string? sourceVersion = exportVersion >= 6 && !reader.IsDBNull(8) ? reader.GetString(8) : null;
+			int attemptCount = exportVersion >= 6 ? reader.GetInt32(9) : 0;
+			Guid? claimToken = exportVersion >= 6 && !reader.IsDBNull(10) ? Guid.Parse(reader.GetString(10)) : null;
+			DateTimeOffset? claimedAtUtc = exportVersion >= 6 && !reader.IsDBNull(11) ? ParseTimestamp(reader.GetString(11)) : null;
+			DateTimeOffset? lastAttemptAtUtc = exportVersion >= 6 && !reader.IsDBNull(12) ? ParseTimestamp(reader.GetString(12)) : null;
+			int offset = exportVersion >= 6 ? 8 : 0;
+			YnabSyncType syncType = Enum.Parse<YnabSyncType>(reader.GetString(5 + offset));
+			YnabSyncStatus syncStatus = Enum.Parse<YnabSyncStatus>(reader.GetString(6 + offset));
+			DateTimeOffset? syncedAtUtc = reader.IsDBNull(7 + offset) ? null : ParseTimestamp(reader.GetString(7 + offset));
+			string? lastError = reader.IsDBNull(8 + offset) ? null : reader.GetString(8 + offset);
+			DateTimeOffset createdAt = ParseTimestamp(reader.GetString(9 + offset));
+			DateTimeOffset updatedAt = ParseTimestamp(reader.GetString(10 + offset));
+			if (exportVersion < 6 && syncType == YnabSyncType.TransactionPush && syncStatus != YnabSyncStatus.Synced)
+			{
+				syncStatus = YnabSyncStatus.Unknown;
+				lastError = "This imported YNAB attempt has no immutable operation snapshot. Review the destination transaction before resolving it.";
+			}
 
 			YnabSyncRecordEntity? existing = await context.YnabSyncRecords
 				.IgnoreQueryFilters()
@@ -1016,6 +1032,14 @@ public partial class BackupImportService(
 				existing.YnabTransactionId = ynabTransactionId;
 				existing.YnabBudgetId = ynabBudgetId;
 				existing.YnabAccountId = ynabAccountId;
+				existing.ImportId = importId;
+				existing.RequestPayloadJson = requestPayloadJson;
+				existing.PayloadHash = payloadHash;
+				existing.SourceVersion = sourceVersion;
+				existing.AttemptCount = attemptCount;
+				existing.ClaimToken = claimToken;
+				existing.ClaimedAtUtc = claimedAtUtc;
+				existing.LastAttemptAtUtc = lastAttemptAtUtc;
 				existing.SyncType = syncType;
 				existing.SyncStatus = syncStatus;
 				existing.SyncedAtUtc = syncedAtUtc;
@@ -1034,6 +1058,14 @@ public partial class BackupImportService(
 					YnabTransactionId = ynabTransactionId,
 					YnabBudgetId = ynabBudgetId,
 					YnabAccountId = ynabAccountId,
+					ImportId = importId,
+					RequestPayloadJson = requestPayloadJson,
+					PayloadHash = payloadHash,
+					SourceVersion = sourceVersion,
+					AttemptCount = attemptCount,
+					ClaimToken = claimToken,
+					ClaimedAtUtc = claimedAtUtc,
+					LastAttemptAtUtc = lastAttemptAtUtc,
 					SyncType = syncType,
 					SyncStatus = syncStatus,
 					SyncedAtUtc = syncedAtUtc,

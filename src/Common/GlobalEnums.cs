@@ -41,7 +41,8 @@ public enum YnabSyncStatus
 {
 	Pending,
 	Synced,
-	Failed
+	Failed,
+	Unknown
 }
 
 public enum YnabSyncEventType

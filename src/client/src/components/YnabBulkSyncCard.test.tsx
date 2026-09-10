@@ -182,9 +182,9 @@ describe("YnabBulkSyncCard", () => {
         mutate: mockBulkPushMutate,
         data: {
           results: [
-            { receiptId: "r1", result: { success: true, pushedTransactions: [], error: null } },
-            { receiptId: "r2", result: { success: true, pushedTransactions: [], error: null } },
-            { receiptId: "r3", result: { success: false, pushedTransactions: [], error: "Unmapped categories" } },
+            { receiptId: "r1", result: { success: true, operationStatus: "synced", pushedTransactions: [], error: null } },
+            { receiptId: "r2", result: { success: true, operationStatus: "synced", pushedTransactions: [], error: null } },
+            { receiptId: "r3", result: { success: false, operationStatus: "failed", pushedTransactions: [], error: "Unmapped categories" } },
           ],
         },
       }),
@@ -195,6 +195,40 @@ describe("YnabBulkSyncCard", () => {
     expect(screen.getByText("2 succeeded")).toBeInTheDocument();
     expect(screen.getByText("1 failed")).toBeInTheDocument();
   });
+
+  it.each(["unknown", "pending"] as const)(
+    "shows success=true with %s status as needing review, not succeeded",
+    async (operationStatus) => {
+      const { useBulkPushYnabTransactions } = await import("@/hooks/useYnab");
+      vi.mocked(useBulkPushYnabTransactions).mockReturnValue(
+        mockMutationResult({
+          mutate: mockBulkPushMutate,
+          data: {
+            results: [
+              {
+                receiptId: "r1",
+                result: {
+                  success: true,
+                  operationStatus,
+                  pushedTransactions: [],
+                  error: "Remote result needs review",
+                },
+              },
+            ],
+          },
+        }),
+      );
+
+      renderWithProviders(<YnabBulkSyncCard />);
+
+      expect(screen.getByText("1 need review")).toBeInTheDocument();
+      expect(screen.queryByText(/succeeded/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/failed/)).not.toBeInTheDocument();
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Remote result needs review",
+      );
+    },
+  );
 
   it("shows memo sync summary badges", async () => {
     const { useBulkPushYnabTransactions, useMemoSyncSummary } =
@@ -320,8 +354,8 @@ describe("YnabBulkSyncCard", () => {
         mutate: mockBulkPushMutate,
         data: {
           results: [
-            { receiptId: "r1", result: { success: true, pushedTransactions: [], error: null } },
-            { receiptId: "r2", result: { success: false, pushedTransactions: [], error: "Fail" } },
+            { receiptId: "r1", result: { success: true, operationStatus: "synced", pushedTransactions: [], error: null } },
+            { receiptId: "r2", result: { success: false, operationStatus: "failed", pushedTransactions: [], error: "Fail" } },
           ],
         },
       }),

@@ -11,6 +11,14 @@ public class YnabSyncRecordEntity : ISoftDeletable, IOwnedBy<TransactionEntity>
 	public string? YnabTransactionId { get; set; }
 	public string YnabBudgetId { get; set; } = string.Empty;
 	public string? YnabAccountId { get; set; }
+	public string? ImportId { get; set; }
+	public string? RequestPayloadJson { get; set; }
+	public string? PayloadHash { get; set; }
+	public string? SourceVersion { get; set; }
+	public int AttemptCount { get; set; }
+	public Guid? ClaimToken { get; set; }
+	public DateTimeOffset? ClaimedAtUtc { get; set; }
+	public DateTimeOffset? LastAttemptAtUtc { get; set; }
 	public YnabSyncType SyncType { get; set; }
 	public YnabSyncStatus SyncStatus { get; set; }
 	public DateTimeOffset? SyncedAtUtc { get; set; }

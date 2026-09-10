@@ -8433,7 +8433,7 @@ components:
 
     YnabSyncRecordResponseSyncStatus:
       type: string
-      enum: [pending, synced, failed]
+      enum: [pending, synced, failed, unknown]
 
     ReceiptYnabSyncStatus:
       type: object
@@ -8447,7 +8447,7 @@ components:
 
     ReceiptYnabSyncStatusValue:
       type: string
-      enum: [notSynced, pending, synced, failed]
+      enum: [notSynced, pending, synced, failed, unknown]
 
     ReceiptYnabSyncStatusListResponse:
       type: object
@@ -8721,7 +8721,7 @@ components:
 
     PushYnabTransactionsResponse:
       type: object
-      required: [success, pushedTransactions]
+      required: [success, pushedTransactions, operationStatus]
       properties:
         success:
           type: boolean
@@ -8729,6 +8729,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PushedTransactionInfo"
+        operationStatus:
+          $ref: "#/components/schemas/YnabSyncRecordResponseSyncStatus"
         unmappedCategories:
           type:
             - "null"

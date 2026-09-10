@@ -81,6 +81,7 @@ let heldSignal: AbortSignal | undefined;
 let calls: { path: string; body: unknown }[];
 const pushResult = {
   success: true,
+  operationStatus: "synced",
   pushedTransactions: [
     {
       localTransactionId: localId,

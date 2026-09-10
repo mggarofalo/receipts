@@ -48,6 +48,7 @@ public class PushYnabTransactionsImportIdStabilityTests
 
 	public PushYnabTransactionsImportIdStabilityTests()
 	{
+		_syncRecordServiceMock.SetupPushOperationDefaults();
 		_handler = new PushYnabTransactionsCommandHandler(
 			_receiptServiceMock.Object,
 			_receiptItemServiceMock.Object,
@@ -110,6 +111,12 @@ public class PushYnabTransactionsImportIdStabilityTests
 			.ReturnsAsync(new YnabSyncRecordDto(_syncRecord1Id, _tx1Id, "ynab-tx-1", _budgetId, _ynabAccountId, YnabSyncType.TransactionPush, YnabSyncStatus.Synced, DateTimeOffset.UtcNow, null, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
 		_syncRecordServiceMock.Setup(s => s.GetByTransactionTypeAndBudgetAsync(_tx2Id, YnabSyncType.TransactionPush, _budgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new YnabSyncRecordDto(_syncRecord2Id, _tx2Id, null, _budgetId, null, YnabSyncType.TransactionPush, YnabSyncStatus.Failed, null, "previous failure", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
+		_syncRecordServiceMock.Setup(s => s.GetPushOperationIdentitiesByReceiptAsync(
+				_receiptId, _budgetId, It.IsAny<CancellationToken>()))
+			.ReturnsAsync([
+				new YnabPushOperationIdentity(_tx1Id, YnabImportId.Generate(Milliunits, _date, _receiptId, 1)),
+				new YnabPushOperationIdentity(_tx2Id, YnabImportId.Generate(Milliunits, _date, _receiptId, 2)),
+			]);
 
 		// tx1 first, tx2 second — same amount and date.
 		_splitCalculatorMock.Setup(s => s.ComputeWaterfallSplits(It.IsAny<ReceiptWithItems>(), It.IsAny<List<Domain.Core.Transaction>>(), It.IsAny<Dictionary<string, string>>()))
@@ -148,8 +155,9 @@ public class PushYnabTransactionsImportIdStabilityTests
 		capturedImportId.Should().EndWith(":2");
 
 		// tx2's own record is stamped Synced with its OWN (distinct) YNAB transaction.
-		_syncRecordServiceMock.Verify(s => s.UpdateStatusAsync(
-			_syncRecord2Id, YnabSyncStatus.Synced, "ynab-tx-2", null, It.IsAny<CancellationToken>()), Times.Once);
+		_syncRecordServiceMock.Verify(s => s.CompletePushOperationAsync(
+			It.IsAny<Guid>(), It.IsAny<Guid>(), YnabSyncStatus.Synced, "ynab-tx-2", null,
+			It.IsAny<CancellationToken>()), Times.Once);
 	}
 
 	[Fact]
@@ -174,12 +182,38 @@ public class PushYnabTransactionsImportIdStabilityTests
 		result.Error.Should().Contain("ynab-tx-1");
 
 		// tx2 must NOT be bound to tx1's YNAB transaction.
-		_syncRecordServiceMock.Verify(s => s.UpdateStatusAsync(
-			_syncRecord2Id, YnabSyncStatus.Synced, "ynab-tx-1", null, It.IsAny<CancellationToken>()), Times.Never);
+		_syncRecordServiceMock.Verify(s => s.CompletePushOperationAsync(
+			It.IsAny<Guid>(), It.IsAny<Guid>(), YnabSyncStatus.Synced, "ynab-tx-1", null,
+			It.IsAny<CancellationToken>()), Times.Never);
 		result.PushedTransactions.Should().NotContain(p => p.YnabTransactionId == "ynab-tx-1");
 
 		// tx2's record is marked Failed with an explanatory error.
-		_syncRecordServiceMock.Verify(s => s.UpdateStatusAsync(
-			_syncRecord2Id, YnabSyncStatus.Failed, null, It.Is<string>(m => m.Contains("ynab-tx-1")), It.IsAny<CancellationToken>()), Times.Once);
+		_syncRecordServiceMock.Verify(s => s.CompletePushOperationAsync(
+			It.IsAny<Guid>(), It.IsAny<Guid>(), YnabSyncStatus.Failed, null,
+			It.Is<string>(message => message.Contains("ynab-tx-1")), It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	[Fact]
+	public async Task Retry_DuplicateRecoveryWithStaleClaim_ReturnsClaimChangedInsteadOfDuplicateFailure()
+	{
+		SetupRetryPipeline();
+		_syncRecordServiceMock.Setup(s => s.CompletePushOperationAsync(
+				It.IsAny<Guid>(), It.IsAny<Guid>(), YnabSyncStatus.Failed, null,
+				It.IsAny<string>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(false);
+		_ynabApiClientMock.Setup(s => s.CreateTransactionAsync(
+				_budgetId, It.IsAny<YnabCreateTransactionRequest>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new HttpRequestException("conflict", null, HttpStatusCode.Conflict));
+		_ynabApiClientMock.Setup(s => s.FindTransactionByImportIdAsync(
+				_budgetId, _ynabAccountId, It.IsAny<string>(), It.IsAny<DateOnly>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync("ynab-tx-1");
+
+		PushYnabTransactionsResult result = await _handler.Handle(
+			new PushYnabTransactionsCommand(_receiptId), CancellationToken.None);
+
+		result.Success.Should().BeFalse();
+		result.Error.Should().Contain("claim changed");
+		result.Error.Should().NotContain("already bound");
+		result.PushedTransactions.Should().BeEmpty();
 	}
 }

@@ -2,9 +2,9 @@ namespace Infrastructure.Services;
 
 internal static class PortableBackupFormat
 {
-	public const int CurrentVersion = 5;
+	public const int CurrentVersion = 6;
 
-	// v5 is a complete portable snapshot. Legacy partial-file compatibility is handled
+	// v5+ is a complete portable snapshot. Legacy partial-file compatibility is handled
 	// separately by the importer; missing v5 tables must not silently lose durable state.
 	public static IReadOnlyList<string> RequiredTables { get; } = Array.AsReadOnly<string>([
 		"accounts", "cards", "categories", "subcategories", "item_templates", "receipts",

@@ -260,6 +260,14 @@ public class BackupRoundTripFidelityTests : IDisposable
 				YnabTransactionId = "ynab-txn-1",
 				YnabBudgetId = nonCanonicalBudgetId,
 				YnabAccountId = "ynab-acct-1",
+				ImportId = "YNAB:-12345:2024-01-15:abc123:1",
+				RequestPayloadJson = "{\"accountId\":\"ynab-acct-1\",\"amount\":-12345}",
+				PayloadHash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+				SourceVersion = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+				AttemptCount = 3,
+				ClaimToken = syncId,
+				ClaimedAtUtc = ts.AddMinutes(-2),
+				LastAttemptAtUtc = ts.AddMinutes(-2),
 				SyncType = YnabSyncType.TransactionPush,
 				SyncStatus = YnabSyncStatus.Synced,
 				SyncedAtUtc = ts,
@@ -336,6 +344,14 @@ public class BackupRoundTripFidelityTests : IDisposable
 		sync.SyncType.Should().Be(YnabSyncType.TransactionPush);
 		sync.SyncStatus.Should().Be(YnabSyncStatus.Synced);
 		sync.SyncedAtUtc.Should().Be(ts);
+		sync.ImportId.Should().Be("YNAB:-12345:2024-01-15:abc123:1");
+		sync.RequestPayloadJson.Should().Be("{\"accountId\":\"ynab-acct-1\",\"amount\":-12345}");
+		sync.PayloadHash.Should().Be("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+		sync.SourceVersion.Should().Be("abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789");
+		sync.AttemptCount.Should().Be(3);
+		sync.ClaimToken.Should().Be(syncId);
+		sync.ClaimedAtUtc.Should().Be(ts.AddMinutes(-2));
+		sync.LastAttemptAtUtc.Should().Be(ts.AddMinutes(-2));
 		sync.DeletedAt.Should().BeNull();
 		sync.YnabBudgetId.Should().Be(canonicalBudgetId);
 		(await assert.YnabSyncRecords.FindAsync(legacySyncId))!.YnabBudgetId.Should().Be(legacyBudgetId);
@@ -379,6 +395,48 @@ public class BackupRoundTripFidelityTests : IDisposable
 		receipt.ProcessedImagePath.Should().BeNull();
 		(await assert.YnabSelectedBudgets.CountAsync()).Should().Be(0);
 		(await assert.NormalizedDescriptions.CountAsync()).Should().Be(0);
+	}
+
+	[Theory]
+	[InlineData("Pending")]
+	[InlineData("Failed")]
+	public async Task Import_LegacyV5NonTerminalPushWithoutSnapshot_IsConservativelyUnknown(string status)
+	{
+		Guid accountId = Guid.NewGuid();
+		Guid receiptId = Guid.NewGuid();
+		Guid transactionId = Guid.NewGuid();
+		Guid syncId = Guid.NewGuid();
+		string path = Path.Combine(_tempDir, $"{Guid.NewGuid():N}.sqlite");
+		await using (SqliteConnection connection = new($"Data Source={path};Pooling=False"))
+		{
+			await connection.OpenAsync();
+			await BackupService.CreateSchemaAsync(connection, CancellationToken.None);
+			Exec(connection, "INSERT INTO backup_metadata VALUES ('export_version', '5')");
+			Exec(connection, $"INSERT INTO accounts VALUES ('{accountId}', 'Checking', 1)");
+			Exec(connection, $"INSERT INTO cards VALUES ('{accountId}', '1000', 'Checking', 1, '{accountId}')");
+			Exec(connection, $"INSERT INTO receipts VALUES ('{receiptId}', 'Legacy Store', '2024-01-15', '0', 'USD', NULL, NULL)");
+			Exec(connection, $"INSERT INTO transactions VALUES ('{transactionId}', '{receiptId}', '{accountId}', '10', 'USD', '2024-01-15')");
+			Exec(connection, $"""
+				INSERT INTO ynab_sync_records
+					(id, local_transaction_id, ynab_transaction_id, ynab_budget_id, ynab_account_id,
+					 import_id, request_payload_json, payload_hash, source_version, attempt_count,
+					 claim_token, claimed_at_utc, last_attempt_at_utc, sync_type, sync_status,
+					 synced_at_utc, last_error, created_at, updated_at)
+				VALUES ('{syncId}', '{transactionId}', NULL, 'legacy-budget', 'legacy-account',
+					NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, 'TransactionPush', '{status}',
+					NULL, 'legacy error', '2024-01-15T00:00:00Z', '2024-01-15T00:00:00Z')
+				""");
+		}
+
+		await using FileStream stream = File.OpenRead(path);
+		await _importService.ImportFromSqliteAsync(stream, CancellationToken.None);
+
+		await using ApplicationDbContext assert = Target();
+		YnabSyncRecordEntity restored = (await assert.YnabSyncRecords.FindAsync(syncId))!;
+		restored.SyncStatus.Should().Be(YnabSyncStatus.Unknown);
+		restored.LastError.Should().Contain("no immutable operation snapshot");
+		restored.ImportId.Should().BeNull();
+		restored.RequestPayloadJson.Should().BeNull();
 	}
 
 	// RECEIPTS-789 regression guard: importing a v3 backup (no image-path columns) over an

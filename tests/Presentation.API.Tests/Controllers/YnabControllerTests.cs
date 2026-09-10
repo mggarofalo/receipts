@@ -11,6 +11,7 @@ using Application.Interfaces.Services;
 using Application.Models;
 using Application.Models.Ynab;
 using Application.Queries.Core.Ynab;
+using Common;
 using FluentAssertions;
 using Infrastructure.Ynab;
 using Mediator;
@@ -700,7 +701,8 @@ public class YnabControllerTests
 		Guid receiptId = Guid.NewGuid();
 
 		PushYnabTransactionsResult pushResult = new(false, [],
-			UnmappedCategories: ["Electronics"], Error: "Unmapped categories found.");
+			UnmappedCategories: ["Electronics"], Error: "Unmapped categories found.",
+			OperationStatus: YnabSyncStatus.Unknown);
 
 		_mediatorMock.Setup(m => m.Send(
 			It.Is<PushYnabTransactionsCommand>(c => c.ReceiptId == receiptId),
@@ -717,6 +719,7 @@ public class YnabControllerTests
 		BadRequest<PushYnabTransactionsResponse> badResult = Assert.IsType<BadRequest<PushYnabTransactionsResponse>>(result.Result);
 		PushYnabTransactionsResponse response = badResult.Value!;
 		response.Success.Should().BeFalse();
+		response.OperationStatus.Should().Be(YnabSyncRecordResponseSyncStatus.Unknown);
 		response.UnmappedCategories.Should().Contain("Electronics");
 	}
 

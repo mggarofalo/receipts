@@ -55,9 +55,16 @@ export function YnabBulkSyncCard() {
 
   const pushData = bulkPush.data;
   const pushSucceeded =
-    pushData?.results?.filter((r) => r.result.success).length ?? 0;
+    pushData?.results?.filter((r) => r.result.operationStatus === "synced")
+      .length ?? 0;
+  const pushNeedsReview =
+    pushData?.results?.filter(
+      (r) =>
+        r.result.operationStatus === "unknown" ||
+        r.result.operationStatus === "pending",
+    ).length ?? 0;
   const pushFailed =
-    pushData?.results?.filter((r) => !r.result.success).length ?? 0;
+    (pushData?.results?.length ?? 0) - pushSucceeded - pushNeedsReview;
   const pushTotal = pushData?.results?.length ?? 0;
 
   return (
@@ -125,6 +132,14 @@ export function YnabBulkSyncCard() {
                       {pushFailed} failed
                     </Badge>
                   )}
+                  {pushNeedsReview > 0 && (
+                    <Badge
+                      variant="outline"
+                      className="border-amber-300 text-amber-700"
+                    >
+                      {pushNeedsReview} need review
+                    </Badge>
+                  )}
                 </div>
               )}
             </div>
@@ -133,9 +148,17 @@ export function YnabBulkSyncCard() {
           {/* Error alerts outside the flex row so they span full width */}
           {pushData &&
             pushData.results
-              ?.filter((r) => !r.result.success && r.result.error)
+              ?.filter((r) => r.result.error)
               .map((r) => (
-                <Alert key={r.receiptId} variant="destructive" role="alert">
+                <Alert
+                  key={r.receiptId}
+                  variant={
+                    r.result.operationStatus === "failed"
+                      ? "destructive"
+                      : "default"
+                  }
+                  role="alert"
+                >
                   <AlertDescription>
                     Receipt {r.receiptId.slice(0, 8)}...: {r.result.error}
                   </AlertDescription>

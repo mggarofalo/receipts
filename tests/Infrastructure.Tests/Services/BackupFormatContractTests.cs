@@ -16,7 +16,7 @@ public class BackupFormatContractTests
 {
 	[Theory]
 	[InlineData("0")]
-	[InlineData("6")]
+	[InlineData("7")]
 	[InlineData("invalid")]
 	[InlineData("")]
 	public async Task Import_ExplicitUnsupportedOrMalformedVersion_IsRejected(string version)
@@ -57,7 +57,7 @@ public class BackupFormatContractTests
 	[Theory]
 	[InlineData(4, false)]
 	[InlineData(4, true)]
-	[InlineData(5, true)]
+	[InlineData(6, true)]
 	public async Task Import_CanonicalRestore_InvalidatesEmbeddingAndTreatsNeighbourEvidenceByFormat(int version, bool changed)
 	{
 		DbContextOptions<ApplicationDbContext> options = Options();
@@ -68,7 +68,7 @@ public class BackupFormatContractTests
 			await seed.SaveChangesAsync();
 		}
 		using Artifact artifact = new();
-		if (version == 5)
+		if (version >= 5)
 		{
 			await artifact.CreateCurrentSchema();
 			artifact.Execute("INSERT INTO normalized_descriptions (id, canonical_name, status, created_at, display_label, nearest_neighbour_id, nearest_neighbour_similarity) VALUES ($id, $name, 'Active', '2024-01-01T00:00:00Z', 'Restored label', NULL, '0.66')", ("$id", id.ToString()), ("$name", "New matched text"));
@@ -88,14 +88,14 @@ public class BackupFormatContractTests
 		if (changed)
 		{
 			row.NearestNeighbourId.Should().BeNull();
-			row.NearestNeighbourSimilarity.Should().Be(version == 5 ? 0.66 : null);
+			row.NearestNeighbourSimilarity.Should().Be(version >= 5 ? 0.66 : null);
 		}
 		else
 		{
 			row.NearestNeighbourId.Should().Be(neighbour);
 			row.NearestNeighbourSimilarity.Should().Be(0.81);
 		}
-		row.DisplayLabel.Should().Be(version == 5 ? "Restored label" : "Human label");
+		row.DisplayLabel.Should().Be(version >= 5 ? "Restored label" : "Human label");
 	}
 
 	[Fact]
@@ -179,7 +179,7 @@ public class BackupFormatContractTests
 		public async Task CreateCurrentSchema()
 		{
 			await BackupService.CreateSchemaAsync(_sqlite, CancellationToken.None);
-			Execute("INSERT INTO backup_metadata VALUES ('export_version', '5')");
+			Execute("INSERT INTO backup_metadata VALUES ('export_version', '6')");
 		}
 		public async Task Import(BackupImportService importer)
 		{
