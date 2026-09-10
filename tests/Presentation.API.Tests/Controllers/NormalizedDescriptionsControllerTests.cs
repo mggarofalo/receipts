@@ -11,6 +11,7 @@ using Application.Models;
 using Application.Models.NormalizedDescriptions;
 using Application.Queries.NormalizedDescription.GetAll;
 using Application.Queries.NormalizedDescription.GetById;
+using Application.Queries.NormalizedDescription.GetEmbeddingCoverage;
 using Application.Queries.NormalizedDescription.GetSettings;
 using Application.Queries.NormalizedDescription.PreviewRequeuePending;
 using Application.Queries.NormalizedDescription.PreviewThresholdImpact;
@@ -54,6 +55,32 @@ public class NormalizedDescriptionsControllerTests
 		result.Value!.Id.Should().Be(settings.Id);
 		result.Value.AutoAcceptThreshold.Should().Be(0.81);
 		result.Value.PendingReviewThreshold.Should().Be(0.68);
+	}
+
+	[Fact]
+	public async Task GetEmbeddingCoverage_ReturnsCurrentFingerprintReadinessProjection()
+	{
+		EmbeddingCoverage coverage = new(
+			"space-fingerprint",
+			CanonicalReady: 8,
+			CanonicalTotal: 10,
+			ItemReady: 18,
+			ItemTotal: 20);
+		_mediatorMock
+			.Setup(m => m.Send(It.IsAny<GetEmbeddingCoverageQuery>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(coverage);
+
+		Ok<EmbeddingCoverageResponse> result =
+			await _controller.GetEmbeddingCoverage(CancellationToken.None);
+
+		result.Value!.Fingerprint.Should().Be("space-fingerprint");
+		result.Value.CanonicalReady.Should().Be(8);
+		result.Value.CanonicalTotal.Should().Be(10);
+		result.Value.CanonicalPending.Should().Be(2);
+		result.Value.ItemReady.Should().Be(18);
+		result.Value.ItemTotal.Should().Be(20);
+		result.Value.ItemPending.Should().Be(2);
+		result.Value.IsComplete.Should().BeFalse();
 	}
 
 	// ── PATCH settings ──────────────────────────────────────────

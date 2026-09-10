@@ -105,7 +105,7 @@ public class EmbeddingGenerationTrashConcurrencyTests(PostgresFixture fixture)
 			|| (row.EntityType == "ReceiptItem" && row.EntityId == itemId))).Should().BeFalse();
 		publisher.Verify(p => p.PublishAsync(It.IsAny<CommittedEntityChange>()), Times.Never);
 		await verify.ItemEmbeddings
-			.Where(row => row.ModelVersion == "integration-baseline")
+			.Where(row => row.ModelVersion == OnnxEmbeddingService.EmbeddingSpaceFingerprint)
 			.ExecuteDeleteAsync();
 	}
 
@@ -116,7 +116,7 @@ public class EmbeddingGenerationTrashConcurrencyTests(PostgresFixture fixture)
 		EntityId = entityId,
 		EntityText = text,
 		Embedding = new Vector(new float[1024]),
-		ModelVersion = "integration-baseline",
+		ModelVersion = OnnxEmbeddingService.EmbeddingSpaceFingerprint,
 		CreatedAt = DateTimeOffset.UtcNow,
 	};
 
