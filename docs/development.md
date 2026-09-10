@@ -9,7 +9,7 @@ Local development uses **.NET Aspire** to orchestrate all services — API, Post
 | [.NET 10 SDK](https://dot.net) | 10.0+ | Build and run the API |
 | [Aspire CLI](https://aspire.dev/get-started/install-cli/) | Any | Orchestrate local dev stack from CLI |
 | [Docker Desktop](https://www.docker.com/products/docker-desktop/) | Any | PostgreSQL container (Aspire manages it) |
-| [Node.js](https://nodejs.org) | 18+ | OpenAPI spec linting and drift detection |
+| [Node.js](https://nodejs.org) | 24.21.0 | React client and OpenAPI tooling; pinned in `.nvmrc` and `package.json` |
 | [VS Code](https://code.visualstudio.com) | Any | Recommended IDE |
 | [C# Dev Kit](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.csdevkit) | Any | VS Code C# support |
 
@@ -21,6 +21,10 @@ Local development uses **.NET Aspire** to orchestrate all services — API, Post
 # Clone the repository
 git clone https://github.com/mggarofalo/Receipts.git
 cd Receipts
+
+# Select the repository's exact Node runtime (shown here with nvm)
+nvm install 24.21.0
+nvm use 24.21.0
 
 # Install Aspire CLI (if not already installed)
 dotnet tool install --global Aspire.Cli
@@ -36,6 +40,12 @@ npm ci
 # semantic features work immediately instead of a few minutes in.
 dotnet run scripts/download-onnx-model.cs
 ```
+
+Both npm workspaces use committed lockfiles and `npm ci`. Project lifecycle scripts remain
+enabled because the client intentionally runs `patch-package` after installation. Dependency
+install scripts are blocked unless listed in `allowScripts`: the client approves the locked
+`esbuild` and `@sentry/cli` installers, while optional `fsevents` and `msw` scripts are explicitly
+denied. Do not substitute `npm install` in setup or CI, as that can rewrite the lockfiles.
 
 The model is stored per-machine, not per-checkout — `%LOCALAPPDATA%\Receipts\models` on
 Windows, `~/.local/share/Receipts/models` elsewhere — so every clone and worktree shares one

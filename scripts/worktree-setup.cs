@@ -4,6 +4,28 @@ using System.Diagnostics;
 
 string repoRoot = GetRepoRoot();
 bool checkOnly = args.Length > 0 && args[0] == "--check";
+const string requiredNodeVersion = "v24.21.0";
+const string requiredNpmVersion = "11.19.0";
+
+string? installedNodeVersion = await GetCommandOutputAsync("node", ["--version"], repoRoot);
+if (installedNodeVersion != requiredNodeVersion)
+{
+    Console.Error.WriteLine(
+        installedNodeVersion is null
+            ? $"Node.js {requiredNodeVersion[1..]} is required but node was not found. Run 'nvm install {requiredNodeVersion[1..]} && nvm use {requiredNodeVersion[1..]}'."
+            : $"Node.js {requiredNodeVersion[1..]} is required, but {installedNodeVersion.TrimStart('v')} is active. Run 'nvm install {requiredNodeVersion[1..]} && nvm use {requiredNodeVersion[1..]}'.");
+    return 1;
+}
+
+string? installedNpmVersion = await GetCommandOutputAsync("npm", ["--version"], repoRoot);
+if (installedNpmVersion != requiredNpmVersion)
+{
+    Console.Error.WriteLine(
+        installedNpmVersion is null
+            ? $"npm {requiredNpmVersion} is required but npm was not found. Reinstall Node.js {requiredNodeVersion[1..]}."
+            : $"npm {requiredNpmVersion} is required, but {installedNpmVersion} is active. Reinstall Node.js {requiredNodeVersion[1..]}.");
+    return 1;
+}
 
 if (checkOnly)
 {
@@ -118,6 +140,42 @@ static async Task RunAsync(string command, string[] arguments, string workingDir
     if (process.ExitCode != 0)
     {
         throw new InvalidOperationException($"{command} exited with code {process.ExitCode}.");
+    }
+}
+
+static async Task<string?> GetCommandOutputAsync(string command, string[] arguments, string workingDirectory)
+{
+    try
+    {
+        bool isWindows = OperatingSystem.IsWindows();
+        string resolvedCommand = isWindows && !Path.HasExtension(command) && command != "dotnet" && command != "git"
+            ? "cmd"
+            : command;
+        string[] resolvedArgs = resolvedCommand == "cmd"
+            ? ["/c", command, .. arguments]
+            : arguments;
+
+        ProcessStartInfo psi = new(resolvedCommand, resolvedArgs)
+        {
+            WorkingDirectory = workingDirectory,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+
+        using Process? process = Process.Start(psi);
+        if (process is null)
+        {
+            return null;
+        }
+
+        string output = await process.StandardOutput.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        return process.ExitCode == 0 ? output.Trim() : null;
+    }
+    catch (System.ComponentModel.Win32Exception)
+    {
+        return null;
     }
 }
 

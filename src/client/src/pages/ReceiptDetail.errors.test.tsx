@@ -154,7 +154,7 @@ describe("receipt errors keep their local state owner", () => {
       screen.queryByRole("heading", { name: "Global server error route" }),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByText(
+      await screen.findByText(
         "YNAB is temporarily unavailable. Receipt editing is still available.",
       ),
     ).toBeInTheDocument();

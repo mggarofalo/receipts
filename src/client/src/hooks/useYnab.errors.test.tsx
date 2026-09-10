@@ -64,7 +64,7 @@ it("retains the last successful receipt sync status and exposes a failed refetch
       queryKey: ["ynab", "receipt-sync-statuses"],
     });
   });
-  expect(result.current.isError).toBe(true);
+  await waitFor(() => expect(result.current.isError).toBe(true));
   expect(result.current.statusMap.get(id)).toBe("synced");
 });
 

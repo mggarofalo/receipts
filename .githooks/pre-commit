@@ -83,7 +83,7 @@ if [ "${PRECOMMIT_QUICK:-}" != "1" ]; then
 fi
 
 next_step "Checking TypeScript types..."
-(cd src/client && npm exec -- tsc -b --noEmit)
+(cd src/client && npm run typecheck)
 
 next_step "Linting React client..."
 (cd src/client && npm run lint)

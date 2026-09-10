@@ -2,5 +2,5 @@
 set -e
 
 echo "=== Commit-msg hook: validating commit message ==="
-npm exec -- commitlint --edit "$1"
+npm run --silent lint:commit -- --edit "$1"
 echo "=== Commit message is valid ==="

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
+import { findStorageMethodOwner } from "@/test/storage-spy";
 import { usePreferences } from "./usePreferences";
 
 describe("usePreferences", () => {
@@ -93,7 +94,7 @@ describe("usePreferences", () => {
 
   it("tolerates setItem failures", () => {
     const spy = vi
-      .spyOn(window.localStorage.__proto__, "setItem")
+      .spyOn(findStorageMethodOwner(window.localStorage, "setItem"), "setItem")
       .mockImplementation(() => {
         throw new Error("denied");
       });
@@ -103,6 +104,7 @@ describe("usePreferences", () => {
         result.current.setWeekStart("monday");
       });
     }).not.toThrow();
+    expect(spy).toHaveBeenCalled();
     spy.mockRestore();
   });
 });
