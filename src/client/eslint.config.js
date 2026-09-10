@@ -1,7 +1,6 @@
 import js from "@eslint/js";
 import globals from "globals";
 import reactHooks from "eslint-plugin-react-hooks";
-import reactHookStability from "@mggarofalo/eslint-plugin-react-hook-stability";
 import reactRefresh from "eslint-plugin-react-refresh";
 import jsxA11y from "eslint-plugin-jsx-a11y";
 import tseslint from "typescript-eslint";
@@ -17,7 +16,6 @@ export default defineConfig([
       js.configs.recommended,
       tseslint.configs.recommended,
       reactHooks.configs.flat.recommended,
-      reactHookStability.configs.recommended,
       reactRefresh.configs.vite,
       jsxA11y.flatConfigs.recommended,
     ],
@@ -34,7 +32,6 @@ export default defineConfig([
         "error",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
-      "react-hook-stability/require-stable-hook-returns": "error",
       // Field rows must wrap rather than shrink, so inputs can't overlap.
       "local/field-row-layout": "error",
     },

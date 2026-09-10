@@ -119,6 +119,10 @@ All API data flows through TanStack Query hooks in `src/client/src/hooks/`. Neve
 **Conventions:**
 
 - Query keys: `["entity", "list", offset, limit, sortBy, sortDirection]` for lists, `["entity", id]` for singles
+- Return TanStack Query results directly when a hook does not add fields. Depend on the
+  specific result fields a component uses, never the whole result object. A representative
+  unchanged-data refetch measured zero extra renders for the direct result versus two for the
+  blanket stable projection; this is subscription scope evidence, not a general latency claim.
 - Mutations show success/error toasts in `onSuccess`/`onError`
 - Optimistic updates use `onMutate` with rollback in `onError` (see `useDeleteReceipts`)
 - Composite mutations invalidate all affected query families (see `useCreateCompleteReceipt`)
