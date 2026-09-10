@@ -16,7 +16,8 @@ public sealed record EmbeddingModelFile(string FileName, string RemotePath, long
 /// The model is deliberately NOT part of the build output or the container image — at
 /// 1.34 GB it dwarfed everything else we ship (RECEIPTS-929). It is provisioned into a
 /// persistent directory at runtime by <see cref="EmbeddingModelProvisioningService"/>
-/// and loaded lazily by <see cref="OnnxEmbeddingService"/>.
+/// and loaded explicitly by <see cref="EmbeddingModelWarmupService"/> or on the first queued
+/// inference if warmup has not completed yet.
 /// </summary>
 public sealed class EmbeddingModelOptions
 {
@@ -75,6 +76,12 @@ public sealed class EmbeddingModelOptions
 
 	/// <summary>Cap on how long a single file download may take.</summary>
 	public TimeSpan DownloadTimeout { get; set; } = TimeSpan.FromMinutes(30);
+
+	/// <summary>Maximum interactive embedding requests waiting for the single inference session.</summary>
+	public int RequestQueueCapacity { get; set; } = 32;
+
+	/// <summary>Maximum background items waiting for the single inference session.</summary>
+	public int BackgroundQueueCapacity { get; set; } = 8;
 
 	public string ResolveModelDirectory()
 	{
