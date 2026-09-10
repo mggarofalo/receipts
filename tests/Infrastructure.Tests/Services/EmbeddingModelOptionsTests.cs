@@ -148,4 +148,13 @@ public class EmbeddingModelOptionsTests
 	{
 		new EmbeddingModelOptions().AutoDownload.Should().BeTrue();
 	}
+
+	[Fact]
+	public void QueueCapacities_DefaultToFinitePositiveBounds()
+	{
+		EmbeddingModelOptions options = new();
+
+		options.RequestQueueCapacity.Should().Be(32);
+		options.BackgroundQueueCapacity.Should().Be(8);
+	}
 }

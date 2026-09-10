@@ -19,6 +19,8 @@ Data access and external service implementations. Depends on Domain and Applicat
 - **`ApplicationDbContext`** is configured via `IDbContextFactory` for proper scoped lifetime management.
 - **Repositories** use `IDbContextFactory<ApplicationDbContext>` to create short-lived contexts per operation.
 - **Vector similarity search** uses pgvector with ONNX Runtime (`bge-large-en-v1.5` model, 1024-dim embeddings, CLS pooling).
+- **Embedding inference** uses bounded request/background lanes, explicit warmup, and
+  process-local queue telemetry; see [Embedding inference operations](../../docs/embedding-inference.md).
 - **ASP.NET Identity** is configured here for user/role management with PostgreSQL storage.
 
 ## Database

@@ -7,7 +7,7 @@ using Microsoft.ML.Tokenizers;
 
 namespace Infrastructure.Services;
 
-public sealed class OnnxEmbeddingService : IEmbeddingService, IDisposable
+public sealed class OnnxEmbeddingService : IEmbeddingService, IEmbeddingModelRuntime, IBackgroundEmbeddingService, IDisposable
 {
 	public const string ModelName = "bge-large-en-v1.5";
 	public const int EmbeddingDimension = 1024;
@@ -39,10 +39,12 @@ public sealed class OnnxEmbeddingService : IEmbeddingService, IDisposable
 	private readonly string _modelPath;
 	private readonly string _vocabPath;
 	private readonly ILogger<OnnxEmbeddingService> _logger;
-	private readonly object _inferLock = new();
+	private readonly object _modelLock = new();
+	private readonly EmbeddingInferenceQueue _inferenceQueue;
 
-	private LoadedModel? _loaded;
-	private bool _disposed;
+	private volatile LoadedModel? _loaded;
+	private volatile bool _disposed;
+	private volatile bool _isReady;
 
 	public OnnxEmbeddingService(IOptions<EmbeddingModelOptions> options, ILogger<OnnxEmbeddingService> logger)
 	{
@@ -51,62 +53,66 @@ public sealed class OnnxEmbeddingService : IEmbeddingService, IDisposable
 		_modelDirectory = options.Value.ResolveModelDirectory();
 		_modelPath = Path.Combine(_modelDirectory, EmbeddingModelOptions.ModelFileName);
 		_vocabPath = Path.Combine(_modelDirectory, EmbeddingModelOptions.VocabFileName);
+		_inferenceQueue = new EmbeddingInferenceQueue(
+			GenerateEmbedding,
+			options.Value.RequestQueueCapacity,
+			options.Value.BackgroundQueueCapacity);
 	}
 
 	/// <summary>
-	/// True once the model has loaded. The model is provisioned onto a volume at runtime
-	/// rather than shipped in the image (RECEIPTS-929), so on a fresh deployment this is
-	/// false until <see cref="EmbeddingModelProvisioningService"/> finishes the download.
-	/// Every caller already guards on this and degrades gracefully.
+	/// True only after explicit warmup or inference has loaded the model successfully. Reading
+	/// this property never loads the model or waits for inference capacity, so guarded callers
+	/// continue to degrade gracefully after a failed warmup.
 	/// </summary>
-	public bool IsConfigured
-	{
-		get
-		{
-			lock (_inferLock)
-			{
-				return TryLoad() is not null;
-			}
-		}
-	}
+	public bool IsConfigured => IsReady;
 
-	public Task<float[]> GenerateEmbeddingAsync(string text, CancellationToken cancellationToken)
-	{
-		float[] embedding = GenerateEmbedding(text);
-		return Task.FromResult(embedding);
-	}
+	public bool IsProvisioned => !_disposed && EmbeddingModelProvisioningService.IsProvisioned(_modelDirectory);
 
-	public Task<List<float[]>> GenerateEmbeddingsAsync(List<string> texts, CancellationToken cancellationToken)
+	public bool IsLoaded => !_disposed && _loaded is not null;
+	public bool IsReady => !_disposed && _isReady;
+
+	public Task WarmUpAsync(CancellationToken cancellationToken) =>
+		_inferenceQueue.EnqueueBackgroundAsync("receipts embedding warmup", cancellationToken);
+
+	public Task<float[]> GenerateEmbeddingAsync(string text, CancellationToken cancellationToken) =>
+		_inferenceQueue.EnqueueRequestAsync(text, cancellationToken);
+
+	Task<float[]> IBackgroundEmbeddingService.GenerateBackgroundEmbeddingAsync(
+		string text,
+		CancellationToken cancellationToken) =>
+		_inferenceQueue.EnqueueBackgroundAsync(text, cancellationToken);
+
+	public async Task<List<float[]>> GenerateEmbeddingsAsync(List<string> texts, CancellationToken cancellationToken)
 	{
 		List<float[]> results = new(texts.Count);
 		foreach (string text in texts)
 		{
 			cancellationToken.ThrowIfCancellationRequested();
-			results.Add(GenerateEmbedding(text));
+			results.Add(await _inferenceQueue.EnqueueBackgroundAsync(text, cancellationToken));
 		}
 
-		return Task.FromResult(results);
+		return results;
 	}
 
 	private float[] GenerateEmbedding(string text)
 	{
-		// Lock to guarantee thread safety: BertTokenizer's thread-safety is undocumented,
-		// and this singleton may be called concurrently from the background service and request pipeline.
-		// InferenceSession.Run is thread-safe per ONNX Runtime docs, but we lock the whole method
-		// to keep it simple — embedding generation is I/O-bound, not a hot path.
-		lock (_inferLock)
+		// The bounded queue is the only caller, so the tokenizer and session remain serialized
+		// without blocking request threads or allowing background batches to monopolize the model.
+		lock (_modelLock)
 		{
 			LoadedModel model = TryLoad()
 				?? throw new InvalidOperationException(
 					$"The ONNX embedding model is not available at {Path.GetDirectoryName(_modelPath)}. " +
 					$"Check {nameof(IEmbeddingService)}.{nameof(IsConfigured)} before generating embeddings.");
 
-			return GenerateEmbeddingCore(model, text);
+			float[] embedding = GenerateEmbeddingCore(model, text);
+			_isReady = true;
+			return embedding;
 		}
 	}
 
 	/// <summary>
-	/// Loads the session on first use. Callers must hold <see cref="_inferLock"/>.
+	/// Loads the session on first use. Callers must hold <see cref="_modelLock"/>.
 	///
 	/// A failed load is not latched: the files may simply not have finished downloading yet,
 	/// so a later call retries and the app recovers without a restart.
@@ -207,15 +213,17 @@ public sealed class OnnxEmbeddingService : IEmbeddingService, IDisposable
 
 	public void Dispose()
 	{
-		lock (_inferLock)
+		if (_disposed)
 		{
-			if (_disposed)
-			{
-				return;
-			}
+			return;
+		}
 
+		_inferenceQueue.Dispose();
+		lock (_modelLock)
+		{
 			_loaded?.Session.Dispose();
 			_loaded = null;
+			_isReady = false;
 			_disposed = true;
 		}
 	}

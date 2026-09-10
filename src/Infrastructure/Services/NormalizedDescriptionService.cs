@@ -104,8 +104,12 @@ public class NormalizedDescriptionService(
 		}
 
 		// Step 3: generate embedding for the input.
-		float[] embeddingData = await embeddingService.GenerateEmbeddingAsync(normalized, cancellationToken);
-		Vector? embeddingVector = embeddingData.Length > 0 ? new Vector(embeddingData) : null;
+		float[]? embeddingData = await TryGenerateEmbeddingAsync(
+			normalized,
+			cancellationToken,
+			background: true,
+			fallbackWhenFull: false);
+		Vector? embeddingVector = embeddingData is { Length: > 0 } ? new Vector(embeddingData) : null;
 
 		// Step 4: ANN top-1 search — only supported on Postgres. On other providers (InMemory tests)
 		// the method is a no-op by default; tests can override AnnSearchTopOneAsync to simulate
@@ -208,8 +212,8 @@ public class NormalizedDescriptionService(
 		Vector? embedding = null;
 		if (embeddingService.IsConfigured)
 		{
-			float[] data = await embeddingService.GenerateEmbeddingAsync(normalized, cancellationToken);
-			embedding = data.Length > 0 ? new Vector(data) : null;
+			float[]? data = await TryGenerateEmbeddingAsync(normalized, cancellationToken);
+			embedding = data is { Length: > 0 } ? new Vector(data) : null;
 		}
 
 		(NormalizedDescriptionEntity created, _) = await InsertAsync(
@@ -519,8 +523,8 @@ public class NormalizedDescriptionService(
 		Vector? embeddingVector = null;
 		if (embeddingService.IsConfigured)
 		{
-			float[] data = await embeddingService.GenerateEmbeddingAsync(canonicalName, cancellationToken);
-			if (data.Length > 0)
+			float[]? data = await TryGenerateEmbeddingAsync(canonicalName, cancellationToken);
+			if (data is { Length: > 0 })
 			{
 				embeddingVector = new Vector(data);
 			}
@@ -1167,8 +1171,8 @@ public class NormalizedDescriptionService(
 			return new MatchTestResult([], MatchTestOutcomes.EmbeddingUnavailable, SimulatedTargetId: null);
 		}
 
-		float[] embeddingData = await embeddingService.GenerateEmbeddingAsync(normalized, cancellationToken);
-		if (embeddingData.Length == 0)
+		float[]? embeddingData = await TryGenerateEmbeddingAsync(normalized, cancellationToken);
+		if (embeddingData is not { Length: > 0 })
 		{
 			return new MatchTestResult([], MatchTestOutcomes.EmbeddingUnavailable, SimulatedTargetId: null);
 		}
@@ -1883,13 +1887,36 @@ public class NormalizedDescriptionService(
 			return null;
 		}
 
-		float[] embeddingData = await embeddingService.GenerateEmbeddingAsync(normalized, cancellationToken);
-		if (embeddingData.Length == 0)
+		float[]? embeddingData = await TryGenerateEmbeddingAsync(normalized, cancellationToken);
+		if (embeddingData is not { Length: > 0 })
 		{
 			return null;
 		}
 
 		return await SimilarityToAsync(context, new Vector(embeddingData), keep.Id, cancellationToken);
+	}
+
+	private async Task<float[]?> TryGenerateEmbeddingAsync(
+		string text,
+		CancellationToken cancellationToken,
+		bool background = false,
+		bool fallbackWhenFull = true)
+	{
+		try
+		{
+			if (background && embeddingService is IBackgroundEmbeddingService backgroundEmbeddingService)
+			{
+				return await backgroundEmbeddingService.GenerateBackgroundEmbeddingAsync(text, cancellationToken);
+			}
+
+			return await embeddingService.GenerateEmbeddingAsync(text, cancellationToken);
+		}
+		catch (EmbeddingQueueFullException) when (fallbackWhenFull)
+		{
+			// Embeddings enrich these workflows but are not required for correctness. Under
+			// deliberate scheduler backpressure, use each caller's existing no-vector fallback.
+			return null;
+		}
 	}
 
 	// Virtual so tests can stub a similarity without pgvector, matching AnnSearchTopOneAsync.

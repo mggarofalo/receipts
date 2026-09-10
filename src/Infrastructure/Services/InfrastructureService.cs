@@ -237,7 +237,9 @@ public static class InfrastructureService
 		// rather than shipped in the image (RECEIPTS-929), so this resolves whether or not
 		// the model files are present yet — see OnnxEmbeddingService.IsConfigured.
 		services.Configure<EmbeddingModelOptions>(configuration.GetSection(EmbeddingModelOptions.SectionName));
-		services.AddSingleton<IEmbeddingService, OnnxEmbeddingService>();
+		services.AddSingleton<OnnxEmbeddingService>();
+		services.AddSingleton<IEmbeddingService>(provider => provider.GetRequiredService<OnnxEmbeddingService>());
+		services.AddSingleton<IEmbeddingModelRuntime>(provider => provider.GetRequiredService<OnnxEmbeddingService>());
 
 		// TryAdd so callers (tests, specific deployments) can override with a FakeTimeProvider.
 		services.TryAddSingleton(TimeProvider.System);
@@ -277,6 +279,7 @@ public static class InfrastructureService
 		});
 
 		services.AddHostedService<EmbeddingModelProvisioningService>();
+		services.AddHostedService<EmbeddingModelWarmupService>();
 		services.AddHostedService<EmbeddingGenerationService>();
 		services.AddHostedService<AuthAuditCleanupService>();
 		services.AddHostedService<ReceiptImageCleanupService>();
