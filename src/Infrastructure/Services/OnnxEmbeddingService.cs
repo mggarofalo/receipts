@@ -19,6 +19,7 @@ public sealed class OnnxEmbeddingService : IEmbeddingService, IDisposable
 
 	private const int MaxTokens = 512;
 
+	private readonly string _modelDirectory;
 	private readonly string _modelPath;
 	private readonly string _vocabPath;
 	private readonly ILogger<OnnxEmbeddingService> _logger;
@@ -31,9 +32,9 @@ public sealed class OnnxEmbeddingService : IEmbeddingService, IDisposable
 	{
 		_logger = logger;
 
-		string directory = options.Value.ResolveModelDirectory();
-		_modelPath = Path.Combine(directory, EmbeddingModelOptions.ModelFileName);
-		_vocabPath = Path.Combine(directory, EmbeddingModelOptions.VocabFileName);
+		_modelDirectory = options.Value.ResolveModelDirectory();
+		_modelPath = Path.Combine(_modelDirectory, EmbeddingModelOptions.ModelFileName);
+		_vocabPath = Path.Combine(_modelDirectory, EmbeddingModelOptions.VocabFileName);
 	}
 
 	/// <summary>
@@ -101,7 +102,7 @@ public sealed class OnnxEmbeddingService : IEmbeddingService, IDisposable
 			return _loaded;
 		}
 
-		if (_disposed || !File.Exists(_modelPath) || !File.Exists(_vocabPath))
+		if (_disposed || !EmbeddingModelProvisioningService.IsProvisioned(_modelDirectory))
 		{
 			return null;
 		}

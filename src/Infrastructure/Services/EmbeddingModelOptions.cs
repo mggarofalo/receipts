@@ -34,9 +34,11 @@ public sealed class EmbeddingModelOptions
 
 	/// <summary>
 	/// Written next to the model files once both have been verified. Holds
-	/// <see cref="Revision"/> so that bumping the pinned revision re-provisions.
+	/// a verifier-versioned <see cref="Revision"/> so that either a revision bump or a
+	/// stronger verification contract triggers a one-time re-verification.
 	/// </summary>
 	public const string MarkerFileName = ".provisioned";
+	internal const string VerifiedMarker = "sha256-v1:" + Revision;
 
 	private const string ModelDirectoryName = "BgeLargeEnV15";
 

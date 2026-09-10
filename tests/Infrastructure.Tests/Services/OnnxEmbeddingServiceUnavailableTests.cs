@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Infrastructure.Services;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -16,10 +17,10 @@ public class OnnxEmbeddingServiceUnavailableTests : IDisposable
 	private readonly string _emptyDirectory =
 		Path.Combine(Path.GetTempPath(), "receipts-onnx-absent", Guid.NewGuid().ToString("N"));
 
-	private OnnxEmbeddingService CreateService() =>
+	private OnnxEmbeddingService CreateService(ILogger<OnnxEmbeddingService>? logger = null) =>
 		new(
 			Options.Create(new EmbeddingModelOptions { ModelPath = _emptyDirectory }),
-			NullLogger<OnnxEmbeddingService>.Instance);
+			logger ?? NullLogger<OnnxEmbeddingService>.Instance);
 
 	[Fact]
 	public void Constructor_ModelMissing_DoesNotThrow()
@@ -49,6 +50,24 @@ public class OnnxEmbeddingServiceUnavailableTests : IDisposable
 		{
 			service.IsConfigured.Should().BeFalse();
 		}
+	}
+
+	[Fact]
+	public void IsConfigured_ModelFilesWithoutVerifiedMarker_DoesNotAttemptModelLoad()
+	{
+		Directory.CreateDirectory(_emptyDirectory);
+		File.WriteAllBytes(
+			Path.Combine(_emptyDirectory, EmbeddingModelOptions.ModelFileName),
+			[1, 2, 3, 4]);
+		File.WriteAllBytes(
+			Path.Combine(_emptyDirectory, EmbeddingModelOptions.VocabFileName),
+			[5, 6, 7, 8]);
+		ErrorCountingLogger logger = new();
+		using OnnxEmbeddingService service = CreateService(logger);
+
+		service.IsConfigured.Should().BeFalse();
+		service.IsConfigured.Should().BeFalse();
+		logger.ErrorCount.Should().Be(0, "unverified files must be rejected before ONNX loading is attempted");
 	}
 
 	[Fact]
@@ -110,5 +129,27 @@ public class OnnxEmbeddingServiceUnavailableTests : IDisposable
 		}
 
 		GC.SuppressFinalize(this);
+	}
+
+	private sealed class ErrorCountingLogger : ILogger<OnnxEmbeddingService>
+	{
+		public int ErrorCount { get; private set; }
+
+		public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+		public bool IsEnabled(LogLevel logLevel) => true;
+
+		public void Log<TState>(
+			LogLevel logLevel,
+			EventId eventId,
+			TState state,
+			Exception? exception,
+			Func<TState, Exception?, string> formatter)
+		{
+			if (logLevel == LogLevel.Error)
+			{
+				ErrorCount++;
+			}
+		}
 	}
 }

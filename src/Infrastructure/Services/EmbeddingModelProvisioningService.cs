@@ -44,10 +44,10 @@ public sealed class EmbeddingModelProvisioningService(
 
 		if (!_options.AutoDownload)
 		{
-			logger.LogWarning(
-				"Embedding model is missing from {Directory} and automatic download is disabled. " +
-				"Semantic features stay disabled until the files are staged in manually.",
-				directory);
+			await VerifyLocalFilesWithoutDownloadAsync(
+				directory,
+				EmbeddingModelOptions.Files,
+				stoppingToken);
 			return;
 		}
 
@@ -57,7 +57,7 @@ public sealed class EmbeddingModelProvisioningService(
 		{
 			try
 			{
-				await ProvisionAsync(directory, stoppingToken);
+				await ProvisionAsync(directory, EmbeddingModelOptions.Files, stoppingToken);
 
 				logger.LogInformation(
 					"Embedding model provisioned at {Directory} (revision {Revision})",
@@ -96,10 +96,46 @@ public sealed class EmbeddingModelProvisioningService(
 		}
 	}
 
+	internal async Task VerifyLocalFilesWithoutDownloadAsync(
+		string directory,
+		IReadOnlyList<EmbeddingModelFile> files,
+		CancellationToken cancellationToken)
+	{
+		try
+		{
+			if (await VerifyExistingSetAndPublishMarkerAsync(directory, files, cancellationToken))
+			{
+				logger.LogInformation(
+					"Verified the existing embedding model at {Directory} and upgraded its provenance marker",
+					directory);
+				return;
+			}
+		}
+		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+		{
+			return;
+		}
+		catch (Exception ex)
+		{
+			logger.LogError(
+				ex,
+				"Failed to verify the locally staged embedding model in {Directory}. " +
+				"Automatic download is disabled, so semantic features remain unavailable.",
+				directory);
+			return;
+		}
+
+		logger.LogWarning(
+			"Embedding model is missing or failed verification in {Directory}, and automatic download is disabled. " +
+			"Semantic features stay disabled until the files are staged in manually.",
+			directory);
+	}
+
 	/// <summary>
-	/// Cheap startup check: the marker names the revision that was verified, and each file's
-	/// length is compared against the expected size. Re-hashing 1.34 GB on every boot would
-	/// cost seconds for no real benefit — the digest is verified when the file is written.
+	/// Cheap startup check: the marker names the verifier contract and revision that were used,
+	/// and each file's length is compared against the expected size. Re-hashing 1.34 GB on every
+	/// boot would cost seconds for no real benefit — every digest is verified before the marker
+	/// is published.
 	/// </summary>
 	internal static bool IsProvisioned(string directory) =>
 		IsProvisioned(directory, EmbeddingModelOptions.Files);
@@ -123,7 +159,7 @@ public sealed class EmbeddingModelProvisioningService(
 			return false;
 		}
 
-		if (!string.Equals(marker, EmbeddingModelOptions.Revision, StringComparison.Ordinal))
+		if (!string.Equals(marker, EmbeddingModelOptions.VerifiedMarker, StringComparison.Ordinal))
 		{
 			return false;
 		}
@@ -140,21 +176,45 @@ public sealed class EmbeddingModelProvisioningService(
 		return true;
 	}
 
-	private async Task ProvisionAsync(string directory, CancellationToken cancellationToken)
+	internal static async Task<bool> VerifyExistingSetAndPublishMarkerAsync(
+		string directory,
+		IReadOnlyList<EmbeddingModelFile> files,
+		CancellationToken cancellationToken)
+	{
+		foreach (EmbeddingModelFile file in files)
+		{
+			cancellationToken.ThrowIfCancellationRequested();
+			if (!await IsExistingFileVerifiedAsync(directory, file, cancellationToken))
+			{
+				return false;
+			}
+		}
+
+		await File.WriteAllTextAsync(
+			Path.Combine(directory, EmbeddingModelOptions.MarkerFileName),
+			EmbeddingModelOptions.VerifiedMarker,
+			cancellationToken);
+		return true;
+	}
+
+	internal async Task ProvisionAsync(
+		string directory,
+		IReadOnlyList<EmbeddingModelFile> files,
+		CancellationToken cancellationToken)
 	{
 		Directory.CreateDirectory(directory);
 
 		HttpClient http = httpClientFactory.CreateClient(HttpClientName);
 
-		foreach (EmbeddingModelFile file in EmbeddingModelOptions.Files)
+		foreach (EmbeddingModelFile file in files)
 		{
 			cancellationToken.ThrowIfCancellationRequested();
 
-			FileInfo existing = new(Path.Combine(directory, file.FileName));
-			if (existing.Exists && existing.Length == file.SizeBytes)
+			if (await IsExistingFileVerifiedAsync(directory, file, cancellationToken))
 			{
-				// Present and the right size — most likely a previous run that got part-way
-				// through the set before being interrupted. Leave it alone.
+				// IsProvisioned already handles the inexpensive trusted-startup path. Reaching
+				// here means provenance is absent or stale, so an equal-length artifact is only
+				// reusable after its content has been verified against the pinned digest.
 				continue;
 			}
 
@@ -164,8 +224,28 @@ public sealed class EmbeddingModelProvisioningService(
 		// Written last: its presence is what lets a later boot skip all of the above.
 		await File.WriteAllTextAsync(
 			Path.Combine(directory, EmbeddingModelOptions.MarkerFileName),
-			EmbeddingModelOptions.Revision,
+			EmbeddingModelOptions.VerifiedMarker,
 			cancellationToken);
+	}
+
+	private static async Task<bool> IsExistingFileVerifiedAsync(
+		string directory,
+		EmbeddingModelFile file,
+		CancellationToken cancellationToken)
+	{
+		string path = Path.Combine(directory, file.FileName);
+		FileInfo existing = new(path);
+		if (!existing.Exists || existing.Length != file.SizeBytes)
+		{
+			return false;
+		}
+
+		await using FileStream stream = new(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+		byte[] actualHash = await SHA256.HashDataAsync(stream, cancellationToken);
+		return string.Equals(
+			Convert.ToHexStringLower(actualHash),
+			file.Sha256,
+			StringComparison.OrdinalIgnoreCase);
 	}
 
 	private async Task DownloadAndVerifyAsync(
