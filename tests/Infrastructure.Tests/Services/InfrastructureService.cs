@@ -359,6 +359,7 @@ public class InfrastructureServiceTests
 			.Select(d => d.ImplementationType)];
 
 		hostedServiceTypes.Should().Contain(typeof(EmbeddingModelProvisioningService));
+		hostedServiceTypes.Should().Contain(typeof(EmbeddingModelWarmupService));
 		hostedServiceTypes.Should().Contain(typeof(EmbeddingGenerationService));
 		hostedServiceTypes.Should().Contain(typeof(AuthAuditCleanupService));
 		hostedServiceTypes.Should().Contain(typeof(NormalizedDescriptionResolutionService));
@@ -376,6 +377,8 @@ public class InfrastructureServiceTests
 			{
 				["Embeddings:ModelPath"] = "/data/models/BgeLargeEnV15",
 				["Embeddings:AutoDownload"] = "false",
+				["Embeddings:RequestQueueCapacity"] = "7",
+				["Embeddings:BackgroundQueueCapacity"] = "3",
 			})
 			.Build();
 
@@ -387,6 +390,8 @@ public class InfrastructureServiceTests
 		// Assert
 		options.ModelPath.Should().Be("/data/models/BgeLargeEnV15");
 		options.AutoDownload.Should().BeFalse();
+		options.RequestQueueCapacity.Should().Be(7);
+		options.BackgroundQueueCapacity.Should().Be(3);
 		options.ResolveModelDirectory().Should().Be("/data/models/BgeLargeEnV15");
 	}
 
@@ -411,6 +416,10 @@ public class InfrastructureServiceTests
 		// Assert
 		IEmbeddingService embeddingService = serviceProvider.GetRequiredService<IEmbeddingService>();
 		embeddingService.IsConfigured.Should().BeFalse();
+		IEmbeddingModelRuntime runtime = serviceProvider.GetRequiredService<IEmbeddingModelRuntime>();
+		OnnxEmbeddingService concrete = serviceProvider.GetRequiredService<OnnxEmbeddingService>();
+		runtime.Should().BeSameAs(concrete);
+		embeddingService.Should().BeSameAs(concrete);
 	}
 
 	#endregion

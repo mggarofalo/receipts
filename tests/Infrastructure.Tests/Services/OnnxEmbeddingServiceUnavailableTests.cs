@@ -71,6 +71,27 @@ public class OnnxEmbeddingServiceUnavailableTests : IDisposable
 	}
 
 	[Fact]
+	public void IsConfigured_VerifiedFiles_DoesNotLoadOnnxOrLogAnError()
+	{
+		Directory.CreateDirectory(_emptyDirectory);
+		foreach (EmbeddingModelFile file in EmbeddingModelOptions.Files)
+		{
+			using FileStream stream = File.Create(Path.Combine(_emptyDirectory, file.FileName));
+			stream.SetLength(file.SizeBytes);
+		}
+
+		File.WriteAllText(
+			Path.Combine(_emptyDirectory, EmbeddingModelOptions.MarkerFileName),
+			EmbeddingModelOptions.VerifiedMarker);
+		ErrorCountingLogger logger = new();
+		using OnnxEmbeddingService service = CreateService(logger);
+
+		service.IsConfigured.Should().BeTrue();
+		service.IsLoaded.Should().BeFalse("availability checks must not allocate an ONNX session");
+		logger.ErrorCount.Should().Be(0);
+	}
+
+	[Fact]
 	public async Task GenerateEmbeddingAsync_ModelMissing_ThrowsWithAnActionableMessage()
 	{
 		using OnnxEmbeddingService service = CreateService();
