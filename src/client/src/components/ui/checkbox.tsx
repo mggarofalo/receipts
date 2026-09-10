@@ -15,7 +15,6 @@ function Checkbox({
       data-slot="checkbox"
       className={cn(
         "peer h-4 w-4 shrink-0 rounded border border-input shadow-xs",
-        "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none",
         "disabled:cursor-not-allowed disabled:opacity-50",
         "data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground data-[state=checked]:border-primary",
         "aria-invalid:border-destructive",

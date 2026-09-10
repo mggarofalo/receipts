@@ -66,10 +66,10 @@ describe("Checkbox", () => {
     expect(checkbox.className).not.toContain("border-gray-300");
   });
 
-  it("uses the focus-visible ring class for consistent focus styling", () => {
+  it("delegates focus-visible styling to the global focus rule", () => {
     render(<Checkbox aria-label="Focus check" />);
     const checkbox = screen.getByRole("checkbox", { name: "Focus check" });
-    expect(checkbox.className).toContain("focus-visible:ring-[3px]");
+    expect(checkbox.className).not.toContain("focus-visible:");
   });
 });
 

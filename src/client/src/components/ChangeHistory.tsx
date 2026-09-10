@@ -41,7 +41,7 @@ function TimelineEntry({ log }: { log: AuditLog }) {
               <TooltipTrigger asChild>
                 <button
                   type="button"
-                  className="text-xs text-muted-foreground cursor-default bg-transparent border-0 p-0 font-[inherit] focus:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm"
+                  className="text-xs text-muted-foreground cursor-default bg-transparent border-0 p-0 font-[inherit] rounded-sm"
                   aria-label={`Timestamp: ${formatAuditTimestamp(log.changedAt)}`}
                 >
                   {relativeTime(log.changedAt)}
@@ -58,7 +58,7 @@ function TimelineEntry({ log }: { log: AuditLog }) {
                 <TooltipTrigger asChild>
                   <button
                     type="button"
-                    className="font-mono cursor-default bg-transparent border-0 p-0 font-[inherit] focus:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm"
+                    className="font-mono cursor-default bg-transparent border-0 p-0 font-[inherit] rounded-sm"
                     aria-label={`Full user ID: ${log.changedByUserId}`}
                   >
                     User: {truncateId(log.changedByUserId)}
@@ -72,7 +72,7 @@ function TimelineEntry({ log }: { log: AuditLog }) {
                 <TooltipTrigger asChild>
                   <button
                     type="button"
-                    className="font-mono cursor-default bg-transparent border-0 p-0 font-[inherit] focus:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm"
+                    className="font-mono cursor-default bg-transparent border-0 p-0 font-[inherit] rounded-sm"
                     aria-label={`Full API key ID: ${log.changedByApiKeyId}`}
                   >
                     API Key: {truncateId(log.changedByApiKeyId)}
