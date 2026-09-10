@@ -43,7 +43,7 @@ public partial class NormalizedDescriptionStaleWriteTests(PostgresFixture fixtur
 		}
 		TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
 		TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
-		Mock<INormalizedDescriptionService> canonical = new();
+		Mock<INormalizedDescriptionService> canonical = CanonicalMock();
 		canonical.Setup(service => service.GetOrCreateAsync("Milk", It.IsAny<CancellationToken>())).Returns(async (string _, CancellationToken cancellationToken) =>
 		{
 			entered.TrySetResult();
@@ -87,7 +87,7 @@ public partial class NormalizedDescriptionStaleWriteTests(PostgresFixture fixtur
 		TaskCompletionSource firstRelease = new(TaskCreationOptions.RunContinuationsAsynchronously);
 		TaskCompletionSource secondRelease = new(TaskCreationOptions.RunContinuationsAsynchronously);
 		int arrivals = 0;
-		Mock<INormalizedDescriptionService> canonical = new();
+		Mock<INormalizedDescriptionService> canonical = CanonicalMock();
 		canonical.Setup(service => service.GetOrCreateAsync("Milk", It.IsAny<CancellationToken>())).Returns(async (string _, CancellationToken cancellationToken) =>
 		{
 			int index = Interlocked.Increment(ref arrivals);
@@ -149,7 +149,7 @@ public partial class NormalizedDescriptionStaleWriteTests(PostgresFixture fixtur
 		}
 		TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
 		TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
-		Mock<INormalizedDescriptionService> canonical = new();
+		Mock<INormalizedDescriptionService> canonical = CanonicalMock();
 		canonical.Setup(service => service.GetOrCreateAsync("Milk", It.IsAny<CancellationToken>())).Returns(async (string _, CancellationToken token) =>
 		{
 			entered.TrySetResult();
@@ -192,7 +192,7 @@ public partial class NormalizedDescriptionStaleWriteTests(PostgresFixture fixtur
 		builder.UseVector();
 		await using Npgsql.NpgsqlDataSource dataSource = builder.Build();
 		DbContextOptions<ApplicationDbContext> options = new DbContextOptionsBuilder<ApplicationDbContext>().UseNpgsql(dataSource, postgres => { postgres.UseVector(); postgres.UsePublicMigrationsHistory(); }).Options;
-		Mock<INormalizedDescriptionService> canonical = new();
+		Mock<INormalizedDescriptionService> canonical = CanonicalMock();
 		canonical.Setup(service => service.GetOrCreateAsync("Milk", It.IsAny<CancellationToken>())).ReturnsAsync(new GetOrCreateResult(new(seed.Milk, "Milk", NormalizedDescriptionStatus.Active, DateTimeOffset.UtcNow), 1));
 		using ServiceProvider provider = BuildProvider(canonical.Object, new OptionsFactory(options));
 		using NormalizedDescriptionResolutionService resolver = CreateResolver(provider);
@@ -268,7 +268,7 @@ public partial class NormalizedDescriptionStaleWriteTests(PostgresFixture fixtur
 		item.NormalizedDescriptionId = null;
 		item.NormalizedDescriptionMatchScore = null;
 		Guid milk = Guid.NewGuid(), bread = Guid.NewGuid();
-		context.NormalizedDescriptions.AddRange(new() { Id = milk, CanonicalName = "Milk", Status = NormalizedDescriptionStatus.Active, CreatedAt = DateTimeOffset.UtcNow }, new() { Id = bread, CanonicalName = "Bread", Status = NormalizedDescriptionStatus.Active, CreatedAt = DateTimeOffset.UtcNow });
+		context.NormalizedDescriptions.AddRange(CurrentCanonical(milk, "Milk"), CurrentCanonical(bread, "Bread"));
 		context.Receipts.Add(receipt);
 		context.ReceiptItems.Add(item);
 		await context.SaveChangesAsync();
@@ -291,6 +291,30 @@ public partial class NormalizedDescriptionStaleWriteTests(PostgresFixture fixtur
 		services.AddSingleton<IDescriptionChangeSignal, DescriptionChangeSignal>();
 		return services.BuildServiceProvider();
 	}
+
+	private static Mock<INormalizedDescriptionService> CanonicalMock()
+	{
+		Mock<INormalizedDescriptionService> canonical = new();
+		canonical
+			.Setup(service => service.GetEmbeddingCoverageAsync(It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new EmbeddingCoverage(
+				OnnxEmbeddingService.EmbeddingSpaceFingerprint,
+				CanonicalReady: 0,
+				CanonicalTotal: 0,
+				ItemReady: 0,
+				ItemTotal: 0));
+		return canonical;
+	}
+
+	private static NormalizedDescriptionEntity CurrentCanonical(Guid id, string name) => new()
+	{
+		Id = id,
+		CanonicalName = name,
+		Status = NormalizedDescriptionStatus.Active,
+		Embedding = new Pgvector.Vector(new float[OnnxEmbeddingService.EmbeddingDimension]),
+		EmbeddingModelVersion = OnnxEmbeddingService.EmbeddingSpaceFingerprint,
+		CreatedAt = DateTimeOffset.UtcNow,
+	};
 
 	private static IEmbeddingService Embedding()
 	{
