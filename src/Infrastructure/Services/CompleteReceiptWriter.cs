@@ -7,12 +7,12 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Infrastructure.Services;
 
-public class CompleteReceiptService(
+public class CompleteReceiptWriter(
 	IDbContextFactory<ApplicationDbContext> contextFactory,
 	ReceiptMapper receiptMapper,
 	TransactionMapper transactionMapper,
 	ReceiptItemMapper receiptItemMapper,
-	AdjustmentMapper adjustmentMapper) : ICompleteReceiptService
+	AdjustmentMapper adjustmentMapper) : ICompleteReceiptWriter
 {
 	public async Task<CreateCompleteReceiptResult> CreateAsync(
 		Receipt receipt,

@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace Infrastructure.Tests.Services;
 
-public class CompleteReceiptServiceTests
+public class CompleteReceiptWriterTests
 {
 	private sealed class ThrowingSaveChangesInterceptor : SaveChangesInterceptor
 	{
@@ -27,7 +27,7 @@ public class CompleteReceiptServiceTests
 	public async Task CreateAsync_PersistsAdjustmentWithSameReceiptAsEntireAggregate()
 	{
 		IDbContextFactory<ApplicationDbContext> factory = DbContextHelpers.CreateInMemoryContextFactory();
-		CompleteReceiptService service = new(
+		CompleteReceiptWriter writer = new(
 			factory,
 			new ReceiptMapper(),
 			new TransactionMapper(),
@@ -37,7 +37,7 @@ public class CompleteReceiptServiceTests
 		ReceiptItem item = new(Guid.NewGuid(), null, "Item", 1, new Money(10), new Money(10), "Food", null);
 		Adjustment adjustment = new(Guid.NewGuid(), AdjustmentType.Discount, new Money(-2));
 
-		CreateCompleteReceiptResult result = await service.CreateAsync(receipt, [], [item], [adjustment], CancellationToken.None);
+		CreateCompleteReceiptResult result = await writer.CreateAsync(receipt, [], [item], [adjustment], CancellationToken.None);
 
 		result.Adjustments.Should().ContainSingle();
 		result.Adjustments[0].ReceiptId.Should().Be(result.Receipt.Id);
@@ -59,7 +59,7 @@ public class CompleteReceiptServiceTests
 			.AddInterceptors(new ThrowingSaveChangesInterceptor())
 			.Options;
 		IDbContextFactory<ApplicationDbContext> throwingFactory = new TestDbContextFactory(options);
-		CompleteReceiptService service = new(
+		CompleteReceiptWriter writer = new(
 			throwingFactory,
 			new ReceiptMapper(),
 			new TransactionMapper(),
@@ -70,7 +70,7 @@ public class CompleteReceiptServiceTests
 		ReceiptItem item = new(Guid.NewGuid(), null, "Item", 1, new Money(10), new Money(10), "Food", null);
 		Adjustment adjustment = new(Guid.NewGuid(), AdjustmentType.Discount, new Money(-2));
 
-		Func<Task> act = () => service.CreateAsync(receipt, [transaction], [item], [adjustment], CancellationToken.None);
+		Func<Task> act = () => writer.CreateAsync(receipt, [transaction], [item], [adjustment], CancellationToken.None);
 
 		await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("Simulated persistence failure");
 		DbContextOptions<ApplicationDbContext> verificationOptions = new DbContextOptionsBuilder<ApplicationDbContext>()

@@ -143,49 +143,6 @@ public class ReceiptServiceTests
 	}
 
 	[Fact]
-	public async Task GetAllAsync_WithAccountAndCardFilters_PassesThroughToRepository()
-	{
-		// Arrange
-		Guid accountId = Guid.NewGuid();
-		Guid cardId = Guid.NewGuid();
-		List<ReceiptListItem> items = CreateListItems(1);
-
-		_mockRepository.Setup(r => r.GetCountAsync(accountId, cardId, null, null, It.IsAny<CancellationToken>())).ReturnsAsync(items.Count);
-		_mockRepository.Setup(r => r.GetListAsync(0, 50, It.IsAny<SortParams>(), accountId, cardId, null, null, It.IsAny<CancellationToken>())).ReturnsAsync(items);
-
-		// Act
-		PagedResult<ReceiptListItem> actual = await _service.GetAllAsync(0, 50, SortParams.Default, accountId, cardId, null, null, CancellationToken.None);
-
-		// Assert
-		Assert.Equal(items.Count, actual.Data.Count);
-		_mockRepository.Verify(r => r.GetListAsync(0, 50, It.IsAny<SortParams>(), accountId, cardId, null, null, It.IsAny<CancellationToken>()), Times.Once);
-	}
-
-	[Fact]
-	public async Task GetAllAsync_WithLocationFilter_PassesThroughToRepositoryGetCountAndGetAll()
-	{
-		// Arrange
-		const string location = "Target";
-		List<ReceiptListItem> items = CreateListItems(1);
-
-		_mockRepository.Setup(r => r.GetCountAsync(null, null, null, location, It.IsAny<CancellationToken>())).ReturnsAsync(items.Count);
-		_mockRepository.Setup(r => r.GetListAsync(0, 50, It.IsAny<SortParams>(), null, null, null, location, It.IsAny<CancellationToken>())).ReturnsAsync(items);
-
-		// Act
-		PagedResult<ReceiptListItem> actual = await _service.GetAllAsync(0, 50, SortParams.Default, null, null, null, location, CancellationToken.None);
-
-		// Assert
-		Assert.Equal(items.Count, actual.Data.Count);
-		_mockRepository.Verify(r => r.GetCountAsync(null, null, null, location, It.IsAny<CancellationToken>()), Times.Once);
-		_mockRepository.Verify(r => r.GetListAsync(0, 50, It.IsAny<SortParams>(), null, null, null, location, It.IsAny<CancellationToken>()), Times.Once);
-	}
-
-	private static List<ReceiptListItem> CreateListItems(int count) =>
-		[.. Enumerable.Range(0, count).Select(index => new ReceiptListItem(
-			Guid.NewGuid(), $"Location {index}", new DateOnly(2026, 8, 30), 1m,
-			2m, 3m, 6m, 6m, "balanced", 1, "Food", "Checking · Visa"))];
-
-	[Fact]
 	public async Task GetByIdAsync_ExistingId_ReturnsReceipt()
 	{
 		// Arrange

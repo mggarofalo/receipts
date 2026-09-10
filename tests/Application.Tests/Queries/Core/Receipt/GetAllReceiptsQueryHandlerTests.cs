@@ -13,8 +13,8 @@ public class GetAllReceiptsQueryHandlerTests
 	{
 		List<ReceiptListItem> expected = CreateListItems(2);
 
-		Mock<IReceiptService> mockService = new();
-		mockService.Setup(r => r.GetAllAsync(0, 50, It.IsAny<SortParams>(), null, null, null, null, It.IsAny<CancellationToken>()))
+		Mock<IReceiptListReader> mockService = new();
+		mockService.Setup(r => r.GetAsync(0, 50, It.IsAny<SortParams>(), null, null, null, null, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new PagedResult<ReceiptListItem>(expected, expected.Count, 0, 50));
 
 		GetAllReceiptsQueryHandler handler = new(mockService.Object);
@@ -32,8 +32,8 @@ public class GetAllReceiptsQueryHandlerTests
 		Guid cardId = Guid.NewGuid();
 		List<ReceiptListItem> expected = CreateListItems(1);
 
-		Mock<IReceiptService> mockService = new();
-		mockService.Setup(r => r.GetAllAsync(0, 50, It.IsAny<SortParams>(), accountId, cardId, null, null, It.IsAny<CancellationToken>()))
+		Mock<IReceiptListReader> mockService = new();
+		mockService.Setup(r => r.GetAsync(0, 50, It.IsAny<SortParams>(), accountId, cardId, null, null, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new PagedResult<ReceiptListItem>(expected, expected.Count, 0, 50));
 
 		GetAllReceiptsQueryHandler handler = new(mockService.Object);
@@ -42,7 +42,7 @@ public class GetAllReceiptsQueryHandlerTests
 		PagedResult<ReceiptListItem> result = await handler.Handle(query, CancellationToken.None);
 
 		result.Data.Should().BeSameAs(expected);
-		mockService.Verify(r => r.GetAllAsync(0, 50, It.IsAny<SortParams>(), accountId, cardId, null, null, It.IsAny<CancellationToken>()), Times.Once);
+		mockService.Verify(r => r.GetAsync(0, 50, It.IsAny<SortParams>(), accountId, cardId, null, null, It.IsAny<CancellationToken>()), Times.Once);
 	}
 
 	[Fact]
@@ -51,8 +51,8 @@ public class GetAllReceiptsQueryHandlerTests
 		List<ReceiptListItem> expected = CreateListItems(1);
 		const string searchQuery = "Walmart";
 
-		Mock<IReceiptService> mockService = new();
-		mockService.Setup(r => r.GetAllAsync(0, 50, It.IsAny<SortParams>(), null, null, searchQuery, null, It.IsAny<CancellationToken>()))
+		Mock<IReceiptListReader> mockService = new();
+		mockService.Setup(r => r.GetAsync(0, 50, It.IsAny<SortParams>(), null, null, searchQuery, null, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new PagedResult<ReceiptListItem>(expected, expected.Count, 0, 50));
 
 		GetAllReceiptsQueryHandler handler = new(mockService.Object);
@@ -61,7 +61,7 @@ public class GetAllReceiptsQueryHandlerTests
 		PagedResult<ReceiptListItem> result = await handler.Handle(query, CancellationToken.None);
 
 		result.Data.Should().BeSameAs(expected);
-		mockService.Verify(r => r.GetAllAsync(0, 50, It.IsAny<SortParams>(), null, null, searchQuery, null, It.IsAny<CancellationToken>()), Times.Once);
+		mockService.Verify(r => r.GetAsync(0, 50, It.IsAny<SortParams>(), null, null, searchQuery, null, It.IsAny<CancellationToken>()), Times.Once);
 	}
 
 	[Fact]
@@ -70,8 +70,8 @@ public class GetAllReceiptsQueryHandlerTests
 		List<ReceiptListItem> expected = CreateListItems(1);
 		const string location = "Target";
 
-		Mock<IReceiptService> mockService = new();
-		mockService.Setup(r => r.GetAllAsync(0, 50, It.IsAny<SortParams>(), null, null, null, location, It.IsAny<CancellationToken>()))
+		Mock<IReceiptListReader> mockService = new();
+		mockService.Setup(r => r.GetAsync(0, 50, It.IsAny<SortParams>(), null, null, null, location, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new PagedResult<ReceiptListItem>(expected, expected.Count, 0, 50));
 
 		GetAllReceiptsQueryHandler handler = new(mockService.Object);
@@ -80,7 +80,7 @@ public class GetAllReceiptsQueryHandlerTests
 		PagedResult<ReceiptListItem> result = await handler.Handle(query, CancellationToken.None);
 
 		result.Data.Should().BeSameAs(expected);
-		mockService.Verify(r => r.GetAllAsync(0, 50, It.IsAny<SortParams>(), null, null, null, location, It.IsAny<CancellationToken>()), Times.Once);
+		mockService.Verify(r => r.GetAsync(0, 50, It.IsAny<SortParams>(), null, null, null, location, It.IsAny<CancellationToken>()), Times.Once);
 	}
 
 	[Fact]
@@ -90,8 +90,8 @@ public class GetAllReceiptsQueryHandlerTests
 		const string searchQuery = "Milk";
 		const string location = "Target";
 
-		Mock<IReceiptService> mockService = new();
-		mockService.Setup(r => r.GetAllAsync(0, 50, It.IsAny<SortParams>(), null, null, searchQuery, location, It.IsAny<CancellationToken>()))
+		Mock<IReceiptListReader> mockService = new();
+		mockService.Setup(r => r.GetAsync(0, 50, It.IsAny<SortParams>(), null, null, searchQuery, location, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new PagedResult<ReceiptListItem>(expected, expected.Count, 0, 50));
 
 		GetAllReceiptsQueryHandler handler = new(mockService.Object);
@@ -100,7 +100,7 @@ public class GetAllReceiptsQueryHandlerTests
 		PagedResult<ReceiptListItem> result = await handler.Handle(query, CancellationToken.None);
 
 		result.Data.Should().BeSameAs(expected);
-		mockService.Verify(r => r.GetAllAsync(0, 50, It.IsAny<SortParams>(), null, null, searchQuery, location, It.IsAny<CancellationToken>()), Times.Once);
+		mockService.Verify(r => r.GetAsync(0, 50, It.IsAny<SortParams>(), null, null, searchQuery, location, It.IsAny<CancellationToken>()), Times.Once);
 	}
 
 	private static List<ReceiptListItem> CreateListItems(int count) =>

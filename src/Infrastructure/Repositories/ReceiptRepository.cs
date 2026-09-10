@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using Application.Interfaces.Services;
 using Application.Models;
 using Application.Models.Images;
 using Infrastructure.Entities.Core;
@@ -8,7 +9,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Infrastructure.Repositories;
 
-public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFactory) : IReceiptRepository
+public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFactory) : IReceiptRepository, IReceiptListReader
 {
 	private static readonly Dictionary<string, Expression<Func<ReceiptEntity, object>>> AllowedSortColumns = new(StringComparer.OrdinalIgnoreCase)
 	{
@@ -126,6 +127,22 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 				Summarize(categoriesByReceipt.GetValueOrDefault(r.Id, [])),
 				Summarize(paymentsByReceipt.GetValueOrDefault(r.Id, [])));
 		})];
+	}
+
+	public async Task<PagedResult<ReceiptListItem>> GetAsync(
+		int offset,
+		int limit,
+		SortParams sort,
+		Guid? accountId,
+		Guid? cardId,
+		string? query,
+		string? location,
+		CancellationToken cancellationToken)
+	{
+		int total = await GetCountAsync(accountId, cardId, query, location, cancellationToken);
+		List<ReceiptListItem> data = await GetListAsync(
+			offset, limit, sort, accountId, cardId, query, location, cancellationToken);
+		return new PagedResult<ReceiptListItem>(data, total, offset, limit);
 	}
 
 	private static string Summarize(IReadOnlyList<string> values)

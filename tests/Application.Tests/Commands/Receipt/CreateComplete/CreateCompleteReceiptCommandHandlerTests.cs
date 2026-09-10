@@ -11,7 +11,7 @@ namespace Application.Tests.Commands.Receipt.CreateComplete;
 
 public class CreateCompleteReceiptCommandHandlerTests
 {
-	private readonly Mock<ICompleteReceiptService> _mockService = new();
+	private readonly Mock<ICompleteReceiptWriter> _mockService = new();
 	private readonly CreateCompleteReceiptCommandHandler _handler;
 
 	public CreateCompleteReceiptCommandHandlerTests()

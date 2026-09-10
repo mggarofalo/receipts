@@ -273,6 +273,33 @@ public class ReceiptRepositoryTests
 		_contextFactory.ResetDatabase();
 	}
 
+	[Fact]
+	public async Task GetAsync_ReturnsProjectionPageWithFilteredTotal()
+	{
+		ReceiptEntity first = CreateReceipt("Target", 1m);
+		ReceiptEntity second = CreateReceipt("Target", 2m);
+		ReceiptEntity excluded = CreateReceipt("Other", 3m);
+
+		using (ApplicationDbContext context = _contextFactory.CreateDbContext())
+		{
+			context.Receipts.AddRange(first, second, excluded);
+			await context.SaveChangesAsync();
+		}
+
+		ReceiptRepository repository = new(_contextFactory);
+
+		PagedResult<ReceiptListItem> result = await repository.GetAsync(
+			1, 1, new SortParams("taxAmount", "asc"), null, null, null, "Target", CancellationToken.None);
+
+		result.Data.Should().ContainSingle();
+		result.Data[0].Id.Should().Be(second.Id);
+		result.Total.Should().Be(2);
+		result.Offset.Should().Be(1);
+		result.Limit.Should().Be(1);
+
+		_contextFactory.ResetDatabase();
+	}
+
 	private static ReceiptEntity CreateReceipt(string location, decimal taxAmount)
 	{
 		ReceiptEntity receipt = ReceiptEntityGenerator.Generate();

@@ -41,6 +41,13 @@ This is a .NET 10 Clean Architecture solution for a receipt management applicati
 - **Soft Delete**: Entities support soft delete with restore capabilities and trash management
 - **Audit Logging**: All mutations are logged with user/API key attribution
 
+### Receipt use-case ownership
+
+Complete receipt creation is the bounded pilot for application-owned write policy and
+atomic persistence ports. The receipt list uses an explicit read projection rather
+than a generic entity-shaped service path. See [Receipt use-case boundary](receipt-use-case-boundary.md)
+for the entry point, policy, commit, adapter, notification, and projection owners.
+
 ### Adjustment Entity
 
 The `Adjustment` entity captures receipt-level monetary adjustments (tips, discounts, coupons, rounding):

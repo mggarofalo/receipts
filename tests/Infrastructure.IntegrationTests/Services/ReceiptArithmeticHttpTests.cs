@@ -120,7 +120,7 @@ public class ReceiptArithmeticHttpTests(PostgresFixture fixture) : IClassFixture
 		builder.Services.AddSingleton<IDbContextFactory<ApplicationDbContext>>(new Factory(fixture));
 		builder.Services.AddSingleton<ReceiptMapper>().AddSingleton<ReceiptItemMapper>().AddSingleton<TransactionMapper>().AddSingleton<AdjustmentMapper>().AddSingleton<AccountMapper>();
 		builder.Services.AddScoped<IReceiptRepository, ReceiptRepository>().AddScoped<IReceiptItemRepository, ReceiptItemRepository>().AddScoped<ITransactionRepository, TransactionRepository>().AddScoped<IAdjustmentRepository, AdjustmentRepository>();
-		builder.Services.AddScoped<IReceiptService, ReceiptService>().AddScoped<IReceiptItemService, ReceiptItemService>().AddScoped<ITransactionService, TransactionService>().AddScoped<IAdjustmentService, AdjustmentService>().AddScoped<ICompleteReceiptService, CompleteReceiptService>();
+		builder.Services.AddScoped<IReceiptService, ReceiptService>().AddScoped<IReceiptItemService, ReceiptItemService>().AddScoped<ITransactionService, TransactionService>().AddScoped<IAdjustmentService, AdjustmentService>().AddScoped<ICompleteReceiptWriter, CompleteReceiptWriter>();
 		builder.Services.AddSingleton(notifier);
 		WebApplication app = builder.Build();
 		app.UseMiddleware<ValidationExceptionMiddleware>();
