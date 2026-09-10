@@ -38,6 +38,22 @@ All functions, objects, and arrays returned from custom hooks (`use*`) **must** 
 
 Unstable references cause infinite render loops that pass individual tests but hang the full suite.
 
+## Focus indicator ownership
+
+The global `:focus-visible` rule in `src/index.css` owns every visible focus
+indicator. Do not add focus ring, focus border, or outline suppression utilities
+to components. This includes state-based variants such as `has-focus:ring-*`
+and `group-data-[focused=true]:ring-*`.
+
+The shadcn CLI can restore its default `focus-visible:ring-*` and
+`outline-none` classes when it adds or updates a component. Remove those
+classes before committing. A source-scanning test guards
+`src/components/ui/` and explains any violation.
+
+Transparent native controls may need a visible proxy indicator. Keep that
+exception narrow and ensure the native control becomes visible in
+forced-colors mode, as the calendar caption selects do.
+
 ## Development
 
 ```bash
