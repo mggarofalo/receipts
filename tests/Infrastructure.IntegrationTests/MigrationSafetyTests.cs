@@ -73,16 +73,19 @@ public class MigrationSafetyTests(PostgresFixture fixture)
 				YnabCategoryGroupName = "Group A",
 				YnabBudgetId = legacyBudgetA,
 			});
-			migrationContext.YnabSyncRecords.Add(new YnabSyncRecordEntity
-			{
-				Id = syncRecordAId,
-				LocalTransactionId = transaction.Id,
-				YnabTransactionId = "transaction-A",
-				YnabBudgetId = legacyBudgetA,
-				SyncType = YnabSyncType.TransactionPush,
-				SyncStatus = YnabSyncStatus.Synced,
-			});
 			await migrationContext.SaveChangesAsync();
+			// This database is deliberately at the historical predecessor. Insert the
+			// historical row shape directly so later YnabSyncRecord columns from the
+			// current EF model are not projected into SQL against the older schema.
+			await migrationContext.Database.ExecuteSqlRawAsync(
+				"""
+				INSERT INTO ynab."YnabSyncRecords"
+					("Id", "LocalTransactionId", "YnabTransactionId", "YnabBudgetId",
+					 "SyncType", "SyncStatus", "CreatedAt", "UpdatedAt")
+				VALUES ({0}, {1}, {2}, {3}, {4}, {5}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+				""",
+				syncRecordAId, transaction.Id, "transaction-A", legacyBudgetA,
+				YnabSyncType.TransactionPush.ToString(), YnabSyncStatus.Synced.ToString());
 			migrationContext.ChangeTracker.Clear();
 
 			await migrator.MigrateAsync();
@@ -181,18 +184,19 @@ public class MigrationSafetyTests(PostgresFixture fixture)
 				});
 				await duplicateContext.SaveChangesAsync();
 			});
-			await AssertUniqueViolationAsync(async duplicateContext =>
-			{
-				duplicateContext.YnabSyncRecords.Add(new YnabSyncRecordEntity
-				{
-					Id = Guid.NewGuid(),
-					LocalTransactionId = transaction.Id,
-					YnabBudgetId = budgetB,
-					SyncType = YnabSyncType.TransactionPush,
-					SyncStatus = YnabSyncStatus.Pending,
-				});
-				await duplicateContext.SaveChangesAsync();
-			});
+			// The failed downgrade may legitimately have removed migrations newer than
+			// ScopeYnabDestinationIdentity. Exercise its surviving scoped index using
+			// that migration's row shape, not today's later-expanded EF entity model.
+			Func<Task> duplicateSyncInsert = () => migrationContext.Database.ExecuteSqlRawAsync(
+				"""
+				INSERT INTO ynab."YnabSyncRecords"
+					("Id", "LocalTransactionId", "YnabBudgetId", "SyncType", "SyncStatus", "CreatedAt", "UpdatedAt")
+				VALUES ({0}, {1}, {2}, {3}, {4}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+				""",
+				Guid.NewGuid(), transaction.Id, budgetB,
+				YnabSyncType.TransactionPush.ToString(), YnabSyncStatus.Pending.ToString());
+			PostgresException duplicateSync = (await duplicateSyncInsert.Should().ThrowAsync<PostgresException>()).Which;
+			duplicateSync.SqlState.Should().Be(PostgresErrorCodes.UniqueViolation);
 		}
 		finally
 		{
