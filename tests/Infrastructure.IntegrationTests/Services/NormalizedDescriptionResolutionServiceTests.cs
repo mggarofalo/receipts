@@ -49,6 +49,8 @@ public class NormalizedDescriptionResolutionServiceTests(PostgresFixture fixture
 					Id = milkId,
 					CanonicalName = "Organic Milk",
 					Status = NormalizedDescriptionStatus.Active,
+					Embedding = CurrentVector(),
+					EmbeddingModelVersion = OnnxEmbeddingService.EmbeddingSpaceFingerprint,
 					CreatedAt = DateTimeOffset.UtcNow,
 				},
 				new NormalizedDescriptionEntity
@@ -56,6 +58,8 @@ public class NormalizedDescriptionResolutionServiceTests(PostgresFixture fixture
 					Id = bananaId,
 					CanonicalName = "Bananas",
 					Status = NormalizedDescriptionStatus.Active,
+					Embedding = CurrentVector(),
+					EmbeddingModelVersion = OnnxEmbeddingService.EmbeddingSpaceFingerprint,
 					CreatedAt = DateTimeOffset.UtcNow,
 				});
 			setup.Receipts.Add(receipt);
@@ -123,6 +127,8 @@ public class NormalizedDescriptionResolutionServiceTests(PostgresFixture fixture
 				Id = canonicalId,
 				CanonicalName = "Eggs Large",
 				Status = NormalizedDescriptionStatus.Active,
+				Embedding = CurrentVector(),
+				EmbeddingModelVersion = OnnxEmbeddingService.EmbeddingSpaceFingerprint,
 				CreatedAt = DateTimeOffset.UtcNow,
 			});
 			setup.Receipts.Add(receipt);
@@ -169,6 +175,8 @@ public class NormalizedDescriptionResolutionServiceTests(PostgresFixture fixture
 				Id = canonicalId,
 				CanonicalName = "Sourdough Bread",
 				Status = NormalizedDescriptionStatus.Active,
+				Embedding = CurrentVector(),
+				EmbeddingModelVersion = OnnxEmbeddingService.EmbeddingSpaceFingerprint,
 				CreatedAt = DateTimeOffset.UtcNow,
 			});
 			setup.Receipts.Add(receipt);
@@ -213,6 +221,8 @@ public class NormalizedDescriptionResolutionServiceTests(PostgresFixture fixture
 					Id = existingCanonicalId,
 					CanonicalName = "Pre-existing",
 					Status = NormalizedDescriptionStatus.Active,
+					Embedding = CurrentVector(),
+					EmbeddingModelVersion = OnnxEmbeddingService.EmbeddingSpaceFingerprint,
 					CreatedAt = DateTimeOffset.UtcNow,
 				},
 				new NormalizedDescriptionEntity
@@ -220,6 +230,8 @@ public class NormalizedDescriptionResolutionServiceTests(PostgresFixture fixture
 					Id = newCanonicalId,
 					CanonicalName = "Unresolved",
 					Status = NormalizedDescriptionStatus.Active,
+					Embedding = CurrentVector(),
+					EmbeddingModelVersion = OnnxEmbeddingService.EmbeddingSpaceFingerprint,
 					CreatedAt = DateTimeOffset.UtcNow,
 				});
 
@@ -319,6 +331,9 @@ public class NormalizedDescriptionResolutionServiceTests(PostgresFixture fixture
 		item.Description = description;
 		return item;
 	}
+
+	private static Pgvector.Vector CurrentVector() =>
+		new(new float[OnnxEmbeddingService.EmbeddingDimension]);
 
 	private async Task ResetTablesAsync()
 	{

@@ -58,7 +58,7 @@ public class BackupFormatContractTests
 	[InlineData(4, false)]
 	[InlineData(4, true)]
 	[InlineData(5, true)]
-	public async Task Import_CanonicalTextChange_InvalidatesOldEmbeddingAndTreatsNeighbourEvidenceByFormat(int version, bool changed)
+	public async Task Import_CanonicalRestore_InvalidatesEmbeddingAndTreatsNeighbourEvidenceByFormat(int version, bool changed)
 	{
 		DbContextOptions<ApplicationDbContext> options = Options();
 		Guid id = Guid.NewGuid(), neighbour = Guid.NewGuid();
@@ -83,17 +83,15 @@ public class BackupFormatContractTests
 
 		await using ApplicationDbContext read = new(options);
 		NormalizedDescriptionEntity row = await read.NormalizedDescriptions.SingleAsync();
+		row.Embedding.Should().BeNull("portable backups never own rebuildable vector projections");
+		row.EmbeddingModelVersion.Should().BeNull();
 		if (changed)
 		{
-			row.Embedding.Should().BeNull();
-			row.EmbeddingModelVersion.Should().BeNull();
 			row.NearestNeighbourId.Should().BeNull();
 			row.NearestNeighbourSimilarity.Should().Be(version == 5 ? 0.66 : null);
 		}
 		else
 		{
-			row.Embedding.Should().NotBeNull();
-			row.EmbeddingModelVersion.Should().Be("previous-model");
 			row.NearestNeighbourId.Should().Be(neighbour);
 			row.NearestNeighbourSimilarity.Should().Be(0.81);
 		}
