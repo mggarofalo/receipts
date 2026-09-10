@@ -16,6 +16,7 @@ namespace Infrastructure.IntegrationTests.Services;
 // only a real relational provider throws.
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
 public class ReportServiceHealthSummaryTests(PostgresFixture fixture)
 {
 	[Fact]

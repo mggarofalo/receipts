@@ -42,5 +42,5 @@ code change so the model and schema stay in sync.
 Applied by the Testcontainers integration suite (`tests/Infrastructure.IntegrationTests`,
 `Category=Integration`), which migrates a real PostgreSQL instance to HEAD before every test.
 `ColumnTypeMappingTests.ReceiptItemEntity_FractionalQuantityAndSubCentUnitPrice_RoundTripWithoutTruncation`
-inserts `Quantity = 1.125`, `UnitPrice = 3.4599` and asserts they round-trip exactly. CI does not
-run integration tests, so this is validated locally against Docker Postgres.
+inserts `Quantity = 1.125`, `UnitPrice = 3.4599` and asserts they round-trip exactly. These tests
+also declare `Prerequisite=Postgres` and run in the dedicated CI persistence gate.

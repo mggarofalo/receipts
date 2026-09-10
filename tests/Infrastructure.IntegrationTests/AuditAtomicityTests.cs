@@ -14,6 +14,7 @@ namespace Infrastructure.IntegrationTests;
 
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
 public class AuditAtomicityTests(PostgresFixture fixture)
 {
 	[Theory]

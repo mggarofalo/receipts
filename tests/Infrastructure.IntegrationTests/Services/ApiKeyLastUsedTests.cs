@@ -14,6 +14,7 @@ namespace Infrastructure.IntegrationTests.Services;
 // path — the targeted UPDATE, its in-WHERE throttle, and its audit-bypass — is proven only here.
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
 public class ApiKeyLastUsedTests(PostgresFixture fixture)
 {
 	[Fact]

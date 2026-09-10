@@ -19,6 +19,7 @@ namespace Infrastructure.Tests.Services;
 /// <c>dotnet test --filter "FullyQualifiedName~OnnxEmbeddingThresholdCalibrationTests"</c>.
 /// </summary>
 [Trait("Category", "Integration")]
+[Trait("Prerequisite", "Model")]
 public class OnnxEmbeddingThresholdCalibrationTests : IClassFixture<OnnxEmbeddingServiceFixture>
 {
 	private readonly OnnxEmbeddingService _service;

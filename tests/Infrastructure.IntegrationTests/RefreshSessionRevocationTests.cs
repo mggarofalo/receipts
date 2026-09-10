@@ -9,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Infrastructure.IntegrationTests;
 
 [Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
 [Collection(PostgresCollection.Name)]
 public class RefreshSessionRevocationTests(PostgresFixture fixture)
 {

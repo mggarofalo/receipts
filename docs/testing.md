@@ -8,11 +8,14 @@
 # Unit tests only (same as CI and pre-commit)
 dotnet test Receipts.slnx --filter "Category!=Integration"
 
-# All tests including integration (requires ONNX model locally)
-dotnet test Receipts.slnx
+# Real PostgreSQL/pgvector tests (requires Docker, not the ONNX model)
+dotnet run scripts/run-prerequisite-tests.cs -- postgres
 
-# Integration tests only
-dotnet test Receipts.slnx --filter "Category=Integration"
+# Real-model tests (provisions/checks the pinned model first)
+dotnet run scripts/run-prerequisite-tests.cs -- model
+
+# Integration tests with no Docker/model prerequisite
+dotnet test Receipts.slnx --filter "Category=Integration&Prerequisite!=Postgres&Prerequisite!=Model"
 
 # Single project
 dotnet test tests/Application.Tests/Application.Tests.csproj
@@ -64,10 +67,11 @@ Configured in `scripts/tests/coverlet.runsettings`:
 
 ### Integration Tests
 
-Tests that require external resources (ONNX model files, real database) are tagged with `[Trait("Category", "Integration")]`. This separates them from fast unit tests.
+Integration tests keep `[Trait("Category", "Integration")]` so the ordinary unit-test step can exclude them. Suites with external resources also identify their prerequisite independently:
 
 ```csharp
 [Trait("Category", "Integration")]
+[Trait("Prerequisite", "Model")]
 public class OnnxEmbeddingServiceIntegrationTests : IClassFixture<OnnxEmbeddingServiceFixture>
 {
     // Tests that run against the real ONNX model
@@ -75,11 +79,12 @@ public class OnnxEmbeddingServiceIntegrationTests : IClassFixture<OnnxEmbeddingS
 ```
 
 **Key points:**
-- CI and pre-commit hooks run with `--filter "Category!=Integration"` — integration tests are excluded
+- CI and pre-commit unit steps run with `--filter "Category!=Integration"` — integration tests are excluded from that lane
 - Unit tests do NOT need a `[Trait]` attribute — they run everywhere by default
 - Integration tests use `IClassFixture<T>` to share expensive resources (e.g., loading the ONNX model once for all tests in a class)
-- The ONNX model (~1.34 GB) is not in git and is no longer copied into test output. It lives in a per-machine cache (`%LOCALAPPDATA%\Receipts\models` on Windows, `~/.local/share/Receipts/models` elsewhere); run `dotnet run scripts/download-onnx-model.cs` to populate it once
-- Run `dotnet test --filter "Category=Integration"` to execute integration tests locally
+- PostgreSQL tests declare `Prerequisite=Postgres`; their dedicated lane checks Docker, runs in CI, and fails if its filter discovers no tests
+- Real-model tests declare `Prerequisite=Model`; their lane provisions/verifies the pinned model, fails if no tests are discovered, and reports the actual executed count through the normal test summary
+- The ONNX model (~1.34 GB) is not in git and is no longer copied into test output. It lives in a per-machine cache (`%LOCALAPPDATA%\Receipts\models` on Windows, `~/.local/share/Receipts/models` elsewhere)
 
 ## React Frontend
 

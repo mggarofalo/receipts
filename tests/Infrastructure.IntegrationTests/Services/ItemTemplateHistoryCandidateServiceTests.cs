@@ -17,6 +17,7 @@ namespace Infrastructure.IntegrationTests.Services;
 /// </summary>
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
 public class ItemTemplateHistoryCandidateServiceTests(PostgresFixture fixture)
 {
 	[Fact]

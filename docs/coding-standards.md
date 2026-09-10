@@ -8,7 +8,7 @@
 - Unit tests: xUnit with Arrange/Act/Assert structure
 - Use `expected` and `actual` as variable names in test assertions
 - Avoid testing implementation details
-- Tag integration tests with `[Trait("Category", "Integration")]` — these are excluded from CI and pre-commit. Unit tests need no trait.
+- Tag integration tests with `[Trait("Category", "Integration")]` — these are excluded from the unit-test step and pre-commit. Add `[Trait("Prerequisite", "Postgres")]` or `[Trait("Prerequisite", "Model")]` when the suite needs that external resource. Unit tests need no trait.
 - **Moq `It.IsAny<T>()` rule:** Only use `It.IsAny<T>()` when the value genuinely doesn't matter for the test's assertion (e.g., `CancellationToken`). For domain-meaningful parameters like IDs, entity names, or any value the system under test is expected to pass through correctly, use specific values. This catches argument-ordering bugs where two parameters share the same type (e.g., `receiptId` and `accountId` are both `Guid`).
 
 ## Mapperly Rules

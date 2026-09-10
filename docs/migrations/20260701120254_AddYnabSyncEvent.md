@@ -49,5 +49,5 @@ RECEIPTS-737 code change.
 
 Applied by the Testcontainers integration suite (`tests/Infrastructure.IntegrationTests`,
 `Category=Integration`) which migrates a real PostgreSQL instance to HEAD: 36/37 pass (the one
-failure, `PurgeTrashServiceTests`, is pre-existing and unrelated — RECEIPTS-747). CI does not run
-integration tests, so this is validated locally.
+failure, `PurgeTrashServiceTests`, is pre-existing and unrelated — RECEIPTS-747). PostgreSQL tests
+now also declare `Prerequisite=Postgres` and run in the dedicated CI persistence gate.

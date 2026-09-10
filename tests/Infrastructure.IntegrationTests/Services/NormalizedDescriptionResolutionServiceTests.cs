@@ -23,6 +23,7 @@ namespace Infrastructure.IntegrationTests.Services;
 // AnnSearchTopOneAsync for each threshold band).
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
 public class NormalizedDescriptionResolutionServiceTests(PostgresFixture fixture)
 {
 	[Fact]

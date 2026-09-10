@@ -21,6 +21,7 @@ namespace Infrastructure.IntegrationTests;
 /// <c>search_path</c> with <c>public</c> first, which masks the bug on both counts.
 /// </remarks>
 [Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
 public class MigrationsHistorySchemaTests : IAsyncLifetime
 {
 	/// <summary>Role name and database name, chosen to collide with the <c>receipts</c> schema.</summary>

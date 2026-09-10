@@ -26,6 +26,7 @@ namespace Infrastructure.IntegrationTests.Services;
 // exactly the ones it seeded, and every assertion is scoped to its own rows.
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
 public class NormalizedDescriptionRequeueTests(PostgresFixture fixture)
 {
 	[Fact]

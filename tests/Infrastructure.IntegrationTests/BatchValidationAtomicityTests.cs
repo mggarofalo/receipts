@@ -23,6 +23,7 @@ using Moq;
 namespace Infrastructure.IntegrationTests;
 
 [Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
 public class BatchValidationAtomicityTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	private async Task<WebApplication> StartAsync()

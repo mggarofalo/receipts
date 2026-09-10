@@ -8,6 +8,7 @@ using Npgsql;
 namespace Infrastructure.IntegrationTests;
 
 [Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
 public class TemplatePriceMigrationTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	private const string MigrationId = "20260906000530_WidenItemTemplateUnitPricePrecision";

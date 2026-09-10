@@ -23,6 +23,7 @@ using Moq;
 namespace Infrastructure.IntegrationTests;
 
 [Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
 public class TransactionAccountHttpTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	[Theory]

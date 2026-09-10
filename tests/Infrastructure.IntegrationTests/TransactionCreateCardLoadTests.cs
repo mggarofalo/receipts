@@ -13,6 +13,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 namespace Infrastructure.IntegrationTests;
 
 [Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
 public class TransactionCreateCardLoadTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	[Theory]

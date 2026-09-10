@@ -17,6 +17,7 @@ namespace Infrastructure.IntegrationTests.Services;
 // only a real Postgres connection can catch a translation regression.
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
 public class ReportServiceSpendingByNormalizedDescriptionTests(PostgresFixture fixture)
 {
 	[Fact]

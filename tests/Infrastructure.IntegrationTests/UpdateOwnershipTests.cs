@@ -28,6 +28,7 @@ using NormalizedDescriptionStatus = Domain.NormalizedDescriptions.NormalizedDesc
 namespace Infrastructure.IntegrationTests;
 
 [Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
 public class UpdateOwnershipTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	[Theory]

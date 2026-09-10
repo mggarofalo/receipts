@@ -25,6 +25,7 @@ using SampleData;
 namespace Infrastructure.IntegrationTests.Services;
 
 [Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
 public class ReceiptArithmeticHttpTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	public static TheoryData<string> VectorIds

@@ -15,6 +15,7 @@ namespace Infrastructure.IntegrationTests.Services;
 
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
 public class NormalizedDescriptionProjectionTests(PostgresFixture fixture)
 {
 	[Fact]

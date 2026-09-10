@@ -13,6 +13,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Infrastructure.IntegrationTests;
 
 [Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
 public class BackupCurationRoundTripTests(PostgresFixture source) : IClassFixture<PostgresFixture>
 {
 	[Fact]

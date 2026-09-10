@@ -21,6 +21,7 @@ namespace Infrastructure.IntegrationTests.Services;
 // the fallback path there crashed the test host under coverage on CI).
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
 public class TransactionBalanceValidationTests(PostgresFixture fixture)
 {
 	private static void NoOp(ReceiptBalanceState _) { }

@@ -15,9 +15,9 @@ namespace Infrastructure.Tests;
 /// <see cref="AcceptedDuplicatePairEntity"/> in RECEIPTS-834.
 ///
 /// This is a UNIT test on purpose. The guard it replaces lived in Infrastructure.IntegrationTests,
-/// which CI and the pre-commit hook both skip via <c>--filter "Category!=Integration"</c>, so it
-/// never gated anything. Building the EF model needs no database, so there is no reason for it to
-/// sit behind Docker.
+/// which the unit lane and pre-commit hook skip via <c>--filter "Category!=Integration"</c>.
+/// PostgreSQL tests now have their own CI lane, but this guard still belongs in the fast unit lane:
+/// building the EF model needs no database, so there is no reason for it to sit behind Docker.
 /// </summary>
 public class SoftDeletePurgeCoverageTests
 {

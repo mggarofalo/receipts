@@ -9,7 +9,7 @@ namespace Infrastructure.Tests.Services;
 /// The model is provisioned onto a volume at runtime rather than shipped in the image
 /// (RECEIPTS-929), so there is a real window on a fresh deployment where it is absent.
 /// These tests pin that behaviour down and need no model of their own, so unlike the
-/// Category=Integration suites they run in CI.
+/// Prerequisite=Model suites, they run in the ordinary CI unit lane.
 /// </summary>
 public class OnnxEmbeddingServiceUnavailableTests : IDisposable
 {

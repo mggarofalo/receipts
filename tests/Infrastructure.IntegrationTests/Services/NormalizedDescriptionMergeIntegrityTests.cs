@@ -26,6 +26,7 @@ namespace Infrastructure.IntegrationTests.Services;
 // This mirrors the fix already made for transactions in AccountMergeService (RECEIPTS-801).
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
 public class NormalizedDescriptionMergeIntegrityTests(PostgresFixture fixture)
 {
 	[Fact]

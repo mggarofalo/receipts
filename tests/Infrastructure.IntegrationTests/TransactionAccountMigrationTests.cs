@@ -10,6 +10,7 @@ using Npgsql;
 namespace Infrastructure.IntegrationTests;
 
 [Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
 public class TransactionAccountMigrationTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	[Theory]

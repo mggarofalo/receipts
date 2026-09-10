@@ -8,6 +8,7 @@ using SampleData.Entities;
 namespace Infrastructure.IntegrationTests.Services;
 
 [Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
 public partial class TemplatePricePrecisionTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	[Theory]

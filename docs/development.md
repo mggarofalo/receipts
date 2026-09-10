@@ -143,11 +143,14 @@ dotnet run scripts/generate-api-contract.cs
 # Run unit tests (same as CI)
 dotnet test Receipts.slnx --filter "Category!=Integration"
 
-# Run all tests including integration (requires Docker + ONNX model)
-dotnet test Receipts.slnx
+# Run the real PostgreSQL/pgvector suite (requires Docker, not the ONNX model)
+dotnet run scripts/run-prerequisite-tests.cs -- postgres
 
-# Run integration tests only (requires Docker)
-dotnet test tests/Infrastructure.IntegrationTests --filter "Category=Integration"
+# Provision/check the pinned model, then run only real-model tests
+dotnet run scripts/run-prerequisite-tests.cs -- model
+
+# Integration tests with no Docker/model prerequisite
+dotnet test Receipts.slnx --filter "Category=Integration&Prerequisite!=Postgres&Prerequisite!=Model"
 
 # Run tests for a specific project
 dotnet test tests/Application.Tests/Application.Tests.csproj
@@ -163,9 +166,9 @@ The `Infrastructure.IntegrationTests` project runs EF Core against a real Postgr
 - **Audit logging** — full `SaveChangesAsync` pipeline with real database round-trips
 - **Query filters** — `HasQueryFilter` generates real SQL `WHERE` clauses
 
-**Requirements:** Docker must be running. The tests automatically start and stop a PostgreSQL container — no manual database setup needed.
+**Requirements:** Docker must be running. The tests automatically start and stop a PostgreSQL container — no manual database setup or ONNX model is needed. The lane command checks Docker first and exits with a prerequisite-specific message if it is unavailable.
 
-**CI note:** Integration tests are tagged `[Trait("Category", "Integration")]` and excluded from the CI unit test step (`--filter "Category!=Integration"`). They run locally or in CI environments with Docker available.
+**CI note:** Integration tests remain excluded from the CI unit-test step. PostgreSQL-backed tests additionally declare `Prerequisite=Postgres` and run in the **PostgreSQL Persistence** job. Real-model tests declare `Prerequisite=Model` and remain an explicit local lane because provisioning the pinned model downloads about 1.34 GB.
 
 ## Git Hooks
 
@@ -201,7 +204,7 @@ Every `git commit` runs the full quality pipeline automatically:
 3. **Build with warnings-as-errors** — compiles without starting the API or requiring runtime secrets
 4. **Server contract generation** — starts a non-serving extraction process with a scoped synthetic key
 5. **Semantic drift check** — compares spec vs generated output for structural differences
-6. **Tests** — `dotnet test --no-build --filter "Category!=Integration"`
+6. **Unit tests** — `dotnet test --no-build --filter "Category!=Integration"`
 7. **TypeScript types** — uses the client-pinned compiler
 8. **ESLint** — uses the client-pinned ESLint version
 
