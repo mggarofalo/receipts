@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { render, screen } from "@testing-library/react";
+import { Calendar } from "@/components/ui/calendar";
 import { Command, CommandInput } from "@/components/ui/command";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -32,6 +33,18 @@ describe("focus indicators", () => {
     expect(calendarSource).not.toMatch(
       /group-data-\[focused=true\]\/day:(?:border|ring)/,
     );
+  });
+
+  it("reveals transparent calendar selects in forced-colors mode", () => {
+    const { container } = render(
+      <Calendar captionLayout="dropdown" month={new Date(2025, 0, 1)} />,
+    );
+
+    const dropdowns = [...container.querySelectorAll("select")];
+    expect(dropdowns).not.toHaveLength(0);
+    dropdowns.forEach((dropdown) => {
+      expect(dropdown).toHaveClass("opacity-0", "forced-colors:opacity-100");
+    });
   });
 
   it("gives the command input enough internal clearance for the global outline", () => {
