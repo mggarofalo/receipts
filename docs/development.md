@@ -76,7 +76,7 @@ VS Code will automatically open the **Aspire Dashboard** in your browser.
 > **Note:** Aspire assigns dynamic ports and the defaults above may differ. Check the **Aspire Dashboard → Resources** view for the actual URLs assigned to each service in your session.
 
 The frontend is the exception: `AppHost.cs` pins its endpoint to 5173 so tooling
-that hardcodes the port (Playwright's `webServer`, the QA skills) keeps working.
+that hardcodes the port, including Playwright's `webServer`, keeps working.
 The endpoint is plain HTTP — there is no dev certificate on it, so `https://localhost:5173`
 will fail the TLS handshake. Do not add a second endpoint to the frontend resource;
 `AddViteApp` already declares one, and a duplicate produces a proxy that accepts
@@ -140,9 +140,16 @@ dotnet run --project src/Tools/DbSeeder/DbSeeder.csproj
 
 If the variables are absent, the seeder logs a warning and seeds only roles (no admin user). The seed is not recorded in `__SeedHistory` when admin config is missing, so you can re-run the seeder with the correct variables later.
 
-> **Tip:** The `src/Tools/DbSeeder/appsettings.Development.json` file provides these defaults automatically when running with `DOTNET_ENVIRONMENT=Development` (the default for `dotnet run`).
+> **Tip:** The `src/Tools/DbSeeder/appsettings.Development.json` file provides these defaults when
+> you explicitly set `DOTNET_ENVIRONMENT=Development`; this tool has no launch profile that sets it
+> automatically for `dotnet run`.
 
 ## Build and Test
+
+These are the supported clean-checkout verification lanes. Use the repository-pinned
+Node 24.21.0 runtime, run `dotnet restore Receipts.slnx` and `npm ci`, then use the
+commands below. The PostgreSQL lane requires Docker; the model lane provisions and
+verifies the pinned ONNX artifact before running real inference tests.
 
 ```bash
 # Build entire solution

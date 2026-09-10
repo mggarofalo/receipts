@@ -27,7 +27,7 @@ This is a .NET 10 Clean Architecture solution for a receipt management applicati
     - `Validators/` - FluentValidation validators (business rules only; spec-expressible constraints use DataAnnotations)
     - `Configuration/` - Service registration extension methods
     - `Hubs/ReceiptsHub.cs` - SignalR hub
-  - **Client** (`src/client/`) - React/Vite SPA (TypeScript, TanStack Query/Router, Tailwind CSS, shadcn/ui)
+  - **Client** (`src/client/`) - React/Vite SPA (TypeScript, React Router 7, TanStack Query, Tailwind CSS, shadcn/ui)
 - **AppHost** (`src/Receipts.AppHost/`) - .NET Aspire orchestration (API + PostgreSQL + React dev server)
 
 ## Key Patterns
@@ -40,6 +40,12 @@ This is a .NET 10 Clean Architecture solution for a receipt management applicati
 - **Service Registration**: Each layer has a static extension method (`RegisterApplicationServices`, `RegisterInfrastructureServices`) for DI setup
 - **Soft Delete**: Entities support soft delete with restore capabilities and trash management
 - **Audit Logging**: All mutations are logged with user/API key attribution
+
+Application validators are registered from the Application assembly; API DTO validators
+are registered by Presentation and traverse every batch element. Error middleware is a
+fallback for bodiless framework failures, not a replacement for endpoint-owned RFC 9457
+responses. See [API validation ownership](api-guidelines.md#validation-ownership) and
+[request error ownership](request-errors.md).
 
 ### Receipt use-case ownership
 
