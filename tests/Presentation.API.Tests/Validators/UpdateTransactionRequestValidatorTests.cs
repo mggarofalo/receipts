@@ -5,7 +5,7 @@ namespace Presentation.API.Tests.Validators;
 
 public class UpdateTransactionRequestValidatorTests
 {
-	private readonly UpdateTransactionRequestValidator _validator = new();
+	private readonly UpdateTransactionRequestValidator _validator = new(ValidatorTestClock.Policy);
 
 	[Fact]
 	public void Should_Pass_When_AllFieldsValid()
@@ -15,7 +15,7 @@ public class UpdateTransactionRequestValidatorTests
 		{
 			Id = Guid.NewGuid(),
 			Amount = 100,
-			Date = DateOnly.FromDateTime(DateTime.Today),
+			Date = ValidatorTestClock.Today,
 			CardId = Guid.NewGuid()
 		};
 
@@ -34,7 +34,7 @@ public class UpdateTransactionRequestValidatorTests
 		{
 			Id = Guid.Empty,
 			Amount = 100,
-			Date = DateOnly.FromDateTime(DateTime.Today),
+			Date = ValidatorTestClock.Today,
 			CardId = Guid.NewGuid()
 		};
 
@@ -54,7 +54,7 @@ public class UpdateTransactionRequestValidatorTests
 		{
 			Id = Guid.NewGuid(),
 			Amount = 0,
-			Date = DateOnly.FromDateTime(DateTime.Today),
+			Date = ValidatorTestClock.Today,
 			CardId = Guid.NewGuid()
 		};
 
@@ -74,7 +74,7 @@ public class UpdateTransactionRequestValidatorTests
 		{
 			Id = Guid.NewGuid(),
 			Amount = 100,
-			Date = DateOnly.FromDateTime(DateTime.Today.AddDays(1)),
+			Date = ValidatorTestClock.Today.AddDays(1),
 			CardId = Guid.NewGuid()
 		};
 
@@ -94,7 +94,7 @@ public class UpdateTransactionRequestValidatorTests
 		{
 			Id = Guid.NewGuid(),
 			Amount = 100,
-			Date = DateOnly.FromDateTime(DateTime.Today),
+			Date = ValidatorTestClock.Today,
 			CardId = Guid.Empty
 		};
 

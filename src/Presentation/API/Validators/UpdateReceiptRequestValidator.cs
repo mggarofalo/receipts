@@ -1,4 +1,5 @@
 using API.Generated.Dtos;
+using Application.Validation;
 using FluentValidation;
 
 namespace API.Validators;
@@ -9,7 +10,7 @@ public class UpdateReceiptRequestValidator : AbstractValidator<UpdateReceiptRequ
 	public const string LocationMustNotBeEmpty = "Location must not be empty.";
 	public const string DateMustBePriorToCurrentDate = "Date must be prior to the current date";
 
-	public UpdateReceiptRequestValidator()
+	public UpdateReceiptRequestValidator(AdmissionDatePolicy datePolicy)
 	{
 		RuleFor(x => x.Id)
 			.NotEqual(Guid.Empty)
@@ -20,7 +21,7 @@ public class UpdateReceiptRequestValidator : AbstractValidator<UpdateReceiptRequ
 			.WithMessage(LocationMustNotBeEmpty);
 
 		RuleFor(x => x.Date)
-			.Must(date => date.ToDateTime(TimeOnly.MinValue) <= DateTime.Today)
+			.Must(datePolicy.IsNotFuture)
 			.WithMessage(DateMustBePriorToCurrentDate);
 	}
 }

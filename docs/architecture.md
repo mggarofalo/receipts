@@ -41,6 +41,12 @@ This is a .NET 10 Clean Architecture solution for a receipt management applicati
 - **Soft Delete**: Entities support soft delete with restore capabilities and trash management
 - **Audit Logging**: All mutations are logged with user/API key attribution
 
+Domain entities are mutable transfer-oriented models with timeless constructor checks.
+Time-dependent receipt and transaction admission belongs to application command validators
+through a shared `TimeProvider` policy; persistence hydration does not consult the clock.
+`Money` permits only same-currency addition/subtraction, scalar scaling, and dimensionless
+same-currency ratios. See the [Domain conventions](../src/Domain/README.md).
+
 Application validators are registered from the Application assembly; API DTO validators
 are registered by Presentation and traverse every batch element. Error middleware is a
 fallback for bodiless framework failures, not a replacement for endpoint-owned RFC 9457

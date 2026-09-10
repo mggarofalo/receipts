@@ -5,7 +5,7 @@ namespace Presentation.API.Tests.Validators;
 
 public class UpdateReceiptRequestValidatorTests
 {
-	private readonly UpdateReceiptRequestValidator _validator = new();
+	private readonly UpdateReceiptRequestValidator _validator = new(ValidatorTestClock.Policy);
 
 	[Fact]
 	public void Should_Pass_When_AllFieldsValid()
@@ -15,7 +15,7 @@ public class UpdateReceiptRequestValidatorTests
 		{
 			Id = Guid.NewGuid(),
 			Location = "Store",
-			Date = DateOnly.FromDateTime(DateTime.Today)
+			Date = ValidatorTestClock.Today
 		};
 
 		// Act
@@ -33,7 +33,7 @@ public class UpdateReceiptRequestValidatorTests
 		{
 			Id = Guid.Empty,
 			Location = "Store",
-			Date = DateOnly.FromDateTime(DateTime.Today)
+			Date = ValidatorTestClock.Today
 		};
 
 		// Act
@@ -52,7 +52,7 @@ public class UpdateReceiptRequestValidatorTests
 		{
 			Id = Guid.NewGuid(),
 			Location = "",
-			Date = DateOnly.FromDateTime(DateTime.Today)
+			Date = ValidatorTestClock.Today
 		};
 
 		// Act
@@ -95,7 +95,7 @@ public class UpdateReceiptRequestValidatorTests
 		{
 			Id = Guid.NewGuid(),
 			Location = "Store",
-			Date = DateOnly.FromDateTime(DateTime.Today.AddDays(1))
+			Date = ValidatorTestClock.Today.AddDays(1)
 		};
 
 		// Act
