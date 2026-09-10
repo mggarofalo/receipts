@@ -17,7 +17,23 @@ public sealed class OnnxEmbeddingService : IEmbeddingService, IDisposable
 	// worse discrimination than using the first token's output.
 	public const string PoolingStrategyName = "CLS";
 
-	private const int MaxTokens = 512;
+	public const int MaxTokens = 512;
+
+	/// <summary>
+	/// Identifies the complete embedding space persisted in PostgreSQL. Every input that can
+	/// change vector coordinates belongs here; changing any value makes existing vectors stale
+	/// and lets the bounded rebuild worker replace them without mixing incompatible spaces.
+	/// </summary>
+	public static string EmbeddingSpaceFingerprint { get; } = string.Join('|',
+		$"model={ModelName}",
+		$"revision={EmbeddingModelOptions.Revision}",
+		$"model-sha256={EmbeddingModelOptions.ModelSha256}",
+		$"onnx-runtime={typeof(InferenceSession).Assembly.GetName().Version}",
+		$"tokenizer={typeof(BertTokenizer).Assembly.GetName().Name}@{typeof(BertTokenizer).Assembly.GetName().Version}",
+		$"vocab-sha256={EmbeddingModelOptions.VocabSha256}",
+		$"max-tokens={MaxTokens}",
+		$"pooling={PoolingStrategyName}",
+		"normalization=l2-v1");
 
 	private readonly string _modelDirectory;
 	private readonly string _modelPath;

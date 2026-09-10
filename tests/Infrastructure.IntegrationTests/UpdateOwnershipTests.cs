@@ -242,6 +242,14 @@ public class UpdateOwnershipTests(PostgresFixture fixture) : IClassFixture<Postg
 		string milk = $"Milk {token}", bread = $"Bread {token}", unchanged = $"Curated dairy {token}";
 		await using (ApplicationDbContext seed = fixture.CreateDbContext())
 		{
+			List<NormalizedDescriptionEntity> existingCanonicals = await seed.NormalizedDescriptions
+				.Where(row => row.Status != NormalizedDescriptionStatus.Rejected)
+				.ToListAsync();
+			foreach (NormalizedDescriptionEntity canonical in existingCanonicals)
+			{
+				canonical.Embedding = new Pgvector.Vector(new float[OnnxEmbeddingService.EmbeddingDimension]);
+				canonical.EmbeddingModelVersion = OnnxEmbeddingService.EmbeddingSpaceFingerprint;
+			}
 			seed.Receipts.Add(new ReceiptEntity { Id = receiptId, Location = "Store", Date = new DateOnly(2025, 1, 1) });
 			seed.NormalizedDescriptions.AddRange(Canonical(milkId, milk), Canonical(breadId, bread));
 			seed.ReceiptItems.AddRange(
@@ -300,6 +308,8 @@ public class UpdateOwnershipTests(PostgresFixture fixture) : IClassFixture<Postg
 		Id = id,
 		CanonicalName = name,
 		Status = NormalizedDescriptionStatus.Active,
+		Embedding = new Pgvector.Vector(new float[OnnxEmbeddingService.EmbeddingDimension]),
+		EmbeddingModelVersion = OnnxEmbeddingService.EmbeddingSpaceFingerprint,
 		CreatedAt = DateTimeOffset.UtcNow,
 	};
 

@@ -166,6 +166,7 @@ public class NormalizedDescriptionMergeIntegrityTests(PostgresFixture fixture)
 			// and NormalizedDescriptions has a unique index on lower(CanonicalName).
 			NormalizedDescriptionEntity keep = BuildNormalized(keepId, "Threshold Sourdough");
 			keep.Embedding = new Vector(vector);
+			keep.EmbeddingModelVersion = OnnxEmbeddingService.EmbeddingSpaceFingerprint;
 			setup.NormalizedDescriptions.AddRange(keep, BuildNormalized(discardId, "Thrshold Sourdogh"));
 			await setup.SaveChangesAsync();
 

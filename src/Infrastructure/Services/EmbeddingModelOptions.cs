@@ -31,6 +31,8 @@ public sealed class EmbeddingModelOptions
 
 	public const string ModelFileName = "model.onnx";
 	public const string VocabFileName = "vocab.txt";
+	public const string ModelSha256 = "69ed3f810d3b6d13f70dff9ca89966f39c0a0e877fb88211be7bcc070df2a2ce";
+	public const string VocabSha256 = "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3";
 
 	/// <summary>
 	/// Written next to the model files once both have been verified. Holds
@@ -48,8 +50,8 @@ public sealed class EmbeddingModelOptions
 	/// </summary>
 	public static readonly IReadOnlyList<EmbeddingModelFile> Files =
 	[
-		new(ModelFileName, "onnx/model.onnx", 1_336_854_281L, "69ed3f810d3b6d13f70dff9ca89966f39c0a0e877fb88211be7bcc070df2a2ce"),
-		new(VocabFileName, "vocab.txt", 231_508L, "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3"),
+		new(ModelFileName, "onnx/model.onnx", 1_336_854_281L, ModelSha256),
+		new(VocabFileName, "vocab.txt", 231_508L, VocabSha256),
 	];
 
 	/// <summary>

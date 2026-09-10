@@ -143,14 +143,22 @@ public partial class BackupImportService
 					if (!string.Equals(entity.CanonicalName, canonicalName, StringComparison.Ordinal))
 					{
 						// Vectors and comparison evidence describe text, not just the row ID.
-						entity.Embedding = null;
-						entity.EmbeddingModelVersion = null;
 						if (!hasCuration)
 						{
 							entity.NearestNeighbourId = null;
 							entity.NearestNeighbourSimilarity = null;
 						}
 					}
+
+					// Portable backups deliberately do not own rebuildable vectors. Clear both
+					// projection columns on every restored row and force EF to send the NULLs even
+					// when this transaction originally read NULL. A concurrent rebuild may commit a
+					// vector while the restore waits for its row lock; explicit modified flags ensure
+					// the restore still wins and the next worker cycle rebuilds the imported text.
+					entity.Embedding = null;
+					entity.EmbeddingModelVersion = null;
+					context.Entry(entity).Property(item => item.Embedding).IsModified = true;
+					context.Entry(entity).Property(item => item.EmbeddingModelVersion).IsModified = true;
 					updated++;
 				}
 

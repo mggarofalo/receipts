@@ -560,6 +560,29 @@ export interface paths {
         patch: operations["UpdateNormalizedDescriptionSettings"];
         trace?: never;
     };
+    "/api/normalized-descriptions/embedding-coverage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get semantic-vector rebuild coverage
+         * @description Reports how many searchable canonical descriptions and source items carry vectors in
+         *     the current model/tokenizer/pooling embedding space. The background worker rebuilds
+         *     pending rows in bounded batches. Exact canonical-name matching remains available while
+         *     coverage is incomplete; ANN and hybrid search ignore obsolete fingerprints. Admin-only.
+         */
+        get: operations["GetNormalizedDescriptionEmbeddingCoverage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/normalized-descriptions/settings/preview": {
         parameters: {
             query?: never;
@@ -3267,6 +3290,24 @@ export interface components {
              * @description When the settings were last changed.
              */
             updatedAt: string;
+        };
+        EmbeddingCoverageResponse: {
+            /** @description Full model, tokenizer, pooling, and normalization fingerprint admitted by semantic readers. */
+            fingerprint: string;
+            /** Format: int32 */
+            canonicalReady: number;
+            /** Format: int32 */
+            canonicalTotal: number;
+            /** Format: int32 */
+            canonicalPending: number;
+            /** Format: int32 */
+            itemReady: number;
+            /** Format: int32 */
+            itemTotal: number;
+            /** Format: int32 */
+            itemPending: number;
+            /** @description True only when every eligible canonical description and source item has a current vector. */
+            isComplete: boolean;
         };
         UpdateNormalizedDescriptionSettingsRequest: {
             /** Format: double */
@@ -6050,6 +6091,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    GetNormalizedDescriptionEmbeddingCoverage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmbeddingCoverageResponse"];
                 };
             };
         };

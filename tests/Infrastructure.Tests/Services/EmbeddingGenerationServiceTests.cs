@@ -1,5 +1,6 @@
 using Application.Interfaces.Services;
 using Application.Models.CommittedChanges;
+using Domain.NormalizedDescriptions;
 using FluentAssertions;
 using Infrastructure.Entities.Core;
 using Infrastructure.Services;
@@ -318,7 +319,7 @@ public class EmbeddingGenerationServiceTests
 		embeddings[0].EntityType.Should().Be("ItemTemplate");
 		embeddings[0].EntityId.Should().Be(templateId);
 		embeddings[0].EntityText.Should().Be("Organic Milk");
-		embeddings[0].ModelVersion.Should().Be(OnnxEmbeddingService.ModelName);
+		embeddings[0].ModelVersion.Should().Be(OnnxEmbeddingService.EmbeddingSpaceFingerprint);
 	}
 
 	[Fact]
@@ -341,7 +342,7 @@ public class EmbeddingGenerationServiceTests
 				EntityId = templateId,
 				EntityText = "Old Milk Name",
 				Embedding = new Vector(CreateFakeEmbedding()),
-				ModelVersion = OnnxEmbeddingService.ModelName,
+				ModelVersion = OnnxEmbeddingService.EmbeddingSpaceFingerprint,
 				CreatedAt = DateTimeOffset.UtcNow.AddHours(-1),
 			});
 			await seedContext.SaveChangesAsync();
@@ -612,6 +613,189 @@ public class EmbeddingGenerationServiceTests
 
 		// Assert — the OperationCanceledException from the loop Task.Delay should be caught internally
 		await act.Should().NotThrowAsync();
+	}
+
+	[Fact]
+	public async Task ProcessPendingEmbeddingsAsync_NormalizedDescriptions_RebuildsMissingAndStaleVectorsInPlace()
+	{
+		Guid activeId = Guid.NewGuid();
+		Guid pendingId = Guid.NewGuid();
+		Guid linkedTemplateId = Guid.NewGuid();
+		await using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.AddRange(
+				new NormalizedDescriptionEntity
+				{
+					Id = activeId,
+					CanonicalName = "Organic milk",
+					DisplayLabel = "Milk",
+					Status = NormalizedDescriptionStatus.Active,
+					Embedding = null,
+					EmbeddingModelVersion = null,
+					CreatedAt = DateTimeOffset.UtcNow.AddDays(-2),
+				},
+				new NormalizedDescriptionEntity
+				{
+					Id = pendingId,
+					CanonicalName = "Oat beverage",
+					DisplayLabel = "Oat milk review",
+					Status = NormalizedDescriptionStatus.PendingReview,
+					Embedding = new Vector(CreateFakeEmbedding()),
+					EmbeddingModelVersion = "obsolete-space",
+					CreatedAt = DateTimeOffset.UtcNow.AddDays(-1),
+				});
+			seed.ItemTemplates.Add(new ItemTemplateEntity
+			{
+				Id = linkedTemplateId,
+				Name = "X",
+				NormalizedDescriptionId = activeId,
+			});
+			await seed.SaveChangesAsync();
+		}
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
+		_embeddingServiceMock
+			.Setup(e => e.GenerateEmbeddingsAsync(
+				It.Is<List<string>>(texts => texts.Count == 2),
+				It.IsAny<CancellationToken>()))
+			.ReturnsAsync([CreateFakeEmbedding(), CreateFakeEmbedding()]);
+
+		int processed = await CreatePublisherAwareService()
+			.ProcessPendingEmbeddingsAsync(CancellationToken.None);
+
+		processed.Should().Be(2);
+		await using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		NormalizedDescriptionEntity active = await verify.NormalizedDescriptions.SingleAsync(row => row.Id == activeId);
+		active.Status.Should().Be(NormalizedDescriptionStatus.Active);
+		active.DisplayLabel.Should().Be("Milk");
+		active.Embedding.Should().NotBeNull();
+		active.EmbeddingModelVersion.Should().Be(OnnxEmbeddingService.EmbeddingSpaceFingerprint);
+		NormalizedDescriptionEntity pending = await verify.NormalizedDescriptions.SingleAsync(row => row.Id == pendingId);
+		pending.Status.Should().Be(NormalizedDescriptionStatus.PendingReview);
+		pending.DisplayLabel.Should().Be("Oat milk review");
+		pending.EmbeddingModelVersion.Should().Be(OnnxEmbeddingService.EmbeddingSpaceFingerprint);
+		(await verify.ItemTemplates.SingleAsync(row => row.Id == linkedTemplateId))
+			.NormalizedDescriptionId.Should().Be(activeId);
+	}
+
+	[Fact]
+	public async Task ProcessPendingEmbeddingsAsync_NormalizedDescriptions_BoundsAndResumesCanonicalFirstBatch()
+	{
+		await using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.AddRange(Enumerable.Range(0, 55).Select(index =>
+				new NormalizedDescriptionEntity
+				{
+					Id = Guid.NewGuid(),
+					CanonicalName = $"Canonical {index:D2}",
+					Status = NormalizedDescriptionStatus.Active,
+					CreatedAt = DateTimeOffset.UtcNow,
+				}));
+			seed.ItemTemplates.Add(new ItemTemplateEntity { Id = Guid.NewGuid(), Name = "Also pending item" });
+			await seed.SaveChangesAsync();
+		}
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
+		List<List<string>> batches = [];
+		_embeddingServiceMock
+			.Setup(e => e.GenerateEmbeddingsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()))
+			.Returns<List<string>, CancellationToken>((texts, _) =>
+			{
+				batches.Add([.. texts]);
+				return Task.FromResult(texts.Select(_ => CreateFakeEmbedding()).ToList());
+			});
+
+		EmbeddingGenerationService service = CreatePublisherAwareService();
+		int first = await service.ProcessPendingEmbeddingsAsync(CancellationToken.None);
+		int second = await service.ProcessPendingEmbeddingsAsync(CancellationToken.None);
+
+		first.Should().Be(50);
+		second.Should().Be(6);
+		batches[0].Should().HaveCount(50).And.OnlyContain(text => text.StartsWith("Canonical ", StringComparison.Ordinal));
+		batches[1].Should().Contain("Also pending item");
+		await using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		(await verify.NormalizedDescriptions.CountAsync(row =>
+			row.EmbeddingModelVersion == OnnxEmbeddingService.EmbeddingSpaceFingerprint)).Should().Be(55);
+	}
+
+	[Fact]
+	public async Task ProcessPendingEmbeddingsAsync_UnchangedItemWithObsoleteFingerprint_IsRegeneratedInPlace()
+	{
+		Guid templateId = Guid.NewGuid();
+		Guid embeddingId = Guid.NewGuid();
+		await using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.ItemTemplates.Add(new ItemTemplateEntity { Id = templateId, Name = "Organic Milk" });
+			seed.NormalizedDescriptions.AddRange(
+				new NormalizedDescriptionEntity
+				{
+					Id = Guid.NewGuid(),
+					CanonicalName = "Current canonical",
+					Status = NormalizedDescriptionStatus.Active,
+					Embedding = new Vector(CreateFakeEmbedding()),
+					EmbeddingModelVersion = OnnxEmbeddingService.EmbeddingSpaceFingerprint,
+					CreatedAt = DateTimeOffset.UtcNow,
+				},
+				new NormalizedDescriptionEntity
+				{
+					Id = Guid.NewGuid(),
+					CanonicalName = "Rejected canonical",
+					Status = NormalizedDescriptionStatus.Rejected,
+					Embedding = null,
+					EmbeddingModelVersion = null,
+					CreatedAt = DateTimeOffset.UtcNow,
+				});
+			seed.ItemEmbeddings.Add(new ItemEmbeddingEntity
+			{
+				Id = embeddingId,
+				EntityType = "ItemTemplate",
+				EntityId = templateId,
+				EntityText = "Organic Milk",
+				Embedding = new Vector(CreateFakeEmbedding()),
+				ModelVersion = "obsolete-space",
+				CreatedAt = DateTimeOffset.UtcNow.AddDays(-1),
+			});
+			await seed.SaveChangesAsync();
+		}
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
+		_embeddingServiceMock
+			.Setup(e => e.GenerateEmbeddingsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync([CreateFakeEmbedding()]);
+
+		int processed = await CreatePublisherAwareService().ProcessPendingEmbeddingsAsync(CancellationToken.None);
+
+		processed.Should().Be(1);
+		await using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		ItemEmbeddingEntity stored = await verify.ItemEmbeddings.SingleAsync();
+		stored.Id.Should().Be(embeddingId);
+		stored.ModelVersion.Should().Be(OnnxEmbeddingService.EmbeddingSpaceFingerprint);
+	}
+
+	[Fact]
+	public async Task ProcessPendingEmbeddingsAsync_CurrentFingerprint_IsNotRegenerated()
+	{
+		Guid templateId = Guid.NewGuid();
+		await using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.ItemTemplates.Add(new ItemTemplateEntity { Id = templateId, Name = "Organic Milk" });
+			seed.ItemEmbeddings.Add(new ItemEmbeddingEntity
+			{
+				Id = Guid.NewGuid(),
+				EntityType = "ItemTemplate",
+				EntityId = templateId,
+				EntityText = "Organic Milk",
+				Embedding = new Vector(CreateFakeEmbedding()),
+				ModelVersion = OnnxEmbeddingService.EmbeddingSpaceFingerprint,
+				CreatedAt = DateTimeOffset.UtcNow,
+			});
+			await seed.SaveChangesAsync();
+		}
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
+
+		int processed = await CreatePublisherAwareService().ProcessPendingEmbeddingsAsync(CancellationToken.None);
+
+		processed.Should().Be(0);
+		_embeddingServiceMock.Verify(
+			e => e.GenerateEmbeddingsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()),
+			Times.Never);
 	}
 
 	private static float[] CreateFakeEmbedding()

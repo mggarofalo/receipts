@@ -50,6 +50,14 @@ public class EmbeddingGenerationTrashConcurrencyTests(PostgresFixture fixture)
 					&& !seed.ItemEmbeddings.Any(embedding =>
 						embedding.EntityType == "ReceiptItem" && embedding.EntityId == row.Id))
 				.ToListAsync();
+			List<NormalizedDescriptionEntity> existingCanonicals = await seed.NormalizedDescriptions
+				.Where(row => row.Status != Domain.NormalizedDescriptions.NormalizedDescriptionStatus.Rejected)
+				.ToListAsync();
+			foreach (NormalizedDescriptionEntity canonical in existingCanonicals)
+			{
+				canonical.Embedding = new Vector(new float[OnnxEmbeddingService.EmbeddingDimension]);
+				canonical.EmbeddingModelVersion = OnnxEmbeddingService.EmbeddingSpaceFingerprint;
+			}
 			seed.ItemEmbeddings.AddRange(otherTemplates.Select(row => BaselineEmbedding("ItemTemplate", row.Id, row.Name)));
 			seed.ItemEmbeddings.AddRange(otherItems.Select(row => BaselineEmbedding("ReceiptItem", row.Id, row.Description)));
 			await seed.SaveChangesAsync();
@@ -105,7 +113,7 @@ public class EmbeddingGenerationTrashConcurrencyTests(PostgresFixture fixture)
 			|| (row.EntityType == "ReceiptItem" && row.EntityId == itemId))).Should().BeFalse();
 		publisher.Verify(p => p.PublishAsync(It.IsAny<CommittedEntityChange>()), Times.Never);
 		await verify.ItemEmbeddings
-			.Where(row => row.ModelVersion == "integration-baseline")
+			.Where(row => row.ModelVersion == OnnxEmbeddingService.EmbeddingSpaceFingerprint)
 			.ExecuteDeleteAsync();
 	}
 
@@ -116,7 +124,7 @@ public class EmbeddingGenerationTrashConcurrencyTests(PostgresFixture fixture)
 		EntityId = entityId,
 		EntityText = text,
 		Embedding = new Vector(new float[1024]),
-		ModelVersion = "integration-baseline",
+		ModelVersion = OnnxEmbeddingService.EmbeddingSpaceFingerprint,
 		CreatedAt = DateTimeOffset.UtcNow,
 	};
 

@@ -52,6 +52,95 @@ public class NormalizedDescriptionServiceTests
 			CancellationToken.None)).Data;
 
 	[Fact]
+	public async Task GetEmbeddingCoverageAsync_CountsOnlyEligibleRowsInCurrentEmbeddingSpace()
+	{
+		Guid currentTemplateId = Guid.NewGuid();
+		Guid staleTemplateId = Guid.NewGuid();
+		Guid currentReceiptItemId = Guid.NewGuid();
+		Guid receiptId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.AddRange(
+				Canonical("current canonical", NormalizedDescriptionStatus.Active, OnnxEmbeddingService.EmbeddingSpaceFingerprint),
+				Canonical("stale canonical", NormalizedDescriptionStatus.Active, "obsolete-space"),
+				Canonical("missing canonical", NormalizedDescriptionStatus.PendingReview, null, includeVector: false),
+				Canonical("rejected canonical", NormalizedDescriptionStatus.Rejected, OnnxEmbeddingService.EmbeddingSpaceFingerprint));
+			seed.ItemTemplates.AddRange(
+				new ItemTemplateEntity { Id = currentTemplateId, Name = "Current template" },
+				new ItemTemplateEntity { Id = staleTemplateId, Name = "Stale template" },
+				new ItemTemplateEntity { Id = Guid.NewGuid(), Name = "Missing template" },
+				new ItemTemplateEntity { Id = Guid.NewGuid(), Name = "X" },
+				new ItemTemplateEntity { Id = Guid.NewGuid(), Name = "Deleted template", DeletedAt = DateTimeOffset.UtcNow });
+			seed.Receipts.Add(new ReceiptEntity
+			{
+				Id = receiptId,
+				Date = new DateOnly(2026, 9, 10),
+				Location = "Coverage fixture",
+				TaxAmountCurrency = Currency.USD,
+			});
+			seed.ReceiptItems.Add(new ReceiptItemEntity
+			{
+				Id = currentReceiptItemId,
+				ReceiptId = receiptId,
+				Description = "Current receipt item",
+				Category = "Test",
+				Quantity = 1,
+				UnitPrice = 1,
+				UnitPriceCurrency = Currency.USD,
+				TotalAmount = 1,
+				TotalAmountCurrency = Currency.USD,
+			});
+			seed.ItemEmbeddings.AddRange(
+				ItemEmbedding(currentTemplateId, "ItemTemplate", "Current template", OnnxEmbeddingService.EmbeddingSpaceFingerprint),
+				ItemEmbedding(staleTemplateId, "ItemTemplate", "Stale template", "obsolete-space"),
+				ItemEmbedding(currentReceiptItemId, "ReceiptItem", "Current receipt item", OnnxEmbeddingService.EmbeddingSpaceFingerprint));
+			await seed.SaveChangesAsync();
+		}
+		NormalizedDescriptionService service = new(
+			_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+
+		EmbeddingCoverage coverage = await service.GetEmbeddingCoverageAsync(CancellationToken.None);
+
+		coverage.Fingerprint.Should().Be(OnnxEmbeddingService.EmbeddingSpaceFingerprint);
+		coverage.CanonicalTotal.Should().Be(3);
+		coverage.CanonicalReady.Should().Be(1);
+		coverage.CanonicalPending.Should().Be(2);
+		coverage.ItemTotal.Should().Be(4);
+		coverage.ItemReady.Should().Be(2);
+		coverage.ItemPending.Should().Be(2);
+		coverage.IsComplete.Should().BeFalse();
+	}
+
+	private static NormalizedDescriptionEntity Canonical(
+		string name,
+		NormalizedDescriptionStatus status,
+		string? fingerprint,
+		bool includeVector = true) => new()
+		{
+			Id = Guid.NewGuid(),
+			CanonicalName = name,
+			Status = status,
+			Embedding = includeVector ? new Vector(new float[OnnxEmbeddingService.EmbeddingDimension]) : null,
+			EmbeddingModelVersion = fingerprint,
+			CreatedAt = DateTimeOffset.UtcNow,
+		};
+
+	private static ItemEmbeddingEntity ItemEmbedding(
+		Guid entityId,
+		string entityType,
+		string text,
+		string fingerprint) => new()
+		{
+			Id = Guid.NewGuid(),
+			EntityId = entityId,
+			EntityType = entityType,
+			EntityText = text,
+			Embedding = new Vector(new float[OnnxEmbeddingService.EmbeddingDimension]),
+			ModelVersion = fingerprint,
+			CreatedAt = DateTimeOffset.UtcNow,
+		};
+
+	[Fact]
 	public async Task GetOrCreateAsync_ExactCaseInsensitiveMatch_ReturnsExisting()
 	{
 		// Arrange — seed an existing canonical entry.
@@ -63,6 +152,8 @@ public class NormalizedDescriptionServiceTests
 				Id = existingId,
 				CanonicalName = "Organic Milk",
 				Status = NormalizedDescriptionStatus.Active,
+				Embedding = new Vector(new float[OnnxEmbeddingService.EmbeddingDimension]),
+				EmbeddingModelVersion = "obsolete-space",
 				CreatedAt = DateTimeOffset.UtcNow,
 			});
 			await seed.SaveChangesAsync();
@@ -71,7 +162,8 @@ public class NormalizedDescriptionServiceTests
 		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
 		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, _committedChangePublisherMock.Object);
 
-		// Act — query with different casing; it should short-circuit without generating an embedding.
+		// Act — query with different casing; exact identity remains available even while its
+		// semantic vector is obsolete and therefore ineligible for ANN matching.
 		GetOrCreateResult result = await service.GetOrCreateAsync("organic MILK", CancellationToken.None);
 
 		// Assert

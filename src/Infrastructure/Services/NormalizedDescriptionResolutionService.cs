@@ -136,6 +136,20 @@ public class NormalizedDescriptionResolutionService(
 			return ResolutionSummary.Empty;
 		}
 
+		// A negative ANN result is not authoritative while canonical vectors are still being
+		// rebuilt. Creating rows in that window can permanently duplicate an existing concept
+		// whose obsolete vector is (correctly) excluded from search. Exact-name callers remain
+		// available through GetOrCreateAsync; the background fuzzy resolver simply retries after
+		// the canonical-first rebuild reaches full coverage.
+		EmbeddingCoverage coverage = await normalizedDescriptionService.GetEmbeddingCoverageAsync(cancellationToken);
+		if (coverage.CanonicalPending > 0)
+		{
+			logger.LogInformation(
+				"Deferring normalized-description resolution while {PendingCount} canonical vectors rebuild",
+				coverage.CanonicalPending);
+			return ResolutionSummary.Empty;
+		}
+
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 
 		// Candidate set: live ReceiptItems without an FK and with a description long enough

@@ -1,3 +1,5 @@
+using System.Data.Common;
+using Application.Interfaces.Services;
 using Application.Models;
 using Domain.NormalizedDescriptions;
 using FluentAssertions;
@@ -7,6 +9,8 @@ using Infrastructure.IntegrationTests.Fixtures;
 using Infrastructure.Services;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Infrastructure.IntegrationTests;
@@ -15,6 +19,84 @@ namespace Infrastructure.IntegrationTests;
 [Trait("Prerequisite", "Postgres")]
 public class BackupCurationImportTests(PostgresFixture target) : IClassFixture<PostgresFixture>
 {
+	[Fact]
+	public async Task ImportCanonicalRename_WinsRaceWithOldNameWorker_AndQueuesRenamedTextForRebuild()
+	{
+		await using (ApplicationDbContext reset = target.CreateDbContext())
+		{
+			await reset.Database.ExecuteSqlRawAsync(
+				"""TRUNCATE matching."NormalizedDescriptions" RESTART IDENTITY CASCADE;""");
+		}
+		Guid canonicalId = Guid.NewGuid();
+		await using (ApplicationDbContext seed = target.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
+			{
+				Id = canonicalId,
+				CanonicalName = "Old canonical name",
+				Status = NormalizedDescriptionStatus.Active,
+				CreatedAt = DateTimeOffset.UtcNow,
+			});
+			await seed.SaveChangesAsync();
+		}
+		using Artifact artifact = await Artifact.Create(5);
+		artifact.Execute(
+			"INSERT INTO normalized_descriptions (id, canonical_name, status, created_at, display_label, nearest_neighbour_id, nearest_neighbour_similarity) VALUES ($id, 'Imported canonical name', 'Active', '2024-01-01T00:00:00Z', 'Imported label', NULL, NULL)",
+			("$id", canonicalId.ToString()));
+
+		HeldEmbeddingService heldEmbedding = new();
+		CanonicalLockBarrier workerBarrier = new();
+		using ServiceProvider workerProvider = BuildWorkerProvider(heldEmbedding, workerBarrier);
+		using EmbeddingGenerationService worker = new(
+			workerProvider.GetRequiredService<IServiceScopeFactory>(),
+			NullLogger<EmbeddingGenerationService>.Instance);
+		Task<int> generation = worker.ProcessPendingEmbeddingsAsync(CancellationToken.None);
+		(await heldEmbedding.Started.Task.WaitAsync(TimeSpan.FromSeconds(10)))
+			.Should().ContainSingle().Which.Should().Be("Old canonical name");
+		heldEmbedding.Release.TrySetResult();
+		await workerBarrier.LockHeld.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+		ImportReadBarrier importBarrier = new();
+		DbContextOptions<ApplicationDbContext> importOptions =
+			new DbContextOptionsBuilder<ApplicationDbContext>(target.CreateOptions())
+				.AddInterceptors(importBarrier)
+				.Options;
+		BackupImportService importer = new(new Factory(importOptions), NullLogger<BackupImportService>.Instance);
+		artifact.CloseForRead();
+		FileStream stream = File.OpenRead(artifact.Path);
+		await using (stream)
+		{
+			Task<BackupImportResult> import = importer.ImportFromSqliteAsync(stream, CancellationToken.None);
+			await importBarrier.CanonicalRead.Task.WaitAsync(TimeSpan.FromSeconds(10));
+			workerBarrier.Release.TrySetResult();
+			await Task.WhenAll(generation, import).WaitAsync(TimeSpan.FromSeconds(15));
+		}
+		(await generation).Should().Be(1);
+
+		await using (ApplicationDbContext afterImport = target.CreateDbContext())
+		{
+			NormalizedDescriptionEntity restored = await afterImport.NormalizedDescriptions
+				.AsNoTracking().SingleAsync(row => row.Id == canonicalId);
+			restored.CanonicalName.Should().Be("Imported canonical name");
+			restored.DisplayLabel.Should().Be("Imported label");
+			restored.Embedding.Should().BeNull();
+			restored.EmbeddingModelVersion.Should().BeNull(
+				"the import must invalidate the old-name vector even after waiting on the worker lock");
+		}
+
+		using ServiceProvider rebuildProvider = BuildWorkerProvider(new ImmediateEmbeddingService());
+		using EmbeddingGenerationService rebuild = new(
+			rebuildProvider.GetRequiredService<IServiceScopeFactory>(),
+			NullLogger<EmbeddingGenerationService>.Instance);
+		(await rebuild.ProcessPendingEmbeddingsAsync(CancellationToken.None)).Should().Be(1);
+		await using ApplicationDbContext verify = target.CreateDbContext();
+		NormalizedDescriptionEntity rebuilt = await verify.NormalizedDescriptions
+			.AsNoTracking().SingleAsync(row => row.Id == canonicalId);
+		rebuilt.CanonicalName.Should().Be("Imported canonical name");
+		rebuilt.Embedding.Should().NotBeNull();
+		rebuilt.EmbeddingModelVersion.Should().Be(OnnxEmbeddingService.EmbeddingSpaceFingerprint);
+	}
+
 	[Theory]
 	[InlineData("same-active")]
 	[InlineData("different-active")]
@@ -313,6 +395,93 @@ public class BackupCurationImportTests(PostgresFixture target) : IClassFixture<P
 		artifact.CloseForRead();
 		await using FileStream stream = File.OpenRead(artifact.Path);
 		return await importer.ImportFromSqliteAsync(stream, CancellationToken.None);
+	}
+
+	private ServiceProvider BuildWorkerProvider(IEmbeddingService embeddings, IInterceptor? interceptor = null)
+	{
+		DbContextOptionsBuilder<ApplicationDbContext> options =
+			new(target.CreateOptions());
+		if (interceptor is not null)
+		{
+			options.AddInterceptors(interceptor);
+		}
+		ServiceCollection services = new();
+		services.AddSingleton(embeddings);
+		services.AddSingleton<IDbContextFactory<ApplicationDbContext>>(new Factory(options.Options));
+		return services.BuildServiceProvider();
+	}
+
+	private sealed class HeldEmbeddingService : IEmbeddingService
+	{
+		public bool IsConfigured => true;
+		public TaskCompletionSource<IReadOnlyList<string>> Started { get; } =
+			new(TaskCreationOptions.RunContinuationsAsynchronously);
+		public TaskCompletionSource Release { get; } =
+			new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+		public Task<float[]> GenerateEmbeddingAsync(string text, CancellationToken cancellationToken) =>
+			throw new NotSupportedException();
+
+		public async Task<List<float[]>> GenerateEmbeddingsAsync(
+			List<string> texts,
+			CancellationToken cancellationToken)
+		{
+			Started.TrySetResult(texts);
+			await Release.Task.WaitAsync(cancellationToken);
+			return texts.Select(_ => new float[OnnxEmbeddingService.EmbeddingDimension]).ToList();
+		}
+	}
+
+	private sealed class ImmediateEmbeddingService : IEmbeddingService
+	{
+		public bool IsConfigured => true;
+		public Task<float[]> GenerateEmbeddingAsync(string text, CancellationToken cancellationToken) =>
+			Task.FromResult(new float[OnnxEmbeddingService.EmbeddingDimension]);
+		public Task<List<float[]>> GenerateEmbeddingsAsync(List<string> texts, CancellationToken cancellationToken) =>
+			Task.FromResult(texts.Select(_ => new float[OnnxEmbeddingService.EmbeddingDimension]).ToList());
+	}
+
+	private sealed class CanonicalLockBarrier : DbCommandInterceptor
+	{
+		public TaskCompletionSource LockHeld { get; } =
+			new(TaskCreationOptions.RunContinuationsAsynchronously);
+		public TaskCompletionSource Release { get; } =
+			new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+		public override async ValueTask<DbDataReader> ReaderExecutedAsync(
+			DbCommand command,
+			CommandExecutedEventData eventData,
+			DbDataReader result,
+			CancellationToken cancellationToken = default)
+		{
+			if (command.CommandText.Contains("matching.\"NormalizedDescriptions\"", StringComparison.Ordinal)
+				&& command.CommandText.Contains("FOR UPDATE", StringComparison.Ordinal))
+			{
+				LockHeld.TrySetResult();
+				await Release.Task.WaitAsync(cancellationToken);
+			}
+			return result;
+		}
+	}
+
+	private sealed class ImportReadBarrier : DbCommandInterceptor
+	{
+		public TaskCompletionSource CanonicalRead { get; } =
+			new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+		public override ValueTask<DbDataReader> ReaderExecutedAsync(
+			DbCommand command,
+			CommandExecutedEventData eventData,
+			DbDataReader result,
+			CancellationToken cancellationToken = default)
+		{
+			if (command.CommandText.Contains("matching.\"NormalizedDescriptions\"", StringComparison.Ordinal)
+				&& !command.CommandText.Contains("FOR UPDATE", StringComparison.Ordinal))
+			{
+				CanonicalRead.TrySetResult();
+			}
+			return ValueTask.FromResult(result);
+		}
 	}
 
 	private static ReceiptEntity Receipt(Guid id) => new() { Id = id, Location = "Before import", Date = new(2024, 1, 1) };

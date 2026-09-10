@@ -150,13 +150,16 @@ public class ItemTemplateSimilarityService(
 			    c.default_item_code
 			FROM combined c
 			LEFT JOIN "matching"."ItemEmbeddings" e
-			    ON e."EntityType" = c.entity_type AND e."EntityId" = c.entity_id
+			    ON e."EntityType" = c.entity_type
+			   AND e."EntityId" = c.entity_id
+			   AND e."EntityText" = c.name
+			   AND e."ModelVersion" = {4}
 			ORDER BY combined_score DESC
 			LIMIT {3}
 			""";
 
 		return await context.Database
-			.SqlQueryRaw<SimilarItemRow>(sql, searchText, threshold, searchVector, limit)
+			.SqlQueryRaw<SimilarItemRow>(sql, searchText, threshold, searchVector, limit, OnnxEmbeddingService.EmbeddingSpaceFingerprint)
 			.ToListAsync(cancellationToken);
 	}
 

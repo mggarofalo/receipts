@@ -68,7 +68,7 @@ public partial class NormalizedDescriptionStaleWriteTests
 		TargetAttempt loserAttempt = new();
 		DbContextOptions<ApplicationDbContext> workerOptions = Options(rejectionWins ? loserAttempt : winnerGate);
 		DbContextOptions<ApplicationDbContext> rejectOptions = Options(rejectionWins ? winnerGate : loserAttempt);
-		Mock<INormalizedDescriptionService> canonical = new();
+		Mock<INormalizedDescriptionService> canonical = CanonicalMock();
 		canonical.Setup(service => service.GetOrCreateAsync("Milk", It.IsAny<CancellationToken>())).ReturnsAsync(new GetOrCreateResult(new(seed.Milk, "Milk", NormalizedDescriptionStatus.Active, DateTimeOffset.UtcNow), 0.94));
 		using ServiceProvider provider = BuildProvider(canonical.Object, new OptionsFactory(workerOptions));
 		using NormalizedDescriptionResolutionService worker = CreateResolver(provider);
@@ -133,7 +133,7 @@ public partial class NormalizedDescriptionStaleWriteTests
 	{
 		Seed seed = await SeedAsync();
 		CommitFailureOnce failure = new();
-		Mock<INormalizedDescriptionService> canonical = new();
+		Mock<INormalizedDescriptionService> canonical = CanonicalMock();
 		canonical.Setup(service => service.GetOrCreateAsync("Milk", It.IsAny<CancellationToken>())).ReturnsAsync(new GetOrCreateResult(new(seed.Milk, "Milk", NormalizedDescriptionStatus.Active, DateTimeOffset.UtcNow), 0.94));
 		using ServiceProvider provider = BuildProvider(canonical.Object, new OptionsFactory(Options(failure)));
 		using NormalizedDescriptionResolutionService worker = CreateResolver(provider);

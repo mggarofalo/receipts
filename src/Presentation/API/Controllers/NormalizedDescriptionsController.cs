@@ -11,6 +11,7 @@ using Application.Models;
 using Application.Models.NormalizedDescriptions;
 using Application.Queries.NormalizedDescription.GetAll;
 using Application.Queries.NormalizedDescription.GetById;
+using Application.Queries.NormalizedDescription.GetEmbeddingCoverage;
 using Application.Queries.NormalizedDescription.GetSettings;
 using Application.Queries.NormalizedDescription.PreviewRequeuePending;
 using Application.Queries.NormalizedDescription.PreviewThresholdImpact;
@@ -39,6 +40,7 @@ namespace API.Controllers;
 public class NormalizedDescriptionsController(IMediator mediator) : ControllerBase
 {
 	public const string RouteSettings = "settings";
+	public const string RouteEmbeddingCoverage = "embedding-coverage";
 	public const string RoutePreview = "settings/preview";
 	public const string RouteTest = "test";
 	public const string RouteGetAll = "";
@@ -81,6 +83,25 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 	{
 		NormalizedDescriptionSettings settings = await mediator.Send(new GetNormalizedDescriptionSettingsQuery(), cancellationToken);
 		return TypedResults.Ok(ToResponse(settings));
+	}
+
+	[HttpGet(RouteEmbeddingCoverage)]
+	[EndpointSummary("Get semantic-vector rebuild coverage")]
+	[EndpointDescription("Reports current-fingerprint coverage while the bounded background rebuild runs. Exact name matching remains available during rebuild; semantic readers ignore obsolete vectors. Admin-only.")]
+	public async Task<Ok<EmbeddingCoverageResponse>> GetEmbeddingCoverage(CancellationToken cancellationToken)
+	{
+		EmbeddingCoverage coverage = await mediator.Send(new GetEmbeddingCoverageQuery(), cancellationToken);
+		return TypedResults.Ok(new EmbeddingCoverageResponse
+		{
+			Fingerprint = coverage.Fingerprint,
+			CanonicalReady = coverage.CanonicalReady,
+			CanonicalTotal = coverage.CanonicalTotal,
+			CanonicalPending = coverage.CanonicalPending,
+			ItemReady = coverage.ItemReady,
+			ItemTotal = coverage.ItemTotal,
+			ItemPending = coverage.ItemPending,
+			IsComplete = coverage.IsComplete,
+		});
 	}
 
 	[HttpPatch(RouteSettings)]

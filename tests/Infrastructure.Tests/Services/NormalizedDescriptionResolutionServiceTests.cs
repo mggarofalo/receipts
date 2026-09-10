@@ -5,6 +5,7 @@ using Application.Models.NormalizedDescriptions;
 using Domain.NormalizedDescriptions;
 using FluentAssertions;
 using Infrastructure.Entities.Core;
+using Infrastructure.Mapping;
 using Infrastructure.Services;
 using Infrastructure.Tests.Helpers;
 using Microsoft.EntityFrameworkCore;
@@ -31,6 +32,14 @@ public class NormalizedDescriptionResolutionServiceTests
 	{
 		_embeddingServiceMock = new Mock<IEmbeddingService>();
 		_normalizedServiceMock = new Mock<INormalizedDescriptionService>();
+		_normalizedServiceMock
+			.Setup(service => service.GetEmbeddingCoverageAsync(It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new EmbeddingCoverage(
+				OnnxEmbeddingService.EmbeddingSpaceFingerprint,
+				CanonicalReady: 0,
+				CanonicalTotal: 0,
+				ItemReady: 0,
+				ItemTotal: 0));
 		_signalMock = new Mock<IDescriptionChangeSignal>();
 		// The service Subscribe()s once at construction for its own wake-up reader.
 		_signalMock
@@ -124,6 +133,57 @@ public class NormalizedDescriptionResolutionServiceTests
 		seed.NormalizedDescriptions.Add(new() { Id = domain.Id, CanonicalName = domain.CanonicalName, Status = domain.Status, CreatedAt = domain.CreatedAt });
 		seed.SaveChanges();
 		return new GetOrCreateResult(domain, matchScore);
+	}
+
+	[Fact]
+	public async Task ProcessPendingResolutionsAsync_RestoreWithIncompleteCanonicalVectors_UsesExactMatchButDefersNovelText()
+	{
+		ReceiptItemEntity exact = BuildItem("organic MILK");
+		ReceiptItemEntity novel = BuildItem("Oat beverage");
+		await SeedReceiptAndItemsAsync(exact, novel);
+		Guid canonicalId = Guid.NewGuid();
+		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
+			{
+				Id = canonicalId,
+				CanonicalName = "Organic Milk",
+				Status = NormalizedDescriptionStatus.Active,
+				Embedding = null,
+				EmbeddingModelVersion = null,
+				CreatedAt = DateTimeOffset.UtcNow,
+			});
+			await seed.SaveChangesAsync();
+		}
+		_embeddingServiceMock.Setup(service => service.IsConfigured).Returns(true);
+		_embeddingServiceMock
+			.Setup(service => service.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new float[OnnxEmbeddingService.EmbeddingDimension]);
+		NormalizedDescriptionService realService = new(
+			_contextFactory,
+			_embeddingServiceMock.Object,
+			new NormalizedDescriptionMapper(),
+			new NormalizedDescriptionSettingsMapper());
+		_serviceProviderMock
+			.Setup(provider => provider.GetService(typeof(INormalizedDescriptionService)))
+			.Returns(realService);
+
+		NormalizedDescriptionResolutionService.ResolutionSummary summary =
+			await CreateService().ProcessPendingResolutionsAsync(CancellationToken.None);
+		GetOrCreateResult exactLookup =
+			await realService.GetOrCreateAsync("organic MILK", CancellationToken.None);
+
+		summary.Should().Be(NormalizedDescriptionResolutionService.ResolutionSummary.Empty);
+		exactLookup.Description.Id.Should().Be(canonicalId);
+		exactLookup.MatchScore.Should().Be(1);
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		verify.NormalizedDescriptions.Should().ContainSingle();
+		verify.ReceiptItems.IgnoreAutoIncludes().Single(item => item.Id == exact.Id)
+			.NormalizedDescriptionId.Should().BeNull(
+				"the background resolver defers the entire fuzzy batch until coverage is complete");
+		verify.ReceiptItems.IgnoreAutoIncludes().Single(item => item.Id == novel.Id)
+			.NormalizedDescriptionId.Should().BeNull(
+				"fuzzy matching or create-new must wait for complete canonical coverage");
 	}
 
 	[Fact]
