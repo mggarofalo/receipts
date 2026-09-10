@@ -1,8 +1,8 @@
 diff --git a/node_modules/vite/dist/node/chunks/config.js b/node_modules/vite/dist/node/chunks/config.js
-index 2b39a20..d9ff548 100644
+index 936353a..7712ebf 100644
 --- a/node_modules/vite/dist/node/chunks/config.js
 +++ b/node_modules/vite/dist/node/chunks/config.js
-@@ -2227,7 +2227,7 @@ function optimizeSafeRealPathSync() {
+@@ -2230,7 +2230,7 @@ function optimizeSafeRealPathSync() {
  			return;
  		}
  	}

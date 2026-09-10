@@ -6,6 +6,7 @@
     "npm": "11.19.0"
   },
   "allowScripts": {
+    "@scarf/scarf": false,
     "fsevents": false
   },
   "scripts": {
@@ -15,11 +16,11 @@
     "check:breaking": "node scripts/check-breaking.mjs"
   },
   "devDependencies": {
-    "@commitlint/cli": "^20.4.3",
-    "@commitlint/config-conventional": "^20.4.3",
-    "@stoplight/spectral-cli": "^6.15.0",
+    "@commitlint/cli": "^20.5.3",
+    "@commitlint/config-conventional": "^20.5.3",
+    "@stoplight/spectral-cli": "^6.16.3",
     "cross-env": "^10.1.0",
-    "js-yaml": "^4.1.0",
+    "js-yaml": "^4.3.2",
     "typescript": "~5.9.3"
   }
 }
