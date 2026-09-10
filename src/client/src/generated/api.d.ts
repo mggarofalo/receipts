@@ -4423,6 +4423,7 @@ export interface components {
         PushYnabTransactionsResponse: {
             success: boolean;
             pushedTransactions: components["schemas"]["PushedTransactionInfo"][];
+            operationStatus: components["schemas"]["YnabSyncRecordResponseSyncStatus"];
             unmappedCategories?: null | string[];
             error?: null | string;
         };

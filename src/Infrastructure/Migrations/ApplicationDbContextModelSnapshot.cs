@@ -1214,6 +1214,10 @@ namespace Infrastructure.Migrations
                         .IsUnique()
                         .HasFilter("\"DeletedAt\" IS NULL");
 
+                    b.HasIndex("YnabBudgetId", "YnabAccountId", "ImportId")
+                        .IsUnique()
+                        .HasFilter("\"SyncType\" = 'TransactionPush' AND \"ImportId\" IS NOT NULL AND \"YnabAccountId\" IS NOT NULL");
+
                     b.ToTable("YnabSyncRecords", "ynab", t =>
                         {
                             t.HasCheckConstraint("CK_YnabSyncRecords_AttemptCount", "\"AttemptCount\" >= 0");

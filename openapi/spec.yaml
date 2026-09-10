@@ -8721,7 +8721,7 @@ components:
 
     PushYnabTransactionsResponse:
       type: object
-      required: [success, pushedTransactions]
+      required: [success, pushedTransactions, operationStatus]
       properties:
         success:
           type: boolean
@@ -8729,6 +8729,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PushedTransactionInfo"
+        operationStatus:
+          $ref: "#/components/schemas/YnabSyncRecordResponseSyncStatus"
         unmappedCategories:
           type:
             - "null"

@@ -14,5 +14,6 @@ public interface IYnabSyncRecordRepository
 	Task<bool> UpdateAsync(YnabSyncRecordEntity entity, CancellationToken cancellationToken);
 	Task DeleteAsync(Guid id, CancellationToken cancellationToken);
 	Task<List<YnabSyncRecordEntity>> GetByReceiptIdsAndBudgetAsync(List<Guid> receiptIds, string ynabBudgetId, CancellationToken cancellationToken);
+	Task<List<YnabSyncRecordEntity>> GetPushOperationIdentitiesByReceiptAsync(Guid receiptId, string ynabBudgetId, CancellationToken cancellationToken);
 	Task<DateTimeOffset?> GetLatestSuccessfulSyncTimestampAsync(string ynabBudgetId, CancellationToken cancellationToken);
 }

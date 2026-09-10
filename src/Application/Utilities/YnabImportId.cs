@@ -5,6 +5,10 @@ public static class YnabImportId
 	private const int MaxLength = 36;
 	private const int ReceiptPrefixLength = 6;
 
+	public static string Generate(Guid localTransactionId) => $"YNAB{localTransactionId:N}";
+
+	// Legacy occurrence-based format. Existing immutable operation snapshots keep
+	// using these IDs; new operations use the globally stable transaction format.
 	public static string Generate(long milliunits, DateOnly date, Guid receiptId, int occurrence)
 	{
 		ArgumentOutOfRangeException.ThrowIfLessThan(occurrence, 1);

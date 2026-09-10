@@ -89,6 +89,14 @@ public partial class PersistImmutableYnabPushOperations : Migration
 			table: "YnabSyncRecords",
 			sql: "\"RequestPayloadJson\" IS NULL OR (\"ImportId\" IS NOT NULL AND \"PayloadHash\" IS NOT NULL AND \"SourceVersion\" IS NOT NULL AND \"YnabAccountId\" IS NOT NULL)");
 
+		migrationBuilder.CreateIndex(
+			name: "IX_YnabSyncRecords_YnabBudgetId_YnabAccountId_ImportId",
+			schema: "ynab",
+			table: "YnabSyncRecords",
+			columns: ["YnabBudgetId", "YnabAccountId", "ImportId"],
+			unique: true,
+			filter: "\"SyncType\" = 'TransactionPush' AND \"ImportId\" IS NOT NULL AND \"YnabAccountId\" IS NOT NULL");
+
 		// Old non-terminal pushes have no durable import ID or request snapshot. Treat
 		// them as ambiguous instead of silently recomputing mutable receipt data.
 		migrationBuilder.Sql(
@@ -96,9 +104,8 @@ public partial class PersistImmutableYnabPushOperations : Migration
 			UPDATE ynab."YnabSyncRecords"
 			SET "SyncStatus" = 'Unknown',
 				"LastError" = 'This YNAB attempt predates immutable operation tracking and cannot be retried automatically. Review the destination transaction before resolving it.'
-			WHERE "SyncType" = 'TransactionPush'
-				AND "SyncStatus" IN ('Pending', 'Failed')
-				AND "DeletedAt" IS NULL;
+				WHERE "SyncType" = 'TransactionPush'
+					AND "SyncStatus" IN ('Pending', 'Failed');
 			""");
 	}
 
@@ -116,6 +123,11 @@ public partial class PersistImmutableYnabPushOperations : Migration
 
 		migrationBuilder.DropCheckConstraint(
 			name: "CK_YnabSyncRecords_AttemptCount",
+			schema: "ynab",
+			table: "YnabSyncRecords");
+
+		migrationBuilder.DropIndex(
+			name: "IX_YnabSyncRecords_YnabBudgetId_YnabAccountId_ImportId",
 			schema: "ynab",
 			table: "YnabSyncRecords");
 

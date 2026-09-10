@@ -43,6 +43,13 @@ public class YnabSyncRecordEntityConfiguration : IEntityTypeConfiguration<YnabSy
 			.IsUnique()
 			.HasFilter("\"DeletedAt\" IS NULL");
 
+		// YNAB de-duplicates import IDs per destination account. Keep tombstoned
+		// operations in this uniqueness domain because their remote transaction and
+		// consumed import ID survive a local soft delete.
+		builder.HasIndex(e => new { e.YnabBudgetId, e.YnabAccountId, e.ImportId })
+			.IsUnique()
+			.HasFilter("\"SyncType\" = 'TransactionPush' AND \"ImportId\" IS NOT NULL AND \"YnabAccountId\" IS NOT NULL");
+
 		// ClientCascade: EF only cascades when related entities are loaded in the
 		// same change tracker. Hard-delete paths (TrashService.PurgeAllDeletedAsync)
 		// must delete YnabSyncRecords before Transactions to respect FK order.

@@ -4,7 +4,8 @@ public record PushYnabTransactionsResult(
 	bool Success,
 	List<PushedTransactionInfo> PushedTransactions,
 	List<string>? UnmappedCategories = null,
-	string? Error = null)
+	string? Error = null,
+	Common.YnabSyncStatus? OperationStatus = null)
 {
 	public static PushYnabTransactionsResult Failure(string error) =>
 		new(false, [], null, error);

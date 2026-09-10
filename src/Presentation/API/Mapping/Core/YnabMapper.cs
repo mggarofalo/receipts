@@ -2,6 +2,7 @@ using API.Generated.Dtos;
 using Application.Commands.Ynab.PushTransactions;
 using Application.Models;
 using Application.Models.Ynab;
+using Common;
 using Riok.Mapperly.Abstractions;
 using AppYnabMemoSyncOutcome = Application.Models.Ynab.YnabMemoSyncOutcome;
 using AppYnabTransactionCandidate = Application.Models.Ynab.YnabTransactionCandidate;
@@ -201,6 +202,8 @@ public partial class YnabMapper
 		return new PushYnabTransactionsResponse
 		{
 			Success = source.Success,
+			OperationStatus = Enum.Parse<YnabSyncRecordResponseSyncStatus>(
+				(source.OperationStatus ?? (source.Success ? YnabSyncStatus.Synced : YnabSyncStatus.Failed)).ToString()),
 			PushedTransactions = source.PushedTransactions
 				.Select(ToPushedTransactionInfo)
 				.ToList(),

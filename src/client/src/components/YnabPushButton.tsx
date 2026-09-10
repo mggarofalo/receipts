@@ -28,17 +28,12 @@ export function YnabPushButton({
   };
 
   const result = pushMutation.data;
-  const mutationSucceeded = result?.success === true;
-  const mutationFailed = result != null && result.success === false;
+  const mutationSucceeded = result?.operationStatus === "synced";
 
   // Effective status: a fresh mutation result trumps whatever was persisted.
   // Otherwise fall back to the status fetched on page load.
   const effectiveStatus: ReceiptYnabSyncStatusValue | undefined =
-    mutationSucceeded
-      ? "synced"
-      : mutationFailed
-        ? "failed"
-        : persistedSyncStatus;
+    result?.operationStatus ?? persistedSyncStatus;
 
   const isSynced = effectiveStatus === "synced";
 
@@ -80,8 +75,13 @@ export function YnabPushButton({
             </AlertDescription>
           </Alert>
         )}
-        {result && !result.success && result.error && (
-          <Alert variant="destructive" role="alert">
+        {result && result.error && (
+          <Alert
+            variant={
+              result.operationStatus === "failed" ? "destructive" : "default"
+            }
+            role="alert"
+          >
             <AlertDescription>{result.error}</AlertDescription>
           </Alert>
         )}

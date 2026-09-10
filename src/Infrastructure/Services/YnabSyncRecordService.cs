@@ -65,6 +65,19 @@ public class YnabSyncRecordService(
 		return entity is null ? null : ToDto(entity);
 	}
 
+	public async Task<IReadOnlyList<YnabPushOperationIdentity>> GetPushOperationIdentitiesByReceiptAsync(
+		Guid receiptId,
+		string ynabBudgetId,
+		CancellationToken cancellationToken)
+	{
+		List<YnabSyncRecordEntity> records = await repository.GetPushOperationIdentitiesByReceiptAsync(
+			receiptId, ynabBudgetId, cancellationToken);
+		return records
+			.Where(record => record.SyncType == YnabSyncType.TransactionPush && record.ImportId is not null)
+			.Select(record => new YnabPushOperationIdentity(record.LocalTransactionId, record.ImportId!))
+			.ToList();
+	}
+
 	public async Task<YnabPushOperation> PreparePushOperationAsync(
 		Guid localTransactionId,
 		string ynabBudgetId,

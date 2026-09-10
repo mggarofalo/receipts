@@ -179,6 +179,24 @@ public class YnabSyncRecordRepository(IDbContextFactory<ApplicationDbContext> co
 			.ToListAsync(cancellationToken);
 	}
 
+	public async Task<List<YnabSyncRecordEntity>> GetPushOperationIdentitiesByReceiptAsync(
+		Guid receiptId,
+		string ynabBudgetId,
+		CancellationToken cancellationToken)
+	{
+		using ApplicationDbContext context = contextFactory.CreateDbContext();
+		return await context.YnabSyncRecords
+			.IgnoreQueryFilters()
+			.Where(record => record.YnabBudgetId == ynabBudgetId &&
+				record.SyncType == YnabSyncType.TransactionPush &&
+				record.ImportId != null &&
+				context.Set<TransactionEntity>()
+					.IgnoreQueryFilters()
+					.Any(transaction => transaction.Id == record.LocalTransactionId && transaction.ReceiptId == receiptId))
+			.AsNoTracking()
+			.ToListAsync(cancellationToken);
+	}
+
 	public async Task<DateTimeOffset?> GetLatestSuccessfulSyncTimestampAsync(string ynabBudgetId, CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();

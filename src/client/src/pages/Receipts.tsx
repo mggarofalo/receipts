@@ -905,11 +905,11 @@ function Receipts() {
             onPushToYnab={() => {
               bulkPushYnab.mutate(Array.from(selected), {
                 onSuccess: (data) => {
-                  // Only clear the receipts that actually pushed; keep the
-                  // failed ones selected so the user can retry. RECEIPTS-783.
+                  // Only clear receipts authoritatively recorded as Synced; keep
+                  // failed or ambiguous work selected for review/reconciliation.
                   const succeededIds = new Set(
                     (data?.results ?? [])
-                      .filter((r) => r.result.success)
+                      .filter((r) => r.result.operationStatus === "synced")
                       .map((r) => r.receiptId),
                   );
                   setSelected((prev) => {
