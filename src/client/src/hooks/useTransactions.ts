@@ -1,5 +1,5 @@
 import { toastErrorPolicy } from "@/lib/request-error-policy";
-import { invalidateDomainChange, queryKeys } from "@/lib/query-invalidation";
+import { invalidateDomainChange, queryKeys, repairDomainChange } from "@/lib/query-invalidation";
 import { useMemo } from "react";
 import { useStableQuery } from "@/hooks/useStableQuery";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -7,6 +7,16 @@ import { useSessionMutation } from "@/hooks/useSessionMutation";
 import client from "@/lib/api-client";
 import type { components } from "@/generated/api";
 import { toast } from "sonner";
+import { getSessionVersion } from "@/lib/auth";
+
+function repairYnabSyncRecordChange(queryClient: ReturnType<typeof useQueryClient>) {
+  const sessionVersion = getSessionVersion();
+  return repairDomainChange(
+    queryClient,
+    "ynab-sync-record",
+    () => getSessionVersion() === sessionVersion,
+  );
+}
 
 export function useTransactions(offset = 0, limit = 50, sortBy?: string | null, sortDirection?: string | null) {
   const query = useQuery({
@@ -158,6 +168,7 @@ export function useDeleteTransactions() {
     },
     onSuccess: () => {
       toast.success("Transaction(s) deleted");
+      return repairYnabSyncRecordChange(queryClient);
     },
   });
 }
@@ -191,6 +202,7 @@ export function useRestoreTransaction() {
     onSuccess: () => {
       invalidateDomainChange(queryClient, "transaction");
       toast.success("Transaction restored");
+      return repairYnabSyncRecordChange(queryClient);
     },
   });
 }

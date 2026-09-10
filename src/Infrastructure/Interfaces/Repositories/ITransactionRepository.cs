@@ -14,8 +14,8 @@ public interface ITransactionRepository
 	Task<int> GetDeletedCountAsync(CancellationToken cancellationToken);
 	Task<List<TransactionEntity>> CreateAsync(List<TransactionEntity> entities, CancellationToken cancellationToken);
 	Task UpdateAsync(List<TransactionEntity> entities, CancellationToken cancellationToken);
-	Task DeleteAsync(List<Guid> ids, CancellationToken cancellationToken);
+	Task<CascadeMutationResult> DeleteAsync(List<Guid> ids, CancellationToken cancellationToken);
 	Task<bool> ExistsAsync(Guid id, CancellationToken cancellationToken);
 	Task<int> GetCountAsync(CancellationToken cancellationToken);
-	Task<bool> RestoreAsync(Guid id, CancellationToken cancellationToken);
+	Task<CascadeMutationResult> RestoreAsync(Guid id, CancellationToken cancellationToken);
 }

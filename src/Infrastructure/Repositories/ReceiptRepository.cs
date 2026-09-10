@@ -293,12 +293,13 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 		return previous;
 	}
 
-	public async Task DeleteAsync(List<Guid> ids, CancellationToken cancellationToken)
+	public async Task<CascadeMutationResult> DeleteAsync(List<Guid> ids, CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		List<ReceiptEntity> entities = await context.Receipts
 			.Where(e => ids.Contains(e.Id))
 			.ToListAsync(cancellationToken);
+		List<Guid> entityIds = [.. entities.Select(entity => entity.Id)];
 
 		// Load owned children into the change tracker so cascade soft-delete fires
 		await context.ReceiptItems.IgnoreAutoIncludes().Where(i => ids.Contains(i.ReceiptId)).LoadAsync(cancellationToken);
@@ -309,16 +310,17 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 		// cascade (Receipt -> Transaction -> YnabSyncRecord) soft-deletes them in
 		// FK-correct order. Otherwise a synced transaction's active sync record lingers
 		// and later blocks Empty Trash on the NO ACTION FK. See RECEIPTS-755.
-		await context.YnabSyncRecords
+		List<YnabSyncRecordEntity> syncRecords = await context.YnabSyncRecords
 			.IgnoreAutoIncludes()
 			.Where(s => context.Transactions
-				.Where(t => ids.Contains(t.ReceiptId))
+				.Where(t => entityIds.Contains(t.ReceiptId))
 				.Select(t => t.Id)
 				.Contains(s.LocalTransactionId))
-			.LoadAsync(cancellationToken);
+			.ToListAsync(cancellationToken);
 
 		context.Receipts.RemoveRange(entities);
 		await context.SaveChangesAsync(cancellationToken);
+		return new CascadeMutationResult(entities.Count > 0, syncRecords.Count);
 	}
 
 	public async Task<bool> ExistsAsync(Guid id, CancellationToken cancellationToken)
@@ -362,7 +364,7 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 		return locations;
 	}
 
-	public async Task<bool> RestoreAsync(Guid id, CancellationToken cancellationToken)
+	public async Task<CascadeMutationResult> RestoreAsync(Guid id, CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		ReceiptEntity? entity = await context.Receipts
@@ -371,7 +373,7 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 
 		if (entity is null)
 		{
-			return false;
+			return new CascadeMutationResult(false, 0);
 		}
 
 		entity.DeletedAt = null;
@@ -383,8 +385,11 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 		// and, in turn, the YnabSyncRecords those transactions cascade-soft-deleted
 		// (tagged with the transaction id). Mirrors the two-level cascade delete. RECEIPTS-755
 		await context.RestoreOwnedChildrenAsync<ReceiptEntity>(id, cancellationToken);
+		int syncRecordsChanged = context.ChangeTracker.Entries<YnabSyncRecordEntity>().Count(entry =>
+			entry.Property(syncRecord => syncRecord.DeletedAt).OriginalValue is not null
+			&& entry.Property(syncRecord => syncRecord.DeletedAt).CurrentValue is null);
 
 		await context.SaveChangesAsync(cancellationToken);
-		return true;
+		return new CascadeMutationResult(true, syncRecordsChanged);
 	}
 }

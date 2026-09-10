@@ -17,10 +17,10 @@ public interface IReceiptRepository
 	/// </summary>
 	Task UpdateAsync(List<ReceiptEntity> entities, CancellationToken cancellationToken);
 	Task<ReceiptImageSet?> ReplaceImagePathsAsync(Guid id, ReceiptImageSet imageSet, CancellationToken cancellationToken);
-	Task DeleteAsync(List<Guid> ids, CancellationToken cancellationToken);
+	Task<CascadeMutationResult> DeleteAsync(List<Guid> ids, CancellationToken cancellationToken);
 	Task<bool> ExistsAsync(Guid id, CancellationToken cancellationToken);
 	Task<int> GetCountAsync(CancellationToken cancellationToken);
 	Task<int> GetCountAsync(Guid? accountId, Guid? cardId, string? q, string? location, CancellationToken cancellationToken);
-	Task<bool> RestoreAsync(Guid id, CancellationToken cancellationToken);
+	Task<CascadeMutationResult> RestoreAsync(Guid id, CancellationToken cancellationToken);
 	Task<List<string>> GetDistinctLocationsAsync(string? query, int limit, CancellationToken cancellationToken);
 }
