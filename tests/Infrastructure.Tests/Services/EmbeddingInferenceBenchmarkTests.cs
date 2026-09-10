@@ -23,7 +23,7 @@ public class EmbeddingInferenceBenchmarkTests(ITestOutputHelper output)
 			{
 				ModelPath = modelDirectory,
 				RequestQueueCapacity = 32,
-				BackgroundQueueCapacity = 8,
+				BackgroundQueueCapacity = 32,
 			}),
 			NullLogger<OnnxEmbeddingService>.Instance);
 		service.IsProvisioned.Should().BeTrue(
@@ -50,24 +50,25 @@ public class EmbeddingInferenceBenchmarkTests(ITestOutputHelper output)
 			warmLatencies.Add(await MeasureRequestAsync(service, $"warm latency sample {i}"));
 		}
 
-		List<string> backgroundTexts = Enumerable.Range(0, 48)
+		List<string> backgroundTexts = Enumerable.Range(0, 24)
 			.Select(index => $"background receipt item description {index}")
 			.ToList();
-		Task<List<float[]>> backgroundBatch = service.GenerateEmbeddingsAsync(
-			backgroundTexts,
-			CancellationToken.None);
-		backgroundBatch.IsCompleted.Should().BeFalse(
-			"request measurements must begin while background inference remains queued");
+		IBackgroundEmbeddingService backgroundService = service;
+		List<Task<float[]>> backgroundTasks = backgroundTexts
+			.Select(text => backgroundService.GenerateBackgroundEmbeddingAsync(text, CancellationToken.None))
+			.ToList();
+		backgroundTasks.Should().Contain(task => !task.IsCompleted,
+			"request measurements must begin while an admitted background inference is outstanding");
 		List<double> contendedRequestLatencies = [];
 		for (int i = 0; i < 20; i++)
 		{
-			backgroundBatch.IsCompleted.Should().BeFalse(
-				$"request sample {i} must overlap remaining background work");
+			backgroundTasks.Should().Contain(task => !task.IsCompleted,
+				$"request sample {i} must overlap a concrete queued or in-flight background inference");
 			contendedRequestLatencies.Add(
 				await MeasureRequestAsync(service, $"interactive receipt lookup {i}"));
 		}
 
-		List<float[]> backgroundResults = await backgroundBatch;
+		float[][] backgroundResults = await Task.WhenAll(backgroundTasks);
 
 		backgroundResults.Should().HaveCount(backgroundTexts.Count);
 		warmLatencies.Should().HaveCount(10);
