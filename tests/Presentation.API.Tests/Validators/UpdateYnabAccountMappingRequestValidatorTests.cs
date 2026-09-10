@@ -5,6 +5,7 @@ namespace Presentation.API.Tests.Validators;
 
 public class UpdateYnabAccountMappingRequestValidatorTests
 {
+	private static readonly Guid ValidBudgetId = Guid.Parse("11111111-1111-1111-1111-111111111111");
 	private readonly UpdateYnabAccountMappingRequestValidator _validator = new();
 
 	[Fact]
@@ -15,7 +16,7 @@ public class UpdateYnabAccountMappingRequestValidatorTests
 		{
 			YnabAccountId = "ynab-account-1",
 			YnabAccountName = "Checking",
-			YnabBudgetId = "budget-1",
+			YnabBudgetId = ValidBudgetId,
 		};
 
 		// Act
@@ -33,7 +34,7 @@ public class UpdateYnabAccountMappingRequestValidatorTests
 		{
 			YnabAccountId = "",
 			YnabAccountName = "Checking",
-			YnabBudgetId = "budget-1",
+			YnabBudgetId = ValidBudgetId,
 		};
 
 		// Act
@@ -52,7 +53,7 @@ public class UpdateYnabAccountMappingRequestValidatorTests
 		{
 			YnabAccountId = "ynab-account-1",
 			YnabAccountName = "",
-			YnabBudgetId = "budget-1",
+			YnabBudgetId = ValidBudgetId,
 		};
 
 		// Act
@@ -71,7 +72,7 @@ public class UpdateYnabAccountMappingRequestValidatorTests
 		{
 			YnabAccountId = "ynab-account-1",
 			YnabAccountName = "Checking",
-			YnabBudgetId = "",
+			YnabBudgetId = Guid.Empty,
 		};
 
 		// Act

@@ -612,6 +612,7 @@ public class CardsControllerTests
 				CardsToMove: 2,
 				TransactionsToRepoint: 37,
 				TrashedTransactionsToRepoint: 4,
+				YnabMappingsToMove: 3,
 				SurvivingYnabMapping: null,
 				Conflicts: null));
 
@@ -621,6 +622,7 @@ public class CardsControllerTests
 		Ok<MergeCardsPreviewResponse> ok = Assert.IsType<Ok<MergeCardsPreviewResponse>>(result.Result);
 		(ok.Value!.CardsToMove, ok.Value.TransactionsToRepoint, ok.Value.TrashedTransactionsToRepoint)
 			.Should().Be((2, 37, 4));
+		ok.Value.YnabMappingsToMove.Should().Be(3);
 		ok.Value.AccountsToRemove.Should().ContainSingle()
 			.Which.Name.Should().Be("Source Account");
 		_notifierMock.Verify(

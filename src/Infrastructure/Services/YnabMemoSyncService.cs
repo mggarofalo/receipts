@@ -50,8 +50,7 @@ public class YnabMemoSyncService(
 		}
 
 		// Capture account identity once for the entire operation, including bulk requests.
-		ILookup<Guid, YnabAccountMappingDto> mappings = (await accountMappingService.GetAllAsync(cancellationToken))
-			.Where(mapping => string.Equals(mapping.YnabBudgetId, budgetId, StringComparison.Ordinal))
+		ILookup<Guid, YnabAccountMappingDto> mappings = (await accountMappingService.GetByBudgetIdAsync(budgetId, cancellationToken))
 			.ToLookup(mapping => mapping.ReceiptsAccountId);
 		List<YnabMemoSyncResult> results = [];
 		List<MemoWork> work = [];
@@ -73,13 +72,15 @@ public class YnabMemoSyncService(
 					continue;
 				}
 
-				YnabSyncRecordDto? memo = await syncRecordService.GetByTransactionAndTypeAsync(transaction.Id, YnabSyncType.MemoUpdate, cancellationToken);
-				YnabSyncRecordDto? push = await syncRecordService.GetByTransactionAndTypeAsync(transaction.Id, YnabSyncType.TransactionPush, cancellationToken);
+				YnabSyncRecordDto? memo = await syncRecordService.GetByTransactionTypeAndBudgetAsync(
+					transaction.Id, YnabSyncType.MemoUpdate, budgetId, cancellationToken);
+				YnabSyncRecordDto? push = await syncRecordService.GetByTransactionTypeAndBudgetAsync(
+					transaction.Id, YnabSyncType.TransactionPush, budgetId, cancellationToken);
 				work.Add(new(transaction, receipt, memo, push));
 				// Preload even later AlreadySynced/Pending/Failed bindings before choosing any target.
 				foreach (YnabSyncRecordDto? record in new[] { memo, push })
 				{
-					if (record is not null && record.YnabBudgetId == budgetId && !string.IsNullOrWhiteSpace(record.YnabTransactionId))
+					if (record is not null && !string.IsNullOrWhiteSpace(record.YnabTransactionId))
 					{
 						Reserve(owners, record.YnabTransactionId, transaction.Id);
 					}
@@ -107,7 +108,7 @@ public class YnabMemoSyncService(
 			}
 		}
 
-		List<MemoPlan> plans = work.Select(item => PlanMemo(item, budgetId, mappings, byDate, owners)).ToList();
+		List<MemoPlan> plans = work.Select(item => PlanMemo(item, mappings, byDate, owners)).ToList();
 		// Reserve every confident choice before any outbound write. Equally competing choices
 		// remain unresolved; neither receipt order nor failure of an earlier PATCH breaks a tie.
 		foreach (MemoPlan plan in plans.Where(plan => plan.AutomaticCandidate is not null))
@@ -150,7 +151,7 @@ public class YnabMemoSyncService(
 			candidates.Select(candidate => new YnabTransactionCandidate(candidate.Id, candidate.Date, candidate.Amount,
 				candidate.Memo, candidate.PayeeName, candidate.AccountId)).ToList());
 
-	private static MemoPlan PlanMemo(MemoWork work, string budgetId, ILookup<Guid, YnabAccountMappingDto> mappings,
+	private static MemoPlan PlanMemo(MemoWork work, ILookup<Guid, YnabAccountMappingDto> mappings,
 		Dictionary<DateOnly, (List<YnabTransaction>? Transactions, string? Error)> byDate,
 		Dictionary<string, HashSet<Guid>> owners)
 	{
@@ -164,10 +165,6 @@ public class YnabMemoSyncService(
 		}
 
 		YnabSyncRecordDto?[] records = [work.MemoRecord, work.PushRecord];
-		if (records.Any(record => record is not null && record.YnabBudgetId != budgetId))
-		{
-			return Outcome(YnabMemoSyncOutcome.Failed, "An existing sync record belongs to another YNAB budget. Resolve that binding before syncing.");
-		}
 		if (work.MemoRecord is { SyncStatus: YnabSyncStatus.Synced } synced)
 		{
 			return Outcome(YnabMemoSyncOutcome.AlreadySynced, remoteId: synced.YnabTransactionId);
@@ -255,14 +252,8 @@ public class YnabMemoSyncService(
 		TransactionEntity transaction, ReceiptEntity receipt, string budgetId,
 		YnabTransaction ynabTransaction, CancellationToken cancellationToken)
 	{
-		// The current schema identifies records by local payment/type. Never overwrite a
-		// binding for another budget; destination-scoped recovery is owned by RECEIPTS-961/962.
-		YnabSyncRecordDto? syncRecord = await syncRecordService.GetByTransactionAndTypeAsync(transaction.Id, YnabSyncType.MemoUpdate, cancellationToken);
-		if (syncRecord is not null && syncRecord.YnabBudgetId != budgetId)
-		{
-			return new(transaction.Id, receipt.Id, YnabMemoSyncOutcome.Failed, null,
-				"An existing sync record belongs to another YNAB budget. Resolve that binding before syncing.", null);
-		}
+		YnabSyncRecordDto? syncRecord = await syncRecordService.GetByTransactionTypeAndBudgetAsync(
+			transaction.Id, YnabSyncType.MemoUpdate, budgetId, cancellationToken);
 
 		string receiptLink = $"/receipts/{receipt.Id}";
 

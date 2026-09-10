@@ -1,5 +1,6 @@
 using Application.Interfaces.Services;
 using Application.Models.CommittedChanges;
+using FluentAssertions;
 using Infrastructure.Interfaces.Repositories;
 using Infrastructure.Services;
 using Moq;
@@ -26,6 +27,23 @@ public class YnabBudgetSelectionServiceTests
 			change.EntityType == CommittedEntityType.YnabBudget
 			&& change.ChangeType == CommittedChangeType.Updated
 			&& change.EntityId == null)), repositoryChanged ? Times.Once() : Times.Never());
+		_repository.VerifyAll();
+	}
+
+	[Fact]
+	public async Task SetSelectedBudgetIdAsync_CanonicalizesUuidBeforeRepositoryWrite()
+	{
+		Guid budgetId = Guid.NewGuid();
+		string canonicalBudgetId = budgetId.ToString("D");
+		_repository.Setup(r => r.SetSelectedBudgetIdAsync(canonicalBudgetId, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(false);
+		YnabBudgetSelectionService service = new(_repository.Object, _publisher.Object);
+
+		Func<Task> act = () => service.SetSelectedBudgetIdAsync(
+			$"  {{{canonicalBudgetId.ToUpperInvariant()}}}  ",
+			CancellationToken.None);
+
+		await act.Should().NotThrowAsync();
 		_repository.VerifyAll();
 	}
 }

@@ -23,10 +23,13 @@ public class GetReceiptYnabSyncStatusesQueryHandlerTests
 		];
 
 		Mock<IYnabSyncRecordService> mockService = new();
-		mockService.Setup(s => s.GetSyncStatusesByReceiptIdsAsync(receiptIds, It.IsAny<CancellationToken>()))
+		Mock<IYnabBudgetSelectionService> budgetSelection = new();
+		budgetSelection.Setup(s => s.GetSelectedBudgetIdAsync(It.IsAny<CancellationToken>()))
+			.ReturnsAsync("budget-B");
+		mockService.Setup(s => s.GetSyncStatusesByReceiptIdsAndBudgetAsync(receiptIds, "budget-B", It.IsAny<CancellationToken>()))
 			.ReturnsAsync(expected);
 
-		GetReceiptYnabSyncStatusesQueryHandler handler = new(mockService.Object);
+		GetReceiptYnabSyncStatusesQueryHandler handler = new(mockService.Object, budgetSelection.Object);
 
 		// Act
 		List<ReceiptYnabSyncStatusDto> result = await handler.Handle(
@@ -44,10 +47,13 @@ public class GetReceiptYnabSyncStatusesQueryHandlerTests
 		List<ReceiptYnabSyncStatusDto> expected = [];
 
 		Mock<IYnabSyncRecordService> mockService = new();
-		mockService.Setup(s => s.GetSyncStatusesByReceiptIdsAsync(receiptIds, It.IsAny<CancellationToken>()))
+		Mock<IYnabBudgetSelectionService> budgetSelection = new();
+		budgetSelection.Setup(s => s.GetSelectedBudgetIdAsync(It.IsAny<CancellationToken>()))
+			.ReturnsAsync("budget-B");
+		mockService.Setup(s => s.GetSyncStatusesByReceiptIdsAndBudgetAsync(receiptIds, "budget-B", It.IsAny<CancellationToken>()))
 			.ReturnsAsync(expected);
 
-		GetReceiptYnabSyncStatusesQueryHandler handler = new(mockService.Object);
+		GetReceiptYnabSyncStatusesQueryHandler handler = new(mockService.Object, budgetSelection.Object);
 
 		// Act
 		List<ReceiptYnabSyncStatusDto> result = await handler.Handle(

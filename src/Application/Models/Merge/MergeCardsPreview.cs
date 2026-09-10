@@ -17,6 +17,7 @@ public record MergeCardsPreview(
 	int CardsToMove,
 	int TransactionsToRepoint,
 	int TrashedTransactionsToRepoint,
+	int YnabMappingsToMove,
 	MergeCardsPreviewMapping? SurvivingYnabMapping,
 	IReadOnlyList<YnabMappingConflict>? Conflicts)
 {
@@ -25,14 +26,15 @@ public record MergeCardsPreview(
 		&& AccountsToRemove.Count == 0
 		&& CardsToMove == 0
 		&& TransactionsToRepoint == 0
-		&& TrashedTransactionsToRepoint == 0;
+		&& TrashedTransactionsToRepoint == 0
+		&& YnabMappingsToMove == 0;
 
 	/// <summary>A merge the database has already satisfied.</summary>
-	public static MergeCardsPreview NoOp() => new([], 0, 0, 0, null, null);
+	public static MergeCardsPreview NoOp() => new([], 0, 0, 0, 0, null, null);
 
 	/// <summary>Blocked pending a YNAB mapping decision; nothing else is meaningful yet.</summary>
 	public static MergeCardsPreview Conflicted(IReadOnlyList<YnabMappingConflict> conflicts) =>
-		new([], 0, 0, 0, null, conflicts);
+		new([], 0, 0, 0, 0, null, conflicts);
 }
 
 /// <summary>An account the merge would empty and then delete, named so the user can recognise it.</summary>

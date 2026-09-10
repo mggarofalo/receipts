@@ -36,7 +36,7 @@ public class YnabMemoSyncServiceTests
 			.Setup(r => r.UpsertAsync(It.IsAny<string>(), It.IsAny<long>(), It.IsAny<CancellationToken>()))
 			.Returns(Task.CompletedTask);
 
-		_mappingServiceMock.Setup(service => service.GetAllAsync(It.IsAny<CancellationToken>()))
+		_mappingServiceMock.Setup(service => service.GetByBudgetIdAsync(BudgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync([new(Guid.NewGuid(), AccountId, "acc-1", "Mapped account", BudgetId, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow)]);
 
 		_service = new YnabMemoSyncService(
@@ -336,7 +336,7 @@ public class YnabMemoSyncServiceTests
 
 		// Already synced record exists
 		_syncRecordServiceMock
-			.Setup(s => s.GetByTransactionAndTypeAsync(transaction.Id, YnabSyncType.MemoUpdate, It.IsAny<CancellationToken>()))
+			.Setup(s => s.GetByTransactionTypeAndBudgetAsync(transaction.Id, YnabSyncType.MemoUpdate, BudgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new YnabSyncRecordDto(
 				Guid.NewGuid(), transaction.Id, "yt-1", BudgetId, null,
 				YnabSyncType.MemoUpdate, YnabSyncStatus.Synced,
@@ -790,14 +790,14 @@ public class YnabMemoSyncServiceTests
 	private void SetupNoExistingSyncRecord(Guid transactionId)
 	{
 		_syncRecordServiceMock
-			.Setup(s => s.GetByTransactionAndTypeAsync(transactionId, YnabSyncType.MemoUpdate, It.IsAny<CancellationToken>()))
+			.Setup(s => s.GetByTransactionTypeAndBudgetAsync(transactionId, YnabSyncType.MemoUpdate, BudgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync((YnabSyncRecordDto?)null);
 	}
 
 	private void SetupNoExistingSyncRecordForAny()
 	{
 		_syncRecordServiceMock
-			.Setup(s => s.GetByTransactionAndTypeAsync(It.IsAny<Guid>(), YnabSyncType.MemoUpdate, It.IsAny<CancellationToken>()))
+			.Setup(s => s.GetByTransactionTypeAndBudgetAsync(It.IsAny<Guid>(), YnabSyncType.MemoUpdate, BudgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync((YnabSyncRecordDto?)null);
 	}
 

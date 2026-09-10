@@ -17,6 +17,8 @@ namespace Presentation.API.Tests.Controllers;
 
 public class YnabAccountMappingControllerTests
 {
+	private static readonly Guid Budget1 = Guid.Parse("11111111-1111-1111-1111-111111111111");
+	private static readonly Guid BudgetB = Guid.Parse("22222222-2222-2222-2222-222222222222");
 	private readonly Mock<IMediator> _mediatorMock;
 	private readonly Mock<IYnabApiClient> _ynabClientMock;
 	private readonly Mock<IYnabBudgetSelectionService> _budgetSelectionMock;
@@ -80,7 +82,7 @@ public class YnabAccountMappingControllerTests
 			ReceiptsAccountId = accountId,
 			YnabAccountId = "ynab-1",
 			YnabAccountName = "Checking",
-			YnabBudgetId = "budget-1",
+			YnabBudgetId = Budget1,
 		};
 
 		// Act
@@ -107,7 +109,7 @@ public class YnabAccountMappingControllerTests
 			ReceiptsAccountId = Guid.NewGuid(),
 			YnabAccountId = "ynab-1",
 			YnabAccountName = "Checking",
-			YnabBudgetId = "budget-1",
+			YnabBudgetId = Budget1,
 		};
 
 		// Act
@@ -117,6 +119,29 @@ public class YnabAccountMappingControllerTests
 		// Assert
 		BadRequest<ProblemDetails> badRequest = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
 		badRequest.Value!.Detail.Should().Contain("Card does not exist.");
+	}
+
+	[Fact]
+	public async Task CreateAccountMapping_Returns400_WhenRequestBudgetIsNotSelectedBudget()
+	{
+		_mediatorMock.Setup(m => m.Send(
+			It.IsAny<CreateYnabAccountMappingCommand>(),
+			It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new ArgumentException("The mapping budget must match the selected YNAB budget."));
+
+		CreateYnabAccountMappingRequest request = new()
+		{
+			ReceiptsAccountId = Guid.NewGuid(),
+			YnabAccountId = "ynab-B-account",
+			YnabAccountName = "Budget B Checking",
+			YnabBudgetId = BudgetB,
+		};
+
+		Results<Created<YnabAccountMappingResponse>, BadRequest<ProblemDetails>> result =
+			await _controller.CreateAccountMapping(request, CancellationToken.None);
+
+		BadRequest<ProblemDetails> badRequest = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		badRequest.Value!.Detail.Should().Contain("selected YNAB budget");
 	}
 
 	[Fact]
@@ -132,6 +157,8 @@ public class YnabAccountMappingControllerTests
 			It.Is<GetYnabAccountMappingByIdQuery>(q => q.Id == id),
 			It.IsAny<CancellationToken>()))
 			.ReturnsAsync(existing);
+		_budgetSelectionMock.Setup(s => s.GetSelectedBudgetIdAsync(It.IsAny<CancellationToken>()))
+			.ReturnsAsync("budget-1");
 
 		_mediatorMock.Setup(m => m.Send(
 			It.IsAny<UpdateYnabAccountMappingCommand>(),
@@ -142,11 +169,11 @@ public class YnabAccountMappingControllerTests
 		{
 			YnabAccountId = "ynab-2",
 			YnabAccountName = "Savings",
-			YnabBudgetId = "budget-1",
+			YnabBudgetId = Budget1,
 		};
 
 		// Act
-		Results<NoContent, NotFound> result = await _controller.UpdateAccountMapping(id, request, CancellationToken.None);
+		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result = await _controller.UpdateAccountMapping(id, request, CancellationToken.None);
 
 		// Assert
 		Assert.IsType<NoContent>(result.Result);
@@ -166,14 +193,44 @@ public class YnabAccountMappingControllerTests
 		{
 			YnabAccountId = "ynab-2",
 			YnabAccountName = "Savings",
-			YnabBudgetId = "budget-1",
+			YnabBudgetId = Budget1,
 		};
 
 		// Act
-		Results<NoContent, NotFound> result = await _controller.UpdateAccountMapping(id, request, CancellationToken.None);
+		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result = await _controller.UpdateAccountMapping(id, request, CancellationToken.None);
 
 		// Assert
 		Assert.IsType<NotFound>(result.Result);
+	}
+
+	[Fact]
+	public async Task UpdateAccountMapping_Returns404_WhenMappingBelongsToAnotherBudget()
+	{
+		Guid id = Guid.NewGuid();
+		YnabAccountMappingDto existing = new(
+			id, Guid.NewGuid(), "ynab-A-account", "Budget A Checking", "budget-A",
+			DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+		_mediatorMock.Setup(m => m.Send(
+			It.Is<GetYnabAccountMappingByIdQuery>(q => q.Id == id),
+			It.IsAny<CancellationToken>()))
+			.ReturnsAsync(existing);
+		_budgetSelectionMock.Setup(s => s.GetSelectedBudgetIdAsync(It.IsAny<CancellationToken>()))
+			.ReturnsAsync("budget-B");
+
+		UpdateYnabAccountMappingRequest request = new()
+		{
+			YnabAccountId = "ynab-B-account",
+			YnabAccountName = "Budget B Checking",
+			YnabBudgetId = BudgetB,
+		};
+
+		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result =
+			await _controller.UpdateAccountMapping(id, request, CancellationToken.None);
+
+		Assert.IsType<NotFound>(result.Result);
+		_mediatorMock.Verify(m => m.Send(
+			It.IsAny<UpdateYnabAccountMappingCommand>(),
+			It.IsAny<CancellationToken>()), Times.Never);
 	}
 
 	[Fact]
@@ -189,6 +246,8 @@ public class YnabAccountMappingControllerTests
 			It.Is<GetYnabAccountMappingByIdQuery>(q => q.Id == id),
 			It.IsAny<CancellationToken>()))
 			.ReturnsAsync(existing);
+		_budgetSelectionMock.Setup(s => s.GetSelectedBudgetIdAsync(It.IsAny<CancellationToken>()))
+			.ReturnsAsync("budget-1");
 
 		_mediatorMock.Setup(m => m.Send(
 			It.IsAny<DeleteYnabAccountMappingCommand>(),
@@ -217,6 +276,28 @@ public class YnabAccountMappingControllerTests
 
 		// Assert
 		Assert.IsType<NotFound>(result.Result);
+	}
+
+	[Fact]
+	public async Task DeleteAccountMapping_Returns404_WhenMappingBelongsToAnotherBudget()
+	{
+		Guid id = Guid.NewGuid();
+		YnabAccountMappingDto existing = new(
+			id, Guid.NewGuid(), "ynab-A-account", "Budget A Checking", "budget-A",
+			DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+		_mediatorMock.Setup(m => m.Send(
+			It.Is<GetYnabAccountMappingByIdQuery>(q => q.Id == id),
+			It.IsAny<CancellationToken>()))
+			.ReturnsAsync(existing);
+		_budgetSelectionMock.Setup(s => s.GetSelectedBudgetIdAsync(It.IsAny<CancellationToken>()))
+			.ReturnsAsync("budget-B");
+
+		Results<NoContent, NotFound> result = await _controller.DeleteAccountMapping(id, CancellationToken.None);
+
+		Assert.IsType<NotFound>(result.Result);
+		_mediatorMock.Verify(m => m.Send(
+			It.IsAny<DeleteYnabAccountMappingCommand>(),
+			It.IsAny<CancellationToken>()), Times.Never);
 	}
 
 	[Fact]

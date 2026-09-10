@@ -278,6 +278,21 @@ describe("YnabSettings – Category Mapping", () => {
     ).toBeInTheDocument();
   });
 
+  it("explains the mapping and export consequences of switching destination budgets", () => {
+    renderWithProviders(<YnabSettings />);
+
+    expect(
+      screen.getByText(
+        /mappings from previously selected budgets are preserved.*ignored/i,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /switching.*budget.*map.*accounts.*categories.*re-export/i,
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("shows loading spinner when categoryMappingLoading is true", async () => {
     const { useYnabBudgets, useSelectedYnabBudget, useYnabCategories } =
       await import("@/hooks/useYnab");
@@ -620,7 +635,9 @@ describe("YnabSettings – Stale Mappings", () => {
     renderWithProviders(<YnabSettings />);
 
     expect(screen.getByText(/2 account mapping\(s\)/)).toBeInTheDocument();
-    expect(screen.getByText("Clear stale mappings")).toBeInTheDocument();
+    expect(
+      screen.getByText("Delete previous-budget mappings"),
+    ).toBeInTheDocument();
   });
 
   it("shows stale mapping banner when stale category mappings exist", async () => {
@@ -647,7 +664,9 @@ describe("YnabSettings – Stale Mappings", () => {
     renderWithProviders(<YnabSettings />);
 
     expect(screen.getByText(/3 category mapping\(s\)/)).toBeInTheDocument();
-    expect(screen.getByText("Clear stale mappings")).toBeInTheDocument();
+    expect(
+      screen.getByText("Delete previous-budget mappings"),
+    ).toBeInTheDocument();
   });
 
   it("shows both account and category counts when both are stale", async () => {
@@ -700,7 +719,9 @@ describe("YnabSettings – Stale Mappings", () => {
 
     renderWithProviders(<YnabSettings />);
 
-    expect(screen.queryByText("Clear stale mappings")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Delete previous-budget mappings"),
+    ).not.toBeInTheDocument();
   });
 });
 

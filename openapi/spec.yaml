@@ -507,8 +507,9 @@ paths:
       description: >
         Repoints the listed cards (and their transactions) to the target account
         and deletes any now-orphaned accounts. Requires the Admin role. Returns
-        409 Conflict if the source/target accounts have differing YNAB account
-        mappings; resubmit with `ynabMappingWinnerAccountId` to resolve.
+        409 Conflict when mappings differ within one YNAB budget; resubmit with
+        `ynabMappingWinnerAccountId` to resolve. Conflicts in multiple budgets
+        return 400 and require obsolete mappings to be removed first.
       security:
         - BearerAuth: []
         - ApiKey: []
@@ -526,7 +527,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/MergeCardsResponse"
         "400":
-          description: Bad Request
+          description: >
+            Bad Request — invalid merge selection, or conflicting mappings in multiple
+            YNAB budgets that the single-winner request cannot resolve. Remove obsolete
+            mappings until at most one budget conflicts, then retry.
           content:
             application/json:
               schema:
@@ -568,7 +572,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/MergeCardsPreviewResponse"
         "400":
-          description: Bad Request
+          description: >
+            Bad Request — invalid merge selection, or conflicting mappings in multiple
+            YNAB budgets that must be reduced before the merge can be previewed.
           content:
             application/json:
               schema:
@@ -4762,7 +4768,7 @@ paths:
       operationId: GetYnabConnectionStatus
       tags: [YNAB]
       summary: Get YNAB connection status
-      description: Returns whether YNAB is configured, whether the connection is active, and the last successful sync timestamp.
+      description: Returns whether YNAB is configured, whether the connection is active, and the selected budget's last successful sync timestamp.
       security:
         - BearerAuth: []
       responses:
@@ -4910,7 +4916,7 @@ paths:
       operationId: GetYnabAccountMappings
       tags: [YNAB]
       summary: List YNAB account mappings
-      description: Returns all mappings between receipts accounts and YNAB accounts.
+      description: Returns mappings between receipts accounts and YNAB accounts for the selected budget.
       security:
         - BearerAuth: []
       responses:
@@ -4942,6 +4948,10 @@ paths:
                 $ref: "#/components/schemas/YnabAccountMappingResponse"
         "400":
           description: Invalid request (e.g. nonexistent receipts account)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
 
   /api/ynab/account-mappings/{id}:
     put:
@@ -4967,8 +4977,14 @@ paths:
       responses:
         "204":
           description: No Content
+        "400":
+          description: Mapping budget does not match the selected budget
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
         "404":
-          description: Mapping not found
+          description: Mapping not found in the selected budget
     delete:
       operationId: DeleteYnabAccountMapping
       tags: [YNAB]
@@ -5028,7 +5044,7 @@ paths:
       operationId: GetYnabCategoryMappings
       tags: [YNAB]
       summary: List all category mappings
-      description: Returns all receipts-to-YNAB category mappings.
+      description: Returns receipts-to-YNAB category mappings for the selected budget.
       security:
         - BearerAuth: []
       responses:
@@ -5058,8 +5074,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/YnabCategoryMappingResponse"
+        "400":
+          description: Mapping budget does not match the selected budget
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
         "409":
-          description: Conflict — mapping for this receipts category already exists
+          description: Conflict — mapping for this receipts category already exists in the selected budget
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
 
   /api/ynab/category-mappings/{id}:
     put:
@@ -5085,8 +5111,14 @@ paths:
       responses:
         "204":
           description: No Content
+        "400":
+          description: Mapping budget does not match the selected budget
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
         "404":
-          description: Mapping not found
+          description: Mapping not found in the selected budget
     delete:
       operationId: DeleteYnabCategoryMapping
       tags: [YNAB]
@@ -6179,7 +6211,7 @@ components:
     MergeCardsPreviewResponse:
       type: object
       required:
-        [accountsToRemove, cardsToMove, transactionsToRepoint, trashedTransactionsToRepoint]
+        [accountsToRemove, cardsToMove, transactionsToRepoint, trashedTransactionsToRepoint, ynabMappingsToMove]
       description: >
         What the merge would do, computed without writing. Every count is zero and
         `accountsToRemove` empty when the merge would change nothing. When `conflicts`
@@ -6206,11 +6238,15 @@ components:
             Soft-deleted transactions that would be repointed too. Reported separately
             because they are invisible everywhere except the recycle bin, and a merge
             moves them just the same.
+        ynabMappingsToMove:
+          type: integer
+          format: int32
+          description: Number of destination-scoped YNAB mappings moved from source accounts.
         survivingYnabMapping:
           oneOf:
             - $ref: "#/components/schemas/MergeCardsPreviewMapping"
             - type: "null"
-          description: Present only when a mapping would move from a source account to the target.
+          description: Present only when exactly one mapping would move; use ynabMappingsToMove for the total.
         conflicts:
           type:
             - array
@@ -8297,6 +8333,7 @@ components:
       properties:
         budgetId:
           type: string
+          format: uuid
 
     YnabSyncRecordResponse:
       type: object
@@ -8441,6 +8478,7 @@ components:
           type: string
         ynabBudgetId:
           type: string
+          format: uuid
 
     UpdateYnabAccountMappingRequest:
       type: object
@@ -8452,6 +8490,7 @@ components:
           type: string
         ynabBudgetId:
           type: string
+          format: uuid
 
     YnabCategorySummary:
       type: object
@@ -8533,6 +8572,7 @@ components:
           type: string
         ynabBudgetId:
           type: string
+          format: uuid
 
     UpdateYnabCategoryMappingRequest:
       type: object
@@ -8546,6 +8586,7 @@ components:
           type: string
         ynabBudgetId:
           type: string
+          format: uuid
 
     StaleMappingsResponse:
       type: object

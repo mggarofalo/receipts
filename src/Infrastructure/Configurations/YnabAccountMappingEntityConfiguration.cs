@@ -25,7 +25,7 @@ public class YnabAccountMappingEntityConfiguration : IEntityTypeConfiguration<Yn
 		builder.Property(e => e.YnabBudgetId)
 			.HasMaxLength(256);
 
-		builder.HasIndex(e => e.ReceiptsAccountId)
+		builder.HasIndex(e => new { e.ReceiptsAccountId, e.YnabBudgetId })
 			.IsUnique();
 
 		builder.HasOne(e => e.Account)

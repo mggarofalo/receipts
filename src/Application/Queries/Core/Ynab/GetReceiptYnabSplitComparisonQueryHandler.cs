@@ -73,9 +73,15 @@ public class GetReceiptYnabSplitComparisonQueryHandler(
 			return Unavailable("Receipt has no transactions.");
 		}
 
+		string? budgetId = await budgetSelectionService.GetSelectedBudgetIdAsync(cancellationToken);
+		if (string.IsNullOrEmpty(budgetId))
+		{
+			return Unavailable("No YNAB budget selected.");
+		}
+
 		// Category mapping check — surface unmapped list as structured data
 		List<string> distinctCategories = items.Select(i => i.Category).Distinct().ToList();
-		List<YnabCategoryMappingDto> allMappings = await categoryMappingService.GetAllAsync(cancellationToken);
+		List<YnabCategoryMappingDto> allMappings = await categoryMappingService.GetByBudgetIdAsync(budgetId, cancellationToken);
 		Dictionary<string, string> categoryToYnabId = allMappings
 			.ToDictionary(m => m.ReceiptsCategory, m => m.YnabCategoryId);
 
@@ -89,13 +95,7 @@ public class GetReceiptYnabSplitComparisonQueryHandler(
 				TransactionComparisons: []);
 		}
 
-		string? budgetId = await budgetSelectionService.GetSelectedBudgetIdAsync(cancellationToken);
-		if (string.IsNullOrEmpty(budgetId))
-		{
-			return Unavailable("No YNAB budget selected.");
-		}
-
-		List<YnabAccountMappingDto> accountMappingsList = await accountMappingService.GetAllAsync(cancellationToken);
+		List<YnabAccountMappingDto> accountMappingsList = await accountMappingService.GetByBudgetIdAsync(budgetId, cancellationToken);
 		Dictionary<Guid, string> accountToYnabId = accountMappingsList
 			.ToDictionary(m => m.ReceiptsAccountId, m => m.YnabAccountId);
 
@@ -163,8 +163,8 @@ public class GetReceiptYnabSplitComparisonQueryHandler(
 			string? actualFetchError = null;
 			bool? matches = null;
 
-			YnabSyncRecordDto? syncRecord = await syncRecordService.GetByTransactionAndTypeAsync(
-				txSplit.LocalTransactionId, YnabSyncType.TransactionPush, cancellationToken);
+			YnabSyncRecordDto? syncRecord = await syncRecordService.GetByTransactionTypeAndBudgetAsync(
+				txSplit.LocalTransactionId, YnabSyncType.TransactionPush, budgetId, cancellationToken);
 
 			if (syncRecord is { SyncStatus: YnabSyncStatus.Synced, YnabTransactionId: not null })
 			{

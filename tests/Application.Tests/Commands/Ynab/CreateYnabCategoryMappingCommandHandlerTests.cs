@@ -9,12 +9,16 @@ namespace Application.Tests.Commands.Ynab;
 
 public class CreateYnabCategoryMappingCommandHandlerTests
 {
+	private const string BudgetId = "11111111-1111-1111-1111-111111111111";
 	private readonly Mock<IYnabCategoryMappingService> _mockService = new();
+	private readonly Mock<IYnabBudgetSelectionService> _budgetSelection = new();
 	private readonly CreateYnabCategoryMappingCommandHandler _handler;
 
 	public CreateYnabCategoryMappingCommandHandlerTests()
 	{
-		_handler = new CreateYnabCategoryMappingCommandHandler(_mockService.Object);
+		_budgetSelection.Setup(s => s.GetSelectedBudgetIdAsync(It.IsAny<CancellationToken>()))
+			.ReturnsAsync(BudgetId);
+		_handler = new CreateYnabCategoryMappingCommandHandler(_mockService.Object, _budgetSelection.Object);
 	}
 
 	[Fact]
@@ -26,9 +30,9 @@ public class CreateYnabCategoryMappingCommandHandlerTests
 			"cat-123",
 			"Groceries",
 			"Immediate Obligations",
-			"budget-1");
+			BudgetId);
 
-		_mockService.Setup(s => s.GetByReceiptsCategoryAsync("Groceries", It.IsAny<CancellationToken>()))
+		_mockService.Setup(s => s.GetByReceiptsCategoryAndBudgetAsync("Groceries", BudgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync((YnabCategoryMappingDto?)null);
 
 		YnabCategoryMappingDto expected = new(
@@ -37,12 +41,12 @@ public class CreateYnabCategoryMappingCommandHandlerTests
 			"cat-123",
 			"Groceries",
 			"Immediate Obligations",
-			"budget-1",
+			BudgetId,
 			DateTimeOffset.UtcNow,
 			DateTimeOffset.UtcNow);
 
 		_mockService.Setup(s => s.CreateAsync(
-			"Groceries", "cat-123", "Groceries", "Immediate Obligations", "budget-1",
+			"Groceries", "cat-123", "Groceries", "Immediate Obligations", BudgetId,
 			It.IsAny<CancellationToken>()))
 			.ReturnsAsync(expected);
 
@@ -52,7 +56,7 @@ public class CreateYnabCategoryMappingCommandHandlerTests
 		// Assert
 		result.Should().Be(expected);
 		_mockService.Verify(s => s.CreateAsync(
-			"Groceries", "cat-123", "Groceries", "Immediate Obligations", "budget-1",
+			"Groceries", "cat-123", "Groceries", "Immediate Obligations", BudgetId,
 			It.IsAny<CancellationToken>()), Times.Once);
 	}
 
@@ -65,7 +69,7 @@ public class CreateYnabCategoryMappingCommandHandlerTests
 			"cat-123",
 			"Groceries",
 			"Immediate Obligations",
-			"budget-1");
+			BudgetId);
 
 		YnabCategoryMappingDto existing = new(
 			Guid.NewGuid(),
@@ -73,11 +77,11 @@ public class CreateYnabCategoryMappingCommandHandlerTests
 			"cat-456",
 			"Food",
 			"Needs",
-			"budget-1",
+			BudgetId,
 			DateTimeOffset.UtcNow,
 			DateTimeOffset.UtcNow);
 
-		_mockService.Setup(s => s.GetByReceiptsCategoryAsync("Groceries", It.IsAny<CancellationToken>()))
+		_mockService.Setup(s => s.GetByReceiptsCategoryAndBudgetAsync("Groceries", BudgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(existing);
 
 		// Act
@@ -98,13 +102,13 @@ public class CreateYnabCategoryMappingCommandHandlerTests
 			"cat-123",
 			"Groceries",
 			"Immediate Obligations",
-			"budget-1");
+			BudgetId);
 
-		_mockService.Setup(s => s.GetByReceiptsCategoryAsync("Groceries", It.IsAny<CancellationToken>()))
+		_mockService.Setup(s => s.GetByReceiptsCategoryAndBudgetAsync("Groceries", BudgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync((YnabCategoryMappingDto?)null);
 
 		_mockService.Setup(s => s.CreateAsync(
-			"Groceries", "cat-123", "Groceries", "Immediate Obligations", "budget-1",
+			"Groceries", "cat-123", "Groceries", "Immediate Obligations", BudgetId,
 			It.IsAny<CancellationToken>()))
 			.ThrowsAsync(new DuplicateEntityException("A mapping for receipts category 'Groceries' already exists."));
 
@@ -125,10 +129,10 @@ public class CreateYnabCategoryMappingCommandHandlerTests
 			"cat-123",
 			"Groceries",
 			"Immediate Obligations",
-			"budget-1");
+			BudgetId);
 
-		// GetByReceiptsCategoryAsync for "groceries" returns null (no exact match)
-		_mockService.Setup(s => s.GetByReceiptsCategoryAsync("groceries", It.IsAny<CancellationToken>()))
+		// The current budget has no exact-case match for "groceries".
+		_mockService.Setup(s => s.GetByReceiptsCategoryAndBudgetAsync("groceries", BudgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync((YnabCategoryMappingDto?)null);
 
 		YnabCategoryMappingDto expected = new(
@@ -137,12 +141,12 @@ public class CreateYnabCategoryMappingCommandHandlerTests
 			"cat-123",
 			"Groceries",
 			"Immediate Obligations",
-			"budget-1",
+			BudgetId,
 			DateTimeOffset.UtcNow,
 			DateTimeOffset.UtcNow);
 
 		_mockService.Setup(s => s.CreateAsync(
-			"groceries", "cat-123", "Groceries", "Immediate Obligations", "budget-1",
+			"groceries", "cat-123", "Groceries", "Immediate Obligations", BudgetId,
 			It.IsAny<CancellationToken>()))
 			.ReturnsAsync(expected);
 
@@ -151,5 +155,29 @@ public class CreateYnabCategoryMappingCommandHandlerTests
 
 		// Assert
 		result.ReceiptsCategory.Should().Be("groceries");
+	}
+
+	[Fact]
+	public async Task Handle_CanonicalizesRequestBudgetForComparisonLookupAndPersistence()
+	{
+		string nonCanonicalBudgetId = $"  {{{BudgetId.ToUpperInvariant()}}}  ";
+		_mockService.Setup(s => s.GetByReceiptsCategoryAndBudgetAsync(
+			"Groceries", BudgetId, It.IsAny<CancellationToken>()))
+			.ReturnsAsync((YnabCategoryMappingDto?)null);
+		YnabCategoryMappingDto expected = new(
+			Guid.NewGuid(), "Groceries", "cat-123", "Groceries", "Needs", BudgetId,
+			DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+		_mockService.Setup(s => s.CreateAsync(
+			"Groceries", "cat-123", "Groceries", "Needs", BudgetId, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(expected);
+
+		YnabCategoryMappingDto result = await _handler.Handle(
+			new CreateYnabCategoryMappingCommand(
+				"Groceries", "cat-123", "Groceries", "Needs", nonCanonicalBudgetId),
+			CancellationToken.None);
+
+		result.Should().Be(expected);
+		_mockService.Verify(s => s.CreateAsync(
+			"Groceries", "cat-123", "Groceries", "Needs", BudgetId, It.IsAny<CancellationToken>()), Times.Once);
 	}
 }

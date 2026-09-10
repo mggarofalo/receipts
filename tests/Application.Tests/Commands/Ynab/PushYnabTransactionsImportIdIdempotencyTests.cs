@@ -90,7 +90,7 @@ public class PushYnabTransactionsImportIdIdempotencyTests
 		_transactionServiceMock.Setup(s => s.GetTransactionAccountsByReceiptIdAsync(_receiptId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync([.. transactions.Select(t => new TransactionAccount { Transaction = t, Account = account })]);
 
-		_categoryMappingServiceMock.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>()))
+		_categoryMappingServiceMock.Setup(s => s.GetByBudgetIdAsync(_budgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync([
 				new YnabCategoryMappingDto(Guid.NewGuid(), "Groceries", "ynab-cat-1", "Groceries", "Food", _budgetId, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow),
 			]);
@@ -98,13 +98,13 @@ public class PushYnabTransactionsImportIdIdempotencyTests
 		_budgetSelectionServiceMock.Setup(s => s.GetSelectedBudgetIdAsync(It.IsAny<CancellationToken>()))
 			.ReturnsAsync(_budgetId);
 
-		_accountMappingServiceMock.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>()))
+		_accountMappingServiceMock.Setup(s => s.GetByBudgetIdAsync(_budgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync([
 				new YnabAccountMappingDto(Guid.NewGuid(), _accountId, _ynabAccountId, "Checking", _budgetId, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow),
 			]);
 
 		// Fresh state: nothing synced yet — every transaction gets a new Pending record.
-		_syncRecordServiceMock.Setup(s => s.GetByTransactionAndTypeAsync(It.IsAny<Guid>(), YnabSyncType.TransactionPush, It.IsAny<CancellationToken>()))
+		_syncRecordServiceMock.Setup(s => s.GetByTransactionTypeAndBudgetAsync(It.IsAny<Guid>(), YnabSyncType.TransactionPush, _budgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync((YnabSyncRecordDto?)null);
 		_syncRecordServiceMock.Setup(s => s.CreateAsync(It.IsAny<Guid>(), _budgetId, YnabSyncType.TransactionPush, It.IsAny<CancellationToken>()))
 			.ReturnsAsync((Guid txId, string budget, YnabSyncType type, CancellationToken _) =>

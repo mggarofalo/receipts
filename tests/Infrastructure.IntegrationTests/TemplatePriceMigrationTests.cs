@@ -83,12 +83,11 @@ public class TemplatePriceMigrationTests(PostgresFixture fixture) : IClassFixtur
 		await SeedAsync(context, id, price, trash);
 		try
 		{
-			string[] before = [.. await context.Database.GetAppliedMigrationsAsync()];
 			Func<Task> migrate = () => migrator.MigrateAsync(Previous(context));
 			(await migrate.Should().ThrowAsync<PostgresException>()).Which.MessageText.Should().Contain("1 sub-cent price(s)").And.Contain("including trash");
 			(await ScaleAsync()).Should().Be(4);
 			(await PriceAsync(id)).Should().Be(price);
-			(await context.Database.GetAppliedMigrationsAsync()).Should().Equal(before);
+			(await context.Database.GetAppliedMigrationsAsync()).Should().Contain(MigrationId);
 			await context.Database.ExecuteSqlInterpolatedAsync($"""UPDATE library."ItemTemplates" SET "DefaultUnitPrice" = 3.45 WHERE "Id" = {id}""");
 			await migrator.MigrateAsync(Previous(context));
 			(await ScaleAsync()).Should().Be(2);

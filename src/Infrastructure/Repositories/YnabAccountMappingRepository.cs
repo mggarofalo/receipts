@@ -14,6 +14,15 @@ public class YnabAccountMappingRepository(IDbContextFactory<ApplicationDbContext
 			.ToListAsync(cancellationToken);
 	}
 
+	public async Task<List<YnabAccountMappingEntity>> GetByBudgetIdAsync(string ynabBudgetId, CancellationToken cancellationToken)
+	{
+		using ApplicationDbContext context = contextFactory.CreateDbContext();
+		return await context.YnabAccountMappings
+			.Where(e => e.YnabBudgetId == ynabBudgetId)
+			.OrderBy(e => e.CreatedAt)
+			.ToListAsync(cancellationToken);
+	}
+
 	public async Task<YnabAccountMappingEntity?> GetByIdAsync(Guid id, CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();

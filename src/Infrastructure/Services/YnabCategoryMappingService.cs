@@ -24,15 +24,27 @@ public class YnabCategoryMappingService(
 		return entities.Select(ToDto).ToList();
 	}
 
+	public async Task<List<YnabCategoryMappingDto>> GetByBudgetIdAsync(string ynabBudgetId, CancellationToken cancellationToken)
+	{
+		List<YnabCategoryMappingEntity> entities = await repository.GetByBudgetIdAsync(ynabBudgetId, cancellationToken);
+		return entities.Select(ToDto).ToList();
+	}
+
 	public async Task<YnabCategoryMappingDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken)
 	{
 		YnabCategoryMappingEntity? entity = await repository.GetByIdAsync(id, cancellationToken);
 		return entity is null ? null : ToDto(entity);
 	}
 
-	public async Task<YnabCategoryMappingDto?> GetByReceiptsCategoryAsync(string receiptsCategory, CancellationToken cancellationToken)
+	public async Task<YnabCategoryMappingDto?> GetByReceiptsCategoryAndBudgetAsync(
+		string receiptsCategory,
+		string ynabBudgetId,
+		CancellationToken cancellationToken)
 	{
-		YnabCategoryMappingEntity? entity = await repository.GetByReceiptsCategoryAsync(receiptsCategory, cancellationToken);
+		YnabCategoryMappingEntity? entity = await repository.GetByReceiptsCategoryAndBudgetAsync(
+			receiptsCategory,
+			ynabBudgetId,
+			cancellationToken);
 		return entity is null ? null : ToDto(entity);
 	}
 
@@ -84,11 +96,14 @@ public class YnabCategoryMappingService(
 		{
 			return;
 		}
+		if (!string.Equals(entity.YnabBudgetId, ynabBudgetId, StringComparison.Ordinal))
+		{
+			throw new ArgumentException("A mapping cannot be moved between YNAB budgets.", nameof(ynabBudgetId));
+		}
 
 		entity.YnabCategoryId = ynabCategoryId;
 		entity.YnabCategoryName = ynabCategoryName;
 		entity.YnabCategoryGroupName = ynabCategoryGroupName;
-		entity.YnabBudgetId = ynabBudgetId;
 		entity.UpdatedAt = DateTimeOffset.UtcNow;
 
 		if (await repository.UpdateAsync(entity, cancellationToken))
@@ -134,10 +149,10 @@ public class YnabCategoryMappingService(
 		return await repository.GetDistinctReceiptItemCategoriesAsync(cancellationToken);
 	}
 
-	public async Task<List<string>> GetUnmappedCategoriesAsync(CancellationToken cancellationToken)
+	public async Task<List<string>> GetUnmappedCategoriesAsync(string ynabBudgetId, CancellationToken cancellationToken)
 	{
 		List<string> allCategories = await repository.GetDistinctReceiptItemCategoriesAsync(cancellationToken);
-		List<YnabCategoryMappingEntity> mappings = await repository.GetAllAsync(cancellationToken);
+		List<YnabCategoryMappingEntity> mappings = await repository.GetByBudgetIdAsync(ynabBudgetId, cancellationToken);
 
 		HashSet<string> mappedCategories = new(mappings.Select(m => m.ReceiptsCategory), StringComparer.Ordinal);
 

@@ -668,6 +668,9 @@ export function MergeCardsDialog({
                       (from {preview.survivingYnabMapping.fromAccountName})
                     </li>
                   )}
+                  {preview.ynabMappingsToMove > 1 && (
+                    <li>{preview.ynabMappingsToMove} destination-scoped YNAB mappings kept</li>
+                  )}
                 </ul>
               </AlertDescription>
             </Alert>

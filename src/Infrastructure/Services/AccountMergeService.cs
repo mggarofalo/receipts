@@ -1,3 +1,4 @@
+using System.Data;
 using Application.Interfaces.Services;
 using Application.Models.Merge;
 using Infrastructure.Entities.Audit;
@@ -16,6 +17,7 @@ public class AccountMergeService(
 	public const string SourceCardNotFound = "One or more source cards not found.";
 	public const string InvalidWinnerAccount = "Winner account id must match one of the accounts involved in the merge.";
 	public const string PartialSourceAccountMerge = "Source account would be partially merged: all of its cards must be included in the merge, or none.";
+	public const string MultipleYnabBudgetConflicts = "Merge cannot resolve conflicting mappings in multiple YNAB budgets at once. Delete obsolete mappings until only one budget has a conflict, then retry.";
 
 	public async Task<MergeCardsResult> MergeCardsAsync(
 		Guid targetAccountId,
@@ -48,8 +50,8 @@ public class AccountMergeService(
 			return MergeCardsResult.NoOp();
 		}
 
-		(bool needsWinner, Guid? winnerAccountId) =
-			ResolveMappingWinner(targetAccountId, mappings, ynabMappingWinnerAccountId);
+		(bool needsWinner, HashSet<Guid> winnerMappingIds) =
+			ResolveMappingWinners(targetAccountId, mappings, ynabMappingWinnerAccountId);
 		if (needsWinner)
 		{
 			return BuildConflictResult(mappings, accountNamesById);
@@ -67,7 +69,24 @@ public class AccountMergeService(
 		int removedAccountCount;
 		using (ApplicationDbContext context = contextFactory.CreateDbContext())
 		{
-			await using IDbContextTransaction dbTransaction = await context.Database.BeginTransactionAsync(cancellationToken);
+			await using IDbContextTransaction dbTransaction = await context.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+
+			// Refresh mapping ownership inside the serializable transaction. The preview
+			// snapshot above is intentionally read-only; it must not authorize deletion of
+			// a target mapping created concurrently before this transaction began.
+			List<Guid> involvedAccountIds = [.. sourceAccountIds, targetAccountId];
+			List<YnabAccountMappingEntity> currentMappings = await context.YnabAccountMappings
+				.AsNoTracking()
+				.Where(m => involvedAccountIds.Contains(m.ReceiptsAccountId))
+				.ToListAsync(cancellationToken);
+			(needsWinner, winnerMappingIds) = ResolveMappingWinners(
+				targetAccountId,
+				currentMappings,
+				ynabMappingWinnerAccountId);
+			if (needsWinner)
+			{
+				return BuildConflictResult(currentMappings, accountNamesById);
+			}
 
 			// Phase 1: repoint dependents + repoint/replace mapping + write audit. No account deletes yet.
 			// History follows the cards, including trashed transactions. Capture semantic
@@ -89,27 +108,26 @@ public class AccountMergeService(
 				card.AccountId = targetAccountId;
 			}
 
-			// Remove any source mappings that are NOT the winner. We explicitly delete them
-			// rather than relying on cascade from account deletion (EF's InMemory provider
+			// Reconcile mappings independently per budget. A merged account may own one
+			// mapping for every destination, so a winner in budget A must never discard an
+			// unrelated mapping in budget B.
+			//
+			// Remove mappings that are not their budget's winner explicitly rather than
+			// relying on cascade from account deletion (EF's InMemory provider
 			// does not replay cascades for store-resident rows the change tracker never saw).
-			Guid? keptMappingId = winnerAccountId;
+			HashSet<Guid> loserMappingIds = [.. currentMappings
+				.Where(m => !winnerMappingIds.Contains(m.Id))
+				.Select(m => m.Id)];
 			List<YnabAccountMappingEntity> mappingsToDelete = await context.YnabAccountMappings
-				.Where(m => sourceAccountIds.Contains(m.ReceiptsAccountId)
-					&& (!keptMappingId.HasValue || m.ReceiptsAccountId != keptMappingId.Value))
+				.Where(m => loserMappingIds.Contains(m.Id))
 				.ToListAsync(cancellationToken);
 			context.YnabAccountMappings.RemoveRange(mappingsToDelete);
 
-			if (winnerAccountId.HasValue && winnerAccountId.Value != targetAccountId)
+			List<YnabAccountMappingEntity> sourceWinners = await context.YnabAccountMappings
+				.Where(m => winnerMappingIds.Contains(m.Id) && m.ReceiptsAccountId != targetAccountId)
+				.ToListAsync(cancellationToken);
+			foreach (YnabAccountMappingEntity winner in sourceWinners)
 			{
-				YnabAccountMappingEntity? existingTarget = await context.YnabAccountMappings
-					.FirstOrDefaultAsync(m => m.ReceiptsAccountId == targetAccountId, cancellationToken);
-				if (existingTarget is not null)
-				{
-					context.YnabAccountMappings.Remove(existingTarget);
-				}
-
-				YnabAccountMappingEntity winner = await context.YnabAccountMappings
-					.FirstAsync(m => m.ReceiptsAccountId == winnerAccountId.Value, cancellationToken);
 				winner.ReceiptsAccountId = targetAccountId;
 				winner.UpdatedAt = DateTimeOffset.UtcNow;
 			}
@@ -184,8 +202,8 @@ public class AccountMergeService(
 			return MergeCardsPreview.NoOp();
 		}
 
-		(bool needsWinner, Guid? winnerAccountId) =
-			ResolveMappingWinner(targetAccountId, mappings, ynabMappingWinnerAccountId);
+		(bool needsWinner, HashSet<Guid> winnerMappingIds) =
+			ResolveMappingWinners(targetAccountId, mappings, ynabMappingWinnerAccountId);
 		if (needsWinner)
 		{
 			return MergeCardsPreview.Conflicted(BuildConflicts(mappings, accountNamesById));
@@ -214,12 +232,17 @@ public class AccountMergeService(
 		// Only worth reporting when a mapping actually changes hands. One already sitting on
 		// the target survives by staying put, which is not news.
 		MergeCardsPreviewMapping? survivingMapping = null;
-		if (winnerAccountId.HasValue && (!targetAccountId.HasValue || winnerAccountId.Value != targetAccountId.Value))
+		List<YnabAccountMappingEntity> movedWinners =
+		[
+			.. mappings.Where(m => winnerMappingIds.Contains(m.Id)
+				&& (!targetAccountId.HasValue || m.ReceiptsAccountId != targetAccountId.Value)),
+		];
+		if (movedWinners.Count == 1)
 		{
-			YnabAccountMappingEntity winner = mappings.First(m => m.ReceiptsAccountId == winnerAccountId.Value);
+			YnabAccountMappingEntity winner = movedWinners[0];
 			survivingMapping = new MergeCardsPreviewMapping(
-				winnerAccountId.Value,
-				accountNamesById.GetValueOrDefault(winnerAccountId.Value, ""),
+				winner.ReceiptsAccountId,
+				accountNamesById.GetValueOrDefault(winner.ReceiptsAccountId, ""),
 				winner.YnabAccountName);
 		}
 
@@ -228,6 +251,7 @@ public class AccountMergeService(
 			originalCardAccountIds.Count(kvp => kvp.Value != targetAccountId),
 			transactionsToRepoint,
 			trashedTransactionsToRepoint,
+			movedWinners.Count,
 			survivingMapping,
 			null);
 	}
@@ -237,41 +261,49 @@ public class AccountMergeService(
 	/// Shared by the merge and its preview so the two can never disagree about which
 	/// selections need a decision.
 	/// </summary>
-	private static (bool NeedsWinner, Guid? WinnerAccountId) ResolveMappingWinner(
+	private static (bool NeedsWinner, HashSet<Guid> WinnerMappingIds) ResolveMappingWinners(
 		Guid? targetAccountId,
 		List<YnabAccountMappingEntity> mappings,
 		Guid? ynabMappingWinnerAccountId)
 	{
-		int distinctMappingTuples = mappings
-			.Select(m => (m.YnabBudgetId, m.YnabAccountId))
-			.Distinct()
-			.Count();
-
-		if (distinctMappingTuples > 1)
+		HashSet<Guid> winners = [];
+		List<IGrouping<string, YnabAccountMappingEntity>> budgetGroups =
+			[.. mappings.GroupBy(m => m.YnabBudgetId, StringComparer.Ordinal)];
+		int conflictingBudgetCount = budgetGroups.Count(group =>
+			group.Select(m => m.YnabAccountId).Distinct(StringComparer.Ordinal).Count() > 1);
+		if (conflictingBudgetCount > 1)
 		{
-			if (!ynabMappingWinnerAccountId.HasValue)
-			{
-				return (true, null);
-			}
-
-			if (!mappings.Any(m => m.ReceiptsAccountId == ynabMappingWinnerAccountId.Value))
-			{
-				throw new ArgumentException(InvalidWinnerAccount, nameof(ynabMappingWinnerAccountId));
-			}
-
-			return (false, ynabMappingWinnerAccountId.Value);
+			throw new ArgumentException(MultipleYnabBudgetConflicts, nameof(ynabMappingWinnerAccountId));
 		}
 
-		if (mappings.Count > 0)
+		foreach (IGrouping<string, YnabAccountMappingEntity> budgetMappings in budgetGroups)
 		{
-			// No conflict; keep the target mapping if it exists, else promote the sole source
-			// mapping. A target that does not exist yet cannot have one, so the source wins.
-			return (false, targetAccountId.HasValue && mappings.Any(m => m.ReceiptsAccountId == targetAccountId.Value)
-				? targetAccountId.Value
-				: mappings[0].ReceiptsAccountId);
+			List<YnabAccountMappingEntity> candidates = [.. budgetMappings];
+			if (candidates.Select(m => m.YnabAccountId).Distinct(StringComparer.Ordinal).Count() > 1)
+			{
+				if (!ynabMappingWinnerAccountId.HasValue)
+				{
+					return (true, []);
+				}
+
+				YnabAccountMappingEntity? selected = candidates.FirstOrDefault(
+					m => m.ReceiptsAccountId == ynabMappingWinnerAccountId.Value);
+				if (selected is null)
+				{
+					throw new ArgumentException(InvalidWinnerAccount, nameof(ynabMappingWinnerAccountId));
+				}
+
+				winners.Add(selected.Id);
+				continue;
+			}
+
+			YnabAccountMappingEntity winner = targetAccountId.HasValue
+				? candidates.FirstOrDefault(m => m.ReceiptsAccountId == targetAccountId.Value) ?? candidates[0]
+				: candidates[0];
+			winners.Add(winner.Id);
 		}
 
-		return (false, null);
+		return (false, winners);
 	}
 
 	/// <summary>
@@ -383,7 +415,11 @@ public class AccountMergeService(
 	private static List<YnabMappingConflict> BuildConflicts(
 		List<YnabAccountMappingEntity> mappings,
 		Dictionary<Guid, string> accountNamesById) =>
-		[.. mappings.Select(m => new YnabMappingConflict(
+		[.. mappings
+			.GroupBy(m => m.YnabBudgetId, StringComparer.Ordinal)
+			.Where(group => group.Select(m => m.YnabAccountId).Distinct(StringComparer.Ordinal).Count() > 1)
+			.SelectMany(group => group)
+			.Select(m => new YnabMappingConflict(
 			m.ReceiptsAccountId,
 			accountNamesById.GetValueOrDefault(m.ReceiptsAccountId, ""),
 			m.YnabBudgetId,

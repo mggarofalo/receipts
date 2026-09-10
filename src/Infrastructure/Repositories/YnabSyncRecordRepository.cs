@@ -21,11 +21,19 @@ public class YnabSyncRecordRepository(IDbContextFactory<ApplicationDbContext> co
 		return await context.YnabSyncRecords.FindAsync([id], cancellationToken);
 	}
 
-	public async Task<YnabSyncRecordEntity?> GetByTransactionAndTypeAsync(Guid localTransactionId, YnabSyncType syncType, CancellationToken cancellationToken)
+	public async Task<YnabSyncRecordEntity?> GetByTransactionTypeAndBudgetAsync(
+		Guid localTransactionId,
+		YnabSyncType syncType,
+		string ynabBudgetId,
+		CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		return await context.YnabSyncRecords
-			.FirstOrDefaultAsync(e => e.LocalTransactionId == localTransactionId && e.SyncType == syncType, cancellationToken);
+			.FirstOrDefaultAsync(
+				e => e.LocalTransactionId == localTransactionId &&
+					e.SyncType == syncType &&
+					e.YnabBudgetId == ynabBudgetId,
+				cancellationToken);
 	}
 
 	public async Task<bool> UpdateAsync(YnabSyncRecordEntity entity, CancellationToken cancellationToken)
@@ -52,11 +60,14 @@ public class YnabSyncRecordRepository(IDbContextFactory<ApplicationDbContext> co
 		}
 	}
 
-	public async Task<List<YnabSyncRecordEntity>> GetByReceiptIdsAsync(List<Guid> receiptIds, CancellationToken cancellationToken)
+	public async Task<List<YnabSyncRecordEntity>> GetByReceiptIdsAndBudgetAsync(
+		List<Guid> receiptIds,
+		string ynabBudgetId,
+		CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		return await context.YnabSyncRecords
-			.Where(sr => context.Set<TransactionEntity>()
+			.Where(sr => sr.YnabBudgetId == ynabBudgetId && context.Set<TransactionEntity>()
 				.Where(t => receiptIds.Contains(t.ReceiptId))
 				.Select(t => t.Id)
 				.Contains(sr.LocalTransactionId))
@@ -65,11 +76,11 @@ public class YnabSyncRecordRepository(IDbContextFactory<ApplicationDbContext> co
 			.ToListAsync(cancellationToken);
 	}
 
-	public async Task<DateTimeOffset?> GetLatestSuccessfulSyncTimestampAsync(CancellationToken cancellationToken)
+	public async Task<DateTimeOffset?> GetLatestSuccessfulSyncTimestampAsync(string ynabBudgetId, CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		return await context.YnabSyncRecords
-			.Where(e => e.SyncStatus == YnabSyncStatus.Synced && e.SyncedAtUtc != null)
+			.Where(e => e.YnabBudgetId == ynabBudgetId && e.SyncStatus == YnabSyncStatus.Synced && e.SyncedAtUtc != null)
 			.OrderByDescending(e => e.SyncedAtUtc)
 			.Select(e => e.SyncedAtUtc)
 			.FirstOrDefaultAsync(cancellationToken);

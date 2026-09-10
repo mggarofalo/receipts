@@ -11,12 +11,18 @@ public class BulkPushYnabTransactionsCommandHandlerTests
 {
 	private readonly Mock<IMediator> _mediatorMock = new();
 	private readonly Mock<IYnabRateLimitTracker> _rateLimitTrackerMock = new();
+	private readonly Mock<IYnabBudgetSelectionService> _budgetSelectionMock = new();
 	private readonly BulkPushYnabTransactionsCommandHandler _handler;
 
 	public BulkPushYnabTransactionsCommandHandlerTests()
 	{
 		_rateLimitTrackerMock.Setup(r => r.CanMakeRequests(It.IsAny<int>())).Returns(true);
-		_handler = new BulkPushYnabTransactionsCommandHandler(_mediatorMock.Object, _rateLimitTrackerMock.Object);
+		_budgetSelectionMock.Setup(s => s.GetSelectedBudgetIdAsync(It.IsAny<CancellationToken>()))
+			.ReturnsAsync("budget-123");
+		_handler = new BulkPushYnabTransactionsCommandHandler(
+			_mediatorMock.Object,
+			_rateLimitTrackerMock.Object,
+			_budgetSelectionMock.Object);
 	}
 
 	[Fact]
@@ -171,5 +177,45 @@ public class BulkPushYnabTransactionsCommandHandlerTests
 		// Assert
 		result.Results.Should().BeEmpty();
 		_mediatorMock.Verify(m => m.Send(It.IsAny<PushYnabTransactionsCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+	}
+
+	[Fact]
+	public async Task Handle_CapturesSelectedBudgetOnceForEveryDispatchedReceipt()
+	{
+		List<Guid> receiptIds = [Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()];
+		_budgetSelectionMock.SetupSequence(s => s.GetSelectedBudgetIdAsync(It.IsAny<CancellationToken>()))
+			.ReturnsAsync("budget-A")
+			.ReturnsAsync("budget-B");
+		List<PushYnabTransactionsCommand> dispatched = [];
+		_mediatorMock.Setup(m => m.Send(It.IsAny<PushYnabTransactionsCommand>(), It.IsAny<CancellationToken>()))
+			.Callback((IRequest<PushYnabTransactionsResult> command, CancellationToken _) =>
+				dispatched.Add((PushYnabTransactionsCommand)command))
+			.ReturnsAsync(new PushYnabTransactionsResult(true, []));
+
+		BulkPushYnabTransactionsResult result = await _handler.Handle(
+			new BulkPushYnabTransactionsCommand(receiptIds), CancellationToken.None);
+
+		result.Results.Should().HaveCount(3);
+		dispatched.Select(command => command.ReceiptId).Should().Equal(receiptIds);
+		dispatched.Should().OnlyContain(command => command.CapturedYnabBudgetId == "budget-A");
+		_budgetSelectionMock.Verify(
+			s => s.GetSelectedBudgetIdAsync(It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	[Fact]
+	public async Task Handle_WithoutSelectedBudget_FailsEveryReceiptWithoutDispatching()
+	{
+		List<Guid> receiptIds = [Guid.NewGuid(), Guid.NewGuid()];
+		_budgetSelectionMock.Setup(s => s.GetSelectedBudgetIdAsync(It.IsAny<CancellationToken>()))
+			.ReturnsAsync((string?)null);
+
+		BulkPushYnabTransactionsResult result = await _handler.Handle(
+			new BulkPushYnabTransactionsCommand(receiptIds), CancellationToken.None);
+
+		result.Results.Should().HaveCount(2);
+		result.Results.Should().OnlyContain(item =>
+			!item.Result.Success && item.Result.Error == "No YNAB budget selected.");
+		_mediatorMock.Verify(
+			m => m.Send(It.IsAny<PushYnabTransactionsCommand>(), It.IsAny<CancellationToken>()), Times.Never);
 	}
 }

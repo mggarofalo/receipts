@@ -31,7 +31,7 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 {
 	[HttpGet("connection-status")]
 	[EndpointSummary("Get YNAB connection status")]
-	[EndpointDescription("Returns whether YNAB is configured, whether the connection is active, and the last successful sync timestamp.")]
+	[EndpointDescription("Returns whether YNAB is configured, whether the connection is active, and the selected budget's last successful sync timestamp.")]
 	public async Task<Ok<YnabConnectionStatusResponse>> GetConnectionStatus(CancellationToken cancellationToken)
 	{
 		YnabConnectionStatus status = await mediator.Send(new GetYnabConnectionStatusQuery(), cancellationToken);
@@ -185,13 +185,13 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 	[EndpointDescription("Sets the active YNAB budget for sync operations.")]
 	public async Task<NoContent> SelectBudget([FromBody] SelectYnabBudgetRequest request, CancellationToken cancellationToken)
 	{
-		await mediator.Send(new SelectYnabBudgetCommand(request.BudgetId), cancellationToken);
+		await mediator.Send(new SelectYnabBudgetCommand(request.BudgetId.ToString("D")), cancellationToken);
 		return TypedResults.NoContent();
 	}
 
 	[HttpGet("account-mappings")]
 	[EndpointSummary("List YNAB account mappings")]
-	[EndpointDescription("Returns all mappings between receipts accounts and YNAB accounts.")]
+	[EndpointDescription("Returns mappings between receipts accounts and YNAB accounts for the selected budget.")]
 	public async Task<Ok<YnabAccountMappingListResponse>> GetAccountMappings(CancellationToken cancellationToken)
 	{
 		List<YnabAccountMappingDto> mappings = await mediator.Send(new GetYnabAccountMappingsQuery(), cancellationToken);
@@ -212,7 +212,7 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 					request.ReceiptsAccountId,
 					request.YnabAccountId,
 					request.YnabAccountName,
-					request.YnabBudgetId),
+					request.YnabBudgetId.ToString("D")),
 				cancellationToken);
 
 			YnabAccountMappingResponse response = mapper.ToAccountMappingResponse(mapping);
@@ -227,24 +227,32 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 	[HttpPut("account-mappings/{id}")]
 	[EndpointSummary("Update a YNAB account mapping")]
 	[EndpointDescription("Updates the YNAB account for an existing mapping.")]
-	public async Task<Results<NoContent, NotFound>> UpdateAccountMapping(
+	public async Task<Results<NoContent, NotFound, BadRequest<ProblemDetails>>> UpdateAccountMapping(
 		[FromRoute] Guid id,
 		[FromBody] UpdateYnabAccountMappingRequest request,
 		CancellationToken cancellationToken)
 	{
 		YnabAccountMappingDto? existing = await mediator.Send(new GetYnabAccountMappingByIdQuery(id), cancellationToken);
-		if (existing is null)
+		string? selectedBudgetId = await budgetSelectionService.GetSelectedBudgetIdAsync(cancellationToken);
+		if (existing is null || !string.Equals(existing.YnabBudgetId, selectedBudgetId, StringComparison.Ordinal))
 		{
 			return TypedResults.NotFound();
 		}
 
-		await mediator.Send(
-			new UpdateYnabAccountMappingCommand(
-				id,
-				request.YnabAccountId,
-				request.YnabAccountName,
-				request.YnabBudgetId),
-			cancellationToken);
+		try
+		{
+			await mediator.Send(
+				new UpdateYnabAccountMappingCommand(
+					id,
+					request.YnabAccountId,
+					request.YnabAccountName,
+					request.YnabBudgetId.ToString("D")),
+				cancellationToken);
+		}
+		catch (ArgumentException ex)
+		{
+			return ApiProblem.BadRequest(ex.Message);
+		}
 
 		return TypedResults.NoContent();
 	}
@@ -257,7 +265,8 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 		CancellationToken cancellationToken)
 	{
 		YnabAccountMappingDto? existing = await mediator.Send(new GetYnabAccountMappingByIdQuery(id), cancellationToken);
-		if (existing is null)
+		string? selectedBudgetId = await budgetSelectionService.GetSelectedBudgetIdAsync(cancellationToken);
+		if (existing is null || !string.Equals(existing.YnabBudgetId, selectedBudgetId, StringComparison.Ordinal))
 		{
 			return TypedResults.NotFound();
 		}
@@ -268,7 +277,7 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 
 	[HttpGet("category-mappings")]
 	[EndpointSummary("List all category mappings")]
-	[EndpointDescription("Returns all receipts-to-YNAB category mappings.")]
+	[EndpointDescription("Returns receipts-to-YNAB category mappings for the selected budget.")]
 	public async Task<Ok<YnabCategoryMappingListResponse>> GetCategoryMappings(CancellationToken cancellationToken)
 	{
 		List<YnabCategoryMappingDto> mappings = await mediator.Send(new GetAllYnabCategoryMappingsQuery(), cancellationToken);
@@ -278,7 +287,7 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 	[HttpPost("category-mappings")]
 	[EndpointSummary("Create a category mapping")]
 	[EndpointDescription("Creates a new mapping from a receipts category to a YNAB category.")]
-	public async Task<Results<Created<YnabCategoryMappingResponse>, Conflict<ProblemDetails>>> CreateCategoryMapping(
+	public async Task<Results<Created<YnabCategoryMappingResponse>, Conflict<ProblemDetails>, BadRequest<ProblemDetails>>> CreateCategoryMapping(
 		[FromBody] CreateYnabCategoryMappingRequest request,
 		CancellationToken cancellationToken)
 	{
@@ -289,7 +298,7 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 				request.YnabCategoryId,
 				request.YnabCategoryName,
 				request.YnabCategoryGroupName,
-				request.YnabBudgetId), cancellationToken);
+				request.YnabBudgetId.ToString("D")), cancellationToken);
 
 			YnabCategoryMappingResponse response = mapper.ToCategoryMappingResponse(mapping);
 			return TypedResults.Created($"/api/ynab/category-mappings/{mapping.Id}", response);
@@ -298,28 +307,40 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 		{
 			return ApiProblem.Conflict(ex.Message);
 		}
+		catch (ArgumentException ex)
+		{
+			return ApiProblem.BadRequest(ex.Message);
+		}
 	}
 
 	[HttpPut("category-mappings/{id}")]
 	[EndpointSummary("Update a category mapping")]
 	[EndpointDescription("Updates the YNAB category for an existing mapping.")]
-	public async Task<Results<NoContent, NotFound>> UpdateCategoryMapping(
+	public async Task<Results<NoContent, NotFound, BadRequest<ProblemDetails>>> UpdateCategoryMapping(
 		[FromRoute] Guid id,
 		[FromBody] UpdateYnabCategoryMappingRequest request,
 		CancellationToken cancellationToken)
 	{
 		YnabCategoryMappingDto? existing = await mediator.Send(new GetYnabCategoryMappingByIdQuery(id), cancellationToken);
-		if (existing is null)
+		string? selectedBudgetId = await budgetSelectionService.GetSelectedBudgetIdAsync(cancellationToken);
+		if (existing is null || !string.Equals(existing.YnabBudgetId, selectedBudgetId, StringComparison.Ordinal))
 		{
 			return TypedResults.NotFound();
 		}
 
-		await mediator.Send(new UpdateYnabCategoryMappingCommand(
-			id,
-			request.YnabCategoryId,
-			request.YnabCategoryName,
-			request.YnabCategoryGroupName,
-			request.YnabBudgetId), cancellationToken);
+		try
+		{
+			await mediator.Send(new UpdateYnabCategoryMappingCommand(
+				id,
+				request.YnabCategoryId,
+				request.YnabCategoryName,
+				request.YnabCategoryGroupName,
+				request.YnabBudgetId.ToString("D")), cancellationToken);
+		}
+		catch (ArgumentException ex)
+		{
+			return ApiProblem.BadRequest(ex.Message);
+		}
 
 		return TypedResults.NoContent();
 	}
@@ -330,7 +351,8 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 	public async Task<Results<NoContent, NotFound>> DeleteCategoryMapping([FromRoute] Guid id, CancellationToken cancellationToken)
 	{
 		YnabCategoryMappingDto? existing = await mediator.Send(new GetYnabCategoryMappingByIdQuery(id), cancellationToken);
-		if (existing is null)
+		string? selectedBudgetId = await budgetSelectionService.GetSelectedBudgetIdAsync(cancellationToken);
+		if (existing is null || !string.Equals(existing.YnabBudgetId, selectedBudgetId, StringComparison.Ordinal))
 		{
 			return TypedResults.NotFound();
 		}

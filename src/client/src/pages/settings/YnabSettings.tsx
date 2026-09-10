@@ -433,7 +433,10 @@ export default function YnabSettings() {
                   " and "}
                 {staleCategoryMappingCount > 0 &&
                   `${staleCategoryMappingCount} category mapping(s)`}{" "}
-                reference a previous budget and may not work correctly.
+                belong to another budget. They are preserved and ignored while
+                this budget is selected. Create mappings for the current budget
+                before syncing; transactions exported elsewhere are eligible for
+                a separate export here.
               </span>
               <Button
                 variant="outline"
@@ -457,7 +460,7 @@ export default function YnabSettings() {
               >
                 {clearStaleMappings.isPending
                   ? "Clearing..."
-                  : "Clear stale mappings"}
+                  : "Delete previous-budget mappings"}
               </Button>
             </AlertDescription>
           </Alert>
@@ -469,7 +472,11 @@ export default function YnabSettings() {
               <CardHeader>
                 <CardTitle>Budget Selection</CardTitle>
                 <CardDescription>
-                  Select the YNAB budget to use for syncing transactions.
+                  Mappings from previously selected budgets are preserved and
+                  ignored while another destination is active. Switching to a
+                  different budget requires mapping its accounts and categories;
+                  transactions exported elsewhere can be re-exported to this
+                  destination.
                 </CardDescription>
               </CardHeader>
               <CardContent>
