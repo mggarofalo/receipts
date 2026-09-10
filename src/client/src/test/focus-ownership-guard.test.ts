@@ -49,7 +49,9 @@ function ownsOrSuppressesFocusIndicator(token: string): boolean {
   if (/^\[outline(?:-[^:]+)?:none\]$/.test(utility)) return true;
 
   const isIndicatorUtility =
-    /^(?:ring|border|outline|shadow|drop-shadow)(?:-|$)/.test(utility) ||
+    /^(?:ring|inset-ring|border|outline|shadow|inset-shadow|drop-shadow)(?:-|$)/.test(
+      utility,
+    ) ||
     /^\[(?:box-shadow|outline(?:-[^:]+)?|border(?:-[^:]+)?):/.test(
       utility,
     );
@@ -196,6 +198,9 @@ describe("shadcn focus ownership guard", () => {
     "focus-visible:shadow-md",
     "group-focus:drop-shadow-lg",
     "focus-visible:shadow-md!",
+    "focus-visible:inset-ring-2",
+    "focus-visible:inset-ring-[3px]",
+    "group-focus:inset-shadow-sm",
   ])("recognizes forbidden focus utility %s", (utility) => {
     expect(ownsOrSuppressesFocusIndicator(utility)).toBe(true);
   });
@@ -213,13 +218,17 @@ describe("shadcn focus ownership guard", () => {
     "shadow-md",
     "drop-shadow-lg",
     "hover:shadow-md",
+    "inset-ring-2",
+    "inset-ring-[3px]",
+    "inset-shadow-sm",
+    "hover:inset-shadow-sm",
   ])("allows non-focus decorative utility %s", (utility) => {
     expect(ownsOrSuppressesFocusIndicator(utility)).toBe(false);
   });
 
   it("scans every static segment of an interpolated template literal", () => {
     const source = `
-      const classes = \`group-focus:ring-2 sm:group-focus:ring-2 has-focus-visible:ring-2 group-has-focus:ring-2 focus-visible:shadow-md \${first} peer-focus-visible:border-ring focus-visible:!ring-[3px] focus-visible:ring-[3px]! group-focus:drop-shadow-lg \${second} [&:focus-visible]:outline-2 [&:focus]:[box-shadow:0_0_0_2px_red] [outline:none]!\`;
+      const classes = \`group-focus:ring-2 sm:group-focus:ring-2 has-focus-visible:ring-2 group-has-focus:ring-2 focus-visible:shadow-md focus-visible:inset-ring-[3px] \${first} peer-focus-visible:border-ring focus-visible:!ring-[3px] focus-visible:ring-[3px]! group-focus:drop-shadow-lg group-focus:inset-shadow-sm \${second} [&:focus-visible]:outline-2 [&:focus]:[box-shadow:0_0_0_2px_red] [outline:none]!\`;
     `;
 
     expect(focusViolations("fixture.ts", "fixture.ts", source)).toEqual([
@@ -228,10 +237,12 @@ describe("shadcn focus ownership guard", () => {
       "fixture.ts:2 has-focus-visible:ring-2",
       "fixture.ts:2 group-has-focus:ring-2",
       "fixture.ts:2 focus-visible:shadow-md",
+      "fixture.ts:2 focus-visible:inset-ring-[3px]",
       "fixture.ts:2 peer-focus-visible:border-ring",
       "fixture.ts:2 focus-visible:!ring-[3px]",
       "fixture.ts:2 focus-visible:ring-[3px]!",
       "fixture.ts:2 group-focus:drop-shadow-lg",
+      "fixture.ts:2 group-focus:inset-shadow-sm",
       "fixture.ts:2 [&:focus-visible]:outline-2",
       "fixture.ts:2 [&:focus]:[box-shadow:0_0_0_2px_red]",
       "fixture.ts:2 [outline:none]!",
