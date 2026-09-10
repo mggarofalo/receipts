@@ -108,6 +108,8 @@ function syncStatusToChip(
       return "pending";
     case "failed":
       return "error";
+    case "unknown":
+      return "error";
     default:
       return "none";
   }
@@ -123,6 +125,8 @@ function syncStatusLabel(status: ReceiptYnabSyncStatusValue): string {
       return "Synced";
     case "failed":
       return "Failed";
+    case "unknown":
+      return "Needs Review";
   }
 }
 

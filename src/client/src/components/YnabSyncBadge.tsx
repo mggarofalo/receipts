@@ -1,5 +1,5 @@
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle, Clock, XCircle, Minus } from "lucide-react";
+import { AlertTriangle, CheckCircle, Clock, XCircle, Minus } from "lucide-react";
 import type { ReceiptYnabSyncStatusValue } from "@/hooks/useYnab";
 
 const STATUS_CONFIG: Record<
@@ -9,6 +9,7 @@ const STATUS_CONFIG: Record<
   synced: { label: "Synced", variant: "default", icon: CheckCircle },
   pending: { label: "Pending", variant: "secondary", icon: Clock },
   failed: { label: "Failed", variant: "destructive", icon: XCircle },
+  unknown: { label: "Needs Review", variant: "destructive", icon: AlertTriangle },
   notSynced: { label: "Not Synced", variant: "outline", icon: Minus },
 };
 

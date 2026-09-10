@@ -4287,14 +4287,14 @@ export interface components {
         /** @enum {string} */
         YnabSyncRecordResponseSyncType: "memoUpdate" | "transactionPush";
         /** @enum {string} */
-        YnabSyncRecordResponseSyncStatus: "pending" | "synced" | "failed";
+        YnabSyncRecordResponseSyncStatus: "pending" | "synced" | "failed" | "unknown";
         ReceiptYnabSyncStatus: {
             /** Format: uuid */
             receiptId: string;
             syncStatus: components["schemas"]["ReceiptYnabSyncStatusValue"];
         };
         /** @enum {string} */
-        ReceiptYnabSyncStatusValue: "notSynced" | "pending" | "synced" | "failed";
+        ReceiptYnabSyncStatusValue: "notSynced" | "pending" | "synced" | "failed" | "unknown";
         ReceiptYnabSyncStatusListResponse: {
             data: components["schemas"]["ReceiptYnabSyncStatus"][];
         };

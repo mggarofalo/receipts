@@ -1,3 +1,6 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using Application.Interfaces.Services;
 using Application.Models;
 using Application.Models.Ynab;
@@ -166,6 +169,7 @@ public class PushYnabTransactionsCommandHandler(
 
 		// 9. Create YNAB transactions and track sync
 		List<PushedTransactionInfo> pushedTransactions = [];
+		string? snapshotWarning = null;
 
 		foreach (YnabTransactionSplit txSplit in splitResult.TransactionSplits)
 		{
@@ -185,60 +189,120 @@ public class PushYnabTransactionsCommandHandler(
 			// numbering stays stable across retries.
 			string importId = importIdByTransactionId[txSplit.LocalTransactionId];
 
-			YnabSyncRecordDto? syncRecord = null;
+			// Materialize the complete remote request before acquiring a send claim. The
+			// persisted snapshot, not mutable receipt state, is authoritative on retries.
+			List<YnabSubTransaction>? subTransactions = null;
+			string? categoryId = null;
+			if (txSplit.SubTransactions.Count == 1)
+			{
+				categoryId = txSplit.SubTransactions[0].YnabCategoryId;
+			}
+			else if (txSplit.SubTransactions.Count > 1)
+			{
+				subTransactions = txSplit.SubTransactions
+					.Select(st => new YnabSubTransaction(st.Milliunits, st.YnabCategoryId, null))
+					.ToList();
+			}
+
+			YnabCreateTransactionRequest proposedRequest = new(
+				AccountId: ynabAccountId,
+				Date: localTx.Date,
+				Amount: txSplit.TotalMilliunits,
+				Memo: $"Receipt: {receipt.Location} ({receipt.Date:yyyy-MM-dd})",
+				PayeeName: receipt.Location,
+				CategoryId: categoryId,
+				Approved: false,
+				SubTransactions: subTransactions,
+				ImportId: importId);
+
+			YnabPushOperation operation;
+			string proposedSourceVersion = ComputeSourceVersion(request.ReceiptId, localTx.Id, proposedRequest);
 			try
 			{
-				if (existingRecord is not null)
-				{
-					// Reuse existing Failed/Pending row to avoid unique-constraint violation
-					await syncRecordService.UpdateStatusAsync(
-						existingRecord.Id, YnabSyncStatus.Pending, null, null, cancellationToken);
-					syncRecord = existingRecord;
-				}
-				else
-				{
-					// Create sync record (Pending) — inside try so DB failure is caught
-					syncRecord = await syncRecordService.CreateAsync(
-						localTx.Id, budgetId, YnabSyncType.TransactionPush, cancellationToken);
-				}
+				operation = await syncRecordService.PreparePushOperationAsync(
+					localTx.Id,
+					budgetId,
+					proposedRequest,
+					proposedSourceVersion,
+					cancellationToken);
+			}
+			catch (Exception ex)
+			{
+				return new PushYnabTransactionsResult(false, pushedTransactions,
+					Error: $"Failed to persist the YNAB operation for local transaction {localTx.Id}: {ex.Message}");
+			}
 
-				// Build sub-transactions
-				List<YnabSubTransaction>? subTransactions = null;
-				string? categoryId = null;
+			if (operation.SyncStatus == YnabSyncStatus.Synced)
+			{
+				continue;
+			}
 
-				if (txSplit.SubTransactions.Count == 1)
-				{
-					// Single category — no split needed
-					categoryId = txSplit.SubTransactions[0].YnabCategoryId;
-				}
-				else if (txSplit.SubTransactions.Count > 1)
-				{
-					subTransactions = txSplit.SubTransactions
-						.Select(st => new YnabSubTransaction(st.Milliunits, st.YnabCategoryId, null))
-						.ToList();
-				}
+			if (operation.SourceVersion.Length > 0 && operation.SourceVersion != proposedSourceVersion)
+			{
+				snapshotWarning = "The receipt changed after its original YNAB attempt. The saved operation snapshot was reconciled or retried without changing its import ID.";
+			}
 
-				YnabCreateTransactionRequest ynabRequest = new(
-					AccountId: ynabAccountId,
-					Date: localTx.Date,
-					Amount: txSplit.TotalMilliunits,
-					Memo: $"Receipt: {receipt.Location} ({receipt.Date:yyyy-MM-dd})",
-					PayeeName: receipt.Location,
-					CategoryId: categoryId,
-					Approved: false,
-					SubTransactions: subTransactions,
-					ImportId: importId);
+			if (operation.Request is null)
+			{
+				return new PushYnabTransactionsResult(false, pushedTransactions, Error: operation.LastError);
+			}
+
+			YnabPushOperationClaim? claim = await syncRecordService.TryClaimPushOperationAsync(
+				operation.SyncRecordId,
+				cancellationToken);
+			if (claim is null)
+			{
+				return new PushYnabTransactionsResult(false, pushedTransactions,
+					Error: $"A YNAB push for local transaction {localTx.Id} is already in progress. Refresh before retrying.");
+			}
+
+			YnabCreateTransactionRequest persistedRequest = claim.Operation.Request
+				?? throw new InvalidOperationException($"Claimed YNAB operation {claim.Operation.SyncRecordId} has no request snapshot.");
+
+			try
+			{
+				// Every retry first reconciles the immutable import ID. This covers a lost
+				// response and a prior local status-write failure without issuing a second
+				// create, even when the receipt was edited after the original attempt.
+				if (claim.Operation.AttemptCount > 1)
+				{
+					string? reconciledId = await ynabApiClient.FindTransactionByImportIdAsync(
+						budgetId,
+						persistedRequest.AccountId,
+						persistedRequest.ImportId!,
+						persistedRequest.Date.AddDays(-1),
+						cancellationToken);
+					if (reconciledId is not null)
+					{
+						if (!boundYnabTransactionIds.Add(reconciledId))
+						{
+							string duplicateError = $"YNAB transaction '{reconciledId}' is already bound to another sync record " +
+								$"for this receipt; refusing to double-bind local transaction {localTx.Id}.";
+							await syncRecordService.CompletePushOperationAsync(
+								operation.SyncRecordId, claim.ClaimToken, YnabSyncStatus.Failed, null, duplicateError, CancellationToken.None);
+							await LogPushEventAsync(request.ReceiptId, localTx.Id, success: false, duplicateError, CancellationToken.None);
+							return new PushYnabTransactionsResult(false, pushedTransactions, Error: duplicateError);
+						}
+
+						await syncRecordService.CompletePushOperationAsync(
+							operation.SyncRecordId, claim.ClaimToken, YnabSyncStatus.Synced, reconciledId, null, CancellationToken.None);
+						pushedTransactions.Add(new PushedTransactionInfo(
+							localTx.Id, reconciledId, persistedRequest.Amount, persistedRequest.SubTransactions?.Count ?? 1));
+						await LogPushEventAsync(request.ReceiptId, localTx.Id, success: true, errorMessage: null, CancellationToken.None);
+						continue;
+					}
+				}
 
 				YnabCreateTransactionResponse ynabResponse;
 				try
 				{
 					ynabResponse = await ynabApiClient.CreateTransactionAsync(
-						budgetId, ynabRequest, cancellationToken);
+						budgetId, persistedRequest, cancellationToken);
 				}
 				catch (HttpRequestException conflictEx) when (conflictEx.StatusCode == System.Net.HttpStatusCode.Conflict)
 				{
 					string? recoveredId = await ynabApiClient.FindTransactionByImportIdAsync(
-						budgetId, ynabAccountId, importId, localTx.Date.AddDays(-1), cancellationToken);
+						budgetId, persistedRequest.AccountId, persistedRequest.ImportId!, persistedRequest.Date.AddDays(-1), cancellationToken);
 
 					if (recoveredId is null)
 					{
@@ -254,24 +318,24 @@ public class PushYnabTransactionsCommandHandler(
 						string dupError = $"YNAB transaction '{recoveredId}' is already bound to another sync record " +
 							$"for this receipt; refusing to double-bind local transaction {localTx.Id}.";
 
-						await syncRecordService.UpdateStatusAsync(
-							syncRecord!.Id, YnabSyncStatus.Failed, null, dupError, cancellationToken);
+						await syncRecordService.CompletePushOperationAsync(
+							operation.SyncRecordId, claim.ClaimToken, YnabSyncStatus.Failed, null, dupError, CancellationToken.None);
 
 						await LogPushEventAsync(request.ReceiptId, localTx.Id, success: false, dupError, cancellationToken);
 
 						return new PushYnabTransactionsResult(false, pushedTransactions, Error: dupError);
 					}
 
-					await syncRecordService.UpdateStatusAsync(
-						syncRecord!.Id, YnabSyncStatus.Synced, recoveredId, null, cancellationToken);
+					await syncRecordService.CompletePushOperationAsync(
+						operation.SyncRecordId, claim.ClaimToken, YnabSyncStatus.Synced, recoveredId, null, CancellationToken.None);
 
 					pushedTransactions.Add(new PushedTransactionInfo(
 						localTx.Id,
 						recoveredId,
-						txSplit.TotalMilliunits,
-						txSplit.SubTransactions.Count));
+						persistedRequest.Amount,
+						persistedRequest.SubTransactions?.Count ?? 1));
 
-					await LogPushEventAsync(request.ReceiptId, localTx.Id, success: true, errorMessage: null, cancellationToken);
+					await LogPushEventAsync(request.ReceiptId, localTx.Id, success: true, errorMessage: null, CancellationToken.None);
 					continue;
 				}
 
@@ -279,22 +343,46 @@ public class PushYnabTransactionsCommandHandler(
 				// recover-bind onto it (RECEIPTS-752 double-bind guard).
 				boundYnabTransactionIds.Add(ynabResponse.TransactionId);
 
-				await LogPushEventAsync(request.ReceiptId, localTx.Id, success: true, errorMessage: null, cancellationToken);
+				await LogPushEventAsync(request.ReceiptId, localTx.Id, success: true, errorMessage: null, CancellationToken.None);
 
 				// Update sync record to Synced — separate error handling (Bug 6)
 				try
 				{
-					await syncRecordService.UpdateStatusAsync(
-						syncRecord.Id, YnabSyncStatus.Synced, ynabResponse.TransactionId, null, cancellationToken);
+					bool completed = await syncRecordService.CompletePushOperationAsync(
+						operation.SyncRecordId, claim.ClaimToken, YnabSyncStatus.Synced, ynabResponse.TransactionId, null, CancellationToken.None);
+					if (!completed)
+					{
+						throw new InvalidOperationException("the persisted operation claim was lost before completion");
+					}
 				}
 				catch (Exception statusEx)
 				{
-					// YNAB TX already created; don't mark as Failed. Return success with warning.
+					// YNAB accepted the request, so never mark it Failed. Best-effort an
+					// explicit Unknown transition; if persistence is still unavailable the
+					// existing claim lease prevents an immediate duplicate send and the next
+					// retry reconciles the immutable import ID.
+					string statusError = $"YNAB transaction created but sync record update failed: {statusEx.Message}";
+					try
+					{
+						await syncRecordService.CompletePushOperationAsync(
+							operation.SyncRecordId,
+							claim.ClaimToken,
+							YnabSyncStatus.Unknown,
+							ynabResponse.TransactionId,
+							statusError,
+							CancellationToken.None);
+					}
+					catch (Exception unknownStatusException)
+					{
+						logger.LogWarning(unknownStatusException,
+							"Failed to persist Unknown for accepted YNAB operation {OperationId}", operation.SyncRecordId);
+					}
+
 					pushedTransactions.Add(new PushedTransactionInfo(
 						localTx.Id,
 						ynabResponse.TransactionId,
-						txSplit.TotalMilliunits,
-						txSplit.SubTransactions.Count));
+						persistedRequest.Amount,
+						persistedRequest.SubTransactions?.Count ?? 1));
 
 					return new PushYnabTransactionsResult(true, pushedTransactions,
 						Error: $"YNAB transaction created but sync record update failed for transaction {localTx.Id}: {statusEx.Message}");
@@ -303,26 +391,43 @@ public class PushYnabTransactionsCommandHandler(
 				pushedTransactions.Add(new PushedTransactionInfo(
 					localTx.Id,
 					ynabResponse.TransactionId,
-					txSplit.TotalMilliunits,
-					txSplit.SubTransactions.Count));
+					persistedRequest.Amount,
+					persistedRequest.SubTransactions?.Count ?? 1));
 			}
 			catch (Exception ex)
 			{
-				// Mark sync record as Failed if it was created (preserves original behavior)
-				if (syncRecord is not null)
+				bool definitelyRejected = ex is HttpRequestException httpException &&
+					httpException.StatusCode is >= System.Net.HttpStatusCode.BadRequest and < System.Net.HttpStatusCode.InternalServerError &&
+					httpException.StatusCode != System.Net.HttpStatusCode.RequestTimeout;
+				YnabSyncStatus failureStatus = definitelyRejected ? YnabSyncStatus.Failed : YnabSyncStatus.Unknown;
+				string operationError = failureStatus == YnabSyncStatus.Unknown
+					? $"YNAB may have accepted the transaction: {ex.Message}. Retry to reconcile the saved import ID before another send."
+					: ex.Message;
+				try
 				{
-					await syncRecordService.UpdateStatusAsync(
-						syncRecord.Id, YnabSyncStatus.Failed, null, ex.Message, cancellationToken);
+					await syncRecordService.CompletePushOperationAsync(
+						operation.SyncRecordId, claim.ClaimToken, failureStatus, null, operationError, CancellationToken.None);
+				}
+				catch (Exception persistenceException)
+				{
+					logger.LogWarning(persistenceException,
+						"Failed to persist {Status} for YNAB operation {OperationId}", failureStatus, operation.SyncRecordId);
 				}
 
-				await LogPushEventAsync(request.ReceiptId, localTx.Id, success: false, ex.Message, cancellationToken);
+				await LogPushEventAsync(request.ReceiptId, localTx.Id, success: false, operationError, CancellationToken.None);
 
 				return new PushYnabTransactionsResult(false, pushedTransactions,
-					Error: $"Failed to push YNAB transaction for local transaction {localTx.Id}: {ex.Message}");
+					Error: $"Failed to push YNAB transaction for local transaction {localTx.Id}: {operationError}");
 			}
 		}
 
-		return new PushYnabTransactionsResult(true, pushedTransactions);
+		return new PushYnabTransactionsResult(true, pushedTransactions, Error: snapshotWarning);
+	}
+
+	private static string ComputeSourceVersion(Guid receiptId, Guid transactionId, YnabCreateTransactionRequest request)
+	{
+		string source = $"{receiptId:N}:{transactionId:N}:{JsonSerializer.Serialize(request)}";
+		return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(source)));
 	}
 
 	// RECEIPTS-737: append one YnabSyncEvent per push attempt. Best-effort — a logging failure

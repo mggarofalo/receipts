@@ -5,7 +5,8 @@ public enum ReceiptSyncStatusValue
 	NotSynced,
 	Pending,
 	Synced,
-	Failed
+	Failed,
+	Unknown
 }
 
 public record ReceiptYnabSyncStatusDto(Guid ReceiptId, ReceiptSyncStatusValue SyncStatus);

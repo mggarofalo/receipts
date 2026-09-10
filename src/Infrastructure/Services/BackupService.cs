@@ -248,6 +248,14 @@ public class BackupService(
 				ynab_transaction_id TEXT,
 				ynab_budget_id TEXT NOT NULL,
 				ynab_account_id TEXT,
+				import_id TEXT,
+				request_payload_json TEXT,
+				payload_hash TEXT,
+				source_version TEXT,
+				attempt_count INTEGER NOT NULL,
+				claim_token TEXT,
+				claimed_at_utc TEXT,
+				last_attempt_at_utc TEXT,
 				sync_type TEXT NOT NULL,
 				sync_status TEXT NOT NULL,
 				synced_at_utc TEXT,
@@ -587,9 +595,12 @@ public class BackupService(
 
 		const string sql = """
 			INSERT INTO ynab_sync_records (id, local_transaction_id, ynab_transaction_id, ynab_budget_id,
-				ynab_account_id, sync_type, sync_status, synced_at_utc, last_error, created_at, updated_at)
-			VALUES ($id, $localTransactionId, $ynabTransactionId, $ynabBudgetId, $ynabAccountId, $syncType,
-				$syncStatus, $syncedAtUtc, $lastError, $createdAt, $updatedAt)
+				ynab_account_id, import_id, request_payload_json, payload_hash, source_version, attempt_count,
+				claim_token, claimed_at_utc, last_attempt_at_utc, sync_type, sync_status, synced_at_utc,
+				last_error, created_at, updated_at)
+			VALUES ($id, $localTransactionId, $ynabTransactionId, $ynabBudgetId, $ynabAccountId, $importId,
+				$requestPayloadJson, $payloadHash, $sourceVersion, $attemptCount, $claimToken, $claimedAtUtc,
+				$lastAttemptAtUtc, $syncType, $syncStatus, $syncedAtUtc, $lastError, $createdAt, $updatedAt)
 			""";
 
 		foreach (YnabSyncRecordEntity record in records)
@@ -601,6 +612,14 @@ public class BackupService(
 			cmd.Parameters.AddWithValue("$ynabTransactionId", (object?)record.YnabTransactionId ?? DBNull.Value);
 			cmd.Parameters.AddWithValue("$ynabBudgetId", record.YnabBudgetId);
 			cmd.Parameters.AddWithValue("$ynabAccountId", (object?)record.YnabAccountId ?? DBNull.Value);
+			cmd.Parameters.AddWithValue("$importId", (object?)record.ImportId ?? DBNull.Value);
+			cmd.Parameters.AddWithValue("$requestPayloadJson", (object?)record.RequestPayloadJson ?? DBNull.Value);
+			cmd.Parameters.AddWithValue("$payloadHash", (object?)record.PayloadHash ?? DBNull.Value);
+			cmd.Parameters.AddWithValue("$sourceVersion", (object?)record.SourceVersion ?? DBNull.Value);
+			cmd.Parameters.AddWithValue("$attemptCount", record.AttemptCount);
+			cmd.Parameters.AddWithValue("$claimToken", (object?)record.ClaimToken?.ToString() ?? DBNull.Value);
+			cmd.Parameters.AddWithValue("$claimedAtUtc", record.ClaimedAtUtc.HasValue ? record.ClaimedAtUtc.Value.ToString("O") : DBNull.Value);
+			cmd.Parameters.AddWithValue("$lastAttemptAtUtc", record.LastAttemptAtUtc.HasValue ? record.LastAttemptAtUtc.Value.ToString("O") : DBNull.Value);
 			cmd.Parameters.AddWithValue("$syncType", record.SyncType.ToString());
 			cmd.Parameters.AddWithValue("$syncStatus", record.SyncStatus.ToString());
 			cmd.Parameters.AddWithValue("$syncedAtUtc", record.SyncedAtUtc.HasValue ? record.SyncedAtUtc.Value.ToString("O") : DBNull.Value);
