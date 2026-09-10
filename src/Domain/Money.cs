@@ -10,22 +10,33 @@ public record Money(decimal Amount, Currency Currency)
 
 	public static Money operator +(Money a, Money b)
 	{
+		EnsureSameCurrency(a, b);
 		return new Money(a.Amount + b.Amount, a.Currency);
 	}
 
 	public static Money operator -(Money a, Money b)
 	{
+		EnsureSameCurrency(a, b);
 		return new Money(a.Amount - b.Amount, a.Currency);
 	}
 
-	public static Money operator *(Money a, Money b)
+	public static Money operator *(Money money, decimal scalar) => new(money.Amount * scalar, money.Currency);
+	public static Money operator *(decimal scalar, Money money) => money * scalar;
+	public static Money operator /(Money money, decimal scalar) => new(money.Amount / scalar, money.Currency);
+	public static decimal operator /(Money numerator, Money denominator) => numerator.RatioTo(denominator);
+
+	public decimal RatioTo(Money denominator)
 	{
-		return new Money(a.Amount * b.Amount, a.Currency);
+		EnsureSameCurrency(this, denominator);
+		return Amount / denominator.Amount;
 	}
 
-	public static Money operator /(Money a, Money b)
+	private static void EnsureSameCurrency(Money left, Money right)
 	{
-		// Half-up to match the cash-register convention used for line-item totals (RECEIPTS-670).
-		return new Money(Math.Round(a.Amount / b.Amount, 2, MidpointRounding.AwayFromZero), a.Currency);
+		if (left.Currency != right.Currency)
+		{
+			throw new InvalidOperationException(
+				$"Cannot combine {left.Currency} and {right.Currency} monetary values.");
+		}
 	}
 }

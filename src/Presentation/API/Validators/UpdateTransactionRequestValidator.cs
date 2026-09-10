@@ -1,4 +1,5 @@
 using API.Generated.Dtos;
+using Application.Validation;
 using FluentValidation;
 
 namespace API.Validators;
@@ -10,7 +11,7 @@ public class UpdateTransactionRequestValidator : AbstractValidator<UpdateTransac
 	public const string DateMustBePriorToCurrentDate = "Date must be prior to the current date";
 	public const string CardIdMustNotBeEmpty = "Card ID must not be empty.";
 
-	public UpdateTransactionRequestValidator()
+	public UpdateTransactionRequestValidator(AdmissionDatePolicy datePolicy)
 	{
 		RuleFor(x => x.Id)
 			.NotEqual(Guid.Empty)
@@ -21,7 +22,7 @@ public class UpdateTransactionRequestValidator : AbstractValidator<UpdateTransac
 			.WithMessage(AmountMustBeNonZero);
 
 		RuleFor(x => x.Date)
-			.Must(date => date.ToDateTime(TimeOnly.MinValue) <= DateTime.Today)
+			.Must(datePolicy.IsNotFuture)
 			.WithMessage(DateMustBePriorToCurrentDate);
 
 		RuleFor(x => x.CardId)

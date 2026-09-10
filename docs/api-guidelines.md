@@ -24,7 +24,7 @@ Generated request DTOs retain case-insensitive and numeric enum input behavior.
 
 ## Validation Ownership
 
-Schema-expressible constraints belong in `openapi/spec.yaml`. Generated DTO DataAnnotations enforce them through MVC model validation; for example, receipt location length is 1–200 characters. Keep whitespace-only rejection and rules relative to today's date in the API FluentValidation validators. Do not duplicate a generated length limit in a handwritten validator.
+Schema-expressible constraints belong in `openapi/spec.yaml`. Generated DTO DataAnnotations enforce them through MVC model validation; for example, receipt location length is 1–200 characters. Keep whitespace-only rejection in API FluentValidation validators. Date admission uses the shared `AdmissionDatePolicy`: API validators reject invalid transport requests early, while application command validators enforce the same boundary for every Mediator caller. Do not duplicate a generated length limit in a handwritten validator.
 
 The API registers its own DTO validators. `FluentValidationActionFilter` validates both collection-level rules and each list element before invoking an action. An empty list or a null element is invalid; element errors use paths such as `[1].Date`. A list validator does not replace the element validators. Nested DTO business rules remain the responsibility of their owning validator, such as `CreateCompleteReceiptRequestValidator`. Validation honors request cancellation, including a final check before action dispatch.
 
