@@ -13,9 +13,9 @@ namespace Presentation.API.Tests.Configuration;
 
 /// <summary>
 /// Verifies that the auth middleware pipeline in <see cref="AuthConfiguration.UseAuthServices"/>
-/// registers middleware in the correct order. Specifically, UseAuthorization must run before
-/// UseRateLimiter so that <c>context.User</c> has the BypassRateLimit claim when the rate
-/// limiter evaluates.
+/// registers middleware in the correct order. Specifically, authentication must run before
+/// rate limiting so that <c>context.User</c> has the BypassRateLimit claim when the limiter
+/// evaluates, while authorization runs afterward so rejected requests still consume budget.
 /// </summary>
 public class AuthMiddlewareOrderingTests
 {
@@ -33,10 +33,10 @@ public class AuthMiddlewareOrderingTests
 	};
 
 	[Fact]
-	public async Task UseAuthServices_AuthorizationRunsBeforeRateLimiter_BypassClaimIsAvailable()
+	public async Task UseAuthServices_AuthenticationRunsBeforeRateLimiter_BypassClaimIsAvailable()
 	{
 		// Arrange: Build a minimal host that uses UseAuthServices with a BypassRateLimit claim
-		// injected during authentication. If authorization runs before the rate limiter,
+		// injected before the production pipeline. If authentication runs before the rate limiter,
 		// the claim will be visible to the rate limiter and bypass will work.
 		using IHost host = CreateHostWithAuthPipeline(bypassRateLimit: true);
 		await host.StartAsync();
@@ -48,7 +48,7 @@ public class AuthMiddlewareOrderingTests
 		HttpResponseMessage response3 = await client.GetAsync("/test");
 
 		// Assert: All should succeed because the BypassRateLimit claim is available
-		// to the rate limiter (authorization ran first, making the claim visible)
+		// to the rate limiter (authentication ran first, making the claim visible)
 		response1.StatusCode.Should().Be(HttpStatusCode.OK);
 		response2.StatusCode.Should().Be(HttpStatusCode.OK);
 		response3.StatusCode.Should().Be(HttpStatusCode.OK);

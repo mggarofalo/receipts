@@ -103,17 +103,13 @@ public static class AuthConfiguration
 		{
 			options.AddPolicy("ApiOrJwt", policy =>
 			{
-				policy.AddAuthenticationSchemes(
-					JwtBearerDefaults.AuthenticationScheme,
-					ApiKeyAuthenticationDefaults.AuthenticationScheme);
+				policy.AddAuthenticationSchemes(PolicySchemeName);
 				policy.RequireAuthenticatedUser();
 			});
 
 			options.AddPolicy("RequireAdmin", policy =>
 			{
-				policy.AddAuthenticationSchemes(
-					JwtBearerDefaults.AuthenticationScheme,
-					ApiKeyAuthenticationDefaults.AuthenticationScheme);
+				policy.AddAuthenticationSchemes(PolicySchemeName);
 				policy.RequireAuthenticatedUser();
 				policy.RequireRole(AppRoles.Admin);
 			});
@@ -127,8 +123,8 @@ public static class AuthConfiguration
 	public static IApplicationBuilder UseAuthServices(this IApplicationBuilder app)
 	{
 		app.UseAuthentication();
-		app.UseAuthorization();
 		app.UseRateLimiter();
+		app.UseAuthorization();
 		app.UseMiddleware<MustResetPasswordMiddleware>();
 		return app;
 	}

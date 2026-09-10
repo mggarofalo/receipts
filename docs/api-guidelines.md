@@ -60,6 +60,17 @@ The API supports two authentication schemes, both valid on all protected endpoin
 | **JWT Bearer** | Browser clients (login flow) | `Authorization: Bearer <token>` |
 | **API Key** | Programmatic access (scripts, integrations) | `X-Api-Key: <key>` |
 
+Send one credential scheme per request. When `X-Api-Key` is present it is selected in preference
+to Bearer authentication; an invalid API key fails closed even if the request also carries a valid
+Bearer token. This keeps the identity used for rate-limit partitioning identical to the identity
+used for authorization.
+
+Authentication runs before rate limiting so authenticated policies can partition by user and
+honor the explicit API-key `BypassRateLimit` claim. Rate limiting runs before authorization, so
+repeated unauthenticated or forbidden requests to protected endpoints still consume the global
+client-IP budget. A rejection is an RFC 9457 problem document with `Retry-After` and a matching
+`retryAfterSeconds` extension.
+
 ### JWT Implementation
 
 - Tokens are issued via `POST /api/auth/login` with email + password

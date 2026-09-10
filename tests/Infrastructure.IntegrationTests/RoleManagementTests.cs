@@ -119,7 +119,7 @@ public class RoleManagementTests(PostgresFixture fixture) : IClassFixture<Postgr
 	[Theory]
 	[InlineData(false)]
 	[InlineData(true)]
-	public async Task MixedSubjects_CannotBorrowAdminAuthorityToBypassSelfDemotionGuard(bool replace)
+	public async Task MixedSubjects_NonAdminApiKeyIsRejectedByAdminPolicyBeforeSelfDemotionGuard(bool replace)
 	{
 		ApplicationUser target = await CreateUserAsync(AppRoles.Admin);
 		ApplicationUser keyOwner = await CreateUserAsync(AppRoles.User);
@@ -133,8 +133,9 @@ public class RoleManagementTests(PostgresFixture fixture) : IClassFixture<Postgr
 			? await client.PutAsJsonAsync($"/api/users/{target.Id}", new UpdateUserRequest { Email = "changed@example.com", Role = AppRoles.User })
 			: await client.DeleteAsync($"/api/users/{target.Id}/roles/Admin");
 
-		result.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-		(await result.Content.ReadAsStringAsync()).Should().Contain("single user");
+		result.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+		result.Content.Headers.ContentType.Should().BeNull();
+		(await result.Content.ReadAsStringAsync()).Should().BeEmpty();
 		await AssertUnchangedAsync(target, [AppRoles.Admin]);
 	}
 

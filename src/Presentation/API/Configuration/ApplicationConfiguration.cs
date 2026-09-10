@@ -123,7 +123,7 @@ public static class ApplicationConfiguration
 				}
 
 				return RateLimitPartition.GetFixedWindowLimiter(
-					context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+					GetIdentityRateLimitKey(context),
 					_ => new FixedWindowRateLimiterOptions
 					{
 						PermitLimit = rateLimitConfig.AuthSensitive.PermitLimit,
@@ -139,7 +139,7 @@ public static class ApplicationConfiguration
 				}
 
 				return RateLimitPartition.GetFixedWindowLimiter(
-					context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+					GetIdentityRateLimitKey(context),
 					_ => new FixedWindowRateLimiterOptions
 					{
 						PermitLimit = rateLimitConfig.ApiKey.PermitLimit,
@@ -214,6 +214,14 @@ public static class ApplicationConfiguration
 		});
 
 		return services;
+	}
+
+	private static string GetIdentityRateLimitKey(HttpContext context)
+	{
+		string? userId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+		return !string.IsNullOrWhiteSpace(userId)
+			? $"user:{userId}"
+			: $"ip:{context.Connection.RemoteIpAddress?.ToString() ?? "unknown"}";
 	}
 
 	public static WebApplication UseApplicationServices(this WebApplication app)
