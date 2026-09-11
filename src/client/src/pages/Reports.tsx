@@ -327,7 +327,7 @@ function ReportMonthPicker({
       <PopoverTrigger asChild>
         <Button
           variant="outline"
-          aria-label="Choose report month"
+          aria-label={`Choose report month, selected ${format(month, "MMMM yyyy")}`}
           className="font-mono text-xs"
         >
           <Icon.Calendar aria-hidden="true" />
@@ -360,7 +360,11 @@ function ReportMonthPicker({
             <Icon.ChevronR aria-hidden="true" />
           </Button>
         </div>
-        <div className="grid grid-cols-3 gap-1" role="grid">
+        <div
+          className="grid grid-cols-3 gap-1"
+          role="group"
+          aria-label={`Months in ${displayYear}`}
+        >
           {MONTH_NAMES.map((name, monthIndex) => {
             const isFuture =
               displayYear > currentYear ||

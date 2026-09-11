@@ -67,6 +67,11 @@ describe("Reports price-intelligence shell", () => {
     expect(
       screen.getByText("Personal price intelligence · September 2026"),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: "Choose report month, selected September 2026",
+      }),
+    ).toBeInTheDocument();
 
     const basket = screen.getByRole("tab", { name: "01 Basket" });
     expect(basket).toHaveAttribute("aria-selected", "true");
@@ -101,10 +106,15 @@ describe("Reports price-intelligence shell", () => {
     renderReports();
 
     await actor.click(
-      screen.getByRole("button", { name: "Choose report month" }),
+      screen.getByRole("button", {
+        name: "Choose report month, selected September 2026",
+      }),
     );
 
     expect(screen.getByText("2026")).toBeInTheDocument();
+    expect(
+      screen.getByRole("group", { name: "Months in 2026" }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Sep 2026" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Oct 2026" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Nov 2026" })).toBeDisabled();
@@ -112,11 +122,19 @@ describe("Reports price-intelligence shell", () => {
 
     await actor.click(screen.getByRole("button", { name: "Previous year" }));
     expect(screen.getByText("2025")).toBeInTheDocument();
+    expect(
+      screen.getByRole("group", { name: "Months in 2025" }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Dec 2025" })).toBeEnabled();
 
     await actor.click(screen.getByRole("button", { name: "Aug 2025" }));
     expect(
       screen.getByText("Personal price intelligence · August 2025"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: "Choose report month, selected August 2025",
+      }),
     ).toBeInTheDocument();
 
     await actor.click(screen.getByRole("tab", { name: "03 Comparisons" }));
