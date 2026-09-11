@@ -91,9 +91,9 @@ describe("Reports", () => {
     ).toBeInTheDocument();
   });
 
-  it("renders the report selector dropdown", () => {
+  it("keeps the operational report picker off the intelligence landing", () => {
     renderWithProviders(<Reports />, { route: "/reports" });
-    expect(screen.getByRole("combobox")).toBeInTheDocument();
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
   });
 
   describe("hub landing", () => {
@@ -102,10 +102,10 @@ describe("Reports", () => {
 
       expect(screen.queryByTestId("report-out-of-balance")).toBeNull();
       expect(
-        screen.getByRole("heading", { level: 2, name: "Spending" }),
+        screen.getByRole("heading", { level: 2, name: "Operational reports" }),
       ).toBeInTheDocument();
       expect(
-        screen.getByRole("heading", { level: 2, name: "Data Quality" }),
+        screen.getByRole("heading", { level: 3, name: "Data Quality" }),
       ).toBeInTheDocument();
     });
 
@@ -185,7 +185,7 @@ describe("Reports", () => {
 
       expect(screen.queryByTestId("report-out-of-balance")).toBeNull();
       expect(
-        screen.getByRole("heading", { level: 2, name: "Spending" }),
+        screen.getByRole("heading", { level: 2, name: "Operational reports" }),
       ).toBeInTheDocument();
     });
 
@@ -201,7 +201,7 @@ describe("Reports", () => {
 
       expect(screen.queryByTestId("report-out-of-balance")).toBeNull();
       expect(
-        screen.getByRole("heading", { level: 2, name: "Data Quality" }),
+        screen.getByRole("heading", { level: 3, name: "Data Quality" }),
       ).toBeInTheDocument();
     });
 
@@ -213,7 +213,9 @@ describe("Reports", () => {
 
   describe("grouped picker", () => {
     it("renders a section header per group", async () => {
-      renderWithProviders(<Reports />, { route: "/reports" });
+      renderWithProviders(<Reports />, {
+        route: "/reports?report=category-trends",
+      });
       await userEvent.click(screen.getByRole("combobox"));
 
       expect(screen.getByRole("group", { name: "Spending" })).toBeInTheDocument();
@@ -223,7 +225,9 @@ describe("Reports", () => {
     });
 
     it("lists every report as an option", async () => {
-      renderWithProviders(<Reports />, { route: "/reports" });
+      renderWithProviders(<Reports />, {
+        route: "/reports?report=category-trends",
+      });
       await userEvent.click(screen.getByRole("combobox"));
 
       for (const report of REPORTS) {
@@ -234,7 +238,9 @@ describe("Reports", () => {
     });
 
     it("surfaces non-zero data-quality counts in the picker", async () => {
-      renderWithProviders(<Reports />, { route: "/reports" });
+      renderWithProviders(<Reports />, {
+        route: "/reports?report=category-trends",
+      });
       await userEvent.click(screen.getByRole("combobox"));
 
       const option = screen.getByRole("option", { name: /out of balance/i });
@@ -243,7 +249,9 @@ describe("Reports", () => {
     });
 
     it("omits a picker badge when the count is zero", async () => {
-      renderWithProviders(<Reports />, { route: "/reports" });
+      renderWithProviders(<Reports />, {
+        route: "/reports?report=category-trends",
+      });
       await userEvent.click(screen.getByRole("combobox"));
 
       const option = screen.getByRole("option", {
@@ -253,7 +261,9 @@ describe("Reports", () => {
     });
 
     it("navigates to the chosen report", async () => {
-      renderWithProviders(<Reports />, { route: "/reports" });
+      renderWithProviders(<Reports />, {
+        route: "/reports?report=category-trends",
+      });
       await userEvent.click(screen.getByRole("combobox"));
       await userEvent.click(
         screen.getByRole("option", { name: /duplicate detection/i }),
@@ -265,7 +275,9 @@ describe("Reports", () => {
     });
 
     it("no longer lists Normalized Descriptions among the reports", async () => {
-      renderWithProviders(<Reports />, { route: "/reports" });
+      renderWithProviders(<Reports />, {
+        route: "/reports?report=category-trends",
+      });
       await userEvent.click(screen.getByRole("combobox"));
 
       expect(
