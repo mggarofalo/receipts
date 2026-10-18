@@ -1,4 +1,5 @@
 using System.Transactions;
+using Application.Duplicates;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -30,12 +31,14 @@ public partial class ApplicationDbContext
 			}
 
 			HandleSoftDelete();
+			List<DuplicateReceiptFacts> duplicateFacts = CaptureDuplicateFacts();
 			auditEntries = PrepareAuditEntries();
 			HashSet<string> touchedDescriptions = CollectTouchedReceiptItemDescriptions();
 			AuditLogs.AddRange(auditEntries.Select(entry => entry.AuditLog));
 
 			// Keep the caller's tracked changes pending until audit AND reconciliation succeed.
 			result = base.SaveChanges(acceptAllChangesOnSuccess: false) - auditEntries.Count;
+			InvalidateChangedDuplicateAcceptances(duplicateFacts);
 			descriptionsChanged = ReconcileDistinctDescriptions(touchedDescriptions);
 			ownedTransaction?.Commit();
 			if (savepointCreated)
@@ -90,12 +93,14 @@ public partial class ApplicationDbContext
 			}
 
 			HandleSoftDelete();
+			List<DuplicateReceiptFacts> duplicateFacts = await CaptureDuplicateFactsAsync(cancellationToken).ConfigureAwait(false);
 			auditEntries = PrepareAuditEntries();
 			HashSet<string> touchedDescriptions = CollectTouchedReceiptItemDescriptions();
 			AuditLogs.AddRange(auditEntries.Select(entry => entry.AuditLog));
 
 			// Explicitly call the base Boolean overload; the token-only overload dispatches virtually.
 			result = await base.SaveChangesAsync(acceptAllChangesOnSuccess: false, cancellationToken).ConfigureAwait(false) - auditEntries.Count;
+			await InvalidateChangedDuplicateAcceptancesAsync(duplicateFacts, cancellationToken).ConfigureAwait(false);
 			descriptionsChanged = await ReconcileDistinctDescriptionsAsync(touchedDescriptions, cancellationToken).ConfigureAwait(false);
 			cancellationToken.ThrowIfCancellationRequested();
 			if (ownedTransaction is not null)

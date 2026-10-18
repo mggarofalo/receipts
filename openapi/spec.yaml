@@ -2165,6 +2165,13 @@ paths:
           description: No Content
         "404":
           description: Not Found
+        "409":
+          description: The resource changed concurrently. Reload before retrying.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
 
   /api/receipts/locations:
     get:
@@ -2257,6 +2264,13 @@ paths:
               $ref: "#/components/headers/X-Resource-Id"
         "404":
           description: Not Found
+        "409":
+          description: The resource changed concurrently. Reload before retrying.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
 
   /api/receipts/{receiptId}/image:
     post:
@@ -2758,6 +2772,13 @@ paths:
               $ref: "#/components/headers/X-Resource-Id"
         "404":
           description: Not Found
+        "409":
+          description: The resource changed concurrently. Reload before retrying.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
 
   /api/transactions:
     get:
@@ -2812,6 +2833,13 @@ paths:
           description: No Content
         "404":
           description: Not Found
+        "409":
+          description: The resource changed concurrently. Reload before retrying.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
 
   /api/transactions/deleted:
     get:
@@ -2863,6 +2891,13 @@ paths:
               $ref: "#/components/headers/X-Resource-Id"
         "404":
           description: Not Found
+        "409":
+          description: The resource changed concurrently. Reload before retrying.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
 
   /api/transactions/batch:
     put:
@@ -2885,6 +2920,13 @@ paths:
           description: No Content
         "404":
           description: Not Found
+        "409":
+          description: The resource changed concurrently. Reload before retrying.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
 
   /api/receipts/{receiptId}/transactions:
     post:

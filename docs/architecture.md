@@ -60,6 +60,15 @@ atomic persistence ports. The receipt list uses an explicit read projection rath
 than a generic entity-shaped service path. See [Receipt use-case boundary](receipt-use-case-boundary.md)
 for the entry point, policy, commit, adapter, notification, and projection owners.
 
+### Duplicate acceptance and receipt facts
+
+Duplicate acceptance acknowledges immutable date, location and payment-total facts.
+The persistence pipeline captures those facts under the same ordered receipt locks
+used by acceptance, then invalidates affected accepted pairs inside the business
+write transaction. Ordinary receipt trash/restore retains acceptance; changes to
+the acknowledged facts require review again. See [duplicate acceptance after edits](duplicate-acceptance-invalidation.md)
+for the concurrency contract, soft-delete behavior and compatibility limits.
+
 ### Adjustment Entity
 
 The `Adjustment` entity captures receipt-level monetary adjustments (tips, discounts, coupons, rounding):
