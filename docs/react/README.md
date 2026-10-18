@@ -28,3 +28,7 @@ After RECEIPTS-852, the account is selection/display state in these forms. Trans
 `ReceiptPicker` is the receipt-item form's domain-specific paginated combobox. Keep server pagination, debounced Location search, loaded-option date matching and selected-detail hydration in this boundary; the general `Combobox` must remain free of receipt query state. The trigger forwards its native props and ref so `FormControl` can supply its accessible name and validation relationships.
 
 The picker loads only while open. Near-bottom scroll and the explicit load-more button request one page at a time. Search results use keys distinct from unfiltered browse pages, and an unloaded date match is never inferred from the Location-only API. The selected receipt detail is keyed independently and remains available when search changes or the picker closes. Failure owners sit outside command filtering so the typed search cannot hide retry.
+
+## Normalization workflows
+
+See [Normalization and receipt draft interactions](normalization-workflows.md) for dialog lifetimes, verified selections, simulation evidence and shared draft validation.

@@ -2,29 +2,16 @@
 
 Rules for writing and modifying hooks in `src/client/src/hooks/`.
 
-## Stability Rule (Critical)
+## Hook return identity
 
-All functions, objects, and arrays returned from custom hooks **must** be referentially stable. This is enforced as a project convention (see [coding-standards.md](../coding-standards.md)).
+Stabilize callbacks, arrays and objects only when a consumer depends on their identity.
+Use `useCallback` for reactive callbacks used as dependencies and return the existing
+reducer state when nothing changed. Do not wrap every hook return in `useMemo`.
 
-- Wrap returned functions in `useCallback`
-- Wrap returned objects/arrays in `useMemo`
-- Reducers must return the same state reference when values haven't changed
-
-**Why:** Consumers place hook return values in dependency arrays. Unstable references cause infinite render loops that pass individual tests but hang the full suite.
-
-```tsx
-// BAD — returns a new function reference every render
-export function useThings() {
-  const doSomething = () => { /* ... */ };
-  return { doSomething };
-}
-
-// GOOD — stable reference
-export function useThings() {
-  const doSomething = useCallback(() => { /* ... */ }, []);
-  return useMemo(() => ({ doSomething }), [doSomething]);
-}
-```
+Return unmodified TanStack Query results directly. Their tracked properties preserve
+subscription granularity; consumers must destructure the fields they use and depend
+on those fields rather than the whole query result. A custom projection is appropriate
+when a hook adds a different public shape and its consumers need that boundary.
 
 ## Hook Categories
 
@@ -98,7 +85,7 @@ export function useThing({ enabled = true }: UseThingOptions = {}): UseThingRetu
     setValue(next);
   }, []);
 
-  // Return a stable object
+  // This projection is useful when consumers require a stable dependency.
   return useMemo(() => ({ value, update }), [value, update]);
 }
 ```

@@ -15,7 +15,9 @@ vi.mock("@/hooks/useFormShortcuts", () => ({
 
 vi.mock("@/hooks/useReceipts", () => ({
   useReceipt: vi.fn((id: string | null) => ({
-    data: id ? { id, location: "Walmart", date: "2024-01-15", taxAmount: 0 } : undefined,
+    data: id
+      ? { id, location: "Walmart", date: "2024-01-15", taxAmount: 0 }
+      : undefined,
     isLoading: false,
     isError: false,
     isFetching: false,
@@ -26,10 +28,21 @@ vi.mock("@/hooks/useReceipts", () => ({
 // These form-unit cases isolate field validation/submission; the dedicated picker
 // has actual QueryClient/MSW integration coverage in ReceiptPicker.errors.test.tsx.
 vi.mock("./ReceiptPicker", () => ({
-  ReceiptPicker: ({ selectedReceipt, ...props }: ComponentProps<typeof ReceiptPicker>) => (
-    <Combobox {...props} options={[
-      { value: selectedReceipt?.id ?? "r-1", label: "Walmart", sublabel: "Walmart — 2024-01-15" },
-    ]} placeholder="Select a receipt..." />
+  ReceiptPicker: ({
+    selectedReceipt,
+    ...props
+  }: ComponentProps<typeof ReceiptPicker>) => (
+    <Combobox
+      {...props}
+      options={[
+        {
+          value: selectedReceipt?.id ?? "r-1",
+          label: "Walmart",
+          sublabel: "Walmart — 2024-01-15",
+        },
+      ]}
+      placeholder="Select a receipt..."
+    />
   ),
 }));
 
@@ -73,11 +86,13 @@ vi.mock("@/hooks/useItemTemplates", () => ({
 }));
 
 vi.mock("@/lib/combobox-options", () => ({
-  receiptToOption: vi.fn((r: { id: string; location: string; date: string }) => ({
-    value: r.id,
-    label: r.location,
-    sublabel: `${r.location} — ${r.date}`,
-  })),
+  receiptToOption: vi.fn(
+    (r: { id: string; location: string; date: string }) => ({
+      value: r.id,
+      label: r.location,
+      sublabel: `${r.location} — ${r.date}`,
+    }),
+  ),
 }));
 
 vi.mock("@/lib/format", async (importOriginal) => {
@@ -132,7 +147,9 @@ describe("ReceiptItemForm", () => {
     expect(screen.getByLabelText(/^Unit Price/)).toBeInTheDocument();
     expect(screen.getByText(/^Category/)).toBeInTheDocument();
     expect(screen.getByText(/^Subcategory/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /create item/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /create item/i }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /cancel/i })).toBeInTheDocument();
   });
 
@@ -162,8 +179,12 @@ describe("ReceiptItemForm", () => {
     );
 
     // Item Code is now an Input; check its value
-    expect(screen.getByPlaceholderText("Enter item code...")).toHaveValue("ITM-001");
-    expect(screen.getByRole("button", { name: /update item/i })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Enter item code...")).toHaveValue(
+      "ITM-001",
+    );
+    expect(
+      screen.getByRole("button", { name: /update item/i }),
+    ).toBeInTheDocument();
   });
 
   it("shows validation errors when required fields are empty", async () => {
@@ -208,7 +229,7 @@ describe("ReceiptItemForm", () => {
           description: "Milk",
 
           quantity: 3,
-          unitPrice: 2.50,
+          unitPrice: 2.5,
           category: "Groceries",
           subcategory: "Dairy",
         }}
@@ -604,3 +625,64 @@ describe("ReceiptItemForm", () => {
     });
   });
 });
+
+it("normalizes persisted item text with the same draft rules", async () => {
+  const onSubmit = vi.fn();
+  const user = userEvent.setup();
+  render(
+    <ReceiptItemForm
+      mode="edit"
+      onSubmit={onSubmit}
+      onCancel={vi.fn()}
+      defaultValues={{
+        receiptId: "r-1",
+        receiptItemCode: " CODE ",
+        description: " Milk ",
+        category: "Groceries",
+        subcategory: " Dairy ",
+        quantity: 1,
+        unitPrice: 0,
+      }}
+    />,
+  );
+  await user.click(screen.getByRole("button", { name: /update item/i }));
+  await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+  expect(onSubmit.mock.calls[0][0]).toMatchObject({
+    receiptItemCode: "CODE",
+    description: "Milk",
+    category: "Groceries",
+    subcategory: "Dairy",
+    quantity: 1,
+    unitPrice: 0,
+  });
+});
+
+it.each(["description", "receiptItemCode", "subcategory"])(
+  "rejects whitespace-only persisted-item %s",
+  async (field) => {
+    const onSubmit = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <ReceiptItemForm
+        mode="edit"
+        onSubmit={onSubmit}
+        onCancel={vi.fn()}
+        defaultValues={{
+          receiptId: "r-1",
+          receiptItemCode: "CODE",
+          description: "Milk",
+          category: "Groceries",
+          subcategory: "Dairy",
+          quantity: 1,
+          unitPrice: 0,
+          [field]: "   ",
+        }}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /update item/i }));
+    await waitFor(() =>
+      expect(screen.getByText(/is required/i)).toBeInTheDocument(),
+    );
+    expect(onSubmit).not.toHaveBeenCalled();
+  },
+);
