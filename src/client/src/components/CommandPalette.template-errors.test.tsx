@@ -35,6 +35,14 @@ let templates: {
   defaultCategory: string;
 }[];
 const server = setupServer(
+  http.get("*/api/search/purchases", ({ request }) =>
+    HttpResponse.json({
+      items: [],
+      total: 0,
+      offset: Number(new URL(request.url).searchParams.get("offset")),
+      limit: Number(new URL(request.url).searchParams.get("limit")),
+    }),
+  ),
   http.get("*/api/item-templates", ({ request }) => {
     const params = new URL(request.url).searchParams;
     templateRequests.push(params);
@@ -124,14 +132,14 @@ it("keeps a template failure visible outside cmdk filtering, preserves the query
   renderPalette();
   const user = userEvent.setup();
   await user.type(
-    screen.getByPlaceholderText(/type a command or search/i),
+    screen.getByPlaceholderText(/search purchases, receipts, or commands/i),
     "quux-unmatched",
   );
   const failure = await screen.findByRole("alert");
   expect(failure).toHaveTextContent(/template.*unavailable/i);
-  expect(screen.getByPlaceholderText(/type a command or search/i)).toHaveValue(
-    "quux-unmatched",
-  );
+  expect(
+    screen.getByPlaceholderText(/search purchases, receipts, or commands/i),
+  ).toHaveValue("quux-unmatched");
   expect(
     screen.queryByRole("heading", { name: "Global server error route" }),
   ).not.toBeInTheDocument();
@@ -154,16 +162,16 @@ it("keeps a template failure visible outside cmdk filtering, preserves the query
     expect(screen.queryByRole("alert")).not.toBeInTheDocument(),
   );
   expect(await screen.findByText("quux-unmatched template")).toBeVisible();
-  expect(screen.getByPlaceholderText(/type a command or search/i)).toHaveValue(
-    "quux-unmatched",
-  );
+  expect(
+    screen.getByPlaceholderText(/search purchases, receipts, or commands/i),
+  ).toHaveValue("quux-unmatched");
   expect(templateRequests).toHaveLength(2);
 });
 it("preserves other command navigation when the template catalog is successfully empty", async () => {
   renderPalette();
   const user = userEvent.setup();
   await user.type(
-    screen.getByPlaceholderText(/type a command or search/i),
+    screen.getByPlaceholderText(/search purchases, receipts, or commands/i),
     "new receipt",
   );
   await waitFor(() => expect(templateRequests).toHaveLength(1));
@@ -186,7 +194,7 @@ it("retains cached matching templates with an honest failure notice and usable c
   renderPalette();
   const user = userEvent.setup();
   await user.type(
-    screen.getByPlaceholderText(/type a command or search/i),
+    screen.getByPlaceholderText(/search purchases, receipts, or commands/i),
     "milk",
   );
   expect(await screen.findByText("Milk template")).toBeVisible();
@@ -198,10 +206,12 @@ it("retains cached matching templates with an honest failure notice and usable c
     /template.*unavailable/i,
   );
   expect(screen.getByText("Milk template")).toBeVisible();
-  expect(screen.getByPlaceholderText(/type a command or search/i)).toHaveValue(
-    "milk",
+  expect(
+    screen.getByPlaceholderText(/search purchases, receipts, or commands/i),
+  ).toHaveValue("milk");
+  const userInput = screen.getByPlaceholderText(
+    /search purchases, receipts, or commands/i,
   );
-  const userInput = screen.getByPlaceholderText(/type a command or search/i);
   await user.clear(userInput);
   await user.type(userInput, "new receipt");
   await screen.findByRole("alert");
@@ -215,7 +225,9 @@ it("hides obsolete template Retry while input debounces or clears and does not r
   templateFailure = true;
   renderPalette();
   const user = userEvent.setup();
-  const input = screen.getByPlaceholderText(/type a command or search/i);
+  const input = screen.getByPlaceholderText(
+    /search purchases, receipts, or commands/i,
+  );
   await user.type(input, "quux");
   await screen.findByRole("alert");
   const initialReads = templateRequests.length;
@@ -231,12 +243,12 @@ it("hides obsolete template Retry while input debounces or clears and does not r
   const readsBeforeClose = templateRequests.length;
   await user.keyboard("{Escape}");
   expect(
-    screen.queryByPlaceholderText(/type a command or search/i),
+    screen.queryByPlaceholderText(/search purchases, receipts, or commands/i),
   ).not.toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Reopen palette" }));
-  expect(screen.getByPlaceholderText(/type a command or search/i)).toHaveValue(
-    "",
-  );
+  expect(
+    screen.getByPlaceholderText(/search purchases, receipts, or commands/i),
+  ).toHaveValue("");
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   expect(templateRequests).toHaveLength(readsBeforeClose);
 });
@@ -256,7 +268,7 @@ it.each(["herbal", "grocery", "template"])(
     renderPalette();
     const user = userEvent.setup();
     await user.type(
-      screen.getByPlaceholderText(/type a command or search/i),
+      screen.getByPlaceholderText(/search purchases, receipts, or commands/i),
       token,
     );
     expect(await screen.findByText("Peppermint")).toBeVisible();
@@ -277,7 +289,7 @@ it("shows the bounded catalog scope outside filtering even when none of the firs
   renderPalette();
   const user = userEvent.setup();
   await user.type(
-    screen.getByPlaceholderText(/type a command or search/i),
+    screen.getByPlaceholderText(/search purchases, receipts, or commands/i),
     "unmatched-outside-page",
   );
   expect(
@@ -311,18 +323,18 @@ it("shows loading rather than a successful-empty claim until the initial templat
   const user = userEvent.setup();
   try {
     await user.type(
-      screen.getByPlaceholderText(/type a command or search/i),
+      screen.getByPlaceholderText(/search purchases, receipts, or commands/i),
       "unmatched-pending",
     );
     await started;
-    expect(await screen.findByText("Loading template results…")).toBeVisible();
+    expect(await screen.findByText("Searching…")).toBeVisible();
     expect(screen.queryByText(/^No matches\./)).not.toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   } finally {
     finishRead();
   }
   expect(await screen.findByText(/^No matches\./)).toBeVisible();
-  expect(screen.getByPlaceholderText(/type a command or search/i)).toHaveValue(
-    "unmatched-pending",
-  );
+  expect(
+    screen.getByPlaceholderText(/search purchases, receipts, or commands/i),
+  ).toHaveValue("unmatched-pending");
 });

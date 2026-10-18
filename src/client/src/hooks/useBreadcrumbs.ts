@@ -9,6 +9,7 @@ const routeLabels: Record<string, string> = {
   "/item-templates": "Item Templates",
   "/receipts": "Receipts",
   "/reports": "Reports",
+  "/search": "Purchase history",
   "/api-keys": "API Keys",
   "/security": "Security",
   "/settings": "Settings",

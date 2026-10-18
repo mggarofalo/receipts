@@ -1,4 +1,3 @@
-import { useMemo } from "react";
 import type { ComponentType, SVGProps } from "react";
 import {
   Building2,
@@ -44,14 +43,50 @@ export interface EntityResultGroup {
   scopeNotice?: string;
 }
 
-interface AccountLike { id: string; name: string }
-interface CardLike { id: string; name: string; cardCode?: string | null }
-interface CategoryLike { id: string; name: string; description?: string | null }
-interface SubcategoryLike { id: string; name: string; description?: string | null }
-interface ItemTemplateLike { id: string; name: string; description?: string | null; defaultCategory?: string | null }
-interface ReceiptLike { id: string; location: string; date?: string | null }
-interface ReceiptItemLike { id: string; receiptId: string; description: string; receiptItemCode?: string | null; category?: string | null; subcategory?: string | null }
-interface UserLike { userId: string; email: string; firstName?: string | null; lastName?: string | null }
+interface AccountLike {
+  id: string;
+  name: string;
+}
+interface CardLike {
+  id: string;
+  name: string;
+  cardCode?: string | null;
+}
+interface CategoryLike {
+  id: string;
+  name: string;
+  description?: string | null;
+}
+interface SubcategoryLike {
+  id: string;
+  name: string;
+  description?: string | null;
+}
+interface ItemTemplateLike {
+  id: string;
+  name: string;
+  description?: string | null;
+  defaultCategory?: string | null;
+}
+interface ReceiptLike {
+  id: string;
+  location: string;
+  date?: string | null;
+}
+interface ReceiptItemLike {
+  id: string;
+  receiptId: string;
+  description: string;
+  receiptItemCode?: string | null;
+  category?: string | null;
+  subcategory?: string | null;
+}
+interface UserLike {
+  userId: string;
+  email: string;
+  firstName?: string | null;
+  lastName?: string | null;
+}
 
 function tokens(...parts: Array<string | null | undefined>): string {
   return parts
@@ -83,23 +118,76 @@ export function useEntityResults({
   const hasQuery =
     open && rawSearch !== undefined && rawSearch === entitySearch;
   const referenceOptions = { enabled: hasQuery, q: entitySearch };
-  const accounts = useAccounts(0, SMALL_LIMIT, undefined, undefined, undefined, referenceOptions);
-  const cards = useCards(0, SMALL_LIMIT, undefined, undefined, undefined, referenceOptions);
-  const categories = useCategories(0, SMALL_LIMIT, undefined, undefined, undefined, referenceOptions);
-  const subcategories = useSubcategories(0, SMALL_LIMIT, undefined, undefined, undefined, referenceOptions);
+  const accounts = useAccounts(
+    0,
+    SMALL_LIMIT,
+    undefined,
+    undefined,
+    undefined,
+    referenceOptions,
+  );
+  const cards = useCards(
+    0,
+    SMALL_LIMIT,
+    undefined,
+    undefined,
+    undefined,
+    referenceOptions,
+  );
+  const categories = useCategories(
+    0,
+    SMALL_LIMIT,
+    undefined,
+    undefined,
+    undefined,
+    referenceOptions,
+  );
+  const subcategories = useSubcategories(
+    0,
+    SMALL_LIMIT,
+    undefined,
+    undefined,
+    undefined,
+    referenceOptions,
+  );
   // Template q searches names only; palette tokens also include description,
   // category and the "template" prefix. Preserve those matches within the
   // existing page ceiling until the server exposes the same search contract.
   // Admin users likewise retain their existing bounded page.
-  const itemTemplates = useItemTemplates(0, SMALL_LIMIT, undefined, undefined, { enabled: hasQuery });
-  const receipts = useReceipts(0, LARGE_LIMIT, null, null, null, null, entitySearch, { enabled: hasQuery });
-  const receiptItems = useReceiptItems(0, LARGE_LIMIT, null, null, entitySearch, { enabled: hasQuery });
-  const users = useUsers(0, SMALL_LIMIT, undefined, undefined, { enabled: isAdmin && hasQuery });
+  const itemTemplates = useItemTemplates(0, SMALL_LIMIT, undefined, undefined, {
+    enabled: hasQuery,
+  });
+  const receipts = useReceipts(
+    0,
+    LARGE_LIMIT,
+    null,
+    null,
+    null,
+    null,
+    entitySearch,
+    { enabled: hasQuery },
+  );
+  const receiptItems = useReceiptItems(
+    0,
+    LARGE_LIMIT,
+    null,
+    null,
+    entitySearch,
+    { enabled: hasQuery },
+  );
+  const users = useUsers(0, SMALL_LIMIT, undefined, undefined, {
+    enabled: isAdmin && hasQuery,
+  });
 
   const { refetch: retryItemTemplates } = itemTemplates;
-  const templateSearchLoading = open && rawSearch !== undefined && itemTemplates.data === undefined && (!hasQuery || itemTemplates.isFetching);
+  const templateSearchLoading =
+    open &&
+    rawSearch !== undefined &&
+    itemTemplates.data === undefined &&
+    (!hasQuery || itemTemplates.isFetching);
 
-  return useMemo<EntityResultGroup[]>(() => {
+  if (!hasQuery) return [];
+  {
     const groups: EntityResultGroup[] = [];
 
     const accountData = (accounts.data as AccountLike[] | undefined) ?? [];
@@ -168,25 +256,41 @@ export function useEntityResults({
 
     const itemTemplateData =
       (itemTemplates.data as ItemTemplateLike[] | undefined) ?? [];
-    if (itemTemplateData.length || templateSearchLoading || (hasQuery && itemTemplates.isError)) {
+    if (
+      itemTemplateData.length ||
+      templateSearchLoading ||
+      (hasQuery && itemTemplates.isError)
+    ) {
       groups.push({
         id: "item-templates",
         heading: "Item Templates",
         icon: Package,
-        failure: hasQuery && itemTemplates.isError ? {
-          message: "Template search unavailable. Cached matches may be incomplete.",
-          retry: () => { if (hasQuery) void retryItemTemplates(); },
-          isRetrying: itemTemplates.isFetching,
-        } : undefined,
+        failure:
+          hasQuery && itemTemplates.isError
+            ? {
+                message:
+                  "Template search unavailable. Cached matches may be incomplete.",
+                retry: () => {
+                  if (hasQuery) void retryItemTemplates();
+                },
+                isRetrying: itemTemplates.isFetching,
+              }
+            : undefined,
         isLoading: templateSearchLoading,
-        scopeNotice: hasQuery && itemTemplates.total > itemTemplateData.length
-          ? `Template search covers the first ${itemTemplateData.length} of ${itemTemplates.total} templates.`
-          : undefined,
+        scopeNotice:
+          hasQuery && itemTemplates.total > itemTemplateData.length
+            ? `Template search covers the first ${itemTemplateData.length} of ${itemTemplates.total} templates.`
+            : undefined,
         items: itemTemplateData.map((t) => ({
           id: t.id,
           label: t.name,
           meta: t.defaultCategory ?? t.description ?? undefined,
-          searchValue: tokens("template", t.name, t.description, t.defaultCategory),
+          searchValue: tokens(
+            "template",
+            t.name,
+            t.description,
+            t.defaultCategory,
+          ),
           href: "/item-templates",
         })),
       });
@@ -218,7 +322,9 @@ export function useEntityResults({
         items: receiptItemData.map((i) => ({
           id: i.id,
           label: i.description,
-          meta: [i.receiptItemCode, i.category].filter(Boolean).join(" · ") || undefined,
+          meta:
+            [i.receiptItemCode, i.category].filter(Boolean).join(" · ") ||
+            undefined,
           searchValue: tokens(
             "item",
             i.description,
@@ -239,7 +345,9 @@ export function useEntityResults({
           heading: "Users",
           icon: Users,
           items: userData.map((u) => {
-            const fullName = [u.firstName, u.lastName].filter(Boolean).join(" ");
+            const fullName = [u.firstName, u.lastName]
+              .filter(Boolean)
+              .join(" ");
             return {
               id: u.userId,
               label: fullName || u.email,
@@ -252,22 +360,56 @@ export function useEntityResults({
       }
     }
 
+    const sources = [
+      { id: "accounts", heading: "Accounts", icon: Building2, query: accounts },
+      { id: "cards", heading: "Cards", icon: CreditCard, query: cards },
+      { id: "categories", heading: "Categories", icon: Tag, query: categories },
+      {
+        id: "subcategories",
+        heading: "Subcategories",
+        icon: Tags,
+        query: subcategories,
+      },
+      { id: "receipts", heading: "Receipts", icon: Receipt, query: receipts },
+      {
+        id: "receipt-items",
+        heading: "Receipt Items",
+        icon: Package,
+        query: receiptItems,
+      },
+      ...(isAdmin
+        ? [{ id: "users", heading: "Users", icon: Users, query: users }]
+        : []),
+    ];
+    for (const source of sources) {
+      let group = groups.find((candidate) => candidate.id === source.id);
+      if (!group) {
+        group = {
+          id: source.id,
+          heading: source.heading,
+          icon: source.icon,
+          items: [],
+        };
+        groups.push(group);
+      }
+      group.isLoading = source.query.isLoading;
+      if (source.query.isError) {
+        // A failed refresh must not masquerade as a current, complete result.
+        group.items = [];
+        group.failure = {
+          message: `${source.heading} search unavailable.`,
+          retry: () => {
+            void source.query.refetch();
+          },
+          isRetrying: source.query.isFetching,
+        };
+      } else if (source.query.total > group.items.length) {
+        group.scopeNotice =
+          source.id === "users"
+            ? `User search covers the first ${group.items.length} of ${source.query.total} users.`
+            : `${source.heading}: showing the first ${group.items.length} of ${source.query.total} matches. Refine your search.`;
+      }
+    }
     return groups;
-  }, [
-    accounts.data,
-    cards.data,
-    categories.data,
-    subcategories.data,
-    itemTemplates.data,
-    itemTemplates.total,
-    itemTemplates.isError,
-    itemTemplates.isFetching,
-    retryItemTemplates,
-    hasQuery,
-    templateSearchLoading,
-    receipts.data,
-    receiptItems.data,
-    users.data,
-    isAdmin,
-  ]);
+  }
 }

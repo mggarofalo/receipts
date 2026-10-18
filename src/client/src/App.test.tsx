@@ -3,6 +3,9 @@ import { render, screen } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider, Outlet } from "react-router";
 import type { ReactNode } from "react";
 
+vi.mock("@/pages/PurchaseSearch", () => ({
+  default: () => <div data-testid="page-purchase-search">Purchase history</div>,
+}));
 // Mock all page components to simple stubs
 vi.mock("@/pages/Dashboard", () => ({
   default: () => <div data-testid="page-dashboard">Dashboard Page</div>,
@@ -145,14 +148,30 @@ describe("App router", () => {
 
   it('renders BackupRestore page at "/admin/backup" route', async () => {
     renderRoute("/admin/backup");
-    expect(await screen.findByTestId("page-backup-restore")).toBeInTheDocument();
+    expect(
+      await screen.findByTestId("page-backup-restore"),
+    ).toBeInTheDocument();
   });
 
   it("renders NotFound for deprecated redirect routes", async () => {
-    for (const path of ["/receipt-items", "/transactions", "/trips", "/transaction-detail", "/receipt-detail"]) {
+    for (const path of [
+      "/receipt-items",
+      "/transactions",
+      "/trips",
+      "/transaction-detail",
+      "/receipt-detail",
+    ]) {
       const { unmount } = renderRoute(path);
       expect(await screen.findByTestId("page-not-found")).toBeInTheDocument();
       unmount();
     }
   });
+});
+
+it("routes a shareable purchase search URL into the application layout", async () => {
+  renderRoute("/search?q=hot+dogs&offset=25");
+  expect(await screen.findByTestId("page-purchase-search")).toBeInTheDocument();
+  expect(screen.getByTestId("layout")).toContainElement(
+    screen.getByTestId("page-purchase-search"),
+  );
 });

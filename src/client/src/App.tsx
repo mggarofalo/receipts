@@ -14,6 +14,7 @@ import Subcategories from "@/pages/Subcategories";
 import Receipts from "@/pages/Receipts";
 import ItemTemplates from "@/pages/ItemTemplates";
 import Reports from "@/pages/Reports";
+import PurchaseSearch from "@/pages/PurchaseSearch";
 import ReceiptDetail from "@/pages/ReceiptDetail";
 import AdminUsers from "@/pages/AdminUsers";
 import AuditLog from "@/pages/AuditLog";
@@ -56,6 +57,7 @@ export const routeConfig = [
           { path: "/receipts/new", element: <NewReceipt /> },
           { path: "/item-templates", element: <ItemTemplates /> },
           { path: "/reports", element: <Reports /> },
+          { path: "/search", element: <PurchaseSearch /> },
           { path: "/receipts/:id", element: <ReceiptDetail /> },
           { path: "/api-keys", element: <ApiKeys /> },
           { path: "/security", element: <SecurityLog /> },
@@ -114,4 +116,3 @@ export const routeConfig = [
     ],
   },
 ];
-

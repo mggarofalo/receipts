@@ -95,6 +95,25 @@ export const REPORT_COMMANDS: Array<{
 ];
 
 export const COMMANDS: Command[] = [
+  {
+    id: "navigate:purchase-history",
+    label: "Search purchase history",
+    keywords: [
+      "price",
+      "prices",
+      "paid",
+      "cost",
+      "historical",
+      "item",
+      "store",
+    ],
+    icon: Search,
+    group: "navigate",
+    run: ({ close, navigate }) => {
+      close();
+      navigate("/search");
+    },
+  },
   // ---- Create ----
   {
     id: "create:receipt",
@@ -394,7 +413,8 @@ export const COMMANDS: Command[] = [
         signedOutVersion = getSessionVersion();
         await completion;
       } catch (err) {
-        if (isAbortError(err) || getSessionVersion() !== signedOutVersion) return;
+        if (isAbortError(err) || getSessionVersion() !== signedOutVersion)
+          return;
         console.error("Logout failed; navigating to login anyway.", err);
       }
       if (getSessionVersion() === signedOutVersion) ctx.navigate("/login");
@@ -411,4 +431,3 @@ export const COMMANDS: Command[] = [
     run: goTo(`/reports?report=${report.slug}`),
   })),
 ];
-

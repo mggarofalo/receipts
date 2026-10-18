@@ -60,6 +60,12 @@ atomic persistence ports. The receipt list uses an explicit read projection rath
 than a generic entity-shaped service path. See [Receipt use-case boundary](receipt-use-case-boundary.md)
 for the entry point, policy, commit, adapter, notification, and projection owners.
 
+Purchase search uses an Application-validated query and a narrow read port;
+Infrastructure projects matching purchase facts without hydrating receipt
+aggregates. The browser exposes those facts in universal search and an all-time
+purchase table. See [Purchase search](purchase-search.md) for matching semantics,
+pagination, cancellation, and projection invalidation obligations.
+
 ### Duplicate acceptance and receipt facts
 
 Duplicate acceptance acknowledges immutable date, location and payment-total facts.
