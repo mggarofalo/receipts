@@ -75,16 +75,25 @@ it("paginates through URL state and resets the page when a new phrase is submitt
   renderPage();
   expect(screen.getByRole("button", { name: "Previous" })).toBeDisabled();
   await user.click(screen.getByRole("button", { name: "Next" }));
+  await waitFor(() =>
+    expect(screen.getByLabelText("Current URL")).toHaveTextContent(
+      /^\?q=milk&offset=25$/,
+    ),
+  );
   expect(search).toHaveBeenLastCalledWith("milk", 25, 25);
-  expect(screen.getByLabelText("Current URL")).toHaveTextContent("offset=25");
   await user.clear(screen.getByRole("textbox", { name: "Search purchases" }));
   await user.type(
     screen.getByRole("textbox", { name: "Search purchases" }),
     "  bread  ",
   );
   await user.click(screen.getByRole("button", { name: "Search" }));
+  // The async resolver and router transition may render before the URL commits.
+  await waitFor(() =>
+    expect(screen.getByLabelText("Current URL")).toHaveTextContent(
+      /^\?q=bread$/,
+    ),
+  );
   expect(search).toHaveBeenLastCalledWith("bread", 0, 25);
-  expect(screen.getByLabelText("Current URL")).toHaveTextContent("?q=bread");
 });
 
 it.each(["-1", "nope", "2147483648", "9007199254740993"])(
@@ -140,7 +149,12 @@ it("distinguishes a stale empty page from no matching purchases", async () => {
     }),
   );
   await userEvent.click(screen.getByRole("button", { name: "First page" }));
-  await waitFor(() => expect(search).toHaveBeenLastCalledWith("milk", 0, 25));
+  await waitFor(() =>
+    expect(screen.getByLabelText("Current URL")).toHaveTextContent(
+      /^\?q=milk&offset=0$/,
+    ),
+  );
+  expect(search).toHaveBeenLastCalledWith("milk", 0, 25);
   expect(
     screen.getByText(/No purchases match this phrase/),
   ).toBeInTheDocument();
@@ -172,12 +186,20 @@ it("restores submitted query and page with browser Back, discarding the other se
   });
   await userEvent.click(screen.getByRole("button", { name: "Search" }));
   await waitFor(() =>
-    expect(search).toHaveBeenLastCalledWith("hot dogs", 0, 25),
+    expect(screen.getByLabelText("Current URL")).toHaveTextContent(
+      /^\?q=hot\+dogs$/,
+    ),
   );
+  expect(search).toHaveBeenLastCalledWith("hot dogs", 0, 25);
   fireEvent.change(screen.getByRole("textbox", { name: "Search purchases" }), {
     target: { value: "unsubmitted bread" },
   });
   await userEvent.click(screen.getByRole("button", { name: "Browser Back" }));
+  await waitFor(() =>
+    expect(screen.getByLabelText("Current URL")).toHaveTextContent(
+      /^\?q=milk&offset=25$/,
+    ),
+  );
   expect(screen.getByRole("textbox", { name: "Search purchases" })).toHaveValue(
     "milk",
   );
