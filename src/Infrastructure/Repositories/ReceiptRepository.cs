@@ -5,6 +5,7 @@ using Application.Models.Images;
 using Infrastructure.Entities.Core;
 using Infrastructure.Extensions;
 using Infrastructure.Interfaces.Repositories;
+using Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace Infrastructure.Repositories;
@@ -313,6 +314,9 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 	public async Task<CascadeMutationResult> DeleteAsync(List<Guid> ids, CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
+		await using Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? transaction = context.Database.IsRelational()
+			? await context.Database.BeginTransactionAsync(cancellationToken) : null;
+		await ReceiptFactLock.AcquireAsync(context, ids, cancellationToken);
 		List<ReceiptEntity> entities = await context.Receipts
 			.Where(e => ids.Contains(e.Id))
 			.ToListAsync(cancellationToken);
@@ -337,6 +341,10 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 
 		context.Receipts.RemoveRange(entities);
 		await context.SaveChangesAsync(cancellationToken);
+		if (transaction is not null)
+		{
+			await transaction.CommitAsync(cancellationToken);
+		}
 		return new CascadeMutationResult(entities.Count > 0, syncRecords.Count);
 	}
 
@@ -384,6 +392,9 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 	public async Task<CascadeMutationResult> RestoreAsync(Guid id, CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
+		await using Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? transaction = context.Database.IsRelational()
+			? await context.Database.BeginTransactionAsync(cancellationToken) : null;
+		await ReceiptFactLock.AcquireAsync(context, [id], cancellationToken);
 		ReceiptEntity? entity = await context.Receipts
 			.IncludeDeleted()
 			.FirstOrDefaultAsync(e => e.Id == id && e.DeletedAt != null, cancellationToken);
@@ -407,6 +418,10 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 			&& entry.Property(syncRecord => syncRecord.DeletedAt).CurrentValue is null);
 
 		await context.SaveChangesAsync(cancellationToken);
+		if (transaction is not null)
+		{
+			await transaction.CommitAsync(cancellationToken);
+		}
 		return new CascadeMutationResult(true, syncRecordsChanged);
 	}
 }

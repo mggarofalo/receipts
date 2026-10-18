@@ -2624,6 +2624,13 @@ paths:
               $ref: "#/components/headers/X-Resource-Id"
         "404":
           description: Not Found
+        "409":
+          description: The receipt is no longer active. Restore or reload it before retrying.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
 
   /api/receipt-items/batch:
     put:
@@ -2678,6 +2685,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ReceiptItemResponse"
+        "409":
+          description: The receipt is no longer active. Restore or reload it before retrying.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
 
   /api/receipts/{receiptId}/receipt-items/batch:
     post:
@@ -2711,6 +2725,13 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/ReceiptItemResponse"
+        "409":
+          description: The receipt is no longer active. Restore or reload it before retrying.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
 
   # ──────────────────────────────────────────────
   # Transactions
@@ -2959,6 +2980,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TransactionResponse"
+        "409":
+          description: The receipt is no longer active. Restore or reload it before retrying.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
 
   /api/receipts/{receiptId}/transactions/batch:
     post:
@@ -2992,6 +3020,13 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/TransactionResponse"
+        "409":
+          description: The receipt is no longer active. Restore or reload it before retrying.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
 
   # ──────────────────────────────────────────────
   # Adjustments
@@ -3053,6 +3088,13 @@ paths:
               $ref: "#/components/headers/X-Resource-Id"
         "404":
           description: Not Found
+        "409":
+          description: The receipt is no longer active. Restore or reload it before retrying.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
 
   /api/adjustments:
     get:
@@ -3158,6 +3200,13 @@ paths:
               $ref: "#/components/headers/X-Resource-Id"
         "404":
           description: Not Found
+        "409":
+          description: The receipt is no longer active. Restore or reload it before retrying.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
 
   /api/receipts/{receiptId}/adjustments:
     post:
@@ -3190,6 +3239,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdjustmentResponse"
+        "409":
+          description: The receipt is no longer active. Restore or reload it before retrying.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
 
   # ──────────────────────────────────────────────
   # Trash
