@@ -2,7 +2,7 @@ import { act, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "@/test/test-utils";
 import { mockMutationResult } from "@/test/mock-hooks";
-import { YnabMemoSyncCard } from "./YnabMemoSyncCard";
+import { YnabMemoSyncContent } from "./YnabMemoSyncContent";
 
 const mockSyncMemosMutate = vi.fn();
 const mockResolveSyncMutate = vi.fn();
@@ -50,9 +50,9 @@ beforeEach(async () => {
   } as ReturnType<typeof ynab.useYnabConnectionStatus>);
 });
 
-describe("YnabMemoSyncCard", () => {
+describe("YnabMemoSyncContent", () => {
   it("renders the card title and sync button", () => {
-    renderWithProviders(<YnabMemoSyncCard receiptId="r1" />);
+    renderWithProviders(<YnabMemoSyncContent receiptId="r1" />);
 
     expect(screen.getByText("Memo sync")).toBeInTheDocument();
     expect(
@@ -60,50 +60,9 @@ describe("YnabMemoSyncCard", () => {
     ).toBeInTheDocument();
   });
 
-  it("returns null when no budget is selected", async () => {
-    const ynab = await import("@/hooks/useYnab");
-    vi.mocked(ynab.useSelectedYnabBudget).mockReturnValue({
-      selectedBudgetId: null,
-      isLoading: false,
-    } as ReturnType<typeof ynab.useSelectedYnabBudget>);
-
-    const { container } = renderWithProviders(
-      <YnabMemoSyncCard receiptId="r1" />,
-    );
-    expect(container.firstChild).toBeNull();
-  });
-
-  it("returns null when YNAB is not configured (no PAT) — RECEIPTS-731", async () => {
-    const ynab = await import("@/hooks/useYnab");
-    vi.mocked(ynab.useYnabConnectionStatus).mockReturnValue({
-      isConfigured: false,
-      isConnected: false,
-      isLoading: false,
-    } as ReturnType<typeof ynab.useYnabConnectionStatus>);
-
-    const { container } = renderWithProviders(
-      <YnabMemoSyncCard receiptId="r1" />,
-    );
-    expect(container.firstChild).toBeNull();
-  });
-
-  it("returns null while the connection status is still loading", async () => {
-    const ynab = await import("@/hooks/useYnab");
-    vi.mocked(ynab.useYnabConnectionStatus).mockReturnValue({
-      isConfigured: false,
-      isConnected: false,
-      isLoading: true,
-    } as ReturnType<typeof ynab.useYnabConnectionStatus>);
-
-    const { container } = renderWithProviders(
-      <YnabMemoSyncCard receiptId="r1" />,
-    );
-    expect(container.firstChild).toBeNull();
-  });
-
   it("calls syncMemos mutation with the receipt id when sync button is clicked", async () => {
     const user = userEvent.setup();
-    renderWithProviders(<YnabMemoSyncCard receiptId="r-clicked" />);
+    renderWithProviders(<YnabMemoSyncContent receiptId="r-clicked" />);
 
     await user.click(screen.getByRole("button", { name: /Sync Memos/i }));
 
@@ -119,7 +78,7 @@ describe("YnabMemoSyncCard", () => {
       mockMutationResult({ mutate: mockSyncMemosMutate, isPending: true }),
     );
 
-    renderWithProviders(<YnabMemoSyncCard receiptId="r1" />);
+    renderWithProviders(<YnabMemoSyncContent receiptId="r1" />);
 
     expect(screen.getByRole("button", { name: /Syncing.../i })).toBeDisabled();
   });
@@ -129,7 +88,7 @@ describe("YnabMemoSyncCard", () => {
     vi.mocked(ynab.useSyncYnabMemos).mockReturnValue(
       mockMutationResult({
         mutate: mockSyncMemosMutate,
-        // Simulate onSuccess populating results=[]; YnabMemoSyncCard uses internal state
+        // Simulate onSuccess populating results=[]; YnabMemoSyncContent uses internal state
         // so we test via the component's rendered output after a sync
       }),
     );
@@ -138,7 +97,7 @@ describe("YnabMemoSyncCard", () => {
     // The component's CardContent with "No transactions found" only renders when
     // results is set to an empty array (not undefined). We can test this by
     // checking the card body is absent when results is undefined.
-    renderWithProviders(<YnabMemoSyncCard receiptId="r1" />);
+    renderWithProviders(<YnabMemoSyncContent receiptId="r1" />);
 
     // No results section should be present before any sync
     expect(
@@ -187,7 +146,7 @@ describe("YnabMemoSyncCard", () => {
     );
 
     const user = userEvent.setup();
-    renderWithProviders(<YnabMemoSyncCard receiptId="r1" />);
+    renderWithProviders(<YnabMemoSyncContent receiptId="r1" />);
 
     await user.click(screen.getByRole("button", { name: /Sync Memos/i }));
 
@@ -224,7 +183,7 @@ describe("YnabMemoSyncCard", () => {
         }),
       );
       const user = userEvent.setup();
-      renderWithProviders(<YnabMemoSyncCard receiptId="receipt-1" />);
+      renderWithProviders(<YnabMemoSyncContent receiptId="receipt-1" />);
       await user.click(screen.getByRole("button", { name: "Sync Memos" }));
       expect(screen.getByText(reason)).toBeInTheDocument();
       expect(mockResolveSyncMutate).not.toHaveBeenCalled();

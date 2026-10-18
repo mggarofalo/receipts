@@ -1,7 +1,7 @@
 import { screen } from "@testing-library/react";
 import { renderWithProviders } from "@/test/test-utils";
 import { mockQueryResult } from "@/test/mock-hooks";
-import { YnabSplitComparisonCard } from "./YnabSplitComparisonCard";
+import { YnabSplitComparisonContent } from "./YnabSplitComparisonContent";
 
 const configuredStatus = () =>
   mockQueryResult({ isConfigured: true, isConnected: true, isLoading: false });
@@ -24,49 +24,14 @@ beforeEach(async () => {
   vi.mocked(ynab.useYnabSplitComparison).mockReturnValue(mockQueryResult());
 });
 
-describe("YnabSplitComparisonCard", () => {
-  it("renders nothing when YNAB is not configured", async () => {
-    const ynab = await import("@/hooks/useYnab");
-    vi.mocked(ynab.useYnabConnectionStatus).mockReturnValue(
-      mockQueryResult({
-        isConfigured: false,
-        isConnected: false,
-        isLoading: false,
-      }),
-    );
-
-    const { container } = renderWithProviders(
-      <YnabSplitComparisonCard receiptId="r1" />,
-    );
-
-    expect(container).toBeEmptyDOMElement();
-    expect(screen.queryByText("Split comparison")).not.toBeInTheDocument();
-  });
-
-  it("renders nothing while the connection status is still loading", async () => {
-    const ynab = await import("@/hooks/useYnab");
-    vi.mocked(ynab.useYnabConnectionStatus).mockReturnValue(
-      mockQueryResult({
-        isConfigured: false,
-        isConnected: false,
-        isLoading: true,
-      }),
-    );
-
-    const { container } = renderWithProviders(
-      <YnabSplitComparisonCard receiptId="r1" />,
-    );
-
-    expect(container).toBeEmptyDOMElement();
-  });
-
+describe("YnabSplitComparisonContent", () => {
   it("renders a loading skeleton while the query is pending", async () => {
     const ynab = await import("@/hooks/useYnab");
     vi.mocked(ynab.useYnabSplitComparison).mockReturnValue(
       mockQueryResult({ isLoading: true, isPending: true }),
     );
 
-    renderWithProviders(<YnabSplitComparisonCard receiptId="r1" />);
+    renderWithProviders(<YnabSplitComparisonContent receiptId="r1" />);
 
     expect(screen.getByText("Split comparison")).toBeInTheDocument();
     // Skeleton contains no specific text but should be in the card body.
@@ -89,7 +54,7 @@ describe("YnabSplitComparisonCard", () => {
       }),
     );
 
-    renderWithProviders(<YnabSplitComparisonCard receiptId="r1" />);
+    renderWithProviders(<YnabSplitComparisonContent receiptId="r1" />);
 
     expect(
       screen.getByText(/Could not load split comparison/),
@@ -113,7 +78,7 @@ describe("YnabSplitComparisonCard", () => {
       }),
     );
 
-    renderWithProviders(<YnabSplitComparisonCard receiptId="r1" />);
+    renderWithProviders(<YnabSplitComparisonContent receiptId="r1" />);
 
     expect(screen.getByText(/Unmapped categories found\./)).toBeInTheDocument();
     expect(screen.getByText(/Gas, Dining/)).toBeInTheDocument();
@@ -153,7 +118,7 @@ describe("YnabSplitComparisonCard", () => {
       }),
     );
 
-    renderWithProviders(<YnabSplitComparisonCard receiptId="r1" />);
+    renderWithProviders(<YnabSplitComparisonContent receiptId="r1" />);
 
     expect(
       screen.getByText(/Actual will appear here after you push to YNAB/),
@@ -201,7 +166,7 @@ describe("YnabSplitComparisonCard", () => {
       }),
     );
 
-    renderWithProviders(<YnabSplitComparisonCard receiptId="r1" />);
+    renderWithProviders(<YnabSplitComparisonContent receiptId="r1" />);
 
     expect(screen.getByText("Checking")).toBeInTheDocument();
     expect(screen.getByText("Expected")).toBeInTheDocument();
@@ -247,7 +212,7 @@ describe("YnabSplitComparisonCard", () => {
       }),
     );
 
-    renderWithProviders(<YnabSplitComparisonCard receiptId="r1" />);
+    renderWithProviders(<YnabSplitComparisonContent receiptId="r1" />);
 
     // Top-level mismatch badge + per-transaction one
     const badges = screen.getAllByText(/Mismatch/);
@@ -291,7 +256,7 @@ describe("YnabSplitComparisonCard", () => {
       }),
     );
 
-    renderWithProviders(<YnabSplitComparisonCard receiptId="r1" />);
+    renderWithProviders(<YnabSplitComparisonContent receiptId="r1" />);
 
     expect(
       screen.getByText(/Could not fetch current YNAB state: YNAB 503/),
@@ -354,7 +319,7 @@ describe("YnabSplitComparisonCard", () => {
       }),
     );
 
-    renderWithProviders(<YnabSplitComparisonCard receiptId="r1" />);
+    renderWithProviders(<YnabSplitComparisonContent receiptId="r1" />);
 
     // Both distinct amounts should appear in the table — and each should
     // render twice (once in Expected, once in Actual) because the merge

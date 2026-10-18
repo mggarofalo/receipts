@@ -25,11 +25,13 @@ vi.mock("@/hooks/useYnab", () => ({
 }));
 
 vi.mock("@/hooks/useTrips", () => ({
-  useTripByReceiptId: vi.fn(() => mockQueryResult({
-    data: undefined,
-    isLoading: false,
-    isError: false,
-  })),
+  useTripByReceiptId: vi.fn(() =>
+    mockQueryResult({
+      data: undefined,
+      isLoading: false,
+      isError: false,
+    }),
+  ),
 }));
 
 vi.mock("@/hooks/useReceipts", () => ({
@@ -85,20 +87,16 @@ vi.mock("@/hooks/useListKeyboardNav", () => ({
     focusedId: null,
     setFocusedIndex: vi.fn(),
     tableRef: { current: null },
-    containerProps: { role: "grid" as const, tabIndex: 0, "aria-label": "list", "aria-activedescendant": undefined },
-    getRowProps: (id: string) => ({ id: `list-row-${id}`, role: "row" as const }),
-  })),
-}));
-
-vi.mock("@/hooks/usePagination", () => ({
-  usePagination: vi.fn(() => ({
-    paginatedItems: [],
-    currentPage: 1,
-    pageSize: 10,
-    totalItems: 0,
-    totalPages: 1,
-    setPage: vi.fn(),
-    setPageSize: vi.fn(),
+    containerProps: {
+      role: "grid" as const,
+      tabIndex: 0,
+      "aria-label": "list",
+      "aria-activedescendant": undefined,
+    },
+    getRowProps: (id: string) => ({
+      id: `list-row-${id}`,
+      role: "row" as const,
+    }),
   })),
 }));
 
@@ -108,24 +106,40 @@ describe("Receipts", () => {
     statusMap: Map<string, string> = new Map(),
   ) {
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "",
-      setSearch: vi.fn(),
-      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
-      totalCount: items.length,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: items.map((item) => ({
+          item,
+          matches: [],
+          score: 0,
+          refIndex: 0,
+        })),
+        totalCount: items.length,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
 
     const { useReceipts } = await import("@/hooks/useReceipts");
-    vi.mocked(useReceipts).mockReturnValue(mockQueryResult({
-      data: items,
-      total: items.length,
-      isLoading: false,
-    }));
+    vi.mocked(useReceipts).mockReturnValue(
+      mockQueryResult({
+        data: items,
+        total: items.length,
+        isLoading: false,
+      }),
+    );
 
     const { useReceiptYnabSyncStatuses } = await import("@/hooks/useYnab");
-    vi.mocked(useReceiptYnabSyncStatuses).mockReturnValue(mockQueryResult({ statusMap, isLoading: false, isSuccess: true, status: "success" }));
+    vi.mocked(useReceiptYnabSyncStatuses).mockReturnValue(
+      mockQueryResult({
+        statusMap,
+        isLoading: false,
+        isSuccess: true,
+        status: "success",
+      }),
+    );
   }
 
   it("renders the page heading", () => {
@@ -137,27 +151,31 @@ describe("Receipts", () => {
 
   it("renders loading skeleton when data is loading", async () => {
     const { useReceipts } = await import("@/hooks/useReceipts");
-    vi.mocked(useReceipts).mockReturnValue(mockQueryResult({
-      data: undefined,
-      isLoading: true,
-    }));
+    vi.mocked(useReceipts).mockReturnValue(
+      mockQueryResult({
+        data: undefined,
+        isLoading: true,
+      }),
+    );
 
     const { container } = renderWithProviders(<Receipts />);
-    expect(container.querySelector("[data-slot='skeleton']")).toBeInTheDocument();
+    expect(
+      container.querySelector("[data-slot='skeleton']"),
+    ).toBeInTheDocument();
   });
 
   it("renders empty state when no receipts exist", async () => {
     const { useReceipts } = await import("@/hooks/useReceipts");
-    vi.mocked(useReceipts).mockReturnValue(mockQueryResult({
-      data: [],
-      total: 0,
-      isLoading: false,
-    }));
+    vi.mocked(useReceipts).mockReturnValue(
+      mockQueryResult({
+        data: [],
+        total: 0,
+        isLoading: false,
+      }),
+    );
 
     renderWithProviders(<Receipts />);
-    expect(
-      screen.getByText(/no receipts yet/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/no receipts yet/i)).toBeInTheDocument();
   });
 
   it("renders the Quick Add button", () => {
@@ -169,33 +187,50 @@ describe("Receipts", () => {
 
   it("renders the search input", () => {
     renderWithProviders(<Receipts />);
-    expect(
-      screen.getByPlaceholderText(/search receipts/i),
-    ).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/search receipts/i)).toBeInTheDocument();
   });
 
   it("renders table with receipts when data exists", async () => {
     const items = [
-      mockReceiptResponse({ id: "1", location: "Walmart", date: "2024-01-15", taxAmount: 5.25 }),
-      mockReceiptResponse({ id: "2", location: "Target", date: "2024-01-20", taxAmount: 3.50 }),
+      mockReceiptResponse({
+        id: "1",
+        location: "Walmart",
+        date: "2024-01-15",
+        taxAmount: 5.25,
+      }),
+      mockReceiptResponse({
+        id: "2",
+        location: "Target",
+        date: "2024-01-20",
+        taxAmount: 3.5,
+      }),
     ];
 
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "",
-      setSearch: vi.fn(),
-      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
-      totalCount: items.length,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: items.map((item) => ({
+          item,
+          matches: [],
+          score: 0,
+          refIndex: 0,
+        })),
+        totalCount: items.length,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
 
     const { useReceipts } = await import("@/hooks/useReceipts");
-    vi.mocked(useReceipts).mockReturnValue(mockQueryResult({
-      data: items,
-      total: items.length,
-      isLoading: false,
-    }));
+    vi.mocked(useReceipts).mockReturnValue(
+      mockQueryResult({
+        data: items,
+        total: items.length,
+        isLoading: false,
+      }),
+    );
 
     renderWithProviders(<Receipts />);
     expect(screen.getByText("Walmart")).toBeInTheDocument();
@@ -217,7 +252,9 @@ describe("Receipts", () => {
 
     renderWithProviders(<Receipts />);
 
-    const table = screen.getByRole("grid", { name: "list" }).querySelector("table")!;
+    const table = screen
+      .getByRole("grid", { name: "list" })
+      .querySelector("table")!;
     const headers = within(table)
       .getAllByRole("columnheader")
       .map((header) => header.textContent?.trim() ?? "");
@@ -236,7 +273,9 @@ describe("Receipts", () => {
     expect(screen.getByText(/2 items/)).toBeInTheDocument();
     expect(screen.getByText(/Grocery, Household/)).toBeInTheDocument();
     expect(screen.queryByText("deadbeef")).not.toBeInTheDocument();
-    expect(within(table).queryByRole("columnheader", { name: "Tax" })).not.toBeInTheDocument();
+    expect(
+      within(table).queryByRole("columnheader", { name: "Tax" }),
+    ).not.toBeInTheDocument();
     expect(screen.queryByText("$123.45")).not.toBeInTheDocument();
   });
 
@@ -275,7 +314,9 @@ describe("Receipts", () => {
     await mockReceiptTable([mockReceiptListItemResponse()]);
     renderWithProviders(<Receipts />);
 
-    const table = document.querySelector<HTMLTableElement>("table.receipts-table")!;
+    const table = document.querySelector<HTMLTableElement>(
+      "table.receipts-table",
+    )!;
     expect(table).toBeInTheDocument();
     expect(table.closest(".receipts-table-card")).toHaveClass("card");
     const columns = Array.from(table.querySelectorAll("colgroup > col"));
@@ -290,17 +331,18 @@ describe("Receipts", () => {
       "receipt-status",
       "receipt-actions",
     ]);
-    expect(within(table).getByRole("columnheader", { name: "Select all rows" })).toHaveClass(
-      "receipt-select",
-    );
-    expect(within(table).getByRole("columnheader", { name: "Actions" })).toHaveClass(
-      "receipt-actions",
-    );
-    expect(within(table).getByRole("columnheader", { name: "Payment" })).toHaveClass("receipt-col-secondary");
-    expect(within(table).getByRole("columnheader", { name: "Contents" })).toHaveClass(
-      "receipt-col-secondary",
-      "receipt-col-contents",
-    );
+    expect(
+      within(table).getByRole("columnheader", { name: "Select all rows" }),
+    ).toHaveClass("receipt-select");
+    expect(
+      within(table).getByRole("columnheader", { name: "Actions" }),
+    ).toHaveClass("receipt-actions");
+    expect(
+      within(table).getByRole("columnheader", { name: "Payment" }),
+    ).toHaveClass("receipt-col-secondary");
+    expect(
+      within(table).getByRole("columnheader", { name: "Contents" }),
+    ).toHaveClass("receipt-col-secondary", "receipt-col-contents");
 
     const row = within(table).getAllByRole("row")[1];
     expect(row.querySelector(".receipt-date")).toBeInTheDocument();
@@ -309,47 +351,72 @@ describe("Receipts", () => {
     expect(row.querySelector(".receipt-status")).toBeInTheDocument();
     expect(row.querySelector(".receipt-actions")).toBeInTheDocument();
     expect(row.querySelectorAll(".receipt-col-secondary")).toHaveLength(2);
-    expect(document.querySelector(".receipts-pagination-top")).toHaveClass("receipts-pagination");
-    expect(document.querySelector(".receipts-pagination-bottom")).toHaveClass("receipts-pagination");
+    expect(document.querySelector(".receipts-pagination-top")).toHaveClass(
+      "receipts-pagination",
+    );
+    expect(document.querySelector(".receipts-pagination-bottom")).toHaveClass(
+      "receipts-pagination",
+    );
   });
 
   it("renders text and accessible labels for every balance and YNAB state", async () => {
     const items = [
       mockReceiptListItemResponse({ id: "balanced", balanceState: "balanced" }),
-      mockReceiptListItemResponse({ id: "missing", balanceState: "noTransactions" }),
-      mockReceiptListItemResponse({ id: "mismatch", balanceState: "outOfBalance" }),
-      mockReceiptListItemResponse({ id: "ambiguous", balanceState: "balanced" }),
+      mockReceiptListItemResponse({
+        id: "missing",
+        balanceState: "noTransactions",
+      }),
+      mockReceiptListItemResponse({
+        id: "mismatch",
+        balanceState: "outOfBalance",
+      }),
+      mockReceiptListItemResponse({
+        id: "ambiguous",
+        balanceState: "balanced",
+      }),
     ];
-    await mockReceiptTable(items, new Map([
-      ["balanced", "synced"],
-      ["missing", "pending"],
-      ["mismatch", "failed"],
-      ["ambiguous", "unknown"],
-    ]));
+    await mockReceiptTable(
+      items,
+      new Map([
+        ["balanced", "synced"],
+        ["missing", "pending"],
+        ["mismatch", "failed"],
+        ["ambiguous", "unknown"],
+      ]),
+    );
 
     renderWithProviders(<Receipts />);
 
     expect(screen.getAllByLabelText("Balance: balanced")).toHaveLength(2);
-    expect(screen.getByLabelText("Balance: no transactions")).toHaveTextContent("No transactions");
-    expect(screen.getByLabelText("Balance: out of balance")).toHaveTextContent("Out of balance");
+    expect(screen.getByLabelText("Balance: no transactions")).toHaveTextContent(
+      "No transactions",
+    );
+    expect(screen.getByLabelText("Balance: out of balance")).toHaveTextContent(
+      "Out of balance",
+    );
     expect(screen.getByLabelText("YNAB: synced")).toHaveTextContent("YNAB");
     expect(screen.getByLabelText("YNAB: pending")).toHaveTextContent("Pending");
     expect(screen.getAllByLabelText("YNAB: error")).toHaveLength(2);
   });
 
   it("lazy-loads on mouse expansion, exposes valid detail-row relationships, and reopens cached data", async () => {
-    const receipt = mockReceiptListItemResponse({ id: "r1", location: "Target" });
+    const receipt = mockReceiptListItemResponse({
+      id: "r1",
+      location: "Target",
+    });
     await mockReceiptTable([receipt]);
     const refetch = vi.fn();
     const { useTripByReceiptId } = await import("@/hooks/useTrips");
     const tripHook = vi.mocked(useTripByReceiptId);
     tripHook.mockClear();
-    tripHook.mockReturnValue(mockQueryResult({
-      data: undefined,
-      isLoading: false,
-      isError: false,
-      refetch,
-    }));
+    tripHook.mockReturnValue(
+      mockQueryResult({
+        data: undefined,
+        isLoading: false,
+        isError: false,
+        refetch,
+      }),
+    );
 
     renderWithProviders(<Receipts />);
     expect(tripHook).not.toHaveBeenCalled();
@@ -358,7 +425,9 @@ describe("Receipts", () => {
     expect(row).toHaveAttribute("aria-expanded", "false");
     expect(row).not.toHaveAttribute("aria-controls");
     const detailId = "receipt-detail-r1";
-    await (await import("@testing-library/user-event")).default.setup().click(row);
+    await (await import("@testing-library/user-event")).default
+      .setup()
+      .click(row);
 
     expect(tripHook).toHaveBeenCalledTimes(1);
     expect(tripHook).toHaveBeenCalledWith("r1");
@@ -368,20 +437,31 @@ describe("Receipts", () => {
     expect(detailRow).toHaveClass("receipt-detail-row");
     expect(detailRow.querySelector("td")).toHaveAttribute("colspan", "8");
 
-    await (await import("@testing-library/user-event")).default.setup().click(row);
+    await (await import("@testing-library/user-event")).default
+      .setup()
+      .click(row);
     expect(document.getElementById(detailId)).not.toBeInTheDocument();
-    await (await import("@testing-library/user-event")).default.setup().click(row);
-    expect(screen.getByRole("link", { name: "Open receipt" })).toBeInTheDocument();
+    await (await import("@testing-library/user-event")).default
+      .setup()
+      .click(row);
+    expect(
+      screen.getByRole("link", { name: "Open receipt" }),
+    ).toBeInTheDocument();
     expect(refetch).not.toHaveBeenCalled();
   });
 
   it("forgets expansion when a filtered-out receipt later returns", async () => {
-    const receipt = mockReceiptListItemResponse({ id: "r1", location: "Target" });
+    const receipt = mockReceiptListItemResponse({
+      id: "r1",
+      location: "Target",
+    });
     await mockReceiptTable([receipt]);
     const { useTripByReceiptId } = await import("@/hooks/useTrips");
     const tripHook = vi.mocked(useTripByReceiptId);
     tripHook.mockClear();
-    tripHook.mockReturnValue(mockQueryResult({ isLoading: false, isError: false }));
+    tripHook.mockReturnValue(
+      mockQueryResult({ isLoading: false, isError: false }),
+    );
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
     const fuzzySearch = vi.mocked(useFuzzySearch);
 
@@ -390,25 +470,31 @@ describe("Receipts", () => {
     await user.click(screen.getByRole("row", { name: /Target/ }));
     expect(tripHook).toHaveBeenCalledTimes(1);
 
-    fuzzySearch.mockReturnValue(mockQueryResult({
-      search: "hidden",
-      setSearch: vi.fn(),
-      results: [],
-      totalCount: 0,
-      isSearching: true,
-      clearSearch: vi.fn(),
-    }));
+    fuzzySearch.mockReturnValue(
+      mockQueryResult({
+        search: "hidden",
+        setSearch: vi.fn(),
+        results: [],
+        totalCount: 0,
+        isSearching: true,
+        clearSearch: vi.fn(),
+      }),
+    );
     rerender(<Receipts />);
-    expect(screen.queryByRole("row", { name: /Target/ })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("row", { name: /Target/ }),
+    ).not.toBeInTheDocument();
 
-    fuzzySearch.mockReturnValue(mockQueryResult({
-      search: "",
-      setSearch: vi.fn(),
-      results: [{ item: receipt, matches: [], score: 0, refIndex: 0 }],
-      totalCount: 1,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
+    fuzzySearch.mockReturnValue(
+      mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: [{ item: receipt, matches: [], score: 0, refIndex: 0 }],
+        totalCount: 1,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
     rerender(<Receipts />);
 
     const returnedRow = screen.getByRole("row", { name: /Target/ });
@@ -423,12 +509,17 @@ describe("Receipts", () => {
 
   it("keeps only one row expanded and switches the lazy detail receipt", async () => {
     const first = mockReceiptListItemResponse({ id: "r1", location: "Target" });
-    const second = mockReceiptListItemResponse({ id: "r2", location: "Walmart" });
+    const second = mockReceiptListItemResponse({
+      id: "r2",
+      location: "Walmart",
+    });
     await mockReceiptTable([first, second]);
     const { useTripByReceiptId } = await import("@/hooks/useTrips");
     const tripHook = vi.mocked(useTripByReceiptId);
     tripHook.mockClear();
-    tripHook.mockReturnValue(mockQueryResult({ isLoading: false, isError: false }));
+    tripHook.mockReturnValue(
+      mockQueryResult({ isLoading: false, isError: false }),
+    );
 
     renderWithProviders(<Receipts />);
     const user = (await import("@testing-library/user-event")).default.setup();
@@ -444,7 +535,10 @@ describe("Receipts", () => {
   });
 
   it("renders loading and retryable error states inside the expanded row", async () => {
-    const receipt = mockReceiptListItemResponse({ id: "r1", location: "Target" });
+    const receipt = mockReceiptListItemResponse({
+      id: "r1",
+      location: "Target",
+    });
     await mockReceiptTable([receipt]);
     const { useTripByReceiptId } = await import("@/hooks/useTrips");
     const tripHook = vi.mocked(useTripByReceiptId);
@@ -453,16 +547,22 @@ describe("Receipts", () => {
     const { rerender } = renderWithProviders(<Receipts />);
     const user = (await import("@testing-library/user-event")).default.setup();
     await user.click(screen.getByRole("row", { name: /Target/ }));
-    expect(screen.getByRole("status")).toHaveTextContent("Loading receipt details");
-    expect(screen.getByRole("status").closest(".receipt-detail-row")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Loading receipt details",
+    );
+    expect(
+      screen.getByRole("status").closest(".receipt-detail-row"),
+    ).toBeInTheDocument();
 
     const refetch = vi.fn();
-    tripHook.mockReturnValue(mockQueryResult({
-      isLoading: false,
-      isError: true,
-      isRefetching: false,
-      refetch,
-    }));
+    tripHook.mockReturnValue(
+      mockQueryResult({
+        isLoading: false,
+        isError: true,
+        isRefetching: false,
+        refetch,
+      }),
+    );
     rerender(<Receipts />);
     const alert = screen.getByRole("alert");
     expect(alert).toHaveTextContent("Couldn't load receipt details");
@@ -491,36 +591,63 @@ describe("Receipts", () => {
       unitPrice: index + 1,
     }));
     const { useTripByReceiptId } = await import("@/hooks/useTrips");
-    vi.mocked(useTripByReceiptId).mockReturnValue(mockQueryResult({
-      isLoading: false,
-      isError: false,
-      data: {
-        receipt: { subtotal: 10, adjustmentTotal: -2, expectedTotal: 9, items },
-        transactions: [{ transaction: { amount: 9 } }],
-      },
-    }));
+    vi.mocked(useTripByReceiptId).mockReturnValue(
+      mockQueryResult({
+        isLoading: false,
+        isError: false,
+        data: {
+          receipt: {
+            subtotal: 10,
+            adjustmentTotal: -2,
+            expectedTotal: 9,
+            items,
+          },
+          transactions: [{ transaction: { amount: 9 } }],
+        },
+      }),
+    );
 
     renderWithProviders(<Receipts />);
     await (await import("@testing-library/user-event")).default
       .setup()
       .click(screen.getByRole("row", { name: /Target/ }));
 
-    const detail = document.querySelector<HTMLElement>(".receipt-inline-detail")!;
-    const terms = [...detail.querySelectorAll(".receipt-equation-term")].map((term) => term.textContent);
-    expect(terms).toEqual(["Subtotal$10.00", "Tax$1.00", "Adjustments$2.00", "Expected$9.00"]);
-    expect([...detail.querySelectorAll(".receipt-equation-operator")].map((term) => term.textContent))
-      .toEqual(["+", "−", "="]);
-    expect(within(detail).getByRole("math", {
-      name: "Subtotal $10.00, plus Tax $1.00, minus Adjustments $2.00; equals Expected $9.00",
-    })).toHaveClass("receipt-equation");
+    const detail = document.querySelector<HTMLElement>(
+      ".receipt-inline-detail",
+    )!;
+    const terms = [...detail.querySelectorAll(".receipt-equation-term")].map(
+      (term) => term.textContent,
+    );
+    expect(terms).toEqual([
+      "Subtotal$10.00",
+      "Tax$1.00",
+      "Adjustments$2.00",
+      "Expected$9.00",
+    ]);
+    expect(
+      [...detail.querySelectorAll(".receipt-equation-operator")].map(
+        (term) => term.textContent,
+      ),
+    ).toEqual(["+", "−", "="]);
+    expect(
+      within(detail).getByRole("math", {
+        name: "Subtotal $10.00, plus Tax $1.00, minus Adjustments $2.00; equals Expected $9.00",
+      }),
+    ).toHaveClass("receipt-equation");
     expect(within(detail).getByText("Checking · Visa")).toBeInTheDocument();
-    expect(within(detail).getByText("Checking · Visa")).toHaveClass("receipt-detail-pill");
-    expect(within(detail).getByText("Reconciliation: Out of balance")).toHaveClass("chip", "neg");
+    expect(within(detail).getByText("Checking · Visa")).toHaveClass(
+      "receipt-detail-pill",
+    );
+    expect(
+      within(detail).getByText("Reconciliation: Out of balance"),
+    ).toHaveClass("chip", "neg");
     expect(within(detail).getByText("Grocery")).toBeInTheDocument();
     expect(within(detail).getByText("YNAB: synced")).toBeInTheDocument();
     expect(within(detail).getAllByRole("listitem")).toHaveLength(5);
     expect(within(detail).getByText("+1 more")).toBeInTheDocument();
-    expect(within(detail).getByRole("link", { name: "Open receipt" })).toHaveAttribute("href", "/receipts/r1");
+    expect(
+      within(detail).getByRole("link", { name: "Open receipt" }),
+    ).toHaveAttribute("href", "/receipts/r1");
   });
 
   it("omits zero tax and adjustment terms from the inline equation", async () => {
@@ -534,14 +661,25 @@ describe("Receipts", () => {
     });
     await mockReceiptTable([receipt]);
     const { useTripByReceiptId } = await import("@/hooks/useTrips");
-    vi.mocked(useTripByReceiptId).mockReturnValue(mockQueryResult({
-      isLoading: false,
-      isError: false,
-      data: { receipt: { subtotal: 10, adjustmentTotal: 0, expectedTotal: 10, items: [] }, transactions: [] },
-    }));
+    vi.mocked(useTripByReceiptId).mockReturnValue(
+      mockQueryResult({
+        isLoading: false,
+        isError: false,
+        data: {
+          receipt: {
+            subtotal: 10,
+            adjustmentTotal: 0,
+            expectedTotal: 10,
+            items: [],
+          },
+          transactions: [],
+        },
+      }),
+    );
 
     renderWithProviders(<Receipts />);
-    await (await import("@testing-library/user-event")).default.setup()
+    await (await import("@testing-library/user-event")).default
+      .setup()
       .click(screen.getByRole("row", { name: /Target/ }));
 
     const equation = document.querySelector<HTMLElement>(".receipt-equation")!;
@@ -552,30 +690,42 @@ describe("Receipts", () => {
   });
 
   it("renders deterministic empty related-data labels", async () => {
-    const receipt = mockReceiptListItemResponse({ id: "r1", location: "Target" });
+    const receipt = mockReceiptListItemResponse({
+      id: "r1",
+      location: "Target",
+    });
     await mockReceiptTable([receipt]);
     const { useTripByReceiptId } = await import("@/hooks/useTrips");
-    vi.mocked(useTripByReceiptId).mockReturnValue(mockQueryResult({
-      isLoading: false,
-      isError: false,
-      data: { receipt: { items: [] }, transactions: [] },
-    }));
+    vi.mocked(useTripByReceiptId).mockReturnValue(
+      mockQueryResult({
+        isLoading: false,
+        isError: false,
+        data: { receipt: { items: [] }, transactions: [] },
+      }),
+    );
 
     renderWithProviders(<Receipts />);
     await (await import("@testing-library/user-event")).default
       .setup()
       .click(screen.getByRole("row", { name: /Target/ }));
 
-    const detail = document.querySelector<HTMLElement>(".receipt-inline-detail")!;
+    const detail = document.querySelector<HTMLElement>(
+      ".receipt-inline-detail",
+    )!;
     expect(within(detail).getByText("No transactions")).toBeInTheDocument();
-    expect(within(detail).getByText("Reconciliation: No transactions")).toBeInTheDocument();
+    expect(
+      within(detail).getByText("Reconciliation: No transactions"),
+    ).toBeInTheDocument();
     expect(within(detail).getByText("Uncategorized")).toBeInTheDocument();
     expect(within(detail).getByText("YNAB: not synced")).toBeInTheDocument();
     expect(within(detail).getByText("No items")).toBeInTheDocument();
   });
 
   it("supports Enter, Right and Left expansion without nested controls toggling", async () => {
-    const receipt = mockReceiptListItemResponse({ id: "r1", location: "Target" });
+    const receipt = mockReceiptListItemResponse({
+      id: "r1",
+      location: "Target",
+    });
     await mockReceiptTable([receipt]);
     const { useListKeyboardNav } = await import("@/hooks/useListKeyboardNav");
     vi.mocked(useListKeyboardNav).mockReturnValue({
@@ -583,13 +733,20 @@ describe("Receipts", () => {
       focusedId: "r1",
       setFocusedIndex: vi.fn(),
       tableRef: { current: null },
-      containerProps: { role: "grid", tabIndex: 0, "aria-label": "list", "aria-activedescendant": "list-row-r1" },
+      containerProps: {
+        role: "grid",
+        tabIndex: 0,
+        "aria-label": "list",
+        "aria-activedescendant": "list-row-r1",
+      },
       getRowProps: (id: string) => ({ id: `list-row-${id}`, role: "row" }),
     });
     const { useTripByReceiptId } = await import("@/hooks/useTrips");
     const tripHook = vi.mocked(useTripByReceiptId);
     tripHook.mockClear();
-    tripHook.mockReturnValue(mockQueryResult({ isLoading: false, isError: false }));
+    tripHook.mockReturnValue(
+      mockQueryResult({ isLoading: false, isError: false }),
+    );
 
     renderWithProviders(<Receipts />);
     const grid = screen.getByRole("grid", { name: "list" });
@@ -619,10 +776,18 @@ describe("Receipts", () => {
       focusedId: null,
       setFocusedIndex,
       tableRef: { current: null },
-      containerProps: { role: "grid", tabIndex: 0, "aria-label": "list", "aria-activedescendant": undefined },
+      containerProps: {
+        role: "grid",
+        tabIndex: 0,
+        "aria-label": "list",
+        "aria-activedescendant": undefined,
+      },
       getRowProps: (id: string) => ({ id: `list-row-${id}`, role: "row" }),
     });
-    const receipt = mockReceiptListItemResponse({ id: "receipt-123", location: "Target" });
+    const receipt = mockReceiptListItemResponse({
+      id: "receipt-123",
+      location: "Target",
+    });
     await mockReceiptTable([receipt]);
 
     renderWithProviders(<Receipts />);
@@ -634,7 +799,9 @@ describe("Receipts", () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     await user.click(screen.getByRole("button", { name: "Edit" }));
     expect(setFocusedIndex).not.toHaveBeenCalled();
-    expect(screen.getByRole("heading", { name: /edit receipt/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /edit receipt/i }),
+    ).toBeInTheDocument();
   });
 
   it("opens create dialog when Quick Add button is clicked", async () => {
@@ -651,37 +818,46 @@ describe("Receipts", () => {
   it("closes edit dialog when dismissed", async () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const items = [
-      mockReceiptResponse({ id: "1", location: "Walmart", date: "2024-01-15", taxAmount: 5.25 }),
+      mockReceiptResponse({
+        id: "1",
+        location: "Walmart",
+        date: "2024-01-15",
+        taxAmount: 5.25,
+      }),
     ];
 
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "",
-      setSearch: vi.fn(),
-      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
-      totalCount: items.length,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
-
-    const { usePagination } = await import("@/hooks/usePagination");
-    vi.mocked(usePagination).mockReturnValue({
-      paginatedItems: items,
-      currentPage: 1,
-      pageSize: 10,
-      totalItems: items.length,
-      totalPages: 1,
-      setPage: vi.fn(),
-      setPageSize: vi.fn(),
-    });
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: items.map((item) => ({
+          item,
+          matches: [],
+          score: 0,
+          refIndex: 0,
+        })),
+        totalCount: items.length,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
+    const { useReceipts } = await import("@/hooks/useReceipts");
+    vi.mocked(useReceipts).mockReturnValue(
+      mockQueryResult({ data: items, total: items.length, isLoading: false }),
+    );
 
     renderWithProviders(<Receipts />);
     await user.click(screen.getByRole("button", { name: /edit/i }));
-    expect(screen.getByRole("heading", { name: /edit receipt/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /edit receipt/i }),
+    ).toBeInTheDocument();
 
     await user.keyboard("{Escape}");
     await vi.waitFor(() => {
-      expect(screen.queryByRole("heading", { name: /edit receipt/i })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("heading", { name: /edit receipt/i }),
+      ).not.toBeInTheDocument();
     });
   });
 
@@ -689,36 +865,54 @@ describe("Receipts", () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     renderWithProviders(<Receipts />);
     await user.click(screen.getByRole("button", { name: /quick add/i }));
-    expect(screen.getByRole("heading", { name: /create receipt/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /create receipt/i }),
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /cancel/i }));
     await vi.waitFor(() => {
-      expect(screen.queryByRole("heading", { name: /create receipt/i })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("heading", { name: /create receipt/i }),
+      ).not.toBeInTheDocument();
     });
   });
 
   it("opens edit dialog when Edit button is clicked", async () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const items = [
-      mockReceiptResponse({ id: "1", location: "Walmart", date: "2024-01-15", taxAmount: 5.25 }),
+      mockReceiptResponse({
+        id: "1",
+        location: "Walmart",
+        date: "2024-01-15",
+        taxAmount: 5.25,
+      }),
     ];
 
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "",
-      setSearch: vi.fn(),
-      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
-      totalCount: items.length,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: items.map((item) => ({
+          item,
+          matches: [],
+          score: 0,
+          refIndex: 0,
+        })),
+        totalCount: items.length,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
 
     const { useReceipts } = await import("@/hooks/useReceipts");
-    vi.mocked(useReceipts).mockReturnValue(mockQueryResult({
-      data: items,
-      total: items.length,
-      isLoading: false,
-    }));
+    vi.mocked(useReceipts).mockReturnValue(
+      mockQueryResult({
+        data: items,
+        total: items.length,
+        isLoading: false,
+      }),
+    );
 
     renderWithProviders(<Receipts />);
     await user.click(screen.getByRole("button", { name: /edit/i }));
@@ -731,67 +925,86 @@ describe("Receipts", () => {
   it("toggles checkbox selection and shows delete button", async () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const items = [
-      mockReceiptResponse({ id: "1", location: "Walmart", date: "2024-01-15", taxAmount: 5.25 }),
+      mockReceiptResponse({
+        id: "1",
+        location: "Walmart",
+        date: "2024-01-15",
+        taxAmount: 5.25,
+      }),
     ];
 
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "",
-      setSearch: vi.fn(),
-      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
-      totalCount: items.length,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: items.map((item) => ({
+          item,
+          matches: [],
+          score: 0,
+          refIndex: 0,
+        })),
+        totalCount: items.length,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
 
     const { useReceipts } = await import("@/hooks/useReceipts");
-    vi.mocked(useReceipts).mockReturnValue(mockQueryResult({
-      data: items,
-      total: items.length,
-      isLoading: false,
-    }));
+    vi.mocked(useReceipts).mockReturnValue(
+      mockQueryResult({
+        data: items,
+        total: items.length,
+        isLoading: false,
+      }),
+    );
 
     renderWithProviders(<Receipts />);
     await user.click(screen.getByLabelText("Select Walmart"));
 
-    expect(
-      screen.getByRole("button", { name: /delete/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /delete/i })).toBeInTheDocument();
   });
 
   it("submits edit form and calls updateReceipt.mutate", async () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const mockMutate = vi.fn();
     const { useUpdateReceipt } = await import("@/hooks/useReceipts");
-    vi.mocked(useUpdateReceipt).mockReturnValue(mockMutationResult({
-      mutate: mockMutate,
-      isPending: false,
-    }));
+    vi.mocked(useUpdateReceipt).mockReturnValue(
+      mockMutationResult({
+        mutate: mockMutate,
+        isPending: false,
+      }),
+    );
 
     const items = [
-      mockReceiptResponse({ id: "1", location: "Walmart", date: "2024-01-15", taxAmount: 5.25 }),
+      mockReceiptResponse({
+        id: "1",
+        location: "Walmart",
+        date: "2024-01-15",
+        taxAmount: 5.25,
+      }),
     ];
 
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "",
-      setSearch: vi.fn(),
-      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
-      totalCount: items.length,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
-
-    const { usePagination } = await import("@/hooks/usePagination");
-    vi.mocked(usePagination).mockReturnValue({
-      paginatedItems: items,
-      currentPage: 1,
-      pageSize: 10,
-      totalItems: items.length,
-      totalPages: 1,
-      setPage: vi.fn(),
-      setPageSize: vi.fn(),
-    });
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: items.map((item) => ({
+          item,
+          matches: [],
+          score: 0,
+          refIndex: 0,
+        })),
+        totalCount: items.length,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
+    const { useReceipts } = await import("@/hooks/useReceipts");
+    vi.mocked(useReceipts).mockReturnValue(
+      mockQueryResult({ data: items, total: items.length, isLoading: false }),
+    );
 
     renderWithProviders(<Receipts />);
     await user.click(screen.getByRole("button", { name: /edit/i }));
@@ -814,10 +1027,12 @@ describe("Receipts", () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const mockMutate = vi.fn();
     const { useCreateReceipt } = await import("@/hooks/useReceipts");
-    vi.mocked(useCreateReceipt).mockReturnValue(mockMutationResult({
-      mutate: mockMutate,
-      isPending: false,
-    }));
+    vi.mocked(useCreateReceipt).mockReturnValue(
+      mockMutationResult({
+        mutate: mockMutate,
+        isPending: false,
+      }),
+    );
 
     renderWithProviders(<Receipts />);
     await user.click(screen.getByRole("button", { name: /quick add/i }));
@@ -842,20 +1057,31 @@ describe("Receipts", () => {
 
   it("renders NoResults when search returns no matches", async () => {
     const { useReceipts } = await import("@/hooks/useReceipts");
-    vi.mocked(useReceipts).mockReturnValue(mockQueryResult({
-      data: [mockReceiptResponse({ id: "1", location: "Walmart", date: "2024-01-15", taxAmount: 5.25 })],
-      isLoading: false,
-    }));
+    vi.mocked(useReceipts).mockReturnValue(
+      mockQueryResult({
+        data: [
+          mockReceiptResponse({
+            id: "1",
+            location: "Walmart",
+            date: "2024-01-15",
+            taxAmount: 5.25,
+          }),
+        ],
+        isLoading: false,
+      }),
+    );
 
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "xyz",
-      setSearch: vi.fn(),
-      results: [],
-      totalCount: 0,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "xyz",
+        setSearch: vi.fn(),
+        results: [],
+        totalCount: 0,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
 
     renderWithProviders(<Receipts />);
     expect(screen.getByText(/try fewer keywords/i)).toBeInTheDocument();
@@ -865,31 +1091,47 @@ describe("Receipts", () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const mockMutate = vi.fn();
     const { useDeleteReceipts } = await import("@/hooks/useReceipts");
-    vi.mocked(useDeleteReceipts).mockReturnValue(mockMutationResult({
-      mutate: mockMutate,
-      isPending: false,
-    }));
+    vi.mocked(useDeleteReceipts).mockReturnValue(
+      mockMutationResult({
+        mutate: mockMutate,
+        isPending: false,
+      }),
+    );
 
     const items = [
-      mockReceiptResponse({ id: "1", location: "Walmart", date: "2024-01-15", taxAmount: 5.25 }),
+      mockReceiptResponse({
+        id: "1",
+        location: "Walmart",
+        date: "2024-01-15",
+        taxAmount: 5.25,
+      }),
     ];
 
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "",
-      setSearch: vi.fn(),
-      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
-      totalCount: items.length,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: items.map((item) => ({
+          item,
+          matches: [],
+          score: 0,
+          refIndex: 0,
+        })),
+        totalCount: items.length,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
 
     const { useReceipts } = await import("@/hooks/useReceipts");
-    vi.mocked(useReceipts).mockReturnValue(mockQueryResult({
-      data: items,
-      total: items.length,
-      isLoading: false,
-    }));
+    vi.mocked(useReceipts).mockReturnValue(
+      mockQueryResult({
+        data: items,
+        total: items.length,
+        isLoading: false,
+      }),
+    );
 
     renderWithProviders(<Receipts />);
     await user.click(screen.getByLabelText("Select Walmart"));
@@ -911,26 +1153,45 @@ describe("Receipts", () => {
   it("toggles select all checkbox", async () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const items = [
-      mockReceiptResponse({ id: "1", location: "Walmart", date: "2024-01-15", taxAmount: 5.25 }),
-      mockReceiptResponse({ id: "2", location: "Chipotle", date: "2024-01-20", taxAmount: 1.50 }),
+      mockReceiptResponse({
+        id: "1",
+        location: "Walmart",
+        date: "2024-01-15",
+        taxAmount: 5.25,
+      }),
+      mockReceiptResponse({
+        id: "2",
+        location: "Chipotle",
+        date: "2024-01-20",
+        taxAmount: 1.5,
+      }),
     ];
 
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "",
-      setSearch: vi.fn(),
-      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
-      totalCount: items.length,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: items.map((item) => ({
+          item,
+          matches: [],
+          score: 0,
+          refIndex: 0,
+        })),
+        totalCount: items.length,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
 
     const { useReceipts } = await import("@/hooks/useReceipts");
-    vi.mocked(useReceipts).mockReturnValue(mockQueryResult({
-      data: items,
-      total: items.length,
-      isLoading: false,
-    }));
+    vi.mocked(useReceipts).mockReturnValue(
+      mockQueryResult({
+        data: items,
+        total: items.length,
+        isLoading: false,
+      }),
+    );
 
     renderWithProviders(<Receipts />);
     await user.click(screen.getByLabelText("Select all rows"));
@@ -946,37 +1207,58 @@ describe("Receipts", () => {
 
   it("renders YNAB sync status badges when data is available", async () => {
     const items = [
-      mockReceiptResponse({ id: "r1", location: "Walmart", date: "2024-01-15", taxAmount: 5.25 }),
-      mockReceiptResponse({ id: "r2", location: "Target", date: "2024-01-20", taxAmount: 3.50 }),
+      mockReceiptResponse({
+        id: "r1",
+        location: "Walmart",
+        date: "2024-01-15",
+        taxAmount: 5.25,
+      }),
+      mockReceiptResponse({
+        id: "r2",
+        location: "Target",
+        date: "2024-01-20",
+        taxAmount: 3.5,
+      }),
     ];
 
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "",
-      setSearch: vi.fn(),
-      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
-      totalCount: items.length,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: items.map((item) => ({
+          item,
+          matches: [],
+          score: 0,
+          refIndex: 0,
+        })),
+        totalCount: items.length,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
 
     const { useReceipts } = await import("@/hooks/useReceipts");
-    vi.mocked(useReceipts).mockReturnValue(mockQueryResult({
-      data: items,
-      total: items.length,
-      isLoading: false,
-    }));
+    vi.mocked(useReceipts).mockReturnValue(
+      mockQueryResult({
+        data: items,
+        total: items.length,
+        isLoading: false,
+      }),
+    );
 
     const { useReceiptYnabSyncStatuses } = await import("@/hooks/useYnab");
-    vi.mocked(useReceiptYnabSyncStatuses).mockReturnValue(mockQueryResult({
-      isLoading: false,
-      isSuccess: true,
-      status: "success",
-      statusMap: new Map([
-        ["r1", "synced"],
-        ["r2", "failed"],
-      ]),
-    }));
+    vi.mocked(useReceiptYnabSyncStatuses).mockReturnValue(
+      mockQueryResult({
+        isLoading: false,
+        isSuccess: true,
+        status: "success",
+        statusMap: new Map([
+          ["r1", "synced"],
+          ["r2", "failed"],
+        ]),
+      }),
+    );
 
     renderWithProviders(<Receipts />);
     expect(screen.getAllByText("YNAB").length).toBeGreaterThan(0);
@@ -985,28 +1267,44 @@ describe("Receipts", () => {
 
   it("renders the combined Status column header", async () => {
     const items = [
-      mockReceiptResponse({ id: "1", location: "Walmart", date: "2024-01-15", taxAmount: 5.25 }),
+      mockReceiptResponse({
+        id: "1",
+        location: "Walmart",
+        date: "2024-01-15",
+        taxAmount: 5.25,
+      }),
     ];
 
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "",
-      setSearch: vi.fn(),
-      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
-      totalCount: items.length,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: items.map((item) => ({
+          item,
+          matches: [],
+          score: 0,
+          refIndex: 0,
+        })),
+        totalCount: items.length,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
 
     const { useReceipts } = await import("@/hooks/useReceipts");
-    vi.mocked(useReceipts).mockReturnValue(mockQueryResult({
-      data: items,
-      total: items.length,
-      isLoading: false,
-    }));
+    vi.mocked(useReceipts).mockReturnValue(
+      mockQueryResult({
+        data: items,
+        total: items.length,
+        isLoading: false,
+      }),
+    );
 
     renderWithProviders(<Receipts />);
-    expect(screen.getByRole("columnheader", { name: "Status" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("columnheader", { name: "Status" }),
+    ).toBeInTheDocument();
   });
 
   it("opens create dialog on shortcut:new-item event", async () => {
@@ -1054,19 +1352,36 @@ describe("Receipts", () => {
   // data stays on screen (the global toast surfaces the transient failure).
   it("keeps the list visible when a background refetch fails but data is cached", async () => {
     const items = [
-      mockReceiptResponse({ id: "1", location: "Walmart", date: "2024-01-15", taxAmount: 5.25 }),
-      mockReceiptResponse({ id: "2", location: "Target", date: "2024-01-20", taxAmount: 3.5 }),
+      mockReceiptResponse({
+        id: "1",
+        location: "Walmart",
+        date: "2024-01-15",
+        taxAmount: 5.25,
+      }),
+      mockReceiptResponse({
+        id: "2",
+        location: "Target",
+        date: "2024-01-20",
+        taxAmount: 3.5,
+      }),
     ];
 
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "",
-      setSearch: vi.fn(),
-      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
-      totalCount: items.length,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: items.map((item) => ({
+          item,
+          matches: [],
+          score: 0,
+          refIndex: 0,
+        })),
+        totalCount: items.length,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
 
     const { useReceipts } = await import("@/hooks/useReceipts");
     vi.mocked(useReceipts).mockReturnValue(
@@ -1085,7 +1400,9 @@ describe("Receipts", () => {
 
     expect(screen.getByText("Walmart")).toBeInTheDocument();
     expect(screen.getByText("Target")).toBeInTheDocument();
-    expect(screen.queryByText(/couldn't load receipts/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/couldn't load receipts/i),
+    ).not.toBeInTheDocument();
   });
 
   // RECEIPTS-841: drill-down from Spending by Location forwards an
@@ -1153,33 +1470,67 @@ describe("Receipts", () => {
   it("keeps success=true Unknown receipts selected after a partial bulk YNAB push", async () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const items = [
-      mockReceiptResponse({ id: "1", location: "Walmart", date: "2024-01-15", taxAmount: 5.25 }),
-      mockReceiptResponse({ id: "2", location: "Target", date: "2024-01-20", taxAmount: 3.5 }),
+      mockReceiptResponse({
+        id: "1",
+        location: "Walmart",
+        date: "2024-01-15",
+        taxAmount: 5.25,
+      }),
+      mockReceiptResponse({
+        id: "2",
+        location: "Target",
+        date: "2024-01-20",
+        taxAmount: 3.5,
+      }),
     ];
 
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "",
-      setSearch: vi.fn(),
-      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
-      totalCount: items.length,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: items.map((item) => ({
+          item,
+          matches: [],
+          score: 0,
+          refIndex: 0,
+        })),
+        totalCount: items.length,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
 
     const { useReceipts } = await import("@/hooks/useReceipts");
-    vi.mocked(useReceipts).mockReturnValue(mockQueryResult({
-      data: items,
-      total: items.length,
-      isLoading: false,
-    }));
+    vi.mocked(useReceipts).mockReturnValue(
+      mockQueryResult({
+        data: items,
+        total: items.length,
+        isLoading: false,
+      }),
+    );
 
     const bulkMutate = vi.fn(
       (_ids: string[], opts?: { onSuccess?: (data: unknown) => void }) => {
         opts?.onSuccess?.({
           results: [
-            { receiptId: "1", result: { success: true, operationStatus: "synced", pushedTransactions: [] } },
-            { receiptId: "2", result: { success: true, operationStatus: "unknown", pushedTransactions: [], error: "review" } },
+            {
+              receiptId: "1",
+              result: {
+                success: true,
+                operationStatus: "synced",
+                pushedTransactions: [],
+              },
+            },
+            {
+              receiptId: "2",
+              result: {
+                success: true,
+                operationStatus: "unknown",
+                pushedTransactions: [],
+                error: "review",
+              },
+            },
           ],
         });
       },

@@ -16,8 +16,7 @@ vi.mock("@/lib/api-client", () => {
 });
 
 vi.mock("@/lib/auth", async (importOriginal) => ({
-  ...await importOriginal<typeof import("@/lib/auth")>(),
-  isAuthenticated: vi.fn(() => false),
+  ...(await importOriginal<typeof import("@/lib/auth")>()),
   getAccessToken: vi.fn(() => null),
   parseJwtPayload: vi.fn(() => null),
   setTokens: vi.fn(),
@@ -59,21 +58,19 @@ function TestConsumer() {
 
 describe("AuthProvider", () => {
   beforeEach(async () => {
-    const realAuth = await vi.importActual<typeof import("@/lib/auth")>("@/lib/auth");
+    const realAuth =
+      await vi.importActual<typeof import("@/lib/auth")>("@/lib/auth");
     realAuth.clearTokens();
     vi.clearAllMocks();
-    mockedAuth.isAuthenticated.mockReturnValue(false);
     mockedAuth.getAccessToken.mockReturnValue(null);
     mockedAuth.parseJwtPayload.mockReturnValue(null);
     mockedAuth.addTokenRefreshListener.mockReturnValue(vi.fn());
     mockedAuth.setTokens.mockImplementation((accessToken, refreshToken) => {
       mockedAuth.getAccessToken.mockReturnValue(accessToken);
-      mockedAuth.isAuthenticated.mockReturnValue(true);
       realAuth.setTokens(accessToken, refreshToken);
     });
     mockedAuth.clearTokens.mockImplementation(() => {
       mockedAuth.getAccessToken.mockReturnValue(null);
-      mockedAuth.isAuthenticated.mockReturnValue(false);
       realAuth.clearTokens();
     });
   });
@@ -92,7 +89,6 @@ describe("AuthProvider", () => {
 
   it("parses stored token on mount and provides user", () => {
     const token = makeJwt("user@test.com", "User");
-    mockedAuth.isAuthenticated.mockReturnValue(true);
     mockedAuth.getAccessToken.mockReturnValue(token);
     mockedAuth.parseJwtPayload.mockReturnValue({
       userId: "user-id",
@@ -112,7 +108,6 @@ describe("AuthProvider", () => {
 
   it("initializes mustResetPassword from JWT claim", () => {
     const token = makeJwt("admin@test.com", "Admin");
-    mockedAuth.isAuthenticated.mockReturnValue(true);
     mockedAuth.getAccessToken.mockReturnValue(token);
     mockedAuth.parseJwtPayload.mockReturnValue({
       userId: "admin-id",
@@ -132,10 +127,12 @@ describe("AuthProvider", () => {
 
   it("sets mustResetPassword when password-change-required listener fires", () => {
     let capturedListener: (() => void) | undefined;
-    mockedAuth.addPasswordChangeRequiredListener.mockImplementation((cb: () => void) => {
-      capturedListener = cb;
-      return vi.fn();
-    });
+    mockedAuth.addPasswordChangeRequiredListener.mockImplementation(
+      (cb: () => void) => {
+        capturedListener = cb;
+        return vi.fn();
+      },
+    );
 
     render(
       <AuthProvider>
@@ -189,7 +186,6 @@ describe("AuthProvider", () => {
 
   it("logout clears tokens and sets user to null", async () => {
     const token = makeJwt("user@test.com", "User");
-    mockedAuth.isAuthenticated.mockReturnValue(true);
     mockedAuth.getAccessToken.mockReturnValue(token);
     mockedAuth.parseJwtPayload.mockReturnValue({
       userId: "user-id",
@@ -220,18 +216,28 @@ describe("AuthProvider", () => {
 
   it("ends the local session immediately while the remote logout is pending", async () => {
     const token = makeJwt("user@test.com", "User");
-    mockedAuth.isAuthenticated.mockReturnValue(true);
     mockedAuth.getAccessToken.mockReturnValue(token);
     mockedAuth.parseJwtPayload.mockReturnValue({
-      userId: "user-id", email: "user@test.com", roles: ["User"], mustResetPassword: true,
+      userId: "user-id",
+      email: "user@test.com",
+      roles: ["User"],
+      mustResetPassword: true,
     });
     let finishLogout!: () => void;
-    const remoteLogout = new Promise<void>((resolve) => { finishLogout = resolve; });
+    const remoteLogout = new Promise<void>((resolve) => {
+      finishLogout = resolve;
+    });
     mockedClient.POST.mockImplementationOnce(() => remoteLogout);
-    render(<AuthProvider><TestConsumer /></AuthProvider>);
+    render(
+      <AuthProvider>
+        <TestConsumer />
+      </AuthProvider>,
+    );
 
     try {
-      await act(async () => { screen.getByTestId("logout").click(); });
+      await act(async () => {
+        screen.getByTestId("logout").click();
+      });
 
       expect(mockedAuth.clearTokens).toHaveBeenCalledOnce();
       expect(screen.getByTestId("user")).toHaveTextContent("null");
@@ -240,45 +246,78 @@ describe("AuthProvider", () => {
         headers: { Authorization: `Bearer ${token}` },
       });
     } finally {
-      await act(async () => { finishLogout(); await remoteLogout; });
+      await act(async () => {
+        finishLogout();
+        await remoteLogout;
+      });
     }
   });
 
   it("waits for remote logout before submitting a new login", async () => {
     const oldToken = makeJwt("alice@test.com", "User");
-    mockedAuth.isAuthenticated.mockReturnValue(true);
     mockedAuth.getAccessToken.mockReturnValue(oldToken);
     mockedAuth.parseJwtPayload.mockReturnValue({
-      userId: "alice-id", email: "alice@test.com", roles: ["User"], mustResetPassword: false,
+      userId: "alice-id",
+      email: "alice@test.com",
+      roles: ["User"],
+      mustResetPassword: false,
     });
     let finishLogout!: () => void;
-    const remoteLogout = new Promise<void>((resolve) => { finishLogout = resolve; });
+    const remoteLogout = new Promise<void>((resolve) => {
+      finishLogout = resolve;
+    });
     mockedClient.POST.mockImplementationOnce(() => remoteLogout);
     const newToken = makeJwt("bob@test.com", "User");
-    mockedClient.POST.mockResolvedValueOnce({ data: { accessToken: newToken, refreshToken: "bob-refresh", mustResetPassword: false } });
-    render(<AuthProvider><TestConsumer /></AuthProvider>);
+    mockedClient.POST.mockResolvedValueOnce({
+      data: {
+        accessToken: newToken,
+        refreshToken: "bob-refresh",
+        mustResetPassword: false,
+      },
+    });
+    render(
+      <AuthProvider>
+        <TestConsumer />
+      </AuthProvider>,
+    );
 
     try {
-      await act(async () => { screen.getByTestId("logout").click(); });
-      mockedAuth.parseJwtPayload.mockReturnValue({
-        userId: "bob-id", email: "bob@test.com", roles: ["User"], mustResetPassword: false,
+      await act(async () => {
+        screen.getByTestId("logout").click();
       });
-      await act(async () => { screen.getByTestId("login").click(); });
+      mockedAuth.parseJwtPayload.mockReturnValue({
+        userId: "bob-id",
+        email: "bob@test.com",
+        roles: ["User"],
+        mustResetPassword: false,
+      });
+      await act(async () => {
+        screen.getByTestId("login").click();
+      });
 
       expect(mockedClient.POST).toHaveBeenCalledTimes(1);
       expect(screen.getByTestId("user")).toHaveTextContent("null");
       expect(mockedAuth.setTokens).not.toHaveBeenCalled();
 
-      await act(async () => { finishLogout(); await remoteLogout; });
+      await act(async () => {
+        finishLogout();
+        await remoteLogout;
+      });
 
       expect(mockedClient.POST).toHaveBeenNthCalledWith(2, "/api/auth/login", {
         middleware: expect.any(Array),
         body: { email: "a@b.com", password: "pw" },
       });
-      expect(mockedAuth.setTokens).toHaveBeenCalledWith(newToken, "bob-refresh");
+      expect(mockedAuth.setTokens).toHaveBeenCalledWith(
+        newToken,
+        "bob-refresh",
+      );
       expect(screen.getByTestId("user")).toHaveTextContent("bob@test.com");
     } finally {
-      await act(async () => { finishLogout(); await remoteLogout; });
+      await act(async () => {
+        finishLogout();
+        await remoteLogout;
+      });
     }
   });
 
@@ -294,9 +333,13 @@ describe("AuthProvider", () => {
           <span data-testid="error-type">{error}</span>
           <button
             data-testid="login-catch"
-            onClick={() => ctx!.login("a@b.com", "pw").catch((e: unknown) =>
-              setError(e instanceof DOMException ? e.name : "other"),
-            )}
+            onClick={() =>
+              ctx!
+                .login("a@b.com", "pw")
+                .catch((e: unknown) =>
+                  setError(e instanceof DOMException ? e.name : "other"),
+                )
+            }
           />
         </div>
       );
@@ -327,9 +370,13 @@ describe("AuthProvider", () => {
           <span data-testid="error-type">{error}</span>
           <button
             data-testid="login-catch"
-            onClick={() => ctx!.login("a@b.com", "pw").catch((e: unknown) =>
-              setError(e instanceof TypeError ? e.message : "other"),
-            )}
+            onClick={() =>
+              ctx!
+                .login("a@b.com", "pw")
+                .catch((e: unknown) =>
+                  setError(e instanceof TypeError ? e.message : "other"),
+                )
+            }
           />
         </div>
       );
@@ -345,7 +392,9 @@ describe("AuthProvider", () => {
       screen.getByTestId("login-catch").click();
     });
 
-    expect(screen.getByTestId("error-type")).toHaveTextContent("Failed to fetch");
+    expect(screen.getByTestId("error-type")).toHaveTextContent(
+      "Failed to fetch",
+    );
   });
 
   it("token refresh listener updates user when new token is available", () => {
@@ -390,7 +439,6 @@ describe("AuthProvider", () => {
 
     // Start with a valid user
     const token = makeJwt("user@test.com", "User");
-    mockedAuth.isAuthenticated.mockReturnValue(true);
     mockedAuth.getAccessToken.mockReturnValue(token);
     mockedAuth.parseJwtPayload.mockReturnValue({
       userId: "user-id",
@@ -537,7 +585,6 @@ describe("AuthProvider", () => {
 
   it("logout clears tokens even when POST /api/auth/logout rejects", async () => {
     const token = makeJwt("user@test.com", "User");
-    mockedAuth.isAuthenticated.mockReturnValue(true);
     mockedAuth.getAccessToken.mockReturnValue(token);
     mockedAuth.parseJwtPayload.mockReturnValue({
       userId: "user-id",
@@ -564,8 +611,7 @@ describe("AuthProvider", () => {
     expect(screen.getByTestId("must-reset")).toHaveTextContent("false");
   });
 
-  it("provides null user when isAuthenticated but getAccessToken returns null", () => {
-    mockedAuth.isAuthenticated.mockReturnValue(true);
+  it("provides null user when getAccessToken returns null", () => {
     mockedAuth.getAccessToken.mockReturnValue(null);
 
     render(

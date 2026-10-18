@@ -7,41 +7,59 @@ import { useSessionMutation } from "@/hooks/useSessionMutation";
 import client from "@/lib/api-client";
 import { toast } from "sonner";
 
-export function useItemTemplates(offset = 0, limit = 50, sortBy?: string | null, sortDirection?: string | null, options: { enabled?: boolean; q?: string } = {}) {
+export function useItemTemplates(
+  offset = 0,
+  limit = 50,
+  sortBy?: string | null,
+  sortDirection?: string | null,
+  options: { enabled?: boolean; q?: string } = {},
+) {
   const { enabled = true, q } = options;
   // Trimmed to undefined so a whitespace-only box is the unfiltered list and does not mint a
   // separate cache entry from the empty one (RECEIPTS-930).
   const search = q?.trim() || undefined;
   const query = useQuery({
     ...localErrorPolicy.query,
-    queryKey: [...queryKeys.itemTemplates, "list", offset, limit, sortBy, sortDirection, search],
+    queryKey: [
+      ...queryKeys.itemTemplates,
+      "list",
+      offset,
+      limit,
+      sortBy,
+      sortDirection,
+      search,
+    ],
     enabled,
     queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/api/item-templates", {
         ...localErrorPolicy.request,
         signal,
-        params: { query: { offset, limit, sortBy: sortBy ?? undefined, sortDirection: (sortDirection ?? undefined) as "asc" | "desc" | undefined, q: search } },
+        params: {
+          query: {
+            offset,
+            limit,
+            sortBy: sortBy ?? undefined,
+            sortDirection: (sortDirection ?? undefined) as
+              | "asc"
+              | "desc"
+              | undefined,
+            q: search,
+          },
+        },
       });
       if (error) throw error;
       return data;
     },
   });
   const base = useStableQuery(query);
-  return useMemo(() => ({ ...base, data: query.data?.data, total: Number(query.data?.total ?? 0) }), [base, query.data]);
-}
-
-export function useItemTemplate(id: string | null) {
-  return useQuery({
-    queryKey: [...queryKeys.itemTemplates, id],
-    enabled: !!id,
-    queryFn: async () => {
-      const { data, error } = await client.GET("/api/item-templates/{id}", {
-        params: { path: { id: id! } },
-      });
-      if (error) throw error;
-      return data;
-    },
-  });
+  return useMemo(
+    () => ({
+      ...base,
+      data: query.data?.data,
+      total: Number(query.data?.total ?? 0),
+    }),
+    [base, query.data],
+  );
 }
 
 export function useCreateItemTemplate() {
@@ -109,14 +127,35 @@ export function useDeleteItemTemplates() {
       if (error) throw error;
     },
     onMutate: async (ids) => {
-      await queryClient.cancelQueries({ queryKey: [...queryKeys.itemTemplates] });
-      const previous = queryClient.getQueriesData<{ data: { id: string }[]; total: number }>({ queryKey: [...queryKeys.itemTemplates, "list"] });
+      await queryClient.cancelQueries({
+        queryKey: [...queryKeys.itemTemplates],
+      });
+      const previous = queryClient.getQueriesData<{
+        data: { id: string }[];
+        total: number;
+      }>({ queryKey: [...queryKeys.itemTemplates, "list"] });
       for (const [key] of previous) {
-        queryClient.setQueryData(key, (old: { data: { id: string }[]; total: number; offset: number; limit: number } | undefined) => {
-          if (!old?.data) return old;
-          const filtered = old.data.filter((item) => !ids.includes(item.id));
-          return { ...old, data: filtered, total: old.total - (old.data.length - filtered.length) };
-        });
+        queryClient.setQueryData(
+          key,
+          (
+            old:
+              | {
+                  data: { id: string }[];
+                  total: number;
+                  offset: number;
+                  limit: number;
+                }
+              | undefined,
+          ) => {
+            if (!old?.data) return old;
+            const filtered = old.data.filter((item) => !ids.includes(item.id));
+            return {
+              ...old,
+              data: filtered,
+              total: old.total - (old.data.length - filtered.length),
+            };
+          },
+        );
       }
       return { previous };
     },
@@ -146,14 +185,35 @@ export function useHideItemTemplate() {
       if (error) throw error;
     },
     onMutate: async (id) => {
-      await queryClient.cancelQueries({ queryKey: [...queryKeys.itemTemplates] });
-      const previous = queryClient.getQueriesData<{ data: { id: string }[]; total: number }>({ queryKey: [...queryKeys.itemTemplates, "list"] });
+      await queryClient.cancelQueries({
+        queryKey: [...queryKeys.itemTemplates],
+      });
+      const previous = queryClient.getQueriesData<{
+        data: { id: string }[];
+        total: number;
+      }>({ queryKey: [...queryKeys.itemTemplates, "list"] });
       for (const [key] of previous) {
-        queryClient.setQueryData(key, (old: { data: { id: string }[]; total: number; offset: number; limit: number } | undefined) => {
-          if (!old?.data) return old;
-          const filtered = old.data.filter((item) => item.id !== id);
-          return { ...old, data: filtered, total: old.total - (old.data.length - filtered.length) };
-        });
+        queryClient.setQueryData(
+          key,
+          (
+            old:
+              | {
+                  data: { id: string }[];
+                  total: number;
+                  offset: number;
+                  limit: number;
+                }
+              | undefined,
+          ) => {
+            if (!old?.data) return old;
+            const filtered = old.data.filter((item) => item.id !== id);
+            return {
+              ...old,
+              data: filtered,
+              total: old.total - (old.data.length - filtered.length),
+            };
+          },
+        );
       }
       return { previous };
     },
@@ -166,24 +226,55 @@ export function useHideItemTemplate() {
       invalidateDomainChange(queryClient, "item-template");
     },
     onSuccess: () => {
-      toast.success("Template hidden. You can restore it from the recycle bin.");
+      toast.success(
+        "Template hidden. You can restore it from the recycle bin.",
+      );
     },
   });
 }
 
-export function useDeletedItemTemplates(offset = 0, limit = 50, sortBy?: string | null, sortDirection?: string | null) {
+export function useDeletedItemTemplates(
+  offset = 0,
+  limit = 50,
+  sortBy?: string | null,
+  sortDirection?: string | null,
+) {
   const query = useQuery({
-    queryKey: [...queryKeys.itemTemplates, "deleted", offset, limit, sortBy, sortDirection],
+    queryKey: [
+      ...queryKeys.itemTemplates,
+      "deleted",
+      offset,
+      limit,
+      sortBy,
+      sortDirection,
+    ],
     queryFn: async () => {
       const { data, error } = await client.GET("/api/item-templates/deleted", {
-        params: { query: { offset, limit, sortBy: sortBy ?? undefined, sortDirection: (sortDirection ?? undefined) as "asc" | "desc" | undefined } },
+        params: {
+          query: {
+            offset,
+            limit,
+            sortBy: sortBy ?? undefined,
+            sortDirection: (sortDirection ?? undefined) as
+              | "asc"
+              | "desc"
+              | undefined,
+          },
+        },
       });
       if (error) throw error;
       return data;
     },
   });
   const base = useStableQuery(query);
-  return useMemo(() => ({ ...base, data: query.data?.data, total: Number(query.data?.total ?? 0) }), [base, query.data]);
+  return useMemo(
+    () => ({
+      ...base,
+      data: query.data?.data,
+      total: Number(query.data?.total ?? 0),
+    }),
+    [base, query.data],
+  );
 }
 
 export function useRestoreItemTemplate() {

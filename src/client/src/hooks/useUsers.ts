@@ -1,9 +1,6 @@
 import { useMemo } from "react";
 import { useStableQuery } from "@/hooks/useStableQuery";
-import {
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSessionMutation } from "@/hooks/useSessionMutation";
 import client, { attemptTokenRefresh } from "@/lib/api-client";
 import { toast } from "sonner";
@@ -21,28 +18,31 @@ export function useUsers(
     enabled,
     queryFn: async () => {
       const { data, error } = await client.GET("/api/users", {
-        params: { query: { offset, limit, sortBy: sortBy ?? undefined, sortDirection: (sortDirection ?? undefined) as "asc" | "desc" | undefined } },
+        params: {
+          query: {
+            offset,
+            limit,
+            sortBy: sortBy ?? undefined,
+            sortDirection: (sortDirection ?? undefined) as
+              | "asc"
+              | "desc"
+              | undefined,
+          },
+        },
       });
       if (error) throw error;
       return data;
     },
   });
   const base = useStableQuery(query);
-  return useMemo(() => ({ ...base, data: query.data?.data, total: Number(query.data?.total ?? 0) }), [base, query.data]);
-}
-
-export function useUser(userId: string | null) {
-  return useQuery({
-    queryKey: ["users", userId],
-    enabled: !!userId,
-    queryFn: async () => {
-      const { data, error } = await client.GET("/api/users/{userId}", {
-        params: { path: { userId: userId! } },
-      });
-      if (error) throw error;
-      return data;
-    },
-  });
+  return useMemo(
+    () => ({
+      ...base,
+      data: query.data?.data,
+      total: Number(query.data?.total ?? 0),
+    }),
+    [base, query.data],
+  );
 }
 
 export function useCreateUser() {

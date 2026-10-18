@@ -1,9 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import client from "@/lib/api-client";
-import type { components } from "@/generated/api";
 import { localErrorPolicy } from "@/lib/request-error-policy";
-
-export type YnabStatusResponse = components["schemas"]["YnabStatusResponse"];
 
 export function useYnabStatus() {
   return useQuery({

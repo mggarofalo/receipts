@@ -22,10 +22,10 @@ import { RootLayout } from "@/components/RootLayout";
 import { createAppQueryClient } from "@/lib/query-client";
 import { setTokens, clearTokens } from "@/lib/auth";
 import { clearServerErrorPageFlag } from "@/lib/server-error-bus";
-import { useReceiptYnabSyncStatuses, useYnabSyncStatus } from "@/hooks/useYnab";
+import { useReceiptYnabSyncStatuses } from "@/hooks/useYnab";
 import { mockReceiptListItemResponse } from "@/test/mock-api";
 import { YnabPushButton } from "./YnabPushButton";
-import { YnabMemoSyncCard } from "./YnabMemoSyncCard";
+import { YnabMemoSyncContent } from "./YnabMemoSyncContent";
 import { YnabBulkSyncCard } from "./YnabBulkSyncCard";
 import { ReceiptItemForm } from "./ReceiptItemForm";
 import {
@@ -44,7 +44,6 @@ let rows: components["schemas"]["ReceiptListItemResponse"][];
 let results: WireResult[];
 let pushBodies: unknown[];
 let resolveBodies: unknown[];
-let syncType: string | null;
 let statusFailure: boolean;
 let memoCalls: number;
 let suggestionRequests: { code: string | null; location: string | null }[];
@@ -125,10 +124,6 @@ const server = setupServer(
           })),
         }),
   ),
-  http.get("*/api/ynab/sync-status/:id", ({ request }) => {
-    syncType = new URL(request.url).searchParams.get("syncType");
-    return HttpResponse.json({ status: 404 }, { status: 404 });
-  }),
   http.get("*/api/receipts", () =>
     HttpResponse.json({
       data: rows,
@@ -139,7 +134,11 @@ const server = setupServer(
   ),
   http.post("*/api/ynab/push-transactions", async ({ request }) => {
     pushBodies.push(await request.json());
-    return HttpResponse.json({ success: true, operationStatus: "synced", pushedTransactions: [] });
+    return HttpResponse.json({
+      success: true,
+      operationStatus: "synced",
+      pushedTransactions: [],
+    });
   }),
   http.post("*/api/ynab/sync-memos", () => {
     memoCalls++;
@@ -190,16 +189,6 @@ function ReceiptPush() {
     />
   );
 }
-function TransactionStatus() {
-  const status = useYnabSyncStatus(receiptId);
-  return (
-    <p>
-      {status.isSuccess && status.data === null
-        ? "No existing sync record"
-        : "Reading sync record"}
-    </p>
-  );
-}
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
 afterAll(() => server.close());
 beforeEach(() => {
@@ -213,7 +202,6 @@ beforeEach(() => {
   results = [];
   pushBodies = [];
   resolveBodies = [];
-  syncType = null;
   statusFailure = false;
   memoCalls = 0;
   suggestionRequests = [];
@@ -313,12 +301,6 @@ it("retains unavailable status as a local failure and prohibits a push", async (
   expect(pushBodies).toEqual([]);
 });
 
-it("uses the documented transactionPush query literal and preserves404 as no record", async () => {
-  renderFeature(<TransactionStatus />);
-  expect(await screen.findByText("No existing sync record")).toBeVisible();
-  expect(syncType).toBe("transactionPush");
-});
-
 it("counts actual camel-case single memo outcomes and preserves friendly labels", async () => {
   const outcomes: WireOutcome[] = [
     "synced",
@@ -331,7 +313,7 @@ it("counts actual camel-case single memo outcomes and preserves friendly labels"
     "failed",
   ];
   results = outcomes.map(memoResult);
-  renderFeature(<YnabMemoSyncCard receiptId={receiptId} />);
+  renderFeature(<YnabMemoSyncContent receiptId={receiptId} />);
   await userEvent.click(
     await screen.findByRole("button", { name: "Sync Memos" }),
   );
@@ -354,7 +336,7 @@ it("counts actual camel-case single memo outcomes and preserves friendly labels"
 
 it("opens a real ambiguous wire result and sends the deliberately selected resolution", async () => {
   results = [memoResult("ambiguous")];
-  renderFeature(<YnabMemoSyncCard receiptId={receiptId} />);
+  renderFeature(<YnabMemoSyncContent receiptId={receiptId} />);
   await userEvent.click(
     await screen.findByRole("button", { name: "Sync Memos" }),
   );
@@ -395,7 +377,7 @@ it("counts camel-case bulk memo wire results without claiming zero successes", a
 });
 
 it("keeps a successful empty memo response distinct from enum failures", async () => {
-  renderFeature(<YnabMemoSyncCard receiptId={receiptId} />);
+  renderFeature(<YnabMemoSyncContent receiptId={receiptId} />);
   await userEvent.click(
     await screen.findByRole("button", { name: "Sync Memos" }),
   );

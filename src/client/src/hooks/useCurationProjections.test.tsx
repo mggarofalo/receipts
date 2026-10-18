@@ -1,6 +1,4 @@
-vi.hoisted(() =>
-  vi.stubEnv("VITE_API_URL", "http://curation-projections.test"),
-);
+import { useReceiptItems } from "./useReceiptItems";
 import { act, cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -11,7 +9,10 @@ import { renderWithProviders } from "@/test/test-utils";
 import { createAppQueryClient } from "@/lib/query-client";
 import { clearTokens } from "@/lib/auth";
 import { ReceiptItemsCard } from "@/components/ReceiptItemsCard";
-import { useReceiptItem } from "./useReceiptItems";
+vi.hoisted(() =>
+  vi.stubEnv("VITE_API_URL", "http://curation-projections.test"),
+);
+
 import { useSpendingByNormalizedDescription } from "./useSpendingByNormalizedDescription";
 import { useRenameMutation } from "./useNormalizedDescriptionActions";
 import { useRequeuePendingMutation } from "./useNormalizedDescriptionMaintenance";
@@ -78,15 +79,23 @@ const receiptRows = receiptIds.map((receiptId) => ({
   transactionTotal: 10,
 }));
 const server = setupServer(
-  http.get("*/api/receipt-items/item-1", () => {
+  http.get("*/api/receipt-items", () => {
     itemReads++;
     return HttpResponse.json({
-      id: "item-1",
-      description: "MILK RAW",
-      quantity: 1,
-      unitPrice: 10,
-      category: "Food",
-      normalizedDescriptionName: label === "(Not Normalized)" ? null : label,
+      data: [
+        {
+          id: "item-1",
+          description: "MILK RAW",
+          quantity: 1,
+          unitPrice: 10,
+          category: "Food",
+          normalizedDescriptionName:
+            label === "(Not Normalized)" ? null : label,
+        },
+      ],
+      total: 1,
+      offset: 0,
+      limit: 50,
     });
   }),
   http.get("*/api/reports/spending-by-normalized-description", () => {
@@ -187,17 +196,17 @@ afterEach(() => {
 
 function CurationViews({ remote }: { remote: boolean }) {
   const connection = useSignalR(remote);
-  const item = useReceiptItem("item-1");
+  const item = useReceiptItems();
   const report = useSpendingByNormalizedDescription();
   const rename = useRenameMutation();
   const requeue = useRequeuePendingMutation();
   return (
     <>
       <output aria-label="Connection">{connection.connectionState}</output>
-      {item.data && (
+      {item.data?.[0] && (
         <ReceiptItemsCard
           receiptId="receipt-1"
-          items={[item.data]}
+          items={[item.data?.[0]]}
           subtotal={10}
         />
       )}
@@ -326,13 +335,20 @@ function holdFirstResponse(
 it.each(["local", "remote", "same-session"] as const)(
   "replaces held initial item/report reads after %s normalized-description change",
   async (origin) => {
-    const item = holdFirstResponse("*/api/receipt-items/item-1", () => ({
-      id: "item-1",
-      description: "MILK RAW",
-      quantity: 1,
-      unitPrice: 10,
-      category: "Food",
-      normalizedDescriptionName: label,
+    const item = holdFirstResponse("*/api/receipt-items", () => ({
+      data: [
+        {
+          id: "item-1",
+          description: "MILK RAW",
+          quantity: 1,
+          unitPrice: 10,
+          category: "Food",
+          normalizedDescriptionName: label,
+        },
+      ],
+      total: 1,
+      offset: 0,
+      limit: 50,
     }));
     const report = holdFirstResponse(
       "*/api/reports/spending-by-normalized-description",
@@ -368,7 +384,15 @@ it.each(["local", "remote", "same-session"] as const)(
     try {
       await Promise.all([item.started.promise, report.started.promise]);
       expect(
-        queryClient.getQueryState(["receipt-items", "item-1"]),
+        queryClient.getQueryState([
+          "receipt-items",
+          "list",
+          0,
+          50,
+          undefined,
+          undefined,
+          undefined,
+        ]),
       ).toMatchObject({ data: undefined, fetchStatus: "fetching" });
       expect(
         queryClient.getQueriesData({
@@ -408,8 +432,16 @@ it.each(["local", "remote", "same-session"] as const)(
       expect(item.reads()).toBe(2);
       expect(report.reads()).toBe(2);
       expect(
-        queryClient.getQueryData(["receipt-items", "item-1"]),
-      ).toMatchObject({ normalizedDescriptionName: "Whole Milk" });
+        queryClient.getQueryData([
+          "receipt-items",
+          "list",
+          0,
+          50,
+          undefined,
+          undefined,
+          undefined,
+        ]),
+      ).toMatchObject({ data: [{ normalizedDescriptionName: "Whole Milk" }] });
     } finally {
       item.release.resolve();
       report.release.resolve();
@@ -551,9 +583,17 @@ it.each(["local", "remote", "same-session"] as const)(
         screen.getByRole("status", { name: "Spending bucket" }),
       ).toHaveTextContent(/^Whole Milk$/),
     );
-    expect(queryClient.getQueryData(["receipt-items", "item-1"])).toMatchObject(
-      { normalizedDescriptionName: "Whole Milk" },
-    );
+    expect(
+      queryClient.getQueryData([
+        "receipt-items",
+        "list",
+        0,
+        50,
+        undefined,
+        undefined,
+        undefined,
+      ]),
+    ).toMatchObject({ data: [{ normalizedDescriptionName: "Whole Milk" }] });
     expect(
       queryClient.getQueryState(["receipt-items", "inactive-fixture"])
         ?.isInvalidated,

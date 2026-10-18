@@ -405,6 +405,57 @@ describe("ReceiptDetail", () => {
     });
   });
 
+  it.each([
+    {
+      name: "unconfigured connection",
+      configured: false,
+      connectionLoading: false,
+      budgetLoading: false,
+    },
+    {
+      name: "pending connection",
+      configured: true,
+      connectionLoading: true,
+      budgetLoading: false,
+    },
+    {
+      name: "pending budget",
+      configured: true,
+      connectionLoading: false,
+      budgetLoading: true,
+    },
+  ])(
+    "keeps YNAB workflows unavailable with a $name",
+    async ({ configured, connectionLoading, budgetLoading }) => {
+      const { useTripByReceiptId } = await import("@/hooks/useTrips");
+      const {
+        useYnabConnectionStatus,
+        useSelectedYnabBudget,
+        useReceiptYnabSyncStatuses,
+      } = await import("@/hooks/useYnab");
+      vi.mocked(useTripByReceiptId).mockReturnValue(
+        mockQueryResult({ data: MOCK_TRIP }),
+      );
+      vi.mocked(useYnabConnectionStatus).mockReturnValue(
+        mockQueryResult({
+          isConfigured: configured,
+          isLoading: connectionLoading,
+        }),
+      );
+      vi.mocked(useSelectedYnabBudget).mockReturnValue({
+        selectedBudgetId: "budget-1",
+        isLoading: budgetLoading,
+      } as ReturnType<typeof useSelectedYnabBudget>);
+      renderWithRoutes("/receipts/r1");
+      expect(mockYnabReceiptCard).toHaveBeenCalledWith(
+        expect.objectContaining({ isAvailable: false }),
+      );
+      expect(useReceiptYnabSyncStatuses).toHaveBeenLastCalledWith(
+        ["r1"],
+        false,
+      );
+    },
+  );
   it("marks the unified YNAB card unavailable when no budget is selected", async () => {
     const { useTripByReceiptId } = await import("@/hooks/useTrips");
     vi.mocked(useTripByReceiptId).mockReturnValue(

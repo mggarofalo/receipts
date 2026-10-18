@@ -6,7 +6,7 @@ import { setupServer } from "msw/node";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { createAppQueryClient } from "@/lib/query-client";
 import { clearTokens, setTokens } from "@/lib/auth";
-import { useReceiptYnabSyncStatuses, useYnabSyncStatus } from "./useYnab";
+import { useReceiptYnabSyncStatuses } from "./useYnab";
 
 const id = "95000000-0000-4000-8000-000000000001";
 let failed = false;
@@ -66,22 +66,4 @@ it("retains the last successful receipt sync status and exposes a failed refetch
   });
   await waitFor(() => expect(result.current.isError).toBe(true));
   expect(result.current.statusMap.get(id)).toBe("synced");
-});
-
-it("does not turn transaction sync503 into a successful no-record result", async () => {
-  const { wrapper } = setup();
-  const { result } = renderHook(() => useYnabSyncStatus(id), { wrapper });
-  await waitFor(() => expect(result.current.isFetching).toBe(false), {
-    timeout: 3000,
-  });
-  expect(result.current.isError).toBe(true);
-  expect(result.current.data).not.toBeNull();
-});
-
-it("preserves documented transaction sync404 as a successful no-record control", async () => {
-  transactionStatus = 404;
-  const { wrapper } = setup();
-  const { result } = renderHook(() => useYnabSyncStatus(id), { wrapper });
-  await waitFor(() => expect(result.current.isSuccess).toBe(true));
-  expect(result.current.data).toBeNull();
 });

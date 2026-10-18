@@ -90,10 +90,6 @@ export function formatDecimal(value: number, decimals = 2): string {
   return value.toFixed(decimals);
 }
 
-export function parseCurrencyInput(raw: string): string {
-  return raw.replace(/[^0-9.]/g, "").replace(/(\..*)\./g, "$1");
-}
-
 /**
  * Parse and evaluate a simple arithmetic expression containing +, -, *, /
  * with standard operator precedence and optional parentheses.

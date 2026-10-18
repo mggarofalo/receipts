@@ -76,27 +76,41 @@ vi.mock("@/hooks/useListKeyboardNav", () => ({
     focusedId: null,
     setFocusedIndex: vi.fn(),
     tableRef: { current: null },
-    containerProps: { role: "grid" as const, tabIndex: 0, "aria-label": "list", "aria-activedescendant": undefined },
-    getRowProps: (id: string) => ({ id: `list-row-${id}`, role: "row" as const }),
-  })),
-}));
-
-vi.mock("@/hooks/usePagination", () => ({
-  usePagination: vi.fn(() => ({
-    paginatedItems: [],
-    currentPage: 1,
-    pageSize: 10,
-    totalItems: 0,
-    totalPages: 1,
-    setPage: vi.fn(),
-    setPageSize: vi.fn(),
+    containerProps: {
+      role: "grid" as const,
+      tabIndex: 0,
+      "aria-label": "list",
+      "aria-activedescendant": undefined,
+    },
+    getRowProps: (id: string) => ({
+      id: `list-row-${id}`,
+      role: "row" as const,
+    }),
   })),
 }));
 
 const ITEMS = [
-  { id: "1", name: "Dairy", categoryId: "c1", description: "Dairy products", isActive: true },
-  { id: "2", name: "Bakery", categoryId: "c1", description: "Baked goods", isActive: true },
-  { id: "3", name: "Electronics", categoryId: "c2", description: null, isActive: true },
+  {
+    id: "1",
+    name: "Dairy",
+    categoryId: "c1",
+    description: "Dairy products",
+    isActive: true,
+  },
+  {
+    id: "2",
+    name: "Bakery",
+    categoryId: "c1",
+    description: "Baked goods",
+    isActive: true,
+  },
+  {
+    id: "3",
+    name: "Electronics",
+    categoryId: "c2",
+    description: null,
+    isActive: true,
+  },
 ];
 
 const CATEGORIES = [

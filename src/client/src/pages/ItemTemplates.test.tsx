@@ -116,18 +116,6 @@ vi.mock("@/hooks/useSubcategories", () => ({
   })),
 }));
 
-vi.mock("@/hooks/usePagination", () => ({
-  usePagination: vi.fn(() => ({
-    paginatedItems: [],
-    currentPage: 1,
-    pageSize: 10,
-    totalItems: 0,
-    totalPages: 1,
-    setPage: vi.fn(),
-    setPageSize: vi.fn(),
-  })),
-}));
-
 describe("ItemTemplates", () => {
   it("renders the page heading", () => {
     renderWithProviders(<ItemTemplates />);
@@ -263,17 +251,10 @@ describe("ItemTemplates", () => {
         clearSearch: vi.fn(),
       }),
     );
-
-    const { usePagination } = await import("@/hooks/usePagination");
-    vi.mocked(usePagination).mockReturnValue({
-      paginatedItems: items,
-      currentPage: 1,
-      pageSize: 10,
-      totalItems: items.length,
-      totalPages: 1,
-      setPage: vi.fn(),
-      setPageSize: vi.fn(),
-    });
+    const { useItemTemplates } = await import("@/hooks/useItemTemplates");
+    vi.mocked(useItemTemplates).mockReturnValue(
+      mockQueryResult({ data: items, total: items.length, isLoading: false }),
+    );
 
     renderWithProviders(<ItemTemplates />);
     await user.click(screen.getByRole("button", { name: /edit/i }));
@@ -452,17 +433,10 @@ describe("ItemTemplates", () => {
         clearSearch: vi.fn(),
       }),
     );
-
-    const { usePagination } = await import("@/hooks/usePagination");
-    vi.mocked(usePagination).mockReturnValue({
-      paginatedItems: items,
-      currentPage: 1,
-      pageSize: 10,
-      totalItems: items.length,
-      totalPages: 1,
-      setPage: vi.fn(),
-      setPageSize: vi.fn(),
-    });
+    const { useItemTemplates } = await import("@/hooks/useItemTemplates");
+    vi.mocked(useItemTemplates).mockReturnValue(
+      mockQueryResult({ data: items, total: items.length, isLoading: false }),
+    );
 
     renderWithProviders(<ItemTemplates />);
     await user.click(screen.getByRole("button", { name: /edit/i }));

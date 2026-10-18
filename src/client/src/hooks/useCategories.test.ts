@@ -21,7 +21,6 @@ import { toast } from "sonner";
 import {
   useCategories,
   useAllCategories,
-  useCategory,
   useCreateCategory,
   useUpdateCategory,
 } from "./useCategories";
@@ -31,7 +30,11 @@ function createWrapper() {
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
   return function Wrapper({ children }: { children: ReactNode }) {
-    return createElement(QueryClientProvider, { client: queryClient }, children);
+    return createElement(
+      QueryClientProvider,
+      { client: queryClient },
+      children,
+    );
   };
 }
 
@@ -42,7 +45,10 @@ beforeEach(() => {
 describe("useCategories", () => {
   it("list query returns data on success", async () => {
     const categories = [{ id: "1", name: "Food", description: "Groceries" }];
-    (client.GET as Mock).mockResolvedValue({ data: { data: categories, total: 1, offset: 0, limit: 50 }, error: undefined });
+    (client.GET as Mock).mockResolvedValue({
+      data: { data: categories, total: 1, offset: 0, limit: 50 },
+      error: undefined,
+    });
 
     const { result } = renderHook(() => useCategories(), {
       wrapper: createWrapper(),
@@ -56,12 +62,20 @@ describe("useCategories", () => {
   });
 
   it("list query passes isActive filter when provided", async () => {
-    const categories = [{ id: "1", name: "Food", description: "Groceries", isActive: true }];
-    (client.GET as Mock).mockResolvedValue({ data: { data: categories, total: 1, offset: 0, limit: 50 }, error: undefined });
-
-    const { result } = renderHook(() => useCategories(0, 50, null, null, true), {
-      wrapper: createWrapper(),
+    const categories = [
+      { id: "1", name: "Food", description: "Groceries", isActive: true },
+    ];
+    (client.GET as Mock).mockResolvedValue({
+      data: { data: categories, total: 1, offset: 0, limit: 50 },
+      error: undefined,
     });
+
+    const { result } = renderHook(
+      () => useCategories(0, 50, null, null, true),
+      {
+        wrapper: createWrapper(),
+      },
+    );
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(client.GET).toHaveBeenCalledWith("/api/categories", {
@@ -71,11 +85,17 @@ describe("useCategories", () => {
 
   it("list query omits isActive when null", async () => {
     const categories = [{ id: "1", name: "Food", description: "Groceries" }];
-    (client.GET as Mock).mockResolvedValue({ data: { data: categories, total: 1, offset: 0, limit: 50 }, error: undefined });
-
-    const { result } = renderHook(() => useCategories(0, 50, null, null, null), {
-      wrapper: createWrapper(),
+    (client.GET as Mock).mockResolvedValue({
+      data: { data: categories, total: 1, offset: 0, limit: 50 },
+      error: undefined,
     });
+
+    const { result } = renderHook(
+      () => useCategories(0, 50, null, null, null),
+      {
+        wrapper: createWrapper(),
+      },
+    );
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(client.GET).toHaveBeenCalledWith("/api/categories", {
@@ -84,7 +104,9 @@ describe("useCategories", () => {
   });
 
   it("list query trims q, sends it to the API, and refetches for a new q", async () => {
-    (client.GET as Mock).mockResolvedValue({ data: { data: [], total: 0, offset: 0, limit: 50 } });
+    (client.GET as Mock).mockResolvedValue({
+      data: { data: [], total: 0, offset: 0, limit: 50 },
+    });
     const { result, rerender } = renderHook(
       ({ q }) => useCategories(0, 50, null, null, null, { q }),
       { initialProps: { q: "  food  " }, wrapper: createWrapper() },
@@ -118,19 +140,32 @@ describe("useCategories", () => {
     expect(result.current.data).toEqual(categories);
     expect(client.GET).toHaveBeenCalledTimes(1);
     expect(client.GET).toHaveBeenCalledWith("/api/categories", {
-      params: { query: { offset: 0, limit: 500, sortBy: "name", sortDirection: "asc" } },
+      params: {
+        query: { offset: 0, limit: 500, sortBy: "name", sortDirection: "asc" },
+      },
       middleware: expect.any(Array),
       signal: expect.any(AbortSignal),
     });
   });
 
   it("useAllCategories auto-paginates across multiple pages", async () => {
-    const pageOne = Array.from({ length: 500 }, (_, i) => ({ id: `${i}`, name: `Cat ${i}` }));
-    const pageTwo = Array.from({ length: 100 }, (_, i) => ({ id: `${500 + i}`, name: `Cat ${500 + i}` }));
+    const pageOne = Array.from({ length: 500 }, (_, i) => ({
+      id: `${i}`,
+      name: `Cat ${i}`,
+    }));
+    const pageTwo = Array.from({ length: 100 }, (_, i) => ({
+      id: `${500 + i}`,
+      name: `Cat ${500 + i}`,
+    }));
     (client.GET as Mock).mockImplementation((_path, opts) => {
       const offset = opts.params.query.offset;
       return Promise.resolve({
-        data: { data: offset === 0 ? pageOne : pageTwo, total: 600, offset, limit: 500 },
+        data: {
+          data: offset === 0 ? pageOne : pageTwo,
+          total: 600,
+          offset,
+          limit: 500,
+        },
         error: undefined,
       });
     });
@@ -143,38 +178,31 @@ describe("useCategories", () => {
     expect(result.current.data).toHaveLength(600);
     expect(client.GET).toHaveBeenCalledTimes(2);
     expect(client.GET).toHaveBeenLastCalledWith("/api/categories", {
-      params: { query: { offset: 500, limit: 500, sortBy: "name", sortDirection: "asc", isActive: true } },
+      params: {
+        query: {
+          offset: 500,
+          limit: 500,
+          sortBy: "name",
+          sortDirection: "asc",
+          isActive: true,
+        },
+      },
       middleware: expect.any(Array),
       signal: expect.any(AbortSignal),
     });
   });
 
-  it("single query is disabled when id is null", () => {
-    const { result } = renderHook(() => useCategory(null), {
-      wrapper: createWrapper(),
-    });
-
-    expect(result.current.data).toBeUndefined();
-    expect(result.current.fetchStatus).toBe("idle");
-    expect(client.GET).not.toHaveBeenCalled();
-  });
-
-  it("single query fetches data when id is provided", async () => {
-    const category = { id: "1", name: "Food", description: "Groceries" };
-    (client.GET as Mock).mockResolvedValue({ data: category, error: undefined });
-
-    const { result } = renderHook(() => useCategory("1"), {
-      wrapper: createWrapper(),
-    });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data).toEqual(category);
-  });
-
   it("create mutation calls POST and shows toast on success", async () => {
-    const newCategory = { name: "Travel", description: "Business travel", isActive: true };
+    const newCategory = {
+      name: "Travel",
+      description: "Business travel",
+      isActive: true,
+    };
     const created = { id: "2", ...newCategory };
-    (client.POST as Mock).mockResolvedValue({ data: created, error: undefined });
+    (client.POST as Mock).mockResolvedValue({
+      data: created,
+      error: undefined,
+    });
 
     const { result } = renderHook(() => useCreateCategory(), {
       wrapper: createWrapper(),
@@ -182,12 +210,20 @@ describe("useCategories", () => {
 
     await result.current.mutateAsync(newCategory);
 
-    expect(client.POST).toHaveBeenCalledWith("/api/categories", { middleware: expect.any(Array), body: newCategory });
+    expect(client.POST).toHaveBeenCalledWith("/api/categories", {
+      middleware: expect.any(Array),
+      body: newCategory,
+    });
     expect(toast.success).toHaveBeenCalledWith("Category created");
   });
 
   it("update mutation calls PUT and shows toast on success", async () => {
-    const updated = { id: "1", name: "Food & Drink", description: "Updated", isActive: true };
+    const updated = {
+      id: "1",
+      name: "Food & Drink",
+      description: "Updated",
+      isActive: true,
+    };
     (client.PUT as Mock).mockResolvedValue({ error: undefined });
 
     const { result } = renderHook(() => useUpdateCategory(), {
@@ -202,5 +238,4 @@ describe("useCategories", () => {
     });
     expect(toast.success).toHaveBeenCalledWith("Category updated");
   });
-
 });
