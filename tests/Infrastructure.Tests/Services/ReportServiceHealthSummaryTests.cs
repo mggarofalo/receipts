@@ -10,6 +10,29 @@ namespace Infrastructure.Tests.Services;
 public class ReportServiceHealthSummaryTests
 {
 	[Fact]
+	public async Task GetHealthSummaryAsync_ExcludesOnlyFullyAcceptedGroups()
+	{
+		IDbContextFactory<ApplicationDbContext> factory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid[] ids = [Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()];
+		await using (ApplicationDbContext context = factory.CreateDbContext())
+		{
+			foreach (Guid id in ids)
+			{
+				context.Receipts.Add(new ReceiptEntity { Id = id, Location = "Same Store", Date = new(2025, 3, 1) });
+			}
+
+			await context.SaveChangesAsync();
+		}
+		ReportService service = new(factory);
+		await new DuplicateWorkflowFixture(factory).AcceptDuplicateGroupAsync([ids[0], ids[1]], CancellationToken.None);
+		(await service.GetHealthSummaryAsync(CancellationToken.None)).DuplicateGroupCount.Should().Be(1);
+		await new DuplicateWorkflowFixture(factory).AcceptDuplicateGroupAsync([.. ids], CancellationToken.None);
+		(await service.GetHealthSummaryAsync(CancellationToken.None)).DuplicateGroupCount.Should().Be(0);
+		await new DuplicateWorkflowFixture(factory).UnacceptDuplicateGroupAsync([ids[0], ids[1]], CancellationToken.None);
+		(await service.GetHealthSummaryAsync(CancellationToken.None)).DuplicateGroupCount.Should().Be(1);
+	}
+
+	[Fact]
 	public async Task GetHealthSummaryAsync_ReturnsZerosForAnEmptyDatabase()
 	{
 		// Arrange

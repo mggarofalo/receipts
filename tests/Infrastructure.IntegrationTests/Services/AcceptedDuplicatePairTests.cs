@@ -88,7 +88,7 @@ public class AcceptedDuplicatePairTests(PostgresFixture fixture)
 		Guid cardId = Guid.NewGuid();
 		(Guid lower, Guid higher) = await SeedTwoReceiptsAsync(accountId, cardId);
 
-		ReportService service = new(new FixtureDbContextFactory(fixture));
+		DuplicateWorkflowFixture service = new(new FixtureDbContextFactory(fixture));
 
 		// Act — submit highest-first.
 		int accepted = await service.AcceptDuplicateGroupAsync([higher, lower], CancellationToken.None);
@@ -136,7 +136,7 @@ public class AcceptedDuplicatePairTests(PostgresFixture fixture)
 		Guid cardId = Guid.NewGuid();
 		(Guid lower, Guid higher) = await SeedTwoReceiptsAsync(accountId, cardId);
 
-		ReportService service = new(new FixtureDbContextFactory(fixture));
+		DuplicateWorkflowFixture service = new(new FixtureDbContextFactory(fixture));
 
 		// Act — accept, un-accept, accept again, all through the real write paths.
 		await service.AcceptDuplicateGroupAsync([lower, higher], CancellationToken.None);
@@ -159,7 +159,7 @@ public class AcceptedDuplicatePairTests(PostgresFixture fixture)
 		Guid cardId = Guid.NewGuid();
 		(Guid lower, Guid higher) = await SeedTwoReceiptsAsync(accountId, cardId);
 
-		ReportService service = new(new FixtureDbContextFactory(fixture));
+		DuplicateWorkflowFixture service = new(new FixtureDbContextFactory(fixture));
 
 		int first = await service.AcceptDuplicateGroupAsync([lower, higher], CancellationToken.None);
 		int second = await service.AcceptDuplicateGroupAsync([lower, higher], CancellationToken.None);
@@ -182,7 +182,7 @@ public class AcceptedDuplicatePairTests(PostgresFixture fixture)
 		ids.Sort();
 		(Guid a, Guid b, Guid c, Guid d) = (ids[0], ids[1], ids[2], ids[3]);
 
-		ReportService service = new(new FixtureDbContextFactory(fixture));
+		DuplicateWorkflowFixture service = new(new FixtureDbContextFactory(fixture));
 
 		int firstGroup = await service.AcceptDuplicateGroupAsync([a, b, c], CancellationToken.None);
 		int secondGroup = await service.AcceptDuplicateGroupAsync([b, c, d], CancellationToken.None);
@@ -209,7 +209,7 @@ public class AcceptedDuplicatePairTests(PostgresFixture fixture)
 		List<Guid> ids = await SeedReceiptsAsync(accountId, cardId, count: 3);
 		ids.Sort();
 
-		ReportService service = new(new FixtureDbContextFactory(fixture));
+		DuplicateWorkflowFixture service = new(new FixtureDbContextFactory(fixture));
 		await service.AcceptDuplicateGroupAsync(ids, CancellationToken.None);
 
 		await using (ApplicationDbContext seeded = fixture.CreateDbContext())
@@ -250,7 +250,7 @@ public class AcceptedDuplicatePairTests(PostgresFixture fixture)
 		Guid cardId = Guid.NewGuid();
 		(Guid lower, Guid higher) = await SeedTwoReceiptsAsync(accountId, cardId);
 
-		ReportService service = new(new FixtureDbContextFactory(fixture));
+		DuplicateWorkflowFixture service = new(new FixtureDbContextFactory(fixture));
 		await service.AcceptDuplicateGroupAsync([lower, higher], CancellationToken.None);
 		await service.UnacceptDuplicateGroupAsync([lower, higher], CancellationToken.None);
 
@@ -285,7 +285,7 @@ public class AcceptedDuplicatePairTests(PostgresFixture fixture)
 		Guid cardId = Guid.NewGuid();
 		(Guid lower, Guid higher) = await SeedTwoReceiptsAsync(accountId, cardId);
 
-		ReportService service = new(new FixtureDbContextFactory(fixture));
+		DuplicateWorkflowFixture service = new(new FixtureDbContextFactory(fixture));
 		await service.AcceptDuplicateGroupAsync([lower, higher], CancellationToken.None);
 
 		// Act
@@ -337,7 +337,7 @@ public class AcceptedDuplicatePairTests(PostgresFixture fixture)
 		List<Guid> ids = await SeedReceiptsAsync(accountId, cardId, count: 3);
 		ids.Sort();
 
-		ReportService service = new(new FixtureDbContextFactory(fixture));
+		DuplicateWorkflowFixture service = new(new FixtureDbContextFactory(fixture));
 		await service.AcceptDuplicateGroupAsync(ids, CancellationToken.None);
 
 		// Soft-delete the third receipt so it can no longer be displayed.
@@ -376,7 +376,7 @@ public class AcceptedDuplicatePairTests(PostgresFixture fixture)
 		ids.Sort();
 		(Guid a, Guid b, Guid c, Guid d) = (ids[0], ids[1], ids[2], ids[3]);
 
-		ReportService service = new(new FixtureDbContextFactory(fixture));
+		DuplicateWorkflowFixture service = new(new FixtureDbContextFactory(fixture));
 		await service.AcceptDuplicateGroupAsync([a, b], CancellationToken.None);
 		await service.AcceptDuplicateGroupAsync([c, d], CancellationToken.None);
 		await service.AcceptDuplicateGroupAsync([a, b, c, d], CancellationToken.None);
@@ -407,7 +407,7 @@ public class AcceptedDuplicatePairTests(PostgresFixture fixture)
 		Guid cardId = Guid.NewGuid();
 		(Guid lower, Guid higher) = await SeedTwoReceiptsAsync(accountId, cardId);
 
-		ReportService service = new(new FixtureDbContextFactory(fixture));
+		DuplicateWorkflowFixture service = new(new FixtureDbContextFactory(fixture));
 
 		DuplicateDetectionResult before = await service.GetDuplicatesAsync(
 			"dateAndLocation", "exact", 0m, includeAccepted: false, CancellationToken.None);
@@ -432,7 +432,7 @@ public class AcceptedDuplicatePairTests(PostgresFixture fixture)
 		Guid cardId = Guid.NewGuid();
 		(Guid lower, Guid higher) = await SeedTwoReceiptsAsync(accountId, cardId);
 
-		ReportService service = new(new FixtureDbContextFactory(fixture));
+		DuplicateWorkflowFixture service = new(new FixtureDbContextFactory(fixture));
 		await service.AcceptDuplicateGroupAsync([lower, higher], CancellationToken.None);
 
 		AcceptedDuplicatesResult result = await service.GetAcceptedDuplicatesAsync(CancellationToken.None);
@@ -464,7 +464,7 @@ public class AcceptedDuplicatePairTests(PostgresFixture fixture)
 		Guid cardId = Guid.NewGuid();
 		List<Guid> ids = await SeedReceiptsAsync(accountId, cardId, count: 4);
 
-		ReportService service = new(new FixtureDbContextFactory(fixture));
+		DuplicateWorkflowFixture service = new(new FixtureDbContextFactory(fixture));
 
 		List<Guid> forward = [.. ids];
 		List<Guid> reversed = [.. ids];
@@ -494,7 +494,7 @@ public class AcceptedDuplicatePairTests(PostgresFixture fixture)
 
 		async Task<int> RunAsync(List<Guid> order)
 		{
-			ReportService scoped = new(new FixtureDbContextFactory(fixture));
+			DuplicateWorkflowFixture scoped = new(new FixtureDbContextFactory(fixture));
 			return await scoped.AcceptDuplicateGroupAsync(order, CancellationToken.None);
 		}
 
@@ -517,10 +517,10 @@ public class AcceptedDuplicatePairTests(PostgresFixture fixture)
 		reversed.Reverse();
 
 		Task<int> first = Task.Run(() =>
-			new ReportService(new FixtureDbContextFactory(fixture))
+			new DuplicateWorkflowFixture(new FixtureDbContextFactory(fixture))
 				.AcceptDuplicateGroupAsync(ids, CancellationToken.None));
 		Task<int> second = Task.Run(() =>
-			new ReportService(new FixtureDbContextFactory(fixture))
+			new DuplicateWorkflowFixture(new FixtureDbContextFactory(fixture))
 				.AcceptDuplicateGroupAsync(reversed, CancellationToken.None));
 
 		int[] accepted = await Task.WhenAll(first, second);
