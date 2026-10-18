@@ -6,6 +6,7 @@ using Application.Commands.Adjustment.Create;
 using Application.Commands.Adjustment.Delete;
 using Application.Commands.Adjustment.Restore;
 using Application.Commands.Adjustment.Update;
+using Application.Exceptions;
 using Application.Models;
 using Application.Queries.Core.Adjustment;
 using Domain.Core;
@@ -307,7 +308,7 @@ public class AdjustmentsControllerTests
 		CreateAdjustmentRequest controllerInput = AdjustmentDtoGenerator.GenerateCreateRequest();
 
 		// Act
-		Ok<AdjustmentResponse> result = await _controller.CreateAdjustment(controllerInput, receiptId);
+		Ok<AdjustmentResponse> result = Assert.IsType<Ok<AdjustmentResponse>>((await _controller.CreateAdjustment(controllerInput, receiptId)).Result);
 
 		// Assert
 		AdjustmentResponse actualReturn = result.Value!;
@@ -346,7 +347,7 @@ public class AdjustmentsControllerTests
 			.ReturnsAsync(true);
 
 		// Act
-		Results<NoContent, NotFound> result = await _controller.UpdateAdjustment(controllerInput, id);
+		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.UpdateAdjustment(controllerInput, id);
 
 		// Assert
 		Assert.IsType<NoContent>(result.Result);
@@ -365,7 +366,7 @@ public class AdjustmentsControllerTests
 			.ReturnsAsync(false);
 
 		// Act
-		Results<NoContent, NotFound> result = await _controller.UpdateAdjustment(controllerInput, id);
+		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.UpdateAdjustment(controllerInput, id);
 
 		// Assert
 		Assert.IsType<NotFound>(result.Result);
@@ -386,7 +387,7 @@ public class AdjustmentsControllerTests
 			.ReturnsAsync(true);
 
 		// Act
-		Results<NoContent, NotFound> result = await _controller.UpdateAdjustment(controllerInput, routeId);
+		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.UpdateAdjustment(controllerInput, routeId);
 
 		// Assert — the dispatched command targets the route id, and the notification names it too
 		Assert.IsType<NoContent>(result.Result);
@@ -480,7 +481,7 @@ public class AdjustmentsControllerTests
 			.ReturnsAsync(true);
 
 		// Act
-		Results<NoContent, NotFound> result = await _controller.RestoreAdjustment(id);
+		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.RestoreAdjustment(id);
 
 		// Assert
 		Assert.IsType<NoContent>(result.Result);
@@ -497,7 +498,7 @@ public class AdjustmentsControllerTests
 			.ReturnsAsync(false);
 
 		// Act
-		Results<NoContent, NotFound> result = await _controller.RestoreAdjustment(id);
+		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.RestoreAdjustment(id);
 
 		// Assert
 		Assert.IsType<NotFound>(result.Result);
@@ -518,5 +519,47 @@ public class AdjustmentsControllerTests
 
 		// Assert
 		await act.Should().ThrowAsync<Exception>();
+	}
+
+	[Fact]
+	public async Task CreateAdjustment_InactiveParentConflict_Returns409WithoutNotification()
+	{
+		const string detail = "The receipt is no longer active. Restore or reload it before adding or restoring its children.";
+		_mediatorMock.Setup(m => m.Send(It.IsAny<CreateAdjustmentCommand>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new ConcurrencyConflictException(detail));
+		Microsoft.AspNetCore.Http.IResult result = await _controller.CreateAdjustment(AdjustmentDtoGenerator.GenerateCreateRequest(), Guid.NewGuid());
+		var response = result is Microsoft.AspNetCore.Http.INestedHttpResult nested ? nested.Result : result;
+		var conflict = Assert.IsType<Conflict<ProblemDetails>>(response);
+		conflict.Value!.Status.Should().Be(409);
+		conflict.Value.Detail.Should().Be(detail);
+		_notifierMock.VerifyNoOtherCalls();
+	}
+
+	[Fact]
+	public async Task RestoreAdjustment_InactiveParentConflict_Returns409WithoutNotification()
+	{
+		const string detail = "The receipt is no longer active. Restore or reload it before adding or restoring its children.";
+		_mediatorMock.Setup(m => m.Send(It.IsAny<RestoreAdjustmentCommand>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new ConcurrencyConflictException(detail));
+		Microsoft.AspNetCore.Http.IResult result = await _controller.RestoreAdjustment(Guid.NewGuid());
+		var response = result is Microsoft.AspNetCore.Http.INestedHttpResult nested ? nested.Result : result;
+		var conflict = Assert.IsType<Conflict<ProblemDetails>>(response);
+		conflict.Value!.Status.Should().Be(409);
+		conflict.Value.Detail.Should().Be(detail);
+		_notifierMock.VerifyNoOtherCalls();
+	}
+
+	[Fact]
+	public async Task UpdateAdjustment_InactiveParentConflict_Returns409WithoutNotification()
+	{
+		const string detail = "The receipt is no longer active. Restore or reload it before adding or restoring its children.";
+		_mediatorMock.Setup(m => m.Send(It.IsAny<UpdateAdjustmentCommand>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new ConcurrencyConflictException(detail));
+		Microsoft.AspNetCore.Http.IResult result = await _controller.UpdateAdjustment(AdjustmentDtoGenerator.GenerateUpdateRequest(), Guid.NewGuid());
+		var response = result is Microsoft.AspNetCore.Http.INestedHttpResult nested ? nested.Result : result;
+		var conflict = Assert.IsType<Conflict<ProblemDetails>>(response);
+		conflict.Value!.Status.Should().Be(409);
+		conflict.Value.Detail.Should().Be(detail);
+		_notifierMock.VerifyNoOtherCalls();
 	}
 }

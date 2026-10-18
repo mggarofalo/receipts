@@ -37,3 +37,14 @@ No schema or backup-format migration is needed. Existing acceptances remain unti
 a subsequent fact change: historical acceptance-time facts were never stored, so
 the application cannot reconstruct whether an older acceptance was already stale.
 Pairwise grouping semantics are unchanged. Transaction update/delete/restore and receipt delete/restore now additionally declare RFC 9457 HTTP 409 when a payment parent changed concurrently; the response detail instructs the caller to reload before retrying.
+
+Receipt lifecycle and child admission (RECEIPTS-987) use the same lock protocol.
+Receipt delete and restore acquire ordered parent locks before reading their
+cascade snapshots and hold them through commit. The PostgreSQL save pipeline
+locks the union of duplicate-fact and child-admission parents before validation;
+active child creation, reparenting, and restoration require an active receipt.
+A receipt created or restored in the same atomic save is valid. This protects
+payments, line items (including template-assisted creation), and adjustments
+without duplicating the rule in each repository. A stale admission is rejected
+with a reasoned HTTP 409 and leaves the business write and audits uncommitted.
+As with fact reconciliation, direct SQL must explicitly join this protocol.

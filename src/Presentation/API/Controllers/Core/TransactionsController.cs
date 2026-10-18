@@ -145,18 +145,26 @@ public class TransactionsController(IMediator mediator, TransactionMapper mapper
 
 	[HttpPost(RouteCreate)]
 	[EndpointSummary("Create a single transaction")]
-	public async Task<Ok<TransactionResponse>> CreateTransaction([FromBody] CreateTransactionRequest model, [FromRoute] Guid receiptId, CancellationToken cancellationToken = default)
+	public async Task<Results<Ok<TransactionResponse>, Conflict<ProblemDetails>>> CreateTransaction([FromBody] CreateTransactionRequest model, [FromRoute] Guid receiptId, CancellationToken cancellationToken = default)
 	{
 		Transaction transaction = mapper.ToDomain(model);
 		CreateTransactionCommand command = new([transaction], receiptId);
-		List<Transaction> transactions = await mediator.Send(command, cancellationToken);
+		List<Transaction> transactions;
+		try
+		{
+			transactions = await mediator.Send(command, cancellationToken);
+		}
+		catch (ConcurrencyConflictException ex)
+		{
+			return ApiProblem.Conflict(ex.Message);
+		}
 		await notifier.NotifyCreated("transaction", transactions[0].Id);
 		return TypedResults.Ok(mapper.ToResponse(transactions[0]));
 	}
 
 	[HttpPost(RouteCreateBatch)]
 	[EndpointSummary("Create transactions in batch")]
-	public async Task<Ok<List<TransactionResponse>>> CreateTransactions([FromBody] List<CreateTransactionRequest> models, [FromRoute] Guid receiptId, CancellationToken cancellationToken = default)
+	public async Task<Results<Ok<List<TransactionResponse>>, Conflict<ProblemDetails>>> CreateTransactions([FromBody] List<CreateTransactionRequest> models, [FromRoute] Guid receiptId, CancellationToken cancellationToken = default)
 	{
 		List<Transaction> transactions = [.. models.Select(m =>
 		{
@@ -165,7 +173,15 @@ public class TransactionsController(IMediator mediator, TransactionMapper mapper
 		})];
 
 		CreateTransactionCommand command = new(transactions, receiptId);
-		List<Transaction> result = await mediator.Send(command, cancellationToken);
+		List<Transaction> result;
+		try
+		{
+			result = await mediator.Send(command, cancellationToken);
+		}
+		catch (ConcurrencyConflictException ex)
+		{
+			return ApiProblem.Conflict(ex.Message);
+		}
 
 		List<TransactionResponse> results = [.. result.Select(mapper.ToResponse)];
 		await notifier.NotifyBulkChanged("transaction", "created", result.Select(t => t.Id));

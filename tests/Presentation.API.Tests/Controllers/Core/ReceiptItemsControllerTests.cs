@@ -6,6 +6,7 @@ using Application.Commands.ReceiptItem.Create;
 using Application.Commands.ReceiptItem.Delete;
 using Application.Commands.ReceiptItem.Restore;
 using Application.Commands.ReceiptItem.Update;
+using Application.Exceptions;
 using Application.Models;
 using Application.Queries.Core.ReceiptItem;
 using Domain.Core;
@@ -332,7 +333,7 @@ public class ReceiptItemsControllerTests
 		CreateReceiptItemRequest controllerInput = ReceiptItemDtoGenerator.GenerateCreateRequest();
 
 		// Act
-		Ok<ReceiptItemResponse> result = await _controller.CreateReceiptItem(controllerInput, receiptId);
+		Ok<ReceiptItemResponse> result = Assert.IsType<Ok<ReceiptItemResponse>>((await _controller.CreateReceiptItem(controllerInput, receiptId)).Result);
 
 		// Assert
 		ReceiptItemResponse actualReturn = result.Value!;
@@ -375,7 +376,7 @@ public class ReceiptItemsControllerTests
 		List<CreateReceiptItemRequest> controllerInput = ReceiptItemDtoGenerator.GenerateCreateRequestList(2);
 
 		// Act
-		Ok<List<ReceiptItemResponse>> result = await _controller.CreateReceiptItems(controllerInput, receiptId);
+		Ok<List<ReceiptItemResponse>> result = Assert.IsType<Ok<List<ReceiptItemResponse>>>((await _controller.CreateReceiptItems(controllerInput, receiptId)).Result);
 
 		// Assert
 		List<ReceiptItemResponse> actualControllerReturn = result.Value!;
@@ -596,7 +597,7 @@ public class ReceiptItemsControllerTests
 			.ReturnsAsync(true);
 
 		// Act
-		Results<NoContent, NotFound> result = await _controller.RestoreReceiptItem(id);
+		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.RestoreReceiptItem(id);
 
 		// Assert
 		Assert.IsType<NoContent>(result.Result);
@@ -613,7 +614,7 @@ public class ReceiptItemsControllerTests
 			.ReturnsAsync(false);
 
 		// Act
-		Results<NoContent, NotFound> result = await _controller.RestoreReceiptItem(id);
+		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.RestoreReceiptItem(id);
 
 		// Assert
 		Assert.IsType<NotFound>(result.Result);
@@ -682,5 +683,47 @@ public class ReceiptItemsControllerTests
 		response.NormalizedDescriptionId.Should().BeNull();
 		response.NormalizedDescriptionName.Should().BeNull();
 		response.NormalizedDescriptionMatchScore.Should().BeNull();
+	}
+
+	[Fact]
+	public async Task CreateReceiptItem_InactiveParentConflict_Returns409WithoutNotification()
+	{
+		const string detail = "The receipt is no longer active. Restore or reload it before adding or restoring its children.";
+		_mediatorMock.Setup(m => m.Send(It.IsAny<CreateReceiptItemCommand>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new ConcurrencyConflictException(detail));
+		Microsoft.AspNetCore.Http.IResult result = await _controller.CreateReceiptItem(ReceiptItemDtoGenerator.GenerateCreateRequest(), Guid.NewGuid());
+		var response = result is Microsoft.AspNetCore.Http.INestedHttpResult nested ? nested.Result : result;
+		var conflict = Assert.IsType<Conflict<ProblemDetails>>(response);
+		conflict.Value!.Status.Should().Be(409);
+		conflict.Value.Detail.Should().Be(detail);
+		_notifierMock.VerifyNoOtherCalls();
+	}
+
+	[Fact]
+	public async Task CreateReceiptItems_InactiveParentConflict_Returns409WithoutNotification()
+	{
+		const string detail = "The receipt is no longer active. Restore or reload it before adding or restoring its children.";
+		_mediatorMock.Setup(m => m.Send(It.IsAny<CreateReceiptItemCommand>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new ConcurrencyConflictException(detail));
+		Microsoft.AspNetCore.Http.IResult result = await _controller.CreateReceiptItems(ReceiptItemDtoGenerator.GenerateCreateRequestList(2), Guid.NewGuid());
+		var response = result is Microsoft.AspNetCore.Http.INestedHttpResult nested ? nested.Result : result;
+		var conflict = Assert.IsType<Conflict<ProblemDetails>>(response);
+		conflict.Value!.Status.Should().Be(409);
+		conflict.Value.Detail.Should().Be(detail);
+		_notifierMock.VerifyNoOtherCalls();
+	}
+
+	[Fact]
+	public async Task RestoreReceiptItem_InactiveParentConflict_Returns409WithoutNotification()
+	{
+		const string detail = "The receipt is no longer active. Restore or reload it before adding or restoring its children.";
+		_mediatorMock.Setup(m => m.Send(It.IsAny<RestoreReceiptItemCommand>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new ConcurrencyConflictException(detail));
+		Microsoft.AspNetCore.Http.IResult result = await _controller.RestoreReceiptItem(Guid.NewGuid());
+		var response = result is Microsoft.AspNetCore.Http.INestedHttpResult nested ? nested.Result : result;
+		var conflict = Assert.IsType<Conflict<ProblemDetails>>(response);
+		conflict.Value!.Status.Should().Be(409);
+		conflict.Value.Detail.Should().Be(detail);
+		_notifierMock.VerifyNoOtherCalls();
 	}
 }

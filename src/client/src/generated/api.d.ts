@@ -7188,6 +7188,15 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description The receipt is no longer active. Restore or reload it before retrying. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
         };
     };
     UpdateReceiptItems: {
@@ -7244,6 +7253,15 @@ export interface operations {
                     "application/json": components["schemas"]["ReceiptItemResponse"];
                 };
             };
+            /** @description The receipt is no longer active. Restore or reload it before retrying. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
         };
     };
     CreateReceiptItems: {
@@ -7268,6 +7286,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReceiptItemResponse"][];
+                };
+            };
+            /** @description The receipt is no longer active. Restore or reload it before retrying. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
         };
@@ -7553,6 +7580,15 @@ export interface operations {
                     "application/json": components["schemas"]["TransactionResponse"];
                 };
             };
+            /** @description The receipt is no longer active. Restore or reload it before retrying. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
         };
     };
     CreateTransactions: {
@@ -7577,6 +7613,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TransactionResponse"][];
+                };
+            };
+            /** @description The receipt is no longer active. Restore or reload it before retrying. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
         };
@@ -7641,6 +7686,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description The receipt is no longer active. Restore or reload it before retrying. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
             };
         };
     };
@@ -7770,6 +7824,15 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description The receipt is no longer active. Restore or reload it before retrying. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
         };
     };
     CreateAdjustment: {
@@ -7795,6 +7858,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdjustmentResponse"];
+                };
+            };
+            /** @description The receipt is no longer active. Restore or reload it before retrying. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
         };

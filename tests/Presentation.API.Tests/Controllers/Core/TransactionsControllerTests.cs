@@ -289,7 +289,7 @@ public class TransactionsControllerTests
 			.ReturnsAsync([transaction]);
 
 		// Act
-		Ok<TransactionResponse> result = await _controller.CreateTransaction(controllerInput, receiptId);
+		Ok<TransactionResponse> result = Assert.IsType<Ok<TransactionResponse>>((await _controller.CreateTransaction(controllerInput, receiptId)).Result);
 
 		// Assert
 		TransactionResponse actualReturn = result.Value!;
@@ -332,7 +332,7 @@ public class TransactionsControllerTests
 			.ReturnsAsync(mediatorReturn);
 
 		// Act
-		Ok<List<TransactionResponse>> result = await _controller.CreateTransactions(controllerInput, receiptId);
+		Ok<List<TransactionResponse>> result = Assert.IsType<Ok<List<TransactionResponse>>>((await _controller.CreateTransactions(controllerInput, receiptId)).Result);
 
 		// Assert
 		List<TransactionResponse> actualControllerReturn = result.Value!;
@@ -364,7 +364,7 @@ public class TransactionsControllerTests
 		List<TransactionResponse> expectedControllerReturn = [.. mediatorReturn.Select(_mapper.ToResponse)];
 
 		// Act
-		Ok<List<TransactionResponse>> result = await _controller.CreateTransactions(controllerInput, receiptId);
+		Ok<List<TransactionResponse>> result = Assert.IsType<Ok<List<TransactionResponse>>>((await _controller.CreateTransactions(controllerInput, receiptId)).Result);
 
 		// Assert
 		List<TransactionResponse> actualControllerReturn = result.Value!;
@@ -754,6 +754,34 @@ public class TransactionsControllerTests
 			.ThrowsAsync(new ConcurrencyConflictException(detail));
 		var result = await _controller.RestoreTransaction(Guid.NewGuid());
 		var conflict = Assert.IsType<Conflict<ProblemDetails>>(result.Result);
+		conflict.Value!.Status.Should().Be(409);
+		conflict.Value.Detail.Should().Be(detail);
+		_notifierMock.VerifyNoOtherCalls();
+	}
+
+	[Fact]
+	public async Task CreateTransaction_InactiveParentConflict_Returns409WithoutNotification()
+	{
+		const string detail = "The receipt is no longer active. Restore or reload it before adding or restoring its children.";
+		_mediatorMock.Setup(m => m.Send(It.IsAny<CreateTransactionCommand>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new ConcurrencyConflictException(detail));
+		Microsoft.AspNetCore.Http.IResult result = await _controller.CreateTransaction(TransactionDtoGenerator.GenerateCreateRequest(), Guid.NewGuid());
+		var response = result is Microsoft.AspNetCore.Http.INestedHttpResult nested ? nested.Result : result;
+		var conflict = Assert.IsType<Conflict<ProblemDetails>>(response);
+		conflict.Value!.Status.Should().Be(409);
+		conflict.Value.Detail.Should().Be(detail);
+		_notifierMock.VerifyNoOtherCalls();
+	}
+
+	[Fact]
+	public async Task CreateTransactions_InactiveParentConflict_Returns409WithoutNotification()
+	{
+		const string detail = "The receipt is no longer active. Restore or reload it before adding or restoring its children.";
+		_mediatorMock.Setup(m => m.Send(It.IsAny<CreateTransactionCommand>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new ConcurrencyConflictException(detail));
+		Microsoft.AspNetCore.Http.IResult result = await _controller.CreateTransactions(TransactionDtoGenerator.GenerateCreateRequestList(2), Guid.NewGuid());
+		var response = result is Microsoft.AspNetCore.Http.INestedHttpResult nested ? nested.Result : result;
+		var conflict = Assert.IsType<Conflict<ProblemDetails>>(response);
 		conflict.Value!.Status.Should().Be(409);
 		conflict.Value.Detail.Should().Be(detail);
 		_notifierMock.VerifyNoOtherCalls();

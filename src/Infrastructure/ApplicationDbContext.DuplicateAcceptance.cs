@@ -1,7 +1,6 @@
 using Application.Duplicates;
 using Application.Exceptions;
 using Infrastructure.Entities.Core;
-using Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 
@@ -61,7 +60,6 @@ public partial class ApplicationDbContext
 		{
 			return [];
 		}
-		ReceiptFactLock.Acquire(this, ids);
 		Dictionary<Guid, (Guid Original, Guid Current)> expectedParents = ExpectedDuplicatePaymentParents();
 		if (expectedParents.Count > 0)
 		{
@@ -86,7 +84,6 @@ public partial class ApplicationDbContext
 		{
 			return [];
 		}
-		await ReceiptFactLock.AcquireAsync(this, ids, cancellationToken).ConfigureAwait(false);
 		Dictionary<Guid, (Guid Original, Guid Current)> expectedParents = ExpectedDuplicatePaymentParents();
 		if (expectedParents.Count > 0)
 		{

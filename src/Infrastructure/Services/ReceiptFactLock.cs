@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Infrastructure.Services;
 
-/// <summary>Serializes duplicate acceptance with writes to the receipt facts it acknowledges.</summary>
+/// <summary>Serializes receipt lifecycle, child admission, and duplicate fact acknowledgements.</summary>
 internal static class ReceiptFactLock
 {
 	internal static void Acquire(ApplicationDbContext context, IEnumerable<Guid> receiptIds)
@@ -31,7 +31,7 @@ internal static class ReceiptFactLock
 	{
 		if (context.Database.CurrentTransaction is null)
 		{
-			throw new InvalidOperationException("Duplicate receipt fact locks require an active transaction.");
+			throw new InvalidOperationException("Receipt locks require an active transaction.");
 		}
 	}
 }

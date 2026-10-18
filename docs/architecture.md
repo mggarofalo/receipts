@@ -302,3 +302,9 @@ Client mutation and remote-event projection ownership is described in [Query inv
 Connection startup, catch-up and shared HTTP/hub token refresh are described in [Realtime recovery](realtime-recovery.md).
 
 Request and cache error presentation ownership is described in [Request errors](request-errors.md).
+
+Receipt-owned child admission is enforced in the PostgreSQL audited save boundary:
+creation, restoration and reparenting lock receipt parents and validate that they
+are active, allowing parents created/restored in the same atomic save. Receipt
+lifecycle repositories lock before loading cascade children. See
+[the receipt lifecycle locking obligations](duplicate-acceptance-invalidation.md).
