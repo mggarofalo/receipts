@@ -6787,11 +6787,11 @@ components:
             $ref: "#/components/schemas/MatchCandidateDto"
         simulatedOutcome:
           type: string
-          description: "One of: AutoAccept, PendingReview, CreateNew, EmbeddingUnavailable."
+          description: "One of: AutoAccept, PendingReview, CreateNew, EmbeddingUnavailable, Rejected. Rejected means an exact-name tombstone suppresses attachment."
         simulatedTargetId:
           type: ["string", "null"]
           format: uuid
-          description: ID of the normalized-description row the resolver would reuse (AutoAccept) or null for CreateNew / PendingReview / EmbeddingUnavailable.
+          description: ID of the normalized-description row the resolver would reuse (AutoAccept) or null for CreateNew / PendingReview / EmbeddingUnavailable / Rejected.
 
     MatchCandidateDto:
       type: object
