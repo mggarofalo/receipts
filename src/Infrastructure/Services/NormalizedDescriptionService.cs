@@ -5,6 +5,7 @@ using Application.Interfaces.Services;
 using Application.Models;
 using Application.Models.CommittedChanges;
 using Application.Models.NormalizedDescriptions;
+using Application.Normalization;
 using Domain.NormalizedDescriptions;
 using Infrastructure.Configurations;
 using Infrastructure.Entities.Audit;
@@ -67,86 +68,40 @@ public class NormalizedDescriptionService(
 		}
 
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
-
-		// Read thresholds fresh from the DB each call. Call frequency is bounded by the
-		// resolver's 30-second poll cycle, so the latency cost is negligible and admin
-		// updates take effect on the next run without any cache-invalidation plumbing.
 		(double autoAccept, double pendingReview) = await ResolveThresholdsAsync(context, cancellationToken);
-
-		// Step 1: exact case-insensitive match on existing canonical name.
-		NormalizedDescriptionEntity? existing = await FindExactCaseInsensitiveAsync(context, normalized, cancellationToken);
-		if (existing is not null)
+		NormalizationMatchPolicy policy = new(autoAccept, pendingReview);
+		NormalizedDescriptionEntity? exact = await FindExactCaseInsensitiveAsync(context, normalized, cancellationToken);
+		if (exact is not null)
 		{
-			// A tombstone (RECEIPTS-876). The reviewer already said this text does not deserve a
-			// canonical entry, so we hand the row back with its Rejected status intact and let the
-			// caller decline to link. Returning it rather than null is deliberate: the caller can
-			// then tell "deliberately rejected" from "nothing happened", and log accordingly.
-			//
-			// MatchScore stays null. A score of 1.0 would be recorded on a ReceiptItem that is not
-			// being linked to anything, reproducing exactly the orphan-score inconsistency
-			// RECEIPTS-883 exists to prevent.
-			if (existing.Status == NormalizedDescriptionStatus.Rejected)
-			{
-				return new GetOrCreateResult(mapper.ToDomain(existing), MatchScore: null);
-			}
-
-			// An exact-name match is a perfect logical match — surface similarity = 1 so
-			// the resolver can record it on the ReceiptItem without requiring a second
-			// embedding roundtrip.
-			return new GetOrCreateResult(mapper.ToDomain(existing), MatchScore: 1.0);
+			MatchDecision exactDecision = policy.Decide(exact.Status, embeddingAvailable: false, similarity: null);
+			return new GetOrCreateResult(mapper.ToDomain(exact), exactDecision == MatchDecision.Rejected ? null : 1.0);
 		}
 
-		// Step 2: no embedding capability — create Active entry directly with no vector.
-		if (!embeddingService.IsConfigured)
-		{
-			(NormalizedDescriptionEntity created, _) = await InsertAsync(context, normalized, NormalizedDescriptionStatus.Active, embedding: null, cancellationToken);
-			return new GetOrCreateResult(mapper.ToDomain(created), MatchScore: null);
-		}
-
-		// Step 3: generate embedding for the input.
-		float[]? embeddingData = await TryGenerateEmbeddingAsync(
-			normalized,
-			cancellationToken,
-			background: true,
-			fallbackWhenFull: false);
+		float[]? embeddingData = embeddingService.IsConfigured
+			? await TryGenerateEmbeddingAsync(normalized, cancellationToken, background: true, fallbackWhenFull: false)
+			: null;
 		Vector? embeddingVector = embeddingData is { Length: > 0 } ? new Vector(embeddingData) : null;
+		(NormalizedDescriptionEntity? topMatch, double? topSimilarity) = embeddingVector is not null
+			? await AnnSearchTopOneAsync(context, embeddingVector, cancellationToken)
+			: (null, null);
+		MatchDecision decision = policy.Decide(null, embeddingVector is not null, topMatch is null ? null : topSimilarity);
 
-		// Step 4: ANN top-1 search — only supported on Postgres. On other providers (InMemory tests)
-		// the method is a no-op by default; tests can override AnnSearchTopOneAsync to simulate
-		// specific top-1 matches and exercise each threshold band.
-		double? topSimilarity = null;
-		NormalizedDescriptionEntity? topMatch = null;
-		if (embeddingVector is not null)
+		if (decision == MatchDecision.ReuseSimilar)
 		{
-			(topMatch, topSimilarity) = await AnnSearchTopOneAsync(context, embeddingVector, cancellationToken);
+			return new GetOrCreateResult(mapper.ToDomain(topMatch!), topSimilarity);
+		}
+		if (decision == MatchDecision.CreatePendingReview)
+		{
+			(NormalizedDescriptionEntity pending, _) = await InsertAsync(
+				context, normalized, NormalizedDescriptionStatus.PendingReview, embeddingVector,
+				cancellationToken, nearestNeighbourId: topMatch!.Id, nearestNeighbourSimilarity: topSimilarity);
+			return new GetOrCreateResult(mapper.ToDomain(pending), topSimilarity);
 		}
 
-		if (topMatch is not null && topSimilarity.HasValue)
-		{
-			if (topSimilarity.Value >= autoAccept)
-			{
-				return new GetOrCreateResult(mapper.ToDomain(topMatch), topSimilarity.Value);
-			}
-
-			if (topSimilarity.Value >= pendingReview)
-			{
-				// Persist the near-miss that caused the pending status (RECEIPTS-873). Previously
-				// only the score survived — on the ReceiptItem — so the API could not answer
-				// "what did this nearly match?" without recomputing embeddings.
-				(NormalizedDescriptionEntity pending, _) = await InsertAsync(
-					context,
-					normalized,
-					NormalizedDescriptionStatus.PendingReview,
-					embeddingVector,
-					cancellationToken,
-					nearestNeighbourId: topMatch.Id,
-					nearestNeighbourSimilarity: topSimilarity.Value);
-				return new GetOrCreateResult(mapper.ToDomain(pending), topSimilarity.Value);
-			}
-		}
-
-		(NormalizedDescriptionEntity activeCreated, _) = await InsertAsync(context, normalized, NormalizedDescriptionStatus.Active, embeddingVector, cancellationToken);
-		return new GetOrCreateResult(mapper.ToDomain(activeCreated), MatchScore: null);
+		// Missing embeddings and below-floor matches intentionally share the active-creation fallback.
+		(NormalizedDescriptionEntity created, _) = await InsertAsync(
+			context, normalized, NormalizedDescriptionStatus.Active, embeddingVector, cancellationToken);
+		return new GetOrCreateResult(mapper.ToDomain(created), MatchScore: null);
 	}
 
 	/// <summary>
@@ -1144,62 +1099,36 @@ public class NormalizedDescriptionService(
 
 		double autoAccept = autoAcceptThresholdOverride ?? settings.AutoAcceptThreshold;
 		double pendingReview = pendingReviewThresholdOverride ?? settings.PendingReviewThreshold;
-		NormalizedDescriptionSettings.Validate(autoAccept, pendingReview);
+		NormalizationMatchPolicy policy = new(autoAccept, pendingReview);
 
-		// If there is an exact case-insensitive match, the resolver would short-circuit
-		// without ever querying embeddings. Mirror that here so the preview is truthful.
 		NormalizedDescriptionEntity? exactMatch = await FindExactCaseInsensitiveAsync(context, normalized, cancellationToken);
+		List<MatchCandidate> candidates = [];
+		bool embeddingAvailable = false;
 		if (exactMatch is not null)
 		{
-			List<MatchCandidate> exactCandidates =
-			[
-				new MatchCandidate(
-					exactMatch.Id,
-					exactMatch.CanonicalName,
-					1.0,
-					exactMatch.Status.ToString()),
-			];
-			return new MatchTestResult(exactCandidates, MatchTestOutcomes.AutoAccept, exactMatch.Id);
+			candidates.Add(new MatchCandidate(exactMatch.Id, exactMatch.CanonicalName, 1.0, exactMatch.Status.ToString()));
 		}
-
-		if (!embeddingService.IsConfigured)
+		else if (embeddingService.IsConfigured)
 		{
-			// No embedding service — the real resolver would create a new Active entry, but
-			// admins still deserve an honest answer: no candidates, and a dedicated outcome
-			// so the UI can surface a banner. SimulatedTargetId is null because the new
-			// entry doesn't exist yet.
-			return new MatchTestResult([], MatchTestOutcomes.EmbeddingUnavailable, SimulatedTargetId: null);
+			float[]? embeddingData = await TryGenerateEmbeddingAsync(normalized, cancellationToken);
+			if (embeddingData is { Length: > 0 })
+			{
+				embeddingAvailable = true;
+				candidates = await AnnSearchTopNAsync(context, new Vector(embeddingData), topN, cancellationToken);
+			}
 		}
 
-		float[]? embeddingData = await TryGenerateEmbeddingAsync(normalized, cancellationToken);
-		if (embeddingData is not { Length: > 0 })
-		{
-			return new MatchTestResult([], MatchTestOutcomes.EmbeddingUnavailable, SimulatedTargetId: null);
-		}
-
-		Vector queryVector = new(embeddingData);
-		List<MatchCandidate> candidates = await AnnSearchTopNAsync(context, queryVector, topN, cancellationToken);
-
-		// The resolver makes its branch decision against the top-1 candidate, so we do too —
-		// the rest of the candidates are informational only.
+		// Only the leading candidate informs policy; the remaining candidates explain the search.
 		MatchCandidate? top = candidates.Count > 0 ? candidates[0] : null;
-		if (top is not null)
+		return policy.Decide(exactMatch?.Status, embeddingAvailable, top?.CosineSimilarity) switch
 		{
-			if (top.CosineSimilarity >= autoAccept)
-			{
-				return new MatchTestResult(candidates, MatchTestOutcomes.AutoAccept, top.NormalizedDescriptionId);
-			}
-
-			if (top.CosineSimilarity >= pendingReview)
-			{
-				// In the real resolver this would create a new PendingReview entry linked in
-				// a neighbourhood of `top`; SimulatedTargetId=null because the row doesn't
-				// exist yet. The caller has the top candidate in `candidates[0]` for context.
-				return new MatchTestResult(candidates, MatchTestOutcomes.PendingReview, SimulatedTargetId: null);
-			}
-		}
-
-		return new MatchTestResult(candidates, MatchTestOutcomes.CreateNew, SimulatedTargetId: null);
+			MatchDecision.ReuseExact or MatchDecision.ReuseSimilar =>
+				new MatchTestResult(candidates, MatchTestOutcomes.AutoAccept, top!.NormalizedDescriptionId),
+			MatchDecision.Rejected => new MatchTestResult(candidates, MatchTestOutcomes.Rejected, null),
+			MatchDecision.CreatePendingReview => new MatchTestResult(candidates, MatchTestOutcomes.PendingReview, null),
+			MatchDecision.EmbeddingUnavailable => new MatchTestResult(candidates, MatchTestOutcomes.EmbeddingUnavailable, null),
+			_ => new MatchTestResult(candidates, MatchTestOutcomes.CreateNew, null),
+		};
 	}
 
 	public async Task<ThresholdImpactPreview> PreviewThresholdImpactAsync(
@@ -1212,58 +1141,17 @@ public class NormalizedDescriptionService(
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		NormalizedDescriptionSettingsEntity settings = await ResolveSettingsEntityAsync(context, cancellationToken);
 
-		// Snapshot the scored live-set once. We bucketise twice (current thresholds and
-		// proposed thresholds) over the same in-memory list to keep the two classifications
-		// strictly comparable — querying twice would risk a race if items were resolved
-		// between the two counts. An item only enters this list if BOTH the FK and the
-		// score are populated; otherwise it's structurally unresolved and no threshold
-		// change can reclassify it. The set is bounded (only resolved items) so memory
-		// cost is modest relative to the total ReceiptItems table.
-		List<double> scored = await context.ReceiptItems
+		// A single query captures both scored and structurally unresolved items. Separate counts
+		// could observe an item before and after a concurrent resolver commit.
+		List<double?> scores = await context.ReceiptItems
 			.AsNoTracking()
 			.IgnoreAutoIncludes()
-			.Where(r => r.NormalizedDescriptionMatchScore != null && r.NormalizedDescriptionId != null)
-			.Select(r => r.NormalizedDescriptionMatchScore!.Value)
+			.Select(r => r.NormalizedDescriptionId != null ? r.NormalizedDescriptionMatchScore : null)
 			.ToListAsync(cancellationToken);
 
-		// Items without a match score or without any linked NormalizedDescription are
-		// counted as structurally unresolved regardless of threshold choice.
-		int unresolvedCount = await context.ReceiptItems
-			.AsNoTracking()
-			.IgnoreAutoIncludes()
-			.CountAsync(r => r.NormalizedDescriptionMatchScore == null || r.NormalizedDescriptionId == null, cancellationToken);
-
-		ClassificationCounts current = Classify(scored, settings.AutoAcceptThreshold, settings.PendingReviewThreshold, unresolvedCount);
-		ClassificationCounts proposed = Classify(scored, autoAcceptThreshold, pendingReviewThreshold, unresolvedCount);
-
-		// Deltas: per-item transitions between the two classification maps. We don't have
-		// item identity here, just a list of scores — so we compute counts by bucket
-		// intersection (e.g., items currently auto-accepted but proposed-pending-review =
-		// scores where current.auto holds but proposed.auto doesn't and proposed.pending
-		// does). Same for Unresolved → {auto, pending}, which falls out of the score nulls:
-		// null-score items never change bucket, so Unresolved→X transitions only apply to
-		// the "scored but currently below pendingReview" sub-slice.
-		int autoToPending = scored.Count(s =>
-			s >= settings.AutoAcceptThreshold &&
-			s >= pendingReviewThreshold && s < autoAcceptThreshold);
-
-		int pendingToAuto = scored.Count(s =>
-			s >= settings.PendingReviewThreshold && s < settings.AutoAcceptThreshold &&
-			s >= autoAcceptThreshold);
-
-		// Unresolved→X deltas describe currently-unresolved-by-threshold items (i.e., scored
-		// but below the current pending-review floor) that would move up under the proposal.
-		// NULL-score items are "structurally unresolved" and cannot move via a threshold change.
-		int unresolvedToAuto = scored.Count(s =>
-			s < settings.PendingReviewThreshold &&
-			s >= autoAcceptThreshold);
-
-		int unresolvedToPending = scored.Count(s =>
-			s < settings.PendingReviewThreshold &&
-			s >= pendingReviewThreshold && s < autoAcceptThreshold);
-
-		ReclassificationDeltas deltas = new(autoToPending, pendingToAuto, unresolvedToAuto, unresolvedToPending);
-		return new ThresholdImpactPreview(current, proposed, deltas);
+		return ThresholdImpactCalculator.Calculate(scores,
+			new NormalizationMatchPolicy(settings.AutoAcceptThreshold, settings.PendingReviewThreshold),
+			new NormalizationMatchPolicy(autoAcceptThreshold, pendingReviewThreshold));
 	}
 
 	public async Task<RequeuePendingPreview> PreviewRequeuePendingAsync(CancellationToken cancellationToken)
@@ -1428,37 +1316,6 @@ public class NormalizedDescriptionService(
 	{
 		string joined = string.Join(',', ids.OrderBy(id => id));
 		return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(joined)));
-	}
-
-	private static ClassificationCounts Classify(
-		List<double> scored,
-		double autoAcceptThreshold,
-		double pendingReviewThreshold,
-		int unresolvedCount)
-	{
-		int autoAccepted = 0;
-		int pendingReview = 0;
-		int belowFloor = 0;
-		foreach (double score in scored)
-		{
-			if (score >= autoAcceptThreshold)
-			{
-				autoAccepted++;
-			}
-			else if (score >= pendingReviewThreshold)
-			{
-				pendingReview++;
-			}
-			else
-			{
-				belowFloor++;
-			}
-		}
-
-		// Unresolved = structurally-unresolved (NULL score) + "scored but below pending-review"
-		// (i.e., the resolver would have created a new canonical entry, so they're still
-		// effectively unresolved against any existing NormalizedDescription).
-		return new ClassificationCounts(autoAccepted, pendingReview, unresolvedCount + belowFloor);
 	}
 
 	private async Task<(double AutoAccept, double PendingReview)> ResolveThresholdsAsync(

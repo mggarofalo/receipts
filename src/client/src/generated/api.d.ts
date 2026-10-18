@@ -3337,11 +3337,11 @@ export interface components {
         };
         MatchTestResultResponse: {
             candidates: components["schemas"]["MatchCandidateDto"][];
-            /** @description One of: AutoAccept, PendingReview, CreateNew, EmbeddingUnavailable. */
+            /** @description One of: AutoAccept, PendingReview, CreateNew, EmbeddingUnavailable, Rejected. Rejected means an exact-name tombstone suppresses attachment. */
             simulatedOutcome: string;
             /**
              * Format: uuid
-             * @description ID of the normalized-description row the resolver would reuse (AutoAccept) or null for CreateNew / PendingReview / EmbeddingUnavailable.
+             * @description ID of the normalized-description row the resolver would reuse (AutoAccept) or null for CreateNew / PendingReview / EmbeddingUnavailable / Rejected.
              */
             simulatedTargetId?: string | null;
         };

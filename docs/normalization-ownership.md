@@ -47,3 +47,32 @@ The repository resolves current active templates and valid canonical targets ins
 Accepted hints stamp the canonical ID with a null score: a template declaration is not a measured similarity. Canonical display/name equality with the template is not required on this entry path, because a deliberate canonical merge can leave the template linked to a differently named survivor. Current locked template identity wins. Ordinary no-hint creation is unchanged, and complete-receipt creation does not gain template hints.
 
 Real PostgreSQL creation-chain and controlled matching/lock-wait tests cover these boundaries. The frontend conflict test uses the actual page, mutation hook, app query client, error presentation and a controlled HTTP response, including same-draft retry after 409.
+
+## Matching decisions and threshold previews
+
+`Application.Normalization.NormalizationMatchPolicy` owns the immutable threshold
+configuration and the decision from observed matching facts. Exact Active and
+PendingReview names are reused without embeddings; exact Rejected names suppress
+attachment. Otherwise the top candidate is reused at the inclusive auto-accept
+threshold, creates a pending entry at the inclusive pending-review threshold, or
+creates a new active entry below it. Domain validation rejects nonfinite thresholds.
+
+`NormalizedDescriptionService` supplies exact-name and ANN facts, obtains embeddings,
+and executes the decision through its existing persistence operations. It retains
+the background versus interactive scheduler distinction. Missing embedding capacity
+is an explicit decision: execution retains its new-active fallback while simulation
+reports `EmbeddingUnavailable`. Cancellation is not missing capacity and propagates.
+
+The match-test response adds the `Rejected` outcome with no simulated target. Its
+candidate still identifies the tombstone for explanation; it does not imply a link.
+The response remains an unrestricted string with the same shape. Template declaration
+is intentionally separate: exact lookup or active creation, no fuzzy match, with
+explicit reinstatement of a tombstone and preservation of pending review.
+
+`ThresholdImpactCalculator` uses the same score bands for counts and transitions.
+Infrastructure captures linked scores and structurally unresolved items in one narrow
+query, then compares current and proposed thresholds over that single population.
+This is a reclassification of recorded evidence, not a new model run or a prediction
+of template/manual-link decisions. Null scores or missing links remain unresolved;
+no writes or embeddings are performed by the calculation. The existing response
+exposes four transition directions; it does not claim to enumerate every transition.

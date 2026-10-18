@@ -13,6 +13,7 @@ public record MatchTestResult(
 // human-readable and stable across refactors.
 public static class MatchTestOutcomes
 {
+	public const string Rejected = "Rejected";
 	public const string AutoAccept = "AutoAccept";
 	public const string PendingReview = "PendingReview";
 	public const string CreateNew = "CreateNew";
