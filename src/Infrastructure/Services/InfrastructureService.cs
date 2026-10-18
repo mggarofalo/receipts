@@ -170,7 +170,6 @@ public static class InfrastructureService
 			.AddScoped<IBackupService, BackupService>()
 			.AddScoped<IImageStorageService, LocalImageStorageService>()
 			.AddScoped<IImageProcessingService, ImageProcessingService>()
-			.AddScoped<IPdfConversionService, PdfConversionService>()
 			.AddScoped<IYnabSyncRecordRepository, YnabSyncRecordRepository>()
 			.AddScoped<IYnabBudgetSelectionRepository, YnabBudgetSelectionRepository>()
 			.AddScoped<IYnabAccountMappingRepository, YnabAccountMappingRepository>()
