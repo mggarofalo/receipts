@@ -111,7 +111,8 @@ public class NormalizedDescriptionService(
 	/// Deliberately not a call into <see cref="GetOrCreateAsync"/>. That method answers "what does
 	/// this receipt text probably mean?" — it runs an ANN search and can land the result in the
 	/// review queue. This one records a declaration a user already made by creating the template,
-	/// so it takes the exact-match-or-create path only and always produces an <c>Active</c> row.
+	/// so it takes the exact-match-or-create path only. New and reinstated rows are <c>Active</c>;
+	/// an existing exact match retains its status, including <c>PendingReview</c>.
 	/// Routing templates through the resolver would ask a human to confirm a grouping the same
 	/// human just made by hand, which is the duplication this issue exists to remove.
 	///
