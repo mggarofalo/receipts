@@ -25,3 +25,23 @@ The existing resolution flow lets the user choose a remote transaction explicitl
 These reservations are in memory and cover participating payments in one request. They do not establish exclusive ownership across concurrent requests or all historical payments. Destination-scoped records are enforced by the database and service lookups; durable claims, retries and uncertain remote-write recovery remain tracked in RECEIPTS-962. This matching flow does not claim exactly-once delivery.
 
 Tests use controlled services and fake HTTP responses, with no real YNAB writes. They assert outcomes and outbound target IDs for account mismatches, insufficient payee identity, competing payments, retained bindings and legitimate matches.
+
+## Completion and cancellation
+
+An existing receipt link on the selected remote transaction is completion evidence.
+The service repairs a missing, pending or failed local memo record to `Synced`,
+records the selected remote ID and clears any old error without sending another
+PATCH. A correct completed record remains unchanged. This also reconciles an
+explicitly selected target with the local tracking record.
+
+Requested cancellation propagates from a memo PATCH without recording a definite
+failure: the remote write may already have completed. Retrying reads the remote
+memo and uses the receipt-link check to reconcile local state. This is separate
+from the durable claim and immutable payload protocol for transaction creation;
+memo synchronization does not acquire that protocol's guarantees.
+
+Bulk transaction push stops dispatching further receipts when cancellation is
+requested, including when an individual push first records an uncertain outcome
+and returns it. Completed remote writes and their durable state remain intact.
+Similarity search likewise propagates requested embedding cancellation instead
+of starting a trigram fallback; ordinary embedding failures retain that fallback.

@@ -49,6 +49,59 @@ public class YnabMemoSyncServiceTests
 			_loggerMock.Object);
 	}
 
+	[Theory]
+	[InlineData(YnabSyncStatus.Pending, "yt-1", null, true)]
+	[InlineData(YnabSyncStatus.Failed, "yt-1", null, true)]
+	[InlineData(YnabSyncStatus.Synced, "wrong-binding", null, true)]
+	[InlineData(YnabSyncStatus.Synced, "yt-1", "old failure", true)]
+	[InlineData(YnabSyncStatus.Synced, "yt-1", null, false)]
+	public async Task ResolveMemoSync_ReceiptLinkAlreadyPresent_RepairsOnlyInconsistentRecords(
+		YnabSyncStatus status, string remoteId, string? error, bool shouldRepair)
+	{
+		SetupBudgetSelection(BudgetId);
+		ReceiptEntity receipt = CreateReceipt("Walmart");
+		TransactionEntity transaction = CreateTransaction(receipt.Id, 25.50m);
+		_transactionRepoMock.Setup(r => r.GetByIdAsync(transaction.Id, It.IsAny<CancellationToken>())).ReturnsAsync(transaction);
+		SetupReceiptRepo(receipt);
+		YnabTransaction remote = new("yt-1", transaction.Date, -25500, $"Receipt: /receipts/{receipt.Id}", "cleared", true, "acc-1", null, "Walmart");
+		_ynabClientMock.Setup(c => c.GetTransactionAsync(BudgetId, "yt-1", It.IsAny<CancellationToken>())).ReturnsAsync(remote);
+		Guid recordId = Guid.NewGuid();
+		YnabSyncRecordDto record = new(recordId, transaction.Id, remoteId, BudgetId, null, YnabSyncType.MemoUpdate, status, null, error, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+		_syncRecordServiceMock.Setup(s => s.GetByTransactionTypeAndBudgetAsync(transaction.Id, YnabSyncType.MemoUpdate, BudgetId, It.IsAny<CancellationToken>())).ReturnsAsync(record);
+		SetupSyncRecordUpdate();
+
+		YnabMemoSyncResult result = await _service.ResolveMemoSyncAsync(transaction.Id, "yt-1", CancellationToken.None);
+
+		result.Outcome.Should().Be(YnabMemoSyncOutcome.AlreadySynced);
+		_syncRecordServiceMock.Verify(s => s.UpdateStatusAsync(recordId, YnabSyncStatus.Synced, "yt-1", null, It.IsAny<CancellationToken>()), shouldRepair ? Times.Once() : Times.Never());
+		_ynabClientMock.Verify(c => c.UpdateTransactionMemoAsync(BudgetId, "yt-1", It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+		_syncRecordServiceMock.Verify(s => s.CreateAsync(transaction.Id, BudgetId, YnabSyncType.MemoUpdate, It.IsAny<CancellationToken>()), Times.Never);
+	}
+
+	[Fact]
+	public async Task ResolveMemoSync_RequestedCancellation_DoesNotRecordDefiniteFailure()
+	{
+		using CancellationTokenSource cancellation = new();
+		SetupBudgetSelection(BudgetId);
+		ReceiptEntity receipt = CreateReceipt("Walmart");
+		TransactionEntity transaction = CreateTransaction(receipt.Id, 25.50m);
+		_transactionRepoMock.Setup(r => r.GetByIdAsync(transaction.Id, cancellation.Token)).ReturnsAsync(transaction);
+		SetupReceiptRepo(receipt);
+		YnabTransaction remote = CreateYnabTransaction("yt-1", transaction.Date, -25500, "Walmart");
+		_ynabClientMock.Setup(c => c.GetTransactionAsync(BudgetId, "yt-1", cancellation.Token)).ReturnsAsync(remote);
+		SetupSyncRecordCreation();
+		SetupSyncRecordUpdate();
+		SetupNoExistingSyncRecord(transaction.Id);
+		_ynabClientMock.Setup(c => c.UpdateTransactionMemoAsync(BudgetId, "yt-1", It.IsAny<string>(), cancellation.Token))
+			.Callback(() => cancellation.Cancel())
+			.ThrowsAsync(new OperationCanceledException(cancellation.Token));
+
+		Func<Task> act = () => _service.ResolveMemoSyncAsync(transaction.Id, "yt-1", cancellation.Token);
+
+		await act.Should().ThrowAsync<OperationCanceledException>();
+		_syncRecordServiceMock.Verify(s => s.UpdateStatusAsync(It.IsAny<Guid>(), YnabSyncStatus.Failed, It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
+	}
+
 	#region FormatMemo Tests
 
 	[Fact]
