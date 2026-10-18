@@ -22,7 +22,7 @@ public class NormalizedDescriptionSettings
 
 	public static void Validate(double autoAcceptThreshold, double pendingReviewThreshold)
 	{
-		if (autoAcceptThreshold < 0 || autoAcceptThreshold > 1 || pendingReviewThreshold < 0 || pendingReviewThreshold > 1)
+		if (!double.IsFinite(autoAcceptThreshold) || !double.IsFinite(pendingReviewThreshold) || autoAcceptThreshold < 0 || autoAcceptThreshold > 1 || pendingReviewThreshold < 0 || pendingReviewThreshold > 1)
 		{
 			throw new ArgumentException(ThresholdsMustBeInRange);
 		}

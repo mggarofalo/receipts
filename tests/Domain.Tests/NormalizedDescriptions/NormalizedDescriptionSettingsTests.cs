@@ -7,6 +7,17 @@ public class NormalizedDescriptionSettingsTests
 {
 	private static readonly DateTimeOffset NowTimestamp = new(2026, 4, 19, 0, 0, 0, TimeSpan.Zero);
 
+	[Theory]
+	[InlineData(double.NaN, 0.5)]
+	[InlineData(0.9, double.NaN)]
+	[InlineData(double.PositiveInfinity, 0.5)]
+	[InlineData(0.9, double.NegativeInfinity)]
+	public void Validate_NonfiniteThreshold_Rejects(double autoAccept, double pendingReview)
+	{
+		Action act = () => NormalizedDescriptionSettings.Validate(autoAccept, pendingReview);
+		act.Should().Throw<ArgumentException>();
+	}
+
 	[Fact]
 	public void Constructor_ValidThresholds_AssignsProperties()
 	{
