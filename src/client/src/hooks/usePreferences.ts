@@ -1,101 +1,75 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-
-/**
- * Settings → Preferences tab state. Browser-scoped, localStorage-backed —
- * lighter than a DB-column-per-preference and good enough for the per-device
- * settings that don't need to sync across devices.
- *
- * Closes the smaller Preferences slice of RECEIPTS-739. Sync-across-devices
- * for these can be added later by upgrading the storage layer; the consumer
- * API stays the same.
- */
-export type WeekStart = "sunday" | "monday";
-
-interface Preferences {
-  weekStart: WeekStart;
-  showKeyboardHints: boolean;
-}
-
-const DEFAULTS: Preferences = {
-  weekStart: "sunday",
-  showKeyboardHints: true,
-};
+import { useSyncExternalStore } from "react";
 
 const STORAGE_KEY = "receipts:preferences";
+const CHANGED_EVENT = "receipts:preferences-changed";
+const DEFAULT_SHOW_KEYBOARD_HINTS = true;
 
-function read(): Preferences {
-  if (typeof window === "undefined") return DEFAULTS;
+// Keep all mounted consumers consistent even when persistence is unavailable.
+// A different stored value (or a cross-tab storage event) supersedes this fallback.
+let unsavedPreference:
+  | { raw: string | null | undefined; value: boolean }
+  | undefined;
+
+function getSnapshot(): boolean {
+  if (typeof window === "undefined") return DEFAULT_SHOW_KEYBOARD_HINTS;
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULTS;
-    const parsed: unknown = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return DEFAULTS;
+    if (unsavedPreference && raw === unsavedPreference.raw) {
+      return unsavedPreference.value;
     }
-    const obj = parsed as Partial<Preferences>;
-    return {
-      weekStart:
-        obj.weekStart === "monday" || obj.weekStart === "sunday"
-          ? obj.weekStart
-          : DEFAULTS.weekStart,
-      showKeyboardHints:
-        typeof obj.showKeyboardHints === "boolean"
-          ? obj.showKeyboardHints
-          : DEFAULTS.showKeyboardHints,
-    };
+    unsavedPreference = undefined;
+    const parsed: unknown = raw ? JSON.parse(raw) : null;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const value = (parsed as { showKeyboardHints?: unknown })
+        .showKeyboardHints;
+      if (typeof value === "boolean") return value;
+    }
   } catch {
-    return DEFAULTS;
+    return unsavedPreference?.value ?? DEFAULT_SHOW_KEYBOARD_HINTS;
   }
+  return DEFAULT_SHOW_KEYBOARD_HINTS;
 }
 
-function write(prefs: Preferences): void {
+function subscribe(onChange: () => void): () => void {
+  function onStorage(event: StorageEvent) {
+    if (event.key !== null && event.key !== STORAGE_KEY) return;
+    // sessionStorage has its own storage events and must not reset this setting.
+    if (event.storageArea && event.storageArea !== window.localStorage) return;
+    unsavedPreference = undefined;
+    onChange();
+  }
+  window.addEventListener("storage", onStorage);
+  window.addEventListener(CHANGED_EVENT, onChange);
+  return () => {
+    window.removeEventListener("storage", onStorage);
+    window.removeEventListener(CHANGED_EVENT, onChange);
+  };
+}
+
+function setShowKeyboardHints(showKeyboardHints: boolean): void {
   if (typeof window === "undefined") return;
+  let raw: string | null | undefined;
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
+    raw = window.localStorage.getItem(STORAGE_KEY);
+    // Ignore obsolete weekStart data on read and retire it on the next write.
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ showKeyboardHints }),
+    );
+    unsavedPreference = undefined;
   } catch {
-    // Privacy mode / disabled storage — degrade silently.
+    unsavedPreference = { raw, value: showKeyboardHints };
   }
+  // Native storage events only reach other documents, not sibling consumers.
+  window.dispatchEvent(new Event(CHANGED_EVENT));
 }
 
-interface UsePreferencesReturn {
-  preferences: Preferences;
-  setWeekStart: (v: WeekStart) => void;
-  setShowKeyboardHints: (v: boolean) => void;
-}
-
-export function usePreferences(): UsePreferencesReturn {
-  const [preferences, setPreferences] = useState<Preferences>(() => read());
-
-  // Cross-tab sync: storage events fire on other tabs when localStorage
-  // changes in this one, so the user gets consistent state without a refresh.
-  useEffect(() => {
-    function onStorage(e: StorageEvent) {
-      if (e.key === STORAGE_KEY) {
-        setPreferences(read());
-      }
-    }
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, []);
-
-  const setWeekStart = useCallback((weekStart: WeekStart) => {
-    setPreferences((prev) => {
-      const next = { ...prev, weekStart };
-      write(next);
-      return next;
-    });
-  }, []);
-
-  const setShowKeyboardHints = useCallback((showKeyboardHints: boolean) => {
-    setPreferences((prev) => {
-      const next = { ...prev, showKeyboardHints };
-      write(next);
-      return next;
-    });
-  }, []);
-
-  return useMemo(
-    () => ({ preferences, setWeekStart, setShowKeyboardHints }),
-    [preferences, setWeekStart, setShowKeyboardHints],
+/** Browser-local preferences shared by Settings and every hint consumer. */
+export function usePreferences() {
+  const showKeyboardHints = useSyncExternalStore(
+    subscribe,
+    getSnapshot,
+    () => DEFAULT_SHOW_KEYBOARD_HINTS,
   );
+  return { preferences: { showKeyboardHints }, setShowKeyboardHints };
 }

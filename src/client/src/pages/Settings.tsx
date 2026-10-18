@@ -38,7 +38,7 @@ function Settings() {
   const navigate = useNavigate();
   const { isAdmin } = usePermission();
   const { palette, density, setPalette, setDensity } = useAppearance();
-  const { preferences, setWeekStart, setShowKeyboardHints } = usePreferences();
+  const { preferences, setShowKeyboardHints } = usePreferences();
 
   const visibleTabs = useMemo(
     () => TABS.filter((t) => !t.adminOnly || isAdmin()),
@@ -136,23 +136,6 @@ function Settings() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <fieldset className="space-y-2">
-                <legend className="text-sm font-medium">Week starts on</legend>
-                <div className="flex flex-wrap gap-2">
-                  {(["sunday", "monday"] as const).map((opt) => (
-                    <button
-                      key={opt}
-                      type="button"
-                      className={`btn xs ${preferences.weekStart === opt ? "primary" : ""}`}
-                      aria-pressed={preferences.weekStart === opt}
-                      onClick={() => setWeekStart(opt)}
-                    >
-                      {opt[0].toUpperCase() + opt.slice(1)}
-                    </button>
-                  ))}
-                </div>
-              </fieldset>
-
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <Label
@@ -162,7 +145,8 @@ function Settings() {
                     Keyboard hints
                   </Label>
                   <p className="text-sm text-muted-foreground">
-                    Show ⌘K and shortcut chips in the topbar and nav.
+                    Show keyboard shortcut hints throughout the app. Keyboard
+                    shortcuts still work when hints are hidden.
                   </p>
                 </div>
                 <Switch

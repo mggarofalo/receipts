@@ -52,6 +52,20 @@ Exception: `useState(initialX)` where the prop name signals "initial" and the co
 
 ## State Structure Rules
 
+### Browser preferences
+
+`usePreferences` owns the browser-local keyboard-hint preference. It exposes a
+shared external-store snapshot so Settings, navigation, the command palette, and receipt entry
+update together, including changes from other tabs and cleared storage. A failed
+storage write still updates the current document; persistence then lasts only
+until reload. There is no server synchronization.
+
+The preference controls passive shortcut hints, not keyboard bindings or the
+explicit shortcut-help dialog. Week-start has no consumer and is no longer a
+setting. Legacy stored `weekStart` fields are ignored, while a valid
+`showKeyboardHints` value is retained; the next preference write stores only the
+supported field.
+
 ### 1. Group related values
 
 If two state variables always update together, merge them.

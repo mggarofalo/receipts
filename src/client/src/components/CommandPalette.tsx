@@ -32,6 +32,7 @@ import {
 import { useAppearance } from "@/hooks/useAppearance";
 import { useAuth } from "@/hooks/useAuth";
 import { usePermission } from "@/hooks/usePermission";
+import { usePreferences } from "@/hooks/usePreferences";
 import { useBackupExport } from "@/hooks/useBackup";
 import { usePurgeTrash } from "@/hooks/useTrash";
 import {
@@ -112,6 +113,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const { setPalette } = useAppearance();
   const { logout } = useAuth();
   const { isAdmin } = usePermission();
+  const { preferences } = usePreferences();
   const shortcutsCtx = useContext(ShortcutsContext);
   const [query, setQuery] = useState("");
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
@@ -303,7 +305,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           <Icon aria-hidden="true" className="mr-2 h-4 w-4" />
           <span>{cmd.label}</span>
           <div className="ml-auto flex items-center gap-2">
-            {shortcutGlyph ? (
+            {preferences.showKeyboardHints && shortcutGlyph ? (
               <CommandShortcut className="ml-0">
                 <span aria-hidden="true">{shortcutGlyph}</span>
                 <span className="sr-only">{spokenShortcut(shortcutGlyph)}</span>
@@ -332,7 +334,13 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         </CommandItem>
       );
     },
-    [pinnedSet, runCommand, handleTogglePin, location.pathname],
+    [
+      pinnedSet,
+      runCommand,
+      handleTogglePin,
+      location.pathname,
+      preferences.showKeyboardHints,
+    ],
   );
 
   return (

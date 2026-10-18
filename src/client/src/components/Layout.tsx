@@ -10,6 +10,7 @@ import {
 import { Icon, Kbd } from "@/components/primitives";
 import { useAuth } from "@/hooks/useAuth";
 import { usePermission } from "@/hooks/usePermission";
+import { usePreferences } from "@/hooks/usePreferences";
 import { useSignalR } from "@/hooks/useSignalR";
 import type { SignalRConnectionState } from "@/hooks/useSignalR";
 import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
@@ -112,6 +113,7 @@ const CONNECTION: Record<
 export function Layout() {
   const { user, logout } = useAuth();
   const { isAdmin } = usePermission();
+  const { preferences } = usePreferences();
   const navigate = useNavigate();
   const navigation = useNavigation();
   const location = useLocation();
@@ -182,7 +184,9 @@ export function Layout() {
                 >
                   <IconComp />
                   {item.label}
-                  {item.kbd && <span className="kbd">{item.kbd}</span>}
+                  {preferences.showKeyboardHints && item.kbd && (
+                    <span className="kbd">{item.kbd}</span>
+                  )}
                 </Link>
               );
             })}
@@ -237,10 +241,12 @@ export function Layout() {
             <span>Search or jump to…</span>
             {/* Classed rather than inline-styled so the mobile breakpoint can
                 hide it — an inline `display: flex` outranks the stylesheet. */}
-            <span className="search-btn-kbd" aria-hidden>
-              <Kbd>⌘</Kbd>
-              <Kbd>K</Kbd>
-            </span>
+            {preferences.showKeyboardHints && (
+              <span className="search-btn-kbd" aria-hidden>
+                <Kbd>⌘</Kbd>
+                <Kbd>K</Kbd>
+              </span>
+            )}
           </button>
           <ThemeToggle />
           {user && (
