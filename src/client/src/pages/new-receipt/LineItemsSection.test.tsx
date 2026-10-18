@@ -1,3 +1,4 @@
+import { useCreateSubcategory } from "@/hooks/useSubcategories";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "@/test/test-utils";
@@ -669,5 +670,100 @@ describe("LineItemsSection", () => {
         }),
       ).toBeDisabled();
     });
+  });
+});
+
+describe("line item draft normalization", () => {
+  it("normalizes added descriptions and rejects whitespace-only descriptions", async () => {
+    const onChange = vi.fn();
+    const user = userEvent.setup();
+    renderWithProviders(<LineItemsSection items={[]} onChange={onChange} />);
+    await user.type(screen.getByPlaceholderText("Item description"), "   ");
+    await user.click(screen.getByRole("button", { name: /add item/i }));
+    expect(
+      await screen.findByText("Description is required"),
+    ).toBeInTheDocument();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+});
+
+it("normalizes equivalent add and edit drafts identically while preserving item identity", async () => {
+  const user = userEvent.setup();
+  const onChange = vi.fn();
+  const { rerender } = renderWithProviders(
+    <LineItemsSection items={[]} onChange={onChange} />,
+  );
+  await user.type(screen.getByPlaceholderText("Item description"), "  Milk  ");
+  await user.type(screen.getByPlaceholderText("e.g. MILK-GAL"), " CODE ");
+  await user.click(screen.getByRole("combobox", { name: /^Category/ }));
+  await user.click(await screen.findByRole("option", { name: "Food" }));
+  await user.click(screen.getByRole("button", { name: /add item/i }));
+  await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
+  const added = onChange.mock.calls[0][0][0] as ReceiptLineItem;
+  expect(added).toEqual({
+    id: expect.any(String),
+    description: "Milk",
+    receiptItemCode: "CODE",
+    category: "Food",
+    subcategory: "",
+    quantity: 1,
+    unitPrice: 0,
+  });
+  rerender(<LineItemsSection items={[added]} onChange={onChange} />);
+  await user.click(screen.getByRole("button", { name: /edit/i }));
+  await user.clear(screen.getByLabelText("Edit description"));
+  await user.type(screen.getByLabelText("Edit description"), "  Milk  ");
+  await user.click(screen.getByRole("button", { name: /save/i }));
+  expect(onChange).toHaveBeenLastCalledWith([added]);
+});
+
+it("creates the same subcategory name independently per category and releases failed requests", async () => {
+  let rejectFirst!: (error: Error) => void;
+  const mutateAsync = vi
+    .fn()
+    .mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectFirst = reject;
+        }),
+    )
+    .mockResolvedValue(undefined);
+  vi.mocked(useCreateSubcategory).mockReturnValue(
+    mockMutationResult({ mutateAsync }),
+  );
+  const user = userEvent.setup();
+  renderWithProviders(<LineItemsSection items={[]} onChange={vi.fn()} />);
+  async function category(name: string) {
+    await user.click(screen.getByRole("combobox", { name: /^Category/ }));
+    await user.click(await screen.findByRole("option", { name }));
+  }
+  async function subcategory() {
+    await user.click(screen.getByRole("combobox", { name: /^Subcategory/ }));
+    await user.type(
+      screen.getByPlaceholderText("Search subcategories..."),
+      "Shared",
+    );
+    await user.click(
+      await screen.findByRole("button", { name: 'Use "Shared"' }),
+    );
+  }
+  await category("Food");
+  await subcategory();
+  await subcategory();
+  expect(mutateAsync).toHaveBeenCalledTimes(1);
+  await category("Household");
+  await subcategory();
+  expect(mutateAsync).toHaveBeenNthCalledWith(2, {
+    categoryId: "cat-2",
+    name: "Shared",
+    isActive: true,
+  });
+  rejectFirst(new Error("failed"));
+  await category("Food");
+  await subcategory();
+  expect(mutateAsync).toHaveBeenNthCalledWith(3, {
+    categoryId: "cat-1",
+    name: "Shared",
+    isActive: true,
   });
 });

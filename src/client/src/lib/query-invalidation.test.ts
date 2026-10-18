@@ -94,3 +94,33 @@ describe("YNAB committed-change invalidation", () => {
     }
   });
 });
+
+it("repairs the health badge after accepting or unaccepting duplicates", async () => {
+  const client = new QueryClient();
+  const health = ["reports", "health-summary"];
+  client.setQueryData(health, { duplicateGroups: 2 });
+  client.setQueryData(["reports", "spending"], { amount: 50 });
+  await repairDomainChange(client, "duplicate-acceptance", () => true);
+  expect(client.getQueryState(health)?.isInvalidated).toBe(true);
+  expect(client.getQueryState(["reports", "spending"])?.isInvalidated).toBe(
+    false,
+  );
+  client.clear();
+});
+
+it.each(["receipt", "transaction"] as const)(
+  "repairs duplicate acceptance projections after %s facts change",
+  async (change) => {
+    const client = new QueryClient();
+    const keys = [
+      ["reports", "health-summary"],
+      ["reports", "accepted-duplicates"],
+      ["reports", "duplicates"],
+    ];
+    for (const key of keys) client.setQueryData(key, { cached: true });
+    await repairDomainChange(client, change, () => true);
+    for (const key of keys)
+      expect(client.getQueryState(key)?.isInvalidated).toBe(true);
+    client.clear();
+  },
+);

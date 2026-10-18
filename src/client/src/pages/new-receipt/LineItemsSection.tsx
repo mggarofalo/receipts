@@ -1,5 +1,9 @@
+import { receiptItemDraftSchema } from "@/lib/receipt-item-draft";
 import { RequestFailure } from "@/components/RequestFailure";
-import { calculateSubtotal, calculateLineTotal } from "@/lib/receipt-arithmetic";
+import {
+  calculateSubtotal,
+  calculateLineTotal,
+} from "@/lib/receipt-arithmetic";
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { generateId } from "@/lib/id";
 import { useForm } from "react-hook-form";
@@ -62,14 +66,7 @@ import {
   BookmarkPlus,
 } from "lucide-react";
 
-const itemSchema = z.object({
-  receiptItemCode: z.string().optional().default(""),
-  description: z.string().min(1, "Description is required"),
-  quantity: z.number().positive("Quantity must be positive"),
-  unitPrice: z.number().min(0, "Unit price must be non-negative"),
-  category: z.string().min(1, "Category is required"),
-  subcategory: z.string().optional().default(""),
-});
+const itemSchema = receiptItemDraftSchema;
 
 type ItemFormValues = z.output<typeof itemSchema>;
 
@@ -145,12 +142,12 @@ export function LineItemsSection({
   });
 
   const hasItemCodeResults =
-    itemCodeSuggestions && itemCodeSuggestions.length > 0;
+    !!itemCodeSuggestions && itemCodeSuggestions.length > 0;
   const hasNoItemCodeResultsMessage =
     (itemCode ?? "").length >= 1 &&
     !isFetchingItemCodeSuggestions &&
     !itemCodeSuggestionsError &&
-    itemCodeSuggestions &&
+    !!itemCodeSuggestions &&
     itemCodeSuggestions.length === 0;
   const isItemCodeSuggestionsOpen =
     showItemCodeSuggestions &&
@@ -210,22 +207,31 @@ export function LineItemsSection({
     ],
   );
 
-  const { data: similarItems, isFetching: isFetchingSimilar, isError: similarItemsError, isDebouncing: similarItemsDebouncing, refetch: retrySimilarItems } = useSimilarItems(
-    description,
-    { enabled: showSuggestions },
-  );
+  const {
+    data: similarItems,
+    isFetching: isFetchingSimilar,
+    isError: similarItemsError,
+    isDebouncing: similarItemsDebouncing,
+    refetch: retrySimilarItems,
+  } = useSimilarItems(description, { enabled: showSuggestions });
 
-  const hasResults = similarItems && similarItems.length > 0;
+  const hasResults = !!similarItems && similarItems.length > 0;
   const hasNoResultsMessage =
     description.length >= 2 &&
     !isFetchingSimilar &&
     !similarItemsError &&
-    similarItems &&
+    !!similarItems &&
     similarItems.length === 0;
   const isSuggestionsOpen =
     showSuggestions && (hasResults || hasNoResultsMessage);
 
-  const { data: categoryRecs, isError: categoryRecsError, isFetching: categoryRecsFetching, isDebouncing: categoryRecsDebouncing, refetch: retryCategoryRecs } = useCategoryRecommendations(description, {
+  const {
+    data: categoryRecs,
+    isError: categoryRecsError,
+    isFetching: categoryRecsFetching,
+    isDebouncing: categoryRecsDebouncing,
+    refetch: retryCategoryRecs,
+  } = useCategoryRecommendations(description, {
     enabled: description.length >= 2 && !selectedCategory,
   });
 
@@ -266,6 +272,8 @@ export function LineItemsSection({
       canCreate: boolean,
       setValue: (v: string) => void,
     ) => {
+      next = next.trim();
+      const pendingKey = JSON.stringify([categoryId, next]);
       setValue(next);
       const isExisting = existing.some((o) => o.name === next);
       if (
@@ -273,15 +281,17 @@ export function LineItemsSection({
         !isExisting &&
         next &&
         categoryId &&
-        !pendingSubcategories.current.has(next)
+        !pendingSubcategories.current.has(pendingKey)
       ) {
-        pendingSubcategories.current.add(next);
-        createSubcategory.mutate(
-          { categoryId, name: next, isActive: true },
-          {
-            onSettled: () => pendingSubcategories.current.delete(next),
-          },
-        );
+        pendingSubcategories.current.add(pendingKey);
+        // Each request owns its cleanup. Per-call mutate callbacks only run for
+        // the latest observer and would strand earlier concurrent pending keys.
+        void createSubcategory
+          .mutateAsync({ categoryId, name: next, isActive: true })
+          .finally(() => pendingSubcategories.current.delete(pendingKey))
+          .catch(() => {
+            /* The mutation hook owns error presentation. */
+          });
       }
     },
     [createSubcategory],
@@ -477,22 +487,20 @@ export function LineItemsSection({
 
   const saveEditing = useCallback(() => {
     if (!editingItemId) return;
-    if (!editDraft.description.trim()) return;
-    if (!editDraft.category.trim()) return;
-    if (!Number.isFinite(editDraft.quantity) || editDraft.quantity <= 0) return;
-    if (!Number.isFinite(editDraft.unitPrice) || editDraft.unitPrice < 0)
-      return;
+    const parsed = itemSchema.safeParse(editDraft);
+    if (!parsed.success) return;
+    const draft = parsed.data;
 
     onChange(
       items.map((item) =>
         item.id === editingItemId
           ? {
               ...item,
-              description: editDraft.description.trim(),
-              quantity: editDraft.quantity,
-              unitPrice: editDraft.unitPrice,
-              category: editDraft.category,
-              subcategory: editDraft.subcategory,
+              description: draft.description,
+              quantity: draft.quantity,
+              unitPrice: draft.unitPrice,
+              category: draft.category,
+              subcategory: draft.subcategory,
             }
           : item,
       ),
@@ -648,13 +656,17 @@ export function LineItemsSection({
                       </PopoverContent>
                     </Popover>
                     <FormMessage />
-                    {itemCodeSuggestionsError && (itemCode ?? "").length >= 1 && !itemCodeDebouncing && (
-                      <RequestFailure
-                        message="Item code suggestions unavailable. You can enter the item manually."
-                        retry={() => { void retryItemCodeSuggestions(); }}
-                        isRetrying={isFetchingItemCodeSuggestions}
-                      />
-                    )}
+                    {itemCodeSuggestionsError &&
+                      (itemCode ?? "").length >= 1 &&
+                      !itemCodeDebouncing && (
+                        <RequestFailure
+                          message="Item code suggestions unavailable. You can enter the item manually."
+                          retry={() => {
+                            void retryItemCodeSuggestions();
+                          }}
+                          isRetrying={isFetchingItemCodeSuggestions}
+                        />
+                      )}
                   </FormItem>
                 )}
               />
@@ -694,7 +706,8 @@ export function LineItemsSection({
                                 // arrive there is no outside layer to clear this flag;
                                 // release ownership when focus has already moved on so a
                                 // late response cannot open over the next field.
-                                if (!isSuggestionsOpen) setShowSuggestions(false);
+                                if (!isSuggestionsOpen)
+                                  setShowSuggestions(false);
                               }}
                               onKeyDown={handleDescriptionKeyDown}
                             />
@@ -818,13 +831,17 @@ export function LineItemsSection({
                       </PopoverContent>
                     </Popover>
                     <FormMessage />
-                    {similarItemsError && description.length >= 2 && !similarItemsDebouncing && (
-                      <RequestFailure
-                        message="Description suggestions unavailable. You can enter the item manually."
-                        retry={() => { void retrySimilarItems(); }}
-                        isRetrying={isFetchingSimilar}
-                      />
-                    )}
+                    {similarItemsError &&
+                      description.length >= 2 &&
+                      !similarItemsDebouncing && (
+                        <RequestFailure
+                          message="Description suggestions unavailable. You can enter the item manually."
+                          retry={() => {
+                            void retrySimilarItems();
+                          }}
+                          isRetrying={isFetchingSimilar}
+                        />
+                      )}
                   </FormItem>
                 )}
               />
@@ -881,13 +898,18 @@ export function LineItemsSection({
                         </div>
                       )}
                     <FormMessage />
-                    {categoryRecsError && description.length >= 2 && !selectedCategory && !categoryRecsDebouncing && (
-                      <RequestFailure
-                        message="Category suggestions unavailable. You can choose a category manually."
-                        retry={() => { void retryCategoryRecs(); }}
-                        isRetrying={categoryRecsFetching}
-                      />
-                    )}
+                    {categoryRecsError &&
+                      description.length >= 2 &&
+                      !selectedCategory &&
+                      !categoryRecsDebouncing && (
+                        <RequestFailure
+                          message="Category suggestions unavailable. You can choose a category manually."
+                          retry={() => {
+                            void retryCategoryRecs();
+                          }}
+                          isRetrying={categoryRecsFetching}
+                        />
+                      )}
                   </FormItem>
                 )}
               />
