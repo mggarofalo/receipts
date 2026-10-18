@@ -14,6 +14,7 @@ public class BulkPushYnabTransactionsCommandHandler(
 
 	public async ValueTask<BulkPushYnabTransactionsResult> Handle(BulkPushYnabTransactionsCommand request, CancellationToken cancellationToken)
 	{
+		cancellationToken.ThrowIfCancellationRequested();
 		// A bulk submission is one user operation. Capture its destination once so a
 		// concurrent settings change cannot split receipts across YNAB budgets.
 		string? budgetId = await budgetSelectionService.GetSelectedBudgetIdAsync(cancellationToken);
@@ -40,11 +41,16 @@ public class BulkPushYnabTransactionsCommandHandler(
 
 		foreach (Guid receiptId in request.ReceiptIds)
 		{
+			cancellationToken.ThrowIfCancellationRequested();
 			try
 			{
 				PushYnabTransactionsResult result = await mediator.Send(
 					new PushYnabTransactionsCommand(receiptId, budgetId), cancellationToken);
 				results.Add(new ReceiptPushResult(receiptId, result));
+			}
+			catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+			{
+				throw;
 			}
 			catch (Exception ex)
 			{
@@ -53,6 +59,8 @@ public class BulkPushYnabTransactionsCommandHandler(
 			}
 		}
 
+		// A push can record an uncertain remote outcome before returning after cancellation.
+		cancellationToken.ThrowIfCancellationRequested();
 		return new BulkPushYnabTransactionsResult(results);
 	}
 }

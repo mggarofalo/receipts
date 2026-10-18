@@ -30,6 +30,21 @@ public class ItemTemplateSimilarityServiceTests
 	}
 
 	[Fact]
+	public async Task GetSimilarItemsAsync_RequestedCancellation_DoesNotRunFallbackQuery()
+	{
+		using CancellationTokenSource cancellation = new();
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
+		_embeddingServiceMock.Setup(e => e.GenerateEmbeddingAsync("cancelled query", cancellation.Token))
+			.Callback(() => cancellation.Cancel())
+			.ThrowsAsync(new OperationCanceledException(cancellation.Token));
+
+		Func<Task> act = () => _service.GetSimilarItemsAsync("cancelled query", 10, 0.3, true, cancellation.Token);
+
+		// The InMemory provider rejects SQL: reaching fallback would throw InvalidOperationException.
+		await act.Should().ThrowAsync<OperationCanceledException>();
+	}
+
+	[Fact]
 	public async Task GetSimilarItemsAsync_SkipsEmbedding_WhenSemanticSearchDisabled()
 	{
 		// Arrange — no DbContext setup needed since we're testing the embedding path only.

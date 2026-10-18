@@ -25,6 +25,41 @@ public class BulkPushYnabTransactionsCommandHandlerTests
 			_budgetSelectionMock.Object);
 	}
 
+	[Theory]
+	[InlineData(false)]
+	[InlineData(true)]
+	public async Task Handle_InnerPushReturnsAfterCancellation_DoesNotContinueOrReportCompletion(bool finalReceipt)
+	{
+		using CancellationTokenSource cancellation = new();
+		Guid first = Guid.NewGuid();
+		Guid next = Guid.NewGuid();
+		_mediatorMock.Setup(m => m.Send(It.Is<PushYnabTransactionsCommand>(c => c.ReceiptId == first), cancellation.Token))
+			.Callback(() => cancellation.Cancel())
+			.ReturnsAsync(new PushYnabTransactionsResult(false, [], Error: "Outcome unknown"));
+		List<Guid> ids = finalReceipt ? [first] : [first, next];
+
+		Func<Task> act = async () => await _handler.Handle(new(ids), cancellation.Token);
+
+		await act.Should().ThrowAsync<OperationCanceledException>();
+		_mediatorMock.Verify(m => m.Send(It.Is<PushYnabTransactionsCommand>(c => c.ReceiptId == next), It.IsAny<CancellationToken>()), Times.Never);
+	}
+
+	[Fact]
+	public async Task Handle_RequestedCancellation_StopsBeforeNextReceipt()
+	{
+		using CancellationTokenSource cancellation = new();
+		Guid first = Guid.NewGuid();
+		Guid next = Guid.NewGuid();
+		_mediatorMock.Setup(m => m.Send(It.Is<PushYnabTransactionsCommand>(c => c.ReceiptId == first), cancellation.Token))
+			.Callback(() => cancellation.Cancel())
+			.ThrowsAsync(new OperationCanceledException(cancellation.Token));
+
+		Func<Task> act = async () => await _handler.Handle(new([first, next]), cancellation.Token);
+
+		await act.Should().ThrowAsync<OperationCanceledException>();
+		_mediatorMock.Verify(m => m.Send(It.Is<PushYnabTransactionsCommand>(c => c.ReceiptId == next), It.IsAny<CancellationToken>()), Times.Never);
+	}
+
 	[Fact]
 	public async Task Handle_WithinRateLimit_ProcessesAllReceipts()
 	{

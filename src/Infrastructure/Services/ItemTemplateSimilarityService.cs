@@ -16,6 +16,7 @@ public class ItemTemplateSimilarityService(
 
 	public async Task<List<SimilarItemResult>> GetSimilarItemsAsync(string searchText, int limit, double threshold, bool useSemanticSearch, CancellationToken cancellationToken)
 	{
+		cancellationToken.ThrowIfCancellationRequested();
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 
 		// Try to generate an embedding for the search text
@@ -30,12 +31,17 @@ public class ItemTemplateSimilarityService(
 					searchVector = new Vector(embedding);
 				}
 			}
+			catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+			{
+				throw;
+			}
 			catch (Exception ex)
 			{
 				logger.LogWarning(ex, "Failed to generate search embedding, falling back to trigram-only");
 			}
 		}
 
+		cancellationToken.ThrowIfCancellationRequested();
 		List<SimilarItemRow> rows;
 		if (searchVector is not null)
 		{
