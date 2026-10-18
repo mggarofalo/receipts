@@ -1,6 +1,7 @@
 using API.Controllers;
 using API.Generated.Dtos;
 using API.Services;
+using Application.Exceptions;
 using Application.Interfaces.Services;
 using Application.Models;
 using FluentAssertions;
@@ -63,7 +64,7 @@ public class BackupImportNotificationTests : IDisposable
 			.Returns(Task.CompletedTask);
 		using MemoryStream contents = new([1, 2, 3]);
 
-		Task<Results<Ok<BackupImportResponse>, BadRequest<ProblemDetails>>> operation = _controller.ImportBackup(Upload(contents));
+		Task<Results<Ok<BackupImportResponse>, BadRequest<ProblemDetails>, Conflict<ProblemDetails>>> operation = _controller.ImportBackup(Upload(contents));
 		await entered.Task;
 		_notifier.VerifyNoOtherCalls();
 		committed.SetResult();
@@ -153,6 +154,22 @@ public class BackupImportNotificationTests : IDisposable
 				File.Delete(path);
 			}
 		}
+	}
+
+	[Fact]
+	public async Task Import_ConcurrencyRejectionReturnsReasonedConflictWithoutNotification()
+	{
+		const string reason = "Receipt changed during import; reload and retry.";
+		_import.Setup(service => service.ImportFromSqliteAsync(It.IsAny<Stream>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new ConcurrencyConflictException(reason));
+		using MemoryStream contents = new([1, 2, 3]);
+
+		var response = await _controller.ImportBackup(Upload(contents));
+
+		ProblemDetails problem = response.Result.Should().BeOfType<Conflict<ProblemDetails>>().Which.Value!;
+		problem.Status.Should().Be(StatusCodes.Status409Conflict);
+		problem.Detail.Should().Be(reason);
+		_notifier.VerifyNoOtherCalls();
 	}
 
 	private static FormFile Upload(Stream stream) => new(stream, 0, stream.Length, "file", "backup.db");

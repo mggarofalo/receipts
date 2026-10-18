@@ -48,3 +48,15 @@ payments, line items (including template-assisted creation), and adjustments
 without duplicating the rule in each repository. A stale admission is rejected
 with a reasoned HTTP 409 and leaves the business write and audits uncommitted.
 As with fact reconciliation, direct SQL must explicitly join this protocol.
+
+Backup import keeps an existing target pair's identity when the archive explicitly
+restores that same accepted pair. Import snapshots those identities under the
+receipt locks before updating receipt facts, then reactivates only assertions
+supplied by the archive. A changed receipt whose acceptance is omitted remains
+invalidated. Repeated imports preserve semantic identity and do not create extra
+active pairs. The archive format is unchanged.
+
+Backup import also declares a reasoned HTTP 409 if a concurrent receipt-parent change prevents safe admission; the entire import rolls back and emits no change notification.
+Import revalidates the archived children's persisted parents after acquiring the
+ordered lock set. If that snapshot changed, it rejects the entire import with
+HTTP 409; it does not acquire an unexpected parent lock midway through import.
