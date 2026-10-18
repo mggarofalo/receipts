@@ -1,15 +1,16 @@
+import type { components } from "@/generated/api";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { server } from "@/test/msw/server";
-import { cards } from "@/test/msw/fixtures/cards";
+import { accounts } from "@/test/msw/fixtures/accounts";
 import { createListHandlers } from "@/test/msw/handler-factories";
 import { renderWithQueryClient } from "@/test/test-utils";
 import Cards from "./Cards";
 
 beforeEach(() => {
   localStorage.clear();
-  server.use(...createListHandlers("cards", cards));
+  server.use(...createListHandlers("accounts", accounts));
 });
 
 describe("Cards (integration)", () => {
@@ -27,12 +28,16 @@ describe("Cards (integration)", () => {
   it("shows loading skeleton then resolves to data", async () => {
     const { container } = renderWithQueryClient(<Cards />);
 
-    expect(container.querySelector("[data-slot='skeleton']")).toBeInTheDocument();
+    expect(
+      container.querySelector("[data-slot='skeleton']"),
+    ).toBeInTheDocument();
 
     await waitFor(() => {
       expect(screen.getByText("Cash")).toBeInTheDocument();
     });
-    expect(container.querySelector("[data-slot='skeleton']")).not.toBeInTheDocument();
+    expect(
+      container.querySelector("[data-slot='skeleton']"),
+    ).not.toBeInTheDocument();
   });
 
   it("renders empty state when API returns no data", async () => {
@@ -73,8 +78,8 @@ describe("Cards (integration)", () => {
 
     await user.click(screen.getByRole("tab", { name: "Inactive" }));
 
+    expect(await screen.findByText("Closed Savings")).toBeInTheDocument();
     expect(screen.queryByText("Cash")).not.toBeInTheDocument();
-    expect(screen.getByText("Closed Savings")).toBeInTheDocument();
   });
 
   it("shows all cards when All tab is clicked", async () => {
@@ -89,7 +94,7 @@ describe("Cards (integration)", () => {
 
     expect(screen.getByText("Cash")).toBeInTheDocument();
     expect(screen.getByText("Credit Card")).toBeInTheDocument();
-    expect(screen.getByText("Closed Savings")).toBeInTheDocument();
+    expect(await screen.findByText("Closed Savings")).toBeInTheDocument();
   });
 
   it("persists status filter in localStorage", async () => {
@@ -111,10 +116,15 @@ describe("Cards (integration)", () => {
 
     server.use(
       http.post("*/api/cards", async ({ request }) => {
-        capturedBody = (await request.json()) as Record<string, unknown>;
+        const body =
+          (await request.json()) as components["schemas"]["CreateCardRequest"];
+        capturedBody = body;
         return HttpResponse.json(
-          { id: "new-id", ...capturedBody },
-          { status: 201 },
+          {
+            ...body,
+            id: "00000000-0000-0000-0000-000000000099",
+          } satisfies components["schemas"]["CardResponse"],
+          { status: 200 },
         );
       }),
     );
@@ -126,10 +136,22 @@ describe("Cards (integration)", () => {
     });
 
     await user.click(screen.getByRole("button", { name: /new card/i }));
-    expect(screen.getByRole("heading", { name: /create card/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /create card/i }),
+    ).toBeInTheDocument();
 
     await user.type(screen.getByLabelText(/card code/i), "4000");
-    await user.type(screen.getByLabelText(/^name$/i), "New Checking");
+    await user.type(
+      screen.getByRole("textbox", { name: /^name\s*\*$/i }),
+      "New Checking",
+    );
+    // A parent account is required: reject the incomplete draft before any HTTP write.
+    await user.click(screen.getByRole("button", { name: /create card/i }));
+    expect(await screen.findByText("Account is required")).toBeInTheDocument();
+    expect(capturedBody).toBeNull();
+
+    await user.click(screen.getByRole("combobox", { name: "Account" }));
+    await user.click(await screen.findByRole("option", { name: "Household" }));
     await user.click(screen.getByRole("button", { name: /create card/i }));
 
     await waitFor(() => {
@@ -139,6 +161,7 @@ describe("Cards (integration)", () => {
       cardCode: "4000",
       name: "New Checking",
       isActive: true,
+      accountId: accounts[0].id,
     });
   });
 
@@ -162,9 +185,11 @@ describe("Cards (integration)", () => {
     const editButtons = screen.getAllByRole("button", { name: /edit/i });
     await user.click(editButtons[0]);
 
-    expect(screen.getByRole("heading", { name: /edit card/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /edit card/i }),
+    ).toBeInTheDocument();
 
-    const nameInput = screen.getByLabelText(/^name$/i);
+    const nameInput = screen.getByRole("textbox", { name: /^name\s*\*$/i });
     await user.clear(nameInput);
     await user.type(nameInput, "Updated Cash");
     await user.click(screen.getByRole("button", { name: /update card/i }));
@@ -172,7 +197,10 @@ describe("Cards (integration)", () => {
     await waitFor(() => {
       expect(capturedBody).not.toBeNull();
     });
-    expect(capturedBody).toMatchObject({ name: "Updated Cash" });
+    expect(capturedBody).toMatchObject({
+      name: "Updated Cash",
+      accountId: accounts[0].id,
+    });
   });
 
   it("closes create dialog when Cancel is clicked", async () => {
@@ -180,15 +208,21 @@ describe("Cards (integration)", () => {
     renderWithQueryClient(<Cards />);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /new card/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /new card/i }),
+      ).toBeInTheDocument();
     });
 
     await user.click(screen.getByRole("button", { name: /new card/i }));
-    expect(screen.getByRole("heading", { name: /create card/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /create card/i }),
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /cancel/i }));
     await waitFor(() => {
-      expect(screen.queryByRole("heading", { name: /create card/i })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("heading", { name: /create card/i }),
+      ).not.toBeInTheDocument();
     });
   });
 
@@ -196,13 +230,17 @@ describe("Cards (integration)", () => {
     renderWithQueryClient(<Cards />);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /new card/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /new card/i }),
+      ).toBeInTheDocument();
     });
 
     window.dispatchEvent(new Event("shortcut:new-item"));
 
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: /create card/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole("heading", { name: /create card/i }),
+      ).toBeInTheDocument();
     });
   });
 

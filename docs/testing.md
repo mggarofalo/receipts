@@ -337,7 +337,8 @@ vi.mocked(useAccounts).mockReturnValue(mockQueryResult({
 Test hooks against a mock HTTP server for higher-fidelity validation.
 
 - Use MSW (Mock Service Worker) with `setupServer()` from `msw/node`
-- Setup file: `src/client/src/test/setup.integration.ts` starts and resets the server
+- Setup file: `src/client/src/test/setup.integration.ts` imports the shared browser environment from `setup.ts`, then starts and resets the server. Keep jsdom browser shims shared so unit and HTTP tests exercise the same real controls.
+- Preserve resource-specific MSW handlers when testing server filters. A generic list fixture must not override filtering or omit required parent relationships. Type entity fixtures against generated API schemas; use RFC 9457 `detail` plus extensions for reasoned API failures.
 - Test files: `*.integration.test.ts` (colocated with hook tests)
 - Response bodies must match the real API response shape exactly
 
