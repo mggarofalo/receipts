@@ -2,15 +2,11 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Infrastructure.Services;
 
-/// <summary>
-/// Serializes operations that can restore historical image paths with the filesystem
-/// reconciler. The transaction-scoped PostgreSQL advisory lock also coordinates across
-/// API instances and is released automatically on commit, rollback, or connection loss.
-/// </summary>
-internal static class ReceiptImageReconciliationLock
+/// <summary>Serializes portable backup imports locally and across API instances.</summary>
+internal static class BackupImportLock
 {
 	// Arbitrary application-owned key. Keep stable so every deployed version contends on
-	// the same lock while backup imports and image reconciliation overlap.
+	// the same lock during rolling upgrades from versions with image reconciliation.
 	private const long AdvisoryLockKey = 0x52454345495054; // "RECEIPT"
 	private static readonly SemaphoreSlim LocalWaiter = new(1, 1);
 

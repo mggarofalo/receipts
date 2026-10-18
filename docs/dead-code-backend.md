@@ -1,5 +1,8 @@
 # Backend dead-code evidence
 
+This audit records the v0.14.0 state. Receipt photo infrastructure was subsequently
+retired in RECEIPTS-994; see [retirement guidance](receipt-image-storage.md).
+
 The audit starts at main `3cef6d257fc424f51205a3060066dc2abc8c0142` and also checks the integrated refactor at `d71e96e85030032dd52693bfa3ea32792a942a79`. The removed backend declarations are identical at both revisions. Their production consumers were checked against the integrated revision, including generated Mediator dispatch. A separate semantic run against main failed closed on historical advisory diagnostics embedded in its restore metadata; it is not counted as a successful semantic run. Main declarations and production references were compared separately; final integrated proof and builds remain required.
 
 ## Reproduce the candidate proof

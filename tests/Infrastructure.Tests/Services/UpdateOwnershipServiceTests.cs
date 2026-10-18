@@ -1,4 +1,3 @@
-using Application.Models.Images;
 using Common;
 using Domain;
 using Domain.Core;
@@ -15,7 +14,7 @@ namespace Infrastructure.Tests.Services;
 public class UpdateOwnershipServiceTests
 {
 	[Fact]
-	public async Task ReceiptUpdate_ChangesEditableFields_PreservesImages_AndExplicitImageUpdateStillWorks()
+	public async Task ReceiptUpdate_ChangesEditableFields_PreservesArchivalImagePaths()
 	{
 		IDbContextFactory<ApplicationDbContext> factory = DbContextHelpers.CreateInMemoryContextFactory();
 		Guid id = Guid.NewGuid();
@@ -38,13 +37,6 @@ public class UpdateOwnershipServiceTests
 			stored.OriginalImagePath.Should().Be("original.jpg");
 			stored.ProcessedImagePath.Should().Be("processed.png");
 		}
-		ReceiptImageSet? previous = await service.ReplaceImagePathsAsync(
-			id, new ReceiptImageSet("replacement.jpg", "replacement.png"), CancellationToken.None);
-		previous.Should().Be(new ReceiptImageSet("original.jpg", "processed.png"));
-		await using ApplicationDbContext verify = factory.CreateDbContext();
-		ReceiptEntity replacement = await verify.Receipts.SingleAsync();
-		replacement.OriginalImagePath.Should().Be("replacement.jpg");
-		replacement.ProcessedImagePath.Should().Be("replacement.png");
 	}
 
 	[Theory]

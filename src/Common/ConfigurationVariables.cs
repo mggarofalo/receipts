@@ -15,8 +15,6 @@ public static class ConfigurationVariables
 	public const string JwtIssuer = "Jwt:Issuer";
 	public const string JwtAudience = "Jwt:Audience";
 
-	public const string ImageStoragePath = "ImageStorage:Path";
-
 	public const string AdminSeedEmail = "AdminSeed:Email";
 	public const string AdminSeedPassword = "AdminSeed:Password";
 	public const string AdminSeedFirstName = "AdminSeed:FirstName";

@@ -984,26 +984,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/receipts/{receiptId}/image": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Upload an image for a receipt
-         * @description Accepts a JPEG or PNG image, runs preprocessing (grayscale, adaptive threshold, deskew), atomically publishes the original and processed variants as one immutable set, and returns both image paths.
-         */
-        post: operations["UploadReceiptImage"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/receipts/complete": {
         parameters: {
             query?: never;
@@ -2147,7 +2127,7 @@ export interface paths {
         put?: never;
         /**
          * Export database to a portable SQLite file
-         * @description Generates a SQLite database containing all domain data (accounts, categories, receipts, items, transactions, adjustments, item templates), YNAB configuration and current sync records, and normalized descriptions. Receipt image file paths are included, but the image binaries are stored outside the database and must be backed up separately. User accounts and authentication settings are excluded. Audit logs, the YNAB sync history (YnabSyncEvents), and the re-fetchable YNAB delta cursor (YnabServerKnowledge) are deliberately excluded as activity history or regenerable data rather than restorable state. Admin-only. Soft-deleted records are excluded.
+         * @description Generates a SQLite database containing all domain data (accounts, categories, receipts, items, transactions, adjustments, item templates), YNAB configuration and current sync records, and normalized descriptions. Inert legacy receipt image-path metadata is retained for archival compatibility. Photo support is retired and image binaries are not included. User accounts and authentication settings are excluded. Audit logs, the YNAB sync history (YnabSyncEvents), and the re-fetchable YNAB delta cursor (YnabServerKnowledge) are deliberately excluded as activity history or regenerable data rather than restorable state. Admin-only. Soft-deleted records are excluded.
          */
         post: operations["ExportBackup"];
         delete?: never;
@@ -3770,10 +3750,6 @@ export interface components {
         };
         /** Format: binary */
         IFormFile: string;
-        UploadReceiptImageResponse: {
-            originalImagePath: string;
-            processedImagePath: string;
-        };
         CreateCompleteReceiptRequest: {
             receipt: components["schemas"]["CreateReceiptRequest"];
             transactions: components["schemas"]["CreateTransactionRequest"][];
@@ -6920,50 +6896,6 @@ export interface operations {
                 content: {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
-            };
-        };
-    };
-    UploadReceiptImage: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                receiptId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "multipart/form-data": {
-                    file?: components["schemas"]["IFormFile"];
-                };
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UploadReceiptImageResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProblemDetails"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
         };
     };

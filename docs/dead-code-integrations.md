@@ -1,5 +1,8 @@
 # Integration dead-code evidence (RECEIPTS-989)
 
+This audit records the v0.14.0 state. Receipt photo infrastructure was subsequently
+retired in RECEIPTS-994; see [retirement guidance](receipt-image-storage.md).
+
 The audit evaluated the production graph at `d71e96e85030032dd52693bfa3ea32792a942a79`
 and checked each deletion against the `main` baseline
 `3cef6d257fc424f51205a3060066dc2abc8c0142`. Tests and DI registration are not, by

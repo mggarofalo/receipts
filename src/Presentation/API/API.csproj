@@ -19,7 +19,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" GeneratePathProperty="true" />
     <PackageReference Include="Asp.Versioning.Mvc" />
     <PackageReference Include="Asp.Versioning.Mvc.ApiExplorer" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
@@ -50,12 +49,6 @@
     <ProjectReference Include="..\..\Application\Application.csproj" />
 	<ProjectReference Include="..\..\Infrastructure\Infrastructure.csproj" />
     <ProjectReference Include="..\..\Receipts.ServiceDefaults\Receipts.ServiceDefaults.csproj" />
-  </ItemGroup>
-
-  <!-- Ship the pinned codec's license and complete native dependency notices with deployments. -->
-  <ItemGroup>
-    <Content Include="$(PkgSkiaSharp_NativeAssets_Linux_NoDependencies)\LICENSE.txt" Link="licenses\SkiaSharp\LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="$(PkgSkiaSharp_NativeAssets_Linux_NoDependencies)\THIRD-PARTY-NOTICES.txt" Link="licenses\SkiaSharp\THIRD-PARTY-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!-- Generated DTOs are produced by the GenerateDtos target below, which re-adds

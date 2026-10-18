@@ -2324,50 +2324,6 @@ paths:
                 $ref: "#/components/schemas/ProblemDetails"
 
 
-  /api/receipts/{receiptId}/image:
-    post:
-      operationId: UploadReceiptImage
-      tags: [Receipts]
-      summary: Upload an image for a receipt
-      description: >
-        Accepts a JPEG or PNG image, runs preprocessing (grayscale, adaptive threshold,
-        deskew), atomically publishes the original and processed variants as one immutable
-        set, and returns both image paths.
-      security:
-        - BearerAuth: []
-        - ApiKey: []
-      parameters:
-        - name: receiptId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              properties:
-                file:
-                  $ref: "#/components/schemas/IFormFile"
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/UploadReceiptImageResponse"
-        "400":
-          description: Bad Request
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-        "404":
-          description: Not Found
-
   /api/receipts/complete:
     post:
       operationId: CreateCompleteReceipt
@@ -4918,8 +4874,8 @@ paths:
         Generates a SQLite database containing all domain data (accounts,
         categories, receipts, items, transactions, adjustments, item templates),
         YNAB configuration and current sync records, and normalized descriptions.
-        Receipt image file paths are included, but the image binaries are stored
-        outside the database and must be backed up separately. User accounts and
+        Inert legacy receipt image-path metadata is retained for archival compatibility.
+        Photo support is retired and image binaries are not included. User accounts and
         authentication settings are excluded. Audit logs, the YNAB sync history
         (YnabSyncEvents), and the re-fetchable YNAB delta cursor
         (YnabServerKnowledge) are deliberately excluded as activity history or
@@ -7510,15 +7466,6 @@ components:
     IFormFile:
       type: string
       format: binary
-
-    UploadReceiptImageResponse:
-      type: object
-      required: [originalImagePath, processedImagePath]
-      properties:
-        originalImagePath:
-          type: string
-        processedImagePath:
-          type: string
 
     CreateCompleteReceiptRequest:
       type: object
