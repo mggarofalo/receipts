@@ -229,9 +229,3 @@ describe("useNormalizedDescriptions", () => {
     expect(result.current.error).toEqual(apiError);
   });
 });
-
-describe("useNormalizedDescription", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-});
