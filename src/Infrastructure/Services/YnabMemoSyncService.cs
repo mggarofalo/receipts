@@ -260,11 +260,16 @@ public class YnabMemoSyncService(
 		// Idempotency: if memo already contains this receipt link, skip
 		if (ynabTransaction.Memo is not null && ynabTransaction.Memo.Contains(receiptLink))
 		{
-			// Ensure we have a sync record for tracking
+			// Remote state is authoritative after an interrupted PATCH or local status write.
 			if (syncRecord is null)
 			{
-				YnabSyncRecordDto record = await syncRecordService.CreateAsync(transaction.Id, budgetId, YnabSyncType.MemoUpdate, cancellationToken);
-				await syncRecordService.UpdateStatusAsync(record.Id, YnabSyncStatus.Synced, ynabTransaction.Id, null, cancellationToken);
+				syncRecord = await syncRecordService.CreateAsync(transaction.Id, budgetId, YnabSyncType.MemoUpdate, cancellationToken);
+			}
+			if (syncRecord.SyncStatus != YnabSyncStatus.Synced
+				|| syncRecord.YnabTransactionId != ynabTransaction.Id
+				|| syncRecord.LastError is not null)
+			{
+				await syncRecordService.UpdateStatusAsync(syncRecord.Id, YnabSyncStatus.Synced, ynabTransaction.Id, null, cancellationToken);
 			}
 
 			return new YnabMemoSyncResult(transaction.Id, receipt.Id, YnabMemoSyncOutcome.AlreadySynced, ynabTransaction.Id, null, null);
@@ -285,6 +290,11 @@ public class YnabMemoSyncService(
 			await syncRecordService.UpdateStatusAsync(syncRecord.Id, YnabSyncStatus.Synced, ynabTransaction.Id, null, cancellationToken);
 
 			return new YnabMemoSyncResult(transaction.Id, receipt.Id, YnabMemoSyncOutcome.Synced, ynabTransaction.Id, null, null);
+		}
+		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+		{
+			// The remote PATCH may have completed. A retry reconciles its receipt link.
+			throw;
 		}
 		catch (Exception ex)
 		{
