@@ -70,8 +70,9 @@
     <!-- Pinned for security: GHSA-37gx-xxp4-5rgx, GHSA-w3x6-4m5h-cxqf (RECEIPTS-680). Forced
          into Infrastructure.csproj via a direct PackageReference so CPM resolves the patched
          transitive. Bumped again for GHSA-cvvh-rhrc-wg4q, GHSA-23rf-6693-g89p, GHSA-8q5v-6pqq-x66h,
-         GHSA-g8r8-53c2-pm3f and GHSA-mmjf-rqrv-855v, all patched in 10.0.10 (RECEIPTS-828). -->
-    <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.10" />
+         GHSA-g8r8-53c2-pm3f and GHSA-mmjf-rqrv-855v, all patched in 10.0.10 (RECEIPTS-828).
+         10.0.13 also patches the October 2026 XML and PKCS advisories (RECEIPTS-986). -->
+    <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.13" />
 
     <!--
       Transitive security pins (RECEIPTS-828). None of these is referenced
@@ -82,11 +83,11 @@
       once the parent dependency ships a patched version on its own.
         SQLitePCLRaw.lib.e_sqlite3 → GHSA-2m69-gcr7-jv3q (vulnerable <= 2.1.11)
         Microsoft.OpenApi         → GHSA-v5pm-xwqc-g5wc (patched in 2.7.5)
-        MessagePack               → GHSA-hv8m-jj95-wg3x (patched in 2.5.301)
+        MessagePack               → GHSA-hv8m-jj95-wg3x and GHSA-qhrr-8q5h-9q3h (2.5.303)
     -->
     <PackageVersion Include="SQLitePCLRaw.lib.e_sqlite3" Version="2.1.12" />
     <PackageVersion Include="Microsoft.OpenApi" Version="2.7.5" />
-    <PackageVersion Include="MessagePack" Version="2.5.301" />
+    <PackageVersion Include="MessagePack" Version="2.5.303" />
     <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageVersion Include="Serilog.Extensions.Logging" Version="10.0.0" />
     <PackageVersion Include="Serilog.Sinks.Console" Version="6.1.1" />
@@ -97,8 +98,8 @@
     <PackageVersion Include="Serilog.Sinks.OpenTelemetry" Version="4.2.0" />
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.14.0" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
-    <PackageVersion Include="SixLabors.ImageSharp" Version="3.1.12" />
-    <PackageVersion Include="PdfPig" Version="0.1.14" />
+    <PackageVersion Include="SkiaSharp" Version="4.153.1" />
+    <PackageVersion Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.153.1" />
     <PackageVersion Include="xunit" Version="2.9.3" />
   </ItemGroup>
 

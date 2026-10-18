@@ -263,3 +263,17 @@ The API waits for PostgreSQL to be healthy before starting (`.WaitFor(db)` in Ap
 ## Releases
 
 See **[docs/releases.md](releases.md)** for the full release process. Releases are tag-driven: pushing a `vX.Y.Z` git tag on `main` publishes Docker images to GHCR and creates a GitHub Release with auto-generated notes. The .NET version is derived from the tag by MinVer.
+
+### Dependency security validation (RECEIPTS-986)
+
+The XML cryptography packages are pinned to 10.0.13 and MessagePack to 2.5.303,
+including AppHost's explicit package reference. Package resolution alone does not
+prove runtime remediation: the API can prune XML package references in favor of
+the ASP.NET shared framework. Update the installed runtime and pull/redeploy the
+patched `aspnet:10.0-noble` container image as well.
+
+ImageSharp 3.1.12 remains a known NuGet audit blocker for strict builds and server
+contract extraction. Its patched upgrade introduces license-key validation; that
+upgrade requires a separate licensing decision. Do not disable audit, lower
+warning severity, or treat an ordinary build as evidence that strict extraction
+passed. CI configuration and coverage thresholds remain unchanged.

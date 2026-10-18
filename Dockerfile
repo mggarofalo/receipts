@@ -109,7 +109,7 @@ LABEL org.opencontainers.image.title="Receipts" \
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends gosu curl \
-      libgomp1 libgdiplus && \
+      libgomp1 && \
     rm -rf /var/lib/apt/lists/*
 
 ARG SENTRY_BACKEND_DSN=

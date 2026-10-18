@@ -38,8 +38,7 @@
     <PackageReference Include="Pgvector" />
     <PackageReference Include="Pgvector.EntityFrameworkCore" />
     <PackageReference Include="Riok.Mapperly" />
-    <PackageReference Include="SixLabors.ImageSharp" />
-    <PackageReference Include="PdfPig" />
+    <PackageReference Include="SkiaSharp" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Tools">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

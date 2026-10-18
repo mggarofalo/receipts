@@ -1,467 +1,222 @@
+using System.Buffers.Binary;
 using Application.Interfaces.Services;
 using FluentAssertions;
 using Infrastructure.Services;
-using Microsoft.Extensions.Logging;
-using Moq;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Formats.Jpeg;
-using SixLabors.ImageSharp.Formats.Png;
-using SixLabors.ImageSharp.PixelFormats;
-using SixLabors.ImageSharp.Processing;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Infrastructure.Tests.Services;
 
 public class ImageProcessingServiceTests
 {
-	private readonly ImageProcessingService _service;
+	private readonly ImageProcessingService _service = new(NullLogger<ImageProcessingService>.Instance);
 
-	public ImageProcessingServiceTests()
+	[Fact]
+	public async Task PreprocessAsync_JpegFixture_ReturnsSingleChannelPngWithExactDimensions()
 	{
-		Mock<ILogger<ImageProcessingService>> mockLogger = new();
-		_service = new ImageProcessingService(mockLogger.Object);
+		ImageProcessingResult result = await _service.PreprocessAsync(PngFixture.WhiteJpeg, "image/jpeg", CancellationToken.None);
+		result.Width.Should().Be(8);
+		result.Height.Should().Be(6);
+		PngFixture.DecodeGray(result.ProcessedBytes).Should().Equal(Enumerable.Repeat((byte)255, 48));
 	}
 
 	[Fact]
-	public async Task PreprocessAsync_ValidJpeg_ReturnsProcessedPng()
+	public async Task PreprocessAsync_ColorPng_UsesLuminanceAndWritesActualGrayscale()
 	{
-		// Arrange
-		byte[] imageBytes = CreateTestJpeg(100, 100);
-
-		// Act
-		ImageProcessingResult result = await _service.PreprocessAsync(imageBytes, "image/jpeg", CancellationToken.None);
-
-		// Assert
-		result.ProcessedBytes.Should().NotBeNullOrEmpty();
-		result.Width.Should().BeGreaterThan(0);
-		result.Height.Should().BeGreaterThan(0);
-
-		// Verify output is valid PNG
-		using Image<L8> output = Image.Load<L8>(result.ProcessedBytes);
-		output.Width.Should().BeGreaterThan(0);
+		// Red, green, blue have Rec.709 luminances below, above, below their mean.
+		byte[] input = PngFixture.Encode(3, 1, [255, 0, 0, 0, 255, 0, 0, 0, 255], rgb: true);
+		ImageProcessingResult result = await _service.PreprocessAsync(input, "image/png", CancellationToken.None);
+		result.Width.Should().Be(3);
+		result.Height.Should().Be(1);
+		PngFixture.DecodeGray(result.ProcessedBytes).Should().Equal(0, 255, 0);
 	}
 
 	[Fact]
-	public async Task PreprocessAsync_ValidPng_ReturnsProcessedPng()
+	public async Task PreprocessAsync_TransparentColor_PreservesRgbLuminanceWithoutAlphaCompositing()
 	{
-		// Arrange
-		byte[] imageBytes = CreateTestPng(80, 120);
-
-		// Act
-		ImageProcessingResult result = await _service.PreprocessAsync(imageBytes, "image/png", CancellationToken.None);
-
-		// Assert
-		result.ProcessedBytes.Should().NotBeNullOrEmpty();
-		result.Width.Should().BeGreaterThan(0);
-		result.Height.Should().BeGreaterThan(0);
+		byte[] rgba = [255, 0, 0, 0, 0, 255, 0, 0, 0, 0, 255, 128];
+		ImageProcessingResult result = await _service.PreprocessAsync(PngFixture.Encode(3, 1, rgba, rgba: true), "image/png", CancellationToken.None);
+		PngFixture.DecodeGray(result.ProcessedBytes).Should().Equal(0, 255, 0);
 	}
 
 	[Fact]
-	public async Task PreprocessAsync_CorruptData_ThrowsInvalidOperationException()
+	public async Task PreprocessAsync_AnimatedPng_ProcessesOnlyFirstFrame()
 	{
-		// Arrange
-		byte[] corruptBytes = [0x00, 0x01, 0x02, 0x03, 0x04, 0x05];
-
-		// Act
-		Func<Task> act = () => _service.PreprocessAsync(corruptBytes, "image/jpeg", CancellationToken.None);
-
-		// Assert
-		await act.Should().ThrowAsync<InvalidOperationException>()
-			.WithMessage("*not a supported image format*");
+		ImageProcessingResult result = await _service.PreprocessAsync(PngFixture.TwoFrameAnimation(), "image/png", CancellationToken.None);
+		result.Width.Should().Be(3);
+		result.Height.Should().Be(1);
+		PngFixture.DecodeGray(result.ProcessedBytes).Should().Equal(255, 255, 255);
 	}
 
-	[Fact]
-	public async Task PreprocessAsync_GifMasqueradingAsJpeg_ThrowsInvalidOperationException()
+	[Theory]
+	[InlineData(1)]
+	[InlineData(-1)]
+	public async Task PreprocessAsync_SlantedLines_ExpandsCanvasAndMakesLinesHorizontal(int direction)
 	{
-		// Arrange - GIF magic bytes with JPEG content type
-		byte[] gifBytes = [0x47, 0x49, 0x46, 0x38, 0x39, 0x61]; // GIF89a
-
-		// Act
-		Func<Task> act = () => _service.PreprocessAsync(gifBytes, "image/jpeg", CancellationToken.None);
-
-		// Assert
-		await act.Should().ThrowAsync<InvalidOperationException>()
-			.WithMessage("*not a supported image format*");
-	}
-
-	[Fact]
-	public void ApplyAdaptiveThreshold_GrayscaleImage_ProducesBlackAndWhite()
-	{
-		// Arrange - create a gradient image
-		using Image<L8> image = new(50, 50);
-		image.ProcessPixelRows(accessor =>
+		byte[] pixels = Enumerable.Repeat((byte)255, 120 * 100).ToArray();
+		foreach (int baseline in new[] { 20, 50, 80 })
 		{
-			for (int y = 0; y < 50; y++)
+			for (int x = 10; x < 110; x++)
 			{
-				Span<L8> row = accessor.GetRowSpan(y);
-				for (int x = 0; x < 50; x++)
-				{
-					row[x] = new L8((byte)(x * 5)); // gradient from 0 to 245
-				}
+				pixels[(baseline + direction * (x / 10)) * 120 + x] = 0;
 			}
-		});
+		}
+		ImageProcessingResult result = await _service.PreprocessAsync(PngFixture.Encode(120, 100, pixels), "image/png", CancellationToken.None);
+		result.Width.Should().BeGreaterThan(120);
+		result.Height.Should().BeGreaterThan(100);
+		byte[] output = PngFixture.DecodeGray(result.ProcessedBytes);
+		// Compare actual darkest line locations at two interior columns, ignoring rotation padding.
+		int leftRow = Enumerable.Range(15, 30).MinBy(y => output[y * result.Width + 35]);
+		int rightRow = Enumerable.Range(15, 30).MinBy(y => output[y * result.Width + 85]);
+		output[leftRow * result.Width + 35].Should().BeLessThan(100);
+		output[rightRow * result.Width + 85].Should().BeLessThan(100);
+		Math.Abs(leftRow - rightRow).Should().BeLessThanOrEqualTo(1,
+			"deskewing must flatten the text, not double its slope");
+	}
 
-		// Act
-		ImageProcessingService.ApplyAdaptiveThreshold(image);
-
-		// Assert - pixels should be either 0 or 255
-		image.ProcessPixelRows(accessor =>
-		{
-			for (int y = 0; y < image.Height; y++)
-			{
-				Span<L8> row = accessor.GetRowSpan(y);
-				for (int x = 0; x < image.Width; x++)
-				{
-					byte val = row[x].PackedValue;
-					(val == 0 || val == 255).Should().BeTrue(
-						$"pixel ({x},{y}) should be 0 or 255 but was {val}");
-				}
-			}
-		});
+	[Theory]
+	[InlineData(0)]
+	[InlineData(2)]
+	[InlineData(128)]
+	[InlineData(255)]
+	public void DetectSkewAngle_UniformImage_ReturnsZero(byte intensity)
+	{
+		byte[] pixels = Enumerable.Repeat(intensity, 50 * 50).ToArray();
+		ImageProcessingService.DetectSkewAngle(pixels, 50, 50).Should().Be(0,
+			"a featureless image has no evidence of skew");
 	}
 
 	[Fact]
-	public void ApplyAdaptiveThreshold_AllBlackImage_SkipsThreshold()
+	public void DetectSkewAngle_HorizontalTextLines_ReturnsZero()
 	{
-		// Arrange - all-black image (mean < 5)
-		using Image<L8> image = new(30, 30, new L8(0));
-
-		// Act
-		ImageProcessingService.ApplyAdaptiveThreshold(image);
-
-		// Assert - should remain all black (threshold skipped)
-		image.ProcessPixelRows(accessor =>
+		byte[] pixels = Enumerable.Repeat((byte)255, 100 * 100).ToArray();
+		foreach (int baseline in new[] { 20, 50, 80 })
 		{
-			Span<L8> row = accessor.GetRowSpan(0);
-			row[0].PackedValue.Should().Be(0);
-		});
+			for (int x = 10; x < 90; x++)
+			{
+				pixels[baseline * 100 + x] = 0;
+			}
+		}
+		ImageProcessingService.DetectSkewAngle(pixels, 100, 100).Should().Be(0);
 	}
 
 	[Fact]
-	public void ApplyAdaptiveThreshold_AllWhiteImage_SkipsThreshold()
+	public void DetectSkewAngle_SlantedTextLines_FindsTheirDirection()
 	{
-		// Arrange - all-white image (mean > 250)
-		using Image<L8> image = new(30, 30, new L8(255));
-
-		// Act
-		ImageProcessingService.ApplyAdaptiveThreshold(image);
-
-		// Assert - should remain all white (threshold skipped)
-		image.ProcessPixelRows(accessor =>
+		byte[] pixels = Enumerable.Repeat((byte)255, 120 * 100).ToArray();
+		foreach (int baseline in new[] { 15, 40, 65 })
 		{
-			Span<L8> row = accessor.GetRowSpan(0);
-			row[0].PackedValue.Should().Be(255);
-		});
+			for (int x = 10; x < 110; x++)
+			{
+				pixels[(baseline + x / 10) * 120 + x] = 0;
+			}
+		}
+		ImageProcessingService.DetectSkewAngle(pixels, 120, 100).Should().BeInRange(5, 6.5);
+	}
+
+	[Theory]
+	[InlineData(0, 0)]
+	[InlineData(2, 2)]
+	[InlineData(4, 4)]
+	[InlineData(5, 255)]
+	[InlineData(250, 255)]
+	[InlineData(251, 251)]
+	[InlineData(252, 252)]
+	[InlineData(255, 255)]
+	public void ApplyAdaptiveThreshold_NearBlackWhiteBoundaries_PreserveOnlySkippedValues(byte input, byte expected)
+	{
+		byte[] pixels = Enumerable.Repeat(input, 30 * 30).ToArray();
+		ImageProcessingService.ApplyAdaptiveThreshold(pixels, 30, 30);
+		pixels.Should().Equal(Enumerable.Repeat(expected, 30 * 30));
 	}
 
 	[Fact]
-	public void DetectSkewAngle_StraightImage_ReturnsNearZero()
+	public void ApplyAdaptiveThreshold_AtLocalMean_IsWhiteAndEdgesUseOnlyAvailablePixels()
 	{
-		// Arrange - create image with horizontal black lines (no skew)
-		using Image<L8> image = new(100, 100, new L8(255));
-		image.ProcessPixelRows(accessor =>
-		{
-			for (int y = 20; y < 25; y++)
-			{
-				Span<L8> row = accessor.GetRowSpan(y);
-				for (int x = 10; x < 90; x++)
-				{
-					row[x] = new L8(0);
-				}
-			}
-			for (int y = 50; y < 55; y++)
-			{
-				Span<L8> row = accessor.GetRowSpan(y);
-				for (int x = 10; x < 90; x++)
-				{
-					row[x] = new L8(0);
-				}
-			}
-			for (int y = 80; y < 85; y++)
-			{
-				Span<L8> row = accessor.GetRowSpan(y);
-				for (int x = 10; x < 90; x++)
-				{
-					row[x] = new L8(0);
-				}
-			}
-		});
+		byte[] pixels = [10, 20, 30];
+		ImageProcessingService.ApplyAdaptiveThreshold(pixels, 3, 1);
+		pixels.Should().Equal(0, 255, 255);
+	}
 
-		// Act
-		double angle = ImageProcessingService.DetectSkewAngle(image);
-
-		// Assert - should be near zero for horizontal lines
-		Math.Abs(angle).Should().BeLessThan(1.0);
+	[Theory]
+	[InlineData("threshold")]
+	[InlineData("skew")]
+	public void PixelOperations_Cancelled_DoNotProcess(string operation)
+	{
+		byte[] pixels = [10, 20, 30];
+		using CancellationTokenSource cancellation = new();
+		cancellation.Cancel();
+		Action act = operation == "threshold"
+			? () => ImageProcessingService.ApplyAdaptiveThreshold(pixels, 3, 1, cancellation.Token)
+			: () => ImageProcessingService.DetectSkewAngle(pixels, 3, 1, cancellation.Token);
+		act.Should().Throw<OperationCanceledException>();
+		pixels.Should().Equal(10, 20, 30);
 	}
 
 	[Fact]
-	public async Task PreprocessAsync_CancellationRequested_ThrowsOperationCanceledException()
+	public async Task PreprocessAsync_Cancelled_RejectsBeforeInspectingInvalidData()
 	{
-		// Arrange
-		byte[] imageBytes = CreateTestPng(50, 50);
-		using CancellationTokenSource cts = new();
-		cts.Cancel();
-
-		// Act
-		Func<Task> act = () => _service.PreprocessAsync(imageBytes, "image/png", cts.Token);
-
-		// Assert
+		using CancellationTokenSource cancellation = new();
+		cancellation.Cancel();
+		Func<Task> act = () => _service.PreprocessAsync([], "image/png", cancellation.Token);
 		await act.Should().ThrowAsync<OperationCanceledException>();
 	}
 
 	[Fact]
-	public async Task PreprocessAsync_OutputIsSingleChannelGrayscale()
+	public async Task PreprocessAsync_ValidGifMasqueradingAsPng_RejectsActualFormat()
 	{
-		// Arrange - create a color-like JPEG (will still be L8 channel but verifies pipeline output)
-		byte[] imageBytes = CreateTestJpeg(60, 40);
-
-		// Act
-		ImageProcessingResult result = await _service.PreprocessAsync(imageBytes, "image/jpeg", CancellationToken.None);
-
-		// Assert - output should be loadable as L8 (grayscale)
-		using Image<L8> output = Image.Load<L8>(result.ProcessedBytes);
-		output.Width.Should().BeGreaterThan(0);
-		output.Height.Should().BeGreaterThan(0);
+		byte[] gif = Convert.FromBase64String("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7");
+		Func<Task> act = () => _service.PreprocessAsync(gif, "image/png", CancellationToken.None);
+		await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*not a supported image format*");
 	}
 
 	[Fact]
-	public async Task PreprocessAsync_ReturnsCorrectDimensions()
+	public async Task PreprocessAsync_CorruptData_Rejects()
 	{
-		// Arrange
-		byte[] imageBytes = CreateTestPng(75, 50);
-
-		// Act
-		ImageProcessingResult result = await _service.PreprocessAsync(imageBytes, "image/png", CancellationToken.None);
-
-		// Assert
-		result.Width.Should().BeGreaterThan(0);
-		result.Height.Should().BeGreaterThan(0);
-		// Dimensions may differ slightly due to deskew rotation, but should be close
-		result.Width.Should().BeInRange(50, 100);
-		result.Height.Should().BeInRange(25, 75);
+		Func<Task> act = () => _service.PreprocessAsync([0, 1, 2, 3], "image/jpeg", CancellationToken.None);
+		await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*not a supported image format*");
 	}
 
 	[Fact]
-	public void DetectSkewAngle_UniformImage_ReturnsZero()
+	public async Task PreprocessAsync_RecognizablePngWithoutPixels_RejectsDecode()
 	{
-		// Arrange - uniform gray image with no features
-		using Image<L8> image = new(50, 50, new L8(128));
+		Func<Task> act = () => _service.PreprocessAsync(PngFixture.HeaderOnly(80, 120), "image/png", CancellationToken.None);
+		await act.Should().ThrowAsync<InvalidOperationException>();
+	}
 
-		// Act
-		double angle = ImageProcessingService.DetectSkewAngle(image);
-
-		// Assert - with no features, angle should be near zero
-		Math.Abs(angle).Should().BeLessThanOrEqualTo(10.0);
+	[Theory]
+	[InlineData(8001, 100, "dimensions")]
+	[InlineData(100, 8001, "dimensions")]
+	[InlineData(5000, 5000, "pixels")]
+	[InlineData(10000, 10000, "dimensions")]
+	public async Task PreprocessAsync_OversizedPngHeader_RejectsBeforePixelDecode(int width, int height, string reason)
+	{
+		// No IDAT pixels exist: the limit must be enforced from declared dimensions alone.
+		Func<Task> act = () => _service.PreprocessAsync(PngFixture.HeaderOnly(width, height), "image/png", CancellationToken.None);
+		(await act.Should().ThrowAsync<InvalidOperationException>()).Which.Message.Should().Contain(reason).And.Contain("maximum allowed");
 	}
 
 	[Fact]
-	public void ApplyAdaptiveThreshold_NearBlackImage_SkipsThreshold()
+	public async Task PreprocessAsync_OversizedJpegHeader_RejectsBeforePixelDecode()
 	{
-		// Arrange - image with mean pixel value < 5 (mostly black with some very dark pixels)
-		using Image<L8> image = new(30, 30, new L8(2));
-
-		// Act
-		ImageProcessingService.ApplyAdaptiveThreshold(image);
-
-		// Assert - should be unchanged (threshold skipped)
-		image.ProcessPixelRows(accessor =>
-		{
-			Span<L8> row = accessor.GetRowSpan(0);
-			row[0].PackedValue.Should().Be(2);
-		});
+		byte[] jpeg = PngFixture.WhiteJpeg;
+		int offset = Array.FindIndex(jpeg, value => value == 0xC0);
+		jpeg[offset - 1].Should().Be(0xFF);
+		BinaryPrimitives.WriteUInt16BigEndian(jpeg.AsSpan(offset + 4, 2), 10000);
+		BinaryPrimitives.WriteUInt16BigEndian(jpeg.AsSpan(offset + 6, 2), 10000);
+		Func<Task> act = () => _service.PreprocessAsync(jpeg, "image/jpeg", CancellationToken.None);
+		await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*dimensions*maximum allowed*");
 	}
 
-	[Fact]
-	public void ApplyAdaptiveThreshold_NearWhiteImage_SkipsThreshold()
+	[Theory]
+	[InlineData(8000, 1)]
+	[InlineData(1, 8000)]
+	[InlineData(1200, 900)]
+	public async Task PreprocessAsync_SupportedDimensions_PreserveUnskewedCanvas(int width, int height)
 	{
-		// Arrange - image with mean pixel value > 250
-		using Image<L8> image = new(30, 30, new L8(252));
-
-		// Act
-		ImageProcessingService.ApplyAdaptiveThreshold(image);
-
-		// Assert - should be unchanged (threshold skipped)
-		image.ProcessPixelRows(accessor =>
-		{
-			Span<L8> row = accessor.GetRowSpan(0);
-			row[0].PackedValue.Should().Be(252);
-		});
-	}
-
-	[Fact]
-	public async Task PreprocessAsync_ExceedsMegapixelCap_RejectsBeforeAllocation()
-	{
-		// Decompression-bomb guard: a 5000x5000 solid-color PNG is only a few KB compressed but
-		// decodes to 25 megapixels — over the 24 MP cap. Each dimension is under the per-dimension
-		// limit (8000), so this specifically exercises the total-megapixel guard. It must be
-		// rejected at the header-inspection step, BEFORE Image.Load and before ApplyAdaptiveThreshold
-		// allocates its ~200 MB integral array. If the guard failed, this call would allocate
-		// hundreds of MB and run for a long time rather than throwing promptly.
-		byte[] bomb = CreateSolidPng(5000, 5000);
-
-		Func<Task> act = () => _service.PreprocessAsync(bomb, "image/png", CancellationToken.None);
-
-		(await act.Should().ThrowAsync<InvalidOperationException>())
-			.Which.Message.Should().Contain("exceeds the maximum allowed")
-			.And.Contain("pixels");
-	}
-
-	[Fact]
-	public async Task PreprocessAsync_ExceedsPerDimensionCap_Rejects()
-	{
-		// A very wide but low-total-pixel image (8001 x 100 = 0.8 MP) is under the megapixel cap
-		// but over the per-dimension cap, so the per-dimension guard must reject it.
-		byte[] wide = CreateSolidPng(8001, 100);
-
-		Func<Task> act = () => _service.PreprocessAsync(wide, "image/png", CancellationToken.None);
-
-		(await act.Should().ThrowAsync<InvalidOperationException>())
-			.Which.Message.Should().Contain("dimensions").And.Contain("exceed the maximum allowed");
-	}
-
-	[Fact]
-	public async Task PreprocessAsync_ForgedHeaderDeclaring10000Squared_IsRejectedFromHeaderAlone()
-	{
-		// The original vulnerability: a 10000x10000 image (~100 MP, tens of KB on disk) passed the
-		// old "> 10000" per-dimension check and then allocated a ~800 MB integral array. Here we
-		// feed a PNG whose IHDR *declares* 10000x10000 but which carries no pixel data at all. It is
-		// rejected purely from the header via Image.Identify — proving the guard fires before any
-		// Image.Load / decode / large allocation ever happens (there is nothing decodable to load).
-		byte[] forged = CreateForgedPngDeclaringDimensions(10000, 10000);
-
-		Func<Task> act = () => _service.PreprocessAsync(forged, "image/png", CancellationToken.None);
-
-		await act.Should().ThrowAsync<InvalidOperationException>()
-			.WithMessage("*exceed*maximum allowed*");
-	}
-
-	[Fact]
-	public async Task PreprocessAsync_NormalMultiHundredKilopixelImage_StillProcesses()
-	{
-		// A legitimate downscaled receipt photo (well under the caps) must still process normally.
-		byte[] imageBytes = CreateTestPng(1200, 900);
-
-		ImageProcessingResult result = await _service.PreprocessAsync(imageBytes, "image/png", CancellationToken.None);
-
-		result.ProcessedBytes.Should().NotBeNullOrEmpty();
-		result.Width.Should().BeGreaterThan(0);
-		result.Height.Should().BeGreaterThan(0);
-	}
-
-	private static byte[] CreateSolidPng(int width, int height)
-	{
-		// Solid color so PNG compression keeps the encoded file tiny regardless of dimensions —
-		// this is exactly the decompression-bomb shape we defend against.
-		using Image<L8> image = new(width, height, new L8(200));
-		using MemoryStream ms = new();
-		image.Save(ms, new PngEncoder());
-		return ms.ToArray();
-	}
-
-	// Builds a minimal, structurally valid PNG whose IHDR declares the given dimensions but which
-	// contains no image data. Image.Identify reports the declared dimensions from the header alone,
-	// so this lets us assert the dimension guard rejects abusive sizes without allocating any large
-	// pixel buffer in the test.
-	private static byte[] CreateForgedPngDeclaringDimensions(int width, int height)
-	{
-		using MemoryStream ms = new();
-		ms.Write([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]); // PNG signature
-
-		byte[] ihdr = new byte[13];
-		WriteBigEndianInt32(ihdr, 0, width);
-		WriteBigEndianInt32(ihdr, 4, height);
-		ihdr[8] = 8;  // bit depth
-		ihdr[9] = 0;  // color type: grayscale
-		ihdr[10] = 0; // compression method
-		ihdr[11] = 0; // filter method
-		ihdr[12] = 0; // interlace method
-		WritePngChunk(ms, "IHDR", ihdr);
-		WritePngChunk(ms, "IEND", []);
-
-		return ms.ToArray();
-	}
-
-	private static void WriteBigEndianInt32(byte[] buffer, int offset, int value)
-	{
-		buffer[offset] = (byte)((value >> 24) & 0xFF);
-		buffer[offset + 1] = (byte)((value >> 16) & 0xFF);
-		buffer[offset + 2] = (byte)((value >> 8) & 0xFF);
-		buffer[offset + 3] = (byte)(value & 0xFF);
-	}
-
-	private static void WritePngChunk(Stream stream, string type, byte[] data)
-	{
-		byte[] length = new byte[4];
-		WriteBigEndianInt32(length, 0, data.Length);
-		stream.Write(length);
-
-		byte[] typeBytes = System.Text.Encoding.ASCII.GetBytes(type);
-		stream.Write(typeBytes);
-		stream.Write(data);
-
-		uint crc = Crc32(typeBytes, data);
-		byte[] crcBytes = new byte[4];
-		WriteBigEndianInt32(crcBytes, 0, (int)crc);
-		stream.Write(crcBytes);
-	}
-
-	private static uint Crc32(byte[] typeBytes, byte[] data)
-	{
-		uint crc = 0xFFFFFFFF;
-		crc = Crc32Update(crc, typeBytes);
-		crc = Crc32Update(crc, data);
-		return crc ^ 0xFFFFFFFF;
-	}
-
-	private static uint Crc32Update(uint crc, byte[] bytes)
-	{
-		foreach (byte b in bytes)
-		{
-			crc ^= b;
-			for (int i = 0; i < 8; i++)
-			{
-				crc = (crc & 1) != 0 ? (crc >> 1) ^ 0xEDB88320 : crc >> 1;
-			}
-		}
-		return crc;
-	}
-
-	private static byte[] CreateTestJpeg(int width, int height)
-	{
-		using Image<L8> image = new(width, height);
-		image.ProcessPixelRows(accessor =>
-		{
-			for (int y = 0; y < height; y++)
-			{
-				Span<L8> row = accessor.GetRowSpan(y);
-				for (int x = 0; x < width; x++)
-				{
-					row[x] = new L8((byte)((x + y) % 256));
-				}
-			}
-		});
-
-		using MemoryStream ms = new();
-		image.Save(ms, new JpegEncoder());
-		return ms.ToArray();
-	}
-
-	private static byte[] CreateTestPng(int width, int height)
-	{
-		using Image<L8> image = new(width, height);
-		image.ProcessPixelRows(accessor =>
-		{
-			for (int y = 0; y < height; y++)
-			{
-				Span<L8> row = accessor.GetRowSpan(y);
-				for (int x = 0; x < width; x++)
-				{
-					row[x] = new L8((byte)((x * 3 + y * 7) % 256));
-				}
-			}
-		});
-
-		using MemoryStream ms = new();
-		image.Save(ms, new PngEncoder());
-		return ms.ToArray();
+		byte[] png = PngFixture.Encode(width, height, Enumerable.Repeat((byte)255, width * height).ToArray());
+		ImageProcessingResult result = await _service.PreprocessAsync(png, "image/png", CancellationToken.None);
+		result.Width.Should().Be(width);
+		result.Height.Should().Be(height);
+		PngFixture.DecodeGray(result.ProcessedBytes).Should().Equal(Enumerable.Repeat((byte)255, width * height));
 	}
 }
