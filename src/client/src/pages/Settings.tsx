@@ -16,12 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 
-type SettingsTab =
-  | "appearance"
-  | "preferences"
-  | "export"
-  | "data"
-  | "ynab";
+type SettingsTab = "appearance" | "preferences" | "export" | "data" | "ynab";
 
 const TABS: { value: SettingsTab; label: string; adminOnly?: boolean }[] = [
   { value: "appearance", label: "Appearance" },
@@ -185,18 +180,68 @@ function Settings() {
             <CardHeader>
               <CardTitle>Export</CardTitle>
               <CardDescription>
-                API tokens for programmatic access. CSV / ZIP export coming
-                later.
+                Download report CSVs or use the existing backup tools.
               </CardDescription>
             </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">
-                Manage API tokens at{" "}
-                <Link to="/api-keys" className="underline">
-                  API Keys
-                </Link>
-                .
-              </p>
+            <CardContent className="space-y-6">
+              <section aria-labelledby="report-exports-title">
+                <h3 id="report-exports-title" className="font-medium">
+                  Report CSVs
+                </h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Open a report, choose its filters, then select Export CSV.
+                </p>
+                <ul className="mt-2 space-y-1 text-sm">
+                  {[
+                    ["spending-by-location", "Spending by Location"],
+                    [
+                      "spending-by-normalized-description",
+                      "Spending by Normalized Description",
+                    ],
+                    ["out-of-balance", "Out of Balance"],
+                    ["duplicate-detection", "Duplicate Detection"],
+                    ["uncategorized-items", "Uncategorized Items"],
+                  ].map(([slug, label]) => (
+                    <li key={slug}>
+                      <Link
+                        to={`/reports?report=${slug}`}
+                        className="underline"
+                      >
+                        {label}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+              {isAdmin() && (
+                <section aria-labelledby="database-export-title">
+                  <h3 id="database-export-title" className="font-medium">
+                    Portable backup
+                  </h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Download a SQLite backup of application data for restoring
+                    or moving your data.
+                  </p>
+                  <Link
+                    to="/admin/backup"
+                    className="mt-2 inline-block text-sm underline"
+                  >
+                    Backup &amp; Restore
+                  </Link>
+                </section>
+              )}
+              <section aria-labelledby="programmatic-export-title">
+                <h3 id="programmatic-export-title" className="font-medium">
+                  Programmatic access
+                </h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Create API credentials for custom data exports at{" "}
+                  <Link to="/api-keys" className="underline">
+                    API Keys
+                  </Link>
+                  .
+                </p>
+              </section>
             </CardContent>
           </Card>
         </TabsContent>
@@ -245,8 +290,8 @@ function Settings() {
       </Tabs>
 
       <div style={{ marginTop: 20 }} className="text-xs text-muted-foreground">
-        <Icon.Settings /> Settings live here. Tabs sync with the URL hash so
-        you can deep-link to a specific section.
+        <Icon.Settings /> Settings live here. Tabs sync with the URL hash so you
+        can deep-link to a specific section.
       </div>
     </>
   );
