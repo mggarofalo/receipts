@@ -47,14 +47,16 @@ vi.mock("@/hooks/useNormalizedDescriptionActions", () => ({
 }));
 
 vi.mock("@/hooks/useItemTemplates", () => ({
-  useItemTemplates: vi.fn(() => mockQueryResult({
-    data: itemTemplates,
-    total: itemTemplates.length,
-    isLoading: false,
-    isPending: false,
-    isSuccess: true,
-    status: "success",
-  })),
+  useItemTemplates: vi.fn(() =>
+    mockQueryResult({
+      data: itemTemplates,
+      total: itemTemplates.length,
+      isLoading: false,
+      isPending: false,
+      isSuccess: true,
+      status: "success",
+    }),
+  ),
 }));
 
 vi.mock("@/hooks/useNormalizedDescriptionSettings", () => ({
@@ -282,14 +284,16 @@ function wireDefaults() {
   );
   vi.mocked(useRequeuePendingMutation).mockReturnValue(mockMutationResult());
   vi.mocked(useLinkTemplateMutation).mockReturnValue(mockMutationResult());
-  vi.mocked(useItemTemplates).mockReturnValue(mockQueryResult({
-    data: itemTemplates,
-    total: itemTemplates.length,
-    isLoading: false,
-    isPending: false,
-    isSuccess: true,
-    status: "success",
-  }));
+  vi.mocked(useItemTemplates).mockReturnValue(
+    mockQueryResult({
+      data: itemTemplates,
+      total: itemTemplates.length,
+      isLoading: false,
+      isPending: false,
+      isSuccess: true,
+      status: "success",
+    }),
+  );
   vi.mocked(useLinkedReceiptItems).mockReturnValue({
     data: [],
     total: 0,
@@ -328,9 +332,7 @@ describe("NormalizedDescriptions review queue", () => {
 
   it("renders pending-review rows by default", async () => {
     renderWithQueryClient(<NormalizedDescriptions />);
-    expect(
-      await screen.findByText("Strawberry Preserves"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("Strawberry Preserves")).toBeInTheDocument();
     expect(screen.getByText("Organic Milk")).toBeInTheDocument();
   });
 
@@ -420,9 +422,7 @@ describe("NormalizedDescriptions review queue", () => {
     const mutate = vi.fn((_vars, opts?: { onSuccess?: () => void }) => {
       opts?.onSuccess?.();
     });
-    vi.mocked(useMergeMutation).mockReturnValue(
-      mockMutationResult({ mutate }),
-    );
+    vi.mocked(useMergeMutation).mockReturnValue(mockMutationResult({ mutate }));
 
     const user = userEvent.setup();
     renderWithQueryClient(<NormalizedDescriptions />);
@@ -459,7 +459,9 @@ describe("NormalizedDescriptions review queue", () => {
 
     const user = userEvent.setup();
     renderWithQueryClient(<NormalizedDescriptions />);
-    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    const row = (await screen.findByText("Strawberry Preserves")).closest(
+      "tr",
+    )!;
     await user.click(within(row).getByRole("button", { name: "Split" }));
 
     const dialog = screen.getByRole("dialog");
@@ -485,7 +487,9 @@ describe("NormalizedDescriptions review queue", () => {
 
     const user = userEvent.setup();
     renderWithQueryClient(<NormalizedDescriptions />);
-    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    const row = (await screen.findByText("Strawberry Preserves")).closest(
+      "tr",
+    )!;
     await user.click(within(row).getByRole("button", { name: "Split" }));
 
     // The old dialog pulled a fixed page of every receipt item app-wide and filtered it in the
@@ -498,15 +502,21 @@ describe("NormalizedDescriptions review queue", () => {
 
     const user = userEvent.setup();
     renderWithQueryClient(<NormalizedDescriptions />);
-    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    const row = (await screen.findByText("Strawberry Preserves")).closest(
+      "tr",
+    )!;
     await user.click(within(row).getByRole("button", { name: "Split" }));
 
     const dialog = screen.getByRole("dialog");
-    expect(within(dialog).getByRole("button", { name: "Split" })).toBeDisabled();
+    expect(
+      within(dialog).getByRole("button", { name: "Split" }),
+    ).toBeDisabled();
 
     await user.click(within(dialog).getByLabelText("MILK 2% GAL"));
     await user.clear(within(dialog).getByLabelText(/name for the new entry/i));
-    expect(within(dialog).getByRole("button", { name: "Split" })).toBeDisabled();
+    expect(
+      within(dialog).getByRole("button", { name: "Split" }),
+    ).toBeDisabled();
   });
 
   it("says the entry has no linked items rather than blaming the lookup", async () => {
@@ -608,12 +618,15 @@ describe("NormalizedDescriptions registry tab", () => {
 
     await waitFor(() =>
       expect(vi.mocked(useNormalizedDescriptions)).toHaveBeenCalledWith(
-        expect.objectContaining({ status: "Active", offset: expect.any(Number) }),
+        expect.objectContaining({
+          status: "Active",
+          offset: expect.any(Number),
+        }),
       ),
     );
     const offsets = vi
       .mocked(useNormalizedDescriptions)
-      .mock.calls.map(([o]) => (o as ListOptions | undefined))
+      .mock.calls.map(([o]) => o as ListOptions | undefined)
       .filter((o) => o?.status === "Active")
       .map((o) => o!.offset);
     expect(offsets.some((offset) => (offset ?? 0) > 0)).toBe(true);
@@ -665,8 +678,12 @@ describe("NormalizedDescriptions registry tab", () => {
     // The registry is the only place an approved mistake can be corrected. Read-only meant
     // every approval was permanent.
     const row = (await screen.findByText("Apples")).closest("tr")!;
-    expect(within(row).getByRole("button", { name: MERGE_ACTION })).toBeInTheDocument();
-    expect(within(row).getByRole("button", { name: "Split" })).toBeInTheDocument();
+    expect(
+      within(row).getByRole("button", { name: MERGE_ACTION }),
+    ).toBeInTheDocument();
+    expect(
+      within(row).getByRole("button", { name: "Split" }),
+    ).toBeInTheDocument();
     expect(
       within(row).getByRole("button", { name: /rename apples/i }),
     ).toBeInTheDocument();
@@ -770,7 +787,9 @@ describe("NormalizedDescriptions action explanations", () => {
     const explainer = await screen.findByTestId("review-queue-explainer");
     // Why a row is here at all: the near-match band. Without this the queue reads as a list of
     // arbitrary rows a reviewer is expected to have an opinion about.
-    expect(explainer).toHaveTextContent(/nearly matches an entry the registry already has/i);
+    expect(explainer).toHaveTextContent(
+      /nearly matches an entry the registry already has/i,
+    );
     // And that the spend is already counted — approving is not what puts it in the reports.
     expect(explainer).toHaveTextContent(/already appears in reports/i);
 
@@ -799,12 +818,17 @@ describe("NormalizedDescriptions action explanations", () => {
 
   it("describes each row action, with the count of items it would move", async () => {
     renderWithQueryClient(<NormalizedDescriptions />);
-    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    const row = (await screen.findByText("Strawberry Preserves")).closest(
+      "tr",
+    )!;
 
     // p-1 holds 4 items. The hint reaches keyboard and screen-reader users through
     // aria-describedby, not only whoever happens to hover.
     const expectations: [string, RegExp][] = [
-      ["Approve", /nothing is re-linked or moved.*4 receipt items stay where they are/is],
+      [
+        "Approve",
+        /nothing is re-linked or moved.*4 receipt items stay where they are/is,
+      ],
       [MERGE_ACTION, /4 receipt items are re-pointed.*this one is deleted/is],
       ["Split", /everything you leave unselected stays here/i],
       ["Reject", /4 receipt items become unnormalized/i],
@@ -828,9 +852,13 @@ describe("NormalizedDescriptions action explanations", () => {
           mockList(options)) as any);
 
     renderWithQueryClient(<NormalizedDescriptions />);
-    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    const row = (await screen.findByText("Strawberry Preserves")).closest(
+      "tr",
+    )!;
     const button = within(row).getByRole("button", { name: "Approve" });
-    const hint = document.getElementById(button.getAttribute("aria-describedby")!);
+    const hint = document.getElementById(
+      button.getAttribute("aria-describedby")!,
+    );
 
     expect(hint).toHaveTextContent(/1 receipt item stay/i);
     expect(hint).not.toHaveTextContent(/1 receipt items/i);
@@ -838,12 +866,18 @@ describe("NormalizedDescriptions action explanations", () => {
 
   it("names the direction of a merge in the button itself", async () => {
     renderWithQueryClient(<NormalizedDescriptions />);
-    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    const row = (await screen.findByText("Strawberry Preserves")).closest(
+      "tr",
+    )!;
 
     // "Merge" alone said nothing about which of the two rows survives, and the answer is that
     // this one does not.
-    expect(within(row).getByRole("button", { name: MERGE_ACTION })).toBeInTheDocument();
-    expect(within(row).queryByRole("button", { name: "Merge" })).not.toBeInTheDocument();
+    expect(
+      within(row).getByRole("button", { name: MERGE_ACTION }),
+    ).toBeInTheDocument();
+    expect(
+      within(row).queryByRole("button", { name: "Merge" }),
+    ).not.toBeInTheDocument();
   });
 
   it("explains the registry's actions too", async () => {
@@ -852,8 +886,12 @@ describe("NormalizedDescriptions action explanations", () => {
     await user.click(screen.getByRole("tab", { name: "Registry" }));
     const row = (await screen.findByText("Apples")).closest("tr")!;
 
-    const button = within(row).getByRole("button", { name: "Send back to review" });
-    const hint = document.getElementById(button.getAttribute("aria-describedby")!);
+    const button = within(row).getByRole("button", {
+      name: "Send back to review",
+    });
+    const hint = document.getElementById(
+      button.getAttribute("aria-describedby")!,
+    );
     // The reversible one. Saying "nothing is unlinked" is what separates it from Reject.
     expect(hint).toHaveTextContent(/nothing is unlinked/i);
     expect(hint).toHaveTextContent(/12 receipt items stay attached/i);
@@ -871,7 +909,9 @@ describe("NormalizedDescriptions merge candidates", () => {
   it("searches candidates on the server rather than filtering the loaded page", async () => {
     const user = userEvent.setup();
     renderWithQueryClient(<NormalizedDescriptions />);
-    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    const row = (await screen.findByText("Strawberry Preserves")).closest(
+      "tr",
+    )!;
     await user.click(within(row).getByRole("button", { name: MERGE_ACTION }));
 
     const dialog = await screen.findByRole("dialog");
@@ -901,20 +941,24 @@ describe("NormalizedDescriptions merge candidates", () => {
 
     const user = userEvent.setup();
     renderWithQueryClient(<NormalizedDescriptions />);
-    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    const row = (await screen.findByText("Strawberry Preserves")).closest(
+      "tr",
+    )!;
     await user.click(within(row).getByRole("button", { name: MERGE_ACTION }));
 
     // Silently showing the first 50 of 412 reads as "the entry you want does not exist"
     // (RECEIPTS-878).
-    expect(await screen.findByTestId("merge-truncation-notice")).toHaveTextContent(
-      /showing 2 of 412/i,
-    );
+    expect(
+      await screen.findByTestId("merge-truncation-notice"),
+    ).toHaveTextContent(/showing 2 of 412/i);
   });
 
   it("stays quiet when every match is on screen", async () => {
     const user = userEvent.setup();
     renderWithQueryClient(<NormalizedDescriptions />);
-    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    const row = (await screen.findByText("Strawberry Preserves")).closest(
+      "tr",
+    )!;
     await user.click(within(row).getByRole("button", { name: MERGE_ACTION }));
 
     await screen.findByRole("dialog");
@@ -950,7 +994,9 @@ describe("NormalizedDescriptions merge candidates", () => {
   it("asks for active and pending targets, and never rejected ones", async () => {
     const user = userEvent.setup();
     renderWithQueryClient(<NormalizedDescriptions />);
-    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    const row = (await screen.findByText("Strawberry Preserves")).closest(
+      "tr",
+    )!;
     await user.click(within(row).getByRole("button", { name: MERGE_ACTION }));
 
     // Rejected rows are tombstones. Merging items into one would resurrect text a reviewer
@@ -969,19 +1015,25 @@ describe("NormalizedDescriptions merge candidates", () => {
   it("offers a pending entry as a target and marks it as pending", async () => {
     const user = userEvent.setup();
     renderWithQueryClient(<NormalizedDescriptions />);
-    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    const row = (await screen.findByText("Strawberry Preserves")).closest(
+      "tr",
+    )!;
     await user.click(within(row).getByRole("button", { name: MERGE_ACTION }));
 
     // Two near-duplicates out of the same resolver batch are exactly the pair you want to merge.
     // Requiring one to be approved first forced a judgement the reviewer had not made yet.
     const dialog = await screen.findByRole("dialog");
-    const candidate = within(dialog).getByText("Organic Milk").closest("label")!;
+    const candidate = within(dialog)
+      .getByText("Organic Milk")
+      .closest("label")!;
     // Distinguished, because the survivor stays pending and still needs review — that is a
     // different outcome from merging into something already approved.
     expect(within(candidate).getByText(/pending review/i)).toBeInTheDocument();
 
     const active = within(dialog).getByText("Apples").closest("label")!;
-    expect(within(active).queryByText(/pending review/i)).not.toBeInTheDocument();
+    expect(
+      within(active).queryByText(/pending review/i),
+    ).not.toBeInTheDocument();
   });
 
   it("merges one pending entry into another", async () => {
@@ -992,7 +1044,9 @@ describe("NormalizedDescriptions merge candidates", () => {
 
     const user = userEvent.setup();
     renderWithQueryClient(<NormalizedDescriptions />);
-    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    const row = (await screen.findByText("Strawberry Preserves")).closest(
+      "tr",
+    )!;
     await user.click(within(row).getByRole("button", { name: MERGE_ACTION }));
 
     const dialog = await screen.findByRole("dialog");
@@ -1011,7 +1065,9 @@ describe("NormalizedDescriptions merge candidates", () => {
   it("shows each candidate's linked-item count", async () => {
     const user = userEvent.setup();
     renderWithQueryClient(<NormalizedDescriptions />);
-    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    const row = (await screen.findByText("Strawberry Preserves")).closest(
+      "tr",
+    )!;
     await user.click(within(row).getByRole("button", { name: MERGE_ACTION }));
 
     // Merging is direction-sensitive and irreversible. Without the counts there is nothing on
@@ -1047,14 +1103,20 @@ describe("NormalizedDescriptions rename and reject", () => {
   it("renames a row to a new label", async () => {
     const user = userEvent.setup();
     const mutate = vi.fn();
-    vi.mocked(useRenameMutation).mockReturnValue(mockMutationResult({ mutate }));
+    vi.mocked(useRenameMutation).mockReturnValue(
+      mockMutationResult({ mutate }),
+    );
 
     renderWithQueryClient(<NormalizedDescriptions />);
     await user.click(
-      await screen.findByRole("button", { name: /rename strawberry preserves/i }),
+      await screen.findByRole("button", {
+        name: /rename strawberry preserves/i,
+      }),
     );
 
-    const input = screen.getByLabelText(/display name for strawberry preserves/i);
+    const input = screen.getByLabelText(
+      /display name for strawberry preserves/i,
+    );
     await user.clear(input);
     await user.type(input, "Jam");
     await user.click(screen.getByRole("button", { name: "Save" }));
@@ -1068,11 +1130,15 @@ describe("NormalizedDescriptions rename and reject", () => {
   it("treats renaming a row back to its matched text as clearing the label", async () => {
     const user = userEvent.setup();
     const mutate = vi.fn();
-    vi.mocked(useRenameMutation).mockReturnValue(mockMutationResult({ mutate }));
+    vi.mocked(useRenameMutation).mockReturnValue(
+      mockMutationResult({ mutate }),
+    );
 
     renderWithQueryClient(<NormalizedDescriptions />);
     await user.click(screen.getByRole("tab", { name: "Registry" }));
-    await user.click(await screen.findByRole("button", { name: /rename milk/i }));
+    await user.click(
+      await screen.findByRole("button", { name: /rename milk/i }),
+    );
 
     const input = screen.getByLabelText(/display name for milk/i);
     await user.clear(input);
@@ -1090,13 +1156,19 @@ describe("NormalizedDescriptions rename and reject", () => {
   it("will not submit an empty name", async () => {
     const user = userEvent.setup();
     const mutate = vi.fn();
-    vi.mocked(useRenameMutation).mockReturnValue(mockMutationResult({ mutate }));
+    vi.mocked(useRenameMutation).mockReturnValue(
+      mockMutationResult({ mutate }),
+    );
 
     renderWithQueryClient(<NormalizedDescriptions />);
     await user.click(
-      await screen.findByRole("button", { name: /rename strawberry preserves/i }),
+      await screen.findByRole("button", {
+        name: /rename strawberry preserves/i,
+      }),
     );
-    await user.clear(screen.getByLabelText(/display name for strawberry preserves/i));
+    await user.clear(
+      screen.getByLabelText(/display name for strawberry preserves/i),
+    );
 
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
     expect(mutate).not.toHaveBeenCalled();
@@ -1110,12 +1182,16 @@ describe("NormalizedDescriptions rename and reject", () => {
     );
 
     renderWithQueryClient(<NormalizedDescriptions />);
-    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    const row = (await screen.findByText("Strawberry Preserves")).closest(
+      "tr",
+    )!;
     await user.click(within(row).getByRole("button", { name: "Reject" }));
 
     const dialog = await screen.findByRole("dialog");
     // p-1 has 4 linked items. Both consequences are non-obvious, so both are spelled out.
-    expect(dialog).toHaveTextContent(/4 receipt items will become unnormalized/i);
+    expect(dialog).toHaveTextContent(
+      /4 receipt items will become unnormalized/i,
+    );
     expect(dialog).toHaveTextContent(/will not create it again/i);
 
     await user.click(within(dialog).getByRole("button", { name: "Reject" }));
@@ -1139,12 +1215,18 @@ describe("NormalizedDescriptions rename and reject", () => {
 
   it("keeps Reject distinct from Merge in the row actions", async () => {
     renderWithQueryClient(<NormalizedDescriptions />);
-    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    const row = (await screen.findByText("Strawberry Preserves")).closest(
+      "tr",
+    )!;
 
     // Merge means "this is the same as X" and re-points items; Reject means "this is not worth
     // an entry" and unlinks them. Collapsing them was the original complaint.
-    expect(within(row).getByRole("button", { name: MERGE_ACTION })).toBeInTheDocument();
-    expect(within(row).getByRole("button", { name: "Reject" })).toBeInTheDocument();
+    expect(
+      within(row).getByRole("button", { name: MERGE_ACTION }),
+    ).toBeInTheDocument();
+    expect(
+      within(row).getByRole("button", { name: "Reject" }),
+    ).toBeInTheDocument();
   });
 });
 
@@ -1175,7 +1257,9 @@ describe("NormalizedDescriptions template evidence and linking", () => {
 
   it("shows no evidence badge on a row no template declares", async () => {
     renderWithQueryClient(<NormalizedDescriptions />);
-    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    const row = (await screen.findByText("Strawberry Preserves")).closest(
+      "tr",
+    )!;
     expect(
       within(row).queryByTestId("template-evidence"),
     ).not.toBeInTheDocument();
@@ -1206,7 +1290,9 @@ describe("NormalizedDescriptions template evidence and linking", () => {
 
     const user = userEvent.setup();
     renderWithQueryClient(<NormalizedDescriptions />);
-    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    const row = (await screen.findByText("Strawberry Preserves")).closest(
+      "tr",
+    )!;
     await user.click(within(row).getByRole("button", { name: LINK_ACTION }));
 
     const dialog = await screen.findByRole("dialog");
@@ -1223,17 +1309,19 @@ describe("NormalizedDescriptions template evidence and linking", () => {
   it("warns that the row is deleted when the template's entry is a different row", async () => {
     const user = userEvent.setup();
     renderWithQueryClient(<NormalizedDescriptions />);
-    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    const row = (await screen.findByText("Strawberry Preserves")).closest(
+      "tr",
+    )!;
     await user.click(within(row).getByRole("button", { name: LINK_ACTION }));
 
     const dialog = await screen.findByRole("dialog");
     const target = within(dialog).getByText("Gallon of Milk").closest("label")!;
     await user.click(within(target).getByRole("radio"));
 
-    const consequence = within(dialog).getByTestId(
-      "link-template-consequence",
+    const consequence = within(dialog).getByTestId("link-template-consequence");
+    expect(consequence).toHaveTextContent(
+      /consolidated into the “Gallon of Milk” entry/,
     );
-    expect(consequence).toHaveTextContent(/consolidated into the “Gallon of Milk” entry/);
     expect(consequence).toHaveTextContent(/4 receipt items will be re-pointed/);
     expect(consequence).toHaveTextContent(/this entry is then deleted/i);
     // The merge re-points trashed items too, which linkedItemCount does not count.
@@ -1250,12 +1338,12 @@ describe("NormalizedDescriptions template evidence and linking", () => {
     await user.click(within(row).getByRole("button", { name: LINK_ACTION }));
 
     const dialog = await screen.findByRole("dialog");
-    const target = within(dialog).getByText("Strawberry Preserves").closest("label")!;
+    const target = within(dialog)
+      .getByText("Strawberry Preserves")
+      .closest("label")!;
     await user.click(within(target).getByRole("radio"));
 
-    const consequence = within(dialog).getByTestId(
-      "link-template-consequence",
-    );
+    const consequence = within(dialog).getByTestId("link-template-consequence");
     expect(consequence).toHaveTextContent(/no live receipt items are linked/i);
     expect(consequence).toHaveTextContent(/recycle bin moves with it/i);
   });
@@ -1263,7 +1351,9 @@ describe("NormalizedDescriptions template evidence and linking", () => {
   it("says nothing moves when the row already is that template's entry", async () => {
     const user = userEvent.setup();
     renderWithQueryClient(<NormalizedDescriptions />);
-    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    const row = (await screen.findByText("Strawberry Preserves")).closest(
+      "tr",
+    )!;
     await user.click(within(row).getByRole("button", { name: LINK_ACTION }));
 
     // The template's name matches this row's matched text exactly, which is how the server
@@ -1275,13 +1365,15 @@ describe("NormalizedDescriptions template evidence and linking", () => {
       .find((label): label is HTMLLabelElement => label !== null)!;
     await user.click(within(target).getByRole("radio"));
 
-    const consequence = within(dialog).getByTestId(
-      "link-template-consequence",
+    const consequence = within(dialog).getByTestId("link-template-consequence");
+    expect(consequence).toHaveTextContent(
+      /already is the “Strawberry Preserves” entry/,
     );
-    expect(consequence).toHaveTextContent(/already is the “Strawberry Preserves” entry/);
     // "nothing is deleted" contains "deleted", so the assertion has to be about the destructive
     // claim rather than the word.
-    expect(consequence).toHaveTextContent(/nothing is moved and nothing is deleted/);
+    expect(consequence).toHaveTextContent(
+      /nothing is moved and nothing is deleted/,
+    );
     expect(consequence).not.toHaveTextContent(/consolidated/i);
     expect(consequence).not.toHaveTextContent(/entry is then deleted/i);
   });
@@ -1294,7 +1386,9 @@ describe("NormalizedDescriptions template evidence and linking", () => {
 
     const user = userEvent.setup();
     renderWithQueryClient(<NormalizedDescriptions />);
-    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    const row = (await screen.findByText("Strawberry Preserves")).closest(
+      "tr",
+    )!;
     await user.click(within(row).getByRole("button", { name: LINK_ACTION }));
 
     const dialog = await screen.findByRole("dialog");
@@ -1307,7 +1401,9 @@ describe("NormalizedDescriptions template evidence and linking", () => {
     // size read as "no such template exists" — the failure RECEIPTS-878 removed from merge.
     const user = userEvent.setup();
     renderWithQueryClient(<NormalizedDescriptions />);
-    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    const row = (await screen.findByText("Strawberry Preserves")).closest(
+      "tr",
+    )!;
     await user.click(within(row).getByRole("button", { name: LINK_ACTION }));
 
     const dialog = await screen.findByRole("dialog");
@@ -1327,7 +1423,9 @@ describe("NormalizedDescriptions template evidence and linking", () => {
   it("keeps the requested page within the documented limit", async () => {
     const user = userEvent.setup();
     renderWithQueryClient(<NormalizedDescriptions />);
-    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    const row = (await screen.findByText("Strawberry Preserves")).closest(
+      "tr",
+    )!;
     await user.click(within(row).getByRole("button", { name: LINK_ACTION }));
 
     await screen.findByRole("dialog");
@@ -1343,19 +1441,23 @@ describe("NormalizedDescriptions template evidence and linking", () => {
     // The empty state instructs the admin to create a template. Rendering it on a fetch failure
     // tells someone who owns templates that they own none, and the template they then create
     // links to a second canonical entry — the exact split this feature removes.
-    vi.mocked(useItemTemplates).mockReturnValue(mockQueryResult({
-      data: undefined,
-      total: 0,
-      isLoading: false,
-      isError: true,
-    isPending: false,
-    isSuccess: false,
-    status: "error",
-  }));
+    vi.mocked(useItemTemplates).mockReturnValue(
+      mockQueryResult({
+        data: undefined,
+        total: 0,
+        isLoading: false,
+        isError: true,
+        isPending: false,
+        isSuccess: false,
+        status: "error",
+      }),
+    );
 
     const user = userEvent.setup();
     renderWithQueryClient(<NormalizedDescriptions />);
-    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    const row = (await screen.findByText("Strawberry Preserves")).closest(
+      "tr",
+    )!;
     await user.click(within(row).getByRole("button", { name: LINK_ACTION }));
 
     const dialog = await screen.findByRole("dialog");
@@ -1368,25 +1470,31 @@ describe("NormalizedDescriptions template evidence and linking", () => {
   });
 
   it("says when it is showing only part of the matching templates", async () => {
-    vi.mocked(useItemTemplates).mockReturnValue(mockQueryResult({
-      data: itemTemplates,
-      total: 250,
-      isLoading: false,
-    isPending: false,
-    isSuccess: true,
-    status: "success",
-  }));
+    vi.mocked(useItemTemplates).mockReturnValue(
+      mockQueryResult({
+        data: itemTemplates,
+        total: 250,
+        isLoading: false,
+        isPending: false,
+        isSuccess: true,
+        status: "success",
+      }),
+    );
 
     const user = userEvent.setup();
     renderWithQueryClient(<NormalizedDescriptions />);
-    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    const row = (await screen.findByText("Strawberry Preserves")).closest(
+      "tr",
+    )!;
     await user.click(within(row).getByRole("button", { name: LINK_ACTION }));
 
     const dialog = await screen.findByRole("dialog");
     // "keep typing", not "refine your search": the search now runs on the server, so narrowing it
     // genuinely reaches templates that are not on this page. The old copy advised the one thing
     // that could not work.
-    const notice = within(dialog).getByTestId("link-template-truncation-notice");
+    const notice = within(dialog).getByTestId(
+      "link-template-truncation-notice",
+    );
     expect(notice).toHaveTextContent("Showing 2 of 250 matching templates");
     expect(notice).toHaveTextContent(/keep typing/i);
   });
@@ -1394,7 +1502,9 @@ describe("NormalizedDescriptions template evidence and linking", () => {
   it("stays quiet when every template is on screen", async () => {
     const user = userEvent.setup();
     renderWithQueryClient(<NormalizedDescriptions />);
-    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    const row = (await screen.findByText("Strawberry Preserves")).closest(
+      "tr",
+    )!;
     await user.click(within(row).getByRole("button", { name: LINK_ACTION }));
 
     const dialog = await screen.findByRole("dialog");
@@ -1404,24 +1514,28 @@ describe("NormalizedDescriptions template evidence and linking", () => {
   });
 
   it("points at the Item Templates page when there are none to link", async () => {
-    vi.mocked(useItemTemplates).mockReturnValue(mockQueryResult({
-      data: [],
-      total: 0,
-      isLoading: false,
-    isPending: false,
-    isSuccess: true,
-    status: "success",
-  }));
+    vi.mocked(useItemTemplates).mockReturnValue(
+      mockQueryResult({
+        data: [],
+        total: 0,
+        isLoading: false,
+        isPending: false,
+        isSuccess: true,
+        status: "success",
+      }),
+    );
 
     const user = userEvent.setup();
     renderWithQueryClient(<NormalizedDescriptions />);
-    const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+    const row = (await screen.findByText("Strawberry Preserves")).closest(
+      "tr",
+    )!;
     await user.click(within(row).getByRole("button", { name: LINK_ACTION }));
 
     const dialog = await screen.findByRole("dialog");
-    expect(
-      within(dialog).getByTestId("link-template-empty"),
-    ).toHaveTextContent(/no item templates yet/i);
+    expect(within(dialog).getByTestId("link-template-empty")).toHaveTextContent(
+      /no item templates yet/i,
+    );
   });
 
   it("explains the action in the queue explainer, deletion included", async () => {
@@ -1561,9 +1675,7 @@ describe("NormalizedDescriptions settings tab", () => {
       "Auto-Accept Threshold",
     )) as HTMLInputElement;
     await waitFor(() => expect(autoInput.value).toBe("0.9"));
-    await user.click(
-      screen.getByRole("button", { name: /preview impact/i }),
-    );
+    await user.click(screen.getByRole("button", { name: /preview impact/i }));
     expect(mutate).toHaveBeenCalledWith({
       autoAcceptThreshold: 0.9,
       pendingReviewThreshold: 0.75,
@@ -1643,9 +1755,7 @@ describe("NormalizedDescriptions — Maintenance tab (RECEIPTS-883)", () => {
     // Nothing may be destroyed on the strength of one click on a destructive action.
     expect(mutate).not.toHaveBeenCalled();
     const dialog = await screen.findByRole("dialog");
-    expect(
-      within(dialog).getByText(/cannot be undone/i),
-    ).toBeInTheDocument();
+    expect(within(dialog).getByText(/cannot be undone/i)).toBeInTheDocument();
 
     await user.click(within(dialog).getByRole("button", { name: "Requeue" }));
 
@@ -1700,7 +1810,9 @@ describe("NormalizedDescriptions — Maintenance tab (RECEIPTS-883)", () => {
     await user.click(screen.getByRole("tab", { name: "Maintenance" }));
 
     expect(await screen.findByTestId("requeue-empty")).toBeInTheDocument();
-    expect(screen.queryByTestId("requeue-preview-panel")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("requeue-preview-panel"),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /Requeue 0 pending/ }),
     ).toBeDisabled();
@@ -1740,4 +1852,379 @@ describe("NormalizedDescriptions — Maintenance tab (RECEIPTS-883)", () => {
       screen.queryByRole("tab", { name: "Maintenance" }),
     ).not.toBeInTheDocument();
   });
+});
+
+describe("merge selection freshness", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    wireDefaults();
+  });
+
+  it("invalidates the selected target as soon as search changes", async () => {
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Strawberry Preserves")).closest(
+      "tr",
+    )!;
+    await user.click(within(row).getByRole("button", { name: MERGE_ACTION }));
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByText("Apples").closest("label")!);
+    expect(within(dialog).getByRole("button", { name: "Merge" })).toBeEnabled();
+    await user.type(
+      within(dialog).getByLabelText("Search active entries"),
+      "Milk",
+    );
+    expect(
+      within(dialog).getByRole("button", { name: "Merge" }),
+    ).toBeDisabled();
+  });
+
+  it("does not offer stale candidates while a query is fetching", async () => {
+    vi.mocked(useNormalizedDescriptions).mockImplementation((options) => ({
+      ...mockList(options as ListOptions),
+      isFetching: Array.isArray(options?.status),
+    }));
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Strawberry Preserves")).closest(
+      "tr",
+    )!;
+    await user.click(within(row).getByRole("button", { name: MERGE_ACTION }));
+    for (const radio of within(screen.getByRole("dialog")).queryAllByRole(
+      "radio",
+    )) {
+      expect(radio).toBeDisabled();
+    }
+    expect(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Merge" }),
+    ).toBeDisabled();
+  });
+});
+
+describe("normalization operation evidence", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    wireDefaults();
+  });
+
+  it("keeps simulation results labeled with their submitted thresholds after edits", async () => {
+    vi.mocked(usePreviewImpactMutation).mockReturnValue(
+      mockMutationResult({
+        data: {
+          current: { autoAccepted: 5, pendingReview: 2, unresolved: 1 },
+          proposed: { autoAccepted: 6, pendingReview: 1, unresolved: 1 },
+          deltas: {
+            autoToPending: 0,
+            pendingToAuto: 1,
+            unresolvedToAuto: 0,
+            unresolvedToPending: 0,
+          },
+        },
+        variables: { autoAcceptThreshold: 0.9, pendingReviewThreshold: 0.75 },
+      }),
+    );
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    await user.click(screen.getByRole("tab", { name: "Settings" }));
+    const input = screen.getByLabelText("Auto-Accept Threshold");
+    await user.clear(input);
+    await user.type(input, "0.95");
+    expect(screen.getByTestId("preview-impact-panel")).toHaveTextContent(
+      "Submitted thresholds: auto-accept 0.9, pending-review 0.75",
+    );
+  });
+
+  it("reports merge read failures and retries without allowing a write", async () => {
+    const refetch = vi.fn();
+    vi.mocked(useNormalizedDescriptions).mockImplementation((options) =>
+      Array.isArray(options?.status)
+        ? ({
+            ...listResult(activeItems),
+            isSuccess: false,
+            isError: true,
+            refetch,
+          } as ReturnType<typeof useNormalizedDescriptions>)
+        : mockList(options as ListOptions),
+    );
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Strawberry Preserves")).closest(
+      "tr",
+    )!;
+    await user.click(within(row).getByRole("button", { name: MERGE_ACTION }));
+    expect(
+      screen.getByText(/Merge candidates unavailable/),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Merge" }),
+    ).toBeDisabled();
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: /retry/i,
+      }),
+    );
+    expect(refetch).toHaveBeenCalledOnce();
+  });
+
+  it("retains the selection after a failed merge and clears it on reopening", async () => {
+    const mutate = vi.fn();
+    vi.mocked(useMergeMutation).mockReturnValue(
+      mockMutationResult({ mutate, isError: true }),
+    );
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Strawberry Preserves")).closest(
+      "tr",
+    )!;
+    await user.click(within(row).getByRole("button", { name: MERGE_ACTION }));
+    await user.click(
+      within(screen.getByRole("dialog")).getByText("Apples").closest("label")!,
+    );
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Merge" }),
+    );
+    expect(mutate).toHaveBeenCalledWith(
+      { id: "a-1", discardId: "p-1" },
+      expect.any(Object),
+    );
+    expect(
+      within(screen.getByRole("dialog")).getByRole("radio", { checked: true }),
+    ).toHaveAttribute("value", "a-1");
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "Cancel",
+      }),
+    );
+    await user.click(within(row).getByRole("button", { name: MERGE_ACTION }));
+    expect(
+      within(screen.getByRole("dialog")).queryByRole("radio", {
+        checked: true,
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("split verification and confirmation snapshots", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    wireDefaults();
+  });
+
+  it("preserves cross-page split selections and user-entered names", async () => {
+    const mutate = vi.fn();
+    vi.mocked(useSplitMutation).mockReturnValue(mockMutationResult({ mutate }));
+    vi.mocked(useLinkedReceiptItems).mockImplementation(
+      (_id, offset) =>
+        mockQueryResult({
+          data: offset
+            ? [{ id: "second", description: "Second item" }]
+            : [{ id: "first", description: "First item" }],
+          total: 51,
+          isLoading: false,
+          isSuccess: true,
+        }) as ReturnType<typeof useLinkedReceiptItems>,
+    );
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Strawberry Preserves")).closest(
+      "tr",
+    )!;
+    await user.click(within(row).getByRole("button", { name: "Split" }));
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByLabelText("First item"));
+    const name = within(dialog).getByLabelText(/name for the new entry/i);
+    await user.clear(name);
+    await user.type(name, "Chosen name");
+    await user.click(within(dialog).getByRole("button", { name: /next/i }));
+    await user.click(within(dialog).getByLabelText("Second item"));
+    expect(name).toHaveValue("Chosen name");
+    await user.click(within(dialog).getByRole("button", { name: "Split" }));
+    expect(mutate).toHaveBeenCalledWith(
+      {
+        id: "p-1",
+        receiptItemIds: ["first", "second"],
+        canonicalName: "Chosen name",
+      },
+      expect.any(Object),
+    );
+  });
+
+  it("blocks split after a selected item disappears from its verified page", async () => {
+    mockLinkedItems([{ id: "gone", description: "Selected item" }]);
+    const user = userEvent.setup();
+    const { rerender } = renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Strawberry Preserves")).closest(
+      "tr",
+    )!;
+    await user.click(within(row).getByRole("button", { name: "Split" }));
+    await user.click(
+      within(screen.getByRole("dialog")).getByLabelText("Selected item"),
+    );
+    mockLinkedItems([]);
+    rerender(<NormalizedDescriptions />);
+    expect(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Split" }),
+    ).toBeDisabled();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "no longer on its verified page",
+    );
+  });
+
+  it("shows a linked-item read failure instead of an empty list", async () => {
+    const refetch = vi.fn();
+    vi.mocked(useLinkedReceiptItems).mockReturnValue(
+      mockQueryResult({
+        data: undefined,
+        total: 0,
+        isError: true,
+        isLoading: false,
+        refetch,
+      }) as ReturnType<typeof useLinkedReceiptItems>,
+    );
+    const user = userEvent.setup();
+    renderWithQueryClient(<NormalizedDescriptions />);
+    const row = (await screen.findByText("Strawberry Preserves")).closest(
+      "tr",
+    )!;
+    await user.click(within(row).getByRole("button", { name: "Split" }));
+    expect(screen.getByText(/Linked items unavailable/)).toBeInTheDocument();
+    expect(screen.queryByTestId("split-empty")).not.toBeInTheDocument();
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: /retry/i,
+      }),
+    );
+    expect(refetch).toHaveBeenCalledOnce();
+  });
+
+  it("submits the requeue fingerprint originally confirmed even after preview refresh", async () => {
+    const mutate = vi.fn();
+    vi.mocked(useRequeuePendingMutation).mockReturnValue(
+      mockMutationResult({ mutate }),
+    );
+    const user = userEvent.setup();
+    const { rerender } = renderWithQueryClient(<NormalizedDescriptions />);
+    await user.click(screen.getByRole("tab", { name: "Maintenance" }));
+    await user.click(
+      screen.getByRole("button", { name: /Requeue .* pending/ }),
+    );
+    vi.mocked(useRequeuePendingPreview).mockReturnValue(
+      mockQueryResult({
+        data: {
+          ...requeuePreview,
+          pendingFingerprint: "changed",
+          pendingDescriptionCount: 1,
+        },
+        isLoading: false,
+      }),
+    );
+    rerender(<NormalizedDescriptions />);
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "Requeue",
+      }),
+    );
+    expect(mutate).toHaveBeenCalledWith(
+      { expectedFingerprint: requeuePreview.pendingFingerprint },
+      expect.any(Object),
+    );
+  });
+});
+
+it("does not silently replace invalid simulation overrides with live settings", async () => {
+  wireDefaults();
+  const user = userEvent.setup();
+  renderWithQueryClient(<NormalizedDescriptions />);
+  await user.click(screen.getByRole("tab", { name: "Settings" }));
+  await user.type(screen.getByLabelText("Description"), "Milk");
+  const auto = screen.getByLabelText("Auto-Accept Threshold");
+  await user.clear(auto);
+  await user.type(auto, "0.5");
+  expect(screen.getByRole("button", { name: "Test" })).toBeDisabled();
+  await user.clear(auto);
+  expect(screen.getByRole("button", { name: "Test" })).toBeEnabled();
+});
+
+it("does not revive a disproven split selection by navigating to another page", async () => {
+  wireDefaults();
+  let disappeared = false;
+  let fetching = false;
+  vi.mocked(useLinkedReceiptItems).mockImplementation(
+    (_id, offset) =>
+      mockQueryResult({
+        data: offset
+          ? [{ id: "second", description: "Second item" }]
+          : disappeared
+            ? [{ id: "other", description: "Other item" }]
+            : [{ id: "first", description: "First item" }],
+        total: 51,
+        isLoading: false,
+        isSuccess: true,
+        isFetching: fetching,
+      }) as ReturnType<typeof useLinkedReceiptItems>,
+  );
+  const user = userEvent.setup();
+  const { rerender } = renderWithQueryClient(<NormalizedDescriptions />);
+  const row = (await screen.findByText("Strawberry Preserves")).closest("tr")!;
+  await user.click(within(row).getByRole("button", { name: "Split" }));
+  await user.click(
+    within(screen.getByRole("dialog")).getByLabelText("First item"),
+  );
+  disappeared = true;
+  rerender(<NormalizedDescriptions />);
+  expect(
+    within(screen.getByRole("dialog")).getByRole("button", { name: "Split" }),
+  ).toBeDisabled();
+  fetching = true;
+  rerender(<NormalizedDescriptions />);
+  expect(
+    within(screen.getByRole("dialog")).getByRole("checkbox"),
+  ).toBeDisabled();
+  await user.click(
+    within(screen.getByRole("dialog")).getByRole("button", { name: /next/i }),
+  );
+  expect(
+    within(screen.getByRole("dialog")).getByRole("button", { name: "Split" }),
+  ).toBeDisabled();
+  fetching = false;
+  rerender(<NormalizedDescriptions />);
+  await user.click(
+    within(screen.getByRole("dialog")).getByRole("button", {
+      name: "Clear selection",
+    }),
+  );
+  await user.click(
+    within(screen.getByRole("dialog")).getByLabelText("Second item"),
+  );
+  expect(
+    within(screen.getByRole("dialog")).getByRole("button", { name: "Split" }),
+  ).toBeEnabled();
+});
+
+it("blocks repeated keyboard rename commits and cancellation while saving", async () => {
+  wireDefaults();
+  const mutate = vi.fn();
+  vi.mocked(useRenameMutation).mockReturnValue(mockMutationResult({ mutate }));
+  const user = userEvent.setup();
+  const { rerender } = renderWithQueryClient(<NormalizedDescriptions />);
+  await user.click(
+    await screen.findByRole("button", { name: "Rename Strawberry Preserves" }),
+  );
+  const input = screen.getByLabelText("Display name for Strawberry Preserves");
+  await user.clear(input);
+  await user.type(input, "New label");
+  await user.keyboard("{Enter}");
+  expect(mutate).toHaveBeenCalledTimes(1);
+  vi.mocked(useRenameMutation).mockReturnValue(
+    mockMutationResult({ mutate, isPending: true }),
+  );
+  rerender(<NormalizedDescriptions />);
+  await user.keyboard("{Enter}{Escape}");
+  expect(mutate).toHaveBeenCalledTimes(1);
+  expect(
+    screen.getByLabelText("Display name for Strawberry Preserves"),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "Rename Strawberry Preserves" }),
+  ).not.toBeInTheDocument();
 });

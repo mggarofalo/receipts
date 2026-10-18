@@ -1,4 +1,9 @@
-import { matchQuery, type Query, type QueryClient, type QueryKey } from "@tanstack/react-query";
+import {
+  matchQuery,
+  type Query,
+  type QueryClient,
+  type QueryKey,
+} from "@tanstack/react-query";
 
 // Preserve cache identities while sharing their prefixes between reads and writes.
 export const queryKeys = {
@@ -24,6 +29,7 @@ export const queryKeys = {
   normalizedDescriptionSettings: ["normalized-descriptions", "settings"],
   reportDuplicates: ["reports", "duplicates"],
   acceptedDuplicates: ["reports", "accepted-duplicates"],
+  reportsHealthSummary: ["reports", "health-summary"],
   ynab: ["ynab"],
   ynabConnectionStatus: ["ynab", "connection-status"],
   ynabSplitComparison: ["ynab", "split-comparison"],
@@ -101,6 +107,7 @@ const NORMALIZED_DESCRIPTION_CHANGE_QUERY_KEYS = [
 const DUPLICATE_ACCEPTANCE_CHANGE_QUERY_KEYS = [
   queryKeys.reportDuplicates,
   queryKeys.acceptedDuplicates,
+  queryKeys.reportsHealthSummary,
 ] as const;
 
 const YNAB_MAPPING_CHANGE_QUERY_KEYS = [
@@ -230,9 +237,11 @@ export function repairDomainChanges(
 // Reconnection repairs unknown missed changes, independent of individual event
 // exceptions (such as a known template creation retaining similarity results).
 const RECONNECT_QUERY_KEYS = Array.from(
-  new Map(Object.values(DOMAIN_CHANGE_QUERY_KEYS).flat().map(
-    (queryKey) => [JSON.stringify(queryKey), queryKey],
-  )).values(),
+  new Map(
+    Object.values(DOMAIN_CHANGE_QUERY_KEYS)
+      .flat()
+      .map((queryKey) => [JSON.stringify(queryKey), queryKey]),
+  ).values(),
 );
 
 /** Cancel potentially stale reads, then repair this domain union once. */
@@ -241,7 +250,8 @@ async function repairDomainQueries(
   prefixes: readonly QueryKey[],
   isCurrent: () => boolean,
 ) {
-  const matches = (query: Query) => prefixes.some((queryKey) => matchQuery({ queryKey }, query));
+  const matches = (query: Query) =>
+    prefixes.some((queryKey) => matchQuery({ queryKey }, query));
   // First reads can be reused by invalidation, and inactive reads can continue
   // after navigation. Either old result would clear staleness (including Infinity
   // freshness). Cancel all matching in-flight reads before asking for current data.
@@ -252,19 +262,30 @@ async function repairDomainQueries(
   if (!isCurrent()) return;
   // A union predicate prevents ancestor/child prefixes (especially YNAB) from
   // repeatedly cancelling and restarting the same active refetch.
-  await queryClient.invalidateQueries({ predicate: matches, refetchType: "active" });
+  await queryClient.invalidateQueries({
+    predicate: matches,
+    refetchType: "active",
+  });
 }
 
 export function invalidateAfterReconnect(
   queryClient: QueryClient,
   isCurrentConnection: () => boolean,
 ) {
-  return repairDomainQueries(queryClient, RECONNECT_QUERY_KEYS, isCurrentConnection);
+  return repairDomainQueries(
+    queryClient,
+    RECONNECT_QUERY_KEYS,
+    isCurrentConnection,
+  );
 }
 
 export function invalidateAfterBackupImport(
   queryClient: QueryClient,
   isCurrentSession: () => boolean,
 ) {
-  return repairDomainQueries(queryClient, BACKUP_IMPORT_QUERY_KEYS, isCurrentSession);
+  return repairDomainQueries(
+    queryClient,
+    BACKUP_IMPORT_QUERY_KEYS,
+    isCurrentSession,
+  );
 }

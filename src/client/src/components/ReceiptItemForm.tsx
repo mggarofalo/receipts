@@ -1,3 +1,4 @@
+import { receiptItemDraftSchema } from "@/lib/receipt-item-draft";
 import { RequestFailure } from "@/components/RequestFailure";
 import { calculateLineTotal } from "@/lib/receipt-arithmetic";
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
@@ -57,14 +58,10 @@ interface ItemTemplate {
   defaultItemCode?: string | null;
 }
 
-const receiptItemSchema = z.object({
+const receiptItemSchema = receiptItemDraftSchema.extend({
   receiptId: z.string().min(1, "Receipt is required"),
-  receiptItemCode: z.string().min(1, "Item code is required"),
-  description: z.string().min(1, "Description is required"),
-  quantity: z.number().positive("Quantity must be positive"),
-  unitPrice: z.number().min(0, "Unit price must be non-negative"),
-  category: z.string().min(1, "Category is required"),
-  subcategory: z.string().min(1, "Subcategory is required"),
+  receiptItemCode: z.string().trim().min(1, "Item code is required"),
+  subcategory: z.string().trim().min(1, "Subcategory is required"),
   // Provenance, not user input — there is no control bound to it (RECEIPTS-881). Set when a
   // template is applied and cleared the moment the description stops matching that template's
   // name, so the server never stamps an item with a canonical entry the text no longer means.
@@ -216,10 +213,15 @@ export function ReceiptItemForm({
     useState(false);
   const itemCodeListId = "item-code-autocomplete-list";
 
-  const { data: itemCodeSuggestions, isFetching: isFetchingItemCodeSuggestions, isError: itemCodeSuggestionsError, isDebouncing: itemCodeDebouncing, refetch: retryItemCodeSuggestions } =
-    useReceiptItemSuggestions(itemCodeInput, resolvedLocation, {
-      enabled: itemCodeAutocompleteOpen && itemCodeInput.length >= 1,
-    });
+  const {
+    data: itemCodeSuggestions,
+    isFetching: isFetchingItemCodeSuggestions,
+    isError: itemCodeSuggestionsError,
+    isDebouncing: itemCodeDebouncing,
+    refetch: retryItemCodeSuggestions,
+  } = useReceiptItemSuggestions(itemCodeInput, resolvedLocation, {
+    enabled: itemCodeAutocompleteOpen && itemCodeInput.length >= 1,
+  });
 
   // Filter item code history entries that match the current input
   const itemCodeHistoryMatches = useMemo(() => {
@@ -571,13 +573,17 @@ export function ReceiptItemForm({
                 </PopoverContent>
               </Popover>
               <FormMessage />
-              {itemCodeSuggestionsError && itemCodeInput.length >= 1 && !itemCodeDebouncing && (
-                <RequestFailure
-                  message="Item code suggestions unavailable. You can enter the item manually."
-                  retry={() => { void retryItemCodeSuggestions(); }}
-                  isRetrying={isFetchingItemCodeSuggestions}
-                />
-              )}
+              {itemCodeSuggestionsError &&
+                itemCodeInput.length >= 1 &&
+                !itemCodeDebouncing && (
+                  <RequestFailure
+                    message="Item code suggestions unavailable. You can enter the item manually."
+                    retry={() => {
+                      void retryItemCodeSuggestions();
+                    }}
+                    isRetrying={isFetchingItemCodeSuggestions}
+                  />
+                )}
             </FormItem>
           )}
         />
@@ -640,7 +646,13 @@ export function ReceiptItemForm({
                 >
                   <Command>
                     <CommandList id={descriptionListId}>
-                      <CommandEmpty>{templatesQuery.isError ? "Template suggestions unavailable." : templatesQuery.isLoading ? "Loading template suggestions…" : "No suggestions found."}</CommandEmpty>
+                      <CommandEmpty>
+                        {templatesQuery.isError
+                          ? "Template suggestions unavailable."
+                          : templatesQuery.isLoading
+                            ? "Loading template suggestions…"
+                            : "No suggestions found."}
+                      </CommandEmpty>
                       {descriptionHistoryMatches.length > 0 && (
                         <CommandGroup heading="Recent Descriptions">
                           {descriptionHistoryMatches.slice(0, 5).map((opt) => (
@@ -692,7 +704,9 @@ export function ReceiptItemForm({
               {templatesQuery.isError && (
                 <RequestFailure
                   message="Template suggestions unavailable. You can enter the item manually."
-                  retry={() => { void templatesQuery.refetch(); }}
+                  retry={() => {
+                    void templatesQuery.refetch();
+                  }}
                   isRetrying={templatesQuery.isFetching}
                 />
               )}
