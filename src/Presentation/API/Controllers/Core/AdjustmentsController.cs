@@ -1,10 +1,12 @@
 using API.Generated.Dtos;
+using API.Http;
 using API.Mapping.Core;
 using API.Services;
 using Application.Commands.Adjustment.Create;
 using Application.Commands.Adjustment.Delete;
 using Application.Commands.Adjustment.Restore;
 using Application.Commands.Adjustment.Update;
+using Application.Exceptions;
 using Application.Models;
 using Application.Queries.Core.Adjustment;
 using Asp.Versioning;
@@ -141,23 +143,39 @@ public class AdjustmentsController(IMediator mediator, AdjustmentMapper mapper, 
 
 	[HttpPost(RouteCreate)]
 	[EndpointSummary("Create a single adjustment")]
-	public async Task<Ok<AdjustmentResponse>> CreateAdjustment([FromBody] CreateAdjustmentRequest model, [FromRoute] Guid receiptId, CancellationToken cancellationToken = default)
+	public async Task<Results<Ok<AdjustmentResponse>, Conflict<ProblemDetails>>> CreateAdjustment([FromBody] CreateAdjustmentRequest model, [FromRoute] Guid receiptId, CancellationToken cancellationToken = default)
 	{
 		CreateAdjustmentCommand command = new([mapper.ToDomain(model)], receiptId);
-		List<Adjustment> adjustments = await mediator.Send(command, cancellationToken);
+		List<Adjustment> adjustments;
+		try
+		{
+			adjustments = await mediator.Send(command, cancellationToken);
+		}
+		catch (ConcurrencyConflictException ex)
+		{
+			return ApiProblem.Conflict(ex.Message);
+		}
 		await notifier.NotifyCreated("adjustment", adjustments[0].Id);
 		return TypedResults.Ok(mapper.ToResponse(adjustments[0]));
 	}
 
 	[HttpPut(RouteUpdate)]
 	[EndpointSummary("Update a single adjustment")]
-	public async Task<Results<NoContent, NotFound>> UpdateAdjustment([FromBody] UpdateAdjustmentRequest model, [FromRoute] Guid id, CancellationToken cancellationToken = default)
+	public async Task<Results<NoContent, NotFound, Conflict<ProblemDetails>>> UpdateAdjustment([FromBody] UpdateAdjustmentRequest model, [FromRoute] Guid id, CancellationToken cancellationToken = default)
 	{
 		// Route id is authoritative; ignore any mismatched body id so a PUT can never
 		// silently update a resource other than the one the URL names (RECEIPTS-793).
 		model.Id = id;
 		UpdateAdjustmentCommand command = new([mapper.ToDomain(model)]);
-		bool result = await mediator.Send(command, cancellationToken);
+		bool result;
+		try
+		{
+			result = await mediator.Send(command, cancellationToken);
+		}
+		catch (ConcurrencyConflictException ex)
+		{
+			return ApiProblem.Conflict(ex.Message);
+		}
 
 		if (!result)
 		{
@@ -190,10 +208,18 @@ public class AdjustmentsController(IMediator mediator, AdjustmentMapper mapper, 
 	[HttpPost(RouteRestore)]
 	[EndpointSummary("Restore a soft-deleted adjustment")]
 	[EndpointDescription("Restores a previously soft-deleted adjustment by clearing its DeletedAt timestamp.")]
-	public async Task<Results<NoContent, NotFound>> RestoreAdjustment([FromRoute] Guid id, CancellationToken cancellationToken = default)
+	public async Task<Results<NoContent, NotFound, Conflict<ProblemDetails>>> RestoreAdjustment([FromRoute] Guid id, CancellationToken cancellationToken = default)
 	{
 		RestoreAdjustmentCommand command = new(id);
-		bool result = await mediator.Send(command, cancellationToken);
+		bool result;
+		try
+		{
+			result = await mediator.Send(command, cancellationToken);
+		}
+		catch (ConcurrencyConflictException ex)
+		{
+			return ApiProblem.Conflict(ex.Message);
+		}
 
 		if (!result)
 		{

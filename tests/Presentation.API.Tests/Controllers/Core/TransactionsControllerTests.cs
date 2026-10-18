@@ -6,6 +6,7 @@ using Application.Commands.Transaction.Create;
 using Application.Commands.Transaction.Delete;
 using Application.Commands.Transaction.Restore;
 using Application.Commands.Transaction.Update;
+using Application.Exceptions;
 using Application.Models;
 using Application.Queries.Core.Transaction;
 using Domain.Core;
@@ -288,7 +289,7 @@ public class TransactionsControllerTests
 			.ReturnsAsync([transaction]);
 
 		// Act
-		Ok<TransactionResponse> result = await _controller.CreateTransaction(controllerInput, receiptId);
+		Ok<TransactionResponse> result = Assert.IsType<Ok<TransactionResponse>>((await _controller.CreateTransaction(controllerInput, receiptId)).Result);
 
 		// Assert
 		TransactionResponse actualReturn = result.Value!;
@@ -331,7 +332,7 @@ public class TransactionsControllerTests
 			.ReturnsAsync(mediatorReturn);
 
 		// Act
-		Ok<List<TransactionResponse>> result = await _controller.CreateTransactions(controllerInput, receiptId);
+		Ok<List<TransactionResponse>> result = Assert.IsType<Ok<List<TransactionResponse>>>((await _controller.CreateTransactions(controllerInput, receiptId)).Result);
 
 		// Assert
 		List<TransactionResponse> actualControllerReturn = result.Value!;
@@ -363,7 +364,7 @@ public class TransactionsControllerTests
 		List<TransactionResponse> expectedControllerReturn = [.. mediatorReturn.Select(_mapper.ToResponse)];
 
 		// Act
-		Ok<List<TransactionResponse>> result = await _controller.CreateTransactions(controllerInput, receiptId);
+		Ok<List<TransactionResponse>> result = Assert.IsType<Ok<List<TransactionResponse>>>((await _controller.CreateTransactions(controllerInput, receiptId)).Result);
 
 		// Assert
 		List<TransactionResponse> actualControllerReturn = result.Value!;
@@ -431,7 +432,7 @@ public class TransactionsControllerTests
 			.ReturnsAsync(true);
 
 		// Act
-		Results<NoContent, NotFound> result = await _controller.UpdateTransaction(controllerInput, id);
+		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.UpdateTransaction(controllerInput, id);
 
 		// Assert
 		Assert.IsType<NoContent>(result.Result);
@@ -450,7 +451,7 @@ public class TransactionsControllerTests
 			.ReturnsAsync(false);
 
 		// Act
-		Results<NoContent, NotFound> result = await _controller.UpdateTransaction(controllerInput, id);
+		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.UpdateTransaction(controllerInput, id);
 
 		// Assert
 		Assert.IsType<NotFound>(result.Result);
@@ -488,7 +489,7 @@ public class TransactionsControllerTests
 			.ReturnsAsync(true);
 
 		// Act
-		Results<NoContent, NotFound> result = await _controller.UpdateTransactions(controllerInput);
+		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.UpdateTransactions(controllerInput);
 
 		// Assert
 		Assert.IsType<NoContent>(result.Result);
@@ -513,7 +514,7 @@ public class TransactionsControllerTests
 			.ReturnsAsync(true);
 
 		// Act
-		Results<NoContent, NotFound> result = await _controller.UpdateTransactions(controllerInput);
+		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.UpdateTransactions(controllerInput);
 
 		// Assert
 		Assert.IsType<NoContent>(result.Result);
@@ -539,7 +540,7 @@ public class TransactionsControllerTests
 			.ReturnsAsync(false);
 
 		// Act
-		Results<NoContent, NotFound> result = await _controller.UpdateTransactions(controllerInput);
+		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.UpdateTransactions(controllerInput);
 
 		// Assert
 		Assert.IsType<NotFound>(result.Result);
@@ -558,7 +559,7 @@ public class TransactionsControllerTests
 			.ReturnsAsync(false);
 
 		// Act
-		Results<NoContent, NotFound> result = await _controller.UpdateTransactions(controllerInput);
+		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.UpdateTransactions(controllerInput);
 
 		// Assert
 		Assert.IsType<NotFound>(result.Result);
@@ -595,7 +596,7 @@ public class TransactionsControllerTests
 			.ReturnsAsync(true);
 
 		// Act
-		Results<NoContent, NotFound> result = await _controller.DeleteTransactions(controllerInput);
+		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.DeleteTransactions(controllerInput);
 
 		// Assert
 		Assert.IsType<NoContent>(result.Result);
@@ -613,7 +614,7 @@ public class TransactionsControllerTests
 			.ReturnsAsync(false);
 
 		// Act
-		Results<NoContent, NotFound> result = await _controller.DeleteTransactions(controllerInput);
+		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.DeleteTransactions(controllerInput);
 
 		// Assert
 		Assert.IsType<NotFound>(result.Result);
@@ -631,7 +632,7 @@ public class TransactionsControllerTests
 			.ReturnsAsync(false);
 
 		// Act
-		Results<NoContent, NotFound> result = await _controller.DeleteTransactions(controllerInput);
+		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.DeleteTransactions(controllerInput);
 
 		// Assert
 		Assert.IsType<NotFound>(result.Result);
@@ -666,7 +667,7 @@ public class TransactionsControllerTests
 			.ReturnsAsync(true);
 
 		// Act
-		Results<NoContent, NotFound> result = await _controller.RestoreTransaction(id);
+		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.RestoreTransaction(id);
 
 		// Assert
 		Assert.IsType<NoContent>(result.Result);
@@ -683,7 +684,7 @@ public class TransactionsControllerTests
 			.ReturnsAsync(false);
 
 		// Act
-		Results<NoContent, NotFound> result = await _controller.RestoreTransaction(id);
+		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.RestoreTransaction(id);
 
 		// Assert
 		Assert.IsType<NotFound>(result.Result);
@@ -704,5 +705,85 @@ public class TransactionsControllerTests
 
 		// Assert
 		await act.Should().ThrowAsync<Exception>();
+	}
+
+	[Fact]
+	public async Task UpdateTransaction_ConcurrentParentChange_Returns409WithoutNotification()
+	{
+		const string detail = "A payment moved to another receipt. Reload it before saving.";
+		_mediatorMock.Setup(m => m.Send(It.IsAny<UpdateTransactionCommand>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new ConcurrencyConflictException(detail));
+		var result = await _controller.UpdateTransaction(TransactionDtoGenerator.GenerateUpdateRequest(), Guid.NewGuid());
+		var conflict = Assert.IsType<Conflict<ProblemDetails>>(result.Result);
+		conflict.Value!.Status.Should().Be(409);
+		conflict.Value.Detail.Should().Be(detail);
+		_notifierMock.VerifyNoOtherCalls();
+	}
+
+	[Fact]
+	public async Task UpdateTransactions_ConcurrentParentChange_Returns409WithoutNotification()
+	{
+		const string detail = "A payment moved to another receipt. Reload it before saving.";
+		_mediatorMock.Setup(m => m.Send(It.IsAny<UpdateTransactionCommand>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new ConcurrencyConflictException(detail));
+		var result = await _controller.UpdateTransactions(TransactionDtoGenerator.GenerateUpdateRequestList(2));
+		var conflict = Assert.IsType<Conflict<ProblemDetails>>(result.Result);
+		conflict.Value!.Status.Should().Be(409);
+		conflict.Value.Detail.Should().Be(detail);
+		_notifierMock.VerifyNoOtherCalls();
+	}
+
+	[Fact]
+	public async Task DeleteTransactions_ConcurrentParentChange_Returns409WithoutNotification()
+	{
+		const string detail = "A payment moved to another receipt. Reload it before saving.";
+		_mediatorMock.Setup(m => m.Send(It.IsAny<DeleteTransactionCommand>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new ConcurrencyConflictException(detail));
+		var result = await _controller.DeleteTransactions([Guid.NewGuid()]);
+		var conflict = Assert.IsType<Conflict<ProblemDetails>>(result.Result);
+		conflict.Value!.Status.Should().Be(409);
+		conflict.Value.Detail.Should().Be(detail);
+		_notifierMock.VerifyNoOtherCalls();
+	}
+
+	[Fact]
+	public async Task RestoreTransaction_ConcurrentParentChange_Returns409WithoutNotification()
+	{
+		const string detail = "A payment moved to another receipt. Reload it before saving.";
+		_mediatorMock.Setup(m => m.Send(It.IsAny<RestoreTransactionCommand>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new ConcurrencyConflictException(detail));
+		var result = await _controller.RestoreTransaction(Guid.NewGuid());
+		var conflict = Assert.IsType<Conflict<ProblemDetails>>(result.Result);
+		conflict.Value!.Status.Should().Be(409);
+		conflict.Value.Detail.Should().Be(detail);
+		_notifierMock.VerifyNoOtherCalls();
+	}
+
+	[Fact]
+	public async Task CreateTransaction_InactiveParentConflict_Returns409WithoutNotification()
+	{
+		const string detail = "The receipt is no longer active. Restore or reload it before adding or restoring its children.";
+		_mediatorMock.Setup(m => m.Send(It.IsAny<CreateTransactionCommand>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new ConcurrencyConflictException(detail));
+		Microsoft.AspNetCore.Http.IResult result = await _controller.CreateTransaction(TransactionDtoGenerator.GenerateCreateRequest(), Guid.NewGuid());
+		var response = result is Microsoft.AspNetCore.Http.INestedHttpResult nested ? nested.Result : result;
+		var conflict = Assert.IsType<Conflict<ProblemDetails>>(response);
+		conflict.Value!.Status.Should().Be(409);
+		conflict.Value.Detail.Should().Be(detail);
+		_notifierMock.VerifyNoOtherCalls();
+	}
+
+	[Fact]
+	public async Task CreateTransactions_InactiveParentConflict_Returns409WithoutNotification()
+	{
+		const string detail = "The receipt is no longer active. Restore or reload it before adding or restoring its children.";
+		_mediatorMock.Setup(m => m.Send(It.IsAny<CreateTransactionCommand>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new ConcurrencyConflictException(detail));
+		Microsoft.AspNetCore.Http.IResult result = await _controller.CreateTransactions(TransactionDtoGenerator.GenerateCreateRequestList(2), Guid.NewGuid());
+		var response = result is Microsoft.AspNetCore.Http.INestedHttpResult nested ? nested.Result : result;
+		var conflict = Assert.IsType<Conflict<ProblemDetails>>(response);
+		conflict.Value!.Status.Should().Be(409);
+		conflict.Value.Detail.Should().Be(detail);
+		_notifierMock.VerifyNoOtherCalls();
 	}
 }

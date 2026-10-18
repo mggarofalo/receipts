@@ -1,5 +1,6 @@
 using API.Generated.Dtos;
 using API.Services;
+using Application.Exceptions;
 using Application.Interfaces.Services;
 using Application.Models;
 using Asp.Versioning;
@@ -68,7 +69,7 @@ public class BackupController(
 	[RequestSizeLimit(100 * 1024 * 1024)]
 	[EndpointSummary("Import data from a SQLite backup file")]
 	[EndpointDescription("Accepts a SQLite database file exported by the backup endpoint, reads all entity tables, and upserts each row into the current database. Backups from older export versions are accepted; tables and columns they lack are treated as absent. Requires the Admin role.")]
-	public async Task<Results<Ok<BackupImportResponse>, BadRequest<ProblemDetails>>> ImportBackup(
+	public async Task<Results<Ok<BackupImportResponse>, BadRequest<ProblemDetails>, Conflict<ProblemDetails>>> ImportBackup(
 		IFormFile? file)
 	{
 		if (file is null || file.Length == 0)
@@ -125,6 +126,10 @@ public class BackupController(
 				TotalCreated = result.TotalCreated,
 				TotalUpdated = result.TotalUpdated,
 			});
+		}
+		catch (ConcurrencyConflictException ex)
+		{
+			return ApiProblem.Conflict(ex.Message);
 		}
 		catch (InvalidOperationException ex)
 		{

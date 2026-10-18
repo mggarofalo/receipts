@@ -1,10 +1,12 @@
 using API.Generated.Dtos;
+using API.Http;
 using API.Mapping.Core;
 using API.Services;
 using Application.Commands.ReceiptItem.Create;
 using Application.Commands.ReceiptItem.Delete;
 using Application.Commands.ReceiptItem.Restore;
 using Application.Commands.ReceiptItem.Update;
+using Application.Exceptions;
 using Application.Models;
 using Application.Queries.Core.ReceiptItem;
 using Application.Queries.Core.ReceiptItem.GetReceiptItemSuggestions;
@@ -155,23 +157,39 @@ public class ReceiptItemsController(IMediator mediator, ReceiptItemMapper mapper
 
 	[HttpPost(RouteCreate)]
 	[EndpointSummary("Create a single receipt item")]
-	public async Task<Ok<ReceiptItemResponse>> CreateReceiptItem([FromBody] CreateReceiptItemRequest model, [FromRoute] Guid receiptId, CancellationToken cancellationToken = default)
+	public async Task<Results<Ok<ReceiptItemResponse>, Conflict<ProblemDetails>>> CreateReceiptItem([FromBody] CreateReceiptItemRequest model, [FromRoute] Guid receiptId, CancellationToken cancellationToken = default)
 	{
 		CreateReceiptItemCommand command = new([mapper.ToDomain(model)], receiptId, [model.ItemTemplateId]);
-		List<ReceiptItem> receiptItems = await mediator.Send(command, cancellationToken);
+		List<ReceiptItem> receiptItems;
+		try
+		{
+			receiptItems = await mediator.Send(command, cancellationToken);
+		}
+		catch (ConcurrencyConflictException ex)
+		{
+			return ApiProblem.Conflict(ex.Message);
+		}
 		await notifier.NotifyCreated("receipt-item", receiptItems[0].Id);
 		return TypedResults.Ok(mapper.ToResponse(receiptItems[0]));
 	}
 
 	[HttpPost(RouteCreateBatch)]
 	[EndpointSummary("Create receipt items in batch")]
-	public async Task<Ok<List<ReceiptItemResponse>>> CreateReceiptItems([FromBody] List<CreateReceiptItemRequest> models, [FromRoute] Guid receiptId, CancellationToken cancellationToken = default)
+	public async Task<Results<Ok<List<ReceiptItemResponse>>, Conflict<ProblemDetails>>> CreateReceiptItems([FromBody] List<CreateReceiptItemRequest> models, [FromRoute] Guid receiptId, CancellationToken cancellationToken = default)
 	{
 		CreateReceiptItemCommand command = new(
 			[.. models.Select(mapper.ToDomain)],
 			receiptId,
 			[.. models.Select(m => m.ItemTemplateId)]);
-		List<ReceiptItem> receiptItems = await mediator.Send(command, cancellationToken);
+		List<ReceiptItem> receiptItems;
+		try
+		{
+			receiptItems = await mediator.Send(command, cancellationToken);
+		}
+		catch (ConcurrencyConflictException ex)
+		{
+			return ApiProblem.Conflict(ex.Message);
+		}
 		await notifier.NotifyBulkChanged("receipt-item", "created", receiptItems.Select(ri => ri.Id));
 		return TypedResults.Ok(receiptItems.Select(mapper.ToResponse).ToList());
 	}
@@ -233,10 +251,18 @@ public class ReceiptItemsController(IMediator mediator, ReceiptItemMapper mapper
 	[HttpPost(RouteRestore)]
 	[EndpointSummary("Restore a soft-deleted receipt item")]
 	[EndpointDescription("Restores a previously soft-deleted receipt item by clearing its DeletedAt timestamp.")]
-	public async Task<Results<NoContent, NotFound>> RestoreReceiptItem([FromRoute] Guid id, CancellationToken cancellationToken = default)
+	public async Task<Results<NoContent, NotFound, Conflict<ProblemDetails>>> RestoreReceiptItem([FromRoute] Guid id, CancellationToken cancellationToken = default)
 	{
 		RestoreReceiptItemCommand command = new(id);
-		bool result = await mediator.Send(command, cancellationToken);
+		bool result;
+		try
+		{
+			result = await mediator.Send(command, cancellationToken);
+		}
+		catch (ConcurrencyConflictException ex)
+		{
+			return ApiProblem.Conflict(ex.Message);
+		}
 
 		if (!result)
 		{

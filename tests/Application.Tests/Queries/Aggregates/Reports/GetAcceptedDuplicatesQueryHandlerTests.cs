@@ -8,12 +8,12 @@ namespace Application.Tests.Queries.Aggregates.Reports;
 
 public class GetAcceptedDuplicatesQueryHandlerTests
 {
-	private readonly Mock<IReportService> _reportServiceMock;
+	private readonly Mock<IDuplicateReportReader> _reportServiceMock;
 	private readonly GetAcceptedDuplicatesQueryHandler _handler;
 
 	public GetAcceptedDuplicatesQueryHandlerTests()
 	{
-		_reportServiceMock = new Mock<IReportService>();
+		_reportServiceMock = new Mock<IDuplicateReportReader>();
 		_handler = new GetAcceptedDuplicatesQueryHandler(_reportServiceMock.Object);
 	}
 

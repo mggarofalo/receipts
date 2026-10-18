@@ -144,6 +144,30 @@ public class BackupCurationImportTests(PostgresFixture target) : IClassFixture<P
 	}
 
 	[Fact]
+	public async Task ImportFacts_WithoutIncomingAcceptance_InvalidatesExistingPair()
+	{
+		Guid[] receipts = [.. new[] { Guid.NewGuid(), Guid.NewGuid() }.Order()];
+		Guid pairId = Guid.NewGuid();
+		await using (ApplicationDbContext seed = target.CreateDbContext())
+		{
+			seed.Receipts.AddRange(receipts.Select(Receipt));
+			seed.AcceptedDuplicatePairs.Add(new() { Id = pairId, ReceiptIdA = receipts[0], ReceiptIdB = receipts[1], AcceptedAt = DateTimeOffset.UtcNow });
+			await seed.SaveChangesAsync();
+		}
+		using Artifact artifact = await Artifact.Create(5);
+		artifact.AddReceipts(receipts); // Changes exact location, but supplies no new acknowledgment.
+
+		BackupImportResult result = await Import(artifact);
+
+		result.AcceptedDuplicatePairsCreated.Should().Be(0);
+		result.AcceptedDuplicatePairsUpdated.Should().Be(0);
+		await using ApplicationDbContext read = target.CreateDbContext();
+		(await read.Receipts.Where(receipt => receipts.Contains(receipt.Id)).Select(receipt => receipt.Location).ToListAsync()).Should().OnlyContain(location => location == "Imported");
+		(await read.AcceptedDuplicatePairs.AnyAsync(pair => pair.Id == pairId)).Should().BeFalse();
+		(await read.AcceptedDuplicatePairs.IgnoreQueryFilters().SingleAsync(pair => pair.Id == pairId)).DeletedAt.Should().NotBeNull();
+	}
+
+	[Fact]
 	public async Task ImportPairs_SourceIdBelongsToAnotherPair_RejectsAndRollsBackEarlierReceiptUpdates()
 	{
 		Guid[] ids = [.. new[] { Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid() }.Order()];

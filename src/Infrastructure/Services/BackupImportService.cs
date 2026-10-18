@@ -91,6 +91,7 @@ public partial class BackupImportService(
 			(int subcategoriesCreated, int subcategoriesUpdated) = await UpsertSubcategoriesAsync(context, sqlite, cancellationToken);
 			(int normalizedDescriptionsCreated, int normalizedDescriptionsUpdated) = await UpsertNormalizedDescriptionsAsync(context, sqlite, exportVersion, cancellationToken);
 			(int itemTemplatesCreated, int itemTemplatesUpdated) = await UpsertItemTemplatesAsync(context, sqlite, exportVersion, cancellationToken);
+			Dictionary<(Guid First, Guid Second), Guid> priorAcceptedPairs = await LockReceiptImportAsync(context, sqlite, exportVersion, cancellationToken);
 			(int receiptsCreated, int receiptsUpdated) = await UpsertReceiptsAsync(context, sqlite, exportVersion, cancellationToken);
 			(int receiptItemsCreated, int receiptItemsUpdated) = await UpsertReceiptItemsAsync(context, sqlite, exportVersion, cancellationToken);
 			(int transactionsCreated, int transactionsUpdated) = await UpsertTransactionsAsync(context, sqlite, exportVersion, cancellationToken);
@@ -106,7 +107,7 @@ public partial class BackupImportService(
 			(int ynabSyncRecordsCreated, int ynabSyncRecordsUpdated) = await UpsertYnabSyncRecordsAsync(context, sqlite, exportVersion, cancellationToken);
 			(int normalizedDescriptionSettingsCreated, int normalizedDescriptionSettingsUpdated) = await UpsertNormalizedDescriptionSettingsAsync(context, sqlite, exportVersion, cancellationToken);
 
-			(int acceptedPairsCreated, int acceptedPairsUpdated) = await UpsertAcceptedDuplicatePairsAsync(context, sqlite, exportVersion, cancellationToken);
+			(int acceptedPairsCreated, int acceptedPairsUpdated) = await UpsertAcceptedDuplicatePairsAsync(context, sqlite, exportVersion, priorAcceptedPairs, cancellationToken);
 
 			await transaction.CommitAsync(cancellationToken);
 

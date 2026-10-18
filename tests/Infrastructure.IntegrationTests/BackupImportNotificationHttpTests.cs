@@ -145,7 +145,7 @@ public class BackupImportNotificationHttpTests(PostgresFixture fixture) : IClass
 			await command.ExecuteNonQueryAsync();
 			if (malformedAdjustment)
 			{
-				command.CommandText = "INSERT INTO adjustments (id, receipt_id, type, amount, amount_currency) VALUES ('not-a-guid', $id, 'Discount', '1', 'USD')";
+				command.CommandText = "INSERT INTO adjustments (id, receipt_id, type, amount, amount_currency) VALUES ('a2a55028-3a73-4482-8262-27e66b78bd8c', $id, 'Discount', 'not-a-decimal', 'USD')";
 				await command.ExecuteNonQueryAsync();
 			}
 			return artifact;

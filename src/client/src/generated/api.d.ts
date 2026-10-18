@@ -2753,7 +2753,7 @@ export interface components {
             receiptIds: string[];
         };
         UnacceptDuplicateGroupRequest: {
-            /** @description Every receipt whose mutual acceptances should be removed. At least two distinct IDs. Deliberately has no upper bound, unlike AcceptDuplicateGroupRequest: accepting stores one row per pair and is quadratic, whereas un-accepting is a single DELETE that is linear in the input and cannot create rows. An accepted group can exceed 100 members without any single accept call doing so, because groups are connected components that merge when an acceptance bridges two of them — capping this would make such a group impossible to undo. */
+            /** @description Every receipt whose mutual acceptances should be removed. At least two distinct IDs. Deliberately has no upper bound, unlike AcceptDuplicateGroupRequest: accepting stores one row per pair and is quadratic, whereas un-accepting loads and soft-deletes existing matching pairs without creating rows. Its cost follows existing pairs, which may also be quadratic. An accepted group can exceed 100 members without any single accept call doing so, because groups are connected components that merge when an acceptance bridges two of them — capping this would make such a group impossible to undo. */
             receiptIds: string[];
         };
         AcceptDuplicateGroupResponse: {
@@ -6715,6 +6715,15 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description The resource changed concurrently. Reload before retrying. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
         };
     };
     GetReceiptLocations: {
@@ -6811,6 +6820,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description The resource changed concurrently. Reload before retrying. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
             };
         };
     };
@@ -7170,6 +7188,15 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description The receipt is no longer active. Restore or reload it before retrying. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
         };
     };
     UpdateReceiptItems: {
@@ -7226,6 +7253,15 @@ export interface operations {
                     "application/json": components["schemas"]["ReceiptItemResponse"];
                 };
             };
+            /** @description The receipt is no longer active. Restore or reload it before retrying. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
         };
     };
     CreateReceiptItems: {
@@ -7250,6 +7286,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReceiptItemResponse"][];
+                };
+            };
+            /** @description The receipt is no longer active. Restore or reload it before retrying. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
         };
@@ -7314,6 +7359,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description The resource changed concurrently. Reload before retrying. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
             };
         };
     };
@@ -7380,6 +7434,15 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description The resource changed concurrently. Reload before retrying. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
         };
     };
     GetDeletedTransactions: {
@@ -7443,6 +7506,15 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description The resource changed concurrently. Reload before retrying. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
         };
     };
     UpdateTransactions: {
@@ -7472,6 +7544,15 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description The resource changed concurrently. Reload before retrying. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
         };
     };
     CreateTransaction: {
@@ -7499,6 +7580,15 @@ export interface operations {
                     "application/json": components["schemas"]["TransactionResponse"];
                 };
             };
+            /** @description The receipt is no longer active. Restore or reload it before retrying. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
         };
     };
     CreateTransactions: {
@@ -7523,6 +7613,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TransactionResponse"][];
+                };
+            };
+            /** @description The receipt is no longer active. Restore or reload it before retrying. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
         };
@@ -7587,6 +7686,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description The receipt is no longer active. Restore or reload it before retrying. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
             };
         };
     };
@@ -7716,6 +7824,15 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description The receipt is no longer active. Restore or reload it before retrying. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
         };
     };
     CreateAdjustment: {
@@ -7741,6 +7858,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdjustmentResponse"];
+                };
+            };
+            /** @description The receipt is no longer active. Restore or reload it before retrying. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
         };
@@ -7963,6 +8089,15 @@ export interface operations {
             };
             /** @description Bad Request — file missing, wrong format, or validation error */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict — receipt state changed during import; reload and retry */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

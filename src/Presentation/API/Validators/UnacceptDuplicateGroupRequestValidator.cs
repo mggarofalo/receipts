@@ -8,9 +8,9 @@ namespace API.Validators;
 ///
 /// Deliberately has NO upper bound on the ID count, unlike
 /// <see cref="AcceptDuplicateGroupRequestValidator"/>. That cap exists because accepting expands to
-/// C(n,2) INSERTs, so the work is quadratic in the input. Un-accepting is a single DELETE whose
-/// predicate is linear in the input and whose effect is bounded by the rows that already exist —
-/// there is no amplification, so the quadratic rationale does not transfer.
+/// C(n,2) INSERTs, so the work is quadratic in the input. Un-accepting loads and soft-deletes
+/// existing matching pairs without creating rows. Its cost follows existing pairs and may also
+/// be quadratic; the accept cap cannot bound a component that grows through multiple operations.
 ///
 /// Sharing one request contract between the two endpoints was an outright bug. Accepted groups are
 /// connected components of the pair graph, and components merge whenever an acceptance bridges two

@@ -1,4 +1,5 @@
 using API.Generated.Dtos;
+using API.Http;
 using API.Mapping.Core;
 using API.Services;
 using Application.Commands.Receipt.Create;
@@ -6,6 +7,7 @@ using Application.Commands.Receipt.CreateComplete;
 using Application.Commands.Receipt.Delete;
 using Application.Commands.Receipt.Restore;
 using Application.Commands.Receipt.Update;
+using Application.Exceptions;
 using Application.Models;
 using Application.Queries.Core.Receipt;
 using Asp.Versioning;
@@ -284,10 +286,18 @@ public class ReceiptsController(
 	[HttpDelete(RouteDelete)]
 	[EndpointSummary("Delete receipts")]
 	[EndpointDescription("Deletes one or more receipts by their IDs. Returns 404 if any receipt is not found.")]
-	public async Task<Results<NoContent, NotFound>> DeleteReceipts([FromBody] List<Guid> ids, CancellationToken cancellationToken = default)
+	public async Task<Results<NoContent, NotFound, Conflict<ProblemDetails>>> DeleteReceipts([FromBody] List<Guid> ids, CancellationToken cancellationToken = default)
 	{
 		DeleteReceiptCommand command = new(ids);
-		bool result = await mediator.Send(command, cancellationToken);
+		bool result;
+		try
+		{
+			result = await mediator.Send(command, cancellationToken);
+		}
+		catch (ConcurrencyConflictException ex)
+		{
+			return ApiProblem.Conflict(ex.Message);
+		}
 
 		if (!result)
 		{
@@ -302,10 +312,18 @@ public class ReceiptsController(
 	[HttpPost(RouteRestore)]
 	[EndpointSummary("Restore a soft-deleted receipt")]
 	[EndpointDescription("Restores a previously soft-deleted receipt and its associated items and transactions.")]
-	public async Task<Results<NoContent, NotFound>> RestoreReceipt([FromRoute] Guid id, CancellationToken cancellationToken = default)
+	public async Task<Results<NoContent, NotFound, Conflict<ProblemDetails>>> RestoreReceipt([FromRoute] Guid id, CancellationToken cancellationToken = default)
 	{
 		RestoreReceiptCommand command = new(id);
-		bool result = await mediator.Send(command, cancellationToken);
+		bool result;
+		try
+		{
+			result = await mediator.Send(command, cancellationToken);
+		}
+		catch (ConcurrencyConflictException ex)
+		{
+			return ApiProblem.Conflict(ex.Message);
+		}
 
 		if (!result)
 		{

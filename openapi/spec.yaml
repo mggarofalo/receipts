@@ -2165,6 +2165,13 @@ paths:
           description: No Content
         "404":
           description: Not Found
+        "409":
+          description: The resource changed concurrently. Reload before retrying.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
 
   /api/receipts/locations:
     get:
@@ -2257,6 +2264,13 @@ paths:
               $ref: "#/components/headers/X-Resource-Id"
         "404":
           description: Not Found
+        "409":
+          description: The resource changed concurrently. Reload before retrying.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
 
   /api/receipts/{receiptId}/image:
     post:
@@ -2610,6 +2624,13 @@ paths:
               $ref: "#/components/headers/X-Resource-Id"
         "404":
           description: Not Found
+        "409":
+          description: The receipt is no longer active. Restore or reload it before retrying.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
 
   /api/receipt-items/batch:
     put:
@@ -2664,6 +2685,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ReceiptItemResponse"
+        "409":
+          description: The receipt is no longer active. Restore or reload it before retrying.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
 
   /api/receipts/{receiptId}/receipt-items/batch:
     post:
@@ -2697,6 +2725,13 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/ReceiptItemResponse"
+        "409":
+          description: The receipt is no longer active. Restore or reload it before retrying.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
 
   # ──────────────────────────────────────────────
   # Transactions
@@ -2758,6 +2793,13 @@ paths:
               $ref: "#/components/headers/X-Resource-Id"
         "404":
           description: Not Found
+        "409":
+          description: The resource changed concurrently. Reload before retrying.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
 
   /api/transactions:
     get:
@@ -2812,6 +2854,13 @@ paths:
           description: No Content
         "404":
           description: Not Found
+        "409":
+          description: The resource changed concurrently. Reload before retrying.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
 
   /api/transactions/deleted:
     get:
@@ -2863,6 +2912,13 @@ paths:
               $ref: "#/components/headers/X-Resource-Id"
         "404":
           description: Not Found
+        "409":
+          description: The resource changed concurrently. Reload before retrying.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
 
   /api/transactions/batch:
     put:
@@ -2885,6 +2941,13 @@ paths:
           description: No Content
         "404":
           description: Not Found
+        "409":
+          description: The resource changed concurrently. Reload before retrying.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
 
   /api/receipts/{receiptId}/transactions:
     post:
@@ -2917,6 +2980,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TransactionResponse"
+        "409":
+          description: The receipt is no longer active. Restore or reload it before retrying.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
 
   /api/receipts/{receiptId}/transactions/batch:
     post:
@@ -2950,6 +3020,13 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/TransactionResponse"
+        "409":
+          description: The receipt is no longer active. Restore or reload it before retrying.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
 
   # ──────────────────────────────────────────────
   # Adjustments
@@ -3011,6 +3088,13 @@ paths:
               $ref: "#/components/headers/X-Resource-Id"
         "404":
           description: Not Found
+        "409":
+          description: The receipt is no longer active. Restore or reload it before retrying.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
 
   /api/adjustments:
     get:
@@ -3116,6 +3200,13 @@ paths:
               $ref: "#/components/headers/X-Resource-Id"
         "404":
           description: Not Found
+        "409":
+          description: The receipt is no longer active. Restore or reload it before retrying.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
 
   /api/receipts/{receiptId}/adjustments:
     post:
@@ -3148,6 +3239,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdjustmentResponse"
+        "409":
+          description: The receipt is no longer active. Restore or reload it before retrying.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
 
   # ──────────────────────────────────────────────
   # Trash
@@ -3402,6 +3500,12 @@ paths:
                 $ref: "#/components/schemas/BackupImportResponse"
         "400":
           description: Bad Request — file missing, wrong format, or validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
+          description: Conflict — receipt state changed during import; reload and retry
           content:
             application/json:
               schema:
@@ -5721,8 +5825,8 @@ components:
           description: >
             Every receipt whose mutual acceptances should be removed. At least two distinct IDs.
             Deliberately has no upper bound, unlike AcceptDuplicateGroupRequest: accepting stores one
-            row per pair and is quadratic, whereas un-accepting is a single DELETE that is linear in
-            the input and cannot create rows. An accepted group can exceed 100 members without any
+            row per pair and is quadratic, whereas un-accepting loads and soft-deletes existing matching
+            pairs without creating rows. Its cost follows existing pairs, which may also be quadratic. An accepted group can exceed 100 members without any
             single accept call doing so, because groups are connected components that merge when an
             acceptance bridges two of them — capping this would make such a group impossible to undo.
 
