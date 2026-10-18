@@ -83,9 +83,9 @@ function BackupRestore() {
               </CardTitle>
               <CardDescription>
                 Download a SQLite backup of your database. It can be used to
-                restore your data on another instance. Note that receipt image
-                files are stored outside the database and are not included
-                &mdash; only their file paths are.
+                restore your data on another instance. Receipt photos are
+                retired; only legacy image-path metadata is retained for
+                archival compatibility. Image files are not included.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -150,12 +150,12 @@ function BackupRestore() {
           <AlertDescription>
             Backups include your receipts, transactions, accounts, categories,
             item templates, adjustments, YNAB configuration, and normalized
-            descriptions. Receipt image files are stored outside the database:
-            their paths are backed up, but the image files themselves must be
-            backed up separately. User accounts and authentication settings are
-            excluded for security reasons. Audit logs and YNAB sync history are
-            not included either &mdash; a backup restores your data, not the
-            record of past activity.
+            descriptions. Receipt photos are no longer supported. Legacy image
+            paths remain in backups for archival compatibility; image files are
+            not included and existing files are left untouched. User accounts
+            and authentication settings are excluded for security reasons. Audit
+            logs and YNAB sync history are not included either &mdash; a backup
+            restores your data, not the record of past activity.
           </AlertDescription>
         </Alert>
 

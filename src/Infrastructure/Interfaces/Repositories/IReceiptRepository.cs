@@ -1,5 +1,4 @@
 using Application.Models;
-using Application.Models.Images;
 using Infrastructure.Entities.Core;
 
 namespace Infrastructure.Interfaces.Repositories;
@@ -15,7 +14,6 @@ public interface IReceiptRepository
 	/// Updates only location, date, and tax fields; preserves image and deletion metadata.
 	/// </summary>
 	Task UpdateAsync(List<ReceiptEntity> entities, CancellationToken cancellationToken);
-	Task<ReceiptImageSet?> ReplaceImagePathsAsync(Guid id, ReceiptImageSet imageSet, CancellationToken cancellationToken);
 	Task<CascadeMutationResult> DeleteAsync(List<Guid> ids, CancellationToken cancellationToken);
 	Task<bool> ExistsAsync(Guid id, CancellationToken cancellationToken);
 	Task<int> GetCountAsync(CancellationToken cancellationToken);

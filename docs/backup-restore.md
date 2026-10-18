@@ -4,7 +4,7 @@ The application supports portable SQLite backups for disaster recovery, migratio
 
 ## What gets backed up
 
-The export (current format `export_version = 5`) includes your domain data plus YNAB
+The export (current format `export_version = 6`) includes your domain data plus YNAB
 configuration/state and normalized-description settings:
 
 - Accounts
@@ -12,7 +12,7 @@ configuration/state and normalized-description settings:
 - Categories
 - Subcategories
 - Item Templates, including declared canonical-description links
-- Receipts (including image file **paths** — see below)
+- Receipts (including inert legacy image-path metadata; see below)
 - Receipt Items, including canonical-description links and recorded match scores
 - Transactions
 - Adjustments
@@ -23,8 +23,9 @@ configuration/state and normalized-description settings:
 
 Soft-deleted records are **excluded** from exports. An accepted pair may survive a receipt's soft deletion in the live database, but a portable backup excludes that pair if either receipt is excluded. Export does not alter the source acceptance.
 
-Receipt image **binaries** are stored outside the database and are **not** included — only
-their file paths are backed up. Back the image files up separately.
+Receipt photos are retired. Existing image-path metadata remains in backups for
+archival compatibility; image binaries were never included. Imports do not access
+those paths or modify files. See [photo retirement and existing files](receipt-image-storage.md).
 
 ### Deliberately excluded from backup
 

@@ -1,7 +1,6 @@
 using System.Linq.Expressions;
 using Application.Interfaces.Services;
 using Application.Models;
-using Application.Models.Images;
 using Infrastructure.Entities.Core;
 using Infrastructure.Extensions;
 using Infrastructure.Interfaces.Repositories;
@@ -264,7 +263,7 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 		foreach (ReceiptEntity entity in entities)
 		{
 			ReceiptEntity existingEntity = existingEntities.Single(e => e.Id == entity.Id);
-			// A mapped edit is not a replacement for server-owned image/deletion metadata.
+			// A mapped edit is not a replacement for legacy archival image-path and server-owned deletion metadata.
 			existingEntity.Location = entity.Location;
 			existingEntity.Date = entity.Date;
 			existingEntity.TaxAmount = entity.TaxAmount;
@@ -272,43 +271,6 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 		}
 
 		await context.SaveChangesAsync(cancellationToken);
-	}
-
-	public async Task<ReceiptImageSet?> ReplaceImagePathsAsync(
-		Guid id,
-		ReceiptImageSet imageSet,
-		CancellationToken cancellationToken)
-	{
-		using ApplicationDbContext context = contextFactory.CreateDbContext();
-		await using Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? transaction = context.Database.IsRelational()
-			? await context.Database.BeginTransactionAsync(cancellationToken)
-			: null;
-
-		if (context.Database.IsNpgsql())
-		{
-			await context.Database.SqlQuery<Guid>($"""
-				SELECT "Id" AS "Value" FROM receipts."Receipts"
-				WHERE "Id" = {id} FOR UPDATE
-				""").ToListAsync(cancellationToken);
-		}
-
-		ReceiptEntity entity = await context.Receipts.FindAsync([id], cancellationToken)
-			?? throw new KeyNotFoundException($"Receipt {id} not found.");
-
-		ReceiptImageSet? previous = entity.OriginalImagePath is not null && entity.ProcessedImagePath is not null
-			? new(entity.OriginalImagePath, entity.ProcessedImagePath)
-			: null;
-
-		entity.OriginalImagePath = imageSet.OriginalImagePath;
-		entity.ProcessedImagePath = imageSet.ProcessedImagePath;
-
-		await context.SaveChangesAsync(cancellationToken);
-		if (transaction is not null)
-		{
-			await transaction.CommitAsync(cancellationToken);
-		}
-
-		return previous;
 	}
 
 	public async Task<CascadeMutationResult> DeleteAsync(List<Guid> ids, CancellationToken cancellationToken)
