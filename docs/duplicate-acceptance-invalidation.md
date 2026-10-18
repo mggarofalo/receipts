@@ -36,4 +36,4 @@ or external maintenance writes must reconcile affected acceptances explicitly.
 No schema or backup-format migration is needed. Existing acceptances remain until
 a subsequent fact change: historical acceptance-time facts were never stored, so
 the application cannot reconstruct whether an older acceptance was already stale.
-The wire contracts and pairwise grouping semantics are unchanged.
+Pairwise grouping semantics are unchanged. Transaction update/delete/restore and receipt delete/restore now additionally declare RFC 9457 HTTP 409 when a payment parent changed concurrently; the response detail instructs the caller to reload before retrying.
