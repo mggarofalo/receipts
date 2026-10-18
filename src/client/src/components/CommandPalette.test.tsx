@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
-import { screen, within, waitFor } from "@testing-library/react";
+import { act, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -121,6 +121,38 @@ beforeEach(async () => {
 });
 
 describe("CommandPalette", () => {
+  it("updates passive shortcut hints from another tab without disabling commands", async () => {
+    const user = userEvent.setup();
+    renderWithQueryClient(
+      <CommandPalette open={true} onOpenChange={vi.fn()} />,
+      { route: "/accounts" },
+    );
+    const item = screen
+      .getByText("New Account")
+      .closest("[cmdk-item]") as HTMLElement;
+    expect(within(item).getByText("⇧ N")).toBeInTheDocument();
+    // The real modal makes outside controls inert; update via a cross-tab event
+    // while the palette remains mounted, as another browser tab would.
+    act(() => {
+      localStorage.setItem(
+        "receipts:preferences",
+        '{"showKeyboardHints":false}',
+      );
+      window.dispatchEvent(
+        new StorageEvent("storage", { key: "receipts:preferences" }),
+      );
+    });
+    expect(within(item).queryByText("⇧ N")).not.toBeInTheDocument();
+    expect(within(item).queryByText("Shift+N")).not.toBeInTheDocument();
+    const create = vi.fn();
+    window.addEventListener("shortcut:new-item", create);
+    try {
+      await user.click(item);
+      expect(create).toHaveBeenCalledOnce();
+    } finally {
+      window.removeEventListener("shortcut:new-item", create);
+    }
+  });
   it("does not render when closed", () => {
     renderWithQueryClient(
       <CommandPalette open={false} onOpenChange={vi.fn()} />,

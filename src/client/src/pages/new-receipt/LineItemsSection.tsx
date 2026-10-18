@@ -20,6 +20,7 @@ import {
 } from "@/hooks/useSimilarItems";
 import { useReceiptItemSuggestions } from "@/hooks/useReceiptItemSuggestions";
 import { usePromoteToTemplate } from "@/hooks/usePromoteToTemplate";
+import { usePreferences } from "@/hooks/usePreferences";
 import { formatUnitPrice, formatCurrency } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -91,6 +92,7 @@ export function LineItemsSection({
   onChange,
   location,
 }: LineItemsSectionProps) {
+  const { preferences } = usePreferences();
   const [showSuggestions, setShowSuggestions] = useState(false);
   const suggestionsListId = "new-receipt-suggestions-list";
   // Index of the keyboard-highlighted row in the description lookup.
@@ -691,7 +693,11 @@ export function LineItemsSection({
                               aria-autocomplete="list"
                               aria-expanded={isSuggestionsOpen}
                               aria-controls={suggestionsListId}
-                              aria-describedby="description-shortcuts-hint"
+                              aria-describedby={
+                                preferences.showKeyboardHints
+                                  ? "description-shortcuts-hint"
+                                  : undefined
+                              }
                               autoComplete="off"
                               {...field}
                               onChange={(e) => {
@@ -711,14 +717,16 @@ export function LineItemsSection({
                               }}
                               onKeyDown={handleDescriptionKeyDown}
                             />
-                            <span
-                              id="description-shortcuts-hint"
-                              className="sr-only"
-                            >
-                              When a suggestion from your history is
-                              highlighted, press Shift+Enter to save it as a
-                              template.
-                            </span>
+                            {preferences.showKeyboardHints && (
+                              <span
+                                id="description-shortcuts-hint"
+                                className="sr-only"
+                              >
+                                When a suggestion from your history is
+                                highlighted, press Shift+Enter to save it as a
+                                template.
+                              </span>
+                            )}
                             {isFetchingSimilar && description.length >= 2 && (
                               <>
                                 <Loader2

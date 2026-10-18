@@ -1,5 +1,5 @@
 import { useCreateSubcategory } from "@/hooks/useSubcategories";
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "@/test/test-utils";
 import { mockQueryResult, mockMutationResult } from "@/test/mock-hooks";
@@ -83,6 +83,49 @@ describe("LineItemsSection", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
+    window.dispatchEvent(new StorageEvent("storage", { key: null }));
+  });
+
+  it("removes and restores the description shortcut hint and its accessible association together", () => {
+    renderWithProviders(<LineItemsSection {...defaultProps} />);
+    const description = screen.getByPlaceholderText("Item description");
+    expect(description).toHaveAttribute(
+      "aria-describedby",
+      "description-shortcuts-hint",
+    );
+    expect(
+      screen.getByText(/press Shift\+Enter to save it as a template/),
+    ).toBeInTheDocument();
+    act(() => {
+      localStorage.setItem(
+        "receipts:preferences",
+        '{"showKeyboardHints":false}',
+      );
+      window.dispatchEvent(
+        new StorageEvent("storage", { key: "receipts:preferences" }),
+      );
+    });
+    expect(description).not.toHaveAttribute(
+      "aria-describedby",
+      "description-shortcuts-hint",
+    );
+    expect(
+      screen.queryByText(/press Shift\+Enter to save it as a template/),
+    ).not.toBeInTheDocument();
+    act(() => {
+      localStorage.removeItem("receipts:preferences");
+      window.dispatchEvent(
+        new StorageEvent("storage", { key: "receipts:preferences" }),
+      );
+    });
+    expect(description).toHaveAttribute(
+      "aria-describedby",
+      "description-shortcuts-hint",
+    );
+    expect(
+      screen.getByText(/press Shift\+Enter to save it as a template/),
+    ).toBeInTheDocument();
   });
 
   it("renders the card title", () => {
@@ -507,33 +550,40 @@ describe("LineItemsSection", () => {
       );
     });
 
-    it("promotes the highlighted history suggestion with Shift+Enter without applying it", async () => {
-      const user = userEvent.setup();
-      mockSuggestions();
-      const mutate = mockPromote();
-      renderWithProviders(<LineItemsSection {...defaultProps} />);
+    it.each([true, false])(
+      "promotes the highlighted history suggestion with Shift+Enter without applying it (hints=%s)",
+      async (showKeyboardHints) => {
+        localStorage.setItem(
+          "receipts:preferences",
+          JSON.stringify({ showKeyboardHints }),
+        );
+        const user = userEvent.setup();
+        mockSuggestions();
+        const mutate = mockPromote();
+        renderWithProviders(<LineItemsSection {...defaultProps} />);
 
-      const input = screen.getByPlaceholderText("Item description");
-      await user.type(input, "mi");
-      await screen.findByRole("option", { name: /milk \(gallon\)/i });
+        const input = screen.getByPlaceholderText("Item description");
+        await user.type(input, "mi");
+        await screen.findByRole("option", { name: /milk \(gallon\)/i });
 
-      // The first result (the history suggestion) is highlighted by default.
-      await user.keyboard("{Shift>}{Enter}{/Shift}");
+        // The first result (the history suggestion) is highlighted by default.
+        await user.keyboard("{Shift>}{Enter}{/Shift}");
 
-      expect(mutate).toHaveBeenCalledWith({
-        name: "Milk (gallon)",
-        defaultCategory: "Food",
-        defaultSubcategory: "Dairy",
-        defaultUnitPrice: 3.5,
-        defaultItemCode: "MILK-GAL",
-      });
-      // Shift+Enter must not apply the suggestion to the form...
-      expect(input).toHaveValue("mi");
-      // ...and must not close the popover.
-      expect(
-        screen.getByRole("option", { name: /milk \(gallon\)/i }),
-      ).toBeInTheDocument();
-    });
+        expect(mutate).toHaveBeenCalledWith({
+          name: "Milk (gallon)",
+          defaultCategory: "Food",
+          defaultSubcategory: "Dairy",
+          defaultUnitPrice: 3.5,
+          defaultItemCode: "MILK-GAL",
+        });
+        // Shift+Enter must not apply the suggestion to the form...
+        expect(input).toHaveValue("mi");
+        // ...and must not close the popover.
+        expect(
+          screen.getByRole("option", { name: /milk \(gallon\)/i }),
+        ).toBeInTheDocument();
+      },
+    );
 
     it("plain Enter still applies (does not promote) a highlighted history suggestion", async () => {
       const user = userEvent.setup();
