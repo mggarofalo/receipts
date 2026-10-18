@@ -10,6 +10,31 @@ namespace Infrastructure.Tests.Services;
 public class ReportServiceTests
 {
 	[Fact]
+	public async Task GetDuplicates_AnchorsAtLowestTotal_IndependentOfStorageOrder()
+	{
+		IDbContextFactory<ApplicationDbContext> factory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid low = Guid.NewGuid();
+		Guid middle = Guid.NewGuid();
+		Guid high = Guid.NewGuid();
+		await using (ApplicationDbContext context = factory.CreateDbContext())
+		{
+			Guid card = Guid.NewGuid();
+			DateOnly date = new(2025, 3, 1);
+			SeedReceipt(context, middle, "Store", date, card, 11m);
+			SeedReceipt(context, high, "Store", date, card, 12m);
+			SeedReceipt(context, low, "Store", date, card, 10m);
+			SeedOriginatingCards(context);
+			await context.SaveChangesAsync();
+		}
+		DuplicateWorkflowFixture service = new(factory);
+
+		DuplicateDetectionResult result = await service.GetDuplicatesAsync("dateAndTotal", "exact", 1m, false, CancellationToken.None);
+
+		result.Groups.Should().ContainSingle().Which.Receipts.Select(r => r.ReceiptId)
+			.Should().Equal(low, middle);
+	}
+
+	[Fact]
 	public async Task GetOutOfBalanceAsync_ReturnsEmptyWhenAllBalanced()
 	{
 		// Arrange
@@ -1480,7 +1505,7 @@ public class ReportServiceTests
 			await context.SaveChangesAsync();
 		}
 
-		ReportService service = new(contextFactory);
+		DuplicateWorkflowFixture service = new(contextFactory);
 
 		// Act
 		DuplicateDetectionResult result = await service.GetDuplicatesAsync(
@@ -1517,7 +1542,7 @@ public class ReportServiceTests
 			await context.SaveChangesAsync();
 		}
 
-		ReportService service = new(contextFactory);
+		DuplicateWorkflowFixture service = new(contextFactory);
 
 		// The group is reported before acceptance.
 		DuplicateDetectionResult before = await service.GetDuplicatesAsync(
@@ -1567,7 +1592,7 @@ public class ReportServiceTests
 			await context.SaveChangesAsync();
 		}
 
-		ReportService service = new(contextFactory);
+		DuplicateWorkflowFixture service = new(contextFactory);
 		await service.AcceptDuplicateGroupAsync([acceptedA, acceptedB], CancellationToken.None);
 
 		// Act
@@ -1609,7 +1634,7 @@ public class ReportServiceTests
 			await context.SaveChangesAsync();
 		}
 
-		ReportService service = new(contextFactory);
+		DuplicateWorkflowFixture service = new(contextFactory);
 
 		(string MatchOn, string LocationTolerance, decimal TotalTolerance)[] settings =
 		[
@@ -1673,7 +1698,7 @@ public class ReportServiceTests
 			await context.SaveChangesAsync();
 		}
 
-		ReportService service = new(contextFactory);
+		DuplicateWorkflowFixture service = new(contextFactory);
 		await service.AcceptDuplicateGroupAsync([receiptA, receiptB], CancellationToken.None);
 
 		// Act — the newcomer's pairs have never been reviewed, so the group resurfaces.
@@ -1718,7 +1743,7 @@ public class ReportServiceTests
 			await context.SaveChangesAsync();
 		}
 
-		ReportService service = new(contextFactory);
+		DuplicateWorkflowFixture service = new(contextFactory);
 		int acceptedPairs = await service.AcceptDuplicateGroupAsync(
 			[receiptA, receiptB, receiptC], CancellationToken.None);
 		acceptedPairs.Should().Be(3);
@@ -1763,7 +1788,7 @@ public class ReportServiceTests
 			await context.SaveChangesAsync();
 		}
 
-		ReportService service = new(contextFactory);
+		DuplicateWorkflowFixture service = new(contextFactory);
 		await service.AcceptDuplicateGroupAsync([receiptA, receiptB], CancellationToken.None);
 
 		// Act — soft-delete B: the group drops below two members and is not reported at all.
@@ -1816,7 +1841,7 @@ public class ReportServiceTests
 			await context.SaveChangesAsync();
 		}
 
-		ReportService service = new(contextFactory);
+		DuplicateWorkflowFixture service = new(contextFactory);
 
 		// Act
 		int firstCall = await service.AcceptDuplicateGroupAsync([receiptA, receiptB], CancellationToken.None);
@@ -1852,7 +1877,7 @@ public class ReportServiceTests
 			await context.SaveChangesAsync();
 		}
 
-		ReportService service = new(contextFactory);
+		DuplicateWorkflowFixture service = new(contextFactory);
 
 		// Act
 		Func<Task> act = () => service.AcceptDuplicateGroupAsync([receiptA, ghost], CancellationToken.None);
@@ -1881,7 +1906,7 @@ public class ReportServiceTests
 			await context.SaveChangesAsync();
 		}
 
-		ReportService service = new(contextFactory);
+		DuplicateWorkflowFixture service = new(contextFactory);
 		List<Guid> ghosts = [.. Enumerable.Range(0, 25).Select(_ => Guid.NewGuid())];
 
 		// Act
@@ -1918,7 +1943,7 @@ public class ReportServiceTests
 
 		await SoftDeleteReceiptAsync(contextFactory, receiptB);
 
-		ReportService service = new(contextFactory);
+		DuplicateWorkflowFixture service = new(contextFactory);
 
 		// Act
 		Func<Task> act = () => service.AcceptDuplicateGroupAsync([receiptA, receiptB], CancellationToken.None);
@@ -1947,7 +1972,7 @@ public class ReportServiceTests
 			await context.SaveChangesAsync();
 		}
 
-		ReportService service = new(contextFactory);
+		DuplicateWorkflowFixture service = new(contextFactory);
 
 		// Act
 		int single = await service.AcceptDuplicateGroupAsync([receiptA], CancellationToken.None);
@@ -1988,7 +2013,7 @@ public class ReportServiceTests
 			await context.SaveChangesAsync();
 		}
 
-		ReportService service = new(contextFactory);
+		DuplicateWorkflowFixture service = new(contextFactory);
 
 		// Act
 		int accepted = await service.AcceptDuplicateGroupAsync(
@@ -2029,7 +2054,7 @@ public class ReportServiceTests
 			await context.SaveChangesAsync();
 		}
 
-		ReportService service = new(contextFactory);
+		DuplicateWorkflowFixture service = new(contextFactory);
 		await service.AcceptDuplicateGroupAsync([receiptA, receiptB, receiptC], CancellationToken.None);
 
 		// Act
@@ -2073,7 +2098,7 @@ public class ReportServiceTests
 			await context.SaveChangesAsync();
 		}
 
-		ReportService service = new(contextFactory);
+		DuplicateWorkflowFixture service = new(contextFactory);
 
 		// Act
 		int removedWithNothingStored = await service.UnacceptDuplicateGroupAsync(
@@ -2107,7 +2132,7 @@ public class ReportServiceTests
 			await context.SaveChangesAsync();
 		}
 
-		ReportService service = new(contextFactory);
+		DuplicateWorkflowFixture service = new(contextFactory);
 
 		// Act — accept, un-accept, accept again.
 		await service.AcceptDuplicateGroupAsync([receiptA, receiptB], CancellationToken.None);
@@ -2158,7 +2183,7 @@ public class ReportServiceTests
 			await context.SaveChangesAsync();
 		}
 
-		ReportService service = new(contextFactory);
+		DuplicateWorkflowFixture service = new(contextFactory);
 		DateTimeOffset beforeAccept = DateTimeOffset.UtcNow.AddSeconds(-1);
 		await service.AcceptDuplicateGroupAsync([receiptA, receiptB], CancellationToken.None);
 
@@ -2189,7 +2214,7 @@ public class ReportServiceTests
 	{
 		// Arrange
 		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
-		ReportService service = new(contextFactory);
+		DuplicateWorkflowFixture service = new(contextFactory);
 
 		// Act
 		AcceptedDuplicatesResult result = await service.GetAcceptedDuplicatesAsync(CancellationToken.None);
@@ -2221,7 +2246,7 @@ public class ReportServiceTests
 			await context.SaveChangesAsync();
 		}
 
-		ReportService service = new(contextFactory);
+		DuplicateWorkflowFixture service = new(contextFactory);
 		await service.AcceptDuplicateGroupAsync([receiptA, receiptB], CancellationToken.None);
 
 		// Act
@@ -2263,7 +2288,7 @@ public class ReportServiceTests
 			await context.SaveChangesAsync();
 		}
 
-		ReportService service = new(contextFactory);
+		DuplicateWorkflowFixture service = new(contextFactory);
 		await service.AcceptDuplicateGroupAsync([receiptA, receiptB], CancellationToken.None);
 		await service.AcceptDuplicateGroupAsync([receiptB, receiptC], CancellationToken.None);
 
@@ -2303,7 +2328,7 @@ public class ReportServiceTests
 			await context.SaveChangesAsync();
 		}
 
-		ReportService service = new(contextFactory);
+		DuplicateWorkflowFixture service = new(contextFactory);
 		(await service.AcceptDuplicateGroupAsync([receiptA, receiptB, receiptC], CancellationToken.None))
 			.Should().Be(3);
 
@@ -2367,7 +2392,7 @@ public class ReportServiceTests
 			await context.SaveChangesAsync();
 		}
 
-		ReportService service = new(contextFactory);
+		DuplicateWorkflowFixture service = new(contextFactory);
 
 		// Tolerance 0 clusters {A,B} and {C,D}; accept both.
 		await service.AcceptDuplicateGroupAsync([receiptA, receiptB], CancellationToken.None);
@@ -2431,7 +2456,7 @@ public class ReportServiceTests
 			await context.SaveChangesAsync();
 		}
 
-		ReportService service = new(contextFactory);
+		DuplicateWorkflowFixture service = new(contextFactory);
 		await service.AcceptDuplicateGroupAsync([receiptA, receiptB], CancellationToken.None);
 		await service.AcceptDuplicateGroupAsync([receiptC, receiptD], CancellationToken.None);
 
@@ -2482,7 +2507,7 @@ public class ReportServiceTests
 			await context.SaveChangesAsync();
 		}
 
-		ReportService service = new(contextFactory);
+		DuplicateWorkflowFixture service = new(contextFactory);
 		await service.AcceptDuplicateGroupAsync([receiptA, receiptB], CancellationToken.None);
 		await service.AcceptDuplicateGroupAsync([receiptC, receiptD], CancellationToken.None);
 
@@ -2527,7 +2552,7 @@ public class ReportServiceTests
 			await context.SaveChangesAsync();
 		}
 
-		ReportService service = new(contextFactory);
+		DuplicateWorkflowFixture service = new(contextFactory);
 
 		// Chain the accepts so every consecutive pair shares a receipt — one component, 101 pairs.
 		for (int i = 0; i < memberCount - 1; i++)
@@ -2584,7 +2609,7 @@ public class ReportServiceTests
 			await context.SaveChangesAsync();
 		}
 
-		ReportService service = new(contextFactory);
+		DuplicateWorkflowFixture service = new(contextFactory);
 
 		for (int i = 0; i < memberCount - 1; i++)
 		{

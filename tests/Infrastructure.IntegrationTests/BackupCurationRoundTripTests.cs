@@ -4,6 +4,7 @@ using FluentAssertions;
 using FluentAssertions.Execution;
 using Infrastructure.Entities.Core;
 using Infrastructure.IntegrationTests.Fixtures;
+using Infrastructure.IntegrationTests.Services;
 using Infrastructure.Services;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -41,7 +42,7 @@ public class BackupCurationRoundTripTests(PostgresFixture source) : IClassFixtur
 			seed.ReceiptItems.Add(new ReceiptItemEntity { Id = unlinkedItemId, ReceiptId = receiptA, Description = "Intentionally unlinked item", Quantity = 1, UnitPrice = 1, TotalAmount = 1, Category = "Food" });
 			await seed.SaveChangesAsync();
 		}
-		ReportService sourceReports = new(new Factory(source.CreateOptions()));
+		DuplicateWorkflowFixture sourceReports = new(new Factory(source.CreateOptions()));
 		(await sourceReports.GetDuplicatesAsync("dateAndLocation", "exact", 0, false, CancellationToken.None)).Groups.Should().ContainSingle();
 		(await sourceReports.AcceptDuplicateGroupAsync([receiptA, receiptB], CancellationToken.None)).Should().Be(1);
 		(await sourceReports.GetDuplicatesAsync("dateAndLocation", "exact", 0, false, CancellationToken.None)).Groups.Should().BeEmpty();
@@ -102,10 +103,10 @@ public class BackupCurationRoundTripTests(PostgresFixture source) : IClassFixtur
 				NormalizedDescriptionEntity rejected = await restored.NormalizedDescriptions.SingleAsync(row => row.Id == rejectedId);
 				NormalizedDescriptionEntity historical = await restored.NormalizedDescriptions.SingleAsync(row => row.Id == historicalId);
 				List<AcceptedDuplicatePairEntity> pairs = await restored.AcceptedDuplicatePairs.ToListAsync();
-				ReportService targetReports = new(new Factory(target.CreateOptions()));
+				DuplicateWorkflowFixture targetReports = new(new Factory(target.CreateOptions()));
 				var visible = await targetReports.GetDuplicatesAsync("dateAndLocation", "exact", 0, false, CancellationToken.None);
 				var includingAccepted = await targetReports.GetDuplicatesAsync("dateAndLocation", "exact", 0, true, CancellationToken.None);
-				var spending = await targetReports.GetSpendingByNormalizedDescriptionAsync(null, null, "totalAmount", "desc", 1, 50, CancellationToken.None);
+				var spending = await new ReportService(new Factory(target.CreateOptions())).GetSpendingByNormalizedDescriptionAsync(null, null, "totalAmount", "desc", 1, 50, CancellationToken.None);
 
 				using AssertionScope assertions = new();
 				curated.NormalizedDescriptionId.Should().Be(activeId);

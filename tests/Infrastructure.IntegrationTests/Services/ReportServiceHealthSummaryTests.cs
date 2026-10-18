@@ -20,6 +20,28 @@ namespace Infrastructure.IntegrationTests.Services;
 public class ReportServiceHealthSummaryTests(PostgresFixture fixture)
 {
 	[Fact]
+	public async Task GetHealthSummaryAsync_TracksPairCompletenessWithoutLoadingReceiptTotals()
+	{
+		Guid[] ids = [Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()];
+		await SeedAsync(Guid.NewGuid(), Guid.NewGuid(), context =>
+		{
+			foreach (Guid id in ids)
+			{
+				AddReceipt(context, id, new(2025, 6, 1), "Same Store", 0m);
+			}
+		});
+		FixtureDbContextFactory factory = new(fixture);
+		DuplicateWorkflowFixture workflow = new(factory);
+		ReportService report = new(factory);
+		await workflow.AcceptDuplicateGroupAsync([ids[0], ids[1]], CancellationToken.None);
+		(await report.GetHealthSummaryAsync(CancellationToken.None)).DuplicateGroupCount.Should().Be(1);
+		await workflow.AcceptDuplicateGroupAsync([.. ids], CancellationToken.None);
+		(await report.GetHealthSummaryAsync(CancellationToken.None)).DuplicateGroupCount.Should().Be(0);
+		await workflow.UnacceptDuplicateGroupAsync([ids[0], ids[1]], CancellationToken.None);
+		(await report.GetHealthSummaryAsync(CancellationToken.None)).DuplicateGroupCount.Should().Be(1);
+	}
+
+	[Fact]
 	public async Task GetHealthSummaryAsync_TranslatesEveryCountToSql_AndReturnsCorrectTotals()
 	{
 		// Arrange

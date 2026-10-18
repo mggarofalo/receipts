@@ -7,23 +7,23 @@ namespace Application.Tests.Commands.Reports;
 
 public class UnacceptDuplicateGroupCommandHandlerTests
 {
-	private readonly Mock<IReportService> _reportServiceMock;
+	private readonly Mock<IDuplicateAcceptanceStore> _storeMock;
 	private readonly UnacceptDuplicateGroupCommandHandler _handler;
 
 	public UnacceptDuplicateGroupCommandHandlerTests()
 	{
-		_reportServiceMock = new Mock<IReportService>();
-		_handler = new UnacceptDuplicateGroupCommandHandler(_reportServiceMock.Object);
+		_storeMock = new Mock<IDuplicateAcceptanceStore>();
+		_handler = new UnacceptDuplicateGroupCommandHandler(_storeMock.Object);
 	}
 
 	[Fact]
-	public async Task Handle_DelegatesToReportService()
+	public async Task Handle_RemovesOnlySubmittedPairs()
 	{
 		// Arrange
 		List<Guid> receiptIds = [Guid.NewGuid(), Guid.NewGuid()];
 		UnacceptDuplicateGroupCommand command = new(receiptIds);
 
-		_reportServiceMock.Setup(s => s.UnacceptDuplicateGroupAsync(
+		_storeMock.Setup(s => s.RemovePairsAsync(
 			receiptIds, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(1);
 
@@ -32,7 +32,7 @@ public class UnacceptDuplicateGroupCommandHandlerTests
 
 		// Assert
 		result.Should().Be(1);
-		_reportServiceMock.Verify(s => s.UnacceptDuplicateGroupAsync(
+		_storeMock.Verify(s => s.RemovePairsAsync(
 			receiptIds, It.IsAny<CancellationToken>()), Times.Once);
 	}
 
@@ -43,7 +43,7 @@ public class UnacceptDuplicateGroupCommandHandlerTests
 		List<Guid> receiptIds = [Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()];
 		UnacceptDuplicateGroupCommand command = new(receiptIds);
 
-		_reportServiceMock.Setup(s => s.UnacceptDuplicateGroupAsync(
+		_storeMock.Setup(s => s.RemovePairsAsync(
 			It.IsAny<List<Guid>>(), It.IsAny<CancellationToken>()))
 			.ReturnsAsync(3);
 
@@ -60,7 +60,7 @@ public class UnacceptDuplicateGroupCommandHandlerTests
 		// Arrange
 		UnacceptDuplicateGroupCommand command = new([Guid.NewGuid(), Guid.NewGuid()]);
 
-		_reportServiceMock.Setup(s => s.UnacceptDuplicateGroupAsync(
+		_storeMock.Setup(s => s.RemovePairsAsync(
 			It.IsAny<List<Guid>>(), It.IsAny<CancellationToken>()))
 			.ReturnsAsync(0);
 

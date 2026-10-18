@@ -165,6 +165,8 @@ public static class InfrastructureService
 			.AddScoped<ITrashService, TrashService>()
 			.AddScoped<IDashboardService, DashboardService>()
 			.AddScoped<IReportService, ReportService>()
+			.AddScoped<IDuplicateReportReader, DuplicateReportReader>()
+			.AddScoped<IDuplicateAcceptanceStore, DuplicateAcceptanceStore>()
 			.AddScoped<IBackupService, BackupService>()
 			.AddScoped<IImageStorageService, LocalImageStorageService>()
 			.AddScoped<IImageProcessingService, ImageProcessingService>()

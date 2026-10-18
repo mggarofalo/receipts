@@ -4,7 +4,7 @@ using Mediator;
 
 namespace Application.Queries.Aggregates.Reports;
 
-public class GetAcceptedDuplicatesQueryHandler(IReportService reportService)
+public class GetAcceptedDuplicatesQueryHandler(IDuplicateReportReader reportService)
 	: IRequestHandler<GetAcceptedDuplicatesQuery, AcceptedDuplicatesResult>
 {
 	public async ValueTask<AcceptedDuplicatesResult> Handle(GetAcceptedDuplicatesQuery request, CancellationToken cancellationToken)
