@@ -29,7 +29,7 @@ vi.mock("@/lib/toast", () => ({
 }));
 
 vi.mock("@/lib/auth", async (importOriginal) => ({
-  ...await importOriginal<typeof import("@/lib/auth")>(),
+  ...(await importOriginal<typeof import("@/lib/auth")>()),
   getAccessToken: vi.fn(() => "mock-token"),
 }));
 
@@ -90,11 +90,19 @@ describe("BackupRestore", () => {
     expect(document.getElementById("backup-file")).toBeInTheDocument();
   });
 
-  it("renders the info alert about what backups include", () => {
+  it("explains backup contents and the archival-only status of retired photos", () => {
     renderWithQueryClient(<BackupRestore />);
     expect(
       screen.getByText(/backups include your receipts/i),
     ).toBeInTheDocument();
+    const notice = screen.getByText(/backups include your receipts/i);
+    expect(notice).toHaveTextContent("Receipt photos are no longer supported.");
+    expect(notice).toHaveTextContent(
+      /Legacy image paths remain in backups for archival compatibility/,
+    );
+    expect(notice).toHaveTextContent(
+      /image files are not included and existing files are left untouched/,
+    );
   });
 
   it("enables Import Backup button when a file is selected", async () => {
