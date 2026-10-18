@@ -272,8 +272,8 @@ prove runtime remediation: the API can prune XML package references in favor of
 the ASP.NET shared framework. Update the installed runtime and pull/redeploy the
 patched `aspnet:10.0-noble` container image as well.
 
-ImageSharp 3.1.12 remains a known NuGet audit blocker for strict builds and server
-contract extraction. Its patched upgrade introduces license-key validation; that
-upgrade requires a separate licensing decision. Do not disable audit, lower
-warning severity, or treat an ordinary build as evidence that strict extraction
-passed. CI configuration and coverage thresholds remain unchanged.
+The refactor baseline also exposed ImageSharp 3.1.12 advisories. Its replacement
+and removal of the unused PDF converter are tracked in RECEIPTS-988. Validate the
+combined dependency changes with strict server-contract extraction; an ordinary
+build is not equivalent evidence. Do not disable audit or lower warning severity.
+CI configuration and coverage thresholds remain unchanged.
