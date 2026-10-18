@@ -4,6 +4,26 @@
  */
 
 export interface paths {
+    "/api/search/purchases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search purchase history
+         * @description Searches all active receipt items on active receipts using a trimmed, case-insensitive literal substring across description, item code, store, and active canonical description or its display label. Returns individual purchases, newest receipt date first, then receipt ID and item ID ascending. Prices retain their stored currencies and precision; no currency conversion or physical unit comparison is performed. Count and page are live reads and can change during concurrent edits.
+         */
+        get: operations["SearchPurchases"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health": {
         parameters: {
             query?: never;
@@ -2624,6 +2644,43 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        PurchaseSearchResponse: {
+            items: components["schemas"]["PurchaseSearchItem"][];
+            /** Format: int32 */
+            total: number;
+            /** Format: int32 */
+            offset: number;
+            /** Format: int32 */
+            limit: number;
+        };
+        PurchaseSearchItem: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            receiptId: string;
+            /** Format: date */
+            date: string;
+            location: string;
+            description: string;
+            receiptItemCode?: string | null;
+            /** Format: uuid */
+            normalizedDescriptionId?: string | null;
+            /** @description Display label (falling back to canonical name) of the active linked description, otherwise null. Use normalizedDescriptionId for identity. */
+            normalizedDescription?: string | null;
+            /** Format: double */
+            quantity: number;
+            /**
+             * Format: double
+             * @description Stored price per entered quantity unit, retaining up to four decimal places.
+             */
+            unitPrice: number;
+            /** @description Stored currency code without conversion. */
+            unitPriceCurrency: string;
+            /** Format: double */
+            totalAmount: number;
+            /** @description Stored currency code without conversion. */
+            totalAmountCurrency: string;
+        };
         /** @description RFC 9457 problem document. Every 4xx this API raises with a reason answers in this shape; the human-readable reason is always in `detail`. Some responses add machine-readable members alongside these (for example `transactionCount` on a 409 from a delete that is blocked by references) — RFC 9457 permits such extension members, and they appear at the top level of the object. */
         ProblemDetails: {
             type?: string | null;
@@ -4538,6 +4595,40 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    SearchPurchases: {
+        parameters: {
+            query: {
+                /** @description Literal search phrase, 2 to 200 characters after trimming. */
+                q: string;
+                offset?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Matching purchases */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseSearchResponse"];
+                };
+            };
+            /** @description Invalid search phrase or pagination */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     Get: {
         parameters: {
             query?: never;

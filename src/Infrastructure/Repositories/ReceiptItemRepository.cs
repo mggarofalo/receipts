@@ -147,10 +147,10 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 
 		string pattern = "%" + q.Trim().Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
 		return query.Where(ri =>
-			EF.Functions.ILike(ri.Description, pattern)
-			|| (ri.ReceiptItemCode != null && EF.Functions.ILike(ri.ReceiptItemCode, pattern))
-			|| EF.Functions.ILike(ri.Category, pattern)
-			|| (ri.Subcategory != null && EF.Functions.ILike(ri.Subcategory, pattern)));
+			EF.Functions.ILike(ri.Description, pattern, @"\")
+			|| (ri.ReceiptItemCode != null && EF.Functions.ILike(ri.ReceiptItemCode, pattern, @"\"))
+			|| EF.Functions.ILike(ri.Category, pattern, @"\")
+			|| (ri.Subcategory != null && EF.Functions.ILike(ri.Subcategory, pattern, @"\")));
 	}
 
 	public async Task<List<ReceiptItemEntity>> GetDeletedAsync(int offset, int limit, SortParams sort, CancellationToken cancellationToken)
