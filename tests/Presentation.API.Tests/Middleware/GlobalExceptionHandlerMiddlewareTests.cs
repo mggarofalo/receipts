@@ -123,6 +123,32 @@ public class GlobalExceptionHandlerMiddlewareTests
 	}
 
 	[Fact]
+	public async Task InvokeAsync_ConcurrencyConflictException_Returns409ProblemDetails()
+	{
+		// Arrange
+		DefaultHttpContext context = new();
+		context.Response.Body = new MemoryStream();
+
+		GlobalExceptionHandlerMiddleware middleware = new(
+			_ => throw new ConcurrencyConflictException("A payment moved to another receipt. Reload it before saving."),
+			_loggerMock.Object,
+			ProblemDetailsService);
+
+		// Act
+		await middleware.InvokeAsync(context);
+
+		// Assert
+		context.Response.StatusCode.Should().Be(409);
+		context.Response.ContentType.Should().Be("application/problem+json");
+
+		ProblemDetails? problemDetails = await DeserializeProblemDetails(context.Response);
+		problemDetails.Should().NotBeNull();
+		problemDetails!.Status.Should().Be(409);
+		problemDetails.Title.Should().Be("Conflict");
+		problemDetails.Detail.Should().Be("A payment moved to another receipt. Reload it before saving.");
+	}
+
+	[Fact]
 	public async Task InvokeAsync_KeyNotFoundException_Returns404ProblemDetails()
 	{
 		// Arrange

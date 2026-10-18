@@ -6715,6 +6715,15 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description The resource changed concurrently. Reload before retrying. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
         };
     };
     GetReceiptLocations: {
@@ -6811,6 +6820,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description The resource changed concurrently. Reload before retrying. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
             };
         };
     };
@@ -7315,6 +7333,15 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description The resource changed concurrently. Reload before retrying. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
         };
     };
     GetAllTransactions: {
@@ -7380,6 +7407,15 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description The resource changed concurrently. Reload before retrying. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
         };
     };
     GetDeletedTransactions: {
@@ -7443,6 +7479,15 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description The resource changed concurrently. Reload before retrying. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
         };
     };
     UpdateTransactions: {
@@ -7471,6 +7516,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description The resource changed concurrently. Reload before retrying. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
             };
         };
     };

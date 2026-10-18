@@ -1,10 +1,12 @@
 using API.Generated.Dtos;
+using API.Http;
 using API.Mapping.Core;
 using API.Services;
 using Application.Commands.Transaction.Create;
 using Application.Commands.Transaction.Delete;
 using Application.Commands.Transaction.Restore;
 using Application.Commands.Transaction.Update;
+using Application.Exceptions;
 using Application.Models;
 using Application.Queries.Core.Transaction;
 using Asp.Versioning;
@@ -172,13 +174,21 @@ public class TransactionsController(IMediator mediator, TransactionMapper mapper
 
 	[HttpPut(RouteUpdate)]
 	[EndpointSummary("Update a single transaction")]
-	public async Task<Results<NoContent, NotFound>> UpdateTransaction([FromBody] UpdateTransactionRequest model, [FromRoute] Guid id, CancellationToken cancellationToken = default)
+	public async Task<Results<NoContent, NotFound, Conflict<ProblemDetails>>> UpdateTransaction([FromBody] UpdateTransactionRequest model, [FromRoute] Guid id, CancellationToken cancellationToken = default)
 	{
 		// Route id is authoritative; ignore any mismatched body id (RECEIPTS-793).
 		model.Id = id;
 		Transaction transaction = mapper.ToDomain(model);
 		UpdateTransactionCommand command = new([transaction]);
-		bool result = await mediator.Send(command, cancellationToken);
+		bool result;
+		try
+		{
+			result = await mediator.Send(command, cancellationToken);
+		}
+		catch (ConcurrencyConflictException ex)
+		{
+			return ApiProblem.Conflict(ex.Message);
+		}
 
 		if (!result)
 		{
@@ -192,7 +202,7 @@ public class TransactionsController(IMediator mediator, TransactionMapper mapper
 
 	[HttpPut(RouteUpdateBatch)]
 	[EndpointSummary("Update transactions in batch")]
-	public async Task<Results<NoContent, NotFound>> UpdateTransactions([FromBody] List<UpdateTransactionRequest> models, CancellationToken cancellationToken = default)
+	public async Task<Results<NoContent, NotFound, Conflict<ProblemDetails>>> UpdateTransactions([FromBody] List<UpdateTransactionRequest> models, CancellationToken cancellationToken = default)
 	{
 		List<Transaction> transactions = [.. models.Select(m =>
 		{
@@ -201,7 +211,15 @@ public class TransactionsController(IMediator mediator, TransactionMapper mapper
 		})];
 
 		UpdateTransactionCommand command = new(transactions);
-		bool result = await mediator.Send(command, cancellationToken);
+		bool result;
+		try
+		{
+			result = await mediator.Send(command, cancellationToken);
+		}
+		catch (ConcurrencyConflictException ex)
+		{
+			return ApiProblem.Conflict(ex.Message);
+		}
 
 		if (!result)
 		{
@@ -216,10 +234,18 @@ public class TransactionsController(IMediator mediator, TransactionMapper mapper
 	[HttpDelete(RouteDelete)]
 	[EndpointSummary("Delete transactions")]
 	[EndpointDescription("Deletes one or more transactions by their IDs. Returns 404 if any transaction is not found.")]
-	public async Task<Results<NoContent, NotFound>> DeleteTransactions([FromBody] List<Guid> ids, CancellationToken cancellationToken = default)
+	public async Task<Results<NoContent, NotFound, Conflict<ProblemDetails>>> DeleteTransactions([FromBody] List<Guid> ids, CancellationToken cancellationToken = default)
 	{
 		DeleteTransactionCommand command = new(ids);
-		bool result = await mediator.Send(command, cancellationToken);
+		bool result;
+		try
+		{
+			result = await mediator.Send(command, cancellationToken);
+		}
+		catch (ConcurrencyConflictException ex)
+		{
+			return ApiProblem.Conflict(ex.Message);
+		}
 
 		if (!result)
 		{
@@ -234,10 +260,18 @@ public class TransactionsController(IMediator mediator, TransactionMapper mapper
 	[HttpPost(RouteRestore)]
 	[EndpointSummary("Restore a soft-deleted transaction")]
 	[EndpointDescription("Restores a previously soft-deleted transaction by clearing its DeletedAt timestamp.")]
-	public async Task<Results<NoContent, NotFound>> RestoreTransaction([FromRoute] Guid id, CancellationToken cancellationToken = default)
+	public async Task<Results<NoContent, NotFound, Conflict<ProblemDetails>>> RestoreTransaction([FromRoute] Guid id, CancellationToken cancellationToken = default)
 	{
 		RestoreTransactionCommand command = new(id);
-		bool result = await mediator.Send(command, cancellationToken);
+		bool result;
+		try
+		{
+			result = await mediator.Send(command, cancellationToken);
+		}
+		catch (ConcurrencyConflictException ex)
+		{
+			return ApiProblem.Conflict(ex.Message);
+		}
 
 		if (!result)
 		{

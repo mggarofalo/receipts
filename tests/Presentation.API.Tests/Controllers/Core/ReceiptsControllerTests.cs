@@ -7,6 +7,7 @@ using Application.Commands.Receipt.CreateComplete;
 using Application.Commands.Receipt.Delete;
 using Application.Commands.Receipt.Restore;
 using Application.Commands.Receipt.Update;
+using Application.Exceptions;
 using Application.Models;
 using Application.Queries.Core.Receipt;
 using Domain.Core;
@@ -600,7 +601,7 @@ public class ReceiptsControllerTests
 			.ReturnsAsync(true);
 
 		// Act
-		Results<NoContent, NotFound> result = await _controller.DeleteReceipts(controllerInput);
+		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.DeleteReceipts(controllerInput);
 
 		// Assert
 		Assert.IsType<NoContent>(result.Result);
@@ -619,7 +620,7 @@ public class ReceiptsControllerTests
 			.ReturnsAsync(false);
 
 		// Act
-		Results<NoContent, NotFound> result = await _controller.DeleteReceipts(controllerInput);
+		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.DeleteReceipts(controllerInput);
 
 		// Assert
 		Assert.IsType<NotFound>(result.Result);
@@ -654,7 +655,7 @@ public class ReceiptsControllerTests
 			.ReturnsAsync(true);
 
 		// Act
-		Results<NoContent, NotFound> result = await _controller.RestoreReceipt(id);
+		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.RestoreReceipt(id);
 
 		// Assert
 		Assert.IsType<NoContent>(result.Result);
@@ -672,7 +673,7 @@ public class ReceiptsControllerTests
 			.ReturnsAsync(false);
 
 		// Act
-		Results<NoContent, NotFound> result = await _controller.RestoreReceipt(id);
+		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.RestoreReceipt(id);
 
 		// Assert
 		Assert.IsType<NotFound>(result.Result);
@@ -785,5 +786,31 @@ public class ReceiptsControllerTests
 		Ok<LocationSuggestionsResponse> okResult = Assert.IsType<Ok<LocationSuggestionsResponse>>(result.Result);
 		LocationSuggestionsResponse response = Assert.IsType<LocationSuggestionsResponse>(okResult.Value);
 		response.Locations.Should().BeEquivalentTo(expectedLocations);
+	}
+
+	[Fact]
+	public async Task DeleteReceipts_ConcurrentParentChange_Returns409WithoutNotification()
+	{
+		const string detail = "A payment moved to another receipt. Reload it before saving.";
+		_mediatorMock.Setup(m => m.Send(It.IsAny<DeleteReceiptCommand>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new ConcurrencyConflictException(detail));
+		var result = await _controller.DeleteReceipts([Guid.NewGuid()]);
+		var conflict = Assert.IsType<Conflict<ProblemDetails>>(result.Result);
+		conflict.Value!.Status.Should().Be(409);
+		conflict.Value.Detail.Should().Be(detail);
+		_notifierMock.VerifyNoOtherCalls();
+	}
+
+	[Fact]
+	public async Task RestoreReceipt_ConcurrentParentChange_Returns409WithoutNotification()
+	{
+		const string detail = "A payment moved to another receipt. Reload it before saving.";
+		_mediatorMock.Setup(m => m.Send(It.IsAny<RestoreReceiptCommand>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new ConcurrencyConflictException(detail));
+		var result = await _controller.RestoreReceipt(Guid.NewGuid());
+		var conflict = Assert.IsType<Conflict<ProblemDetails>>(result.Result);
+		conflict.Value!.Status.Should().Be(409);
+		conflict.Value.Detail.Should().Be(detail);
+		_notifierMock.VerifyNoOtherCalls();
 	}
 }

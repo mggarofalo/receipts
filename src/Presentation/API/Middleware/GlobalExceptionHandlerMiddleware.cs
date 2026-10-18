@@ -54,6 +54,10 @@ public class GlobalExceptionHandlerMiddleware(
 	{
 		switch (exception)
 		{
+			case ConcurrencyConflictException:
+				logger.LogWarning(exception, "Concurrent update: {Message}", exception.Message);
+				return CreateProblem(StatusCodes.Status409Conflict, "Conflict", "15.5.10", exception.Message);
+
 			case DuplicateEntityException:
 				logger.LogWarning(exception, "Duplicate entity: {Message}", exception.Message);
 				return CreateProblem(StatusCodes.Status409Conflict, "Conflict", "15.5.10", exception.Message);
