@@ -19,7 +19,6 @@ public class YnabMemoSyncServiceTests
 	private readonly Mock<IYnabSyncRecordService> _syncRecordServiceMock = new();
 	private readonly Mock<ITransactionRepository> _transactionRepoMock = new();
 	private readonly Mock<IReceiptRepository> _receiptRepoMock = new();
-	private readonly Mock<IYnabServerKnowledgeRepository> _serverKnowledgeRepoMock = new();
 	private readonly Mock<ILogger<YnabMemoSyncService>> _loggerMock = new();
 	private readonly YnabMemoSyncService _service;
 
@@ -29,13 +28,6 @@ public class YnabMemoSyncServiceTests
 
 	public YnabMemoSyncServiceTests()
 	{
-		_serverKnowledgeRepoMock
-			.Setup(r => r.GetAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-			.ReturnsAsync((long?)null);
-		_serverKnowledgeRepoMock
-			.Setup(r => r.UpsertAsync(It.IsAny<string>(), It.IsAny<long>(), It.IsAny<CancellationToken>()))
-			.Returns(Task.CompletedTask);
-
 		_mappingServiceMock.Setup(service => service.GetByBudgetIdAsync(BudgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync([new(Guid.NewGuid(), AccountId, "acc-1", "Mapped account", BudgetId, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow)]);
 
@@ -723,7 +715,7 @@ public class YnabMemoSyncServiceTests
 	#region Server Knowledge Tests
 
 	[Fact]
-	public async Task SyncMemosByReceipt_DoesNotPersistServerKnowledgeFromDateFilteredFetch()
+	public async Task SyncMemosByReceipt_RepeatedDateFilteredFetchesDoNotReuseReturnedCursor()
 	{
 		// Arrange
 		SetupBudgetSelection(BudgetId);
@@ -745,14 +737,16 @@ public class YnabMemoSyncServiceTests
 			.Setup(c => c.UpdateTransactionMemoAsync(BudgetId, "yt-1", It.IsAny<string>(), It.IsAny<CancellationToken>()))
 			.Returns(Task.CompletedTask);
 
-		// Act
+		// The returned cursor describes only this date window. A later operation must
+		// fetch the full window again rather than skip transactions using that cursor.
+		await _service.SyncMemosByReceiptAsync(receipt.Id, CancellationToken.None);
 		await _service.SyncMemosByReceiptAsync(receipt.Id, CancellationToken.None);
 
-		// Assert: server knowledge is NOT persisted from date-filtered fetches (RECEIPTS-523).
-		// Date-filtered results only represent changes within that date window, not global
-		// sync state — persisting them would cause future delta consumers to skip transactions.
-		_serverKnowledgeRepoMock.Verify(
-			r => r.UpsertAsync(It.IsAny<string>(), It.IsAny<long>(), It.IsAny<CancellationToken>()),
+		_ynabClientMock.Verify(
+			c => c.GetTransactionsByDateAsync(BudgetId, transaction.Date, null, It.IsAny<CancellationToken>()),
+			Times.Exactly(2));
+		_ynabClientMock.Verify(
+			c => c.GetTransactionsByDateAsync(BudgetId, transaction.Date, It.Is<long?>(cursor => cursor.HasValue), It.IsAny<CancellationToken>()),
 			Times.Never);
 	}
 
@@ -768,11 +762,6 @@ public class YnabMemoSyncServiceTests
 		SetupTransactionRepo(receipt.Id, [transaction]);
 		SetupNoExistingSyncRecord(transaction.Id);
 
-		// Set up server knowledge repo to return a stored value
-		_serverKnowledgeRepoMock
-			.Setup(r => r.GetAsync(BudgetId, It.IsAny<CancellationToken>()))
-			.ReturnsAsync(999L);
-
 		_ynabClientMock
 			.Setup(c => c.GetTransactionsByDateAsync(BudgetId, transaction.Date, It.IsAny<long?>(), It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new YnabTransactionsResult([], 1000));
@@ -780,7 +769,7 @@ public class YnabMemoSyncServiceTests
 		// Act
 		await _service.SyncMemosByReceiptAsync(receipt.Id, CancellationToken.None);
 
-		// Assert: API client was called WITHOUT lastKnowledgeOfServer (null, not 999)
+		// Assert: API client was called WITHOUT lastKnowledgeOfServer (null)
 		_ynabClientMock.Verify(
 			c => c.GetTransactionsByDateAsync(BudgetId, transaction.Date, null, It.IsAny<CancellationToken>()),
 			Times.Once);

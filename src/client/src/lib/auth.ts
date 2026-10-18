@@ -12,7 +12,9 @@ function advanceSession(): void {
   sessionVersion += 1;
   const previousController = sessionController;
   sessionController = new AbortController();
-  previousController.abort(new DOMException("The authenticated session changed", "AbortError"));
+  previousController.abort(
+    new DOMException("The authenticated session changed", "AbortError"),
+  );
   sessionChangeListeners.forEach((listener) => listener());
 }
 
@@ -27,7 +29,12 @@ export function getSessionSignal(): AbortSignal {
 }
 
 export function isAbortError(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "name" in error && error.name === "AbortError";
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "name" in error &&
+    error.name === "AbortError"
+  );
 }
 
 export function assertSessionCurrent(expectedVersion: number): void {
@@ -37,7 +44,11 @@ export function assertSessionCurrent(expectedVersion: number): void {
 }
 
 export function synchronizeStoredSession(event: StorageEvent): void {
-  if (event.key === null || event.key === LS_ACCESS_KEY || event.key === LS_REFRESH_KEY) {
+  if (
+    event.key === null ||
+    event.key === LS_ACCESS_KEY ||
+    event.key === LS_REFRESH_KEY
+  ) {
     getSessionVersion();
   }
 }
@@ -46,7 +57,10 @@ export function getSessionVersion(): number {
   const currentRefreshToken = getRefreshToken();
   // Another tab can replace credentials without calling this module's setters.
   // Treat that as a boundary; only our own token rotation preserves the version.
-  if (observedRefreshToken !== undefined && observedRefreshToken !== currentRefreshToken) {
+  if (
+    observedRefreshToken !== undefined &&
+    observedRefreshToken !== currentRefreshToken
+  ) {
     observedRefreshToken = currentRefreshToken;
     advanceSession();
   }
@@ -67,9 +81,12 @@ export function notifyTokenRefresh(): void {
 }
 
 type PasswordChangeRequiredListener = () => void;
-const passwordChangeRequiredListeners = new Set<PasswordChangeRequiredListener>();
+const passwordChangeRequiredListeners =
+  new Set<PasswordChangeRequiredListener>();
 
-export function addPasswordChangeRequiredListener(cb: PasswordChangeRequiredListener): () => void {
+export function addPasswordChangeRequiredListener(
+  cb: PasswordChangeRequiredListener,
+): () => void {
   passwordChangeRequiredListeners.add(cb);
   return () => passwordChangeRequiredListeners.delete(cb);
 }
@@ -99,7 +116,10 @@ export function setRefreshedTokens(
   accessToken: string,
   refreshToken: string,
 ): boolean {
-  if (getSessionVersion() !== expectedSessionVersion || getRefreshToken() !== expectedRefreshToken) {
+  if (
+    getSessionVersion() !== expectedSessionVersion ||
+    getRefreshToken() !== expectedRefreshToken
+  ) {
     return false;
   }
   localStorage.setItem(LS_ACCESS_KEY, accessToken);
@@ -113,10 +133,6 @@ export function clearTokens(): void {
   localStorage.removeItem(LS_ACCESS_KEY);
   localStorage.removeItem(LS_REFRESH_KEY);
   advanceSession();
-}
-
-export function isAuthenticated(): boolean {
-  return getAccessToken() !== null;
 }
 
 export interface JwtPayload {
@@ -151,7 +167,9 @@ export function parseJwtPayload(token: string): JwtPayload | null {
       : roleClaim
         ? [roleClaim]
         : [];
-    const mustResetPassword = payload.must_reset_password === "true" || payload.must_reset_password === true;
+    const mustResetPassword =
+      payload.must_reset_password === "true" ||
+      payload.must_reset_password === true;
     return { userId, email, roles, mustResetPassword };
   } catch {
     return null;

@@ -42,16 +42,8 @@ export function addRecent(id: string): string[] {
   return recent;
 }
 
-export function clearRecent(): void {
-  localStorage.removeItem(RECENT_KEY);
-}
-
 export function getPinned(): string[] {
   return readStringArray(PINNED_KEY);
-}
-
-export function isPinned(id: string): boolean {
-  return getPinned().includes(id);
 }
 
 /**
@@ -67,9 +59,3 @@ export function togglePinned(id: string): string[] {
   writeStringArray(PINNED_KEY, next);
   return next;
 }
-
-export function clearPinned(): void {
-  localStorage.removeItem(PINNED_KEY);
-}
-
-export const MAX_RECENT_ENTRIES = MAX_RECENT;

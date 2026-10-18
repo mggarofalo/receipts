@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider, QueryObserver } from "@tanstack/react-query";
+import {
+  QueryClient,
+  QueryClientProvider,
+  QueryObserver,
+} from "@tanstack/react-query";
 import { createElement, type ReactNode } from "react";
 
 vi.mock("@/lib/api-client", () => ({
@@ -19,22 +23,24 @@ vi.mock("sonner", () => ({
 import client from "@/lib/api-client";
 import { toast } from "sonner";
 import {
-  useTransactions,
-  useTransaction,
-  useTransactionsByReceiptId,
   useCreateTransaction,
-  useCreateTransactionsBatch,
   useUpdateTransaction,
   useDeleteTransactions,
   useDeletedTransactions,
   useRestoreTransaction,
 } from "./useTransactions";
 
-function createWrapper(queryClient = new QueryClient({
+function createWrapper(
+  queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
-  })) {
+  }),
+) {
   return function Wrapper({ children }: { children: ReactNode }) {
-    return createElement(QueryClientProvider, { client: queryClient }, children);
+    return createElement(
+      QueryClientProvider,
+      { client: queryClient },
+      children,
+    );
   };
 }
 
@@ -43,62 +49,18 @@ beforeEach(() => {
 });
 
 describe("useTransactions", () => {
-  it("list query returns data on success", async () => {
-    const transactions = [
-      { id: "1", amount: 100, date: "2025-01-01" },
-    ];
-    (client.GET as Mock).mockResolvedValue({ data: { data: transactions, total: 1, offset: 0, limit: 50 }, error: undefined });
-
-    const { result } = renderHook(() => useTransactions(), {
-      wrapper: createWrapper(),
-    });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data).toEqual(transactions);
-    expect(client.GET).toHaveBeenCalledWith("/api/transactions", {
-      params: { query: { offset: 0, limit: 50 } },
-    });
-  });
-
-  it("single query is disabled when id is null", () => {
-    const { result } = renderHook(() => useTransaction(null), {
-      wrapper: createWrapper(),
-    });
-
-    expect(result.current.data).toBeUndefined();
-    expect(result.current.fetchStatus).toBe("idle");
-    expect(client.GET).not.toHaveBeenCalled();
-  });
-
-  it("by-receipt query returns data when receiptId is provided", async () => {
-    const items = [{ id: "1", amount: 50, date: "2025-01-01" }];
-    (client.GET as Mock).mockResolvedValue({ data: { data: items, total: 1, offset: 0, limit: 200 }, error: undefined });
-
-    const { result } = renderHook(() => useTransactionsByReceiptId("r-1"), {
-      wrapper: createWrapper(),
-    });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data).toEqual(items);
-    expect(client.GET).toHaveBeenCalledWith(
-      "/api/transactions",
-      { params: { query: { receiptId: "r-1", offset: 0, limit: 200 } } },
-    );
-  });
-
-  it("by-receipt query is disabled when receiptId is null", () => {
-    const { result } = renderHook(() => useTransactionsByReceiptId(null), {
-      wrapper: createWrapper(),
-    });
-
-    expect(result.current.data).toBeUndefined();
-    expect(result.current.fetchStatus).toBe("idle");
-  });
-
   it("create mutation sends card identity without a stale form account", async () => {
-    const body = { amount: 200, date: "2025-03-01", accountId: "stale-account", cardId: "card-1" };
+    const body = {
+      amount: 200,
+      date: "2025-03-01",
+      accountId: "stale-account",
+      cardId: "card-1",
+    };
     const created = { id: "2", ...body };
-    (client.POST as Mock).mockResolvedValue({ data: created, error: undefined });
+    (client.POST as Mock).mockResolvedValue({
+      data: created,
+      error: undefined,
+    });
 
     const { result } = renderHook(() => useCreateTransaction(), {
       wrapper: createWrapper(),
@@ -111,13 +73,23 @@ describe("useTransactions", () => {
 
     expect(client.POST).toHaveBeenCalledWith(
       "/api/receipts/{receiptId}/transactions",
-      { middleware: expect.any(Array), params: { path: { receiptId: "r-1" } }, body: { amount: 200, date: "2025-03-01", cardId: "card-1" } },
+      {
+        middleware: expect.any(Array),
+        params: { path: { receiptId: "r-1" } },
+        body: { amount: 200, date: "2025-03-01", cardId: "card-1" },
+      },
     );
     expect(toast.success).toHaveBeenCalledWith("Transaction created");
   });
 
   it("update mutation sends card identity without a stale form account", async () => {
-    const body = { id: "1", amount: 250, date: "2025-03-02", accountId: "acc-1", cardId: "card-1" };
+    const body = {
+      id: "1",
+      amount: 250,
+      date: "2025-03-02",
+      accountId: "acc-1",
+      cardId: "card-1",
+    };
     (client.PUT as Mock).mockResolvedValue({ error: undefined });
 
     const { result } = renderHook(() => useUpdateTransaction(), {
@@ -128,10 +100,11 @@ describe("useTransactions", () => {
       body,
     });
 
-    expect(client.PUT).toHaveBeenCalledWith(
-      "/api/transactions/{id}",
-      { middleware: expect.any(Array), params: { path: { id: "1" } }, body: { id: "1", amount: 250, date: "2025-03-02", cardId: "card-1" } },
-    );
+    expect(client.PUT).toHaveBeenCalledWith("/api/transactions/{id}", {
+      middleware: expect.any(Array),
+      params: { path: { id: "1" } },
+      body: { id: "1", amount: 250, date: "2025-03-02", cardId: "card-1" },
+    });
     expect(toast.success).toHaveBeenCalledWith("Transaction updated");
   });
 
@@ -144,7 +117,8 @@ describe("useTransactions", () => {
 
     await result.current.mutateAsync(["1", "2"]);
 
-    expect(client.DELETE).toHaveBeenCalledWith("/api/transactions", { middleware: expect.any(Array),
+    expect(client.DELETE).toHaveBeenCalledWith("/api/transactions", {
+      middleware: expect.any(Array),
       body: ["1", "2"],
     });
     expect(toast.success).toHaveBeenCalledWith("Transaction(s) deleted");
@@ -152,7 +126,10 @@ describe("useTransactions", () => {
 
   it("deleted transactions query returns data on success", async () => {
     const deleted = [{ id: "3", amount: 10, date: "2024-01-01" }];
-    (client.GET as Mock).mockResolvedValue({ data: { data: deleted, total: 1, offset: 0, limit: 50 }, error: undefined });
+    (client.GET as Mock).mockResolvedValue({
+      data: { data: deleted, total: 1, offset: 0, limit: 50 },
+      error: undefined,
+    });
 
     const { result } = renderHook(() => useDeletedTransactions(), {
       wrapper: createWrapper(),
@@ -174,31 +151,31 @@ describe("useTransactions", () => {
 
     await result.current.mutateAsync("1");
 
-    expect(client.POST).toHaveBeenCalledWith("/api/transactions/{id}/restore", { middleware: expect.any(Array),
+    expect(client.POST).toHaveBeenCalledWith("/api/transactions/{id}/restore", {
+      middleware: expect.any(Array),
       params: { path: { id: "1" } },
     });
     expect(toast.success).toHaveBeenCalledWith("Transaction restored");
   });
 
   it("delete success refreshes same-session YNAB connection summary", async () => {
-      const queryClient = new QueryClient({
-        defaultOptions: { queries: { retry: false, gcTime: Infinity } },
-      });
-      queryClient.setQueryData(["ynab", "connection-status"], {
-        lastSuccessfulSyncUtc: "2026-09-10T12:00:00Z",
-      });
-      (client.DELETE as Mock).mockResolvedValue({ error: undefined });
-      (client.POST as Mock).mockResolvedValue({ error: undefined });
-      const { result } = renderHook(() => useDeleteTransactions(), {
-        wrapper: createWrapper(queryClient),
-      });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+    });
+    queryClient.setQueryData(["ynab", "connection-status"], {
+      lastSuccessfulSyncUtc: "2026-09-10T12:00:00Z",
+    });
+    (client.DELETE as Mock).mockResolvedValue({ error: undefined });
+    (client.POST as Mock).mockResolvedValue({ error: undefined });
+    const { result } = renderHook(() => useDeleteTransactions(), {
+      wrapper: createWrapper(queryClient),
+    });
 
-      await result.current.mutateAsync(["1"]);
+    await result.current.mutateAsync(["1"]);
 
-      expect(
-        queryClient.getQueryState(["ynab", "connection-status"])
-          ?.isInvalidated,
-      ).toBe(true);
+    expect(
+      queryClient.getQueryState(["ynab", "connection-status"])?.isInvalidated,
+    ).toBe(true);
   });
 
   it("restore success refreshes same-session YNAB connection summary", async () => {
@@ -221,7 +198,9 @@ describe("useTransactions", () => {
   });
 
   it("restore success refetches an actively rendered connection summary", async () => {
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
     const queryKey = ["ynab", "connection-status"] as const;
     queryClient.setQueryData(queryKey, { lastSuccessfulSyncUtc: "old" });
     const observer = new QueryObserver(queryClient, {
@@ -238,17 +217,27 @@ describe("useTransactions", () => {
     await result.current.mutateAsync("1");
 
     await waitFor(() =>
-      expect(queryClient.getQueryData(queryKey)).toEqual({ lastSuccessfulSyncUtc: "new" }),
+      expect(queryClient.getQueryData(queryKey)).toEqual({
+        lastSuccessfulSyncUtc: "new",
+      }),
     );
     unsubscribe();
   });
 
   it("restore cancels a held initial connection read before fresh repair settles", async () => {
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
     const queryKey = ["ynab", "connection-status"] as const;
     let resolveOld!: (value: { lastSuccessfulSyncUtc: string }) => void;
-    const queryFn = vi.fn()
-      .mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve; }))
+    const queryFn = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveOld = resolve;
+          }),
+      )
       .mockResolvedValue({ lastSuccessfulSyncUtc: "new" });
     const observer = new QueryObserver(queryClient, { queryKey, queryFn });
     const unsubscribe = observer.subscribe(() => {});
@@ -260,77 +249,50 @@ describe("useTransactions", () => {
 
     await result.current.mutateAsync("1");
     await waitFor(() =>
-      expect(queryClient.getQueryData(queryKey)).toEqual({ lastSuccessfulSyncUtc: "new" }),
+      expect(queryClient.getQueryData(queryKey)).toEqual({
+        lastSuccessfulSyncUtc: "new",
+      }),
     );
     resolveOld({ lastSuccessfulSyncUtc: "old" });
     await Promise.resolve();
-    expect(queryClient.getQueryData(queryKey)).toEqual({ lastSuccessfulSyncUtc: "new" });
+    expect(queryClient.getQueryData(queryKey)).toEqual({
+      lastSuccessfulSyncUtc: "new",
+    });
     unsubscribe();
   });
 
   // --- Branch coverage: error callbacks ---
 
   it("create mutation does not toast on failure (surfaced by the global handler)", async () => {
-    (client.POST as Mock).mockResolvedValue({ error: { message: "Server error" } });
+    (client.POST as Mock).mockResolvedValue({
+      error: { message: "Server error" },
+    });
 
     const { result } = renderHook(() => useCreateTransaction(), {
       wrapper: createWrapper(),
     });
 
-    result.current.mutate({ receiptId: "r-1", body: { amount: 100, date: "2025-01-01", cardId: "card-1" } });
+    result.current.mutate({
+      receiptId: "r-1",
+      body: { amount: 100, date: "2025-01-01", cardId: "card-1" },
+    });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(toast.error).not.toHaveBeenCalled();
-  });
-
-  it("batch create mutation does not toast on failure (surfaced by the global handler)", async () => {
-    (client.POST as Mock).mockResolvedValue({ error: { message: "Server error" } });
-
-    const { result } = renderHook(() => useCreateTransactionsBatch(), {
-      wrapper: createWrapper(),
-    });
-
-    result.current.mutate({ receiptId: "r-1", body: [{ amount: 100, date: "2025-01-01", cardId: "card-1" }] });
-
-    await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(toast.error).not.toHaveBeenCalled();
-  });
-
-  it("batch create mutation invalidates cache on success", async () => {
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false, gcTime: Infinity } },
-    });
-    queryClient.setQueryData(["transactions"], { data: [], total: 0, offset: 0, limit: 50 });
-
-    function Wrapper({ children }: { children: ReactNode }) {
-      return createElement(QueryClientProvider, { client: queryClient }, children);
-    }
-
-    (client.POST as Mock).mockResolvedValue({ data: [{ id: "1" }], error: undefined });
-
-    const { result } = renderHook(() => useCreateTransactionsBatch(), {
-      wrapper: Wrapper,
-    });
-
-    const body = [{ amount: 100, date: "2025-01-01", accountId: "stale-account", cardId: "card-1" }];
-    result.current.mutate({ receiptId: "r-1", body });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(client.POST).toHaveBeenCalledWith(
-      "/api/receipts/{receiptId}/transactions/batch",
-      { middleware: expect.any(Array), params: { path: { receiptId: "r-1" } }, body: [{ amount: 100, date: "2025-01-01", cardId: "card-1" }] },
-    );
-    expect(queryClient.getQueryState(["transactions"])?.isInvalidated).toBe(true);
   });
 
   it("update mutation does not toast on failure (surfaced by the global handler)", async () => {
-    (client.PUT as Mock).mockResolvedValue({ error: { message: "Server error" } });
+    (client.PUT as Mock).mockResolvedValue({
+      error: { message: "Server error" },
+    });
 
     const { result } = renderHook(() => useUpdateTransaction(), {
       wrapper: createWrapper(),
     });
 
-    result.current.mutate({ body: { id: "1", amount: 100, date: "2025-01-01", cardId: "card-1" } });
+    result.current.mutate({
+      body: { id: "1", amount: 100, date: "2025-01-01", cardId: "card-1" },
+    });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(toast.error).not.toHaveBeenCalled();
@@ -343,7 +305,11 @@ describe("useTransactions", () => {
     const setQueryDataSpy = vi.spyOn(queryClient, "setQueryData");
 
     function Wrapper({ children }: { children: ReactNode }) {
-      return createElement(QueryClientProvider, { client: queryClient }, children);
+      return createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        children,
+      );
     }
 
     const transactions = [
@@ -355,7 +321,9 @@ describe("useTransactions", () => {
     queryClient.setQueryData(cacheKey, cacheValue);
     setQueryDataSpy.mockClear();
 
-    (client.DELETE as Mock).mockResolvedValue({ error: { message: "Server error" } });
+    (client.DELETE as Mock).mockResolvedValue({
+      error: { message: "Server error" },
+    });
 
     const { result } = renderHook(() => useDeleteTransactions(), {
       wrapper: Wrapper,
@@ -376,10 +344,17 @@ describe("useTransactions", () => {
     });
 
     function Wrapper({ children }: { children: ReactNode }) {
-      return createElement(QueryClientProvider, { client: queryClient }, children);
+      return createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        children,
+      );
     }
 
-    queryClient.setQueryData(["transactions", "list", 0, 50, undefined, undefined], undefined);
+    queryClient.setQueryData(
+      ["transactions", "list", 0, 50, undefined, undefined],
+      undefined,
+    );
 
     (client.DELETE as Mock).mockResolvedValue({ error: undefined });
 
@@ -394,7 +369,9 @@ describe("useTransactions", () => {
   });
 
   it("restore mutation does not toast on failure (surfaced by the global handler)", async () => {
-    (client.POST as Mock).mockResolvedValue({ error: { message: "Server error" } });
+    (client.POST as Mock).mockResolvedValue({
+      error: { message: "Server error" },
+    });
 
     const { result } = renderHook(() => useRestoreTransaction(), {
       wrapper: createWrapper(),
@@ -406,49 +383,29 @@ describe("useTransactions", () => {
     expect(toast.error).not.toHaveBeenCalled();
   });
 
-  it("list query throws on API error", async () => {
-    (client.GET as Mock).mockResolvedValue({ data: undefined, error: { message: "Server error" } });
-
-    const { result } = renderHook(() => useTransactions(), {
-      wrapper: createWrapper(),
-    });
-
-    await waitFor(() => expect(result.current.isError).toBe(true));
-  });
-
-  it("list query passes sort parameters", async () => {
-    (client.GET as Mock).mockResolvedValue({ data: { data: [], total: 0, offset: 0, limit: 50 }, error: undefined });
-
-    const { result } = renderHook(() => useTransactions(0, 50, "amount", "desc"), {
-      wrapper: createWrapper(),
-    });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(client.GET).toHaveBeenCalledWith("/api/transactions", {
-      params: { query: { offset: 0, limit: 50, sortBy: "amount", sortDirection: "desc" } },
-    });
-  });
-
-  it("list query returns total of 0 when data is undefined", async () => {
-    (client.GET as Mock).mockResolvedValue({ data: undefined, error: { message: "err" } });
-
-    const { result } = renderHook(() => useTransactions(), {
-      wrapper: createWrapper(),
-    });
-
-    await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(result.current.total).toBe(0);
-  });
-
   it("delete mutation invalidates both list and deleted query keys on settled", async () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false, gcTime: Infinity } },
     });
-    queryClient.setQueryData(["transactions"], { data: [], total: 0, offset: 0, limit: 50 });
-    queryClient.setQueryData(["transactions", "deleted"], { data: [], total: 0, offset: 0, limit: 50 });
+    queryClient.setQueryData(["transactions"], {
+      data: [],
+      total: 0,
+      offset: 0,
+      limit: 50,
+    });
+    queryClient.setQueryData(["transactions", "deleted"], {
+      data: [],
+      total: 0,
+      offset: 0,
+      limit: 50,
+    });
 
     function Wrapper({ children }: { children: ReactNode }) {
-      return createElement(QueryClientProvider, { client: queryClient }, children);
+      return createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        children,
+      );
     }
 
     (client.DELETE as Mock).mockResolvedValue({ error: undefined });
@@ -460,27 +417,46 @@ describe("useTransactions", () => {
     result.current.mutate(["1"]);
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(queryClient.getQueryState(["transactions"])?.isInvalidated).toBe(true);
-    expect(queryClient.getQueryState(["transactions", "deleted"])?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(["transactions"])?.isInvalidated).toBe(
+      true,
+    );
+    expect(
+      queryClient.getQueryState(["transactions", "deleted"])?.isInvalidated,
+    ).toBe(true);
   });
 
   it("create mutation invalidates trips query on success", async () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false, gcTime: Infinity } },
     });
-    queryClient.setQueryData(["trips"], { data: [], total: 0, offset: 0, limit: 50 });
+    queryClient.setQueryData(["trips"], {
+      data: [],
+      total: 0,
+      offset: 0,
+      limit: 50,
+    });
 
     function Wrapper({ children }: { children: ReactNode }) {
-      return createElement(QueryClientProvider, { client: queryClient }, children);
+      return createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        children,
+      );
     }
 
-    (client.POST as Mock).mockResolvedValue({ data: { id: "1" }, error: undefined });
+    (client.POST as Mock).mockResolvedValue({
+      data: { id: "1" },
+      error: undefined,
+    });
 
     const { result } = renderHook(() => useCreateTransaction(), {
       wrapper: Wrapper,
     });
 
-    result.current.mutate({ receiptId: "r-1", body: { amount: 100, date: "2025-01-01", cardId: "card-1" } });
+    result.current.mutate({
+      receiptId: "r-1",
+      body: { amount: 100, date: "2025-01-01", cardId: "card-1" },
+    });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(queryClient.getQueryState(["trips"])?.isInvalidated).toBe(true);
@@ -490,10 +466,19 @@ describe("useTransactions", () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false, gcTime: Infinity } },
     });
-    queryClient.setQueryData(["trips"], { data: [], total: 0, offset: 0, limit: 50 });
+    queryClient.setQueryData(["trips"], {
+      data: [],
+      total: 0,
+      offset: 0,
+      limit: 50,
+    });
 
     function Wrapper({ children }: { children: ReactNode }) {
-      return createElement(QueryClientProvider, { client: queryClient }, children);
+      return createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        children,
+      );
     }
 
     (client.PUT as Mock).mockResolvedValue({ error: undefined });
@@ -502,7 +487,9 @@ describe("useTransactions", () => {
       wrapper: Wrapper,
     });
 
-    result.current.mutate({ body: { id: "1", amount: 100, date: "2025-01-01", cardId: "card-1" } });
+    result.current.mutate({
+      body: { id: "1", amount: 100, date: "2025-01-01", cardId: "card-1" },
+    });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(queryClient.getQueryState(["trips"])?.isInvalidated).toBe(true);
@@ -512,10 +499,19 @@ describe("useTransactions", () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false, gcTime: Infinity } },
     });
-    queryClient.setQueryData(["trips"], { data: [], total: 0, offset: 0, limit: 50 });
+    queryClient.setQueryData(["trips"], {
+      data: [],
+      total: 0,
+      offset: 0,
+      limit: 50,
+    });
 
     function Wrapper({ children }: { children: ReactNode }) {
-      return createElement(QueryClientProvider, { client: queryClient }, children);
+      return createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        children,
+      );
     }
 
     (client.DELETE as Mock).mockResolvedValue({ error: undefined });
@@ -534,10 +530,19 @@ describe("useTransactions", () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false, gcTime: Infinity } },
     });
-    queryClient.setQueryData(["trips"], { data: [], total: 0, offset: 0, limit: 50 });
+    queryClient.setQueryData(["trips"], {
+      data: [],
+      total: 0,
+      offset: 0,
+      limit: 50,
+    });
 
     function Wrapper({ children }: { children: ReactNode }) {
-      return createElement(QueryClientProvider, { client: queryClient }, children);
+      return createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        children,
+      );
     }
 
     (client.POST as Mock).mockResolvedValue({ error: undefined });

@@ -1,59 +1,9 @@
 import { toastErrorPolicy } from "@/lib/request-error-policy";
 import { invalidateDomainChange, queryKeys } from "@/lib/query-invalidation";
-import { useMemo } from "react";
-import { useStableQuery } from "@/hooks/useStableQuery";
-import {
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useSessionMutation } from "@/hooks/useSessionMutation";
 import client from "@/lib/api-client";
 import { toast } from "sonner";
-
-export function useAdjustments(offset = 0, limit = 50, sortBy?: string | null, sortDirection?: string | null) {
-  const query = useQuery({
-    queryKey: [...queryKeys.adjustments, "list", offset, limit, sortBy, sortDirection],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/api/adjustments", {
-        params: { query: { offset, limit, sortBy: sortBy ?? undefined, sortDirection: (sortDirection ?? undefined) as "asc" | "desc" | undefined } },
-      });
-      if (error) throw error;
-      return data;
-    },
-  });
-  const base = useStableQuery(query);
-  return useMemo(() => ({ ...base, data: query.data?.data, total: query.data?.total ?? 0 }), [base, query.data]);
-}
-
-export function useAdjustment(id: string | null) {
-  return useQuery({
-    queryKey: [...queryKeys.adjustments, id],
-    enabled: !!id,
-    queryFn: async () => {
-      const { data, error } = await client.GET("/api/adjustments/{id}", {
-        params: { path: { id: id! } },
-      });
-      if (error) throw error;
-      return data;
-    },
-  });
-}
-
-export function useAdjustmentsByReceiptId(receiptId: string | null, offset = 0, limit = 200, sortBy?: string | null, sortDirection?: string | null) {
-  const query = useQuery({
-    queryKey: [...queryKeys.adjustments, "by-receipt", receiptId, offset, limit, sortBy, sortDirection],
-    enabled: !!receiptId,
-    queryFn: async () => {
-      const { data, error } = await client.GET("/api/adjustments", {
-        params: { query: { receiptId: receiptId!, offset, limit, sortBy: sortBy ?? undefined, sortDirection: (sortDirection ?? undefined) as "asc" | "desc" | undefined } },
-      });
-      if (error) throw error;
-      return data;
-    },
-  });
-  const base = useStableQuery(query);
-  return useMemo(() => ({ ...base, data: query.data?.data, total: query.data?.total ?? 0 }), [base, query.data]);
-}
 
 export function useCreateAdjustment() {
   const queryClient = useQueryClient();
@@ -125,13 +75,32 @@ export function useDeleteAdjustments() {
     },
     onMutate: async (ids) => {
       await queryClient.cancelQueries({ queryKey: [...queryKeys.adjustments] });
-      const previous = queryClient.getQueriesData<{ data: { id: string }[]; total: number }>({ queryKey: [...queryKeys.adjustments, "list"] });
+      const previous = queryClient.getQueriesData<{
+        data: { id: string }[];
+        total: number;
+      }>({ queryKey: [...queryKeys.adjustments, "list"] });
       for (const [key] of previous) {
-        queryClient.setQueryData(key, (old: { data: { id: string }[]; total: number; offset: number; limit: number } | undefined) => {
-          if (!old?.data) return old;
-          const filtered = old.data.filter((item) => !ids.includes(item.id));
-          return { ...old, data: filtered, total: old.total - (old.data.length - filtered.length) };
-        });
+        queryClient.setQueryData(
+          key,
+          (
+            old:
+              | {
+                  data: { id: string }[];
+                  total: number;
+                  offset: number;
+                  limit: number;
+                }
+              | undefined,
+          ) => {
+            if (!old?.data) return old;
+            const filtered = old.data.filter((item) => !ids.includes(item.id));
+            return {
+              ...old,
+              data: filtered,
+              total: old.total - (old.data.length - filtered.length),
+            };
+          },
+        );
       }
       return { previous };
     },
@@ -145,39 +114,6 @@ export function useDeleteAdjustments() {
     },
     onSuccess: () => {
       toast.success("Adjustment(s) deleted");
-    },
-  });
-}
-
-export function useDeletedAdjustments(offset = 0, limit = 50, sortBy?: string | null, sortDirection?: string | null) {
-  const query = useQuery({
-    queryKey: [...queryKeys.adjustments, "deleted", offset, limit, sortBy, sortDirection],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/api/adjustments/deleted", {
-        params: { query: { offset, limit, sortBy: sortBy ?? undefined, sortDirection: (sortDirection ?? undefined) as "asc" | "desc" | undefined } },
-      });
-      if (error) throw error;
-      return data;
-    },
-  });
-  const base = useStableQuery(query);
-  return useMemo(() => ({ ...base, data: query.data?.data, total: query.data?.total ?? 0 }), [base, query.data]);
-}
-
-export function useRestoreAdjustment() {
-  const queryClient = useQueryClient();
-  return useSessionMutation({
-    ...toastErrorPolicy.mutation,
-    mutationFn: async (id: string) => {
-      const { error } = await client.POST("/api/adjustments/{id}/restore", {
-        ...toastErrorPolicy.request,
-        params: { path: { id } },
-      });
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      invalidateDomainChange(queryClient, "adjustment");
-      toast.success("Adjustment restored");
     },
   });
 }

@@ -2,11 +2,6 @@ import { render, screen } from "@testing-library/react";
 import { YnabSyncBadge } from "./YnabSyncBadge";
 
 describe("YnabSyncBadge", () => {
-  it("renders nothing when status is undefined", () => {
-    const { container } = render(<YnabSyncBadge status={undefined} />);
-    expect(container.innerHTML).toBe("");
-  });
-
   it("renders Synced badge", () => {
     render(<YnabSyncBadge status="synced" />);
     expect(screen.getByText("Synced")).toBeInTheDocument();

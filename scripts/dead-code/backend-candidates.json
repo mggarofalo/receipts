@@ -1,0 +1,81 @@
+{
+  "productionProjects": [
+    "src/Common/Common.csproj",
+    "src/Domain/Domain.csproj",
+    "src/Application/Application.csproj",
+    "src/Infrastructure/Infrastructure.csproj",
+    "src/Presentation/API/API.csproj",
+    "src/Tools/DbMigrator/DbMigrator.csproj",
+    "src/Tools/DbSeeder/DbSeeder.csproj",
+    "src/Tools/DbExporter/DbExporter.csproj",
+    "src/Receipts.AppHost/Receipts.AppHost.csproj",
+    "src/Receipts.ServiceDefaults/Receipts.ServiceDefaults.csproj"
+  ],
+  "candidates": [
+    {
+      "project": "src/Common/Common.csproj",
+      "symbol": "Common.ApiKeyUtilities",
+      "allowedClusterFiles": []
+    },
+    {
+      "project": "src/Common/Common.csproj",
+      "symbol": "Common.DateTimeExtensions",
+      "allowedClusterFiles": []
+    },
+    {
+      "project": "src/Common/Common.csproj",
+      "symbol": "Common.DecimalExtensions",
+      "allowedClusterFiles": []
+    },
+    {
+      "project": "src/Application/Application.csproj",
+      "symbol": "Application.Commands.Ynab.SyncRecord.CreateYnabSyncRecordCommand",
+      "allowedClusterFiles": [
+        "src/Application/Commands/Ynab/SyncRecord/CreateYnabSyncRecordCommandHandler.cs"
+      ],
+      "allowGeneratedMediatorDispatch": true
+    },
+    {
+      "project": "src/Application/Application.csproj",
+      "symbol": "Application.Commands.Ynab.SyncRecord.UpdateYnabSyncRecordStatusCommand",
+      "allowedClusterFiles": [
+        "src/Application/Commands/Ynab/SyncRecord/UpdateYnabSyncRecordStatusCommandHandler.cs"
+      ],
+      "allowGeneratedMediatorDispatch": true
+    },
+    {
+      "project": "src/Infrastructure/Infrastructure.csproj",
+      "symbol": "Infrastructure.Utilities.YnabConvert::FromMilliunits",
+      "allowedClusterFiles": []
+    },
+    {
+      "project": "src/Infrastructure/Infrastructure.csproj",
+      "symbol": "Infrastructure.Interfaces.Repositories.IYnabServerKnowledgeRepository",
+      "allowedClusterFiles": [
+        "src/Infrastructure/Repositories/YnabServerKnowledgeRepository.cs",
+        "src/Infrastructure/Services/InfrastructureService.cs"
+      ]
+    },
+    {
+      "project": "src/Infrastructure/Infrastructure.csproj",
+      "symbol": "Infrastructure.Repositories.YnabServerKnowledgeRepository",
+      "allowedClusterFiles": [
+        "src/Infrastructure/Services/InfrastructureService.cs"
+      ]
+    },
+    {
+      "project": "src/Application/Application.csproj",
+      "symbol": "Application.Interfaces.Services.IImageStorageService::DeleteReceiptImagesAsync",
+      "allowedClusterFiles": [
+        "src/Infrastructure/Services/LocalImageStorageService.cs"
+      ]
+    },
+    {
+      "project": "src/Infrastructure/Infrastructure.csproj",
+      "symbol": "Infrastructure.Services.LocalImageStorageService::DeleteReceiptImagesAsync",
+      "allowedClusterFiles": [
+        "src/Application/Interfaces/Services/IImageStorageService.cs"
+      ]
+    }
+  ]
+}

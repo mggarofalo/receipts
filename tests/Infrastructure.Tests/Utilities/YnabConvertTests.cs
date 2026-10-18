@@ -28,16 +28,4 @@ public class YnabConvertTests
 		result.Should().Be(1235L);
 	}
 
-	[Theory]
-	[InlineData(12340L, 12.34)]
-	[InlineData(1L, 0.001)]
-	[InlineData(0L, 0)]
-	public void FromMilliunits_ConvertsCorrectly(long milliunits, decimal expected)
-	{
-		// Act
-		decimal result = YnabConvert.FromMilliunits(milliunits);
-
-		// Assert
-		result.Should().Be(expected);
-	}
 }

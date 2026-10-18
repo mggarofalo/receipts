@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement, type ReactNode } from "react";
 
 vi.mock("@/lib/api-client", async (importOriginal) => ({
-  ...await importOriginal<typeof import("@/lib/api-client")>(),
+  ...(await importOriginal<typeof import("@/lib/api-client")>()),
   default: {
     GET: vi.fn(),
     POST: vi.fn(),
@@ -22,7 +22,6 @@ import { toast } from "sonner";
 import {
   useCards,
   useAllCards,
-  useCard,
   useCreateCard,
   useUpdateCard,
   useDeleteCard,
@@ -36,7 +35,11 @@ function createWrapper() {
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
   return function Wrapper({ children }: { children: ReactNode }) {
-    return createElement(QueryClientProvider, { client: queryClient }, children);
+    return createElement(
+      QueryClientProvider,
+      { client: queryClient },
+      children,
+    );
   };
 }
 
@@ -49,7 +52,10 @@ describe("useCards", () => {
     const cards = [
       { id: "1", cardCode: "CARD1", name: "Checking", isActive: true },
     ];
-    (client.GET as Mock).mockResolvedValue({ data: { data: cards, total: 1, offset: 0, limit: 50 }, error: undefined });
+    (client.GET as Mock).mockResolvedValue({
+      data: { data: cards, total: 1, offset: 0, limit: 50 },
+      error: undefined,
+    });
 
     const { result } = renderHook(() => useCards(), {
       wrapper: createWrapper(),
@@ -66,7 +72,10 @@ describe("useCards", () => {
     const cards = [
       { id: "1", cardCode: "CARD1", name: "Checking", isActive: true },
     ];
-    (client.GET as Mock).mockResolvedValue({ data: { data: cards, total: 1, offset: 0, limit: 50 }, error: undefined });
+    (client.GET as Mock).mockResolvedValue({
+      data: { data: cards, total: 1, offset: 0, limit: 50 },
+      error: undefined,
+    });
 
     const { result } = renderHook(() => useCards(0, 50, null, null, true), {
       wrapper: createWrapper(),
@@ -82,7 +91,10 @@ describe("useCards", () => {
     const cards = [
       { id: "1", cardCode: "CARD1", name: "Checking", isActive: true },
     ];
-    (client.GET as Mock).mockResolvedValue({ data: { data: cards, total: 1, offset: 0, limit: 50 }, error: undefined });
+    (client.GET as Mock).mockResolvedValue({
+      data: { data: cards, total: 1, offset: 0, limit: 50 },
+      error: undefined,
+    });
 
     const { result } = renderHook(() => useCards(0, 50, null, null, null), {
       wrapper: createWrapper(),
@@ -95,7 +107,9 @@ describe("useCards", () => {
   });
 
   it("list query trims q, sends it to the API, and refetches for a new q", async () => {
-    (client.GET as Mock).mockResolvedValue({ data: { data: [], total: 0, offset: 0, limit: 50 } });
+    (client.GET as Mock).mockResolvedValue({
+      data: { data: [], total: 0, offset: 0, limit: 50 },
+    });
     const { result, rerender } = renderHook(
       ({ q }) => useCards(0, 50, null, null, null, { q }),
       { initialProps: { q: "  visa  " }, wrapper: createWrapper() },
@@ -111,32 +125,18 @@ describe("useCards", () => {
     });
   });
 
-  it("single query is disabled when id is null", () => {
-    const { result } = renderHook(() => useCard(null), {
-      wrapper: createWrapper(),
-    });
-
-    expect(result.current.data).toBeUndefined();
-    expect(result.current.fetchStatus).toBe("idle");
-    expect(client.GET).not.toHaveBeenCalled();
-  });
-
-  it("single query fetches data when id is provided", async () => {
-    const card = { id: "1", cardCode: "CARD1", name: "Checking", isActive: true };
-    (client.GET as Mock).mockResolvedValue({ data: card, error: undefined });
-
-    const { result } = renderHook(() => useCard("1"), {
-      wrapper: createWrapper(),
-    });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data).toEqual(card);
-  });
-
   it("create mutation calls POST and shows toast on success", async () => {
-    const newCard = { cardCode: "CARD2", name: "Savings", isActive: true, accountId: "acct-1" };
+    const newCard = {
+      cardCode: "CARD2",
+      name: "Savings",
+      isActive: true,
+      accountId: "acct-1",
+    };
     const created = { id: "2", ...newCard };
-    (client.POST as Mock).mockResolvedValue({ data: created, error: undefined });
+    (client.POST as Mock).mockResolvedValue({
+      data: created,
+      error: undefined,
+    });
 
     const { result } = renderHook(() => useCreateCard(), {
       wrapper: createWrapper(),
@@ -145,12 +145,20 @@ describe("useCards", () => {
     await result.current.mutateAsync(newCard);
 
     expect(client.POST).toHaveBeenCalledWith("/api/cards", {
-      middleware: expect.any(Array), body: newCard });
+      middleware: expect.any(Array),
+      body: newCard,
+    });
     expect(toast.success).toHaveBeenCalledWith("Card created");
   });
 
   it("update mutation calls PUT and shows toast on success", async () => {
-    const updated = { id: "1", cardCode: "CARD1", name: "Updated", isActive: false, accountId: "acct-1" };
+    const updated = {
+      id: "1",
+      cardCode: "CARD1",
+      name: "Updated",
+      isActive: false,
+      accountId: "acct-1",
+    };
     (client.PUT as Mock).mockResolvedValue({ error: undefined });
 
     const { result } = renderHook(() => useUpdateCard(), {
@@ -168,7 +176,10 @@ describe("useCards", () => {
   });
 
   it("delete mutation calls DELETE and shows toast on success", async () => {
-    (client.DELETE as Mock).mockResolvedValue({ error: undefined, response: { status: 204, ok: true } });
+    (client.DELETE as Mock).mockResolvedValue({
+      error: undefined,
+      response: { status: 204, ok: true },
+    });
 
     const { result } = renderHook(() => useDeleteCard(), {
       wrapper: createWrapper(),
@@ -252,7 +263,8 @@ describe("useCards", () => {
       },
     });
     expect(toast.success).toHaveBeenCalledWith("Cards merged", {
-      description: "2 cards moved, 37 transactions repointed, 1 empty account removed.",
+      description:
+        "2 cards moved, 37 transactions repointed, 1 empty account removed.",
     });
     expect(toast.info).not.toHaveBeenCalled();
   });
@@ -295,7 +307,10 @@ describe("useCards", () => {
       wrapper: createWrapper(),
     });
 
-    await result.current.mutateAsync({ targetAccountId: "t", sourceCardIds: ["c1", "c2"] });
+    await result.current.mutateAsync({
+      targetAccountId: "t",
+      sourceCardIds: ["c1", "c2"],
+    });
 
     expect(toast.success).toHaveBeenCalledWith("Cards merged", {
       description: "1 card moved, 1 empty account removed.",
@@ -304,7 +319,18 @@ describe("useCards", () => {
 
   it("merge mutation rejects with conflict object on 409 and does not toast error", async () => {
     (client.POST as Mock).mockResolvedValue({
-      error: { message: "conflict", conflicts: [{ accountId: "a", accountName: "A", ynabBudgetId: "b", ynabAccountId: "y", ynabAccountName: "Y" }] },
+      error: {
+        message: "conflict",
+        conflicts: [
+          {
+            accountId: "a",
+            accountName: "A",
+            ynabBudgetId: "b",
+            ynabAccountId: "y",
+            ynabAccountName: "Y",
+          },
+        ],
+      },
       response: { status: 409, ok: false },
     });
 
@@ -314,7 +340,10 @@ describe("useCards", () => {
 
     let caught: unknown = null;
     try {
-      await result.current.mutateAsync({ targetAccountId: "t", sourceCardIds: ["c1", "c2"] });
+      await result.current.mutateAsync({
+        targetAccountId: "t",
+        sourceCardIds: ["c1", "c2"],
+      });
     } catch (err) {
       caught = err;
     }
@@ -336,7 +365,10 @@ describe("useCards", () => {
     });
 
     await expect(
-      result.current.mutateAsync({ targetAccountId: "t", sourceCardIds: ["c1", "c2"] }),
+      result.current.mutateAsync({
+        targetAccountId: "t",
+        sourceCardIds: ["c1", "c2"],
+      }),
     ).rejects.toThrow();
 
     expect(toast.error).toHaveBeenCalledTimes(1);
@@ -362,7 +394,10 @@ describe("useCards", () => {
 
       let caught: unknown = null;
       try {
-        await result.current.mutateAsync({ targetAccountId: "t", sourceCardIds: ["c1", "c2"] });
+        await result.current.mutateAsync({
+          targetAccountId: "t",
+          sourceCardIds: ["c1", "c2"],
+        });
       } catch (err) {
         caught = err;
       }
@@ -393,7 +428,10 @@ describe("useCards", () => {
 
     let caught: unknown = null;
     try {
-      await result.current.mutateAsync({ targetAccountId: "t", sourceCardIds: ["c1", "c2"] });
+      await result.current.mutateAsync({
+        targetAccountId: "t",
+        sourceCardIds: ["c1", "c2"],
+      });
     } catch (err) {
       caught = err;
     }
@@ -420,14 +458,16 @@ describe("useCards", () => {
 
     let caught: unknown = null;
     try {
-      await result.current.mutateAsync({ targetAccountId: "t", sourceCardIds: ["c1", "c2"] });
+      await result.current.mutateAsync({
+        targetAccountId: "t",
+        sourceCardIds: ["c1", "c2"],
+      });
     } catch (err) {
       caught = err;
     }
 
     expect(caught).toMatchObject({ status: 400, detail: reason });
   });
-
 });
 
 describe("useAllCards", () => {
@@ -498,7 +538,11 @@ describe("useMergeCardsPreview", () => {
     });
 
     const { result } = renderHook(
-      () => useMergeCardsPreview({ targetAccountId: "t", sourceCardIds: ["c1", "c2"] }),
+      () =>
+        useMergeCardsPreview({
+          targetAccountId: "t",
+          sourceCardIds: ["c1", "c2"],
+        }),
       { wrapper: createWrapper() },
     );
 
@@ -524,7 +568,8 @@ describe("useMergeCardsPreview", () => {
     });
 
     const { result } = renderHook(
-      () => useMergeCardsPreview({ targetAccountId: null, sourceCardIds: ["c1"] }),
+      () =>
+        useMergeCardsPreview({ targetAccountId: null, sourceCardIds: ["c1"] }),
       { wrapper: createWrapper() },
     );
 
@@ -565,7 +610,8 @@ describe("useMergeCardsPreview", () => {
     });
 
     const { result } = renderHook(
-      () => useMergeCardsPreview({ targetAccountId: "t", sourceCardIds: ["c1"] }),
+      () =>
+        useMergeCardsPreview({ targetAccountId: "t", sourceCardIds: ["c1"] }),
       { wrapper: createWrapper() },
     );
 

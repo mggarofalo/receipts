@@ -1,0 +1,76 @@
+CANDIDATE Common.ApiKeyUtilities
+test tests/Common.Tests/ApiKeyUtilitiesTests.cs:11 Common.ApiKeyUtilities
+test tests/Common.Tests/ApiKeyUtilitiesTests.cs:11 Common.ApiKeyUtilities.GenerateApiKey(int, bool)
+test tests/Common.Tests/ApiKeyUtilitiesTests.cs:23 Common.ApiKeyUtilities
+test tests/Common.Tests/ApiKeyUtilitiesTests.cs:23 Common.ApiKeyUtilities.GenerateApiKey(int, bool)
+test tests/Common.Tests/ApiKeyUtilitiesTests.cs:34 Common.ApiKeyUtilities
+test tests/Common.Tests/ApiKeyUtilitiesTests.cs:34 Common.ApiKeyUtilities.GenerateApiKey(int, bool)
+test tests/Common.Tests/ApiKeyUtilitiesTests.cs:35 Common.ApiKeyUtilities
+test tests/Common.Tests/ApiKeyUtilitiesTests.cs:35 Common.ApiKeyUtilities.GenerateApiKey(int, bool)
+CANDIDATE Common.DateTimeExtensions
+test tests/Common.Tests/DateExtensionsTests.cs:104 Common.DateTimeExtensions.Between(System.DateOnly, System.DateOnly, System.DateOnly)
+test tests/Common.Tests/DateExtensionsTests.cs:119 Common.DateTimeExtensions.Between(System.DateOnly, System.DateOnly, System.DateOnly)
+test tests/Common.Tests/DateExtensionsTests.cs:134 Common.DateTimeExtensions.Between(System.DateOnly, System.DateOnly, System.DateOnly)
+test tests/Common.Tests/DateExtensionsTests.cs:14 Common.DateTimeExtensions.Between(System.DateTime, System.DateTime, System.DateTime)
+test tests/Common.Tests/DateExtensionsTests.cs:149 Common.DateTimeExtensions.Between(System.DateOnly, System.DateOnly, System.DateOnly)
+test tests/Common.Tests/DateExtensionsTests.cs:29 Common.DateTimeExtensions.Between(System.DateTime, System.DateTime, System.DateTime)
+test tests/Common.Tests/DateExtensionsTests.cs:44 Common.DateTimeExtensions.Between(System.DateTime, System.DateTime, System.DateTime)
+test tests/Common.Tests/DateExtensionsTests.cs:59 Common.DateTimeExtensions.Between(System.DateTime, System.DateTime, System.DateTime)
+test tests/Common.Tests/DateExtensionsTests.cs:74 Common.DateTimeExtensions.Between(System.DateTime, System.DateTime, System.DateTime)
+test tests/Common.Tests/DateExtensionsTests.cs:89 Common.DateTimeExtensions.Between(System.DateOnly, System.DateOnly, System.DateOnly)
+CANDIDATE Common.DecimalExtensions
+test tests/Common.Tests/DecimalExtensionsTests.cs:14 Common.DecimalExtensions.Between(decimal, decimal, decimal)
+test tests/Common.Tests/DecimalExtensionsTests.cs:20 Common.DecimalExtensions.Between(decimal, decimal, decimal)
+test tests/Common.Tests/DecimalExtensionsTests.cs:26 Common.DecimalExtensions.Between(decimal, decimal, decimal)
+test tests/Common.Tests/DecimalExtensionsTests.cs:32 Common.DecimalExtensions.Between(decimal, decimal, decimal)
+test tests/Common.Tests/DecimalExtensionsTests.cs:8 Common.DecimalExtensions.Between(decimal, decimal, decimal)
+CANDIDATE Application.Commands.Ynab.SyncRecord.CreateYnabSyncRecordCommand
+cluster src/Application/Commands/Ynab/SyncRecord/CreateYnabSyncRecordCommandHandler.cs:11 Application.Commands.Ynab.SyncRecord.CreateYnabSyncRecordCommand.LocalTransactionId
+cluster src/Application/Commands/Ynab/SyncRecord/CreateYnabSyncRecordCommandHandler.cs:11 Application.Commands.Ynab.SyncRecord.CreateYnabSyncRecordCommand.SyncType
+cluster src/Application/Commands/Ynab/SyncRecord/CreateYnabSyncRecordCommandHandler.cs:11 Application.Commands.Ynab.SyncRecord.CreateYnabSyncRecordCommand.YnabBudgetId
+cluster src/Application/Commands/Ynab/SyncRecord/CreateYnabSyncRecordCommandHandler.cs:7 Application.Commands.Ynab.SyncRecord.CreateYnabSyncRecordCommand
+cluster src/Application/Commands/Ynab/SyncRecord/CreateYnabSyncRecordCommandHandler.cs:9 Application.Commands.Ynab.SyncRecord.CreateYnabSyncRecordCommand
+generated-dispatch src/Application/obj/Debug/net10.0/Mediator.SourceGenerator/Mediator.SourceGenerator.IncrementalMediatorGenerator/Mediator.g.cs:1318 Application.Commands.Ynab.SyncRecord.CreateYnabSyncRecordCommand
+generated-dispatch src/Application/obj/Debug/net10.0/Mediator.SourceGenerator/Mediator.SourceGenerator.IncrementalMediatorGenerator/Mediator.g.cs:1473 Application.Commands.Ynab.SyncRecord.CreateYnabSyncRecordCommand
+generated-dispatch src/Application/obj/Debug/net10.0/Mediator.SourceGenerator/Mediator.SourceGenerator.IncrementalMediatorGenerator/Mediator.g.cs:1629 Application.Commands.Ynab.SyncRecord.CreateYnabSyncRecordCommand
+generated-dispatch src/Application/obj/Debug/net10.0/Mediator.SourceGenerator/Mediator.SourceGenerator.IncrementalMediatorGenerator/Mediator.g.cs:3553 Application.Commands.Ynab.SyncRecord.CreateYnabSyncRecordCommand
+generated-dispatch src/Application/obj/Debug/net10.0/Mediator.SourceGenerator/Mediator.SourceGenerator.IncrementalMediatorGenerator/Mediator.g.cs:398 Application.Commands.Ynab.SyncRecord.CreateYnabSyncRecordCommand
+generated-dispatch src/Application/obj/Debug/net10.0/Mediator.SourceGenerator/Mediator.SourceGenerator.IncrementalMediatorGenerator/Mediator.g.cs:399 Application.Commands.Ynab.SyncRecord.CreateYnabSyncRecordCommand
+generated-dispatch src/Application/obj/Debug/net10.0/Mediator.SourceGenerator/Mediator.SourceGenerator.IncrementalMediatorGenerator/Mediator.g.cs:546 Application.Commands.Ynab.SyncRecord.CreateYnabSyncRecordCommand
+CANDIDATE Application.Commands.Ynab.SyncRecord.UpdateYnabSyncRecordStatusCommand
+cluster src/Application/Commands/Ynab/SyncRecord/UpdateYnabSyncRecordStatusCommandHandler.cs:10 Application.Commands.Ynab.SyncRecord.UpdateYnabSyncRecordStatusCommand.Id
+cluster src/Application/Commands/Ynab/SyncRecord/UpdateYnabSyncRecordStatusCommandHandler.cs:10 Application.Commands.Ynab.SyncRecord.UpdateYnabSyncRecordStatusCommand.LastError
+cluster src/Application/Commands/Ynab/SyncRecord/UpdateYnabSyncRecordStatusCommandHandler.cs:10 Application.Commands.Ynab.SyncRecord.UpdateYnabSyncRecordStatusCommand.Status
+cluster src/Application/Commands/Ynab/SyncRecord/UpdateYnabSyncRecordStatusCommandHandler.cs:10 Application.Commands.Ynab.SyncRecord.UpdateYnabSyncRecordStatusCommand.YnabTransactionId
+cluster src/Application/Commands/Ynab/SyncRecord/UpdateYnabSyncRecordStatusCommandHandler.cs:6 Application.Commands.Ynab.SyncRecord.UpdateYnabSyncRecordStatusCommand
+cluster src/Application/Commands/Ynab/SyncRecord/UpdateYnabSyncRecordStatusCommandHandler.cs:8 Application.Commands.Ynab.SyncRecord.UpdateYnabSyncRecordStatusCommand
+generated-dispatch src/Application/obj/Debug/net10.0/Mediator.SourceGenerator/Mediator.SourceGenerator.IncrementalMediatorGenerator/Mediator.g.cs:1320 Application.Commands.Ynab.SyncRecord.UpdateYnabSyncRecordStatusCommand
+generated-dispatch src/Application/obj/Debug/net10.0/Mediator.SourceGenerator/Mediator.SourceGenerator.IncrementalMediatorGenerator/Mediator.g.cs:1475 Application.Commands.Ynab.SyncRecord.UpdateYnabSyncRecordStatusCommand
+generated-dispatch src/Application/obj/Debug/net10.0/Mediator.SourceGenerator/Mediator.SourceGenerator.IncrementalMediatorGenerator/Mediator.g.cs:1631 Application.Commands.Ynab.SyncRecord.UpdateYnabSyncRecordStatusCommand
+generated-dispatch src/Application/obj/Debug/net10.0/Mediator.SourceGenerator/Mediator.SourceGenerator.IncrementalMediatorGenerator/Mediator.g.cs:3585 Application.Commands.Ynab.SyncRecord.UpdateYnabSyncRecordStatusCommand
+generated-dispatch src/Application/obj/Debug/net10.0/Mediator.SourceGenerator/Mediator.SourceGenerator.IncrementalMediatorGenerator/Mediator.g.cs:404 Application.Commands.Ynab.SyncRecord.UpdateYnabSyncRecordStatusCommand
+generated-dispatch src/Application/obj/Debug/net10.0/Mediator.SourceGenerator/Mediator.SourceGenerator.IncrementalMediatorGenerator/Mediator.g.cs:405 Application.Commands.Ynab.SyncRecord.UpdateYnabSyncRecordStatusCommand
+generated-dispatch src/Application/obj/Debug/net10.0/Mediator.SourceGenerator/Mediator.SourceGenerator.IncrementalMediatorGenerator/Mediator.g.cs:547 Application.Commands.Ynab.SyncRecord.UpdateYnabSyncRecordStatusCommand
+CANDIDATE Infrastructure.Utilities.YnabConvert::FromMilliunits
+test tests/Infrastructure.Tests/Utilities/YnabConvertTests.cs:38 Infrastructure.Utilities.YnabConvert.FromMilliunits(long)
+CANDIDATE Infrastructure.Interfaces.Repositories.IYnabServerKnowledgeRepository
+cluster src/Infrastructure/Repositories/YnabServerKnowledgeRepository.cs:7 Infrastructure.Interfaces.Repositories.IYnabServerKnowledgeRepository
+cluster src/Infrastructure/Services/InfrastructureService.cs:182 Infrastructure.Interfaces.Repositories.IYnabServerKnowledgeRepository
+test tests/Infrastructure.Tests/Services/YnabMemoSyncServiceTests.cs:22 Infrastructure.Interfaces.Repositories.IYnabServerKnowledgeRepository
+test tests/Infrastructure.Tests/Services/YnabMemoSyncServiceTests.cs:33 Infrastructure.Interfaces.Repositories.IYnabServerKnowledgeRepository.GetAsync(string, System.Threading.CancellationToken)
+test tests/Infrastructure.Tests/Services/YnabMemoSyncServiceTests.cs:36 Infrastructure.Interfaces.Repositories.IYnabServerKnowledgeRepository.UpsertAsync(string, long, System.Threading.CancellationToken)
+test tests/Infrastructure.Tests/Services/YnabMemoSyncServiceTests.cs:755 Infrastructure.Interfaces.Repositories.IYnabServerKnowledgeRepository.UpsertAsync(string, long, System.Threading.CancellationToken)
+test tests/Infrastructure.Tests/Services/YnabMemoSyncServiceTests.cs:773 Infrastructure.Interfaces.Repositories.IYnabServerKnowledgeRepository.GetAsync(string, System.Threading.CancellationToken)
+CANDIDATE Infrastructure.Repositories.YnabServerKnowledgeRepository
+cluster src/Infrastructure/Services/InfrastructureService.cs:182 Infrastructure.Repositories.YnabServerKnowledgeRepository
+test tests/Infrastructure.Tests/Services/YnabMemoSyncServiceTests.cs:33 Infrastructure.Interfaces.Repositories.IYnabServerKnowledgeRepository.GetAsync(string, System.Threading.CancellationToken)
+test tests/Infrastructure.Tests/Services/YnabMemoSyncServiceTests.cs:36 Infrastructure.Interfaces.Repositories.IYnabServerKnowledgeRepository.UpsertAsync(string, long, System.Threading.CancellationToken)
+test tests/Infrastructure.Tests/Services/YnabMemoSyncServiceTests.cs:755 Infrastructure.Interfaces.Repositories.IYnabServerKnowledgeRepository.UpsertAsync(string, long, System.Threading.CancellationToken)
+test tests/Infrastructure.Tests/Services/YnabMemoSyncServiceTests.cs:773 Infrastructure.Interfaces.Repositories.IYnabServerKnowledgeRepository.GetAsync(string, System.Threading.CancellationToken)
+CANDIDATE Application.Interfaces.Services.IImageStorageService::DeleteReceiptImagesAsync
+test tests/Application.Tests/Commands/Receipt/UploadImage/UploadReceiptImageCommandHandlerTests.cs:112 Application.Interfaces.Services.IImageStorageService.DeleteReceiptImagesAsync(System.Guid, System.Threading.CancellationToken)
+test tests/Application.Tests/Commands/Receipt/UploadImage/UploadReceiptImageCommandHandlerTests.cs:97 Application.Interfaces.Services.IImageStorageService.DeleteReceiptImagesAsync(System.Guid, System.Threading.CancellationToken)
+CANDIDATE Infrastructure.Services.LocalImageStorageService::DeleteReceiptImagesAsync
+test tests/Application.Tests/Commands/Receipt/UploadImage/UploadReceiptImageCommandHandlerTests.cs:112 Application.Interfaces.Services.IImageStorageService.DeleteReceiptImagesAsync(System.Guid, System.Threading.CancellationToken)
+test tests/Application.Tests/Commands/Receipt/UploadImage/UploadReceiptImageCommandHandlerTests.cs:97 Application.Interfaces.Services.IImageStorageService.DeleteReceiptImagesAsync(System.Guid, System.Threading.CancellationToken)
+PASS: declared candidate conditions satisfied; runtime-root review remains required.

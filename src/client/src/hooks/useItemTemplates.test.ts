@@ -20,7 +20,6 @@ import client from "@/lib/api-client";
 import { toast } from "sonner";
 import {
   useItemTemplates,
-  useItemTemplate,
   useCreateItemTemplate,
   useUpdateItemTemplate,
   useDeleteItemTemplates,
@@ -34,7 +33,11 @@ function createWrapper() {
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
   return function Wrapper({ children }: { children: ReactNode }) {
-    return createElement(QueryClientProvider, { client: queryClient }, children);
+    return createElement(
+      QueryClientProvider,
+      { client: queryClient },
+      children,
+    );
   };
 }
 
@@ -55,7 +58,10 @@ describe("useItemTemplates", () => {
         defaultItemCode: "GRO",
       },
     ];
-    (client.GET as Mock).mockResolvedValue({ data: { data: templates, total: 1, offset: 0, limit: 50 }, error: undefined });
+    (client.GET as Mock).mockResolvedValue({
+      data: { data: templates, total: 1, offset: 0, limit: 50 },
+      error: undefined,
+    });
 
     const { result } = renderHook(() => useItemTemplates(), {
       wrapper: createWrapper(),
@@ -70,28 +76,6 @@ describe("useItemTemplates", () => {
     });
   });
 
-  it("single query is disabled when id is null", () => {
-    const { result } = renderHook(() => useItemTemplate(null), {
-      wrapper: createWrapper(),
-    });
-
-    expect(result.current.data).toBeUndefined();
-    expect(result.current.fetchStatus).toBe("idle");
-    expect(client.GET).not.toHaveBeenCalled();
-  });
-
-  it("single query fetches data when id is provided", async () => {
-    const template = { id: "1", name: "Grocery Item", description: null };
-    (client.GET as Mock).mockResolvedValue({ data: template, error: undefined });
-
-    const { result } = renderHook(() => useItemTemplate("1"), {
-      wrapper: createWrapper(),
-    });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data).toEqual(template);
-  });
-
   it("create mutation calls POST and shows toast on success", async () => {
     const newTemplate = {
       name: "Gas Template",
@@ -102,7 +86,10 @@ describe("useItemTemplates", () => {
       defaultItemCode: "GAS",
     };
     const created = { id: "2", ...newTemplate };
-    (client.POST as Mock).mockResolvedValue({ data: created, error: undefined });
+    (client.POST as Mock).mockResolvedValue({
+      data: created,
+      error: undefined,
+    });
 
     const { result } = renderHook(() => useCreateItemTemplate(), {
       wrapper: createWrapper(),
@@ -110,7 +97,8 @@ describe("useItemTemplates", () => {
 
     await result.current.mutateAsync(newTemplate);
 
-    expect(client.POST).toHaveBeenCalledWith("/api/item-templates", { middleware: expect.any(Array),
+    expect(client.POST).toHaveBeenCalledWith("/api/item-templates", {
+      middleware: expect.any(Array),
       body: newTemplate,
     });
     expect(toast.success).toHaveBeenCalledWith("Item template created");
@@ -134,7 +122,8 @@ describe("useItemTemplates", () => {
 
     await result.current.mutateAsync(updated);
 
-    expect(client.PUT).toHaveBeenCalledWith("/api/item-templates/{id}", { middleware: expect.any(Array),
+    expect(client.PUT).toHaveBeenCalledWith("/api/item-templates/{id}", {
+      middleware: expect.any(Array),
       params: { path: { id: "1" } },
       body: updated,
     });
@@ -150,7 +139,8 @@ describe("useItemTemplates", () => {
 
     await result.current.mutateAsync(["1", "2"]);
 
-    expect(client.DELETE).toHaveBeenCalledWith("/api/item-templates", { middleware: expect.any(Array),
+    expect(client.DELETE).toHaveBeenCalledWith("/api/item-templates", {
+      middleware: expect.any(Array),
       body: ["1", "2"],
     });
     expect(toast.success).toHaveBeenCalledWith("Item template(s) deleted");
@@ -158,7 +148,10 @@ describe("useItemTemplates", () => {
 
   it("deleted item templates query returns data on success", async () => {
     const deleted = [{ id: "3", name: "Old Template", description: null }];
-    (client.GET as Mock).mockResolvedValue({ data: { data: deleted, total: 1, offset: 0, limit: 50 }, error: undefined });
+    (client.GET as Mock).mockResolvedValue({
+      data: { data: deleted, total: 1, offset: 0, limit: 50 },
+      error: undefined,
+    });
 
     const { result } = renderHook(() => useDeletedItemTemplates(), {
       wrapper: createWrapper(),
@@ -180,16 +173,19 @@ describe("useItemTemplates", () => {
 
     await result.current.mutateAsync("1");
 
-    expect(client.POST).toHaveBeenCalledWith("/api/item-templates/{id}/restore", { middleware: expect.any(Array),
-      params: { path: { id: "1" } },
-    });
+    expect(client.POST).toHaveBeenCalledWith(
+      "/api/item-templates/{id}/restore",
+      { middleware: expect.any(Array), params: { path: { id: "1" } } },
+    );
     expect(toast.success).toHaveBeenCalledWith("Item template restored");
   });
 
   // --- Branch coverage: error callbacks ---
 
   it("create mutation does not toast on failure (surfaced by the global handler)", async () => {
-    (client.POST as Mock).mockResolvedValue({ error: { message: "Server error" } });
+    (client.POST as Mock).mockResolvedValue({
+      error: { message: "Server error" },
+    });
 
     const { result } = renderHook(() => useCreateItemTemplate(), {
       wrapper: createWrapper(),
@@ -202,7 +198,9 @@ describe("useItemTemplates", () => {
   });
 
   it("update mutation does not toast on failure (surfaced by the global handler)", async () => {
-    (client.PUT as Mock).mockResolvedValue({ error: { message: "Server error" } });
+    (client.PUT as Mock).mockResolvedValue({
+      error: { message: "Server error" },
+    });
 
     const { result } = renderHook(() => useUpdateItemTemplate(), {
       wrapper: createWrapper(),
@@ -221,7 +219,11 @@ describe("useItemTemplates", () => {
     const setQueryDataSpy = vi.spyOn(queryClient, "setQueryData");
 
     function Wrapper({ children }: { children: ReactNode }) {
-      return createElement(QueryClientProvider, { client: queryClient }, children);
+      return createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        children,
+      );
     }
 
     const templates = [
@@ -233,7 +235,9 @@ describe("useItemTemplates", () => {
     queryClient.setQueryData(cacheKey, cacheValue);
     setQueryDataSpy.mockClear();
 
-    (client.DELETE as Mock).mockResolvedValue({ error: { message: "Server error" } });
+    (client.DELETE as Mock).mockResolvedValue({
+      error: { message: "Server error" },
+    });
 
     const { result } = renderHook(() => useDeleteItemTemplates(), {
       wrapper: Wrapper,
@@ -254,10 +258,17 @@ describe("useItemTemplates", () => {
     });
 
     function Wrapper({ children }: { children: ReactNode }) {
-      return createElement(QueryClientProvider, { client: queryClient }, children);
+      return createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        children,
+      );
     }
 
-    queryClient.setQueryData(["itemTemplates", "list", 0, 50, undefined, undefined], undefined);
+    queryClient.setQueryData(
+      ["itemTemplates", "list", 0, 50, undefined, undefined],
+      undefined,
+    );
 
     (client.DELETE as Mock).mockResolvedValue({ error: undefined });
 
@@ -272,7 +283,9 @@ describe("useItemTemplates", () => {
   });
 
   it("restore mutation does not toast on failure (surfaced by the global handler)", async () => {
-    (client.POST as Mock).mockResolvedValue({ error: { message: "Server error" } });
+    (client.POST as Mock).mockResolvedValue({
+      error: { message: "Server error" },
+    });
 
     const { result } = renderHook(() => useRestoreItemTemplate(), {
       wrapper: createWrapper(),
@@ -285,7 +298,10 @@ describe("useItemTemplates", () => {
   });
 
   it("list query throws on API error", async () => {
-    (client.GET as Mock).mockResolvedValue({ data: undefined, error: { message: "Server error" } });
+    (client.GET as Mock).mockResolvedValue({
+      data: undefined,
+      error: { message: "Server error" },
+    });
 
     const { result } = renderHook(() => useItemTemplates(), {
       wrapper: createWrapper(),
@@ -295,22 +311,33 @@ describe("useItemTemplates", () => {
   });
 
   it("list query passes sort parameters", async () => {
-    (client.GET as Mock).mockResolvedValue({ data: { data: [], total: 0, offset: 0, limit: 50 }, error: undefined });
-
-    const { result } = renderHook(() => useItemTemplates(0, 50, "name", "asc"), {
-      wrapper: createWrapper(),
+    (client.GET as Mock).mockResolvedValue({
+      data: { data: [], total: 0, offset: 0, limit: 50 },
+      error: undefined,
     });
+
+    const { result } = renderHook(
+      () => useItemTemplates(0, 50, "name", "asc"),
+      {
+        wrapper: createWrapper(),
+      },
+    );
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(client.GET).toHaveBeenCalledWith("/api/item-templates", {
       middleware: expect.any(Array),
       signal: expect.any(AbortSignal),
-      params: { query: { offset: 0, limit: 50, sortBy: "name", sortDirection: "asc" } },
+      params: {
+        query: { offset: 0, limit: 50, sortBy: "name", sortDirection: "asc" },
+      },
     });
   });
 
   it("list query returns total of 0 when data is undefined", async () => {
-    (client.GET as Mock).mockResolvedValue({ data: undefined, error: { message: "err" } });
+    (client.GET as Mock).mockResolvedValue({
+      data: undefined,
+      error: { message: "err" },
+    });
 
     const { result } = renderHook(() => useItemTemplates(), {
       wrapper: createWrapper(),
@@ -324,11 +351,25 @@ describe("useItemTemplates", () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false, gcTime: Infinity } },
     });
-    queryClient.setQueryData(["itemTemplates"], { data: [], total: 0, offset: 0, limit: 50 });
-    queryClient.setQueryData(["itemTemplates", "deleted"], { data: [], total: 0, offset: 0, limit: 50 });
+    queryClient.setQueryData(["itemTemplates"], {
+      data: [],
+      total: 0,
+      offset: 0,
+      limit: 50,
+    });
+    queryClient.setQueryData(["itemTemplates", "deleted"], {
+      data: [],
+      total: 0,
+      offset: 0,
+      limit: 50,
+    });
 
     function Wrapper({ children }: { children: ReactNode }) {
-      return createElement(QueryClientProvider, { client: queryClient }, children);
+      return createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        children,
+      );
     }
 
     (client.DELETE as Mock).mockResolvedValue({ error: undefined });
@@ -340,8 +381,12 @@ describe("useItemTemplates", () => {
     result.current.mutate(["1"]);
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(queryClient.getQueryState(["itemTemplates"])?.isInvalidated).toBe(true);
-    expect(queryClient.getQueryState(["itemTemplates", "deleted"])?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(["itemTemplates"])?.isInvalidated).toBe(
+      true,
+    );
+    expect(
+      queryClient.getQueryState(["itemTemplates", "deleted"])?.isInvalidated,
+    ).toBe(true);
   });
 
   // --- useHideItemTemplate ---
@@ -355,7 +400,8 @@ describe("useItemTemplates", () => {
 
     await result.current.mutateAsync("template-1");
 
-    expect(client.DELETE).toHaveBeenCalledWith("/api/item-templates", { middleware: expect.any(Array),
+    expect(client.DELETE).toHaveBeenCalledWith("/api/item-templates", {
+      middleware: expect.any(Array),
       body: ["template-1"],
     });
     expect(toast.success).toHaveBeenCalledWith(
@@ -364,7 +410,9 @@ describe("useItemTemplates", () => {
   });
 
   it("hide mutation does not toast on failure (surfaced by the global handler)", async () => {
-    (client.DELETE as Mock).mockResolvedValue({ error: { message: "Server error" } });
+    (client.DELETE as Mock).mockResolvedValue({
+      error: { message: "Server error" },
+    });
 
     const { result } = renderHook(() => useHideItemTemplate(), {
       wrapper: createWrapper(),
@@ -383,7 +431,11 @@ describe("useItemTemplates", () => {
     const setQueryDataSpy = vi.spyOn(queryClient, "setQueryData");
 
     function Wrapper({ children }: { children: ReactNode }) {
-      return createElement(QueryClientProvider, { client: queryClient }, children);
+      return createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        children,
+      );
     }
 
     const templates = [
@@ -395,7 +447,9 @@ describe("useItemTemplates", () => {
     queryClient.setQueryData(cacheKey, cacheValue);
     setQueryDataSpy.mockClear();
 
-    (client.DELETE as Mock).mockResolvedValue({ error: { message: "Server error" } });
+    (client.DELETE as Mock).mockResolvedValue({
+      error: { message: "Server error" },
+    });
 
     const { result } = renderHook(() => useHideItemTemplate(), {
       wrapper: Wrapper,
@@ -412,11 +466,25 @@ describe("useItemTemplates", () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false, gcTime: Infinity } },
     });
-    queryClient.setQueryData(["itemTemplates"], { data: [], total: 0, offset: 0, limit: 50 });
-    queryClient.setQueryData(["itemTemplates", "deleted"], { data: [], total: 0, offset: 0, limit: 50 });
+    queryClient.setQueryData(["itemTemplates"], {
+      data: [],
+      total: 0,
+      offset: 0,
+      limit: 50,
+    });
+    queryClient.setQueryData(["itemTemplates", "deleted"], {
+      data: [],
+      total: 0,
+      offset: 0,
+      limit: 50,
+    });
 
     function Wrapper({ children }: { children: ReactNode }) {
-      return createElement(QueryClientProvider, { client: queryClient }, children);
+      return createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        children,
+      );
     }
 
     (client.DELETE as Mock).mockResolvedValue({ error: undefined });
@@ -428,7 +496,11 @@ describe("useItemTemplates", () => {
     result.current.mutate("template-1");
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(queryClient.getQueryState(["itemTemplates"])?.isInvalidated).toBe(true);
-    expect(queryClient.getQueryState(["itemTemplates", "deleted"])?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(["itemTemplates"])?.isInvalidated).toBe(
+      true,
+    );
+    expect(
+      queryClient.getQueryState(["itemTemplates", "deleted"])?.isInvalidated,
+    ).toBe(true);
   });
 });

@@ -13,12 +13,6 @@ import {
 } from "@/components/ui/collapsible";
 import type { FilterPreset } from "@/lib/search";
 
-export type FilterFieldType =
-  | "select"
-  | "dateRange"
-  | "numberRange"
-  | "boolean";
-
 export interface SelectFilterField {
   type: "select";
   key: string;

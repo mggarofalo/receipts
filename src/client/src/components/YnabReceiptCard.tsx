@@ -8,8 +8,8 @@ import {
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { YnabPushButton } from "@/components/YnabPushButton";
-import { YnabMemoSyncContent } from "@/components/YnabMemoSyncCard";
-import { YnabSplitComparisonContent } from "@/components/YnabSplitComparisonCard";
+import { YnabMemoSyncContent } from "@/components/YnabMemoSyncContent";
+import { YnabSplitComparisonContent } from "@/components/YnabSplitComparisonContent";
 
 interface YnabReceiptCardProps {
   receiptId: string;
@@ -46,30 +46,30 @@ export function YnabReceiptCard({
       </CardHeader>
       <CardContent>
         <fieldset disabled={isUnavailable} className="min-w-0 space-y-5">
-        <section aria-labelledby="ynab-transaction-sync-heading">
-          <div className="mb-3 space-y-1">
-            <h3
-              id="ynab-transaction-sync-heading"
-              className="text-base font-semibold"
-            >
-              Transaction sync
-            </h3>
-            <p className="text-sm text-muted-foreground">
-              Push this receipt’s transactions to YNAB with category splits.
-            </p>
-          </div>
-          <YnabPushButton
-            receiptId={receiptId}
-            hasTransactions={hasTransactions}
-            persistedSyncStatus={persistedSyncStatus}
-            syncStatusUnavailable={syncStatusUnavailable}
-          />
-        </section>
+          <section aria-labelledby="ynab-transaction-sync-heading">
+            <div className="mb-3 space-y-1">
+              <h3
+                id="ynab-transaction-sync-heading"
+                className="text-base font-semibold"
+              >
+                Transaction sync
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                Push this receipt’s transactions to YNAB with category splits.
+              </p>
+            </div>
+            <YnabPushButton
+              receiptId={receiptId}
+              hasTransactions={hasTransactions}
+              persistedSyncStatus={persistedSyncStatus}
+              syncStatusUnavailable={syncStatusUnavailable}
+            />
+          </section>
 
-        <Separator />
-        <YnabMemoSyncContent receiptId={receiptId} embedded disabled={isUnavailable} />
-        <Separator />
-        <YnabSplitComparisonContent receiptId={receiptId} embedded />
+          <Separator />
+          <YnabMemoSyncContent receiptId={receiptId} disabled={isUnavailable} />
+          <Separator />
+          <YnabSplitComparisonContent receiptId={receiptId} />
         </fieldset>
       </CardContent>
     </Card>

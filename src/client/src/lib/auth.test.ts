@@ -6,7 +6,6 @@ import {
   setTokens,
   setRefreshedTokens,
   clearTokens,
-  isAuthenticated,
   parseJwtPayload,
   addTokenRefreshListener,
   notifyTokenRefresh,
@@ -40,20 +39,18 @@ describe("token storage", () => {
     expect(getRefreshToken()).toBeNull();
   });
 
-  it("reports authenticated when access token exists", () => {
-    setTokens("token", "refresh");
-    expect(isAuthenticated()).toBe(true);
-  });
-
-  it("reports not authenticated when no access token", () => {
-    expect(isAuthenticated()).toBe(false);
-  });
-
   it("rotates tokens without replacing the current session", () => {
     setTokens("access", "refresh");
     const session = getSessionVersion();
 
-    expect(setRefreshedTokens(session, "refresh", "renewed-access", "renewed-refresh")).toBe(true);
+    expect(
+      setRefreshedTokens(
+        session,
+        "refresh",
+        "renewed-access",
+        "renewed-refresh",
+      ),
+    ).toBe(true);
 
     expect(getAccessToken()).toBe("renewed-access");
     expect(getRefreshToken()).toBe("renewed-refresh");
@@ -66,7 +63,14 @@ describe("token storage", () => {
     clearTokens();
     setTokens("access", "refresh");
 
-    expect(setRefreshedTokens(oldSession, "refresh", "obsolete-access", "obsolete-refresh")).toBe(false);
+    expect(
+      setRefreshedTokens(
+        oldSession,
+        "refresh",
+        "obsolete-access",
+        "obsolete-refresh",
+      ),
+    ).toBe(false);
 
     expect(getAccessToken()).toBe("access");
     expect(getRefreshToken()).toBe("refresh");
@@ -78,7 +82,14 @@ describe("token storage", () => {
     localStorage.setItem("receipts_access_token", "other-access");
     localStorage.setItem("receipts_refresh_token", "other-refresh");
 
-    expect(setRefreshedTokens(session, "refresh", "obsolete-access", "obsolete-refresh")).toBe(false);
+    expect(
+      setRefreshedTokens(
+        session,
+        "refresh",
+        "obsolete-access",
+        "obsolete-refresh",
+      ),
+    ).toBe(false);
 
     expect(getAccessToken()).toBe("other-access");
     expect(getRefreshToken()).toBe("other-refresh");

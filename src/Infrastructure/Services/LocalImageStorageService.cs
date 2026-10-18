@@ -137,17 +137,6 @@ public class LocalImageStorageService : IImageStorageService
 		return Path.Combine(GetReceiptDirectory(receiptId), fileName);
 	}
 
-	public Task DeleteReceiptImagesAsync(Guid receiptId, CancellationToken ct)
-	{
-		ct.ThrowIfCancellationRequested();
-		string directory = GetReceiptDirectory(receiptId);
-		if (Directory.Exists(directory))
-		{
-			Directory.Delete(directory, recursive: true);
-		}
-		return Task.CompletedTask;
-	}
-
 	public Task<ImageCleanupResult> CleanupUnreferencedAsync(
 		IReadOnlySet<string> referencedPaths,
 		DateTimeOffset createdBefore,

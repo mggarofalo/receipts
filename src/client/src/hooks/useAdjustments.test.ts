@@ -19,33 +19,49 @@ vi.mock("sonner", () => ({
 import client from "@/lib/api-client";
 import { toast } from "sonner";
 import {
-  useAdjustments,
-  useAdjustment,
-  useAdjustmentsByReceiptId,
   useCreateAdjustment,
   useUpdateAdjustment,
   useDeleteAdjustments,
-  useDeletedAdjustments,
-  useRestoreAdjustment,
 } from "./useAdjustments";
 
-function createWrapper(queryClient = new QueryClient({
+function createWrapper(
+  queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: Infinity } },
-  })) {
+  }),
+) {
   return function Wrapper({ children }: { children: ReactNode }) {
-    return createElement(QueryClientProvider, { client: queryClient }, children);
+    return createElement(
+      QueryClientProvider,
+      { client: queryClient },
+      children,
+    );
   };
 }
 
-const cachedAdjustmentDependents = [["receipts"], ["receipts-with-items"], ["trips"], ["reports"], ["ynab", "split-comparison"], ["ynab", "receipt-sync-statuses"], ["adjustments"], ["adjustments", "deleted"]];
+const cachedAdjustmentDependents = [
+  ["receipts"],
+  ["receipts-with-items"],
+  ["trips"],
+  ["reports"],
+  ["ynab", "split-comparison"],
+  ["ynab", "receipt-sync-statuses"],
+  ["adjustments"],
+  ["adjustments", "deleted"],
+];
 
 function expectReceiptDependentsInvalidated(queryClient: QueryClient) {
   expect(queryClient.getQueryState(["receipts"])?.isInvalidated).toBe(true);
-  expect(queryClient.getQueryState(["receipts-with-items"])?.isInvalidated).toBe(true);
+  expect(
+    queryClient.getQueryState(["receipts-with-items"])?.isInvalidated,
+  ).toBe(true);
   expect(queryClient.getQueryState(["trips"])?.isInvalidated).toBe(true);
   expect(queryClient.getQueryState(["reports"])?.isInvalidated).toBe(true);
-  expect(queryClient.getQueryState(["ynab", "split-comparison"])?.isInvalidated).toBe(true);
-  expect(queryClient.getQueryState(["ynab", "receipt-sync-statuses"])?.isInvalidated).toBe(true);
+  expect(
+    queryClient.getQueryState(["ynab", "split-comparison"])?.isInvalidated,
+  ).toBe(true);
+  expect(
+    queryClient.getQueryState(["ynab", "receipt-sync-statuses"])?.isInvalidated,
+  ).toBe(true);
 }
 
 beforeEach(() => {
@@ -53,75 +69,36 @@ beforeEach(() => {
 });
 
 describe("useAdjustments", () => {
-  it("list query returns data on success", async () => {
-    const adjustments = [
-      { id: "1", type: "discount", amount: 5.0, description: "Coupon" },
-    ];
-    (client.GET as Mock).mockResolvedValue({ data: { data: adjustments, total: 1, offset: 0, limit: 50 }, error: undefined });
-
-    const { result } = renderHook(() => useAdjustments(), {
-      wrapper: createWrapper(),
-    });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data).toEqual(adjustments);
-    expect(client.GET).toHaveBeenCalledWith("/api/adjustments", {
-      params: { query: { offset: 0, limit: 50 } },
-    });
-  });
-
-  it("single query is disabled when id is null", () => {
-    const { result } = renderHook(() => useAdjustment(null), {
-      wrapper: createWrapper(),
-    });
-
-    expect(result.current.data).toBeUndefined();
-    expect(result.current.fetchStatus).toBe("idle");
-    expect(client.GET).not.toHaveBeenCalled();
-  });
-
-  it("by-receipt query returns data when receiptId is provided", async () => {
-    const items = [{ id: "1", type: "discount", amount: 5.0 }];
-    (client.GET as Mock).mockResolvedValue({ data: { data: items, total: 1, offset: 0, limit: 200 }, error: undefined });
-
-    const { result } = renderHook(() => useAdjustmentsByReceiptId("r-1"), {
-      wrapper: createWrapper(),
-    });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data).toEqual(items);
-    expect(client.GET).toHaveBeenCalledWith(
-      "/api/adjustments",
-      { params: { query: { receiptId: "r-1", offset: 0, limit: 200 } } },
-    );
-  });
-
-  it("by-receipt query is disabled when receiptId is null", () => {
-    const { result } = renderHook(() => useAdjustmentsByReceiptId(null), {
-      wrapper: createWrapper(),
-    });
-
-    expect(result.current.data).toBeUndefined();
-    expect(result.current.fetchStatus).toBe("idle");
-  });
-
   it("create mutation calls POST and shows toast on success", async () => {
     const body = { type: "surcharge", amount: 2.0, description: "Service fee" };
     const created = { id: "2", ...body };
-    (client.POST as Mock).mockResolvedValue({ data: created, error: undefined });
+    (client.POST as Mock).mockResolvedValue({
+      data: created,
+      error: undefined,
+    });
 
     const queryClient = new QueryClient();
-    for (const key of cachedAdjustmentDependents) queryClient.setQueryData(key, { data: [], total: 0, offset: 0, limit: 50 });
+    for (const key of cachedAdjustmentDependents)
+      queryClient.setQueryData(key, {
+        data: [],
+        total: 0,
+        offset: 0,
+        limit: 50,
+      });
     const { result } = renderHook(() => useCreateAdjustment(), {
       wrapper: createWrapper(queryClient),
     });
 
     await result.current.mutateAsync({ receiptId: "r-1", body });
 
-    expect(client.POST).toHaveBeenCalledWith("/api/receipts/{receiptId}/adjustments", { middleware: expect.any(Array),
-      params: { path: { receiptId: "r-1" } },
-      body,
-    });
+    expect(client.POST).toHaveBeenCalledWith(
+      "/api/receipts/{receiptId}/adjustments",
+      {
+        middleware: expect.any(Array),
+        params: { path: { receiptId: "r-1" } },
+        body,
+      },
+    );
     expect(toast.success).toHaveBeenCalledWith("Adjustment created");
     expectReceiptDependentsInvalidated(queryClient);
   });
@@ -136,14 +113,21 @@ describe("useAdjustments", () => {
     (client.PUT as Mock).mockResolvedValue({ error: undefined });
 
     const queryClient = new QueryClient();
-    for (const key of cachedAdjustmentDependents) queryClient.setQueryData(key, { data: [], total: 0, offset: 0, limit: 50 });
+    for (const key of cachedAdjustmentDependents)
+      queryClient.setQueryData(key, {
+        data: [],
+        total: 0,
+        offset: 0,
+        limit: 50,
+      });
     const { result } = renderHook(() => useUpdateAdjustment(), {
       wrapper: createWrapper(queryClient),
     });
 
     await result.current.mutateAsync({ body });
 
-    expect(client.PUT).toHaveBeenCalledWith("/api/adjustments/{id}", { middleware: expect.any(Array),
+    expect(client.PUT).toHaveBeenCalledWith("/api/adjustments/{id}", {
+      middleware: expect.any(Array),
       params: { path: { id: body.id } },
       body,
     });
@@ -160,62 +144,37 @@ describe("useAdjustments", () => {
 
     await result.current.mutateAsync(["1"]);
 
-    expect(client.DELETE).toHaveBeenCalledWith("/api/adjustments", { middleware: expect.any(Array),
+    expect(client.DELETE).toHaveBeenCalledWith("/api/adjustments", {
+      middleware: expect.any(Array),
       body: ["1"],
     });
     expect(toast.success).toHaveBeenCalledWith("Adjustment(s) deleted");
   });
 
-  it("deleted adjustments query returns data on success", async () => {
-    const deleted = [{ id: "3", type: "discount", amount: 1.0 }];
-    (client.GET as Mock).mockResolvedValue({ data: { data: deleted, total: 1, offset: 0, limit: 50 }, error: undefined });
-
-    const { result } = renderHook(() => useDeletedAdjustments(), {
-      wrapper: createWrapper(),
-    });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data).toEqual(deleted);
-    expect(client.GET).toHaveBeenCalledWith("/api/adjustments/deleted", {
-      params: { query: { offset: 0, limit: 50 } },
-    });
-  });
-
-  it("restore mutation calls POST and shows toast on success", async () => {
-    (client.POST as Mock).mockResolvedValue({ error: undefined });
-
-    const queryClient = new QueryClient();
-    for (const key of cachedAdjustmentDependents) queryClient.setQueryData(key, { data: [], total: 0, offset: 0, limit: 50 });
-    const { result } = renderHook(() => useRestoreAdjustment(), {
-      wrapper: createWrapper(queryClient),
-    });
-
-    await result.current.mutateAsync("1");
-
-    expect(client.POST).toHaveBeenCalledWith("/api/adjustments/{id}/restore", { middleware: expect.any(Array),
-      params: { path: { id: "1" } },
-    });
-    expect(toast.success).toHaveBeenCalledWith("Adjustment restored");
-    expectReceiptDependentsInvalidated(queryClient);
-  });
-
   // --- Branch coverage: error callbacks ---
 
   it("create mutation does not toast on failure (surfaced by the global handler)", async () => {
-    (client.POST as Mock).mockResolvedValue({ error: { message: "Server error" } });
+    (client.POST as Mock).mockResolvedValue({
+      error: { message: "Server error" },
+    });
 
     const { result } = renderHook(() => useCreateAdjustment(), {
       wrapper: createWrapper(),
     });
 
-    result.current.mutate({ receiptId: "r-1", body: { type: "discount", amount: 5.0 } });
+    result.current.mutate({
+      receiptId: "r-1",
+      body: { type: "discount", amount: 5.0 },
+    });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(toast.error).not.toHaveBeenCalled();
   });
 
   it("update mutation does not toast on failure (surfaced by the global handler)", async () => {
-    (client.PUT as Mock).mockResolvedValue({ error: { message: "Server error" } });
+    (client.PUT as Mock).mockResolvedValue({
+      error: { message: "Server error" },
+    });
 
     const { result } = renderHook(() => useUpdateAdjustment(), {
       wrapper: createWrapper(),
@@ -234,7 +193,11 @@ describe("useAdjustments", () => {
     const setQueryDataSpy = vi.spyOn(queryClient, "setQueryData");
 
     function Wrapper({ children }: { children: ReactNode }) {
-      return createElement(QueryClientProvider, { client: queryClient }, children);
+      return createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        children,
+      );
     }
 
     const adjustments = [
@@ -246,7 +209,9 @@ describe("useAdjustments", () => {
     queryClient.setQueryData(cacheKey, cacheValue);
     setQueryDataSpy.mockClear();
 
-    (client.DELETE as Mock).mockResolvedValue({ error: { message: "Server error" } });
+    (client.DELETE as Mock).mockResolvedValue({
+      error: { message: "Server error" },
+    });
 
     const { result } = renderHook(() => useDeleteAdjustments(), {
       wrapper: Wrapper,
@@ -267,10 +232,17 @@ describe("useAdjustments", () => {
     });
 
     function Wrapper({ children }: { children: ReactNode }) {
-      return createElement(QueryClientProvider, { client: queryClient }, children);
+      return createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        children,
+      );
     }
 
-    queryClient.setQueryData(["adjustments", "list", 0, 50, undefined, undefined], undefined);
+    queryClient.setQueryData(
+      ["adjustments", "list", 0, 50, undefined, undefined],
+      undefined,
+    );
 
     (client.DELETE as Mock).mockResolvedValue({ error: undefined });
 
@@ -284,61 +256,24 @@ describe("useAdjustments", () => {
     expect(toast.success).toHaveBeenCalledWith("Adjustment(s) deleted");
   });
 
-  it("restore mutation does not toast on failure (surfaced by the global handler)", async () => {
-    (client.POST as Mock).mockResolvedValue({ error: { message: "Server error" } });
-
-    const { result } = renderHook(() => useRestoreAdjustment(), {
-      wrapper: createWrapper(),
-    });
-
-    result.current.mutate("1");
-
-    await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(toast.error).not.toHaveBeenCalled();
-  });
-
-  it("list query throws on API error", async () => {
-    (client.GET as Mock).mockResolvedValue({ data: undefined, error: { message: "Server error" } });
-
-    const { result } = renderHook(() => useAdjustments(), {
-      wrapper: createWrapper(),
-    });
-
-    await waitFor(() => expect(result.current.isError).toBe(true));
-  });
-
-  it("list query passes sort parameters", async () => {
-    (client.GET as Mock).mockResolvedValue({ data: { data: [], total: 0, offset: 0, limit: 50 }, error: undefined });
-
-    const { result } = renderHook(() => useAdjustments(0, 50, "amount", "asc"), {
-      wrapper: createWrapper(),
-    });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(client.GET).toHaveBeenCalledWith("/api/adjustments", {
-      params: { query: { offset: 0, limit: 50, sortBy: "amount", sortDirection: "asc" } },
-    });
-  });
-
-  it("list query returns total of 0 when data is undefined", async () => {
-    (client.GET as Mock).mockResolvedValue({ data: undefined, error: { message: "err" } });
-
-    const { result } = renderHook(() => useAdjustments(), {
-      wrapper: createWrapper(),
-    });
-
-    await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(result.current.total).toBe(0);
-  });
-
   it("delete mutation invalidates adjustments, deleted, receipts-with-items, and trips on settled", async () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false, gcTime: Infinity } },
     });
-    for (const key of cachedAdjustmentDependents) queryClient.setQueryData(key, { data: [], total: 0, offset: 0, limit: 50 });
+    for (const key of cachedAdjustmentDependents)
+      queryClient.setQueryData(key, {
+        data: [],
+        total: 0,
+        offset: 0,
+        limit: 50,
+      });
 
     function Wrapper({ children }: { children: ReactNode }) {
-      return createElement(QueryClientProvider, { client: queryClient }, children);
+      return createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        children,
+      );
     }
 
     (client.DELETE as Mock).mockResolvedValue({ error: undefined });
@@ -350,9 +285,15 @@ describe("useAdjustments", () => {
     result.current.mutate(["1"]);
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(queryClient.getQueryState(["adjustments"])?.isInvalidated).toBe(true);
-    expect(queryClient.getQueryState(["adjustments", "deleted"])?.isInvalidated).toBe(true);
-    expect(queryClient.getQueryState(["receipts-with-items"])?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(["adjustments"])?.isInvalidated).toBe(
+      true,
+    );
+    expect(
+      queryClient.getQueryState(["adjustments", "deleted"])?.isInvalidated,
+    ).toBe(true);
+    expect(
+      queryClient.getQueryState(["receipts-with-items"])?.isInvalidated,
+    ).toBe(true);
     expect(queryClient.getQueryState(["trips"])?.isInvalidated).toBe(true);
     expectReceiptDependentsInvalidated(queryClient);
   });

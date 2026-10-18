@@ -7,22 +7,57 @@ import client from "@/lib/api-client";
 import { localErrorPolicy, toastErrorPolicy } from "@/lib/request-error-policy";
 import { toast } from "sonner";
 
-export function useAccounts(offset = 0, limit = 50, sortBy?: string | null, sortDirection?: string | null, isActive?: boolean | null, options: { enabled?: boolean; q?: string } = {}) {
+export function useAccounts(
+  offset = 0,
+  limit = 50,
+  sortBy?: string | null,
+  sortDirection?: string | null,
+  isActive?: boolean | null,
+  options: { enabled?: boolean; q?: string } = {},
+) {
   const { enabled = true, q } = options;
   const search = q?.trim() || undefined;
   const query = useQuery({
-    queryKey: [...queryKeys.accounts, "list", offset, limit, sortBy, sortDirection, isActive, search],
+    queryKey: [
+      ...queryKeys.accounts,
+      "list",
+      offset,
+      limit,
+      sortBy,
+      sortDirection,
+      isActive,
+      search,
+    ],
     enabled,
     queryFn: async () => {
       const { data, error } = await client.GET("/api/accounts", {
-        params: { query: { offset, limit, sortBy: sortBy ?? undefined, sortDirection: (sortDirection ?? undefined) as "asc" | "desc" | undefined, isActive: isActive ?? undefined, q: search } },
+        params: {
+          query: {
+            offset,
+            limit,
+            sortBy: sortBy ?? undefined,
+            sortDirection: (sortDirection ?? undefined) as
+              | "asc"
+              | "desc"
+              | undefined,
+            isActive: isActive ?? undefined,
+            q: search,
+          },
+        },
       });
       if (error) throw error;
       return data;
     },
   });
   const base = useStableQuery(query);
-  return useMemo(() => ({ ...base, data: query.data?.data, total: Number(query.data?.total ?? 0) }), [base, query.data]);
+  return useMemo(
+    () => ({
+      ...base,
+      data: query.data?.data,
+      total: Number(query.data?.total ?? 0),
+    }),
+    [base, query.data],
+  );
 }
 
 /** Fetches the complete account list for pickers and entity lookups. */
@@ -62,20 +97,6 @@ export function useAllAccounts(isActive?: boolean | null) {
   });
 }
 
-export function useAccount(id: string | null) {
-  return useQuery({
-    queryKey: [...queryKeys.accounts, id],
-    enabled: !!id,
-    queryFn: async () => {
-      const { data, error } = await client.GET("/api/accounts/{id}", {
-        params: { path: { id: id! } },
-      });
-      if (error) throw error;
-      return data;
-    },
-  });
-}
-
 export function useAccountCards(accountId: string | null) {
   // Keyed under "cards" so mutations in useCards (useUpdateCard, useDeleteCard,
   // useMergeCards) that invalidate ["cards"] also invalidate these per-account
@@ -111,11 +132,21 @@ export function useAccountCards(accountId: string | null) {
 export function useAccountsCards(accountIds: string[]) {
   const queryClient = useQueryClient();
   const accountIdsKey = JSON.stringify(accountIds);
-  const refetch = useCallback(() => Promise.all(
-    (JSON.parse(accountIdsKey) as string[]).map((id) => queryClient.refetchQueries({
-      queryKey: [...queryKeys.cards, "byAccount", id], exact: true,
-    }, { cancelRefetch: false })),
-  ), [queryClient, accountIdsKey]);
+  const refetch = useCallback(
+    () =>
+      Promise.all(
+        (JSON.parse(accountIdsKey) as string[]).map((id) =>
+          queryClient.refetchQueries(
+            {
+              queryKey: [...queryKeys.cards, "byAccount", id],
+              exact: true,
+            },
+            { cancelRefetch: false },
+          ),
+        ),
+      ),
+    [queryClient, accountIdsKey],
+  );
   const results = useQueries({
     queries: accountIds.map((accountId) => ({
       ...localErrorPolicy.query,
@@ -140,11 +171,17 @@ export function useAccountsCards(accountIds: string[]) {
   // useQueries hands back a fresh array (and fresh result objects) every render, so
   // memoising on `results` would rebuild the map each time and defeat every downstream
   // memo. Track every projected field while retaining stable identity on unchanged data.
-  const signature = JSON.stringify(accountIds.map((id, i) => [
-    id,
-    results[i]?.data !== undefined,
-    (results[i]?.data ?? []).map((card) => [card.id, card.name, card.cardCode]),
-  ]));
+  const signature = JSON.stringify(
+    accountIds.map((id, i) => [
+      id,
+      results[i]?.data !== undefined,
+      (results[i]?.data ?? []).map((card) => [
+        card.id,
+        card.name,
+        card.cardCode,
+      ]),
+    ]),
+  );
 
   const cardsByAccountId = useMemo(() => {
     const map = new Map<string, CardSummary[]>();
@@ -153,7 +190,12 @@ export function useAccountsCards(accountIds: string[]) {
       if (cards) {
         map.set(
           accountId,
-          cards.map((c) => ({ id: c.id, name: c.name, cardCode: c.cardCode, accountId })),
+          cards.map((c) => ({
+            id: c.id,
+            name: c.name,
+            cardCode: c.cardCode,
+            accountId,
+          })),
         );
       }
     });
@@ -162,7 +204,14 @@ export function useAccountsCards(accountIds: string[]) {
   }, [signature]);
 
   return useMemo(
-    () => ({ cardsByAccountId, isLoading, isError, isFetching, isSuccess, refetch }),
+    () => ({
+      cardsByAccountId,
+      isLoading,
+      isError,
+      isFetching,
+      isSuccess,
+      refetch,
+    }),
     [cardsByAccountId, isLoading, isError, isFetching, isSuccess, refetch],
   );
 }
@@ -179,11 +228,11 @@ export function useCreateAccount() {
   const queryClient = useQueryClient();
   return useSessionMutation({
     ...toastErrorPolicy.mutation,
-    mutationFn: async (body: {
-      name: string;
-      isActive: boolean;
-    }) => {
-      const { data, error } = await client.POST("/api/accounts", { body, ...toastErrorPolicy.request });
+    mutationFn: async (body: { name: string; isActive: boolean }) => {
+      const { data, error } = await client.POST("/api/accounts", {
+        body,
+        ...toastErrorPolicy.request,
+      });
       if (error) throw error;
       return data;
     },
@@ -243,9 +292,15 @@ export function useDeleteAccount() {
       toast.success("Account deleted");
     },
     onError: (error: unknown) => {
-      const err = error as { conflict?: boolean; detail?: string; cardCount?: number };
+      const err = error as {
+        conflict?: boolean;
+        detail?: string;
+        cardCount?: number;
+      };
       if (err.conflict) {
-        toast.error(err.detail ?? "Cannot delete — cards reference this account");
+        toast.error(
+          err.detail ?? "Cannot delete — cards reference this account",
+        );
       }
       // Non-conflict failures fall through to the global error handler.
     },

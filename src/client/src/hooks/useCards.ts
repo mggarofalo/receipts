@@ -12,22 +12,57 @@ import type { components } from "@/generated/api";
 
 // Note: Cards are hard-delete entities (no soft-delete/restore).
 
-export function useCards(offset = 0, limit = 50, sortBy?: string | null, sortDirection?: string | null, isActive?: boolean | null, options: { enabled?: boolean; q?: string } = {}) {
+export function useCards(
+  offset = 0,
+  limit = 50,
+  sortBy?: string | null,
+  sortDirection?: string | null,
+  isActive?: boolean | null,
+  options: { enabled?: boolean; q?: string } = {},
+) {
   const { enabled = true, q } = options;
   const search = q?.trim() || undefined;
   const query = useQuery({
-    queryKey: [...queryKeys.cards, "list", offset, limit, sortBy, sortDirection, isActive, search],
+    queryKey: [
+      ...queryKeys.cards,
+      "list",
+      offset,
+      limit,
+      sortBy,
+      sortDirection,
+      isActive,
+      search,
+    ],
     enabled,
     queryFn: async () => {
       const { data, error } = await client.GET("/api/cards", {
-        params: { query: { offset, limit, sortBy: sortBy ?? undefined, sortDirection: (sortDirection ?? undefined) as "asc" | "desc" | undefined, isActive: isActive ?? undefined, q: search } },
+        params: {
+          query: {
+            offset,
+            limit,
+            sortBy: sortBy ?? undefined,
+            sortDirection: (sortDirection ?? undefined) as
+              | "asc"
+              | "desc"
+              | undefined,
+            isActive: isActive ?? undefined,
+            q: search,
+          },
+        },
       });
       if (error) throw error;
       return data;
     },
   });
   const base = useStableQuery(query);
-  return useMemo(() => ({ ...base, data: query.data?.data, total: Number(query.data?.total ?? 0) }), [base, query.data]);
+  return useMemo(
+    () => ({
+      ...base,
+      data: query.data?.data,
+      total: Number(query.data?.total ?? 0),
+    }),
+    [base, query.data],
+  );
 }
 
 /** Fetches the complete card list for pickers and entity lookups. */
@@ -67,20 +102,6 @@ export function useAllCards(isActive?: boolean | null) {
   });
 }
 
-export function useCard(id: string | null) {
-  return useQuery({
-    queryKey: [...queryKeys.cards, id],
-    enabled: !!id,
-    queryFn: async () => {
-      const { data, error } = await client.GET("/api/cards/{id}", {
-        params: { path: { id: id! } },
-      });
-      if (error) throw error;
-      return data;
-    },
-  });
-}
-
 export function useCreateCard() {
   const queryClient = useQueryClient();
   return useSessionMutation({
@@ -91,7 +112,10 @@ export function useCreateCard() {
       isActive: boolean;
       accountId: string;
     }) => {
-      const { data, error } = await client.POST("/api/cards", { body, ...toastErrorPolicy.request });
+      const { data, error } = await client.POST("/api/cards", {
+        body,
+        ...toastErrorPolicy.request,
+      });
       if (error) throw error;
       return data;
     },
@@ -153,9 +177,15 @@ export function useDeleteCard() {
       toast.success("Card deleted");
     },
     onError: (error: unknown) => {
-      const err = error as { conflict?: boolean; detail?: string; transactionCount?: number };
+      const err = error as {
+        conflict?: boolean;
+        detail?: string;
+        transactionCount?: number;
+      };
       if (err.conflict) {
-        toast.error(err.detail ?? "Cannot delete — transactions reference this card");
+        toast.error(
+          err.detail ?? "Cannot delete — transactions reference this card",
+        );
       }
       // Non-conflict failures fall through to the global error handler.
     },
@@ -211,10 +241,13 @@ export function isNoOpMerge(impact: MergeCardsImpact): boolean {
  * like something went wrong.
  */
 export function describeMergeImpact(impact: MergeCardsImpact): string {
-  const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
+  const plural = (n: number, noun: string) =>
+    `${n} ${noun}${n === 1 ? "" : "s"}`;
   const parts = [`${plural(impact.cardsMoved, "card")} moved`];
   if (impact.transactionsRepointed > 0) {
-    parts.push(`${plural(impact.transactionsRepointed, "transaction")} repointed`);
+    parts.push(
+      `${plural(impact.transactionsRepointed, "transaction")} repointed`,
+    );
   }
   if (impact.accountsRemoved > 0) {
     parts.push(`${plural(impact.accountsRemoved, "empty account")} removed`);
@@ -222,7 +255,8 @@ export function describeMergeImpact(impact: MergeCardsImpact): string {
   return `${parts.join(", ")}.`;
 }
 
-export type MergeCardsPreview = components["schemas"]["MergeCardsPreviewResponse"];
+export type MergeCardsPreview =
+  components["schemas"]["MergeCardsPreviewResponse"];
 
 /**
  * A merge to preview. `targetAccountId` may be null, meaning "an account that does not
@@ -245,7 +279,9 @@ export interface MergeCardsPreviewInput {
  * The dialog owns preview failures inline. Submission stays disabled until an
  * accepted preview is available; the merge itself still validates live data.
  */
-export function mergeCardsPreviewQueryOptions(input: MergeCardsPreviewInput | null) {
+export function mergeCardsPreviewQueryOptions(
+  input: MergeCardsPreviewInput | null,
+) {
   return queryOptions({
     ...localErrorPolicy.query,
     queryKey: [
@@ -264,15 +300,19 @@ export function mergeCardsPreviewQueryOptions(input: MergeCardsPreviewInput | nu
     staleTime: 0,
     retry: false,
     queryFn: async ({ signal }): Promise<MergeCardsPreview | null> => {
-      const { data, error, response } = await client.POST("/api/cards/merge/preview", {
-        signal,
-        ...localErrorPolicy.request,
-        body: {
-          targetAccountId: input!.targetAccountId ?? null,
-          sourceCardIds: input!.sourceCardIds,
-          ynabMappingWinnerAccountId: input!.ynabMappingWinnerAccountId ?? null,
+      const { data, error, response } = await client.POST(
+        "/api/cards/merge/preview",
+        {
+          signal,
+          ...localErrorPolicy.request,
+          body: {
+            targetAccountId: input!.targetAccountId ?? null,
+            sourceCardIds: input!.sourceCardIds,
+            ynabMappingWinnerAccountId:
+              input!.ynabMappingWinnerAccountId ?? null,
+          },
         },
-      });
+      );
       if (!response.ok) throw toApiError(response.status, error);
       return data ?? null;
     },
@@ -285,7 +325,11 @@ export function useMergeCardsPreview(input: MergeCardsPreviewInput | null) {
 
 export function useMergeCards() {
   const queryClient = useQueryClient();
-  return useSessionMutation<MergeCardsImpact, MergeCardsConflict | unknown, MergeCardsInput>({
+  return useSessionMutation<
+    MergeCardsImpact,
+    MergeCardsConflict | unknown,
+    MergeCardsInput
+  >({
     ...localErrorPolicy.mutation,
     mutationFn: async (input) => {
       const { data, error, response } = await client.POST("/api/cards/merge", {
@@ -312,7 +356,10 @@ export function useMergeCards() {
       // dereference below and throw a TypeError, which the global handler
       // would misreport as a network failure.
       if (response.status === 409 && error) {
-        const body = error as unknown as { message: string; conflicts: YnabMappingConflict[] };
+        const body = error as unknown as {
+          message: string;
+          conflicts: YnabMappingConflict[];
+        };
         const conflict: MergeCardsConflict = {
           conflict: true,
           message: body.message,
@@ -341,7 +388,9 @@ export function useMergeCards() {
       }
 
       invalidateDomainChange(queryClient, "card");
-      toast.success("Cards merged", { description: describeMergeImpact(impact) });
+      toast.success("Cards merged", {
+        description: describeMergeImpact(impact),
+      });
     },
     onError: (error: unknown) => {
       const err = error as Partial<MergeCardsConflict>;
@@ -354,7 +403,9 @@ export function useMergeCards() {
   });
 }
 
-export function isMergeCardsConflict(error: unknown): error is MergeCardsConflict {
+export function isMergeCardsConflict(
+  error: unknown,
+): error is MergeCardsConflict {
   return (
     typeof error === "object" &&
     error !== null &&

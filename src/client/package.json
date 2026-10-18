@@ -26,6 +26,8 @@
     "prebuild": "npm run generate:types:check",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --noEmit",
+    "audit:dead-code": "node scripts/audit-dead-code.mjs --check",
+    "test:dead-code": "node --test scripts/audit-dead-code.test.mjs",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

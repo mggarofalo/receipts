@@ -27,7 +27,7 @@ import {
   getRequestErrorPresentation,
 } from "@/lib/request-error-policy";
 import { mockReceiptListItemResponse } from "@/test/mock-api";
-import { YnabMemoSyncCard } from "./YnabMemoSyncCard";
+import { YnabMemoSyncContent } from "./YnabMemoSyncContent";
 import { YnabPushButton } from "./YnabPushButton";
 import { YnabBulkSyncCard } from "./YnabBulkSyncCard";
 import Receipts from "@/pages/Receipts";
@@ -360,7 +360,7 @@ const memoModes = [
     name: "single",
     button: "Sync Memos",
     path: "sync-memos",
-    component: <YnabMemoSyncCard receiptId={receiptId} />,
+    component: <YnabMemoSyncContent receiptId={receiptId} />,
   },
   {
     name: "bulk",
@@ -467,7 +467,7 @@ async function openCandidate(candidateCount = 1) {
     });
   }
   results = [ambiguous];
-  renderAction(<YnabMemoSyncCard receiptId={receiptId} />);
+  renderAction(<YnabMemoSyncContent receiptId={receiptId} />);
   await clickAction("Sync Memos");
   await settled();
   await clickAction("Resolve");
@@ -662,7 +662,7 @@ it.each([
     path: "sync-memos",
     status: 400,
     button: "Sync Memos",
-    component: <YnabMemoSyncCard receiptId={receiptId} />,
+    component: <YnabMemoSyncContent receiptId={receiptId} />,
   },
   {
     path: "push-transactions",

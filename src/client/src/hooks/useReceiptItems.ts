@@ -7,22 +7,51 @@ import { useSessionMutation } from "@/hooks/useSessionMutation";
 import client from "@/lib/api-client";
 import { toast } from "sonner";
 
-export function useReceiptItems(offset = 0, limit = 50, sortBy?: string | null, sortDirection?: string | null, q?: string | null, options: { enabled?: boolean } = {}) {
+export function useReceiptItems(
+  offset = 0,
+  limit = 50,
+  sortBy?: string | null,
+  sortDirection?: string | null,
+  q?: string | null,
+  options: { enabled?: boolean } = {},
+) {
   const { enabled = true } = options;
   const trimmedQ = q?.trim() || undefined;
   const query = useQuery({
-    queryKey: [...queryKeys.receiptItems, "list", offset, limit, sortBy, sortDirection, trimmedQ],
+    queryKey: [
+      ...queryKeys.receiptItems,
+      "list",
+      offset,
+      limit,
+      sortBy,
+      sortDirection,
+      trimmedQ,
+    ],
     enabled,
     queryFn: async () => {
       const { data, error } = await client.GET("/api/receipt-items", {
-        params: { query: { offset, limit, sortBy: sortBy ?? undefined, sortDirection: (sortDirection ?? undefined) as "asc" | "desc" | undefined, q: trimmedQ } },
+        params: {
+          query: {
+            offset,
+            limit,
+            sortBy: sortBy ?? undefined,
+            sortDirection: (sortDirection ?? undefined) as
+              | "asc"
+              | "desc"
+              | undefined,
+            q: trimmedQ,
+          },
+        },
       });
       if (error) throw error;
       return data;
     },
   });
   const base = useStableQuery(query);
-  return useMemo(() => ({ ...base, data: query.data?.data, total: query.data?.total ?? 0 }), [base, query.data]);
+  return useMemo(
+    () => ({ ...base, data: query.data?.data, total: query.data?.total ?? 0 }),
+    [base, query.data],
+  );
 }
 
 /**
@@ -39,12 +68,22 @@ export function useLinkedReceiptItems(
   limit = 50,
 ) {
   const query = useQuery({
-    queryKey: [...queryKeys.receiptItems, "by-normalized-description", normalizedDescriptionId, offset, limit],
+    queryKey: [
+      ...queryKeys.receiptItems,
+      "by-normalized-description",
+      normalizedDescriptionId,
+      offset,
+      limit,
+    ],
     enabled: !!normalizedDescriptionId,
     queryFn: async () => {
       const { data, error } = await client.GET("/api/receipt-items", {
         params: {
-          query: { normalizedDescriptionId: normalizedDescriptionId!, offset, limit },
+          query: {
+            normalizedDescriptionId: normalizedDescriptionId!,
+            offset,
+            limit,
+          },
         },
       });
       if (error) throw error;
@@ -56,36 +95,6 @@ export function useLinkedReceiptItems(
     () => ({ ...base, data: query.data?.data, total: query.data?.total ?? 0 }),
     [base, query.data],
   );
-}
-
-export function useReceiptItem(id: string | null) {
-  return useQuery({
-    queryKey: [...queryKeys.receiptItems, id],
-    enabled: !!id,
-    queryFn: async () => {
-      const { data, error } = await client.GET("/api/receipt-items/{id}", {
-        params: { path: { id: id! } },
-      });
-      if (error) throw error;
-      return data;
-    },
-  });
-}
-
-export function useReceiptItemsByReceiptId(receiptId: string | null, offset = 0, limit = 200, sortBy?: string | null, sortDirection?: string | null) {
-  const query = useQuery({
-    queryKey: [...queryKeys.receiptItems, "by-receipt", receiptId, offset, limit, sortBy, sortDirection],
-    enabled: !!receiptId,
-    queryFn: async () => {
-      const { data, error } = await client.GET("/api/receipt-items", {
-        params: { query: { receiptId: receiptId!, offset, limit, sortBy: sortBy ?? undefined, sortDirection: (sortDirection ?? undefined) as "asc" | "desc" | undefined } },
-      });
-      if (error) throw error;
-      return data;
-    },
-  });
-  const base = useStableQuery(query);
-  return useMemo(() => ({ ...base, data: query.data?.data, total: query.data?.total ?? 0 }), [base, query.data]);
 }
 
 export function useCreateReceiptItem() {
@@ -118,37 +127,6 @@ export function useCreateReceiptItem() {
     onSuccess: () => {
       invalidateDomainChange(queryClient, "receipt-item");
       toast.success("Receipt item created");
-    },
-  });
-}
-
-export function useCreateReceiptItemsBatch() {
-  const queryClient = useQueryClient();
-  return useSessionMutation({
-    ...toastErrorPolicy.mutation,
-    mutationFn: async ({
-      receiptId,
-      body,
-    }: {
-      receiptId: string;
-      body: {
-        receiptItemCode: string;
-        description: string;
-        quantity: number;
-        unitPrice: number;
-        category: string;
-        subcategory: string;
-      }[];
-    }) => {
-      const { data, error } = await client.POST(
-        "/api/receipts/{receiptId}/receipt-items/batch",
-        { ...toastErrorPolicy.request, params: { path: { receiptId } }, body },
-      );
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: () => {
-      invalidateDomainChange(queryClient, "receipt-item");
     },
   });
 }
@@ -196,14 +174,35 @@ export function useDeleteReceiptItems() {
       if (error) throw error;
     },
     onMutate: async (ids) => {
-      await queryClient.cancelQueries({ queryKey: [...queryKeys.receiptItems] });
-      const previous = queryClient.getQueriesData<{ data: { id: string }[]; total: number }>({ queryKey: [...queryKeys.receiptItems, "list"] });
+      await queryClient.cancelQueries({
+        queryKey: [...queryKeys.receiptItems],
+      });
+      const previous = queryClient.getQueriesData<{
+        data: { id: string }[];
+        total: number;
+      }>({ queryKey: [...queryKeys.receiptItems, "list"] });
       for (const [key] of previous) {
-        queryClient.setQueryData(key, (old: { data: { id: string }[]; total: number; offset: number; limit: number } | undefined) => {
-          if (!old?.data) return old;
-          const filtered = old.data.filter((item) => !ids.includes(item.id));
-          return { ...old, data: filtered, total: old.total - (old.data.length - filtered.length) };
-        });
+        queryClient.setQueryData(
+          key,
+          (
+            old:
+              | {
+                  data: { id: string }[];
+                  total: number;
+                  offset: number;
+                  limit: number;
+                }
+              | undefined,
+          ) => {
+            if (!old?.data) return old;
+            const filtered = old.data.filter((item) => !ids.includes(item.id));
+            return {
+              ...old,
+              data: filtered,
+              total: old.total - (old.data.length - filtered.length),
+            };
+          },
+        );
       }
       return { previous };
     },
@@ -221,19 +220,44 @@ export function useDeleteReceiptItems() {
   });
 }
 
-export function useDeletedReceiptItems(offset = 0, limit = 50, sortBy?: string | null, sortDirection?: string | null) {
+export function useDeletedReceiptItems(
+  offset = 0,
+  limit = 50,
+  sortBy?: string | null,
+  sortDirection?: string | null,
+) {
   const query = useQuery({
-    queryKey: [...queryKeys.receiptItems, "deleted", offset, limit, sortBy, sortDirection],
+    queryKey: [
+      ...queryKeys.receiptItems,
+      "deleted",
+      offset,
+      limit,
+      sortBy,
+      sortDirection,
+    ],
     queryFn: async () => {
       const { data, error } = await client.GET("/api/receipt-items/deleted", {
-        params: { query: { offset, limit, sortBy: sortBy ?? undefined, sortDirection: (sortDirection ?? undefined) as "asc" | "desc" | undefined } },
+        params: {
+          query: {
+            offset,
+            limit,
+            sortBy: sortBy ?? undefined,
+            sortDirection: (sortDirection ?? undefined) as
+              | "asc"
+              | "desc"
+              | undefined,
+          },
+        },
       });
       if (error) throw error;
       return data;
     },
   });
   const base = useStableQuery(query);
-  return useMemo(() => ({ ...base, data: query.data?.data, total: query.data?.total ?? 0 }), [base, query.data]);
+  return useMemo(
+    () => ({ ...base, data: query.data?.data, total: query.data?.total ?? 0 }),
+    [base, query.data],
+  );
 }
 
 export function useRestoreReceiptItem() {

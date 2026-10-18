@@ -10,12 +10,6 @@ export type NormalizedDescriptionStatusFilter =
 /** Default page size. Matches the server's own default for a caller that sends no window. */
 export const NORMALIZED_DESCRIPTION_PAGE_SIZE = 50;
 
-/**
- * Server-side ceiling on `limit`, mirroring `NormalizedDescriptionsController.MaxPageSize`.
- * Asking for more is a 400, so anything building a page size from user input clamps to this.
- */
-export const NORMALIZED_DESCRIPTION_MAX_PAGE_SIZE = 200;
-
 export interface NormalizedDescriptionListOptions {
   /**
    * One status, or several to match any of them (RECEIPTS-878). Omit for no filter.
@@ -23,7 +17,9 @@ export interface NormalizedDescriptionListOptions {
    * The merge dialog passes two: every legitimate target is Active or PendingReview, and never
    * Rejected — merging items into a tombstone would resurrect text the reviewer retired.
    */
-  status?: NormalizedDescriptionStatusFilter | NormalizedDescriptionStatusFilter[];
+  status?:
+    | NormalizedDescriptionStatusFilter
+    | NormalizedDescriptionStatusFilter[];
   /** Matches the display name and the matched text, so a renamed row is findable by either. */
   q?: string;
   offset?: number;
@@ -91,19 +87,4 @@ export function useNormalizedDescriptions({
     }),
     [query],
   );
-}
-
-export function useNormalizedDescription(id: string | null) {
-  return useQuery({
-    queryKey: ["normalized-descriptions", id],
-    enabled: !!id,
-    queryFn: async () => {
-      const { data, error } = await client.GET(
-        "/api/normalized-descriptions/{id}",
-        { params: { path: { id: id! } } },
-      );
-      if (error) throw error;
-      return data;
-    },
-  });
 }
