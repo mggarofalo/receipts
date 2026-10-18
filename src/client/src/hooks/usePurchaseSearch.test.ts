@@ -1,0 +1,166 @@
+import type { components } from "@/generated/api";
+import { act, renderHook, waitFor } from "@testing-library/react";
+import { createQueryWrapper } from "@/test/test-utils";
+import { usePurchaseSearch } from "./usePurchaseSearch";
+const { get } = vi.hoisted(() => ({ get: vi.fn() }));
+vi.mock("@/lib/api-client", () => ({ default: { GET: get } }));
+
+beforeEach(() => vi.clearAllMocks());
+
+it("sends the literal trimmed phrase and page with an abort signal", async () => {
+  get.mockResolvedValue({
+    data: {
+      items: [],
+      total: 0,
+      offset: 25,
+      limit: 5,
+    } satisfies components["schemas"]["PurchaseSearchResponse"],
+    response: new Response(),
+  });
+  const { result, unmount } = renderHook(
+    () => usePurchaseSearch("  50%_milk  ", 25, 5),
+    { wrapper: createQueryWrapper() },
+  );
+  await waitFor(() => expect(result.current.isSuccess).toBe(true));
+  expect(get).toHaveBeenCalledWith("/api/search/purchases", {
+    params: { query: { q: "50%_milk", offset: 25, limit: 5 } },
+    signal: expect.any(AbortSignal),
+  });
+  unmount();
+});
+
+it.each(["", " ", "a", "x".repeat(201)])(
+  "does not request invalid query %s",
+  (q) => {
+    renderHook(() => usePurchaseSearch(q), { wrapper: createQueryWrapper() });
+    expect(get).not.toHaveBeenCalled();
+  },
+);
+
+it("does not request while the palette is closed", () => {
+  renderHook(() => usePurchaseSearch("milk", 0, 5, false), {
+    wrapper: createQueryWrapper(),
+  });
+  expect(get).not.toHaveBeenCalled();
+});
+
+it("cancels the obsolete query and never carries its results into another phrase", async () => {
+  let obsoleteSignal: AbortSignal | undefined;
+  get.mockImplementationOnce((_path, options) => {
+    obsoleteSignal = options?.signal as AbortSignal;
+    return new Promise(() => {});
+  });
+  get.mockResolvedValueOnce({
+    data: {
+      items: [],
+      total: 0,
+      offset: 0,
+      limit: 25,
+    } satisfies components["schemas"]["PurchaseSearchResponse"],
+    response: new Response(),
+  });
+  const { result, rerender } = renderHook(({ q }) => usePurchaseSearch(q), {
+    initialProps: { q: "milk" },
+    wrapper: createQueryWrapper(),
+  });
+  await waitFor(() => expect(get).toHaveBeenCalledTimes(1));
+  rerender({ q: "bread" });
+  expect(obsoleteSignal?.aborted).toBe(true);
+  expect(result.current.data).toBeUndefined();
+  await waitFor(() =>
+    expect(result.current.data).toEqual({
+      items: [],
+      total: 0,
+      offset: 0,
+      limit: 25,
+    }),
+  );
+});
+
+it("exposes a failed request and retries the same query", async () => {
+  const error = { detail: "Search temporarily unavailable", status: 503 };
+  get.mockResolvedValueOnce({
+    error,
+    response: new Response(null, { status: 503 }),
+  });
+  get.mockResolvedValueOnce({
+    data: {
+      items: [],
+      total: 0,
+      offset: 0,
+      limit: 25,
+    } satisfies components["schemas"]["PurchaseSearchResponse"],
+    response: new Response(),
+  });
+  const { result } = renderHook(() => usePurchaseSearch("milk"), {
+    wrapper: createQueryWrapper(),
+  });
+  await waitFor(() => expect(result.current.isError).toBe(true));
+  expect(result.current.error).toEqual(error);
+  await act(async () => {
+    await result.current.refetch();
+  });
+  await waitFor(() => expect(result.current.isSuccess).toBe(true));
+  expect(get).toHaveBeenCalledTimes(2);
+});
+
+it.each(["receipt-item", "normalized-description"] as const)(
+  "refreshes mounted purchase results after %s changes",
+  async (change) => {
+    const { useQueryClient } = await import("@tanstack/react-query");
+    const { invalidateDomainChange } = await import("@/lib/query-invalidation");
+    get.mockResolvedValue({
+      data: {
+        items: [],
+        total: 0,
+        offset: 0,
+        limit: 25,
+      } satisfies components["schemas"]["PurchaseSearchResponse"],
+      response: new Response(),
+    });
+    const { result } = renderHook(
+      () => ({
+        search: usePurchaseSearch("hot dogs"),
+        client: useQueryClient(),
+      }),
+      { wrapper: createQueryWrapper() },
+    );
+    await waitFor(() => expect(result.current.search.isSuccess).toBe(true));
+    expect(get).toHaveBeenCalledTimes(1);
+    act(() => invalidateDomainChange(result.current.client, change));
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+  },
+);
+
+it("does not display a completed previous search as the new query's results", async () => {
+  const prior: components["schemas"]["PurchaseSearchResponse"] = {
+    items: [
+      {
+        id: "old",
+        receiptId: "receipt-old",
+        date: "2020-01-15",
+        description: "Milk",
+        location: "Store",
+        quantity: 1,
+        unitPrice: 2,
+        unitPriceCurrency: "USD",
+        totalAmount: 2,
+        totalAmountCurrency: "USD",
+      },
+    ],
+    total: 1,
+    offset: 0,
+    limit: 25,
+  };
+  get.mockResolvedValueOnce({ data: prior, response: new Response() });
+  get.mockImplementationOnce(() => new Promise(() => {}));
+  const { result, rerender } = renderHook(({ q }) => usePurchaseSearch(q), {
+    initialProps: { q: "milk" },
+    wrapper: createQueryWrapper(),
+  });
+  await waitFor(() => expect(result.current.data).toEqual(prior));
+  rerender({ q: "hot dogs" });
+  expect(result.current.data).toBeUndefined();
+  expect(result.current.isPending).toBe(true);
+  expect(result.current.isPlaceholderData).toBe(false);
+});

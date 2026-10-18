@@ -1,12 +1,11 @@
 import { RequestFailure } from "@/components/RequestFailure";
-import { assertSessionCurrent, getSessionVersion, isAbortError } from "@/lib/auth";
+import { PurchaseSearchResults } from "@/components/PurchaseSearchResults";
 import {
-  Fragment,
-  useCallback,
-  useContext,
-  useMemo,
-  useState,
-} from "react";
+  assertSessionCurrent,
+  getSessionVersion,
+  isAbortError,
+} from "@/lib/auth";
+import { Fragment, useCallback, useContext, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { ChevronDown, Star } from "lucide-react";
 import { toast } from "sonner";
@@ -122,7 +121,8 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 
   // Destructure stable callbacks — TanStack Query guarantees mutate/mutateAsync
   // are stable refs, but the surrounding mutation object is not.
-  const { mutateAsync: bulkPushYnabMutateAsync } = useBulkPushYnabTransactions();
+  const { mutateAsync: bulkPushYnabMutateAsync } =
+    useBulkPushYnabTransactions();
   const { mutate: backupExportMutate } = useBackupExport();
   const { mutateAsync: purgeTrashMutateAsync, isPending: purgeTrashPending } =
     usePurgeTrash();
@@ -292,7 +292,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       const Icon = cmd.icon;
       const showShiftN =
         cmd.group === "create" && cmd.targetPath === location.pathname;
-      const shortcutGlyph = showShiftN ? "⇧ N" : cmd.shortcut ?? null;
+      const shortcutGlyph = showShiftN ? "⇧ N" : (cmd.shortcut ?? null);
       const pinned = pinnedSet.has(cmd.id);
       return (
         <CommandItem
@@ -337,159 +337,169 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 
   return (
     <>
-    <CommandDialog open={open} onOpenChange={handleOpenChange}>
-      <CommandInput
-        placeholder="Type a command or search…"
-        value={query}
-        onValueChange={setQuery}
-      />
-      {showEntities && entityGroups.some((group) => group.failure || group.scopeNotice) && (
-        <div className="space-y-2 border-b px-3 py-2">
-          {entityGroups.map((group) => (
-            <Fragment key={group.id}>
-              {group.failure && (
-                <RequestFailure
-                  message={group.failure.message}
-                  retry={group.failure.retry}
-                  isRetrying={group.failure.isRetrying}
-                />
-              )}
-              {group.scopeNotice && <p className="text-xs text-muted-foreground">{group.scopeNotice}</p>}
-            </Fragment>
-          ))}
-        </div>
-      )}
-      <CommandList>
-        <CommandEmpty>
-          {showEntities && entityGroups.some((group) => group.failure)
-            ? "Some search results are unavailable. Retry or try another search."
-            : showEntities && entityGroups.some((group) => group.isLoading)
-              ? "Loading template results…"
-              : "No matches. Try a different word or press Esc to close."}
-        </CommandEmpty>
+      <CommandDialog open={open} onOpenChange={handleOpenChange}>
+        <CommandInput
+          placeholder="Search purchases, receipts, or commands…"
+          value={query}
+          onValueChange={setQuery}
+        />
+        {showEntities &&
+          entityGroups.some((group) => group.failure || group.scopeNotice) && (
+            <div className="space-y-2 border-b px-3 py-2">
+              {entityGroups.map((group) => (
+                <Fragment key={group.id}>
+                  {group.failure && (
+                    <RequestFailure
+                      message={group.failure.message}
+                      retry={group.failure.retry}
+                      isRetrying={group.failure.isRetrying}
+                    />
+                  )}
+                  {group.scopeNotice && (
+                    <p className="text-xs text-muted-foreground">
+                      {group.scopeNotice}
+                    </p>
+                  )}
+                </Fragment>
+              ))}
+            </div>
+          )}
+        <CommandList>
+          <CommandEmpty>
+            {showEntities && entityGroups.some((group) => group.failure)
+              ? "Some search results are unavailable. Retry or try another search."
+              : showEntities && entityGroups.some((group) => group.isLoading)
+                ? "Searching…"
+                : "No matches. Try a different word or press Esc to close."}
+          </CommandEmpty>
 
-        {showTopSections && pinnedCommands.length > 0 && (
-          <CommandGroup heading="Pinned">
-            {pinnedCommands.map((cmd) => renderCommandItem(cmd, "pinned"))}
-          </CommandGroup>
-        )}
-
-        {showTopSections && recentCommands.length > 0 && (
-          <Fragment>
-            {pinnedCommands.length > 0 && <CommandSeparator />}
-            <CommandGroup heading="Recent">
-              {recentCommands.map((cmd) => renderCommandItem(cmd, "recent"))}
+          {showTopSections && pinnedCommands.length > 0 && (
+            <CommandGroup heading="Pinned">
+              {pinnedCommands.map((cmd) => renderCommandItem(cmd, "pinned"))}
             </CommandGroup>
-          </Fragment>
-        )}
+          )}
 
-        {GROUP_ORDER.map((groupId, index) => {
-          // When the Pinned section is visible, hide those commands from
-          // their regular group to avoid rendering the same row twice.
-          // Recent is intentionally not hidden — it's a brief MRU hint, not
-          // a replacement for the command's canonical home.
-          const commands = showTopSections
-            ? commandsByGroup[groupId].filter((cmd) => !pinnedSet.has(cmd.id))
-            : commandsByGroup[groupId];
-          if (commands.length === 0) return null;
-          const hasTopSections =
-            showTopSections &&
-            (pinnedCommands.length > 0 || recentCommands.length > 0);
-          return (
-            <Fragment key={groupId}>
-              {(hasTopSections || index > 0) && <CommandSeparator />}
-              <CommandGroup heading={COMMAND_GROUP_LABELS[groupId]}>
-                {commands.map((cmd) => renderCommandItem(cmd, groupId))}
+          {showTopSections && recentCommands.length > 0 && (
+            <Fragment>
+              {pinnedCommands.length > 0 && <CommandSeparator />}
+              <CommandGroup heading="Recent">
+                {recentCommands.map((cmd) => renderCommandItem(cmd, "recent"))}
               </CommandGroup>
             </Fragment>
-          );
-        })}
+          )}
 
-        {showEntities &&
-          entityGroups.map((group) => {
-            if (group.items.length === 0) return null;
-            const Icon = group.icon;
-            const expanded = expandedGroups.has(group.id);
-            const visibleItems = expanded
-              ? group.items
-              : group.items.slice(0, ENTITY_GROUP_VISIBLE_LIMIT);
-            const hiddenCount = group.items.length - visibleItems.length;
+          {GROUP_ORDER.map((groupId, index) => {
+            // When the Pinned section is visible, hide those commands from
+            // their regular group to avoid rendering the same row twice.
+            // Recent is intentionally not hidden — it's a brief MRU hint, not
+            // a replacement for the command's canonical home.
+            const commands = showTopSections
+              ? commandsByGroup[groupId].filter((cmd) => !pinnedSet.has(cmd.id))
+              : commandsByGroup[groupId];
+            if (commands.length === 0) return null;
+            const hasTopSections =
+              showTopSections &&
+              (pinnedCommands.length > 0 || recentCommands.length > 0);
             return (
-              <Fragment key={group.id}>
-                <CommandSeparator />
-                <CommandGroup heading={group.heading}>
-                  {visibleItems.map((item) => (
-                    <CommandItem
-                      key={item.id}
-                      value={item.searchValue}
-                      onSelect={() => {
-                        close();
-                        navigate(item.href);
-                      }}
-                    >
-                      <Icon
-                        aria-hidden="true"
-                        className="mr-2 h-4 w-4 text-muted-foreground"
-                      />
-                      <span className="truncate">{item.label}</span>
-                      {item.meta ? (
-                        <span className="ml-2 truncate font-mono text-xs text-muted-foreground">
-                          {item.meta}
-                        </span>
-                      ) : null}
-                    </CommandItem>
-                  ))}
-                  {hiddenCount > 0 && (
-                    <CommandItem
-                      key={`${group.id}:more`}
-                      value={`show-more-${group.id}`}
-                      onSelect={() => toggleGroupExpanded(group.id)}
-                      className="text-muted-foreground"
-                      aria-expanded={expanded}
-                    >
-                      <ChevronDown aria-hidden="true" className="mr-2 h-4 w-4" />
-                      <span>
-                        Show {hiddenCount} more {group.heading.toLowerCase()}
-                      </span>
-                    </CommandItem>
-                  )}
+              <Fragment key={groupId}>
+                {(hasTopSections || index > 0) && <CommandSeparator />}
+                <CommandGroup heading={COMMAND_GROUP_LABELS[groupId]}>
+                  {commands.map((cmd) => renderCommandItem(cmd, groupId))}
                 </CommandGroup>
               </Fragment>
             );
           })}
-      </CommandList>
-    </CommandDialog>
-    <AlertDialog
-      open={confirmingEmptyTrash}
-      onOpenChange={(next) => {
-        if (!purgeTrashPending) setConfirmingEmptyTrash(next);
-      }}
-    >
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Empty Trash?</AlertDialogTitle>
-          <AlertDialogDescription>
-            This will permanently delete every item in the Recycle Bin. This
-            action cannot be undone.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={purgeTrashPending}>
-            Cancel
-          </AlertDialogCancel>
-          <AlertDialogAction
-            variant="destructive"
-            disabled={purgeTrashPending}
-            onClick={(e) => {
-              e.preventDefault();
-              void handleConfirmEmptyTrash();
-            }}
-          >
-            {purgeTrashPending ? "Emptying…" : "Empty Trash"}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+
+          <PurchaseSearchResults query={query} open={open} close={close} />
+          {showEntities &&
+            entityGroups.map((group) => {
+              if (group.items.length === 0) return null;
+              const Icon = group.icon;
+              const expanded = expandedGroups.has(group.id);
+              const visibleItems = expanded
+                ? group.items
+                : group.items.slice(0, ENTITY_GROUP_VISIBLE_LIMIT);
+              const hiddenCount = group.items.length - visibleItems.length;
+              return (
+                <Fragment key={group.id}>
+                  <CommandSeparator />
+                  <CommandGroup heading={group.heading}>
+                    {visibleItems.map((item) => (
+                      <CommandItem
+                        key={item.id}
+                        value={item.searchValue}
+                        onSelect={() => {
+                          close();
+                          navigate(item.href);
+                        }}
+                      >
+                        <Icon
+                          aria-hidden="true"
+                          className="mr-2 h-4 w-4 text-muted-foreground"
+                        />
+                        <span className="truncate">{item.label}</span>
+                        {item.meta ? (
+                          <span className="ml-2 truncate font-mono text-xs text-muted-foreground">
+                            {item.meta}
+                          </span>
+                        ) : null}
+                      </CommandItem>
+                    ))}
+                    {hiddenCount > 0 && (
+                      <CommandItem
+                        key={`${group.id}:more`}
+                        value={`show-more-${group.id}`}
+                        forceMount
+                        onSelect={() => toggleGroupExpanded(group.id)}
+                        className="text-muted-foreground"
+                        aria-expanded={expanded}
+                      >
+                        <ChevronDown
+                          aria-hidden="true"
+                          className="mr-2 h-4 w-4"
+                        />
+                        <span>
+                          Show {hiddenCount} more {group.heading.toLowerCase()}
+                        </span>
+                      </CommandItem>
+                    )}
+                  </CommandGroup>
+                </Fragment>
+              );
+            })}
+        </CommandList>
+      </CommandDialog>
+      <AlertDialog
+        open={confirmingEmptyTrash}
+        onOpenChange={(next) => {
+          if (!purgeTrashPending) setConfirmingEmptyTrash(next);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Empty Trash?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete every item in the Recycle Bin. This
+              action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={purgeTrashPending}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={purgeTrashPending}
+              onClick={(e) => {
+                e.preventDefault();
+                void handleConfirmEmptyTrash();
+              }}
+            >
+              {purgeTrashPending ? "Emptying…" : "Empty Trash"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

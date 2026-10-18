@@ -101,6 +101,14 @@ const actionPaths = [
   "sync-memos/resolve",
 ];
 const server = setupServer(
+  http.get("*/api/search/purchases", ({ request }) =>
+    HttpResponse.json({
+      items: [],
+      total: 0,
+      offset: Number(new URL(request.url).searchParams.get("offset")),
+      limit: Number(new URL(request.url).searchParams.get("limit")),
+    }),
+  ),
   http.get("*/api/ynab/connection-status", () =>
     HttpResponse.json({ isConfigured: true, isConnected: true }),
   ),
@@ -303,7 +311,9 @@ it.each([1, 2])(
             screen.getByRole("button", { name: "Open command palette" }),
           );
         await user.type(
-          await screen.findByPlaceholderText("Type a command or search…"),
+          await screen.findByPlaceholderText(
+            "Search purchases, receipts, or commands…",
+          ),
           "Sync YNAB Now",
         );
         await user.click(
@@ -311,7 +321,9 @@ it.each([1, 2])(
         );
         await pending[index].started.promise;
         expect(
-          screen.queryByPlaceholderText("Type a command or search…"),
+          screen.queryByPlaceholderText(
+            "Search purchases, receipts, or commands…",
+          ),
         ).not.toBeInTheDocument();
       }
       expect(queryClient.isMutating()).toBe(count);

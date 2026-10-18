@@ -17,12 +17,19 @@ beforeAll(() => {
   Element.prototype.scrollIntoView = vi.fn();
 });
 
+vi.mock("@/hooks/usePurchaseSearch", () => ({
+  usePurchaseSearch: vi.fn(() =>
+    mockQueryResult({
+      isPending: false,
+      data: { items: [], total: 0, offset: 0, limit: 25 },
+    }),
+  ),
+}));
 const navigateMock = vi.fn();
 
 vi.mock("react-router", async () => {
-  const actual = await vi.importActual<typeof import("react-router")>(
-    "react-router",
-  );
+  const actual =
+    await vi.importActual<typeof import("react-router")>("react-router");
   return {
     ...actual,
     useNavigate: () => navigateMock,
@@ -61,13 +68,18 @@ vi.mock("@/hooks/useUsers", () => ({
 const bulkPushMutateAsync = vi.fn(async () => ({ results: [] }));
 const backupExportMutate = vi.fn();
 const purgeTrashMutateAsync = vi.fn(async () => {});
-const fetchAllReceiptIdsMock = vi.fn(async () => ({ ids: ["r1", "r2"], total: 2 }));
+const fetchAllReceiptIdsMock = vi.fn(async () => ({
+  ids: ["r1", "r2"],
+  total: 2,
+}));
 
 function ControlledPalette() {
   const [open, setOpen] = useState(true);
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)}>Reopen palette</button>
+      <button type="button" onClick={() => setOpen(true)}>
+        Reopen palette
+      </button>
       <CommandPalette open={open} onOpenChange={setOpen} />
     </>
   );
@@ -86,7 +98,10 @@ vi.mock("@/hooks/useBackup", () => ({
 }));
 
 vi.mock("@/hooks/useTrash", () => ({
-  usePurgeTrash: () => ({ mutateAsync: purgeTrashMutateAsync, isPending: false }),
+  usePurgeTrash: () => ({
+    mutateAsync: purgeTrashMutateAsync,
+    isPending: false,
+  }),
 }));
 
 beforeEach(async () => {
@@ -111,7 +126,7 @@ describe("CommandPalette", () => {
       <CommandPalette open={false} onOpenChange={vi.fn()} />,
     );
     expect(
-      screen.queryByPlaceholderText(/type a command or search/i),
+      screen.queryByPlaceholderText(/search purchases, receipts, or commands/i),
     ).not.toBeInTheDocument();
   });
 
@@ -179,7 +194,9 @@ describe("CommandPalette", () => {
       <CommandPalette open={true} onOpenChange={onOpenChange} />,
     );
 
-    const input = screen.getByPlaceholderText(/type a command or search/i);
+    const input = screen.getByPlaceholderText(
+      /search purchases, receipts, or commands/i,
+    );
     await user.type(input, "new receipt");
 
     // cmdk highlights the first matching row by default; pressing Enter
@@ -217,9 +234,11 @@ describe("CommandPalette", () => {
     renderWithQueryClient(
       <CommandPalette open={true} onOpenChange={vi.fn()} />,
     );
-    const input = screen.getByPlaceholderText(/type a command or search/i);
+    const input = screen.getByPlaceholderText(
+      /search purchases, receipts, or commands/i,
+    );
     await user.type(input, "apple");
-    expect(screen.getByText("Apple Card")).toBeInTheDocument();
+    expect(await screen.findByText("Apple Card")).toBeInTheDocument();
   });
 
   it("navigates to a receipt when a receipt item entity is selected", async () => {
@@ -242,9 +261,11 @@ describe("CommandPalette", () => {
     renderWithQueryClient(
       <CommandPalette open={true} onOpenChange={onOpenChange} />,
     );
-    const input = screen.getByPlaceholderText(/type a command or search/i);
+    const input = screen.getByPlaceholderText(
+      /search purchases, receipts, or commands/i,
+    );
     await user.type(input, "bananas");
-    await user.click(screen.getByText("Organic bananas"));
+    await user.click(await screen.findByText("Organic bananas"));
     expect(navigateMock).toHaveBeenCalledWith("/receipts/r99");
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
@@ -258,7 +279,9 @@ describe("CommandPalette", () => {
     expect(item).not.toBeNull();
     expect(within(item as HTMLElement).getByText("⇧ N")).toBeInTheDocument();
     // Screen readers see spelled-out text instead of the glyph
-    expect(within(item as HTMLElement).getByText("Shift+N")).toBeInTheDocument();
+    expect(
+      within(item as HTMLElement).getByText("Shift+N"),
+    ).toBeInTheDocument();
   });
 
   it("does not show ⇧ N hint on create commands that don't match current route", () => {
@@ -281,7 +304,7 @@ describe("CommandPalette", () => {
       <CommandPalette open={true} onOpenChange={onOpenChange} />,
     );
     await user.type(
-      screen.getByPlaceholderText(/type a command or search/i),
+      screen.getByPlaceholderText(/search purchases, receipts, or commands/i),
       "xyz",
     );
     await user.keyboard("{Escape}");
@@ -293,7 +316,7 @@ describe("CommandPalette", () => {
     expect(
       (
         screen.getByPlaceholderText(
-          /type a command or search/i,
+          /search purchases, receipts, or commands/i,
         ) as HTMLInputElement
       ).value,
     ).toBe("");
@@ -303,14 +326,18 @@ describe("CommandPalette", () => {
     const user = userEvent.setup();
     renderWithQueryClient(<ControlledPalette />);
     await user.type(
-      screen.getByPlaceholderText(/type a command or search/i),
+      screen.getByPlaceholderText(/search purchases, receipts, or commands/i),
       "stale account",
     );
     await user.keyboard("{Escape}");
-    expect(screen.queryByPlaceholderText(/type a command or search/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByPlaceholderText(/search purchases, receipts, or commands/i),
+    ).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /reopen palette/i }));
-    expect(screen.getByPlaceholderText(/type a command or search/i)).toHaveValue("");
+    expect(
+      screen.getByPlaceholderText(/search purchases, receipts, or commands/i),
+    ).toHaveValue("");
   });
 
   it("selecting an entity clears the query and disables searches before reopen", async () => {
@@ -320,13 +347,20 @@ describe("CommandPalette", () => {
     );
     const user = userEvent.setup();
     renderWithQueryClient(<ControlledPalette />);
-    await user.type(screen.getByPlaceholderText(/type a command or search/i), "apple");
-    await user.click(screen.getByText("Apple Card"));
+    await user.type(
+      screen.getByPlaceholderText(/search purchases, receipts, or commands/i),
+      "apple",
+    );
+    await user.click(await screen.findByText("Apple Card"));
 
     expect(navigateMock).toHaveBeenCalledWith("/accounts");
-    expect(vi.mocked(useAccounts).mock.calls.at(-1)?.at(-1)).toMatchObject({ enabled: false });
+    expect(vi.mocked(useAccounts).mock.calls.at(-1)?.at(-1)).toMatchObject({
+      enabled: false,
+    });
     await user.click(screen.getByRole("button", { name: /reopen palette/i }));
-    expect(screen.getByPlaceholderText(/type a command or search/i)).toHaveValue("");
+    expect(
+      screen.getByPlaceholderText(/search purchases, receipts, or commands/i),
+    ).toHaveValue("");
   });
 
   it("New Receipt navigation leaves no stale enabled search or error toast", async () => {
@@ -334,11 +368,16 @@ describe("CommandPalette", () => {
     const errorToast = vi.spyOn(toast, "error");
     const user = userEvent.setup();
     renderWithQueryClient(<ControlledPalette />);
-    await user.type(screen.getByPlaceholderText(/type a command or search/i), "new receipt");
+    await user.type(
+      screen.getByPlaceholderText(/search purchases, receipts, or commands/i),
+      "new receipt",
+    );
     await user.keyboard("{Enter}");
 
     expect(navigateMock).toHaveBeenCalledWith("/receipts/new");
-    expect(vi.mocked(useAccounts).mock.calls.at(-1)?.at(-1)).toMatchObject({ enabled: false });
+    expect(vi.mocked(useAccounts).mock.calls.at(-1)?.at(-1)).toMatchObject({
+      enabled: false,
+    });
     expect(errorToast).not.toHaveBeenCalled();
   });
 
@@ -367,7 +406,9 @@ describe("CommandPalette", () => {
     const goToGroup = screen
       .getByText("Go to")
       .closest("[cmdk-group]") as HTMLElement;
-    expect(within(goToGroup).queryByText("Go to Receipts")).not.toBeInTheDocument();
+    expect(
+      within(goToGroup).queryByText("Go to Receipts"),
+    ).not.toBeInTheDocument();
     // Only one "Go to Receipts" row rendered (in Pinned, not in Go to).
     expect(screen.getAllByText("Go to Receipts")).toHaveLength(1);
   });
@@ -382,7 +423,7 @@ describe("CommandPalette", () => {
       <CommandPalette open={true} onOpenChange={vi.fn()} />,
     );
     await user.type(
-      screen.getByPlaceholderText(/type a command or search/i),
+      screen.getByPlaceholderText(/search purchases, receipts, or commands/i),
       "receipts",
     );
     // With Pinned hidden and the pinned command restored to Go to, the row is
@@ -398,7 +439,7 @@ describe("CommandPalette", () => {
     // Sanity: "Go to Receipts" is visible in the default empty-query render.
     expect(screen.getByText("Go to Receipts")).toBeInTheDocument();
     await user.type(
-      screen.getByPlaceholderText(/type a command or search/i),
+      screen.getByPlaceholderText(/search purchases, receipts, or commands/i),
       "preferences",
     );
     // Typing the group name "preferences" should not match any preference
@@ -446,7 +487,9 @@ describe("CommandPalette", () => {
     const recentGroup = screen
       .getByText("Recent")
       .closest("[cmdk-group]") as HTMLElement;
-    expect(within(recentGroup).queryByText("Go to Receipts")).not.toBeInTheDocument();
+    expect(
+      within(recentGroup).queryByText("Go to Receipts"),
+    ).not.toBeInTheDocument();
     expect(within(recentGroup).getByText("New Card")).toBeInTheDocument();
   });
 
@@ -465,7 +508,7 @@ describe("CommandPalette", () => {
     );
     expect(screen.getByText("Pinned")).toBeInTheDocument();
     await user.type(
-      screen.getByPlaceholderText(/type a command or search/i),
+      screen.getByPlaceholderText(/search purchases, receipts, or commands/i),
       "dash",
     );
     expect(screen.queryByText("Pinned")).not.toBeInTheDocument();
@@ -545,7 +588,9 @@ describe("CommandPalette", () => {
     const pinnedGroup = screen
       .getByText("Pinned")
       .closest("[cmdk-group]") as HTMLElement;
-    expect(within(pinnedGroup).queryByText("Go to Audit Log")).not.toBeInTheDocument();
+    expect(
+      within(pinnedGroup).queryByText("Go to Audit Log"),
+    ).not.toBeInTheDocument();
     expect(within(pinnedGroup).getByText("Go to Receipts")).toBeInTheDocument();
     expect(screen.queryByText("Recent")).not.toBeInTheDocument();
   });
@@ -745,12 +790,12 @@ describe("CommandPalette", () => {
       <CommandPalette open={true} onOpenChange={vi.fn()} />,
     );
     await user.type(
-      screen.getByPlaceholderText(/type a command or search/i),
+      screen.getByPlaceholderText(/search purchases, receipts, or commands/i),
       "cat",
     );
-    expect(screen.getByText("Cat 0")).toBeInTheDocument();
+    expect(await screen.findByText("Cat 0")).toBeInTheDocument();
     expect(screen.queryByText("Cat 9")).not.toBeInTheDocument();
-    const moreRow = screen.getByText(/Show 4 more categories/i);
+    const moreRow = await screen.findByText(/Show 4 more categories/i);
     await user.click(moreRow);
     expect(screen.getByText("Cat 11")).toBeInTheDocument();
   });
