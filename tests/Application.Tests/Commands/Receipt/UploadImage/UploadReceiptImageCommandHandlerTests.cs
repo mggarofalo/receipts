@@ -94,7 +94,8 @@ public class UploadReceiptImageCommandHandlerTests
 			new UploadReceiptImageCommand(id, original, "image/jpeg", ".jpg"), CancellationToken.None);
 
 		await act.Should().ThrowAsync<InvalidOperationException>();
-		_storage.Verify(x => x.DeleteReceiptImagesAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+		_storage.Verify(x => x.SaveImageSetAsync(id, original, ".jpg", processed, It.IsAny<CancellationToken>()), Times.Once);
+		_storage.VerifyNoOtherCalls();
 	}
 
 	[Fact]
@@ -109,7 +110,8 @@ public class UploadReceiptImageCommandHandlerTests
 
 		await Handler.Handle(new UploadReceiptImageCommand(id, original, "image/jpeg", ".jpg"), CancellationToken.None);
 
-		_storage.Verify(x => x.DeleteReceiptImagesAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+		_storage.Verify(x => x.SaveImageSetAsync(id, original, ".jpg", processed, It.IsAny<CancellationToken>()), Times.Once);
+		_storage.VerifyNoOtherCalls();
 	}
 
 	[Fact]
