@@ -3504,6 +3504,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
+        "409":
+          description: Conflict — receipt state changed during import; reload and retry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
 
   # ──────────────────────────────────────────────
   # Auth

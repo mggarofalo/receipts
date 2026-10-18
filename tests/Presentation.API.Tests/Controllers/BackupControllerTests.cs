@@ -86,7 +86,7 @@ public class BackupControllerTests : IDisposable
 	public async Task ImportBackup_NullFile_ReturnsBadRequest()
 	{
 		// Act
-		Results<Ok<BackupImportResponse>, BadRequest<ProblemDetails>> result = await _controller.ImportBackup(null);
+		Results<Ok<BackupImportResponse>, BadRequest<ProblemDetails>, Conflict<ProblemDetails>> result = await _controller.ImportBackup(null);
 
 		// Assert
 		result.Result.Should().BeOfType<BadRequest<ProblemDetails>>()
@@ -101,7 +101,7 @@ public class BackupControllerTests : IDisposable
 		fileMock.Setup(f => f.Length).Returns(0);
 
 		// Act
-		Results<Ok<BackupImportResponse>, BadRequest<ProblemDetails>> result = await _controller.ImportBackup(fileMock.Object);
+		Results<Ok<BackupImportResponse>, BadRequest<ProblemDetails>, Conflict<ProblemDetails>> result = await _controller.ImportBackup(fileMock.Object);
 
 		// Assert
 		result.Result.Should().BeOfType<BadRequest<ProblemDetails>>()
@@ -117,7 +117,7 @@ public class BackupControllerTests : IDisposable
 		fileMock.Setup(f => f.FileName).Returns("backup.sqlite");
 
 		// Act
-		Results<Ok<BackupImportResponse>, BadRequest<ProblemDetails>> result = await _controller.ImportBackup(fileMock.Object);
+		Results<Ok<BackupImportResponse>, BadRequest<ProblemDetails>, Conflict<ProblemDetails>> result = await _controller.ImportBackup(fileMock.Object);
 
 		// Assert
 		result.Result.Should().BeOfType<BadRequest<ProblemDetails>>()
@@ -133,7 +133,7 @@ public class BackupControllerTests : IDisposable
 		fileMock.Setup(f => f.FileName).Returns("backup.txt");
 
 		// Act
-		Results<Ok<BackupImportResponse>, BadRequest<ProblemDetails>> result = await _controller.ImportBackup(fileMock.Object);
+		Results<Ok<BackupImportResponse>, BadRequest<ProblemDetails>, Conflict<ProblemDetails>> result = await _controller.ImportBackup(fileMock.Object);
 
 		// Assert
 		result.Result.Should().BeOfType<BadRequest<ProblemDetails>>()
@@ -158,7 +158,7 @@ public class BackupControllerTests : IDisposable
 		fileMock.Setup(f => f.OpenReadStream()).Returns(new MemoryStream());
 
 		// Act
-		Results<Ok<BackupImportResponse>, BadRequest<ProblemDetails>> result = await _controller.ImportBackup(fileMock.Object);
+		Results<Ok<BackupImportResponse>, BadRequest<ProblemDetails>, Conflict<ProblemDetails>> result = await _controller.ImportBackup(fileMock.Object);
 
 		// Assert
 		Ok<BackupImportResponse> okResult = Assert.IsType<Ok<BackupImportResponse>>(result.Result);
@@ -191,7 +191,7 @@ public class BackupControllerTests : IDisposable
 		fileMock.Setup(f => f.OpenReadStream()).Returns(new MemoryStream());
 
 		// Act
-		Results<Ok<BackupImportResponse>, BadRequest<ProblemDetails>> result = await _controller.ImportBackup(fileMock.Object);
+		Results<Ok<BackupImportResponse>, BadRequest<ProblemDetails>, Conflict<ProblemDetails>> result = await _controller.ImportBackup(fileMock.Object);
 
 		// Assert
 		result.Result.Should().BeOfType<BadRequest<ProblemDetails>>()
@@ -212,7 +212,7 @@ public class BackupControllerTests : IDisposable
 		fileMock.Setup(f => f.OpenReadStream()).Returns(new MemoryStream());
 
 		// Act
-		Results<Ok<BackupImportResponse>, BadRequest<ProblemDetails>> result = await _controller.ImportBackup(fileMock.Object);
+		Results<Ok<BackupImportResponse>, BadRequest<ProblemDetails>, Conflict<ProblemDetails>> result = await _controller.ImportBackup(fileMock.Object);
 
 		// Assert
 		result.Result.Should().BeOfType<BadRequest<ProblemDetails>>()
@@ -233,7 +233,7 @@ public class BackupControllerTests : IDisposable
 		fileMock.Setup(f => f.OpenReadStream()).Returns(new MemoryStream());
 
 		// Act
-		Results<Ok<BackupImportResponse>, BadRequest<ProblemDetails>> result = await _controller.ImportBackup(fileMock.Object);
+		Results<Ok<BackupImportResponse>, BadRequest<ProblemDetails>, Conflict<ProblemDetails>> result = await _controller.ImportBackup(fileMock.Object);
 
 		// Assert
 		result.Result.Should().BeOfType<BadRequest<ProblemDetails>>()
@@ -265,7 +265,7 @@ public class BackupControllerTests : IDisposable
 		fileMock.Setup(f => f.OpenReadStream()).Returns(new MemoryStream());
 
 		// Act
-		Results<Ok<BackupImportResponse>, BadRequest<ProblemDetails>> result = await _controller.ImportBackup(fileMock.Object);
+		Results<Ok<BackupImportResponse>, BadRequest<ProblemDetails>, Conflict<ProblemDetails>> result = await _controller.ImportBackup(fileMock.Object);
 
 		// Assert
 		Ok<BackupImportResponse> okResult = Assert.IsType<Ok<BackupImportResponse>>(result.Result);

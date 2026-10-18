@@ -1,4 +1,5 @@
 using System.Globalization;
+using Application.Exceptions;
 using Domain.NormalizedDescriptions;
 using Infrastructure.Entities.Core;
 using Microsoft.Data.Sqlite;
@@ -191,8 +192,82 @@ public partial class BackupImportService
 		return (created, updated);
 	}
 
-	private static async Task<(int Created, int Updated)> UpsertAcceptedDuplicatePairsAsync(
+	// Import acknowledges only the pairs explicitly supplied by the archive. Keep the target's
+	// semantic identity even when earlier fact writes in this transaction tombstone that pair.
+	private static async Task<Dictionary<(Guid First, Guid Second), Guid>> LockReceiptImportAsync(
 		ApplicationDbContext context, SqliteConnection sqlite, int exportVersion, CancellationToken cancellationToken)
+	{
+		Guid[] receiptIds = await ReadImportIdsAsync(sqlite, "receipts", cancellationToken);
+		Guid[] transactionIds = await ReadImportIdsAsync(sqlite, "transactions", cancellationToken);
+		Guid[] itemIds = await ReadImportIdsAsync(sqlite, "receipt_items", cancellationToken);
+		Guid[] adjustmentIds = await ReadImportIdsAsync(sqlite, "adjustments", cancellationToken);
+		Dictionary<(Type Kind, Guid Id), Guid> parents = await CaptureImportedChildParentsAsync(
+			context, transactionIds, itemIds, adjustmentIds, cancellationToken);
+		HashSet<Guid> lockIds = [.. receiptIds, .. parents.Values];
+		lockIds.UnionWith(await ReadImportIdsAsync(sqlite, "transactions", cancellationToken, "receipt_id"));
+		lockIds.UnionWith(await ReadImportIdsAsync(sqlite, "receipt_items", cancellationToken, "receipt_id"));
+		lockIds.UnionWith(await ReadImportIdsAsync(sqlite, "adjustments", cancellationToken, "receipt_id"));
+		await ReceiptFactLock.AcquireAsync(context, lockIds, cancellationToken);
+		Dictionary<(Type Kind, Guid Id), Guid> lockedParents = await CaptureImportedChildParentsAsync(
+			context, transactionIds, itemIds, adjustmentIds, cancellationToken);
+		if (parents.Count != lockedParents.Count || parents.Any(pair => !lockedParents.TryGetValue(pair.Key, out Guid parent) || parent != pair.Value))
+		{
+			throw new ConcurrencyConflictException("Receipt children changed parents while the backup import was starting. Retry the import.");
+		}
+		if (exportVersion < 5)
+		{
+			return [];
+		}
+		var pairs = await context.AcceptedDuplicatePairs.AsNoTracking()
+			.Where(pair => receiptIds.Contains(pair.ReceiptIdA) && receiptIds.Contains(pair.ReceiptIdB))
+			.Select(pair => new { pair.Id, pair.ReceiptIdA, pair.ReceiptIdB }).ToListAsync(cancellationToken);
+		return pairs.ToDictionary(pair => (pair.ReceiptIdA, pair.ReceiptIdB), pair => pair.Id);
+	}
+
+	private static async Task<Dictionary<(Type Kind, Guid Id), Guid>> CaptureImportedChildParentsAsync(
+		ApplicationDbContext context, Guid[] transactionIds, Guid[] itemIds, Guid[] adjustmentIds, CancellationToken cancellationToken)
+	{
+		var payments = await context.Transactions.IgnoreQueryFilters().IgnoreAutoIncludes().AsNoTracking()
+			.Where(row => transactionIds.Contains(row.Id)).Select(row => new { row.Id, row.ReceiptId }).ToListAsync(cancellationToken);
+		var items = await context.ReceiptItems.IgnoreQueryFilters().IgnoreAutoIncludes().AsNoTracking()
+			.Where(row => itemIds.Contains(row.Id)).Select(row => new { row.Id, row.ReceiptId }).ToListAsync(cancellationToken);
+		var adjustments = await context.Adjustments.IgnoreQueryFilters().IgnoreAutoIncludes().AsNoTracking()
+			.Where(row => adjustmentIds.Contains(row.Id)).Select(row => new { row.Id, row.ReceiptId }).ToListAsync(cancellationToken);
+		Dictionary<(Type Kind, Guid Id), Guid> parents = [];
+		foreach (var row in payments)
+		{
+			parents.Add((typeof(TransactionEntity), row.Id), row.ReceiptId);
+		}
+		foreach (var row in items)
+		{
+			parents.Add((typeof(ReceiptItemEntity), row.Id), row.ReceiptId);
+		}
+		foreach (var row in adjustments)
+		{
+			parents.Add((typeof(AdjustmentEntity), row.Id), row.ReceiptId);
+		}
+		return parents;
+	}
+	private static async Task<Guid[]> ReadImportIdsAsync(SqliteConnection sqlite, string table, CancellationToken cancellationToken, string column = "id")
+	{
+		if (!TableExists(sqlite, table))
+		{
+			return [];
+		}
+		// Table and column names are fixed internal call-site constants, never archive content or user input.
+		await using SqliteCommand command = sqlite.CreateCommand();
+		command.CommandText = $"SELECT {column} FROM {table}";
+		await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+		List<Guid> ids = [];
+		while (await reader.ReadAsync(cancellationToken))
+		{
+			ids.Add(Guid.Parse(reader.GetString(0)));
+		}
+		return [.. ids];
+	}
+	private static async Task<(int Created, int Updated)> UpsertAcceptedDuplicatePairsAsync(
+		ApplicationDbContext context, SqliteConnection sqlite, int exportVersion,
+		IReadOnlyDictionary<(Guid First, Guid Second), Guid> priorAcceptedPairs, CancellationToken cancellationToken)
 	{
 		if (exportVersion < 5)
 		{
@@ -225,7 +300,13 @@ public partial class BackupImportService
 			// to the same assertion. Keep that target identity rather than duplicating it.
 			AcceptedDuplicatePairEntity? active = await context.AcceptedDuplicatePairs
 				.FirstOrDefaultAsync(pair => pair.ReceiptIdA == first && pair.ReceiptIdB == second, cancellationToken);
-			AcceptedDuplicatePairEntity? entity = active ?? byId;
+			AcceptedDuplicatePairEntity? prior = null;
+			if (active is null && priorAcceptedPairs.TryGetValue((first, second), out Guid priorId))
+			{
+				prior = await context.AcceptedDuplicatePairs.IgnoreQueryFilters()
+					.FirstOrDefaultAsync(pair => pair.Id == priorId, cancellationToken);
+			}
+			AcceptedDuplicatePairEntity? entity = active ?? prior ?? byId;
 			if (entity is null)
 			{
 				context.AcceptedDuplicatePairs.Add(new AcceptedDuplicatePairEntity

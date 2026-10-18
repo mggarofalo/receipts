@@ -132,7 +132,6 @@ public class ItemTemplateHistoryCandidateServiceTests(PostgresFixture fixture)
 		await ResetAsync();
 		ReceiptEntity live = Receipt(new DateOnly(2026, 2, 1));
 		ReceiptEntity deletedReceipt = Receipt(new DateOnly(2026, 2, 2));
-		deletedReceipt.DeletedAt = DateTimeOffset.UtcNow;
 
 		ReceiptItemEntity deletedItem = Item(live.Id, "Coffee Beans");
 		deletedItem.DeletedAt = DateTimeOffset.UtcNow;
@@ -145,6 +144,14 @@ public class ItemTemplateHistoryCandidateServiceTests(PostgresFixture fixture)
 				deletedItem,
 				Item(deletedReceipt.Id, "Coffee Beans"),
 			]);
+
+		// Preserve an active child under a historical tombstone: normal writes now reject this
+		// state, but read projections must continue excluding it from existing databases.
+		await using (ApplicationDbContext legacy = fixture.CreateDbContext())
+		{
+			await legacy.Database.ExecuteSqlInterpolatedAsync($"UPDATE receipts.\"Receipts\" SET \"DeletedAt\" = {DateTimeOffset.UtcNow} WHERE \"Id\" = {deletedReceipt.Id}");
+			(await legacy.ReceiptItems.IgnoreAutoIncludes().CountAsync(item => item.ReceiptId == deletedReceipt.Id)).Should().Be(1);
+		}
 
 		// Act
 		PagedResult<ItemTemplateHistoryCandidate> result = await CreateService().GetHistoryCandidatesAsync(0, 50, 2, CancellationToken.None);

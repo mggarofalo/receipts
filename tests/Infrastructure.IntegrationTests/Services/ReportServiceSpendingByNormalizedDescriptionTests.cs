@@ -222,7 +222,6 @@ public class ReportServiceSpendingByNormalizedDescriptionTests(PostgresFixture f
 		Guid normalizedId = Guid.NewGuid();
 		ReceiptEntity live = ReceiptEntityGenerator.Generate();
 		ReceiptEntity deleted = ReceiptEntityGenerator.Generate();
-		deleted.DeletedAt = DateTimeOffset.UtcNow;
 
 		await using (ApplicationDbContext setup = fixture.CreateDbContext())
 		{
@@ -254,6 +253,10 @@ public class ReportServiceSpendingByNormalizedDescriptionTests(PostgresFixture f
 
 			setup.ReceiptItems.AddRange(liveItem, softDeletedItem, itemOnDeletedReceipt);
 			await setup.SaveChangesAsync();
+			// Model historical/external data that predates enforced child admission. The child
+			// deliberately stays active so this still verifies the report's parent filter.
+			await setup.Database.ExecuteSqlInterpolatedAsync($"UPDATE receipts.\"Receipts\" SET \"DeletedAt\" = {DateTimeOffset.UtcNow} WHERE \"Id\" = {deleted.Id}");
+			(await setup.ReceiptItems.IgnoreAutoIncludes().AsNoTracking().SingleAsync(item => item.Id == itemOnDeletedReceipt.Id)).DeletedAt.Should().BeNull();
 		}
 
 		ReportService service = new(new FixtureDbContextFactory(fixture));
