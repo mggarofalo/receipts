@@ -27,14 +27,33 @@ if (typeof window !== "undefined" && typeof window.matchMedia !== "function") {
 }
 
 // Polyfill localStorage for jsdom environments where it's not properly initialized
-if (typeof globalThis.localStorage === 'undefined' || typeof globalThis.localStorage.setItem !== 'function') {
+if (
+  typeof globalThis.localStorage === "undefined" ||
+  typeof globalThis.localStorage.setItem !== "function"
+) {
   const store: Record<string, string> = {};
   globalThis.localStorage = {
     getItem: (key: string) => store[key] ?? null,
-    setItem: (key: string, value: string) => { store[key] = value; },
-    removeItem: (key: string) => { delete store[key]; },
-    clear: () => { for (const k of Object.keys(store)) delete store[k]; },
+    setItem: (key: string, value: string) => {
+      store[key] = value;
+    },
+    removeItem: (key: string) => {
+      delete store[key];
+    },
+    clear: () => {
+      for (const k of Object.keys(store)) delete store[k];
+    },
     key: (index: number) => Object.keys(store)[index] ?? null,
-    get length() { return Object.keys(store).length; },
+    get length() {
+      return Object.keys(store).length;
+    },
   } as Storage;
+}
+
+// jsdom has no layout/scrolling; cmdk scrolls its keyboard-selected option.
+if (
+  typeof HTMLElement !== "undefined" &&
+  typeof HTMLElement.prototype.scrollIntoView !== "function"
+) {
+  HTMLElement.prototype.scrollIntoView = () => {};
 }

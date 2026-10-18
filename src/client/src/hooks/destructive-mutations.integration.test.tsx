@@ -87,16 +87,20 @@ describe("destructive mutations reject bodiless failures (RECEIPTS-885)", () => 
   });
 
   it("useDeleteAccount still surfaces a 409 conflict body unchanged", async () => {
-    // The normaliser must not flatten a non-ProblemDetails object body, or the
-    // conflict dialog loses the fields it renders.
+    // Preserve the RFC 9457 detail and extension used by the conflict dialog.
     server.use(
       http.delete("*/api/accounts/:id", () =>
         HttpResponse.json(
           {
-            message: "Cannot delete — 3 cards reference this account",
+            detail: "Cannot delete — 3 card(s) reference this account",
+            status: 409,
+            title: "Conflict",
             cardCount: 3,
           },
-          { status: 409 },
+          {
+            status: 409,
+            headers: { "Content-Type": "application/problem+json" },
+          },
         ),
       ),
     );
@@ -110,11 +114,12 @@ describe("destructive mutations reject bodiless failures (RECEIPTS-885)", () => 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(result.current.error).toMatchObject({
       conflict: true,
-      message: "Cannot delete — 3 cards reference this account",
+      detail: "Cannot delete — 3 card(s) reference this account",
       cardCount: 3,
     });
+    expect(toast.success).not.toHaveBeenCalled();
     expect(toast.error).toHaveBeenCalledWith(
-      "Cannot delete — 3 cards reference this account",
+      "Cannot delete — 3 card(s) reference this account",
     );
   });
 });

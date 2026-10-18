@@ -1,3 +1,4 @@
+import type { components } from "@/generated/api";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
@@ -24,12 +25,16 @@ describe("Categories (integration)", () => {
   it("shows loading skeleton then resolves to data", async () => {
     const { container } = renderWithQueryClient(<Categories />);
 
-    expect(container.querySelector("[data-slot='skeleton']")).toBeInTheDocument();
+    expect(
+      container.querySelector("[data-slot='skeleton']"),
+    ).toBeInTheDocument();
 
     await waitFor(() => {
       expect(screen.getByText("Groceries")).toBeInTheDocument();
     });
-    expect(container.querySelector("[data-slot='skeleton']")).not.toBeInTheDocument();
+    expect(
+      container.querySelector("[data-slot='skeleton']"),
+    ).not.toBeInTheDocument();
   });
 
   it("renders empty state when API returns no data", async () => {
@@ -128,10 +133,16 @@ describe("Categories (integration)", () => {
 
     server.use(
       http.post("*/api/categories", async ({ request }) => {
-        capturedBody = (await request.json()) as Record<string, unknown>;
+        const body =
+          (await request.json()) as components["schemas"]["CreateCategoryRequest"];
+        capturedBody = body;
         return HttpResponse.json(
-          { id: "new-id", ...capturedBody },
-          { status: 201 },
+          {
+            ...body,
+            isActive: body.isActive ?? false,
+            id: "00000000-0000-0000-0000-000000000099",
+          } satisfies components["schemas"]["CategoryResponse"],
+          { status: 200 },
         );
       }),
     );
@@ -143,9 +154,14 @@ describe("Categories (integration)", () => {
     });
 
     await user.click(screen.getByRole("button", { name: /new category/i }));
-    expect(screen.getByRole("heading", { name: /create category/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /create category/i }),
+    ).toBeInTheDocument();
 
-    await user.type(screen.getByLabelText(/^name$/i), "Automotive");
+    await user.type(
+      screen.getByRole("textbox", { name: /^name\s*\*$/i }),
+      "Automotive",
+    );
     await user.click(screen.getByRole("button", { name: /create category/i }));
 
     await waitFor(() => {
@@ -174,9 +190,11 @@ describe("Categories (integration)", () => {
     const editButtons = screen.getAllByRole("button", { name: /edit/i });
     await user.click(editButtons[0]);
 
-    expect(screen.getByRole("heading", { name: /edit category/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /edit category/i }),
+    ).toBeInTheDocument();
 
-    const nameInput = screen.getByLabelText(/^name$/i);
+    const nameInput = screen.getByRole("textbox", { name: /^name\s*\*$/i });
     await user.clear(nameInput);
     await user.type(nameInput, "Updated Groceries");
     await user.click(screen.getByRole("button", { name: /update category/i }));
@@ -192,15 +210,21 @@ describe("Categories (integration)", () => {
     renderWithQueryClient(<Categories />);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /new category/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /new category/i }),
+      ).toBeInTheDocument();
     });
 
     await user.click(screen.getByRole("button", { name: /new category/i }));
-    expect(screen.getByRole("heading", { name: /create category/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /create category/i }),
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /cancel/i }));
     await waitFor(() => {
-      expect(screen.queryByRole("heading", { name: /create category/i })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("heading", { name: /create category/i }),
+      ).not.toBeInTheDocument();
     });
   });
 
@@ -208,13 +232,17 @@ describe("Categories (integration)", () => {
     renderWithQueryClient(<Categories />);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /new category/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /new category/i }),
+      ).toBeInTheDocument();
     });
 
     window.dispatchEvent(new Event("shortcut:new-item"));
 
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: /create category/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole("heading", { name: /create category/i }),
+      ).toBeInTheDocument();
     });
   });
 
