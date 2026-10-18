@@ -20,10 +20,7 @@ import client from "@/lib/api-client";
 import { toast } from "sonner";
 import {
   useReceiptItems,
-  useReceiptItem,
-  useReceiptItemsByReceiptId,
   useCreateReceiptItem,
-  useCreateReceiptItemsBatch,
   useUpdateReceiptItem,
   useDeleteReceiptItems,
   useDeletedReceiptItems,
@@ -35,7 +32,11 @@ function createWrapper() {
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
   return function Wrapper({ children }: { children: ReactNode }) {
-    return createElement(QueryClientProvider, { client: queryClient }, children);
+    return createElement(
+      QueryClientProvider,
+      { client: queryClient },
+      children,
+    );
   };
 }
 
@@ -56,7 +57,10 @@ describe("useReceiptItems", () => {
         subcategory: "Produce",
       },
     ];
-    (client.GET as Mock).mockResolvedValue({ data: { data: items, total: 1, offset: 0, limit: 50 }, error: undefined });
+    (client.GET as Mock).mockResolvedValue({
+      data: { data: items, total: 1, offset: 0, limit: 50 },
+      error: undefined,
+    });
 
     const { result } = renderHook(() => useReceiptItems(), {
       wrapper: createWrapper(),
@@ -70,11 +74,17 @@ describe("useReceiptItems", () => {
   });
 
   it("list query passes trimmed q to the server when provided", async () => {
-    (client.GET as Mock).mockResolvedValue({ data: { data: [], total: 0, offset: 0, limit: 50 }, error: undefined });
-
-    const { result } = renderHook(() => useReceiptItems(0, 50, null, null, "  Apples  "), {
-      wrapper: createWrapper(),
+    (client.GET as Mock).mockResolvedValue({
+      data: { data: [], total: 0, offset: 0, limit: 50 },
+      error: undefined,
     });
+
+    const { result } = renderHook(
+      () => useReceiptItems(0, 50, null, null, "  Apples  "),
+      {
+        wrapper: createWrapper(),
+      },
+    );
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(client.GET).toHaveBeenCalledWith("/api/receipt-items", {
@@ -83,50 +93,21 @@ describe("useReceiptItems", () => {
   });
 
   it("list query omits q when the value is blank", async () => {
-    (client.GET as Mock).mockResolvedValue({ data: { data: [], total: 0, offset: 0, limit: 50 }, error: undefined });
-
-    const { result } = renderHook(() => useReceiptItems(0, 50, null, null, "   "), {
-      wrapper: createWrapper(),
+    (client.GET as Mock).mockResolvedValue({
+      data: { data: [], total: 0, offset: 0, limit: 50 },
+      error: undefined,
     });
+
+    const { result } = renderHook(
+      () => useReceiptItems(0, 50, null, null, "   "),
+      {
+        wrapper: createWrapper(),
+      },
+    );
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     const call = (client.GET as Mock).mock.calls[0];
     expect(call[1].params.query.q).toBeUndefined();
-  });
-
-  it("single query is disabled when id is null", () => {
-    const { result } = renderHook(() => useReceiptItem(null), {
-      wrapper: createWrapper(),
-    });
-
-    expect(result.current.data).toBeUndefined();
-    expect(result.current.fetchStatus).toBe("idle");
-    expect(client.GET).not.toHaveBeenCalled();
-  });
-
-  it("by-receipt query returns data when receiptId is provided", async () => {
-    const items = [{ id: "1", receiptItemCode: "RI-1", description: "Apples" }];
-    (client.GET as Mock).mockResolvedValue({ data: { data: items, total: 1, offset: 0, limit: 200 }, error: undefined });
-
-    const { result } = renderHook(() => useReceiptItemsByReceiptId("r-1"), {
-      wrapper: createWrapper(),
-    });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data).toEqual(items);
-    expect(client.GET).toHaveBeenCalledWith(
-      "/api/receipt-items",
-      { params: { query: { receiptId: "r-1", offset: 0, limit: 200 } } },
-    );
-  });
-
-  it("by-receipt query is disabled when receiptId is null", () => {
-    const { result } = renderHook(() => useReceiptItemsByReceiptId(null), {
-      wrapper: createWrapper(),
-    });
-
-    expect(result.current.data).toBeUndefined();
-    expect(result.current.fetchStatus).toBe("idle");
   });
 
   it("create mutation calls POST and shows toast on success", async () => {
@@ -139,7 +120,10 @@ describe("useReceiptItems", () => {
       subcategory: "Produce",
     };
     const created = { id: "2", ...body };
-    (client.POST as Mock).mockResolvedValue({ data: created, error: undefined });
+    (client.POST as Mock).mockResolvedValue({
+      data: created,
+      error: undefined,
+    });
 
     const { result } = renderHook(() => useCreateReceiptItem(), {
       wrapper: createWrapper(),
@@ -147,10 +131,14 @@ describe("useReceiptItems", () => {
 
     await result.current.mutateAsync({ receiptId: "r-1", body });
 
-    expect(client.POST).toHaveBeenCalledWith("/api/receipts/{receiptId}/receipt-items", { middleware: expect.any(Array),
-      params: { path: { receiptId: "r-1" } },
-      body,
-    });
+    expect(client.POST).toHaveBeenCalledWith(
+      "/api/receipts/{receiptId}/receipt-items",
+      {
+        middleware: expect.any(Array),
+        params: { path: { receiptId: "r-1" } },
+        body,
+      },
+    );
     expect(toast.success).toHaveBeenCalledWith("Receipt item created");
   });
 
@@ -172,7 +160,8 @@ describe("useReceiptItems", () => {
 
     await result.current.mutateAsync({ body });
 
-    expect(client.PUT).toHaveBeenCalledWith("/api/receipt-items/{id}", { middleware: expect.any(Array),
+    expect(client.PUT).toHaveBeenCalledWith("/api/receipt-items/{id}", {
+      middleware: expect.any(Array),
       params: { path: { id: body.id } },
       body,
     });
@@ -188,15 +177,21 @@ describe("useReceiptItems", () => {
 
     await result.current.mutateAsync(["1"]);
 
-    expect(client.DELETE).toHaveBeenCalledWith("/api/receipt-items", { middleware: expect.any(Array),
+    expect(client.DELETE).toHaveBeenCalledWith("/api/receipt-items", {
+      middleware: expect.any(Array),
       body: ["1"],
     });
     expect(toast.success).toHaveBeenCalledWith("Receipt item(s) deleted");
   });
 
   it("deleted receipt items query returns data on success", async () => {
-    const deleted = [{ id: "3", receiptItemCode: "DEL", description: "Old item" }];
-    (client.GET as Mock).mockResolvedValue({ data: { data: deleted, total: 1, offset: 0, limit: 50 }, error: undefined });
+    const deleted = [
+      { id: "3", receiptItemCode: "DEL", description: "Old item" },
+    ];
+    (client.GET as Mock).mockResolvedValue({
+      data: { data: deleted, total: 1, offset: 0, limit: 50 },
+      error: undefined,
+    });
 
     const { result } = renderHook(() => useDeletedReceiptItems(), {
       wrapper: createWrapper(),
@@ -218,70 +213,60 @@ describe("useReceiptItems", () => {
 
     await result.current.mutateAsync("1");
 
-    expect(client.POST).toHaveBeenCalledWith("/api/receipt-items/{id}/restore", { middleware: expect.any(Array),
-      params: { path: { id: "1" } },
-    });
+    expect(client.POST).toHaveBeenCalledWith(
+      "/api/receipt-items/{id}/restore",
+      { middleware: expect.any(Array), params: { path: { id: "1" } } },
+    );
     expect(toast.success).toHaveBeenCalledWith("Receipt item restored");
   });
 
   // --- Branch coverage: error callbacks ---
 
   it("create mutation does not toast on failure (surfaced by the global handler)", async () => {
-    (client.POST as Mock).mockResolvedValue({ error: { message: "Server error" } });
+    (client.POST as Mock).mockResolvedValue({
+      error: { message: "Server error" },
+    });
 
     const { result } = renderHook(() => useCreateReceiptItem(), {
       wrapper: createWrapper(),
     });
 
-    result.current.mutate({ receiptId: "r-1", body: { receiptItemCode: "RI-1", description: "X", quantity: 1, unitPrice: 1, category: "C", subcategory: "S" } });
+    result.current.mutate({
+      receiptId: "r-1",
+      body: {
+        receiptItemCode: "RI-1",
+        description: "X",
+        quantity: 1,
+        unitPrice: 1,
+        category: "C",
+        subcategory: "S",
+      },
+    });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(toast.error).not.toHaveBeenCalled();
-  });
-
-  it("batch create mutation does not toast on failure (surfaced by the global handler)", async () => {
-    (client.POST as Mock).mockResolvedValue({ error: { message: "Server error" } });
-
-    const { result } = renderHook(() => useCreateReceiptItemsBatch(), {
-      wrapper: createWrapper(),
-    });
-
-    result.current.mutate({ receiptId: "r-1", body: [{ receiptItemCode: "RI-1", description: "X", quantity: 1, unitPrice: 1, category: "C", subcategory: "S" }] });
-
-    await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(toast.error).not.toHaveBeenCalled();
-  });
-
-  it("batch create mutation invalidates cache on success", async () => {
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false, gcTime: Infinity } },
-    });
-    queryClient.setQueryData(["receipt-items"], { data: [], total: 0, offset: 0, limit: 50 });
-
-    function Wrapper({ children }: { children: ReactNode }) {
-      return createElement(QueryClientProvider, { client: queryClient }, children);
-    }
-
-    (client.POST as Mock).mockResolvedValue({ data: [{ id: "1" }], error: undefined });
-
-    const { result } = renderHook(() => useCreateReceiptItemsBatch(), {
-      wrapper: Wrapper,
-    });
-
-    result.current.mutate({ receiptId: "r-1", body: [{ receiptItemCode: "RI-1", description: "X", quantity: 1, unitPrice: 1, category: "C", subcategory: "S" }] });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(queryClient.getQueryState(["receipt-items"])?.isInvalidated).toBe(true);
   });
 
   it("update mutation does not toast on failure (surfaced by the global handler)", async () => {
-    (client.PUT as Mock).mockResolvedValue({ error: { message: "Server error" } });
+    (client.PUT as Mock).mockResolvedValue({
+      error: { message: "Server error" },
+    });
 
     const { result } = renderHook(() => useUpdateReceiptItem(), {
       wrapper: createWrapper(),
     });
 
-    result.current.mutate({ body: { id: "1", receiptItemCode: "RI-1", description: "X", quantity: 1, unitPrice: 1, category: "C", subcategory: "S" } });
+    result.current.mutate({
+      body: {
+        id: "1",
+        receiptItemCode: "RI-1",
+        description: "X",
+        quantity: 1,
+        unitPrice: 1,
+        category: "C",
+        subcategory: "S",
+      },
+    });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(toast.error).not.toHaveBeenCalled();
@@ -294,7 +279,11 @@ describe("useReceiptItems", () => {
     const setQueryDataSpy = vi.spyOn(queryClient, "setQueryData");
 
     function Wrapper({ children }: { children: ReactNode }) {
-      return createElement(QueryClientProvider, { client: queryClient }, children);
+      return createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        children,
+      );
     }
 
     // Pre-populate cache with list data
@@ -307,7 +296,9 @@ describe("useReceiptItems", () => {
     queryClient.setQueryData(cacheKey, cacheValue);
     setQueryDataSpy.mockClear();
 
-    (client.DELETE as Mock).mockResolvedValue({ error: { message: "Server error" } });
+    (client.DELETE as Mock).mockResolvedValue({
+      error: { message: "Server error" },
+    });
 
     const { result } = renderHook(() => useDeleteReceiptItems(), {
       wrapper: Wrapper,
@@ -328,11 +319,18 @@ describe("useReceiptItems", () => {
     });
 
     function Wrapper({ children }: { children: ReactNode }) {
-      return createElement(QueryClientProvider, { client: queryClient }, children);
+      return createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        children,
+      );
     }
 
     // Set cache to undefined (simulating no prior fetch)
-    queryClient.setQueryData(["receipt-items", "list", 0, 50, undefined, undefined], undefined);
+    queryClient.setQueryData(
+      ["receipt-items", "list", 0, 50, undefined, undefined],
+      undefined,
+    );
 
     (client.DELETE as Mock).mockResolvedValue({ error: undefined });
 
@@ -347,7 +345,9 @@ describe("useReceiptItems", () => {
   });
 
   it("restore mutation does not toast on failure (surfaced by the global handler)", async () => {
-    (client.POST as Mock).mockResolvedValue({ error: { message: "Server error" } });
+    (client.POST as Mock).mockResolvedValue({
+      error: { message: "Server error" },
+    });
 
     const { result } = renderHook(() => useRestoreReceiptItem(), {
       wrapper: createWrapper(),
@@ -360,7 +360,10 @@ describe("useReceiptItems", () => {
   });
 
   it("list query throws on API error", async () => {
-    (client.GET as Mock).mockResolvedValue({ data: undefined, error: { message: "Server error" } });
+    (client.GET as Mock).mockResolvedValue({
+      data: undefined,
+      error: { message: "Server error" },
+    });
 
     const { result } = renderHook(() => useReceiptItems(), {
       wrapper: createWrapper(),
@@ -370,20 +373,36 @@ describe("useReceiptItems", () => {
   });
 
   it("list query passes sort parameters", async () => {
-    (client.GET as Mock).mockResolvedValue({ data: { data: [], total: 0, offset: 0, limit: 50 }, error: undefined });
-
-    const { result } = renderHook(() => useReceiptItems(0, 50, "description", "asc"), {
-      wrapper: createWrapper(),
+    (client.GET as Mock).mockResolvedValue({
+      data: { data: [], total: 0, offset: 0, limit: 50 },
+      error: undefined,
     });
+
+    const { result } = renderHook(
+      () => useReceiptItems(0, 50, "description", "asc"),
+      {
+        wrapper: createWrapper(),
+      },
+    );
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(client.GET).toHaveBeenCalledWith("/api/receipt-items", {
-      params: { query: { offset: 0, limit: 50, sortBy: "description", sortDirection: "asc" } },
+      params: {
+        query: {
+          offset: 0,
+          limit: 50,
+          sortBy: "description",
+          sortDirection: "asc",
+        },
+      },
     });
   });
 
   it("list query returns total of 0 when data is undefined", async () => {
-    (client.GET as Mock).mockResolvedValue({ data: undefined, error: { message: "err" } });
+    (client.GET as Mock).mockResolvedValue({
+      data: undefined,
+      error: { message: "err" },
+    });
 
     const { result } = renderHook(() => useReceiptItems(), {
       wrapper: createWrapper(),
@@ -397,11 +416,25 @@ describe("useReceiptItems", () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false, gcTime: Infinity } },
     });
-    queryClient.setQueryData(["receipt-items"], { data: [], total: 0, offset: 0, limit: 50 });
-    queryClient.setQueryData(["receipt-items", "deleted"], { data: [], total: 0, offset: 0, limit: 50 });
+    queryClient.setQueryData(["receipt-items"], {
+      data: [],
+      total: 0,
+      offset: 0,
+      limit: 50,
+    });
+    queryClient.setQueryData(["receipt-items", "deleted"], {
+      data: [],
+      total: 0,
+      offset: 0,
+      limit: 50,
+    });
 
     function Wrapper({ children }: { children: ReactNode }) {
-      return createElement(QueryClientProvider, { client: queryClient }, children);
+      return createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        children,
+      );
     }
 
     (client.DELETE as Mock).mockResolvedValue({ error: undefined });
@@ -413,7 +446,11 @@ describe("useReceiptItems", () => {
     result.current.mutate(["1"]);
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(queryClient.getQueryState(["receipt-items"])?.isInvalidated).toBe(true);
-    expect(queryClient.getQueryState(["receipt-items", "deleted"])?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(["receipt-items"])?.isInvalidated).toBe(
+      true,
+    );
+    expect(
+      queryClient.getQueryState(["receipt-items", "deleted"])?.isInvalidated,
+    ).toBe(true);
   });
 });

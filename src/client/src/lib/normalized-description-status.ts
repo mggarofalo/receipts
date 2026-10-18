@@ -31,9 +31,3 @@ export function isPendingReview(
 ): boolean {
   return matches(status, "pendingReview");
 }
-
-export function isActive(
-  status: NormalizedDescriptionStatus | null | undefined,
-): boolean {
-  return matches(status, "active");
-}

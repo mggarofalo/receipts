@@ -1,0 +1,262 @@
+{
+  "revision": "3cef6d257fc424f51205a3060066dc2abc8c0142",
+  "entryPoints": [
+    "src/main.tsx"
+  ],
+  "unreachableFiles": [
+    "src/components/dashboard/RecentReceiptsWidget.tsx",
+    "src/components/ui/navigation-menu.tsx",
+    "src/components/ui/scroll-area.tsx",
+    "src/hooks/useAggregates.ts",
+    "src/hooks/usePagination.ts",
+    "src/hooks/useRoles.ts",
+    "src/pages/Home.tsx"
+  ],
+  "unusedExports": [
+    {
+      "file": "src/components/FilterPanel.tsx",
+      "name": "FilterFieldType"
+    },
+    {
+      "file": "src/components/primitives/icons.tsx",
+      "name": "IconName"
+    },
+    {
+      "file": "src/components/primitives/index.ts",
+      "name": "IconName"
+    },
+    {
+      "file": "src/components/ui/alert-dialog.tsx",
+      "name": "AlertDialogMedia"
+    },
+    {
+      "file": "src/components/ui/card.tsx",
+      "name": "CardFooter"
+    },
+    {
+      "file": "src/components/ui/dialog.tsx",
+      "name": "DialogClose"
+    },
+    {
+      "file": "src/components/ui/dialog.tsx",
+      "name": "DialogTrigger"
+    },
+    {
+      "file": "src/components/ui/dropdown-menu.tsx",
+      "name": "DropdownMenuCheckboxItem"
+    },
+    {
+      "file": "src/components/ui/dropdown-menu.tsx",
+      "name": "DropdownMenuGroup"
+    },
+    {
+      "file": "src/components/ui/dropdown-menu.tsx",
+      "name": "DropdownMenuPortal"
+    },
+    {
+      "file": "src/components/ui/dropdown-menu.tsx",
+      "name": "DropdownMenuShortcut"
+    },
+    {
+      "file": "src/components/ui/dropdown-menu.tsx",
+      "name": "DropdownMenuSub"
+    },
+    {
+      "file": "src/components/ui/dropdown-menu.tsx",
+      "name": "DropdownMenuSubContent"
+    },
+    {
+      "file": "src/components/ui/dropdown-menu.tsx",
+      "name": "DropdownMenuSubTrigger"
+    },
+    {
+      "file": "src/components/ui/form.tsx",
+      "name": "FormDescription"
+    },
+    {
+      "file": "src/components/ui/popover.tsx",
+      "name": "PopoverDescription"
+    },
+    {
+      "file": "src/components/ui/popover.tsx",
+      "name": "PopoverHeader"
+    },
+    {
+      "file": "src/components/ui/popover.tsx",
+      "name": "PopoverTitle"
+    },
+    {
+      "file": "src/components/ui/select.tsx",
+      "name": "SelectSeparator"
+    },
+    {
+      "file": "src/components/ui/sheet.tsx",
+      "name": "SheetClose"
+    },
+    {
+      "file": "src/components/ui/sheet.tsx",
+      "name": "SheetDescription"
+    },
+    {
+      "file": "src/components/ui/sheet.tsx",
+      "name": "SheetFooter"
+    },
+    {
+      "file": "src/components/ui/sheet.tsx",
+      "name": "SheetTrigger"
+    },
+    {
+      "file": "src/components/ui/table.tsx",
+      "name": "TableCaption"
+    },
+    {
+      "file": "src/components/YnabMemoSyncCard.tsx",
+      "name": "YnabMemoSyncCard"
+    },
+    {
+      "file": "src/components/YnabSplitComparisonCard.tsx",
+      "name": "YnabSplitComparisonCard"
+    },
+    {
+      "file": "src/hooks/useAccounts.ts",
+      "name": "useAccount"
+    },
+    {
+      "file": "src/hooks/useAdjustments.ts",
+      "name": "useAdjustment"
+    },
+    {
+      "file": "src/hooks/useAdjustments.ts",
+      "name": "useAdjustments"
+    },
+    {
+      "file": "src/hooks/useAdjustments.ts",
+      "name": "useAdjustmentsByReceiptId"
+    },
+    {
+      "file": "src/hooks/useAdjustments.ts",
+      "name": "useDeletedAdjustments"
+    },
+    {
+      "file": "src/hooks/useAdjustments.ts",
+      "name": "useRestoreAdjustment"
+    },
+    {
+      "file": "src/hooks/useCards.ts",
+      "name": "useCard"
+    },
+    {
+      "file": "src/hooks/useCategories.ts",
+      "name": "useCategory"
+    },
+    {
+      "file": "src/hooks/useItemTemplates.ts",
+      "name": "useItemTemplate"
+    },
+    {
+      "file": "src/hooks/useNormalizedDescriptions.ts",
+      "name": "NORMALIZED_DESCRIPTION_MAX_PAGE_SIZE"
+    },
+    {
+      "file": "src/hooks/useNormalizedDescriptions.ts",
+      "name": "useNormalizedDescription"
+    },
+    {
+      "file": "src/hooks/useReceiptItems.ts",
+      "name": "useCreateReceiptItemsBatch"
+    },
+    {
+      "file": "src/hooks/useReceiptItems.ts",
+      "name": "useReceiptItem"
+    },
+    {
+      "file": "src/hooks/useReceiptItems.ts",
+      "name": "useReceiptItemsByReceiptId"
+    },
+    {
+      "file": "src/hooks/useSubcategories.ts",
+      "name": "useSubcategory"
+    },
+    {
+      "file": "src/hooks/useTransactions.ts",
+      "name": "useCreateTransactionsBatch"
+    },
+    {
+      "file": "src/hooks/useTransactions.ts",
+      "name": "useTransaction"
+    },
+    {
+      "file": "src/hooks/useTransactions.ts",
+      "name": "useTransactions"
+    },
+    {
+      "file": "src/hooks/useTransactions.ts",
+      "name": "useTransactionsByReceiptId"
+    },
+    {
+      "file": "src/hooks/useUsers.ts",
+      "name": "useUser"
+    },
+    {
+      "file": "src/hooks/useYnab.ts",
+      "name": "ReceiptYnabSyncStatus"
+    },
+    {
+      "file": "src/hooks/useYnab.ts",
+      "name": "useYnabSyncStatus"
+    },
+    {
+      "file": "src/hooks/useYnabStatus.ts",
+      "name": "YnabStatusResponse"
+    },
+    {
+      "file": "src/lib/auth.ts",
+      "name": "isAuthenticated"
+    },
+    {
+      "file": "src/lib/command-palette/command-history.ts",
+      "name": "clearPinned"
+    },
+    {
+      "file": "src/lib/command-palette/command-history.ts",
+      "name": "clearRecent"
+    },
+    {
+      "file": "src/lib/command-palette/command-history.ts",
+      "name": "isPinned"
+    },
+    {
+      "file": "src/lib/command-palette/command-history.ts",
+      "name": "MAX_RECENT_ENTRIES"
+    },
+    {
+      "file": "src/lib/format.ts",
+      "name": "parseCurrencyInput"
+    },
+    {
+      "file": "src/lib/location-history.ts",
+      "name": "addLocation"
+    },
+    {
+      "file": "src/lib/location-history.ts",
+      "name": "clearLocationHistory"
+    },
+    {
+      "file": "src/lib/location-history.ts",
+      "name": "getLocationHistory"
+    },
+    {
+      "file": "src/lib/normalized-description-status.ts",
+      "name": "isActive"
+    },
+    {
+      "file": "src/lib/signalr-toast-buffer.ts",
+      "name": "_flushForTesting"
+    },
+    {
+      "file": "src/lib/signalr-toast-buffer.ts",
+      "name": "_resetForTesting"
+    }
+  ],
+  "unknownEdges": []
+}

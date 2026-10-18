@@ -3,7 +3,6 @@ import { extractErrorMessage } from "@/lib/problem-details";
 import { useMemo } from "react";
 import { Link } from "react-router";
 import {
-  useYnabConnectionStatus,
   useYnabSplitComparison,
   type SplitLineDto,
   type TransactionSplitComparisonDto,
@@ -27,9 +26,8 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 
-interface YnabSplitComparisonCardProps {
+interface YnabSplitComparisonContentProps {
   receiptId: string;
-  embedded?: boolean;
 }
 
 /**
@@ -42,33 +40,11 @@ function formatMilliunits(milliunits: number): string {
   return `${sign}$${Math.abs(dollars).toFixed(2)}`;
 }
 
-export function YnabSplitComparisonCard({
-  receiptId,
-  embedded = false,
-}: YnabSplitComparisonCardProps) {
-  // The split-comparison endpoint is YNAB-gated (503 when YNAB is not set up).
-  // Only query — and only render the card — once we know YNAB is configured;
-  // otherwise the card would surface a spurious 503 on every receipt detail.
-  const { isConfigured, isLoading: connectionLoading, isError: connectionError, refetch: retryConnection, isFetching: connectionFetching } =
-    useYnabConnectionStatus();
-
-  if (connectionError) return <RequestFailure
-    message="YNAB connection status is unavailable."
-    retry={() => { void retryConnection(); }}
-    isRetrying={connectionFetching}
-  />;
-  if (connectionLoading || !isConfigured) return null;
-
-  return (
-    <YnabSplitComparisonContent receiptId={receiptId} embedded={embedded} />
-  );
-}
-
 export function YnabSplitComparisonContent({
   receiptId,
-  embedded = false,
-}: YnabSplitComparisonCardProps) {
-  const { data, isLoading, error, refetch, isFetching } = useYnabSplitComparison(receiptId, true);
+}: YnabSplitComparisonContentProps) {
+  const { data, isLoading, error, refetch, isFetching } =
+    useYnabSplitComparison(receiptId, true);
 
   // Derived values — memoized so downstream render stays stable regardless of
   // which branch we render. Safe because we only derive from `data`.
@@ -94,11 +70,9 @@ export function YnabSplitComparisonContent({
   );
 
   return (
-    <Card className={embedded ? "border-0 shadow-none" : undefined}>
+    <Card className="border-0 shadow-none">
       <CardHeader>
-        <CardTitle className={embedded ? "text-base" : undefined}>
-          Split comparison
-        </CardTitle>
+        <CardTitle className="text-base">Split comparison</CardTitle>
         <CardDescription>
           Expected category split (computed locally) vs. the actual state
           currently stored in YNAB.
@@ -114,7 +88,9 @@ export function YnabSplitComparisonContent({
         ) : error ? (
           <RequestFailure
             message={`Could not load split comparison. ${extractErrorMessage(error) ?? "Please try again."}`}
-            retry={() => { void refetch(); }}
+            retry={() => {
+              void refetch();
+            }}
             isRetrying={isFetching}
           />
         ) : !data ? null : !data.canComputeExpected ? (

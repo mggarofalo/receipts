@@ -200,5 +200,3 @@ export const Icon = {
   ChevronR: makeIcon("ChevronR", <path d="M9 6l6 6-6 6" />),
   ChevronD: makeIcon("ChevronD", <path d="M6 9l6 6 6-6" />),
 } as const;
-
-export type IconName = keyof typeof Icon;

@@ -21,7 +21,6 @@ import client, { attemptTokenRefresh } from "@/lib/api-client";
 import { toast } from "sonner";
 import {
   useUsers,
-  useUser,
   useCreateUser,
   useUpdateUser,
   useDeleteUser,
@@ -33,7 +32,11 @@ function createWrapper() {
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
   return function Wrapper({ children }: { children: ReactNode }) {
-    return createElement(QueryClientProvider, { client: queryClient }, children);
+    return createElement(
+      QueryClientProvider,
+      { client: queryClient },
+      children,
+    );
   };
 }
 
@@ -44,7 +47,10 @@ beforeEach(() => {
 describe("useUsers", () => {
   it("fetches paginated users with page and pageSize", async () => {
     const mockUsers = [{ id: "1", email: "a@b.com" }];
-    (client.GET as Mock).mockResolvedValue({ data: { data: mockUsers, total: 1, offset: 0, limit: 10 }, error: null });
+    (client.GET as Mock).mockResolvedValue({
+      data: { data: mockUsers, total: 1, offset: 0, limit: 10 },
+      error: null,
+    });
 
     const { result } = renderHook(() => useUsers(0, 10), {
       wrapper: createWrapper(),
@@ -69,33 +75,6 @@ describe("useUsers", () => {
     });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-  });
-});
-
-describe("useUser", () => {
-  it("fetches a single user when userId is provided", async () => {
-    const mockUser = { id: "u1", email: "user@test.com" };
-    (client.GET as Mock).mockResolvedValue({ data: mockUser, error: null });
-
-    const { result } = renderHook(() => useUser("u1"), {
-      wrapper: createWrapper(),
-    });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-
-    expect(client.GET).toHaveBeenCalledWith("/api/users/{userId}", {
-      params: { path: { userId: "u1" } },
-    });
-    expect(result.current.data).toEqual(mockUser);
-  });
-
-  it("does not fetch when userId is null", () => {
-    const { result } = renderHook(() => useUser(null), {
-      wrapper: createWrapper(),
-    });
-
-    expect(result.current.fetchStatus).toBe("idle");
-    expect(client.GET).not.toHaveBeenCalled();
   });
 });
 

@@ -7,22 +7,57 @@ import { useSessionMutation } from "@/hooks/useSessionMutation";
 import client from "@/lib/api-client";
 import { toast } from "sonner";
 
-export function useCategories(offset = 0, limit = 50, sortBy?: string | null, sortDirection?: string | null, isActive?: boolean | null, options: { enabled?: boolean; q?: string } = {}) {
+export function useCategories(
+  offset = 0,
+  limit = 50,
+  sortBy?: string | null,
+  sortDirection?: string | null,
+  isActive?: boolean | null,
+  options: { enabled?: boolean; q?: string } = {},
+) {
   const { enabled = true, q } = options;
   const search = q?.trim() || undefined;
   const query = useQuery({
-    queryKey: [...queryKeys.categories, "list", offset, limit, sortBy, sortDirection, isActive, search],
+    queryKey: [
+      ...queryKeys.categories,
+      "list",
+      offset,
+      limit,
+      sortBy,
+      sortDirection,
+      isActive,
+      search,
+    ],
     enabled,
     queryFn: async () => {
       const { data, error } = await client.GET("/api/categories", {
-        params: { query: { offset, limit, sortBy: sortBy ?? undefined, sortDirection: (sortDirection ?? undefined) as "asc" | "desc" | undefined, isActive: isActive ?? undefined, q: search } },
+        params: {
+          query: {
+            offset,
+            limit,
+            sortBy: sortBy ?? undefined,
+            sortDirection: (sortDirection ?? undefined) as
+              | "asc"
+              | "desc"
+              | undefined,
+            isActive: isActive ?? undefined,
+            q: search,
+          },
+        },
       });
       if (error) throw error;
       return data;
     },
   });
   const base = useStableQuery(query);
-  return useMemo(() => ({ ...base, data: query.data?.data, total: Number(query.data?.total ?? 0) }), [base, query.data]);
+  return useMemo(
+    () => ({
+      ...base,
+      data: query.data?.data,
+      total: Number(query.data?.total ?? 0),
+    }),
+    [base, query.data],
+  );
 }
 
 /**
@@ -71,20 +106,6 @@ export function useAllCategories(isActive?: boolean | null) {
   });
 }
 
-export function useCategory(id: string | null) {
-  return useQuery({
-    queryKey: [...queryKeys.categories, id],
-    enabled: !!id,
-    queryFn: async () => {
-      const { data, error } = await client.GET("/api/categories/{id}", {
-        params: { path: { id: id! } },
-      });
-      if (error) throw error;
-      return data;
-    },
-  });
-}
-
 export function useCreateCategory() {
   const queryClient = useQueryClient();
   return useSessionMutation({
@@ -94,7 +115,10 @@ export function useCreateCategory() {
       description?: string | null;
       isActive: boolean;
     }) => {
-      const { data, error } = await client.POST("/api/categories", { ...toastErrorPolicy.request, body });
+      const { data, error } = await client.POST("/api/categories", {
+        ...toastErrorPolicy.request,
+        body,
+      });
       if (error) throw error;
       return data;
     },
@@ -161,26 +185,57 @@ export function useDeleteCategory() {
     onError: (error: unknown) => {
       const err = error as { conflict?: boolean; detail?: string };
       if (err.conflict) {
-        toast.error(err.detail ?? "Cannot delete — dependencies reference this category");
+        toast.error(
+          err.detail ?? "Cannot delete — dependencies reference this category",
+        );
       }
       // Non-conflict failures fall through to the global error handler.
     },
   });
 }
 
-export function useDeletedCategories(offset = 0, limit = 50, sortBy?: string | null, sortDirection?: string | null) {
+export function useDeletedCategories(
+  offset = 0,
+  limit = 50,
+  sortBy?: string | null,
+  sortDirection?: string | null,
+) {
   const query = useQuery({
-    queryKey: [...queryKeys.categories, "deleted", offset, limit, sortBy, sortDirection],
+    queryKey: [
+      ...queryKeys.categories,
+      "deleted",
+      offset,
+      limit,
+      sortBy,
+      sortDirection,
+    ],
     queryFn: async () => {
       const { data, error } = await client.GET("/api/categories/deleted", {
-        params: { query: { offset, limit, sortBy: sortBy ?? undefined, sortDirection: (sortDirection ?? undefined) as "asc" | "desc" | undefined } },
+        params: {
+          query: {
+            offset,
+            limit,
+            sortBy: sortBy ?? undefined,
+            sortDirection: (sortDirection ?? undefined) as
+              | "asc"
+              | "desc"
+              | undefined,
+          },
+        },
       });
       if (error) throw error;
       return data;
     },
   });
   const base = useStableQuery(query);
-  return useMemo(() => ({ ...base, data: query.data?.data, total: Number(query.data?.total ?? 0) }), [base, query.data]);
+  return useMemo(
+    () => ({
+      ...base,
+      data: query.data?.data,
+      total: Number(query.data?.total ?? 0),
+    }),
+    [base, query.data],
+  );
 }
 
 export function useRestoreCategory() {

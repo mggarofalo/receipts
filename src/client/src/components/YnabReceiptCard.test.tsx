@@ -16,11 +16,11 @@ vi.mock("@/components/YnabPushButton", () => ({
   YnabPushButton: (props: unknown) => mockPushButton(props),
 }));
 
-vi.mock("@/components/YnabMemoSyncCard", () => ({
+vi.mock("@/components/YnabMemoSyncContent", () => ({
   YnabMemoSyncContent: (props: unknown) => mockMemoCard(props),
 }));
 
-vi.mock("@/components/YnabSplitComparisonCard", () => ({
+vi.mock("@/components/YnabSplitComparisonContent", () => ({
   YnabSplitComparisonContent: (props: unknown) => mockSplitCard(props),
 }));
 
@@ -29,6 +29,19 @@ describe("YnabReceiptCard", () => {
     vi.clearAllMocks();
   });
 
+  it("does not mount YNAB workflows until the receipt owner reports readiness", () => {
+    const { container } = renderWithProviders(
+      <YnabReceiptCard
+        receiptId="receipt-1"
+        hasTransactions
+        isAvailable={false}
+      />,
+    );
+    expect(container).toBeEmptyDOMElement();
+    expect(mockPushButton).not.toHaveBeenCalled();
+    expect(mockMemoCard).not.toHaveBeenCalled();
+    expect(mockSplitCard).not.toHaveBeenCalled();
+  });
   it("combines all receipt-level YNAB workflows in one card", () => {
     renderWithProviders(
       <YnabReceiptCard
@@ -66,27 +79,10 @@ describe("YnabReceiptCard", () => {
     });
     expect(mockMemoCard).toHaveBeenCalledWith({
       receiptId: "receipt-42",
-      embedded: true,
       disabled: false,
     });
     expect(mockSplitCard).toHaveBeenCalledWith({
       receiptId: "receipt-42",
-      embedded: true,
     });
-  });
-
-  it("renders nothing when the receipt-level integration gate is unavailable", () => {
-    const { container } = renderWithProviders(
-      <YnabReceiptCard
-        receiptId="receipt-1"
-        hasTransactions
-        isAvailable={false}
-      />,
-    );
-
-    expect(container.firstChild).toBeNull();
-    expect(mockPushButton).not.toHaveBeenCalled();
-    expect(mockMemoCard).not.toHaveBeenCalled();
-    expect(mockSplitCard).not.toHaveBeenCalled();
   });
 });

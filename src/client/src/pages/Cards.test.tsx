@@ -83,20 +83,16 @@ vi.mock("@/hooks/useListKeyboardNav", () => ({
     focusedId: null,
     setFocusedIndex: vi.fn(),
     tableRef: { current: null },
-    containerProps: { role: "grid" as const, tabIndex: 0, "aria-label": "list", "aria-activedescendant": undefined },
-    getRowProps: (id: string) => ({ id: `list-row-${id}`, role: "row" as const }),
-  })),
-}));
-
-vi.mock("@/hooks/usePagination", () => ({
-  usePagination: vi.fn(() => ({
-    paginatedItems: [],
-    currentPage: 1,
-    pageSize: 10,
-    totalItems: 0,
-    totalPages: 1,
-    setPage: vi.fn(),
-    setPageSize: vi.fn(),
+    containerProps: {
+      role: "grid" as const,
+      tabIndex: 0,
+      "aria-label": "list",
+      "aria-activedescendant": undefined,
+    },
+    getRowProps: (id: string) => ({
+      id: `list-row-${id}`,
+      role: "row" as const,
+    }),
   })),
 }));
 
@@ -119,34 +115,36 @@ describe("Cards", () => {
 
   it("renders the page heading", () => {
     renderWithQueryClient(<Cards />);
-    expect(
-      screen.getByRole("heading", { name: /cards/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /cards/i })).toBeInTheDocument();
   });
 
   it("renders loading skeleton when data is loading", async () => {
     const { useCards } = await import("@/hooks/useCards");
-    vi.mocked(useCards).mockReturnValue(mockQueryResult({
-      data: undefined,
-      isLoading: true,
-    }));
+    vi.mocked(useCards).mockReturnValue(
+      mockQueryResult({
+        data: undefined,
+        isLoading: true,
+      }),
+    );
 
     const { container } = renderWithQueryClient(<Cards />);
-    expect(container.querySelector("[data-slot='skeleton']")).toBeInTheDocument();
+    expect(
+      container.querySelector("[data-slot='skeleton']"),
+    ).toBeInTheDocument();
   });
 
   it("renders empty state when no cards exist", async () => {
     const { useCards } = await import("@/hooks/useCards");
-    vi.mocked(useCards).mockReturnValue(mockQueryResult({
-      data: [],
-      total: 0,
-      isLoading: false,
-    }));
+    vi.mocked(useCards).mockReturnValue(
+      mockQueryResult({
+        data: [],
+        total: 0,
+        isLoading: false,
+      }),
+    );
 
     renderWithQueryClient(<Cards />);
-    expect(
-      screen.getByText(/no cards yet/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/no cards yet/i)).toBeInTheDocument();
   });
 
   it("renders the New Card button", () => {
@@ -158,9 +156,7 @@ describe("Cards", () => {
 
   it("renders the search input", () => {
     renderWithQueryClient(<Cards />);
-    expect(
-      screen.getByPlaceholderText(/search cards/i),
-    ).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/search cards/i)).toBeInTheDocument();
   });
 
   it("renders table with cards when data exists", async () => {
@@ -170,21 +166,30 @@ describe("Cards", () => {
     ];
 
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "",
-      setSearch: vi.fn(),
-      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
-      totalCount: items.length,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: items.map((item) => ({
+          item,
+          matches: [],
+          score: 0,
+          refIndex: 0,
+        })),
+        totalCount: items.length,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
 
     const { useCards } = await import("@/hooks/useCards");
-    vi.mocked(useCards).mockReturnValue(mockQueryResult({
-      data: items,
-      total: items.length,
-      isLoading: false,
-    }));
+    vi.mocked(useCards).mockReturnValue(
+      mockQueryResult({
+        data: items,
+        total: items.length,
+        isLoading: false,
+      }),
+    );
 
     renderWithQueryClient(<Cards />);
     expect(screen.getByText("Checking")).toBeInTheDocument();
@@ -210,21 +215,30 @@ describe("Cards", () => {
     ];
 
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "",
-      setSearch: vi.fn(),
-      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
-      totalCount: items.length,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: items.map((item) => ({
+          item,
+          matches: [],
+          score: 0,
+          refIndex: 0,
+        })),
+        totalCount: items.length,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
 
     const { useCards } = await import("@/hooks/useCards");
-    vi.mocked(useCards).mockReturnValue(mockQueryResult({
-      data: items,
-      total: items.length,
-      isLoading: false,
-    }));
+    vi.mocked(useCards).mockReturnValue(
+      mockQueryResult({
+        data: items,
+        total: items.length,
+        isLoading: false,
+      }),
+    );
 
     renderWithQueryClient(<Cards />);
     await user.click(screen.getByRole("button", { name: /edit/i }));
@@ -238,11 +252,15 @@ describe("Cards", () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     renderWithQueryClient(<Cards />);
     await user.click(screen.getByRole("button", { name: /new card/i }));
-    expect(screen.getByRole("heading", { name: /create card/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /create card/i }),
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /cancel/i }));
     await vi.waitFor(() => {
-      expect(screen.queryByRole("heading", { name: /create card/i })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("heading", { name: /create card/i }),
+      ).not.toBeInTheDocument();
     });
   });
 
@@ -253,33 +271,37 @@ describe("Cards", () => {
     ];
 
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "",
-      setSearch: vi.fn(),
-      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
-      totalCount: items.length,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
-
-    const { usePagination } = await import("@/hooks/usePagination");
-    vi.mocked(usePagination).mockReturnValue({
-      paginatedItems: items,
-      currentPage: 1,
-      pageSize: 10,
-      totalItems: items.length,
-      totalPages: 1,
-      setPage: vi.fn(),
-      setPageSize: vi.fn(),
-    });
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: items.map((item) => ({
+          item,
+          matches: [],
+          score: 0,
+          refIndex: 0,
+        })),
+        totalCount: items.length,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
+    const { useCards } = await import("@/hooks/useCards");
+    vi.mocked(useCards).mockReturnValue(
+      mockQueryResult({ data: items, total: items.length, isLoading: false }),
+    );
 
     renderWithQueryClient(<Cards />);
     await user.click(screen.getByRole("button", { name: /edit/i }));
-    expect(screen.getByRole("heading", { name: /edit card/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /edit card/i }),
+    ).toBeInTheDocument();
 
     await user.keyboard("{Escape}");
     await vi.waitFor(() => {
-      expect(screen.queryByRole("heading", { name: /edit card/i })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("heading", { name: /edit card/i }),
+      ).not.toBeInTheDocument();
     });
   });
 
@@ -312,10 +334,12 @@ describe("Cards", () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const mockMutate = vi.fn();
     const { useCreateCard } = await import("@/hooks/useCards");
-    vi.mocked(useCreateCard).mockReturnValue(mockMutationResult({
-      mutate: mockMutate,
-      isPending: false,
-    }));
+    vi.mocked(useCreateCard).mockReturnValue(
+      mockMutationResult({
+        mutate: mockMutate,
+        isPending: false,
+      }),
+    );
 
     renderWithQueryClient(<Cards />);
     await user.click(screen.getByRole("button", { name: /new card/i }));
@@ -335,35 +359,37 @@ describe("Cards", () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const mockMutate = vi.fn();
     const { useUpdateCard } = await import("@/hooks/useCards");
-    vi.mocked(useUpdateCard).mockReturnValue(mockMutationResult({
-      mutate: mockMutate,
-      isPending: false,
-    }));
+    vi.mocked(useUpdateCard).mockReturnValue(
+      mockMutationResult({
+        mutate: mockMutate,
+        isPending: false,
+      }),
+    );
 
     const items = [
       mockCardResponse({ id: "1", cardCode: "CARD-001", name: "Checking" }),
     ];
 
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "",
-      setSearch: vi.fn(),
-      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
-      totalCount: items.length,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
-
-    const { usePagination } = await import("@/hooks/usePagination");
-    vi.mocked(usePagination).mockReturnValue({
-      paginatedItems: items,
-      currentPage: 1,
-      pageSize: 10,
-      totalItems: items.length,
-      totalPages: 1,
-      setPage: vi.fn(),
-      setPageSize: vi.fn(),
-    });
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: items.map((item) => ({
+          item,
+          matches: [],
+          score: 0,
+          refIndex: 0,
+        })),
+        totalCount: items.length,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
+    const { useCards } = await import("@/hooks/useCards");
+    vi.mocked(useCards).mockReturnValue(
+      mockQueryResult({ data: items, total: items.length, isLoading: false }),
+    );
 
     renderWithQueryClient(<Cards />);
     await user.click(screen.getByRole("button", { name: /edit/i }));
@@ -380,20 +406,26 @@ describe("Cards", () => {
 
   it("renders NoResults when search returns no matches", async () => {
     const { useCards } = await import("@/hooks/useCards");
-    vi.mocked(useCards).mockReturnValue(mockQueryResult({
-      data: [mockCardResponse({ id: "1", cardCode: "CARD-001", name: "Checking" })],
-      isLoading: false,
-    }));
+    vi.mocked(useCards).mockReturnValue(
+      mockQueryResult({
+        data: [
+          mockCardResponse({ id: "1", cardCode: "CARD-001", name: "Checking" }),
+        ],
+        isLoading: false,
+      }),
+    );
 
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "xyz",
-      setSearch: vi.fn(),
-      results: [],
-      totalCount: 0,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "xyz",
+        setSearch: vi.fn(),
+        results: [],
+        totalCount: 0,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
 
     renderWithQueryClient(<Cards />);
     expect(screen.getByText(/try fewer keywords/i)).toBeInTheDocument();
@@ -401,25 +433,39 @@ describe("Cards", () => {
 
   it("defaults to showing only active cards (server-side filtered)", async () => {
     const activeItems = [
-      mockCardResponse({ id: "1", cardCode: "CARD-001", name: "Checking", isActive: true }),
+      mockCardResponse({
+        id: "1",
+        cardCode: "CARD-001",
+        name: "Checking",
+        isActive: true,
+      }),
     ];
 
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "",
-      setSearch: vi.fn(),
-      results: activeItems.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
-      totalCount: activeItems.length,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: activeItems.map((item) => ({
+          item,
+          matches: [],
+          score: 0,
+          refIndex: 0,
+        })),
+        totalCount: activeItems.length,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
 
     const { useCards } = await import("@/hooks/useCards");
-    vi.mocked(useCards).mockReturnValue(mockQueryResult({
-      data: activeItems,
-      total: activeItems.length,
-      isLoading: false,
-    }));
+    vi.mocked(useCards).mockReturnValue(
+      mockQueryResult({
+        data: activeItems,
+        total: activeItems.length,
+        isLoading: false,
+      }),
+    );
 
     renderWithQueryClient(<Cards />);
     expect(screen.getByText("Checking")).toBeInTheDocument();
@@ -428,7 +474,11 @@ describe("Cards", () => {
     expect(activeTab).toHaveAttribute("data-state", "active");
 
     expect(useCards).toHaveBeenCalledWith(
-      expect.anything(), expect.anything(), expect.anything(), expect.anything(), true,
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      true,
     );
   });
 
@@ -436,11 +486,13 @@ describe("Cards", () => {
     const user = (await import("@testing-library/user-event")).default.setup();
 
     const { useCards } = await import("@/hooks/useCards");
-    vi.mocked(useCards).mockReturnValue(mockQueryResult({
-      data: [],
-      total: 0,
-      isLoading: false,
-    }));
+    vi.mocked(useCards).mockReturnValue(
+      mockQueryResult({
+        data: [],
+        total: 0,
+        isLoading: false,
+      }),
+    );
 
     renderWithQueryClient(<Cards />);
     await user.click(screen.getByRole("tab", { name: "All" }));
@@ -450,26 +502,45 @@ describe("Cards", () => {
 
   it("renders a switch toggle on each card row", async () => {
     const items = [
-      mockCardResponse({ id: "1", cardCode: "CARD-001", name: "Checking", isActive: true }),
-      mockCardResponse({ id: "2", cardCode: "CARD-002", name: "Savings", isActive: false }),
+      mockCardResponse({
+        id: "1",
+        cardCode: "CARD-001",
+        name: "Checking",
+        isActive: true,
+      }),
+      mockCardResponse({
+        id: "2",
+        cardCode: "CARD-002",
+        name: "Savings",
+        isActive: false,
+      }),
     ];
 
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "",
-      setSearch: vi.fn(),
-      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
-      totalCount: items.length,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: items.map((item) => ({
+          item,
+          matches: [],
+          score: 0,
+          refIndex: 0,
+        })),
+        totalCount: items.length,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
 
     const { useCards } = await import("@/hooks/useCards");
-    vi.mocked(useCards).mockReturnValue(mockQueryResult({
-      data: items,
-      total: items.length,
-      isLoading: false,
-    }));
+    vi.mocked(useCards).mockReturnValue(
+      mockQueryResult({
+        data: items,
+        total: items.length,
+        isLoading: false,
+      }),
+    );
 
     renderWithQueryClient(<Cards />);
     const switches = screen.getAllByRole("switch");
@@ -482,31 +553,47 @@ describe("Cards", () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const mockMutate = vi.fn();
     const { useUpdateCard } = await import("@/hooks/useCards");
-    vi.mocked(useUpdateCard).mockReturnValue(mockMutationResult({
-      mutate: mockMutate,
-      isPending: false,
-    }));
+    vi.mocked(useUpdateCard).mockReturnValue(
+      mockMutationResult({
+        mutate: mockMutate,
+        isPending: false,
+      }),
+    );
 
     const items = [
-      mockCardResponse({ id: "1", cardCode: "CARD-001", name: "Checking", isActive: true }),
+      mockCardResponse({
+        id: "1",
+        cardCode: "CARD-001",
+        name: "Checking",
+        isActive: true,
+      }),
     ];
 
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "",
-      setSearch: vi.fn(),
-      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
-      totalCount: items.length,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: items.map((item) => ({
+          item,
+          matches: [],
+          score: 0,
+          refIndex: 0,
+        })),
+        totalCount: items.length,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
 
     const { useCards } = await import("@/hooks/useCards");
-    vi.mocked(useCards).mockReturnValue(mockQueryResult({
-      data: items,
-      total: items.length,
-      isLoading: false,
-    }));
+    vi.mocked(useCards).mockReturnValue(
+      mockQueryResult({
+        data: items,
+        total: items.length,
+        isLoading: false,
+      }),
+    );
 
     renderWithQueryClient(<Cards />);
     const switchEl = screen.getByRole("switch");
@@ -525,86 +612,134 @@ describe("Cards", () => {
   it("does not open edit dialog when switch is clicked", async () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const items = [
-      mockCardResponse({ id: "1", cardCode: "CARD-001", name: "Checking", isActive: true }),
+      mockCardResponse({
+        id: "1",
+        cardCode: "CARD-001",
+        name: "Checking",
+        isActive: true,
+      }),
     ];
 
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "",
-      setSearch: vi.fn(),
-      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
-      totalCount: items.length,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: items.map((item) => ({
+          item,
+          matches: [],
+          score: 0,
+          refIndex: 0,
+        })),
+        totalCount: items.length,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
 
     const { useCards } = await import("@/hooks/useCards");
-    vi.mocked(useCards).mockReturnValue(mockQueryResult({
-      data: items,
-      total: items.length,
-      isLoading: false,
-    }));
+    vi.mocked(useCards).mockReturnValue(
+      mockQueryResult({
+        data: items,
+        total: items.length,
+        isLoading: false,
+      }),
+    );
 
     renderWithQueryClient(<Cards />);
     const switchEl = screen.getByRole("switch");
     await user.click(switchEl);
 
-    expect(screen.queryByRole("heading", { name: /edit card/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: /edit card/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("passes isActive=false to useCards when Inactive tab is selected", async () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const inactiveItems = [
-      mockCardResponse({ id: "2", cardCode: "CARD-002", name: "Savings", isActive: false }),
+      mockCardResponse({
+        id: "2",
+        cardCode: "CARD-002",
+        name: "Savings",
+        isActive: false,
+      }),
     ];
 
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "",
-      setSearch: vi.fn(),
-      results: inactiveItems.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
-      totalCount: inactiveItems.length,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: inactiveItems.map((item) => ({
+          item,
+          matches: [],
+          score: 0,
+          refIndex: 0,
+        })),
+        totalCount: inactiveItems.length,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
 
     const { useCards } = await import("@/hooks/useCards");
-    vi.mocked(useCards).mockReturnValue(mockQueryResult({
-      data: inactiveItems,
-      total: inactiveItems.length,
-      isLoading: false,
-    }));
+    vi.mocked(useCards).mockReturnValue(
+      mockQueryResult({
+        data: inactiveItems,
+        total: inactiveItems.length,
+        isLoading: false,
+      }),
+    );
 
     renderWithQueryClient(<Cards />);
     await user.click(screen.getByRole("tab", { name: "Inactive" }));
 
     expect(useCards).toHaveBeenCalledWith(
-      expect.anything(), expect.anything(), expect.anything(), expect.anything(), false,
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      false,
     );
   });
 
   it("renders the parent Account name in the table row", async () => {
     const items = [
-      mockCardResponse({ id: "1", cardCode: "CARD-001", name: "Checking", accountId: "acct-1" }),
+      mockCardResponse({
+        id: "1",
+        cardCode: "CARD-001",
+        name: "Checking",
+        accountId: "acct-1",
+      }),
       mockCardResponse({ id: "2", cardCode: "CARD-002", name: "Savings" }),
     ];
 
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "",
-      setSearch: vi.fn(),
-      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
-      totalCount: items.length,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: items.map((item) => ({
+          item,
+          matches: [],
+          score: 0,
+          refIndex: 0,
+        })),
+        totalCount: items.length,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
 
     const { useCards } = await import("@/hooks/useCards");
-    vi.mocked(useCards).mockReturnValue(mockQueryResult({
-      data: items,
-      total: items.length,
-      isLoading: false,
-    }));
+    vi.mocked(useCards).mockReturnValue(
+      mockQueryResult({
+        data: items,
+        total: items.length,
+        isLoading: false,
+      }),
+    );
 
     renderWithQueryClient(<Cards />);
     expect(screen.getByText("Primary Checking")).toBeInTheDocument();
@@ -614,31 +749,48 @@ describe("Cards", () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const mockMutate = vi.fn();
     const { useUpdateCard } = await import("@/hooks/useCards");
-    vi.mocked(useUpdateCard).mockReturnValue(mockMutationResult({
-      mutate: mockMutate,
-      isPending: false,
-    }));
+    vi.mocked(useUpdateCard).mockReturnValue(
+      mockMutationResult({
+        mutate: mockMutate,
+        isPending: false,
+      }),
+    );
 
     const items = [
-      mockCardResponse({ id: "1", cardCode: "CARD-001", name: "Checking", isActive: true, accountId: "acct-1" }),
+      mockCardResponse({
+        id: "1",
+        cardCode: "CARD-001",
+        name: "Checking",
+        isActive: true,
+        accountId: "acct-1",
+      }),
     ];
 
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "",
-      setSearch: vi.fn(),
-      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
-      totalCount: items.length,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: items.map((item) => ({
+          item,
+          matches: [],
+          score: 0,
+          refIndex: 0,
+        })),
+        totalCount: items.length,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
 
     const { useCards } = await import("@/hooks/useCards");
-    vi.mocked(useCards).mockReturnValue(mockQueryResult({
-      data: items,
-      total: items.length,
-      isLoading: false,
-    }));
+    vi.mocked(useCards).mockReturnValue(
+      mockQueryResult({
+        data: items,
+        total: items.length,
+        isLoading: false,
+      }),
+    );
 
     renderWithQueryClient(<Cards />);
     await user.click(screen.getByRole("switch"));
@@ -656,10 +808,12 @@ describe("Cards", () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const mockMutate = vi.fn();
     const { useCreateCard } = await import("@/hooks/useCards");
-    vi.mocked(useCreateCard).mockReturnValue(mockMutationResult({
-      mutate: mockMutate,
-      isPending: false,
-    }));
+    vi.mocked(useCreateCard).mockReturnValue(
+      mockMutationResult({
+        mutate: mockMutate,
+        isPending: false,
+      }),
+    );
 
     renderWithQueryClient(<Cards />);
     await user.click(screen.getByRole("button", { name: /new card/i }));
@@ -682,28 +836,49 @@ describe("Cards", () => {
     await setAdmin(true);
     const user = (await import("@testing-library/user-event")).default.setup();
     const items = [
-      mockCardResponse({ id: "1", cardCode: "A1", name: "Alpha", isActive: true }),
-      mockCardResponse({ id: "2", cardCode: "A2", name: "Beta", isActive: true }),
+      mockCardResponse({
+        id: "1",
+        cardCode: "A1",
+        name: "Alpha",
+        isActive: true,
+      }),
+      mockCardResponse({
+        id: "2",
+        cardCode: "A2",
+        name: "Beta",
+        isActive: true,
+      }),
     ];
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "",
-      setSearch: vi.fn(),
-      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
-      totalCount: items.length,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: items.map((item) => ({
+          item,
+          matches: [],
+          score: 0,
+          refIndex: 0,
+        })),
+        totalCount: items.length,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
     const { useCards } = await import("@/hooks/useCards");
-    vi.mocked(useCards).mockReturnValue(mockQueryResult({
-      data: items,
-      total: items.length,
-      isLoading: false,
-    }));
+    vi.mocked(useCards).mockReturnValue(
+      mockQueryResult({
+        data: items,
+        total: items.length,
+        isLoading: false,
+      }),
+    );
 
     renderWithQueryClient(<Cards />);
 
-    const mergeButton = screen.getByRole("button", { name: /merge selected cards/i });
+    const mergeButton = screen.getByRole("button", {
+      name: /merge selected cards/i,
+    });
     // Nothing selected is still nothing to merge.
     expect(mergeButton).toBeDisabled();
 
@@ -721,26 +896,47 @@ describe("Cards", () => {
   // create a target account and only then be rejected with a 403.
   describe("merge permission gate", () => {
     async function renderWithTwoCards() {
-      const user = (await import("@testing-library/user-event")).default.setup();
+      const user = (
+        await import("@testing-library/user-event")
+      ).default.setup();
       const items = [
-        mockCardResponse({ id: "1", cardCode: "A1", name: "Alpha", isActive: true }),
-        mockCardResponse({ id: "2", cardCode: "A2", name: "Beta", isActive: true }),
+        mockCardResponse({
+          id: "1",
+          cardCode: "A1",
+          name: "Alpha",
+          isActive: true,
+        }),
+        mockCardResponse({
+          id: "2",
+          cardCode: "A2",
+          name: "Beta",
+          isActive: true,
+        }),
       ];
       const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-      vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-        search: "",
-        setSearch: vi.fn(),
-        results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
-        totalCount: items.length,
-        isSearching: false,
-        clearSearch: vi.fn(),
-      }));
+      vi.mocked(useFuzzySearch).mockReturnValue(
+        mockQueryResult({
+          search: "",
+          setSearch: vi.fn(),
+          results: items.map((item) => ({
+            item,
+            matches: [],
+            score: 0,
+            refIndex: 0,
+          })),
+          totalCount: items.length,
+          isSearching: false,
+          clearSearch: vi.fn(),
+        }),
+      );
       const { useCards } = await import("@/hooks/useCards");
-      vi.mocked(useCards).mockReturnValue(mockQueryResult({
-        data: items,
-        total: items.length,
-        isLoading: false,
-      }));
+      vi.mocked(useCards).mockReturnValue(
+        mockQueryResult({
+          data: items,
+          total: items.length,
+          isLoading: false,
+        }),
+      );
 
       renderWithQueryClient(<Cards />);
       return user;
@@ -805,5 +1001,4 @@ describe("Cards", () => {
       ).not.toBeDisabled();
     });
   });
-
 });

@@ -7,52 +7,108 @@ import { useSessionMutation } from "@/hooks/useSessionMutation";
 import client from "@/lib/api-client";
 import { toast } from "sonner";
 
-export function useSubcategories(offset = 0, limit = 50, sortBy?: string | null, sortDirection?: string | null, isActive?: boolean | null, options: { enabled?: boolean; q?: string } = {}) {
+export function useSubcategories(
+  offset = 0,
+  limit = 50,
+  sortBy?: string | null,
+  sortDirection?: string | null,
+  isActive?: boolean | null,
+  options: { enabled?: boolean; q?: string } = {},
+) {
   const { enabled = true, q } = options;
   const search = q?.trim() || undefined;
   const query = useQuery({
-    queryKey: [...queryKeys.subcategories, "list", offset, limit, sortBy, sortDirection, isActive, search],
+    queryKey: [
+      ...queryKeys.subcategories,
+      "list",
+      offset,
+      limit,
+      sortBy,
+      sortDirection,
+      isActive,
+      search,
+    ],
     enabled,
     queryFn: async () => {
       const { data, error } = await client.GET("/api/subcategories", {
-        params: { query: { offset, limit, sortBy: sortBy ?? undefined, sortDirection: (sortDirection ?? undefined) as "asc" | "desc" | undefined, isActive: isActive ?? undefined, q: search } },
+        params: {
+          query: {
+            offset,
+            limit,
+            sortBy: sortBy ?? undefined,
+            sortDirection: (sortDirection ?? undefined) as
+              | "asc"
+              | "desc"
+              | undefined,
+            isActive: isActive ?? undefined,
+            q: search,
+          },
+        },
       });
       if (error) throw error;
       return data;
     },
   });
   const base = useStableQuery(query);
-  return useMemo(() => ({ ...base, data: query.data?.data, total: Number(query.data?.total ?? 0) }), [base, query.data]);
+  return useMemo(
+    () => ({
+      ...base,
+      data: query.data?.data,
+      total: Number(query.data?.total ?? 0),
+    }),
+    [base, query.data],
+  );
 }
 
-export function useSubcategory(id: string | null) {
-  return useQuery({
-    queryKey: [...queryKeys.subcategories, id],
-    enabled: !!id,
-    queryFn: async () => {
-      const { data, error } = await client.GET("/api/subcategories/{id}", {
-        params: { path: { id: id! } },
-      });
-      if (error) throw error;
-      return data;
-    },
-  });
-}
-
-export function useSubcategoriesByCategoryId(categoryId: string | null, offset = 0, limit = 200, sortBy?: string | null, sortDirection?: string | null, isActive?: boolean | null) {
+export function useSubcategoriesByCategoryId(
+  categoryId: string | null,
+  offset = 0,
+  limit = 200,
+  sortBy?: string | null,
+  sortDirection?: string | null,
+  isActive?: boolean | null,
+) {
   const query = useQuery({
-    queryKey: [...queryKeys.subcategories, "byCategory", categoryId, offset, limit, sortBy, sortDirection, isActive],
+    queryKey: [
+      ...queryKeys.subcategories,
+      "byCategory",
+      categoryId,
+      offset,
+      limit,
+      sortBy,
+      sortDirection,
+      isActive,
+    ],
     enabled: !!categoryId,
     queryFn: async () => {
       const { data, error } = await client.GET("/api/subcategories", {
-        params: { query: { categoryId: categoryId!, offset, limit, sortBy: sortBy ?? undefined, sortDirection: (sortDirection ?? undefined) as "asc" | "desc" | undefined, isActive: isActive ?? undefined } },
+        params: {
+          query: {
+            categoryId: categoryId!,
+            offset,
+            limit,
+            sortBy: sortBy ?? undefined,
+            sortDirection: (sortDirection ?? undefined) as
+              | "asc"
+              | "desc"
+              | undefined,
+            isActive: isActive ?? undefined,
+          },
+        },
       });
       if (error) throw error;
       return data;
     },
   });
   const base = useStableQuery(query);
-  return useMemo(() => ({ ...base, data: query.data?.data, total: Number(query.data?.total ?? 0) }), [base, query.data]);
+  return useMemo(
+    () => ({
+      ...base,
+      data: query.data?.data,
+      total: Number(query.data?.total ?? 0),
+    }),
+    [base, query.data],
+  );
 }
 
 /**
@@ -64,10 +120,19 @@ export function useSubcategoriesByCategoryId(categoryId: string | null, offset =
  * hook loops in 500-row chunks (the API's max `limit`) until `total` is
  * reached. Returns the subcategory array directly as `data`.
  */
-export function useAllSubcategoriesByCategoryId(categoryId: string | null, isActive?: boolean | null) {
+export function useAllSubcategoriesByCategoryId(
+  categoryId: string | null,
+  isActive?: boolean | null,
+) {
   return useQuery({
     ...localErrorPolicy.query,
-    queryKey: [...queryKeys.subcategories, "byCategory", "all", categoryId, isActive ?? undefined],
+    queryKey: [
+      ...queryKeys.subcategories,
+      "byCategory",
+      "all",
+      categoryId,
+      isActive ?? undefined,
+    ],
     enabled: !!categoryId,
     queryFn: async ({ signal }) => {
       const pageSize = 500;
@@ -173,9 +238,12 @@ export function useDeleteSubcategory() {
   const queryClient = useQueryClient();
   return useSessionMutation({
     mutationFn: async (id: string) => {
-      const { error, response } = await client.DELETE("/api/subcategories/{id}", {
-        params: { path: { id } },
-      });
+      const { error, response } = await client.DELETE(
+        "/api/subcategories/{id}",
+        {
+          params: { path: { id } },
+        },
+      );
       if (error) {
         if (response.status === 409) {
           const body = error as unknown as DeleteSubcategoryConflict;
@@ -189,32 +257,69 @@ export function useDeleteSubcategory() {
       toast.success("Subcategory deleted");
     },
     onError: (error: unknown) => {
-      const err = error as { conflict?: boolean; detail?: string; receiptItemCount?: number; affectedReceipts?: AffectedReceipt[] };
+      const err = error as {
+        conflict?: boolean;
+        detail?: string;
+        receiptItemCount?: number;
+        affectedReceipts?: AffectedReceipt[];
+      };
       if (err.conflict && err.affectedReceipts) {
         // Conflict with affected receipts — handled by the component via onError callback
         return;
       }
       if (err.conflict) {
-        toast.error(err.detail ?? "Cannot delete — receipt items reference this subcategory");
+        toast.error(
+          err.detail ??
+            "Cannot delete — receipt items reference this subcategory",
+        );
       }
       // Non-conflict failures fall through to the global error handler.
     },
   });
 }
 
-export function useDeletedSubcategories(offset = 0, limit = 50, sortBy?: string | null, sortDirection?: string | null) {
+export function useDeletedSubcategories(
+  offset = 0,
+  limit = 50,
+  sortBy?: string | null,
+  sortDirection?: string | null,
+) {
   const query = useQuery({
-    queryKey: [...queryKeys.subcategories, "deleted", offset, limit, sortBy, sortDirection],
+    queryKey: [
+      ...queryKeys.subcategories,
+      "deleted",
+      offset,
+      limit,
+      sortBy,
+      sortDirection,
+    ],
     queryFn: async () => {
       const { data, error } = await client.GET("/api/subcategories/deleted", {
-        params: { query: { offset, limit, sortBy: sortBy ?? undefined, sortDirection: (sortDirection ?? undefined) as "asc" | "desc" | undefined } },
+        params: {
+          query: {
+            offset,
+            limit,
+            sortBy: sortBy ?? undefined,
+            sortDirection: (sortDirection ?? undefined) as
+              | "asc"
+              | "desc"
+              | undefined,
+          },
+        },
       });
       if (error) throw error;
       return data;
     },
   });
   const base = useStableQuery(query);
-  return useMemo(() => ({ ...base, data: query.data?.data, total: Number(query.data?.total ?? 0) }), [base, query.data]);
+  return useMemo(
+    () => ({
+      ...base,
+      data: query.data?.data,
+      total: Number(query.data?.total ?? 0),
+    }),
+    [base, query.data],
+  );
 }
 
 export function useRestoreSubcategory() {

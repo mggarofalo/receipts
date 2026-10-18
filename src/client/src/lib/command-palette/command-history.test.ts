@@ -1,13 +1,9 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import {
   addRecent,
-  clearPinned,
-  clearRecent,
   getPinned,
   getRecent,
-  isPinned,
   togglePinned,
-  MAX_RECENT_ENTRIES,
 } from "./command-history";
 
 const RECENT_KEY = "receipts:palette-recent";
@@ -23,7 +19,10 @@ describe("getRecent", () => {
   });
 
   it("returns stored entries in order", () => {
-    localStorage.setItem(RECENT_KEY, JSON.stringify(["nav:receipts", "create:card"]));
+    localStorage.setItem(
+      RECENT_KEY,
+      JSON.stringify(["nav:receipts", "create:card"]),
+    );
     expect(getRecent()).toEqual(["nav:receipts", "create:card"]);
   });
 
@@ -72,13 +71,13 @@ describe("addRecent", () => {
     expect(getRecent()).toEqual(["NAV:RECEIPTS", "nav:receipts"]);
   });
 
-  it("caps the list at MAX_RECENT_ENTRIES", () => {
-    for (let i = 0; i < MAX_RECENT_ENTRIES + 3; i++) {
+  it("caps the list at 5", () => {
+    for (let i = 0; i < 5 + 3; i++) {
       addRecent(`cmd:${i}`);
     }
     const recent = getRecent();
-    expect(recent).toHaveLength(MAX_RECENT_ENTRIES);
-    expect(recent[0]).toBe(`cmd:${MAX_RECENT_ENTRIES + 2}`);
+    expect(recent).toHaveLength(5);
+    expect(recent[0]).toBe(`cmd:${5 + 2}`);
   });
 
   it("is a no-op for empty ids", () => {
@@ -101,21 +100,16 @@ describe("addRecent", () => {
   });
 });
 
-describe("clearRecent", () => {
-  it("removes all entries", () => {
-    addRecent("nav:receipts");
-    clearRecent();
-    expect(getRecent()).toEqual([]);
-  });
-});
-
 describe("getPinned", () => {
   it("returns empty when storage is empty", () => {
     expect(getPinned()).toEqual([]);
   });
 
   it("returns stored entries in insertion order", () => {
-    localStorage.setItem(PINNED_KEY, JSON.stringify(["create:receipt", "nav:reports"]));
+    localStorage.setItem(
+      PINNED_KEY,
+      JSON.stringify(["create:receipt", "nav:reports"]),
+    );
     expect(getPinned()).toEqual(["create:receipt", "nav:reports"]);
   });
 
@@ -127,17 +121,6 @@ describe("getPinned", () => {
   it("filters non-string entries", () => {
     localStorage.setItem(PINNED_KEY, JSON.stringify([null, "create:card", 99]));
     expect(getPinned()).toEqual(["create:card"]);
-  });
-});
-
-describe("isPinned", () => {
-  it("returns true when id is pinned", () => {
-    togglePinned("create:receipt");
-    expect(isPinned("create:receipt")).toBe(true);
-  });
-
-  it("returns false when id is not pinned", () => {
-    expect(isPinned("nav:receipts")).toBe(false);
   });
 });
 
@@ -175,14 +158,5 @@ describe("togglePinned", () => {
     };
     expect(() => togglePinned("create:card")).not.toThrow();
     localStorage.setItem = original;
-  });
-});
-
-describe("clearPinned", () => {
-  it("removes all pinned entries", () => {
-    togglePinned("create:card");
-    togglePinned("nav:reports");
-    clearPinned();
-    expect(getPinned()).toEqual([]);
   });
 });

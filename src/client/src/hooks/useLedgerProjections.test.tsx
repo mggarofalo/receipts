@@ -1,3 +1,4 @@
+import { useReceiptItems } from "./useReceiptItems";
 import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -9,7 +10,7 @@ import { server } from "@/test/msw/server";
 import { renderWithProviders } from "@/test/test-utils";
 import { BalanceSummaryCard } from "@/components/BalanceSummaryCard";
 import { DateRangeSelector } from "@/components/dashboard/DateRangeSelector";
-import { useReceiptItem, useUpdateReceiptItem } from "./useReceiptItems";
+import { useUpdateReceiptItem } from "./useReceiptItems";
 import { useCreateReceipt, useReceipts } from "./useReceipts";
 import { useTripByReceiptId } from "./useTrips";
 import { MergeCardsDialog } from "@/components/MergeCardsDialog";
@@ -55,7 +56,13 @@ vi.mock("@microsoft/signalr", () => ({
     }
   },
   LogLevel: { Debug: 1, None: 6 },
-  HubConnectionState: { Disconnected: "Disconnected", Connecting: "Connecting", Connected: "Connected", Reconnecting: "Reconnecting", Disconnecting: "Disconnecting" },
+  HubConnectionState: {
+    Disconnected: "Disconnected",
+    Connecting: "Connecting",
+    Connected: "Connected",
+    Reconnecting: "Reconnecting",
+    Disconnecting: "Disconnecting",
+  },
 }));
 
 vi.hoisted(() => vi.stubEnv("VITE_API_URL", "http://ledger-projections.test"));
@@ -64,8 +71,12 @@ afterAll(() => server.close());
 beforeEach(() => {
   vi.clearAllMocks();
   hub.state = "Disconnected";
-  hub.start.mockImplementation(async () => { hub.state = "Connected"; });
-  hub.stop.mockImplementation(async () => { hub.state = "Disconnected"; });
+  hub.start.mockImplementation(async () => {
+    hub.state = "Connected";
+  });
+  hub.stop.mockImplementation(async () => {
+    hub.state = "Disconnected";
+  });
   localStorage.clear();
   clearTokens();
 });
@@ -94,7 +105,7 @@ function ItemViews({ remote = false }: { remote?: boolean }) {
   useSignalR(remote);
   const report = useOutOfBalanceReport();
   const split = useYnabSplitComparison("receipt");
-  const currentItem = useReceiptItem("item");
+  const currentItem = useReceiptItems();
   const receipts = useReceipts();
   const trip = useTripByReceiptId("receipt");
   const update = useUpdateReceiptItem();
@@ -107,7 +118,9 @@ function ItemViews({ remote = false }: { remote?: boolean }) {
       <output aria-label="Expected YNAB split">
         {split.data?.transactionComparisons[0]?.expected[0]?.milliunits}
       </output>
-      <output aria-label="Item price">{currentItem.data?.unitPrice}</output>
+      <output aria-label="Item price">
+        {currentItem.data?.[0]?.unitPrice}
+      </output>
       <output aria-label="Receipt list subtotal">
         {receipts.data?.[0]?.itemSubtotal}
       </output>
@@ -187,8 +200,13 @@ it.each(["local", "remote", "same-session"] as const)(
           ],
         }),
       ),
-      http.get("*/api/receipt-items/item", () =>
-        HttpResponse.json({ ...item, unitPrice: price }),
+      http.get("*/api/receipt-items", () =>
+        HttpResponse.json({
+          data: [{ ...item, unitPrice: price }],
+          total: 1,
+          offset: 0,
+          limit: 50,
+        }),
       ),
       http.get("*/api/receipts", () =>
         HttpResponse.json({

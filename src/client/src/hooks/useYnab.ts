@@ -3,7 +3,6 @@ import { useStableQuery } from "@/hooks/useStableQuery";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSessionMutation } from "@/hooks/useSessionMutation";
 import { localErrorPolicy, toastErrorPolicy } from "@/lib/request-error-policy";
-import { parseProblemDetails } from "@/lib/problem-details";
 import { assertSessionCurrent, getSessionVersion } from "@/lib/auth";
 import client from "@/lib/api-client";
 import type { components } from "@/generated/api";
@@ -24,8 +23,12 @@ const budgetDependentYnabQueryKeys = [
   ["ynab", "sync-status"],
 ] as const;
 
-const ynabBudgetChanges = ["ynab-budget"] as const satisfies readonly DomainChange[];
-const ynabMappingChanges = ["ynab-mapping"] as const satisfies readonly DomainChange[];
+const ynabBudgetChanges = [
+  "ynab-budget",
+] as const satisfies readonly DomainChange[];
+const ynabMappingChanges = [
+  "ynab-mapping",
+] as const satisfies readonly DomainChange[];
 const ynabSyncChanges = [
   "ynab-sync-record",
   "ynab-sync-event",
@@ -820,8 +823,6 @@ export function useAllReceiptIds(enabled = true) {
 
 export type ReceiptYnabSyncStatusValue =
   components["schemas"]["ReceiptYnabSyncStatusValue"];
-export type ReceiptYnabSyncStatus =
-  components["schemas"]["ReceiptYnabSyncStatus"];
 type ReceiptYnabSyncStatusListResponse =
   components["schemas"]["ReceiptYnabSyncStatusListResponse"];
 
@@ -853,30 +854,6 @@ export function useReceiptYnabSyncStatuses(
     }
     return { ...base, statusMap };
   }, [base, query.data]);
-}
-
-export function useYnabSyncStatus(transactionId: string | null) {
-  return useQuery({
-    ...localErrorPolicy.query,
-    queryKey: ["ynab", "sync-status", transactionId],
-    queryFn: async () => {
-      if (!transactionId) return null;
-      const { data, error } = await client.GET(
-        "/api/ynab/sync-status/{transactionId}",
-        {
-          ...localErrorPolicy.request,
-          params: {
-            path: { transactionId },
-            query: { syncType: "transactionPush" },
-          },
-        },
-      );
-      if (parseProblemDetails(error)?.status === 404) return null;
-      if (error) throw error;
-      return data;
-    },
-    enabled: !!transactionId,
-  });
 }
 
 export function useYnabRateLimitStatus(enabled = true) {

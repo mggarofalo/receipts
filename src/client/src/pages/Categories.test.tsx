@@ -67,20 +67,16 @@ vi.mock("@/hooks/useListKeyboardNav", () => ({
     focusedId: null,
     setFocusedIndex: vi.fn(),
     tableRef: { current: null },
-    containerProps: { role: "grid" as const, tabIndex: 0, "aria-label": "list", "aria-activedescendant": undefined },
-    getRowProps: (id: string) => ({ id: `list-row-${id}`, role: "row" as const }),
-  })),
-}));
-
-vi.mock("@/hooks/usePagination", () => ({
-  usePagination: vi.fn(() => ({
-    paginatedItems: [],
-    currentPage: 1,
-    pageSize: 10,
-    totalItems: 0,
-    totalPages: 1,
-    setPage: vi.fn(),
-    setPageSize: vi.fn(),
+    containerProps: {
+      role: "grid" as const,
+      tabIndex: 0,
+      "aria-label": "list",
+      "aria-activedescendant": undefined,
+    },
+    getRowProps: (id: string) => ({
+      id: `list-row-${id}`,
+      role: "row" as const,
+    }),
   })),
 }));
 
@@ -94,27 +90,31 @@ describe("Categories", () => {
 
   it("renders loading skeleton when data is loading", async () => {
     const { useCategories } = await import("@/hooks/useCategories");
-    vi.mocked(useCategories).mockReturnValue(mockQueryResult({
-      data: undefined,
-      isLoading: true,
-    }));
+    vi.mocked(useCategories).mockReturnValue(
+      mockQueryResult({
+        data: undefined,
+        isLoading: true,
+      }),
+    );
 
     const { container } = renderWithProviders(<Categories />);
-    expect(container.querySelector("[data-slot='skeleton']")).toBeInTheDocument();
+    expect(
+      container.querySelector("[data-slot='skeleton']"),
+    ).toBeInTheDocument();
   });
 
   it("renders empty state when no categories exist", async () => {
     const { useCategories } = await import("@/hooks/useCategories");
-    vi.mocked(useCategories).mockReturnValue(mockQueryResult({
-      data: [],
-      total: 0,
-      isLoading: false,
-    }));
+    vi.mocked(useCategories).mockReturnValue(
+      mockQueryResult({
+        data: [],
+        total: 0,
+        isLoading: false,
+      }),
+    );
 
     renderWithProviders(<Categories />);
-    expect(
-      screen.getByText(/no categories yet/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/no categories yet/i)).toBeInTheDocument();
   });
 
   it("renders the New Category button", () => {
@@ -138,21 +138,30 @@ describe("Categories", () => {
     ];
 
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "",
-      setSearch: vi.fn(),
-      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
-      totalCount: items.length,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: items.map((item) => ({
+          item,
+          matches: [],
+          score: 0,
+          refIndex: 0,
+        })),
+        totalCount: items.length,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
 
     const { useCategories } = await import("@/hooks/useCategories");
-    vi.mocked(useCategories).mockReturnValue(mockQueryResult({
-      data: items,
-      total: items.length,
-      isLoading: false,
-    }));
+    vi.mocked(useCategories).mockReturnValue(
+      mockQueryResult({
+        data: items,
+        total: items.length,
+        isLoading: false,
+      }),
+    );
 
     renderWithProviders(<Categories />);
     expect(screen.getByText("Food")).toBeInTheDocument();
@@ -178,21 +187,30 @@ describe("Categories", () => {
     ];
 
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "",
-      setSearch: vi.fn(),
-      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
-      totalCount: items.length,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: items.map((item) => ({
+          item,
+          matches: [],
+          score: 0,
+          refIndex: 0,
+        })),
+        totalCount: items.length,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
 
     const { useCategories } = await import("@/hooks/useCategories");
-    vi.mocked(useCategories).mockReturnValue(mockQueryResult({
-      data: items,
-      total: items.length,
-      isLoading: false,
-    }));
+    vi.mocked(useCategories).mockReturnValue(
+      mockQueryResult({
+        data: items,
+        total: items.length,
+        isLoading: false,
+      }),
+    );
 
     renderWithProviders(<Categories />);
     await user.click(screen.getByRole("button", { name: /edit/i }));
@@ -206,10 +224,12 @@ describe("Categories", () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const mockMutate = vi.fn();
     const { useCreateCategory } = await import("@/hooks/useCategories");
-    vi.mocked(useCreateCategory).mockReturnValue(mockMutationResult({
-      mutate: mockMutate,
-      isPending: false,
-    }));
+    vi.mocked(useCreateCategory).mockReturnValue(
+      mockMutationResult({
+        mutate: mockMutate,
+        isPending: false,
+      }),
+    );
 
     renderWithProviders(<Categories />);
     await user.click(screen.getByRole("button", { name: /new category/i }));
@@ -226,35 +246,37 @@ describe("Categories", () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const mockMutate = vi.fn();
     const { useUpdateCategory } = await import("@/hooks/useCategories");
-    vi.mocked(useUpdateCategory).mockReturnValue(mockMutationResult({
-      mutate: mockMutate,
-      isPending: false,
-    }));
+    vi.mocked(useUpdateCategory).mockReturnValue(
+      mockMutationResult({
+        mutate: mockMutate,
+        isPending: false,
+      }),
+    );
 
     const items = [
       { id: "1", name: "Food", description: "Food expenses", isActive: true },
     ];
 
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "",
-      setSearch: vi.fn(),
-      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
-      totalCount: items.length,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
-
-    const { usePagination } = await import("@/hooks/usePagination");
-    vi.mocked(usePagination).mockReturnValue({
-      paginatedItems: items,
-      currentPage: 1,
-      pageSize: 10,
-      totalItems: items.length,
-      totalPages: 1,
-      setPage: vi.fn(),
-      setPageSize: vi.fn(),
-    });
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: items.map((item) => ({
+          item,
+          matches: [],
+          score: 0,
+          refIndex: 0,
+        })),
+        totalCount: items.length,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
+    const { useCategories } = await import("@/hooks/useCategories");
+    vi.mocked(useCategories).mockReturnValue(
+      mockQueryResult({ data: items, total: items.length, isLoading: false }),
+    );
 
     renderWithProviders(<Categories />);
     await user.click(screen.getByRole("button", { name: /edit/i }));
@@ -271,20 +293,24 @@ describe("Categories", () => {
 
   it("renders NoResults when search returns no matches", async () => {
     const { useCategories } = await import("@/hooks/useCategories");
-    vi.mocked(useCategories).mockReturnValue(mockQueryResult({
-      data: [{ id: "1", name: "Food", description: "Food expenses" }],
-      isLoading: false,
-    }));
+    vi.mocked(useCategories).mockReturnValue(
+      mockQueryResult({
+        data: [{ id: "1", name: "Food", description: "Food expenses" }],
+        isLoading: false,
+      }),
+    );
 
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "xyz",
-      setSearch: vi.fn(),
-      results: [],
-      totalCount: 0,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "xyz",
+        setSearch: vi.fn(),
+        results: [],
+        totalCount: 0,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
 
     renderWithProviders(<Categories />);
     expect(screen.getByText(/try fewer keywords/i)).toBeInTheDocument();
@@ -294,11 +320,15 @@ describe("Categories", () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     renderWithProviders(<Categories />);
     await user.click(screen.getByRole("button", { name: /new category/i }));
-    expect(screen.getByRole("heading", { name: /create category/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /create category/i }),
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /cancel/i }));
     await vi.waitFor(() => {
-      expect(screen.queryByRole("heading", { name: /create category/i })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("heading", { name: /create category/i }),
+      ).not.toBeInTheDocument();
     });
   });
 
@@ -309,33 +339,37 @@ describe("Categories", () => {
     ];
 
     const { useFuzzySearch } = await import("@/hooks/useFuzzySearch");
-    vi.mocked(useFuzzySearch).mockReturnValue(mockQueryResult({
-      search: "",
-      setSearch: vi.fn(),
-      results: items.map((item) => ({ item, matches: [], score: 0, refIndex: 0 })),
-      totalCount: items.length,
-      isSearching: false,
-      clearSearch: vi.fn(),
-    }));
-
-    const { usePagination } = await import("@/hooks/usePagination");
-    vi.mocked(usePagination).mockReturnValue({
-      paginatedItems: items,
-      currentPage: 1,
-      pageSize: 10,
-      totalItems: items.length,
-      totalPages: 1,
-      setPage: vi.fn(),
-      setPageSize: vi.fn(),
-    });
+    vi.mocked(useFuzzySearch).mockReturnValue(
+      mockQueryResult({
+        search: "",
+        setSearch: vi.fn(),
+        results: items.map((item) => ({
+          item,
+          matches: [],
+          score: 0,
+          refIndex: 0,
+        })),
+        totalCount: items.length,
+        isSearching: false,
+        clearSearch: vi.fn(),
+      }),
+    );
+    const { useCategories } = await import("@/hooks/useCategories");
+    vi.mocked(useCategories).mockReturnValue(
+      mockQueryResult({ data: items, total: items.length, isLoading: false }),
+    );
 
     renderWithProviders(<Categories />);
     await user.click(screen.getByRole("button", { name: /edit/i }));
-    expect(screen.getByRole("heading", { name: /edit category/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /edit category/i }),
+    ).toBeInTheDocument();
 
     await user.keyboard("{Escape}");
     await vi.waitFor(() => {
-      expect(screen.queryByRole("heading", { name: /edit category/i })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("heading", { name: /edit category/i }),
+      ).not.toBeInTheDocument();
     });
   });
 
