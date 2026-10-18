@@ -162,7 +162,6 @@ startup or contract generation.
 
 ```
 tests/
-  Common.Tests/
   Domain.Tests/
   Application.Tests/
   Infrastructure.Tests/
