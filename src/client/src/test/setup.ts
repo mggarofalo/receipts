@@ -51,6 +51,9 @@ if (
 }
 
 // jsdom has no layout/scrolling; cmdk scrolls its keyboard-selected option.
-if (typeof HTMLElement.prototype.scrollIntoView !== "function") {
+if (
+  typeof HTMLElement !== "undefined" &&
+  typeof HTMLElement.prototype.scrollIntoView !== "function"
+) {
   HTMLElement.prototype.scrollIntoView = () => {};
 }
