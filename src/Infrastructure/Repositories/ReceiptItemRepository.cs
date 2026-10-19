@@ -93,6 +93,7 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 		ri => new ReceiptItemEntity
 		{
 			Id = ri.Id,
+			NormalizationRevision = ri.NormalizationRevision,
 			ReceiptId = ri.ReceiptId,
 			ReceiptItemCode = ri.ReceiptItemCode,
 			Description = ri.Description,
@@ -116,6 +117,7 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 				.Select(n => new NormalizedDescriptionEntity
 				{
 					Id = n.Id,
+					NormalizationRevision = n.NormalizationRevision,
 					CanonicalName = n.CanonicalName,
 					DisplayLabel = n.DisplayLabel,
 					Status = n.Status,
@@ -165,6 +167,7 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 			.Select(ri => new ReceiptItemEntity
 			{
 				Id = ri.Id,
+				NormalizationRevision = ri.NormalizationRevision,
 				ReceiptId = ri.ReceiptId,
 				ReceiptItemCode = ri.ReceiptItemCode,
 				Description = ri.Description,

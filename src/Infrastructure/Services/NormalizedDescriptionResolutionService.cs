@@ -173,6 +173,8 @@ public class NormalizedDescriptionResolutionService(
 			.Where(r =>
 				r.DeletedAt == null &&
 				r.NormalizedDescriptionId == null &&
+				!context.NormalizationAiProposals.Any(proposal => proposal.ReceiptItemId == r.Id && proposal.State == "pending"
+					&& context.NormalizationAiRuns.Any(run => run.Id == proposal.RunId && (run.State == "queued" || run.State == "running" || run.State == "ready" || run.State == "unknown"))) &&
 				r.Description != string.Empty &&
 				r.Description.Length >= MinDescriptionLength &&
 				!context.NormalizedDescriptions.Any(n =>
@@ -317,9 +319,13 @@ public class NormalizedDescriptionResolutionService(
 			context, itemIds, cancellationToken)).ToDictionary(item => item.Id);
 
 		int linked = 0;
+		HashSet<Guid> aiReserved = (await context.NormalizationAiProposals
+			.Where(proposal => itemIds.Contains(proposal.ReceiptItemId) && proposal.State == "pending"
+				&& context.NormalizationAiRuns.Any(run => run.Id == proposal.RunId && (run.State == "queued" || run.State == "running" || run.State == "ready" || run.State == "unknown")))
+			.Select(proposal => proposal.ReceiptItemId).ToListAsync(cancellationToken)).ToHashSet();
 		foreach (PlannedResolution plan in planned)
 		{
-			if (rejectedNames.Contains(plan.Source.Description.Trim().ToLowerInvariant())
+			if (aiReserved.Contains(plan.Source.Id) || rejectedNames.Contains(plan.Source.Description.Trim().ToLowerInvariant())
 				|| !current.TryGetValue(plan.Source.Id, out var snapshot) || !plan.Source.Matches(snapshot)
 				|| !items.TryGetValue(plan.Source.Id, out ReceiptItemEntity? item)
 				|| item.DeletedAt is not null || item.NormalizedDescriptionId is not null

@@ -6,6 +6,7 @@ namespace Infrastructure.Entities.Core;
 public class ReceiptItemEntity : ISoftDeletable, IOwnedBy<ReceiptEntity>
 {
 	public Guid Id { get; set; }
+	public Guid NormalizationRevision { get; set; }
 	public Guid ReceiptId { get; set; }
 	public string? ReceiptItemCode { get; set; }
 	public string Description { get; set; } = string.Empty;

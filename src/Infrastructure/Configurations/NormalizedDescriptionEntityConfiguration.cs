@@ -13,6 +13,9 @@ public class NormalizedDescriptionEntityConfiguration : IEntityTypeConfiguration
 		builder.ToTable("NormalizedDescriptions", "matching");
 
 		builder.HasKey(e => e.Id);
+		builder.Property(e => e.NormalizationRevision).HasDefaultValueSql("gen_random_uuid()").ValueGeneratedOnAddOrUpdate();
+		builder.Property(e => e.NormalizationRevision).Metadata.SetBeforeSaveBehavior(Microsoft.EntityFrameworkCore.Metadata.PropertySaveBehavior.Ignore);
+		builder.Property(e => e.NormalizationRevision).Metadata.SetAfterSaveBehavior(Microsoft.EntityFrameworkCore.Metadata.PropertySaveBehavior.Ignore);
 
 		builder.Property(e => e.Id)
 			.IsRequired()

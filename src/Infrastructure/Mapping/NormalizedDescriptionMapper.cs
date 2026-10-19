@@ -8,6 +8,7 @@ namespace Infrastructure.Mapping;
 public partial class NormalizedDescriptionMapper
 {
 	[MapperIgnoreTarget(nameof(NormalizedDescriptionEntity.Embedding))]
+	[MapperIgnoreTarget(nameof(NormalizedDescriptionEntity.NormalizationRevision))]
 	[MapperIgnoreTarget(nameof(NormalizedDescriptionEntity.EmbeddingModelVersion))]
 	[MapperIgnoreTarget(nameof(NormalizedDescriptionEntity.NearestNeighbour))]
 	// Derived from DisplayLabel and CanonicalName, both of which map directly. There is no column
@@ -16,6 +17,7 @@ public partial class NormalizedDescriptionMapper
 	public partial NormalizedDescriptionEntity ToEntity(NormalizedDescription source);
 
 	[MapperIgnoreSource(nameof(NormalizedDescriptionEntity.Embedding))]
+	[MapperIgnoreSource(nameof(NormalizedDescriptionEntity.NormalizationRevision))]
 	[MapperIgnoreSource(nameof(NormalizedDescriptionEntity.EmbeddingModelVersion))]
 	// The navigation carries the same information as NearestNeighbourId, which maps directly.
 	// Mapping the object graph too would drag a second entity into the domain model for no gain.

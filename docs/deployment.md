@@ -2,11 +2,19 @@
 
 Deploy Receipts on a Raspberry Pi (or any Linux host) using Docker Compose with Nginx Proxy Manager (NPM) for HTTPS termination.
 
-The proposed ChatGPT normalization integration is not available in this deployment.
-See the [eligibility and topology decision](decisions/2026-10-19-chatgpt-normalization-topology.md)
-for the local candidate and the unresolved private remote-hosting gate.
+For optional, review-first ChatGPT item normalization, follow the
+[personal container setup](chatgpt-normalization.md). It uses device-code login
+and a separate private credential volume; no callback port is required.
 
 ## Prerequisites
+
+The image builds its small `gosu` privilege-drop helper from pinned upstream 1.19
+source with Go 1.27.2. Dockerfile pins both the toolchain image digest and source
+archive checksum; upstream `go.sum` verifies module downloads. This replaces the
+Ubuntu helper that embedded Go 1.22.2, without changing the application base or
+PUID/PGID behavior. Updating these pins requires identity/group/HOME, exit and
+signal checks plus an image vulnerability scan. Version-only Go findings are not
+automatically proof of reachability; no scanner suppressions are introduced.
 
 - **Raspberry Pi 4/5** (4GB+ RAM) or any ARM64/AMD64 Linux host
 - **Docker** and **Docker Compose** (v2+)

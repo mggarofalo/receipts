@@ -21,7 +21,9 @@ fi
 
 echo "Running as uid=$(id -u app) gid=$(id -g app)"
 
-chown -R app:app /app
+# Published application and provider files are read-only runtime inputs. Recursively
+# changing their ownership copies the large provider dependency tree into every
+# container's writable layer and makes startup unnecessarily slow.
 
 # /data may contain a read-only bind mount — staging the embedding model from a
 # connected machine is a supported air-gapped pattern (see docs/deployment.md). chown
@@ -57,6 +59,12 @@ AdminSeed__Password="$(cat /secrets/admin_password)"
 
 echo "Secrets loaded from /secrets volume"
 
+# Operator commands share the application's configuration and private auth volume,
+# but must not run migrations, seed users, or start background workers.
+case "${1:-}" in
+    --chatgpt-*) exec gosu app dotnet API.dll "$@" ;;
+esac
+
 # ─── Run ──────────────────────────────────────────────────────────────────────
 echo "Running database migrations..."
 gosu app dotnet tools/DbMigrator/DbMigrator.dll
@@ -77,4 +85,4 @@ if [ ! -f /data/.seeded ]; then
 fi
 
 echo "Starting API..."
-exec gosu app dotnet API.dll
+exec gosu app dotnet API.dll "$@"

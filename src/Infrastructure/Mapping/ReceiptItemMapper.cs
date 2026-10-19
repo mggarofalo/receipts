@@ -18,6 +18,7 @@ public partial class ReceiptItemMapper
 	[MapperIgnoreSource(nameof(ReceiptItem.NormalizedDescriptionMatchScore))]
 	[MapperIgnoreSource(nameof(ReceiptItem.NormalizedDescriptionName))]
 	[MapperIgnoreTarget(nameof(ReceiptItemEntity.Receipt))]
+	[MapperIgnoreTarget(nameof(ReceiptItemEntity.NormalizationRevision))]
 	[MapperIgnoreTarget(nameof(ReceiptItemEntity.ReceiptId))]
 	[MapperIgnoreTarget(nameof(ReceiptItemEntity.NormalizedDescription))]
 	[MapperIgnoreTarget(nameof(ReceiptItemEntity.NormalizedDescriptionId))]
@@ -32,6 +33,7 @@ public partial class ReceiptItemMapper
 	private Money MapTotalAmount(decimal amount, Currency currency) => new(amount, currency);
 
 	[MapperIgnoreSource(nameof(ReceiptItemEntity.Receipt))]
+	[MapperIgnoreSource(nameof(ReceiptItemEntity.NormalizationRevision))]
 	[MapperIgnoreSource(nameof(ReceiptItemEntity.UnitPriceCurrency))]
 	[MapperIgnoreSource(nameof(ReceiptItemEntity.TotalAmountCurrency))]
 	[MapperIgnoreSource(nameof(ReceiptItemEntity.NormalizedDescription))]

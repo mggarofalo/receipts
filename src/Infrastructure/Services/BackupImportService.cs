@@ -64,6 +64,10 @@ public partial class BackupImportService(
 		await using Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction =
 			await context.Database.BeginTransactionAsync(cancellationToken);
 		await BackupImportLock.AcquireDatabaseAsync(context, cancellationToken);
+		// Restored business rows cannot be used by a pre-restore inference, even if
+		// the imported values happen to be identical and EF emits no row update.
+		await Infrastructure.NormalizationAi.NormalizationAiService.FenceForRestoreAsync(context, cancellationToken);
+		await context.SaveChangesAsync(cancellationToken);
 
 		try
 		{

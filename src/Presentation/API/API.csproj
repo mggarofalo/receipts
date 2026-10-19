@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Presentation.API.Tests" />
+    <EmbeddedResource Include="..\..\..\docs\normalization-evaluation\corpus.v1.json" LogicalName="Receipts.NormalizationEvaluation.corpus.v1.json" />
   </ItemGroup>
 
   <ItemGroup>

@@ -129,6 +129,66 @@ and add a new untouched holdout before making a generalization claim. This small
 public synthetic corpus is a regression aid; it cannot be a permanently secret
 benchmark or support statistical claims about real receipts.
 
+## Capture synthetic provider capability and provisional agreement
+
+The application now includes an operator-only evaluator over this **embedded synthetic
+corpus**, using the same `IChatGptRunner`, payload builder and strict output validator as
+the review-first feature. It cannot select a receipt export or read the receipt database.
+First run the offline corpus validator above, and complete the deployment's device login
+and one-request synthetic probe. The commands below perform inference and consume account
+usage; do not run them merely to inspect the tool.
+
+```sh
+docker compose run --rm --no-deps app --chatgpt-evaluate YOUR-EXPLICIT-MODEL example /data/normalization-example-report.json
+docker compose run --rm --no-deps app --chatgpt-evaluate YOUR-EXPLICIT-MODEL holdout /data/normalization-holdout-report.json
+```
+
+Use a new report filename each time; an existing file is rejected before any model
+request. The model must appear in the runtime catalog. There is no fallback or automatic
+retry. Each case has a fresh request context and random request keys; expected labels,
+case IDs, split/family/tags, rationales, merchant names and financial fields remain local.
+Existing synthetic assignments supply candidate names from their observed source text,
+never expected label exemplars. Template-linked and exact-rejected source rows are
+excluded using the Application eligibility policy. This isolated corpus capture does
+not run ANN retrieval or claim parity with a production candidate population.
+
+There are eight example and 24 holdout cases, so the maximum is eight or 24 requests;
+cases containing only protected rows make no call. The current corpus makes seven
+example requests for 15 eligible rows or 24 holdout requests for 46 eligible rows.
+The command prints its exact planned
+request count before dispatch. One request is in flight at a time. An operator lock keeps
+login/logout from switching the account during capture; ordinary application inference
+may cause a safe busy stop, so run the experiment while normalization is idle.
+
+On a provider error, invalid output or cancellation, the tool stops subsequent calls and
+writes a partial report. Failed/unattempted eligible rows remain in the failure denominator;
+they are not counted as abstentions. An ordinary cancellation writes the report before
+returning 130. A forcibly killed process or filesystem failure can leave an empty/incomplete
+report; that means unknown experiment progress/usage, never proof that no request happened.
+The evaluator does not automatically resume or retry such a report.
+
+The report contains corpus/code/model/runtime versions, prompt/schema/corpus digests,
+per-case payload digest, latency, observed token counts, strict-schema result, synthetic
+per-item action/proposed name and the original provisional expected action/group/display.
+Only concise progress categories go to stdout. Raw provider responses, reasoning,
+free-form explanations, credential data and provider error bodies are not logged or saved.
+The JSON report is synthetic evaluation material for a human reviewer, not accepted curation.
+
+Operational coverage, abstention and failure metrics include counts and denominators.
+Pair precision/recall, false-merge, forbidden-pair and unsupported-guess metrics explicitly
+measure **agreement with provisional assumptions**; they are not calibrated semantic
+accuracy. Zero denominators produce null with an explanation. Human suggestion precision
+and label usefulness remain null, and the quality gate remains blocked pending adjudication,
+product thresholds, representative sampling and a real baseline comparison. No database
+apply occurs: financial preservation, transaction atomicity and stale-write invariants
+must be established by the separate PostgreSQL tests, not inferred from this report.
+
+Exit 0 means all attempted model responses validated and capture completed; it does not mean
+the quality gate passed. Exit 1 indicates a stopped/failed experiment, and 130 cancellation.
+After inspecting holdout outputs, do not tune prompts on those cases and still call them
+untouched holdout data. Record human disagreements and product decisions before claiming
+quality or choosing a recommended model. Automatic apply remains out of scope.
+
 ## Future comparison procedure
 
 RECEIPTS-1014 owns the evaluator and provider capability experiment. The following

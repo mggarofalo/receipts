@@ -14,5 +14,11 @@ TestResults/
 coveragereport/
 *.md
 !openapi/*.yaml
+# Include only the synthetic corpus embedded by the operator evaluator.
 docs/
+!docs/
+docs/*
+!docs/normalization-evaluation/
+docs/normalization-evaluation/*
+!docs/normalization-evaluation/corpus.v1.json
 scripts/

@@ -1,0 +1,13 @@
+{
+  "name": "receipts-normalization-runner",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.99.2",
+    "brace-expansion": "5.0.12"
+  },
+  "scripts": {
+    "test": "node --test",
+    "repair": "node repair-shrinkwrap.mjs"
+  }
+}

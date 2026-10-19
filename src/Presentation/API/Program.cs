@@ -4,14 +4,17 @@ using API.Configuration;
 using API.Hubs;
 using API.Middleware;
 using API.Services;
+using Application.NormalizationAi;
 using Application.Services;
+using Infrastructure.NormalizationAi;
 using Infrastructure.Services;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Sentry;
 
 // Create builder
-WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
+bool isChatGptCommand = args.Any(argument => argument.StartsWith("--chatgpt-", StringComparison.Ordinal));
+WebApplicationBuilder builder = WebApplication.CreateBuilder(isChatGptCommand ? [] : args);
 builder.AddServiceDefaults();
 builder.AddApplicationConfiguration();
 bool isContractGeneration = Environment.GetEnvironmentVariable("RECEIPTS_CONTRACT_GENERATION") == "1";
@@ -51,15 +54,30 @@ IServiceCollection services = builder.Services
 	.RegisterApplicationServices(builder.Configuration)
 	.RegisterInfrastructureServices(builder.Configuration);
 
-if (!isContractGeneration)
+services.Configure<NormalizationAiOptions>(builder.Configuration.GetSection("ChatGpt"));
+services.Configure<PiNormalizationRunnerOptions>(builder.Configuration.GetSection("ChatGptRunner"));
+services.AddSingleton<IChatGptRunner, PiNormalizationRunner>();
+services.AddScoped<NormalizationAiService>();
+services.AddScoped<INormalizationAiService>(provider => provider.GetRequiredService<NormalizationAiService>());
+
+if (!isContractGeneration && !isChatGptCommand)
 {
 	// Background workers live only in the long-running host. Contract extraction skips
 	// them, and the CLI tools use a separate composition, so neither path loads the model.
 	services.AddInfrastructureBackgroundServices();
+	services.AddHostedService<NormalizationAiWorker>();
 }
 
 // Build application
 WebApplication app = builder.Build();
+
+if (isChatGptCommand)
+{
+	await using AsyncServiceScope scope = app.Services.CreateAsyncScope();
+	Environment.ExitCode = await ChatGptCommand.RunAsync(args, scope.ServiceProvider, Console.Out, Console.Error);
+	await app.DisposeAsync();
+	return;
+}
 
 // Configure middleware
 var forwardedHeadersOptions = new ForwardedHeadersOptions

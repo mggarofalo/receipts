@@ -4,6 +4,150 @@
  */
 
 export interface paths {
+    "/api/normalization-ai/connection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get ChatGPT credential and model status
+         * @description Admin-only personal ChatGPT normalization. Only the configured credential owner can use this connection. Suggestions never change receipts until explicitly applied.
+         */
+        get: operations["GetNormalizationAiConnection"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/normalization-ai/candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List unresolved items for explicit selection
+         * @description Admin-only personal ChatGPT normalization. Only the configured credential owner can use this connection. Suggestions never change receipts until explicitly applied.
+         */
+        get: operations["ListNormalizationAiCandidates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/normalization-ai/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List recent normalization runs
+         * @description Admin-only personal ChatGPT normalization. Only the configured credential owner can use this connection. Suggestions never change receipts until explicitly applied.
+         */
+        get: operations["ListNormalizationAiRuns"];
+        put?: never;
+        /**
+         * Request suggestions for selected items
+         * @description Admin-only personal ChatGPT normalization. Only the configured credential owner can use this connection. Suggestions never change receipts until explicitly applied.
+         */
+        post: operations["StartNormalizationAiRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/normalization-ai/runs/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a resumable normalization run
+         * @description Admin-only personal ChatGPT normalization. Only the configured credential owner can use this connection. Suggestions never change receipts until explicitly applied.
+         */
+        get: operations["GetNormalizationAiRun"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/normalization-ai/runs/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel a normalization run
+         * @description Admin-only personal ChatGPT normalization. Only the configured credential owner can use this connection. Suggestions never change receipts until explicitly applied.
+         */
+        post: operations["CancelNormalizationAiRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/normalization-ai/runs/{id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Explicitly retry a normalization run
+         * @description Admin-only personal ChatGPT normalization. Only the configured credential owner can use this connection. Suggestions never change receipts until explicitly applied.
+         */
+        post: operations["RetryNormalizationAiRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/normalization-ai/runs/{id}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Atomically apply reviewed suggestions
+         * @description Admin-only personal ChatGPT normalization. Only the configured credential owner can use this connection. Suggestions never change receipts until explicitly applied.
+         */
+        post: operations["ApplyNormalizationAiRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/search/purchases": {
         parameters: {
             query?: never;
@@ -640,7 +784,7 @@ export interface paths {
          *     `NormalizedDescriptionMatchScore` values would be cleared, along with an
          *     estimate of how long the background resolver needs to rebuild them.
          *
-         *     Read-only — nothing is modified. Also serves as the post-run
+         *     Read-only â€” nothing is modified. Also serves as the post-run
          *     verification: after a successful requeue every count reads zero.
          *     Admin-only.
          */
@@ -677,7 +821,7 @@ export interface paths {
          *
          *     `expectedPendingCount` must equal the count the caller last previewed;
          *     a mismatch returns 409 rather than acting on stale information. Re-runnable
-         *     — a second call with no pending rows deletes nothing. Admin-only.
+         *     â€” a second call with no pending rows deletes nothing. Admin-only.
          */
         post: operations["RequeuePendingNormalizedDescriptions"];
         delete?: never;
@@ -722,7 +866,7 @@ export interface paths {
          *     status and search term. Admin-only.
          *
          *     Paginated since RECEIPTS-879. The row count is bounded by the number of unique
-         *     receipt-item descriptions ever seen, which grocery receipts push into the thousands —
+         *     receipt-item descriptions ever seen, which grocery receipts push into the thousands â€”
          *     the previous unpaginated behaviour made the registry load every row and filter in the
          *     browser. Callers that omit `offset`/`limit` now receive the first 50 rows rather than
          *     everything; read `totalCount` to page.
@@ -817,7 +961,7 @@ export interface paths {
          * @description For a reviewer who recognises a resolver-derived row as something they already curated a
          *     template for (RECEIPTS-930).
          *
-         *     The template's entry is the one whose canonical name equals the template's name — that is
+         *     The template's entry is the one whose canonical name equals the template's name â€” that is
          *     the invariant `ItemTemplateService` re-establishes on every create and update. So this
          *     endpoint resolves that entry (creating it if the template has never been linked), points
          *     the template's foreign key at it, and then **consolidates the row at `{id}` into it**:
@@ -827,7 +971,7 @@ export interface paths {
          *     It does not simply point the template's foreign key at `{id}`, for two reasons. The link
          *     would not survive the template's next edit, which re-resolves it from the template's
          *     name. And it would not move the receipt items already sitting on `{id}`, so the two would
-         *     go on reporting as separate buckets — which is the whole thing the caller is trying to
+         *     go on reporting as separate buckets â€” which is the whole thing the caller is trying to
          *     fix.
          *
          *     When `{id}` already *is* the template's entry, nothing is merged and nothing is deleted;
@@ -880,7 +1024,7 @@ export interface paths {
         head?: never;
         /**
          * Set or clear a normalized description's display label
-         * @description Changes only the display label — never `canonicalName`, and never the embedding.
+         * @description Changes only the display label â€” never `canonicalName`, and never the embedding.
          *     Renaming is cosmetic by construction, so it cannot change which receipt text resolves
          *     to this row. Send `displayLabel: null` to clear the label and fall back to showing the
          *     matched text. Admin-only.
@@ -1486,7 +1630,7 @@ export interface paths {
         put?: never;
         /**
          * Import data from a SQLite backup file
-         * @description Accepts a SQLite database file exported by the backup endpoint, reads all entity tables, and upserts each row into the current database (insert if new, update if existing by ID). Requires the Admin role. The import is atomic — if any entity fails validation, the entire import is rolled back.
+         * @description Accepts a SQLite database file exported by the backup endpoint, reads all entity tables, and upserts each row into the current database (insert if new, update if existing by ID). Requires the Admin role. The import is atomic â€” if any entity fails validation, the entire import is rolled back.
          */
         post: operations["ImportBackup"];
         delete?: never;
@@ -1781,7 +1925,7 @@ export interface paths {
         };
         /**
          * Get data-quality health summary
-         * @description Returns headline counts for the data-quality reports so the reports hub can show at a glance whether anything needs attention: out-of-balance receipts, duplicate receipt groups (matched on date + location), and uncategorized receipt items. Backed by COUNT queries only — no report rows are returned.
+         * @description Returns headline counts for the data-quality reports so the reports hub can show at a glance whether anything needs attention: out-of-balance receipts, duplicate receipt groups (matched on date + location), and uncategorized receipt items. Backed by COUNT queries only â€” no report rows are returned.
          */
         get: operations["GetReportsHealthSummary"];
         put?: never;
@@ -1907,7 +2051,7 @@ export interface paths {
         put?: never;
         /**
          * Accept a duplicate group as not-a-duplicate
-         * @description Records every unordered pair of the supplied receipts as "not a duplicate" so the group stops being reported. Idempotent — re-accepting an already-accepted group is a no-op.
+         * @description Records every unordered pair of the supplied receipts as "not a duplicate" so the group stops being reported. Idempotent â€” re-accepting an already-accepted group is a no-op.
          */
         post: operations["AcceptDuplicateGroup"];
         delete?: never;
@@ -1927,7 +2071,7 @@ export interface paths {
         put?: never;
         /**
          * Undo a duplicate-group acceptance
-         * @description Removes the "not a duplicate" assertion between every pair of the supplied receipts, and only those pairs — the server does not expand the request. The caller must therefore submit every member of the group it wants undone: send the group's memberReceiptIds from GET /api/reports/duplicates/accepted, not the receipts it displayed, or the pairs touching a member whose receipt was deleted are left stored with no way to reach them again. To un-accept just one reported cluster instead, send that cluster's receipts.
+         * @description Removes the "not a duplicate" assertion between every pair of the supplied receipts, and only those pairs â€” the server does not expand the request. The caller must therefore submit every member of the group it wants undone: send the group's memberReceiptIds from GET /api/reports/duplicates/accepted, not the receipts it displayed, or the pairs touching a member whose receipt was deleted are left stored with no way to reach them again. To un-accept just one reported cluster instead, send that cluster's receipts.
          */
         post: operations["UnacceptDuplicateGroup"];
         delete?: never;
@@ -2165,7 +2309,7 @@ export interface paths {
         };
         /**
          * Get YNAB integration status and sync stats
-         * @description Returns an aggregate health snapshot for the YNAB status page — whether YNAB is configured, when it was last validated, last push success/failure timestamps, and push counts by window. Derived from the sync-event log; does not perform a live YNAB call.
+         * @description Returns an aggregate health snapshot for the YNAB status page â€” whether YNAB is configured, when it was last validated, last push success/failure timestamps, and push counts by window. Derived from the sync-event log; does not perform a live YNAB call.
          */
         get: operations["GetYnabStatus"];
         put?: never;
@@ -2624,6 +2768,87 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        NormalizationAiConnectionResponse: {
+            configured: boolean;
+            isOwner: boolean;
+            credentialsPresent: boolean;
+            /** Format: uuid */
+            generation: string;
+            models: string[];
+            busy: boolean;
+        };
+        NormalizationAiCandidateResponse: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            receiptId: string;
+            description: string;
+            location: string;
+            /** Format: date */
+            date: string;
+        };
+        NormalizationAiCandidatePageResponse: {
+            items: components["schemas"]["NormalizationAiCandidateResponse"][];
+            /** Format: int32 */
+            total: number;
+        };
+        NormalizationAiUsageResponse: {
+            /** Format: int64 */
+            input: number;
+            /** Format: int64 */
+            output: number;
+            /** Format: int64 */
+            cacheRead: number;
+            /** Format: int64 */
+            cacheWrite: number;
+        };
+        NormalizationAiProposalResponse: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            receiptItemId: string;
+            description: string;
+            action: string;
+            /** Format: uuid */
+            targetId?: string | null;
+            canonicalName?: string | null;
+            displayLabel?: string | null;
+            reason?: string | null;
+            state: string;
+        };
+        NormalizationAiRunResponse: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            revision: string;
+            /** Format: uuid */
+            clientRequestId: string;
+            state: string;
+            model: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            completedAt?: string | null;
+            errorCode?: string | null;
+            errorDetail?: string | null;
+            proposals: components["schemas"]["NormalizationAiProposalResponse"][];
+            usage?: components["schemas"]["NormalizationAiUsageResponse"] | null;
+        };
+        StartNormalizationAiRunRequest: {
+            /** Format: uuid */
+            clientRequestId: string;
+            itemIds: string[];
+            model: string;
+        };
+        RetryNormalizationAiRunRequest: {
+            /** Format: uuid */
+            clientRequestId: string;
+        };
+        ApplyNormalizationAiRunRequest: {
+            proposalIds: string[];
+            /** Format: uuid */
+            expectedRevision: string;
+        };
         PurchaseSearchResponse: {
             items: components["schemas"]["PurchaseSearchItem"][];
             /** Format: int32 */
@@ -2661,7 +2886,7 @@ export interface components {
             /** @description Stored currency code without conversion. */
             totalAmountCurrency: string;
         };
-        /** @description RFC 9457 problem document. Every 4xx this API raises with a reason answers in this shape; the human-readable reason is always in `detail`. Some responses add machine-readable members alongside these (for example `transactionCount` on a 409 from a delete that is blocked by references) — RFC 9457 permits such extension members, and they appear at the top level of the object. */
+        /** @description RFC 9457 problem document. Every 4xx this API raises with a reason answers in this shape; the human-readable reason is always in `detail`. Some responses add machine-readable members alongside these (for example `transactionCount` on a 409 from a delete that is blocked by references) â€” RFC 9457 permits such extension members, and they appear at the top level of the object. */
         ProblemDetails: {
             type?: string | null;
             title?: string | null;
@@ -2754,7 +2979,7 @@ export interface components {
             groups: components["schemas"]["DuplicateGroup"][];
         };
         DuplicateGroup: {
-            /** @description Human-readable description of what these receipts have in common. Display only — it is derived from the current tolerance settings and is not a stable identity. */
+            /** @description Human-readable description of what these receipts have in common. Display only â€” it is derived from the current tolerance settings and is not a stable identity. */
             matchKey: string;
             receipts: components["schemas"]["DuplicateReceipt"][];
             /** @description True when every pair of receipts in this group has been accepted as "not a duplicate". Only ever true when includeAccepted was requested. */
@@ -2786,11 +3011,11 @@ export interface components {
             acceptedAt: string;
         };
         AcceptDuplicateGroupRequest: {
-            /** @description The receipts in the group. At least two distinct IDs, and at most 100 — accepting expands to one stored row per pair, so the list is bounded the same way bulk YNAB pushes are. */
+            /** @description The receipts in the group. At least two distinct IDs, and at most 100 â€” accepting expands to one stored row per pair, so the list is bounded the same way bulk YNAB pushes are. */
             receiptIds: string[];
         };
         UnacceptDuplicateGroupRequest: {
-            /** @description Every receipt whose mutual acceptances should be removed. At least two distinct IDs. Deliberately has no upper bound, unlike AcceptDuplicateGroupRequest: accepting stores one row per pair and is quadratic, whereas un-accepting loads and soft-deletes existing matching pairs without creating rows. Its cost follows existing pairs, which may also be quadratic. An accepted group can exceed 100 members without any single accept call doing so, because groups are connected components that merge when an acceptance bridges two of them — capping this would make such a group impossible to undo. */
+            /** @description Every receipt whose mutual acceptances should be removed. At least two distinct IDs. Deliberately has no upper bound, unlike AcceptDuplicateGroupRequest: accepting stores one row per pair and is quadratic, whereas un-accepting loads and soft-deletes existing matching pairs without creating rows. Its cost follows existing pairs, which may also be quadratic. An accepted group can exceed 100 members without any single accept call doing so, because groups are connected components that merge when an acceptance bridges two of them â€” capping this would make such a group impossible to undo. */
             receiptIds: string[];
         };
         AcceptDuplicateGroupResponse: {
@@ -2889,7 +3114,7 @@ export interface components {
             lastSeen?: string | null;
             /**
              * @description Review status of the canonical row behind this bucket. `pendingReview` means the
-             *     resolver grouped these items on its own and no reviewer has confirmed the grouping —
+             *     resolver grouped these items on its own and no reviewer has confirmed the grouping â€”
              *     clients must render the bucket as provisional rather than settled. The bucket still
              *     counts toward `grandTotal` either way, so the report reconciles against receipt totals
              *     regardless of review progress. Null for the synthetic "(Not Normalized)" bucket, which
@@ -2989,7 +3214,7 @@ export interface components {
             isActive: boolean;
             /**
              * Format: uuid
-             * @description Parent logical Account ID. Required — cards must have a parent.
+             * @description Parent logical Account ID. Required â€” cards must have a parent.
              */
             accountId: string;
         };
@@ -3001,7 +3226,7 @@ export interface components {
             isActive: boolean;
             /**
              * Format: uuid
-             * @description Parent logical Account ID. Required — cards must have a parent.
+             * @description Parent logical Account ID. Required â€” cards must have a parent.
              */
             accountId: string;
         };
@@ -3037,7 +3262,7 @@ export interface components {
              */
             ynabMappingWinnerAccountId?: string | null;
         };
-        /** @description What the merge actually changed. All three counts are zero when every selected card already belonged to the target account — the merge is idempotent, but the caller must be able to tell that apart from one that moved data. */
+        /** @description What the merge actually changed. All three counts are zero when every selected card already belonged to the target account â€” the merge is idempotent, but the caller must be able to tell that apart from one that moved data. */
         MergeCardsResponse: {
             /**
              * Format: int32
@@ -3238,12 +3463,12 @@ export interface components {
             name: string;
             /**
              * Format: double
-             * @description Trigram similarity score (0.0–1.0)
+             * @description Trigram similarity score (0.0â€“1.0)
              */
             similarity: number;
             /**
              * Format: double
-             * @description Embedding cosine similarity score (0.0–1.0), null if embeddings unavailable
+             * @description Embedding cosine similarity score (0.0â€“1.0), null if embeddings unavailable
              */
             semanticSimilarity?: number | null;
             /**
@@ -3438,7 +3663,7 @@ export interface components {
          *     `rejected` rows are tombstones: a reviewer judged the matched text not worth a canonical
          *     entry, so the row survives only to stop the resolver recreating it. Rejected rows are
          *     excluded from ANN candidate search, carry no linked receipt items, and never appear as a
-         *     bucket in the spending report — their items report as "(Not Normalized)".
+         *     bucket in the spending report â€” their items report as "(Not Normalized)".
          * @enum {string}
          */
         NormalizedDescriptionStatus: "active" | "pendingReview" | "rejected";
@@ -3446,7 +3671,7 @@ export interface components {
             /** Format: uuid */
             id: string;
             /**
-             * @description The observed receipt text this row matches on. Never edited — the embedding is
+             * @description The observed receipt text this row matches on. Never edited â€” the embedding is
              *     anchored to it. Use `displayName` when showing this row to a user.
              */
             canonicalName: string;
@@ -3471,7 +3696,7 @@ export interface components {
             linkedItemCount: number;
             /**
              * Format: date-time
-             * @description Latest receipt date among the live items linked to this row, at midnight UTC — a
+             * @description Latest receipt date among the live items linked to this row, at midnight UTC â€” a
              *     receipt has a date, not a time. Null when nothing is linked, which is a different
              *     statement from "last seen a long time ago".
              *
@@ -3492,8 +3717,8 @@ export interface components {
              *     is called X", so a pending row carrying one has already been vouched for by hand and
              *     is almost always an Approve (RECEIPTS-930).
              *
-             *     When several templates point here — the ordinary result of merging two
-             *     template-backed entries — this is the alphabetically first, and `linkedTemplateCount`
+             *     When several templates point here â€” the ordinary result of merging two
+             *     template-backed entries â€” this is the alphabetically first, and `linkedTemplateCount`
              *     says how many there are. Soft-deleted (hidden) templates are excluded: a template the
              *     user has put in the recycle bin is not evidence of anything.
              */
@@ -3515,7 +3740,7 @@ export interface components {
             linkedTemplateCount?: number;
             /**
              * @description Display name of the canonical row this entry most nearly matched when the resolver
-             *     flagged it for review. Null when no near-miss was recorded — the row was auto-accepted,
+             *     flagged it for review. Null when no near-miss was recorded â€” the row was auto-accepted,
              *     created outright, predates the field, or its neighbour has since been merged away.
              *     Clients must render that absence as "no comparison recorded", never as a zero score.
              */
@@ -3533,7 +3758,7 @@ export interface components {
             /**
              * Format: int32
              * @description Total number of rows matching the status and search filters, across all pages.
-             *     Since RECEIPTS-879 this is the count to page against — it is no longer the length
+             *     Since RECEIPTS-879 this is the count to page against â€” it is no longer the length
              *     of `items`, which is capped by `limit`.
              */
             totalCount: number;
@@ -3550,7 +3775,7 @@ export interface components {
         };
         RenameNormalizedDescriptionRequest: {
             /**
-             * @description New display label. Null — or an omitted property — clears it, so the row falls back
+             * @description New display label. Null â€” or an omitted property â€” clears it, so the row falls back
              *     to showing its matched text. The two are equivalent because this is the only field
              *     the endpoint has: there is no other change a caller could be asking for, so an
              *     absent label cannot mean "leave it alone".
@@ -3590,7 +3815,7 @@ export interface components {
         LinkItemTemplateRequest: {
             /**
              * Format: uuid
-             * @description The template whose item this row is. Must be a live template — a soft-deleted one is
+             * @description The template whose item this row is. Must be a live template â€” a soft-deleted one is
              *     a 404, since linking to something sitting in the recycle bin would produce a link
              *     that vanishes the moment it is purged.
              */
@@ -3614,7 +3839,7 @@ export interface components {
             itemsRelinkedCount: number;
             /**
              * @description False when the requested row already *was* the template's entry, so all that happened
-             *     was the template's foreign key being set — nothing moved and nothing was deleted.
+             *     was the template's foreign key being set â€” nothing moved and nothing was deleted.
              *
              *     True when the two were different rows and the requested row was consolidated into the
              *     template's entry and deleted. Clients should treat this as the destructive case and
@@ -3623,7 +3848,7 @@ export interface components {
             merged: boolean;
         };
         RequeuePendingRequest: {
-            /** @description The `pendingFingerprint` the caller last previewed. The requeue is rejected with 409 unless the live pending set is identical, so a stale client cannot delete a row its operator never reviewed. A count would not be sufficient — one row being approved away while the resolver queues a new one leaves the count unchanged but the set different. */
+            /** @description The `pendingFingerprint` the caller last previewed. The requeue is rejected with 409 unless the live pending set is identical, so a stale client cannot delete a row its operator never reviewed. A count would not be sufficient â€” one row being approved away while the resolver queues a new one leaves the count unchanged but the set different. */
             expectedFingerprint: string;
         };
         RequeuePendingPreviewResponse: {
@@ -3636,7 +3861,7 @@ export interface components {
             pendingFingerprint: string;
             /**
              * Format: int32
-             * @description Number of live (non-trashed) ReceiptItems that would be unlinked. Trashed items pointing at a pending row are unlinked too, for integrity, but are deliberately not counted here — the same convention the merge endpoint uses.
+             * @description Number of live (non-trashed) ReceiptItems that would be unlinked. Trashed items pointing at a pending row are unlinked too, for integrity, but are deliberately not counted here â€” the same convention the merge endpoint uses.
              */
             linkedItemCount: number;
             /**
@@ -3780,7 +4005,7 @@ export interface components {
              * @description The item template this line was entered from, if any (RECEIPTS-881).
              *
              *     Supplying it stamps the item with the template's canonical normalized description at
-             *     write time, so the background resolver skips it entirely — it only considers items
+             *     write time, so the background resolver skips it entirely â€” it only considers items
              *     with no normalized description. The user already declared what this item is by
              *     picking the template; re-deriving it by embedding search could disagree with them and
              *     park the result in the review queue.
@@ -4571,6 +4796,550 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    GetNormalizationAiConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NormalizationAiConnectionResponse"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Operation or source state conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description ChatGPT is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    ListNormalizationAiCandidates: {
+        parameters: {
+            query?: {
+                q?: string | null;
+                offset?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NormalizationAiCandidatePageResponse"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Operation or source state conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description ChatGPT is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    ListNormalizationAiRuns: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NormalizationAiRunResponse"][];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Operation or source state conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description ChatGPT is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    StartNormalizationAiRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartNormalizationAiRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NormalizationAiRunResponse"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Operation or source state conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description ChatGPT is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    GetNormalizationAiRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NormalizationAiRunResponse"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Operation or source state conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description ChatGPT is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    CancelNormalizationAiRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NormalizationAiRunResponse"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Operation or source state conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description ChatGPT is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    RetryNormalizationAiRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetryNormalizationAiRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NormalizationAiRunResponse"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Operation or source state conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description ChatGPT is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    ApplyNormalizationAiRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplyNormalizationAiRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NormalizationAiRunResponse"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Operation or source state conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description ChatGPT is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     SearchPurchases: {
         parameters: {
             query: {
@@ -4746,7 +5515,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Conflict — cards reference this account */
+            /** @description Conflict â€” cards reference this account */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -4958,7 +5727,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Bad Request — returned when `accountId` does not refer to an existing Account. */
+            /** @description Bad Request â€” returned when `accountId` does not refer to an existing Account. */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -5001,7 +5770,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Conflict — transactions reference this card */
+            /** @description Conflict â€” transactions reference this card */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -5076,7 +5845,7 @@ export interface operations {
                     "application/json": components["schemas"]["CardResponse"];
                 };
             };
-            /** @description Bad Request — returned when `accountId` does not refer to an existing Account. */
+            /** @description Bad Request â€” returned when `accountId` does not refer to an existing Account. */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -5107,7 +5876,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Bad Request — returned when any entry's `accountId` does not refer to an existing Account. */
+            /** @description Bad Request â€” returned when any entry's `accountId` does not refer to an existing Account. */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -5147,7 +5916,7 @@ export interface operations {
                     "application/json": components["schemas"]["CardResponse"][];
                 };
             };
-            /** @description Bad Request — returned when any entry's `accountId` does not refer to an existing Account. */
+            /** @description Bad Request â€” returned when any entry's `accountId` does not refer to an existing Account. */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -5180,7 +5949,7 @@ export interface operations {
                     "application/json": components["schemas"]["MergeCardsResponse"];
                 };
             };
-            /** @description Bad Request — invalid merge selection, or conflicting mappings in multiple YNAB budgets that the single-winner request cannot resolve. Remove obsolete mappings until at most one budget conflicts, then retry. */
+            /** @description Bad Request â€” invalid merge selection, or conflicting mappings in multiple YNAB budgets that the single-winner request cannot resolve. Remove obsolete mappings until at most one budget conflicts, then retry. */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -5189,14 +5958,14 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Not Found — target account or source card missing */
+            /** @description Not Found â€” target account or source card missing */
             404: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description Conflict — source accounts have differing YNAB mappings */
+            /** @description Conflict â€” source accounts have differing YNAB mappings */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -5229,7 +5998,7 @@ export interface operations {
                     "application/json": components["schemas"]["MergeCardsPreviewResponse"];
                 };
             };
-            /** @description Bad Request — invalid merge selection, or conflicting mappings in multiple YNAB budgets that must be reduced before the merge can be previewed. */
+            /** @description Bad Request â€” invalid merge selection, or conflicting mappings in multiple YNAB budgets that must be reduced before the merge can be previewed. */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -5238,7 +6007,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Not Found — target account or source card missing */
+            /** @description Not Found â€” target account or source card missing */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -5334,7 +6103,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Conflict — receipt items use this category name. ProblemDetails includes receiptItemCount (matching items, including trash) as an extension. */
+            /** @description Conflict â€” receipt items use this category name. ProblemDetails includes receiptItemCount (matching items, including trash) as an extension. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -5611,7 +6380,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Conflict — receipt items use this category/subcategory name pair. ProblemDetails extensions include receiptItemCount (matching items, including trash) and affectedReceipts (up to 20 distinct matching receipts, including trash, ordered by date descending then ID ascending). Each receipt has id (UUID), date (ISO date), location (string), and isDeleted (boolean). Deleted receipts are not available at the ordinary receipt detail route. The sample length is not an item count. */
+            /** @description Conflict â€” receipt items use this category/subcategory name pair. ProblemDetails extensions include receiptItemCount (matching items, including trash) and affectedReceipts (up to 20 distinct matching receipts, including trash, ordered by date descending then ID ascending). Each receipt has id (UUID), date (ISO date), location (string), and isDeleted (boolean). Deleted receipts are not available at the ordinary receipt detail route. The sample length is not an item count. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -5883,7 +6652,7 @@ export interface operations {
                 sortDirection?: components["parameters"]["SortDirection"];
                 /**
                  * @description Case-insensitive substring match on the template name. Omitted or blank means no
-                 *     filter — blank is deliberately not "match nothing", which would return zero rows for
+                 *     filter â€” blank is deliberately not "match nothing", which would return zero rows for
                  *     what reads like an unfiltered request.
                  *
                  *     `total` counts matching templates rather than all of them, so a caller can page
@@ -6015,7 +6784,7 @@ export interface operations {
                 q: string;
                 /** @description Maximum number of results to return */
                 limit?: number;
-                /** @description Minimum similarity score (0.0–1.0) */
+                /** @description Minimum similarity score (0.0â€“1.0) */
                 threshold?: number;
                 /** @description Whether to include semantic (embedding-based) similarity in ranking */
                 semantic?: boolean;
@@ -6334,7 +7103,7 @@ export interface operations {
                  *     too. When absent, returns rows of every status. Matching is case-insensitive.
                  *
                  *     Repeatable since RECEIPTS-878: the merge dialog needs every legitimate merge target,
-                 *     which is Active *and* PendingReview but never Rejected — a tombstone must not be
+                 *     which is Active *and* PendingReview but never Rejected â€” a tombstone must not be
                  *     resurrected by having items merged into it. A single-valued filter forced the client
                  *     to choose one, so two near-duplicate pending entries from the same resolver batch
                  *     could not be merged with each other. `?status=Active` still behaves exactly as before.
@@ -6447,7 +7216,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Not Found — the kept or the discarded id does not exist */
+            /** @description Not Found â€” the kept or the discarded id does not exist */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -6526,7 +7295,7 @@ export interface operations {
                     "application/json": components["schemas"]["LinkItemTemplateResponse"];
                 };
             };
-            /** @description Bad Request — an empty id, or the row is a rejected tombstone */
+            /** @description Bad Request â€” an empty id, or the row is a rejected tombstone */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -6535,7 +7304,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Not Found — the row or the template does not exist */
+            /** @description Not Found â€” the row or the template does not exist */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -6610,7 +7379,7 @@ export interface operations {
                     "application/json": components["schemas"]["NormalizedDescriptionResponse"];
                 };
             };
-            /** @description Bad Request — the label is whitespace-only or longer than 200 characters */
+            /** @description Bad Request â€” the label is whitespace-only or longer than 200 characters */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -6628,7 +7397,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Conflict — another normalized description already displays that name */
+            /** @description Conflict â€” another normalized description already displays that name */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -6715,7 +7484,7 @@ export interface operations {
                 cardId?: string;
                 /** @description Case-insensitive substring filter applied to the receipt Location column. Whitespace-only values are ignored. */
                 q?: string;
-                /** @description Exact-match filter on the receipt Location column. Unlike `q`, which is a case-insensitive substring search, this is a literal byte-for-byte equality test: case-sensitive and not trimmed. It exists so a drill-down from the Spending by Location report returns exactly the rows that report's row counted, and that report groups on the raw Location value — so "Walmart" and "walmart" are distinct filters, as are "Target" and "Target ". Empty values are ignored. Combines with `q` as an AND. */
+                /** @description Exact-match filter on the receipt Location column. Unlike `q`, which is a case-insensitive substring search, this is a literal byte-for-byte equality test: case-sensitive and not trimmed. It exists so a drill-down from the Spending by Location report returns exactly the rows that report's row counted, and that report groups on the raw Location value â€” so "Walmart" and "walmart" are distinct filters, as are "Target" and "Target ". Empty values are ignored. Combines with `q` as an AND. */
                 location?: string;
             };
             header?: never;
@@ -8124,7 +8893,7 @@ export interface operations {
                     "application/json": components["schemas"]["BackupImportResponse"];
                 };
             };
-            /** @description Bad Request — file missing, wrong format, or validation error */
+            /** @description Bad Request â€” file missing, wrong format, or validation error */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -8133,7 +8902,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Conflict — receipt state changed during import; reload and retry */
+            /** @description Conflict â€” receipt state changed during import; reload and retry */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -9824,7 +10593,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Conflict — mapping for this receipts category already exists in the selected budget */
+            /** @description Conflict â€” mapping for this receipts category already exists in the selected budget */
             409: {
                 headers: {
                     [name: string]: unknown;
