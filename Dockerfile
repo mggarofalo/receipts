@@ -4,7 +4,15 @@ FROM --platform=$BUILDPLATFORM golang:1.27.2-alpine@sha256:f92b6ef800e499660581e
 ARG TARGETARCH
 WORKDIR /src/gosu
 ADD --checksum=sha256:33d7537d588ea49458b9509bcf4554bdf5ceacc66da71e5caa1058ea3b689c3b https://codeload.github.com/tianon/gosu/tar.gz/6456aaa0f3c854d199d0f037f068eb97515b7513 /tmp/gosu.tar.gz
+# Pin security fixes beyond upstream 1.19's module versions. Checksums come from
+# sum.golang.org; readonly build verifies content and prevents implicit upgrades.
 RUN tar -xzf /tmp/gosu.tar.gz --strip-components=1 && \
+    go mod edit -go=1.25.0 -require=github.com/moby/sys/user@v0.4.1 -require=golang.org/x/sys@v0.44.0 && \
+    printf '%s\n' \
+      'github.com/moby/sys/user v0.4.1 h1:RgjRlaDKi/Xmyrz4t8lyzXT6v2ooFeO/7xtchmhVWE0=' \
+      'github.com/moby/sys/user v0.4.1/go.mod h1:E9QsW5WRe1kUAf7kW8hXKwu1uhsZEAdPLYHYSDudF4Y=' \
+      'golang.org/x/sys v0.44.0 h1:ildZl3J4uzeKP07r2F++Op7E9B29JRUy+a27EibtBTQ=' \
+      'golang.org/x/sys v0.44.0/go.mod h1:4GL1E5IUh+htKOUEOaiffhrAeqysfVGipDYzABqnCmw=' >> go.sum && \
     CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -mod=readonly -trimpath -buildvcs=false -o /out/gosu .
 
 # Stage 1: Build React SPA
@@ -143,8 +151,8 @@ WORKDIR /app
 COPY --from=gosu-build /out/gosu /usr/local/bin/gosu
 # Retain redistribution notices for gosu and its statically linked dependencies.
 COPY --from=gosu-build /src/gosu/LICENSE /usr/share/licenses/gosu/LICENSE
-COPY --from=gosu-build /go/pkg/mod/github.com/moby/sys/user@v0.1.0/LICENSE /usr/share/licenses/gosu/moby-sys-user-LICENSE
-COPY --from=gosu-build /go/pkg/mod/golang.org/x/sys@v0.1.0/LICENSE /usr/share/licenses/gosu/golang-x-sys-LICENSE
+COPY --from=gosu-build /go/pkg/mod/github.com/moby/sys/user@v0.4.1/LICENSE /usr/share/licenses/gosu/moby-sys-user-LICENSE
+COPY --from=gosu-build /go/pkg/mod/golang.org/x/sys@v0.44.0/LICENSE /usr/share/licenses/gosu/golang-x-sys-LICENSE
 COPY --from=gosu-build /usr/local/go/LICENSE /usr/share/licenses/gosu/go-LICENSE
 
 # Copy published API
