@@ -2,6 +2,10 @@
 
 Deploy Receipts on a Raspberry Pi (or any Linux host) using Docker Compose with Nginx Proxy Manager (NPM) for HTTPS termination.
 
+The proposed ChatGPT normalization integration is not available in this deployment.
+See the [eligibility and topology decision](decisions/2026-10-19-chatgpt-normalization-topology.md)
+for the local candidate and the unresolved private remote-hosting gate.
+
 ## Prerequisites
 
 - **Raspberry Pi 4/5** (4GB+ RAM) or any ARM64/AMD64 Linux host
