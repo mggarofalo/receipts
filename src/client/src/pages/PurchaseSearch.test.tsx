@@ -116,6 +116,11 @@ it("applies filters atomically and preserves them when submitting another phrase
       }),
     ),
   );
+  await waitFor(() => {
+    expect(currentParams().get("location")).toBe("New store");
+    expect(currentParams().get("minUnitPrice")).toBe("0");
+    expect(currentParams().get("offset")).toBeNull();
+  });
   fireEvent.change(screen.getByRole("textbox", { name: "Search purchases" }), {
     target: { value: "hot dogs" },
   });
