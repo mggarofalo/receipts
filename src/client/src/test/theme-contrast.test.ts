@@ -30,6 +30,7 @@ const BACKGROUND_TOKENS = [
   "popover",
   "secondary",
   "accent-surface",
+  "command-selection-background",
   "sidebar-accent",
 ] as const;
 

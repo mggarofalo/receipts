@@ -11,6 +11,7 @@ import { Icon, Kbd } from "@/components/primitives";
 import { useAuth } from "@/hooks/useAuth";
 import { usePermission } from "@/hooks/usePermission";
 import { usePreferences } from "@/hooks/usePreferences";
+import { primaryModifierLabel } from "@/lib/keyboard-labels";
 import { useSignalR } from "@/hooks/useSignalR";
 import type { SignalRConnectionState } from "@/hooks/useSignalR";
 import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
@@ -243,7 +244,7 @@ export function Layout() {
                 hide it — an inline `display: flex` outranks the stylesheet. */}
             {preferences.showKeyboardHints && (
               <span className="search-btn-kbd" aria-hidden>
-                <Kbd>⌘</Kbd>
+                <Kbd>{primaryModifierLabel()}</Kbd>
                 <Kbd>K</Kbd>
               </span>
             )}

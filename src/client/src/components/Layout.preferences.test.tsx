@@ -69,10 +69,11 @@ function expectHints(visible: boolean) {
   const search = within(
     screen.getByRole("button", { name: "Search or jump to…" }),
   );
-  if (visible) expect(search.getByText("⌘")).toBeInTheDocument();
-  else expect(search.queryByText("⌘")).not.toBeInTheDocument();
+  if (visible) expect(search.getByText("Ctrl")).toBeInTheDocument();
+  else expect(search.queryByText("Ctrl")).not.toBeInTheDocument();
 }
 beforeEach(() => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
   localStorage.clear();
   window.dispatchEvent(new StorageEvent("storage", { key: null }));
 });
