@@ -100,3 +100,19 @@ Template default prices retain four decimal places and must fit the same storage
 ## Category deletion conflicts
 
 Category and subcategory deletion use historical name snapshots, including trash, to protect suggestions still in use. Subcategory usage is scoped to the current parent category name as well as the child name. Its typed 409 `ProblemDetails` includes an item count and a capped distinct receipt sample; `isDeleted` marks examples that cannot use the ordinary receipt detail route. See [Category snapshots](category-snapshots.md) for matching, diagnostic and concurrency limits.
+
+## Purchase-history filtering and sorting
+
+`GET /api/search/purchases` retains its phrase search and adds optional literal
+store matching, inclusive receipt-date bounds, and inclusive unit-price bounds.
+Filters combine with AND and run before count and pagination. Prices compare
+recorded numeric unit prices without currency conversion or package-size
+normalization. Reversed ranges, negative prices, and unsupported sort values are
+rejected by Application validation through the existing problem-document contract.
+
+Supported sort columns are date, description, location, unitPrice, quantity, and
+totalAmount, in either direction. The default remains date descending. Receipt ID
+and item ID provide ascending tie-breakers for deterministic page boundaries;
+this is offset pagination, not a snapshot across concurrent edits. Infrastructure
+owns the EF projection and database ordering, while Application owns admitted
+query options. Existing callers that omit these options keep their defaults.

@@ -36,6 +36,7 @@ import { RejectDialog } from "./StatusDialogs";
 import type { NormalizedDescription } from "./types";
 export function ReviewQueueTab() {
   const pagination = useServerPagination({
+    tableId: "normalized-review",
     defaultPageSize: NORMALIZED_DESCRIPTION_PAGE_SIZE,
   });
   const {

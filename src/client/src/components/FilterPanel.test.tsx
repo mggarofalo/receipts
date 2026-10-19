@@ -1,7 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
 import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { FilterPanel, type FilterField, type FilterValues } from "./FilterPanel";
+import {
+  FilterPanel,
+  type FilterField,
+  type FilterValues,
+} from "./FilterPanel";
 import { renderWithProviders } from "@/test/test-utils";
 
 const selectField: FilterField = {
@@ -37,19 +41,44 @@ const allFields: FilterField[] = [
 ];
 
 describe("FilterPanel", () => {
+  it("gives each filter control an unambiguous accessible name", async () => {
+    renderWithProviders(
+      <FilterPanel fields={allFields} values={{}} onChange={vi.fn()} />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: /filters/i }));
+    expect(
+      screen.getByRole("combobox", { name: "Status" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: "Verified" }),
+    ).toBeInTheDocument();
+    for (const name of [
+      "Date Range from",
+      "Date Range to",
+      "Amount minimum",
+      "Amount maximum",
+    ])
+      expect(screen.getByLabelText(name)).toBeInTheDocument();
+  });
   it("renders the Filters button", () => {
     const onChange = vi.fn();
     renderWithProviders(
       <FilterPanel fields={allFields} values={{}} onChange={onChange} />,
     );
-    expect(screen.getByRole("button", { name: /filters/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /filters/i }),
+    ).toBeInTheDocument();
   });
 
   it("shows active filter count badge when filters are set", () => {
     const onChange = vi.fn();
     const values: FilterValues = { status: "Active" };
     renderWithProviders(
-      <FilterPanel fields={[selectField]} values={values} onChange={onChange} />,
+      <FilterPanel
+        fields={[selectField]}
+        values={values}
+        onChange={onChange}
+      />,
     );
     expect(screen.getByText("1")).toBeInTheDocument();
   });
@@ -58,7 +87,11 @@ describe("FilterPanel", () => {
     const onChange = vi.fn();
     const values: FilterValues = { status: "all" };
     renderWithProviders(
-      <FilterPanel fields={[selectField]} values={values} onChange={onChange} />,
+      <FilterPanel
+        fields={[selectField]}
+        values={values}
+        onChange={onChange}
+      />,
     );
     expect(screen.queryByText("Clear all")).not.toBeInTheDocument();
   });
@@ -67,9 +100,15 @@ describe("FilterPanel", () => {
     const onChange = vi.fn();
     const values: FilterValues = { status: "Active" };
     renderWithProviders(
-      <FilterPanel fields={[selectField]} values={values} onChange={onChange} />,
+      <FilterPanel
+        fields={[selectField]}
+        values={values}
+        onChange={onChange}
+      />,
     );
-    expect(screen.getByRole("button", { name: /clear all/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /clear all/i }),
+    ).toBeInTheDocument();
   });
 
   it("calls onChange with cleared values when Clear all is clicked", async () => {
@@ -77,7 +116,11 @@ describe("FilterPanel", () => {
     const onChange = vi.fn();
     const values: FilterValues = { status: "Active" };
     renderWithProviders(
-      <FilterPanel fields={[selectField]} values={values} onChange={onChange} />,
+      <FilterPanel
+        fields={[selectField]}
+        values={values}
+        onChange={onChange}
+      />,
     );
     await user.click(screen.getByRole("button", { name: /clear all/i }));
     expect(onChange).toHaveBeenCalledWith({ status: "all" });
@@ -106,7 +149,11 @@ describe("FilterPanel", () => {
     const onChange = vi.fn();
     const values: FilterValues = { dateRange: { from: "2024-01-01" } };
     renderWithProviders(
-      <FilterPanel fields={[dateRangeField]} values={values} onChange={onChange} />,
+      <FilterPanel
+        fields={[dateRangeField]}
+        values={values}
+        onChange={onChange}
+      />,
     );
     expect(screen.getByText("1")).toBeInTheDocument();
   });
@@ -115,7 +162,11 @@ describe("FilterPanel", () => {
     const onChange = vi.fn();
     const values: FilterValues = { amount: { min: 10 } };
     renderWithProviders(
-      <FilterPanel fields={[numberRangeField]} values={values} onChange={onChange} />,
+      <FilterPanel
+        fields={[numberRangeField]}
+        values={values}
+        onChange={onChange}
+      />,
     );
     expect(screen.getByText("1")).toBeInTheDocument();
   });
@@ -124,7 +175,11 @@ describe("FilterPanel", () => {
     const onChange = vi.fn();
     const values: FilterValues = { verified: "true" };
     renderWithProviders(
-      <FilterPanel fields={[booleanField]} values={values} onChange={onChange} />,
+      <FilterPanel
+        fields={[booleanField]}
+        values={values}
+        onChange={onChange}
+      />,
     );
     expect(screen.getByText("1")).toBeInTheDocument();
   });
@@ -133,7 +188,11 @@ describe("FilterPanel", () => {
     const onChange = vi.fn();
     const values: FilterValues = { verified: "all" };
     renderWithProviders(
-      <FilterPanel fields={[booleanField]} values={values} onChange={onChange} />,
+      <FilterPanel
+        fields={[booleanField]}
+        values={values}
+        onChange={onChange}
+      />,
     );
     expect(screen.queryByText("Clear all")).not.toBeInTheDocument();
   });
@@ -194,11 +253,7 @@ describe("FilterPanel", () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
     renderWithProviders(
-      <FilterPanel
-        fields={[dateRangeField]}
-        values={{}}
-        onChange={onChange}
-      />,
+      <FilterPanel fields={[dateRangeField]} values={{}} onChange={onChange} />,
     );
     await user.click(screen.getByRole("button", { name: /filters/i }));
     const fromInput = screen.getByPlaceholderText("From");
@@ -251,7 +306,13 @@ describe("FilterPanel", () => {
     const onChange = vi.fn();
     const onLoadFilter = vi.fn();
     const savedFilters = [
-      { id: "p1", name: "Preset 1", entityType: "receipt", values: { status: "Active" }, createdAt: "2024-01-01" },
+      {
+        id: "p1",
+        name: "Preset 1",
+        entityType: "receipt",
+        values: { status: "Active" },
+        createdAt: "2024-01-01",
+      },
     ];
     renderWithProviders(
       <FilterPanel
@@ -272,7 +333,13 @@ describe("FilterPanel", () => {
     const onChange = vi.fn();
     const onDeleteFilter = vi.fn();
     const savedFilters = [
-      { id: "p1", name: "Preset 1", entityType: "receipt", values: {}, createdAt: "2024-01-01" },
+      {
+        id: "p1",
+        name: "Preset 1",
+        entityType: "receipt",
+        values: {},
+        createdAt: "2024-01-01",
+      },
     ];
     renderWithProviders(
       <FilterPanel

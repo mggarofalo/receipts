@@ -1,7 +1,94 @@
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import type { components } from "@/generated/api";
 import { renderWithQueryClient } from "@/test/test-utils";
 import { mockQueryResult } from "@/test/mock-hooks";
 import ApiKeys from "./ApiKeys";
+
+describe("API key complete-cache table controls", () => {
+  beforeEach(() => localStorage.clear());
+  afterEach(async () => {
+    const { useQuery } = await import("@tanstack/react-query");
+    vi.mocked(useQuery).mockReturnValue(
+      mockQueryResult({ data: [], isLoading: false }),
+    );
+    localStorage.clear();
+  });
+  async function setupKeys() {
+    const { useQuery } = await import("@tanstack/react-query");
+    const keys: components["schemas"]["ApiKeyResponse"][] = Array.from(
+      { length: 28 },
+      (_, index) => ({
+        id: `key-${index + 1}`,
+        name: `Key ${String(index + 1).padStart(2, "0")}`,
+        createdAt: "2025-01-01T00:00:00Z",
+        lastUsedAt: null,
+        expiresAt: null,
+        isRevoked: index === 0,
+        bypassRateLimit: false,
+      }),
+    ).reverse();
+    vi.mocked(useQuery).mockReturnValue(
+      mockQueryResult({ data: keys, isLoading: false }),
+    );
+    return renderWithQueryClient(<ApiKeys />);
+  }
+  it("filters statuses across the cache and keeps keyboard navigation limited to visible matches", async () => {
+    const user = userEvent.setup();
+    await setupKeys();
+    await user.click(
+      screen.getByRole("combobox", { name: "Filter API keys by status" }),
+    );
+    await user.click(screen.getByRole("option", { name: "Revoked" }));
+    expect(screen.getByText("Key 01")).toBeInTheDocument();
+    expect(screen.queryByText("Key 02")).not.toBeInTheDocument();
+    expect(screen.getByText("Showing 1-1 of 1")).toBeInTheDocument();
+    const { useListKeyboardNav } = await import("@/hooks/useListKeyboardNav");
+    expect(vi.mocked(useListKeyboardNav).mock.calls.at(-1)?.[0].items).toEqual([
+      expect.objectContaining({ id: "key-1" }),
+    ]);
+  });
+  it("filters beyond the first local page and sorts the full cached collection", async () => {
+    const user = userEvent.setup();
+    await setupKeys();
+    expect(screen.getByText("Key 01")).toBeInTheDocument();
+    expect(screen.queryByText("Key 28")).not.toBeInTheDocument();
+    await user.type(
+      screen.getByRole("textbox", { name: "Search API keys" }),
+      "Key 28",
+    );
+    expect(screen.getByText("Key 28")).toBeInTheDocument();
+    expect(screen.getByText("Showing 1-1 of 1")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Clear filters" }));
+    await user.click(screen.getByRole("button", { name: "Name" }));
+    const rows = screen.getAllByRole("row");
+    expect(within(rows[1]).getByText("Key 28")).toBeInTheDocument();
+    expect(screen.queryByText("Key 01")).not.toBeInTheDocument();
+  });
+  it("retains independent size preference and shows no matches separately from no keys", async () => {
+    const user = userEvent.setup();
+    const view = await setupKeys();
+    screen.getByRole("combobox", { name: "Rows per page" }).focus();
+    await user.keyboard("{Enter}{Home}{Enter}");
+    expect(screen.getByText("Showing 1-10 of 28")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Next page" }));
+    expect(screen.getByText("Key 11")).toBeInTheDocument();
+    await user.type(
+      screen.getByRole("textbox", { name: "Search API keys" }),
+      "missing",
+    );
+    expect(screen.getByText(/No API keys match/)).toBeInTheDocument();
+    expect(screen.queryByText(/No API keys yet/)).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: "Rows per page" }),
+    ).toBeInTheDocument();
+    view.unmount();
+    await setupKeys();
+    expect(screen.getByText("Showing 1-10 of 28")).toBeInTheDocument();
+    expect(localStorage.getItem("table-page-size:api-keys")).toBe("10");
+    expect(localStorage.getItem("table-page-size:purchase-history")).toBeNull();
+  });
+});
 
 // Page tests control mutation results at the hook boundary. Session ownership
 // and cancellation are exercised with the real hook in AuthContext.session.

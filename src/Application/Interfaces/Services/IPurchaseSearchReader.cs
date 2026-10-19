@@ -5,5 +5,6 @@ namespace Application.Interfaces.Services;
 /// <summary>Active purchase projections, filtered before counting and pagination.</summary>
 public interface IPurchaseSearchReader
 {
-	Task<PurchaseSearchResult> SearchAsync(string query, int offset, int limit, CancellationToken cancellationToken);
+	Task<PurchaseSearchResult> SearchAsync(string query, int offset, int limit,
+		PurchaseSearchOptions options, CancellationToken cancellationToken);
 }

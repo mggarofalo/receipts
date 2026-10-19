@@ -1,3 +1,6 @@
+import { Pagination } from "@/components/Pagination";
+import { usePersistedTablePageSize } from "@/hooks/usePersistedTablePageSize";
+import { isPageSize } from "@/lib/page-size";
 import { useCallback, useMemo } from "react";
 import { Link } from "react-router";
 import {
@@ -42,13 +45,12 @@ type SortDirection = "asc" | "desc";
 const SORT_COLUMNS = ["canonicalName", "totalAmount", "itemCount"] as const;
 const SORT_DIRECTIONS = ["asc", "desc"] as const;
 
-const PAGE_SIZE = 50;
-
 interface SpendingByNormalizedDescriptionUrlParams {
   dateRange: DateRange;
   sortBy: SortColumn;
   sortDirection: SortDirection;
   page: number;
+  pageSize: number;
 }
 
 function parseSpendingByNormalizedDescriptionParams(
@@ -67,6 +69,7 @@ function parseSpendingByNormalizedDescriptionParams(
       "desc",
     ),
     page: parsePositiveIntParam(searchParams.get("page"), 1),
+    pageSize: parsePositiveIntParam(searchParams.get("pageSize"), 0),
   };
 }
 
@@ -77,7 +80,10 @@ function parseSpendingByNormalizedDescriptionParams(
  * it has no backing row, and calling that "Reviewed" would assert an approval nobody gave.
  */
 function reviewStatusLabel(
-  status: components["schemas"]["NormalizedDescriptionStatus"] | null | undefined,
+  status:
+    | components["schemas"]["NormalizedDescriptionStatus"]
+    | null
+    | undefined,
 ): string {
   if (status == null) return "";
   return isPendingReview(status) ? "Unreviewed" : "Reviewed";
@@ -98,6 +104,11 @@ export default function SpendingByNormalizedDescription() {
     parseSpendingByNormalizedDescriptionParams,
   );
   const { dateRange, sortBy, sortDirection, page } = urlParams;
+  const { pageSize: preferredPageSize, setPageSize } =
+    usePersistedTablePageSize("report-spending-normalized", 50);
+  const pageSize = isPageSize(urlParams.pageSize)
+    ? urlParams.pageSize
+    : preferredPageSize;
 
   const params: SpendingByNormalizedDescriptionParams = {
     from: dateRange.startDate,
@@ -105,7 +116,7 @@ export default function SpendingByNormalizedDescription() {
     sortBy,
     sortDirection,
     page,
-    pageSize: PAGE_SIZE,
+    pageSize,
   };
 
   const { data, isLoading, isError } =
@@ -142,7 +153,7 @@ export default function SpendingByNormalizedDescription() {
   const items = useMemo(() => data?.items ?? [], [data?.items]);
   const grandTotal = Number(data?.grandTotal ?? 0);
   const totalCount = Number(data?.totalCount ?? 0);
-  const totalPages = Math.ceil(totalCount / PAGE_SIZE);
+  const totalPages = Math.ceil(totalCount / pageSize);
 
   const chartData = useMemo(
     () =>
@@ -285,8 +296,8 @@ export default function SpendingByNormalizedDescription() {
         >
           {pendingOnPage} {pendingOnPage === 1 ? "bucket" : "buckets"} on this
           page {pendingOnPage === 1 ? "is" : "are"} still awaiting review. Their
-          spend is included in the totals, but the grouping is the resolver&apos;s
-          own and nobody has confirmed it.
+          spend is included in the totals, but the grouping is the
+          resolver&apos;s own and nobody has confirmed it.
           {/* The review queue lives behind AdminRoute, so only offer the link to
               someone who can actually follow it. */}
           {isAdmin() && (
@@ -399,31 +410,17 @@ export default function SpendingByNormalizedDescription() {
         </TableBody>
       </Table>
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            Page {page} of {totalPages}
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() => updateParams({ page: page - 1 })}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages}
-              onClick={() => updateParams({ page: page + 1 })}
-            >
-              Next
-            </Button>
-          </div>
-        </div>
-      )}
+      <Pagination
+        currentPage={page}
+        totalItems={Number(data.totalCount ?? 0)}
+        pageSize={pageSize}
+        totalPages={totalPages}
+        onPageChange={(nextPage) => updateParams({ page: nextPage })}
+        onPageSizeChange={(size) => {
+          setPageSize(size);
+          updateParams({ page: 1, pageSize: size });
+        }}
+      />
     </div>
   );
 }

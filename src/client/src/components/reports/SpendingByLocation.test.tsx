@@ -89,6 +89,39 @@ function setupMock(overrides: Record<string, unknown> = {}) {
 }
 
 describe("SpendingByLocation", () => {
+  it("remembers its own page size and resets the page while preserving URL filters and ordering", async () => {
+    localStorage.clear();
+    setupMock();
+    const user = userEvent.setup();
+    const view = renderWithQueryClient(<SpendingByLocation />, {
+      route:
+        "/reports?report=spending-by-location&page=3&sortBy=visits&sortDirection=asc&startDate=2023-01-01&endDate=2023-06-30",
+    });
+    screen.getByRole("combobox", { name: "Rows per page" }).focus();
+    await user.keyboard("{Enter}{Home}{Enter}");
+    expect(mockHook).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        page: 1,
+        pageSize: 10,
+        sortBy: "visits",
+        sortDirection: "asc",
+        startDate: "2023-01-01",
+        endDate: "2023-06-30",
+      }),
+    );
+    expect(
+      localStorage.getItem("table-page-size:report-spending-location"),
+    ).toBe("10");
+    expect(
+      localStorage.getItem("table-page-size:report-out-of-balance"),
+    ).toBeNull();
+    view.unmount();
+    renderWithQueryClient(<SpendingByLocation />);
+    expect(mockHook).toHaveBeenLastCalledWith(
+      expect.objectContaining({ page: 1, pageSize: 10 }),
+    );
+    localStorage.clear();
+  });
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -114,9 +147,7 @@ describe("SpendingByLocation", () => {
     });
     renderWithQueryClient(<SpendingByLocation />);
     expect(screen.getByText("No Data")).toBeInTheDocument();
-    expect(
-      screen.getByText(/no spending data found/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/no spending data found/i)).toBeInTheDocument();
   });
 
   it("shows empty state when data is null", () => {
@@ -136,9 +167,7 @@ describe("SpendingByLocation", () => {
     setupMock();
     renderWithQueryClient(<SpendingByLocation />);
     expect(screen.getByTestId("bar-chart")).toBeInTheDocument();
-    expect(
-      screen.getByText("Top Locations by Spending"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Top Locations by Spending")).toBeInTheDocument();
   });
 
   it("renders table with all items", () => {
@@ -223,7 +252,9 @@ describe("SpendingByLocation", () => {
     renderWithQueryClient(<SpendingByLocation />);
 
     const table = screen.getByRole("table");
-    await user.click(within(table).getByRole("button", { name: /^location$/i }));
+    await user.click(
+      within(table).getByRole("button", { name: /^location$/i }),
+    );
 
     expect(mockHook).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -233,10 +264,13 @@ describe("SpendingByLocation", () => {
     );
   });
 
-  it("does not show pagination when only one page", () => {
+  it("keeps page size available when only one page", () => {
     setupMock();
     renderWithQueryClient(<SpendingByLocation />);
-    expect(screen.queryByText(/Page/)).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: "Rows per page" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Next page" })).toBeDisabled();
   });
 
   it("shows pagination when multiple pages", () => {
@@ -250,10 +284,12 @@ describe("SpendingByLocation", () => {
       data: { totalCount: 51, grandTotal: 510, items: manyItems },
     });
     renderWithQueryClient(<SpendingByLocation />);
-    expect(screen.getByText("Page 1 of 2")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Previous" })).toBeDisabled();
+    expect(screen.getByText("1/2")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Next" }),
+      screen.getByRole("button", { name: "Previous page" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Next page" }),
     ).not.toBeDisabled();
   });
 
@@ -357,7 +393,7 @@ describe("SpendingByLocation", () => {
     renderWithQueryClient(<SpendingByLocation />);
 
     // Go to page 2
-    const nextBtn = screen.getByRole("button", { name: "Next" });
+    const nextBtn = screen.getByRole("button", { name: "Next page" });
     await user.click(nextBtn);
 
     // Change date range

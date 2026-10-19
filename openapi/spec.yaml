@@ -16,8 +16,9 @@ paths:
       description: >
         Searches all active receipt items on active receipts using a trimmed,
         case-insensitive literal substring across description, item code, store,
-        and active canonical description or its display label. Returns individual purchases, newest
-        receipt date first, then receipt ID and item ID ascending. Prices retain
+        and active canonical description or its display label. Filters apply before
+        counting and pagination. Returns individual purchases sorted by receipt date
+        descending by default, with receipt ID and item ID ascending as stable ties. Prices retain
         their stored currencies and precision; no currency conversion or physical
         unit comparison is performed. Count and page are live reads and can
         change during concurrent edits.
@@ -46,6 +47,52 @@ paths:
             minimum: 1
             maximum: 100
             default: 25
+        - name: sortBy
+          in: query
+          description: Sort column (date, description, location, unitPrice, quantity, or totalAmount).
+          schema:
+            type: string
+            default: date
+        - name: sortDirection
+          in: query
+          description: Sort direction (asc or desc).
+          schema:
+            type: string
+            default: desc
+        - name: location
+          in: query
+          description: Optional case-insensitive literal store substring, at most 200 characters after trimming.
+          schema:
+            type: string
+            nullable: true
+        - name: startDate
+          in: query
+          description: Inclusive earliest receipt date.
+          schema:
+            type: string
+            format: date
+            nullable: true
+        - name: endDate
+          in: query
+          description: Inclusive latest receipt date, not earlier than startDate.
+          schema:
+            type: string
+            format: date
+            nullable: true
+        - name: minUnitPrice
+          in: query
+          description: Inclusive minimum recorded unit price, non-negative. No currency conversion.
+          schema:
+            type: number
+            format: double
+            nullable: true
+        - name: maxUnitPrice
+          in: query
+          description: Inclusive maximum recorded unit price, non-negative and not less than minUnitPrice.
+          schema:
+            type: number
+            format: double
+            nullable: true
       responses:
         "200":
           description: Matching purchases

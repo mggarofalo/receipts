@@ -74,7 +74,7 @@ export default function Ynab() {
     defaultSortBy: "occurredAt",
     defaultSortDirection: "desc",
   });
-  const pagination = useServerPagination({ sortBy, sortDirection });
+  const pagination = useServerPagination({ tableId: "ynab-events", sortBy, sortDirection });
   // `resetPage` is stable (useServerPagination memoizes it); depend on it
   // directly so this handler doesn't churn when other pagination state changes.
   const { resetPage } = pagination;

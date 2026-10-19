@@ -139,6 +139,7 @@ export function FilterPanel({
               <Label className="text-xs">{field.label}</Label>
               {field.type === "select" && (
                 <Combobox
+                  aria-label={field.label}
                   options={[
                     { value: "all", label: "All" },
                     ...field.options.map((opt) => ({
@@ -155,6 +156,7 @@ export function FilterPanel({
               )}
               {field.type === "boolean" && (
                 <Combobox
+                  aria-label={field.label}
                   options={[
                     { value: "all", label: "All" },
                     { value: "true", label: "Yes" },
@@ -171,6 +173,7 @@ export function FilterPanel({
                 <div className="flex gap-2">
                   <DateInput
                     className="h-8 text-xs"
+                    aria-label={`${field.label} from`}
                     placeholder="From"
                     value={
                       (values[field.key] as { from?: string } | undefined)
@@ -185,6 +188,7 @@ export function FilterPanel({
                   />
                   <DateInput
                     className="h-8 text-xs"
+                    aria-label={`${field.label} to`}
                     placeholder="To"
                     value={
                       (values[field.key] as { to?: string } | undefined)?.to ??
@@ -204,6 +208,7 @@ export function FilterPanel({
                   <Input
                     type="number"
                     className="h-8 text-xs"
+                    aria-label={`${field.label} minimum`}
                     placeholder="Min"
                     value={
                       (values[field.key] as { min?: number } | undefined)
@@ -222,6 +227,7 @@ export function FilterPanel({
                   <Input
                     type="number"
                     className="h-8 text-xs"
+                    aria-label={`${field.label} maximum`}
                     placeholder="Max"
                     value={
                       (values[field.key] as { max?: number } | undefined)
@@ -248,6 +254,7 @@ export function FilterPanel({
             {onSaveFilter && (
               <div className="flex gap-1.5">
                 <Input
+                  aria-label="Preset name"
                   placeholder="Preset name..."
                   value={presetName}
                   onChange={(e) => setPresetName(e.target.value)}

@@ -9,6 +9,48 @@ namespace Application.Tests.Queries.Search;
 public class SearchPurchasesQueryTests
 {
 	[Theory]
+	[InlineData("date", "asc")]
+	[InlineData("description", "desc")]
+	[InlineData("location", "asc")]
+	[InlineData("unitPrice", "desc")]
+	[InlineData("quantity", "asc")]
+	[InlineData("totalAmount", "desc")]
+	public void Validate_AcceptsSupportedSortsAndInclusiveEqualBounds(string column, string direction)
+	{
+		var options = new PurchaseSearchOptions(column, direction, "  " + new string('x', 200) + "  ",
+			new DateOnly(2025, 1, 1), new DateOnly(2025, 1, 1), 0m, 0m);
+		new SearchPurchasesQueryValidator().Validate(new SearchPurchasesQuery("milk", Options: options)).IsValid.Should().BeTrue();
+	}
+
+	public static IEnumerable<object[]> InvalidOptions =>
+	[
+		[new PurchaseSearchOptions(SortBy: "receiptId")],
+		[new PurchaseSearchOptions(SortDirection: "descending")],
+		[new PurchaseSearchOptions(Location: new string('x', 201))],
+		[new PurchaseSearchOptions(StartDate: new(2025, 1, 2), EndDate: new(2025, 1, 1))],
+		[new PurchaseSearchOptions(MinUnitPrice: -0.0001m)],
+		[new PurchaseSearchOptions(MaxUnitPrice: -0.0001m)],
+		[new PurchaseSearchOptions(MinUnitPrice: 1.0001m, MaxUnitPrice: 1m)],
+	];
+
+	[Theory]
+	[MemberData(nameof(InvalidOptions))]
+	public void Validate_RejectsInvalidFilterAndSortOptions(PurchaseSearchOptions options)
+		=> new SearchPurchasesQueryValidator().Validate(new SearchPurchasesQuery("milk", Options: options)).IsValid.Should().BeFalse();
+
+	[Fact]
+	public async Task Handle_NormalizesLocationWithoutDroppingOtherOptions()
+	{
+		var options = new PurchaseSearchOptions("unitPrice", "asc", "  50% Market  ", new(2025, 1, 1), new(2025, 1, 2), 1.2345m, 2.3456m);
+		var expectedOptions = options with { Location = "50% Market" };
+		var reader = new Mock<IPurchaseSearchReader>(MockBehavior.Strict);
+		var result = new PurchaseSearchResult([], 0, 10, 10);
+		using var cancellation = new CancellationTokenSource();
+		reader.Setup(x => x.SearchAsync("milk", 10, 10, expectedOptions, cancellation.Token)).ReturnsAsync(result);
+		(await new SearchPurchasesQueryHandler(reader.Object).Handle(new(" milk ", 10, 10, options), cancellation.Token)).Should().BeSameAs(result);
+		reader.VerifyAll();
+	}
+	[Theory]
 	[InlineData(null, 0, 25)]
 	[InlineData("", 0, 25)]
 	[InlineData("  a  ", 0, 25)]
@@ -34,11 +76,10 @@ public class SearchPurchasesQueryTests
 		using CancellationTokenSource cancellation = new();
 		PurchaseSearchResult expected = new([], 204, 200, 25);
 		Mock<IPurchaseSearchReader> reader = new(MockBehavior.Strict);
-		reader.Setup(x => x.SearchAsync("whole milk", 200, 25, cancellation.Token)).ReturnsAsync(expected);
+		reader.Setup(x => x.SearchAsync("whole milk", 200, 25, new PurchaseSearchOptions(), cancellation.Token)).ReturnsAsync(expected);
 		PurchaseSearchResult result = await new SearchPurchasesQueryHandler(reader.Object)
 			.Handle(new("  whole milk  ", 200, 25), cancellation.Token);
 		result.Should().BeSameAs(expected);
 		reader.VerifyAll();
 	}
 }
-

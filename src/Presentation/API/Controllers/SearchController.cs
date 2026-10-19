@@ -5,6 +5,7 @@ using Mediator;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
+using PurchaseSearchOptions = Application.Models.Search.PurchaseSearchOptions;
 
 namespace API.Controllers;
 
@@ -21,9 +22,19 @@ public class SearchController(IMediator mediator) : ControllerBase
 		[FromQuery] string q,
 		CancellationToken cancellationToken,
 		[FromQuery] int offset = 0,
-		[FromQuery] int limit = 25)
+				[FromQuery] int limit = 25,
+				[FromQuery] string sortBy = "date",
+				[FromQuery] string sortDirection = "desc",
+				[FromQuery] string? location = null,
+				[FromQuery] DateOnly? startDate = null,
+				[FromQuery] DateOnly? endDate = null,
+				[FromQuery] decimal? minUnitPrice = null,
+				[FromQuery] decimal? maxUnitPrice = null)
 	{
-		Application.Models.Search.PurchaseSearchResult result = await mediator.Send(new SearchPurchasesQuery(q, offset, limit), cancellationToken);
+		Application.Models.Search.PurchaseSearchResult result = await mediator.Send(
+			new SearchPurchasesQuery(q, offset, limit,
+				new PurchaseSearchOptions(sortBy, sortDirection, location, startDate, endDate, minUnitPrice, maxUnitPrice)),
+			cancellationToken);
 		return TypedResults.Ok(new PurchaseSearchResponse
 		{
 			Items = result.Items.Select(x => new PurchaseSearchItem

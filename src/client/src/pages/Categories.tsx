@@ -79,7 +79,7 @@ function Categories() {
   usePageTitle("Categories");
   const { params: linkParams } = useEntityLinkParams(HIGHLIGHT_PARAMS);
   const { sortBy, sortDirection, toggleSort } = useServerSort({ defaultSortBy: "name", defaultSortDirection: "asc" });
-  const { offset, limit, currentPage, pageSize, totalPages, setPage, setPageSize, resetPage } = useServerPagination({ sortBy, sortDirection });
+  const { offset, limit, currentPage, pageSize, totalPages, setPage, setPageSize, resetPage } = useServerPagination({ tableId: "categories", sortBy, sortDirection });
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => {
     const saved = localStorage.getItem(STATUS_STORAGE_KEY);
     return saved === "all" || saved === "true" || saved === "false" ? saved : "true";

@@ -1,21 +1,27 @@
-const PAGE_SIZE_KEY = "table-page-size";
-const VALID_PAGE_SIZES = [10, 25, 50, 100];
+const LEGACY_PAGE_SIZE_KEY = "table-page-size";
+export const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
-export function getPersistedPageSize(): number | null {
+export function isPageSize(size: number): boolean {
+  return PAGE_SIZE_OPTIONS.includes(size);
+}
+
+export function getPersistedPageSize(tableId: string): number | null {
   try {
-    const raw = localStorage.getItem(PAGE_SIZE_KEY);
+    const raw =
+      localStorage.getItem(`table-page-size:${tableId}`) ??
+      localStorage.getItem(LEGACY_PAGE_SIZE_KEY);
     if (raw === null) return null;
     const parsed = Number(raw);
-    return VALID_PAGE_SIZES.includes(parsed) ? parsed : null;
+    return isPageSize(parsed) ? parsed : null;
   } catch {
     return null;
   }
 }
 
-export function persistPageSize(size: number): void {
-  if (!VALID_PAGE_SIZES.includes(size)) return;
+export function persistPageSize(tableId: string, size: number): void {
+  if (!isPageSize(size)) return;
   try {
-    localStorage.setItem(PAGE_SIZE_KEY, String(size));
+    localStorage.setItem(`table-page-size:${tableId}`, String(size));
   } catch {
     // Ignore storage errors (full, disabled, etc.)
   }

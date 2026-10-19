@@ -18,6 +18,18 @@ namespace Presentation.API.Tests.Configuration;
 
 public class PurchaseSearchHttpTests
 {
+	[Fact]
+	public async Task FilteredQuery_ForwardsTypedNormalizedOptionsThroughTheRealPipeline()
+	{
+		var expected = new PurchaseSearchOptions("unitPrice", "asc", "50% Market", new(2025, 1, 1), new(2025, 1, 2), 0m, 1.2345m);
+		var reader = new Mock<IPurchaseSearchReader>(MockBehavior.Strict);
+		reader.Setup(x => x.SearchAsync("milk", 10, 10, expected, It.IsAny<CancellationToken>())).ReturnsAsync(new PurchaseSearchResult([], 0, 10, 10));
+		await using var app = await StartAsync(reader);
+		using var client = app.GetTestClient();
+		using var response = await client.GetAsync("/api/search/purchases?q=milk&offset=10&limit=10&sortBy=unitPrice&sortDirection=asc&location=%2050%25%20Market%20&startDate=2025-01-01&endDate=2025-01-02&minUnitPrice=0&maxUnitPrice=1.2345");
+		response.StatusCode.Should().Be(HttpStatusCode.OK);
+		reader.VerifyAll();
+	}
 	[Theory]
 	[InlineData("")]
 	[InlineData("?q=")]
@@ -26,6 +38,13 @@ public class PurchaseSearchHttpTests
 	[InlineData("?q=milk&limit=0")]
 	[InlineData("?q=milk&limit=101")]
 	[InlineData("?q=milk&offset=not-a-number")]
+	[InlineData("?q=milk&sortBy=receiptId")]
+	[InlineData("?q=milk&sortDirection=descending")]
+	[InlineData("?q=milk&startDate=2025-02-30")]
+	[InlineData("?q=milk&startDate=2025-02-02&endDate=2025-02-01")]
+	[InlineData("?q=milk&minUnitPrice=-0.0001")]
+	[InlineData("?q=milk&minUnitPrice=1.0001&maxUnitPrice=1")]
+	[InlineData("?q=milk&maxUnitPrice=NaN")]
 	public async Task InvalidQuery_ReturnsReasonedProblemWithoutSearching(string query)
 	{
 		Mock<IPurchaseSearchReader> reader = new(MockBehavior.Strict);
@@ -45,7 +64,7 @@ public class PurchaseSearchHttpTests
 	{
 		Guid id = Guid.NewGuid(), receipt = Guid.NewGuid();
 		Mock<IPurchaseSearchReader> reader = new(MockBehavior.Strict);
-		reader.Setup(x => x.SearchAsync("whole milk", 0, 25, It.IsAny<CancellationToken>())).ReturnsAsync(new PurchaseSearchResult(
+		reader.Setup(x => x.SearchAsync("whole milk", 0, 25, new PurchaseSearchOptions(), It.IsAny<CancellationToken>())).ReturnsAsync(new PurchaseSearchResult(
 			[new(id, receipt, new DateOnly(2024, 1, 2), "Shop", "Whole Milk", "SKU", null, null, 1.2345m, 2.3456m, "USD", 2.90m, "USD")], 204, 0, 25));
 		await using WebApplication app = await StartAsync(reader);
 		using HttpClient client = app.GetTestClient();

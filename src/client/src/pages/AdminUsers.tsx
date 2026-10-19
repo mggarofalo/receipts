@@ -98,7 +98,7 @@ function AdminUsers() {
   const { user: currentUser } = useAuth();
 
   const { sortBy, sortDirection, toggleSort } = useServerSort({ defaultSortBy: "email", defaultSortDirection: "asc" });
-  const { offset, limit, currentPage, pageSize, totalPages, setPage, setPageSize, resetPage } = useServerPagination({ defaultPageSize: 20, sortBy, sortDirection });
+  const { offset, limit, currentPage, pageSize, totalPages, setPage, setPageSize, resetPage } = useServerPagination({ tableId: "admin-users", defaultPageSize: 25, sortBy, sortDirection });
   const { data: usersData, total: serverTotal, isLoading } = useUsers(offset, limit, sortBy, sortDirection);
 
   const handleSort = useCallback((column: string) => {

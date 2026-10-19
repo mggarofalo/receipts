@@ -12,11 +12,67 @@ describe("Pagination", () => {
     onPageChange: vi.fn(),
   };
 
-  it("renders nothing when totalItems is 0", () => {
-    const { container } = render(
-      <Pagination {...defaultProps} totalItems={0} />,
+  it("disables paging and size changes while the owning query is pending", () => {
+    render(
+      <Pagination
+        {...defaultProps}
+        currentPage={2}
+        disabled
+        onPageSizeChange={vi.fn()}
+      />,
     );
-    expect(container.firstChild).toBeNull();
+    expect(
+      screen.getByRole("combobox", { name: "Rows per page" }),
+    ).toBeDisabled();
+    expect(screen.getByLabelText("Previous page")).toBeDisabled();
+    expect(screen.getByLabelText("Next page")).toBeDisabled();
+  });
+
+  it("does not display an inverted range after data shrinks beyond the current page", () => {
+    render(
+      <Pagination
+        {...defaultProps}
+        currentPage={5}
+        totalItems={3}
+        totalPages={1}
+      />,
+    );
+    expect(screen.getByText("Showing 0-0 of 3")).toBeInTheDocument();
+    expect(screen.getByLabelText("Previous page")).toBeEnabled();
+    expect(screen.getByLabelText("Next page")).toBeDisabled();
+  });
+
+  it("keeps the page-size control available with an honest empty range", () => {
+    render(
+      <Pagination
+        {...defaultProps}
+        totalItems={0}
+        totalPages={1}
+        onPageSizeChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Showing 0-0 of 0")).toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: "Rows per page" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Previous page")).toBeDisabled();
+    expect(screen.getByLabelText("Next page")).toBeDisabled();
+  });
+
+  it("offers the supported sizes through a named keyboard-accessible control", async () => {
+    const onPageSizeChange = vi.fn();
+    render(
+      <Pagination {...defaultProps} onPageSizeChange={onPageSizeChange} />,
+    );
+    const user = userEvent.setup();
+    screen.getByRole("combobox", { name: "Rows per page" }).focus();
+    await user.keyboard("{Enter}");
+    for (const size of [10, 25, 50, 100])
+      expect(
+        screen.getByRole("option", { name: String(size) }),
+      ).toBeInTheDocument();
+    await user.keyboard("{Home}{ArrowDown}{ArrowDown}{Enter}");
+    expect(onPageSizeChange).toHaveBeenCalledWith(50);
   });
 
   it("displays the correct range text", () => {

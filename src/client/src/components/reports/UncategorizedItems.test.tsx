@@ -153,7 +153,9 @@ describe("UncategorizedItems", () => {
     expect(screen.getByText("ABC")).toBeInTheDocument();
     // Bananas has null item code, should show "-"
     const bananaRow = screen.getByText("Bananas").closest("tr")!;
-    expect(within(bananaRow).getAllByText("-").length).toBeGreaterThanOrEqual(1);
+    expect(within(bananaRow).getAllByText("-").length).toBeGreaterThanOrEqual(
+      1,
+    );
   });
 
   it("displays subcategory or dash when missing", () => {
@@ -219,10 +221,13 @@ describe("UncategorizedItems", () => {
     expect(screen.getByText("Apply to Selected")).toBeInTheDocument();
   });
 
-  it("does not show pagination when only one page", () => {
+  it("keeps page size available when only one page", () => {
     setupMock();
     renderWithQueryClient(<UncategorizedItems />);
-    expect(screen.queryByText(/Page/)).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: "Rows per page" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Next page" })).toBeDisabled();
   });
 
   it("shows pagination when multiple pages", () => {
@@ -241,10 +246,12 @@ describe("UncategorizedItems", () => {
       data: { totalCount: 51, items: manyItems },
     });
     renderWithQueryClient(<UncategorizedItems />);
-    expect(screen.getByText("Page 1 of 2")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Previous" })).toBeDisabled();
+    expect(screen.getByText("1/2")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Next" }),
+      screen.getByRole("button", { name: "Previous page" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Next page" }),
     ).not.toBeDisabled();
   });
 

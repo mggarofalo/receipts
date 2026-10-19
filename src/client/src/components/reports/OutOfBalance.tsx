@@ -1,3 +1,6 @@
+import { Pagination } from "@/components/Pagination";
+import { usePersistedTablePageSize } from "@/hooks/usePersistedTablePageSize";
+import { isPageSize } from "@/lib/page-size";
 import { useNavigate } from "react-router";
 import {
   useOutOfBalanceReport,
@@ -32,6 +35,7 @@ interface OutOfBalanceUrlParams {
   sortBy: SortColumn;
   sortDirection: SortDirection;
   page: number;
+  pageSize: number;
 }
 
 function parseOutOfBalanceParams(
@@ -45,6 +49,7 @@ function parseOutOfBalanceParams(
       "asc",
     ),
     page: parsePositiveIntParam(searchParams.get("page"), 1),
+    pageSize: parsePositiveIntParam(searchParams.get("pageSize"), 0),
   };
 }
 
@@ -54,7 +59,11 @@ export default function OutOfBalance() {
     parseOutOfBalanceParams,
   );
   const { sortBy, sortDirection, page } = urlParams;
-  const pageSize = 50;
+  const { pageSize: preferredPageSize, setPageSize } =
+    usePersistedTablePageSize("report-out-of-balance", 50);
+  const pageSize = isPageSize(urlParams.pageSize)
+    ? urlParams.pageSize
+    : preferredPageSize;
 
   const params: OutOfBalanceParams = {
     sortBy,
@@ -139,7 +148,9 @@ export default function OutOfBalance() {
     navigate(`/receipts/${receiptId}`);
   }
 
-  const totalPages = data ? Math.ceil(Number(data.totalCount ?? 0) / pageSize) : 0;
+  const totalPages = data
+    ? Math.ceil(Number(data.totalCount ?? 0) / pageSize)
+    : 0;
 
   if (isLoading) {
     return (
@@ -175,9 +186,7 @@ export default function OutOfBalance() {
     <div className="space-y-4">
       <div className="flex items-center gap-6 rounded-lg border p-4">
         <div>
-          <p className="card-sub">
-            Out-of-Balance Receipts
-          </p>
+          <p className="card-sub">Out-of-Balance Receipts</p>
           <p className="money-med">{data.totalCount}</p>
         </div>
         <div>
@@ -200,14 +209,28 @@ export default function OutOfBalance() {
       <Table>
         <TableHeader>
           <TableRow>
-            <SortableTableHead column="date" label="Date" currentSortBy={sortBy} currentSortDirection={sortDirection} onToggleSort={handleSort} />
+            <SortableTableHead
+              column="date"
+              label="Date"
+              currentSortBy={sortBy}
+              currentSortDirection={sortDirection}
+              onToggleSort={handleSort}
+            />
             <TableHead>Location</TableHead>
             <TableHead className="text-right">Item Total</TableHead>
             <TableHead className="text-right">Tax</TableHead>
             <TableHead className="text-right">Adjustments</TableHead>
             <TableHead className="text-right">Expected Total</TableHead>
             <TableHead className="text-right">Actual Total</TableHead>
-            <SortableTableHead column="difference" label="Difference" currentSortBy={sortBy} currentSortDirection={sortDirection} onToggleSort={handleSort} className="text-right" align="right" />
+            <SortableTableHead
+              column="difference"
+              label="Difference"
+              currentSortBy={sortBy}
+              currentSortDirection={sortDirection}
+              onToggleSort={handleSort}
+              className="text-right"
+              align="right"
+            />
             <TableHead className="w-16">View</TableHead>
           </TableRow>
         </TableHeader>
@@ -260,31 +283,17 @@ export default function OutOfBalance() {
         </TableBody>
       </Table>
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            Page {page} of {totalPages}
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() => updateParams({ page: page - 1 })}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages}
-              onClick={() => updateParams({ page: page + 1 })}
-            >
-              Next
-            </Button>
-          </div>
-        </div>
-      )}
+      <Pagination
+        currentPage={page}
+        totalItems={Number(data.totalCount ?? 0)}
+        pageSize={pageSize}
+        totalPages={totalPages}
+        onPageChange={(nextPage) => updateParams({ page: nextPage })}
+        onPageSizeChange={(size) => {
+          setPageSize(size);
+          updateParams({ page: 1, pageSize: size });
+        }}
+      />
     </div>
   );
 }

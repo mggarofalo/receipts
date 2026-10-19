@@ -153,7 +153,7 @@ function AuditLog() {
     defaultSortBy: "changedAt",
     defaultSortDirection: "desc",
   });
-  const pagination = useServerPagination({ sortBy, sortDirection });
+  const pagination = useServerPagination({ tableId: "audit-log", sortBy, sortDirection });
   // `resetPage` is stable (useServerPagination memoizes it); depend on it
   // directly so these handlers don't churn when other pagination state changes.
   const { resetPage } = pagination;

@@ -340,7 +340,7 @@ function Receipts() {
     setPage,
     setPageSize,
     resetPage,
-  } = useServerPagination({ sortBy, sortDirection });
+  } = useServerPagination({ tableId: "receipts", sortBy, sortDirection });
   const {
     data: receiptsData,
     total: serverTotal,
