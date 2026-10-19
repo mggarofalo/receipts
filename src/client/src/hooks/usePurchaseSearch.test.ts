@@ -7,6 +7,42 @@ vi.mock("@/lib/api-client", () => ({ default: { GET: get } }));
 
 beforeEach(() => vi.clearAllMocks());
 
+it("sends whole-result controls and separates cached queries when sort or filters change", async () => {
+  get.mockImplementation((_path, request) =>
+    Promise.resolve({
+      data: {
+        items: [],
+        total: request.params.query.location === "Market" ? 12 : 3,
+        offset: 0,
+        limit: 25,
+      } satisfies components["schemas"]["PurchaseSearchResponse"],
+      response: new Response(),
+    }),
+  );
+  const options = {
+    sortBy: "unitPrice" as const,
+    sortDirection: "asc" as const,
+    location: "Market",
+    startDate: "2025-01-01",
+    endDate: "2025-01-31",
+    minUnitPrice: 0,
+    maxUnitPrice: 1.2345,
+  };
+  const { result, rerender } = renderHook(
+    ({ location }) =>
+      usePurchaseSearch("milk", 0, 25, true, { ...options, location }),
+    { initialProps: { location: "Market" }, wrapper: createQueryWrapper() },
+  );
+  await waitFor(() => expect(result.current.data?.total).toBe(12));
+  expect(get).toHaveBeenLastCalledWith("/api/search/purchases", {
+    params: { query: { q: "milk", offset: 0, limit: 25, ...options } },
+    signal: expect.any(AbortSignal),
+  });
+  rerender({ location: "Other" });
+  await waitFor(() => expect(result.current.data?.total).toBe(3));
+  expect(get).toHaveBeenCalledTimes(2);
+});
+
 it("sends the literal trimmed phrase and page with an abort signal", async () => {
   get.mockResolvedValue({
     data: {

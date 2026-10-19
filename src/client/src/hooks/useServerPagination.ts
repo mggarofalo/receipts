@@ -1,7 +1,12 @@
 import { useReducer, useMemo, useCallback, useRef, useEffect } from "react";
-import { getPersistedPageSize, persistPageSize } from "@/lib/page-size";
+import {
+  getPersistedPageSize,
+  isPageSize,
+  persistPageSize,
+} from "@/lib/page-size";
 
 interface UseServerPaginationOptions {
+  tableId: string;
   defaultPageSize?: number;
   sortBy?: string | null;
   sortDirection?: "asc" | "desc";
@@ -39,14 +44,19 @@ function reducer(state: State, action: Action): State {
 }
 
 export function useServerPagination({
+  tableId,
   defaultPageSize = 25,
   sortBy,
   sortDirection,
-}: UseServerPaginationOptions = {}): UseServerPaginationReturn {
-  const [state, dispatch] = useReducer(reducer, {
-    offset: 0,
-    limit: getPersistedPageSize() ?? defaultPageSize,
-  });
+}: UseServerPaginationOptions): UseServerPaginationReturn {
+  const [state, dispatch] = useReducer(
+    reducer,
+    { tableId, defaultPageSize },
+    (initial) => ({
+      offset: 0,
+      limit: getPersistedPageSize(initial.tableId) ?? initial.defaultPageSize,
+    }),
+  );
 
   // Reset to page 1 when sort params change (e.g. browser back/forward).
   // Skip the initial mount so we don't dispatch a redundant reset.
@@ -78,10 +88,14 @@ export function useServerPagination({
     [state.limit],
   );
 
-  const setPageSize = useCallback((size: number) => {
-    persistPageSize(size);
-    dispatch({ type: "SET_LIMIT", limit: size });
-  }, []);
+  const setPageSize = useCallback(
+    (size: number) => {
+      if (!isPageSize(size)) return;
+      persistPageSize(tableId, size);
+      dispatch({ type: "SET_LIMIT", limit: size });
+    },
+    [tableId],
+  );
 
   const resetPage = useCallback(() => {
     dispatch({ type: "SET_OFFSET", offset: 0 });

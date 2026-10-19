@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { fireEvent, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { server } from "@/test/msw/server";
@@ -83,5 +83,82 @@ it("finds hot dogs through the real query hook and renders a date-descending evi
     q: "hot dogs",
     offset: "0",
     limit: "25",
+    sortBy: "date",
+    sortDirection: "desc",
   });
+});
+
+it("requests filters and ordering for the whole result, then keeps them while changing page size", async () => {
+  localStorage.clear();
+  const requests: URL[] = [];
+  server.use(
+    http.get("*/api/search/purchases", ({ request }) => {
+      const url = new URL(request.url);
+      requests.push(url);
+      const offset = Number(url.searchParams.get("offset"));
+      const limit = Number(url.searchParams.get("limit"));
+      return HttpResponse.json({
+        total: 120,
+        offset,
+        limit,
+        items: [
+          {
+            id: "one",
+            receiptId: "receipt",
+            date: "2020-01-01",
+            description: "Historical milk",
+            location: "Market",
+            quantity: 1,
+            unitPrice: 1.2345,
+            unitPriceCurrency: "USD",
+            totalAmount: 1.23,
+            totalAmountCurrency: "USD",
+          },
+        ],
+      });
+    }),
+  );
+  const user = userEvent.setup();
+  renderWithQueryClient(<PurchaseSearch />, {
+    route: "/search?q=milk&offset=25",
+  });
+  await screen.findByText("Historical milk");
+  fireEvent.change(screen.getByLabelText("Store contains"), {
+    target: { value: "Market" },
+  });
+  fireEvent.change(screen.getByLabelText("Maximum unit price"), {
+    target: { value: "1.2345" },
+  });
+  expect(requests).toHaveLength(1);
+  await user.click(screen.getByRole("button", { name: "Apply filters" }));
+  await waitFor(() =>
+    expect(requests.at(-1)?.searchParams.get("maxUnitPrice")).toBe("1.2345"),
+  );
+  expect(requests.at(-1)?.searchParams.get("offset")).toBe("0");
+  await user.click(screen.getByRole("button", { name: "Unit price" }));
+  await waitFor(() =>
+    expect(requests.at(-1)?.searchParams.get("sortBy")).toBe("unitPrice"),
+  );
+  screen.getByRole("combobox", { name: "Rows per page" }).focus();
+  await user.keyboard("{Enter}{End}{Enter}");
+  await waitFor(() =>
+    expect(requests.at(-1)?.searchParams.get("limit")).toBe("100"),
+  );
+  expect(Object.fromEntries(requests.at(-1)!.searchParams)).toEqual({
+    q: "milk",
+    offset: "0",
+    limit: "100",
+    sortBy: "unitPrice",
+    sortDirection: "asc",
+    location: "Market",
+    maxUnitPrice: "1.2345",
+  });
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Next page" })).toBeEnabled(),
+  );
+  await user.click(screen.getByRole("button", { name: "Next page" }));
+  await waitFor(() =>
+    expect(requests.at(-1)?.searchParams.get("offset")).toBe("100"),
+  );
+  expect(requests.at(-1)?.searchParams.get("maxUnitPrice")).toBe("1.2345");
 });

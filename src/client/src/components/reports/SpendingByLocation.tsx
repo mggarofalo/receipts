@@ -1,3 +1,6 @@
+import { Pagination } from "@/components/Pagination";
+import { usePersistedTablePageSize } from "@/hooks/usePersistedTablePageSize";
+import { isPageSize } from "@/lib/page-size";
 import { useCallback, useMemo } from "react";
 import { Link } from "react-router";
 import {
@@ -34,7 +37,12 @@ import { SortableTableHead } from "@/components/SortableTableHead";
 type SortColumn = "location" | "visits" | "total" | "averagePerVisit";
 type SortDirection = "asc" | "desc";
 
-const SORT_COLUMNS = ["location", "visits", "total", "averagePerVisit"] as const;
+const SORT_COLUMNS = [
+  "location",
+  "visits",
+  "total",
+  "averagePerVisit",
+] as const;
 const SORT_DIRECTIONS = ["asc", "desc"] as const;
 
 interface SpendingByLocationUrlParams {
@@ -42,6 +50,7 @@ interface SpendingByLocationUrlParams {
   sortBy: SortColumn;
   sortDirection: SortDirection;
   page: number;
+  pageSize: number;
 }
 
 function parseSpendingByLocationParams(
@@ -56,6 +65,7 @@ function parseSpendingByLocationParams(
       "desc",
     ),
     page: parsePositiveIntParam(searchParams.get("page"), 1),
+    pageSize: parsePositiveIntParam(searchParams.get("pageSize"), 0),
   };
 }
 
@@ -64,7 +74,11 @@ export default function SpendingByLocation() {
     parseSpendingByLocationParams,
   );
   const { dateRange, sortBy, sortDirection, page } = urlParams;
-  const pageSize = 50;
+  const { pageSize: preferredPageSize, setPageSize } =
+    usePersistedTablePageSize("report-spending-location", 50);
+  const pageSize = isPageSize(urlParams.pageSize)
+    ? urlParams.pageSize
+    : preferredPageSize;
 
   const params: SpendingByLocationParams = {
     startDate: dateRange.startDate,
@@ -149,7 +163,9 @@ export default function SpendingByLocation() {
     [data?.items],
   );
 
-  const totalPages = data ? Math.ceil(Number(data.totalCount ?? 0) / pageSize) : 0;
+  const totalPages = data
+    ? Math.ceil(Number(data.totalCount ?? 0) / pageSize)
+    : 0;
 
   if (isLoading) {
     return (
@@ -236,68 +252,86 @@ export default function SpendingByLocation() {
       <Table>
         <TableHeader>
           <TableRow>
-            <SortableTableHead column="location" label="Location" currentSortBy={sortBy} currentSortDirection={sortDirection} onToggleSort={handleSort} />
-            <SortableTableHead column="visits" label="Visits" currentSortBy={sortBy} currentSortDirection={sortDirection} onToggleSort={handleSort} className="text-right" align="right" />
-            <SortableTableHead column="total" label="Total" currentSortBy={sortBy} currentSortDirection={sortDirection} onToggleSort={handleSort} className="text-right" align="right" />
-            <SortableTableHead column="averagePerVisit" label="Avg/Visit" currentSortBy={sortBy} currentSortDirection={sortDirection} onToggleSort={handleSort} className="text-right" align="right" />
+            <SortableTableHead
+              column="location"
+              label="Location"
+              currentSortBy={sortBy}
+              currentSortDirection={sortDirection}
+              onToggleSort={handleSort}
+            />
+            <SortableTableHead
+              column="visits"
+              label="Visits"
+              currentSortBy={sortBy}
+              currentSortDirection={sortDirection}
+              onToggleSort={handleSort}
+              className="text-right"
+              align="right"
+            />
+            <SortableTableHead
+              column="total"
+              label="Total"
+              currentSortBy={sortBy}
+              currentSortDirection={sortDirection}
+              onToggleSort={handleSort}
+              className="text-right"
+              align="right"
+            />
+            <SortableTableHead
+              column="averagePerVisit"
+              label="Avg/Visit"
+              currentSortBy={sortBy}
+              currentSortDirection={sortDirection}
+              onToggleSort={handleSort}
+              className="text-right"
+              align="right"
+            />
           </TableRow>
         </TableHeader>
         <TableBody>
           {data.items.map((item) => {
             const href = buildLocationDrillDownHref(item.location);
             return (
-            <TableRow key={item.location}>
-              <TableCell>
-                {href ? (
-                  <Link
-                    to={href}
-                    className="underline underline-offset-4 hover:text-primary"
-                    title={`View receipts at ${item.location}`}
-                  >
-                    {item.location}
-                  </Link>
-                ) : (
-                  item.location
-                )}
-              </TableCell>
-              <TableCell className="text-right money">{item.visits}</TableCell>
-              <TableCell className="text-right money">
-                {formatCurrency(Number(item.total ?? 0))}
-              </TableCell>
-              <TableCell className="text-right money">
-                {formatCurrency(Number(item.averagePerVisit ?? 0))}
-              </TableCell>
-            </TableRow>
+              <TableRow key={item.location}>
+                <TableCell>
+                  {href ? (
+                    <Link
+                      to={href}
+                      className="underline underline-offset-4 hover:text-primary"
+                      title={`View receipts at ${item.location}`}
+                    >
+                      {item.location}
+                    </Link>
+                  ) : (
+                    item.location
+                  )}
+                </TableCell>
+                <TableCell className="text-right money">
+                  {item.visits}
+                </TableCell>
+                <TableCell className="text-right money">
+                  {formatCurrency(Number(item.total ?? 0))}
+                </TableCell>
+                <TableCell className="text-right money">
+                  {formatCurrency(Number(item.averagePerVisit ?? 0))}
+                </TableCell>
+              </TableRow>
             );
           })}
         </TableBody>
       </Table>
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            Page {page} of {totalPages}
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() => updateParams({ page: page - 1 })}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages}
-              onClick={() => updateParams({ page: page + 1 })}
-            >
-              Next
-            </Button>
-          </div>
-        </div>
-      )}
+      <Pagination
+        currentPage={page}
+        totalItems={Number(data.totalCount ?? 0)}
+        pageSize={pageSize}
+        totalPages={totalPages}
+        onPageChange={(nextPage) => updateParams({ page: nextPage })}
+        onPageSizeChange={(size) => {
+          setPageSize(size);
+          updateParams({ page: 1, pageSize: size });
+        }}
+      />
     </div>
   );
 }

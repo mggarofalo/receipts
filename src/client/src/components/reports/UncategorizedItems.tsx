@@ -1,3 +1,6 @@
+import { Pagination } from "@/components/Pagination";
+import { usePersistedTablePageSize } from "@/hooks/usePersistedTablePageSize";
+import { isPageSize } from "@/lib/page-size";
 import { RequestFailure } from "@/components/RequestFailure";
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router";
@@ -40,6 +43,7 @@ interface UncategorizedItemsUrlParams {
   sortBy: SortColumn;
   sortDirection: SortDirection;
   page: number;
+  pageSize: number;
 }
 
 function parseUncategorizedItemsParams(
@@ -57,6 +61,7 @@ function parseUncategorizedItemsParams(
       "asc",
     ),
     page: parsePositiveIntParam(searchParams.get("page"), 1),
+    pageSize: parsePositiveIntParam(searchParams.get("pageSize"), 0),
   };
 }
 
@@ -66,7 +71,11 @@ export default function UncategorizedItems() {
     parseUncategorizedItemsParams,
   );
   const { sortBy, sortDirection, page } = urlParams;
-  const pageSize = 50;
+  const { pageSize: preferredPageSize, setPageSize } =
+    usePersistedTablePageSize("report-uncategorized", 50);
+  const pageSize = isPageSize(urlParams.pageSize)
+    ? urlParams.pageSize
+    : preferredPageSize;
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectedCategory, setSelectedCategory] = useState("");
   const [selectedSubcategory, setSelectedSubcategory] = useState("");
@@ -425,31 +434,17 @@ export default function UncategorizedItems() {
         </TableBody>
       </Table>
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            Page {page} of {totalPages}
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() => updateParams({ page: page - 1 })}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages}
-              onClick={() => updateParams({ page: page + 1 })}
-            >
-              Next
-            </Button>
-          </div>
-        </div>
-      )}
+      <Pagination
+        currentPage={page}
+        totalItems={Number(data.totalCount ?? 0)}
+        pageSize={pageSize}
+        totalPages={totalPages}
+        onPageChange={(nextPage) => updateParams({ page: nextPage })}
+        onPageSizeChange={(size) => {
+          setPageSize(size);
+          updateParams({ page: 1, pageSize: size });
+        }}
+      />
     </div>
   );
 }

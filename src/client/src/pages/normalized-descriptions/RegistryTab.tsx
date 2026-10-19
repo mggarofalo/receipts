@@ -39,6 +39,7 @@ import type { NormalizedDescription } from "./types";
  */
 export function RegistryTab() {
   const pagination = useServerPagination({
+    tableId: "normalized-registry",
     defaultPageSize: NORMALIZED_DESCRIPTION_PAGE_SIZE,
   });
   const [search, setSearch] = useState("");

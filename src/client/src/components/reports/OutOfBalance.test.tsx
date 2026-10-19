@@ -95,9 +95,7 @@ describe("OutOfBalance", () => {
     });
     renderWithQueryClient(<OutOfBalance />);
     expect(screen.getByText("All Balanced")).toBeInTheDocument();
-    expect(
-      screen.getByText(/all receipts are balanced/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/all receipts are balanced/i)).toBeInTheDocument();
   });
 
   it("shows empty state when data is null", () => {
@@ -193,7 +191,9 @@ describe("OutOfBalance", () => {
     setupMock();
     renderWithQueryClient(<OutOfBalance />);
 
-    const dateHeader = screen.getByRole("button", { name: /date/i }).closest("th")!;
+    const dateHeader = screen
+      .getByRole("button", { name: /date/i })
+      .closest("th")!;
     expect(dateHeader).toHaveAttribute("aria-sort", "ascending");
   });
 
@@ -219,10 +219,13 @@ describe("OutOfBalance", () => {
     expect(mockNavigate).toHaveBeenCalledWith("/receipts/id-1");
   });
 
-  it("does not show pagination when only one page", () => {
+  it("keeps page size available when only one page", () => {
     setupMock();
     renderWithQueryClient(<OutOfBalance />);
-    expect(screen.queryByText(/Page/)).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: "Rows per page" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Next page" })).toBeDisabled();
   });
 
   it("shows pagination when multiple pages", () => {
@@ -241,10 +244,12 @@ describe("OutOfBalance", () => {
       data: { totalCount: 51, totalDiscrepancy: 204, items: manyItems },
     });
     renderWithQueryClient(<OutOfBalance />);
-    expect(screen.getByText("Page 1 of 2")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Previous" })).toBeDisabled();
+    expect(screen.getByText("1/2")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Next" }),
+      screen.getByRole("button", { name: "Previous page" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Next page" }),
     ).not.toBeDisabled();
   });
 
@@ -272,19 +277,16 @@ describe("OutOfBalance", () => {
     await user.click(screen.getByRole("button", { name: "Export CSV" }));
     await waitFor(() => expect(mockDownloadCsv).toHaveBeenCalledTimes(1));
 
-    expect(mockClient.GET).toHaveBeenCalledWith(
-      "/api/reports/out-of-balance",
-      {
-        params: {
-          query: {
-            sortBy: "date",
-            sortDirection: "asc",
-            page: 1,
-            pageSize: 100,
-          },
+    expect(mockClient.GET).toHaveBeenCalledWith("/api/reports/out-of-balance", {
+      params: {
+        query: {
+          sortBy: "date",
+          sortDirection: "asc",
+          page: 1,
+          pageSize: 100,
         },
       },
-    );
+    });
 
     const [filename, csv] = mockDownloadCsv.mock.calls[0];
     expect(filename).toBe(
@@ -320,7 +322,11 @@ describe("OutOfBalance", () => {
 
     expect(screen.getByRole("table")).toBeInTheDocument();
     expect(mockHook).toHaveBeenLastCalledWith(
-      expect.objectContaining({ sortBy: "date", sortDirection: "asc", page: 1 }),
+      expect.objectContaining({
+        sortBy: "date",
+        sortDirection: "asc",
+        page: 1,
+      }),
     );
   });
 

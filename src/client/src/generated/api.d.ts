@@ -13,7 +13,7 @@ export interface paths {
         };
         /**
          * Search purchase history
-         * @description Searches all active receipt items on active receipts using a trimmed, case-insensitive literal substring across description, item code, store, and active canonical description or its display label. Returns individual purchases, newest receipt date first, then receipt ID and item ID ascending. Prices retain their stored currencies and precision; no currency conversion or physical unit comparison is performed. Count and page are live reads and can change during concurrent edits.
+         * @description Searches all active receipt items on active receipts using a trimmed, case-insensitive literal substring across description, item code, store, and active canonical description or its display label. Filters apply before counting and pagination. Returns individual purchases sorted by receipt date descending by default, with receipt ID and item ID ascending as stable ties. Prices retain their stored currencies and precision; no currency conversion or physical unit comparison is performed. Count and page are live reads and can change during concurrent edits.
          */
         get: operations["SearchPurchases"];
         put?: never;
@@ -4578,6 +4578,20 @@ export interface operations {
                 q: string;
                 offset?: number;
                 limit?: number;
+                /** @description Sort column (date, description, location, unitPrice, quantity, or totalAmount). */
+                sortBy?: string;
+                /** @description Sort direction (asc or desc). */
+                sortDirection?: string;
+                /** @description Optional case-insensitive literal store substring, at most 200 characters after trimming. */
+                location?: string | null;
+                /** @description Inclusive earliest receipt date. */
+                startDate?: string | null;
+                /** @description Inclusive latest receipt date, not earlier than startDate. */
+                endDate?: string | null;
+                /** @description Inclusive minimum recorded unit price, non-negative. No currency conversion. */
+                minUnitPrice?: number | null;
+                /** @description Inclusive maximum recorded unit price, non-negative and not less than minUnitPrice. */
+                maxUnitPrice?: number | null;
             };
             header?: never;
             path?: never;

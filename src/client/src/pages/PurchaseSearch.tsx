@@ -11,7 +11,18 @@ import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/format";
 import { formatPurchasePrice } from "@/lib/purchase-search";
 
-const PAGE_SIZE = 25;
+import { Pagination } from "@/components/Pagination";
+import { SortableTableHead } from "@/components/SortableTableHead";
+import { PurchaseFilters } from "@/components/PurchaseFilters";
+import { usePersistedTablePageSize } from "@/hooks/usePersistedTablePageSize";
+import { isPageSize } from "@/lib/page-size";
+import {
+  PURCHASE_SORT_COLUMNS,
+  purchaseFiltersSchema,
+  readPurchaseFilters,
+  purchaseFilterOptions,
+  type PurchaseSortColumn,
+} from "@/lib/purchase-table";
 const searchSchema = z.object({
   q: z
     .string()
@@ -68,43 +79,103 @@ export default function PurchaseSearch() {
   usePageTitle("Purchase history");
   const [params, setParams] = useSearchParams();
   const q = (params.get("q") ?? "").trim();
+  const { pageSize: preferredPageSize, setPageSize } =
+    usePersistedTablePageSize("purchase-history");
+  const requestedSize = Number(params.get("limit"));
+  const pageSize = isPageSize(requestedSize)
+    ? requestedSize
+    : preferredPageSize;
   const rawOffset = params.get("offset") ?? "0";
-  const offset =
+  const parsedOffset =
     /^\d+$/.test(rawOffset) &&
     Number.isSafeInteger(Number(rawOffset)) &&
     Number(rawOffset) <= 2147483647
       ? Number(rawOffset)
       : 0;
+  const offset = Math.floor(parsedOffset / pageSize) * pageSize;
+  const rawSort = params.get("sortBy");
+  const sortBy: PurchaseSortColumn = PURCHASE_SORT_COLUMNS.includes(
+    rawSort as PurchaseSortColumn,
+  )
+    ? (rawSort as PurchaseSortColumn)
+    : "date";
+  const sortDirection = params.get("sortDirection") === "asc" ? "asc" : "desc";
+  const filters = readPurchaseFilters(params);
+  const parsedFilters = purchaseFiltersSchema.safeParse(filters);
   const valid = q.length >= 2 && q.length <= 200;
   const { data, isPending, isError, isFetching, refetch } = usePurchaseSearch(
     q,
     offset,
-    PAGE_SIZE,
+    pageSize,
+    valid && parsedFilters.success,
+    {
+      ...purchaseFilterOptions(
+        parsedFilters.success
+          ? parsedFilters.data
+          : {
+              location: "",
+              startDate: "",
+              endDate: "",
+              minUnitPrice: "",
+              maxUnitPrice: "",
+            },
+      ),
+      sortBy,
+      sortDirection,
+    },
   );
+  function update(updates: Record<string, string>, resetPage = true) {
+    setParams((previous) => {
+      const next = new URLSearchParams(previous);
+      if (resetPage) next.delete("offset");
+      for (const [key, value] of Object.entries(updates)) {
+        if (value) next.set(key, value);
+        else next.delete(key);
+      }
+      return next;
+    });
+  }
   const page = (nextOffset: number) =>
-    setParams({ q, offset: String(nextOffset) });
+    update({ offset: nextOffset ? String(nextOffset) : "" }, false);
+  function toggleSort(column: string) {
+    update({
+      sortBy: column,
+      sortDirection:
+        column === sortBy && sortDirection === "asc" ? "desc" : "asc",
+    });
+  }
 
   return (
     <div className="space-y-6">
       <PageHead
         title="Purchase history"
-        sub="All time · Newest purchases first"
+        sub="Search, filter, and compare recorded purchases"
       />
       <PurchaseQueryForm
         key={q}
         initialQuery={q}
-        onSearch={(value) => setParams({ q: value })}
+        onSearch={(value) => update({ q: value })}
       />
       <p className="text-sm text-muted-foreground">
         Find what you paid, where, and when. Search matches a phrase in item
         names, item codes, normalized names, or stores. Prices are recorded per
         item; package sizes and measurement units are not standardized.
       </p>
+      <PurchaseFilters
+        key={JSON.stringify(filters)}
+        initialValues={filters}
+        onApply={(values) => update(values)}
+      />
+      {!parsedFilters.success && (
+        <p role="alert">
+          Some filters are invalid. Adjust them and apply again.
+        </p>
+      )}
       {!valid ? (
         <p>
           Enter between 2 and 200 characters to search your purchase history.
         </p>
-      ) : isError ? (
+      ) : !parsedFilters.success ? null : isError ? (
         <RequestFailure
           message="Purchase history could not be loaded."
           retry={() => void refetch()}
@@ -132,23 +203,29 @@ export default function PurchaseSearch() {
                 >
                   <thead className="bg-muted">
                     <tr>
-                      {[
-                        "Receipt date",
-                        "Item",
-                        "Store",
-                        "Unit price",
-                        "Quantity",
-                        "Line total",
-                        "Receipt",
-                      ].map((heading) => (
-                        <th
-                          key={heading}
-                          scope="col"
-                          className="whitespace-nowrap px-4 py-3 font-medium"
-                        >
-                          {heading}
-                        </th>
+                      {(
+                        [
+                          ["date", "Receipt date"],
+                          ["description", "Item"],
+                          ["location", "Store"],
+                          ["unitPrice", "Unit price"],
+                          ["quantity", "Quantity"],
+                          ["totalAmount", "Line total"],
+                        ] as const
+                      ).map(([column, label]) => (
+                        <SortableTableHead
+                          key={column}
+                          column={column}
+                          label={label}
+                          currentSortBy={sortBy}
+                          currentSortDirection={sortDirection}
+                          onToggleSort={toggleSort}
+                          className="px-4 py-3"
+                        />
                       ))}
+                      <th scope="col" className="px-4 py-3 font-medium">
+                        Receipt
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -201,34 +278,24 @@ export default function PurchaseSearch() {
                 </table>
               </div>
             )}
-            <nav
-              aria-label="Purchase result pages"
-              className="flex items-center gap-3"
-            >
+            <nav aria-label="Purchase result pages" className="space-y-3">
               {offset > 0 && (
                 <Button variant="outline" onClick={() => page(0)}>
                   First page
                 </Button>
               )}
-              <Button
-                variant="outline"
-                disabled={offset === 0 || isFetching}
-                onClick={() => page(Math.max(0, offset - PAGE_SIZE))}
-              >
-                Previous
-              </Button>
-              <span>
-                {data.items.length > 0
-                  ? `${offset + 1}–${offset + data.items.length} of ${data.total}`
-                  : "No rows"}
-              </span>
-              <Button
-                variant="outline"
-                disabled={offset + PAGE_SIZE >= data.total || isFetching}
-                onClick={() => page(offset + PAGE_SIZE)}
-              >
-                Next
-              </Button>
+              <Pagination
+                currentPage={Math.floor(offset / pageSize) + 1}
+                totalItems={data.total}
+                pageSize={pageSize}
+                totalPages={Math.max(1, Math.ceil(data.total / pageSize))}
+                disabled={isFetching}
+                onPageChange={(nextPage) => page((nextPage - 1) * pageSize)}
+                onPageSizeChange={(size) => {
+                  setPageSize(size);
+                  update({ limit: String(size) });
+                }}
+              />
             </nav>
           </>
         )

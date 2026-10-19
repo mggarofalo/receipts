@@ -32,3 +32,28 @@ The picker loads only while open. Near-bottom scroll and the explicit load-more 
 ## Normalization workflows
 
 See [Normalization and receipt draft interactions](normalization-workflows.md) for dialog lifetimes, verified selections, simulation evidence and shared draft validation.
+
+## Browse-table controls
+
+Reuse `SortableTableHead` and `Pagination` for visible sorting and page controls.
+Keep data ownership explicit: `useServerPagination` describes a server request;
+`useLocalTable` accepts a **complete** cached collection and memoizes filtering
+and stable sorting before slicing. Never give the local hook one server page or
+claim that filtering downloaded rows searches the full dataset. Keep filter and
+comparison callbacks stable so a page change does not repeat the projection.
+
+Every browse table supplies a stable, distinct `tableId`. Page sizes (10, 25,
+50, 100) live under `table-page-size:<tableId>` in local storage; the old global
+setting is a read-only fallback until that table gets its own preference. Storage
+failures must not prevent browsing. Purchase history and paginated reports also
+accept explicit URL page sizes; those override the preference for that view.
+Changing page size, sort, or applied filters resets pagination. Report CSV exports
+retain their own fetch-all batching and never inherit the displayed page size.
+
+Purchase-history filters are form drafts until Apply succeeds; invalid or partial
+ranges must not send queries. Applied search, filters, sort, and pagination live
+in the URL and in the React Query key, and requests retain AbortSignal support.
+The server applies all filters and ordering before counting and paging. API keys
+demonstrate the complete-cache alternative with the same presentation controls.
+Editable receipt rows and chart accessibility tables are not browse datasets and
+do not gain pagination merely because they render table markup.

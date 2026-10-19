@@ -8,5 +8,7 @@ public class SearchPurchasesQueryHandler(IPurchaseSearchReader reader)
 	: IRequestHandler<SearchPurchasesQuery, PurchaseSearchResult>
 {
 	public async ValueTask<PurchaseSearchResult> Handle(SearchPurchasesQuery request, CancellationToken cancellationToken)
-		=> await reader.SearchAsync(request.Q.Trim(), request.Offset, request.Limit, cancellationToken);
+				=> await reader.SearchAsync(request.Q.Trim(), request.Offset, request.Limit,
+					(request.Options ?? new PurchaseSearchOptions()) with { Location = request.Options?.Location?.Trim() },
+					cancellationToken);
 }

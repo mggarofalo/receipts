@@ -21,9 +21,9 @@ function SecurityLog() {
   const { authEventLabels } = useEnumMetadata();
   const { sortBy, sortDirection, toggleSort } = useServerSort({ defaultSortBy: "timestamp", defaultSortDirection: "desc" });
 
-  const myPagination = useServerPagination({ sortBy, sortDirection });
-  const recentPagination = useServerPagination({ sortBy, sortDirection });
-  const failedPagination = useServerPagination({ sortBy, sortDirection });
+  const myPagination = useServerPagination({ tableId: "security-my-activity", sortBy, sortDirection });
+  const recentPagination = useServerPagination({ tableId: "security-recent-logins", sortBy, sortDirection });
+  const failedPagination = useServerPagination({ tableId: "security-failed-logins", sortBy, sortDirection });
 
   const { resetPage: resetMyPage } = myPagination;
   const { resetPage: resetRecentPage } = recentPagination;

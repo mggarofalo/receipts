@@ -31,9 +31,9 @@ vi.mock("@/hooks/useUsers", () => ({
 vi.mock("@/hooks/useServerPagination", () => ({
   useServerPagination: vi.fn(() => ({
     offset: 0,
-    limit: 20,
+    limit: 25,
     currentPage: 1,
-    pageSize: 20,
+    pageSize: 25,
     totalPages: vi.fn(() => 1),
     setPage: vi.fn(),
     setPageSize: vi.fn(),
@@ -291,9 +291,9 @@ describe("AdminUsers", () => {
     const { useServerPagination } = await import("@/hooks/useServerPagination");
     vi.mocked(useServerPagination).mockReturnValue({
       offset: 0,
-      limit: 20,
+      limit: 25,
       currentPage: 1,
-      pageSize: 20,
+      pageSize: 25,
       totalPages: vi.fn(() => 2),
       setPage: vi.fn(),
       setPageSize: vi.fn(),
@@ -302,7 +302,7 @@ describe("AdminUsers", () => {
 
     const { useUsers } = await import("@/hooks/useUsers");
     vi.mocked(useUsers).mockReturnValue(mockQueryResult({
-      data: Array.from({ length: 20 }, (_, i) => ({
+      data: Array.from({ length: 25 }, (_, i) => ({
         id: String(i + 1),
         email: `user${i + 1}@example.com`,
         firstName: `User`,
@@ -312,7 +312,7 @@ describe("AdminUsers", () => {
         createdAt: "2024-01-01",
         lastLoginAt: null,
       })),
-      total: 25,
+      total: 30,
       isLoading: false,
     }));
 
@@ -332,9 +332,9 @@ describe("AdminUsers", () => {
     const { useServerPagination } = await import("@/hooks/useServerPagination");
     vi.mocked(useServerPagination).mockReturnValue({
       offset: 0,
-      limit: 20,
+      limit: 25,
       currentPage: 1,
-      pageSize: 20,
+      pageSize: 25,
       totalPages: vi.fn(() => 2),
       setPage: mockSetPage,
       setPageSize: vi.fn(),
@@ -343,7 +343,7 @@ describe("AdminUsers", () => {
 
     const { useUsers } = await import("@/hooks/useUsers");
     vi.mocked(useUsers).mockReturnValue(mockQueryResult({
-      data: Array.from({ length: 20 }, (_, i) => ({
+      data: Array.from({ length: 25 }, (_, i) => ({
         id: String(i + 1),
         email: `user${i + 1}@example.com`,
         firstName: `User`,
@@ -353,7 +353,7 @@ describe("AdminUsers", () => {
         createdAt: "2024-01-01",
         lastLoginAt: null,
       })),
-      total: 25,
+      total: 30,
       isLoading: false,
     }));
 
@@ -361,7 +361,7 @@ describe("AdminUsers", () => {
     const nextButtons = screen.getAllByRole("button", { name: /next page/i });
     await user.click(nextButtons[0]);
 
-    expect(mockSetPage).toHaveBeenCalledWith(2, 25);
+    expect(mockSetPage).toHaveBeenCalledWith(2, 30);
   });
 
   it("closes edit dialog when dialog is dismissed", async () => {

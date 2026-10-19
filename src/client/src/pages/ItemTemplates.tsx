@@ -81,7 +81,7 @@ function ItemTemplates() {
     setPage,
     setPageSize,
     resetPage,
-  } = useServerPagination({ sortBy, sortDirection });
+  } = useServerPagination({ tableId: "item-templates", sortBy, sortDirection });
   const templatesQuery = useItemTemplates(offset, limit, sortBy, sortDirection);
   const { data: itemTemplatesData, total: serverTotal, isLoading, isError } = templatesQuery;
   const createItemTemplate = useCreateItemTemplate();

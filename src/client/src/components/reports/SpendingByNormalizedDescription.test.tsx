@@ -73,7 +73,11 @@ const ADMIN_AUTH = {
 
 function setupMock(overrides: Record<string, unknown> = {}) {
   mockHook.mockReturnValue({
-    data: { items: sampleItems, totalCount: sampleItems.length, grandTotal: 52.5 },
+    data: {
+      items: sampleItems,
+      totalCount: sampleItems.length,
+      grandTotal: 52.5,
+    },
     isLoading: false,
     isError: false,
     ...overrides,
@@ -152,7 +156,12 @@ describe("SpendingByNormalizedDescription", () => {
     setupMock({
       data: {
         items: [
-          { canonicalName: "Apples", totalAmount: 12.5, currency: "USD", itemCount: 3 },
+          {
+            canonicalName: "Apples",
+            totalAmount: 12.5,
+            currency: "USD",
+            itemCount: 3,
+          },
         ],
         totalCount: 1,
         grandTotal: 100,
@@ -167,7 +176,12 @@ describe("SpendingByNormalizedDescription", () => {
     setupMock({
       data: {
         items: [
-          { canonicalName: "Apples", totalAmount: 0, currency: "USD", itemCount: 1 },
+          {
+            canonicalName: "Apples",
+            totalAmount: 0,
+            currency: "USD",
+            itemCount: 1,
+          },
         ],
         totalCount: 1,
         grandTotal: 0,
@@ -244,10 +258,13 @@ describe("SpendingByNormalizedDescription", () => {
     );
   });
 
-  it("does not show pagination when only one page", () => {
+  it("keeps page size available when only one page", () => {
     setupMock();
     renderWithQueryClient(<SpendingByNormalizedDescription />);
-    expect(screen.queryByText(/Page/)).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: "Rows per page" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Next page" })).toBeDisabled();
   });
 
   it("shows pagination and disables Previous on the first page", () => {
@@ -260,9 +277,13 @@ describe("SpendingByNormalizedDescription", () => {
     setupMock({ data: { items: manyItems, totalCount: 51, grandTotal: 510 } });
     renderWithQueryClient(<SpendingByNormalizedDescription />);
 
-    expect(screen.getByText("Page 1 of 2")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Previous" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Next" })).not.toBeDisabled();
+    expect(screen.getByText("1/2")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Previous page" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Next page" }),
+    ).not.toBeDisabled();
   });
 
   it("disables Next on the last page", () => {
@@ -277,9 +298,11 @@ describe("SpendingByNormalizedDescription", () => {
       route: "/?page=2",
     });
 
-    expect(screen.getByText("Page 2 of 2")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Previous" })).not.toBeDisabled();
+    expect(screen.getByText("2/2")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Next page" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Previous page" }),
+    ).not.toBeDisabled();
   });
 
   it("updates the page param when clicking Next and Previous", async () => {
@@ -293,12 +316,12 @@ describe("SpendingByNormalizedDescription", () => {
     setupMock({ data: { items: manyItems, totalCount: 51, grandTotal: 510 } });
     renderWithQueryClient(<SpendingByNormalizedDescription />);
 
-    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.click(screen.getByRole("button", { name: "Next page" }));
     expect(mockHook).toHaveBeenLastCalledWith(
       expect.objectContaining({ page: 2 }),
     );
 
-    await user.click(screen.getByRole("button", { name: "Previous" }));
+    await user.click(screen.getByRole("button", { name: "Previous page" }));
     expect(mockHook).toHaveBeenLastCalledWith(
       expect.objectContaining({ page: 1 }),
     );
@@ -468,7 +491,9 @@ describe("SpendingByNormalizedDescription", () => {
       renderWithQueryClient(<SpendingByNormalizedDescription />);
 
       const bananas = screen.getByText("Bananas").closest("tr")!;
-      expect(within(bananas).getByTestId("unreviewed-badge")).toBeInTheDocument();
+      expect(
+        within(bananas).getByTestId("unreviewed-badge"),
+      ).toBeInTheDocument();
 
       const apples = screen.getByText("Apples").closest("tr")!;
       expect(within(apples).queryByTestId("unreviewed-badge")).toBeNull();
@@ -480,7 +505,10 @@ describe("SpendingByNormalizedDescription", () => {
     it("recognises the PascalCase casing the API actually sends", () => {
       setupMock({
         data: {
-          items: [sampleItems[0], { ...sampleItems[1], status: "PendingReview" }],
+          items: [
+            sampleItems[0],
+            { ...sampleItems[1], status: "PendingReview" },
+          ],
           totalCount: 2,
           grandTotal: 52.5,
         },
@@ -488,7 +516,9 @@ describe("SpendingByNormalizedDescription", () => {
       renderWithQueryClient(<SpendingByNormalizedDescription />);
 
       const bananas = screen.getByText("Bananas").closest("tr")!;
-      expect(within(bananas).getByTestId("unreviewed-badge")).toBeInTheDocument();
+      expect(
+        within(bananas).getByTestId("unreviewed-badge"),
+      ).toBeInTheDocument();
     });
 
     it("keeps pending spend in the totals", () => {

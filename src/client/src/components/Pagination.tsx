@@ -1,5 +1,6 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { PAGE_SIZE_OPTIONS } from "@/lib/page-size";
 import {
   Select,
   SelectContent,
@@ -16,6 +17,7 @@ interface PaginationProps {
   onPageChange: (page: number) => void;
   onPageSizeChange?: (size: number) => void;
   pageSizeOptions?: number[];
+  disabled?: boolean;
 }
 
 export function Pagination({
@@ -25,26 +27,36 @@ export function Pagination({
   totalPages,
   onPageChange,
   onPageSizeChange,
-  pageSizeOptions = [10, 25, 50, 100],
+  pageSizeOptions = PAGE_SIZE_OPTIONS,
+  disabled = false,
 }: PaginationProps) {
-  if (totalItems === 0) return null;
-
-  const start = (currentPage - 1) * pageSize + 1;
+  const start =
+    totalItems === 0 || (currentPage - 1) * pageSize >= totalItems
+      ? 0
+      : (currentPage - 1) * pageSize + 1;
   const end = Math.min(currentPage * pageSize, totalItems);
 
   return (
-    <div className="flex items-center justify-between">
+    <div
+      className="flex flex-wrap items-center justify-between gap-3"
+      aria-label="Table pagination"
+    >
       <p className="text-sm text-muted-foreground">
-        Showing {start}-{end} of {totalItems}
+        Showing {start}-{start === 0 ? 0 : end} of {totalItems}
       </p>
       <div className="flex items-center gap-2">
         {onPageSizeChange && (
           <Select
             value={String(pageSize)}
+            disabled={disabled}
             onValueChange={(v) => onPageSizeChange(Number(v))}
           >
-            <SelectTrigger className="h-8 w-[70px] text-xs">
+            <SelectTrigger
+              aria-label="Rows per page"
+              className="h-8 w-[130px] text-xs"
+            >
               <SelectValue />
+              <span aria-hidden="true">per page</span>
             </SelectTrigger>
             <SelectContent>
               {pageSizeOptions.map((size) => (
@@ -59,20 +71,20 @@ export function Pagination({
           variant="outline"
           size="sm"
           className="h-8 w-8 p-0"
-          disabled={currentPage <= 1}
+          disabled={disabled || currentPage <= 1}
           onClick={() => onPageChange(currentPage - 1)}
           aria-label="Previous page"
         >
           <ChevronLeft className="h-4 w-4" />
         </Button>
         <span className="text-sm text-muted-foreground">
-          {currentPage}/{totalPages}
+          {currentPage}/{Math.max(1, totalPages)}
         </span>
         <Button
           variant="outline"
           size="sm"
           className="h-8 w-8 p-0"
-          disabled={currentPage >= totalPages}
+          disabled={disabled || currentPage >= totalPages}
           onClick={() => onPageChange(currentPage + 1)}
           aria-label="Next page"
         >

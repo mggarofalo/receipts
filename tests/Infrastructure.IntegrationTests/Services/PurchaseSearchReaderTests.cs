@@ -16,6 +16,80 @@ namespace Infrastructure.IntegrationTests.Services;
 [Trait("Prerequisite", "Postgres")]
 public class PurchaseSearchReaderTests(PostgresFixture fixture)
 {
+	[Theory]
+	[InlineData("date")]
+	[InlineData("description")]
+	[InlineData("location")]
+	[InlineData("unitPrice")]
+	[InlineData("quantity")]
+	[InlineData("totalAmount")]
+	public async Task SearchAsync_SortsTheWholeResultBeforePagingInBothDirections(string column)
+	{
+		await ResetAsync();
+		// The largest sort values have the smallest IDs; sorting one downloaded
+		// page or using the default date order cannot satisfy both directions.
+		await using (var db = fixture.CreateDbContext())
+		{
+			for (int id = 1; id <= 3; id++)
+			{
+				int rank = 4 - id;
+				var receipt = Receipt(id, new DateOnly(2025, 1, column == "date" ? rank : 1));
+				receipt.Location = column == "location" ? $"Store {rank}" : "Store";
+				var item = Item(id, receipt.Id, column == "description" ? $"Milk {rank}" : "Milk");
+				item.UnitPrice = column == "unitPrice" ? rank : 1;
+				item.Quantity = column == "quantity" ? rank : 1;
+				item.TotalAmount = column == "totalAmount" ? rank * rank : 1;
+				db.Receipts.Add(receipt); db.ReceiptItems.Add(item);
+			}
+			await db.SaveChangesAsync();
+		}
+		foreach (string direction in new[] { "asc", "desc" })
+		{
+			var first = await Reader().SearchAsync("Milk", 0, 1, new(column, direction), CancellationToken.None);
+			var next = await Reader().SearchAsync("Milk", 1, 2, new(column, direction), CancellationToken.None);
+			first.Total.Should().Be(3); next.Total.Should().Be(3);
+			first.Items.Concat(next.Items).Select(x => x.Id).Should().Equal(direction == "asc"
+				? new[] { Id(3), Id(2), Id(1) } : new[] { Id(1), Id(2), Id(3) });
+		}
+	}
+
+	[Fact]
+	public async Task SearchAsync_AppliesEveryInclusiveBoundaryBeforeCountAndPage()
+	{
+		await ResetAsync();
+		await using (var db = fixture.CreateDbContext())
+		{
+			for (int id = 1; id <= 8; id++)
+			{
+				var receipt = Receipt(id, new DateOnly(2025, 1, id == 3 ? 9 : id == 4 ? 12 : id == 2 ? 11 : 10));
+				receipt.Location = id == 7 ? "50 percent Market" : "50% MARKET";
+				var item = Item(id, receipt.Id, id == 8 ? "Bread" : "Milk");
+				item.UnitPrice = id == 1 ? 1.2345m : id == 2 ? 2.3456m : id == 5 ? 1.2344m : id == 6 ? 2.3457m : 2m;
+				db.Receipts.Add(receipt); db.ReceiptItems.Add(item);
+			}
+			await db.SaveChangesAsync();
+		}
+		var options = new PurchaseSearchOptions("unitPrice", "asc", "50% market", new(2025, 1, 10), new(2025, 1, 11), 1.2345m, 2.3456m);
+		var first = await Reader().SearchAsync("milk", 0, 1, options, CancellationToken.None);
+		var second = await Reader().SearchAsync("milk", 1, 1, options, CancellationToken.None);
+		first.Total.Should().Be(2); second.Total.Should().Be(2);
+		first.Items.Should().ContainSingle().Which.Id.Should().Be(Id(1));
+		second.Items.Should().ContainSingle().Which.Id.Should().Be(Id(2));
+	}
+
+	[Theory]
+	[InlineData("asc")]
+	[InlineData("desc")]
+	public async Task SearchAsync_UsesStableReceiptAndItemTieBreakersForPriceSort(string direction)
+	{
+		await ResetAsync();
+		await SeedAsync(Receipt(2), Item(1, Id(2), "Milk"));
+		await SeedAsync(Receipt(1), Item(3, Id(1), "Milk"), Item(2, Id(1), "Milk"));
+		var options = new PurchaseSearchOptions("unitPrice", direction);
+		var first = await Reader().SearchAsync("Milk", 0, 1, options, CancellationToken.None);
+		var second = await Reader().SearchAsync("Milk", 1, 2, options, CancellationToken.None);
+		first.Items.Concat(second.Items).Select(x => x.Id).Should().Equal(Id(2), Id(3), Id(1));
+	}
 	[Fact]
 	public async Task SearchAsync_FindsOldPurchasesBeyondTwoHundredAndCountsAllPages()
 	{
@@ -30,12 +104,12 @@ public class PurchaseSearchReaderTests(PostgresFixture fixture)
 			}
 			await db.SaveChangesAsync();
 		}
-		PurchaseSearchResult result = await Reader().SearchAsync("wHoLe MiLk", 200, 25, CancellationToken.None);
+		PurchaseSearchResult result = await Reader().SearchAsync("wHoLe MiLk", 200, 25, new PurchaseSearchOptions(), CancellationToken.None);
 		result.Total.Should().Be(205);
 		result.Offset.Should().Be(200);
 		result.Limit.Should().Be(25);
 		result.Items.Select(x => x.Id).Should().Equal(Id(5), Id(4), Id(3), Id(2), Id(1));
-		(await Reader().SearchAsync("Whole Milk", 205, 25, CancellationToken.None)).Items.Should().BeEmpty();
+		(await Reader().SearchAsync("Whole Milk", 205, 25, new PurchaseSearchOptions(), CancellationToken.None)).Items.Should().BeEmpty();
 	}
 
 	[Theory]
@@ -46,7 +120,7 @@ public class PurchaseSearchReaderTests(PostgresFixture fixture)
 	{
 		await ResetAsync();
 		await SeedAsync(Receipt(1), Item(1, Id(1), "prefix " + phrase + " suffix"), Item(2, Id(1), decoy));
-		PurchaseSearchResult result = await Reader().SearchAsync(phrase, 0, 25, CancellationToken.None);
+		PurchaseSearchResult result = await Reader().SearchAsync(phrase, 0, 25, new PurchaseSearchOptions(), CancellationToken.None);
 		result.Total.Should().Be(1);
 		result.Items.Should().ContainSingle().Which.Id.Should().Be(Id(1));
 	}
@@ -72,7 +146,7 @@ public class PurchaseSearchReaderTests(PostgresFixture fixture)
 			db.ReceiptItems.AddRange(raw, code, active, pending, rejected, Item(6, store.Id));
 			await db.SaveChangesAsync();
 		}
-		PurchaseSearchResult result = await Reader().SearchAsync("needle", 0, 25, CancellationToken.None);
+		PurchaseSearchResult result = await Reader().SearchAsync("needle", 0, 25, new PurchaseSearchOptions(), CancellationToken.None);
 		result.Total.Should().Be(4);
 		result.Items.Select(x => x.Id).Should().BeEquivalentTo([Id(1), Id(2), Id(3), Id(6)]);
 		result.Items.Single(x => x.Id == Id(3)).NormalizedDescription.Should().Be("Needle canonical");
@@ -95,7 +169,7 @@ public class PurchaseSearchReaderTests(PostgresFixture fixture)
 		}
 		foreach (string phrase in new[] { "canonical milk", "BREAKFAST DRINK" })
 		{
-			PurchaseSearchResult result = await Reader().SearchAsync(phrase, 0, 25, CancellationToken.None);
+			PurchaseSearchResult result = await Reader().SearchAsync(phrase, 0, 25, new PurchaseSearchOptions(), CancellationToken.None);
 			result.Total.Should().Be(1);
 			result.Items.Should().ContainSingle().Which.NormalizedDescription.Should().Be("Breakfast drink");
 		}
@@ -114,7 +188,7 @@ public class PurchaseSearchReaderTests(PostgresFixture fixture)
 		{
 			await db.Receipts.Where(x => x.Id == deleted.Id).ExecuteUpdateAsync(update => update.SetProperty(x => x.DeletedAt, DateTimeOffset.UtcNow));
 		}
-		PurchaseSearchResult result = await Reader().SearchAsync("Milk", 0, 25, CancellationToken.None);
+		PurchaseSearchResult result = await Reader().SearchAsync("Milk", 0, 25, new PurchaseSearchOptions(), CancellationToken.None);
 		result.Total.Should().Be(1);
 		result.Items.Should().ContainSingle().Which.Id.Should().Be(Id(1));
 	}
@@ -129,11 +203,11 @@ public class PurchaseSearchReaderTests(PostgresFixture fixture)
 		precise.UnitPriceCurrency = Currency.USD; precise.TotalAmountCurrency = Currency.USD;
 		await SeedAsync(receipt, Item(2, receipt.Id, "Milk"), precise);
 		await SeedAsync(Receipt(2), Item(3, Id(2), "Milk"));
-		PurchaseSearchResult first = await Reader().SearchAsync("Milk", 0, 1, CancellationToken.None);
+		PurchaseSearchResult first = await Reader().SearchAsync("Milk", 0, 1, new PurchaseSearchOptions(), CancellationToken.None);
 		first.Items.Should().ContainSingle().Which.Should().BeEquivalentTo(new PurchaseSearchItem(
 			Id(1), receipt.Id, receipt.Date, receipt.Location, "Milk", null, null, null,
 			1.2345m, 2.3456m, "USD", 2.90m, "USD"));
-		PurchaseSearchResult next = await Reader().SearchAsync("Milk", 1, 2, CancellationToken.None);
+		PurchaseSearchResult next = await Reader().SearchAsync("Milk", 1, 2, new PurchaseSearchOptions(), CancellationToken.None);
 		next.Items.Select(x => x.Id).Should().Equal(Id(2), Id(3));
 		next.Total.Should().Be(3);
 	}
@@ -142,7 +216,7 @@ public class PurchaseSearchReaderTests(PostgresFixture fixture)
 	public async Task SearchAsync_PropagatesCancellation()
 	{
 		using CancellationTokenSource cancellation = new(); cancellation.Cancel();
-		Func<Task> search = () => Reader().SearchAsync("Milk", 0, 25, cancellation.Token);
+		Func<Task> search = () => Reader().SearchAsync("Milk", 0, 25, new PurchaseSearchOptions(), cancellation.Token);
 		await search.Should().ThrowAsync<OperationCanceledException>();
 	}
 
@@ -207,4 +281,3 @@ public class PurchaseSearchReaderTests(PostgresFixture fixture)
 		public ApplicationDbContext CreateDbContext() => fixture.CreateDbContext();
 	}
 }
-
