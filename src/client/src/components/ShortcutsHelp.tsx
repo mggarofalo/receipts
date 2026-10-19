@@ -1,6 +1,7 @@
 import { useContext } from "react";
 import { ShortcutsContext } from "@/contexts/shortcuts-context";
 import { getShortcutsByCategory } from "@/lib/shortcut-registry";
+import { formatShortcutLabel } from "@/lib/keyboard-labels";
 import {
   Dialog,
   DialogContent,
@@ -34,7 +35,7 @@ export function ShortcutsHelp() {
                   >
                     <span className="text-sm">{shortcut.label}</span>
                     <kbd className="pointer-events-none inline-flex h-5 items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
-                      {shortcut.keys}
+                      {formatShortcutLabel(shortcut.keys)}
                     </kbd>
                   </div>
                 ))}

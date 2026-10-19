@@ -203,3 +203,15 @@ virtualization or server-backed search with loading and error states instead of
 discarding entries.
 - Toasts: `sonner` — call `toast.success()` / `toast.error()` in mutation hooks
 - Icons: `lucide-react`
+## Keyboard command selection and labels
+
+Shared `CommandItem` rows expose cmdk's `data-selected` state through dedicated
+command-selection tokens in `index.css`. The inset marker makes keyboard selection
+visible even when neighboring theme surfaces are similar. Keep metadata readable
+on the selected surface; browser tests check the actual computed appearance in
+both palettes, together with arrow navigation and Enter activation.
+
+`keyboard-labels.ts` owns primary-modifier presentation: Ctrl on Windows/Linux,
+Command on Apple platforms. Layout and shortcut help use it; keyboard bindings
+remain owned by their existing interaction hooks. Hint preferences affect passive
+labels, not bindings or explicit shortcut help.
