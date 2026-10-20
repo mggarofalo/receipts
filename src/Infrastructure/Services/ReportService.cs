@@ -238,6 +238,7 @@ public class ReportService(IDbContextFactory<ApplicationDbContext> contextFactor
 						ri.UnitPrice,
 						r.Date,
 						CanonicalName = n.CanonicalName,
+						DisplayLabel = n.DisplayLabel,
 					};
 
 		// Precedence mirrors the OpenAPI contract: description > normalizedDescription > category.
@@ -249,7 +250,10 @@ public class ReportService(IDbContextFactory<ApplicationDbContext> contextFactor
 		else if (!string.IsNullOrEmpty(normalizedDescription))
 		{
 			string canonicalLower = normalizedDescription.ToLower();
-			query = query.Where(x => x.CanonicalName != null && x.CanonicalName.ToLower() == canonicalLower);
+			bool hasDisplayedMatch = await context.NormalizedDescriptions.AnyAsync(target => (target.DisplayLabel ?? target.CanonicalName).ToLower() == canonicalLower, cancellationToken);
+			query = hasDisplayedMatch
+				? query.Where(x => (x.DisplayLabel ?? x.CanonicalName) != null && (x.DisplayLabel ?? x.CanonicalName)!.ToLower() == canonicalLower)
+				: query.Where(x => x.CanonicalName != null && x.CanonicalName.ToLower() == canonicalLower);
 		}
 		else if (!string.IsNullOrEmpty(category))
 		{

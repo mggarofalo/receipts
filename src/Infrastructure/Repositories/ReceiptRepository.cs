@@ -40,6 +40,7 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 			.Select(r => new ReceiptEntity
 			{
 				Id = r.Id,
+				NormalizationRevision = r.NormalizationRevision,
 				Location = r.Location,
 				Date = r.Date,
 				TaxAmount = r.TaxAmount,
@@ -225,6 +226,7 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 			.Select(r => new ReceiptEntity
 			{
 				Id = r.Id,
+				NormalizationRevision = r.NormalizationRevision,
 				Location = r.Location,
 				Date = r.Date,
 				TaxAmount = r.TaxAmount,

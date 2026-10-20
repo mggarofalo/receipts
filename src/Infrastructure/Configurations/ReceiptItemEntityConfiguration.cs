@@ -8,6 +8,7 @@ public class ReceiptItemEntityConfiguration : IEntityTypeConfiguration<ReceiptIt
 {
 	public void Configure(EntityTypeBuilder<ReceiptItemEntity> builder)
 	{
+		builder.Property(e => e.NormalizationOrigin).HasDefaultValue("unassigned").HasMaxLength(32);
 		builder.ToTable("ReceiptItems", "receipts");
 
 		builder.HasKey(e => e.Id);

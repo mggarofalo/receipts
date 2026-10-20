@@ -99,6 +99,7 @@ RUN case ${TARGETARCH} in \
 # Copy remaining source
 COPY src/ src/
 COPY docs/normalization-evaluation/corpus.v1.json docs/normalization-evaluation/corpus.v1.json
+COPY docs/normalization-evaluation/catalog.v2.json docs/normalization-evaluation/catalog.v2.json
 
 # The ONNX embedding model (~1.34 GB) is NOT downloaded here. Baking it in made the image
 # 2.54 GB — three copies of one file, since MSBuild flowed it into the CLI tools' output too

@@ -23,6 +23,8 @@ public sealed partial class NormalizationAiService
 		await using (NormalizationAiStoreLock lease = await NormalizationAiStoreLock.AcquireAsync(context, cancellationToken))
 		{
 			NormalizationAiRunEntity run = await OwnedRunAsync(context, actor, id, cancellationToken);
+			if (run.Proposals.Any(proposal => proposal.SourceLocation != null))
+			{ throw Error(409, "catalog_review_required", "Review source-group suggestions through catalog preview and approval."); }
 			List<NormalizationAiProposalEntity> selected = run.Proposals.Where(proposal => proposalIds.Contains(proposal.Id)).ToList();
 			if (selected.Count != proposalIds.Count) { throw Error(400, "invalid_selection", "A selected proposal does not belong to this run."); }
 			if (selected.All(proposal => proposal.State == "applied")) { return ToModel(run); }
@@ -87,6 +89,8 @@ public sealed partial class NormalizationAiService
 				ReceiptItemEntity item = items[proposal.ReceiptItemId];
 				item.NormalizedDescriptionId = target.Id;
 				item.NormalizedDescriptionMatchScore = proposal.Action == "reuse" ? proposal.MatchScore : null;
+				item.NormalizationOrigin = "reviewed";
+				item.NormalizationAssignmentId = Guid.NewGuid();
 				proposal.TargetId = target.Id;
 				proposal.State = "applied";
 			}

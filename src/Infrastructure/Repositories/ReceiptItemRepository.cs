@@ -254,6 +254,8 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 					&& template.NormalizedDescriptionId is { } targetId && targets.ContainsKey(targetId))
 				{
 					entity.NormalizedDescriptionId = targetId;
+					entity.NormalizationOrigin = "template";
+					entity.NormalizationAssignmentId = Guid.NewGuid();
 				}
 			}
 

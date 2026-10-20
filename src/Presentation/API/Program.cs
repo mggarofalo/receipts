@@ -58,6 +58,8 @@ services.Configure<NormalizationAiOptions>(builder.Configuration.GetSection("Cha
 services.Configure<PiNormalizationRunnerOptions>(builder.Configuration.GetSection("ChatGptRunner"));
 services.AddSingleton<IChatGptRunner, PiNormalizationRunner>();
 services.AddScoped<NormalizationAiService>();
+services.AddScoped<NormalizationCatalogService>();
+services.AddScoped<Application.Normalization.INormalizationCatalogService>(provider => provider.GetRequiredService<NormalizationCatalogService>());
 services.AddScoped<INormalizationAiService>(provider => provider.GetRequiredService<NormalizationAiService>());
 
 if (!isContractGeneration && !isChatGptCommand)
@@ -66,6 +68,7 @@ if (!isContractGeneration && !isChatGptCommand)
 	// them, and the CLI tools use a separate composition, so neither path loads the model.
 	services.AddInfrastructureBackgroundServices();
 	services.AddHostedService<NormalizationAiWorker>();
+	services.AddHostedService<NormalizationCatalogWorker>();
 }
 
 // Build application

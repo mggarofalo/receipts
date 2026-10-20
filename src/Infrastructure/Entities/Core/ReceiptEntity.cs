@@ -6,6 +6,7 @@ namespace Infrastructure.Entities.Core;
 public class ReceiptEntity : ISoftDeletable
 {
 	public Guid Id { get; set; }
+	public Guid NormalizationRevision { get; set; }
 	public string Location { get; set; } = string.Empty;
 	public DateOnly Date { get; set; }
 	public decimal TaxAmount { get; set; }

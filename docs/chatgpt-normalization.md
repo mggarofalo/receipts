@@ -36,7 +36,132 @@ identities. Its value is reducing the work of building and maintaining that
 catalog. Connecting a model and producing suggestions are supporting capabilities,
 not the definition of a complete normalization feature.
 
-## What the current implementation delivers
+## Catalog workflow in this PR
+
+The catalog extension in this PR is tracked under RECEIPTS-1020.
+The workflow below describes that extension; it is not a claim
+that your database has already been normalized or that live model quality has
+been demonstrated.
+
+**Normalized Descriptions → Catalog** separates five decisions:
+
+1. **Find work.** Browse distinct descriptions, scoped to a store and item code.
+   Counts distinguish unassigned purchases, automatic assignments, unknown legacy
+   assignments, protected decisions, approved mappings, and exclusions.
+2. **Find possible identities.** Retrieve a bounded shortlist from active catalog
+   names using lexical and semantic evidence and previously human-approved source
+   examples. Retrieval supplies possibilities; it does not establish equivalence.
+3. **Interpret the description.** Optionally ask ChatGPT to choose a supplied
+   identity, propose a new name, or abstain. You can also review a source manually
+   without either ChatGPT or the embedding model.
+4. **Approve a precise scope.** Preview the current historical purchases for the
+   exact source key, then approve. Including unknown legacy assignments is an
+   explicit choice. Manual and template decisions remain protected.
+5. **Remember and maintain.** Apply history in durable, bounded batches and reuse
+   the approved exact mapping for new purchases. Review unfamiliar descriptions
+   through the same process. Revoke a bad mapping to stop reuse; undo restores
+   only historical assignments still owned by that operation.
+
+For example, you can review `BF FRANKS 8CT` at one store and approve an
+appropriate existing product identity. The preview shows which historical
+purchases will change. Subsequent purchases with that exact store, description,
+and item-code key reuse the approved mapping without another model request.
+An identical abbreviation at another store, or a different item code, does not
+inherit that approval. `TURKEY FRANKS 8CT` is a separate decision.
+
+Source keys remove outer ASCII spaces only; tabs, nonbreaking spaces, letter
+case, and other characters remain significant. This conservative rule matches
+database grouping and lookup, including legacy data. If the suggested shortlist
+misses the correct existing name, search for it within source review before
+proposing a duplicate. That lookup does not change the source key being approved.
+
+Approval changes the normalized identity used by search and reports. It does
+not replace the receipt description, recalculate financial facts, infer a
+missing package size, or make unit prices comparable across different units.
+Search for a familiar product name to see the linked purchases and their original
+price details.
+
+Purchase search matches text in the original description and active canonical
+name/display label. Choose readable names containing the terms you expect to
+search for. Semantic retrieval helps construct normalization suggestions; the
+purchase-search box does not itself ask the model to interpret synonyms.
+
+### Make existing names readable without changing product identity
+
+A product can already be grouped correctly but still be named `BF FRANKS 8CT`.
+Reusing that identity is correct; creating a duplicate product merely to call it
+`Beef franks, 8 count` is not. The catalog therefore reviews two independent
+choices: which product a source means, and what readable display name that
+product should have.
+
+A reuse suggestion can include a separate readable name. **Review global display
+name** shows the current name, proposed name, and count of purchases using the
+product. Approval changes its display label across search and reports, preserving
+its ID, canonical matching name, receipt text and financial facts. It does not
+approve a source mapping. If the target or affected count changes, preview again.
+Preserve known brand, size, flavor and dietary distinctions; do not approve
+attributes inferred from an ambiguous abbreviation.
+
+For products already mapped or protected, select **Improve display names only**.
+This opens All sources so existing assignments remain accessible. Select source
+descriptions and request suggestions. Each source must resolve to exactly one
+existing active product; ambiguous groups require manual identity review first.
+The model can suggest a label for that identity or abstain, but cannot reassign
+purchases or create products in this mode. The registry also supports manual
+name editing. Reviewed coverage and readable naming are separate measures:
+a mapped purchase does not prove its display name is useful, and an existing
+display label does not prove a human has verified its meaning.
+
+### What the model can and cannot see
+
+The model does not browse the database or search repeatedly on its own. The
+server retrieves and snapshots a bounded candidate set first. Candidates include
+stable IDs, names, and a small number of approved description examples. Example
+scope is distinguished so evidence from another store or item code is not
+presented as an exact source match. Automatically assigned examples do not
+quietly become trusted demonstrations.
+
+The model can choose only a supplied candidate ID, propose a new name for review,
+or abstain. Server validation rejects unknown IDs and malformed responses.
+Neither a similarity score, a confident explanation, nor valid JSON establishes
+that two products are the same. The human review step is the semantic safeguard.
+Approving a suggestion creates a fresh historical preview rather than treating
+an old inference snapshot as permission to change whatever now matches.
+
+There are two independent ways to fail: retrieval can omit the right identity,
+and the model can choose incorrectly even when it is present. Evaluation must
+measure these separately, including missing candidates, conflicting variants,
+ambiguous abbreviations, candidate-order changes, and misleading examples.
+Adding more examples is not automatically better.
+
+### Why keep review and provenance?
+
+The expensive mistake is a wrong equivalence spreading to future receipts.
+Scoped mappings limit that spread. Explicit provenance makes it possible to
+distinguish a machine assignment from a deliberate human or template decision.
+Revision checks protect changes made while a preview is open. Revocation and
+conditional undo provide a correction path without overwriting later edits.
+Paused operations expose failures and committed progress rather than silently
+restarting an entire historical update.
+
+Catalog mappings and assignment provenance are persisted product data and are
+included in backup format 7. Restoring a backup preserves that evidence and the
+operation history, but does not resume or undo old operations against newly
+restored purchase revisions. Make a fresh preview for further corrections.
+Older backups have no provenance evidence, so imported links are labeled unknown
+legacy rather than assumed to be reviewed.
+
+Existing links migrate as **unknown legacy**, with their targets preserved.
+That label means their origin is unknown, not that they are wrong. A complete
+catalog therefore requires reviewing the remaining unknown and automatic work;
+an empty model queue is not evidence of completeness.
+
+The [design and research decision](decisions/2026-10-20-normalization-catalog.md)
+compares Jev, Clef, and Luna Decisions. No additional provider is enabled by this
+change. A specialist model should be selected only after a receipt-specific
+comparison, with its account, privacy, and deployment requirements understood.
+
+## Original selected-purchase workflow
 
 The current PR provides a reviewed suggestion workflow under
 **Normalized Descriptions → ChatGPT**:
@@ -58,31 +183,11 @@ can filter by a canonical name and aggregate prices by period; its ordinary
 description filter still matches raw text exactly. The purchase-search table is
 the current way to inspect matching individual purchases across descriptions.
 
-**This selected-item workflow does not yet fulfill the complete-catalog goal:**
-
-- **Some historical work is hidden.** Selection excludes every item linked to an
-  active normalized description, even if that link was created automatically and
-  still uses an unhelpful raw name. The data does not yet distinguish those
-  assignments from reviewed decisions well enough to safely reopen only the
-  unreviewed ones.
-- **An approval is not yet a reusable description mapping.** It updates selected
-  purchases, but does not remember a source alias such as `BF FRANKS 8CT` for
-  deterministic use on the next receipt. Future matching still relies on
-  canonical-name equality or the existing similarity resolver.
-- **Historical cleanup is still per purchase.** Repeated descriptions occupy
-  multiple selections, and accepting one does not update other historical
-  occurrences. There is no distinct-description cleanup campaign.
-- **New-item processing is incomplete.** The existing background resolver
-  requires configured embeddings even for exact matches, and it does not
-  automatically send unfamiliar descriptions to ChatGPT.
-- **The app cannot yet show reliable completion.** Eligible-item counts do not
-  distinguish reviewed coverage from automatically assigned raw names. An empty
-  ChatGPT candidate list does not mean the catalog is fully normalized.
-
-Completing the product outcome requires explicit assignment provenance, reusable
-approved source mappings, historical review by distinct description, exact reuse
-independent of embeddings, and visible coverage and remaining work. Existing
-manual and template decisions must remain protected during that migration.
+This older workflow remains available for existing per-purchase runs. It does
+not save reusable source mappings or propagate a decision across history. Use
+Catalog for the maintained-catalog workflow. Neither workflow automatically
+sends new unfamiliar receipt text to the provider; requesting model suggestions
+remains an explicit action.
 
 The current suggestion instructions ask the model to preserve product
 distinctions such as brand, package size and dietary variant. Review must verify
@@ -91,9 +196,9 @@ same product. The intended grouping does not merge all hot dogs into one product
 A search for "hot dogs" can find several normalized products while their
 individual price histories remain distinct.
 
-The remainder of this guide describes operating the implemented suggestion
-workflow. It should not be read as evidence that the entire historical catalog
-has been normalized or that future unfamiliar descriptions need no attention.
+The remainder of this guide describes connection setup and the original
+suggestion workflow. Connection status is not evidence of model quality or
+catalog completeness.
 
 ## Connection and deployment
 

@@ -26,6 +26,8 @@ export const queryKeys = {
   similarItems: ["similarItems"],
   categoryRecommendations: ["categoryRecommendations"],
   normalizedDescriptions: ["normalized-descriptions"],
+  normalizationCatalog: ["normalization-catalog"],
+  normalizationAi: ["normalization-ai"],
   normalizedDescriptionSettings: ["normalized-descriptions", "settings"],
   reportDuplicates: ["reports", "duplicates"],
   acceptedDuplicates: ["reports", "accepted-duplicates"],
@@ -60,6 +62,8 @@ const LEDGER_CHANGE_QUERY_KEYS = [
   queryKeys.similarItems,
   queryKeys.categoryRecommendations,
   queryKeys.normalizedDescriptions,
+  queryKeys.normalizationCatalog,
+  queryKeys.normalizationAi,
   queryKeys.ynabSplitComparison,
   queryKeys.ynabReceiptSyncStatuses,
   queryKeys.ynabSyncStatus,
@@ -85,6 +89,8 @@ export const CARD_CHANGE_QUERY_KEYS = [
 const TEMPLATE_CHANGE_QUERY_KEYS = [
   queryKeys.itemTemplates,
   queryKeys.normalizedDescriptions,
+  queryKeys.normalizationCatalog,
+  queryKeys.normalizationAi,
   queryKeys.similarItems,
   queryKeys.categoryRecommendations,
 ] as const;
@@ -94,6 +100,8 @@ const TEMPLATE_CHANGE_QUERY_KEYS = [
 // description does not change receipt totals or dashboard ranges.
 const NORMALIZED_DESCRIPTION_CHANGE_QUERY_KEYS = [
   queryKeys.normalizedDescriptions,
+  queryKeys.normalizationCatalog,
+  queryKeys.normalizationAi,
   queryKeys.receiptItems,
   queryKeys.receiptsWithItems,
   queryKeys.trips,

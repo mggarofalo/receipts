@@ -8,6 +8,777 @@ info:
     default version (currently 1.0) is assumed.
 
 paths:
+  /api/normalization-catalog/targets/{id}/preview-label:
+    post:
+      tags: [NormalizationCatalog]
+      summary: Preview a global display label change and affected purchases
+      operationId: NormalizationCatalog_PreviewLabel
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NormalizationCatalogLabelPreviewRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NormalizationCatalogLabelReviewResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Administrator access required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: State conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/normalization-catalog/targets/{id}/approve-label:
+    post:
+      tags: [NormalizationCatalog]
+      summary: Approve a global display label change at the reviewed revision
+      operationId: NormalizationCatalog_ApproveLabel
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NormalizationCatalogLabelApprovalRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NormalizationCatalogLabelReviewResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Administrator access required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: State conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/normalization-catalog/sources:
+    get:
+      tags:
+        - NormalizationCatalog
+      summary: List distinct receipt descriptions and their normalization coverage
+      operationId: NormalizationCatalog_ListSources
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: disposition
+          in: query
+          required: false
+          schema:
+            type: string
+            default: needs-review
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 0
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 25
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NormalizationSourcePageResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Administrator access required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: State conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/normalization-catalog/coverage:
+    get:
+      tags:
+        - NormalizationCatalog
+      summary: Get normalization coverage across live receipt items
+      operationId: NormalizationCatalog_GetCoverage
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NormalizationCatalogCoverageResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Administrator access required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: State conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/normalization-catalog/candidates:
+    get:
+      tags:
+        - NormalizationCatalog
+      summary: Get matching candidates and approved source examples
+      operationId: NormalizationCatalog_GetCandidates
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      parameters:
+        - name: location
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: description
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: itemCode
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NormalizationCatalogCandidateResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Administrator access required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: State conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/normalization-catalog/mappings:
+    get:
+      tags:
+        - NormalizationCatalog
+      summary: Get mapping history for a scoped source description
+      operationId: NormalizationCatalog_ListMappings
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      parameters:
+        - name: location
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: description
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: itemCode
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NormalizationSourceMappingResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Administrator access required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: State conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/normalization-catalog/operations:
+    get:
+      tags:
+        - NormalizationCatalog
+      summary: List recent historical normalization operations
+      operationId: NormalizationCatalog_ListOperations
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NormalizationCatalogOperationResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Administrator access required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: State conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+    post:
+      tags:
+        - NormalizationCatalog
+      summary: Preview a scoped mapping and historical changes without applying them
+      operationId: NormalizationCatalog_Preview
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NormalizationCatalogPreviewRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NormalizationCatalogOperationResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Administrator access required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: State conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/normalization-catalog/operations/{id}:
+    get:
+      tags:
+        - NormalizationCatalog
+      summary: Get historical normalization progress
+      operationId: NormalizationCatalog_GetOperation
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NormalizationCatalogOperationResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Administrator access required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: State conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/normalization-catalog/operations/{id}/approve:
+    post:
+      tags:
+        - NormalizationCatalog
+      summary: Approve the preview and apply a bounded historical batch
+      operationId: NormalizationCatalog_Approve
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NormalizationCatalogRevisionRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NormalizationCatalogOperationResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Administrator access required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: State conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/normalization-catalog/operations/{id}/resume:
+    post:
+      tags:
+        - NormalizationCatalog
+      summary: Continue an approved historical operation
+      operationId: NormalizationCatalog_Resume
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NormalizationCatalogOperationResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Administrator access required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: State conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/normalization-catalog/operations/{id}/cancel:
+    post:
+      tags:
+        - NormalizationCatalog
+      summary: Stop propagation and revoke the operation mapping
+      operationId: NormalizationCatalog_Cancel
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NormalizationCatalogRevisionRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NormalizationCatalogOperationResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Administrator access required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: State conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/normalization-catalog/operations/{id}/undo:
+    post:
+      tags:
+        - NormalizationCatalog
+      summary: Undo changes still owned by this operation
+      operationId: NormalizationCatalog_Undo
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NormalizationCatalogRevisionRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NormalizationCatalogOperationResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Administrator access required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: State conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/normalization-catalog/mappings/{id}/revoke:
+    post:
+      tags:
+        - NormalizationCatalog
+      summary: Revoke a source mapping to stop future reuse
+      operationId: NormalizationCatalog_Revoke
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NormalizationCatalogRevisionRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NormalizationSourceMappingResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Administrator access required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: State conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/normalization-ai/source-runs:
+    post:
+      tags:
+        - NormalizationAi
+      summary: Request suggestions for distinct scoped source descriptions
+      operationId: NormalizationAi_StartSources
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartNormalizationAiSourcesRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NormalizationAiRunResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Administrator access required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: State conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: Provider unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
   /api/normalization-ai/connection:
     get:
       operationId: GetNormalizationAiConnection
@@ -6059,6 +6830,389 @@ paths:
 
 components:
   schemas:
+    NormalizationSourceKey:
+      type: object
+      required:
+        - location
+        - description
+      properties:
+        location:
+          type: string
+          maxLength: 1000
+        description:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        itemCode:
+          maxLength: 200
+          type:
+            - string
+            - 'null'
+    NormalizationSourceGroupResponse:
+      type: object
+      required:
+        - source
+        - itemCount
+        - unassignedCount
+        - legacyUnknownCount
+        - automaticCount
+        - protectedCount
+      properties:
+        revisableCount:
+          type: integer
+          format: int32
+        source:
+          $ref: '#/components/schemas/NormalizationSourceKey'
+        itemCount:
+          type: integer
+          format: int32
+        unassignedCount:
+          type: integer
+          format: int32
+        legacyUnknownCount:
+          type: integer
+          format: int32
+        automaticCount:
+          type: integer
+          format: int32
+        protectedCount:
+          type: integer
+          format: int32
+        mappingId:
+          type:
+            - string
+            - 'null'
+          format: uuid
+    NormalizationSourcePageResponse:
+      type: object
+      required:
+        - items
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/NormalizationSourceGroupResponse'
+        total:
+          type: integer
+          format: int32
+    NormalizationCatalogCoverageResponse:
+      type: object
+      required:
+        - totalItems
+        - unassigned
+        - legacyUnknown
+        - automatic
+        - reviewed
+        - mapped
+        - protected
+        - excluded
+      properties:
+        revisable:
+          type: integer
+          format: int32
+        totalItems:
+          type: integer
+          format: int32
+        unassigned:
+          type: integer
+          format: int32
+        legacyUnknown:
+          type: integer
+          format: int32
+        automatic:
+          type: integer
+          format: int32
+        reviewed:
+          type: integer
+          format: int32
+        mapped:
+          type: integer
+          format: int32
+        protected:
+          type: integer
+          format: int32
+        excluded:
+          type: integer
+          format: int32
+    NormalizationCatalogCandidateResponse:
+      type: object
+      required:
+        - id
+        - revision
+        - canonicalName
+        - channels
+        - approvedExamples
+      properties:
+        id:
+          type: string
+          format: uuid
+        revision:
+          type: string
+          format: uuid
+        canonicalName:
+          type: string
+        displayLabel:
+          type:
+            - string
+            - 'null'
+        channels:
+          type: array
+          items:
+            type: string
+        approvedExamples:
+          type: array
+          items:
+            type: string
+    NormalizationCatalogPreviewRequest:
+      type: object
+      required:
+        - clientRequestId
+        - source
+        - includeLegacyUnknown
+        - exclude
+      properties:
+        clientRequestId:
+          type: string
+          format: uuid
+        source:
+          $ref: '#/components/schemas/NormalizationSourceKey'
+        targetId:
+          type:
+            - string
+            - 'null'
+          format: uuid
+        targetRevision:
+          type:
+            - string
+            - 'null'
+          format: uuid
+        newCanonicalName:
+          type:
+            - string
+            - 'null'
+          maxLength: 200
+        includeLegacyUnknown:
+          type: boolean
+        exclude:
+          type: boolean
+        suggestionRunId:
+          type:
+            - string
+            - 'null'
+          format: uuid
+        suggestionProposalId:
+          type:
+            - string
+            - 'null'
+          format: uuid
+        suggestionRunRevision:
+          type:
+            - string
+            - 'null'
+          format: uuid
+    NormalizationCatalogRevisionRequest:
+      type: object
+      required:
+        - expectedRevision
+      properties:
+        expectedRevision:
+          type: string
+          format: uuid
+    NormalizationSourceMappingResponse:
+      type: object
+      required:
+        - id
+        - revision
+        - source
+        - state
+        - approvedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        revision:
+          type: string
+          format: uuid
+        source:
+          $ref: '#/components/schemas/NormalizationSourceKey'
+        targetId:
+          type:
+            - string
+            - 'null'
+          format: uuid
+        targetName:
+          type:
+            - string
+            - 'null'
+        state:
+          type: string
+        approvedAt:
+          type: string
+          format: date-time
+    NormalizationCatalogOperationResponse:
+      type: object
+      required:
+        - id
+        - revision
+        - state
+        - source
+        - includeLegacyUnknown
+        - total
+        - eligible
+        - protected
+        - applied
+        - conflicted
+        - remaining
+        - undone
+        - createdAt
+        - exclude
+      properties:
+        id:
+          type: string
+          format: uuid
+        revision:
+          type: string
+          format: uuid
+        state:
+          type: string
+        source:
+          $ref: '#/components/schemas/NormalizationSourceKey'
+        mappingId:
+          type:
+            - string
+            - 'null'
+          format: uuid
+        targetId:
+          type:
+            - string
+            - 'null'
+          format: uuid
+        newCanonicalName:
+          type:
+            - string
+            - 'null'
+        includeLegacyUnknown:
+          type: boolean
+        total:
+          type: integer
+          format: int32
+        eligible:
+          type: integer
+          format: int32
+        protected:
+          type: integer
+          format: int32
+        applied:
+          type: integer
+          format: int32
+        conflicted:
+          type: integer
+          format: int32
+        remaining:
+          type: integer
+          format: int32
+        undone:
+          type: integer
+          format: int32
+        createdAt:
+          type: string
+          format: date-time
+        targetName:
+          type:
+            - string
+            - 'null'
+        exclude:
+          type: boolean
+        errorCode:
+          type:
+            - string
+            - 'null'
+        errorDetail:
+          type:
+            - string
+            - 'null'
+    NormalizationAiSourceSelection:
+      type: object
+      required:
+        - source
+        - includeLegacyUnknown
+      properties:
+        source:
+          $ref: '#/components/schemas/NormalizationSourceKey'
+        includeLegacyUnknown:
+          type: boolean
+        labelOnly:
+          type: boolean
+          description: Suggest a display label for the single existing identity without proposing assignment changes.
+    NormalizationCatalogLabelPreviewRequest:
+      type: object
+      properties:
+        displayLabel:
+          type: [string, 'null']
+          maxLength: 200
+    NormalizationCatalogLabelApprovalRequest:
+      type: object
+      required: [expectedTargetRevision, expectedAffectedItemCount]
+      properties:
+        displayLabel:
+          type: [string, 'null']
+          maxLength: 200
+        expectedTargetRevision:
+          type: string
+          format: uuid
+        expectedAffectedItemCount:
+          type: integer
+          format: int32
+          minimum: 0
+        suggestionRunId:
+          type: [string, 'null']
+          format: uuid
+        suggestionProposalId:
+          type: [string, 'null']
+          format: uuid
+        suggestionRunRevision:
+          type: [string, 'null']
+          format: uuid
+    NormalizationCatalogLabelReviewResponse:
+      type: object
+      required: [targetId, targetRevision, canonicalName, affectedItemCount]
+      properties:
+        targetId:
+          type: string
+          format: uuid
+        targetRevision:
+          type: string
+          format: uuid
+        canonicalName:
+          type: string
+        currentDisplayLabel:
+          type: [string, 'null']
+        proposedDisplayLabel:
+          type: [string, 'null']
+        affectedItemCount:
+          type: integer
+          format: int32
+    StartNormalizationAiSourcesRequest:
+      type: object
+      required:
+        - clientRequestId
+        - sources
+        - model
+      properties:
+        clientRequestId:
+          type: string
+          format: uuid
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/NormalizationAiSourceSelection'
+          minItems: 1
+          maxItems: 50
+        model:
+          type: string
+          minLength: 1
+          maxLength: 200
     NormalizationAiConnectionResponse:
       type: object
       required:
@@ -6177,6 +7331,21 @@ components:
             - 'null'
         state:
           type: string
+        source:
+          oneOf:
+            - $ref: '#/components/schemas/NormalizationSourceKey'
+            - type: 'null'
+        targetRevision:
+          type:
+            - string
+            - 'null'
+          format: uuid
+        includeLegacyUnknown:
+          type: boolean
+        labelOnly:
+          type: boolean
+        suggestedDisplayLabel:
+          type: [string, 'null']
     NormalizationAiRunResponse:
       type: object
       required:

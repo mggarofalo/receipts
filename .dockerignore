@@ -21,4 +21,5 @@ docs/*
 !docs/normalization-evaluation/
 docs/normalization-evaluation/*
 !docs/normalization-evaluation/corpus.v1.json
+!docs/normalization-evaluation/catalog.v2.json
 scripts/

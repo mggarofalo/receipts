@@ -34,7 +34,7 @@ public partial class NormalizedDescriptionStaleWriteTests(PostgresFixture fixtur
 	[InlineData("link-unlink")]
 	public async Task ResolutionRechecksCurrentOwnership_AfterExpensiveMatching(string change)
 	{
-		Seed seed = await SeedAsync();
+		Seed seed = await SeedAsync(approximate: true);
 		if (change == "raw-rejected")
 		{
 			await using ApplicationDbContext before = fixture.CreateDbContext();
@@ -48,7 +48,7 @@ public partial class NormalizedDescriptionStaleWriteTests(PostgresFixture fixtur
 		{
 			entered.TrySetResult();
 			await release.Task.WaitAsync(cancellationToken);
-			return new GetOrCreateResult(new(change == "raw-rejected" ? seed.Bread : seed.Milk, change == "raw-rejected" ? "Bread" : "Milk", NormalizedDescriptionStatus.Active, DateTimeOffset.UtcNow), 0.95);
+			return new GetOrCreateResult(new(change == "raw-rejected" ? seed.Bread : seed.Milk, change == "raw-rejected" ? "Canonical Bread" : "Canonical Milk", NormalizedDescriptionStatus.Active, DateTimeOffset.UtcNow), 0.95);
 		});
 		using ServiceProvider provider = BuildProvider(canonical.Object);
 		using NormalizedDescriptionResolutionService resolver = CreateResolver(provider);
@@ -81,7 +81,7 @@ public partial class NormalizedDescriptionStaleWriteTests(PostgresFixture fixtur
 	[Fact]
 	public async Task TwoReplicasResolvingTheSameSnapshot_OnlyOneCanCommitItsResult()
 	{
-		Seed seed = await SeedAsync();
+		Seed seed = await SeedAsync(approximate: true);
 		TaskCompletionSource firstEntered = new(TaskCreationOptions.RunContinuationsAsynchronously);
 		TaskCompletionSource bothEntered = new(TaskCreationOptions.RunContinuationsAsynchronously);
 		TaskCompletionSource firstRelease = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -102,7 +102,7 @@ public partial class NormalizedDescriptionStaleWriteTests(PostgresFixture fixtur
 			}
 
 			await (index == 1 ? firstRelease : secondRelease).Task.WaitAsync(cancellationToken);
-			return new GetOrCreateResult(new(seed.Milk, "Milk", NormalizedDescriptionStatus.Active, DateTimeOffset.UtcNow), index == 1 ? 0.91 : 0.97);
+			return new GetOrCreateResult(new(seed.Milk, "Canonical Milk", NormalizedDescriptionStatus.Active, DateTimeOffset.UtcNow), index == 1 ? 0.91 : 0.97);
 		});
 		using ServiceProvider provider = BuildProvider(canonical.Object);
 		using NormalizedDescriptionResolutionService first = CreateResolver(provider), second = CreateResolver(provider);
@@ -134,7 +134,7 @@ public partial class NormalizedDescriptionStaleWriteTests(PostgresFixture fixtur
 	[Fact]
 	public async Task MixedBatch_SkipsOnlyChangedItem_AndNextCycleResolvesItsCurrentText()
 	{
-		Seed seed = await SeedAsync();
+		Seed seed = await SeedAsync(approximate: true);
 		Guid unchanged;
 		await using (ApplicationDbContext setup = fixture.CreateDbContext())
 		{
@@ -154,9 +154,9 @@ public partial class NormalizedDescriptionStaleWriteTests(PostgresFixture fixtur
 		{
 			entered.TrySetResult();
 			await release.Task.WaitAsync(token);
-			return new GetOrCreateResult(new(seed.Milk, "Milk", NormalizedDescriptionStatus.Active, DateTimeOffset.UtcNow), 0.95);
+			return new GetOrCreateResult(new(seed.Milk, "Canonical Milk", NormalizedDescriptionStatus.Active, DateTimeOffset.UtcNow), 0.95);
 		});
-		canonical.Setup(service => service.GetOrCreateAsync("Bread", It.IsAny<CancellationToken>())).ReturnsAsync(new GetOrCreateResult(new(seed.Bread, "Bread", NormalizedDescriptionStatus.Active, DateTimeOffset.UtcNow), 0.96));
+		canonical.Setup(service => service.GetOrCreateAsync("Bread", It.IsAny<CancellationToken>())).ReturnsAsync(new GetOrCreateResult(new(seed.Bread, "Canonical Bread", NormalizedDescriptionStatus.Active, DateTimeOffset.UtcNow), 0.96));
 		using ServiceProvider provider = BuildProvider(canonical.Object);
 		using NormalizedDescriptionResolutionService resolver = CreateResolver(provider);
 		var run = resolver.ProcessPendingResolutionsAsync(CancellationToken.None);
@@ -258,7 +258,7 @@ public partial class NormalizedDescriptionStaleWriteTests(PostgresFixture fixtur
 		}
 	}
 
-	private async Task<Seed> SeedAsync()
+	private async Task<Seed> SeedAsync(bool approximate = false)
 	{
 		await using ApplicationDbContext context = fixture.CreateDbContext();
 		await context.Database.ExecuteSqlRawAsync("""TRUNCATE "ReceiptItems", "Receipts", "NormalizedDescriptions", "DistinctDescriptions" RESTART IDENTITY CASCADE;""");
@@ -268,7 +268,7 @@ public partial class NormalizedDescriptionStaleWriteTests(PostgresFixture fixtur
 		item.NormalizedDescriptionId = null;
 		item.NormalizedDescriptionMatchScore = null;
 		Guid milk = Guid.NewGuid(), bread = Guid.NewGuid();
-		context.NormalizedDescriptions.AddRange(CurrentCanonical(milk, "Milk"), CurrentCanonical(bread, "Bread"));
+		context.NormalizedDescriptions.AddRange(CurrentCanonical(milk, approximate ? "Canonical Milk" : "Milk"), CurrentCanonical(bread, approximate ? "Canonical Bread" : "Bread"));
 		context.Receipts.Add(receipt);
 		context.ReceiptItems.Add(item);
 		await context.SaveChangesAsync();

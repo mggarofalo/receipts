@@ -1,5 +1,10 @@
 # Synthetic normalization evaluation corpus
 
+For the maintained-catalog decision protocol, use the separate
+[catalog v2 corpus and evaluation command](catalog.v2.md). The v1 experiment
+below exercises the original selected-purchase prompt and cannot establish
+quality for the newer source-group workflow.
+
 RECEIPTS-1013, initial revision 2026-10-19. This directory contains fixtures and
 an evaluation rubric, not a provider integration or evidence of model quality.
 

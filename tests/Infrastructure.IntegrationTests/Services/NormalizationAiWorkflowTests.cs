@@ -25,7 +25,7 @@ namespace Infrastructure.IntegrationTests.Services;
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public sealed class NormalizationAiWorkflowTests(PostgresFixture fixture)
+public sealed partial class NormalizationAiWorkflowTests(PostgresFixture fixture)
 {
 	private const string Owner = "normalization-test-owner";
 	private readonly Mock<IChatGptRunner> runner = new(MockBehavior.Strict);
@@ -53,6 +53,8 @@ public sealed class NormalizationAiWorkflowTests(PostgresFixture fixture)
 		var items = await db.ReceiptItems.Where(x => ids.Contains(x.Id)).ToListAsync();
 		items.Should().OnlyContain(x => x.NormalizedDescriptionId != null && x.NormalizedDescriptionMatchScore == null);
 		items.Should().OnlyContain(x => x.Quantity == 1.2345m && x.UnitPrice == 2.3456m && x.TotalAmount == 2.90m && x.UnitPriceCurrency == Currency.USD && x.TotalAmountCurrency == Currency.USD);
+		items.Should().OnlyContain(x => x.NormalizationOrigin == "reviewed" && x.NormalizationAssignmentId != null,
+			"accepted human review must not become eligible for automatic catalog reassignment");
 		(await AuditCountAsync(ids)).Should().Be(audits + ids.Length);
 		publisher.Verify(x => x.PublishAsync(It.Is<CommittedEntityChange>(change => change.EntityType == CommittedEntityType.ReceiptItem)), Times.Once);
 		publisher.Verify(x => x.PublishAsync(It.Is<CommittedEntityChange>(change => change.EntityType == CommittedEntityType.NormalizedDescription)), Times.Once);
@@ -583,7 +585,7 @@ public sealed class NormalizationAiWorkflowTests(PostgresFixture fixture)
 			.ReturnsAsync(new MatchTestResult([], MatchTestOutcomes.EmbeddingUnavailable, null));
 		publisher.Setup(x => x.PublishAsync(It.IsAny<CommittedEntityChange>())).Returns(Task.CompletedTask);
 		await using var db = fixture.CreateDbContext();
-		await db.Database.ExecuteSqlRawAsync("""TRUNCATE matching."NormalizationAiRuns", matching."NormalizationAiConnection", receipts."ReceiptItems", receipts."Receipts", matching."NormalizedDescriptions", matching."DistinctDescriptions" CASCADE;""");
+		await db.Database.ExecuteSqlRawAsync("""TRUNCATE matching."NormalizationCatalogMembers", matching."NormalizationCatalogOperations", matching."NormalizationSourceMappings", matching."NormalizationAiRuns", matching."NormalizationAiConnection", receipts."ReceiptItems", receipts."Receipts", matching."NormalizedDescriptions", matching."DistinctDescriptions" CASCADE;""");
 		var owner = await db.Users.FindAsync(Owner);
 		if (owner is null)
 		{

@@ -48,6 +48,14 @@ public class NormalizationAiController(INormalizationAiService service) : Contro
 	public Task<Results<Ok<NormalizationAiRunResponse>, BadRequest<ProblemDetails>, ForbiddenProblem, NotFound<ProblemDetails>, Conflict<ProblemDetails>, ServiceUnavailableProblem>> Start([FromBody] StartNormalizationAiRunRequest request, CancellationToken cancellationToken) =>
 		Execute(async () => Map(await service.StartAsync(Actor, request.ClientRequestId, request.ItemIds.ToList(), request.Model, cancellationToken)));
 
+	[HttpPost("source-runs")]
+	[EndpointSummary("Request suggestions for distinct scoped source descriptions")]
+	public Task<Results<Ok<NormalizationAiRunResponse>, BadRequest<ProblemDetails>, ForbiddenProblem, NotFound<ProblemDetails>, Conflict<ProblemDetails>, ServiceUnavailableProblem>> StartSources([FromBody] StartNormalizationAiSourcesRequest request, CancellationToken cancellationToken) =>
+		Execute(async () => Map(await service.StartSourcesAsync(Actor, request.ClientRequestId,
+			request.Sources.Select(selection => new Application.NormalizationAi.NormalizationAiSourceSelection(
+				new(selection.Source.Location, selection.Source.Description, selection.Source.ItemCode), selection.IncludeLegacyUnknown, selection.LabelOnly)).ToArray(),
+			request.Model, cancellationToken)));
+
 	[HttpPost("runs/{id:guid}/cancel")]
 	[EndpointSummary("Cancel a normalization run")]
 	public Task<Results<Ok<NormalizationAiRunResponse>, BadRequest<ProblemDetails>, ForbiddenProblem, NotFound<ProblemDetails>, Conflict<ProblemDetails>, ServiceUnavailableProblem>> Cancel(Guid id, CancellationToken cancellationToken) =>
@@ -113,6 +121,16 @@ public class NormalizationAiController(INormalizationAiService service) : Contro
 			DisplayLabel = proposal.DisplayLabel,
 			Reason = proposal.Reason,
 			State = proposal.State,
+			Source = proposal.Source is null ? null : new API.Generated.Dtos.NormalizationSourceKey
+			{
+				Location = proposal.Source.Location,
+				Description = proposal.Source.Description,
+				ItemCode = proposal.Source.ItemCode,
+			},
+			TargetRevision = proposal.TargetRevision,
+			IncludeLegacyUnknown = proposal.IncludeLegacyUnknown,
+			LabelOnly = proposal.LabelOnly,
+			SuggestedDisplayLabel = proposal.SuggestedDisplayLabel,
 		}).ToList(),
 	};
 }

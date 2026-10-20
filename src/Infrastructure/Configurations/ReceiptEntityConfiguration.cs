@@ -8,6 +8,9 @@ public class ReceiptEntityConfiguration : IEntityTypeConfiguration<ReceiptEntity
 {
 	public void Configure(EntityTypeBuilder<ReceiptEntity> builder)
 	{
+		builder.Property(e => e.NormalizationRevision).HasDefaultValueSql("gen_random_uuid()").ValueGeneratedOnAddOrUpdate();
+		builder.Property(e => e.NormalizationRevision).Metadata.SetBeforeSaveBehavior(Microsoft.EntityFrameworkCore.Metadata.PropertySaveBehavior.Ignore);
+		builder.Property(e => e.NormalizationRevision).Metadata.SetAfterSaveBehavior(Microsoft.EntityFrameworkCore.Metadata.PropertySaveBehavior.Ignore);
 		builder.ToTable("Receipts", "receipts");
 
 		builder.HasKey(e => e.Id);

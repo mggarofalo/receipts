@@ -24,10 +24,10 @@ public sealed partial class NormalizationAiService
 		DateTimeOffset cutoff = NormalizationAiDecisionPolicy.UnacceptedRetentionCutoff(timeProvider.GetUtcNow(), Settings.UnacceptedRetentionDays);
 		// Accepted provenance survives, but discarded/abstained siblings have no audit retention need.
 		foreach (NormalizationAiRunEntity accepted in await context.NormalizationAiRuns.Include(run => run.Proposals)
-			.Where(run => run.State == "applied" && run.CreatedAt < cutoff && run.Proposals.Any(proposal => proposal.State != "applied"))
+			.Where(run => run.State == "applied" && run.CreatedAt < cutoff && run.Proposals.Any(proposal => proposal.State != "applied" && proposal.State != "overridden"))
 			.ToListAsync(cancellationToken))
 		{
-			NormalizationAiProposalEntity[] discarded = accepted.Proposals.Where(proposal => proposal.State != "applied").ToArray();
+			NormalizationAiProposalEntity[] discarded = accepted.Proposals.Where(proposal => proposal.State != "applied" && proposal.State != "overridden").ToArray();
 			context.NormalizationAiProposals.RemoveRange(discarded);
 			foreach (NormalizationAiProposalEntity proposal in discarded) { accepted.Proposals.Remove(proposal); }
 			accepted.Revision = Guid.NewGuid();
@@ -37,9 +37,10 @@ public sealed partial class NormalizationAiService
 		{
 			// Keep the non-payload request tombstone so a delayed retry of an old HTTP request
 			// cannot incur usage again after its source text and candidates have been purged.
-			context.NormalizationAiProposals.RemoveRange(run.Proposals);
-			run.Proposals.Clear();
-			Finish(run, "expired", "expired", "Unaccepted suggestions expired and their item payloads were removed. Select current items to create a new request.");
+			var unaccepted = run.Proposals.Where(proposal => proposal.State != "applied" && proposal.State != "overridden").ToArray();
+			context.NormalizationAiProposals.RemoveRange(unaccepted);
+			foreach (var proposal in unaccepted) { run.Proposals.Remove(proposal); }
+			Finish(run, run.Proposals.Count > 0 ? "applied" : "expired", "expired", "Unaccepted suggestions expired and their item payloads were removed. Accepted decision evidence was retained.");
 		}
 	}
 
@@ -56,6 +57,11 @@ public sealed partial class NormalizationAiService
 			if (await context.NormalizationAiRuns.AnyAsync(run => run.State == "running", cancellationToken)) { return false; }
 			claimed = await context.NormalizationAiRuns.Include(run => run.Proposals).Where(run => run.State == "queued").OrderBy(run => run.CreatedAt).FirstOrDefaultAsync(cancellationToken);
 			if (claimed is null) { return false; }
+			if (claimed.PromptVersion is not ("receipts-normalization-v1" or NormalizationCatalogAiPolicy.Version))
+			{
+				Finish(claimed, "failed", "unsupported_protocol", "This saved request uses an unsupported protocol. Create a new request.");
+				await context.SaveChangesAsync(cancellationToken); await lease.CommitAsync(cancellationToken); return true;
+			}
 			if (claimed.OwnerUserId != Settings.OwnerUserId || await ConnectionUnavailableAsync(context, claimed.ConnectionGeneration, cancellationToken)
 				|| !await OwnerAuthorizedAsync(context, claimed.OwnerUserId, cancellationToken))
 			{ Finish(claimed, "cancelled", "connection_changed", "The connection owner or generation changed."); await context.SaveChangesAsync(cancellationToken); await lease.CommitAsync(cancellationToken); return true; }
@@ -75,8 +81,10 @@ public sealed partial class NormalizationAiService
 		try
 		{
 			IReadOnlyList<NormalizationAiInput> inputs = Inputs(claimed);
-			inference = runner.InferAsync(new(claimed.Model, NormalizationAiPolicy.Instructions,
-				NormalizationAiPolicy.BuildPrompt(inputs), NormalizationAiPolicy.Schema), inferenceCancellation.Token);
+			bool catalog = claimed.PromptVersion == NormalizationCatalogAiPolicy.Version;
+			inference = runner.InferAsync(new(claimed.Model, catalog ? NormalizationCatalogAiPolicy.Instructions : NormalizationAiPolicy.Instructions,
+				catalog ? NormalizationCatalogAiPolicy.BuildPrompt(inputs) : NormalizationAiPolicy.BuildPrompt(inputs),
+				catalog ? NormalizationCatalogAiPolicy.Schema : NormalizationAiPolicy.Schema), inferenceCancellation.Token);
 			while (!inference.IsCompleted)
 			{
 				await Task.WhenAny(inference, Task.Delay(TimeSpan.FromMilliseconds(250), inferenceCancellation.Token));
@@ -87,7 +95,7 @@ public sealed partial class NormalizationAiService
 			}
 			ChatGptInferenceResult response = await inference;
 			usage = response.Usage;
-			decisions = NormalizationAiPolicy.Validate(response.Text, inputs);
+			decisions = catalog ? NormalizationCatalogAiPolicy.Validate(response.Text, inputs) : NormalizationAiPolicy.Validate(response.Text, inputs);
 		}
 		catch (NormalizationAiException exception) { outcome = "failed"; code = exception.Code; detail = exception.Message; }
 		catch (ChatGptRunnerException exception)
@@ -125,11 +133,15 @@ public sealed partial class NormalizationAiService
 			foreach (NormalizationAiDecision decision in decisions)
 			{
 				NormalizationAiProposalEntity proposal = runResult.Proposals.Single(value => value.Id == decision.Id);
+				proposal.SuggestedDisplayLabel = decision.SuggestedDisplayLabel;
 				proposal.Action = decision.Action; proposal.Reason = decision.Reason; proposal.TargetId = decision.TargetId;
 				if (decision.Action == "reuse")
 				{
 					NormalizationAiTarget target = JsonSerializer.Deserialize<List<NormalizationAiTarget>>(proposal.CandidatesJson)!.Single(value => value.Id == decision.TargetId);
 					proposal.TargetRevision = target.Revision; proposal.MatchScore = target.Score; proposal.CanonicalName = target.Name; proposal.DisplayLabel = target.DisplayLabel;
+					if (proposal.LabelOnly && (decision.SuggestedDisplayLabel is null
+						|| string.Equals(decision.SuggestedDisplayLabel, target.DisplayLabel ?? target.Name, StringComparison.OrdinalIgnoreCase)))
+					{ proposal.State = "no_change"; }
 				}
 				else if (decision.Action == "create") { proposal.CanonicalName = decision.DisplayLabel; }
 				else { proposal.State = "abstained"; }

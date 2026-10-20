@@ -131,9 +131,16 @@ public class NormalizedDescriptionResolutionService(
 		// search — without an embedding service we'd degrade to creating an Active entry
 		// per distinct description, which is cheap but misleading because the downstream
 		// "auto-accept" UX presumes real similarity scoring. Skip the cycle cleanly.
+		var deterministic = await NormalizationCatalogResolver.ResolveAsync(contextFactory, cancellationToken);
+		int deterministicLinked = deterministic.Linked;
+		if (deterministicLinked > 0)
+		{
+			await committedChangePublisher.PublishAsync(new(CommittedEntityType.ReceiptItem, CommittedChangeType.Updated, SuppressToast: true));
+		}
+		if (deterministic.Attempted > 0) { return new(deterministic.Linked, 0, deterministic.Attempted - deterministic.Linked); }
 		if (!embeddingService.IsConfigured)
 		{
-			return ResolutionSummary.Empty;
+			return new(deterministicLinked, 0, 0);
 		}
 
 		// A negative ANN result is not authoritative while canonical vectors are still being
@@ -147,7 +154,7 @@ public class NormalizedDescriptionResolutionService(
 			logger.LogInformation(
 				"Deferring normalized-description resolution while {PendingCount} canonical vectors rebuild",
 				coverage.CanonicalPending);
-			return ResolutionSummary.Empty;
+			return new(deterministicLinked, 0, 0);
 		}
 
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
@@ -166,6 +173,7 @@ public class NormalizedDescriptionResolutionService(
 		//
 		// The comparison mirrors the unique functional index on lower("CanonicalName"), so this is
 		// an index probe per candidate rather than a scan.
+		var catalogReservations = NormalizationCatalogReservations.ItemIds(context);
 		List<ReceiptItemEntity> pending = await context.ReceiptItems
 			.AsNoTracking()
 			.IgnoreAutoIncludes()
@@ -173,6 +181,8 @@ public class NormalizedDescriptionResolutionService(
 			.Where(r =>
 				r.DeletedAt == null &&
 				r.NormalizedDescriptionId == null &&
+				r.NormalizationOrigin == "unassigned" &&
+				!catalogReservations.Contains(r.Id) &&
 				!context.NormalizationAiProposals.Any(proposal => proposal.ReceiptItemId == r.Id && proposal.State == "pending"
 					&& context.NormalizationAiRuns.Any(run => run.Id == proposal.RunId && (run.State == "queued" || run.State == "running" || run.State == "ready" || run.State == "unknown"))) &&
 				r.Description != string.Empty &&
@@ -186,7 +196,7 @@ public class NormalizedDescriptionResolutionService(
 
 		if (pending.Count == 0)
 		{
-			return ResolutionSummary.Empty;
+			return new(deterministicLinked, 0, 0);
 		}
 
 		// Read source values and revision together before any expensive matching. A later
@@ -277,7 +287,7 @@ public class NormalizedDescriptionResolutionService(
 				SuppressToast: true));
 		}
 
-		ResolutionSummary summary = new(linked, newEntriesCreated, skipped);
+		ResolutionSummary summary = new(linked + deterministicLinked, newEntriesCreated, skipped);
 		logger.LogInformation(
 			"Resolved normalized descriptions: linked={Linked}, newEntriesCreated={NewEntriesCreated}, skipped={Skipped}",
 			summary.Linked,
@@ -323,6 +333,7 @@ public class NormalizedDescriptionResolutionService(
 			.Where(proposal => itemIds.Contains(proposal.ReceiptItemId) && proposal.State == "pending"
 				&& context.NormalizationAiRuns.Any(run => run.Id == proposal.RunId && (run.State == "queued" || run.State == "running" || run.State == "ready" || run.State == "unknown")))
 			.Select(proposal => proposal.ReceiptItemId).ToListAsync(cancellationToken)).ToHashSet();
+		aiReserved.UnionWith(await NormalizationCatalogReservations.ItemIds(context).Where(id => itemIds.Contains(id)).ToListAsync(cancellationToken));
 		foreach (PlannedResolution plan in planned)
 		{
 			if (aiReserved.Contains(plan.Source.Id) || rejectedNames.Contains(plan.Source.Description.Trim().ToLowerInvariant())
@@ -337,6 +348,8 @@ public class NormalizedDescriptionResolutionService(
 			}
 			item.NormalizedDescriptionId = target.Id;
 			item.NormalizedDescriptionMatchScore = plan.MatchScore;
+			item.NormalizationOrigin = "automatic";
+			item.NormalizationAssignmentId = Guid.NewGuid();
 			linked++;
 		}
 

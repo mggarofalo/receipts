@@ -7,6 +7,8 @@ public interface INormalizationAiService
 	Task<IReadOnlyList<NormalizationAiRun>> ListRunsAsync(string actor, CancellationToken cancellationToken);
 	Task<NormalizationAiRun?> GetRunAsync(string actor, Guid id, CancellationToken cancellationToken);
 	Task<NormalizationAiRun> StartAsync(string actor, Guid clientRequestId, IReadOnlyList<Guid> itemIds, string model, CancellationToken cancellationToken);
+
+	Task<NormalizationAiRun> StartSourcesAsync(string actor, Guid clientRequestId, IReadOnlyList<NormalizationAiSourceSelection> sources, string model, CancellationToken cancellationToken);
 	Task<NormalizationAiRun> CancelAsync(string actor, Guid id, CancellationToken cancellationToken);
 	Task<NormalizationAiRun> RetryAsync(string actor, Guid id, Guid clientRequestId, CancellationToken cancellationToken);
 	Task<NormalizationAiRun> ApplyAsync(string actor, Guid id, IReadOnlyList<Guid> proposalIds, Guid expectedRevision, CancellationToken cancellationToken);
@@ -21,7 +23,10 @@ public sealed record NormalizationAiRun(Guid Id, Guid Revision, Guid ClientReque
 	DateTimeOffset CreatedAt, DateTimeOffset? CompletedAt, string? ErrorCode, string? ErrorDetail,
 	IReadOnlyList<NormalizationAiProposal> Proposals, ChatGptUsage? Usage);
 public sealed record NormalizationAiProposal(Guid Id, Guid ReceiptItemId, string Description, string Action,
-	Guid? TargetId, string? CanonicalName, string? DisplayLabel, string? Reason, string State);
+	Guid? TargetId, string? CanonicalName, string? DisplayLabel, string? Reason, string State,
+	Application.Normalization.NormalizationSourceKey? Source = null, Guid? TargetRevision = null, bool IncludeLegacyUnknown = false, bool LabelOnly = false, string? SuggestedDisplayLabel = null);
+
+public sealed record NormalizationAiSourceSelection(Application.Normalization.NormalizationSourceKey Source, bool IncludeLegacyUnknown, bool LabelOnly = false);
 
 public sealed class NormalizationAiException(int statusCode, string code, string detail) : Exception(detail)
 {

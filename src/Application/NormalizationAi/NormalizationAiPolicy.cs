@@ -2,9 +2,12 @@ using System.Text.Json;
 
 namespace Application.NormalizationAi;
 
-public sealed record NormalizationAiTarget(Guid Id, Guid Revision, string Name, string? DisplayLabel, double? Score);
-public sealed record NormalizationAiInput(Guid Id, string Description, IReadOnlyList<NormalizationAiTarget> Candidates);
-public sealed record NormalizationAiDecision(Guid Id, string Action, Guid? TargetId, string? DisplayLabel, string Reason);
+public sealed record NormalizationAiTarget(Guid Id, Guid Revision, string Name, string? DisplayLabel, double? Score,
+	IReadOnlyList<string>? ApprovedExamples = null, IReadOnlyList<string>? Channels = null,
+	IReadOnlyList<NormalizationApprovedExample>? ApprovedEvidence = null);
+public sealed record NormalizationApprovedExample(string Description, bool SameScope);
+public sealed record NormalizationAiInput(Guid Id, string Description, IReadOnlyList<NormalizationAiTarget> Candidates, bool LabelOnly = false);
+public sealed record NormalizationAiDecision(Guid Id, string Action, Guid? TargetId, string? DisplayLabel, string Reason, string? SuggestedDisplayLabel = null);
 
 /// <summary>Pure validation and payload policy. Provider output cannot expand the selected data or candidate set.</summary>
 public static class NormalizationAiPolicy

@@ -11,9 +11,9 @@ public static class ChatGptCommand
 	{
 		if (args.Length == 0 || !(args.Length == 1 && args[0] is "--chatgpt-login" or "--chatgpt-status" or "--chatgpt-logout"
 			|| args.Length == 2 && args[0] == "--chatgpt-probe"
-			|| args.Length == 4 && args[0] == "--chatgpt-evaluate"))
+						|| args.Length == 4 && args[0] is "--chatgpt-evaluate" or "--chatgpt-evaluate-catalog"))
 		{
-			await error.WriteLineAsync("Usage: --chatgpt-login | --chatgpt-status | --chatgpt-logout | --chatgpt-probe MODEL | --chatgpt-evaluate MODEL example|holdout REPORT_PATH");
+			await error.WriteLineAsync("Usage: --chatgpt-login | --chatgpt-status | --chatgpt-logout | --chatgpt-probe MODEL | --chatgpt-evaluate MODEL example|holdout REPORT_PATH | --chatgpt-evaluate-catalog MODEL example|holdout REPORT_PATH");
 			return 2;
 		}
 		using CancellationTokenSource cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -44,10 +44,13 @@ public static class ChatGptCommand
 					foreach (string model in await runner.GetModelsAsync(token)) { await output.WriteLineAsync(model); }
 					break;
 				case "--chatgpt-evaluate":
+				case "--chatgpt-evaluate-catalog":
 					// Keep one account stable across all cases; login/logout acquire the same operator lease.
 					using (ChatGptOperatorLease.Acquire(services.GetRequiredService<IOptions<PiNormalizationRunnerOptions>>().Value))
 					{
-						return await ChatGptEvaluationCommand.RunAsync(args[1], args[2], args[3], runner, output, token);
+						return args[0] == "--chatgpt-evaluate-catalog"
+								? await ChatGptCatalogEvaluationCommand.RunAsync(args[1], args[2], args[3], runner, output, token)
+								: await ChatGptEvaluationCommand.RunAsync(args[1], args[2], args[3], runner, output, token);
 					}
 				case "--chatgpt-probe":
 					if (!(await runner.GetModelsAsync(token)).Contains(args[1], StringComparer.Ordinal))
@@ -75,8 +78,8 @@ public static class ChatGptCommand
 			await error.WriteLineAsync($"Normalization operation failed ({exception.Code}).");
 			return 1;
 		}
-		catch (Exception exception) when (args[0] == "--chatgpt-evaluate"
-			&& exception is IOException or UnauthorizedAccessException or ArgumentException)
+		catch (Exception exception) when (args[0] is "--chatgpt-evaluate" or "--chatgpt-evaluate-catalog"
+	&& exception is IOException or UnauthorizedAccessException or ArgumentException)
 		{
 			await error.WriteLineAsync("Evaluation requires an explicit model, example or holdout split, and a new writable report path. Existing reports are never overwritten.");
 			return 1;

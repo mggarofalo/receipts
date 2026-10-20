@@ -24,6 +24,7 @@ public class NormalizationAiHttpTests
 	[InlineData("candidates", "GET")]
 	[InlineData("runs", "GET")]
 	[InlineData("runs", "POST")]
+	[InlineData("source-runs", "POST")]
 	[InlineData("runs/10000000-0000-0000-0000-000000000001/apply", "POST")]
 	public async Task AnonymousAndNonAdminCannotReachService(string path, string method)
 	{
@@ -93,6 +94,28 @@ public class NormalizationAiHttpTests
 		service.VerifyNoOtherCalls();
 	}
 
+	[Fact]
+	public async Task SourceRunPreservesIndependentScopeConsentAndAuthenticatedActor()
+	{
+		Guid intent = Guid.NewGuid(), runId = Guid.NewGuid();
+		NormalizationAiSourceSelection[] selections = [
+			new(new("Store A", "FRANKS", "001"), false),
+			new(new("Store B", "FRANKS", null), true)];
+		var service = new Mock<INormalizationAiService>(MockBehavior.Strict);
+		service.Setup(x => x.StartSourcesAsync("owner", intent,
+			It.Is<IReadOnlyList<NormalizationAiSourceSelection>>(values => values.SequenceEqual(selections)),
+			"model-a", It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new NormalizationAiRun(runId, Guid.NewGuid(), intent, "queued", "model-a",
+				DateTimeOffset.Parse("2026-01-01T00:00:00Z"), null, null, null, [], null));
+		await using var app = await Start(service);
+		using var client = app.GetTestClient(); client.DefaultRequestHeaders.Add("Test-Role", "Admin");
+		using var response = await client.PostAsJsonAsync("/api/normalization-ai/source-runs",
+			new { clientRequestId = intent, sources = selections, model = "model-a", actor = "attacker" });
+		response.StatusCode.Should().Be(HttpStatusCode.OK);
+		using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+		json.RootElement.GetProperty("id").GetGuid().Should().Be(runId);
+		service.VerifyAll();
+	}
 	private static async Task<WebApplication> Start(Mock<INormalizationAiService> service)
 	{
 		var builder = WebApplication.CreateBuilder();

@@ -35,6 +35,12 @@ public sealed class NormalizationAiProposalEntity
 	public Guid ReceiptItemId { get; set; }
 	public Guid ReceiptId { get; set; }
 	public Guid SourceRevision { get; set; }
+	public string? SourceLocation { get; set; }
+	public string? SourceItemCode { get; set; }
+	public Guid? SourceReceiptRevision { get; set; }
+	public bool IncludeLegacyUnknown { get; set; }
+	public bool LabelOnly { get; set; }
+	public string? SuggestedDisplayLabel { get; set; }
 	public Guid? SourceCanonicalId { get; set; }
 	public Guid? SourceCanonicalRevision { get; set; }
 	public double? SourceMatchScore { get; set; }

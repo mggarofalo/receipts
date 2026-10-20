@@ -58,7 +58,7 @@ A dashboard of spending trends and category breakdowns, plus focused reports: ca
 
 Store abbreviations can hide purchases from search and split one product's history across several names. Normalized descriptions link purchases to a shared, readable identity while preserving the original receipt text, quantities and prices. Purchase search can match those names, and normalization-aware reports can use the linked groups.
 
-Local similarity matching uses sentence embeddings (`bge-large-en-v1.5` via ONNX Runtime, stored in `pgvector`) without an embedding API key. The optional ChatGPT workflow proposes names or existing matches for selected items, which you review before applying. The intended outcome is a complete catalog that also remembers how to handle new descriptions; the current selected-item workflow does not yet provide that entire lifecycle. See [the normalization overview](docs/chatgpt-normalization.md) for what works, the historical-cleanup and ongoing-processing gaps, and setup instructions.
+Local similarity matching uses sentence embeddings (`bge-large-en-v1.5` via ONNX Runtime, stored in `pgvector`) without an embedding API key. The catalog workflow in this PR reviews distinct store descriptions, previews historical changes, and remembers approved exact mappings for new purchases. Optional ChatGPT suggestions help interpret unfamiliar descriptions; they never authorize a write. Catalog acceptance is in progress. See [the normalization overview](docs/chatgpt-normalization.md) for the workflow, correction safeguards, evidence limits, and setup.
 
 ### 🔗 YNAB integration
 

@@ -604,6 +604,197 @@ namespace Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Infrastructure.Entities.Core.NormalizationCatalogMemberEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("AppliedRevision")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("AssignmentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ItemId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("OperationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("PreviousAssignmentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("PreviousMappingId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("PreviousOrigin")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<double?>("PreviousScore")
+                        .HasColumnType("double precision");
+
+                    b.Property<Guid?>("PreviousTargetId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ReceiptId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ReceiptRevision")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("SourceRevision")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ItemId")
+                        .HasFilter("\"State\" = 'pending'");
+
+                    b.HasIndex("OperationId", "ItemId")
+                        .IsUnique();
+
+                    b.HasIndex("OperationId", "State");
+
+                    b.ToTable("NormalizationCatalogMembers", "matching");
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Core.NormalizationCatalogOperationEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Actor")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("ClientRequestId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("ErrorCode")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ErrorDetail")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("Exclude")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IncludeLegacyUnknown")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ItemCode")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Location")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid?>("MappingId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("NewCanonicalName")
+                        .HasColumnType("text");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("Revision")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid?>("SuggestionProposalId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("SuggestionRunId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("SuggestionRunRevision")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("TargetId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("TargetRevision")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Actor", "ClientRequestId")
+                        .IsUnique();
+
+                    b.ToTable("NormalizationCatalogOperations", "matching");
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Core.NormalizationSourceMappingEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("ApprovedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("ApprovedBy")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<bool>("Exclude")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ItemCode")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Location")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("Revision")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("SourceHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("text");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("text");
+
+                    b.Property<Guid?>("TargetId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SourceHash")
+                        .IsUnique()
+                        .HasFilter("\"State\" = 'active'");
+
+                    b.ToTable("NormalizationSourceMappings", "matching");
+                });
+
             modelBuilder.Entity("Infrastructure.Entities.Core.NormalizedDescriptionEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -703,6 +894,11 @@ namespace Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<Guid>("NormalizationRevision")
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("uuid")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
                     b.Property<string>("OriginalImagePath")
                         .HasMaxLength(1024)
                         .HasColumnType("text");
@@ -751,6 +947,19 @@ namespace Infrastructure.Migrations
                     b.Property<string>("Description")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<Guid?>("NormalizationAssignmentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("NormalizationMappingId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("NormalizationOrigin")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("text")
+                        .HasDefaultValue("unassigned");
 
                     b.Property<Guid>("NormalizationRevision")
                         .ValueGeneratedOnAddOrUpdate()
@@ -1279,6 +1488,12 @@ namespace Infrastructure.Migrations
                     b.Property<string>("DisplayLabel")
                         .HasColumnType("text");
 
+                    b.Property<bool>("IncludeLegacyUnknown")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("LabelOnly")
+                        .HasColumnType("boolean");
+
                     b.Property<double?>("MatchScore")
                         .HasColumnType("double precision");
 
@@ -1300,8 +1515,17 @@ namespace Infrastructure.Migrations
                     b.Property<Guid?>("SourceCanonicalRevision")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("SourceItemCode")
+                        .HasColumnType("text");
+
+                    b.Property<string>("SourceLocation")
+                        .HasColumnType("text");
+
                     b.Property<double?>("SourceMatchScore")
                         .HasColumnType("double precision");
+
+                    b.Property<Guid?>("SourceReceiptRevision")
+                        .HasColumnType("uuid");
 
                     b.Property<Guid>("SourceRevision")
                         .HasColumnType("uuid");
@@ -1309,6 +1533,9 @@ namespace Infrastructure.Migrations
                     b.Property<string>("State")
                         .IsRequired()
                         .HasMaxLength(24)
+                        .HasColumnType("text");
+
+                    b.Property<string>("SuggestedDisplayLabel")
                         .HasColumnType("text");
 
                     b.Property<Guid?>("TargetId")
@@ -1600,6 +1827,15 @@ namespace Infrastructure.Migrations
                     b.Navigation("NormalizedDescription");
                 });
 
+            modelBuilder.Entity("Infrastructure.Entities.Core.NormalizationCatalogMemberEntity", b =>
+                {
+                    b.HasOne("Infrastructure.Entities.Core.NormalizationCatalogOperationEntity", null)
+                        .WithMany("Members")
+                        .HasForeignKey("OperationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Infrastructure.Entities.Core.NormalizedDescriptionEntity", b =>
                 {
                     b.HasOne("Infrastructure.Entities.Core.NormalizedDescriptionEntity", "NearestNeighbour")
@@ -1748,6 +1984,11 @@ namespace Infrastructure.Migrations
             modelBuilder.Entity("Infrastructure.Entities.Core.CategoryEntity", b =>
                 {
                     b.Navigation("Subcategories");
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Core.NormalizationCatalogOperationEntity", b =>
+                {
+                    b.Navigation("Members");
                 });
 
             modelBuilder.Entity("Infrastructure.Entities.NormalizationAi.NormalizationAiRunEntity", b =>

@@ -102,13 +102,26 @@ export function ChatGptTab() {
               ) : run.isPending ? (
                 <p role="status">Loading run...</p>
               ) : (
-                run.data && (
+                run.data &&
+                (run.data.proposals.some((proposal) => proposal.source) ? (
+                  <Button
+                    onClick={() =>
+                      setParams((previous) => {
+                        const next = new URLSearchParams(previous);
+                        next.set("tab", "catalog");
+                        return next;
+                      })
+                    }
+                  >
+                    Review these source suggestions in Catalog
+                  </Button>
+                ) : (
                   <AiRunReview
                     key={`${run.data.id}:${run.data.revision}`}
                     run={run.data}
                     onRetried={selectRun}
                   />
-                )
+                ))
               )}
             </>
           )}
