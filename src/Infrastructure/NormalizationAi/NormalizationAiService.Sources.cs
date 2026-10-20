@@ -146,8 +146,13 @@ public sealed partial class NormalizationAiService
 			.Select(item => item.NormalizedDescriptionId!.Value).Distinct().Take(2).ToArrayAsync(ct);
 		if (targets.Length != 1)
 		{ throw Error(409, "label_source_ambiguous", "A display-label suggestion needs one unambiguous existing product identity for this source. Review its identities first."); }
-		return await context.NormalizedDescriptions.SingleOrDefaultAsync(target => target.Id == targets[0] && target.Status == NormalizedDescriptionStatus.Active, ct)
-			?? throw Error(409, "label_source_ambiguous", "The source must refer to an active product identity before requesting a display label.");
+		var target = await context.NormalizedDescriptions.SingleOrDefaultAsync(target => target.Id == targets[0], ct);
+		if (target?.Status == NormalizedDescriptionStatus.Active) { return target; }
+		bool pending = target?.Status == NormalizedDescriptionStatus.PendingReview;
+		throw new NormalizationAiException(409, pending ? "pending_identity_requires_review" : "label_target_inactive",
+			pending ? "The linked identity is awaiting review. Review and explicitly approve it before requesting a display label."
+				: "The linked identity is not active. Review its status; rejected identities are not activated automatically.",
+			new Dictionary<string, object?> { ["normalizedDescriptionId"] = targets[0], ["normalizedDescriptionStatus"] = pending ? "pendingReview" : "rejected" });
 	}
 
 }

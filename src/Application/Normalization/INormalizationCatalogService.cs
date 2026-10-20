@@ -22,7 +22,7 @@ public interface INormalizationCatalogService
 /// <summary>Exact ordinal keys after trimming outer ASCII spaces (U+0020). Missing/space-only codes are distinct from present codes.</summary>
 public sealed record NormalizationSourceKey(string Location, string Description, string? ItemCode);
 public sealed record NormalizationSourceGroup(NormalizationSourceKey Source, int ItemCount, int UnassignedCount,
-	int LegacyUnknownCount, int AutomaticCount, int ProtectedCount, Guid? MappingId, int RevisableCount = 0);
+	int LegacyUnknownCount, int AutomaticCount, int ProtectedCount, Guid? MappingId, int RevisableCount = 0, IReadOnlyList<NormalizationLinkedTarget>? LinkedTargets = null, int LinkedTargetCount = 0);
 public sealed record NormalizationSourcePage(IReadOnlyList<NormalizationSourceGroup> Items, int Total);
 public sealed record NormalizationCatalogCoverage(int TotalItems, int Unassigned, int LegacyUnknown,
 	int Automatic, int Reviewed, int Mapped, int Protected, int Excluded, int Revisable = 0);
@@ -43,3 +43,5 @@ public sealed record NormalizationCatalogLabelReview(Guid TargetId, Guid TargetR
 	string? CurrentDisplayLabel, string? ProposedDisplayLabel, int AffectedItemCount);
 public sealed record NormalizationCatalogLabelApproval(string? DisplayLabel, Guid ExpectedTargetRevision, int ExpectedAffectedItemCount,
 	Guid? SuggestionRunId = null, Guid? SuggestionProposalId = null, Guid? SuggestionRunRevision = null);
+
+public sealed record NormalizationLinkedTarget(Guid Id, string Name, Domain.NormalizedDescriptions.NormalizedDescriptionStatus Status);

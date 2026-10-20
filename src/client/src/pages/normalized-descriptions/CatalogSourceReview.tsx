@@ -1,4 +1,6 @@
 import { useId, useRef, useState } from "react";
+import { Link } from "react-router";
+import { PendingIdentityRecovery } from "./PendingIdentityRecovery";
 import {
   useCatalogActions,
   useCatalogCandidates,
@@ -100,6 +102,16 @@ export function CatalogSourceReview({
           Find existing name
         </Button>
       </form>
+      <p className="text-sm">
+        Only Active identities can be selected here.{" "}
+        <Link
+          className="underline"
+          to={`/admin/normalized-descriptions?${new URLSearchParams({ tab: "review", reviewQ: lookup, catalogSource: JSON.stringify(source) })}`}
+        >
+          Search pending identities for this name
+        </Link>{" "}
+        if it is awaiting review.
+      </p>
       {candidates.isPending ? (
         <p role="status">Finding existing names...</p>
       ) : candidates.isError ? (
@@ -237,9 +249,10 @@ export function CatalogSourceReview({
           : "Preview historical changes"}
       </Button>
       {error && (
-        <p role="alert" className="text-destructive">
-          {extractErrorMessage(error)}
-        </p>
+        <div role="alert" className="space-y-2 text-destructive">
+          <p>{extractErrorMessage(error)}</p>
+          <PendingIdentityRecovery error={error} source={source} />
+        </div>
       )}
       <section className="space-y-2" aria-label="Saved source mappings">
         <h3 className="font-medium">Saved mappings</h3>

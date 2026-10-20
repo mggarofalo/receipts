@@ -48,6 +48,7 @@ describe("useNormalizedDescriptions", () => {
     expect(mockClient.GET).toHaveBeenCalledWith(
       "/api/normalized-descriptions",
       {
+        signal: expect.any(AbortSignal),
         params: {
           query: { status: undefined, q: undefined, offset: 0, limit: 50 },
         },
@@ -72,6 +73,7 @@ describe("useNormalizedDescriptions", () => {
     expect(mockClient.GET).toHaveBeenCalledWith(
       "/api/normalized-descriptions",
       {
+        signal: expect.any(AbortSignal),
         params: {
           query: {
             status: ["PendingReview"],
@@ -103,6 +105,7 @@ describe("useNormalizedDescriptions", () => {
     expect(mockClient.GET).toHaveBeenCalledWith(
       "/api/normalized-descriptions",
       {
+        signal: expect.any(AbortSignal),
         params: {
           query: {
             status: ["Active", "PendingReview"],
@@ -132,6 +135,7 @@ describe("useNormalizedDescriptions", () => {
     expect(mockClient.GET).toHaveBeenCalledWith(
       "/api/normalized-descriptions",
       {
+        signal: expect.any(AbortSignal),
         params: {
           query: { status: ["Active"], q: undefined, offset: 0, limit: 50 },
         },
@@ -162,6 +166,7 @@ describe("useNormalizedDescriptions", () => {
     expect(mockClient.GET).toHaveBeenCalledWith(
       "/api/normalized-descriptions",
       {
+        signal: expect.any(AbortSignal),
         params: {
           query: { status: ["Active"], q: "milk", offset: 100, limit: 25 },
         },
@@ -191,6 +196,7 @@ describe("useNormalizedDescriptions", () => {
     expect(mockClient.GET).toHaveBeenCalledWith(
       "/api/normalized-descriptions",
       {
+        signal: expect.any(AbortSignal),
         params: {
           query: { status: undefined, q: undefined, offset: 0, limit: 50 },
         },

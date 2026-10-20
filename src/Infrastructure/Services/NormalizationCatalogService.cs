@@ -111,18 +111,34 @@ public sealed partial class NormalizationCatalogService(
 			_ => groups
 		};
 		int total = await groups.CountAsync(cancellationToken);
-		var page = await groups.OrderBy(group => group.Description).ThenBy(group => group.Location).ThenBy(group => group.Code)
-			.Skip(offset).Take(limit).ToListAsync(cancellationToken);
+		var liveItems = Live(context);
+		var projectedPage = await groups.OrderBy(group => group.Description).ThenBy(group => group.Location).ThenBy(group => group.Code)
+			.Skip(offset).Take(limit).Select(group => new
+			{
+				Group = group,
+				LinkedTargetCount = liveItems.Where(item => item.Description.Trim(' ') == group.Description
+					&& (item.ReceiptItemCode == null || item.ReceiptItemCode.Trim(' ') == "" ? null : item.ReceiptItemCode.Trim(' ')) == group.Code
+					&& context.Receipts.Any(receipt => receipt.Id == item.ReceiptId && receipt.Location.Trim(' ') == group.Location)
+					&& item.NormalizedDescriptionId != null).Select(item => item.NormalizedDescriptionId).Distinct().Count(),
+				LinkedTargets = context.NormalizedDescriptions.Where(target => liveItems.Any(item => item.NormalizedDescriptionId == target.Id
+					&& item.Description.Trim(' ') == group.Description
+					&& (item.ReceiptItemCode == null || item.ReceiptItemCode.Trim(' ') == "" ? null : item.ReceiptItemCode.Trim(' ')) == group.Code
+					&& context.Receipts.Any(receipt => receipt.Id == item.ReceiptId && receipt.Location.Trim(' ') == group.Location)))
+					.OrderBy(target => target.DisplayLabel ?? target.CanonicalName).ThenBy(target => target.Id).Take(5)
+					.Select(target => new NormalizationLinkedTarget(target.Id, target.DisplayLabel ?? target.CanonicalName, target.Status)).ToList()
+			}).ToListAsync(cancellationToken);
+		var page = projectedPage.Select(row => row.Group).ToArray();
 		string[] hashes = page.Select(row => NormalizationCatalogPolicy.Hash(new(row.Location, row.Description, row.Code))).ToArray();
 		var mappings = await context.NormalizationSourceMappings.Where(mapping => mapping.State == "active" && hashes.Contains(mapping.SourceHash))
 			.Select(mapping => new { mapping.SourceHash, mapping.Id }).ToDictionaryAsync(mapping => mapping.SourceHash, mapping => mapping.Id, cancellationToken);
 		List<NormalizationSourceGroup> result = [];
-		foreach (var row in page)
+		foreach (var projected in projectedPage)
 		{
+			var row = projected.Group;
 			NormalizationSourceKey source = new(row.Location, row.Description, row.Code);
 			string hash = NormalizationCatalogPolicy.Hash(source);
 			Guid? mapping = mappings.TryGetValue(hash, out Guid mappingId) ? mappingId : null;
-			result.Add(new(source, row.Total, row.Unassigned, row.Legacy, row.Automatic, row.Protected + row.Mapped + row.Excluded, mapping, row.Revisable));
+			result.Add(new(source, row.Total, row.Unassigned, row.Legacy, row.Automatic, row.Protected + row.Mapped + row.Excluded, mapping, row.Revisable, projected.LinkedTargets, projected.LinkedTargetCount));
 		}
 		return new(result, total);
 	}
@@ -248,8 +264,20 @@ public sealed partial class NormalizationCatalogService(
 		else
 		{
 			string name = operation.NewCanonicalName!.ToLowerInvariant();
-			if (await context.NormalizedDescriptions.AnyAsync(target => target.CanonicalName.ToLower() == name || (target.DisplayLabel ?? target.CanonicalName).ToLower() == name, ct))
-			{ throw Error(409, "name_exists", "This name already exists. Review and choose the existing target."); }
+			var existing = await context.NormalizedDescriptions.Where(target => target.CanonicalName.ToLower() == name
+				|| (target.DisplayLabel ?? target.CanonicalName).ToLower() == name).OrderBy(target => target.Id).FirstOrDefaultAsync(ct);
+			if (existing is not null)
+			{
+				bool pending = existing.Status == NormalizedDescriptionStatus.PendingReview;
+				throw new NormalizationCatalogException(409, pending ? "pending_identity_requires_review" : "name_exists",
+					pending ? "This name belongs to an identity awaiting review. Review and explicitly approve it before choosing it for a mapping."
+						: "This name already exists. Choose its active identity, or review its current status.",
+					new Dictionary<string, object?>
+					{
+						["normalizedDescriptionId"] = existing.Id,
+						["normalizedDescriptionStatus"] = pending ? "pendingReview" : existing.Status == NormalizedDescriptionStatus.Active ? "active" : "rejected"
+					});
+			}
 		}
 	}
 

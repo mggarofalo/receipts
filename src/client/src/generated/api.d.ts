@@ -3012,7 +3012,20 @@ export interface components {
             description: string;
             itemCode?: string | null;
         };
+        NormalizationLinkedTargetResponse: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            status: components["schemas"]["NormalizedDescriptionStatus"];
+        };
         NormalizationSourceGroupResponse: {
+            /**
+             * Format: int32
+             * @description Number of distinct currently linked identities; multiple identities remain ambiguous.
+             */
+            linkedTargetCount?: number;
+            /** @description Up to five current linked identities, for explicit review navigation. Missing entries do not imply a single identity. */
+            linkedTargets?: components["schemas"]["NormalizationLinkedTargetResponse"][];
             /** Format: int32 */
             revisableCount?: number;
             source: components["schemas"]["NormalizationSourceKey"];

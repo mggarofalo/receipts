@@ -6848,6 +6848,17 @@ components:
           type:
             - string
             - 'null'
+    NormalizationLinkedTargetResponse:
+      type: object
+      required: [id, name, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        status:
+          $ref: '#/components/schemas/NormalizedDescriptionStatus'
     NormalizationSourceGroupResponse:
       type: object
       required:
@@ -6858,6 +6869,15 @@ components:
         - automaticCount
         - protectedCount
       properties:
+        linkedTargetCount:
+          type: integer
+          format: int32
+          description: Number of distinct currently linked identities; multiple identities remain ambiguous.
+        linkedTargets:
+          type: array
+          description: Up to five current linked identities, for explicit review navigation. Missing entries do not imply a single identity.
+          items:
+            $ref: '#/components/schemas/NormalizationLinkedTargetResponse'
         revisableCount:
           type: integer
           format: int32

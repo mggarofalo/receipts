@@ -112,6 +112,15 @@ name editing. Reviewed coverage and readable naming are separate measures:
 a mapped purchase does not prove its display name is useful, and an existing
 display label does not prove a human has verified its meaning.
 
+An existing assignment may point to a **Pending review** identity. Such an identity
+is not eligible for model matching or display-name suggestions yet. Catalog source
+rows show their linked identities and statuses; use the pending identity's review
+link to inspect it, then explicitly approve or merge it using the existing review
+controls. The review queue also supports search. Return to the source after review
+to refresh its eligibility. If a proposed new name already belongs to a pending
+identity, the rejection provides the same review route. Navigation and model
+suggestions never approve identities automatically.
+
 ### What the model can and cannot see
 
 The model does not browse the database or search repeatedly on its own. The
@@ -133,6 +142,15 @@ and the model can choose incorrectly even when it is present. Evaluation must
 measure these separately, including missing candidates, conflicting variants,
 ambiguous abbreviations, candidate-order changes, and misleading examples.
 Adding more examples is not automatically better.
+
+The [October 20 diagnostic evaluation](normalization-evaluation/2026-10-20-agent-harness.md)
+records actual blind model calls using synthetic cases and a small, independently
+labeled sample from a real backup. It separates identity agreement, readable-name
+review, and consolidation. These agent-harness results do not validate production
+Pi authentication, retrieval recall, or the correctness of every historical
+assignment. Two equivalent existing identities can each receive a valid match
+and a readable name while their histories remain separate; use explicit reviewed
+merge controls to consolidate them.
 
 ### Why keep review and provenance?
 

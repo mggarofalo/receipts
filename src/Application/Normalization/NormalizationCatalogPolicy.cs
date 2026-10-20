@@ -59,8 +59,9 @@ public static class NormalizationCatalogPolicy
 	}
 }
 
-public sealed class NormalizationCatalogException(int statusCode, string code, string detail) : Exception(detail)
+public sealed class NormalizationCatalogException(int statusCode, string code, string detail, IReadOnlyDictionary<string, object?>? extensions = null) : Exception(detail)
 {
 	public int StatusCode { get; } = statusCode;
 	public string Code { get; } = code;
+	public IReadOnlyDictionary<string, object?> Extensions { get; } = extensions ?? new Dictionary<string, object?>();
 }

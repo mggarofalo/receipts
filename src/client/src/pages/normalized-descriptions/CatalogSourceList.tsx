@@ -1,4 +1,10 @@
 import { useId, useRef, useState } from "react";
+import { Link, useSearchParams } from "react-router";
+import {
+  pendingReviewHref,
+  readCatalogSource,
+} from "./catalog-review-navigation";
+import { PendingIdentityRecovery } from "./PendingIdentityRecovery";
 import {
   useCatalogSources,
   useCatalogSuggestions,
@@ -30,11 +36,15 @@ export function CatalogSourceList({
   onReview: (source: CatalogSource) => void;
   onStarted: (id: string) => void;
 }) {
-  const [query, setQuery] = useState("");
+  const [params] = useSearchParams();
+  const returnedSource = readCatalogSource(params.get("catalogSource"));
+  const [query, setQuery] = useState(returnedSource?.description ?? "");
   const legacyControlId = useId();
   const labelControlId = useId();
   const [labelOnly, setLabelOnly] = useState(false);
-  const [disposition, setDisposition] = useState("needs-review");
+  const [disposition, setDisposition] = useState(
+    returnedSource ? "all" : "needs-review",
+  );
   const [selection, setSelection] = useState<CatalogSource[]>([]);
   const [model, setModel] = useState("");
   const [includeLegacy, setIncludeLegacy] = useState(false);
@@ -65,6 +75,17 @@ export function CatalogSourceList({
     connection.data.credentialsPresent &&
     !connection.data.busy &&
     availableModels.includes(model);
+  const selectionEligible =
+    !labelOnly ||
+    selection.every((source) => {
+      const row = sources.data?.items.find(
+        (group) => sourceId(group.source) === sourceId(source),
+      );
+      return (
+        row?.linkedTargetCount === 1 &&
+        row.linkedTargets?.[0]?.status === "active"
+      );
+    });
   const total = sources.data?.total ?? 0;
   return (
     <section className="space-y-4" aria-label="Catalog source descriptions">
@@ -74,6 +95,13 @@ export function CatalogSourceList({
         new purchases. Unknown legacy assignments need an explicit decision;
         they are not evidence of prior review.
       </p>
+      {returnedSource && (
+        <p role="status">
+          Returned to {returnedSource.description} at {returnedSource.location}
+          {returnedSource.itemCode ? ` (${returnedSource.itemCode})` : ""}.
+          Linked identity status is refreshed after explicit review.
+        </p>
+      )}
       <form
         className="flex flex-wrap gap-2"
         onSubmit={(event) => {
@@ -86,6 +114,7 @@ export function CatalogSourceList({
       >
         <Input
           name="q"
+          defaultValue={query}
           maxLength={200}
           aria-label="Find source descriptions"
           placeholder="Search descriptions"
@@ -129,6 +158,7 @@ export function CatalogSourceList({
               <TableHead>Select</TableHead>
               <TableHead>Description</TableHead>
               <TableHead>Store / code</TableHead>
+              <TableHead>Current identities</TableHead>
               <TableHead>Purchases</TableHead>
               <TableHead>Needs review</TableHead>
               <TableHead>Review</TableHead>
@@ -145,7 +175,12 @@ export function CatalogSourceList({
                       aria-label={`Select ${group.source.description} at ${group.source.location}`}
                       checked={selected}
                       disabled={
-                        start.isPending || (!selected && selection.length >= 50)
+                        start.isPending ||
+                        sources.isFetching ||
+                        (!selected && selection.length >= 50) ||
+                        (labelOnly &&
+                          (group.linkedTargetCount !== 1 ||
+                            group.linkedTargets?.[0]?.status !== "active"))
                       }
                       onCheckedChange={(checked) =>
                         setSelection((current) =>
@@ -167,6 +202,45 @@ export function CatalogSourceList({
                     <span className="block text-sm">
                       {group.source.itemCode || "No item code"}
                     </span>
+                  </TableCell>
+                  <TableCell>
+                    {(group.linkedTargets ?? []).map((target) => (
+                      <div key={target.id}>
+                        <span>
+                          {target.name} —{" "}
+                          {target.status === "pendingReview"
+                            ? "Pending review"
+                            : target.status === "active"
+                              ? "Active"
+                              : "Rejected"}
+                        </span>
+                        {target.status === "pendingReview" && (
+                          <Link
+                            className="block underline"
+                            to={pendingReviewHref(target.id, group.source)}
+                          >
+                            Review pending identity
+                          </Link>
+                        )}
+                      </div>
+                    ))}
+                    {!group.linkedTargetCount && (
+                      <span>No linked identity</span>
+                    )}
+                    {(group.linkedTargetCount ?? 0) > 1 && (
+                      <p className="text-sm">
+                        Multiple identities: review ambiguity before requesting
+                        a display name.
+                      </p>
+                    )}
+                    {(group.linkedTargetCount ?? 0) >
+                      (group.linkedTargets?.length ?? 0) && (
+                      <p>
+                        {group.linkedTargetCount! -
+                          (group.linkedTargets?.length ?? 0)}{" "}
+                        more linked identities
+                      </p>
+                    )}
                   </TableCell>
                   <TableCell>{group.itemCount}</TableCell>
                   <TableCell>
@@ -255,9 +329,10 @@ export function CatalogSourceList({
         {labelOnly && (
           <p>
             Select existing product descriptions, including mapped or protected
-            sources. Each selected source must have exactly one existing product
-            identity. Suggestions cannot reassign purchases. Names require a
-            separate global review.
+            sources. Each selected source must have exactly one Active product
+            identity. Follow its pending-review link and explicitly approve it
+            first if needed. Suggestions cannot reassign purchases. Names
+            require a separate global review.
           </p>
         )}
         <label className="block">
@@ -285,7 +360,14 @@ export function CatalogSourceList({
           Include unknown legacy assignments when requesting suggestions
         </label>
         <Button
-          disabled={!canRequest || !selection.length || start.isPending}
+          disabled={
+            !canRequest ||
+            !selection.length ||
+            !selectionEligible ||
+            sources.isFetching ||
+            sources.isError ||
+            start.isPending
+          }
           onClick={() => {
             const body = {
               model,
@@ -307,7 +389,15 @@ export function CatalogSourceList({
               ? "Suggest readable display names"
               : "Suggest normalized names"}
         </Button>
-        {start.error && <p role="alert">{extractErrorMessage(start.error)}</p>}
+        {start.error && (
+          <>
+            <p role="alert">{extractErrorMessage(start.error)}</p>
+            <PendingIdentityRecovery
+              error={start.error}
+              source={selection.length === 1 ? selection[0] : undefined}
+            />
+          </>
+        )}
       </fieldset>
     </section>
   );

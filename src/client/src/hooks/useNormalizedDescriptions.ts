@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import client from "@/lib/api-client";
+import { toApiError } from "@/lib/problem-details";
 
 export type NormalizedDescriptionStatusFilter =
   | "Active"
@@ -68,8 +69,9 @@ export function useNormalizedDescriptions({
     // Keeps the previous page on screen while the next one loads, so paging and typing in the
     // search box do not blank the table on every keystroke.
     placeholderData: keepPreviousData,
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/api/normalized-descriptions", {
+        signal,
         params: { query: { status: statuses, q: trimmedQ, offset, limit } },
       });
       if (error) throw error;
@@ -87,4 +89,22 @@ export function useNormalizedDescriptions({
     }),
     [query],
   );
+}
+
+export function useNormalizedDescriptionById(id: string | null) {
+  return useQuery({
+    queryKey: ["normalized-descriptions", "detail", id],
+    enabled: !!id,
+    queryFn: async ({ signal }) => {
+      const { data, error, response } = await client.GET(
+        "/api/normalized-descriptions/{id}",
+        {
+          signal,
+          params: { path: { id: id! } },
+        },
+      );
+      if (!response.ok) throw toApiError(response.status, error);
+      return data!;
+    },
+  });
 }

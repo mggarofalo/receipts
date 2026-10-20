@@ -11,6 +11,13 @@ vi.mock("@/lib/api-client", () => ({
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("@/hooks/useNormalizedDescriptions", () => ({
   NORMALIZED_DESCRIPTION_PAGE_SIZE: 50,
+  useNormalizedDescriptionById: () =>
+    mockQueryResult({
+      data: undefined,
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+    }),
   useNormalizedDescriptions: (options: { status?: string | string[] }) =>
     mockQueryResult({
       items: Array.isArray(options.status)

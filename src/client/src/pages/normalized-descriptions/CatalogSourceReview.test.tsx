@@ -1,5 +1,6 @@
 import { toApiError } from "@/lib/problem-details";
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
+import { renderWithProviders as render } from "@/test/test-utils";
 import userEvent from "@testing-library/user-event";
 import { CatalogSourceReview } from "./CatalogSourceReview";
 import {
@@ -301,4 +302,38 @@ it("finds an omitted canonical name without replacing the source being approved 
       targetRevision: omitted.revision,
     }),
   );
+});
+
+it("recovers the conflicting proposed-name identity rather than searching the source text", async () => {
+  const user = userEvent.setup();
+  const { rerender } = render(
+    <CatalogSourceReview source={source} onPreview={vi.fn()} />,
+  );
+  await user.type(
+    screen.getByRole("textbox", { name: "Or propose a new canonical name" }),
+    "Different pending product",
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Preview historical changes" }),
+  );
+  expect(mutate.mock.calls[0][0]).toMatchObject({
+    source,
+    newCanonicalName: "Different pending product",
+    targetId: null,
+  });
+  error = toApiError(409, {
+    detail: "Review this identity first.",
+    normalizedDescriptionId: candidate.id,
+    normalizedDescriptionStatus: "pendingReview",
+  });
+  rerender(<CatalogSourceReview source={source} onPreview={vi.fn()} />);
+  const link = screen.getByRole("link", {
+    name: "Review this pending identity",
+  });
+  const url = new URL(link.getAttribute("href")!, "http://test");
+  expect(url.searchParams.get("reviewTarget")).toBe(candidate.id);
+  expect(JSON.parse(url.searchParams.get("catalogSource")!)).toEqual(source);
+  await user.click(link);
+  expect(mutate).toHaveBeenCalledTimes(1);
+  expect(revoke).not.toHaveBeenCalled();
 });

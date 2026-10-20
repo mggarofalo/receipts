@@ -89,7 +89,7 @@ public class NormalizationAiController(INormalizationAiService service) : Contro
 				403 => new ForbiddenProblem(exception.Message, exception.Code),
 				404 => ApiProblem.NotFound(exception.Message),
 				503 => new ServiceUnavailableProblem(exception.Message, exception.Code),
-				_ => ApiProblem.Conflict(exception.Message, new Dictionary<string, object?> { ["code"] = exception.Code }),
+				_ => ApiProblem.Conflict(exception.Message, new Dictionary<string, object?>(exception.Extensions) { ["code"] = exception.Code }),
 			};
 		}
 		catch (ChatGptRunnerException exception)

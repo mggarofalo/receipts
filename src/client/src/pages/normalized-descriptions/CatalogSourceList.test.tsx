@@ -1,4 +1,5 @@
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
+import { renderWithProviders as render } from "@/test/test-utils";
 import userEvent from "@testing-library/user-event";
 import { CatalogSourceList } from "./CatalogSourceList";
 import {
@@ -27,6 +28,10 @@ const group = {
   mappedCount: 0,
   excludedCount: 0,
   revisableCount: 0,
+  linkedTargetCount: 1,
+  linkedTargets: [
+    { id: "pending-target", name: "Beef Franks", status: "active" },
+  ],
 };
 const mutate = vi.fn();
 let sources: Record<string, unknown>;
@@ -206,3 +211,54 @@ it("keeps the selected model visible during busy refresh without submitting agai
   ).toHaveTextContent("OpenAI");
   expect(screen.getByText(/Requests may consume/)).toBeInTheDocument();
 });
+
+it.each([
+  ["pendingReview", 1],
+  ["rejected", 1],
+  ["active", 2],
+  ["active", 0],
+])(
+  "blocks label-only selection for %s with %i linked identities",
+  async (status, count) => {
+    sources = {
+      ...sources,
+      data: {
+        items: [
+          {
+            ...group,
+            linkedTargetCount: count,
+            linkedTargets: count
+              ? [{ id: "pending-target", name: "Beef Franks", status }]
+              : [],
+          },
+        ],
+        total: 1,
+      },
+    };
+    render(<CatalogSourceList onReview={vi.fn()} onStarted={vi.fn()} />);
+    await userEvent
+      .setup()
+      .click(
+        screen.getByRole("checkbox", { name: /Improve display names only/ }),
+      );
+    expect(
+      screen.getByRole("checkbox", { name: "Select BF FRANKS at Store A" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Suggest readable display names" }),
+    ).toBeDisabled();
+    expect(mutate).not.toHaveBeenCalled();
+    if (status === "pendingReview") {
+      const url = new URL(
+        screen
+          .getByRole("link", { name: "Review pending identity" })
+          .getAttribute("href")!,
+        "http://test",
+      );
+      expect(url.searchParams.get("reviewTarget")).toBe("pending-target");
+      expect(JSON.parse(url.searchParams.get("catalogSource")!)).toEqual(
+        source,
+      );
+    }
+  },
+);

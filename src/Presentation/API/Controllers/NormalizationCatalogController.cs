@@ -67,6 +67,18 @@ public class NormalizationCatalogController(INormalizationCatalogService service
 					ProtectedCount = group.ProtectedCount,
 					MappingId = group.MappingId,
 					RevisableCount = group.RevisableCount,
+					LinkedTargetCount = group.LinkedTargetCount,
+					LinkedTargets = (group.LinkedTargets ?? []).Select(target => new NormalizationLinkedTargetResponse
+					{
+						Id = target.Id,
+						Name = target.Name,
+						Status = target.Status switch
+						{
+							Domain.NormalizedDescriptions.NormalizedDescriptionStatus.Active => API.Generated.Dtos.NormalizedDescriptionStatus.Active,
+							Domain.NormalizedDescriptions.NormalizedDescriptionStatus.PendingReview => API.Generated.Dtos.NormalizedDescriptionStatus.PendingReview,
+							_ => API.Generated.Dtos.NormalizedDescriptionStatus.Rejected,
+						},
+					}).ToList(),
 				}).ToList(),
 			};
 		});
@@ -172,7 +184,7 @@ public class NormalizationCatalogController(INormalizationCatalogService service
 				400 => ApiProblem.BadRequest(exception.Message),
 				403 => new ForbiddenProblem(exception.Message, exception.Code),
 				404 => ApiProblem.NotFound(exception.Message),
-				_ => ApiProblem.Conflict(exception.Message, new Dictionary<string, object?> { ["code"] = exception.Code }),
+				_ => ApiProblem.Conflict(exception.Message, new Dictionary<string, object?>(exception.Extensions) { ["code"] = exception.Code }),
 			};
 		}
 	}

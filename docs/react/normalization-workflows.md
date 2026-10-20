@@ -39,3 +39,5 @@ request promise owning its cleanup so overlapping requests and failures can retr
 Projection repair remains centralized in `query-invalidation.ts`. Duplicate
 acceptance changes refresh the duplicate list, accepted list and health summary.
 Receipt and transaction changes already repair the entire reports family.
+
+Catalog recovery uses `reviewTarget` for an exact pending identity and `reviewQ` for a server-side queue search. The results component is keyed by that navigation state so changing the target or search disposes curation dialogs and resets pagination. `catalogSource` retains only the source key for returning to the catalog. No navigation action activates an identity. Exact-target cache entries share the normalized-description invalidation prefix, so explicit activation refreshes the source's label-only eligibility.

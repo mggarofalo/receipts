@@ -216,6 +216,30 @@ public sealed class NormalizationCatalogHttpTests
 	{
 		var client = app.GetTestClient(); client.DefaultRequestHeaders.Add("Test-Role", "Admin"); return client;
 	}
+
+	[Fact]
+	public async Task PendingIdentityConflictPreservesExactRecoveryTargetAndAuthenticatedActor()
+	{
+		Guid target = Guid.NewGuid();
+		var service = new Mock<INormalizationCatalogService>(MockBehavior.Strict);
+		service.Setup(x => x.PreviewAsync("owner", It.Is<NormalizationCatalogPreview>(value => value.Source.Description == "SOURCE A" && value.NewCanonicalName == "PRODUCT B"), It.IsAny<CancellationToken>()))
+				.ThrowsAsync(new NormalizationCatalogException(409, "pending_identity_requires_review", "Explicitly approve the pending identity first.",
+						new Dictionary<string, object?> { ["normalizedDescriptionId"] = target, ["normalizedDescriptionStatus"] = "pendingReview" }));
+		await using var app = await Start(service);
+		using var client = app.GetTestClient();
+		client.DefaultRequestHeaders.Add("Test-Role", "Admin");
+		using var response = await client.PostAsJsonAsync("/api/normalization-catalog/operations", new { clientRequestId = Guid.NewGuid(), source = new { location = "Store A", description = "SOURCE A" }, newCanonicalName = "PRODUCT B", includeLegacyUnknown = false, exclude = false, actor = "attacker" });
+		response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+		response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+		using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+		json.RootElement.GetProperty("status").GetInt32().Should().Be(409);
+		json.RootElement.GetProperty("detail").GetString().Should().Be("Explicitly approve the pending identity first.");
+		json.RootElement.GetProperty("code").GetString().Should().Be("pending_identity_requires_review");
+		json.RootElement.GetProperty("normalizedDescriptionId").GetGuid().Should().Be(target);
+		json.RootElement.GetProperty("normalizedDescriptionStatus").GetString().Should().Be("pendingReview");
+		service.VerifyAll();
+		service.VerifyNoOtherCalls();
+	}
 	private static async Task<WebApplication> Start(Mock<INormalizationCatalogService> service)
 	{
 		var builder = WebApplication.CreateBuilder();

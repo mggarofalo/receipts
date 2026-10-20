@@ -116,6 +116,30 @@ public class NormalizationAiHttpTests
 		json.RootElement.GetProperty("id").GetGuid().Should().Be(runId);
 		service.VerifyAll();
 	}
+
+	[Fact]
+	public async Task PendingIdentityConflictPreservesExactRecoveryTargetAndAuthenticatedActor()
+	{
+		Guid target = Guid.NewGuid();
+		var service = new Mock<INormalizationAiService>(MockBehavior.Strict);
+		service.Setup(x => x.StartSourcesAsync("owner", It.IsAny<Guid>(), It.Is<IReadOnlyList<NormalizationAiSourceSelection>>(values => values.Count == 1 && values[0].LabelOnly), "model-a", It.IsAny<CancellationToken>()))
+				.ThrowsAsync(new NormalizationAiException(409, "pending_identity_requires_review", "Explicitly approve the pending identity first.",
+						new Dictionary<string, object?> { ["normalizedDescriptionId"] = target, ["normalizedDescriptionStatus"] = "pendingReview" }));
+		await using var app = await Start(service);
+		using var client = app.GetTestClient();
+		client.DefaultRequestHeaders.Add("Test-Role", "Admin");
+		using var response = await client.PostAsJsonAsync("/api/normalization-ai/source-runs", new { clientRequestId = Guid.NewGuid(), sources = new[] { new { source = new { location = "Store A", description = "SOURCE A" }, includeLegacyUnknown = false, labelOnly = true } }, model = "model-a", actor = "attacker" });
+		response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+		response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+		using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+		json.RootElement.GetProperty("status").GetInt32().Should().Be(409);
+		json.RootElement.GetProperty("detail").GetString().Should().Be("Explicitly approve the pending identity first.");
+		json.RootElement.GetProperty("code").GetString().Should().Be("pending_identity_requires_review");
+		json.RootElement.GetProperty("normalizedDescriptionId").GetGuid().Should().Be(target);
+		json.RootElement.GetProperty("normalizedDescriptionStatus").GetString().Should().Be("pendingReview");
+		service.VerifyAll();
+		service.VerifyNoOtherCalls();
+	}
 	private static async Task<WebApplication> Start(Mock<INormalizationAiService> service)
 	{
 		var builder = WebApplication.CreateBuilder();
