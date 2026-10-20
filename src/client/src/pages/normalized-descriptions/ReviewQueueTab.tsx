@@ -225,6 +225,7 @@ function ReviewQueueResults({
       </div>
 
       <fieldset
+        className="min-w-0"
         disabled={current.isFetching || updateStatus.isPending}
         aria-label="Pending identity actions"
       >
