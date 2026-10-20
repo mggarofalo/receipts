@@ -1,4 +1,101 @@
-# ChatGPT normalization in a personal Docker deployment
+# Build a useful catalog of purchased items
+
+Receipt descriptions are written for a store's till, not for finding purchases
+later. The same product may appear as `BF FRANKS 8CT` on one receipt and
+`BEEF FRANKS 8 COUNT` on another. Searching for the words you remember can miss
+those purchases, and grouping by the original text can split one product's
+history into several unrelated entries.
+
+Normalization connects those receipt descriptions to a shared, readable item
+identity. The original receipt text, quantities and prices remain unchanged.
+When two descriptions mean the same product, their purchases should be findable
+together; genuinely different products must remain distinguishable. A shared
+name alone does not make different package sizes or units directly comparable.
+
+## The intended result
+
+The product goal is a complete, maintained catalog, with two connected workflows:
+
+1. **Organize the existing history.** Work through distinct descriptions, reuse
+   or create the appropriate normalized identities, and apply reviewed decisions
+   to the relevant historical purchases. Show what remains unresolved or needs
+   review, including existing automatic assignments that have never been reviewed.
+2. **Keep new receipts organized.** Reuse established description mappings when
+   new purchases arrive. Surface genuinely new or ambiguous descriptions for
+   normalization, and remember accepted decisions so the same work is not
+   repeatedly requested.
+
+Search and reports should consume those same identities. For example, searching
+for a normalized product name should find its differently abbreviated purchases,
+and its price history should retain the date, store, quantity, price and receipt
+link for each purchase. Items whose meaning cannot be determined need a visible
+unresolved state rather than an invented match.
+
+ChatGPT's role is to help interpret unfamiliar abbreviations and propose suitable
+identities. Its value is reducing the work of building and maintaining that
+catalog. Connecting a model and producing suggestions are supporting capabilities,
+not the definition of a complete normalization feature.
+
+## What the current implementation delivers
+
+The current PR provides a reviewed suggestion workflow under
+**Normalized Descriptions → ChatGPT**:
+
+1. Select up to 50 eligible receipt items and a model.
+2. Ask for suggestions. Each suggestion reuses a supplied existing identity,
+   proposes a new readable name, or leaves the item unresolved.
+3. Review the results and explicitly apply the selected suggestions.
+4. The selected receipt items receive their normalized links. Their original
+   purchase facts remain unchanged.
+
+Purchase search already matches active normalized names and display labels as
+well as raw receipt descriptions. This makes an accepted name useful immediately
+for the purchases linked to it. See [Purchase search](purchase-search.md) for
+the current search and price-history contract.
+
+Normalized spending reports also use linked normalized names. Item-cost history
+can filter by a canonical name and aggregate prices by period; its ordinary
+description filter still matches raw text exactly. The purchase-search table is
+the current way to inspect matching individual purchases across descriptions.
+
+**This selected-item workflow does not yet fulfill the complete-catalog goal:**
+
+- **Some historical work is hidden.** Selection excludes every item linked to an
+  active normalized description, even if that link was created automatically and
+  still uses an unhelpful raw name. The data does not yet distinguish those
+  assignments from reviewed decisions well enough to safely reopen only the
+  unreviewed ones.
+- **An approval is not yet a reusable description mapping.** It updates selected
+  purchases, but does not remember a source alias such as `BF FRANKS 8CT` for
+  deterministic use on the next receipt. Future matching still relies on
+  canonical-name equality or the existing similarity resolver.
+- **Historical cleanup is still per purchase.** Repeated descriptions occupy
+  multiple selections, and accepting one does not update other historical
+  occurrences. There is no distinct-description cleanup campaign.
+- **New-item processing is incomplete.** The existing background resolver
+  requires configured embeddings even for exact matches, and it does not
+  automatically send unfamiliar descriptions to ChatGPT.
+- **The app cannot yet show reliable completion.** Eligible-item counts do not
+  distinguish reviewed coverage from automatically assigned raw names. An empty
+  ChatGPT candidate list does not mean the catalog is fully normalized.
+
+Completing the product outcome requires explicit assignment provenance, reusable
+approved source mappings, historical review by distinct description, exact reuse
+independent of embeddings, and visible coverage and remaining work. Existing
+manual and template decisions must remain protected during that migration.
+
+The current suggestion instructions ask the model to preserve product
+distinctions such as brand, package size and dietary variant. Review must verify
+those distinctions; structural validation cannot prove that two names mean the
+same product. The intended grouping does not merge all hot dogs into one product.
+A search for "hot dogs" can find several normalized products while their
+individual price histories remain distinct.
+
+The remainder of this guide describes operating the implemented suggestion
+workflow. It should not be read as evidence that the entire historical catalog
+has been normalized or that future unfamiliar descriptions need no attention.
+
+## Connection and deployment
 
 Receipts uses a dedicated Pi provider runtime with ChatGPT device-code sign-in,
 following the same headless-client pattern as Paperless LLM. Receipts login stays
