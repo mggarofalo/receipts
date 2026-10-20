@@ -32,6 +32,11 @@ This is a .NET 10 Clean Architecture solution for a receipt management applicati
 
 ## Key Patterns
 
+The optional [ChatGPT normalization workflow](chatgpt-normalization.md#responsibility-boundaries)
+uses Application decision policies, durable Infrastructure operation state and an isolated
+text-only provider process. Suggestions require explicit review; applying them is atomic
+and rechecks database-issued source and target revisions.
+
 - **CQRS**: Commands and Queries are separate with dedicated handlers
 - **Mediator Pattern**: martinothamar/Mediator dispatches commands/queries to handlers via source-generated dispatch (no runtime reflection)
 - **Validation Pipeline**: `ValidationBehavior<TMessage, TResponse>` intercepts Mediator requests and runs registered `IValidator<T>` instances before handlers execute. Application owns its validator registration. `FluentValidationActionFilter` validates controller DTOs and every collection element before action dispatch. Generated schema constraints and FluentValidation failures share the 400 problem contract. See [validation ownership](api-guidelines.md#validation-ownership).

@@ -363,6 +363,23 @@ public class NormalizedDescriptionService(
 		}
 
 		context.NormalizedDescriptions.Remove(discard);
+		foreach (var mapping in await context.NormalizationSourceMappings.Where(mapping => mapping.TargetId == discardId).ToListAsync(cancellationToken))
+		{
+			mapping.TargetId = keepId;
+			mapping.Revision = Guid.NewGuid();
+		}
+
+		// A merge changes the identity approved by an immutable historical snapshot.
+		// Keep the explicitly redirected reusable mapping, but require a fresh preview
+		// before assigning purchases that were not yet processed.
+		foreach (var operation in await context.NormalizationCatalogOperations.Where(operation => operation.TargetId == discardId
+			&& (operation.State == "preview" || operation.State == "applying" || operation.State == "paused")).ToListAsync(cancellationToken))
+		{
+			operation.State = "cancelled";
+			operation.Revision = Guid.NewGuid();
+			operation.ErrorCode = "target_changed";
+			operation.ErrorDetail = "The approved target was merged. The reusable mapping follows the merge. To process remaining purchases, revoke that mapping, then review and approve a fresh preview.";
+		}
 
 		int liveCount = items.Count(item => item.DeletedAt is null);
 		int trashedCount = items.Count - liveCount;
@@ -634,6 +651,14 @@ public class NormalizedDescriptionService(
 
 		NormalizedDescriptionStatus previous = entity.Status;
 		entity.Status = status;
+		if (status != NormalizedDescriptionStatus.Active)
+		{
+			foreach (var mapping in await context.NormalizationSourceMappings.Where(mapping => mapping.TargetId == id && mapping.State == "active").ToListAsync(cancellationToken))
+			{
+				mapping.State = "revoked";
+				mapping.Revision = Guid.NewGuid();
+			}
+		}
 
 		if (status == NormalizedDescriptionStatus.Rejected)
 		{
@@ -766,21 +791,7 @@ public class NormalizedDescriptionService(
 			throw new KeyNotFoundException(RenameTargetNotFound);
 		}
 
-		// A label that merely restates the row's own matched text is stored as null rather than a
-		// duplicate copy. Otherwise the row would be permanently "renamed" to the thing it already
-		// displayed, and a later edit to CanonicalName-derived display logic would not reach it.
-		if (trimmed is not null && string.Equals(trimmed, entity.CanonicalName, StringComparison.OrdinalIgnoreCase))
-		{
-			trimmed = null;
-		}
-
-		// Checked here as well as by the unique index so the caller gets a usable message instead
-		// of a raw constraint violation. The index remains the authority under concurrency — see
-		// the DbUpdateException handler below.
-		if (trimmed is not null && await DisplayNameTakenAsync(context, trimmed, id, cancellationToken))
-		{
-			throw new InvalidOperationException(DisplayNameAlreadyTaken);
-		}
+		trimmed = await PrepareDisplayLabelAsync(context, entity, trimmed, cancellationToken);
 
 		entity.DisplayLabel = trimmed;
 
@@ -810,6 +821,18 @@ public class NormalizedDescriptionService(
 
 		return row?.ToDetail()
 			?? new NormalizedDescriptionDetail(mapper.ToDomain(entity), LinkedItemCount: 0, NearestNeighbourName: null, []);
+	}
+
+	internal static async Task<string?> PrepareDisplayLabelAsync(ApplicationDbContext context, NormalizedDescriptionEntity entity,
+		string? displayLabel, CancellationToken cancellationToken)
+	{
+		string? trimmed = displayLabel?.Trim();
+		NormalizedDescription.ValidateDisplayLabel(trimmed);
+		if (trimmed is not null && string.Equals(trimmed, entity.CanonicalName, StringComparison.OrdinalIgnoreCase)) { trimmed = null; }
+		// Clearing also claims the canonical name as the effective display name.
+		if (await DisplayNameTakenAsync(context, trimmed ?? entity.CanonicalName, entity.Id, cancellationToken))
+		{ throw new InvalidOperationException(DisplayNameAlreadyTaken); }
+		return trimmed;
 	}
 
 	// Compares against each row's effective display name, matching the unique index on

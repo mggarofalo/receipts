@@ -33,6 +33,12 @@ const { itemTemplates } = vi.hoisted(() => ({
 
 vi.mock("@/hooks/useNormalizedDescriptions", () => ({
   useNormalizedDescriptions: vi.fn(),
+  useNormalizedDescriptionById: vi.fn(() => ({
+    data: undefined,
+    isLoading: false,
+    isError: false,
+    isFetching: false,
+  })),
   useNormalizedDescription: vi.fn(),
   NORMALIZED_DESCRIPTION_PAGE_SIZE: 50,
   NORMALIZED_DESCRIPTION_MAX_PAGE_SIZE: 200,

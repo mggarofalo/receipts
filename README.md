@@ -54,9 +54,11 @@ A dashboard of spending trends and category breakdowns, plus focused reports: ca
 <img src="docs/screenshots/reports-category-trends.png" alt="Category Trends report — spending by category over twelve months" width="900" />
 </div>
 
-### 🧠 Smarter categorization with local embeddings
+### 🧠 Consistent item names across receipts
 
-Item descriptions are normalized using sentence embeddings (`bge-large-en-v1.5` via ONNX Runtime, stored in `pgvector`) so "BNNS ORG" and "Organic Bananas" collapse to the same thing — all computed locally, with no embedding API key required.
+Store abbreviations can hide purchases from search and split one product's history across several names. Normalized descriptions link purchases to a shared, readable identity while preserving the original receipt text, quantities and prices. Purchase search can match those names, and normalization-aware reports can use the linked groups.
+
+Local similarity matching uses sentence embeddings (`bge-large-en-v1.5` via ONNX Runtime, stored in `pgvector`) without an embedding API key. The catalog workflow in this PR reviews distinct store descriptions, previews historical changes, and remembers approved exact mappings for new purchases. Optional ChatGPT suggestions help interpret unfamiliar descriptions; they never authorize a write. Catalog acceptance is in progress. See [the normalization overview](docs/chatgpt-normalization.md) for the workflow, correction safeguards, evidence limits, and setup.
 
 ### 🔗 YNAB integration
 

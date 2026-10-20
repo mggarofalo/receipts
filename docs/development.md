@@ -226,7 +226,11 @@ Every `git commit` runs the full quality pipeline automatically:
 7. **TypeScript types** — uses the client-pinned compiler
 8. **ESLint** — uses the client-pinned ESLint version
 
-For faster iteration, quick mode runs only prerequisites, format, tsc, and eslint:
+Both modes also check migration integrity and regenerate staged OpenAPI client types.
+When files under `runner/` are staged, both modes run its built-in Node protocol
+tests. These use fake runtimes and require no SDK installation, credentials, or network.
+
+For faster iteration, quick mode runs prerequisites, format, tsc, and eslint plus those conditional checks:
 ```bash
 PRECOMMIT_QUICK=1 git commit -m "message"
 ```

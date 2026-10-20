@@ -6,6 +6,7 @@ namespace Infrastructure.Entities.Core;
 public class NormalizedDescriptionEntity
 {
 	public Guid Id { get; set; }
+	public Guid NormalizationRevision { get; set; }
 	public string CanonicalName { get; set; } = string.Empty;
 
 	// Optional human-chosen name (RECEIPTS-876). Null means nobody has renamed this row, and

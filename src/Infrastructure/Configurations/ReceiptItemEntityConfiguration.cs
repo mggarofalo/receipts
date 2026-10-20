@@ -8,9 +8,13 @@ public class ReceiptItemEntityConfiguration : IEntityTypeConfiguration<ReceiptIt
 {
 	public void Configure(EntityTypeBuilder<ReceiptItemEntity> builder)
 	{
+		builder.Property(e => e.NormalizationOrigin).HasDefaultValue("unassigned").HasMaxLength(32);
 		builder.ToTable("ReceiptItems", "receipts");
 
 		builder.HasKey(e => e.Id);
+		builder.Property(e => e.NormalizationRevision).HasDefaultValueSql("gen_random_uuid()").ValueGeneratedOnAddOrUpdate();
+		builder.Property(e => e.NormalizationRevision).Metadata.SetBeforeSaveBehavior(Microsoft.EntityFrameworkCore.Metadata.PropertySaveBehavior.Ignore);
+		builder.Property(e => e.NormalizationRevision).Metadata.SetAfterSaveBehavior(Microsoft.EntityFrameworkCore.Metadata.PropertySaveBehavior.Ignore);
 
 		builder.Property(e => e.Id)
 			.IsRequired()

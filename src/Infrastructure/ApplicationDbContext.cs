@@ -5,6 +5,7 @@ using Common;
 using Infrastructure.Entities;
 using Infrastructure.Entities.Audit;
 using Infrastructure.Entities.Core;
+using Infrastructure.Entities.NormalizationAi;
 using Infrastructure.Interfaces;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
@@ -67,6 +68,9 @@ public partial class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 	public virtual DbSet<ReceiptEntity> Receipts { get; set; } = null!;
 	public virtual DbSet<TransactionEntity> Transactions { get; set; } = null!;
 	public virtual DbSet<ReceiptItemEntity> ReceiptItems { get; set; } = null!;
+	public virtual DbSet<NormalizationAiRunEntity> NormalizationAiRuns { get; set; } = null!;
+	public virtual DbSet<NormalizationAiProposalEntity> NormalizationAiProposals { get; set; } = null!;
+	public virtual DbSet<NormalizationAiConnectionEntity> NormalizationAiConnection { get; set; } = null!;
 	public virtual DbSet<AdjustmentEntity> Adjustments { get; set; } = null!;
 	public virtual DbSet<ApiKeyEntity> ApiKeys { get; set; } = null!;
 	public virtual DbSet<ItemTemplateEntity> ItemTemplates { get; set; } = null!;
@@ -107,6 +111,12 @@ public partial class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 		// Convert Vector <-> string so InMemory tests can work with embeddings.
 		if (Database.ProviderName == InMemory)
 		{
+			var itemRevision = modelBuilder.Entity<ReceiptItemEntity>().Property(e => e.NormalizationRevision).ValueGeneratedNever();
+			itemRevision.Metadata.SetBeforeSaveBehavior(PropertySaveBehavior.Save);
+			itemRevision.Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Save);
+			var targetRevision = modelBuilder.Entity<NormalizedDescriptionEntity>().Property(e => e.NormalizationRevision).ValueGeneratedNever();
+			targetRevision.Metadata.SetBeforeSaveBehavior(PropertySaveBehavior.Save);
+			targetRevision.Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Save);
 			modelBuilder.Entity<ItemEmbeddingEntity>()
 				.Property(e => e.Embedding)
 				.HasColumnType(null)
@@ -420,7 +430,7 @@ public partial class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 		// record. One accept expands to C(n,2) rows, so auditing it would add thousands of log rows per
 		// click. It also keeps the two write paths consistent — the Postgres path inserts via raw
 		// ON CONFLICT SQL, which bypasses the change tracker and could never have been audited anyway.
-		HashSet<Type> excludedTypes = [typeof(AuditLogEntity), typeof(AuthAuditLogEntity), typeof(SeedHistoryEntry), typeof(YnabSyncRecordEntity), typeof(YnabSelectedBudgetEntity), typeof(YnabAccountMappingEntity), typeof(YnabCategoryMappingEntity), typeof(YnabServerKnowledgeEntity), typeof(YnabSyncEventEntity), typeof(DistinctDescriptionEntity), typeof(ApiKeyEntity), typeof(AcceptedDuplicatePairEntity)];
+		HashSet<Type> excludedTypes = [typeof(NormalizationAiRunEntity), typeof(NormalizationAiProposalEntity), typeof(NormalizationAiConnectionEntity), typeof(AuditLogEntity), typeof(AuthAuditLogEntity), typeof(SeedHistoryEntry), typeof(YnabSyncRecordEntity), typeof(YnabSelectedBudgetEntity), typeof(YnabAccountMappingEntity), typeof(YnabCategoryMappingEntity), typeof(YnabServerKnowledgeEntity), typeof(YnabSyncEventEntity), typeof(DistinctDescriptionEntity), typeof(ApiKeyEntity), typeof(AcceptedDuplicatePairEntity)];
 		List<AuditEntry> auditEntries = [];
 		DateTimeOffset now = DateTimeOffset.UtcNow;
 
@@ -516,6 +526,10 @@ public partial class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 		foreach (PropertyEntry property in entry.Properties)
 		{
 			string propertyName = property.Metadata.Name;
+			if (propertyName == nameof(ReceiptItemEntity.NormalizationRevision))
+			{
+				continue;
+			}
 
 			if (action == AuditAction.Create)
 			{

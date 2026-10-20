@@ -32,6 +32,7 @@ public partial class ApplicationDbContext
 
 			HandleSoftDelete();
 			GuardReceiptAdmissions();
+			PrepareNormalizationRevisions();
 			List<DuplicateReceiptFacts> duplicateFacts = CaptureDuplicateFacts();
 			auditEntries = PrepareAuditEntries();
 			HashSet<string> touchedDescriptions = CollectTouchedReceiptItemDescriptions();
@@ -95,6 +96,7 @@ public partial class ApplicationDbContext
 
 			HandleSoftDelete();
 			await GuardReceiptAdmissionsAsync(cancellationToken).ConfigureAwait(false);
+			PrepareNormalizationRevisions();
 			List<DuplicateReceiptFacts> duplicateFacts = await CaptureDuplicateFactsAsync(cancellationToken).ConfigureAwait(false);
 			auditEntries = PrepareAuditEntries();
 			HashSet<string> touchedDescriptions = CollectTouchedReceiptItemDescriptions();

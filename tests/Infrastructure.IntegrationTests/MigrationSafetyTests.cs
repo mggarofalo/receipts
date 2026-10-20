@@ -18,6 +18,51 @@ namespace Infrastructure.IntegrationTests;
 public class MigrationSafetyTests(PostgresFixture fixture)
 {
 	[Fact]
+	public async Task CatalogProvenanceMigration_PreservesLegacyTargetsAndFactsWithoutInventingHumanApproval()
+	{
+		const string priorMigration = "20261019202429_AddNormalizationAiWorkflow";
+		var receipt = ReceiptEntityGenerator.Generate();
+		var linked = ReceiptItemEntityGenerator.Generate(receipt.Id);
+		var unresolved = ReceiptItemEntityGenerator.Generate(receipt.Id);
+		var canonical = new NormalizedDescriptionEntity
+		{
+			Id = Guid.NewGuid(),
+			CanonicalName = $"Legacy catalog {Guid.NewGuid():N}",
+			Status = Domain.NormalizedDescriptions.NormalizedDescriptionStatus.Active,
+			CreatedAt = DateTimeOffset.UtcNow,
+		};
+		linked.NormalizedDescriptionId = canonical.Id;
+		unresolved.NormalizedDescriptionId = null;
+		var expectedFacts = (linked.Description, linked.Quantity, linked.UnitPrice, linked.TotalAmount);
+		await using var context = fixture.CreateDbContext();
+		var migrator = context.GetInfrastructure().GetRequiredService<IMigrator>();
+		try
+		{
+			context.AddRange(receipt, canonical, linked, unresolved);
+			await context.SaveChangesAsync();
+			context.ChangeTracker.Clear();
+			await migrator.MigrateAsync(priorMigration);
+			await migrator.MigrateAsync();
+
+			await using var verify = fixture.CreateDbContext();
+			var persisted = await verify.ReceiptItems.SingleAsync(x => x.Id == linked.Id);
+			persisted.NormalizedDescriptionId.Should().Be(canonical.Id);
+			persisted.NormalizationOrigin.Should().Be("legacy_unknown");
+			persisted.NormalizationMappingId.Should().BeNull();
+			(persisted.Description, persisted.Quantity, persisted.UnitPrice, persisted.TotalAmount).Should().Be(expectedFacts);
+			(await verify.ReceiptItems.SingleAsync(x => x.Id == unresolved.Id)).NormalizationOrigin.Should().Be("unassigned");
+		}
+		finally
+		{
+			await migrator.MigrateAsync();
+			await using var cleanup = fixture.CreateDbContext();
+			await cleanup.ReceiptItems.IgnoreQueryFilters().Where(x => x.ReceiptId == receipt.Id).ExecuteDeleteAsync();
+			await cleanup.Receipts.IgnoreQueryFilters().Where(x => x.Id == receipt.Id).ExecuteDeleteAsync();
+			await cleanup.NormalizedDescriptions.IgnoreQueryFilters().Where(x => x.Id == canonical.Id).ExecuteDeleteAsync();
+		}
+	}
+
+	[Fact]
 	public async Task PersistImmutablePushOperations_TombstonedLegacyAttemptsRemainUnknownAfterRestore()
 	{
 		const string priorMigration = "20260910081448_ScopeYnabDestinationIdentity";
@@ -110,8 +155,16 @@ public class MigrationSafetyTests(PostgresFixture fixture)
 		try
 		{
 			await migrator.MigrateAsync(priorMigration);
-			migrationContext.AddRange(account, card, receipt);
+			migrationContext.AddRange(account, card);
 			await migrationContext.SaveChangesAsync();
+			// Seed the historical receipt shape; the current EF model includes revision
+			// columns introduced after this migration's predecessor.
+			await migrationContext.Database.ExecuteSqlRawAsync(
+				"""
+				INSERT INTO "Receipts" ("Id", "Location", "Date", "TaxAmount", "TaxAmountCurrency")
+				VALUES ({0}, {1}, {2}, {3}, {4});
+				""",
+				receipt.Id, receipt.Location, receipt.Date, receipt.TaxAmount, receipt.TaxAmountCurrency.ToString());
 			await migrationContext.Database.ExecuteSqlRawAsync(
 				"""
 				INSERT INTO "Transactions" ("Id", "ReceiptId", "AccountId", "CardId", "Amount", "AmountCurrency", "Date")

@@ -77,6 +77,7 @@ public class BackupService(
 			await ExportYnabSyncRecordsAsync(source, sqlite, cancellationToken);
 			await ExportNormalizedDescriptionSettingsAsync(source, sqlite, cancellationToken);
 			await ExportAcceptedDuplicatePairsAsync(source, sqlite, cancellationToken);
+			await PortableCatalogArchive.ExportAsync(source, sqlite, cancellationToken);
 			await WriteMetadataAsync(sqlite, cancellationToken);
 
 

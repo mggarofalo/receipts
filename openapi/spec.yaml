@@ -8,6 +8,1233 @@ info:
     default version (currently 1.0) is assumed.
 
 paths:
+  /api/normalization-catalog/targets/{id}/preview-label:
+    post:
+      tags: [NormalizationCatalog]
+      summary: Preview a global display label change and affected purchases
+      operationId: NormalizationCatalog_PreviewLabel
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NormalizationCatalogLabelPreviewRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NormalizationCatalogLabelReviewResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Administrator access required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: State conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/normalization-catalog/targets/{id}/approve-label:
+    post:
+      tags: [NormalizationCatalog]
+      summary: Approve a global display label change at the reviewed revision
+      operationId: NormalizationCatalog_ApproveLabel
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NormalizationCatalogLabelApprovalRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NormalizationCatalogLabelReviewResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Administrator access required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: State conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/normalization-catalog/sources:
+    get:
+      tags:
+        - NormalizationCatalog
+      summary: List distinct receipt descriptions and their normalization coverage
+      operationId: NormalizationCatalog_ListSources
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: disposition
+          in: query
+          required: false
+          schema:
+            type: string
+            default: needs-review
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 0
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 25
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NormalizationSourcePageResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Administrator access required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: State conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/normalization-catalog/coverage:
+    get:
+      tags:
+        - NormalizationCatalog
+      summary: Get normalization coverage across live receipt items
+      operationId: NormalizationCatalog_GetCoverage
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NormalizationCatalogCoverageResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Administrator access required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: State conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/normalization-catalog/candidates:
+    get:
+      tags:
+        - NormalizationCatalog
+      summary: Get matching candidates and approved source examples
+      operationId: NormalizationCatalog_GetCandidates
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      parameters:
+        - name: location
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: description
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: itemCode
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NormalizationCatalogCandidateResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Administrator access required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: State conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/normalization-catalog/mappings:
+    get:
+      tags:
+        - NormalizationCatalog
+      summary: Get mapping history for a scoped source description
+      operationId: NormalizationCatalog_ListMappings
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      parameters:
+        - name: location
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: description
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: itemCode
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NormalizationSourceMappingResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Administrator access required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: State conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/normalization-catalog/operations:
+    get:
+      tags:
+        - NormalizationCatalog
+      summary: List recent historical normalization operations
+      operationId: NormalizationCatalog_ListOperations
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NormalizationCatalogOperationResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Administrator access required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: State conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+    post:
+      tags:
+        - NormalizationCatalog
+      summary: Preview a scoped mapping and historical changes without applying them
+      operationId: NormalizationCatalog_Preview
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NormalizationCatalogPreviewRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NormalizationCatalogOperationResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Administrator access required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: State conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/normalization-catalog/operations/{id}:
+    get:
+      tags:
+        - NormalizationCatalog
+      summary: Get historical normalization progress
+      operationId: NormalizationCatalog_GetOperation
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NormalizationCatalogOperationResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Administrator access required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: State conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/normalization-catalog/operations/{id}/approve:
+    post:
+      tags:
+        - NormalizationCatalog
+      summary: Approve the preview and apply a bounded historical batch
+      operationId: NormalizationCatalog_Approve
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NormalizationCatalogRevisionRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NormalizationCatalogOperationResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Administrator access required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: State conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/normalization-catalog/operations/{id}/resume:
+    post:
+      tags:
+        - NormalizationCatalog
+      summary: Continue an approved historical operation
+      operationId: NormalizationCatalog_Resume
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NormalizationCatalogOperationResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Administrator access required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: State conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/normalization-catalog/operations/{id}/cancel:
+    post:
+      tags:
+        - NormalizationCatalog
+      summary: Stop propagation and revoke the operation mapping
+      operationId: NormalizationCatalog_Cancel
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NormalizationCatalogRevisionRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NormalizationCatalogOperationResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Administrator access required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: State conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/normalization-catalog/operations/{id}/undo:
+    post:
+      tags:
+        - NormalizationCatalog
+      summary: Undo changes still owned by this operation
+      operationId: NormalizationCatalog_Undo
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NormalizationCatalogRevisionRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NormalizationCatalogOperationResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Administrator access required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: State conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/normalization-catalog/mappings/{id}/revoke:
+    post:
+      tags:
+        - NormalizationCatalog
+      summary: Revoke a source mapping to stop future reuse
+      operationId: NormalizationCatalog_Revoke
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NormalizationCatalogRevisionRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NormalizationSourceMappingResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Administrator access required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: State conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/normalization-ai/source-runs:
+    post:
+      tags:
+        - NormalizationAi
+      summary: Request suggestions for distinct scoped source descriptions
+      operationId: NormalizationAi_StartSources
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartNormalizationAiSourcesRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NormalizationAiRunResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Administrator access required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: State conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: Provider unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/normalization-ai/connection:
+    get:
+      operationId: GetNormalizationAiConnection
+      tags:
+        - NormalizationAi
+      summary: Get ChatGPT credential and model status
+      description: >-
+        Admin-only personal ChatGPT normalization. Only the configured credential owner can use this connection.
+        Suggestions never change receipts until explicitly applied.
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NormalizationAiConnectionResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Operation or source state conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: ChatGPT is unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/normalization-ai/candidates:
+    get:
+      operationId: ListNormalizationAiCandidates
+      tags:
+        - NormalizationAi
+      summary: List unresolved items for explicit selection
+      description: >-
+        Admin-only personal ChatGPT normalization. Only the configured credential owner can use this connection.
+        Suggestions never change receipts until explicitly applied.
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NormalizationAiCandidatePageResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Operation or source state conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: ChatGPT is unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+      parameters:
+        - name: q
+          in: query
+          schema:
+            type: [string, 'null']
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            format: int32
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            format: int32
+            default: 25
+  /api/normalization-ai/runs:
+    get:
+      operationId: ListNormalizationAiRuns
+      tags:
+        - NormalizationAi
+      summary: List recent normalization runs
+      description: >-
+        Admin-only personal ChatGPT normalization. Only the configured credential owner can use this connection.
+        Suggestions never change receipts until explicitly applied.
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NormalizationAiRunResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Operation or source state conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: ChatGPT is unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+    post:
+      operationId: StartNormalizationAiRun
+      tags:
+        - NormalizationAi
+      summary: Request suggestions for selected items
+      description: >-
+        Admin-only personal ChatGPT normalization. Only the configured credential owner can use this connection.
+        Suggestions never change receipts until explicitly applied.
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NormalizationAiRunResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Operation or source state conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: ChatGPT is unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartNormalizationAiRunRequest'
+  /api/normalization-ai/runs/{id}:
+    get:
+      operationId: GetNormalizationAiRun
+      tags:
+        - NormalizationAi
+      summary: Get a resumable normalization run
+      description: >-
+        Admin-only personal ChatGPT normalization. Only the configured credential owner can use this connection.
+        Suggestions never change receipts until explicitly applied.
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NormalizationAiRunResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Operation or source state conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: ChatGPT is unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+  /api/normalization-ai/runs/{id}/cancel:
+    post:
+      operationId: CancelNormalizationAiRun
+      tags:
+        - NormalizationAi
+      summary: Cancel a normalization run
+      description: >-
+        Admin-only personal ChatGPT normalization. Only the configured credential owner can use this connection.
+        Suggestions never change receipts until explicitly applied.
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NormalizationAiRunResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Operation or source state conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: ChatGPT is unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+  /api/normalization-ai/runs/{id}/retry:
+    post:
+      operationId: RetryNormalizationAiRun
+      tags:
+        - NormalizationAi
+      summary: Explicitly retry a normalization run
+      description: >-
+        Admin-only personal ChatGPT normalization. Only the configured credential owner can use this connection.
+        Suggestions never change receipts until explicitly applied.
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NormalizationAiRunResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Operation or source state conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: ChatGPT is unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetryNormalizationAiRunRequest'
+  /api/normalization-ai/runs/{id}/apply:
+    post:
+      operationId: ApplyNormalizationAiRun
+      tags:
+        - NormalizationAi
+      summary: Atomically apply reviewed suggestions
+      description: >-
+        Admin-only personal ChatGPT normalization. Only the configured credential owner can use this connection.
+        Suggestions never change receipts until explicitly applied.
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NormalizationAiRunResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Operation or source state conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: ChatGPT is unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplyNormalizationAiRunRequest'
   /api/search/purchases:
     get:
       operationId: SearchPurchases
@@ -120,9 +1347,9 @@ paths:
               schema:
                 {}
 
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   # Metadata
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /api/metadata/enums:
     get:
@@ -140,9 +1367,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/EnumMetadataResponse"
 
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   # Accounts
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /api/accounts/{id}:
     get:
@@ -222,7 +1449,7 @@ paths:
         "404":
           description: Not Found
         "409":
-          description: Conflict — cards reference this account
+          description: Conflict â€” cards reference this account
           content:
             application/json:
               schema:
@@ -372,9 +1599,9 @@ paths:
         "404":
           description: Not Found
 
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   # Cards
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /api/cards/{id}:
     get:
@@ -430,7 +1657,7 @@ paths:
             X-Resource-Id:
               $ref: "#/components/headers/X-Resource-Id"
         "400":
-          description: Bad Request — returned when `accountId` does not refer to an existing Account.
+          description: Bad Request â€” returned when `accountId` does not refer to an existing Account.
           content:
             application/json:
               schema:
@@ -460,7 +1687,7 @@ paths:
         "404":
           description: Not Found
         "409":
-          description: Conflict — transactions reference this card
+          description: Conflict â€” transactions reference this card
           content:
             application/json:
               schema:
@@ -535,7 +1762,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/CardResponse"
         "400":
-          description: Bad Request — returned when `accountId` does not refer to an existing Account.
+          description: Bad Request â€” returned when `accountId` does not refer to an existing Account.
           content:
             application/json:
               schema:
@@ -566,7 +1793,7 @@ paths:
                 items:
                   $ref: "#/components/schemas/CardResponse"
         "400":
-          description: Bad Request — returned when any entry's `accountId` does not refer to an existing Account.
+          description: Bad Request â€” returned when any entry's `accountId` does not refer to an existing Account.
           content:
             application/json:
               schema:
@@ -590,7 +1817,7 @@ paths:
         "204":
           description: No Content
         "400":
-          description: Bad Request — returned when any entry's `accountId` does not refer to an existing Account.
+          description: Bad Request â€” returned when any entry's `accountId` does not refer to an existing Account.
           content:
             application/json:
               schema:
@@ -627,7 +1854,7 @@ paths:
                 $ref: "#/components/schemas/MergeCardsResponse"
         "400":
           description: >
-            Bad Request — invalid merge selection, or conflicting mappings in multiple
+            Bad Request â€” invalid merge selection, or conflicting mappings in multiple
             YNAB budgets that the single-winner request cannot resolve. Remove obsolete
             mappings until at most one budget conflicts, then retry.
           content:
@@ -635,9 +1862,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
         "404":
-          description: Not Found — target account or source card missing
+          description: Not Found â€” target account or source card missing
         "409":
-          description: Conflict — source accounts have differing YNAB mappings
+          description: Conflict â€” source accounts have differing YNAB mappings
           content:
             application/json:
               schema:
@@ -672,18 +1899,18 @@ paths:
                 $ref: "#/components/schemas/MergeCardsPreviewResponse"
         "400":
           description: >
-            Bad Request — invalid merge selection, or conflicting mappings in multiple
+            Bad Request â€” invalid merge selection, or conflicting mappings in multiple
             YNAB budgets that must be reduced before the merge can be previewed.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
         "404":
-          description: Not Found — target account or source card missing
+          description: Not Found â€” target account or source card missing
 
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   # Categories
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /api/categories/{id}:
     get:
@@ -765,7 +1992,7 @@ paths:
           description: Not Found
         "409":
           description: >
-            Conflict — receipt items use this category name. ProblemDetails includes
+            Conflict â€” receipt items use this category name. ProblemDetails includes
             receiptItemCount (matching items, including trash) as an extension.
           content:
             application/json:
@@ -929,9 +2156,9 @@ paths:
         "404":
           description: Not Found
 
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   # Subcategories
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /api/subcategories/{id}:
     get:
@@ -1013,7 +2240,7 @@ paths:
           description: Not Found
         "409":
           description: >
-            Conflict — receipt items use this category/subcategory name pair.
+            Conflict â€” receipt items use this category/subcategory name pair.
             ProblemDetails extensions include receiptItemCount (matching items,
             including trash) and affectedReceipts (up to 20 distinct matching
             receipts, including trash, ordered by date descending then ID ascending).
@@ -1188,9 +2415,9 @@ paths:
         "404":
           description: Not Found
 
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   # Item Templates
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /api/item-templates/{id}:
     get:
@@ -1274,7 +2501,7 @@ paths:
             type: string
           description: |
             Case-insensitive substring match on the template name. Omitted or blank means no
-            filter — blank is deliberately not "match nothing", which would return zero rows for
+            filter â€” blank is deliberately not "match nothing", which would return zero rows for
             what reads like an unfiltered request.
 
             `total` counts matching templates rather than all of them, so a caller can page
@@ -1404,7 +2631,7 @@ paths:
             default: 0.3
             minimum: 0.0
             maximum: 1.0
-          description: Minimum similarity score (0.0–1.0)
+          description: Minimum similarity score (0.0â€“1.0)
         - name: semantic
           in: query
           required: false
@@ -1531,9 +2758,9 @@ paths:
         "404":
           description: Not Found
 
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   # Normalized Descriptions (admin-only)
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /api/normalized-descriptions/settings:
     get:
@@ -1648,7 +2875,7 @@ paths:
         `NormalizedDescriptionMatchScore` values would be cleared, along with an
         estimate of how long the background resolver needs to rebuild them.
 
-        Read-only — nothing is modified. Also serves as the post-run
+        Read-only â€” nothing is modified. Also serves as the post-run
         verification: after a successful requeue every count reads zero.
         Admin-only.
       security:
@@ -1681,7 +2908,7 @@ paths:
 
         `expectedPendingCount` must equal the count the caller last previewed;
         a mismatch returns 409 rather than acting on stale information. Re-runnable
-        — a second call with no pending rows deletes nothing. Admin-only.
+        â€” a second call with no pending rows deletes nothing. Admin-only.
       security:
         - BearerAuth: []
         - ApiKey: []
@@ -1754,7 +2981,7 @@ paths:
         status and search term. Admin-only.
 
         Paginated since RECEIPTS-879. The row count is bounded by the number of unique
-        receipt-item descriptions ever seen, which grocery receipts push into the thousands —
+        receipt-item descriptions ever seen, which grocery receipts push into the thousands â€”
         the previous unpaginated behaviour made the registry load every row and filter in the
         browser. Callers that omit `offset`/`limit` now receive the first 50 rows rather than
         everything; read `totalCount` to page.
@@ -1778,7 +3005,7 @@ paths:
             too. When absent, returns rows of every status. Matching is case-insensitive.
 
             Repeatable since RECEIPTS-878: the merge dialog needs every legitimate merge target,
-            which is Active *and* PendingReview but never Rejected — a tombstone must not be
+            which is Active *and* PendingReview but never Rejected â€” a tombstone must not be
             resurrected by having items merged into it. A single-valued filter forced the client
             to choose one, so two near-duplicate pending entries from the same resolver batch
             could not be merged with each other. `?status=Active` still behaves exactly as before.
@@ -1896,7 +3123,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
         "404":
-          description: Not Found — the kept or the discarded id does not exist
+          description: Not Found â€” the kept or the discarded id does not exist
           content:
             application/json:
               schema:
@@ -1954,7 +3181,7 @@ paths:
         For a reviewer who recognises a resolver-derived row as something they already curated a
         template for (RECEIPTS-930).
 
-        The template's entry is the one whose canonical name equals the template's name — that is
+        The template's entry is the one whose canonical name equals the template's name â€” that is
         the invariant `ItemTemplateService` re-establishes on every create and update. So this
         endpoint resolves that entry (creating it if the template has never been linked), points
         the template's foreign key at it, and then **consolidates the row at `{id}` into it**:
@@ -1964,7 +3191,7 @@ paths:
         It does not simply point the template's foreign key at `{id}`, for two reasons. The link
         would not survive the template's next edit, which re-resolves it from the template's
         name. And it would not move the receipt items already sitting on `{id}`, so the two would
-        go on reporting as separate buckets — which is the whole thing the caller is trying to
+        go on reporting as separate buckets â€” which is the whole thing the caller is trying to
         fix.
 
         When `{id}` already *is* the template's entry, nothing is merged and nothing is deleted;
@@ -1997,13 +3224,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/LinkItemTemplateResponse"
         "400":
-          description: Bad Request — an empty id, or the row is a rejected tombstone
+          description: Bad Request â€” an empty id, or the row is a rejected tombstone
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
         "404":
-          description: Not Found — the row or the template does not exist
+          description: Not Found â€” the row or the template does not exist
           content:
             application/json:
               schema:
@@ -2052,7 +3279,7 @@ paths:
       tags: [NormalizedDescriptions]
       summary: Set or clear a normalized description's display label
       description: |
-        Changes only the display label — never `canonicalName`, and never the embedding.
+        Changes only the display label â€” never `canonicalName`, and never the embedding.
         Renaming is cosmetic by construction, so it cannot change which receipt text resolves
         to this row. Send `displayLabel: null` to clear the label and fall back to showing the
         matched text. Admin-only.
@@ -2084,7 +3311,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/NormalizedDescriptionResponse"
         "400":
-          description: Bad Request — the label is whitespace-only or longer than 200 characters
+          description: Bad Request â€” the label is whitespace-only or longer than 200 characters
           content:
             application/json:
               schema:
@@ -2096,15 +3323,15 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
         "409":
-          description: Conflict — another normalized description already displays that name
+          description: Conflict â€” another normalized description already displays that name
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   # Receipts
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /api/receipts/{id}:
     get:
@@ -2203,7 +3430,7 @@ paths:
             case-insensitive substring search, this is a literal byte-for-byte equality test:
             case-sensitive and not trimmed. It exists so a drill-down from the Spending by Location
             report returns exactly the rows that report's row counted, and that report groups on the
-            raw Location value — so "Walmart" and "walmart" are distinct filters, as are "Target" and
+            raw Location value â€” so "Walmart" and "walmart" are distinct filters, as are "Target" and
             "Target ". Empty values are ignored. Combines with `q` as an AND.
           schema:
             type: string
@@ -2450,9 +3677,9 @@ paths:
         "404":
           description: Not Found
 
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   # Receipt Items
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /api/receipt-items/{id}:
     get:
@@ -2788,9 +4015,9 @@ paths:
                 $ref: "#/components/schemas/ProblemDetails"
 
 
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   # Transactions
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /api/transactions/{id}:
     get:
@@ -3083,9 +4310,9 @@ paths:
                 $ref: "#/components/schemas/ProblemDetails"
 
 
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   # Adjustments
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /api/adjustments/{id}:
     get:
@@ -3302,9 +4529,9 @@ paths:
                 $ref: "#/components/schemas/ProblemDetails"
 
 
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   # Trash
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /api/trash/purge:
     post:
@@ -3318,9 +4545,9 @@ paths:
         "204":
           description: No Content
 
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   # Aggregates (read-only)
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /api/receipts-with-items:
     get:
@@ -3409,9 +4636,9 @@ paths:
         "404":
           description: Not Found
 
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   # Audit
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /api/audit:
     get:
@@ -3520,9 +4747,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   # Backup
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /api/backup/import:
     post:
@@ -3533,7 +4760,7 @@ paths:
         Accepts a SQLite database file exported by the backup endpoint, reads all
         entity tables, and upserts each row into the current database (insert if
         new, update if existing by ID). Requires the Admin role. The import is
-        atomic — if any entity fails validation, the entire import is rolled back.
+        atomic â€” if any entity fails validation, the entire import is rolled back.
       security:
         - BearerAuth: []
         - ApiKey: []
@@ -3554,21 +4781,21 @@ paths:
               schema:
                 $ref: "#/components/schemas/BackupImportResponse"
         "400":
-          description: Bad Request — file missing, wrong format, or validation error
+          description: Bad Request â€” file missing, wrong format, or validation error
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
         "409":
-          description: Conflict — receipt state changed during import; reload and retry
+          description: Conflict â€” receipt state changed during import; reload and retry
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   # Auth
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /api/auth/login:
     post:
@@ -3693,9 +4920,9 @@ paths:
         "200":
           description: OK
 
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   # API Keys
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /api/apikeys:
     get:
@@ -3754,9 +4981,9 @@ paths:
         "204":
           description: No Content
 
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   # Auth Audit
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /api/auth/audit/me:
     get:
@@ -3839,9 +5066,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   # Users (admin-only)
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /api/users:
     get:
@@ -4000,9 +5227,9 @@ paths:
         "404":
           description: Not Found
 
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   # User Roles (admin-only)
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /api/users/{userId}/roles:
     get:
@@ -4100,9 +5327,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   # Reports
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /api/reports/health-summary:
     get:
@@ -4113,7 +5340,7 @@ paths:
         Returns headline counts for the data-quality reports so the reports hub can
         show at a glance whether anything needs attention: out-of-balance receipts,
         duplicate receipt groups (matched on date + location), and uncategorized
-        receipt items. Backed by COUNT queries only — no report rows are returned.
+        receipt items. Backed by COUNT queries only â€” no report rows are returned.
       security:
         - BearerAuth: []
         - ApiKey: []
@@ -4253,7 +5480,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /api/reports/item-descriptions:
     get:
@@ -4442,7 +5669,7 @@ paths:
       operationId: AcceptDuplicateGroup
       tags: [Reports]
       summary: Accept a duplicate group as not-a-duplicate
-      description: Records every unordered pair of the supplied receipts as "not a duplicate" so the group stops being reported. Idempotent — re-accepting an already-accepted group is a no-op.
+      description: Records every unordered pair of the supplied receipts as "not a duplicate" so the group stops being reported. Idempotent â€” re-accepting an already-accepted group is a no-op.
       security:
         - BearerAuth: []
         - ApiKey: []
@@ -4473,7 +5700,7 @@ paths:
       summary: Undo a duplicate-group acceptance
       description: >
         Removes the "not a duplicate" assertion between every pair of the supplied receipts, and
-        only those pairs — the server does not expand the request. The caller must therefore submit
+        only those pairs â€” the server does not expand the request. The caller must therefore submit
         every member of the group it wants undone: send the group's memberReceiptIds from
         GET /api/reports/duplicates/accepted, not the receipts it displayed, or the pairs touching a
         member whose receipt was deleted are left stored with no way to reach them again. To un-accept
@@ -4607,7 +5834,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /api/reports/spending-by-normalized-description:
     get:
@@ -4680,9 +5907,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   # Dashboard
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /api/dashboard/summary:
     get:
@@ -4908,9 +6135,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/EarliestReceiptYearResponse"
 
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   # Backup
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /api/backup/export:
     post:
@@ -4940,9 +6167,9 @@ paths:
                 type: string
                 format: binary
 
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   # YNAB
-  # ──────────────────────────────────────────────
+  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /api/ynab/connection-status:
     get:
@@ -4965,7 +6192,7 @@ paths:
       operationId: GetYnabStatus
       tags: [YNAB]
       summary: Get YNAB integration status and sync stats
-      description: Returns an aggregate health snapshot for the YNAB status page — whether YNAB is configured, when it was last validated, last push success/failure timestamps, and push counts by window. Derived from the sync-event log; does not perform a live YNAB call.
+      description: Returns an aggregate health snapshot for the YNAB status page â€” whether YNAB is configured, when it was last validated, last push success/failure timestamps, and push counts by window. Derived from the sync-event log; does not perform a live YNAB call.
       security:
         - BearerAuth: []
       responses:
@@ -5262,7 +6489,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
         "409":
-          description: Conflict — mapping for this receipts category already exists in the selected budget
+          description: Conflict â€” mapping for this receipts category already exists in the selected budget
           content:
             application/problem+json:
               schema:
@@ -5603,6 +6830,637 @@ paths:
 
 components:
   schemas:
+    NormalizationSourceKey:
+      type: object
+      required:
+        - location
+        - description
+      properties:
+        location:
+          type: string
+          maxLength: 1000
+        description:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        itemCode:
+          maxLength: 200
+          type:
+            - string
+            - 'null'
+    NormalizationLinkedTargetResponse:
+      type: object
+      required: [id, name, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        status:
+          $ref: '#/components/schemas/NormalizedDescriptionStatus'
+    NormalizationSourceGroupResponse:
+      type: object
+      required:
+        - source
+        - itemCount
+        - unassignedCount
+        - legacyUnknownCount
+        - automaticCount
+        - protectedCount
+      properties:
+        linkedTargetCount:
+          type: integer
+          format: int32
+          description: Number of distinct currently linked identities; multiple identities remain ambiguous.
+        linkedTargets:
+          type: array
+          description: Up to five current linked identities, for explicit review navigation. Missing entries do not imply a single identity.
+          items:
+            $ref: '#/components/schemas/NormalizationLinkedTargetResponse'
+        revisableCount:
+          type: integer
+          format: int32
+        source:
+          $ref: '#/components/schemas/NormalizationSourceKey'
+        itemCount:
+          type: integer
+          format: int32
+        unassignedCount:
+          type: integer
+          format: int32
+        legacyUnknownCount:
+          type: integer
+          format: int32
+        automaticCount:
+          type: integer
+          format: int32
+        protectedCount:
+          type: integer
+          format: int32
+        mappingId:
+          type:
+            - string
+            - 'null'
+          format: uuid
+    NormalizationSourcePageResponse:
+      type: object
+      required:
+        - items
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/NormalizationSourceGroupResponse'
+        total:
+          type: integer
+          format: int32
+    NormalizationCatalogCoverageResponse:
+      type: object
+      required:
+        - totalItems
+        - unassigned
+        - legacyUnknown
+        - automatic
+        - reviewed
+        - mapped
+        - protected
+        - excluded
+      properties:
+        revisable:
+          type: integer
+          format: int32
+        totalItems:
+          type: integer
+          format: int32
+        unassigned:
+          type: integer
+          format: int32
+        legacyUnknown:
+          type: integer
+          format: int32
+        automatic:
+          type: integer
+          format: int32
+        reviewed:
+          type: integer
+          format: int32
+        mapped:
+          type: integer
+          format: int32
+        protected:
+          type: integer
+          format: int32
+        excluded:
+          type: integer
+          format: int32
+    NormalizationCatalogCandidateResponse:
+      type: object
+      required:
+        - id
+        - revision
+        - canonicalName
+        - channels
+        - approvedExamples
+      properties:
+        id:
+          type: string
+          format: uuid
+        revision:
+          type: string
+          format: uuid
+        canonicalName:
+          type: string
+        displayLabel:
+          type:
+            - string
+            - 'null'
+        channels:
+          type: array
+          items:
+            type: string
+        approvedExamples:
+          type: array
+          items:
+            type: string
+    NormalizationCatalogPreviewRequest:
+      type: object
+      required:
+        - clientRequestId
+        - source
+        - includeLegacyUnknown
+        - exclude
+      properties:
+        clientRequestId:
+          type: string
+          format: uuid
+        source:
+          $ref: '#/components/schemas/NormalizationSourceKey'
+        targetId:
+          type:
+            - string
+            - 'null'
+          format: uuid
+        targetRevision:
+          type:
+            - string
+            - 'null'
+          format: uuid
+        newCanonicalName:
+          type:
+            - string
+            - 'null'
+          maxLength: 200
+        includeLegacyUnknown:
+          type: boolean
+        exclude:
+          type: boolean
+        suggestionRunId:
+          type:
+            - string
+            - 'null'
+          format: uuid
+        suggestionProposalId:
+          type:
+            - string
+            - 'null'
+          format: uuid
+        suggestionRunRevision:
+          type:
+            - string
+            - 'null'
+          format: uuid
+    NormalizationCatalogRevisionRequest:
+      type: object
+      required:
+        - expectedRevision
+      properties:
+        expectedRevision:
+          type: string
+          format: uuid
+    NormalizationSourceMappingResponse:
+      type: object
+      required:
+        - id
+        - revision
+        - source
+        - state
+        - approvedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        revision:
+          type: string
+          format: uuid
+        source:
+          $ref: '#/components/schemas/NormalizationSourceKey'
+        targetId:
+          type:
+            - string
+            - 'null'
+          format: uuid
+        targetName:
+          type:
+            - string
+            - 'null'
+        state:
+          type: string
+        approvedAt:
+          type: string
+          format: date-time
+    NormalizationCatalogOperationResponse:
+      type: object
+      required:
+        - id
+        - revision
+        - state
+        - source
+        - includeLegacyUnknown
+        - total
+        - eligible
+        - protected
+        - applied
+        - conflicted
+        - remaining
+        - undone
+        - createdAt
+        - exclude
+      properties:
+        id:
+          type: string
+          format: uuid
+        revision:
+          type: string
+          format: uuid
+        state:
+          type: string
+        source:
+          $ref: '#/components/schemas/NormalizationSourceKey'
+        mappingId:
+          type:
+            - string
+            - 'null'
+          format: uuid
+        targetId:
+          type:
+            - string
+            - 'null'
+          format: uuid
+        newCanonicalName:
+          type:
+            - string
+            - 'null'
+        includeLegacyUnknown:
+          type: boolean
+        total:
+          type: integer
+          format: int32
+        eligible:
+          type: integer
+          format: int32
+        protected:
+          type: integer
+          format: int32
+        applied:
+          type: integer
+          format: int32
+        conflicted:
+          type: integer
+          format: int32
+        remaining:
+          type: integer
+          format: int32
+        undone:
+          type: integer
+          format: int32
+        createdAt:
+          type: string
+          format: date-time
+        targetName:
+          type:
+            - string
+            - 'null'
+        exclude:
+          type: boolean
+        errorCode:
+          type:
+            - string
+            - 'null'
+        errorDetail:
+          type:
+            - string
+            - 'null'
+    NormalizationAiSourceSelection:
+      type: object
+      required:
+        - source
+        - includeLegacyUnknown
+      properties:
+        source:
+          $ref: '#/components/schemas/NormalizationSourceKey'
+        includeLegacyUnknown:
+          type: boolean
+        labelOnly:
+          type: boolean
+          description: Suggest a display label for the single existing identity without proposing assignment changes.
+    NormalizationCatalogLabelPreviewRequest:
+      type: object
+      properties:
+        displayLabel:
+          type: [string, 'null']
+          maxLength: 200
+    NormalizationCatalogLabelApprovalRequest:
+      type: object
+      required: [expectedTargetRevision, expectedAffectedItemCount]
+      properties:
+        displayLabel:
+          type: [string, 'null']
+          maxLength: 200
+        expectedTargetRevision:
+          type: string
+          format: uuid
+        expectedAffectedItemCount:
+          type: integer
+          format: int32
+          minimum: 0
+        suggestionRunId:
+          type: [string, 'null']
+          format: uuid
+        suggestionProposalId:
+          type: [string, 'null']
+          format: uuid
+        suggestionRunRevision:
+          type: [string, 'null']
+          format: uuid
+    NormalizationCatalogLabelReviewResponse:
+      type: object
+      required: [targetId, targetRevision, canonicalName, affectedItemCount]
+      properties:
+        targetId:
+          type: string
+          format: uuid
+        targetRevision:
+          type: string
+          format: uuid
+        canonicalName:
+          type: string
+        currentDisplayLabel:
+          type: [string, 'null']
+        proposedDisplayLabel:
+          type: [string, 'null']
+        affectedItemCount:
+          type: integer
+          format: int32
+    StartNormalizationAiSourcesRequest:
+      type: object
+      required:
+        - clientRequestId
+        - sources
+        - model
+      properties:
+        clientRequestId:
+          type: string
+          format: uuid
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/NormalizationAiSourceSelection'
+          minItems: 1
+          maxItems: 50
+        model:
+          type: string
+          minLength: 1
+          maxLength: 200
+    NormalizationAiConnectionResponse:
+      type: object
+      required:
+        - configured
+        - isOwner
+        - credentialsPresent
+        - generation
+        - models
+        - busy
+      properties:
+        configured:
+          type: boolean
+        isOwner:
+          type: boolean
+        credentialsPresent:
+          type: boolean
+        generation:
+          type: string
+          format: uuid
+        models:
+          type: array
+          items:
+            type: string
+        busy:
+          type: boolean
+    NormalizationAiCandidateResponse:
+      type: object
+      required:
+        - id
+        - receiptId
+        - description
+        - location
+        - date
+      properties:
+        id:
+          type: string
+          format: uuid
+        receiptId:
+          type: string
+          format: uuid
+        description:
+          type: string
+        location:
+          type: string
+        date:
+          type: string
+          format: date
+    NormalizationAiCandidatePageResponse:
+      type: object
+      required:
+        - items
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/NormalizationAiCandidateResponse'
+        total:
+          type: integer
+          format: int32
+    NormalizationAiUsageResponse:
+      type: object
+      required:
+        - input
+        - output
+        - cacheRead
+        - cacheWrite
+      properties:
+        input:
+          type: integer
+          format: int64
+        output:
+          type: integer
+          format: int64
+        cacheRead:
+          type: integer
+          format: int64
+        cacheWrite:
+          type: integer
+          format: int64
+    NormalizationAiProposalResponse:
+      type: object
+      required:
+        - id
+        - receiptItemId
+        - description
+        - action
+        - state
+      properties:
+        id:
+          type: string
+          format: uuid
+        receiptItemId:
+          type: string
+          format: uuid
+        description:
+          type: string
+        action:
+          type: string
+        targetId:
+          type:
+            - string
+            - 'null'
+          format: uuid
+        canonicalName:
+          type:
+            - string
+            - 'null'
+        displayLabel:
+          type:
+            - string
+            - 'null'
+        reason:
+          type:
+            - string
+            - 'null'
+        state:
+          type: string
+        source:
+          oneOf:
+            - $ref: '#/components/schemas/NormalizationSourceKey'
+            - type: 'null'
+        targetRevision:
+          type:
+            - string
+            - 'null'
+          format: uuid
+        includeLegacyUnknown:
+          type: boolean
+        labelOnly:
+          type: boolean
+        suggestedDisplayLabel:
+          type: [string, 'null']
+    NormalizationAiRunResponse:
+      type: object
+      required:
+        - id
+        - revision
+        - clientRequestId
+        - state
+        - model
+        - createdAt
+        - proposals
+      properties:
+        id:
+          type: string
+          format: uuid
+        revision:
+          type: string
+          format: uuid
+        clientRequestId:
+          type: string
+          format: uuid
+        state:
+          type: string
+        model:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        errorCode:
+          type:
+            - string
+            - 'null'
+        errorDetail:
+          type:
+            - string
+            - 'null'
+        proposals:
+          type: array
+          items:
+            $ref: '#/components/schemas/NormalizationAiProposalResponse'
+        usage:
+          oneOf:
+            - $ref: '#/components/schemas/NormalizationAiUsageResponse'
+            - type: 'null'
+    StartNormalizationAiRunRequest:
+      type: object
+      required:
+        - clientRequestId
+        - itemIds
+        - model
+      properties:
+        clientRequestId:
+          type: string
+          format: uuid
+        itemIds:
+          type: array
+          minItems: 1
+          maxItems: 50
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+        model:
+          type: string
+          minLength: 1
+          maxLength: 200
+    RetryNormalizationAiRunRequest:
+      type: object
+      required:
+        - clientRequestId
+      properties:
+        clientRequestId:
+          type: string
+          format: uuid
+    ApplyNormalizationAiRunRequest:
+      type: object
+      required:
+        - proposalIds
+        - expectedRevision
+      properties:
+        proposalIds:
+          type: array
+          minItems: 1
+          maxItems: 50
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+        expectedRevision:
+          type: string
+          format: uuid
     PurchaseSearchResponse:
       type: object
       required: [items, total, offset, limit]
@@ -5663,7 +7521,7 @@ components:
           type: string
           description: Stored currency code without conversion.
 
-    # ── Errors ────────────────────────────────────
+    # â”€â”€ Errors â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     ProblemDetails:
       type: object
@@ -5671,7 +7529,7 @@ components:
         RFC 9457 problem document. Every 4xx this API raises with a reason answers in
         this shape; the human-readable reason is always in `detail`. Some responses add
         machine-readable members alongside these (for example `transactionCount` on a
-        409 from a delete that is blocked by references) — RFC 9457 permits such
+        409 from a delete that is blocked by references) â€” RFC 9457 permits such
         extension members, and they appear at the top level of the object.
       properties:
         type:
@@ -5696,7 +7554,7 @@ components:
             - string
             - "null"
 
-    # ── Reports ───────────────────────────────────
+    # â”€â”€ Reports â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     ReportsHealthSummaryResponse:
       type: object
@@ -5854,7 +7712,7 @@ components:
       properties:
         matchKey:
           type: string
-          description: Human-readable description of what these receipts have in common. Display only — it is derived from the current tolerance settings and is not a stable identity.
+          description: Human-readable description of what these receipts have in common. Display only â€” it is derived from the current tolerance settings and is not a stable identity.
         receipts:
           type: array
           items:
@@ -5925,7 +7783,7 @@ components:
           items:
             type: string
             format: uuid
-          description: The receipts in the group. At least two distinct IDs, and at most 100 — accepting expands to one stored row per pair, so the list is bounded the same way bulk YNAB pushes are.
+          description: The receipts in the group. At least two distinct IDs, and at most 100 â€” accepting expands to one stored row per pair, so the list is bounded the same way bulk YNAB pushes are.
 
     UnacceptDuplicateGroupRequest:
       type: object
@@ -5943,7 +7801,7 @@ components:
             row per pair and is quadratic, whereas un-accepting loads and soft-deletes existing matching
             pairs without creating rows. Its cost follows existing pairs, which may also be quadratic. An accepted group can exceed 100 members without any
             single accept call doing so, because groups are connected components that merge when an
-            acceptance bridges two of them — capping this would make such a group impossible to undo.
+            acceptance bridges two of them â€” capping this would make such a group impossible to undo.
 
     AcceptDuplicateGroupResponse:
       type: object
@@ -6088,13 +7946,13 @@ components:
             - type: "null"
           description: |
             Review status of the canonical row behind this bucket. `pendingReview` means the
-            resolver grouped these items on its own and no reviewer has confirmed the grouping —
+            resolver grouped these items on its own and no reviewer has confirmed the grouping â€”
             clients must render the bucket as provisional rather than settled. The bucket still
             counts toward `grandTotal` either way, so the report reconciles against receipt totals
             regardless of review progress. Null for the synthetic "(Not Normalized)" bucket, which
             has no backing row.
 
-    # ── Dashboard ──────────────────────────────────
+    # â”€â”€ Dashboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     DashboardSummaryResponse:
       type: object
@@ -6225,9 +8083,9 @@ components:
           type: integer
           format: int32
 
-    # ── Card ─────────────────────────────────────
+    # â”€â”€ Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-    # ── Account ──────────────────────────────────
+    # â”€â”€ Account â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     CreateAccountRequest:
       type: object
@@ -6280,7 +8138,7 @@ components:
           type: integer
           format: int32
 
-    # ── Card ──────────────────────────────────────
+    # â”€â”€ Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     CreateCardRequest:
       type: object
@@ -6295,7 +8153,7 @@ components:
         accountId:
           type: string
           format: uuid
-          description: Parent logical Account ID. Required — cards must have a parent.
+          description: Parent logical Account ID. Required â€” cards must have a parent.
 
     UpdateCardRequest:
       type: object
@@ -6313,7 +8171,7 @@ components:
         accountId:
           type: string
           format: uuid
-          description: Parent logical Account ID. Required — cards must have a parent.
+          description: Parent logical Account ID. Required â€” cards must have a parent.
 
     CardResponse:
       type: object
@@ -6383,7 +8241,7 @@ components:
       required: [accountsRemoved, cardsMoved, transactionsRepointed]
       description: >
         What the merge actually changed. All three counts are zero when every selected
-        card already belonged to the target account — the merge is idempotent, but the
+        card already belonged to the target account â€” the merge is idempotent, but the
         caller must be able to tell that apart from one that moved data.
       properties:
         accountsRemoved:
@@ -6523,7 +8381,7 @@ components:
           items:
             $ref: "#/components/schemas/YnabMappingConflict"
 
-    # ── Category ──────────────────────────────────
+    # â”€â”€ Category â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     CreateCategoryRequest:
       type: object
@@ -6588,7 +8446,7 @@ components:
           type: integer
           format: int32
 
-    # ── Subcategory ─────────────────────────────
+    # â”€â”€ Subcategory â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     CreateSubcategoryRequest:
       type: object
@@ -6662,7 +8520,7 @@ components:
           type: integer
           format: int32
 
-    # ── Item Template ──────────────────────────────
+    # â”€â”€ Item Template â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     CreateItemTemplateRequest:
       type: object
@@ -6795,13 +8653,13 @@ components:
         similarity:
           type: number
           format: double
-          description: Trigram similarity score (0.0–1.0)
+          description: Trigram similarity score (0.0â€“1.0)
         semanticSimilarity:
           type:
             - number
             - "null"
           format: double
-          description: Embedding cosine similarity score (0.0–1.0), null if embeddings unavailable
+          description: Embedding cosine similarity score (0.0â€“1.0), null if embeddings unavailable
         combinedScore:
           type: number
           format: double
@@ -6900,7 +8758,7 @@ components:
           format: int32
           description: Number of similar items with this category
 
-    # ── Normalized Descriptions ──────────────────
+    # â”€â”€ Normalized Descriptions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     NormalizedDescriptionSettingsResponse:
       type: object
@@ -7098,7 +8956,7 @@ components:
         `rejected` rows are tombstones: a reviewer judged the matched text not worth a canonical
         entry, so the row survives only to stop the resolver recreating it. Rejected rows are
         excluded from ANN candidate search, carry no linked receipt items, and never appear as a
-        bucket in the spending report — their items report as "(Not Normalized)".
+        bucket in the spending report â€” their items report as "(Not Normalized)".
 
     NormalizedDescriptionResponse:
       type: object
@@ -7111,7 +8969,7 @@ components:
         canonicalName:
           type: string
           description: |
-            The observed receipt text this row matches on. Never edited — the embedding is
+            The observed receipt text this row matches on. Never edited â€” the embedding is
             anchored to it. Use `displayName` when showing this row to a user.
         displayLabel:
           type: ["string", "null"]
@@ -7139,7 +8997,7 @@ components:
           type: ["string", "null"]
           format: date-time
           description: |
-            Latest receipt date among the live items linked to this row, at midnight UTC — a
+            Latest receipt date among the live items linked to this row, at midnight UTC â€” a
             receipt has a date, not a time. Null when nothing is linked, which is a different
             statement from "last seen a long time ago".
 
@@ -7162,8 +9020,8 @@ components:
             is called X", so a pending row carrying one has already been vouched for by hand and
             is almost always an Approve (RECEIPTS-930).
 
-            When several templates point here — the ordinary result of merging two
-            template-backed entries — this is the alphabetically first, and `linkedTemplateCount`
+            When several templates point here â€” the ordinary result of merging two
+            template-backed entries â€” this is the alphabetically first, and `linkedTemplateCount`
             says how many there are. Soft-deleted (hidden) templates are excluded: a template the
             user has put in the recycle bin is not evidence of anything.
         linkedTemplateId:
@@ -7185,7 +9043,7 @@ components:
           type: ["string", "null"]
           description: |
             Display name of the canonical row this entry most nearly matched when the resolver
-            flagged it for review. Null when no near-miss was recorded — the row was auto-accepted,
+            flagged it for review. Null when no near-miss was recorded â€” the row was auto-accepted,
             created outright, predates the field, or its neighbour has since been merged away.
             Clients must render that absence as "no comparison recorded", never as a zero score.
         nearestNeighbourSimilarity:
@@ -7209,7 +9067,7 @@ components:
           format: int32
           description: |
             Total number of rows matching the status and search filters, across all pages.
-            Since RECEIPTS-879 this is the count to page against — it is no longer the length
+            Since RECEIPTS-879 this is the count to page against â€” it is no longer the length
             of `items`, which is capped by `limit`.
         offset:
           type: integer
@@ -7227,7 +9085,7 @@ components:
           type: ["string", "null"]
           maxLength: 200
           description: |
-            New display label. Null — or an omitted property — clears it, so the row falls back
+            New display label. Null â€” or an omitted property â€” clears it, so the row falls back
             to showing its matched text. The two are equivalent because this is the only field
             the endpoint has: there is no other change a caller could be asking for, so an
             absent label cannot mean "leave it alone".
@@ -7285,7 +9143,7 @@ components:
           type: string
           format: uuid
           description: |
-            The template whose item this row is. Must be a live template — a soft-deleted one is
+            The template whose item this row is. Must be a live template â€” a soft-deleted one is
             a 404, since linking to something sitting in the recycle bin would produce a link
             that vanishes the moment it is purged.
 
@@ -7315,7 +9173,7 @@ components:
           type: boolean
           description: |
             False when the requested row already *was* the template's entry, so all that happened
-            was the template's foreign key being set — nothing moved and nothing was deleted.
+            was the template's foreign key being set â€” nothing moved and nothing was deleted.
 
             True when the two were different rows and the requested row was consolidated into the
             template's entry and deleted. Clients should treat this as the destructive case and
@@ -7328,7 +9186,7 @@ components:
         expectedFingerprint:
           type: string
           minLength: 1
-          description: The `pendingFingerprint` the caller last previewed. The requeue is rejected with 409 unless the live pending set is identical, so a stale client cannot delete a row its operator never reviewed. A count would not be sufficient — one row being approved away while the resolver queues a new one leaves the count unchanged but the set different.
+          description: The `pendingFingerprint` the caller last previewed. The requeue is rejected with 409 unless the live pending set is identical, so a stale client cannot delete a row its operator never reviewed. A count would not be sufficient â€” one row being approved away while the resolver queues a new one leaves the count unchanged but the set different.
 
     RequeuePendingPreviewResponse:
       type: object
@@ -7352,7 +9210,7 @@ components:
         linkedItemCount:
           type: integer
           format: int32
-          description: Number of live (non-trashed) ReceiptItems that would be unlinked. Trashed items pointing at a pending row are unlinked too, for integrity, but are deliberately not counted here — the same convention the merge endpoint uses.
+          description: Number of live (non-trashed) ReceiptItems that would be unlinked. Trashed items pointing at a pending row are unlinked too, for integrity, but are deliberately not counted here â€” the same convention the merge endpoint uses.
         staleMatchScoreCount:
           type: integer
           format: int32
@@ -7384,7 +9242,7 @@ components:
           format: int32
           description: Number of live ReceiptItems whose NormalizedDescriptionMatchScore was nulled.
 
-    # ── Receipt ──────────────────────────────────
+    # â”€â”€ Receipt â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     CreateReceiptRequest:
       type: object
@@ -7554,7 +9412,7 @@ components:
           items:
             $ref: "#/components/schemas/AdjustmentResponse"
 
-    # ── Receipt Item ─────────────────────────────
+    # â”€â”€ Receipt Item â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     CreateReceiptItemRequest:
       type: object
@@ -7581,7 +9439,7 @@ components:
             The item template this line was entered from, if any (RECEIPTS-881).
 
             Supplying it stamps the item with the template's canonical normalized description at
-            write time, so the background resolver skips it entirely — it only considers items
+            write time, so the background resolver skips it entirely â€” it only considers items
             with no normalized description. The user already declared what this item is by
             picking the template; re-deriving it by embedding search could disagree with them and
             park the result in the review queue.
@@ -7695,7 +9553,7 @@ components:
         matchType:
           $ref: "#/components/schemas/ReceiptItemSuggestionResponseMatchType"
 
-    # ── Transaction ──────────────────────────────
+    # â”€â”€ Transaction â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     CreateTransactionRequest:
       type: object
@@ -7773,7 +9631,7 @@ components:
           type: integer
           format: int32
 
-    # ── Adjustment ──────────────────────────────
+    # â”€â”€ Adjustment â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     CreateAdjustmentRequest:
       type: object
@@ -7848,7 +9706,7 @@ components:
           type: integer
           format: int32
 
-    # ── Aggregates (read-only) ───────────────────
+    # â”€â”€ Aggregates (read-only) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     ValidationWarningResponse:
       type: object
@@ -7922,7 +9780,7 @@ components:
             $ref: "#/components/schemas/ValidationWarningResponse"
           description: "Soft validation warnings including date consistency checks"
 
-    # ── Audit ───────────────────────────────────────
+    # â”€â”€ Audit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     AuditLogDto:
       type: object
@@ -7974,7 +9832,7 @@ components:
           type: integer
           format: int32
 
-    # ── Auth Audit ────────────────────────────────
+    # â”€â”€ Auth Audit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     AuthAuditEntryDto:
       type: object
@@ -8038,7 +9896,7 @@ components:
           type: integer
           format: int32
 
-    # ── Auth ──────────────────────────────────────
+    # â”€â”€ Auth â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     LoginRequest:
       type: object
@@ -8446,7 +10304,7 @@ components:
           items:
             $ref: "#/components/schemas/EnumValuePair"
 
-    # ── YNAB ──────────────────────────────────────
+    # â”€â”€ YNAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     YnabBudgetSummary:
       type: object

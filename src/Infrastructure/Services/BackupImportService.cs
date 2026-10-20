@@ -64,6 +64,10 @@ public partial class BackupImportService(
 		await using Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction =
 			await context.Database.BeginTransactionAsync(cancellationToken);
 		await BackupImportLock.AcquireDatabaseAsync(context, cancellationToken);
+		// Restored business rows cannot be used by a pre-restore inference, even if
+		// the imported values happen to be identical and EF emits no row update.
+		await Infrastructure.NormalizationAi.NormalizationAiService.FenceForRestoreAsync(context, cancellationToken);
+		await context.SaveChangesAsync(cancellationToken);
 
 		try
 		{
@@ -71,6 +75,8 @@ public partial class BackupImportService(
 			await sqlite.OpenAsync(cancellationToken);
 
 			int exportVersion = ReadExportVersion(sqlite);
+			if (exportVersion >= 7 && !TableExists(sqlite, "normalization_catalog"))
+			{ throw new InvalidOperationException("Backup export_version=7 is missing required 'normalization_catalog' table."); }
 			if (exportVersion >= 5)
 			{
 				foreach (string table in PortableBackupFormat.RequiredTables)
@@ -108,6 +114,7 @@ public partial class BackupImportService(
 			(int normalizedDescriptionSettingsCreated, int normalizedDescriptionSettingsUpdated) = await UpsertNormalizedDescriptionSettingsAsync(context, sqlite, exportVersion, cancellationToken);
 
 			(int acceptedPairsCreated, int acceptedPairsUpdated) = await UpsertAcceptedDuplicatePairsAsync(context, sqlite, exportVersion, priorAcceptedPairs, cancellationToken);
+			await PortableCatalogArchive.ImportAsync(context, sqlite, exportVersion, cancellationToken);
 
 			await transaction.CommitAsync(cancellationToken);
 
@@ -667,6 +674,9 @@ public partial class BackupImportService(
 					existing.NormalizedDescriptionMatchScore = matchScore;
 				}
 				existing.ReceiptId = receiptId;
+				existing.NormalizationOrigin = existing.NormalizedDescriptionId.HasValue ? "legacy_unknown" : "unassigned";
+				existing.NormalizationMappingId = null;
+				existing.NormalizationAssignmentId = Guid.NewGuid();
 				existing.ReceiptItemCode = receiptItemCode;
 				existing.Description = description;
 				existing.Quantity = quantity;
@@ -696,6 +706,8 @@ public partial class BackupImportService(
 					Subcategory = subcategory,
 					NormalizedDescriptionId = canonicalId,
 					NormalizedDescriptionMatchScore = matchScore,
+					NormalizationOrigin = canonicalId.HasValue ? "legacy_unknown" : "unassigned",
+					NormalizationAssignmentId = Guid.NewGuid(),
 				});
 				created++;
 			}

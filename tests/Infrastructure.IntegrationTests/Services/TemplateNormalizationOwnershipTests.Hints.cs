@@ -117,6 +117,10 @@ public partial class TemplateNormalizationOwnershipTests
 		await provider.GetRequiredService<IItemTemplateService>().UpdateAsync([new(seed.Template, "Milk")], CancellationToken.None);
 		var created = await provider.GetRequiredService<CreateReceiptItemCommandHandler>().Handle(new([NewItem(seed.Bread)], seed.Receipt, [seed.Template]), CancellationToken.None);
 		created.Should().ContainSingle().Which.NormalizedDescriptionId.Should().Be(seed.Milk);
+		await using ApplicationDbContext verify = fixture.CreateDbContext();
+		var stored = await verify.ReceiptItems.SingleAsync(row => row.Id == created[0].Id);
+		stored.NormalizationOrigin.Should().Be("template");
+		stored.NormalizationAssignmentId.Should().NotBeNull();
 	}
 
 	private DbContextOptions<ApplicationDbContext> Options(IInterceptor interceptor) => new DbContextOptionsBuilder<ApplicationDbContext>(fixture.CreateOptions()).AddInterceptors(interceptor).Options;

@@ -27,6 +27,49 @@ namespace Infrastructure.IntegrationTests.Services;
 public class NormalizedDescriptionResolutionServiceTests(PostgresFixture fixture)
 {
 	[Fact]
+	public async Task ProcessPendingResolutionsAsync_OfflineExactReuseDoesNotInventMatchesForUnknownDescriptions()
+	{
+		await ResetTablesAsync();
+		Guid canonicalId = Guid.NewGuid();
+		ReceiptEntity receipt = ReceiptEntityGenerator.Generate();
+		ReceiptItemEntity exact = WithDescription(receipt.Id, "Organic Milk");
+		ReceiptItemEntity unknown = WithDescription(receipt.Id, "UNFAMILIAR PRODUCT");
+		var originalFacts = (exact.Description, exact.Quantity, exact.UnitPrice, exact.UnitPriceCurrency,
+			exact.TotalAmount, exact.TotalAmountCurrency);
+		await using (ApplicationDbContext setup = fixture.CreateDbContext())
+		{
+			setup.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
+			{
+				Id = canonicalId,
+				CanonicalName = "Organic Milk",
+				Status = NormalizedDescriptionStatus.Active,
+				CreatedAt = DateTimeOffset.UtcNow,
+			});
+			setup.Receipts.Add(receipt);
+			setup.ReceiptItems.AddRange(exact, unknown);
+			await setup.SaveChangesAsync();
+		}
+
+		using ServiceProvider provider = BuildProvider(new UnavailableEmbeddingService());
+		NormalizedDescriptionResolutionService resolver = new(
+			provider.GetRequiredService<IServiceScopeFactory>(),
+			provider.GetRequiredService<IDescriptionChangeSignal>(),
+			NullLogger<NormalizedDescriptionResolutionService>.Instance);
+		await resolver.ProcessPendingResolutionsAsync(CancellationToken.None);
+		await resolver.ProcessPendingResolutionsAsync(CancellationToken.None);
+
+		await using ApplicationDbContext verify = fixture.CreateDbContext();
+		ReceiptItemEntity saved = await verify.ReceiptItems.AsNoTracking().SingleAsync(x => x.Id == exact.Id);
+		saved.NormalizedDescriptionId.Should().Be(canonicalId,
+			"an established exact identity must remain usable without ONNX or a provider request");
+		(saved.Description, saved.Quantity, saved.UnitPrice, saved.UnitPriceCurrency,
+			saved.TotalAmount, saved.TotalAmountCurrency).Should().Be(originalFacts);
+		(await verify.ReceiptItems.AsNoTracking().SingleAsync(x => x.Id == unknown.Id))
+			.NormalizedDescriptionId.Should().BeNull("missing inference is not evidence for a new identity");
+		(await verify.NormalizedDescriptions.CountAsync()).Should().Be(1);
+	}
+
+	[Fact]
 	public async Task ProcessPendingResolutionsAsync_LinksItems_ViaExactMatch_PopulatesFkAndScore()
 	{
 		// Arrange — pre-seed canonical entries so the resolver routes every description
@@ -323,6 +366,15 @@ public class NormalizedDescriptionResolutionServiceTests(PostgresFixture fixture
 			=> Task.FromResult(Array.Empty<float>());
 		public Task<List<float[]>> GenerateEmbeddingsAsync(List<string> texts, CancellationToken cancellationToken)
 			=> Task.FromResult(texts.Select(_ => Array.Empty<float>()).ToList());
+	}
+
+	private sealed class UnavailableEmbeddingService : IEmbeddingService
+	{
+		public bool IsConfigured => false;
+		public Task<float[]> GenerateEmbeddingAsync(string text, CancellationToken cancellationToken)
+			=> throw new InvalidOperationException("Offline exact reuse must not invoke embeddings.");
+		public Task<List<float[]>> GenerateEmbeddingsAsync(List<string> texts, CancellationToken cancellationToken)
+			=> throw new InvalidOperationException("Offline exact reuse must not invoke embeddings.");
 	}
 
 	private static ReceiptItemEntity WithDescription(Guid receiptId, string description)

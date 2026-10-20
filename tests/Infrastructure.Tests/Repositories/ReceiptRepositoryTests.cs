@@ -367,7 +367,13 @@ public class ReceiptRepositoryTests
 		List<ReceiptEntity> updatedEntities = await verifyContext.Receipts.ToListAsync();
 
 		// Assert
-		updatedEntities.Should().BeEquivalentTo(entities);
+		updatedEntities.Should().BeEquivalentTo(entities, options => options.Excluding(x => x.NormalizationRevision));
+		foreach (var updated in updatedEntities)
+		{
+			updated.NormalizationRevision.Should().NotBeEmpty()
+				.And.NotBe(entities.Single(x => x.Id == updated.Id).NormalizationRevision,
+					"persisting a receipt edit advances its server-owned observation revision");
+		}
 
 		_contextFactory.ResetDatabase();
 	}

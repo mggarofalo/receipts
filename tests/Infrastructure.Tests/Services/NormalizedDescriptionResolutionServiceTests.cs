@@ -124,9 +124,11 @@ public class NormalizedDescriptionResolutionServiceTests
 
 	private GetOrCreateResult NewResult(string canonicalName, double? matchScore)
 	{
+		// These fixtures exercise the fuzzy-service seam. Exact names now resolve
+		// directly without calling that seam; keep the persisted candidate distinct.
 		NormalizedDescription domain = new(
 			Guid.NewGuid(),
-			canonicalName,
+				"Resolved " + canonicalName,
 			NormalizedDescriptionStatus.Active,
 			DateTimeOffset.UtcNow);
 		using ApplicationDbContext seed = _contextFactory.CreateDbContext();
@@ -173,14 +175,21 @@ public class NormalizedDescriptionResolutionServiceTests
 		GetOrCreateResult exactLookup =
 			await realService.GetOrCreateAsync("organic MILK", CancellationToken.None);
 
-		summary.Should().Be(NormalizedDescriptionResolutionService.ResolutionSummary.Empty);
+		summary.Linked.Should().Be(1);
+		summary.NewEntriesCreated.Should().Be(0);
 		exactLookup.Description.Id.Should().Be(canonicalId);
 		exactLookup.MatchScore.Should().Be(1);
+		var deferred = await CreateService().ProcessPendingResolutionsAsync(CancellationToken.None);
+		deferred.Should().Be(NormalizedDescriptionResolutionService.ResolutionSummary.Empty);
+		_embeddingServiceMock.Verify(service => service.GenerateEmbeddingAsync(
+			It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
 		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
 		verify.NormalizedDescriptions.Should().ContainSingle();
 		verify.ReceiptItems.IgnoreAutoIncludes().Single(item => item.Id == exact.Id)
-			.NormalizedDescriptionId.Should().BeNull(
-				"the background resolver defers the entire fuzzy batch until coverage is complete");
+			.NormalizedDescriptionId.Should().Be(canonicalId,
+				"known exact identity does not depend on complete embedding coverage");
+		verify.ReceiptItems.IgnoreAutoIncludes().Single(item => item.Id == exact.Id)
+			.NormalizedDescriptionMatchScore.Should().Be(1);
 		verify.ReceiptItems.IgnoreAutoIncludes().Single(item => item.Id == novel.Id)
 			.NormalizedDescriptionId.Should().BeNull(
 				"fuzzy matching or create-new must wait for complete canonical coverage");
