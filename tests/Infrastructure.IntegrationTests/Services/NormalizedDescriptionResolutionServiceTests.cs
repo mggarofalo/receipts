@@ -1,4 +1,5 @@
 using Application.Interfaces.Services;
+using Application.Normalization;
 using Domain.NormalizedDescriptions;
 using FluentAssertions;
 using Infrastructure.Entities.Core;
@@ -12,22 +13,14 @@ using SampleData.Entities;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-// Real-Postgres exercise of NormalizedDescriptionResolutionService (RECEIPTS-578). The tests
-// pre-seed NormalizedDescription rows so GetOrCreateAsync hits the exact-match short-circuit
-// (step 1 inside the service) and never needs the pgvector ANN pathway — that lets us verify
-// the resolver's end-to-end persistence, grouping, and filtering semantics without depending
-// on the ONNX embedding model.
-//
-// The ANN-match and below-threshold-create branches of GetOrCreateAsync are covered by the
-// unit tests against the InMemory provider (TestableNormalizedDescriptionService overrides
-// AnnSearchTopOneAsync for each threshold band).
+// Approved scoped mappings resolve offline; canonical spelling is never sufficient authority.
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
 public class NormalizedDescriptionResolutionServiceTests(PostgresFixture fixture)
 {
 	[Fact]
-	public async Task ProcessPendingResolutionsAsync_OfflineExactReuseDoesNotInventMatchesForUnknownDescriptions()
+	public async Task ProcessPendingResolutionsAsync_OfflineApprovedScopeDoesNotInventMatchesForUnknownDescriptions()
 	{
 		await ResetTablesAsync();
 		Guid canonicalId = Guid.NewGuid();
@@ -50,6 +43,7 @@ public class NormalizedDescriptionResolutionServiceTests(PostgresFixture fixture
 			await setup.SaveChangesAsync();
 		}
 
+		await ApproveMatchingSourcesAsync();
 		using ServiceProvider provider = BuildProvider(new UnavailableEmbeddingService());
 		NormalizedDescriptionResolutionService resolver = new(
 			provider.GetRequiredService<IServiceScopeFactory>(),
@@ -61,7 +55,7 @@ public class NormalizedDescriptionResolutionServiceTests(PostgresFixture fixture
 		await using ApplicationDbContext verify = fixture.CreateDbContext();
 		ReceiptItemEntity saved = await verify.ReceiptItems.AsNoTracking().SingleAsync(x => x.Id == exact.Id);
 		saved.NormalizedDescriptionId.Should().Be(canonicalId,
-			"an established exact identity must remain usable without ONNX or a provider request");
+			"an approved scoped mapping must remain usable without ONNX or a provider request");
 		(saved.Description, saved.Quantity, saved.UnitPrice, saved.UnitPriceCurrency,
 			saved.TotalAmount, saved.TotalAmountCurrency).Should().Be(originalFacts);
 		(await verify.ReceiptItems.AsNoTracking().SingleAsync(x => x.Id == unknown.Id))
@@ -70,10 +64,9 @@ public class NormalizedDescriptionResolutionServiceTests(PostgresFixture fixture
 	}
 
 	[Fact]
-	public async Task ProcessPendingResolutionsAsync_LinksItems_ViaExactMatch_PopulatesFkAndScore()
+	public async Task ProcessPendingResolutionsAsync_LinksItems_ViaSeparatelyApprovedCaseSensitiveScopes_WithoutSimilarityScores()
 	{
 		// Arrange — pre-seed canonical entries so the resolver routes every description
-		// through the exact-case-insensitive short-circuit inside NormalizedDescriptionService.
 		await ResetTablesAsync();
 
 		Guid milkId = Guid.NewGuid();
@@ -111,6 +104,7 @@ public class NormalizedDescriptionResolutionServiceTests(PostgresFixture fixture
 		}
 
 		NoOpEmbeddingService embeddingService = new();
+		await ApproveMatchingSourcesAsync();
 		ServiceProvider provider = BuildProvider(embeddingService);
 
 		NormalizedDescriptionResolutionService resolver = new(
@@ -121,10 +115,7 @@ public class NormalizedDescriptionResolutionServiceTests(PostgresFixture fixture
 		// Act
 		var summary = await resolver.ProcessPendingResolutionsAsync(CancellationToken.None);
 
-		// Assert — all three items were linked with the exact-match short-circuit's
-		// perfect score of 1.0.
 		summary.Linked.Should().Be(3);
-		summary.NewEntriesCreated.Should().Be(0, "each description hit an existing canonical entry");
 
 		await using ApplicationDbContext verify = fixture.CreateDbContext();
 		List<ReceiptItemEntity> items = await verify.ReceiptItems.AsNoTracking().ToListAsync();
@@ -134,25 +125,20 @@ public class NormalizedDescriptionResolutionServiceTests(PostgresFixture fixture
 		ReceiptItemEntity persistedSecond = items.Single(i => i.Id == second.Id);
 		ReceiptItemEntity persistedThird = items.Single(i => i.Id == third.Id);
 
-		// Both casing variants resolve to the same canonical entry.
 		persistedFirst.NormalizedDescriptionId.Should().Be(milkId);
 		persistedSecond.NormalizedDescriptionId.Should().Be(milkId);
 		persistedThird.NormalizedDescriptionId.Should().Be(bananaId);
 
-		// Exact-match short-circuit surfaces similarity = 1.0 — the resolver must persist
-		// that score alongside the FK so the downstream preview / admin reports don't have
-		// to re-compute embeddings.
-		persistedFirst.NormalizedDescriptionMatchScore.Should().Be(1.0);
-		persistedSecond.NormalizedDescriptionMatchScore.Should().Be(1.0);
-		persistedThird.NormalizedDescriptionMatchScore.Should().Be(1.0);
+		persistedFirst.NormalizedDescriptionMatchScore.Should().BeNull();
+		persistedSecond.NormalizedDescriptionMatchScore.Should().BeNull();
+		persistedThird.NormalizedDescriptionMatchScore.Should().BeNull();
 
-		// The resolver must not invent new canonical entries when exact matches exist.
 		int canonicalCount = await verify.NormalizedDescriptions.AsNoTracking().CountAsync();
 		canonicalCount.Should().Be(2);
 	}
 
 	[Fact]
-	public async Task ProcessPendingResolutionsAsync_Batch_GroupsDuplicateDescriptions_IntoSingleGetOrCreateCall()
+	public async Task ProcessPendingResolutionsAsync_Batch_AppliesApprovedScopeToEveryMatchingPurchase()
 	{
 		// Arrange — three rows with the same text should all resolve to the same FK.
 		await ResetTablesAsync();
@@ -179,9 +165,8 @@ public class NormalizedDescriptionResolutionServiceTests(PostgresFixture fixture
 			await setup.SaveChangesAsync();
 		}
 
-		// A counting embedding service lets us assert the dedup behaviour is real — no need
-		// for embedding data since we pre-seeded the canonical rows.
 		NoOpEmbeddingService embeddingService = new();
+		await ApproveMatchingSourcesAsync();
 		ServiceProvider provider = BuildProvider(embeddingService);
 
 		NormalizedDescriptionResolutionService resolver = new(
@@ -192,13 +177,12 @@ public class NormalizedDescriptionResolutionServiceTests(PostgresFixture fixture
 		// Act
 		var summary = await resolver.ProcessPendingResolutionsAsync(CancellationToken.None);
 
-		// Assert — all three rows got linked to the same canonical entry.
 		summary.Linked.Should().Be(3);
 
 		await using ApplicationDbContext verify = fixture.CreateDbContext();
 		List<ReceiptItemEntity> items = await verify.ReceiptItems.AsNoTracking().ToListAsync();
 		items.Should().OnlyContain(i => i.NormalizedDescriptionId == canonicalId);
-		items.Should().OnlyContain(i => i.NormalizedDescriptionMatchScore == 1.0);
+		items.Should().OnlyContain(i => i.NormalizedDescriptionMatchScore == null);
 	}
 
 	[Fact]
@@ -228,6 +212,7 @@ public class NormalizedDescriptionResolutionServiceTests(PostgresFixture fixture
 		}
 
 		NoOpEmbeddingService embeddingService = new();
+		await ApproveMatchingSourcesAsync();
 		ServiceProvider provider = BuildProvider(embeddingService);
 		NormalizedDescriptionResolutionService resolver = new(
 			provider.GetRequiredService<IServiceScopeFactory>(),
@@ -290,7 +275,6 @@ public class NormalizedDescriptionResolutionServiceTests(PostgresFixture fixture
 			ReceiptItemEntity deleted = WithDescription(receipt.Id, "Unresolved");
 			deleted.DeletedAt = DateTimeOffset.UtcNow;
 
-			// Too-short: filtered out by the length predicate.
 			ReceiptItemEntity tooShort = WithDescription(receipt.Id, "X");
 
 			// The only row that should actually get resolved.
@@ -301,6 +285,7 @@ public class NormalizedDescriptionResolutionServiceTests(PostgresFixture fixture
 		}
 
 		NoOpEmbeddingService embeddingService = new();
+		await ApproveMatchingSourcesAsync();
 		ServiceProvider provider = BuildProvider(embeddingService);
 		NormalizedDescriptionResolutionService resolver = new(
 			provider.GetRequiredService<IServiceScopeFactory>(),
@@ -328,53 +313,56 @@ public class NormalizedDescriptionResolutionServiceTests(PostgresFixture fixture
 			.SingleAsync(i => i.DeletedAt != null);
 		persistedDeleted.NormalizedDescriptionId.Should().BeNull();
 
-		// The too-short row is still unresolved.
 		ReceiptItemEntity persistedTooShort = await verify.ReceiptItems
 			.AsNoTracking()
 			.SingleAsync(i => i.Description == "X");
 		persistedTooShort.NormalizedDescriptionId.Should().BeNull();
 
-		// The target was linked to the pre-seeded "Unresolved" canonical entry with a
-		// perfect exact-match score.
 		ReceiptItemEntity persistedTarget = await verify.ReceiptItems
 			.AsNoTracking()
 			.SingleAsync(i => i.Description == "Unresolved" && i.DeletedAt == null);
 		persistedTarget.NormalizedDescriptionId.Should().Be(newCanonicalId);
-		persistedTarget.NormalizedDescriptionMatchScore.Should().Be(1.0);
+		persistedTarget.NormalizedDescriptionMatchScore.Should().BeNull();
+	}
+
+	private async Task ApproveMatchingSourcesAsync()
+	{
+		await using var context = fixture.CreateDbContext();
+		var items = await context.ReceiptItems.IgnoreQueryFilters().AsNoTracking().ToListAsync();
+		var receipts = await context.Receipts.AsNoTracking().ToDictionaryAsync(r => r.Id);
+		var targets = await context.NormalizedDescriptions.AsNoTracking().ToListAsync();
+		HashSet<string> seen = [];
+		foreach (var item in items)
+		{
+			var target = targets.SingleOrDefault(t => string.Equals(t.CanonicalName, item.Description, StringComparison.OrdinalIgnoreCase));
+			if (target is null) { continue; }
+			var key = NormalizationCatalogPolicy.Normalize(new(receipts[item.ReceiptId].Location, item.Description, item.ReceiptItemCode));
+			string hash = NormalizationCatalogPolicy.Hash(key);
+			if (!seen.Add(hash)) { continue; }
+			context.NormalizationSourceMappings.Add(new() { Id = Guid.NewGuid(), SourceHash = hash, Location = key.Location, Description = key.Description, ItemCode = key.ItemCode, TargetId = target.Id, ApprovedBy = "reviewer", ApprovedAt = DateTimeOffset.UtcNow });
+		}
+		await context.SaveChangesAsync();
 	}
 
 	private ServiceProvider BuildProvider(IEmbeddingService embeddingService)
 	{
 		ServiceCollection services = new();
-		services.AddSingleton<IEmbeddingService>(embeddingService);
-		services.AddSingleton<NormalizedDescriptionMapper>();
-		services.AddSingleton<NormalizedDescriptionSettingsMapper>();
 		services.AddSingleton<IDbContextFactory<ApplicationDbContext>>(new FixtureDbContextFactory(fixture));
-		services.AddScoped<INormalizedDescriptionService, NormalizedDescriptionService>();
 		services.AddSingleton<IDescriptionChangeSignal, DescriptionChangeSignal>();
 		return services.BuildServiceProvider();
 	}
 
-	// Hand-written embedding stub — the integration test project doesn't reference Moq. This
-	// stub reports IsConfigured=true so the resolver proceeds past its short-circuit, but
-	// never has to actually supply an embedding because every test pre-seeds the canonical
-	// entry that the exact-match path will find first.
 	private sealed class NoOpEmbeddingService : IEmbeddingService
 	{
 		public bool IsConfigured => true;
-		public Task<float[]> GenerateEmbeddingAsync(string text, CancellationToken cancellationToken)
-			=> Task.FromResult(Array.Empty<float>());
-		public Task<List<float[]>> GenerateEmbeddingsAsync(List<string> texts, CancellationToken cancellationToken)
-			=> Task.FromResult(texts.Select(_ => Array.Empty<float>()).ToList());
+		public Task<float[]> GenerateEmbeddingAsync(string text, CancellationToken cancellationToken) => throw new InvalidOperationException("Scoped resolution never calls a model.");
+		public Task<List<float[]>> GenerateEmbeddingsAsync(List<string> texts, CancellationToken cancellationToken) => throw new InvalidOperationException("Scoped resolution never calls a model.");
 	}
-
 	private sealed class UnavailableEmbeddingService : IEmbeddingService
 	{
 		public bool IsConfigured => false;
-		public Task<float[]> GenerateEmbeddingAsync(string text, CancellationToken cancellationToken)
-			=> throw new InvalidOperationException("Offline exact reuse must not invoke embeddings.");
-		public Task<List<float[]>> GenerateEmbeddingsAsync(List<string> texts, CancellationToken cancellationToken)
-			=> throw new InvalidOperationException("Offline exact reuse must not invoke embeddings.");
+		public Task<float[]> GenerateEmbeddingAsync(string text, CancellationToken cancellationToken) => throw new InvalidOperationException("Scoped resolution works offline.");
+		public Task<List<float[]>> GenerateEmbeddingsAsync(List<string> texts, CancellationToken cancellationToken) => throw new InvalidOperationException("Scoped resolution works offline.");
 	}
 
 	private static ReceiptItemEntity WithDescription(Guid receiptId, string description)
@@ -393,7 +381,7 @@ public class NormalizedDescriptionResolutionServiceTests(PostgresFixture fixture
 		// Reset every table the resolver touches or depends on. DistinctDescriptions is
 		// reconciled by the DbContext SaveChanges hook so it needs a clean slate too.
 		await context.Database.ExecuteSqlRawAsync(
-			"""TRUNCATE "ReceiptItems", "Receipts", "NormalizedDescriptions", "DistinctDescriptions" RESTART IDENTITY CASCADE;""");
+			"""TRUNCATE matching."NormalizationSourceMappings", "ReceiptItems", "Receipts", "NormalizedDescriptions", "DistinctDescriptions" RESTART IDENTITY CASCADE;""");
 	}
 
 	private sealed class FixtureDbContextFactory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>

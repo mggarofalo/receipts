@@ -299,9 +299,10 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 	}
 
 	[HttpPost(RouteMerge)]
+	[ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict, "application/problem+json")]
 	[EndpointSummary("Merge two normalized descriptions")]
 	[EndpointDescription("Re-links every live ReceiptItem currently pointing at discardId to the canonical row identified by the path {id}, then deletes the discarded row. Returns the count of re-linked items, which is legitimately zero when the discarded row had no live items. Returns 404 if either id does not exist. Admin-only.")]
-	public async Task<Results<Ok<MergeNormalizedDescriptionsResponse>, BadRequest<ProblemDetails>, NotFound<ProblemDetails>>> MergeNormalizedDescriptions(
+	public async Task<Results<Ok<MergeNormalizedDescriptionsResponse>, BadRequest<ProblemDetails>, NotFound<ProblemDetails>, Conflict<ProblemDetails>>> MergeNormalizedDescriptions(
 		[FromRoute] Guid id,
 		[FromBody] MergeNormalizedDescriptionRequest request,
 		CancellationToken cancellationToken)
@@ -339,9 +340,11 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 	}
 
 	[HttpPost(RouteSplit)]
+	[ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden, "application/problem+json")]
+	[ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict, "application/problem+json")]
 	[EndpointSummary("Detach a receipt item from its normalized description")]
 	[EndpointDescription("Creates a new canonical NormalizedDescription row for the supplied ReceiptItem's raw description and re-points the item at it. Used to unpick bad auto-merges. Admin-only.")]
-	public async Task<Results<Ok<NormalizedDescriptionResponse>, NotFound, BadRequest<ProblemDetails>>> SplitNormalizedDescription(
+	public async Task<Results<Ok<NormalizedDescriptionResponse>, NotFound, BadRequest<ProblemDetails>, ForbiddenProblem, Conflict<ProblemDetails>>> SplitNormalizedDescription(
 		[FromRoute] Guid id,
 		[FromBody] SplitNormalizedDescriptionRequest request,
 		CancellationToken cancellationToken)

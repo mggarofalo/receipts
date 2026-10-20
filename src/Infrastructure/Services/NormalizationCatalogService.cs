@@ -59,7 +59,8 @@ public sealed partial class NormalizationCatalogService(
 				context.NormalizedDescriptions.Any(target => target.Status == NormalizedDescriptionStatus.Rejected && target.CanonicalName.ToLower() == current.Description.Trim(' ').ToLower()),
 				context.ItemTemplates.Any(template => template.DeletedAt == null && template.NormalizedDescriptionId != null && template.NormalizedDescriptionId == current.NormalizedDescriptionId),
 				context.NormalizationSourceMappings.Any(mapping => mapping.Id == current.NormalizationMappingId && mapping.State == "revoked"
-					&& current.NormalizationAssignmentId != null && mapping.TargetId == current.NormalizedDescriptionId))
+					&& current.NormalizationAssignmentId != null && mapping.TargetId == current.NormalizedDescriptionId),
+				current.NormalizationReviewState != NormalizationReviewState.NeedsReview, current.NormalizedDescriptionId != null)
 			}).ToListAsync(ct);
 		return rows.ToDictionary(row => row.Id, row => NormalizationCatalogPolicy.Classify(row.Facts, includeLegacy));
 	}
@@ -78,11 +79,14 @@ public sealed partial class NormalizationCatalogService(
 						Location = receipt.Location.Trim(' '),
 						Description = item.Description.Trim(' '),
 						Code = item.ReceiptItemCode == null || item.ReceiptItemCode.Trim(' ') == "" ? null : item.ReceiptItemCode.Trim(' '),
-						item.NormalizationOrigin,
-						Blocked = item.NormalizationOrigin == "manual" || item.NormalizationOrigin == "template" || item.NormalizationOrigin == "reviewed"
+						NormalizationOrigin = item.NormalizationReviewState == NormalizationReviewState.NeedsReview
+							? item.NormalizedDescriptionId != null ? "legacy_unknown" : item.NormalizationOrigin == "automatic" ? "automatic" : "unassigned"
+							: item.NormalizationReviewState == NormalizationReviewState.Excluded ? "excluded" : item.NormalizationOrigin,
+						Blocked = (item.NormalizationReviewState != NormalizationReviewState.NeedsReview
+							&& item.NormalizationReviewState != NormalizationReviewState.Excluded
+							&& item.NormalizationOrigin != "mapped" && item.NormalizationOrigin != "excluded")
 							|| context.NormalizedDescriptions.Any(target => target.Status == NormalizedDescriptionStatus.Rejected
-								&& (target.Id == item.NormalizedDescriptionId || target.CanonicalName.ToLower() == item.Description.Trim(' ').ToLower()))
-							|| context.ItemTemplates.Any(template => template.DeletedAt == null && template.NormalizedDescriptionId != null && template.NormalizedDescriptionId == item.NormalizedDescriptionId),
+								&& (target.Id == item.NormalizedDescriptionId || target.CanonicalName.ToLower() == item.Description.Trim(' ').ToLower())),
 						Revisable = (item.NormalizationOrigin == "mapped" || item.NormalizationOrigin == "excluded")
 							&& item.NormalizationAssignmentId != null && context.NormalizationSourceMappings.Any(mapping => mapping.Id == item.NormalizationMappingId
 								&& mapping.State == "revoked" && mapping.TargetId == item.NormalizedDescriptionId)
@@ -94,9 +98,9 @@ public sealed partial class NormalizationCatalogService(
 			group.Key.Description,
 			group.Key.Code,
 			Total = group.Count(),
-			Unassigned = group.Count(row => row.NormalizationOrigin == "unassigned" && !row.Blocked),
-			Legacy = group.Count(row => row.NormalizationOrigin == "legacy_unknown" && !row.Blocked),
-			Automatic = group.Count(row => row.NormalizationOrigin == "automatic" && !row.Blocked),
+			Unassigned = group.Count(row => row.NormalizationOrigin == "unassigned" && !row.Blocked && !row.Revisable),
+			Legacy = group.Count(row => row.NormalizationOrigin == "legacy_unknown" && !row.Blocked && !row.Revisable),
+			Automatic = group.Count(row => row.NormalizationOrigin == "automatic" && !row.Blocked && !row.Revisable),
 			Mapped = group.Count(row => row.NormalizationOrigin == "mapped" && !row.Revisable && !row.Blocked),
 			Excluded = group.Count(row => row.NormalizationOrigin == "excluded" && !row.Revisable && !row.Blocked),
 			Revisable = group.Count(row => row.Revisable && !row.Blocked),
@@ -147,28 +151,28 @@ public sealed partial class NormalizationCatalogService(
 	{
 		await using ApplicationDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
 		await AuthorizeAsync(context, actor, cancellationToken);
-		var counts = await Live(context).Select(item => new
+		var facts = Live(context).Select(item => new
 		{
-			Origin = item.NormalizationOrigin == "reviewed" ? "reviewed"
-				: item.NormalizationOrigin == "manual" || item.NormalizationOrigin == "template"
-				|| context.NormalizedDescriptions.Any(target => target.Status == NormalizedDescriptionStatus.Rejected
-					&& (target.Id == item.NormalizedDescriptionId || target.CanonicalName.ToLower() == item.Description.Trim(' ').ToLower()))
-				|| context.ItemTemplates.Any(template => template.DeletedAt == null && template.NormalizedDescriptionId != null && template.NormalizedDescriptionId == item.NormalizedDescriptionId)
-				? "protected" : item.NormalizationOrigin
-		}).GroupBy(item => item.Origin)
-			.Select(group => new { Origin = group.Key, Count = group.Count() }).ToDictionaryAsync(row => row.Origin, row => row.Count, cancellationToken);
-		var revisable = await Live(context).Where(item => (item.NormalizationOrigin == "mapped" || item.NormalizationOrigin == "excluded")
-			&& item.NormalizationAssignmentId != null && context.NormalizationSourceMappings.Any(mapping => mapping.Id == item.NormalizationMappingId
-				&& mapping.State == "revoked" && mapping.TargetId == item.NormalizedDescriptionId)
-			&& !context.NormalizedDescriptions.Any(target => target.Status == NormalizedDescriptionStatus.Rejected
-				&& (target.Id == item.NormalizedDescriptionId || target.CanonicalName.ToLower() == item.Description.Trim(' ').ToLower()))
-			&& !context.ItemTemplates.Any(template => template.DeletedAt == null && template.NormalizedDescriptionId != null && template.NormalizedDescriptionId == item.NormalizedDescriptionId))
-			.GroupBy(item => item.NormalizationOrigin).Select(group => new { Origin = group.Key, Count = group.Count() })
+			Origin = item.NormalizationReviewState == NormalizationReviewState.Excluded ? "excluded" : item.NormalizationOrigin,
+			Reviewed = item.NormalizationReviewState != NormalizationReviewState.NeedsReview,
+			Linked = item.NormalizedDescriptionId != null,
+			Rejected = context.NormalizedDescriptions.Any(target => target.Status == NormalizedDescriptionStatus.Rejected
+				&& (target.Id == item.NormalizedDescriptionId || target.CanonicalName.ToLower() == item.Description.Trim(' ').ToLower())),
+			Revisable = (item.NormalizationOrigin == "mapped" || item.NormalizationOrigin == "excluded")
+				&& item.NormalizationAssignmentId != null && context.NormalizationSourceMappings.Any(mapping => mapping.Id == item.NormalizationMappingId
+					&& mapping.State == "revoked" && mapping.TargetId == item.NormalizedDescriptionId)
+		});
+		var counts = await facts.Select(item => new
+		{
+			Origin = item.Rejected ? "protected" : item.Revisable ? "revisable"
+				: !item.Reviewed ? item.Linked ? "legacy_unknown" : item.Origin == "automatic" ? "automatic" : "unassigned"
+				: item.Origin == "mapped" || item.Origin == "excluded" ? item.Origin : "reviewed"
+		}).GroupBy(item => item.Origin).Select(group => new { Origin = group.Key, Count = group.Count() })
 			.ToDictionaryAsync(row => row.Origin, row => row.Count, cancellationToken);
 		return new(counts.Values.Sum(), counts.GetValueOrDefault("unassigned"), counts.GetValueOrDefault("legacy_unknown"),
-			counts.GetValueOrDefault("automatic"), counts.GetValueOrDefault("reviewed"), counts.GetValueOrDefault("mapped") - revisable.GetValueOrDefault("mapped"),
-			counts.GetValueOrDefault("protected"), counts.GetValueOrDefault("excluded") - revisable.GetValueOrDefault("excluded"),
-			revisable.Values.Sum());
+			counts.GetValueOrDefault("automatic"), counts.GetValueOrDefault("reviewed"), counts.GetValueOrDefault("mapped"),
+			counts.GetValueOrDefault("protected"), counts.GetValueOrDefault("excluded"),
+			counts.GetValueOrDefault("revisable"));
 	}
 
 	public async Task<NormalizationCatalogOperation> PreviewAsync(string actor, NormalizationCatalogPreview request, CancellationToken cancellationToken)

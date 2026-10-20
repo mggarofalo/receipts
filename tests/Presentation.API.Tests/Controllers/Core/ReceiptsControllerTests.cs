@@ -68,7 +68,7 @@ public class ReceiptsControllerTests
 		_mediatorMock.Setup(m => m.Send(It.IsAny<CreateCompleteReceiptCommand>(), It.IsAny<CancellationToken>()))
 			.ReturnsAsync(serviceResult);
 
-		Results<Ok<CompleteReceiptResponse>, BadRequest<ProblemDetails>> result =
+		var result =
 			await _controller.CreateCompleteReceipt(request);
 
 		_mediatorMock.Verify(m => m.Send(
@@ -491,7 +491,7 @@ public class ReceiptsControllerTests
 			.ReturnsAsync(true);
 
 		// Act
-		Results<NoContent, NotFound> result = await _controller.UpdateReceipt(controllerInput.Id, controllerInput);
+		var result = await _controller.UpdateReceipt(controllerInput.Id, controllerInput);
 
 		// Assert
 		Assert.IsType<NoContent>(result.Result);
@@ -510,7 +510,7 @@ public class ReceiptsControllerTests
 			.ReturnsAsync(false);
 
 		// Act
-		Results<NoContent, NotFound> result = await _controller.UpdateReceipt(controllerInput.Id, controllerInput);
+		var result = await _controller.UpdateReceipt(controllerInput.Id, controllerInput);
 
 		// Assert
 		Assert.IsType<NotFound>(result.Result);
@@ -546,7 +546,7 @@ public class ReceiptsControllerTests
 			.ReturnsAsync(true);
 
 		// Act
-		Results<NoContent, NotFound> result = await _controller.UpdateReceipts(controllerInput);
+		var result = await _controller.UpdateReceipts(controllerInput);
 
 		// Assert
 		Assert.IsType<NoContent>(result.Result);
@@ -565,7 +565,7 @@ public class ReceiptsControllerTests
 			.ReturnsAsync(false);
 
 		// Act
-		Results<NoContent, NotFound> result = await _controller.UpdateReceipts(controllerInput);
+		var result = await _controller.UpdateReceipts(controllerInput);
 
 		// Assert
 		Assert.IsType<NotFound>(result.Result);

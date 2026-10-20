@@ -45,10 +45,9 @@ export function RejectDialog({ source, onClose }: RejectDialogProps) {
             {count === 0
               ? "No receipt items are linked to this entry."
               : `${count} receipt ${count === 1 ? "item" : "items"} will become unnormalized and report under "(Not Normalized)".`}{" "}
-            The entry is kept as a record of your decision, so the resolver will
-            not create it again the next time this text appears on a receipt.
-            Use Merge instead if this is really the same item as an existing
-            entry.
+            The entry is kept as a record of your decision and is unavailable
+            for selection until explicitly reinstated. Use Merge instead if this
+            is really the same item as an existing entry.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>

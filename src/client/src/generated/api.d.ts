@@ -1405,6 +1405,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/receipt-items/normalization-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview a source decision and search active products without saving */
+        post: operations["PreviewReceiptNormalization"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/receipt-items/{id}": {
         parameters: {
             query?: never;
@@ -4294,12 +4311,12 @@ export interface components {
             staleMatchScoreCount: number;
             /**
              * Format: int32
-             * @description Approximate number of background-resolver cycles needed to rebuild the unlinked items, at 50 items per cycle. Approximate because the resolver's batch is shared with any items that were already unresolved.
+             * @description Legacy compatibility field, always zero. Pending cleanup requires reviewed normalization; no automatic similarity rematching is scheduled.
              */
             estimatedResolverCycles: number;
             /**
              * Format: int32
-             * @description Approximate wall-clock seconds to drain the requeued backlog, at one 50-item cycle per 30 seconds.
+             * @description Legacy compatibility field, always zero. No automatic similarity rematching completion time is estimated.
              */
             estimatedCatchUpSeconds: number;
         };
@@ -4399,6 +4416,11 @@ export interface components {
         /** Format: binary */
         IFormFile: string;
         CreateCompleteReceiptRequest: {
+            /**
+             * Format: uuid
+             * @description Stable retry key scoped to the signed-in user. Reusing a key with changed receipt facts or choices returns a conflict.
+             */
+            clientRequestId?: string | null;
             receipt: components["schemas"]["CreateReceiptRequest"];
             transactions: components["schemas"]["CreateTransactionRequest"][];
             items: components["schemas"]["CreateReceiptItemRequest"][];
@@ -4414,7 +4436,76 @@ export interface components {
             items: components["schemas"]["ReceiptItemResponse"][];
             adjustments: components["schemas"]["AdjustmentResponse"][];
         };
+        ReceiptNormalizationPreviewRequest: {
+            source: components["schemas"]["NormalizationSourceKey"];
+            query?: string | null;
+            /**
+             * Format: int32
+             * @default 0
+             */
+            offset: number;
+            /**
+             * Format: int32
+             * @default 20
+             */
+            limit: number;
+        };
+        ReceiptNormalizationCandidate: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            revision: string;
+            name: string;
+        };
+        ReceiptNormalizationPreviewResponse: {
+            sourceFingerprint: string;
+            /** Format: uuid */
+            mappingId?: string | null;
+            /** Format: uuid */
+            mappingRevision?: string | null;
+            /** Format: uuid */
+            targetId?: string | null;
+            /** Format: uuid */
+            targetRevision?: string | null;
+            targetName?: string | null;
+            excluded: boolean;
+            candidates: components["schemas"]["ReceiptNormalizationCandidate"][];
+            /** Format: int32 */
+            total: number;
+            /** Format: int32 */
+            offset: number;
+            /** Format: int32 */
+            limit: number;
+        };
+        /** @enum {string} */
+        NormalizationReviewState: "needsReview" | "verified" | "excluded";
+        /** @enum {string} */
+        ReceiptNormalizationIntentKind: "knownSource" | "confirmExisting" | "confirmNew" | "exclude" | "defer";
+        /** @description A source-bound choice for one draft row. Existing identity selection requires its revision; editing requires the current item revision. Exclusion requires a reason. Remembering a source never rewrites historical purchases. */
+        ReceiptNormalizationIntent: {
+            kind: components["schemas"]["ReceiptNormalizationIntentKind"];
+            /** Format: uuid */
+            clientRowId: string;
+            sourceFingerprint: string;
+            /** Format: uuid */
+            targetId?: string | null;
+            /** Format: uuid */
+            expectedTargetRevision?: string | null;
+            /**
+             * Format: uuid
+             * @description Required for knownSource. Echo the previewed mapping revision so a changed or revoked mapping rejects the choice.
+             */
+            expectedMappingRevision?: string | null;
+            /** Format: uuid */
+            expectedItemRevision?: string | null;
+            newName?: string | null;
+            /** @default false */
+            rememberSource: boolean;
+            reason?: string | null;
+        };
         CreateReceiptItemRequest: {
+            /** @description Omitted means use a current approved scoped mapping or retain NeedsReview; no automatic inference is approved. */
+            normalizationIntent?: components["schemas"]["ReceiptNormalizationIntent"] | null;
             receiptItemCode?: string | null;
             description: string;
             /** Format: double */
@@ -4425,22 +4516,13 @@ export interface components {
             subcategory?: string | null;
             /**
              * Format: uuid
-             * @description The item template this line was entered from, if any (RECEIPTS-881).
-             *
-             *     Supplying it stamps the item with the template's canonical normalized description at
-             *     write time, so the background resolver skips it entirely â€” it only considers items
-             *     with no normalized description. The user already declared what this item is by
-             *     picking the template; re-deriving it by embedding search could disagree with them and
-             *     park the result in the review queue.
-             *
-             *     Unknown ids and templates that have no canonical entry yet are ignored rather than
-             *     rejected: the id is a hint about provenance, not a constraint, and failing a receipt
-             *     save over a stale template id would be the wrong trade. Such an item simply falls
-             *     through to the resolver as before.
+             * @description Optional provenance hint. A legacy template link does not verify the purchase; explicit source-bound selection or an approved scoped mapping is required.
              */
             itemTemplateId?: string | null;
         };
         UpdateReceiptItemRequest: {
+            /** @description Omitted means use a current approved scoped mapping or retain NeedsReview; no automatic inference is approved. */
+            normalizationIntent?: components["schemas"]["ReceiptNormalizationIntent"] | null;
             /** Format: uuid */
             id: string;
             receiptItemCode?: string | null;
@@ -4453,6 +4535,13 @@ export interface components {
             subcategory?: string | null;
         };
         ReceiptItemResponse: {
+            /** Format: uuid */
+            normalizationRevision?: string;
+            normalizationReviewState?: components["schemas"]["NormalizationReviewState"];
+            normalizationReviewReason?: string | null;
+            normalizationExclusionReason?: string | null;
+            /** Format: uuid */
+            normalizationReviewDecisionId?: string | null;
             /** Format: uuid */
             id: string;
             /** Format: uuid */
@@ -4467,7 +4556,7 @@ export interface components {
             subcategory?: string | null;
             /**
              * Format: uuid
-             * @description FK to the canonical NormalizedDescription. Null until the resolver links this item.
+             * @description Provisional or reviewed canonical identity. Verification is expressed separately by normalizationReviewState.
              */
             normalizedDescriptionId?: string | null;
             /** @description Denormalized CanonicalName from the linked NormalizedDescription for display. */
@@ -8558,6 +8647,15 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
         };
     };
     SplitNormalizedDescription: {
@@ -8594,12 +8692,30 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
             /** @description Not Found */
             404: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
             };
         };
     };
@@ -9046,6 +9162,24 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
+            /** @description Normalization choice rejected; no partial receipt or catalog writes. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Normalization choice rejected; no partial receipt or catalog writes. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
         };
     };
     UpdateReceipts: {
@@ -9101,6 +9235,39 @@ export interface operations {
             };
         };
     };
+    PreviewReceiptNormalization: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReceiptNormalizationPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Advisory source fingerprint, current remembered decision and active candidates */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReceiptNormalizationPreviewResponse"];
+                };
+            };
+            /** @description Invalid source or search bounds */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     GetReceiptItemById: {
         parameters: {
             query?: never;
@@ -9134,7 +9301,10 @@ export interface operations {
     };
     UpdateReceiptItem: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Stable caller request ID for replaying an identical edit after a lost response. */
+                clientRequestId?: string | null;
+            };
             header?: never;
             path: {
                 /** @description Receipt item ID */
@@ -9156,12 +9326,39 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Normalization choice rejected; no partial receipt or catalog writes. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Normalization choice rejected; no partial receipt or catalog writes. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
             /** @description Not Found */
             404: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Normalization choice rejected; no partial receipt or catalog writes. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
             };
         };
     };
@@ -9340,7 +9537,10 @@ export interface operations {
     };
     UpdateReceiptItems: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Stable caller request ID for replaying an identical edit after a lost response. */
+                clientRequestId?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -9358,6 +9558,24 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Normalization choice rejected; no partial receipt or catalog writes. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Normalization choice rejected; no partial receipt or catalog writes. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
             /** @description Not Found */
             404: {
                 headers: {
@@ -9365,11 +9583,23 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Normalization choice rejected; no partial receipt or catalog writes. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
         };
     };
     CreateReceiptItem: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Stable retry key scoped to the signed-in user and immutable request payload. */
+                clientRequestId?: string | null;
+            };
             header?: never;
             path: {
                 receiptId: string;
@@ -9392,6 +9622,24 @@ export interface operations {
                     "application/json": components["schemas"]["ReceiptItemResponse"];
                 };
             };
+            /** @description Normalization choice rejected; no partial receipt or catalog writes. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Normalization choice rejected; no partial receipt or catalog writes. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
             /** @description The receipt is no longer active. Restore or reload it before retrying. */
             409: {
                 headers: {
@@ -9405,7 +9653,10 @@ export interface operations {
     };
     CreateReceiptItems: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Stable retry key scoped to the signed-in user and immutable request payload. */
+                clientRequestId?: string | null;
+            };
             header?: never;
             path: {
                 receiptId: string;
@@ -9425,6 +9676,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReceiptItemResponse"][];
+                };
+            };
+            /** @description Normalization choice rejected; no partial receipt or catalog writes. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Normalization choice rejected; no partial receipt or catalog writes. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
             /** @description The receipt is no longer active. Restore or reload it before retrying. */

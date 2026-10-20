@@ -74,6 +74,7 @@ public sealed partial class NormalizationCatalogTests(PostgresFixture fixture)
 		var manual = await ItemsAsync(Source, 1, "manual", old.Id);
 		var template = await ItemsAsync(Source, 1, "template", old.Id);
 		var reviewed = await ItemsAsync(Source, 1, "reviewed", old.Id);
+		await ReviewExistingAsync(manual.Concat(template).Concat(reviewed).ToArray(), old);
 		var service = Service();
 		var preview = await service.PreviewAsync(Actor, Request(target) with { IncludeLegacyUnknown = includeLegacy }, CancellationToken.None);
 		preview.Total.Should().Be(5);
@@ -124,19 +125,26 @@ public sealed partial class NormalizationCatalogTests(PostgresFixture fixture)
 		var service = Service();
 		var preview = await service.PreviewAsync(Actor, Request(target), CancellationToken.None);
 		var approved = await service.ApproveAsync(Actor, preview.Id, preview.Revision, CancellationToken.None);
-		await using (var db = fixture.CreateDbContext())
-		{
-			var curated = await db.ReceiptItems.SingleAsync(x => x.Id == ids[0]);
-			curated.NormalizationOrigin = "manual";
-			curated.NormalizationAssignmentId = Guid.NewGuid();
-			await db.SaveChangesAsync();
-		}
+		await ReviewExistingAsync([ids[0]], target);
 		var undone = await service.UndoAsync(Actor, approved.Id, approved.Revision, CancellationToken.None);
 		undone.Undone.Should().Be(1);
 		var saved = await ReadAsync(ids);
 		saved.Single(x => x.Id == ids[0]).NormalizedDescriptionId.Should().Be(target.Id);
-		saved.Single(x => x.Id == ids[0]).NormalizationOrigin.Should().Be("manual");
+		saved.Single(x => x.Id == ids[0]).NormalizationReviewState.Should().Be(NormalizationReviewState.Verified);
+		saved.Single(x => x.Id == ids[0]).NormalizationMappingId.Should().BeNull();
 		saved.Single(x => x.Id == ids[1]).NormalizedDescriptionId.Should().BeNull();
+	}
+
+	private async Task ReviewExistingAsync(Guid[] ids, NormalizedDescriptionEntity target)
+	{
+		await using var db = new EntryActorFactory(fixture.CreateOptions(), Actor).CreateDbContext();
+		foreach (var item in await db.ReceiptItems.Where(x => ids.Contains(x.Id)).ToListAsync())
+		{
+			item.NormalizationIntent = new(ReceiptNormalizationIntentKind.ConfirmExisting, Guid.NewGuid(),
+				NormalizationCatalogPolicy.Hash(Source), target.Id, target.NormalizationRevision,
+				ExpectedItemRevision: item.NormalizationRevision);
+		}
+		await db.SaveChangesAsync();
 	}
 
 	private NormalizationCatalogService Service() => new(new Factory(fixture), TimeProvider.System, publisher.Object);

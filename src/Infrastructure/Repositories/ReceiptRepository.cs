@@ -280,6 +280,7 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		await using Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? transaction = context.Database.IsRelational()
 			? await context.Database.BeginTransactionAsync(cancellationToken) : null;
+		await Infrastructure.Utilities.NormalizationWriteGuard.AcquireWriteGateAsync(context, cancellationToken);
 		await ReceiptFactLock.AcquireAsync(context, ids, cancellationToken);
 		List<ReceiptEntity> entities = await context.Receipts
 			.Where(e => ids.Contains(e.Id))
@@ -358,6 +359,7 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		await using Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? transaction = context.Database.IsRelational()
 			? await context.Database.BeginTransactionAsync(cancellationToken) : null;
+		await Infrastructure.Utilities.NormalizationWriteGuard.AcquireWriteGateAsync(context, cancellationToken);
 		await ReceiptFactLock.AcquireAsync(context, [id], cancellationToken);
 		ReceiptEntity? entity = await context.Receipts
 			.IncludeDeleted()

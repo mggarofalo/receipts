@@ -61,6 +61,7 @@ public partial class BackupImportService(
 		await using IAsyncDisposable importLease =
 			await BackupImportLock.AcquireLocalAsync(cancellationToken);
 		await using ApplicationDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
+		context.RestoringNormalizationEvidence = true;
 		await using Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction =
 			await context.Database.BeginTransactionAsync(cancellationToken);
 		await BackupImportLock.AcquireDatabaseAsync(context, cancellationToken);

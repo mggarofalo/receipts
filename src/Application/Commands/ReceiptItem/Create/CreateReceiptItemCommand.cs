@@ -6,6 +6,7 @@ public record CreateReceiptItemCommand : ICommand<List<Domain.Core.ReceiptItem>>
 {
 	public IReadOnlyList<Domain.Core.ReceiptItem> ReceiptItems { get; }
 	public Guid ReceiptId { get; }
+	public Guid? ClientRequestId { get; }
 
 	/// <summary>
 	/// Per-item template provenance, positionally aligned with <see cref="ReceiptItems"/>
@@ -33,7 +34,7 @@ public record CreateReceiptItemCommand : ICommand<List<Domain.Core.ReceiptItem>>
 	public CreateReceiptItemCommand(
 		List<Domain.Core.ReceiptItem> receiptItems,
 		Guid receiptId,
-		List<Guid?>? itemTemplateIds)
+		List<Guid?>? itemTemplateIds, Guid? clientRequestId = null)
 	{
 		ArgumentNullException.ThrowIfNull(receiptItems);
 
@@ -49,6 +50,7 @@ public record CreateReceiptItemCommand : ICommand<List<Domain.Core.ReceiptItem>>
 
 		ReceiptItems = receiptItems.AsReadOnly();
 		ReceiptId = receiptId;
+		ClientRequestId = clientRequestId;
 		ItemTemplateIds = itemTemplateIds?.AsReadOnly() ?? [];
 	}
 }

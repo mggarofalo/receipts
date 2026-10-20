@@ -24,13 +24,13 @@ public sealed partial class NormalizationCatalogTests
 		var future = await ItemsAsync(Source, 1);
 		var fuzzy = new Moq.Mock<INormalizedDescriptionService>();
 		fuzzy.Setup(x => x.GetEmbeddingCoverageAsync(Moq.It.IsAny<CancellationToken>())).ReturnsAsync(new Application.Models.NormalizedDescriptions.EmbeddingCoverage(OnnxEmbeddingService.EmbeddingSpaceFingerprint, 0, 0, 0, 0));
-		fuzzy.Setup(x => x.GetOrCreateAsync(Source.Description, Moq.It.IsAny<CancellationToken>())).ReturnsAsync(new Application.Models.NormalizedDescriptions.GetOrCreateResult(new(target.Id, target.CanonicalName, Domain.NormalizedDescriptions.NormalizedDescriptionStatus.Active, DateTimeOffset.UtcNow), .95));
 		var embeddings = new Moq.Mock<IEmbeddingService>();
 		embeddings.SetupGet(x => x.IsConfigured).Returns(true);
 		using (var provider = fuzzyConfigured ? new ServiceCollection().AddSingleton(fuzzy.Object).AddSingleton(embeddings.Object).AddSingleton<Microsoft.EntityFrameworkCore.IDbContextFactory<Infrastructure.ApplicationDbContext>>(new Factory(fixture)).AddSingleton<IDescriptionChangeSignal, DescriptionChangeSignal>().BuildServiceProvider() : OfflineProvider())
 		using (var resolver = new NormalizedDescriptionResolutionService(provider.GetRequiredService<IServiceScopeFactory>(), provider.GetRequiredService<IDescriptionChangeSignal>(), NullLogger<NormalizedDescriptionResolutionService>.Instance))
 		{ await resolver.ProcessPendingResolutionsAsync(CancellationToken.None); await resolver.ProcessPendingResolutionsAsync(CancellationToken.None); }
-		fuzzy.Verify(x => x.GetOrCreateAsync(Moq.It.IsAny<string>(), Moq.It.IsAny<CancellationToken>()), Moq.Times.Never);
+		fuzzy.VerifyNoOtherCalls();
+		embeddings.VerifyNoOtherCalls();
 		(await ReadAsync(original)).Count(x => x.NormalizedDescriptionId == null).Should().Be(5, "pending historical members belong to the durable operation, not the general resolver");
 		(await ReadAsync(future)).Single().NormalizedDescriptionId.Should().Be(target.Id, "an approved rule still handles future purchases outside the frozen historical snapshot");
 		var completed = await service.ResumeAsync(Actor, first.Id, CancellationToken.None);

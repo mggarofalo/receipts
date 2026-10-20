@@ -1,9 +1,8 @@
 namespace Application.Models.NormalizedDescriptions;
 
-// Result of INormalizedDescriptionService.TestMatchAsync — the admin-facing "what would happen
-// if I ran GetOrCreate on this description" probe. Candidates are the top-N ANN matches; the
-// simulated outcome tells the admin which branch (auto-accept / pending review / create new)
-// the production resolver would take given the supplied overrides or the live DB thresholds.
+// Read-only threshold simulation for administrative candidate inspection. Candidates are
+// bounded ANN matches; legacy outcome names describe the configured advisory thresholds.
+// Simulation neither verifies purchases nor authorizes automatic identity creation.
 public record MatchTestResult(
 	List<MatchCandidate> Candidates,
 	string SimulatedOutcome,

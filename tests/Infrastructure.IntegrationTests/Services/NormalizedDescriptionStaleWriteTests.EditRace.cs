@@ -31,7 +31,7 @@ public partial class NormalizedDescriptionStaleWriteTests
 		ItemReadGate editGate = new();
 		TargetAttempt workerAttempt = new();
 		ReceiptItemRepository editingRepository = new(new OptionsFactory(Options(editGate)));
-		using ServiceProvider provider = BuildProvider(CanonicalService(fixture.CreateOptions()), new OptionsFactory(Options(workerAttempt)));
+		using ServiceProvider provider = BuildProvider(new OptionsFactory(Options(workerAttempt)));
 		using NormalizedDescriptionResolutionService worker = CreateResolver(provider);
 		Task editing = editingRepository.UpdateAsync([requested], CancellationToken.None);
 		Task<NormalizedDescriptionResolutionService.ResolutionSummary>? resolving = null;
@@ -82,6 +82,7 @@ public partial class NormalizedDescriptionStaleWriteTests
 		}
 		// If locking made this cycle skip the edited revision, the next one resolves the
 		// current text; an existing valid classification remains untouched.
+		await ApproveBreadAsync(seed);
 		await worker.ProcessPendingResolutionsAsync(CancellationToken.None);
 		await using ApplicationDbContext final = fixture.CreateDbContext();
 		(await final.ReceiptItems.SingleAsync(item => item.Id == seed.Item)).NormalizedDescriptionId.Should().Be(changeDescription ? seed.Bread : seed.Milk);

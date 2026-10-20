@@ -134,10 +134,11 @@ function SettingsForm({
         <CardHeader>
           <CardTitle>Thresholds</CardTitle>
           <CardDescription>
-            Auto-accept is the similarity score at which the resolver re-uses an
-            existing canonical entry. Pending-review is the floor for flagging a
-            new description for admin review. Both are between 0 and 1, and
-            pending-review must be strictly less than auto-accept.
+            These legacy threshold bands are advisory simulation settings only.
+            They do not approve receipt assignments or create products. Receipt
+            verification requires an explicit choice or an approved exact scoped
+            mapping. Both values are between 0 and 1, with pending-review below
+            auto-accept.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -255,7 +256,8 @@ function SettingsForm({
           <CardDescription>
             Run any description through the classifier with the currently-edited
             thresholds (or the live values when the inputs are blank) to see
-            which canonical rows would match.
+            which canonical rows are candidates. This simulation never writes or
+            verifies a purchase.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

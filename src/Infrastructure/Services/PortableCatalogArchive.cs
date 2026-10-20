@@ -1,6 +1,8 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Application.Normalization;
+using Domain.NormalizedDescriptions;
 using Infrastructure.Entities.Core;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -14,8 +16,10 @@ namespace Infrastructure.Services;
 internal static class PortableCatalogArchive
 {
 	private static readonly JsonSerializerOptions JsonOptions = new() { UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow, MaxDepth = 8 };
-	private static readonly string[] Origins = ["unassigned", "legacy_unknown", "automatic", "manual", "template", "reviewed", "mapped", "excluded"];
+	private static readonly string[] Origins = ["unassigned", "legacy_unknown", "automatic", "manual", "template", "reviewed", "mapped", "excluded", "purchase_excluded"];
 	private sealed record Assignment(Guid Id, string Origin, Guid? MappingId, Guid? AssignmentId);
+	private sealed record ReviewEvidence(Guid Id, NormalizationReviewState State, string? SourceHash, Guid? TargetId, string? Reason,
+		string? ExclusionReason, Guid? DecisionId, string? ReviewedBy, DateTimeOffset? ReviewedAt, Guid? MappingRevision);
 
 	internal static async Task ExportAsync(ApplicationDbContext source, SqliteConnection sqlite, CancellationToken ct)
 	{
@@ -40,7 +44,13 @@ internal static class PortableCatalogArchive
 		await foreach (var member in source.NormalizationCatalogMembers.AsNoTracking().AsAsyncEnumerable().WithCancellation(ct))
 		{ await WriteAsync("member", member.Id, member); }
 		await foreach (var item in source.ReceiptItems.IgnoreAutoIncludes().AsNoTracking().Where(item => item.DeletedAt == null).AsAsyncEnumerable().WithCancellation(ct))
-		{ await WriteAsync("assignment", item.Id, new Assignment(item.Id, item.NormalizationOrigin, item.NormalizationMappingId, item.NormalizationAssignmentId)); }
+		{
+			await WriteAsync("assignment", item.Id, new Assignment(item.Id, item.NormalizationOrigin, item.NormalizationMappingId, item.NormalizationAssignmentId));
+			await WriteAsync("review_evidence", item.Id, new ReviewEvidence(item.Id, item.NormalizationReviewState, item.ReviewedSourceHash, item.ReviewedTargetId,
+				item.NormalizationReviewReason, item.NormalizationExclusionReason, item.NormalizationReviewDecisionId, item.ReviewedBy, item.ReviewedAt, item.ReviewMappingRevision));
+		}
+		await foreach (var request in source.ReceiptWriteRequests.AsNoTracking().AsAsyncEnumerable().WithCancellation(ct))
+		{ await WriteAsync("write_request", RequestArchiveId(request), request); }
 	}
 
 	internal static async Task ImportAsync(ApplicationDbContext context, SqliteConnection sqlite, int version, CancellationToken ct)
@@ -68,7 +78,7 @@ internal static class PortableCatalogArchive
 			return;
 		}
 		// Import in dependency order; each payload has an explicit versioned kind and strict shape.
-		foreach (string kind in new[] { "mapping", "operation", "member", "assignment" })
+		foreach (string kind in (version >= 8 ? new[] { "mapping", "operation", "member", "assignment", "review_evidence", "write_request" } : new[] { "mapping", "operation", "member", "assignment" }))
 		{
 			await using var command = sqlite.CreateCommand();
 			command.CommandText = "SELECT id,payload FROM normalization_catalog WHERE kind=$kind ORDER BY id";
@@ -82,7 +92,28 @@ internal static class PortableCatalogArchive
 				if (payload.Length > 128 * 1024) { throw new InvalidOperationException("Catalog backup record exceeds its bounded payload size."); }
 				switch (kind)
 				{
+					case "review_evidence":
+						await ImportReviewEvidenceAsync(context, id, Read<ReviewEvidence>(payload), ct);
+						break;
+					case "write_request":
+						var request = Read<ReceiptWriteRequestEntity>(payload);
+						if (request.RequestId == Guid.Empty || string.IsNullOrWhiteSpace(request.Actor)
+							|| request.RequestHash.Length != 64 || request.Kind is not ("complete" or "item-create" or "item-update"))
+						{ throw new InvalidOperationException("Invalid receipt write replay evidence."); }
+						var previous = await context.ReceiptWriteRequests.FindAsync([request.Actor, request.RequestId], ct);
+						if (previous is null) { context.ReceiptWriteRequests.Add(request); }
+						else if (previous.RequestHash != request.RequestHash || previous.Kind != request.Kind || previous.ReceiptId != request.ReceiptId
+							|| !previous.ItemIds.SequenceEqual(request.ItemIds))
+						{ throw new InvalidOperationException("Receipt replay evidence conflicts with an existing request."); }
+						break;
 					case "mapping":
+						if (version < 8)
+						{
+							JsonObject legacyMapping = JsonNode.Parse(payload)!.AsObject();
+							if (legacyMapping.ContainsKey("ExclusionReason")) { throw new InvalidOperationException("Legacy mapping contains unsupported evidence."); }
+							legacyMapping.Add("ExclusionReason", null);
+							payload = legacyMapping.ToJsonString();
+						}
 						var mapping = Read<NormalizationSourceMappingEntity>(payload);
 						if (mapping.Id != id || mapping.State is not ("active" or "revoked")
 							|| mapping.SourceHash != NormalizationCatalogPolicy.Hash(new(mapping.Location, mapping.Description, mapping.ItemCode))
@@ -120,7 +151,7 @@ internal static class PortableCatalogArchive
 						{ throw new InvalidOperationException("Invalid catalog assignment in backup."); }
 						var item = await context.ReceiptItems.IgnoreAutoIncludes().SingleOrDefaultAsync(item => item.Id == id, ct)
 							?? throw new InvalidOperationException("Catalog assignment references a missing purchase.");
-						if (assignment.Origin is "unassigned" or "excluded" ? item.NormalizedDescriptionId.HasValue : !item.NormalizedDescriptionId.HasValue)
+						if (assignment.Origin is "unassigned" or "excluded" or "purchase_excluded" ? item.NormalizedDescriptionId.HasValue : !item.NormalizedDescriptionId.HasValue)
 						{ throw new InvalidOperationException("Catalog assignment origin disagrees with its normalized link."); }
 						if (assignment.Origin is not ("mapped" or "excluded") && assignment.MappingId.HasValue)
 						{ throw new InvalidOperationException("Only mapped or excluded assignments may reference a source mapping."); }
@@ -144,14 +175,60 @@ internal static class PortableCatalogArchive
 			await context.SaveChangesAsync(ct);
 		}
 		await using var unknown = sqlite.CreateCommand();
-		unknown.CommandText = "SELECT COUNT(*) FROM normalization_catalog WHERE kind NOT IN ('mapping','operation','member','assignment')";
+		unknown.CommandText = version >= 8
+			? "SELECT COUNT(*) FROM normalization_catalog WHERE kind NOT IN ('mapping','operation','member','assignment','review_evidence','write_request')"
+			: "SELECT COUNT(*) FROM normalization_catalog WHERE kind NOT IN ('mapping','operation','member','assignment')";
 		if (Convert.ToInt64(await unknown.ExecuteScalarAsync(ct)) != 0)
 		{ throw new InvalidOperationException("Backup contains an unsupported catalog record kind."); }
 		await using var missing = sqlite.CreateCommand();
 		missing.CommandText = "SELECT COUNT(*) FROM receipt_items i WHERE NOT EXISTS (SELECT 1 FROM normalization_catalog c WHERE c.kind='assignment' AND c.id=i.id)";
 		if (Convert.ToInt64(await missing.ExecuteScalarAsync(ct)) != 0)
 		{ throw new InvalidOperationException("Backup is missing purchase normalization provenance."); }
+		if (version >= 8)
+		{
+			missing.CommandText = "SELECT COUNT(*) FROM receipt_items i WHERE NOT EXISTS (SELECT 1 FROM normalization_catalog c WHERE c.kind='review_evidence' AND c.id=i.id)";
+			if (Convert.ToInt64(await missing.ExecuteScalarAsync(ct)) != 0) { throw new InvalidOperationException("Backup is missing purchase review evidence."); }
+		}
 	}
+	private static Guid RequestArchiveId(ReceiptWriteRequestEntity request)
+		=> new(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(request.Actor + ":" + request.RequestId))[..16]);
+
+	private static async Task ImportReviewEvidenceAsync(ApplicationDbContext context, Guid id, ReviewEvidence evidence, CancellationToken ct)
+	{
+		var item = await context.ReceiptItems.IgnoreAutoIncludes().SingleOrDefaultAsync(value => value.Id == id, ct)
+			?? throw new InvalidOperationException("Review evidence references a missing purchase.");
+		if (id != evidence.Id || !Enum.IsDefined(evidence.State)) { throw new InvalidOperationException("Invalid purchase review state."); }
+		if (evidence.State != NormalizationReviewState.NeedsReview)
+		{
+			string location = await context.Receipts.Where(value => value.Id == item.ReceiptId).Select(value => value.Location).SingleAsync(ct);
+			string hash = NormalizationCatalogPolicy.Hash(new(location, item.Description, item.ReceiptItemCode));
+			if (evidence.SourceHash != hash || evidence.TargetId != item.NormalizedDescriptionId || evidence.DecisionId is null || evidence.DecisionId == Guid.Empty || evidence.DecisionId != item.NormalizationAssignmentId
+				|| string.IsNullOrWhiteSpace(evidence.ReviewedBy) || evidence.ReviewedAt is null
+				|| (evidence.State == NormalizationReviewState.Excluded && (item.NormalizedDescriptionId.HasValue || string.IsNullOrWhiteSpace(evidence.ExclusionReason)))
+				|| (evidence.State == NormalizationReviewState.Verified && !await context.NormalizedDescriptions.AnyAsync(target => target.Id == item.NormalizedDescriptionId && target.Status == NormalizedDescriptionStatus.Active, ct)))
+			{ throw new InvalidOperationException("Purchase review evidence disagrees with its source or identity."); }
+			if (evidence.Reason == "approved_mapping")
+			{
+				if (!await context.NormalizationSourceMappings.AnyAsync(mapping => mapping.Id == item.NormalizationMappingId && mapping.State == "active"
+					&& mapping.Revision == evidence.MappingRevision && mapping.SourceHash == hash && mapping.TargetId == item.NormalizedDescriptionId
+					&& mapping.Exclude == (evidence.State == NormalizationReviewState.Excluded), ct))
+				{ throw new InvalidOperationException("Purchase review evidence depends on an unavailable mapping."); }
+			}
+			else if (evidence.Reason != (evidence.State == NormalizationReviewState.Excluded ? "purchase_exclusion" : "purchase_review") || evidence.MappingRevision is not null)
+			{ throw new InvalidOperationException("Purchase review evidence has no recognized authority."); }
+		}
+		item.NormalizationReviewState = evidence.State;
+		item.NormalizationReviewReason = evidence.Reason;
+		item.NormalizationExclusionReason = evidence.ExclusionReason;
+		item.NormalizationReviewDecisionId = evidence.State == NormalizationReviewState.NeedsReview ? null : evidence.DecisionId;
+		item.ReviewedTargetId = evidence.TargetId;
+		item.ReviewedSourceHash = evidence.State == NormalizationReviewState.NeedsReview ? null : evidence.SourceHash;
+		item.ReviewedBy = evidence.ReviewedBy;
+		item.ReviewedAt = evidence.ReviewedAt;
+		item.ReviewMappingRevision = evidence.State == NormalizationReviewState.NeedsReview ? null : evidence.MappingRevision;
+		context.RestoredReviewEvidence.Add(id);
+	}
+
 	private static T Read<T>(string payload)
 	{
 		try

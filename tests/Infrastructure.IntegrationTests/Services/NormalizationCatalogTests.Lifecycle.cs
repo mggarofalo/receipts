@@ -19,10 +19,11 @@ public sealed partial class NormalizationCatalogTests
 		var target = await CanonicalAsync("Proposed replacement");
 		var ids = await ItemsAsync(Source, 1, "automatic", old.Id);
 		using var provider = OfflineProvider();
-		var manual = await provider.GetRequiredService<INormalizedDescriptionService>()
+		var manual = await new NormalizedDescriptionService(new EntryActorFactory(fixture.CreateOptions(), Actor), new UnavailableEmbeddingService(), new NormalizedDescriptionMapper(), new NormalizedDescriptionSettingsMapper())
 			.SplitAsync(ids, "Human chosen identity", CancellationToken.None);
 		var stored = (await ReadAsync(ids)).Single();
-		stored.NormalizationOrigin.Should().Be("manual");
+		stored.NormalizationOrigin.Should().Be("reviewed");
+		stored.NormalizationReviewState.Should().Be(Domain.NormalizedDescriptions.NormalizationReviewState.Verified);
 		stored.NormalizationAssignmentId.Should().NotBeNull();
 		stored.NormalizedDescriptionId.Should().Be(manual.Description.Id);
 		var preview = await Service().PreviewAsync(Actor, Request(target) with { IncludeLegacyUnknown = true }, CancellationToken.None);
@@ -42,6 +43,7 @@ public sealed partial class NormalizationCatalogTests
 		var future = await ItemsAsync(Source, 2);
 		var otherStore = await ItemsAsync(Source with { Location = "Other store" }, 1);
 		var otherCode = await ItemsAsync(Source with { ItemCode = "OTHER" }, 1);
+		(await ReadAsync(future)).Should().OnlyContain(x => x.NormalizedDescriptionId == target.Id && x.NormalizationReviewState == Domain.NormalizedDescriptions.NormalizationReviewState.Verified, "approved exact scope resolves in the original save");
 		var facts = await FactsAsync(future);
 		int audits = await AuditCountAsync(future);
 
@@ -56,7 +58,7 @@ public sealed partial class NormalizationCatalogTests
 		(await ReadAsync(future)).Should().OnlyContain(x => x.NormalizedDescriptionId == target.Id && x.NormalizationOrigin == "mapped");
 		(await ReadAsync(otherStore.Concat(otherCode).ToArray())).Should().OnlyContain(x => x.NormalizedDescriptionId == null);
 		(await FactsAsync(future)).Should().BeEquivalentTo(facts);
-		(await AuditCountAsync(future)).Should().Be(audits + future.Length);
+		(await AuditCountAsync(future)).Should().Be(audits, "approved mapping was applied atomically at save; background reconciliation must not repeat its audit");
 	}
 
 	[Fact]
@@ -78,6 +80,9 @@ public sealed partial class NormalizationCatalogTests
 		second.Applied.Should().Be(200);
 		second.Remaining.Should().Be(5);
 		(await AuditCountAsync(ids)).Should().Be(audits + 200);
+		Guid[] beforeCancelAuditIds;
+		await using (var beforeCancel = fixture.CreateDbContext())
+		{ beforeCancelAuditIds = await beforeCancel.AuditLogs.Select(x => x.Id).ToArrayAsync(); }
 		var cancelled = await service.CancelAsync(Actor, second.Id, second.Revision, CancellationToken.None);
 		cancelled.State.Should().Be("cancelled");
 		cancelled.Applied.Should().Be(200);
@@ -86,7 +91,12 @@ public sealed partial class NormalizationCatalogTests
 		mappings.Should().ContainSingle().Which.State.Should().Be("revoked");
 		Func<Task> resume = () => service.ResumeAsync(Actor, second.Id, CancellationToken.None);
 		(await resume.Should().ThrowAsync<NormalizationCatalogException>()).Which.StatusCode.Should().Be(409);
-		(await AuditCountAsync(ids)).Should().Be(audits + 200);
+		(await AuditCountAsync(ids)).Should().Be(audits + 400, "each of 200 dependent assignments has a separate audited verification revocation");
+		await using var verifyCancellation = fixture.CreateDbContext();
+		var revocations = await verifyCancellation.AuditLogs.Where(x => !beforeCancelAuditIds.Contains(x.Id) && x.EntityType == "ReceiptItem").ToListAsync();
+		revocations.Should().HaveCount(200);
+		revocations.Should().OnlyContain(x => x.GetChanges().Any(change => change.FieldName == "NormalizationReviewState" && change.OldValue == "1" && change.NewValue == "0"));
+		(await ReadAsync(ids)).Should().OnlyContain(x => x.NormalizationReviewState == Domain.NormalizedDescriptions.NormalizationReviewState.NeedsReview);
 	}
 
 	[Fact]
@@ -109,9 +119,15 @@ public sealed partial class NormalizationCatalogTests
 		undone.State.Should().Be("undone");
 		undone.Undone.Should().Be(105);
 		(await ReadAsync(ids)).Should().OnlyContain(x => x.NormalizedDescriptionId == previous.Id && x.NormalizationOrigin == "legacy_unknown");
-		(await AuditCountAsync(ids)).Should().Be(audits + 105);
+		(await AuditCountAsync(ids)).Should().Be(audits + 210, "105 dependent proofs are revoked and 105 original assignments restored exactly once");
+		await using (var verify = fixture.CreateDbContext())
+		{
+			var itemAudits = await verify.AuditLogs.Where(x => x.EntityType == "ReceiptItem" && ids.Select(id => id.ToString()).Contains(x.EntityId)).ToListAsync();
+			itemAudits.Count(x => x.GetChanges().Any(change => change.FieldName == "NormalizationReviewState" && change.OldValue == "1" && change.NewValue == "0")).Should().Be(105);
+			itemAudits.Count(x => x.GetChanges().Any(change => change.FieldName == "NormalizedDescriptionId" && change.OldValue == target.Id.ToString() && change.NewValue == previous.Id.ToString())).Should().Be(105);
+		}
 		await service.ResumeAsync(Actor, undone.Id, CancellationToken.None);
-		(await AuditCountAsync(ids)).Should().Be(audits + 105);
+		(await AuditCountAsync(ids)).Should().Be(audits + 210, "105 dependent proofs are revoked and 105 original assignments restored exactly once");
 	}
 
 	private ServiceProvider OfflineProvider()

@@ -39,6 +39,32 @@ public class ReceiptItemsController(IMediator mediator, ReceiptItemMapper mapper
 	public const string RouteGetSuggestions = "suggestions";
 	public const string RouteGetDistinctCategories = "distinct-categories";
 
+	[HttpPost("normalization-preview")]
+	[EndpointSummary("Preview a source decision and search active products without saving")]
+	[ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest, "application/problem+json")]
+	public async Task<Results<Ok<ReceiptNormalizationPreviewResponse>, BadRequest<ProblemDetails>>> PreviewReceiptNormalization(
+		[FromBody] ReceiptNormalizationPreviewRequest request,
+		[FromServices] Application.Normalization.IReceiptNormalizationPreview preview,
+		CancellationToken cancellationToken = default)
+	{
+		var result = await preview.PreviewAsync(new(request.Source.Location, request.Source.Description, request.Source.ItemCode), request.Query,
+			request.Offset, request.Limit, cancellationToken);
+		return TypedResults.Ok(new ReceiptNormalizationPreviewResponse
+		{
+			SourceFingerprint = result.SourceFingerprint,
+			MappingId = result.MappingId,
+			MappingRevision = result.MappingRevision,
+			TargetId = result.TargetId,
+			TargetRevision = result.TargetRevision,
+			TargetName = result.TargetName,
+			Excluded = result.Excluded,
+			Candidates = result.Candidates.Select(value => new API.Generated.Dtos.ReceiptNormalizationCandidate { Id = value.Id, Revision = value.Revision, Name = value.Name }).ToList(),
+			Total = result.Total,
+			Offset = result.Offset,
+			Limit = result.Limit,
+		});
+	}
+
 	[HttpGet(RouteGetById)]
 	[EndpointSummary("Get a receipt item by ID")]
 	[EndpointDescription("Returns a single receipt item matching the provided GUID.")]
@@ -157,9 +183,17 @@ public class ReceiptItemsController(IMediator mediator, ReceiptItemMapper mapper
 
 	[HttpPost(RouteCreate)]
 	[EndpointSummary("Create a single receipt item")]
-	public async Task<Results<Ok<ReceiptItemResponse>, Conflict<ProblemDetails>>> CreateReceiptItem([FromBody] CreateReceiptItemRequest model, [FromRoute] Guid receiptId, CancellationToken cancellationToken = default)
+	[ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest, "application/problem+json")]
+	[ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden, "application/problem+json")]
+	[ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict, "application/problem+json")]
+	public async Task<Results<Ok<ReceiptItemResponse>, BadRequest<ProblemDetails>, ForbiddenProblem, Conflict<ProblemDetails>>> CreateReceiptItem([FromBody] CreateReceiptItemRequest model, [FromRoute] Guid receiptId, CancellationToken cancellationToken = default, [FromQuery] Guid? clientRequestId = null)
 	{
-		CreateReceiptItemCommand command = new([mapper.ToDomain(model)], receiptId, [model.ItemTemplateId]);
+		HttpContext?.Response.OnStarting(() =>
+		{
+			if (Response.StatusCode is 400 or 403 or 409) { Response.ContentType = "application/problem+json"; }
+			return Task.CompletedTask;
+		});
+		CreateReceiptItemCommand command = new([mapper.ToDomain(model)], receiptId, [model.ItemTemplateId], clientRequestId);
 		List<ReceiptItem> receiptItems;
 		try
 		{
@@ -175,12 +209,20 @@ public class ReceiptItemsController(IMediator mediator, ReceiptItemMapper mapper
 
 	[HttpPost(RouteCreateBatch)]
 	[EndpointSummary("Create receipt items in batch")]
-	public async Task<Results<Ok<List<ReceiptItemResponse>>, Conflict<ProblemDetails>>> CreateReceiptItems([FromBody] List<CreateReceiptItemRequest> models, [FromRoute] Guid receiptId, CancellationToken cancellationToken = default)
+	[ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest, "application/problem+json")]
+	[ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden, "application/problem+json")]
+	[ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict, "application/problem+json")]
+	public async Task<Results<Ok<List<ReceiptItemResponse>>, BadRequest<ProblemDetails>, ForbiddenProblem, Conflict<ProblemDetails>>> CreateReceiptItems([FromBody] List<CreateReceiptItemRequest> models, [FromRoute] Guid receiptId, CancellationToken cancellationToken = default, [FromQuery] Guid? clientRequestId = null)
 	{
+		HttpContext?.Response.OnStarting(() =>
+		{
+			if (Response.StatusCode is 400 or 403 or 409) { Response.ContentType = "application/problem+json"; }
+			return Task.CompletedTask;
+		});
 		CreateReceiptItemCommand command = new(
 			[.. models.Select(mapper.ToDomain)],
 			receiptId,
-			[.. models.Select(m => m.ItemTemplateId)]);
+			[.. models.Select(m => m.ItemTemplateId)], clientRequestId);
 		List<ReceiptItem> receiptItems;
 		try
 		{
@@ -196,11 +238,19 @@ public class ReceiptItemsController(IMediator mediator, ReceiptItemMapper mapper
 
 	[HttpPut(RouteUpdate)]
 	[EndpointSummary("Update a single receipt item")]
-	public async Task<Results<NoContent, NotFound>> UpdateReceiptItem([FromBody] UpdateReceiptItemRequest model, [FromRoute] Guid id, CancellationToken cancellationToken = default)
+	[ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest, "application/problem+json")]
+	[ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden, "application/problem+json")]
+	[ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict, "application/problem+json")]
+	public async Task<Results<NoContent, NotFound, BadRequest<ProblemDetails>, ForbiddenProblem, Conflict<ProblemDetails>>> UpdateReceiptItem([FromBody] UpdateReceiptItemRequest model, [FromRoute] Guid id, CancellationToken cancellationToken = default, [FromQuery] Guid? clientRequestId = null)
 	{
+		HttpContext?.Response.OnStarting(() =>
+		{
+			if (Response.StatusCode is 400 or 403 or 409) { Response.ContentType = "application/problem+json"; }
+			return Task.CompletedTask;
+		});
 		// Route id is authoritative; ignore any mismatched body id (RECEIPTS-793).
 		model.Id = id;
-		UpdateReceiptItemCommand command = new([mapper.ToDomain(model)]);
+		UpdateReceiptItemCommand command = new([mapper.ToDomain(model)], clientRequestId);
 		bool result = await mediator.Send(command, cancellationToken);
 
 		if (!result)
@@ -215,9 +265,17 @@ public class ReceiptItemsController(IMediator mediator, ReceiptItemMapper mapper
 
 	[HttpPut(RouteUpdateBatch)]
 	[EndpointSummary("Update receipt items in batch")]
-	public async Task<Results<NoContent, NotFound>> UpdateReceiptItems([FromBody] List<UpdateReceiptItemRequest> models, CancellationToken cancellationToken = default)
+	[ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest, "application/problem+json")]
+	[ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden, "application/problem+json")]
+	[ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict, "application/problem+json")]
+	public async Task<Results<NoContent, NotFound, BadRequest<ProblemDetails>, ForbiddenProblem, Conflict<ProblemDetails>>> UpdateReceiptItems([FromBody] List<UpdateReceiptItemRequest> models, CancellationToken cancellationToken = default, [FromQuery] Guid? clientRequestId = null)
 	{
-		UpdateReceiptItemCommand command = new([.. models.Select(mapper.ToDomain)]);
+		HttpContext?.Response.OnStarting(() =>
+		{
+			if (Response.StatusCode is 400 or 403 or 409) { Response.ContentType = "application/problem+json"; }
+			return Task.CompletedTask;
+		});
+		UpdateReceiptItemCommand command = new([.. models.Select(mapper.ToDomain)], clientRequestId);
 		bool result = await mediator.Send(command, cancellationToken);
 
 		if (!result)

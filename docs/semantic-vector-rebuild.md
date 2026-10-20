@@ -37,8 +37,8 @@ Admins can read `GET /api/normalized-descriptions/embedding-coverage`. It report
 counts for searchable canonical rows and eligible item sources, pending counts, the admitted
 fingerprint, and `isComplete`.
 
-Exact case-insensitive canonical-name matching does not depend on vectors and remains available
-throughout a rebuild. The receipt-item fuzzy resolver pauses while canonical coverage is incomplete
-so an excluded old vector cannot turn an ANN miss into a duplicate durable row. Semantic ANN and
+Read-only exact canonical-name lookup and approved scoped receipt mappings do not depend on vectors
+and remain available throughout a rebuild. Receipt normalization does not create identities or
+accept similarity matches automatically. Semantic ANN and
 hybrid contributions are intentionally partial until `isComplete` becomes true; they never use
 vectors from an obsolete embedding space or from source text that has since changed.

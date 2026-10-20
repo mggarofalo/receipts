@@ -1,5 +1,6 @@
 using Application.Interfaces.Services;
 using Application.Normalization;
+using Domain.NormalizedDescriptions;
 using FluentAssertions;
 using Infrastructure.Entities.Core;
 using Microsoft.EntityFrameworkCore;
@@ -46,11 +47,19 @@ public sealed partial class NormalizationCatalogTests
 		Func<Task> implicitReuse = () => service.ApproveAsync(Actor, fresh.Id, fresh.Revision, CancellationToken.None);
 		(await implicitReuse.Should().ThrowAsync<NormalizationCatalogException>()).Which.StatusCode.Should().Be(409);
 		await service.RevokeAsync(Actor, mapping.Id, mapping.Revision, CancellationToken.None);
+		var revokedRows = await ReadAsync(ids);
+		revokedRows.Should().OnlyContain(x => x.NormalizationReviewState == NormalizationReviewState.NeedsReview);
+		revokedRows.Count(x => x.NormalizedDescriptionId == survivor.Id).Should().Be(100,
+			"revoking mapping-dependent proof preserves historical identity links");
+		revokedRows.Count(x => x.NormalizedDescriptionId == null).Should().Be(5);
 		var replacement = await service.PreviewAsync(Actor, Request(current), CancellationToken.None);
-		replacement.Eligible.Should().Be(5);
-		replacement.Protected.Should().Be(100);
+		replacement.Eligible.Should().Be(105, "revocation requires fresh approval of every dependent observation");
+		replacement.Protected.Should().Be(0);
 		var resumed = await service.ApproveAsync(Actor, replacement.Id, replacement.Revision, CancellationToken.None);
-		resumed.Applied.Should().Be(5);
+		resumed.Applied.Should().Be(100);
+		resumed = await service.ResumeAsync(Actor, replacement.Id, CancellationToken.None);
+		resumed.Applied.Should().Be(105);
+		resumed.State.Should().Be("completed");
 		(await service.ListMappingsAsync(Actor, Source, CancellationToken.None)).Count(x => x.State == "active").Should().Be(1);
 		(await ReadAsync(ids)).Should().OnlyContain(x => x.NormalizedDescriptionId == survivor.Id);
 	}

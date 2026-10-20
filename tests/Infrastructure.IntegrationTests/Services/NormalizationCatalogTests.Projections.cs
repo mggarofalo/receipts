@@ -48,7 +48,7 @@ public sealed partial class NormalizationCatalogTests
 	}
 
 	[Fact]
-	public async Task Coverage_CountsLiveItemsByProvenanceInsteadOfTreatingEveryLinkedItemAsReviewed()
+	public async Task Coverage_CountsCurrentEvidenceInsteadOfTreatingHistoricalOriginAsReview()
 	{
 		await ResetAsync();
 		var target = await CanonicalAsync("Beef franks");
@@ -68,16 +68,24 @@ public sealed partial class NormalizationCatalogTests
 			(await db.Receipts.SingleAsync(x => x.Id == receiptId)).DeletedAt = DateTimeOffset.UtcNow;
 			await db.SaveChangesAsync();
 		}
+		await EntryWriter().CreateAsync(EntryReceipt(), [], [EntryItem(new(ReceiptNormalizationIntentKind.ConfirmExisting,
+			Guid.NewGuid(), NormalizationCatalogPolicy.Hash(Source), target.Id, target.NormalizationRevision, RememberSource: true))], [], CancellationToken.None);
+		await EntryWriter().CreateAsync(EntryReceipt(), [], [EntryItem(null)], [], CancellationToken.None);
+		await EntryWriter().CreateAsync(EntryReceipt(), [], [EntryItem(new(ReceiptNormalizationIntentKind.Exclude,
+			Guid.NewGuid(), NormalizationCatalogPolicy.Hash(Source), Reason: "Non-product observation"))], [], CancellationToken.None);
 		var service = Service();
 		var coverage = await service.GetCoverageAsync(Actor, CancellationToken.None);
-		coverage.TotalItems.Should().Be(8);
-		coverage.Unassigned.Should().Be(2);
-		coverage.LegacyUnknown.Should().Be(1);
-		coverage.Automatic.Should().Be(1);
+		coverage.TotalItems.Should().Be(11);
+		coverage.Unassigned.Should().Be(3, "the historical excluded origin has no explicit exclusion evidence");
+		coverage.LegacyUnknown.Should().Be(5, "all five historical links lack reviewed evidence regardless of provenance label");
+		coverage.Automatic.Should().Be(0);
 		coverage.Reviewed.Should().Be(1);
 		coverage.Mapped.Should().Be(1);
-		coverage.Protected.Should().Be(1);
+		coverage.Protected.Should().Be(0);
 		coverage.Excluded.Should().Be(1);
+		var excludedSources = await service.ListSourcesAsync(Actor, null, "excluded", 0, 10, CancellationToken.None);
+		excludedSources.Items.Should().ContainSingle().Which.Source.Should().Be(Source);
+		excludedSources.Total.Should().Be(1);
 		(coverage.Unassigned + coverage.LegacyUnknown + coverage.Automatic + coverage.Reviewed
 			+ coverage.Mapped + coverage.Protected + coverage.Excluded).Should().Be(coverage.TotalItems);
 	}

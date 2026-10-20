@@ -156,17 +156,19 @@ public class PersistenceContractTests(PostgresFixture fixture)
 	[Fact]
 	public async Task Split_LosingConcurrentNormalizedInsert_RecoversWithoutGhostAudit()
 	{
+		string actor = Guid.NewGuid().ToString();
 		ReceiptEntity receipt = Receipt();
 		ReceiptItemEntity item = Item(receipt);
 		await using (ApplicationDbContext seed = fixture.CreateDbContext())
 		{
+			seed.Users.Add(new Infrastructure.Entities.ApplicationUser { Id = actor, UserName = actor, SecurityStamp = Guid.NewGuid().ToString(), CreatedAt = DateTimeOffset.UtcNow });
 			seed.Receipts.Add(receipt);
 			seed.ReceiptItems.Add(item);
 			await seed.SaveChangesAsync();
 		}
 		string canonical = $"Split winner {Guid.NewGuid():N}";
 		InsertRace race = new(fixture.CreateOptions(), canonical);
-		NormalizedDescriptionService service = new(new Factory(Options(race)), Mock.Of<IEmbeddingService>(), new NormalizedDescriptionMapper(), new NormalizedDescriptionSettingsMapper());
+		NormalizedDescriptionService service = new(new Factory(Options(race), actor), Mock.Of<IEmbeddingService>(), new NormalizedDescriptionMapper(), new NormalizedDescriptionSettingsMapper());
 
 		await service.SplitAsync([item.Id], canonical, CancellationToken.None);
 
@@ -327,9 +329,9 @@ public class PersistenceContractTests(PostgresFixture fixture)
 		_ => throw new ArgumentOutOfRangeException(nameof(overload))
 	};
 
-	private sealed class Factory(DbContextOptions<ApplicationDbContext> options) : IDbContextFactory<ApplicationDbContext>
+	private sealed class Factory(DbContextOptions<ApplicationDbContext> options, string? actor = null) : IDbContextFactory<ApplicationDbContext>
 	{
-		public ApplicationDbContext CreateDbContext() => new(options);
+		public ApplicationDbContext CreateDbContext() => actor is null ? new(options) : new(options, Mock.Of<ICurrentUserAccessor>(user => user.UserId == actor));
 		public Task<ApplicationDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default) => Task.FromResult(CreateDbContext());
 	}
 
@@ -343,8 +345,12 @@ public class PersistenceContractTests(PostgresFixture fixture)
 			{
 				LoserId = eventData.Context!.ChangeTracker.Entries<NormalizedDescriptionEntity>().Single(row => row.State == EntityState.Added).Entity.Id;
 				await using ApplicationDbContext winner = new(seedOptions);
-				winner.NormalizedDescriptions.Add(new() { Id = WinnerId, CanonicalName = canonical, CreatedAt = DateTimeOffset.UtcNow });
-				await winner.SaveChangesAsync(cancellationToken);
+				// This adversarial external writer bypasses the application gate. An EF save
+				// here would wait for the Split whose command interceptor is awaiting us.
+				await winner.Database.ExecuteSqlInterpolatedAsync($"""
+                    INSERT INTO matching."NormalizedDescriptions" ("Id", "CanonicalName", "Status", "CreatedAt")
+                    VALUES ({WinnerId}, {canonical}, 'Active', {DateTimeOffset.UtcNow})
+                    """, cancellationToken);
 			}
 			return result;
 		}

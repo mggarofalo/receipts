@@ -14,4 +14,8 @@ public interface ICompleteReceiptWriter
 		List<Domain.Core.ReceiptItem> items,
 		List<Domain.Core.Adjustment> adjustments,
 		CancellationToken cancellationToken);
+	Task<CreateCompleteReceiptResult> CreateAsync(
+		Domain.Core.Receipt receipt, List<Domain.Core.Transaction> transactions,
+		List<Domain.Core.ReceiptItem> items, List<Domain.Core.Adjustment> adjustments,
+		Guid clientRequestId, CancellationToken cancellationToken);
 }

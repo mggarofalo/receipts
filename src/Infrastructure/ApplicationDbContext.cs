@@ -430,7 +430,8 @@ public partial class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 		// record. One accept expands to C(n,2) rows, so auditing it would add thousands of log rows per
 		// click. It also keeps the two write paths consistent — the Postgres path inserts via raw
 		// ON CONFLICT SQL, which bypasses the change tracker and could never have been audited anyway.
-		HashSet<Type> excludedTypes = [typeof(NormalizationAiRunEntity), typeof(NormalizationAiProposalEntity), typeof(NormalizationAiConnectionEntity), typeof(AuditLogEntity), typeof(AuthAuditLogEntity), typeof(SeedHistoryEntry), typeof(YnabSyncRecordEntity), typeof(YnabSelectedBudgetEntity), typeof(YnabAccountMappingEntity), typeof(YnabCategoryMappingEntity), typeof(YnabServerKnowledgeEntity), typeof(YnabSyncEventEntity), typeof(DistinctDescriptionEntity), typeof(ApiKeyEntity), typeof(AcceptedDuplicatePairEntity)];
+		// Replay tombstones and the reconciled review queue are bookkeeping; business/evidence mutations retain their item/catalog audits.
+		HashSet<Type> excludedTypes = [typeof(ReceiptWriteRequestEntity), typeof(NormalizationReviewWorkEntity), typeof(NormalizationAiRunEntity), typeof(NormalizationAiProposalEntity), typeof(NormalizationAiConnectionEntity), typeof(AuditLogEntity), typeof(AuthAuditLogEntity), typeof(SeedHistoryEntry), typeof(YnabSyncRecordEntity), typeof(YnabSelectedBudgetEntity), typeof(YnabAccountMappingEntity), typeof(YnabCategoryMappingEntity), typeof(YnabServerKnowledgeEntity), typeof(YnabSyncEventEntity), typeof(DistinctDescriptionEntity), typeof(ApiKeyEntity), typeof(AcceptedDuplicatePairEntity)];
 		List<AuditEntry> auditEntries = [];
 		DateTimeOffset now = DateTimeOffset.UtcNow;
 

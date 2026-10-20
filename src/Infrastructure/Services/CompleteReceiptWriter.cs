@@ -1,9 +1,12 @@
 using Application.Commands.Receipt.CreateComplete;
 using Application.Interfaces.Services;
+using Application.Normalization;
 using Domain.Core;
 using Infrastructure.Entities.Core;
 using Infrastructure.Mapping;
+using Infrastructure.Utilities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Infrastructure.Services;
 
@@ -14,14 +17,46 @@ public class CompleteReceiptWriter(
 	ReceiptItemMapper receiptItemMapper,
 	AdjustmentMapper adjustmentMapper) : ICompleteReceiptWriter
 {
-	public async Task<CreateCompleteReceiptResult> CreateAsync(
+	public Task<CreateCompleteReceiptResult> CreateAsync(Receipt receipt, List<Transaction> transactions, List<ReceiptItem> items,
+		List<Adjustment> adjustments, CancellationToken cancellationToken)
+		=> CreateCoreAsync(receipt, transactions, items, adjustments, null, cancellationToken);
+
+	public Task<CreateCompleteReceiptResult> CreateAsync(Receipt receipt, List<Transaction> transactions, List<ReceiptItem> items,
+		List<Adjustment> adjustments, Guid clientRequestId, CancellationToken cancellationToken)
+		=> CreateCoreAsync(receipt, transactions, items, adjustments, clientRequestId, cancellationToken);
+
+	private async Task<CreateCompleteReceiptResult> CreateCoreAsync(
 		Receipt receipt,
 		List<Transaction> transactions,
 		List<ReceiptItem> items,
 		List<Adjustment> adjustments,
-		CancellationToken cancellationToken)
+		Guid? clientRequestId, CancellationToken cancellationToken)
 	{
 		await using ApplicationDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
+		await using IDbContextTransaction? transaction = context.Database.IsRelational() ? await context.Database.BeginTransactionAsync(cancellationToken) : null;
+		await NormalizationWriteGuard.AcquireWriteGateAsync(context, cancellationToken);
+		ReceiptWriteRequestEntity? request = null;
+		if (clientRequestId is Guid requestId)
+		{
+			request = await ReceiptWriteIdempotency.FindOrCreateAsync(context, requestId, "complete", new
+			{
+				receipt.Location,
+				receipt.Date,
+				receipt.TaxAmount,
+				transactions = transactions.Select(value => new { value.CardId, value.Amount, value.Date }),
+				items = items.Select(value => new { value.Description, value.ReceiptItemCode, value.Quantity, value.UnitPrice, value.TotalAmount, value.Category, value.Subcategory, value.NormalizationIntent }),
+				adjustments = adjustments.Select(value => new { value.Type, value.Amount, value.Description })
+			}, cancellationToken);
+			if (request.ReceiptId != Guid.Empty)
+			{
+				ReceiptEntity? stored = await context.Receipts.IgnoreQueryFilters().SingleOrDefaultAsync(value => value.Id == request.ReceiptId, cancellationToken);
+				if (stored is null || stored.DeletedAt is not null) { throw new NormalizationCatalogException(409, "receipt_request_deleted", "This request already created a receipt that is now deleted. Restore it instead of replaying creation."); }
+				var savedItems = await context.ReceiptItems.Where(value => value.ReceiptId == stored.Id).ToListAsync(cancellationToken);
+				var savedTransactions = await context.Transactions.Where(value => value.ReceiptId == stored.Id).ToListAsync(cancellationToken);
+				var savedAdjustments = await context.Adjustments.Where(value => value.ReceiptId == stored.Id).ToListAsync(cancellationToken);
+				return new(receiptMapper.ToDomain(stored), savedTransactions.Select(transactionMapper.ToDomain).ToList(), savedItems.Select(receiptItemMapper.ToDomain).ToList(), savedAdjustments.Select(adjustmentMapper.ToDomain).ToList());
+			}
+		}
 
 		// Map receipt and pre-generate ID for FK assignment
 		ReceiptEntity receiptEntity = receiptMapper.ToEntity(receipt);
@@ -54,6 +89,12 @@ public class CompleteReceiptWriter(
 			return entity;
 		}).ToList();
 
+		if (request is not null)
+		{
+			request.ReceiptId = receiptEntity.Id;
+			request.ItemIds = itemEntities.Select(item => item.Id).ToArray();
+		}
+
 		// Add all to context and persist in a single SaveChangesAsync (implicit transaction)
 		context.Set<ReceiptEntity>().Add(receiptEntity);
 		context.Set<TransactionEntity>().AddRange(transactionEntities);
@@ -65,6 +106,7 @@ public class CompleteReceiptWriter(
 		List<Guid> cardIds = transactionEntities.Select(entity => entity.CardId).Distinct().ToList();
 		await context.Cards.IgnoreAutoIncludes().Where(card => cardIds.Contains(card.Id)).LoadAsync(cancellationToken);
 		await context.SaveChangesAsync(cancellationToken);
+		if (transaction is not null) { await transaction.CommitAsync(cancellationToken); }
 
 
 		// Map back to domain

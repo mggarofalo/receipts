@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Infrastructure.Services;
 
-/// <summary>Deterministic approved-source and canonical equality resolution; never calls a model.</summary>
+/// <summary>Deterministic approved-source resolution; never calls a model.</summary>
 internal static class NormalizationCatalogResolver
 {
 	internal readonly record struct Result(int Linked, int Attempted);
@@ -18,17 +18,15 @@ internal static class NormalizationCatalogResolver
 		var candidates = from item in context.ReceiptItems.IgnoreAutoIncludes()
 						 join receipt in context.Receipts on item.ReceiptId equals receipt.Id
 						 where item.DeletedAt == null && receipt.DeletedAt == null && item.NormalizedDescriptionId == null
-						 && item.NormalizationOrigin == "unassigned"
+						 && item.NormalizationOrigin == "unassigned" && item.NormalizationReviewReason != "deferred"
 						 && !catalogReservations.Contains(item.Id)
 						 && !context.NormalizationAiProposals.Any(proposal => proposal.ReceiptItemId == item.Id && proposal.State == "pending"
 							&& context.NormalizationAiRuns.Any(run => run.Id == proposal.RunId && (run.State == "queued" || run.State == "running" || run.State == "ready" || run.State == "unknown")))
-						 && !context.NormalizedDescriptions.Any(target => target.Status == NormalizedDescriptionStatus.Rejected && target.CanonicalName.ToLower() == item.Description.Trim(' ').ToLower())
 						 && (context.NormalizationSourceMappings.Any(mapping => mapping.State == "active"
 							&& (mapping.Exclude || context.NormalizedDescriptions.Any(target => target.Id == mapping.TargetId && target.Status == NormalizedDescriptionStatus.Active))
 							&& mapping.Description == item.Description.Trim(' ')
 							&& mapping.Location == receipt.Location.Trim(' ')
-							&& mapping.ItemCode == (item.ReceiptItemCode == null || item.ReceiptItemCode.Trim(' ') == "" ? null : item.ReceiptItemCode.Trim(' ')))
-							|| context.NormalizedDescriptions.Any(target => target.Status == NormalizedDescriptionStatus.Active && target.CanonicalName.ToLower() == item.Description.Trim(' ').ToLower()))
+							&& mapping.ItemCode == (item.ReceiptItemCode == null || item.ReceiptItemCode.Trim(' ') == "" ? null : item.ReceiptItemCode.Trim(' '))))
 						 orderby item.Id
 						 select item;
 		var items = await candidates.AsNoTracking().Take(NormalizationCatalogPolicy.ChunkSize).ToListAsync(ct);
@@ -54,23 +52,19 @@ internal static class NormalizationCatalogResolver
 			&& context.NormalizationAiRuns.Any(run => run.Id == proposal.RunId && (run.State == "queued" || run.State == "running" || run.State == "ready" || run.State == "unknown")))
 			.Select(proposal => proposal.ReceiptItemId).ToListAsync(ct)).ToHashSet();
 		reserved.UnionWith(await NormalizationCatalogReservations.ItemIds(context).Where(id => itemIds.Contains(id)).ToListAsync(ct));
-		var rejected = (await context.NormalizedDescriptions.Where(target => target.Status == NormalizedDescriptionStatus.Rejected
-			&& names.Contains(target.CanonicalName.ToLower())).Select(target => target.CanonicalName.ToLower()).ToListAsync(ct)).ToHashSet(StringComparer.Ordinal);
 		var sourceHashes = currentItems.Where(item => parents.ContainsKey(item.ReceiptId) && item.NormalizationRevision == observedRevisions[item.Id]
-			&& item.DeletedAt == null && item.NormalizedDescriptionId == null && item.NormalizationOrigin == "unassigned").Select(item => NormalizationCatalogPolicy.Hash(
+			&& item.DeletedAt == null && item.NormalizedDescriptionId == null && item.NormalizationOrigin == "unassigned" && item.NormalizationReviewReason != "deferred").Select(item => NormalizationCatalogPolicy.Hash(
 			NormalizationCatalogPolicy.Normalize(new(parents[item.ReceiptId].Location, item.Description, item.ReceiptItemCode)))).Distinct().ToArray();
 		var mappings = await context.NormalizationSourceMappings.Where(mapping => sourceHashes.Contains(mapping.SourceHash) && mapping.State == "active")
 			.ToDictionaryAsync(mapping => mapping.SourceHash, ct);
 		var activeTargets = await context.NormalizedDescriptions.Where(target => target.Status == NormalizedDescriptionStatus.Active && targets.Contains(target.Id))
 			.Select(target => new { target.Id, Name = target.CanonicalName.ToLower() }).ToListAsync(ct);
 		var activeIds = activeTargets.Select(target => target.Id).ToHashSet();
-		var exactTargets = activeTargets.ToDictionary(target => target.Name, target => target.Id, StringComparer.Ordinal);
 		int linked = 0;
 		foreach (ReceiptItemEntity item in currentItems)
 		{
-			if (item.NormalizationRevision != observedRevisions[item.Id] || item.DeletedAt != null || item.NormalizedDescriptionId != null || item.NormalizationOrigin != "unassigned") { continue; }
-			string name = item.Description.Trim(' ').ToLowerInvariant();
-			if (reserved.Contains(item.Id) || rejected.Contains(name) || !parents.TryGetValue(item.ReceiptId, out var receipt)) { continue; }
+			if (item.NormalizationRevision != observedRevisions[item.Id] || item.DeletedAt != null || item.NormalizedDescriptionId != null || item.NormalizationOrigin != "unassigned" || item.NormalizationReviewReason == "deferred") { continue; }
+			if (reserved.Contains(item.Id) || !parents.TryGetValue(item.ReceiptId, out var receipt)) { continue; }
 			NormalizationSourceKey key = NormalizationCatalogPolicy.Normalize(new(receipt.Location, item.Description, item.ReceiptItemCode));
 			string hash = NormalizationCatalogPolicy.Hash(key);
 			var mapping = mappings.GetValueOrDefault(hash);
@@ -82,13 +76,7 @@ internal static class NormalizationCatalogResolver
 				item.NormalizationMappingId = mapping.Id;
 				item.NormalizedDescriptionMatchScore = null;
 			}
-			else
-			{
-				if (!exactTargets.TryGetValue(name, out Guid target)) { continue; }
-				item.NormalizedDescriptionId = target;
-				item.NormalizedDescriptionMatchScore = 1;
-				item.NormalizationOrigin = "automatic";
-			}
+			else { continue; }
 			item.NormalizationAssignmentId = Guid.NewGuid();
 			linked++;
 		}

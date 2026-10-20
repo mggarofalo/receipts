@@ -40,19 +40,18 @@ public sealed class NormalizationCatalogPolicyTests
 	}
 
 	[Theory]
-	[InlineData("unassigned", false, true)]
-	[InlineData("automatic", false, true)]
-	[InlineData("legacy_unknown", false, false)]
-	[InlineData("legacy_unknown", true, true)]
-	[InlineData("manual", true, false)]
-	[InlineData("template", true, false)]
-	[InlineData("reviewed", true, false)]
-	[InlineData("mapped", true, false)]
-	[InlineData("excluded", true, false)]
-	[InlineData("future-unknown-origin", true, false)]
-	public void Eligibility_ConsentOnlyReopensLegacyAssignments(string origin, bool includeLegacy, bool expected)
+	[InlineData("manual")]
+	[InlineData("template")]
+	[InlineData("reviewed")]
+	[InlineData("mapped")]
+	[InlineData("legacy_unknown")]
+	[InlineData("future-unknown-origin")]
+	public void UnverifiedLinkedHistoryRequiresExplicitLegacyConsentRegardlessOfOrigin(string origin)
 	{
-		NormalizationCatalogPolicy.Classify(new(origin, true, true, false, false, false, false), includeLegacy).Eligible.Should().Be(expected);
+		var facts = new CatalogAssignmentFacts(origin, true, true, false, false, origin == "template", false, false, true);
+		NormalizationCatalogPolicy.Classify(facts, false).Eligible.Should().BeFalse();
+		NormalizationCatalogPolicy.Classify(facts, true).Eligible.Should().BeTrue();
+		NormalizationCatalogPolicy.Classify(facts with { HasReviewedEvidence = true }, true).Eligible.Should().BeFalse();
 	}
 
 	[Theory]

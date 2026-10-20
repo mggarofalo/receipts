@@ -1,9 +1,17 @@
+using Domain.NormalizedDescriptions;
+
 namespace Domain.Core;
 
 public class ReceiptItem
 {
 	public Guid Id { get; set; }
 	public Guid ReceiptId { get; set; }
+	public Guid NormalizationRevision { get; set; }
+	public ReceiptNormalizationIntent? NormalizationIntent { get; set; }
+	public NormalizationReviewState NormalizationReviewState { get; set; }
+	public string? NormalizationReviewReason { get; set; }
+	public string? NormalizationExclusionReason { get; set; }
+	public Guid? NormalizationReviewDecisionId { get; set; }
 	public string? ReceiptItemCode { get; set; }
 	public string Description { get; set; }
 	public decimal Quantity { get; set; }

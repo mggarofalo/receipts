@@ -1,11 +1,10 @@
 using System.Threading.Channels;
 using Application.Interfaces.Services;
 using Application.Models.CommittedChanges;
-using Application.Models.NormalizedDescriptions;
+using Application.Normalization;
 using Domain.NormalizedDescriptions;
 using FluentAssertions;
 using Infrastructure.Entities.Core;
-using Infrastructure.Mapping;
 using Infrastructure.Services;
 using Infrastructure.Tests.Helpers;
 using Microsoft.EntityFrameworkCore;
@@ -18,68 +17,123 @@ namespace Infrastructure.Tests.Services;
 [Trait("Category", "Unit")]
 public class NormalizedDescriptionResolutionServiceTests
 {
-	private readonly Mock<IEmbeddingService> _embeddingServiceMock;
-	private readonly Mock<INormalizedDescriptionService> _normalizedServiceMock;
-	private readonly Mock<IDescriptionChangeSignal> _signalMock;
-	private readonly Mock<ILogger<NormalizedDescriptionResolutionService>> _loggerMock;
-	private readonly Mock<IServiceScopeFactory> _scopeFactoryMock;
-	private readonly Mock<IServiceScope> _scopeMock;
-	private readonly Mock<IServiceProvider> _serviceProviderMock;
-	private readonly IDbContextFactory<ApplicationDbContext> _contextFactory;
+	private readonly Mock<IDescriptionChangeSignal> _signalMock = new();
+	private readonly Mock<ILogger<NormalizedDescriptionResolutionService>> _loggerMock = new();
+	private readonly Mock<IServiceScopeFactory> _scopeFactoryMock = new();
 	private readonly Mock<ICommittedChangePublisher> _publisherMock = new();
-
+	private readonly IDbContextFactory<ApplicationDbContext> _contextFactory;
 	public NormalizedDescriptionResolutionServiceTests()
 	{
-		_embeddingServiceMock = new Mock<IEmbeddingService>();
-		_normalizedServiceMock = new Mock<INormalizedDescriptionService>();
-		_normalizedServiceMock
-			.Setup(service => service.GetEmbeddingCoverageAsync(It.IsAny<CancellationToken>()))
-			.ReturnsAsync(new EmbeddingCoverage(
-				OnnxEmbeddingService.EmbeddingSpaceFingerprint,
-				CanonicalReady: 0,
-				CanonicalTotal: 0,
-				ItemReady: 0,
-				ItemTotal: 0));
-		_signalMock = new Mock<IDescriptionChangeSignal>();
-		// The service Subscribe()s once at construction for its own wake-up reader.
-		_signalMock
-			.Setup(s => s.Subscribe())
-			.Returns(Channel.CreateBounded<bool>(1).Reader);
-		_loggerMock = new Mock<ILogger<NormalizedDescriptionResolutionService>>();
-		_scopeFactoryMock = new Mock<IServiceScopeFactory>();
-		_scopeMock = new Mock<IServiceScope>();
-		_serviceProviderMock = new Mock<IServiceProvider>();
+		(_contextFactory, _) = DbContextWithUserHelpers.CreateInMemoryContextFactoryWithUser();
+		_signalMock.Setup(s => s.Subscribe()).Returns(Channel.CreateBounded<bool>(1).Reader);
+		ServiceCollection services = new();
+		// Deliberately omit model and canonical-service dependencies: approved scope works offline.
+		services.AddSingleton(_contextFactory);
+		var provider = services.BuildServiceProvider();
+		_scopeFactoryMock.Setup(f => f.CreateScope()).Returns(() => provider.CreateScope());
+	}
+	private NormalizedDescriptionResolutionService CreateService() => new(_scopeFactoryMock.Object, _signalMock.Object, _loggerMock.Object, _publisherMock.Object);
 
-		(_contextFactory, MockCurrentUserAccessor accessor) = DbContextWithUserHelpers.CreateInMemoryContextFactoryWithUser();
-		accessor.UserId = "test-user";
-
-		_serviceProviderMock
-			.Setup(sp => sp.GetService(typeof(IEmbeddingService)))
-			.Returns(_embeddingServiceMock.Object);
-		_serviceProviderMock
-			.Setup(sp => sp.GetService(typeof(INormalizedDescriptionService)))
-			.Returns(_normalizedServiceMock.Object);
-		_serviceProviderMock
-			.Setup(sp => sp.GetService(typeof(IDbContextFactory<ApplicationDbContext>)))
-			.Returns(_contextFactory);
-		_scopeMock
-			.Setup(s => s.ServiceProvider)
-			.Returns(_serviceProviderMock.Object);
-		_scopeFactoryMock
-			.Setup(f => f.CreateScope())
-			.Returns(_scopeMock.Object);
+	private async Task<Guid> ApproveAsync(string description, NormalizedDescriptionStatus status = NormalizedDescriptionStatus.Active)
+	{
+		await using var context = _contextFactory.CreateDbContext();
+		Guid id = Guid.NewGuid();
+		context.NormalizedDescriptions.Add(new() { Id = id, CanonicalName = "Identity " + description, Status = status, CreatedAt = DateTimeOffset.UtcNow });
+		var key = NormalizationCatalogPolicy.Normalize(new("Test", description, null));
+		context.NormalizationSourceMappings.Add(new() { Id = Guid.NewGuid(), SourceHash = NormalizationCatalogPolicy.Hash(key), Location = key.Location, Description = key.Description, TargetId = id, ApprovedBy = "reviewer", ApprovedAt = DateTimeOffset.UtcNow });
+		await context.SaveChangesAsync();
+		return id;
 	}
 
-	private NormalizedDescriptionResolutionService CreateService() => new(
-		_scopeFactoryMock.Object,
-		_signalMock.Object,
-		_loggerMock.Object);
+	[Fact]
+	public async Task ApprovedScope_LinksDuplicatesOfflineWithoutInventingScores_AndPublishesOnce()
+	{
+		var first = BuildItem("Milk"); var second = BuildItem("Milk");
+		await SeedReceiptAndItemsAsync(first, second);
+		Guid target = await ApproveAsync("Milk");
+		_publisherMock.Setup(p => p.PublishAsync(It.IsAny<CommittedEntityChange>())).Returns(async () =>
+		{
+			await using var committed = _contextFactory.CreateDbContext();
+			(await committed.ReceiptItems.CountAsync(i => i.NormalizedDescriptionId == target)).Should().Be(2);
+		});
+		using var service = CreateService();
+		(await service.ProcessPendingResolutionsAsync(CancellationToken.None)).Linked.Should().Be(2);
+		(await service.ProcessPendingResolutionsAsync(CancellationToken.None)).Linked.Should().Be(0);
+		await using var verify = _contextFactory.CreateDbContext();
+		verify.ReceiptItems.Should().OnlyContain(i => i.NormalizedDescriptionId == target && i.NormalizedDescriptionMatchScore == null);
+		verify.NormalizedDescriptions.Should().ContainSingle();
+		_publisherMock.Verify(p => p.PublishAsync(It.Is<CommittedEntityChange>(c => c.EntityType == CommittedEntityType.ReceiptItem && c.ChangeType == CommittedChangeType.Updated && c.SuppressToast)), Times.Once);
+	}
 
-	private NormalizedDescriptionResolutionService CreatePublisherAwareService() => new(
-		_scopeFactoryMock.Object,
-		_signalMock.Object,
-		_loggerMock.Object,
-		_publisherMock.Object);
+	[Fact]
+	public async Task GlobalExactNameWithoutScope_DoesNotAuthorizeOrPublish()
+	{
+		var item = BuildItem("Milk"); await SeedReceiptAndItemsAsync(item);
+		await using (var context = _contextFactory.CreateDbContext())
+		{
+			context.NormalizedDescriptions.Add(new() { Id = Guid.NewGuid(), CanonicalName = "Milk", Status = NormalizedDescriptionStatus.Active, CreatedAt = DateTimeOffset.UtcNow });
+			await context.SaveChangesAsync();
+		}
+		using var service = CreateService();
+		(await service.ProcessPendingResolutionsAsync(CancellationToken.None)).Linked.Should().Be(0);
+		await using var verify = _contextFactory.CreateDbContext();
+		(await verify.ReceiptItems.SingleAsync()).NormalizedDescriptionId.Should().BeNull();
+		_publisherMock.Verify(p => p.PublishAsync(It.IsAny<CommittedEntityChange>()), Times.Never);
+	}
+
+	[Theory]
+	[InlineData("deleted")]
+	[InlineData("linked")]
+	[InlineData("rejected-target")]
+	[InlineData("different-case")]
+	public async Task IneligibleAssignment_RemainsUntouched(string reason)
+	{
+		var item = BuildItem(reason == "different-case" ? "milk" : "Milk", deletedAt: reason == "deleted" ? DateTimeOffset.UtcNow : null);
+		Guid historicalTarget = Guid.NewGuid();
+		if (reason == "linked")
+		{
+			await using var context = _contextFactory.CreateDbContext();
+			context.NormalizedDescriptions.Add(new() { Id = historicalTarget, CanonicalName = "Historical identity", Status = NormalizedDescriptionStatus.Active, CreatedAt = DateTimeOffset.UtcNow });
+			await context.SaveChangesAsync();
+			item.NormalizedDescriptionId = historicalTarget;
+			item.NormalizedDescriptionMatchScore = 0.42;
+		}
+		await SeedReceiptAndItemsAsync(item);
+		await ApproveAsync("Milk", reason == "rejected-target" ? NormalizedDescriptionStatus.Rejected : NormalizedDescriptionStatus.Active);
+		using var service = CreateService();
+		(await service.ProcessPendingResolutionsAsync(CancellationToken.None)).Linked.Should().Be(0);
+		await using var verify = _contextFactory.CreateDbContext();
+		var stored = await verify.ReceiptItems.IgnoreQueryFilters().SingleAsync();
+		stored.NormalizedDescriptionId.Should().Be(reason == "linked" ? historicalTarget : null);
+		stored.NormalizedDescriptionMatchScore.Should().Be(reason == "linked" ? 0.42 : null);
+		_publisherMock.Verify(p => p.PublishAsync(It.IsAny<CommittedEntityChange>()), Times.Never);
+	}
+
+	[Fact]
+	public async Task ShortApprovedDescription_IsValid()
+	{
+		await SeedReceiptAndItemsAsync(BuildItem("X")); await ApproveAsync("X");
+		using var service = CreateService();
+		(await service.ProcessPendingResolutionsAsync(CancellationToken.None)).Linked.Should().Be(1);
+	}
+
+	[Fact]
+	public async Task EmptyBatch_DoesNotPublish()
+	{
+		using var service = CreateService();
+		(await service.ProcessPendingResolutionsAsync(CancellationToken.None)).Should().Be(NormalizedDescriptionResolutionService.ResolutionSummary.Empty);
+		_publisherMock.Verify(p => p.PublishAsync(It.IsAny<CommittedEntityChange>()), Times.Never);
+	}
+
+	[Fact]
+	public async Task ScopeFailure_DoesNotPublish()
+	{
+		_scopeFactoryMock.Setup(f => f.CreateScope()).Throws(new InvalidOperationException("unavailable"));
+		using var service = CreateService();
+		Func<Task> run = async () => await service.ProcessPendingResolutionsAsync(CancellationToken.None);
+		await run.Should().ThrowAsync<InvalidOperationException>().WithMessage("unavailable");
+		_publisherMock.Verify(p => p.PublishAsync(It.IsAny<CommittedEntityChange>()), Times.Never);
+	}
 
 	private async Task SeedReceiptAndItemsAsync(params ReceiptItemEntity[] items)
 	{
@@ -120,500 +174,6 @@ public class NormalizedDescriptionResolutionServiceTests
 			Category = "Test",
 			DeletedAt = deletedAt,
 		};
-	}
-
-	private GetOrCreateResult NewResult(string canonicalName, double? matchScore)
-	{
-		// These fixtures exercise the fuzzy-service seam. Exact names now resolve
-		// directly without calling that seam; keep the persisted candidate distinct.
-		NormalizedDescription domain = new(
-			Guid.NewGuid(),
-				"Resolved " + canonicalName,
-			NormalizedDescriptionStatus.Active,
-			DateTimeOffset.UtcNow);
-		using ApplicationDbContext seed = _contextFactory.CreateDbContext();
-		seed.NormalizedDescriptions.Add(new() { Id = domain.Id, CanonicalName = domain.CanonicalName, Status = domain.Status, CreatedAt = domain.CreatedAt });
-		seed.SaveChanges();
-		return new GetOrCreateResult(domain, matchScore);
-	}
-
-	[Fact]
-	public async Task ProcessPendingResolutionsAsync_RestoreWithIncompleteCanonicalVectors_UsesExactMatchButDefersNovelText()
-	{
-		ReceiptItemEntity exact = BuildItem("organic MILK");
-		ReceiptItemEntity novel = BuildItem("Oat beverage");
-		await SeedReceiptAndItemsAsync(exact, novel);
-		Guid canonicalId = Guid.NewGuid();
-		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
-		{
-			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
-			{
-				Id = canonicalId,
-				CanonicalName = "Organic Milk",
-				Status = NormalizedDescriptionStatus.Active,
-				Embedding = null,
-				EmbeddingModelVersion = null,
-				CreatedAt = DateTimeOffset.UtcNow,
-			});
-			await seed.SaveChangesAsync();
-		}
-		_embeddingServiceMock.Setup(service => service.IsConfigured).Returns(true);
-		_embeddingServiceMock
-			.Setup(service => service.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-			.ReturnsAsync(new float[OnnxEmbeddingService.EmbeddingDimension]);
-		NormalizedDescriptionService realService = new(
-			_contextFactory,
-			_embeddingServiceMock.Object,
-			new NormalizedDescriptionMapper(),
-			new NormalizedDescriptionSettingsMapper());
-		_serviceProviderMock
-			.Setup(provider => provider.GetService(typeof(INormalizedDescriptionService)))
-			.Returns(realService);
-
-		NormalizedDescriptionResolutionService.ResolutionSummary summary =
-			await CreateService().ProcessPendingResolutionsAsync(CancellationToken.None);
-		GetOrCreateResult exactLookup =
-			await realService.GetOrCreateAsync("organic MILK", CancellationToken.None);
-
-		summary.Linked.Should().Be(1);
-		summary.NewEntriesCreated.Should().Be(0);
-		exactLookup.Description.Id.Should().Be(canonicalId);
-		exactLookup.MatchScore.Should().Be(1);
-		var deferred = await CreateService().ProcessPendingResolutionsAsync(CancellationToken.None);
-		deferred.Should().Be(NormalizedDescriptionResolutionService.ResolutionSummary.Empty);
-		_embeddingServiceMock.Verify(service => service.GenerateEmbeddingAsync(
-			It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
-		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
-		verify.NormalizedDescriptions.Should().ContainSingle();
-		verify.ReceiptItems.IgnoreAutoIncludes().Single(item => item.Id == exact.Id)
-			.NormalizedDescriptionId.Should().Be(canonicalId,
-				"known exact identity does not depend on complete embedding coverage");
-		verify.ReceiptItems.IgnoreAutoIncludes().Single(item => item.Id == exact.Id)
-			.NormalizedDescriptionMatchScore.Should().Be(1);
-		verify.ReceiptItems.IgnoreAutoIncludes().Single(item => item.Id == novel.Id)
-			.NormalizedDescriptionId.Should().BeNull(
-				"fuzzy matching or create-new must wait for complete canonical coverage");
-	}
-
-	[Fact]
-	public async Task ProcessPendingResolutionsAsync_CommittedLinks_PublishesBroadReceiptItemRepairAfterCommit()
-	{
-		ReceiptItemEntity item = BuildItem("Organic Milk");
-		await SeedReceiptAndItemsAsync(item);
-		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
-		GetOrCreateResult result = NewResult("Organic Milk", 0.94);
-		_normalizedServiceMock
-			.Setup(s => s.GetOrCreateAsync(item.Description, It.IsAny<CancellationToken>()))
-			.ReturnsAsync(result);
-		_publisherMock
-			.Setup(p => p.PublishAsync(It.IsAny<CommittedEntityChange>()))
-			.Callback(() =>
-			{
-				using ApplicationDbContext committed = _contextFactory.CreateDbContext();
-				committed.ReceiptItems.IgnoreAutoIncludes().Single(r => r.Id == item.Id)
-					.NormalizedDescriptionId.Should().Be(result.Description.Id,
-						"the relationship must be durable before publication");
-			})
-			.Returns(Task.CompletedTask);
-
-		NormalizedDescriptionResolutionService.ResolutionSummary summary =
-			await CreatePublisherAwareService().ProcessPendingResolutionsAsync(CancellationToken.None);
-
-		summary.Linked.Should().Be(1);
-		_publisherMock.Verify(p => p.PublishAsync(It.Is<CommittedEntityChange>(change =>
-			change.EntityType == CommittedEntityType.ReceiptItem
-			&& change.ChangeType == CommittedChangeType.Updated
-			&& change.EntityId == null
-			&& change.SuppressToast)), Times.Once);
-	}
-
-	[Fact]
-	public async Task ProcessPendingResolutionsAsync_EmptyBatch_DoesNotPublish()
-	{
-		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
-
-		NormalizedDescriptionResolutionService.ResolutionSummary summary =
-			await CreatePublisherAwareService().ProcessPendingResolutionsAsync(CancellationToken.None);
-
-		summary.Linked.Should().Be(0);
-		_publisherMock.Verify(p => p.PublishAsync(It.IsAny<CommittedEntityChange>()), Times.Never);
-	}
-
-	[Fact]
-	public async Task ProcessPendingResolutionsAsync_UnconfiguredEmbeddingService_DoesNotPublish()
-	{
-		await SeedReceiptAndItemsAsync(BuildItem("Waiting Item"));
-		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(false);
-
-		NormalizedDescriptionResolutionService.ResolutionSummary summary =
-			await CreatePublisherAwareService().ProcessPendingResolutionsAsync(CancellationToken.None);
-
-		summary.Linked.Should().Be(0);
-		_publisherMock.Verify(p => p.PublishAsync(It.IsAny<CommittedEntityChange>()), Times.Never);
-	}
-
-	[Fact]
-	public async Task ProcessPendingResolutionsAsync_ResolutionFailure_DoesNotPublish()
-	{
-		ReceiptItemEntity item = BuildItem("Broken Resolution");
-		await SeedReceiptAndItemsAsync(item);
-		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
-		_normalizedServiceMock
-			.Setup(s => s.GetOrCreateAsync(item.Description, It.IsAny<CancellationToken>()))
-			.ThrowsAsync(new InvalidOperationException("resolution failed"));
-
-		NormalizedDescriptionResolutionService.ResolutionSummary summary =
-			await CreatePublisherAwareService().ProcessPendingResolutionsAsync(CancellationToken.None);
-
-		summary.Linked.Should().Be(0);
-		_publisherMock.Verify(p => p.PublishAsync(It.IsAny<CommittedEntityChange>()), Times.Never);
-	}
-
-	// ── RECEIPTS-876: tombstoned text ──────────────────────────────────────────────────
-
-	[Fact]
-	public async Task ProcessPendingResolutionsAsync_TombstonedDescription_IsNeverEvenAskedAbout()
-	{
-		// Arrange — one item whose text a reviewer already rejected, one ordinary item.
-		Guid receiptId = Guid.NewGuid();
-		ReceiptItemEntity rejected = BuildItem("MISC 4.99", receiptId);
-		ReceiptItemEntity ordinary = BuildItem("Bananas", receiptId);
-		await SeedReceiptAndItemsAsync(rejected, ordinary);
-
-		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
-		{
-			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
-			{
-				Id = Guid.NewGuid(),
-				// Different casing from the receipt text on purpose: the tombstone has to bite
-				// case-insensitively, matching the unique index on lower("CanonicalName").
-				CanonicalName = "misc 4.99",
-				Status = NormalizedDescriptionStatus.Rejected,
-				CreatedAt = DateTimeOffset.UtcNow,
-			});
-			await seed.SaveChangesAsync();
-		}
-
-		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
-		_normalizedServiceMock
-			.Setup(s => s.GetOrCreateAsync("Bananas", It.IsAny<CancellationToken>()))
-			.ReturnsAsync(NewResult("Bananas", null));
-
-		// Act
-		NormalizedDescriptionResolutionService.ResolutionSummary summary =
-			await CreateService().ProcessPendingResolutionsAsync(CancellationToken.None);
-
-		// Assert — the rejected text never reaches the service at all. Excluding it at the query
-		// is what stops it occupying the batch window on every cycle forever; declining it later
-		// would leave it re-selected each time and eventually starve real work.
-		_normalizedServiceMock.Verify(
-			s => s.GetOrCreateAsync("MISC 4.99", It.IsAny<CancellationToken>()),
-			Times.Never);
-		summary.Linked.Should().Be(1);
-
-		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
-		verify.ReceiptItems.IgnoreAutoIncludes().Single(r => r.Id == rejected.Id)
-			.NormalizedDescriptionId.Should().BeNull();
-		verify.ReceiptItems.IgnoreAutoIncludes().Single(r => r.Id == ordinary.Id)
-			.NormalizedDescriptionId.Should().NotBeNull();
-	}
-
-	[Fact]
-	public async Task ProcessPendingResolutionsAsync_ServiceReturnsRejectedRow_DoesNotLink()
-	{
-		// Arrange — the race the query filter cannot close: the text is tombstoned between
-		// building the batch and resolving the group.
-		ReceiptItemEntity item = BuildItem("MISC 4.99");
-		await SeedReceiptAndItemsAsync(item);
-
-		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
-
-		NormalizedDescription tombstone = new(
-			Guid.NewGuid(),
-			"MISC 4.99",
-			NormalizedDescriptionStatus.Rejected,
-			DateTimeOffset.UtcNow);
-		_normalizedServiceMock
-			.Setup(s => s.GetOrCreateAsync("MISC 4.99", It.IsAny<CancellationToken>()))
-			.ReturnsAsync(new GetOrCreateResult(tombstone, MatchScore: null));
-
-		// Act
-		NormalizedDescriptionResolutionService.ResolutionSummary summary =
-			await CreateService().ProcessPendingResolutionsAsync(CancellationToken.None);
-
-		// Assert
-		summary.Linked.Should().Be(0);
-		summary.Skipped.Should().Be(1);
-		// Emphatically not linked to the tombstone: that would re-attach the very items the
-		// reviewer detached, and hide their spend from "(Not Normalized)".
-		summary.NewEntriesCreated.Should().Be(0);
-
-		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
-		ReceiptItemEntity saved = verify.ReceiptItems.IgnoreAutoIncludes().Single(r => r.Id == item.Id);
-		saved.NormalizedDescriptionId.Should().BeNull();
-		saved.NormalizedDescriptionMatchScore.Should().BeNull();
-	}
-
-	[Fact]
-	public async Task ProcessPendingResolutionsAsync_BatchDedup_OneCallPerUniqueDescription()
-	{
-		// Arrange — two items share a description; a third has its own.
-		Guid receiptId = Guid.NewGuid();
-		ReceiptItemEntity dup1 = BuildItem("Organic Milk", receiptId);
-		ReceiptItemEntity dup2 = BuildItem("Organic Milk", receiptId);
-		ReceiptItemEntity other = BuildItem("Bananas", receiptId);
-		await SeedReceiptAndItemsAsync(dup1, dup2, other);
-
-		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
-
-		GetOrCreateResult milkResult = NewResult("Organic Milk", 0.95);
-		GetOrCreateResult bananaResult = NewResult("Bananas", null);
-
-		_normalizedServiceMock
-			.Setup(s => s.GetOrCreateAsync("Organic Milk", It.IsAny<CancellationToken>()))
-			.ReturnsAsync(milkResult);
-		_normalizedServiceMock
-			.Setup(s => s.GetOrCreateAsync("Bananas", It.IsAny<CancellationToken>()))
-			.ReturnsAsync(bananaResult);
-
-		NormalizedDescriptionResolutionService service = CreateService();
-
-		// Act
-		var summary = await service.ProcessPendingResolutionsAsync(CancellationToken.None);
-
-		// Assert — one call per unique description.
-		_normalizedServiceMock.Verify(
-			s => s.GetOrCreateAsync("Organic Milk", It.IsAny<CancellationToken>()),
-			Times.Once);
-		_normalizedServiceMock.Verify(
-			s => s.GetOrCreateAsync("Bananas", It.IsAny<CancellationToken>()),
-			Times.Once);
-
-		summary.Linked.Should().Be(3);
-		summary.NewEntriesCreated.Should().Be(1, "the Bananas result had no match score, indicating a new canonical entry");
-
-		// Both dup items point at the same NormalizedDescriptionId; the banana item at its own.
-		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
-		List<ReceiptItemEntity> items = await verify.ReceiptItems.AsNoTracking().ToListAsync();
-		items.Should().HaveCount(3);
-
-		ReceiptItemEntity rDup1 = items.Single(i => i.Id == dup1.Id);
-		ReceiptItemEntity rDup2 = items.Single(i => i.Id == dup2.Id);
-		ReceiptItemEntity rOther = items.Single(i => i.Id == other.Id);
-
-		rDup1.NormalizedDescriptionId.Should().Be(milkResult.Description.Id);
-		rDup2.NormalizedDescriptionId.Should().Be(milkResult.Description.Id);
-		rOther.NormalizedDescriptionId.Should().Be(bananaResult.Description.Id);
-	}
-
-	[Fact]
-	public async Task ProcessPendingResolutionsAsync_WritesMatchScore_AlongsideFk()
-	{
-		// Arrange
-		Guid receiptId = Guid.NewGuid();
-		ReceiptItemEntity matched = BuildItem("Eggs Large", receiptId);
-		ReceiptItemEntity fresh = BuildItem("Mystery Widget", receiptId);
-		await SeedReceiptAndItemsAsync(matched, fresh);
-
-		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
-
-		GetOrCreateResult matchedResult = NewResult("Eggs", 0.87);
-		GetOrCreateResult freshResult = NewResult("Mystery Widget", null);
-
-		_normalizedServiceMock
-			.Setup(s => s.GetOrCreateAsync("Eggs Large", It.IsAny<CancellationToken>()))
-			.ReturnsAsync(matchedResult);
-		_normalizedServiceMock
-			.Setup(s => s.GetOrCreateAsync("Mystery Widget", It.IsAny<CancellationToken>()))
-			.ReturnsAsync(freshResult);
-
-		NormalizedDescriptionResolutionService service = CreateService();
-
-		// Act
-		await service.ProcessPendingResolutionsAsync(CancellationToken.None);
-
-		// Assert
-		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
-		ReceiptItemEntity persistedMatched = await verify.ReceiptItems.AsNoTracking().SingleAsync(i => i.Id == matched.Id);
-		ReceiptItemEntity persistedFresh = await verify.ReceiptItems.AsNoTracking().SingleAsync(i => i.Id == fresh.Id);
-
-		persistedMatched.NormalizedDescriptionId.Should().Be(matchedResult.Description.Id);
-		persistedMatched.NormalizedDescriptionMatchScore.Should().Be(0.87);
-
-		// null MatchScore signals "brand-new canonical entry" — we still link the FK but
-		// don't invent a score.
-		persistedFresh.NormalizedDescriptionId.Should().Be(freshResult.Description.Id);
-		persistedFresh.NormalizedDescriptionMatchScore.Should().BeNull();
-	}
-
-	[Fact]
-	public async Task ProcessPendingResolutionsAsync_SkipsCycle_WhenEmbeddingServiceNotConfigured()
-	{
-		// Arrange
-		await SeedReceiptAndItemsAsync(BuildItem("Would Be Resolved"));
-		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(false);
-
-		NormalizedDescriptionResolutionService service = CreateService();
-
-		// Act
-		var summary = await service.ProcessPendingResolutionsAsync(CancellationToken.None);
-
-		// Assert
-		summary.Linked.Should().Be(0);
-		_normalizedServiceMock.Verify(
-			s => s.GetOrCreateAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
-			Times.Never);
-	}
-
-	[Fact]
-	public async Task ProcessPendingResolutionsAsync_FiltersOutShortDescriptions()
-	{
-		// Arrange — "X" is below MinDescriptionLength; empty is filtered separately.
-		ReceiptItemEntity tooShort = BuildItem("X");
-		ReceiptItemEntity empty = BuildItem(string.Empty);
-		ReceiptItemEntity good = BuildItem("Bread");
-		await SeedReceiptAndItemsAsync(tooShort, empty, good);
-
-		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
-		_normalizedServiceMock
-			.Setup(s => s.GetOrCreateAsync("Bread", It.IsAny<CancellationToken>()))
-			.ReturnsAsync(NewResult("Bread", 0.99));
-
-		NormalizedDescriptionResolutionService service = CreateService();
-
-		// Act
-		var summary = await service.ProcessPendingResolutionsAsync(CancellationToken.None);
-
-		// Assert — only the valid row was processed.
-		summary.Linked.Should().Be(1);
-		_normalizedServiceMock.Verify(
-			s => s.GetOrCreateAsync("X", It.IsAny<CancellationToken>()),
-			Times.Never);
-		_normalizedServiceMock.Verify(
-			s => s.GetOrCreateAsync(string.Empty, It.IsAny<CancellationToken>()),
-			Times.Never);
-		_normalizedServiceMock.Verify(
-			s => s.GetOrCreateAsync("Bread", It.IsAny<CancellationToken>()),
-			Times.Once);
-	}
-
-	[Fact]
-	public async Task ProcessPendingResolutionsAsync_ExcludesSoftDeletedItems()
-	{
-		// Arrange
-		ReceiptItemEntity deleted = BuildItem("Soft Deleted", deletedAt: DateTimeOffset.UtcNow);
-		ReceiptItemEntity live = BuildItem("Live Item");
-		await SeedReceiptAndItemsAsync(deleted, live);
-
-		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
-		_normalizedServiceMock
-			.Setup(s => s.GetOrCreateAsync("Live Item", It.IsAny<CancellationToken>()))
-			.ReturnsAsync(NewResult("Live Item", 0.9));
-
-		NormalizedDescriptionResolutionService service = CreateService();
-
-		// Act
-		await service.ProcessPendingResolutionsAsync(CancellationToken.None);
-
-		// Assert — soft-deleted item was never offered to the normalized service.
-		_normalizedServiceMock.Verify(
-			s => s.GetOrCreateAsync("Soft Deleted", It.IsAny<CancellationToken>()),
-			Times.Never);
-		_normalizedServiceMock.Verify(
-			s => s.GetOrCreateAsync("Live Item", It.IsAny<CancellationToken>()),
-			Times.Once);
-
-		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
-		ReceiptItemEntity persistedDeleted = await verify.ReceiptItems
-			.IgnoreQueryFilters()
-			.AsNoTracking()
-			.SingleAsync(i => i.Id == deleted.Id);
-		persistedDeleted.NormalizedDescriptionId.Should().BeNull();
-	}
-
-	[Fact]
-	public async Task ProcessPendingResolutionsAsync_ExcludesItemsWithFkAlreadySet()
-	{
-		// Arrange — already-linked rows must not be re-processed.
-		Guid existingFk = Guid.NewGuid();
-
-		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
-		{
-			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
-			{
-				Id = existingFk,
-				CanonicalName = "Pre-linked",
-				Status = NormalizedDescriptionStatus.Active,
-				CreatedAt = DateTimeOffset.UtcNow,
-			});
-			await seed.SaveChangesAsync();
-		}
-
-		ReceiptItemEntity alreadyLinked = BuildItem("Already Linked");
-		alreadyLinked.NormalizedDescriptionId = existingFk;
-		ReceiptItemEntity unresolved = BuildItem("Unresolved");
-		await SeedReceiptAndItemsAsync(alreadyLinked, unresolved);
-
-		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
-		_normalizedServiceMock
-			.Setup(s => s.GetOrCreateAsync("Unresolved", It.IsAny<CancellationToken>()))
-			.ReturnsAsync(NewResult("Unresolved", 0.85));
-
-		NormalizedDescriptionResolutionService service = CreateService();
-
-		// Act
-		await service.ProcessPendingResolutionsAsync(CancellationToken.None);
-
-		// Assert
-		_normalizedServiceMock.Verify(
-			s => s.GetOrCreateAsync("Already Linked", It.IsAny<CancellationToken>()),
-			Times.Never);
-		_normalizedServiceMock.Verify(
-			s => s.GetOrCreateAsync("Unresolved", It.IsAny<CancellationToken>()),
-			Times.Once);
-	}
-
-	[Fact]
-	public async Task ProcessPendingResolutionsAsync_ExceptionInGetOrCreate_LogsAndContinues()
-	{
-		// Arrange — one group throws, the other succeeds.
-		Guid receiptId = Guid.NewGuid();
-		ReceiptItemEntity bad = BuildItem("Problematic", receiptId);
-		ReceiptItemEntity good = BuildItem("Works Fine", receiptId);
-		await SeedReceiptAndItemsAsync(bad, good);
-
-		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
-		_normalizedServiceMock
-			.Setup(s => s.GetOrCreateAsync("Problematic", It.IsAny<CancellationToken>()))
-			.ThrowsAsync(new InvalidOperationException("boom"));
-		_normalizedServiceMock
-			.Setup(s => s.GetOrCreateAsync("Works Fine", It.IsAny<CancellationToken>()))
-			.ReturnsAsync(NewResult("Works Fine", 0.9));
-
-		NormalizedDescriptionResolutionService service = CreateService();
-
-		// Act
-		var summary = await service.ProcessPendingResolutionsAsync(CancellationToken.None);
-
-		// Assert — the exception is logged, not rethrown; the good group persisted.
-		summary.Linked.Should().Be(1);
-		summary.Skipped.Should().Be(1);
-
-		_loggerMock.Verify(
-			x => x.Log(
-				LogLevel.Error,
-				It.IsAny<EventId>(),
-				It.IsAny<It.IsAnyType>(),
-				It.IsAny<Exception>(),
-				It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
-			Times.AtLeastOnce);
-
-		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
-		ReceiptItemEntity persistedBad = await verify.ReceiptItems.AsNoTracking().SingleAsync(i => i.Id == bad.Id);
-		ReceiptItemEntity persistedGood = await verify.ReceiptItems.AsNoTracking().SingleAsync(i => i.Id == good.Id);
-
-		persistedBad.NormalizedDescriptionId.Should().BeNull("the failing group must not leave partial state");
-		persistedGood.NormalizedDescriptionId.Should().NotBeNull();
 	}
 
 	[Fact]

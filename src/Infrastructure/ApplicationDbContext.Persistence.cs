@@ -31,7 +31,13 @@ public partial class ApplicationDbContext
 			}
 
 			HandleSoftDelete();
+			if (HasNormalizationWrites() && Database.IsNpgsql())
+			{
+				Database.ExecuteSqlInterpolated($"SELECT pg_advisory_xact_lock({0x52435054}, {0x4E4F524D})");
+			}
 			GuardReceiptAdmissions();
+			PrepareNormalizationProvenance();
+			PrepareReceiptNormalizationAsync(CancellationToken.None).GetAwaiter().GetResult();
 			PrepareNormalizationRevisions();
 			List<DuplicateReceiptFacts> duplicateFacts = CaptureDuplicateFacts();
 			auditEntries = PrepareAuditEntries();
@@ -40,7 +46,9 @@ public partial class ApplicationDbContext
 
 			// Keep the caller's tracked changes pending until audit AND reconciliation succeed.
 			result = base.SaveChanges(acceptAllChangesOnSuccess: false) - auditEntries.Count;
+			if (Database.IsNpgsql()) { Database.ExecuteSqlRaw("SELECT set_config('receipts.review_prepared', '', true)"); }
 			InvalidateChangedDuplicateAcceptances(duplicateFacts);
+			ReconcileNormalizationReviewWorkAsync(CancellationToken.None).GetAwaiter().GetResult();
 			descriptionsChanged = ReconcileDistinctDescriptions(touchedDescriptions);
 			ownedTransaction?.Commit();
 			if (savepointCreated)
@@ -95,7 +103,13 @@ public partial class ApplicationDbContext
 			}
 
 			HandleSoftDelete();
+			if (HasNormalizationWrites())
+			{
+				await Infrastructure.Utilities.NormalizationWriteGuard.AcquireWriteGateAsync(this, cancellationToken).ConfigureAwait(false);
+			}
 			await GuardReceiptAdmissionsAsync(cancellationToken).ConfigureAwait(false);
+			PrepareNormalizationProvenance();
+			await PrepareReceiptNormalizationAsync(cancellationToken).ConfigureAwait(false);
 			PrepareNormalizationRevisions();
 			List<DuplicateReceiptFacts> duplicateFacts = await CaptureDuplicateFactsAsync(cancellationToken).ConfigureAwait(false);
 			auditEntries = PrepareAuditEntries();
@@ -104,7 +118,9 @@ public partial class ApplicationDbContext
 
 			// Explicitly call the base Boolean overload; the token-only overload dispatches virtually.
 			result = await base.SaveChangesAsync(acceptAllChangesOnSuccess: false, cancellationToken).ConfigureAwait(false) - auditEntries.Count;
+			if (Database.IsNpgsql()) { await Database.ExecuteSqlRawAsync("SELECT set_config('receipts.review_prepared', '', true)", cancellationToken).ConfigureAwait(false); }
 			await InvalidateChangedDuplicateAcceptancesAsync(duplicateFacts, cancellationToken).ConfigureAwait(false);
+			await ReconcileNormalizationReviewWorkAsync(cancellationToken).ConfigureAwait(false);
 			descriptionsChanged = await ReconcileDistinctDescriptionsAsync(touchedDescriptions, cancellationToken).ConfigureAwait(false);
 			cancellationToken.ThrowIfCancellationRequested();
 			if (ownedTransaction is not null)
@@ -188,6 +204,10 @@ public partial class ApplicationDbContext
 
 	private void CompleteSave(bool acceptAllChangesOnSuccess, List<AuditEntry> auditEntries, bool descriptionsChanged)
 	{
+		foreach (var entry in ChangeTracker.Entries<Infrastructure.Entities.Core.ReceiptItemEntity>())
+		{
+			entry.Entity.NormalizationIntent = null;
+		}
 		if (acceptAllChangesOnSuccess)
 		{
 			ChangeTracker.AcceptAllChanges();

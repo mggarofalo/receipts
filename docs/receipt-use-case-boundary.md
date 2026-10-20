@@ -17,7 +17,7 @@ workers send that command through Mediator instead of calling Infrastructure.
 
 The handler validates the complete receipt before it invokes the writer. The writer
 contract represents one atomic commit: receipt, transactions, items, adjustments,
-and mandatory audit rows either persist together or do not persist. Infrastructure
+reviewed normalization choices, optional newly confirmed identities/scoped mappings, durable review registration, replay evidence and mandatory audit rows either persist together or do not persist. Infrastructure
 does not decide balance policy, and Application does not reference EF or transport
 types.
 
@@ -36,3 +36,7 @@ partial `ReceiptEntity` graph or rely on global navigation includes.
 The projection owns its aggregate totals, balance state, concise summaries, filtering,
 sorting, and page metadata. Other receipt reads keep their existing contracts; this
 pilot is not a repository-wide rewrite.
+
+## Normalization at receipt save
+
+The application-owned `ReceiptNormalizationPolicy` validates typed per-row choices and proof preservation. The writer executes those decisions through the shared save adapter with local facts and guarded transactions. `IReceiptNormalizationPreview` provides a bounded, read-only source fingerprint, approved mapping and Active candidate page before save. Preview creates no catalog rows; the save rechecks revisions and scope. See [normalization ownership](normalization-ownership.md) for verification, compatibility and outstanding-review obligations.

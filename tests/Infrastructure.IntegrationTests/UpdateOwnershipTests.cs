@@ -6,9 +6,11 @@ using API.Generated.Dtos;
 using API.Middleware;
 using API.Services;
 using Application.Interfaces.Services;
+using Application.Normalization;
 using Application.Services;
 using Domain;
 using Domain.Core;
+using Domain.NormalizedDescriptions;
 using FluentAssertions;
 using Infrastructure.Entities.Core;
 using Infrastructure.IntegrationTests.Fixtures;
@@ -23,6 +25,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using NormalizationReviewState = Domain.NormalizedDescriptions.NormalizationReviewState;
 using NormalizedDescriptionStatus = Domain.NormalizedDescriptions.NormalizedDescriptionStatus;
 
 namespace Infrastructure.IntegrationTests;
@@ -235,21 +238,13 @@ public class UpdateOwnershipTests(PostgresFixture fixture) : IClassFixture<Postg
 	}
 
 	[Fact]
-	public async Task MixedBatch_OnlyChangedDescriptionIsInvalidated_ThenRealResolverLinksNewCanonical()
+	public async Task MixedBatch_OnlyChangedDescriptionIsInvalidated_AndRequiresApprovedScopeForResolution()
 	{
 		Guid receiptId = Guid.NewGuid(), changedId = Guid.NewGuid(), unchangedId = Guid.NewGuid(), milkId = Guid.NewGuid(), breadId = Guid.NewGuid();
 		string token = Guid.NewGuid().ToString("N");
 		string milk = $"Milk {token}", bread = $"Bread {token}", unchanged = $"Curated dairy {token}";
 		await using (ApplicationDbContext seed = fixture.CreateDbContext())
 		{
-			List<NormalizedDescriptionEntity> existingCanonicals = await seed.NormalizedDescriptions
-				.Where(row => row.Status != NormalizedDescriptionStatus.Rejected)
-				.ToListAsync();
-			foreach (NormalizedDescriptionEntity canonical in existingCanonicals)
-			{
-				canonical.Embedding = new Pgvector.Vector(new float[OnnxEmbeddingService.EmbeddingDimension]);
-				canonical.EmbeddingModelVersion = OnnxEmbeddingService.EmbeddingSpaceFingerprint;
-			}
 			seed.Receipts.Add(new ReceiptEntity { Id = receiptId, Location = "Store", Date = new DateOnly(2025, 1, 1) });
 			seed.NormalizedDescriptions.AddRange(Canonical(milkId, milk), Canonical(breadId, bread));
 			seed.ReceiptItems.AddRange(
@@ -279,28 +274,47 @@ public class UpdateOwnershipTests(PostgresFixture fixture) : IClassFixture<Postg
 			(await read.DistinctDescriptions.AnyAsync(description => description.Description == milk)).Should().BeFalse();
 			(await read.DistinctDescriptions.AnyAsync(description => description.Description == bread)).Should().BeTrue();
 		}
-		Mock<IEmbeddingService> embeddings = new(MockBehavior.Strict);
-		embeddings.SetupGet(service => service.IsConfigured).Returns(true);
 		ServiceCollection services = new();
-		services.AddSingleton<IEmbeddingService>(embeddings.Object);
+		// Scope resolution must work without model or canonical-creation services.
 		services.AddSingleton<IDbContextFactory<ApplicationDbContext>>(factory);
-		services.AddSingleton<NormalizedDescriptionMapper>();
-		services.AddSingleton<NormalizedDescriptionSettingsMapper>();
-		services.AddScoped<INormalizedDescriptionService, NormalizedDescriptionService>();
 		await using ServiceProvider provider = services.BuildServiceProvider();
 		using NormalizedDescriptionResolutionService resolver = new(provider.GetRequiredService<IServiceScopeFactory>(), signal, NullLogger<NormalizedDescriptionResolutionService>.Instance);
 
-		await resolver.ProcessPendingResolutionsAsync(CancellationToken.None);
+		(await resolver.ProcessPendingResolutionsAsync(CancellationToken.None)).Linked.Should().Be(0,
+			"global canonical spelling is not permission to classify a purchase");
+		await using (ApplicationDbContext approve = fixture.CreateDbContext())
+		{
+			var pending = await approve.ReceiptItems.AsNoTracking().SingleAsync(item => item.Id == changedId);
+			pending.NormalizedDescriptionId.Should().BeNull();
+			pending.NormalizationReviewState.Should().Be(NormalizationReviewState.NeedsReview);
+			pending.NormalizedDescriptionMatchScore.Should().BeNull();
+			(await approve.NormalizationReviewWork.AnyAsync(work => work.ItemId == changedId)).Should().BeTrue();
+			var key = NormalizationCatalogPolicy.Normalize(new("Store", bread, null));
+			approve.NormalizationSourceMappings.Add(new()
+			{
+				Id = Guid.NewGuid(),
+				SourceHash = NormalizationCatalogPolicy.Hash(key),
+				Location = key.Location,
+				Description = key.Description,
+				ItemCode = key.ItemCode,
+				TargetId = breadId,
+				ApprovedBy = "ownership-test-reviewer",
+				ApprovedAt = DateTimeOffset.UtcNow,
+			});
+			await approve.SaveChangesAsync();
+		}
+		(await resolver.ProcessPendingResolutionsAsync(CancellationToken.None)).Linked.Should().Be(1);
 
 		await using ApplicationDbContext verify = fixture.CreateDbContext();
 		ReceiptItemEntity resolved = await verify.ReceiptItems.IgnoreAutoIncludes().SingleAsync(item => item.Id == changedId);
 		resolved.NormalizedDescriptionId.Should().Be(breadId);
-		resolved.NormalizedDescriptionMatchScore.Should().Be(1.0);
+		resolved.NormalizedDescriptionMatchScore.Should().BeNull("mapping authority is not a similarity score");
+		resolved.NormalizationReviewState.Should().Be(NormalizationReviewState.Verified);
+		resolved.ReviewedTargetId.Should().Be(breadId);
+		(await verify.NormalizationReviewWork.AnyAsync(work => work.ItemId == changedId)).Should().BeFalse();
 		ReceiptItemEntity stillCurated = await verify.ReceiptItems.IgnoreAutoIncludes().SingleAsync(item => item.Id == unchangedId);
 		stillCurated.NormalizedDescriptionId.Should().Be(milkId);
 		stillCurated.NormalizedDescriptionMatchScore.Should().Be(0.71);
-		embeddings.Verify(service => service.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
-		embeddings.Verify(service => service.GenerateEmbeddingsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()), Times.Never);
 	}
 
 	private static NormalizedDescriptionEntity Canonical(Guid id, string name) => new()

@@ -32,7 +32,7 @@ public class NormalizedDescription
 	public DateTimeOffset CreatedAt { get; set; }
 
 	// The near-miss that caused this entry to land in PendingReview (RECEIPTS-873). Written only
-	// by the PendingReview branch of NormalizedDescriptionService.GetOrCreateAsync: every other
+	// by historical matching or explicit review metadata; other
 	// branch leaves both null, because there is genuinely nothing to compare against. Reviewers
 	// must be able to tell "scored 0.00 against a neighbour" apart from "no comparison recorded",
 	// so the absence is modelled as null rather than a zero default.

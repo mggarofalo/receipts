@@ -11,6 +11,7 @@ public partial class ReceiptItemMapper
 {
 	[MapProperty(nameof(ReceiptItem.UnitPrice.Amount), nameof(ReceiptItemResponse.UnitPrice))]
 	[MapperIgnoreSource(nameof(ReceiptItem.TotalAmount))]
+	[MapperIgnoreSource(nameof(ReceiptItem.NormalizationIntent))]
 	[MapperIgnoreTarget(nameof(ReceiptItemResponse.AdditionalProperties))]
 	public partial ReceiptItemResponse ToResponse(ReceiptItem source);
 
@@ -30,7 +31,8 @@ public partial class ReceiptItemMapper
 			totalAmount,
 			source.Category,
 			source.Subcategory
-		);
+		)
+		{ NormalizationIntent = MapIntent(source.NormalizationIntent) };
 	}
 
 	public ReceiptItem ToDomain(UpdateReceiptItemRequest source)
@@ -49,8 +51,14 @@ public partial class ReceiptItemMapper
 			totalAmount,
 			source.Category,
 			source.Subcategory
-		);
+		)
+		{ NormalizationIntent = MapIntent(source.NormalizationIntent) };
 	}
+
+	private static Domain.NormalizedDescriptions.ReceiptNormalizationIntent? MapIntent(API.Generated.Dtos.ReceiptNormalizationIntent? value)
+		=> value is null ? null : new((Domain.NormalizedDescriptions.ReceiptNormalizationIntentKind)value.Kind,
+			value.ClientRowId, value.SourceFingerprint, value.TargetId, value.ExpectedTargetRevision, value.ExpectedMappingRevision,
+			value.ExpectedItemRevision, value.NewName, value.RememberSource, value.Reason);
 
 	private double MapDecimalToDouble(decimal value) => (double)value;
 }

@@ -1,5 +1,8 @@
 # Normalized Description Review — Design Decisions
 
+> Historical design: receipt-entry authority and automatic matching described below were superseded by RECEIPTS-1022. See [current normalization ownership](../normalization-ownership.md) for reviewed verification, scoped reuse and advisory matching. This document retains the original rationale.
+
+
 How the review queue is meant to behave, and why. Each section records a decision, the
 alternatives that were rejected, and the reason — so a later reader can tell a deliberate
 choice from an accident.

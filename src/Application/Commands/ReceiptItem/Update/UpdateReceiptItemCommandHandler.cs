@@ -13,7 +13,9 @@ public class UpdateReceiptItemCommandHandler(IReceiptItemService receiptitemServ
 			return false;
 		}
 
-		await receiptitemService.UpdateAsync([.. request.ReceiptItems], existingItem.ReceiptId, cancellationToken);
+		if (request.ClientRequestId is Guid requestId)
+		{ await receiptitemService.UpdateAsync([.. request.ReceiptItems], existingItem.ReceiptId, requestId, cancellationToken); }
+		else { await receiptitemService.UpdateAsync([.. request.ReceiptItems], existingItem.ReceiptId, cancellationToken); }
 		return true;
 	}
 }

@@ -41,6 +41,15 @@ public class ReceiptItemService(IReceiptItemRepository repository, ReceiptItemMa
 		return [.. created.Select(mapper.ToDomain)];
 	}
 
+	public async Task<List<ReceiptItem>> CreateAsync(List<ReceiptItem> models, Guid receiptId,
+		IReadOnlyList<Guid?> templateIds, Guid clientRequestId, CancellationToken cancellationToken)
+	{
+		List<ReceiptItemEntity> entities = [.. models.Select(mapper.ToEntity)];
+		foreach (ReceiptItemEntity entity in entities) { entity.ReceiptId = receiptId; }
+		List<ReceiptItemEntity> created = await repository.CreateAsync(entities, templateIds, clientRequestId, cancellationToken);
+		return [.. created.Select(mapper.ToDomain)];
+	}
+
 	public async Task DeleteAsync(List<Guid> ids, CancellationToken cancellationToken)
 	{
 		await repository.DeleteAsync(ids, cancellationToken);
@@ -112,6 +121,13 @@ public class ReceiptItemService(IReceiptItemRepository repository, ReceiptItemMa
 		}
 
 		await repository.UpdateAsync(receiptItemEntities, cancellationToken);
+	}
+
+	public async Task UpdateAsync(List<ReceiptItem> models, Guid receiptId, Guid clientRequestId, CancellationToken cancellationToken)
+	{
+		List<ReceiptItemEntity> entities = [.. models.Select(mapper.ToEntity)];
+		foreach (var entity in entities) { entity.ReceiptId = receiptId; }
+		await repository.UpdateAsync(entities, clientRequestId, cancellationToken);
 	}
 
 	public async Task<bool> RestoreAsync(Guid id, CancellationToken cancellationToken)

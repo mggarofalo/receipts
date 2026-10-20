@@ -2,7 +2,7 @@ using Domain.NormalizedDescriptions;
 
 namespace Application.Normalization;
 
-/// <summary>Decides automatic matching from observations, without persistence or model calls.</summary>
+/// <summary>Classifies advisory threshold simulations from observations, without persistence or model calls.</summary>
 public sealed class NormalizationMatchPolicy
 {
 	public double AutoAcceptThreshold { get; }
