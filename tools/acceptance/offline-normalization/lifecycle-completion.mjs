@@ -12,7 +12,7 @@ export async function runWithLifecycleFailureCapture({run,captureFailure}) {
 }
 
 // Observe real events; no route interception or retry. Intent exists before click,
-// and the exact issued body survives a missing response or browser timeout.
+// and any observable issued body survives a missing response or browser timeout.
 export async function journalBrowserSave({page,itemId,planned,journal,click}) {
   journal('browser-save-planned.json',planned);
   const matches=request=>new URL(request.url()).pathname==='/api/receipt-items/'+itemId && request.method()==='PUT';
@@ -22,7 +22,9 @@ export async function journalBrowserSave({page,itemId,planned,journal,click}) {
   const requestListener=request=>{
     if(!matches(request)) return;
     const suffix=++requestCount===1?'':`-${requestCount}`;
-    record(`browser-save-request${suffix}.json`,{url:request.url(),method:request.method(),body:request.postDataJSON()});
+    let body=null,bodyCaptureError=null;
+    try {body=request.postDataJSON();} catch(error) {bodyCaptureError=error.message;}
+    record(`browser-save-request${suffix}.json`,{url:request.url(),method:request.method(),body,requestBodyAvailable:body!==null && body!==undefined,bodyCaptureError});
   };
   const responseListener=response=>{
     if(!matches(response.request())) return;
@@ -106,12 +108,14 @@ export function assertRestoreDecision(before,after) {
     assert.deepEqual(after[field],before[field],`Restore changed ${field}`);
 }
 
-export function assertCompletionFacts(before,after,browserItemId) {
+export function assertCompletionFacts(before,after,browserItemId,priceChange={initial:3,competing:4}) {
   const expected=structuredClone(before);
   if(browserItemId) {
     const item=expected.receipt_items.filter(i=>i.id===browserItemId);assert.equal(item.length,1);
-    assert.equal(item[0].quantity,2);assert.equal(item[0].unit_price,3);assert.equal(item[0].total_amount,6);
-    item[0].unit_price=4;item[0].total_amount=8;
+    assert.equal(Number(item[0].quantity),2);assert.equal(Number(item[0].unit_price),priceChange.initial);assert.equal(Number(item[0].total_amount),2*priceChange.initial);
+    const actual=after.receipt_items.filter(i=>i.id===browserItemId);assert.equal(actual.length,1);
+    assert.equal(Number(actual[0].unit_price),priceChange.competing);assert.equal(Number(actual[0].total_amount),2*priceChange.competing);
+    item[0].unit_price=actual[0].unit_price;item[0].total_amount=actual[0].total_amount;
   }
   const ordered=facts=>Object.fromEntries(Object.entries(facts).map(([table,rows])=>[table,[...rows].sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b)))]));
   assert.deepEqual(ordered(after),ordered(expected),'Continuation changed factual state outside the explicit browser price edit');

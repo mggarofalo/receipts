@@ -56,6 +56,16 @@ test('browser response and body failure evidence are retained before the respons
   assert(f.evidence.has('browser-save-request.json'));
 });
 
+test('missing or inaccessible request bodies remain explicit diagnostics without breaking save observation',async()=>{
+  for(const throws of [false,true]) {
+    const f=browserFixture();f.request.postDataJSON=()=>{if(throws) throw Error('body inaccessible');return null;};
+    const response={request:()=>f.request,url:f.request.url,status:()=>409,text:async()=>'{"code":"normalization_item_changed"}'};
+    assert.equal(await journalBrowserSave({...f,itemId:'item',planned:{unitPrice:8.25},click:async()=>{f.page.emit('request',f.request);f.page.emit('response',response);f.resolveWait(response);}}),response);
+    const observed=f.evidence.get('browser-save-request.json');assert.equal(observed.body,null);assert.equal(observed.requestBodyAvailable,false);assert.equal(observed.bodyCaptureError,throws?'body inaccessible':null);
+    assert.equal(f.page.listenerCount('request'),0);
+  }
+});
+
 function fixture() {
   const stamp={runId:'run',phase:'lifecycle',bSha256:'sha'};
   const item={id:'i',receiptId:'r2',normalizationReviewState:'verified',normalizationReviewReason:'purchase_review',normalizedDescriptionId:'target',description:'Raw oats',receiptItemCode:'500',quantity:2,unitPrice:3,category:'Food',subcategory:'Lifecycle test'};

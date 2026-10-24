@@ -477,3 +477,50 @@ shape without live calls:
 $env:BROWSER_BOUNDARY_RUNTIME = $runtimeA
 node --test ./tools/acceptance/offline-normalization/browser-boundary.test.mjs ./tools/acceptance/offline-normalization/lifecycle-completion.test.mjs ./tools/acceptance/offline-normalization/lifecycle-resume.test.mjs
 ```
+
+
+## Stale browser save observation and assessed post-conflict completion
+
+Stale-save validation requires the exact item's PUT, completed transport, HTTP
+409 and `normalization_item_changed`. When the submitted JSON body is exposed,
+the draft price and complete defer choice must equal the known stale revision
+and source fingerprint. Otherwise evidence explicitly records that the submitted
+draft and normalization choice were not independently observed. Available
+redirect-chain bodies, transport failure and diagnostic response headers remain
+retained. Exact pre-conflict browser item/source/revision, visible retained draft
+and PostgreSQL/portable atomicity checks remain required.
+
+The retained `lifecycle-browser-shortlist-5b51ff47` remains failed: a genuine
+stale-save 409 followed the supported competing PUT from price 3 to 4. Its
+browser request payload remains unavailable. Explicit Refresh and Cancel were
+not reached. `browserPrior` can select this assessed stop. The loader pins its
+independently assessed `evidence-sha256.final.json` SHA-256
+`7cf6c3760f9459becb852b733de31000b04291b1a435669a93a01d3f4e42f88e`, verifies
+all 47 archived files and raw log, and chains original restore/authentication
+evidence. Journals 2-7 must contain exactly connection GET, item GET, read-only
+preview POST, two item GETs, and supported price PUT with actual 204 response.
+Only the known item's price, total, revision, corresponding review-work
+revision/time and one financial audit may differ. All other fields and all 42
+tables are checked against the original chain. Two identical complete 42-table
+captures supply the current pre-authentication guard.
+
+The next item is rehydrated at price 4 and its stopped revision, then checked
+against a fresh GET after that guard. The next intentional competing edit is
+explicitly 4 to 5 on the same synthetic item, quantity 2, stale draft 8.25.
+It creates no receipts and replays no reconfirmation, deletion or restore.
+A new genuine 409 must preserve the numeric draft 8.25; explicit Refresh must
+preserve it again; Cancel must reveal saved $5.00. Complete PostgreSQL and all
+portable tables are compared across rejection and after Refresh/Cancel.
+Financial facts permit exactly price 4 to 5 and total 8 to 10, preserving payments.
+
+Use the preceding `$browserArgs` command with
+`browserPrior=$runtimeA/lifecycle-browser-shortlist-5b51ff47` and a new private
+`out`. Run `preflightOnly=true` from the clean committed harness, then the same
+command without that argument. Before commit, the actual archive loader test
+performs no authentication, application calls or output creation:
+
+```powershell
+$env:BROWSER_BOUNDARY_RUNTIME = $runtimeA
+& 'C:/Users/mggar/AppData/Local/Receipts/tooling/node-v24.21.0-win-x64/node.exe' `
+  --test ./tools/acceptance/offline-normalization/browser-boundary.test.mjs
+```

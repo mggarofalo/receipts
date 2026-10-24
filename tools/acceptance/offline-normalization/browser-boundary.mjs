@@ -73,6 +73,35 @@ export function previewRequestChain(request) {
   return chain;
 }
 
+export async function assertBrowserStaleSave(response,{itemId,draftUnitPrice,expectedItemRevision,sourceFingerprint}) {
+  const request=response.request(),expectedPath='/api/receipt-items/'+itemId;
+  assert.equal(request.method(),'PUT');
+  assert.equal(new URL(request.url()).pathname,expectedPath);
+  assert.equal(new URL(response.url()).pathname,expectedPath);
+  assert.equal(response.status(),409,'Expected genuine stale-revision server rejection');
+  assert.equal(await response.finished(),null,'Stale save transport did not finish');
+  const problem=await response.json();
+  assert(problem.detail);assert.equal(problem.code,'normalization_item_changed');
+  let body=null,bodyCaptureError=null;
+  try {body=request.postDataJSON();} catch(error) {bodyCaptureError=error.message;}
+  const requestBodyAvailable=body!==null && body!==undefined;
+  if(requestBodyAvailable) {
+    assert.equal(typeof body,'object');assert(!Array.isArray(body));
+    assert.equal(Math.round(Number(body.unitPrice)*100),Math.round(draftUnitPrice*100));
+    // clientRowId is optional UI correlation; item identity is the exact PUT URL.
+    const {clientRowId,...choice}=body.normalizationIntent??{};
+    if(clientRowId!==undefined) assert.equal(typeof clientRowId,'string');
+    assert.deepEqual(choice,{kind:'defer',rememberSource:false,expectedItemRevision,sourceFingerprint});
+  }
+  // Retain only diagnostic headers: authentication material must stay private.
+  const headers={};let headerCaptureError=null,failure=null;
+  try {const all=await response.allHeaders();for(const key of ['content-type','content-length','location','x-request-id']) if(all[key]!==undefined) headers[key]=all[key];} catch(error) {headerCaptureError=error.message;}
+  try {failure=request.failure();} catch(error) {failure={captureError:error.message};}
+  return {body,problem,status:response.status(),requestBodyAvailable,
+    requestBodyLimitation:requestBodyAvailable?null:'Browser transport did not expose the submitted JSON body; exact submitted draft and normalization choice are not independently observed.',
+    bodyCaptureError,requestChain:previewRequestChain(request),failure,headers,headerCaptureError};
+}
+
 // Observe rejection immediately. Awaiting the result later still throws into the
 // enclosing lifecycle safe-stop handler, including predicate and timeout errors.
 export function observeResponse(page,predicate) {
@@ -83,6 +112,7 @@ export function observeResponse(page,predicate) {
 export function loadBrowserBoundary({prior,runtime,runId,bSha256,snapshot,transition,_depth=0}) {
   prior=path.resolve(prior);runtime=path.resolve(runtime);
   assert(_depth<8,'Too many assessed browser continuations');
+  if(fs.existsSync(path.join(prior,'browser-stage-assessment.json'))) return loadBrowserPostConflict({prior,runtime,runId,bSha256,snapshot,transition,_depth});
   if(fs.existsSync(path.join(prior,'browser-before-write-assessment.json'))) return loadBrowserBeforeWrite({prior,runtime,runId,bSha256,snapshot,transition,_depth});
   if(path.basename(prior)==='lifecycle-browser-final-a320674d') return loadBrowserRetry({prior,runtime,runId,bSha256,snapshot,transition});
   assert.equal(path.dirname(prior),runtime);assert.equal(path.basename(prior),'lifecycle-completion-18c87514');
@@ -243,6 +273,88 @@ function loadBrowserBeforeWrite(args) {
   assert.deepEqual(allTables.container,stop.container);
   for(const [key,table] of Object.entries(groups)) assert.deepEqual(allTables.tables[table],stop.state[key]);
   return {...original,prior,files,stop,allTables,expected,rawPreviewBodyAvailable:true};
+}
+
+// The only supported business delta at this assessed stop is the known price PUT.
+// Preserve every other field, proof, work row and audit, including unknown groups.
+export function assertCompetingPriceDelta(before,after,itemId,initial,competing) {
+  assert([[3,4],[4,5]].some(pair=>pair[0]===initial && pair[1]===competing),'Unreviewed price transition');
+  const expected=structuredClone(before),row=expected.state.items.find(i=>i.Id===itemId),actual=after.state.items.find(i=>i.Id===itemId);
+  assert(row && actual);assert.equal(row.UnitPrice,initial);assert.equal(row.Quantity,2);assert.equal(row.TotalAmount,initial*2);
+  assert(actual.NormalizationRevision && actual.NormalizationRevision!==row.NormalizationRevision);
+  row.UnitPrice=competing;row.TotalAmount=competing*2;row.NormalizationRevision=actual.NormalizationRevision;
+  const work=expected.state.reviewWork.find(i=>i.ItemId===itemId),updated=after.state.reviewWork.find(i=>i.ItemId===itemId);
+  assert(work && updated);assert.equal(updated.SourceRevision,actual.NormalizationRevision);
+  assert(Date.parse(updated.UpdatedAt)>=Date.parse(work.UpdatedAt));
+  work.SourceRevision=updated.SourceRevision;work.UpdatedAt=updated.UpdatedAt;
+  assert.equal(after.state.audits.length,before.state.audits.length+1);
+  const added=after.state.audits.filter(i=>!before.state.audits.some(old=>old.Id===i.Id));assert.equal(added.length,1);
+  const audit=added[0];assert.equal(audit.EntityType,'ReceiptItem');assert.equal(audit.EntityId,itemId);assert.equal(audit.Action,'Update');
+  assert.deepEqual(JSON.parse(audit.ChangesJson).map(change=>({field:change.FieldName,old:Number(change.OldValue),value:Number(change.NewValue)})).sort((a,b)=>a.field.localeCompare(b.field)),[
+    {field:'TotalAmount',old:initial*2,value:competing*2},{field:'UnitPrice',old:initial,value:competing}]);
+  expected.state.audits=after.state.audits.map(row=>row.Id===audit.Id?audit:expected.state.audits.find(old=>old.Id===row.Id));
+  assert.deepEqual(after,expected,'Unexpected side effect of competing price write');
+}
+
+export function assertPostConflictJournal(requests,responses,item) {
+  assertBeforeWriteJournal(requests.slice(0,4),responses.slice(0,4),item);
+  assert.equal(requests.length,6);assert.equal(responses.length,6);
+  const url='/api/receipt-items/'+item.id;
+  for(const index of [4,5]) {assert.equal(requests[index].url,url);assert.equal(responses[index].url,url);assert.equal(responses[index].method,requests[index].method);}
+  assert.equal(requests[4].method,'GET');assert.equal(responses[4].status,200);assert.deepEqual(JSON.parse(responses[4].text),item);
+  assert.equal(requests[5].method,'PUT');assert.equal(responses[5].status,204);assert.equal(responses[5].text,'');
+  assert.deepEqual(requests[5].body,{id:item.id,description:item.description,receiptItemCode:item.receiptItemCode,quantity:2,unitPrice:4,category:item.category,subcategory:item.subcategory});
+}
+
+function loadBrowserPostConflict(args) {
+  const {prior,runtime,runId,bSha256,snapshot}=args;assert.equal(path.dirname(prior),runtime);
+  const read=name=>JSON.parse(fs.readFileSync(path.join(prior,name),'utf8').replace(/^\uFEFF/,''));
+  const digest=file=>crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+  const manifestPath=path.join(prior,'evidence-sha256.final.json');
+  // Independently assessed archive: this trust anchor is evidence identity, not a harness revision allowlist.
+  assert.equal(digest(manifestPath),'7cf6c3760f9459becb852b733de31000b04291b1a435669a93a01d3f4e42f88e','Post-conflict assessment changed');
+  const manifest=read('evidence-sha256.final.json'),names=fs.readdirSync(prior);
+  assert.equal(manifest.countExcludingSelf,47);assert.deepEqual(names.sort(),[...Object.keys(manifest.files),'evidence-sha256.final.json'].sort());
+  const browser=read('browser-continuation.json');
+  const original=loadBrowserBoundary({...args,prior:browser.prior,_depth:args._depth+1});
+  const files={...original.files,[manifestPath]:digest(manifestPath)};
+  for(const [name,entry] of Object.entries(manifest.files)) {
+    assert.equal(path.basename(name),name);const file=path.join(prior,name);assert(fs.statSync(file).isFile());
+    assert.equal(fs.statSync(file).size,entry.bytes);assert.equal(digest(file),entry.sha256,'Assessed post-conflict archive changed');files[file]=entry.sha256;
+  }
+  const rawLog=path.resolve(manifest.rawLog.path);assert.equal(path.dirname(rawLog),path.dirname(runtime));assert.equal(digest(rawLog),manifest.rawLog.sha256);files[rawLog]=manifest.rawLog.sha256;
+  const assessment=read('safe-stop-assessment.json'),stage=read('browser-stage-assessment.json'),failure=read('failure.json'),continuation=read('continuation.json'),baseline=read('baseline.json');
+  assert.equal(assessment.status,'failed-harness-after-genuine-stale-rejection');assert.equal(assessment.runnerExit,1);assert.equal(assessment.newReceiptCreations,0);
+  assert.equal(stage.status,'incomplete-run-harness-observation-failure');assert.equal(stage.readOnlySupplement,true);assert.equal(stage.noRetry,true);assert.equal(stage.noFurtherWrites,true);
+  assert.equal(stage.response.requestBodyAvailable,false);assert.equal(stage.automaticCacheRefresh.observed,true);
+  assert.match(failure.error.message,/Cannot read properties of null \(reading 'unitPrice'\)/);
+  for(const record of [failure,continuation,browser,baseline]) {assert.equal(record.runId,runId);assert.equal(record.bSha256,bSha256);assert.equal(record.phase,'lifecycle');}
+  assert.deepEqual(failure.completed,original.completed);assert.deepEqual(browser.completedEarlier,original.completed);assert.deepEqual(browser.files,original.files);
+  assert.equal(browser.newReceiptCreations,0);assert.deepEqual(continuation.transition,args.transition);assert.equal(continuation.prior,original.continuation.prior);
+  assert.deepEqual(read('upgrade-preserved.json').postgres,original.stop);
+  for(const prefix of ['request','response']) assert.deepEqual(names.filter(n=>new RegExp('^'+prefix+'-\\d+\\.json$').test(n)).sort(),[2,3,4,5,6,7].map(n=>`${prefix}-${n}.json`));
+  assertPostConflictJournal([2,3,4,5,6,7].map(n=>read(`request-${n}.json`)),[2,3,4,5,6,7].map(n=>read(`response-${n}.json`)),original.future.item);
+  const stop=read('safe-stop-postgres.json');assertCompetingPriceDelta(baseline.postgres,stop,original.future.item.id,3,4);
+  assert.deepEqual(read('after-browser-save-postgres.json'),stop);
+  for(const name of names.filter(n=>/^browser-rejection-settlement-\d+\.json$/.test(n))) assert.deepEqual(read(name),stop);
+  const expected=snapshot(path.join(prior,'safe-stop.db'));assert.deepEqual(snapshot(path.join(prior,'before-browser-rejection.db')).tables,expected.tables);
+  assert.deepEqual(snapshot(path.join(prior,'before-lifecycle.db')).tables,original.expected.tables);
+  assertCompletionFacts(original.expected.facts,expected.facts,original.future.item.id);
+  const allTables=read('safe-stop-all-tables.assessed.json');assert.deepEqual(allTables,read('safe-stop-all-tables.repeat.json'));
+  const groups={items:'receipts.ReceiptItems',receipts:'receipts.Receipts',transactions:'receipts.Transactions',adjustments:'receipts.Adjustments',identities:'matching.NormalizedDescriptions',mappings:'matching.NormalizationSourceMappings',reviewWork:'matching.NormalizationReviewWork',replays:'receipts.ReceiptWriteRequests',operations:'matching.NormalizationCatalogOperations',members:'matching.NormalizationCatalogMembers',audits:'audit.AuditLogs'};
+  assert.deepEqual(allTables.container,stop.container);
+  const beforeWrite=structuredClone(allTables);
+  for(const [key,table] of Object.entries(groups)) {assert.deepEqual(allTables.tables[table],stop.state[key]);beforeWrite.tables[table]=baseline.postgres.state[key];}
+  assertExactLoginEffects(original.allTables,beforeWrite,read('authentication-request.json'),read('authentication-response.json'));
+  const planned=read('browser-save-planned.json'),save=read('browser-save-request.json'),response=read('browser-save-response.json');
+  assert.equal(planned.itemId,original.future.item.id);assert.equal(planned.draftUnitPrice,8.25);assert.equal(planned.intentKind,'defer');assert.equal(planned.expectedItemRevision,original.future.item.normalizationRevision);
+  assert.equal(save.method,'PUT');assert.equal(new URL(save.url).pathname,'/api/receipt-items/'+planned.itemId);assert.equal(save.body,null);
+  assert.equal(response.status,409);assert.equal(new URL(response.url).pathname,new URL(save.url).pathname);assert.equal(JSON.parse(response.text).code,'normalization_item_changed');
+  const row=stop.state.items.find(i=>i.Id===planned.itemId),future=structuredClone(original.future);
+  // Rehydrate current price/revision from the retained stop, never the old GET 6.
+  future.item.unitPrice=row.UnitPrice;future.item.normalizationRevision=row.NormalizationRevision;
+  assert.equal(future.item.unitPrice,4);assert.equal(future.item.quantity,2);
+  return {...original,prior,files,stop,allTables,expected,future,priceChange:{initial:4,competing:5},priorRequestBodyAvailable:false};
 }
 
 export function assertExactLoginEffects(before,after,request,response) {

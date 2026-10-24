@@ -9,7 +9,7 @@ import { assertLifecycleResume, assertSettled, assertRevisionTransition, assertU
 
 import { assertCompletionBoundary, assertIndependentProof, assertRestoreDecision, assertCompletionFacts, runWithLifecycleFailureCapture, journalBrowserSave, redactedFailure, bindCompletionEvidence } from './lifecycle-completion.mjs';
 
-import {matchesPurchasePreview,assertPurchasePreview,assertBrowserPurchase,previewRequestChain,observeResponse,loadBrowserBoundary,browserRequestFailure,matchesCandidateLookup,settleCandidateLookup} from './browser-boundary.mjs';
+import {matchesPurchasePreview,assertPurchasePreview,assertBrowserPurchase,previewRequestChain,observeResponse,loadBrowserBoundary,browserRequestFailure,matchesCandidateLookup,settleCandidateLookup,assertBrowserStaleSave,assertCompetingPriceDelta} from './browser-boundary.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const read = p => JSON.parse(fs.readFileSync(p, 'utf8').replace(/^\uFEFF/, ''));
@@ -461,8 +461,8 @@ async function main() {
     assert.deepEqual(await getItem(browserOnly.future.item.id),browserOnly.future.item,'Existing browser purchase changed');
     assertIndependentProof(currentPg,browserOnly.independentId);
     journal('browser-continuation.json',{...stamp(),prior:browserOnly.prior,files:browserOnly.files,completedEarlier:browserOnly.completed,newReceiptCreations:0,rawRunnerLogAvailable:browserOnly.rawRunnerLogAvailable});
-    await browserDraft(browserOnly.future);
-    assertCompletionFacts(browserOnly.expected.facts,(await exported('after-browser-completion.db')).facts,browserOnly.future.item.id);
+    await browserDraft(browserOnly.future,browserOnly.priceChange);
+    assertCompletionFacts(browserOnly.expected.facts,(await exported('after-browser-completion.db')).facts,browserOnly.future.item.id,browserOnly.priceChange);
     assertRestoreDecision(assertIndependentProof(browserOnly.stop,browserOnly.independentId),assertIndependentProof(postgres(),browserOnly.independentId));
     for(const [file,sha] of Object.entries(browserOnly.files)) assert.equal(hash(file),sha,'Prior browser evidence changed');
     journal('final-postgres.json',postgres());
@@ -476,7 +476,9 @@ async function main() {
     const sql='BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY; SELECT json_build_object('+names.map(name=>"'"+name+"',(SELECT coalesce(json_agg(x ORDER BY to_jsonb(x)::text),'[]') FROM "+quoted(name)+' x)').join(',')+'); COMMIT;';
     return {container,tables:JSON.parse(query(sql))};
   }
-  async function browserDraft(future) {
+  async function browserDraft(future,priceChange={initial:3,competing:4}) {
+    assert([[3,4],[4,5]].some(pair=>pair[0]===priceChange.initial && pair[1]===priceChange.competing),'Unreviewed browser price transition');
+    assert.equal(future.item.unitPrice,priceChange.initial);assert.equal(future.item.quantity,2);
     // Preview DTOs identify a source/target, not an item. Bind the actual browser
     // receipt separately to the exact API item and PostgreSQL revision.
     const expectedSource=source(location,line);
@@ -542,30 +544,41 @@ async function main() {
       await expect(dialog.getByText('Needs review — saved with the receipt',{exact:true})).toBeVisible();
       assert.deepEqual(apiErrors,[],'Unexpected browser API errors before competing edit');
       // The explicit choice captures the observed revision before a competing save.
-      await update(await getItem(future.item.id),{unitPrice:4});
+      const competingItem=await getItem(future.item.id);assert.deepEqual(competingItem,future.item,'Purchase changed before competing edit');
+      const competingBefore=postgres();journal('before-competing-price-postgres.json',competingBefore);
+      const competingPortable=await exported('before-competing-price.db');
+      await update(competingItem,{unitPrice:priceChange.competing});
       const before=await settled('browser-rejection-settlement'); const portable=await exported('before-browser-rejection.db');
+      assertCompetingPriceDelta(competingBefore,before,future.item.id,priceChange.initial,priceChange.competing);
+      assertCompletionFacts(competingPortable.facts,portable.facts,future.item.id,priceChange);
+      const beforeAllTables=browserOnly?captureAllTables(before.container):null;
+      if(beforeAllTables) journal('before-browser-rejection-all-tables.json',beforeAllTables);
       browserLifecycle='stale-draft-save';savePlanned=true;
       const response=await journalBrowserSave({page,itemId:future.item.id,journal,
         planned:{utc:new Date().toISOString(),itemId:future.item.id,url:'/api/receipt-items/'+future.item.id,method:'PUT',draftUnitPrice:8.25,intentKind:'defer',expectedItemRevision:future.item.normalizationRevision,sourceFingerprint:previewEvidence.sourceFingerprint},
         click:()=>dialog.getByRole('button',{name:'Update Item',exact:true}).click()});
       journal('after-browser-save-postgres.json',postgres());
-      assert.equal(response.status(),409,'Expected genuine stale-revision server rejection');
-      const body=response.request().postDataJSON(); assert.equal(cents(body.unitPrice),825); assert.equal(body.normalizationIntent?.kind,'defer'); assert.equal(body.normalizationIntent?.expectedItemRevision,future.item.normalizationRevision); assert.equal(body.normalizationIntent?.sourceFingerprint,previewEvidence.sourceFingerprint);
-      const problem=await response.json(); assert(problem.detail);assert.equal(problem.code,'normalization_item_changed');
+      const saveEvidence=await assertBrowserStaleSave(response,{itemId:future.item.id,draftUnitPrice:8.25,expectedItemRevision:future.item.normalizationRevision,sourceFingerprint:previewEvidence.sourceFingerprint});
+      journal('browser-save-validation.json',saveEvidence);
+      const {body,problem}=saveEvidence;
       await expect(dialog).toBeVisible(); await expect(dialog.getByRole('alert')).toContainText(problem.detail);
-      await expect(dialog.getByLabel('Unit Price',{exact:false})).toHaveValue('8.25');
+      await expect.poll(async()=>Number(await dialog.getByLabel('Unit Price',{exact:false}).inputValue())).toBe(8.25);
       assert.deepEqual(postgres(),before); assert.deepEqual((await exported('after-browser-rejection.db')).tables,portable.tables);
+      if(beforeAllTables) {const after=captureAllTables(before.container);journal('after-browser-rejection-all-tables.json',after);assert.deepEqual(after,beforeAllTables,'Rejected save changed complete PostgreSQL state');}
       const refresh=observeResponse(page,r=>new URL(r.url()).pathname==='/api/trips' && r.request().method()==='GET' && r.ok());
       await dialog.getByRole('button',{name:'Refresh saved receipt information',exact:true}).click();
-      const refreshed=await (await refresh()).json(); assert.equal(cents(refreshed.receipt.items.find(i=>i.id===future.item.id).unitPrice),400);
-      await expect(dialog).toBeVisible(); await expect(dialog.getByLabel('Unit Price',{exact:false})).toHaveValue('8.25');
+      const refreshed=await (await refresh()).json(); assert.equal(cents(refreshed.receipt.items.find(i=>i.id===future.item.id).unitPrice),cents(priceChange.competing));
+      await expect(dialog).toBeVisible(); await expect.poll(async()=>Number(await dialog.getByLabel('Unit Price',{exact:false}).inputValue())).toBe(8.25);
       await page.screenshot({path:path.join(out,'browser-draft-after-refresh.png'),fullPage:true});
       await dialog.getByRole('button',{name:'Cancel',exact:true}).click();
-      await expect(page.getByRole('row').filter({hasText:line.description})).toContainText('$4.00');
+      await expect(page.getByRole('row').filter({hasText:line.description})).toContainText('$'+priceChange.competing.toFixed(2));
+      assert.deepEqual(postgres(),before,'Refresh or cancellation changed PostgreSQL');
+      assert.deepEqual((await exported('after-browser-cancel.db')).tables,portable.tables,'Refresh or cancellation changed portable state');
+      if(beforeAllTables) {const after=captureAllTables(before.container);journal('after-browser-cancel-all-tables.json',after);assert.deepEqual(after,beforeAllTables,'Refresh or cancellation changed complete PostgreSQL state');}
       assert.deepEqual(apiErrors,[],'Unexpected browser API errors');
       await Promise.all(previewCaptures);assert(!previewRequests.some(r=>r.captureError),'Preview response capture failed');
       journal('browser-api-observations.json',{apiErrors,previewRequests});
-      await checkpoint('browser-rejection-cache-refresh-draft',{request:body,status:response.status(),problem,refreshed,interception:false});
+      await checkpoint('browser-rejection-cache-refresh-draft',{request:body,...saveEvidence,refreshed,interception:false});
     } catch(error) {await page.screenshot({path:path.join(out,'browser-failure.png'),fullPage:true});throw error;} finally {await Promise.all(previewCaptures);if(!fs.existsSync(path.join(out,'browser-api-observations.json'))) journal('browser-api-observations.json',{apiErrors,previewRequests});await browser.close();}
   }
   },captureFailure:async error=>{
