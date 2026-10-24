@@ -23,7 +23,6 @@ namespace API.Controllers.Core;
 [ApiVersion("1.0")]
 [ApiController]
 [Route("api/item-templates")]
-[Produces("application/json")]
 [Authorize]
 public class ItemTemplatesController(IMediator mediator, ItemTemplateMapper mapper, ILogger<ItemTemplatesController> logger, IEntityChangeNotifier notifier) : ControllerBase
 {
@@ -58,7 +57,7 @@ public class ItemTemplatesController(IMediator mediator, ItemTemplateMapper mapp
 
 	[HttpGet(RouteGetAll)]
 	[EndpointSummary("Get all item templates")]
-	public async Task<Results<Ok<ItemTemplateListResponse>, BadRequest<ProblemDetails>>> GetAllItemTemplates([FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, [FromQuery] string? q = null, CancellationToken cancellationToken = default)
+	public async Task<Results<Ok<ItemTemplateListResponse>, BadRequestProblem>> GetAllItemTemplates([FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, [FromQuery] string? q = null, CancellationToken cancellationToken = default)
 	{
 		if (offset < 0)
 		{
@@ -98,7 +97,7 @@ public class ItemTemplatesController(IMediator mediator, ItemTemplateMapper mapp
 	[HttpGet(RouteGetDeleted)]
 	[EndpointSummary("Get all soft-deleted item templates")]
 	[EndpointDescription("Returns all item templates that have been soft-deleted.")]
-	public async Task<Results<Ok<ItemTemplateListResponse>, BadRequest<ProblemDetails>>> GetDeletedItemTemplates([FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, CancellationToken cancellationToken = default)
+	public async Task<Results<Ok<ItemTemplateListResponse>, BadRequestProblem>> GetDeletedItemTemplates([FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, CancellationToken cancellationToken = default)
 	{
 		if (offset < 0)
 		{
@@ -145,7 +144,7 @@ public class ItemTemplatesController(IMediator mediator, ItemTemplateMapper mapp
 
 	[HttpPut(RouteUpdate)]
 	[EndpointSummary("Update a single item template")]
-	public async Task<Results<NoContent, NotFound, Conflict<ProblemDetails>>> UpdateItemTemplate([FromRoute] Guid id, [FromBody] UpdateItemTemplateRequest model, CancellationToken cancellationToken = default)
+	public async Task<Results<NoContent, NotFound, ConflictProblem>> UpdateItemTemplate([FromRoute] Guid id, [FromBody] UpdateItemTemplateRequest model, CancellationToken cancellationToken = default)
 	{
 		// Route id is authoritative; ignore any mismatched body id (RECEIPTS-793).
 		model.Id = id;
@@ -233,7 +232,7 @@ public class ItemTemplatesController(IMediator mediator, ItemTemplateMapper mapp
 	[HttpGet(RouteGetHistoryCandidates)]
 	[EndpointSummary("Get suggested item templates from receipt history")]
 	[EndpointDescription("Returns recurring receipt-item descriptions that do not yet have a matching item template, together with defaults suggested from purchase history.")]
-	public async Task<Results<Ok<ItemTemplateHistoryCandidateListResponse>, BadRequest<ProblemDetails>>> GetItemTemplateHistoryCandidates([FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] int minCount = 2, CancellationToken cancellationToken = default)
+	public async Task<Results<Ok<ItemTemplateHistoryCandidateListResponse>, BadRequestProblem>> GetItemTemplateHistoryCandidates([FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] int minCount = 2, CancellationToken cancellationToken = default)
 	{
 		if (offset < 0)
 		{

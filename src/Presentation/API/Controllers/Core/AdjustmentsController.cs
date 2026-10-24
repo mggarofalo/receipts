@@ -21,7 +21,6 @@ namespace API.Controllers.Core;
 [ApiVersion("1.0")]
 [ApiController]
 [Route("api/adjustments")]
-[Produces("application/json")]
 [Authorize]
 public class AdjustmentsController(IMediator mediator, AdjustmentMapper mapper, ILogger<AdjustmentsController> logger, IEntityChangeNotifier notifier) : ControllerBase
 {
@@ -53,7 +52,7 @@ public class AdjustmentsController(IMediator mediator, AdjustmentMapper mapper, 
 
 	[HttpGet(RouteGetAll)]
 	[EndpointSummary("Get all adjustments")]
-	public async Task<Results<Ok<AdjustmentListResponse>, BadRequest<ProblemDetails>>> GetAllAdjustments([FromQuery] Guid? receiptId = null, [FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, CancellationToken cancellationToken = default)
+	public async Task<Results<Ok<AdjustmentListResponse>, BadRequestProblem>> GetAllAdjustments([FromQuery] Guid? receiptId = null, [FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, CancellationToken cancellationToken = default)
 	{
 		if (offset < 0)
 		{
@@ -106,7 +105,7 @@ public class AdjustmentsController(IMediator mediator, AdjustmentMapper mapper, 
 	[HttpGet(RouteGetDeleted)]
 	[EndpointSummary("Get all soft-deleted adjustments")]
 	[EndpointDescription("Returns all adjustments that have been soft-deleted.")]
-	public async Task<Results<Ok<AdjustmentListResponse>, BadRequest<ProblemDetails>>> GetDeletedAdjustments([FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, CancellationToken cancellationToken = default)
+	public async Task<Results<Ok<AdjustmentListResponse>, BadRequestProblem>> GetDeletedAdjustments([FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, CancellationToken cancellationToken = default)
 	{
 		if (offset < 0)
 		{
@@ -143,7 +142,7 @@ public class AdjustmentsController(IMediator mediator, AdjustmentMapper mapper, 
 
 	[HttpPost(RouteCreate)]
 	[EndpointSummary("Create a single adjustment")]
-	public async Task<Results<Ok<AdjustmentResponse>, Conflict<ProblemDetails>>> CreateAdjustment([FromBody] CreateAdjustmentRequest model, [FromRoute] Guid receiptId, CancellationToken cancellationToken = default)
+	public async Task<Results<Ok<AdjustmentResponse>, ConflictProblem>> CreateAdjustment([FromBody] CreateAdjustmentRequest model, [FromRoute] Guid receiptId, CancellationToken cancellationToken = default)
 	{
 		CreateAdjustmentCommand command = new([mapper.ToDomain(model)], receiptId);
 		List<Adjustment> adjustments;
@@ -161,7 +160,7 @@ public class AdjustmentsController(IMediator mediator, AdjustmentMapper mapper, 
 
 	[HttpPut(RouteUpdate)]
 	[EndpointSummary("Update a single adjustment")]
-	public async Task<Results<NoContent, NotFound, Conflict<ProblemDetails>>> UpdateAdjustment([FromBody] UpdateAdjustmentRequest model, [FromRoute] Guid id, CancellationToken cancellationToken = default)
+	public async Task<Results<NoContent, NotFound, ConflictProblem>> UpdateAdjustment([FromBody] UpdateAdjustmentRequest model, [FromRoute] Guid id, CancellationToken cancellationToken = default)
 	{
 		// Route id is authoritative; ignore any mismatched body id so a PUT can never
 		// silently update a resource other than the one the URL names (RECEIPTS-793).
@@ -208,7 +207,7 @@ public class AdjustmentsController(IMediator mediator, AdjustmentMapper mapper, 
 	[HttpPost(RouteRestore)]
 	[EndpointSummary("Restore a soft-deleted adjustment")]
 	[EndpointDescription("Restores a previously soft-deleted adjustment by clearing its DeletedAt timestamp.")]
-	public async Task<Results<NoContent, NotFound, Conflict<ProblemDetails>>> RestoreAdjustment([FromRoute] Guid id, CancellationToken cancellationToken = default)
+	public async Task<Results<NoContent, NotFound, ConflictProblem>> RestoreAdjustment([FromRoute] Guid id, CancellationToken cancellationToken = default)
 	{
 		RestoreAdjustmentCommand command = new(id);
 		bool result;

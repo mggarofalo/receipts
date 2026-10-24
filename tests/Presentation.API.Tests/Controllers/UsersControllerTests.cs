@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using API.Controllers;
 using API.Generated.Dtos;
+using API.Http;
 using Application.Interfaces.Services;
 using Application.Models;
 using FluentAssertions;
@@ -87,9 +88,9 @@ public class UsersControllerTests
 	[InlineData(-100, 50)]
 	public async Task ListUsers_ReturnsBadRequest_WhenOffsetIsNegative(int offset, int limit)
 	{
-		Results<Ok<UserListResponse>, BadRequest<ProblemDetails>> result = await _controller.ListUsers(offset, limit, null, null);
+		Results<Ok<UserListResponse>, BadRequestProblem> result = await _controller.ListUsers(offset, limit, null, null);
 
-		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badRequestResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badRequestResult.Value!.Detail.Should().Be("offset must be >= 0");
 	}
 
@@ -99,9 +100,9 @@ public class UsersControllerTests
 	[InlineData(0, 501)]
 	public async Task ListUsers_ReturnsBadRequest_WhenLimitIsOutOfRange(int offset, int limit)
 	{
-		Results<Ok<UserListResponse>, BadRequest<ProblemDetails>> result = await _controller.ListUsers(offset, limit, null, null);
+		Results<Ok<UserListResponse>, BadRequestProblem> result = await _controller.ListUsers(offset, limit, null, null);
 
-		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badRequestResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badRequestResult.Value!.Detail.Should().Be("limit must be between 1 and 500");
 	}
 
@@ -116,7 +117,7 @@ public class UsersControllerTests
 		_userServiceMock.Setup(s => s.ListUsersAsync(0, 50, It.IsAny<SortParams>(), It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new PagedResult<UserSummary>(users, 2, 0, 50));
 
-		Results<Ok<UserListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.ListUsers(0, 50, null, null);
+		Results<Ok<UserListResponse>, BadRequestProblem> rawResult = await _controller.ListUsers(0, 50, null, null);
 
 		Ok<UserListResponse> result = Assert.IsType<Ok<UserListResponse>>(rawResult.Result);
 		UserListResponse response = result.Value!;
@@ -159,7 +160,7 @@ public class UsersControllerTests
 		_userManagerMock.Setup(m => m.AddToRoleAsync(It.IsAny<ApplicationUser>(), "User"))
 			.ReturnsAsync(IdentityResult.Success);
 
-		Results<Ok<UserSummaryResponse>, BadRequest<ProblemDetails>> result = await _controller.CreateUser(
+		Results<Ok<UserSummaryResponse>, BadRequestProblem> result = await _controller.CreateUser(
 			new CreateUserRequest { Email = "new@example.com", Password = "Password1!", FirstName = "New", LastName = "User", Role = "User" });
 
 		Ok<UserSummaryResponse> okResult = Assert.IsType<Ok<UserSummaryResponse>>(result.Result);
@@ -172,10 +173,10 @@ public class UsersControllerTests
 		_userManagerMock.Setup(m => m.CreateAsync(It.IsAny<ApplicationUser>(), It.IsAny<string>()))
 			.ReturnsAsync(IdentityResult.Failed(new IdentityError { Description = "Password too weak" }));
 
-		Results<Ok<UserSummaryResponse>, BadRequest<ProblemDetails>> result = await _controller.CreateUser(
+		Results<Ok<UserSummaryResponse>, BadRequestProblem> result = await _controller.CreateUser(
 			new CreateUserRequest { Email = "new@example.com", Password = "weak", FirstName = "New", LastName = "User", Role = "User" });
 
-		BadRequest<ProblemDetails> badRequest = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badRequest = Assert.IsType<BadRequestProblem>(result.Result);
 		badRequest.Value!.Detail.Should().Contain("Password too weak");
 	}
 
@@ -187,10 +188,10 @@ public class UsersControllerTests
 		_userManagerMock.Setup(m => m.AddToRoleAsync(It.IsAny<ApplicationUser>(), It.IsAny<string>()))
 			.ReturnsAsync(IdentityResult.Failed(new IdentityError { Description = "Role not found" }));
 
-		Results<Ok<UserSummaryResponse>, BadRequest<ProblemDetails>> result = await _controller.CreateUser(
+		Results<Ok<UserSummaryResponse>, BadRequestProblem> result = await _controller.CreateUser(
 			new CreateUserRequest { Email = "new@example.com", Password = "Password1!", FirstName = "New", LastName = "User", Role = "BadRole" });
 
-		BadRequest<ProblemDetails> badRequest = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badRequest = Assert.IsType<BadRequestProblem>(result.Result);
 		badRequest.Value!.Detail.Should().Contain("Role not found");
 	}
 
@@ -259,7 +260,7 @@ public class UsersControllerTests
 		_userManagerMock.Setup(m => m.FindByIdAsync("user-123")).ReturnsAsync(user);
 		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
 
-		Results<NoContent, BadRequest<ProblemDetails>, NotFound> result = await _controller.DeactivateUser("user-123");
+		Results<NoContent, BadRequestProblem, NotFound> result = await _controller.DeactivateUser("user-123");
 
 		Assert.IsType<NoContent>(result.Result);
 	}
@@ -297,9 +298,9 @@ public class UsersControllerTests
 	{
 		SetupUserClaims("user-123");
 
-		Results<NoContent, BadRequest<ProblemDetails>, NotFound> result = await _controller.DeactivateUser("user-123");
+		Results<NoContent, BadRequestProblem, NotFound> result = await _controller.DeactivateUser("user-123");
 
-		BadRequest<ProblemDetails> badRequest = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badRequest = Assert.IsType<BadRequestProblem>(result.Result);
 		badRequest.Value!.Detail.Should().Contain("Cannot deactivate your own account");
 	}
 
@@ -309,7 +310,7 @@ public class UsersControllerTests
 		SetupUserClaims("admin-1");
 		_userManagerMock.Setup(m => m.FindByIdAsync("missing")).ReturnsAsync((ApplicationUser?)null);
 
-		Results<NoContent, BadRequest<ProblemDetails>, NotFound> result = await _controller.DeactivateUser("missing");
+		Results<NoContent, BadRequestProblem, NotFound> result = await _controller.DeactivateUser("missing");
 
 		Assert.IsType<NotFound>(result.Result);
 	}
@@ -325,7 +326,7 @@ public class UsersControllerTests
 		_userManagerMock.Setup(m => m.AddPasswordAsync(user, "NewPassword1!")).ReturnsAsync(IdentityResult.Success);
 		_userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
 
-		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result = await _controller.AdminResetPassword(
+		Results<NoContent, NotFound, BadRequestProblem> result = await _controller.AdminResetPassword(
 			user.Id,
 			new AdminResetPasswordRequest { NewPassword = "NewPassword1!" });
 
@@ -367,7 +368,7 @@ public class UsersControllerTests
 	{
 		_userManagerMock.Setup(m => m.FindByIdAsync("missing")).ReturnsAsync((ApplicationUser?)null);
 
-		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result = await _controller.AdminResetPassword(
+		Results<NoContent, NotFound, BadRequestProblem> result = await _controller.AdminResetPassword(
 			"missing",
 			new AdminResetPasswordRequest { NewPassword = "NewPassword1!" });
 
@@ -383,11 +384,11 @@ public class UsersControllerTests
 		_userManagerMock.Setup(m => m.AddPasswordAsync(user, "weak"))
 			.ReturnsAsync(IdentityResult.Failed(new IdentityError { Description = "Password too weak" }));
 
-		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result = await _controller.AdminResetPassword(
+		Results<NoContent, NotFound, BadRequestProblem> result = await _controller.AdminResetPassword(
 			user.Id,
 			new AdminResetPasswordRequest { NewPassword = "weak" });
 
-		BadRequest<ProblemDetails> badRequest = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badRequest = Assert.IsType<BadRequestProblem>(result.Result);
 		badRequest.Value!.Detail.Should().Contain("Password too weak");
 	}
 }

@@ -1,6 +1,3 @@
-using Microsoft.AspNetCore.Http.HttpResults;
-using Microsoft.AspNetCore.Mvc;
-
 namespace API.Http;
 
 /// <summary>
@@ -12,11 +9,9 @@ namespace API.Http;
 /// <c>errorNormalizationMiddleware</c>, and any second consumer would have to reimplement
 /// the same repair. Defining the error shape on the server instead is RECEIPTS-886.
 ///
-/// These return <see cref="BadRequest{T}"/>/<see cref="Conflict{T}"/>/<see cref="NotFound{T}"/>
-/// rather than <c>ProblemHttpResult</c> on purpose. The status code stays in the return
-/// type, so it stays visible in the endpoint's <c>Results&lt;…&gt;</c> signature and the
-/// OpenAPI document generator keeps emitting one schema per status — a
-/// <c>ProblemHttpResult</c> erases that distinction and collapses several statuses into one.
+/// Concrete status-specific result types execute as <c>application/problem+json</c>.
+/// Their status stays visible in each endpoint's <c>Results&lt;…&gt;</c> signature,
+/// so OpenAPI generation retains a separate ProblemDetails response for each status.
 /// </summary>
 public static class ApiProblem
 {
@@ -26,8 +21,8 @@ public static class ApiProblem
 	private const string ConflictType = "https://tools.ietf.org/html/rfc9110#section-15.5.10";
 
 	/// <summary>400 with the reason in <c>detail</c>.</summary>
-	public static BadRequest<ProblemDetails> BadRequest(string detail) =>
-		TypedResults.BadRequest(Build(StatusCodes.Status400BadRequest, "Bad Request", BadRequestType, detail));
+	public static BadRequestProblem BadRequest(string detail) =>
+		new(Build(StatusCodes.Status400BadRequest, "Bad Request", BadRequestType, detail));
 
 	/// <summary>
 	/// 400 for a batch of rejection reasons. ASP.NET Identity hands back several at once
@@ -39,23 +34,23 @@ public static class ApiProblem
 	/// message — so the user was told their request failed and never told why. Each entry
 	/// is already a complete sentence, so joining them reads correctly.
 	/// </summary>
-	public static BadRequest<ProblemDetails> BadRequest(IEnumerable<string> details) =>
+	public static BadRequestProblem BadRequest(IEnumerable<string> details) =>
 		BadRequest(string.Join(" ", details));
 
 	/// <summary>404 with the reason in <c>detail</c>. Use the bodiless <c>TypedResults.NotFound()</c> when there is nothing useful to say.</summary>
-	public static NotFound<ProblemDetails> NotFound(string detail) =>
-		TypedResults.NotFound(Build(StatusCodes.Status404NotFound, "Not Found", NotFoundType, detail));
+	public static NotFoundProblem NotFound(string detail) =>
+		new(Build(StatusCodes.Status404NotFound, "Not Found", NotFoundType, detail));
 
 	/// <summary>409 with the reason in <c>detail</c>.</summary>
-	public static Conflict<ProblemDetails> Conflict(string detail) =>
-		TypedResults.Conflict(Build(StatusCodes.Status409Conflict, "Conflict", ConflictType, detail));
+	public static ConflictProblem Conflict(string detail) =>
+		new(Build(StatusCodes.Status409Conflict, "Conflict", ConflictType, detail));
 
 	/// <summary>
 	/// 409 carrying machine-readable context alongside the prose. Callers that need a
 	/// consumer to branch on something more than text — a count, a set of ids — put it in
 	/// <paramref name="extensions"/> rather than encoding it into <c>detail</c>.
 	/// </summary>
-	public static Conflict<ProblemDetails> Conflict(string detail, IDictionary<string, object?> extensions)
+	public static ConflictProblem Conflict(string detail, IDictionary<string, object?> extensions)
 	{
 		ProblemDetails problem = Build(StatusCodes.Status409Conflict, "Conflict", ConflictType, detail);
 		foreach (KeyValuePair<string, object?> entry in extensions)
@@ -63,7 +58,7 @@ public static class ApiProblem
 			problem.Extensions[entry.Key] = entry.Value;
 		}
 
-		return TypedResults.Conflict(problem);
+		return new ConflictProblem(problem);
 	}
 
 	private static ProblemDetails Build(int status, string title, string type, string detail) =>

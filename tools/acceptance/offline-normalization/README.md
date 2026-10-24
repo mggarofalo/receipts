@@ -206,3 +206,65 @@ node --test ./tools/acceptance/offline-normalization/lifecycle.test.mjs
 
 These checks do not establish executed lifecycle acceptance. Actual API and
 selector mismatches fail explicitly and require assessment before claiming a pass.
+
+### Assessed lifecycle recovery
+
+The one supported recovery boundary is the retained first stale-item rejection:
+one provider-disabled manual-entry checkpoint, exactly three isolated receipts,
+and journal requests 2–27 ending in `normalization_item_changed` HTTP 409. Use a
+new output directory and pass `prior=<failed lifecycle directory>`. The original
+failure remains failed evidence. The harness recovers receipt/item IDs and stale
+intent from the fsynced journals; it performs no replacement creation before
+retesting this gate. Any later partial lifecycle stop needs separate assessment.
+
+If application fixes are integrated between attempts, preserve the AppHost and
+exact PostgreSQL container/mounts. Retain a private revision transition JSON with
+`runId`, full 40-character `previousRevision` and `candidateRevision`, and
+`postgresContainerId`; pass its path as `transition=<private JSON>`. The previous
+revision must equal the original runtime `source.json` revision; the candidate
+must equal the checkout's actual HEAD, with a completely clean working tree.
+Commit the integrated product fix and harness before preparing this record.
+Also retain `beforePostgresPath` / `beforePostgresSha256` for the complete settled
+pre-upgrade lifecycle PostgreSQL snapshot, `beforeMigrationHistoryPath` /
+`beforeMigrationHistorySha256` for the exact migration-history array, and
+`allowedAddedMigrations` containing the exact explicitly authorized added
+`MigrationId` / `ProductVersion` rows. The current PostgreSQL snapshot must exactly
+equal the pre-upgrade snapshot; migrations must equal the retained history plus
+those explicit rows. Embeddings, revisions, audits, replay records, and review
+work receive no upgrade exceptions. Resume retains
+the record and hash separately from original launcher `source.json`. The operator
+must establish that the running binaries match this transition record before
+launching; the record alone does not prove binary identity. Do not reprovision the
+runtime or rerun the original creation phase to obtain a clean baseline.
+
+Resume rechecks all prerequisites, frozen A/followup hashes and the original
+22-item/15-receipt baseline, and requires the current portable state to exactly
+equal the retained `before-stale-item.db` (25 items / 18 receipts). No portable
+field is ignored. Active identity embedding/model projections must be populated
+and two complete PostgreSQL samples must match before measuring atomic rejection.
+The rejected PUT is then repeated with fresh exact PostgreSQL and portable
+before/after comparisons, including revisions, proof, replay records and audits.
+This distinguishes background settlement from rejected-write atomicity without
+reclassifying the failed earlier measurement as a pass. The earlier run did not
+retain complete PostgreSQL before/after snapshots at its rejected PUT; its
+truncated assertion and safe-stop summary cannot establish full historical
+atomicity. That old rejection stays failed and unproven. The exact pre/post
+upgrade comparison and the newly measured rejection establish separate evidence
+for the integrated candidate. Pending projections or
+unexplained changes stop recovery. Prior evidence hashes are checked again before
+writing the final success record.
+
+```powershell
+# Add these to the ordinary lifecycle arguments after the runtime is verified.
+# prior=<retained lifecycle-durable-20261024 directory>
+# transition=<private verified revision transition JSON>
+# out=<new private lifecycle-resume directory>
+node --test ./tools/acceptance/offline-normalization/lifecycle-resume.test.mjs
+```
+
+Followup aggregate requests retain a durable `clientRequestId` and exact body
+before sending, then the raw response before interpreting it. Partial followups
+require `resume=true` in the same ledger directory; missing responses replay the
+same idempotency key. Existing successful responses are validated against that
+key and runtime. If a final export already exists, resume retains a separate
+current export and requires exact equality before completing remaining assertions.

@@ -1,5 +1,6 @@
 using API.Controllers.Core;
 using API.Generated.Dtos;
+using API.Http;
 using API.Mapping.Core;
 using API.Services;
 using Application.Commands.ItemTemplate.Create;
@@ -101,7 +102,7 @@ public class ItemTemplatesControllerTests
 			It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new PagedResult<ItemTemplate>(itemTemplates, itemTemplates.Count, 0, 50));
 
-		Results<Ok<ItemTemplateListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetAllItemTemplates(0, 50, null, null);
+		Results<Ok<ItemTemplateListResponse>, BadRequestProblem> rawResult = await _controller.GetAllItemTemplates(0, 50, null, null);
 
 		Ok<ItemTemplateListResponse> result = Assert.IsType<Ok<ItemTemplateListResponse>>(rawResult.Result);
 		ItemTemplateListResponse actualReturn = result.Value!;
@@ -116,9 +117,9 @@ public class ItemTemplatesControllerTests
 	[InlineData(-100, 50)]
 	public async Task GetAllItemTemplates_ReturnsBadRequest_WhenOffsetIsNegative(int offset, int limit)
 	{
-		Results<Ok<ItemTemplateListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetAllItemTemplates(offset, limit, null, null);
+		Results<Ok<ItemTemplateListResponse>, BadRequestProblem> result = await _controller.GetAllItemTemplates(offset, limit, null, null);
 
-		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badRequestResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badRequestResult.Value!.Detail.Should().Be("offset must be >= 0");
 	}
 
@@ -128,9 +129,9 @@ public class ItemTemplatesControllerTests
 	[InlineData(0, 501)]
 	public async Task GetAllItemTemplates_ReturnsBadRequest_WhenLimitIsOutOfRange(int offset, int limit)
 	{
-		Results<Ok<ItemTemplateListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetAllItemTemplates(offset, limit, null, null);
+		Results<Ok<ItemTemplateListResponse>, BadRequestProblem> result = await _controller.GetAllItemTemplates(offset, limit, null, null);
 
-		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badRequestResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badRequestResult.Value!.Detail.Should().Be("limit must be between 1 and 500");
 	}
 
@@ -139,9 +140,9 @@ public class ItemTemplatesControllerTests
 	[InlineData(-100, 50)]
 	public async Task GetDeletedItemTemplates_ReturnsBadRequest_WhenOffsetIsNegative(int offset, int limit)
 	{
-		Results<Ok<ItemTemplateListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetDeletedItemTemplates(offset, limit, null, null);
+		Results<Ok<ItemTemplateListResponse>, BadRequestProblem> result = await _controller.GetDeletedItemTemplates(offset, limit, null, null);
 
-		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badRequestResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badRequestResult.Value!.Detail.Should().Be("offset must be >= 0");
 	}
 
@@ -151,9 +152,9 @@ public class ItemTemplatesControllerTests
 	[InlineData(0, 501)]
 	public async Task GetDeletedItemTemplates_ReturnsBadRequest_WhenLimitIsOutOfRange(int offset, int limit)
 	{
-		Results<Ok<ItemTemplateListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetDeletedItemTemplates(offset, limit, null, null);
+		Results<Ok<ItemTemplateListResponse>, BadRequestProblem> result = await _controller.GetDeletedItemTemplates(offset, limit, null, null);
 
-		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badRequestResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badRequestResult.Value!.Detail.Should().Be("limit must be between 1 and 500");
 	}
 
@@ -183,7 +184,7 @@ public class ItemTemplatesControllerTests
 			It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new PagedResult<ItemTemplate>(itemTemplates, itemTemplates.Count, 0, 50));
 
-		Results<Ok<ItemTemplateListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetDeletedItemTemplates(0, 50, null, null);
+		Results<Ok<ItemTemplateListResponse>, BadRequestProblem> rawResult = await _controller.GetDeletedItemTemplates(0, 50, null, null);
 
 		Ok<ItemTemplateListResponse> result = Assert.IsType<Ok<ItemTemplateListResponse>>(rawResult.Result);
 		ItemTemplateListResponse actualReturn = result.Value!;
@@ -252,7 +253,7 @@ public class ItemTemplatesControllerTests
 			It.IsAny<CancellationToken>()))
 			.ReturnsAsync(true);
 
-		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.UpdateItemTemplate(controllerInput.Id, controllerInput);
+		Results<NoContent, NotFound, ConflictProblem> result = await _controller.UpdateItemTemplate(controllerInput.Id, controllerInput);
 
 		Assert.IsType<NoContent>(result.Result);
 	}
@@ -267,7 +268,7 @@ public class ItemTemplatesControllerTests
 			It.IsAny<CancellationToken>()))
 			.ReturnsAsync(false);
 
-		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.UpdateItemTemplate(controllerInput.Id, controllerInput);
+		Results<NoContent, NotFound, ConflictProblem> result = await _controller.UpdateItemTemplate(controllerInput.Id, controllerInput);
 
 		Assert.IsType<NotFound>(result.Result);
 	}
@@ -279,7 +280,7 @@ public class ItemTemplatesControllerTests
 		_mediatorMock.Setup(mediator => mediator.Send(It.IsAny<UpdateItemTemplateCommand>(), It.IsAny<CancellationToken>()))
 			.ThrowsAsync(new ConcurrencyConflictException("Reload the changed template."));
 		var result = await _controller.UpdateItemTemplate(input.Id, input);
-		Conflict<ProblemDetails> conflict = Assert.IsType<Conflict<ProblemDetails>>(result.Result);
+		ConflictProblem conflict = Assert.IsType<ConflictProblem>(result.Result);
 		conflict.Value!.Detail.Should().Be("Reload the changed template.");
 		_notifierMock.Verify(notifier => notifier.NotifyUpdated(It.IsAny<string>(), It.IsAny<Guid>()), Times.Never);
 	}
@@ -427,7 +428,7 @@ public class ItemTemplatesControllerTests
 			It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new PagedResult<ItemTemplateHistoryCandidate>(candidates, candidates.Count, 0, 50));
 
-		Results<Ok<ItemTemplateHistoryCandidateListResponse>, BadRequest<ProblemDetails>> rawResult =
+		Results<Ok<ItemTemplateHistoryCandidateListResponse>, BadRequestProblem> rawResult =
 			await _controller.GetItemTemplateHistoryCandidates(0, 50, 2);
 
 		Ok<ItemTemplateHistoryCandidateListResponse> result = Assert.IsType<Ok<ItemTemplateHistoryCandidateListResponse>>(rawResult.Result);
@@ -475,10 +476,10 @@ public class ItemTemplatesControllerTests
 	[InlineData(-100)]
 	public async Task GetItemTemplateHistoryCandidates_ReturnsBadRequest_WhenOffsetIsNegative(int offset)
 	{
-		Results<Ok<ItemTemplateHistoryCandidateListResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<ItemTemplateHistoryCandidateListResponse>, BadRequestProblem> result =
 			await _controller.GetItemTemplateHistoryCandidates(offset, 50, 2);
 
-		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badRequestResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badRequestResult.Value!.Detail.Should().Be("offset must be >= 0");
 	}
 
@@ -488,10 +489,10 @@ public class ItemTemplatesControllerTests
 	[InlineData(501)]
 	public async Task GetItemTemplateHistoryCandidates_ReturnsBadRequest_WhenLimitIsOutOfRange(int limit)
 	{
-		Results<Ok<ItemTemplateHistoryCandidateListResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<ItemTemplateHistoryCandidateListResponse>, BadRequestProblem> result =
 			await _controller.GetItemTemplateHistoryCandidates(0, limit, 2);
 
-		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badRequestResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badRequestResult.Value!.Detail.Should().Be("limit must be between 1 and 500");
 	}
 
@@ -500,10 +501,10 @@ public class ItemTemplatesControllerTests
 	[InlineData(-2)]
 	public async Task GetItemTemplateHistoryCandidates_ReturnsBadRequest_WhenMinCountIsBelowOne(int minCount)
 	{
-		Results<Ok<ItemTemplateHistoryCandidateListResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<ItemTemplateHistoryCandidateListResponse>, BadRequestProblem> result =
 			await _controller.GetItemTemplateHistoryCandidates(0, 50, minCount);
 
-		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badRequestResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badRequestResult.Value!.Detail.Should().Be("minCount must be >= 1");
 	}
 

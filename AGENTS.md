@@ -83,9 +83,9 @@ Rules:
 
 - **The human-readable reason always goes in `detail`.** That is the one field the client renders (`extractErrorMessage` in `src/client/src/lib/problem-details.ts`).
 - **Machine-readable context goes in extensions**, not encoded into the prose. Extension members serialise at the top level of the body, so a consumer reads `body.transactionCount` directly.
-- **Declare the status in the return type** — `BadRequest<ProblemDetails>`, not `ProblemHttpResult`. The OpenAPI generator emits one schema per status from the `Results<…>` signature; `ProblemHttpResult` collapses them and the drift check will fail.
+- **Declare the status in the return type** — use `BadRequestProblem`, `NotFoundProblem`, and `ConflictProblem` in `Results<…>` signatures. These concrete results execute `TypedResults.Problem` and declare status-specific `application/problem+json` metadata. `ProblemHttpResult` collapses statuses in union signatures; `BadRequest<ProblemDetails>` and other ordinary typed JSON results emit `application/json`.
 - **A rejection with nothing useful to say stays bodiless.** `TypedResults.NotFound()` is correct when the id simply is not there; do not invent prose to fill a document.
-- **In `openapi/spec.yaml`, point 4xx responses at `#/components/schemas/ProblemDetails`.** A `type: string` error schema is the old contract and will not match what the server sends.
+- **In `openapi/spec.yaml`, declare reasoned 4xx responses as `application/problem+json` with `#/components/schemas/ProblemDetails`.** A `type: string` error schema is the old contract and will not match what the server sends.
 
 Changing an endpoint's error schema trips the **API Breaking Changes** CI gate — see the note under Workflow Rules about `breaking-changes-allowed`.
 

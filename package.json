@@ -12,7 +12,8 @@
   "scripts": {
     "lint:commit": "commitlint",
     "lint:spec": "cross-env NODE_OPTIONS=--disable-warning=DEP0040 spectral lint openapi/spec.yaml --fail-severity warn",
-    "check:drift": "node scripts/check-drift.mjs",
+    "check:drift": "node scripts/check-drift.mjs && npm run check:problems",
+    "check:problems": "node scripts/check-problem-contract.mjs",
     "check:breaking": "node scripts/check-breaking.mjs"
   },
   "devDependencies": {

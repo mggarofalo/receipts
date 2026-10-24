@@ -12,14 +12,13 @@ namespace API.Controllers.Aggregates;
 [ApiVersion("1.0")]
 [ApiController]
 [Route("api/dashboard")]
-[Produces("application/json")]
 [Authorize]
 public class DashboardController(IMediator mediator) : ControllerBase
 {
 	[HttpGet("summary")]
 	[EndpointSummary("Get dashboard summary statistics")]
 	[EndpointDescription("Returns high-level stats for a date range including total receipts, total spent, average trip amount, and most-used account/category.")]
-	public async Task<Results<Ok<DashboardSummaryResponse>, BadRequest<ProblemDetails>>> GetDashboardSummary(
+	public async Task<Results<Ok<DashboardSummaryResponse>, BadRequestProblem>> GetDashboardSummary(
 		[FromQuery] DateOnly? startDate,
 		[FromQuery] DateOnly? endDate,
 		CancellationToken cancellationToken)
@@ -56,7 +55,7 @@ public class DashboardController(IMediator mediator) : ControllerBase
 	[HttpGet("spending-over-time")]
 	[EndpointSummary("Get spending over time")]
 	[EndpointDescription("Returns time-series spending data bucketed by the specified granularity.")]
-	public async Task<Results<Ok<SpendingOverTimeResponse>, BadRequest<ProblemDetails>>> GetSpendingOverTime(
+	public async Task<Results<Ok<SpendingOverTimeResponse>, BadRequestProblem>> GetSpendingOverTime(
 		[FromQuery] DateOnly? startDate,
 		[FromQuery] DateOnly? endDate,
 		[FromQuery] string? granularity,
@@ -108,7 +107,7 @@ public class DashboardController(IMediator mediator) : ControllerBase
 	[HttpGet("spending-by-category")]
 	[EndpointSummary("Get spending grouped by category")]
 	[EndpointDescription("Returns spending amounts grouped by receipt item category.")]
-	public async Task<Results<Ok<SpendingByCategoryResponse>, BadRequest<ProblemDetails>>> GetSpendingByCategory(
+	public async Task<Results<Ok<SpendingByCategoryResponse>, BadRequestProblem>> GetSpendingByCategory(
 		[FromQuery] DateOnly? startDate,
 		[FromQuery] DateOnly? endDate,
 		[FromQuery] int limit = 10,
@@ -144,7 +143,7 @@ public class DashboardController(IMediator mediator) : ControllerBase
 	[HttpGet("spending-by-store")]
 	[EndpointSummary("Get spending grouped by store")]
 	[EndpointDescription("Returns spending amounts grouped by receipt location (store), including visit count and average per visit.")]
-	public async Task<Results<Ok<SpendingByStoreResponse>, BadRequest<ProblemDetails>>> GetSpendingByStore(
+	public async Task<Results<Ok<SpendingByStoreResponse>, BadRequestProblem>> GetSpendingByStore(
 		[FromQuery] DateOnly? startDate,
 		[FromQuery] DateOnly? endDate,
 		CancellationToken cancellationToken)
@@ -175,7 +174,7 @@ public class DashboardController(IMediator mediator) : ControllerBase
 	[HttpGet("spending-by-account")]
 	[EndpointSummary("Get spending grouped by account")]
 	[EndpointDescription("Returns spending amounts grouped by payment account.")]
-	public async Task<Results<Ok<SpendingByAccountResponse>, BadRequest<ProblemDetails>>> GetSpendingByAccount(
+	public async Task<Results<Ok<SpendingByAccountResponse>, BadRequestProblem>> GetSpendingByAccount(
 		[FromQuery] DateOnly? startDate,
 		[FromQuery] DateOnly? endDate,
 		CancellationToken cancellationToken)

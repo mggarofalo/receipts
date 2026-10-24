@@ -25,7 +25,6 @@ namespace API.Controllers;
 [ApiVersion("1.0")]
 [ApiController]
 [Route("api/ynab")]
-[Produces("application/json")]
 [Authorize]
 public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnabBudgetSelectionService budgetSelectionService, YnabMapper mapper, ILogger<YnabController> logger) : ControllerBase
 {
@@ -50,7 +49,7 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 	[HttpGet("events")]
 	[EndpointSummary("Get recent YNAB sync events with optional filtering")]
 	[EndpointDescription("Paginated, filterable feed of YNAB push and validate attempts, most recent first.")]
-	public async Task<Results<Ok<YnabSyncEventListResponse>, BadRequest<ProblemDetails>>> GetEvents(
+	public async Task<Results<Ok<YnabSyncEventListResponse>, BadRequestProblem>> GetEvents(
 		[FromQuery] int offset = 0,
 		[FromQuery] int limit = 50,
 		[FromQuery] string? sortBy = null,
@@ -201,7 +200,7 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 	[HttpPost("account-mappings")]
 	[EndpointSummary("Create a YNAB account mapping")]
 	[EndpointDescription("Maps a receipts account to a YNAB account.")]
-	public async Task<Results<Created<YnabAccountMappingResponse>, BadRequest<ProblemDetails>>> CreateAccountMapping(
+	public async Task<Results<Created<YnabAccountMappingResponse>, BadRequestProblem>> CreateAccountMapping(
 		[FromBody] CreateYnabAccountMappingRequest request,
 		CancellationToken cancellationToken)
 	{
@@ -227,7 +226,7 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 	[HttpPut("account-mappings/{id}")]
 	[EndpointSummary("Update a YNAB account mapping")]
 	[EndpointDescription("Updates the YNAB account for an existing mapping.")]
-	public async Task<Results<NoContent, NotFound, BadRequest<ProblemDetails>>> UpdateAccountMapping(
+	public async Task<Results<NoContent, NotFound, BadRequestProblem>> UpdateAccountMapping(
 		[FromRoute] Guid id,
 		[FromBody] UpdateYnabAccountMappingRequest request,
 		CancellationToken cancellationToken)
@@ -287,7 +286,7 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 	[HttpPost("category-mappings")]
 	[EndpointSummary("Create a category mapping")]
 	[EndpointDescription("Creates a new mapping from a receipts category to a YNAB category.")]
-	public async Task<Results<Created<YnabCategoryMappingResponse>, Conflict<ProblemDetails>, BadRequest<ProblemDetails>>> CreateCategoryMapping(
+	public async Task<Results<Created<YnabCategoryMappingResponse>, ConflictProblem, BadRequestProblem>> CreateCategoryMapping(
 		[FromBody] CreateYnabCategoryMappingRequest request,
 		CancellationToken cancellationToken)
 	{
@@ -316,7 +315,7 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 	[HttpPut("category-mappings/{id}")]
 	[EndpointSummary("Update a category mapping")]
 	[EndpointDescription("Updates the YNAB category for an existing mapping.")]
-	public async Task<Results<NoContent, NotFound, BadRequest<ProblemDetails>>> UpdateCategoryMapping(
+	public async Task<Results<NoContent, NotFound, BadRequestProblem>> UpdateCategoryMapping(
 		[FromRoute] Guid id,
 		[FromBody] UpdateYnabCategoryMappingRequest request,
 		CancellationToken cancellationToken)

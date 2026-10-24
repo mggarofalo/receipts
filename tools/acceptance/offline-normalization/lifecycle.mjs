@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
+import { assertLifecycleResume, assertSettled, assertRevisionTransition, assertUpgradePreserved } from './lifecycle-resume.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const read = p => JSON.parse(fs.readFileSync(p, 'utf8').replace(/^\uFEFF/, ''));
@@ -86,22 +87,57 @@ async function main() {
   const bindings = read(path.join(path.resolve(args.source),'bindings.json'));
   const freeze = read(path.join(path.resolve(args.source),'freeze.json'));
   assert.equal(hash(path.join(path.resolve(args.source),'A.db')), freeze.aSha256);
+  let resume;
+  const transition=args.transition?read(path.resolve(args.transition)):null;
+  const launchSource=read(path.join(runtime,'source.json'));
+  if(args.prior) {
+    assert(transition,'Resume requires transition=PRIVATE_REVISION_RECORD');
+    assert.equal(launchSource.RunId,ready.RunId);
+    const git=argv=>execFileSync('git',argv,{cwd:root,encoding:'utf8',windowsHide:true}).trim();
+    assertRevisionTransition(transition,launchSource,git(['rev-parse','HEAD']),git(['status','--porcelain','--untracked-files=normal']));
+    const prior=path.resolve(args.prior); assert(inside(runtime,prior) && prior!==runtime);
+    const files=['failure.json','baseline.json','before-stale-item.db',...Array.from({length:3},(_,i)=>`created-${i+1}.json`),...Array.from({length:26},(_,i)=>`request-${i+2}.json`),...Array.from({length:26},(_,i)=>`response-${i+2}.json`)];
+    assert(!fs.existsSync(path.join(prior,'lifecycle.json')),'Prior lifecycle already passed');
+    assert(!fs.readdirSync(prior).some(n=>/^request-\d+\.json$/.test(n) && Number(n.match(/\d+/)[0])>27),'Unsupported later mutation journal');
+    const bundle={failure:read(path.join(prior,'failure.json')),baseline:read(path.join(prior,'baseline.json')),created:Array.from({length:3},(_,i)=>read(path.join(prior,`created-${i+1}.json`))),requests:Array.from({length:26},(_,i)=>read(path.join(prior,`request-${i+2}.json`))),responses:Array.from({length:26},(_,i)=>read(path.join(prior,`response-${i+2}.json`)))};
+    resume={...assertLifecycleResume(bundle,ready.RunId,records.sourceRestore.bSha256),prior,baseline:bundle.baseline,expected:snapshot(path.join(prior,'before-stale-item.db')),files:Object.fromEntries(files.map(name=>[name,hash(path.join(prior,name))]))};
+    assert.equal(resume.baseline.followupHash,followupHash);
+    assert.deepEqual(resume.baseline.snapshot.tables,baseline.tables);
+    resume.transitionFiles={[path.resolve(args.transition)]:hash(path.resolve(args.transition)),[path.join(runtime,'source.json')]:hash(path.join(runtime,'source.json'))};
+    for(const key of ['beforePostgres','beforeMigrationHistory']) {
+      const retained=path.resolve(transition[key+'Path']);
+      assert(inside(path.dirname(runtime),retained),'Transition evidence must stay inside the private runtime parent');
+      assert.equal(hash(retained),transition[key+'Sha256'],'Transition evidence hash mismatch');
+      resume.transitionFiles[retained]=transition[key+'Sha256'];
+      resume[key]=read(retained);
+    }
+  }
   fs.mkdirSync(out);
   const save = (name,value) => fs.writeFileSync(path.join(out,name), JSON.stringify(value,null,2), {flag:'wx'});
   const stamp = () => ({runId:ready.RunId,utc:new Date().toISOString(),phase:'lifecycle',bSha256:records.sourceRestore.bSha256});
   let token;
+  let lastRequest=0,requestNumber=0;
+  const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+  const journal=(name,value)=>{const fd=fs.openSync(path.join(out,name),'wx');try{fs.writeFileSync(fd,JSON.stringify(value,null,2));fs.fsyncSync(fd);}finally{fs.closeSync(fd);}};
   async function request(url, body, method = body === undefined ? 'GET' : 'POST', status) {
+    await pause(Math.max(0,lastRequest+850-Date.now()));lastRequest=Date.now();
+    const number=++requestNumber;
+    if(token)journal(`request-${number}.json`,{utc:new Date().toISOString(),url,method,body});
     const response = await fetch(new URL(url,ready.Api), {method,headers:{...(token ? {Authorization:`Bearer ${token}`} : {}),...(body === undefined ? {} : {'Content-Type':'application/json'})},body:body === undefined ? undefined : JSON.stringify(body),signal:AbortSignal.timeout(60000)});
-    const text = await response.text(); const value = text ? JSON.parse(text) : null;
+    const text = await response.text();
+    if(token)journal(`response-${number}.json`,{utc:new Date().toISOString(),url,method,status:response.status,text});
+    const value = text ? JSON.parse(text) : null;
     if (status !== undefined) { assert.equal(response.status,status, `${method} ${url}`); assert(value?.detail, 'Reasoned rejection must have RFC 9457 detail'); }
     else assert(response.ok, `${method} ${url}: ${response.status}; inspect private evidence/runtime log`);
     return value;
   }
   const secrets = read(path.join(runtime,'secrets.json'));
   const password = read(path.join(runtime,'acceptance-password.json')).password;
+  await pause(65000);
   const login = await request('/api/auth/login',{email:secrets.AdminEmail,password});
   assert.equal(login.mustResetPassword,false); token = login.accessToken;
   async function exported(name) {
+    await pause(Math.max(0,lastRequest+850-Date.now()));lastRequest=Date.now();
     const response = await fetch(new URL('/api/backup/export',ready.Api),{method:'POST',headers:{Authorization:`Bearer ${token}`},signal:AbortSignal.timeout(300000)});
     assert(response.ok); const dest = path.join(out,name); fs.writeFileSync(dest,Buffer.from(await response.arrayBuffer()),{flag:'wx'}); return snapshot(dest);
   }
@@ -115,12 +151,38 @@ async function main() {
     const result = execFileSync('docker',['exec',name,'sh','-c','PGPASSWORD="$POSTGRES_PASSWORD" exec psql "$@"','sh','-U','postgres','-d','receiptsdb','-X','-q','-A','-t','-v','ON_ERROR_STOP=1','-c',query],{encoding:'utf8',maxBuffer:64*1024*1024,windowsHide:true});
     return {container,state:JSON.parse(result)};
   }
-  const originalPg = postgres();
-  assert.equal(originalPg.state.items.filter(i => !i.DeletedAt).length,22);
-  assert.equal(originalPg.state.receipts.filter(i => !i.DeletedAt).length,15);
-  assert.deepEqual((await exported('before-lifecycle.db')).tables, baseline.tables, 'Current installation is not the exact seven-followup baseline');
+  function migrationHistory() {
+    const query='SELECT coalesce(json_agg(x ORDER BY x."MigrationId"),\'[]\') FROM public."__EFMigrationsHistory" x;';
+    return JSON.parse(execFileSync('docker',['exec',ready.RunId+'-postgres','sh','-c','PGPASSWORD="$POSTGRES_PASSWORD" exec psql "$@"','sh','-U','postgres','-d','receiptsdb','-X','-q','-A','-t','-v','ON_ERROR_STOP=1','-c',query],{encoding:'utf8',windowsHide:true}));
+  }
+  // Settle projections before taking strict, complete PostgreSQL atomicity baselines.
+  // No revision, audit, proof or business field is removed from any comparison.
+  async function settled(name) {
+    const deadline=Date.now()+180000; let previous;
+    while(Date.now()<deadline) {
+      const pg=postgres();
+      journal(`${name}-${Date.now()}.json`,pg);
+      let readyToMeasure=false;try{assertSettled(pg);readyToMeasure=true;}catch{}
+      if(readyToMeasure && previous && JSON.stringify(pg)===JSON.stringify(previous)) return pg;
+      previous=pg; await pause(5000);
+    }
+    throw Error('PostgreSQL projections did not settle; no mutation attempted at this gate');
+  }
+  const currentPg=await settled('initial-settlement');
+  const originalPg=resume?.baseline.postgres ?? currentPg;
+  if(resume) assert.equal(transition.postgresContainerId,currentPg.container.Id);
+  if(resume) {
+    const migrations=migrationHistory();
+    assertUpgradePreserved(resume.beforePostgres,currentPg,resume.beforeMigrationHistory,migrations,transition.allowedAddedMigrations);
+    journal('upgrade-preserved.json',{...stamp(),postgres:currentPg,migrations});
+  }
+  assert.equal(currentPg.container.Id,originalPg.container.Id); assert.deepEqual(currentPg.container.Mounts,originalPg.container.Mounts);
+  assert.equal(currentPg.state.items.filter(i => !i.DeletedAt).length,resume?25:22);
+  assert.equal(currentPg.state.receipts.filter(i => !i.DeletedAt).length,resume?18:15);
+  assert.deepEqual((await exported('before-lifecycle.db')).tables,resume?.expected.tables ?? baseline.tables,'Current installation differs from retained lifecycle boundary');
   save('baseline.json',{...stamp(),followupHash,prerequisites:records,postgres:originalPg,snapshot:baseline});
-  let step = 0; const completed = [];
+  if(resume) save('resume.json',{...stamp(),prior:resume.prior,files:resume.files,syntheticReceiptIds:resume.created,priorFailureRetained:true,newCreationsBeforeStaleGate:0,originalFailurePassed:false,launchSource:read(path.join(runtime,'source.json')),transition,transitionSha256:hash(path.resolve(args.transition))});
+  let step = 0; const completed = resume?['provider-unavailable-manual-entry']:[];
   async function checkpoint(name, evidence) {
     const pg = postgres(); assert.equal(pg.container.Id,originalPg.container.Id); assert.deepEqual(pg.container.Mounts,originalPg.container.Mounts);
     for (const key of ['items','receipts','transactions','adjustments','mappings','identities','operations','members']) assertPreservedRows({[key]:originalPg.state[key]},{[key]:pg.state[key]});
@@ -142,9 +204,9 @@ async function main() {
   const source = (location,item) => ({location,description:item.description,itemCode:item.receiptItemCode});
   const preview = (location,item) => request('/api/receipt-items/normalization-preview',{source:source(location,item)});
   const update = (item,changes) => request('/api/receipt-items/'+item.id,{id:item.id,description:item.description,receiptItemCode:item.receiptItemCode,quantity:item.quantity,unitPrice:item.unitPrice,category:item.category,subcategory:item.subcategory,...changes},'PUT');
-  const tag = 'Lifecycle '+uuid(); const location = tag+' store';
-  const line = {description:tag+' RAW OATS 500G',receiptItemCode:'LIFE-500',quantity:2,unitPrice:3,category:'Groceries',subcategory:tag};
-  const created = [];
+  const tag = resume?.tag ?? 'Lifecycle '+uuid(); const location = resume?.location ?? tag+' store';
+  const line = resume?.line ?? {description:tag+' RAW OATS 500G',receiptItemCode:'LIFE-500',quantity:2,unitPrice:3,category:'Groceries',subcategory:tag};
+  const created = resume?[...resume.created]:[];
   async function create(item, intent, store=location) {
     // Deliberately receipt-first, then standalone purchase and payment. No SQL arrangement.
     const receipt = await request('/api/receipts',{location:store,date:'2026-10-20',taxAmount:0});
@@ -161,22 +223,33 @@ async function main() {
   }
   try {
     const availability=await request('/api/normalization-ai/connection'); assert.equal(availability.configured,false,'Use the provider-disabled acceptance runtime');
+    let manual,mapped,p,independent,financial;
+    if(!resume) {
     const category=rows(await request('/api/categories?limit=500')).find(c=>c.name===line.category && c.isActive); assert(category);
     await request('/api/subcategories',{name:line.subcategory,categoryId:category.id,isActive:true});
-    const manual=await create(line,await intentFor(line,'confirmNew',{newName:tag+' Oats 500 g',rememberSource:true}));
+    manual=await create(line,await intentFor(line,'confirmNew',{newName:tag+' Oats 500 g',rememberSource:true}));
     assert.equal(manual.item.normalizationReviewState,'verified'); await finances(manual.receiptId);
     await checkpoint('provider-unavailable-manual-entry',{availability,manual});
-    const mapped=await create(line); assert.equal(mapped.item.normalizationReviewState,'verified'); assert.equal(mapped.item.normalizationReviewReason,'approved_mapping');
-    const p=await preview(location,line); assert(p.mappingId && p.mappingRevision && p.targetRevision);
-    const independent=await create(line,await intentFor(line,'confirmExisting',{targetId:p.targetId,expectedTargetRevision:p.targetRevision,rememberSource:false}));
+    mapped=await create(line); assert.equal(mapped.item.normalizationReviewState,'verified'); assert.equal(mapped.item.normalizationReviewReason,'approved_mapping');
+    p=await preview(location,line); assert(p.mappingId && p.mappingRevision && p.targetRevision);
+    independent=await create(line,await intentFor(line,'confirmExisting',{targetId:p.targetId,expectedTargetRevision:p.targetRevision,rememberSource:false}));
     assert.equal(independent.item.normalizationReviewReason,'purchase_review');
     // A financial edit changes the revision, but neither product nor authority.
-    await update(mapped.item,{quantity:3,unitPrice:2}); const financial=await getItem(mapped.item.id);
+    await update(mapped.item,{quantity:3,unitPrice:2}); financial=await getItem(mapped.item.id);
     assert.equal(financial.normalizationReviewState,'verified'); assert.equal(financial.normalizedDescriptionId,mapped.item.normalizedDescriptionId); await finances(mapped.receiptId);
-    const staleIntent=await intentFor(financial,'defer',{expectedItemRevision:mapped.item.normalizationRevision});
-    const rejectBefore=postgres(); const portableBefore=await exported('before-stale-item.db');
+    } else {
+      ({manual,mapped,p,independent,financial}=resume);
+      for(const expected of [manual.item,independent.item,financial]) assert.deepEqual(await getItem(expected.id),expected,'Retained purchase changed before resume');
+      await finances(mapped.receiptId);
+      save('resumed-existing-arrangement.json',{...stamp(),manual,mapped,independent,financial,availability});
+    }
+    const staleIntent=resume?.staleRequest.body.normalizationIntent ?? await intentFor(financial,'defer',{expectedItemRevision:mapped.item.normalizationRevision});
+    const rejectBefore=await settled('stale-item-settlement'); const portableBefore=await exported('before-stale-item.db');
+    journal('before-stale-item-postgres.json',rejectBefore);
     const rejected=await request('/api/receipt-items/'+financial.id,{...line,id:financial.id,description:line.description,unitPrice:91,normalizationIntent:staleIntent},'PUT',409);
-    assert.deepEqual(postgres(),rejectBefore,'Rejected stale edit changed durable facts/proof/audits'); assert.deepEqual((await exported('after-stale-item.db')).tables,portableBefore.tables);
+    const rejectAfter=postgres();journal('after-stale-item-postgres.json',rejectAfter);
+    const portableAfter=await exported('after-stale-item.db');
+    assert.deepEqual(rejectAfter,rejectBefore,'Rejected stale edit changed durable facts/proof/audits'); assert.deepEqual(portableAfter.tables,portableBefore.tables);
     await checkpoint('stale-revision-atomic-rejection',{rejected,financial});
     // Parent source scope is part of a mapped purchase's reviewed fingerprint.
     await request('/api/receipts/'+mapped.receiptId,{id:mapped.receiptId,location:tag+' moved store',date:'2026-10-20',taxAmount:0},'PUT');
@@ -186,17 +259,20 @@ async function main() {
     assert(postgres().state.reviewWork.some(w=>w.ItemId===invalid.id),'Invalidated purchase lacks durable review work');
     await checkpoint('receipt-source-edit-invalidates-authority',{financial,invalid,receipt:await finances(mapped.receiptId)});
     const reused=await create(line); assert.equal(reused.item.normalizationReviewState,'verified');
-    const revokeBefore=postgres();
+    const revokeBefore=await settled('stale-revoke-settlement');
     const staleRevoke=await request('/api/normalization-catalog/mappings/'+p.mappingId+'/revoke',{expectedRevision:uuid()},'POST',409);
-    assert.deepEqual(postgres(),revokeBefore,'Rejected mapping revision changed durable state');
+    const revokeAfter=postgres();journal('after-stale-revoke-postgres.json',revokeAfter);
+    assert.deepEqual(revokeAfter,revokeBefore,'Rejected mapping revision changed durable state');
     const revoked=await request('/api/normalization-catalog/mappings/'+p.mappingId+'/revoke',{expectedRevision:p.mappingRevision}); assert.equal(revoked.state,'revoked');
     const historical=await getItem(reused.item.id), reviewed=await getItem(independent.item.id);
     assertRevokedHistory(reused.item,historical); assertRevokedHistory(independent.item,reviewed,true);
     const future=await create(line); assert.equal(future.item.normalizationReviewState,'needsReview'); assert.equal(future.item.normalizedDescriptionId,null);
     const staleKnown={kind:'knownSource',clientRowId:uuid(),sourceFingerprint:p.sourceFingerprint,expectedMappingRevision:p.mappingRevision};
-    const beforeKnown=postgres(); const beforeKnownPortable=await exported('before-stale-mapping.db');
+    const beforeKnown=await settled('stale-mapping-settlement'); const beforeKnownPortable=await exported('before-stale-mapping.db');
     const knownRejected=await request('/api/receipts/complete',{clientRequestId:uuid(),receipt:{location,date:'2026-10-20',taxAmount:0},items:[{...line,normalizationIntent:staleKnown}],transactions:[{cardId:bindings.card,amount:6,date:'2026-10-20'}],adjustments:[]},'POST',409);
-    assert.deepEqual(postgres(),beforeKnown); assert.deepEqual((await exported('after-stale-mapping.db')).tables,beforeKnownPortable.tables);
+    const afterKnown=postgres();journal('after-stale-mapping-postgres.json',afterKnown);
+    const afterKnownPortable=await exported('after-stale-mapping.db');
+    assert.deepEqual(afterKnown,beforeKnown); assert.deepEqual(afterKnownPortable.tables,beforeKnownPortable.tables);
     await checkpoint('revoke-history-and-future-reuse',{staleRevoke,revoked,historical,reviewed,future,knownRejected});
     // Two deliberately separate declarations describe the same isolated synthetic product.
     const variant={...line,description:tag+' OATS ALT LABEL',receiptItemCode:'LIFE-ALT'};
@@ -206,7 +282,7 @@ async function main() {
     const merged=await getItem(other.item.id); assert.equal(merged.normalizedDescriptionId,manual.item.normalizedDescriptionId);
     assert.equal(merged.normalizationReviewState,'verified','Deliberate merge lost current independent purchase review');
     assert.equal(merged.description,variant.description); await finances(other.receiptId);
-    const mergePg=postgres(); assert(!mergePg.state.identities.some(i=>i.Id===other.item.normalizedDescriptionId));
+    const mergePg=await settled('merge-settlement'); assert(!mergePg.state.identities.some(i=>i.Id===other.item.normalizedDescriptionId));
     if(merged.normalizationReviewState==='verified') {const row=mergePg.state.items.find(i=>i.Id===merged.id);assert.equal(row.ReviewedTargetId,row.NormalizedDescriptionId);assert.equal(row.NormalizationReviewDecisionId,row.NormalizationAssignmentId);assert.equal(row.ReviewedSourceHash,row.NormalizationSourceHash);}
     await checkpoint('intentional-same-product-merge',{merge,before:other.item,merged});
     // Deleting an entire receipt temporarily removes its purchase and payment from projections.
@@ -221,11 +297,16 @@ async function main() {
     assert.equal(cents((await request('/api/reports/spending-by-normalized-description?pageSize=100')).grandTotal),cents(reportBefore.grandTotal));
     await checkpoint('soft-delete-restore',{deleteBefore,restored:await trip(independent.receiptId),reportBefore,reportDeleted});
     await browserDraft(future);
+    if(resume) {
+      for(const [name,sha] of Object.entries(resume.files)) assert.equal(hash(path.join(resume.prior,name)),sha,'Prior evidence changed');
+      for(const [file,sha] of Object.entries(resume.transitionFiles)) assert.equal(hash(file),sha,'Transition evidence changed');
+    }
     save('lifecycle.json',{...stamp(),completed,syntheticReceiptIds:created,baselineFollowupHash:followupHash,status:'passed'});
   } catch(error) {
     save('failure.json',{...stamp(),completed,syntheticReceiptIds:created,error:{name:error.name,message:error.message,stack:error.stack}}); throw error;
   }
   async function browserDraft(future) {
+    await pause(65000);
     const require=createRequire(path.join(root,'src/client/package.json')); const {chromium,expect}=require('@playwright/test');
     const browser=await chromium.launch({headless:true}); const context=await browser.newContext({baseURL:ready.Frontend});
     await context.addInitScript(({accessToken,refreshToken})=>{localStorage.setItem('receipts_access_token',accessToken);localStorage.setItem('receipts_refresh_token',refreshToken);},login);
@@ -255,7 +336,7 @@ async function main() {
       await expect(dialog.getByText('Needs review — saved with the receipt',{exact:true})).toBeVisible();
       // The explicit choice captures the observed revision before a competing save.
       await update(await getItem(future.item.id),{unitPrice:4});
-      const before=postgres(); const portable=await exported('before-browser-rejection.db');
+      const before=await settled('browser-rejection-settlement'); const portable=await exported('before-browser-rejection.db');
       const responsePromise=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/receipt-items/'+future.item.id && r.request().method()==='PUT');
       await dialog.getByRole('button',{name:'Update Item',exact:true}).click();
       const response=await responsePromise; assert.equal(response.status(),409,'Expected genuine stale-revision server rejection');

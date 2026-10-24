@@ -20,7 +20,6 @@ namespace API.Controllers.Core;
 [ApiVersion("1.0")]
 [ApiController]
 [Route("api/subcategories")]
-[Produces("application/json")]
 [Authorize]
 public class SubcategoriesController(IMediator mediator, SubcategoryMapper mapper, ILogger<SubcategoriesController> logger, IEntityChangeNotifier notifier, ISubcategoryService subcategoryService) : ControllerBase
 {
@@ -54,7 +53,7 @@ public class SubcategoriesController(IMediator mediator, SubcategoryMapper mappe
 
 	[HttpGet(RouteGetAll)]
 	[EndpointSummary("Get all subcategories")]
-	public async Task<Results<Ok<SubcategoryListResponse>, BadRequest<ProblemDetails>>> GetAllSubcategories([FromQuery] Guid? categoryId = null, [FromQuery] bool? isActive = null, [FromQuery] string? q = null, [FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, CancellationToken cancellationToken = default)
+	public async Task<Results<Ok<SubcategoryListResponse>, BadRequestProblem>> GetAllSubcategories([FromQuery] Guid? categoryId = null, [FromQuery] bool? isActive = null, [FromQuery] string? q = null, [FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, CancellationToken cancellationToken = default)
 	{
 		if (offset < 0)
 		{
@@ -107,7 +106,7 @@ public class SubcategoriesController(IMediator mediator, SubcategoryMapper mappe
 	[HttpGet(RouteGetDeleted)]
 	[EndpointSummary("Get all soft-deleted subcategories")]
 	[EndpointDescription("Returns all subcategories that have been soft-deleted.")]
-	public async Task<Results<Ok<SubcategoryListResponse>, BadRequest<ProblemDetails>>> GetDeletedSubcategories([FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, CancellationToken cancellationToken = default)
+	public async Task<Results<Ok<SubcategoryListResponse>, BadRequestProblem>> GetDeletedSubcategories([FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, CancellationToken cancellationToken = default)
 	{
 		if (offset < 0)
 		{
@@ -201,7 +200,7 @@ public class SubcategoriesController(IMediator mediator, SubcategoryMapper mappe
 	[HttpDelete(RouteDelete)]
 	[EndpointSummary("Soft-delete a subcategory")]
 	[EndpointDescription("Soft-deletes a subcategory. Returns 409 Conflict if receipt items, including trash, use its current parent category name and subcategory name. Historical labels are unchanged.")]
-	public async Task<Results<NoContent, NotFound, Conflict<ProblemDetails>>> DeleteSubcategory([FromRoute] Guid id, CancellationToken cancellationToken = default)
+	public async Task<Results<NoContent, NotFound, ConflictProblem>> DeleteSubcategory([FromRoute] Guid id, CancellationToken cancellationToken = default)
 	{
 		Subcategory? subcategory = await mediator.Send(new GetSubcategoryByIdQuery(id), cancellationToken);
 		if (subcategory == null)

@@ -11,12 +11,11 @@ namespace API.Controllers;
 [ApiVersion("1.0")]
 [ApiController]
 [Route("api/audit")]
-[Produces("application/json")]
 [Authorize(Policy = "RequireAdmin")]
 public class AuditController(IAuditService auditService) : ControllerBase
 {
 	[HttpGet("")]
-	public async Task<Results<Ok<GeneratedDtos.AuditLogListResponse>, BadRequest<ProblemDetails>>> GetAuditLogs(
+	public async Task<Results<Ok<GeneratedDtos.AuditLogListResponse>, BadRequestProblem>> GetAuditLogs(
 		[FromQuery] string? entityType = null,
 		[FromQuery] string? entityId = null,
 		[FromQuery] string? userId = null,
@@ -71,7 +70,7 @@ public class AuditController(IAuditService auditService) : ControllerBase
 	}
 
 	[HttpGet("recent")]
-	public async Task<Results<Ok<GeneratedDtos.AuditLogListResponse>, BadRequest<ProblemDetails>>> GetRecent(
+	public async Task<Results<Ok<GeneratedDtos.AuditLogListResponse>, BadRequestProblem>> GetRecent(
 		[FromQuery] int offset = 0,
 		[FromQuery] int limit = 50,
 		[FromQuery] string? sortBy = null,

@@ -17,5 +17,5 @@ public sealed class ForbiddenProblem(string detail, string code) : IResult, IEnd
 	}).ExecuteAsync(context);
 
 	public static void PopulateMetadata(MethodInfo method, EndpointBuilder builder) =>
-		builder.Metadata.Add(new ProducesResponseTypeAttribute(typeof(ProblemDetails), 403, "application/problem+json"));
+		builder.Metadata.Add(new ProducesResponseTypeMetadata(403, typeof(ProblemDetails), ["application/problem+json"]));
 }

@@ -17,5 +17,5 @@ public sealed class ServiceUnavailableProblem(string detail, string code) : IRes
 	}).ExecuteAsync(context);
 
 	public static void PopulateMetadata(MethodInfo method, EndpointBuilder builder) =>
-		builder.Metadata.Add(new ProducesResponseTypeAttribute(typeof(ProblemDetails), 503, "application/problem+json"));
+		builder.Metadata.Add(new ProducesResponseTypeMetadata(503, typeof(ProblemDetails), ["application/problem+json"]));
 }

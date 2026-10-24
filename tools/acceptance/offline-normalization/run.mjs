@@ -26,13 +26,17 @@ const ready = read(path.join(runtime,readyFiles[0]));
 assert.match(ready.RunId,/^receipts-offline-20261024-[ab]-[a-f0-9]{8}$/);
 const secrets = read(path.join(runtime,'secrets.json'));
 const source = path.resolve(args.source ?? out);
+const stamp=()=>({runId:ready.RunId,runtime,revision:read(path.join(runtime,'source.json')),utc:new Date().toISOString(),phase});
 const hash = p => crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
 const facts = p => JSON.parse(execFileSync('python',[path.join(root,'tools/acceptance/offline-normalization/snapshot.py'),p],{encoding:'utf8'}));
 let token;
 const requests=[];
 const recordResponse=(method,url,r)=>requests.push({utc:new Date().toISOString(),method,url,status:r.status});
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+const durableSave=(name,value)=>{const fd=fs.openSync(path.join(out,name),'wx');try{fs.writeFileSync(fd,JSON.stringify(value,null,2));fs.fsyncSync(fd);}finally{fs.closeSync(fd);}};
+let lastRequest=0;
 async function api(url,body,method=body===undefined?'GET':'POST') {
+  if(phase==='followups'){await pause(Math.max(0,lastRequest+850-Date.now()));lastRequest=Date.now();}
   const r = await fetch(new URL(url,ready.Api),{method,headers:{...(token?{Authorization:`Bearer ${token}`} : {}),...(body === undefined ? {} : {'Content-Type':'application/json'})},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(300000)});
   recordResponse(method,url,r);
   if(!r.ok) throw Error(`${method} ${url}: ${r.status}; inspect private runtime log`);
@@ -122,7 +126,7 @@ async function select(page,label,value,{allowLocationCreation=false}={}) {
   else {await page.getByPlaceholder('Search locations...').fill(value);await page.getByRole('button',{name:`Use "${value}"`,exact:true}).click();}
 }
 function itemBody(i,bindings){return {description:i.description,receiptItemCode:i.receiptItemCode,quantity:i.quantity,unitPrice:i.unitPrice,category:i.category??'Groceries',...(i.itemTemplateKey?{itemTemplateId:bindings.template}: {})};}
-async function apiReceipt(r,bindings,fragments=true) {
+async function apiReceipt(r,bindings,fragments=true,followupKey) {
   const items=[];
   for(const i of r.items) {
     const body=itemBody(i,bindings);
@@ -141,6 +145,23 @@ async function apiReceipt(r,bindings,fragments=true) {
     for(const transaction of transactions) await api(`/api/receipts/${id}/transactions`,transaction);
     for(const adjustment of adjustments) await api(`/api/receipts/${id}/adjustments`,adjustment);
     return id;
+  }
+  if(followupKey) {
+    const requestName=`followup-${followupKey}-request.json`,responseName=`followup-${followupKey}-response.json`;
+    const requestPath=path.join(out,requestName),responsePath=path.join(out,responseName);
+    if(!fs.existsSync(requestPath))durableSave(requestName,{...stamp(),key:followupKey,body:{clientRequestId:crypto.randomUUID(),receipt,items,transactions,adjustments}});
+    const retained=read(requestPath);assert.equal(retained.runId,ready.RunId);assert.equal(retained.key,followupKey);
+    assert.deepEqual({...retained.body,clientRequestId:null},{clientRequestId:null,receipt,items,transactions,adjustments});
+    let result;
+    if(fs.existsSync(responsePath))result=read(responsePath);
+    else {
+      await pause(Math.max(0,lastRequest+850-Date.now()));lastRequest=Date.now();
+      const response=await fetch(new URL('/api/receipts/complete',ready.Api),{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify(retained.body),signal:AbortSignal.timeout(300000)});
+      result={...stamp(),clientRequestId:retained.body.clientRequestId,status:response.status,text:await response.text()};
+      durableSave(responseName,result);recordResponse('POST','/api/receipts/complete',response);
+    }
+    assert.equal(result.runId,ready.RunId);assert.equal(result.clientRequestId,retained.body.clientRequestId);assert(result.status>=200&&result.status<300,`Followup ${followupKey}: ${result.status}; retained private response`);
+    return JSON.parse(result.text).receipt.id;
   }
   return (await api('/api/receipts/complete',{clientRequestId:crypto.randomUUID(),receipt,items,transactions,adjustments})).receipt.id;
 }
@@ -223,7 +244,6 @@ async function verifyBrowser(login,bindings) {
 let checkpoint='authentication';
 try {
 const login=await authenticate();
-const stamp=()=>({runId:ready.RunId,runtime,revision:read(path.join(runtime,'source.json')),utc:new Date().toISOString(),phase});
 if(phase==='arrange') {
   assert.equal(unwrap(await api('/api/receipts?limit=500')).length,0,'Arrange requires empty task database');
   const bindings={receipts:{},items:{}};
@@ -348,12 +368,24 @@ if(phase==='arrange') {
 } else if(phase==='verify-restart') {
   const bindings=read(path.join(source,'bindings.json'));const evidence=await assertGold(bindings);await verifyBrowser(login,bindings);save('after-restart.json',{...stamp(),evidence,requires:'Retain external API restart event and unchanged PostgreSQL container ID; this phase alone does not establish a restart occurred'});
 } else if(phase==='followups') {
-  assert(fs.existsSync(path.join(out,'restore.json')),'Finish frozen restore before new entry');
-  const bindings=read(path.join(source,'bindings.json'));const created={};const identities=(await assertGold(bindings)).identities;
-  for(const f of gold.followups) {const r={...f,items:[f]};const id=await apiReceipt(r,bindings,false);const trip=await api(`/api/trips?receiptId=${id}`);const item=trip.receipt.items[0];assert.equal(item.normalizationReviewState,f.expectedState);if(f.expectedIdentity)assert.equal(item.normalizedDescriptionId,identities[f.expectedIdentity]);created[f.key]=trip;}
-  const exported=await exportDb('after-followups.db');const final=facts(exported);
+  assert(!fs.existsSync(path.join(out,'followups.json')),'Followups already completed');
+  const restored=read(path.join(path.resolve(args.restore??out),'restore.json'));assert.equal(restored.runId,ready.RunId);assert.equal(restored.target,'source');assert(restored.evidence&&restored.database,'Finish frozen restore before new entry');
+  const bindings=read(path.join(source,'bindings.json'));const created={};
+  const preflightPath=path.join(out,'followups-preflight.json');
+  if(!fs.existsSync(preflightPath)) {
+    assert(!fs.readdirSync(out).some(name=>name.startsWith('followup-')),'Mutation ledger exists without preflight');
+    const evidence=await assertGold(bindings);const before=await exportDb('before-followups.db');
+    durableSave('followups-preflight.json',{...stamp(),evidence,beforeSha256:hash(before)});
+  } else assert.equal(args.resume,'true','Partial followups require explicit resume=true with the same durable ledger');
+  const preflight=read(preflightPath);assert.equal(preflight.runId,ready.RunId);assert.equal(hash(path.join(out,'before-followups.db')),preflight.beforeSha256);
+  const identities=preflight.evidence.identities;
+  for(const f of gold.followups) {const r={...f,items:[f]};const id=await apiReceipt(r,bindings,false,f.key);const trip=await api(`/api/trips?receiptId=${id}`);const item=trip.receipt.items[0];assert.equal(item.normalizationReviewState,f.expectedState);if(f.expectedIdentity)assert.equal(item.normalizedDescriptionId,identities[f.expectedIdentity]);created[f.key]=trip;}
+  const retainedFinal=path.join(out,'after-followups.db');
+  const exported=await exportDb(fs.existsSync(retainedFinal)?`after-followups-resume-${Date.now()}.db`:'after-followups.db');const final=facts(exported);
+  if(exported!==retainedFinal)assert.deepEqual(final.tables,facts(retainedFinal).tables,'Live followups changed since retained final export');
   assert.equal(final.tables.receipts.length,gold.afterFollowups.receipts);assert.equal(final.tables.receipt_items.length,gold.afterFollowups.items);
   assert.equal(final.tables.transactions.reduce((sum,t)=>sum+money(t.amount),0),money(gold.afterFollowups.USD.transactionTotal));
+  const original=facts(path.join(out,'before-followups.db'));for(const [table,rows] of Object.entries(original.tables))for(const row of rows)assert(final.tables[table].some(actual=>JSON.stringify(actual)===JSON.stringify(row)),`Original row changed in ${table}`);
   save('followups.json',{...stamp(),created,evidence:await assertGold(bindings,true)});
 } else if(phase==='reject-corrupt') {
   assert(args.b&&args.sha256);const b=path.resolve(args.b);assert.equal(hash(b),args.sha256);
@@ -377,6 +409,7 @@ if(phase==='arrange') {
 } else throw Error('Unknown phase');
 console.log(`${phase} completed; private evidence: ${out}. This is a phase result, not overall acceptance.`);
 } catch(error) {
+  if(phase==='followups')durableSave(`followups-failure-${Date.now()}.json`,{...stamp(),error:{name:error.name,message:error.message,stack:error.stack},requests});
   if(phase==='restore-resume')save('failure-checkpoint.json',{phase,checkpoint,passed:false,error:{name:error.name,message:error.message,stack:error.stack},runtime,prior:args.prior,requests,utc:new Date().toISOString(),newUploads:0});
   throw error;
 }

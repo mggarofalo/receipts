@@ -16,7 +16,6 @@ namespace API.Controllers;
 [ApiVersion("1.0")]
 [ApiController]
 [Route("api/users")]
-[Produces("application/json")]
 [Authorize(Policy = "RequireAdmin")]
 public class UsersController(
 	IUserService userService,
@@ -28,7 +27,7 @@ public class UsersController(
 {
 	[HttpGet]
 	[EndpointSummary("List all users with their roles")]
-	public async Task<Results<Ok<UserListResponse>, BadRequest<ProblemDetails>>> ListUsers(
+	public async Task<Results<Ok<UserListResponse>, BadRequestProblem>> ListUsers(
 		[FromQuery] int offset = 0,
 		[FromQuery] int limit = 50,
 		[FromQuery] string? sortBy = null,
@@ -95,7 +94,7 @@ public class UsersController(
 
 	[HttpPost]
 	[EndpointSummary("Create a new user (admin only)")]
-	public async Task<Results<Ok<UserSummaryResponse>, BadRequest<ProblemDetails>>> CreateUser([FromBody] CreateUserRequest request)
+	public async Task<Results<Ok<UserSummaryResponse>, BadRequestProblem>> CreateUser([FromBody] CreateUserRequest request)
 	{
 		ApplicationUser user = new()
 		{
@@ -136,7 +135,7 @@ public class UsersController(
 
 	[HttpPut("{userId}")]
 	[EndpointSummary("Update a user (admin only)")]
-	public async Task<Results<NoContent, NotFound, BadRequest<ProblemDetails>, Conflict<ProblemDetails>>> UpdateUser(string userId, [FromBody] UpdateUserRequest request)
+	public async Task<Results<NoContent, NotFound, BadRequestProblem, ConflictProblem>> UpdateUser(string userId, [FromBody] UpdateUserRequest request)
 	{
 		string? actorId = RoleChangeActor.GetSubject(User);
 		if (actorId is null)
@@ -160,7 +159,7 @@ public class UsersController(
 
 	[HttpDelete("{userId}")]
 	[EndpointSummary("Deactivate a user (admin only)")]
-	public async Task<Results<NoContent, BadRequest<ProblemDetails>, NotFound>> DeactivateUser(string userId)
+	public async Task<Results<NoContent, BadRequestProblem, NotFound>> DeactivateUser(string userId)
 	{
 		string? currentUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 		if (userId == currentUserId)
@@ -195,7 +194,7 @@ public class UsersController(
 
 	[HttpPost("{userId}/reset-password")]
 	[EndpointSummary("Reset a user's password (admin only)")]
-	public async Task<Results<NoContent, NotFound, BadRequest<ProblemDetails>>> AdminResetPassword(string userId, [FromBody] AdminResetPasswordRequest request)
+	public async Task<Results<NoContent, NotFound, BadRequestProblem>> AdminResetPassword(string userId, [FromBody] AdminResetPasswordRequest request)
 	{
 		ApplicationUser? user = await userManager.FindByIdAsync(userId);
 		if (user is null)

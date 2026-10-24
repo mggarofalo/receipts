@@ -14,7 +14,6 @@ namespace API.Controllers.Aggregates;
 [ApiVersion("1.0")]
 [ApiController]
 [Route("api/reports")]
-[Produces("application/json")]
 [Authorize]
 public class ReportsController(IMediator mediator, IEntityChangeNotifier notifier) : ControllerBase
 {
@@ -37,7 +36,7 @@ public class ReportsController(IMediator mediator, IEntityChangeNotifier notifie
 	[HttpGet("out-of-balance")]
 	[EndpointSummary("Get out-of-balance receipts report")]
 	[EndpointDescription("Returns all receipts where item subtotal + tax + adjustments does not equal the transaction total.")]
-	public async Task<Results<Ok<OutOfBalanceResponse>, BadRequest<ProblemDetails>>> GetOutOfBalance(
+	public async Task<Results<Ok<OutOfBalanceResponse>, BadRequestProblem>> GetOutOfBalance(
 		[FromQuery] string? sortBy,
 		[FromQuery] string? sortDirection,
 		[FromQuery] int? page,
@@ -96,7 +95,7 @@ public class ReportsController(IMediator mediator, IEntityChangeNotifier notifie
 	[HttpGet("spending-by-location")]
 	[EndpointSummary("Get spending by location report")]
 	[EndpointDescription("Returns spending aggregated by store location with visit count, total, and average per visit.")]
-	public async Task<Results<Ok<SpendingByLocationResponse>, BadRequest<ProblemDetails>>> GetSpendingByLocation(
+	public async Task<Results<Ok<SpendingByLocationResponse>, BadRequestProblem>> GetSpendingByLocation(
 		[FromQuery] DateOnly? startDate,
 		[FromQuery] DateOnly? endDate,
 		[FromQuery] string? sortBy,
@@ -157,7 +156,7 @@ public class ReportsController(IMediator mediator, IEntityChangeNotifier notifie
 	[HttpGet("item-descriptions")]
 	[EndpointSummary("Search item descriptions for autocomplete")]
 	[EndpointDescription("Returns distinct item descriptions with their category and occurrence count, filtered by a search term (minimum 2 characters).")]
-	public async Task<Results<Ok<ItemDescriptionsResponse>, BadRequest<ProblemDetails>>> GetItemDescriptions(
+	public async Task<Results<Ok<ItemDescriptionsResponse>, BadRequestProblem>> GetItemDescriptions(
 		[FromQuery] string? search,
 		[FromQuery] bool? categoryOnly,
 		[FromQuery] int? limit,
@@ -191,7 +190,7 @@ public class ReportsController(IMediator mediator, IEntityChangeNotifier notifie
 	[HttpGet("item-cost-over-time")]
 	[EndpointSummary("Get item cost over time")]
 	[EndpointDescription("Returns time-series cost data for a specific item description, normalized description, or category.")]
-	public async Task<Results<Ok<ItemCostOverTimeResponse>, BadRequest<ProblemDetails>>> GetItemCostOverTime(
+	public async Task<Results<Ok<ItemCostOverTimeResponse>, BadRequestProblem>> GetItemCostOverTime(
 		[FromQuery] string? description,
 		[FromQuery] string? category,
 		[FromQuery] DateOnly? startDate,
@@ -233,7 +232,7 @@ public class ReportsController(IMediator mediator, IEntityChangeNotifier notifie
 	[HttpGet("duplicates")]
 	[EndpointSummary("Get duplicate receipt detection report")]
 	[EndpointDescription("Finds receipts that share the same date+location, date+total, or all three fields and may be double entries.")]
-	public async Task<Results<Ok<DuplicatesResponse>, BadRequest<ProblemDetails>>> GetDuplicates(
+	public async Task<Results<Ok<DuplicatesResponse>, BadRequestProblem>> GetDuplicates(
 		[FromQuery] string? matchOn,
 		[FromQuery] string? locationTolerance,
 		[FromQuery] double? totalTolerance,
@@ -299,7 +298,7 @@ public class ReportsController(IMediator mediator, IEntityChangeNotifier notifie
 	[HttpPost("duplicates/accepted")]
 	[EndpointSummary("Accept a duplicate group as not-a-duplicate")]
 	[EndpointDescription("Records every pair of the supplied receipts as \"not a duplicate\" so the group stops being reported. Idempotent.")]
-	public async Task<Results<Ok<AcceptDuplicateGroupResponse>, NotFound<ProblemDetails>>> AcceptDuplicateGroup(
+	public async Task<Results<Ok<AcceptDuplicateGroupResponse>, NotFoundProblem>> AcceptDuplicateGroup(
 		[FromBody] AcceptDuplicateGroupRequest request,
 		CancellationToken cancellationToken)
 	{
@@ -354,7 +353,7 @@ public class ReportsController(IMediator mediator, IEntityChangeNotifier notifie
 	[HttpGet("category-trends")]
 	[EndpointSummary("Get category spending trends over time")]
 	[EndpointDescription("Returns time-series spending data broken down by category. Categories beyond the topN threshold are collapsed into \"Other\". Buckets are dense and zero-filled.")]
-	public async Task<Results<Ok<CategoryTrendsResponse>, BadRequest<ProblemDetails>>> GetCategoryTrends(
+	public async Task<Results<Ok<CategoryTrendsResponse>, BadRequestProblem>> GetCategoryTrends(
 		[FromQuery] DateOnly? startDate,
 		[FromQuery] DateOnly? endDate,
 		[FromQuery] string? granularity,
@@ -399,7 +398,7 @@ public class ReportsController(IMediator mediator, IEntityChangeNotifier notifie
 	[HttpGet("uncategorized-items")]
 	[EndpointSummary("Get uncategorized items report")]
 	[EndpointDescription("Returns all receipt items where the category is \"Uncategorized\".")]
-	public async Task<Results<Ok<UncategorizedItemsResponse>, BadRequest<ProblemDetails>>> GetUncategorizedItems(
+	public async Task<Results<Ok<UncategorizedItemsResponse>, BadRequestProblem>> GetUncategorizedItems(
 		[FromQuery] string? sortBy,
 		[FromQuery] string? sortDirection,
 		[FromQuery] int? page,
@@ -457,7 +456,7 @@ public class ReportsController(IMediator mediator, IEntityChangeNotifier notifie
 	[HttpGet("spending-by-normalized-description")]
 	[EndpointSummary("Get spending by normalized description report")]
 	[EndpointDescription("Aggregates receipt item spending grouped by normalized description canonical name. Items without a normalized description bucket into a synthetic \"(Not Normalized)\" group.")]
-	public async Task<Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequest<ProblemDetails>>> GetSpendingByNormalizedDescription(
+	public async Task<Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequestProblem>> GetSpendingByNormalizedDescription(
 		[FromQuery] DateTimeOffset? from,
 		[FromQuery] DateTimeOffset? to,
 		[FromQuery] string? sortBy,

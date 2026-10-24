@@ -69,7 +69,7 @@ public class BackupController(
 	[RequestSizeLimit(100 * 1024 * 1024)]
 	[EndpointSummary("Import data from a SQLite backup file")]
 	[EndpointDescription("Accepts a SQLite database file exported by the backup endpoint, reads all entity tables, and upserts each row into the current database. Backups from older export versions are accepted; tables and columns they lack are treated as absent. Requires the Admin role.")]
-	public async Task<Results<Ok<BackupImportResponse>, BadRequest<ProblemDetails>, Conflict<ProblemDetails>>> ImportBackup(
+	public async Task<Results<Ok<BackupImportResponse>, BadRequestProblem, ConflictProblem>> ImportBackup(
 		IFormFile? file)
 	{
 		if (file is null || file.Length == 0)

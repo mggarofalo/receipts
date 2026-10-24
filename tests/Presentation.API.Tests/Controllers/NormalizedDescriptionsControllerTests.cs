@@ -1,5 +1,6 @@
 using API.Controllers;
 using API.Generated.Dtos;
+using API.Http;
 using Application.Commands.NormalizedDescription.LinkTemplate;
 using Application.Commands.NormalizedDescription.Merge;
 using Application.Commands.NormalizedDescription.Rename;
@@ -104,7 +105,7 @@ public class NormalizedDescriptionsControllerTests
 				It.IsAny<CancellationToken>()))
 			.ReturnsAsync(updated);
 
-		Results<Ok<NormalizedDescriptionSettingsResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<NormalizedDescriptionSettingsResponse>, BadRequestProblem> result =
 			await _controller.UpdateSettings(request, CancellationToken.None);
 
 		Ok<NormalizedDescriptionSettingsResponse> ok = Assert.IsType<Ok<NormalizedDescriptionSettingsResponse>>(result.Result);
@@ -127,10 +128,10 @@ public class NormalizedDescriptionsControllerTests
 			PendingReviewThreshold = pendingReview,
 		};
 
-		Results<Ok<NormalizedDescriptionSettingsResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<NormalizedDescriptionSettingsResponse>, BadRequestProblem> result =
 			await _controller.UpdateSettings(request, CancellationToken.None);
 
-		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem bad = Assert.IsType<BadRequestProblem>(result.Result);
 		bad.Value!.Detail.Should().Be(expectedMessage);
 
 		// Should short-circuit without invoking the mediator.
@@ -166,7 +167,7 @@ public class NormalizedDescriptionsControllerTests
 				It.IsAny<CancellationToken>()))
 			.ReturnsAsync(serviceResult);
 
-		Results<Ok<MatchTestResultResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<MatchTestResultResponse>, BadRequestProblem> result =
 			await _controller.TestMatch(request, CancellationToken.None);
 
 		Ok<MatchTestResultResponse> ok = Assert.IsType<Ok<MatchTestResultResponse>>(result.Result);
@@ -194,7 +195,7 @@ public class NormalizedDescriptionsControllerTests
 			.Setup(m => m.Send(It.Is<TestNormalizedDescriptionMatchQuery>(q => q.TopN == 5), It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new MatchTestResult([], MatchTestOutcomes.CreateNew, null));
 
-		Results<Ok<MatchTestResultResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<MatchTestResultResponse>, BadRequestProblem> result =
 			await _controller.TestMatch(request, CancellationToken.None);
 
 		Assert.IsType<Ok<MatchTestResultResponse>>(result.Result);
@@ -208,10 +209,10 @@ public class NormalizedDescriptionsControllerTests
 	{
 		TestMatchRequest request = new() { Description = description, TopN = 5 };
 
-		Results<Ok<MatchTestResultResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<MatchTestResultResponse>, BadRequestProblem> result =
 			await _controller.TestMatch(request, CancellationToken.None);
 
-		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem bad = Assert.IsType<BadRequestProblem>(result.Result);
 		bad.Value!.Detail.Should().Be(expectedMessage);
 	}
 
@@ -222,10 +223,10 @@ public class NormalizedDescriptionsControllerTests
 	{
 		TestMatchRequest request = new() { Description = "milk", TopN = topN };
 
-		Results<Ok<MatchTestResultResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<MatchTestResultResponse>, BadRequestProblem> result =
 			await _controller.TestMatch(request, CancellationToken.None);
 
-		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem bad = Assert.IsType<BadRequestProblem>(result.Result);
 		bad.Value!.Detail.Should().Be(NormalizedDescriptionsController.TopNOutOfRange);
 	}
 
@@ -239,10 +240,10 @@ public class NormalizedDescriptionsControllerTests
 			AutoAcceptThresholdOverride = 1.5,
 		};
 
-		Results<Ok<MatchTestResultResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<MatchTestResultResponse>, BadRequestProblem> result =
 			await _controller.TestMatch(request, CancellationToken.None);
 
-		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem bad = Assert.IsType<BadRequestProblem>(result.Result);
 		bad.Value!.Detail.Should().Be(NormalizedDescriptionsController.OverrideOutOfRange);
 	}
 
@@ -257,10 +258,10 @@ public class NormalizedDescriptionsControllerTests
 			PendingReviewThresholdOverride = 0.8,
 		};
 
-		Results<Ok<MatchTestResultResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<MatchTestResultResponse>, BadRequestProblem> result =
 			await _controller.TestMatch(request, CancellationToken.None);
 
-		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem bad = Assert.IsType<BadRequestProblem>(result.Result);
 		bad.Value!.Detail.Should().Be(NormalizedDescriptionsController.PendingMustBeLessThanAuto);
 	}
 
@@ -286,7 +287,7 @@ public class NormalizedDescriptionsControllerTests
 				It.IsAny<CancellationToken>()))
 			.ReturnsAsync(preview);
 
-		Results<Ok<ThresholdImpactPreviewResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<ThresholdImpactPreviewResponse>, BadRequestProblem> result =
 			await _controller.PreviewThresholdImpact(request, CancellationToken.None);
 
 		Ok<ThresholdImpactPreviewResponse> ok = Assert.IsType<Ok<ThresholdImpactPreviewResponse>>(result.Result);
@@ -310,10 +311,10 @@ public class NormalizedDescriptionsControllerTests
 			PendingReviewThreshold = pendingReview,
 		};
 
-		Results<Ok<ThresholdImpactPreviewResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<ThresholdImpactPreviewResponse>, BadRequestProblem> result =
 			await _controller.PreviewThresholdImpact(request, CancellationToken.None);
 
-		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem bad = Assert.IsType<BadRequestProblem>(result.Result);
 		bad.Value!.Detail.Should().Be(expectedMessage);
 
 		_mediatorMock.Verify(m => m.Send(It.IsAny<PreviewThresholdImpactQuery>(), It.IsAny<CancellationToken>()), Times.Never);
@@ -341,7 +342,7 @@ public class NormalizedDescriptionsControllerTests
 			.Setup(m => m.Send(It.Is<GetAllNormalizedDescriptionsQuery>(q => q.StatusFilter == null), It.IsAny<CancellationToken>()))
 			.ReturnsAsync(Page(items));
 
-		Results<Ok<NormalizedDescriptionListResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<NormalizedDescriptionListResponse>, BadRequestProblem> result =
 			await _controller.GetAllNormalizedDescriptions(status: null, q: null, cancellationToken: CancellationToken.None);
 
 		Ok<NormalizedDescriptionListResponse> ok = Assert.IsType<Ok<NormalizedDescriptionListResponse>>(result.Result);
@@ -368,7 +369,7 @@ public class NormalizedDescriptionsControllerTests
 			.Setup(m => m.Send(It.Is<GetAllNormalizedDescriptionsQuery>(q => FilterIs(q, expected)), It.IsAny<CancellationToken>()))
 			.ReturnsAsync(Page([]));
 
-		Results<Ok<NormalizedDescriptionListResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<NormalizedDescriptionListResponse>, BadRequestProblem> result =
 			await _controller.GetAllNormalizedDescriptions([status], q: null, cancellationToken: CancellationToken.None);
 
 		Ok<NormalizedDescriptionListResponse> ok = Assert.IsType<Ok<NormalizedDescriptionListResponse>>(result.Result);
@@ -380,10 +381,10 @@ public class NormalizedDescriptionsControllerTests
 	[Fact]
 	public async Task GetAllNormalizedDescriptions_InvalidStatusFilter_ReturnsBadRequest()
 	{
-		Results<Ok<NormalizedDescriptionListResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<NormalizedDescriptionListResponse>, BadRequestProblem> result =
 			await _controller.GetAllNormalizedDescriptions(["archived"], q: null, cancellationToken: CancellationToken.None);
 
-		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem bad = Assert.IsType<BadRequestProblem>(result.Result);
 		bad.Value!.Detail.Should().Be(NormalizedDescriptionsController.InvalidStatusFilter);
 		_mediatorMock.Verify(m => m.Send(It.IsAny<GetAllNormalizedDescriptionsQuery>(), It.IsAny<CancellationToken>()), Times.Never);
 	}
@@ -472,7 +473,7 @@ public class NormalizedDescriptionsControllerTests
 	[Fact]
 	public async Task GetAllNormalizedDescriptions_OneBadStatusAmongGoodOnes_ReturnsBadRequest()
 	{
-		Results<Ok<NormalizedDescriptionListResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<NormalizedDescriptionListResponse>, BadRequestProblem> result =
 			await _controller.GetAllNormalizedDescriptions(
 				["Active", "archived"],
 				q: null,
@@ -480,7 +481,7 @@ public class NormalizedDescriptionsControllerTests
 
 		// Silently dropping the unparseable one would answer a narrower question than was asked
 		// and look like a successful filter.
-		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem bad = Assert.IsType<BadRequestProblem>(result.Result);
 		bad.Value!.Detail.Should().Be(NormalizedDescriptionsController.InvalidStatusFilter);
 		_mediatorMock.Verify(m => m.Send(It.IsAny<GetAllNormalizedDescriptionsQuery>(), It.IsAny<CancellationToken>()), Times.Never);
 	}
@@ -501,7 +502,7 @@ public class NormalizedDescriptionsControllerTests
 			.Setup(m => m.Send(It.IsAny<GetAllNormalizedDescriptionsQuery>(), It.IsAny<CancellationToken>()))
 			.ReturnsAsync(Page(items));
 
-		Results<Ok<NormalizedDescriptionListResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<NormalizedDescriptionListResponse>, BadRequestProblem> result =
 			await _controller.GetAllNormalizedDescriptions(status: null, q: null, cancellationToken: CancellationToken.None);
 
 		// Null stays null rather than collapsing to a default date — "never matched anything" and
@@ -536,7 +537,7 @@ public class NormalizedDescriptionsControllerTests
 			.Setup(m => m.Send(It.IsAny<GetAllNormalizedDescriptionsQuery>(), It.IsAny<CancellationToken>()))
 			.ReturnsAsync(Page([], total: 412, offset: 100, limit: 25));
 
-		Results<Ok<NormalizedDescriptionListResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<NormalizedDescriptionListResponse>, BadRequestProblem> result =
 			await _controller.GetAllNormalizedDescriptions(status: null, q: "milk", offset: 100, limit: 25, CancellationToken.None);
 
 		_mediatorMock.Verify(
@@ -556,10 +557,10 @@ public class NormalizedDescriptionsControllerTests
 	[InlineData(int.MinValue)]
 	public async Task GetAllNormalizedDescriptions_NegativeOffset_ReturnsBadRequest(int offset)
 	{
-		Results<Ok<NormalizedDescriptionListResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<NormalizedDescriptionListResponse>, BadRequestProblem> result =
 			await _controller.GetAllNormalizedDescriptions(status: null, q: null, offset, limit: 50, CancellationToken.None);
 
-		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem bad = Assert.IsType<BadRequestProblem>(result.Result);
 		bad.Value!.Detail.Should().Be(NormalizedDescriptionsController.OffsetOutOfRange);
 		_mediatorMock.Verify(m => m.Send(It.IsAny<GetAllNormalizedDescriptionsQuery>(), It.IsAny<CancellationToken>()), Times.Never);
 	}
@@ -570,12 +571,12 @@ public class NormalizedDescriptionsControllerTests
 	[InlineData(NormalizedDescriptionsController.MaxPageSize + 1)]
 	public async Task GetAllNormalizedDescriptions_LimitOutsideBounds_ReturnsBadRequest(int limit)
 	{
-		Results<Ok<NormalizedDescriptionListResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<NormalizedDescriptionListResponse>, BadRequestProblem> result =
 			await _controller.GetAllNormalizedDescriptions(status: null, q: null, offset: 0, limit, CancellationToken.None);
 
 		// The upper bound is the point of the issue: without it a client can ask for everything
 		// again and undo the pagination by parameter.
-		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem bad = Assert.IsType<BadRequestProblem>(result.Result);
 		bad.Value!.Detail.Should().Be(NormalizedDescriptionsController.LimitOutOfRange);
 		_mediatorMock.Verify(m => m.Send(It.IsAny<GetAllNormalizedDescriptionsQuery>(), It.IsAny<CancellationToken>()), Times.Never);
 	}
@@ -587,7 +588,7 @@ public class NormalizedDescriptionsControllerTests
 			.Setup(m => m.Send(It.IsAny<GetAllNormalizedDescriptionsQuery>(), It.IsAny<CancellationToken>()))
 			.ReturnsAsync(Page([], limit: NormalizedDescriptionsController.MaxPageSize));
 
-		Results<Ok<NormalizedDescriptionListResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<NormalizedDescriptionListResponse>, BadRequestProblem> result =
 			await _controller.GetAllNormalizedDescriptions(status: null, q: null, offset: 0, NormalizedDescriptionsController.MaxPageSize, CancellationToken.None);
 
 		Assert.IsType<Ok<NormalizedDescriptionListResponse>>(result.Result);
@@ -615,7 +616,7 @@ public class NormalizedDescriptionsControllerTests
 			.Setup(m => m.Send(It.Is<GetNormalizedDescriptionByIdQuery>(q => q.Id == id), It.IsAny<CancellationToken>()))
 			.ReturnsAsync(item);
 
-		Results<Ok<NormalizedDescriptionResponse>, NotFound, BadRequest<ProblemDetails>> result =
+		Results<Ok<NormalizedDescriptionResponse>, NotFound, BadRequestProblem> result =
 			await _controller.GetNormalizedDescriptionById(id, CancellationToken.None);
 
 		Ok<NormalizedDescriptionResponse> ok = Assert.IsType<Ok<NormalizedDescriptionResponse>>(result.Result);
@@ -638,7 +639,7 @@ public class NormalizedDescriptionsControllerTests
 			.Setup(m => m.Send(It.Is<GetNormalizedDescriptionByIdQuery>(q => q.Id == id), It.IsAny<CancellationToken>()))
 			.ReturnsAsync((NormalizedDescriptionDetail?)null);
 
-		Results<Ok<NormalizedDescriptionResponse>, NotFound, BadRequest<ProblemDetails>> result =
+		Results<Ok<NormalizedDescriptionResponse>, NotFound, BadRequestProblem> result =
 			await _controller.GetNormalizedDescriptionById(id, CancellationToken.None);
 
 		Assert.IsType<NotFound>(result.Result);
@@ -647,10 +648,10 @@ public class NormalizedDescriptionsControllerTests
 	[Fact]
 	public async Task GetNormalizedDescriptionById_EmptyGuid_ReturnsBadRequest()
 	{
-		Results<Ok<NormalizedDescriptionResponse>, NotFound, BadRequest<ProblemDetails>> result =
+		Results<Ok<NormalizedDescriptionResponse>, NotFound, BadRequestProblem> result =
 			await _controller.GetNormalizedDescriptionById(Guid.Empty, CancellationToken.None);
 
-		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem bad = Assert.IsType<BadRequestProblem>(result.Result);
 		bad.Value!.Detail.Should().Be(NormalizedDescriptionsController.IdCannotBeEmpty);
 		_mediatorMock.Verify(m => m.Send(It.IsAny<GetNormalizedDescriptionByIdQuery>(), It.IsAny<CancellationToken>()), Times.Never);
 	}
@@ -694,7 +695,7 @@ public class NormalizedDescriptionsControllerTests
 		var result =
 			await _controller.MergeNormalizedDescriptions(keepId, request, CancellationToken.None);
 
-		NotFound<ProblemDetails> notFound = Assert.IsType<NotFound<ProblemDetails>>(result.Result);
+		NotFoundProblem notFound = Assert.IsType<NotFoundProblem>(result.Result);
 		notFound.Value!.Status.Should().Be(404);
 		// The id is carried through so the admin can tell which of the two was stale.
 		notFound.Value.Detail.Should().Contain(discardId.ToString());
@@ -727,7 +728,7 @@ public class NormalizedDescriptionsControllerTests
 		var result =
 			await _controller.MergeNormalizedDescriptions(Guid.Empty, request, CancellationToken.None);
 
-		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem bad = Assert.IsType<BadRequestProblem>(result.Result);
 		bad.Value!.Detail.Should().Be(NormalizedDescriptionsController.IdCannotBeEmpty);
 		_mediatorMock.Verify(m => m.Send(It.IsAny<MergeNormalizedDescriptionsCommand>(), It.IsAny<CancellationToken>()), Times.Never);
 	}
@@ -740,7 +741,7 @@ public class NormalizedDescriptionsControllerTests
 		var result =
 			await _controller.MergeNormalizedDescriptions(Guid.NewGuid(), request, CancellationToken.None);
 
-		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem bad = Assert.IsType<BadRequestProblem>(result.Result);
 		bad.Value!.Detail.Should().Be(NormalizedDescriptionsController.DiscardIdCannotBeEmpty);
 		_mediatorMock.Verify(m => m.Send(It.IsAny<MergeNormalizedDescriptionsCommand>(), It.IsAny<CancellationToken>()), Times.Never);
 	}
@@ -754,7 +755,7 @@ public class NormalizedDescriptionsControllerTests
 		var result =
 			await _controller.MergeNormalizedDescriptions(id, request, CancellationToken.None);
 
-		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem bad = Assert.IsType<BadRequestProblem>(result.Result);
 		bad.Value!.Detail.Should().Be(NormalizedDescriptionsController.MergeIdsMustDiffer);
 		_mediatorMock.Verify(m => m.Send(It.IsAny<MergeNormalizedDescriptionsCommand>(), It.IsAny<CancellationToken>()), Times.Never);
 	}
@@ -841,7 +842,7 @@ public class NormalizedDescriptionsControllerTests
 		var result =
 			await _controller.SplitNormalizedDescription(Guid.Empty, request, CancellationToken.None);
 
-		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem bad = Assert.IsType<BadRequestProblem>(result.Result);
 		bad.Value!.Detail.Should().Be(NormalizedDescriptionsController.IdCannotBeEmpty);
 		_mediatorMock.Verify(m => m.Send(It.IsAny<SplitNormalizedDescriptionCommand>(), It.IsAny<CancellationToken>()), Times.Never);
 	}
@@ -858,7 +859,7 @@ public class NormalizedDescriptionsControllerTests
 		var result =
 			await _controller.SplitNormalizedDescription(Guid.NewGuid(), request, CancellationToken.None);
 
-		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem bad = Assert.IsType<BadRequestProblem>(result.Result);
 		bad.Value!.Detail.Should().Be(NormalizedDescriptionsController.ReceiptItemIdCannotBeEmpty);
 		_mediatorMock.Verify(m => m.Send(It.IsAny<SplitNormalizedDescriptionCommand>(), It.IsAny<CancellationToken>()), Times.Never);
 	}
@@ -875,7 +876,7 @@ public class NormalizedDescriptionsControllerTests
 		var result =
 			await _controller.SplitNormalizedDescription(Guid.NewGuid(), request, CancellationToken.None);
 
-		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem bad = Assert.IsType<BadRequestProblem>(result.Result);
 		bad.Value!.Detail.Should().Be(NormalizedDescriptionsController.SplitRequiresAtLeastOneItem);
 		_mediatorMock.Verify(m => m.Send(It.IsAny<SplitNormalizedDescriptionCommand>(), It.IsAny<CancellationToken>()), Times.Never);
 	}
@@ -892,7 +893,7 @@ public class NormalizedDescriptionsControllerTests
 		var result =
 			await _controller.SplitNormalizedDescription(Guid.NewGuid(), request, CancellationToken.None);
 
-		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem bad = Assert.IsType<BadRequestProblem>(result.Result);
 		bad.Value!.Detail.Should().Be(NormalizedDescriptionsController.SplitNameRequired);
 		_mediatorMock.Verify(m => m.Send(It.IsAny<SplitNormalizedDescriptionCommand>(), It.IsAny<CancellationToken>()), Times.Never);
 	}
@@ -935,7 +936,7 @@ public class NormalizedDescriptionsControllerTests
 				ItemsRelinkedCount: 5,
 				Merged: true));
 
-		Results<Ok<LinkItemTemplateResponse>, BadRequest<ProblemDetails>, NotFound<ProblemDetails>> result =
+		Results<Ok<LinkItemTemplateResponse>, BadRequestProblem, NotFoundProblem> result =
 			await _controller.LinkItemTemplateToNormalizedDescription(rowId, request, CancellationToken.None);
 
 		Ok<LinkItemTemplateResponse> ok = Assert.IsType<Ok<LinkItemTemplateResponse>>(result.Result);
@@ -963,7 +964,7 @@ public class NormalizedDescriptionsControllerTests
 				ItemsRelinkedCount: 0,
 				Merged: false));
 
-		Results<Ok<LinkItemTemplateResponse>, BadRequest<ProblemDetails>, NotFound<ProblemDetails>> result =
+		Results<Ok<LinkItemTemplateResponse>, BadRequestProblem, NotFoundProblem> result =
 			await _controller.LinkItemTemplateToNormalizedDescription(rowId, request, CancellationToken.None);
 
 		Ok<LinkItemTemplateResponse> ok = Assert.IsType<Ok<LinkItemTemplateResponse>>(result.Result);
@@ -977,10 +978,10 @@ public class NormalizedDescriptionsControllerTests
 	{
 		LinkItemTemplateRequest request = new() { ItemTemplateId = Guid.NewGuid() };
 
-		Results<Ok<LinkItemTemplateResponse>, BadRequest<ProblemDetails>, NotFound<ProblemDetails>> result =
+		Results<Ok<LinkItemTemplateResponse>, BadRequestProblem, NotFoundProblem> result =
 			await _controller.LinkItemTemplateToNormalizedDescription(Guid.Empty, request, CancellationToken.None);
 
-		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem bad = Assert.IsType<BadRequestProblem>(result.Result);
 		bad.Value!.Detail.Should().Be(NormalizedDescriptionsController.IdCannotBeEmpty);
 	}
 
@@ -989,10 +990,10 @@ public class NormalizedDescriptionsControllerTests
 	{
 		LinkItemTemplateRequest request = new() { ItemTemplateId = Guid.Empty };
 
-		Results<Ok<LinkItemTemplateResponse>, BadRequest<ProblemDetails>, NotFound<ProblemDetails>> result =
+		Results<Ok<LinkItemTemplateResponse>, BadRequestProblem, NotFoundProblem> result =
 			await _controller.LinkItemTemplateToNormalizedDescription(Guid.NewGuid(), request, CancellationToken.None);
 
-		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem bad = Assert.IsType<BadRequestProblem>(result.Result);
 		bad.Value!.Detail.Should().Be(NormalizedDescriptionsController.ItemTemplateIdCannotBeEmpty);
 	}
 
@@ -1005,10 +1006,10 @@ public class NormalizedDescriptionsControllerTests
 			.Setup(m => m.Send(It.IsAny<LinkItemTemplateCommand>(), It.IsAny<CancellationToken>()))
 			.ThrowsAsync(new KeyNotFoundException("Item template not found."));
 
-		Results<Ok<LinkItemTemplateResponse>, BadRequest<ProblemDetails>, NotFound<ProblemDetails>> result =
+		Results<Ok<LinkItemTemplateResponse>, BadRequestProblem, NotFoundProblem> result =
 			await _controller.LinkItemTemplateToNormalizedDescription(Guid.NewGuid(), request, CancellationToken.None);
 
-		NotFound<ProblemDetails> notFound = Assert.IsType<NotFound<ProblemDetails>>(result.Result);
+		NotFoundProblem notFound = Assert.IsType<NotFoundProblem>(result.Result);
 		notFound.Value!.Status.Should().Be(404);
 		// Both the review queue and the template picker can be minutes old, so "not found" alone
 		// leaves the admin guessing which half of their request went stale.
@@ -1026,10 +1027,10 @@ public class NormalizedDescriptionsControllerTests
 			.Setup(m => m.Send(It.IsAny<LinkItemTemplateCommand>(), It.IsAny<CancellationToken>()))
 			.ThrowsAsync(new InvalidOperationException("This entry was rejected."));
 
-		Results<Ok<LinkItemTemplateResponse>, BadRequest<ProblemDetails>, NotFound<ProblemDetails>> result =
+		Results<Ok<LinkItemTemplateResponse>, BadRequestProblem, NotFoundProblem> result =
 			await _controller.LinkItemTemplateToNormalizedDescription(Guid.NewGuid(), request, CancellationToken.None);
 
-		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem bad = Assert.IsType<BadRequestProblem>(result.Result);
 		bad.Value!.Detail.Should().Be("This entry was rejected.");
 	}
 
@@ -1058,7 +1059,7 @@ public class NormalizedDescriptionsControllerTests
 				It.IsAny<CancellationToken>()))
 			.ReturnsAsync(RenamedDetail(id, "MILK 2% GAL", "Milk"));
 
-		Results<Ok<NormalizedDescriptionResponse>, NotFound<ProblemDetails>, BadRequest<ProblemDetails>, Conflict<ProblemDetails>> result =
+		Results<Ok<NormalizedDescriptionResponse>, NotFoundProblem, BadRequestProblem, ConflictProblem> result =
 			await _controller.RenameNormalizedDescription(id, request, CancellationToken.None);
 
 		Ok<NormalizedDescriptionResponse> ok = Assert.IsType<Ok<NormalizedDescriptionResponse>>(result.Result);
@@ -1081,7 +1082,7 @@ public class NormalizedDescriptionsControllerTests
 				It.IsAny<CancellationToken>()))
 			.ReturnsAsync(RenamedDetail(id, "MILK 2% GAL", null));
 
-		Results<Ok<NormalizedDescriptionResponse>, NotFound<ProblemDetails>, BadRequest<ProblemDetails>, Conflict<ProblemDetails>> result =
+		Results<Ok<NormalizedDescriptionResponse>, NotFoundProblem, BadRequestProblem, ConflictProblem> result =
 			await _controller.RenameNormalizedDescription(id, request, CancellationToken.None);
 
 		Ok<NormalizedDescriptionResponse> ok = Assert.IsType<Ok<NormalizedDescriptionResponse>>(result.Result);
@@ -1099,11 +1100,11 @@ public class NormalizedDescriptionsControllerTests
 			.Setup(m => m.Send(It.IsAny<RenameNormalizedDescriptionCommand>(), It.IsAny<CancellationToken>()))
 			.ThrowsAsync(new InvalidOperationException("Another normalized description already displays that name."));
 
-		Results<Ok<NormalizedDescriptionResponse>, NotFound<ProblemDetails>, BadRequest<ProblemDetails>, Conflict<ProblemDetails>> result =
+		Results<Ok<NormalizedDescriptionResponse>, NotFoundProblem, BadRequestProblem, ConflictProblem> result =
 			await _controller.RenameNormalizedDescription(id, request, CancellationToken.None);
 
 		// 409 rather than 400: the request is well-formed, it just lost to the current registry.
-		Conflict<ProblemDetails> conflict = Assert.IsType<Conflict<ProblemDetails>>(result.Result);
+		ConflictProblem conflict = Assert.IsType<ConflictProblem>(result.Result);
 		conflict.Value!.Detail.Should().Contain("already displays that name");
 	}
 
@@ -1117,10 +1118,10 @@ public class NormalizedDescriptionsControllerTests
 			.Setup(m => m.Send(It.IsAny<RenameNormalizedDescriptionCommand>(), It.IsAny<CancellationToken>()))
 			.ThrowsAsync(new ArgumentException(NormalizedDescription.DisplayLabelCannotBeWhitespace));
 
-		Results<Ok<NormalizedDescriptionResponse>, NotFound<ProblemDetails>, BadRequest<ProblemDetails>, Conflict<ProblemDetails>> result =
+		Results<Ok<NormalizedDescriptionResponse>, NotFoundProblem, BadRequestProblem, ConflictProblem> result =
 			await _controller.RenameNormalizedDescription(id, request, CancellationToken.None);
 
-		Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		Assert.IsType<BadRequestProblem>(result.Result);
 	}
 
 	[Fact]
@@ -1133,10 +1134,10 @@ public class NormalizedDescriptionsControllerTests
 			.Setup(m => m.Send(It.IsAny<RenameNormalizedDescriptionCommand>(), It.IsAny<CancellationToken>()))
 			.ThrowsAsync(new KeyNotFoundException("Normalized description not found."));
 
-		Results<Ok<NormalizedDescriptionResponse>, NotFound<ProblemDetails>, BadRequest<ProblemDetails>, Conflict<ProblemDetails>> result =
+		Results<Ok<NormalizedDescriptionResponse>, NotFoundProblem, BadRequestProblem, ConflictProblem> result =
 			await _controller.RenameNormalizedDescription(id, request, CancellationToken.None);
 
-		Assert.IsType<NotFound<ProblemDetails>>(result.Result);
+		Assert.IsType<NotFoundProblem>(result.Result);
 	}
 
 	[Fact]
@@ -1144,10 +1145,10 @@ public class NormalizedDescriptionsControllerTests
 	{
 		RenameNormalizedDescriptionRequest request = new() { DisplayLabel = "Milk" };
 
-		Results<Ok<NormalizedDescriptionResponse>, NotFound<ProblemDetails>, BadRequest<ProblemDetails>, Conflict<ProblemDetails>> result =
+		Results<Ok<NormalizedDescriptionResponse>, NotFoundProblem, BadRequestProblem, ConflictProblem> result =
 			await _controller.RenameNormalizedDescription(Guid.Empty, request, CancellationToken.None);
 
-		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem bad = Assert.IsType<BadRequestProblem>(result.Result);
 		bad.Value!.Detail.Should().Be(NormalizedDescriptionsController.IdCannotBeEmpty);
 		_mediatorMock.Verify(m => m.Send(It.IsAny<RenameNormalizedDescriptionCommand>(), It.IsAny<CancellationToken>()), Times.Never);
 	}
@@ -1165,7 +1166,7 @@ public class NormalizedDescriptionsControllerTests
 			.Setup(m => m.Send(It.IsAny<UpdateNormalizedDescriptionStatusCommand>(), It.IsAny<CancellationToken>()))
 			.ReturnsAsync(true);
 
-		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result =
+		Results<NoContent, NotFound, BadRequestProblem> result =
 			await _controller.UpdateNormalizedDescriptionStatus(id, request, CancellationToken.None);
 
 		Assert.IsType<NoContent>(result.Result);
@@ -1194,7 +1195,7 @@ public class NormalizedDescriptionsControllerTests
 				It.IsAny<CancellationToken>()))
 			.ReturnsAsync(true);
 
-		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result =
+		Results<NoContent, NotFound, BadRequestProblem> result =
 			await _controller.UpdateNormalizedDescriptionStatus(id, request, CancellationToken.None);
 
 		Assert.IsType<NoContent>(result.Result);
@@ -1219,7 +1220,7 @@ public class NormalizedDescriptionsControllerTests
 				It.IsAny<CancellationToken>()))
 			.ReturnsAsync(true);
 
-		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result =
+		Results<NoContent, NotFound, BadRequestProblem> result =
 			await _controller.UpdateNormalizedDescriptionStatus(id, request, CancellationToken.None);
 
 		Assert.IsType<NoContent>(result.Result);
@@ -1235,7 +1236,7 @@ public class NormalizedDescriptionsControllerTests
 			.Setup(m => m.Send(It.Is<GetNormalizedDescriptionByIdQuery>(q => q.Id == id), It.IsAny<CancellationToken>()))
 			.ReturnsAsync((NormalizedDescriptionDetail?)null);
 
-		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result =
+		Results<NoContent, NotFound, BadRequestProblem> result =
 			await _controller.UpdateNormalizedDescriptionStatus(id, request, CancellationToken.None);
 
 		Assert.IsType<NotFound>(result.Result);
@@ -1248,10 +1249,10 @@ public class NormalizedDescriptionsControllerTests
 	{
 		UpdateNormalizedDescriptionStatusRequest request = new() { Status = DtoStatus.Active };
 
-		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result =
+		Results<NoContent, NotFound, BadRequestProblem> result =
 			await _controller.UpdateNormalizedDescriptionStatus(Guid.Empty, request, CancellationToken.None);
 
-		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem bad = Assert.IsType<BadRequestProblem>(result.Result);
 		bad.Value!.Detail.Should().Be(NormalizedDescriptionsController.IdCannotBeEmpty);
 		_mediatorMock.Verify(m => m.Send(It.IsAny<GetNormalizedDescriptionByIdQuery>(), It.IsAny<CancellationToken>()), Times.Never);
 		_mediatorMock.Verify(m => m.Send(It.IsAny<UpdateNormalizedDescriptionStatusCommand>(), It.IsAny<CancellationToken>()), Times.Never);
@@ -1285,7 +1286,7 @@ public class NormalizedDescriptionsControllerTests
 			.Setup(m => m.Send(It.Is<RequeuePendingCommand>(c => c.ExpectedFingerprint == "digest-abc"), It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new RequeuePendingResult(4, 120, 118));
 
-		Results<Ok<RequeuePendingResponse>, BadRequest<ProblemDetails>, Conflict<ProblemDetails>> result =
+		Results<Ok<RequeuePendingResponse>, BadRequestProblem, ConflictProblem> result =
 			await _controller.RequeuePending(request, CancellationToken.None);
 
 		Ok<RequeuePendingResponse> ok = Assert.IsType<Ok<RequeuePendingResponse>>(result.Result);
@@ -1303,11 +1304,11 @@ public class NormalizedDescriptionsControllerTests
 			.Setup(m => m.Send(It.IsAny<RequeuePendingCommand>(), It.IsAny<CancellationToken>()))
 			.ReturnsAsync((RequeuePendingResult?)null);
 
-		Results<Ok<RequeuePendingResponse>, BadRequest<ProblemDetails>, Conflict<ProblemDetails>> result =
+		Results<Ok<RequeuePendingResponse>, BadRequestProblem, ConflictProblem> result =
 			await _controller.RequeuePending(request, CancellationToken.None);
 
 		// 409, not 500 or a silent success: nothing was deleted and the caller must re-read.
-		Conflict<ProblemDetails> conflict = Assert.IsType<Conflict<ProblemDetails>>(result.Result);
+		ConflictProblem conflict = Assert.IsType<ConflictProblem>(result.Result);
 		conflict.Value!.Detail.Should().Be(NormalizedDescriptionsController.PendingSetChanged);
 	}
 
@@ -1318,12 +1319,12 @@ public class NormalizedDescriptionsControllerTests
 	{
 		RequeuePendingRequest request = new() { ExpectedFingerprint = fingerprint };
 
-		Results<Ok<RequeuePendingResponse>, BadRequest<ProblemDetails>, Conflict<ProblemDetails>> result =
+		Results<Ok<RequeuePendingResponse>, BadRequestProblem, ConflictProblem> result =
 			await _controller.RequeuePending(request, CancellationToken.None);
 
 		// Without a fingerprint there is nothing to compare against, so the guard would be
 		// vacuous. Refuse rather than dispatch an unguarded bulk delete.
-		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem bad = Assert.IsType<BadRequestProblem>(result.Result);
 		bad.Value!.Detail.Should().Be(NormalizedDescriptionsController.ExpectedFingerprintRequired);
 		_mediatorMock.Verify(m => m.Send(It.IsAny<RequeuePendingCommand>(), It.IsAny<CancellationToken>()), Times.Never);
 	}
@@ -1337,7 +1338,7 @@ public class NormalizedDescriptionsControllerTests
 			.Setup(m => m.Send(It.Is<RequeuePendingCommand>(c => c.ExpectedFingerprint == "empty-digest"), It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new RequeuePendingResult(0, 0, 0));
 
-		Results<Ok<RequeuePendingResponse>, BadRequest<ProblemDetails>, Conflict<ProblemDetails>> result =
+		Results<Ok<RequeuePendingResponse>, BadRequestProblem, ConflictProblem> result =
 			await _controller.RequeuePending(request, CancellationToken.None);
 
 		// The empty set has a real digest, so a re-run is a legitimate call, not a validation failure.

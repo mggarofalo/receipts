@@ -13,7 +13,6 @@ namespace API.Controllers;
 [ApiVersion("1.0")]
 [ApiController]
 [Route("api/normalization-catalog")]
-[Produces("application/json")]
 [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest, "application/problem+json")]
 [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden, "application/problem+json")]
 [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound, "application/problem+json")]
@@ -25,13 +24,13 @@ public class NormalizationCatalogController(INormalizationCatalogService service
 
 	[HttpPost("targets/{id:guid}/preview-label")]
 	[EndpointSummary("Preview a global display label change and affected purchases")]
-	public Task<Results<Ok<NormalizationCatalogLabelReviewResponse>, BadRequest<ProblemDetails>, ForbiddenProblem, NotFound<ProblemDetails>, Conflict<ProblemDetails>>> PreviewLabel(
+	public Task<Results<Ok<NormalizationCatalogLabelReviewResponse>, BadRequestProblem, ForbiddenProblem, NotFoundProblem, ConflictProblem>> PreviewLabel(
 		Guid id, [FromBody] NormalizationCatalogLabelPreviewRequest request, CancellationToken cancellationToken) =>
 		Execute(async () => Map(await service.PreviewLabelAsync(Actor, id, request.DisplayLabel, cancellationToken)));
 
 	[HttpPost("targets/{id:guid}/approve-label")]
 	[EndpointSummary("Approve a global display label change at the reviewed revision")]
-	public Task<Results<Ok<NormalizationCatalogLabelReviewResponse>, BadRequest<ProblemDetails>, ForbiddenProblem, NotFound<ProblemDetails>, Conflict<ProblemDetails>>> ApproveLabel(
+	public Task<Results<Ok<NormalizationCatalogLabelReviewResponse>, BadRequestProblem, ForbiddenProblem, NotFoundProblem, ConflictProblem>> ApproveLabel(
 		Guid id, [FromBody] NormalizationCatalogLabelApprovalRequest request, CancellationToken cancellationToken) =>
 		Execute(async () => Map(await service.ApproveLabelAsync(Actor, id,
 			new(request.DisplayLabel, request.ExpectedTargetRevision, request.ExpectedAffectedItemCount,
@@ -49,7 +48,7 @@ public class NormalizationCatalogController(INormalizationCatalogService service
 
 	[HttpGet("sources")]
 	[EndpointSummary("List distinct receipt descriptions and their normalization coverage")]
-	public Task<Results<Ok<NormalizationSourcePageResponse>, BadRequest<ProblemDetails>, ForbiddenProblem, NotFound<ProblemDetails>, Conflict<ProblemDetails>>> ListSources(
+	public Task<Results<Ok<NormalizationSourcePageResponse>, BadRequestProblem, ForbiddenProblem, NotFoundProblem, ConflictProblem>> ListSources(
 		string? q = null, string disposition = "needs-review", int offset = 0, int limit = 25, CancellationToken cancellationToken = default) =>
 		Execute(async () =>
 		{
@@ -85,7 +84,7 @@ public class NormalizationCatalogController(INormalizationCatalogService service
 
 	[HttpGet("coverage")]
 	[EndpointSummary("Get normalization coverage across live receipt items")]
-	public Task<Results<Ok<NormalizationCatalogCoverageResponse>, BadRequest<ProblemDetails>, ForbiddenProblem, NotFound<ProblemDetails>, Conflict<ProblemDetails>>> GetCoverage(CancellationToken cancellationToken) =>
+	public Task<Results<Ok<NormalizationCatalogCoverageResponse>, BadRequestProblem, ForbiddenProblem, NotFoundProblem, ConflictProblem>> GetCoverage(CancellationToken cancellationToken) =>
 		Execute(async () =>
 		{
 			NormalizationCatalogCoverage value = await service.GetCoverageAsync(Actor, cancellationToken);
@@ -110,7 +109,7 @@ public class NormalizationCatalogController(INormalizationCatalogService service
 
 	[HttpGet("candidates")]
 	[EndpointSummary("Get matching candidates and approved source examples")]
-	public Task<Results<Ok<List<NormalizationCatalogCandidateResponse>>, BadRequest<ProblemDetails>, ForbiddenProblem, NotFound<ProblemDetails>, Conflict<ProblemDetails>>> GetCandidates(
+	public Task<Results<Ok<List<NormalizationCatalogCandidateResponse>>, BadRequestProblem, ForbiddenProblem, NotFoundProblem, ConflictProblem>> GetCandidates(
 		string location, string description, string? itemCode = null, CancellationToken cancellationToken = default) =>
 		Execute(async () => (await service.GetCandidatesAsync(Actor, new(location, description, itemCode), cancellationToken))
 			.Select(candidate => new NormalizationCatalogCandidateResponse
@@ -125,13 +124,13 @@ public class NormalizationCatalogController(INormalizationCatalogService service
 
 	[HttpGet("mappings")]
 	[EndpointSummary("Get mapping history for a scoped source description")]
-	public Task<Results<Ok<List<NormalizationSourceMappingResponse>>, BadRequest<ProblemDetails>, ForbiddenProblem, NotFound<ProblemDetails>, Conflict<ProblemDetails>>> ListMappings(
+	public Task<Results<Ok<List<NormalizationSourceMappingResponse>>, BadRequestProblem, ForbiddenProblem, NotFoundProblem, ConflictProblem>> ListMappings(
 		string location, string description, string? itemCode = null, CancellationToken cancellationToken = default) =>
 		Execute(async () => (await service.ListMappingsAsync(Actor, new(location, description, itemCode), cancellationToken)).Select(Map).ToList());
 
 	[HttpPost("operations")]
 	[EndpointSummary("Preview a scoped mapping and historical changes without applying them")]
-	public Task<Results<Ok<NormalizationCatalogOperationResponse>, BadRequest<ProblemDetails>, ForbiddenProblem, NotFound<ProblemDetails>, Conflict<ProblemDetails>>> Preview(
+	public Task<Results<Ok<NormalizationCatalogOperationResponse>, BadRequestProblem, ForbiddenProblem, NotFoundProblem, ConflictProblem>> Preview(
 		[FromBody] NormalizationCatalogPreviewRequest request, CancellationToken cancellationToken) =>
 		Execute(async () => Map(await service.PreviewAsync(Actor,
 			new(request.ClientRequestId, Map(request.Source), request.TargetId, request.TargetRevision,
@@ -140,45 +139,45 @@ public class NormalizationCatalogController(INormalizationCatalogService service
 
 	[HttpGet("operations")]
 	[EndpointSummary("List recent historical normalization operations")]
-	public Task<Results<Ok<List<NormalizationCatalogOperationResponse>>, BadRequest<ProblemDetails>, ForbiddenProblem, NotFound<ProblemDetails>, Conflict<ProblemDetails>>> ListOperations(CancellationToken cancellationToken) =>
+	public Task<Results<Ok<List<NormalizationCatalogOperationResponse>>, BadRequestProblem, ForbiddenProblem, NotFoundProblem, ConflictProblem>> ListOperations(CancellationToken cancellationToken) =>
 		Execute(async () => (await service.ListOperationsAsync(Actor, cancellationToken)).Select(Map).ToList());
 
 	[HttpGet("operations/{id:guid}")]
 	[EndpointSummary("Get historical normalization progress")]
-	public Task<Results<Ok<NormalizationCatalogOperationResponse>, BadRequest<ProblemDetails>, ForbiddenProblem, NotFound<ProblemDetails>, Conflict<ProblemDetails>>> GetOperation(Guid id, CancellationToken cancellationToken) =>
+	public Task<Results<Ok<NormalizationCatalogOperationResponse>, BadRequestProblem, ForbiddenProblem, NotFoundProblem, ConflictProblem>> GetOperation(Guid id, CancellationToken cancellationToken) =>
 		Execute(async () => Map(await service.GetOperationAsync(Actor, id, cancellationToken)
 			?? throw new NormalizationCatalogException(404, "not_found", "Normalization operation not found.")));
 
 	[HttpPost("operations/{id:guid}/approve")]
 	[EndpointSummary("Approve the preview and apply a bounded historical batch")]
-	public Task<Results<Ok<NormalizationCatalogOperationResponse>, BadRequest<ProblemDetails>, ForbiddenProblem, NotFound<ProblemDetails>, Conflict<ProblemDetails>>> Approve(
+	public Task<Results<Ok<NormalizationCatalogOperationResponse>, BadRequestProblem, ForbiddenProblem, NotFoundProblem, ConflictProblem>> Approve(
 		Guid id, [FromBody] NormalizationCatalogRevisionRequest request, CancellationToken cancellationToken) =>
 		Execute(async () => Map(await service.ApproveAsync(Actor, id, request.ExpectedRevision, cancellationToken)));
 
 	[HttpPost("operations/{id:guid}/resume")]
 	[EndpointSummary("Continue an approved historical operation")]
-	public Task<Results<Ok<NormalizationCatalogOperationResponse>, BadRequest<ProblemDetails>, ForbiddenProblem, NotFound<ProblemDetails>, Conflict<ProblemDetails>>> Resume(Guid id, CancellationToken cancellationToken) =>
+	public Task<Results<Ok<NormalizationCatalogOperationResponse>, BadRequestProblem, ForbiddenProblem, NotFoundProblem, ConflictProblem>> Resume(Guid id, CancellationToken cancellationToken) =>
 		Execute(async () => Map(await service.ResumeAsync(Actor, id, cancellationToken)));
 
 	[HttpPost("operations/{id:guid}/cancel")]
 	[EndpointSummary("Stop propagation and revoke the operation mapping")]
-	public Task<Results<Ok<NormalizationCatalogOperationResponse>, BadRequest<ProblemDetails>, ForbiddenProblem, NotFound<ProblemDetails>, Conflict<ProblemDetails>>> Cancel(
+	public Task<Results<Ok<NormalizationCatalogOperationResponse>, BadRequestProblem, ForbiddenProblem, NotFoundProblem, ConflictProblem>> Cancel(
 		Guid id, [FromBody] NormalizationCatalogRevisionRequest request, CancellationToken cancellationToken) =>
 		Execute(async () => Map(await service.CancelAsync(Actor, id, request.ExpectedRevision, cancellationToken)));
 
 	[HttpPost("operations/{id:guid}/undo")]
 	[EndpointSummary("Undo changes still owned by this operation")]
-	public Task<Results<Ok<NormalizationCatalogOperationResponse>, BadRequest<ProblemDetails>, ForbiddenProblem, NotFound<ProblemDetails>, Conflict<ProblemDetails>>> Undo(
+	public Task<Results<Ok<NormalizationCatalogOperationResponse>, BadRequestProblem, ForbiddenProblem, NotFoundProblem, ConflictProblem>> Undo(
 		Guid id, [FromBody] NormalizationCatalogRevisionRequest request, CancellationToken cancellationToken) =>
 		Execute(async () => Map(await service.UndoAsync(Actor, id, request.ExpectedRevision, cancellationToken)));
 
 	[HttpPost("mappings/{id:guid}/revoke")]
 	[EndpointSummary("Revoke a source mapping to stop future reuse")]
-	public Task<Results<Ok<NormalizationSourceMappingResponse>, BadRequest<ProblemDetails>, ForbiddenProblem, NotFound<ProblemDetails>, Conflict<ProblemDetails>>> Revoke(
+	public Task<Results<Ok<NormalizationSourceMappingResponse>, BadRequestProblem, ForbiddenProblem, NotFoundProblem, ConflictProblem>> Revoke(
 		Guid id, [FromBody] NormalizationCatalogRevisionRequest request, CancellationToken cancellationToken) =>
 		Execute(async () => Map(await service.RevokeAsync(Actor, id, request.ExpectedRevision, cancellationToken)));
 
-	private async Task<Results<Ok<T>, BadRequest<ProblemDetails>, ForbiddenProblem, NotFound<ProblemDetails>, Conflict<ProblemDetails>>> Execute<T>(Func<Task<T>> action)
+	private async Task<Results<Ok<T>, BadRequestProblem, ForbiddenProblem, NotFoundProblem, ConflictProblem>> Execute<T>(Func<Task<T>> action)
 	{
 		try { return TypedResults.Ok(await action()); }
 		catch (NormalizationCatalogException exception)

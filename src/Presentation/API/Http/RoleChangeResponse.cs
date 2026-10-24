@@ -5,7 +5,7 @@ namespace API.Http;
 
 internal static class RoleChangeResponse
 {
-	public static Results<NoContent, NotFound, BadRequest<ProblemDetails>, Conflict<ProblemDetails>> From(RoleChangeResult result) =>
+	public static Results<NoContent, NotFound, BadRequestProblem, ConflictProblem> From(RoleChangeResult result) =>
 		result.Status switch
 		{
 			RoleChangeStatus.Success => TypedResults.NoContent(),

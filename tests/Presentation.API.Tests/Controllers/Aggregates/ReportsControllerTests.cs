@@ -1,5 +1,6 @@
-﻿using API.Controllers.Aggregates;
+using API.Controllers.Aggregates;
 using API.Generated.Dtos;
+using API.Http;
 using Application.Commands.Reports;
 using Application.Queries.Aggregates.Reports;
 using FluentAssertions;
@@ -39,7 +40,7 @@ public class ReportsControllerTests
 			.ReturnsAsync(reportResult);
 
 		// Act
-		Results<Ok<OutOfBalanceResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<OutOfBalanceResponse>, BadRequestProblem> result =
 			await _controller.GetOutOfBalance(null, null, null, null, CancellationToken.None);
 
 		// Assert
@@ -65,7 +66,7 @@ public class ReportsControllerTests
 			.ReturnsAsync(reportResult);
 
 		// Act
-		Results<Ok<OutOfBalanceResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<OutOfBalanceResponse>, BadRequestProblem> result =
 			await _controller.GetOutOfBalance("difference", "desc", 2, 25, CancellationToken.None);
 
 		// Assert
@@ -80,11 +81,11 @@ public class ReportsControllerTests
 	public async Task GetOutOfBalance_ReturnsBadRequest_WhenInvalidSortBy()
 	{
 		// Act
-		Results<Ok<OutOfBalanceResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<OutOfBalanceResponse>, BadRequestProblem> result =
 			await _controller.GetOutOfBalance("invalid", null, null, null, CancellationToken.None);
 
 		// Assert
-		BadRequest<ProblemDetails> badResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badResult.Value!.Detail.Should().Contain("Invalid sortBy");
 	}
 
@@ -92,11 +93,11 @@ public class ReportsControllerTests
 	public async Task GetOutOfBalance_ReturnsBadRequest_WhenInvalidSortDirection()
 	{
 		// Act
-		Results<Ok<OutOfBalanceResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<OutOfBalanceResponse>, BadRequestProblem> result =
 			await _controller.GetOutOfBalance(null, "invalid", null, null, CancellationToken.None);
 
 		// Assert
-		BadRequest<ProblemDetails> badResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badResult.Value!.Detail.Should().Contain("Invalid sortDirection");
 	}
 
@@ -104,11 +105,11 @@ public class ReportsControllerTests
 	public async Task GetOutOfBalance_ReturnsBadRequest_WhenPageLessThanOne()
 	{
 		// Act
-		Results<Ok<OutOfBalanceResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<OutOfBalanceResponse>, BadRequestProblem> result =
 			await _controller.GetOutOfBalance(null, null, 0, null, CancellationToken.None);
 
 		// Assert
-		BadRequest<ProblemDetails> badResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badResult.Value!.Detail.Should().Be("page must be at least 1");
 	}
 
@@ -119,11 +120,11 @@ public class ReportsControllerTests
 	public async Task GetOutOfBalance_ReturnsBadRequest_WhenPageSizeOutOfRange(int pageSize)
 	{
 		// Act
-		Results<Ok<OutOfBalanceResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<OutOfBalanceResponse>, BadRequestProblem> result =
 			await _controller.GetOutOfBalance(null, null, null, pageSize, CancellationToken.None);
 
 		// Assert
-		BadRequest<ProblemDetails> badResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badResult.Value!.Detail.Should().Be("pageSize must be between 1 and 100");
 	}
 
@@ -141,7 +142,7 @@ public class ReportsControllerTests
 			.ReturnsAsync(reportResult);
 
 		// Act
-		Results<Ok<OutOfBalanceResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<OutOfBalanceResponse>, BadRequestProblem> result =
 			await _controller.GetOutOfBalance(sortBy, null, null, null, CancellationToken.None);
 
 		// Assert
@@ -184,7 +185,7 @@ public class ReportsControllerTests
 			.ReturnsAsync(reportResult);
 
 		// Act
-		Results<Ok<OutOfBalanceResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<OutOfBalanceResponse>, BadRequestProblem> result =
 			await _controller.GetOutOfBalance(null, null, null, null, CancellationToken.None);
 
 		// Assert
@@ -220,7 +221,7 @@ public class ReportsControllerTests
 			.ReturnsAsync(descResult);
 
 		// Act
-		Results<Ok<ItemDescriptionsResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<ItemDescriptionsResponse>, BadRequestProblem> result =
 			await _controller.GetItemDescriptions("mi", null, null, CancellationToken.None);
 
 		// Assert
@@ -244,7 +245,7 @@ public class ReportsControllerTests
 			.ReturnsAsync(descResult);
 
 		// Act
-		Results<Ok<ItemDescriptionsResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<ItemDescriptionsResponse>, BadRequestProblem> result =
 			await _controller.GetItemDescriptions("da", true, 10, CancellationToken.None);
 
 		// Assert
@@ -262,11 +263,11 @@ public class ReportsControllerTests
 	public async Task GetItemDescriptions_ReturnsBadRequest_WhenSearchTooShort(string? search)
 	{
 		// Act
-		Results<Ok<ItemDescriptionsResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<ItemDescriptionsResponse>, BadRequestProblem> result =
 			await _controller.GetItemDescriptions(search, null, null, CancellationToken.None);
 
 		// Assert
-		BadRequest<ProblemDetails> badResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badResult.Value!.Detail.Should().Contain("search must be at least 2 characters");
 	}
 
@@ -277,11 +278,11 @@ public class ReportsControllerTests
 	public async Task GetItemDescriptions_ReturnsBadRequest_WhenLimitOutOfRange(int limit)
 	{
 		// Act
-		Results<Ok<ItemDescriptionsResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<ItemDescriptionsResponse>, BadRequestProblem> result =
 			await _controller.GetItemDescriptions("milk", null, limit, CancellationToken.None);
 
 		// Assert
-		BadRequest<ProblemDetails> badResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badResult.Value!.Detail.Should().Contain("limit must be between 1 and 50");
 	}
 
@@ -304,7 +305,7 @@ public class ReportsControllerTests
 			.ReturnsAsync(costResult);
 
 		// Act
-		Results<Ok<ItemCostOverTimeResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<ItemCostOverTimeResponse>, BadRequestProblem> result =
 			await _controller.GetItemCostOverTime("Milk", null, null, null, null, null, CancellationToken.None);
 
 		// Assert
@@ -327,7 +328,7 @@ public class ReportsControllerTests
 			.ReturnsAsync(costResult);
 
 		// Act
-		Results<Ok<ItemCostOverTimeResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<ItemCostOverTimeResponse>, BadRequestProblem> result =
 			await _controller.GetItemCostOverTime(null, "Dairy", null, null, "monthly", null, CancellationToken.None);
 
 		// Assert
@@ -342,11 +343,11 @@ public class ReportsControllerTests
 	public async Task GetItemCostOverTime_ReturnsBadRequest_WhenNoDescriptionCategoryOrNormalizedDescription()
 	{
 		// Act
-		Results<Ok<ItemCostOverTimeResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<ItemCostOverTimeResponse>, BadRequestProblem> result =
 			await _controller.GetItemCostOverTime(null, null, null, null, null, null, CancellationToken.None);
 
 		// Assert
-		BadRequest<ProblemDetails> badResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badResult.Value!.Detail.Should().Contain("One of description, normalizedDescription, or category is required");
 	}
 
@@ -366,7 +367,7 @@ public class ReportsControllerTests
 			.ReturnsAsync(costResult);
 
 		// Act
-		Results<Ok<ItemCostOverTimeResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<ItemCostOverTimeResponse>, BadRequestProblem> result =
 			await _controller.GetItemCostOverTime(null, null, null, null, null, "Milk", CancellationToken.None);
 
 		// Assert
@@ -398,11 +399,11 @@ public class ReportsControllerTests
 	public async Task GetItemCostOverTime_ReturnsBadRequest_WhenInvalidGranularity()
 	{
 		// Act
-		Results<Ok<ItemCostOverTimeResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<ItemCostOverTimeResponse>, BadRequestProblem> result =
 			await _controller.GetItemCostOverTime("Milk", null, null, null, "invalid", null, CancellationToken.None);
 
 		// Assert
-		BadRequest<ProblemDetails> badResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badResult.Value!.Detail.Should().Contain("Invalid granularity");
 	}
 
@@ -421,7 +422,7 @@ public class ReportsControllerTests
 			.ReturnsAsync(costResult);
 
 		// Act
-		Results<Ok<ItemCostOverTimeResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<ItemCostOverTimeResponse>, BadRequestProblem> result =
 			await _controller.GetItemCostOverTime("Milk", null, null, null, granularity, null, CancellationToken.None);
 
 		// Assert
@@ -432,11 +433,11 @@ public class ReportsControllerTests
 	public async Task GetItemCostOverTime_ReturnsBadRequest_WhenStartDateAfterEndDate()
 	{
 		// Act
-		Results<Ok<ItemCostOverTimeResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<ItemCostOverTimeResponse>, BadRequestProblem> result =
 			await _controller.GetItemCostOverTime("Milk", null, new DateOnly(2025, 12, 31), new DateOnly(2025, 1, 1), null, null, CancellationToken.None);
 
 		// Assert
-		BadRequest<ProblemDetails> badResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badResult.Value!.Detail.Should().Contain("startDate must be before or equal to endDate");
 	}
 
@@ -455,7 +456,7 @@ public class ReportsControllerTests
 			.ReturnsAsync(costResult);
 
 		// Act
-		Results<Ok<ItemCostOverTimeResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<ItemCostOverTimeResponse>, BadRequestProblem> result =
 			await _controller.GetItemCostOverTime("Milk", null, start, end, null, null, CancellationToken.None);
 
 		// Assert
@@ -483,7 +484,7 @@ public class ReportsControllerTests
 			.ReturnsAsync(trendsResult);
 
 		// Act
-		Results<Ok<CategoryTrendsResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<CategoryTrendsResponse>, BadRequestProblem> result =
 			await _controller.GetCategoryTrends(null, null, null, null, CancellationToken.None);
 
 		// Assert
@@ -499,11 +500,11 @@ public class ReportsControllerTests
 	public async Task GetCategoryTrends_ReturnsBadRequest_WhenStartDateAfterEndDate()
 	{
 		// Act
-		Results<Ok<CategoryTrendsResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<CategoryTrendsResponse>, BadRequestProblem> result =
 			await _controller.GetCategoryTrends(new DateOnly(2025, 12, 31), new DateOnly(2025, 1, 1), null, null, CancellationToken.None);
 
 		// Assert
-		BadRequest<ProblemDetails> badResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badResult.Value!.Detail.Should().Contain("startDate must be before or equal to endDate");
 	}
 
@@ -511,11 +512,11 @@ public class ReportsControllerTests
 	public async Task GetCategoryTrends_ReturnsBadRequest_WhenInvalidGranularity()
 	{
 		// Act
-		Results<Ok<CategoryTrendsResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<CategoryTrendsResponse>, BadRequestProblem> result =
 			await _controller.GetCategoryTrends(null, null, "invalid", null, CancellationToken.None);
 
 		// Assert
-		BadRequest<ProblemDetails> badResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badResult.Value!.Detail.Should().Contain("Invalid granularity");
 	}
 
@@ -535,7 +536,7 @@ public class ReportsControllerTests
 			.ReturnsAsync(trendsResult);
 
 		// Act
-		Results<Ok<CategoryTrendsResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<CategoryTrendsResponse>, BadRequestProblem> result =
 			await _controller.GetCategoryTrends(null, null, granularity, null, CancellationToken.None);
 
 		// Assert
@@ -546,11 +547,11 @@ public class ReportsControllerTests
 	public async Task GetCategoryTrends_ReturnsBadRequest_WhenTopNTooLow()
 	{
 		// Act
-		Results<Ok<CategoryTrendsResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<CategoryTrendsResponse>, BadRequestProblem> result =
 			await _controller.GetCategoryTrends(null, null, null, 0, CancellationToken.None);
 
 		// Assert
-		BadRequest<ProblemDetails> badResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badResult.Value!.Detail.Should().Contain("topN must be between 1 and 50");
 	}
 
@@ -558,11 +559,11 @@ public class ReportsControllerTests
 	public async Task GetCategoryTrends_ReturnsBadRequest_WhenTopNTooHigh()
 	{
 		// Act
-		Results<Ok<CategoryTrendsResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<CategoryTrendsResponse>, BadRequestProblem> result =
 			await _controller.GetCategoryTrends(null, null, null, 51, CancellationToken.None);
 
 		// Assert
-		BadRequest<ProblemDetails> badResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badResult.Value!.Detail.Should().Contain("topN must be between 1 and 50");
 	}
 
@@ -581,7 +582,7 @@ public class ReportsControllerTests
 			.ReturnsAsync(trendsResult);
 
 		// Act
-		Results<Ok<CategoryTrendsResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<CategoryTrendsResponse>, BadRequestProblem> result =
 			await _controller.GetCategoryTrends(start, end, "quarterly", 5, CancellationToken.None);
 
 		// Assert
@@ -607,7 +608,7 @@ public class ReportsControllerTests
 			.ReturnsAsync(reportResult);
 
 		// Act
-		Results<Ok<DuplicatesResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<DuplicatesResponse>, BadRequestProblem> result =
 			await _controller.GetDuplicates(null, null, null, null, CancellationToken.None);
 
 		// Assert
@@ -634,7 +635,7 @@ public class ReportsControllerTests
 			.ReturnsAsync(reportResult);
 
 		// Act
-		Results<Ok<DuplicatesResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<DuplicatesResponse>, BadRequestProblem> result =
 			await _controller.GetDuplicates(matchOn, null, null, null, CancellationToken.None);
 
 		// Assert
@@ -657,7 +658,7 @@ public class ReportsControllerTests
 			.ReturnsAsync(reportResult);
 
 		// Act
-		Results<Ok<DuplicatesResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<DuplicatesResponse>, BadRequestProblem> result =
 			await _controller.GetDuplicates(matchOn, null, null, null, CancellationToken.None);
 
 		// Assert
@@ -668,11 +669,11 @@ public class ReportsControllerTests
 	public async Task GetDuplicates_ReturnsBadRequest_WhenInvalidMatchOn()
 	{
 		// Act
-		Results<Ok<DuplicatesResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<DuplicatesResponse>, BadRequestProblem> result =
 			await _controller.GetDuplicates("bogus", null, null, null, CancellationToken.None);
 
 		// Assert
-		BadRequest<ProblemDetails> badResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badResult.Value!.Detail.Should().Contain("Invalid matchOn");
 		badResult.Value!.Detail.Should().Contain("dateAndLocation");
 	}
@@ -681,11 +682,11 @@ public class ReportsControllerTests
 	public async Task GetDuplicates_ReturnsBadRequest_WhenInvalidLocationTolerance()
 	{
 		// Act
-		Results<Ok<DuplicatesResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<DuplicatesResponse>, BadRequestProblem> result =
 			await _controller.GetDuplicates(null, "fuzzy", null, null, CancellationToken.None);
 
 		// Assert
-		BadRequest<ProblemDetails> badResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badResult.Value!.Detail.Should().Contain("Invalid locationTolerance");
 	}
 
@@ -693,11 +694,11 @@ public class ReportsControllerTests
 	public async Task GetDuplicates_ReturnsBadRequest_WhenNegativeTotalTolerance()
 	{
 		// Act
-		Results<Ok<DuplicatesResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<DuplicatesResponse>, BadRequestProblem> result =
 			await _controller.GetDuplicates(null, null, -0.01, null, CancellationToken.None);
 
 		// Assert
-		BadRequest<ProblemDetails> badResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badResult.Value!.Detail.Should().Be("totalTolerance must be >= 0");
 	}
 
@@ -714,7 +715,7 @@ public class ReportsControllerTests
 			.ReturnsAsync(reportResult);
 
 		// Act
-		Results<Ok<DuplicatesResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<DuplicatesResponse>, BadRequestProblem> result =
 			await _controller.GetDuplicates("dateAndLocationAndTotal", "normalized", 0.05, null, CancellationToken.None);
 
 		// Assert
@@ -745,7 +746,7 @@ public class ReportsControllerTests
 			.ReturnsAsync(reportResult);
 
 		// Act
-		Results<Ok<DuplicatesResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<DuplicatesResponse>, BadRequestProblem> result =
 			await _controller.GetDuplicates(null, null, null, null, CancellationToken.None);
 
 		// Assert
@@ -780,7 +781,7 @@ public class ReportsControllerTests
 			.ReturnsAsync(reportResult);
 
 		// Act
-		Results<Ok<DuplicatesResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<DuplicatesResponse>, BadRequestProblem> result =
 			await _controller.GetDuplicates(null, null, null, null, CancellationToken.None);
 
 		// Assert
@@ -802,7 +803,7 @@ public class ReportsControllerTests
 			.ReturnsAsync(reportResult);
 
 		// Act
-		Results<Ok<DuplicatesResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<DuplicatesResponse>, BadRequestProblem> result =
 			await _controller.GetDuplicates(null, null, null, true, CancellationToken.None);
 
 		// Assert
@@ -837,7 +838,7 @@ public class ReportsControllerTests
 			.ReturnsAsync(reportResult);
 
 		// Act
-		Results<Ok<DuplicatesResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<DuplicatesResponse>, BadRequestProblem> result =
 			await _controller.GetDuplicates(null, null, null, true, CancellationToken.None);
 
 		// Assert
@@ -927,7 +928,7 @@ public class ReportsControllerTests
 			.ReturnsAsync(1);
 
 		// Act
-		Results<Ok<AcceptDuplicateGroupResponse>, NotFound<ProblemDetails>> result =
+		Results<Ok<AcceptDuplicateGroupResponse>, NotFoundProblem> result =
 			await _controller.AcceptDuplicateGroup(request, CancellationToken.None);
 
 		// Assert
@@ -953,7 +954,7 @@ public class ReportsControllerTests
 			.ReturnsAsync(1);
 
 		// Act
-		Results<Ok<AcceptDuplicateGroupResponse>, NotFound<ProblemDetails>> result =
+		Results<Ok<AcceptDuplicateGroupResponse>, NotFoundProblem> result =
 			await _controller.AcceptDuplicateGroup(request, CancellationToken.None);
 
 		// Assert
@@ -977,11 +978,11 @@ public class ReportsControllerTests
 			.ThrowsAsync(new KeyNotFoundException($"Receipt(s) not found: {missing}"));
 
 		// Act
-		Results<Ok<AcceptDuplicateGroupResponse>, NotFound<ProblemDetails>> result =
+		Results<Ok<AcceptDuplicateGroupResponse>, NotFoundProblem> result =
 			await _controller.AcceptDuplicateGroup(request, CancellationToken.None);
 
 		// Assert
-		NotFound<ProblemDetails> notFoundResult = Assert.IsType<NotFound<ProblemDetails>>(result.Result);
+		NotFoundProblem notFoundResult = Assert.IsType<NotFoundProblem>(result.Result);
 		notFoundResult.Value!.Detail.Should().Contain(missing.ToString());
 	}
 
@@ -1048,7 +1049,7 @@ public class ReportsControllerTests
 			.ReturnsAsync(reportResult);
 
 		// Act
-		Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequestProblem> result =
 			await _controller.GetSpendingByNormalizedDescription(null, null, null, null, null, null, CancellationToken.None);
 
 		// Assert
@@ -1071,7 +1072,7 @@ public class ReportsControllerTests
 			.ReturnsAsync(reportResult);
 
 		// Act
-		Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequestProblem> result =
 			await _controller.GetSpendingByNormalizedDescription(null, null, null, null, null, null, CancellationToken.None);
 
 		// Assert
@@ -1095,7 +1096,7 @@ public class ReportsControllerTests
 			.ReturnsAsync(reportResult);
 
 		// Act
-		Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequestProblem> result =
 			await _controller.GetSpendingByNormalizedDescription(null, null, "canonicalName", "asc", 2, 10, CancellationToken.None);
 
 		// Assert
@@ -1121,7 +1122,7 @@ public class ReportsControllerTests
 			.ReturnsAsync(reportResult);
 
 		// Act
-		Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequestProblem> result =
 			await _controller.GetSpendingByNormalizedDescription(null, null, sortBy, null, null, null, CancellationToken.None);
 
 		// Assert
@@ -1132,11 +1133,11 @@ public class ReportsControllerTests
 	public async Task GetSpendingByNormalizedDescription_ReturnsBadRequest_WhenInvalidSortBy()
 	{
 		// Act
-		Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequestProblem> result =
 			await _controller.GetSpendingByNormalizedDescription(null, null, "invalid", null, null, null, CancellationToken.None);
 
 		// Assert
-		BadRequest<ProblemDetails> badResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badResult.Value!.Detail.Should().Contain("Invalid sortBy");
 	}
 
@@ -1144,11 +1145,11 @@ public class ReportsControllerTests
 	public async Task GetSpendingByNormalizedDescription_ReturnsBadRequest_WhenInvalidSortDirection()
 	{
 		// Act
-		Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequestProblem> result =
 			await _controller.GetSpendingByNormalizedDescription(null, null, null, "invalid", null, null, CancellationToken.None);
 
 		// Assert
-		BadRequest<ProblemDetails> badResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badResult.Value!.Detail.Should().Contain("Invalid sortDirection");
 	}
 
@@ -1156,11 +1157,11 @@ public class ReportsControllerTests
 	public async Task GetSpendingByNormalizedDescription_ReturnsBadRequest_WhenPageLessThanOne()
 	{
 		// Act
-		Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequestProblem> result =
 			await _controller.GetSpendingByNormalizedDescription(null, null, null, null, 0, null, CancellationToken.None);
 
 		// Assert
-		BadRequest<ProblemDetails> badResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badResult.Value!.Detail.Should().Be("page must be at least 1");
 	}
 
@@ -1171,11 +1172,11 @@ public class ReportsControllerTests
 	public async Task GetSpendingByNormalizedDescription_ReturnsBadRequest_WhenPageSizeOutOfRange(int pageSize)
 	{
 		// Act
-		Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequestProblem> result =
 			await _controller.GetSpendingByNormalizedDescription(null, null, null, null, null, pageSize, CancellationToken.None);
 
 		// Assert
-		BadRequest<ProblemDetails> badResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badResult.Value!.Detail.Should().Be("pageSize must be between 1 and 100");
 	}
 
@@ -1193,7 +1194,7 @@ public class ReportsControllerTests
 			.ReturnsAsync(reportResult);
 
 		// Act
-		Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequestProblem> result =
 			await _controller.GetSpendingByNormalizedDescription(from, to, null, null, null, null, CancellationToken.None);
 
 		// Assert
@@ -1214,11 +1215,11 @@ public class ReportsControllerTests
 		DateTimeOffset to = new(2025, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
 		// Act
-		Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequestProblem> result =
 			await _controller.GetSpendingByNormalizedDescription(from, to, null, null, null, null, CancellationToken.None);
 
 		// Assert
-		BadRequest<ProblemDetails> badResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badResult.Value!.Detail.Should().Contain("from must be before or equal to to");
 		_mediatorMock.Verify(
 			m => m.Send(It.IsAny<GetSpendingByNormalizedDescriptionQuery>(), It.IsAny<CancellationToken>()),
@@ -1245,7 +1246,7 @@ public class ReportsControllerTests
 			.ReturnsAsync(reportResult);
 
 		// Act
-		Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequestProblem> result =
 			await _controller.GetSpendingByNormalizedDescription(null, null, null, null, null, null, CancellationToken.None);
 
 		// Assert
@@ -1290,7 +1291,7 @@ public class ReportsControllerTests
 			.ReturnsAsync(reportResult);
 
 		// Act
-		Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequestProblem> result =
 			await _controller.GetSpendingByNormalizedDescription(from, null, null, null, null, null, CancellationToken.None);
 
 		// Assert
@@ -1310,7 +1311,7 @@ public class ReportsControllerTests
 			.ReturnsAsync(reportResult);
 
 		// Act
-		Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<SpendingByNormalizedDescriptionResponse>, BadRequestProblem> result =
 			await _controller.GetSpendingByNormalizedDescription(null, to, null, null, null, null, CancellationToken.None);
 
 		// Assert

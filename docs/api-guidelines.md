@@ -8,6 +8,12 @@ The canonical API contract lives in `openapi/spec.yaml` (OpenAPI 3.1.0). All API
 
 **npm scripts:** `npm run lint:spec`, `npm run check:drift`, `npm run check:breaking -- origin/main`
 
+`check:drift` also runs `check:problems`, which checks every declared
+`ProblemDetails` response for its status, sole `application/problem+json` media
+type, and schema reference in both documents. This includes existing 403/503
+problem responses while preserving ordinary domain-response DTOs and bodiless
+errors. Run its regression tests with `node --test scripts/check-problem-contract.test.mjs`.
+
 ### Typed enum wire values
 
 Enum literals in `openapi/spec.yaml` are the response wire contract. Generated
@@ -35,6 +41,36 @@ Automatic model-state failures and FluentValidation failures use `ApiValidationP
 ## Endpoint Return Types
 
 Use `TypedResults` with concrete `Results<T1, T2, ...>` union return types on all endpoints (see MGG-227). This provides compile-time enforcement of response types and eliminates the need for `[ProducesResponseType]` attributes.
+
+Reasoned 400, 404, and 409 responses use `ApiProblem` and the concrete
+`BadRequestProblem`, `NotFoundProblem`, and `ConflictProblem` result types. These
+results execute `TypedResults.Problem(Value)` and supply status-specific
+`ProblemDetails` metadata with `application/problem+json`. For example:
+
+```csharp
+public Results<Ok<ReceiptResponse>, NotFoundProblem> GetReceipt(Guid id)
+{
+    // ...
+    return ApiProblem.NotFound($"Receipt {id} not found");
+}
+```
+
+Keep `ProblemHttpResult` out of union signatures because its metadata cannot
+represent several distinct error statuses. Ordinary `BadRequest<ProblemDetails>`,
+`NotFound<ProblemDetails>`, and `Conflict<ProblemDetails>` results serialize with
+`application/json`, so they do not implement this contract. Rejections with no
+useful reason can keep `TypedResults.NotFound()`; success DTOs remain ordinary JSON.
+
+The correction to `application/problem+json` is a deliberate public media-type
+change. Status codes and existing problem fields (`type`, `title`, `status`,
+`detail`, and extension members) are retained. Generated consumers must regenerate
+and use the `application/problem+json` content key instead of `application/json`
+for problem responses; custom error parsers must accept the problem media type.
+The configured problem writer may add standard extensions such as `traceId`, so
+consumers should tolerate additional members. The canonical spec and generated
+TypeScript client must change together, and this media-type correction requires
+explicit compatibility review through the existing breaking-change gate.
+
 
 ## List Search Filters
 
@@ -91,7 +127,7 @@ All endpoints are rate-limited at the application level (see [docs/deployment.md
 
 ## Template update conflicts
 
-Template updates resolve canonical metadata asynchronously before their final audited commit. If the stored template changes during that work, `PUT /api/item-templates/{id}` returns 409 `ProblemDetails` as `application/json`, matching the typed `ApiProblem` helpers, with a reason in `detail`; no requested template fields are partially applied. This is a server-side operation revision check, not a public ETag contract. The client retains the edit draft for a deliberate reload/retry. See [normalization ownership](normalization-ownership.md) for the separate canonical-registry side effects and receipt-item hint contract.
+Template updates resolve canonical metadata asynchronously before their final audited commit. If the stored template changes during that work, `PUT /api/item-templates/{id}` returns 409 `ProblemDetails` as `application/problem+json`, matching the typed `ApiProblem` helpers, with a reason in `detail`; no requested template fields are partially applied. This is a server-side operation revision check, not a public ETag contract. The client retains the edit draft for a deliberate reload/retry. See [normalization ownership](normalization-ownership.md) for the separate canonical-registry side effects and receipt-item hint contract.
 
 ## Template price precision
 

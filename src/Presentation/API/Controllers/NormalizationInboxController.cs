@@ -12,7 +12,6 @@ namespace API.Controllers;
 [ApiVersion("1.0")]
 [ApiController]
 [Route("api/normalization-inbox")]
-[Produces("application/json")]
 [ProducesResponseType(typeof(ProblemDetails), 400, "application/problem+json")]
 [ProducesResponseType(typeof(ProblemDetails), 403, "application/problem+json")]
 [ProducesResponseType(typeof(ProblemDetails), 404, "application/problem+json")]
@@ -23,7 +22,7 @@ public class NormalizationInboxController(INormalizationReviewInboxService servi
 	private string Actor => User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
 	[HttpGet]
 	[EndpointSummary("List saved purchases still needing review")]
-	public Task<Results<Ok<NormalizationReviewInboxPageResponse>, BadRequest<ProblemDetails>, ForbiddenProblem, NotFound<ProblemDetails>, Conflict<ProblemDetails>>> List(
+	public Task<Results<Ok<NormalizationReviewInboxPageResponse>, BadRequestProblem, ForbiddenProblem, NotFoundProblem, ConflictProblem>> List(
 		string? q = null, int offset = 0, int limit = 25, CancellationToken cancellationToken = default) => Execute(async () =>
 	{
 		var page = await service.ListAsync(Actor, q, offset, limit, cancellationToken);
@@ -50,16 +49,16 @@ public class NormalizationInboxController(INormalizationReviewInboxService servi
 	});
 	[HttpGet("preferences")]
 	[EndpointSummary("Read post-save assistance consent")]
-	public Task<Results<Ok<NormalizationAssistancePreferencesResponse>, BadRequest<ProblemDetails>, ForbiddenProblem, NotFound<ProblemDetails>, Conflict<ProblemDetails>>> GetPreferences(CancellationToken cancellationToken)
+	public Task<Results<Ok<NormalizationAssistancePreferencesResponse>, BadRequestProblem, ForbiddenProblem, NotFoundProblem, ConflictProblem>> GetPreferences(CancellationToken cancellationToken)
 		=> Execute(async () => Map(await service.GetPreferencesAsync(Actor, cancellationToken)));
 	[HttpPut("preferences")]
 	[EndpointSummary("Configure optional post-save suggestions")]
-	public Task<Results<Ok<NormalizationAssistancePreferencesResponse>, BadRequest<ProblemDetails>, ForbiddenProblem, NotFound<ProblemDetails>, Conflict<ProblemDetails>>> UpdatePreferences(
+	public Task<Results<Ok<NormalizationAssistancePreferencesResponse>, BadRequestProblem, ForbiddenProblem, NotFoundProblem, ConflictProblem>> UpdatePreferences(
 		[FromBody] NormalizationAssistancePreferenceRequest request, CancellationToken cancellationToken)
 		=> Execute(async () => Map(await service.UpdatePreferencesAsync(Actor, new(request.Enabled, request.Model, request.DailyLimit, request.ExpectedRevision), cancellationToken)));
 	[HttpPost("sources/{sourceHash}/retry-admission")]
 	[EndpointSummary("Retry a request that never started inference")]
-	public Task<Results<Ok<NormalizationAssistancePreferencesResponse>, BadRequest<ProblemDetails>, ForbiddenProblem, NotFound<ProblemDetails>, Conflict<ProblemDetails>>> RetryAdmission(
+	public Task<Results<Ok<NormalizationAssistancePreferencesResponse>, BadRequestProblem, ForbiddenProblem, NotFoundProblem, ConflictProblem>> RetryAdmission(
 		string sourceHash, [FromBody] NormalizationAdmissionRetryRequest request, CancellationToken cancellationToken) => Execute(async () =>
 	{
 		await service.RetryAdmissionAsync(Actor, sourceHash, request.ExpectedRevision, cancellationToken);
@@ -67,7 +66,7 @@ public class NormalizationInboxController(INormalizationReviewInboxService servi
 	});
 	private static NormalizationAssistancePreferencesResponse Map(NormalizationAssistancePreferences value)
 		=> new() { IsOwner = value.IsOwner, Enabled = value.Enabled, Model = value.Model, DailyLimit = value.DailyLimit, Revision = value.Revision };
-	private async Task<Results<Ok<T>, BadRequest<ProblemDetails>, ForbiddenProblem, NotFound<ProblemDetails>, Conflict<ProblemDetails>>> Execute<T>(Func<Task<T>> action)
+	private async Task<Results<Ok<T>, BadRequestProblem, ForbiddenProblem, NotFoundProblem, ConflictProblem>> Execute<T>(Func<Task<T>> action)
 	{
 		try { return TypedResults.Ok(await action()); }
 		catch (NormalizationCatalogException exception)
