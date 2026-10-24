@@ -152,6 +152,7 @@ public sealed partial class NormalizationCatalogService
 			item.NormalizationAssignmentId = Guid.NewGuid();
 			member.AssignmentId = item.NormalizationAssignmentId;
 			member.State = "applied";
+			context.RecordApprovedCatalogAssignment(item, mapping);
 		}
 		await context.SaveChangesAsync(ct);
 		// Re-read trigger-generated revisions in one projection after the chunk save.

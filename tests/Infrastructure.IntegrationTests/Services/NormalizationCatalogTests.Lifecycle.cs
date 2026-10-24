@@ -111,6 +111,8 @@ public sealed partial class NormalizationCatalogTests
 		await service.ApproveAsync(Actor, preview.Id, preview.Revision, CancellationToken.None);
 		var completed = await service.ResumeAsync(Actor, preview.Id, CancellationToken.None);
 		completed.State.Should().Be("completed");
+		(await ReadAsync(ids)).Should().OnlyContain(x => x.NormalizationReviewState == Domain.NormalizedDescriptions.NormalizationReviewState.Verified,
+			"every explicitly approved catalog member must receive reviewed proof, including the final partial chunk");
 		int audits = await AuditCountAsync(ids);
 		var undo = await service.UndoAsync(Actor, completed.Id, completed.Revision, CancellationToken.None);
 		undo.State.Should().Be("undoing");

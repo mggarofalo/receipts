@@ -12,6 +12,11 @@ public partial class ApplicationDbContext
 {
 	internal bool RestoringNormalizationEvidence { get; set; }
 	internal HashSet<Guid> RestoredReviewEvidence { get; } = [];
+	private readonly Dictionary<Guid, (Guid MappingId, Guid MappingRevision, Guid AssignmentId)> approvedCatalogAssignments = [];
+	// A scope-reviewed historical operation may intentionally cross a mixed intermediate chunk.
+	// Only its guarded member writer can register this exact assignment; ordinary entry cannot.
+	internal void RecordApprovedCatalogAssignment(ReceiptItemEntity item, NormalizationSourceMappingEntity mapping)
+		=> approvedCatalogAssignments[item.Id] = (mapping.Id, mapping.Revision, item.NormalizationAssignmentId!.Value);
 	internal string? ReceiptWriteActor => _currentUserAccessor?.UserId;
 	public DbSet<ReceiptWriteRequestEntity> ReceiptWriteRequests { get; set; } = null!;
 	public DbSet<NormalizationReviewWorkEntity> NormalizationReviewWork { get; set; } = null!;
@@ -163,7 +168,12 @@ public partial class ApplicationDbContext
 			NormalizationSourceMappingEntity? mapping = mappings.GetValueOrDefault(hash);
 			bool mappingValid = mapping is not null && (mapping.Exclude || (mapping.TargetId is Guid mappedTarget
 				&& targets.TryGetValue(mappedTarget, out var mappedIdentity) && mappedIdentity.Status == NormalizedDescriptionStatus.Active));
-			if (mappingValid)
+			bool scopedApproval = intent is null && mapping is not null
+				&& approvedCatalogAssignments.TryGetValue(item.Id, out var approved)
+				&& approved.MappingId == mapping.Id && approved.MappingRevision == mapping.Revision
+				&& approved.AssignmentId == item.NormalizationAssignmentId && item.NormalizationMappingId == mapping.Id
+				&& item.NormalizedDescriptionId == mapping.TargetId && hash == mapping.SourceHash;
+			if (mappingValid && !scopedApproval)
 			{
 				if (!sourceAmbiguity.TryGetValue(hash, out bool ambiguous))
 				{

@@ -282,6 +282,21 @@ export async function installApiMocks(page: Page, opts: ApiMockOptions = {}): Pr
   // is its own deterministic visual state.
   await page.route("**/hubs/**", (route) => route.fulfill({ status: 404 }));
 
+  // Durable inbox reads are independent of provider discovery.
+  await page.route("**/api/normalization-inbox?*", (route) =>
+    route.fulfill(json({ items: [], total: 0, offset: 0, limit: 25 })),
+  );
+  await page.route("**/api/normalization-inbox/preferences", (route) =>
+    route.fulfill(
+      json({
+        isOwner: false,
+        enabled: false,
+        model: null,
+        dailyLimit: 10,
+        revision: "00000000-0000-0000-0000-000000000000",
+      }),
+    ),
+  );
   // Caller overrides go last so they win on specific URL patterns.
   for (const [pattern, handler] of Object.entries(overrides)) {
     await page.route(pattern, (route) => Promise.resolve(handler(route)));
