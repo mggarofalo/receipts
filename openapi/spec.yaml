@@ -8,6 +8,203 @@ info:
     default version (currently 1.0) is assumed.
 
 paths:
+  /api/normalization-inbox:
+    get:
+      tags:
+        - NormalizationInbox
+      summary: List saved purchases still needing review
+      operationId: NormalizationInbox_List
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NormalizationReviewInboxPageResponse'
+        '400':
+          description: Request rejected
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Request rejected
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Request rejected
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Request rejected
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 0
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 25
+  /api/normalization-inbox/preferences:
+    get:
+      tags:
+        - NormalizationInbox
+      summary: Read post-save assistance consent
+      operationId: NormalizationInbox_GetPreferences
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NormalizationAssistancePreferencesResponse'
+        '400':
+          description: Request rejected
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Request rejected
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Request rejected
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Request rejected
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+    put:
+      tags:
+        - NormalizationInbox
+      summary: Configure optional post-save suggestions
+      operationId: NormalizationInbox_UpdatePreferences
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NormalizationAssistancePreferencesResponse'
+        '400':
+          description: Request rejected
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Request rejected
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Request rejected
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Request rejected
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NormalizationAssistancePreferenceRequest'
+  /api/normalization-inbox/sources/{sourceHash}/retry-admission:
+    post:
+      tags:
+        - NormalizationInbox
+      summary: Retry a request that never started inference
+      operationId: NormalizationInbox_RetryAdmission
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NormalizationAssistancePreferencesResponse'
+        '400':
+          description: Request rejected
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Request rejected
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Request rejected
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Request rejected
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NormalizationAdmissionRetryRequest'
+      parameters:
+        - name: sourceHash
+          in: path
+          required: true
+          schema:
+            type: string
   /api/normalization-catalog/targets/{id}/preview-label:
     post:
       tags: [NormalizationCatalog]
@@ -6991,6 +7188,140 @@ paths:
 
 components:
   schemas:
+    NormalizationReviewReceiptResponse:
+      type: object
+      properties:
+        receiptId:
+          type: string
+          format: uuid
+        itemId:
+          type: string
+          format: uuid
+        date:
+          type: string
+          format: date
+      required:
+        - receiptId
+        - itemId
+        - date
+    NormalizationReviewInboxSourceResponse:
+      type: object
+      properties:
+        sourceHash:
+          type: string
+        source:
+          $ref: '#/components/schemas/NormalizationSourceKey'
+        purchaseCount:
+          type: integer
+          format: int32
+        receiptCount:
+          type: integer
+          format: int32
+        firstSeen:
+          type: string
+          format: date-time
+        receipts:
+          type: array
+          items:
+            $ref: '#/components/schemas/NormalizationReviewReceiptResponse'
+        assistanceState:
+          type: string
+        attemptRevision:
+          type:
+            - string
+            - 'null'
+          format: uuid
+        runId:
+          type:
+            - string
+            - 'null'
+          format: uuid
+        errorCode:
+          type:
+            - string
+            - 'null'
+        errorDetail:
+          type:
+            - string
+            - 'null'
+      required:
+        - sourceHash
+        - source
+        - purchaseCount
+        - receiptCount
+        - firstSeen
+        - receipts
+        - assistanceState
+    NormalizationReviewInboxPageResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/NormalizationReviewInboxSourceResponse'
+        total:
+          type: integer
+          format: int32
+        offset:
+          type: integer
+          format: int32
+        limit:
+          type: integer
+          format: int32
+      required:
+        - items
+        - total
+        - offset
+        - limit
+    NormalizationAssistancePreferencesResponse:
+      type: object
+      properties:
+        isOwner:
+          type: boolean
+        enabled:
+          type: boolean
+        model:
+          type:
+            - string
+            - 'null'
+        dailyLimit:
+          type: integer
+          format: int32
+        revision:
+          type: string
+          format: uuid
+      required:
+        - isOwner
+        - enabled
+        - dailyLimit
+        - revision
+    NormalizationAssistancePreferenceRequest:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        model:
+          type:
+            - string
+            - 'null'
+        dailyLimit:
+          type: integer
+          format: int32
+        expectedRevision:
+          type: string
+          format: uuid
+      required:
+        - enabled
+        - dailyLimit
+        - expectedRevision
+    NormalizationAdmissionRetryRequest:
+      type: object
+      properties:
+        expectedRevision:
+          type: string
+          format: uuid
+      required:
+        - expectedRevision
     NormalizationSourceKey:
       type: object
       required:
@@ -9615,10 +9946,13 @@ components:
 
     ReceiptNormalizationPreviewResponse:
       type: object
-      required: [sourceFingerprint, excluded, candidates, total, offset, limit]
+      required: [sourceFingerprint, excluded, candidates, total, offset, limit, sourceAmbiguous]
       properties:
         sourceFingerprint:
           type: string
+        sourceAmbiguous:
+          type: boolean
+          description: This exact source has multiple recorded product identities; confirm individual purchases instead of remembering one unconditional mapping.
         mappingId:
           type: [string, "null"]
           format: uuid

@@ -20,6 +20,8 @@ import {
 } from "./CatalogSourceReview";
 import { CatalogOperationReview } from "./CatalogOperationReview";
 import { CatalogAiReview } from "./CatalogAiReview";
+import { CatalogInbox } from "./CatalogInbox";
+import { useNormalizationInboxPreferences } from "@/hooks/useNormalizationInbox";
 
 export function CatalogTab() {
   const [params, setParams] = useSearchParams();
@@ -35,7 +37,10 @@ export function CatalogTab() {
   const operations = useCatalogOperations();
   const operation = useCatalogOperation(operationId);
   const connection = useAiConnection();
-  const owner = connection.data?.configured === true && connection.data.isOwner;
+  const assistance = useNormalizationInboxPreferences();
+  const owner =
+    assistance.data?.isOwner === true ||
+    (connection.data?.configured === true && connection.data.isOwner);
   const runs = useAiRuns(owner);
   const run = useAiRun(runId, owner);
   const select = (field: "catalogOperation" | "aiRun", id: string | null) => {
@@ -57,6 +62,7 @@ export function CatalogTab() {
   };
   return (
     <div className="space-y-6">
+      <CatalogInbox onReview={openReview} onRun={(id) => select("aiRun", id)} />
       <section className="space-y-3" aria-label="Catalog coverage">
         <h2 className="card-title">
           A maintained catalog for search and reports

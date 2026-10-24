@@ -65,6 +65,22 @@ public sealed partial class NormalizationAiService
 			if (claimed.OwnerUserId != Settings.OwnerUserId || await ConnectionUnavailableAsync(context, claimed.ConnectionGeneration, cancellationToken)
 				|| !await OwnerAuthorizedAsync(context, claimed.OwnerUserId, cancellationToken))
 			{ Finish(claimed, "cancelled", "connection_changed", "The connection owner or generation changed."); await context.SaveChangesAsync(cancellationToken); await lease.CommitAsync(cancellationToken); return true; }
+			if (await context.NormalizationAssistanceAttempts.AnyAsync(attempt => attempt.RunId == claimed.Id, cancellationToken))
+			{
+				bool stale = false;
+				foreach (var proposal in claimed.Proposals)
+				{
+					if (!await context.ReceiptItems.AnyAsync(item => item.Id == proposal.ReceiptItemId && item.DeletedAt == null
+						&& item.NormalizationRevision == proposal.SourceRevision && item.NormalizationReviewState == Domain.NormalizedDescriptions.NormalizationReviewState.NeedsReview, cancellationToken)
+						|| !await context.Receipts.AnyAsync(receipt => receipt.Id == proposal.ReceiptId && receipt.DeletedAt == null && receipt.NormalizationRevision == proposal.SourceReceiptRevision, cancellationToken))
+					{ stale = true; break; }
+				}
+				if (stale)
+				{
+					Finish(claimed, "cancelled", "source_changed", "The saved purchase changed before suggestions started. Review the current source.");
+					await context.SaveChangesAsync(cancellationToken); await lease.CommitAsync(cancellationToken); return true;
+				}
+			}
 			claimed.State = "running"; claimed.ClaimToken = claim; claimed.Revision = Guid.NewGuid();
 			claimed.LeaseExpiresAt = timeProvider.GetUtcNow() + Settings.LeaseDuration;
 			await context.SaveChangesAsync(cancellationToken);

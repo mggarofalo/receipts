@@ -12,6 +12,11 @@ public partial class ApplicationDbContext
 {
 	internal bool RestoringNormalizationEvidence { get; set; }
 	internal HashSet<Guid> RestoredReviewEvidence { get; } = [];
+	private readonly Dictionary<Guid, (Guid MappingId, Guid MappingRevision, Guid AssignmentId)> approvedCatalogAssignments = [];
+	// A scope-reviewed historical operation may intentionally cross a mixed intermediate chunk.
+	// Only its guarded member writer can register this exact assignment; ordinary entry cannot.
+	internal void RecordApprovedCatalogAssignment(ReceiptItemEntity item, NormalizationSourceMappingEntity mapping)
+		=> approvedCatalogAssignments[item.Id] = (mapping.Id, mapping.Revision, item.NormalizationAssignmentId!.Value);
 	internal string? ReceiptWriteActor => _currentUserAccessor?.UserId;
 	public DbSet<ReceiptWriteRequestEntity> ReceiptWriteRequests { get; set; } = null!;
 	public DbSet<NormalizationReviewWorkEntity> NormalizationReviewWork { get; set; } = null!;
@@ -105,6 +110,15 @@ public partial class ApplicationDbContext
 			else { targets.Remove(entry.Entity.Id); }
 		}
 		bool actorChecked = false;
+		// Repeated explicit new-product choices within this save share the identity created here.
+		// This cache never admits a pre-existing catalog collision as a reviewed choice.
+		Dictionary<string, Guid> createdTargets = new(StringComparer.OrdinalIgnoreCase);
+		Dictionary<string, bool> sourceAmbiguity = new(StringComparer.Ordinal);
+		HashSet<string> stagedDivergentSources = entries.Where(entry => hashes.ContainsKey(entry.Entity.Id)
+			&& mappings.TryGetValue(hashes[entry.Entity.Id], out var remembered)
+			&& (entry.Entity.NormalizationIntent?.Kind == ReceiptNormalizationIntentKind.ConfirmNew
+				|| entry.Entity.NormalizationIntent is { Kind: ReceiptNormalizationIntentKind.ConfirmExisting } choice && choice.TargetId != remembered.TargetId))
+			.Select(entry => hashes[entry.Entity.Id]).ToHashSet(StringComparer.Ordinal);
 		foreach (var entry in entries)
 		{
 			ReceiptItemEntity item = entry.Entity;
@@ -154,6 +168,21 @@ public partial class ApplicationDbContext
 			NormalizationSourceMappingEntity? mapping = mappings.GetValueOrDefault(hash);
 			bool mappingValid = mapping is not null && (mapping.Exclude || (mapping.TargetId is Guid mappedTarget
 				&& targets.TryGetValue(mappedTarget, out var mappedIdentity) && mappedIdentity.Status == NormalizedDescriptionStatus.Active));
+			bool scopedApproval = intent is null && mapping is not null
+				&& approvedCatalogAssignments.TryGetValue(item.Id, out var approved)
+				&& approved.MappingId == mapping.Id && approved.MappingRevision == mapping.Revision
+				&& approved.AssignmentId == item.NormalizationAssignmentId && item.NormalizationMappingId == mapping.Id
+				&& item.NormalizedDescriptionId == mapping.TargetId && hash == mapping.SourceHash;
+			if (mappingValid && !scopedApproval)
+			{
+				if (!sourceAmbiguity.TryGetValue(hash, out bool ambiguous))
+				{
+					ambiguous = stagedDivergentSources.Contains(hash) || await NormalizationCatalogService.SourceItems(this, sources[item.Id])
+						.Where(value => value.NormalizedDescriptionId != null).Select(value => value.NormalizedDescriptionId).Distinct().Take(2).CountAsync(ct) > 1;
+					sourceAmbiguity.Add(hash, ambiguous);
+				}
+				mappingValid = !ambiguous;
+			}
 			if (intent?.ExpectedMappingRevision is Guid expectedMapping && (!mappingValid || mapping!.Revision != expectedMapping))
 			{ throw ReviewConflict("normalization_mapping_changed", "The remembered source decision changed. Refresh or explicitly defer review."); }
 			bool targetActive = item.NormalizedDescriptionId is Guid currentTarget && targets.TryGetValue(currentTarget, out var currentIdentity)
@@ -176,6 +205,11 @@ public partial class ApplicationDbContext
 				{ throw ReviewConflict("normalization_target_changed", "The selected product changed or is not active. Refresh the choice or explicitly defer review."); }
 				targetId = target.Id;
 			}
+			else if (intent?.Kind == ReceiptNormalizationIntentKind.ConfirmNew
+				&& createdTargets.TryGetValue(intent.NewName!.Trim(), out Guid createdTarget))
+			{
+				targetId = createdTarget;
+			}
 			else if (intent?.Kind == ReceiptNormalizationIntentKind.ConfirmNew)
 			{
 				string name = intent.NewName!.Trim();
@@ -191,6 +225,7 @@ public partial class ApplicationDbContext
 				NormalizedDescriptionEntity created = new() { Id = Guid.NewGuid(), CanonicalName = name, Status = NormalizedDescriptionStatus.Active, CreatedAt = DateTimeOffset.UtcNow };
 				NormalizedDescriptions.Add(created);
 				targets.Add(created.Id, created);
+				createdTargets.Add(name, created.Id);
 				targetId = created.Id;
 			}
 			if (intent?.RememberSource == true)
