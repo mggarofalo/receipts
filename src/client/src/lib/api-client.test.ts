@@ -293,6 +293,23 @@ describe("errorNormalizationMiddleware.onResponse", () => {
     );
   });
 
+  it("preserves raw problem-media detail and top-level extensions", async () => {
+    const problem = {
+      type: "https://tools.ietf.org/html/rfc9110#section-15.5.10",
+      title: "Conflict",
+      status: 409,
+      detail: "Cannot delete — 3 transaction(s) reference this card",
+      transactionCount: 3,
+    };
+    const response = () => new Response(JSON.stringify(problem), {
+      status: 409,
+      headers: { "Content-Type": "application/problem+json" },
+    });
+
+    expect(await callOnResponse(response())).toBeUndefined();
+    expect(await errorAsSeenByCallers(response())).toEqual(problem);
+  });
+
   it("preserves a non-ProblemDetails object body and stamps the status on it", async () => {
     // The 409 shape useMergeCards depends on to render its conflict dialog.
     const conflict = {

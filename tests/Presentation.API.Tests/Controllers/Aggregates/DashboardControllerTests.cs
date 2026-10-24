@@ -1,5 +1,6 @@
 using API.Controllers.Aggregates;
 using API.Generated.Dtos;
+using API.Http;
 using Application.Models.Dashboard;
 using Application.Queries.Aggregates.Dashboard;
 using FluentAssertions;
@@ -41,7 +42,7 @@ public class DashboardControllerTests
 			.ReturnsAsync(summaryResult);
 
 		// Act
-		Results<Ok<DashboardSummaryResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<DashboardSummaryResponse>, BadRequestProblem> result =
 			await _controller.GetDashboardSummary(start, end, CancellationToken.None);
 
 		// Assert
@@ -76,7 +77,7 @@ public class DashboardControllerTests
 			.ReturnsAsync(summaryResult);
 
 		// Act
-		Results<Ok<DashboardSummaryResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<DashboardSummaryResponse>, BadRequestProblem> result =
 			await _controller.GetDashboardSummary(null, null, CancellationToken.None);
 
 		// Assert
@@ -96,11 +97,11 @@ public class DashboardControllerTests
 		DateOnly end = new(2024, 1, 1);
 
 		// Act
-		Results<Ok<DashboardSummaryResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<DashboardSummaryResponse>, BadRequestProblem> result =
 			await _controller.GetDashboardSummary(start, end, CancellationToken.None);
 
 		// Assert
-		BadRequest<ProblemDetails> badResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badResult.Value!.Detail.Should().Be("startDate must be before or equal to endDate");
 	}
 
@@ -122,7 +123,7 @@ public class DashboardControllerTests
 			.ReturnsAsync(summaryResult);
 
 		// Act
-		Results<Ok<DashboardSummaryResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<DashboardSummaryResponse>, BadRequestProblem> result =
 			await _controller.GetDashboardSummary(date, date, CancellationToken.None);
 
 		// Assert
@@ -172,7 +173,7 @@ public class DashboardControllerTests
 			.ReturnsAsync(overTimeResult);
 
 		// Act
-		Results<Ok<SpendingOverTimeResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<SpendingOverTimeResponse>, BadRequestProblem> result =
 			await _controller.GetSpendingOverTime(start, end, "monthly", CancellationToken.None);
 
 		// Assert
@@ -197,7 +198,7 @@ public class DashboardControllerTests
 			.ReturnsAsync(overTimeResult);
 
 		// Act
-		Results<Ok<SpendingOverTimeResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<SpendingOverTimeResponse>, BadRequestProblem> result =
 			await _controller.GetSpendingOverTime(start, end, null, CancellationToken.None);
 
 		// Assert
@@ -215,11 +216,11 @@ public class DashboardControllerTests
 		DateOnly end = new(2024, 1, 1);
 
 		// Act
-		Results<Ok<SpendingOverTimeResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<SpendingOverTimeResponse>, BadRequestProblem> result =
 			await _controller.GetSpendingOverTime(start, end, "monthly", CancellationToken.None);
 
 		// Assert
-		BadRequest<ProblemDetails> badResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badResult.Value!.Detail.Should().Be("startDate must be before or equal to endDate");
 	}
 
@@ -231,11 +232,11 @@ public class DashboardControllerTests
 		DateOnly end = new(2024, 1, 31);
 
 		// Act
-		Results<Ok<SpendingOverTimeResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<SpendingOverTimeResponse>, BadRequestProblem> result =
 			await _controller.GetSpendingOverTime(start, end, "biweekly", CancellationToken.None);
 
 		// Assert
-		BadRequest<ProblemDetails> badResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badResult.Value!.Detail.Should().Contain("Invalid granularity");
 	}
 
@@ -257,7 +258,7 @@ public class DashboardControllerTests
 			.ReturnsAsync(overTimeResult);
 
 		// Act
-		Results<Ok<SpendingOverTimeResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<SpendingOverTimeResponse>, BadRequestProblem> result =
 			await _controller.GetSpendingOverTime(start, end, granularity, CancellationToken.None);
 
 		// Assert
@@ -282,7 +283,7 @@ public class DashboardControllerTests
 			.ReturnsAsync(overTimeResult);
 
 		// Act
-		Results<Ok<SpendingOverTimeResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<SpendingOverTimeResponse>, BadRequestProblem> result =
 			await _controller.GetSpendingOverTime(start, end, granularity, CancellationToken.None);
 
 		// Assert
@@ -369,7 +370,7 @@ public class DashboardControllerTests
 			.ReturnsAsync(categoryResult);
 
 		// Act
-		Results<Ok<SpendingByCategoryResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<SpendingByCategoryResponse>, BadRequestProblem> result =
 			await _controller.GetSpendingByCategory(start, end, 10, CancellationToken.None);
 
 		// Assert
@@ -389,11 +390,11 @@ public class DashboardControllerTests
 		DateOnly end = new(2024, 1, 1);
 
 		// Act
-		Results<Ok<SpendingByCategoryResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<SpendingByCategoryResponse>, BadRequestProblem> result =
 			await _controller.GetSpendingByCategory(start, end, 10, CancellationToken.None);
 
 		// Assert
-		BadRequest<ProblemDetails> badResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badResult.Value!.Detail.Should().Be("startDate must be before or equal to endDate");
 	}
 
@@ -408,11 +409,11 @@ public class DashboardControllerTests
 		DateOnly end = new(2024, 1, 31);
 
 		// Act
-		Results<Ok<SpendingByCategoryResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<SpendingByCategoryResponse>, BadRequestProblem> result =
 			await _controller.GetSpendingByCategory(start, end, limit, CancellationToken.None);
 
 		// Assert
-		BadRequest<ProblemDetails> badResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badResult.Value!.Detail.Should().Be("limit must be between 1 and 100");
 	}
 
@@ -432,7 +433,7 @@ public class DashboardControllerTests
 			.ReturnsAsync(categoryResult);
 
 		// Act
-		Results<Ok<SpendingByCategoryResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<SpendingByCategoryResponse>, BadRequestProblem> result =
 			await _controller.GetSpendingByCategory(start, end, limit, CancellationToken.None);
 
 		// Assert
@@ -480,7 +481,7 @@ public class DashboardControllerTests
 			.ReturnsAsync(accountResult);
 
 		// Act
-		Results<Ok<SpendingByAccountResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<SpendingByAccountResponse>, BadRequestProblem> result =
 			await _controller.GetSpendingByAccount(start, end, CancellationToken.None);
 
 		// Assert
@@ -501,11 +502,11 @@ public class DashboardControllerTests
 		DateOnly end = new(2024, 1, 1);
 
 		// Act
-		Results<Ok<SpendingByAccountResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<SpendingByAccountResponse>, BadRequestProblem> result =
 			await _controller.GetSpendingByAccount(start, end, CancellationToken.None);
 
 		// Assert
-		BadRequest<ProblemDetails> badResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badResult.Value!.Detail.Should().Be("startDate must be before or equal to endDate");
 	}
 
@@ -524,7 +525,7 @@ public class DashboardControllerTests
 			.ReturnsAsync(accountResult);
 
 		// Act
-		Results<Ok<SpendingByAccountResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<SpendingByAccountResponse>, BadRequestProblem> result =
 			await _controller.GetSpendingByAccount(null, null, CancellationToken.None);
 
 		// Assert
@@ -577,7 +578,7 @@ public class DashboardControllerTests
 			.ReturnsAsync(storeResult);
 
 		// Act
-		Results<Ok<SpendingByStoreResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<SpendingByStoreResponse>, BadRequestProblem> result =
 			await _controller.GetSpendingByStore(start, end, CancellationToken.None);
 
 		// Assert
@@ -598,11 +599,11 @@ public class DashboardControllerTests
 		DateOnly end = new(2024, 1, 1);
 
 		// Act
-		Results<Ok<SpendingByStoreResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<SpendingByStoreResponse>, BadRequestProblem> result =
 			await _controller.GetSpendingByStore(start, end, CancellationToken.None);
 
 		// Assert
-		BadRequest<ProblemDetails> badResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badResult.Value!.Detail.Should().Be("startDate must be before or equal to endDate");
 	}
 
@@ -621,7 +622,7 @@ public class DashboardControllerTests
 			.ReturnsAsync(storeResult);
 
 		// Act
-		Results<Ok<SpendingByStoreResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<SpendingByStoreResponse>, BadRequestProblem> result =
 			await _controller.GetSpendingByStore(null, null, CancellationToken.None);
 
 		// Assert

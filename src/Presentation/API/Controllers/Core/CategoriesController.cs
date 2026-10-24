@@ -20,7 +20,6 @@ namespace API.Controllers.Core;
 [ApiVersion("1.0")]
 [ApiController]
 [Route("api/categories")]
-[Produces("application/json")]
 [Authorize]
 public class CategoriesController(IMediator mediator, CategoryMapper mapper, ILogger<CategoriesController> logger, IEntityChangeNotifier notifier, ICategoryService categoryService) : ControllerBase
 {
@@ -54,7 +53,7 @@ public class CategoriesController(IMediator mediator, CategoryMapper mapper, ILo
 
 	[HttpGet(RouteGetAll)]
 	[EndpointSummary("Get all categories")]
-	public async Task<Results<Ok<CategoryListResponse>, BadRequest<ProblemDetails>>> GetAllCategories([FromQuery] bool? isActive = null, [FromQuery] string? q = null, [FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, CancellationToken cancellationToken = default)
+	public async Task<Results<Ok<CategoryListResponse>, BadRequestProblem>> GetAllCategories([FromQuery] bool? isActive = null, [FromQuery] string? q = null, [FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, CancellationToken cancellationToken = default)
 	{
 		if (offset < 0)
 		{
@@ -92,7 +91,7 @@ public class CategoriesController(IMediator mediator, CategoryMapper mapper, ILo
 	[HttpGet(RouteGetDeleted)]
 	[EndpointSummary("Get all soft-deleted categories")]
 	[EndpointDescription("Returns all categories that have been soft-deleted.")]
-	public async Task<Results<Ok<CategoryListResponse>, BadRequest<ProblemDetails>>> GetDeletedCategories([FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, CancellationToken cancellationToken = default)
+	public async Task<Results<Ok<CategoryListResponse>, BadRequestProblem>> GetDeletedCategories([FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, CancellationToken cancellationToken = default)
 	{
 		if (offset < 0)
 		{
@@ -186,7 +185,7 @@ public class CategoriesController(IMediator mediator, CategoryMapper mapper, ILo
 	[HttpDelete(RouteDelete)]
 	[EndpointSummary("Soft-delete a category")]
 	[EndpointDescription("Soft-deletes a category and cascade soft-deletes its subcategories. Returns 409 Conflict if receipt items, including trash, use the current category name. Historical category and subcategory labels are unchanged.")]
-	public async Task<Results<NoContent, NotFound, Conflict<ProblemDetails>>> DeleteCategory([FromRoute] Guid id, CancellationToken cancellationToken = default)
+	public async Task<Results<NoContent, NotFound, ConflictProblem>> DeleteCategory([FromRoute] Guid id, CancellationToken cancellationToken = default)
 	{
 		Category? category = await mediator.Send(new GetCategoryByIdQuery(id), cancellationToken);
 		if (category == null)

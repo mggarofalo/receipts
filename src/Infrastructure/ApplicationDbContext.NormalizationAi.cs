@@ -15,7 +15,21 @@ public partial class ApplicationDbContext
 		{
 			if (entry.Entity is ReceiptItemEntity item) { item.NormalizationRevision = Guid.NewGuid(); }
 			if (entry.Entity is ReceiptEntity receipt) { receipt.NormalizationRevision = Guid.NewGuid(); }
-			if (entry.Entity is NormalizedDescriptionEntity description) { description.NormalizationRevision = Guid.NewGuid(); }
+			if (entry.Entity is NormalizedDescriptionEntity description)
+			{
+				// Rebuildable vectors do not change the identity observed by reviewed choices.
+				// Compare every other mapped property so future business fields stay protected.
+				bool projectionChanged = entry.Properties.Any(property =>
+					property.Metadata.Name is nameof(NormalizedDescriptionEntity.Embedding) or nameof(NormalizedDescriptionEntity.EmbeddingModelVersion)
+					&& !Equals(property.OriginalValue, property.CurrentValue));
+				bool businessChanged = entry.Properties.Any(property =>
+					property.Metadata.Name is not (nameof(NormalizedDescriptionEntity.Embedding)
+						or nameof(NormalizedDescriptionEntity.EmbeddingModelVersion) or nameof(NormalizedDescriptionEntity.NormalizationRevision))
+					&& !Equals(property.OriginalValue, property.CurrentValue));
+				description.NormalizationRevision = entry.State == EntityState.Modified && projectionChanged && !businessChanged
+					? (Guid)entry.Property(nameof(NormalizedDescriptionEntity.NormalizationRevision)).OriginalValue!
+					: Guid.NewGuid();
+			}
 		}
 	}
 }

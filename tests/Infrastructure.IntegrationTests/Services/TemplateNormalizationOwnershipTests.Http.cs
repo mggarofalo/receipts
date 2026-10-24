@@ -57,7 +57,7 @@ public partial class TemplateNormalizationOwnershipTests
 		finally { release.TrySetResult(); }
 		using HttpResponseMessage response = await pending.WaitAsync(TimeSpan.FromSeconds(10));
 		response.StatusCode.Should().Be(HttpStatusCode.Conflict);
-		response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+		response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
 		using JsonDocument problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 		problem.RootElement.GetProperty("status").GetInt32().Should().Be(409);
 		problem.RootElement.GetProperty("detail").GetString().Should().Contain("Reload");

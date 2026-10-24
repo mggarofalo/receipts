@@ -1,5 +1,6 @@
 using API.Controllers.Core;
 using API.Generated.Dtos;
+using API.Http;
 using API.Mapping.Core;
 using API.Services;
 using Application.Commands.Adjustment.Create;
@@ -108,7 +109,7 @@ public class AdjustmentsControllerTests
 			.ReturnsAsync(new PagedResult<Adjustment>(adjustments, adjustments.Count, 0, 50));
 
 		// Act
-		Results<Ok<AdjustmentListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetAllAdjustments(null, 0, 50, null, null);
+		Results<Ok<AdjustmentListResponse>, BadRequestProblem> rawResult = await _controller.GetAllAdjustments(null, 0, 50, null, null);
 
 		// Assert
 		Ok<AdjustmentListResponse> result = Assert.IsType<Ok<AdjustmentListResponse>>(rawResult.Result);
@@ -125,10 +126,10 @@ public class AdjustmentsControllerTests
 	public async Task GetAllAdjustments_ReturnsBadRequest_WhenOffsetIsNegative(int offset, int limit)
 	{
 		// Act
-		Results<Ok<AdjustmentListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetAllAdjustments(null, offset, limit, null, null);
+		Results<Ok<AdjustmentListResponse>, BadRequestProblem> result = await _controller.GetAllAdjustments(null, offset, limit, null, null);
 
 		// Assert
-		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badRequestResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badRequestResult.Value!.Detail.Should().Be("offset must be >= 0");
 	}
 
@@ -139,10 +140,10 @@ public class AdjustmentsControllerTests
 	public async Task GetAllAdjustments_ReturnsBadRequest_WhenLimitIsOutOfRange(int offset, int limit)
 	{
 		// Act
-		Results<Ok<AdjustmentListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetAllAdjustments(null, offset, limit, null, null);
+		Results<Ok<AdjustmentListResponse>, BadRequestProblem> result = await _controller.GetAllAdjustments(null, offset, limit, null, null);
 
 		// Assert
-		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badRequestResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badRequestResult.Value!.Detail.Should().Be("limit must be between 1 and 500");
 	}
 
@@ -152,10 +153,10 @@ public class AdjustmentsControllerTests
 	public async Task GetDeletedAdjustments_ReturnsBadRequest_WhenOffsetIsNegative(int offset, int limit)
 	{
 		// Act
-		Results<Ok<AdjustmentListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetDeletedAdjustments(offset, limit, null, null);
+		Results<Ok<AdjustmentListResponse>, BadRequestProblem> result = await _controller.GetDeletedAdjustments(offset, limit, null, null);
 
 		// Assert
-		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badRequestResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badRequestResult.Value!.Detail.Should().Be("offset must be >= 0");
 	}
 
@@ -166,10 +167,10 @@ public class AdjustmentsControllerTests
 	public async Task GetDeletedAdjustments_ReturnsBadRequest_WhenLimitIsOutOfRange(int offset, int limit)
 	{
 		// Act
-		Results<Ok<AdjustmentListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetDeletedAdjustments(offset, limit, null, null);
+		Results<Ok<AdjustmentListResponse>, BadRequestProblem> result = await _controller.GetDeletedAdjustments(offset, limit, null, null);
 
 		// Assert
-		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badRequestResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badRequestResult.Value!.Detail.Should().Be("limit must be between 1 and 500");
 	}
 
@@ -202,7 +203,7 @@ public class AdjustmentsControllerTests
 			.ReturnsAsync(new PagedResult<Adjustment>(adjustments, adjustments.Count, 0, 50));
 
 		// Act
-		Results<Ok<AdjustmentListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetDeletedAdjustments(0, 50, null, null);
+		Results<Ok<AdjustmentListResponse>, BadRequestProblem> rawResult = await _controller.GetDeletedAdjustments(0, 50, null, null);
 
 		// Assert
 		Ok<AdjustmentListResponse> result = Assert.IsType<Ok<AdjustmentListResponse>>(rawResult.Result);
@@ -243,7 +244,7 @@ public class AdjustmentsControllerTests
 			.ReturnsAsync(new PagedResult<Adjustment>(adjustments, adjustments.Count, 0, 50));
 
 		// Act
-		Results<Ok<AdjustmentListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetAllAdjustments(receiptId, 0, 50, null, null);
+		Results<Ok<AdjustmentListResponse>, BadRequestProblem> rawResult = await _controller.GetAllAdjustments(receiptId, 0, 50, null, null);
 
 		// Assert
 		Ok<AdjustmentListResponse> result = Assert.IsType<Ok<AdjustmentListResponse>>(rawResult.Result);
@@ -266,7 +267,7 @@ public class AdjustmentsControllerTests
 			.ReturnsAsync(new PagedResult<Adjustment>([], 0, 0, 50));
 
 		// Act
-		Results<Ok<AdjustmentListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetAllAdjustments(receiptId, 0, 50, null, null);
+		Results<Ok<AdjustmentListResponse>, BadRequestProblem> rawResult = await _controller.GetAllAdjustments(receiptId, 0, 50, null, null);
 
 		// Assert
 		Ok<AdjustmentListResponse> result = Assert.IsType<Ok<AdjustmentListResponse>>(rawResult.Result);
@@ -347,7 +348,7 @@ public class AdjustmentsControllerTests
 			.ReturnsAsync(true);
 
 		// Act
-		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.UpdateAdjustment(controllerInput, id);
+		Results<NoContent, NotFound, ConflictProblem> result = await _controller.UpdateAdjustment(controllerInput, id);
 
 		// Assert
 		Assert.IsType<NoContent>(result.Result);
@@ -366,7 +367,7 @@ public class AdjustmentsControllerTests
 			.ReturnsAsync(false);
 
 		// Act
-		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.UpdateAdjustment(controllerInput, id);
+		Results<NoContent, NotFound, ConflictProblem> result = await _controller.UpdateAdjustment(controllerInput, id);
 
 		// Assert
 		Assert.IsType<NotFound>(result.Result);
@@ -387,7 +388,7 @@ public class AdjustmentsControllerTests
 			.ReturnsAsync(true);
 
 		// Act
-		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.UpdateAdjustment(controllerInput, routeId);
+		Results<NoContent, NotFound, ConflictProblem> result = await _controller.UpdateAdjustment(controllerInput, routeId);
 
 		// Assert — the dispatched command targets the route id, and the notification names it too
 		Assert.IsType<NoContent>(result.Result);
@@ -481,7 +482,7 @@ public class AdjustmentsControllerTests
 			.ReturnsAsync(true);
 
 		// Act
-		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.RestoreAdjustment(id);
+		Results<NoContent, NotFound, ConflictProblem> result = await _controller.RestoreAdjustment(id);
 
 		// Assert
 		Assert.IsType<NoContent>(result.Result);
@@ -498,7 +499,7 @@ public class AdjustmentsControllerTests
 			.ReturnsAsync(false);
 
 		// Act
-		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.RestoreAdjustment(id);
+		Results<NoContent, NotFound, ConflictProblem> result = await _controller.RestoreAdjustment(id);
 
 		// Assert
 		Assert.IsType<NotFound>(result.Result);
@@ -529,7 +530,7 @@ public class AdjustmentsControllerTests
 			.ThrowsAsync(new ConcurrencyConflictException(detail));
 		Microsoft.AspNetCore.Http.IResult result = await _controller.CreateAdjustment(AdjustmentDtoGenerator.GenerateCreateRequest(), Guid.NewGuid());
 		var response = result is Microsoft.AspNetCore.Http.INestedHttpResult nested ? nested.Result : result;
-		var conflict = Assert.IsType<Conflict<ProblemDetails>>(response);
+		var conflict = Assert.IsType<ConflictProblem>(response);
 		conflict.Value!.Status.Should().Be(409);
 		conflict.Value.Detail.Should().Be(detail);
 		_notifierMock.VerifyNoOtherCalls();
@@ -543,7 +544,7 @@ public class AdjustmentsControllerTests
 			.ThrowsAsync(new ConcurrencyConflictException(detail));
 		Microsoft.AspNetCore.Http.IResult result = await _controller.RestoreAdjustment(Guid.NewGuid());
 		var response = result is Microsoft.AspNetCore.Http.INestedHttpResult nested ? nested.Result : result;
-		var conflict = Assert.IsType<Conflict<ProblemDetails>>(response);
+		var conflict = Assert.IsType<ConflictProblem>(response);
 		conflict.Value!.Status.Should().Be(409);
 		conflict.Value.Detail.Should().Be(detail);
 		_notifierMock.VerifyNoOtherCalls();
@@ -557,7 +558,7 @@ public class AdjustmentsControllerTests
 			.ThrowsAsync(new ConcurrencyConflictException(detail));
 		Microsoft.AspNetCore.Http.IResult result = await _controller.UpdateAdjustment(AdjustmentDtoGenerator.GenerateUpdateRequest(), Guid.NewGuid());
 		var response = result is Microsoft.AspNetCore.Http.INestedHttpResult nested ? nested.Result : result;
-		var conflict = Assert.IsType<Conflict<ProblemDetails>>(response);
+		var conflict = Assert.IsType<ConflictProblem>(response);
 		conflict.Value!.Status.Should().Be(409);
 		conflict.Value.Detail.Should().Be(detail);
 		_notifierMock.VerifyNoOtherCalls();

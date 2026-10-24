@@ -1,5 +1,6 @@
 using API.Controllers;
 using API.Generated.Dtos;
+using API.Http;
 using API.Mapping.Core;
 using Application.Commands.Ynab.AccountMapping;
 using Application.Interfaces.Services;
@@ -86,7 +87,7 @@ public class YnabAccountMappingControllerTests
 		};
 
 		// Act
-		Results<Created<YnabAccountMappingResponse>, BadRequest<ProblemDetails>> result =
+		Results<Created<YnabAccountMappingResponse>, BadRequestProblem> result =
 			await _controller.CreateAccountMapping(request, CancellationToken.None);
 
 		// Assert
@@ -113,11 +114,11 @@ public class YnabAccountMappingControllerTests
 		};
 
 		// Act
-		Results<Created<YnabAccountMappingResponse>, BadRequest<ProblemDetails>> result =
+		Results<Created<YnabAccountMappingResponse>, BadRequestProblem> result =
 			await _controller.CreateAccountMapping(request, CancellationToken.None);
 
 		// Assert
-		BadRequest<ProblemDetails> badRequest = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badRequest = Assert.IsType<BadRequestProblem>(result.Result);
 		badRequest.Value!.Detail.Should().Contain("Card does not exist.");
 	}
 
@@ -137,10 +138,10 @@ public class YnabAccountMappingControllerTests
 			YnabBudgetId = BudgetB,
 		};
 
-		Results<Created<YnabAccountMappingResponse>, BadRequest<ProblemDetails>> result =
+		Results<Created<YnabAccountMappingResponse>, BadRequestProblem> result =
 			await _controller.CreateAccountMapping(request, CancellationToken.None);
 
-		BadRequest<ProblemDetails> badRequest = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badRequest = Assert.IsType<BadRequestProblem>(result.Result);
 		badRequest.Value!.Detail.Should().Contain("selected YNAB budget");
 	}
 
@@ -173,7 +174,7 @@ public class YnabAccountMappingControllerTests
 		};
 
 		// Act
-		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result = await _controller.UpdateAccountMapping(id, request, CancellationToken.None);
+		Results<NoContent, NotFound, BadRequestProblem> result = await _controller.UpdateAccountMapping(id, request, CancellationToken.None);
 
 		// Assert
 		Assert.IsType<NoContent>(result.Result);
@@ -197,7 +198,7 @@ public class YnabAccountMappingControllerTests
 		};
 
 		// Act
-		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result = await _controller.UpdateAccountMapping(id, request, CancellationToken.None);
+		Results<NoContent, NotFound, BadRequestProblem> result = await _controller.UpdateAccountMapping(id, request, CancellationToken.None);
 
 		// Assert
 		Assert.IsType<NotFound>(result.Result);
@@ -224,7 +225,7 @@ public class YnabAccountMappingControllerTests
 			YnabBudgetId = BudgetB,
 		};
 
-		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result =
+		Results<NoContent, NotFound, BadRequestProblem> result =
 			await _controller.UpdateAccountMapping(id, request, CancellationToken.None);
 
 		Assert.IsType<NotFound>(result.Result);

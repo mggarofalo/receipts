@@ -1738,7 +1738,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
     post:
@@ -1870,7 +1870,7 @@ paths:
         "400":
           description: Bad Request â€” returned when `accountId` does not refer to an existing Account.
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
         "404":
@@ -1946,7 +1946,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
     post:
@@ -1975,7 +1975,7 @@ paths:
         "400":
           description: Bad Request â€” returned when `accountId` does not refer to an existing Account.
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
   /api/cards/batch:
@@ -2006,7 +2006,7 @@ paths:
         "400":
           description: Bad Request â€” returned when any entry's `accountId` does not refer to an existing Account.
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
     put:
@@ -2030,7 +2030,7 @@ paths:
         "400":
           description: Bad Request â€” returned when any entry's `accountId` does not refer to an existing Account.
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
         "404":
@@ -2069,7 +2069,7 @@ paths:
             YNAB budgets that the single-winner request cannot resolve. Remove obsolete
             mappings until at most one budget conflicts, then retry.
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
         "404":
@@ -2113,7 +2113,7 @@ paths:
             Bad Request â€” invalid merge selection, or conflicting mappings in multiple
             YNAB budgets that must be reduced before the merge can be previewed.
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
         "404":
@@ -2206,7 +2206,7 @@ paths:
             Conflict â€” receipt items use this category name. ProblemDetails includes
             receiptItemCount (matching items, including trash) as an extension.
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -2233,7 +2233,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -2295,7 +2295,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
     post:
@@ -2459,7 +2459,7 @@ paths:
             isDeleted (boolean). Deleted receipts are not available at the ordinary
             receipt detail route. The sample length is not an item count.
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -2486,7 +2486,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -2554,7 +2554,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
     post:
@@ -2688,7 +2688,7 @@ paths:
         "409":
           description: The item template changed during the update
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -2729,7 +2729,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
     post:
@@ -2800,7 +2800,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -2902,7 +2902,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -3017,7 +3017,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -3071,7 +3071,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -3139,13 +3139,13 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
         "409":
           description: The pending-review count changed since the caller previewed it. Nothing was deleted.
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -3178,7 +3178,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -3256,7 +3256,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -3286,7 +3286,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
         "404":
@@ -3330,13 +3330,13 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
         "404":
           description: Not Found â€” the kept or the discarded id does not exist
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -3384,7 +3384,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
         "404":
@@ -3457,13 +3457,13 @@ paths:
         "400":
           description: Bad Request â€” an empty id, or the row is a rejected tombstone
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
         "404":
           description: Not Found â€” the row or the template does not exist
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -3498,7 +3498,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
         "404":
@@ -3544,19 +3544,19 @@ paths:
         "400":
           description: Bad Request â€” the label is whitespace-only or longer than 200 characters
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
         "404":
           description: Not Found
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
         "409":
           description: Conflict â€” another normalized description already displays that name
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -3675,7 +3675,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
     post:
@@ -3767,7 +3767,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -3794,7 +3794,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -4133,7 +4133,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
     delete:
@@ -4181,7 +4181,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -4531,7 +4531,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
     delete:
@@ -4586,7 +4586,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -4826,7 +4826,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
     delete:
@@ -4874,7 +4874,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -5026,7 +5026,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -5103,7 +5103,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -5162,7 +5162,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -5202,13 +5202,13 @@ paths:
         "400":
           description: Bad Request â€” file missing, wrong format, or validation error
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
         "409":
           description: Conflict â€” receipt state changed during import; reload and retry
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -5427,7 +5427,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -5454,7 +5454,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -5481,7 +5481,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -5512,7 +5512,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
     post:
@@ -5586,7 +5586,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
         "404":
@@ -5594,7 +5594,7 @@ paths:
         "409":
           description: Conflict
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
     delete:
@@ -5699,7 +5699,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
         "404":
@@ -5707,7 +5707,7 @@ paths:
         "409":
           description: Conflict
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
     delete:
@@ -5734,7 +5734,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
         "404":
@@ -5742,7 +5742,7 @@ paths:
         "409":
           description: Conflict
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -5824,7 +5824,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -5895,7 +5895,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -5944,7 +5944,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -6008,7 +6008,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -6064,7 +6064,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -6108,7 +6108,7 @@ paths:
         "404":
           description: One or more receipts were not found
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -6192,7 +6192,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -6249,7 +6249,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -6322,7 +6322,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -6364,7 +6364,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -6410,7 +6410,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -6457,7 +6457,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -6495,7 +6495,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -6533,7 +6533,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
@@ -6666,7 +6666,7 @@ paths:
         "400":
           description: Bad Request
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 

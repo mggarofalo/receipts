@@ -14,7 +14,6 @@ namespace API.Controllers;
 [ApiVersion("1.0")]
 [ApiController]
 [Route("api/users/{userId}/roles")]
-[Produces("application/json")]
 [Authorize(Policy = "RequireAdmin")]
 public class UserRolesController(
 	UserManager<ApplicationUser> userManager,
@@ -39,7 +38,7 @@ public class UserRolesController(
 
 	[HttpPost("{role}")]
 	[EndpointSummary("Assign role to user")]
-	public async Task<Results<NoContent, NotFound, BadRequest<ProblemDetails>, Conflict<ProblemDetails>>> AssignUserRole([FromRoute] string userId, [FromRoute] string role)
+	public async Task<Results<NoContent, NotFound, BadRequestProblem, ConflictProblem>> AssignUserRole([FromRoute] string userId, [FromRoute] string role)
 	{
 		string? actorId = RoleChangeActor.GetSubject(User);
 		if (actorId is null)
@@ -55,7 +54,7 @@ public class UserRolesController(
 
 	[HttpDelete("{role}")]
 	[EndpointSummary("Remove role from user")]
-	public async Task<Results<NoContent, NotFound, BadRequest<ProblemDetails>, Conflict<ProblemDetails>>> RemoveUserRole([FromRoute] string userId, [FromRoute] string role)
+	public async Task<Results<NoContent, NotFound, BadRequestProblem, ConflictProblem>> RemoveUserRole([FromRoute] string userId, [FromRoute] string role)
 	{
 		string? actorId = RoleChangeActor.GetSubject(User);
 		if (actorId is null)

@@ -35,7 +35,6 @@ namespace API.Controllers;
 [ApiVersion("1.0")]
 [ApiController]
 [Route("api/normalized-descriptions")]
-[Produces("application/json")]
 [Authorize(Policy = "RequireAdmin")]
 public class NormalizedDescriptionsController(IMediator mediator) : ControllerBase
 {
@@ -107,7 +106,7 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 	[HttpPatch(RouteSettings)]
 	[EndpointSummary("Update the normalized-description threshold settings")]
 	[EndpointDescription("Both thresholds must satisfy 0 <= pendingReviewThreshold < autoAcceptThreshold <= 1. Admin-only.")]
-	public async Task<Results<Ok<NormalizedDescriptionSettingsResponse>, BadRequest<ProblemDetails>>> UpdateSettings(
+	public async Task<Results<Ok<NormalizedDescriptionSettingsResponse>, BadRequestProblem>> UpdateSettings(
 		[FromBody] UpdateNormalizedDescriptionSettingsRequest request,
 		CancellationToken cancellationToken)
 	{
@@ -134,7 +133,7 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 	[HttpPost(RouteTest)]
 	[EndpointSummary("Probe the normalized-description classifier for a given description")]
 	[EndpointDescription("Returns the top-N ANN candidates and the classification branch the resolver would take. Admin-only.")]
-	public async Task<Results<Ok<MatchTestResultResponse>, BadRequest<ProblemDetails>>> TestMatch(
+	public async Task<Results<Ok<MatchTestResultResponse>, BadRequestProblem>> TestMatch(
 		[FromBody] TestMatchRequest request,
 		CancellationToken cancellationToken)
 	{
@@ -183,7 +182,7 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 	[HttpPost(RoutePreview)]
 	[EndpointSummary("Preview the impact of changing normalized-description thresholds")]
 	[EndpointDescription("Returns current and proposed classification counts with per-bucket deltas. Admin-only.")]
-	public async Task<Results<Ok<ThresholdImpactPreviewResponse>, BadRequest<ProblemDetails>>> PreviewThresholdImpact(
+	public async Task<Results<Ok<ThresholdImpactPreviewResponse>, BadRequestProblem>> PreviewThresholdImpact(
 		[FromBody] PreviewThresholdImpactRequest request,
 		CancellationToken cancellationToken)
 	{
@@ -210,7 +209,7 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 	[HttpGet(RouteGetAll)]
 	[EndpointSummary("List normalized descriptions")]
 	[EndpointDescription("Returns one page of canonical normalized-description rows, optionally filtered by status and search term. Search matches the display name and the matched text. Admin-only.")]
-	public async Task<Results<Ok<NormalizedDescriptionListResponse>, BadRequest<ProblemDetails>>> GetAllNormalizedDescriptions(
+	public async Task<Results<Ok<NormalizedDescriptionListResponse>, BadRequestProblem>> GetAllNormalizedDescriptions(
 		[FromQuery] string[]? status,
 		[FromQuery] string? q,
 		[FromQuery] int offset = 0,
@@ -279,7 +278,7 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 	[HttpGet(RouteGetById)]
 	[EndpointSummary("Get a normalized description by ID")]
 	[EndpointDescription("Returns a single canonical normalized-description row by GUID. Admin-only.")]
-	public async Task<Results<Ok<NormalizedDescriptionResponse>, NotFound, BadRequest<ProblemDetails>>> GetNormalizedDescriptionById(
+	public async Task<Results<Ok<NormalizedDescriptionResponse>, NotFound, BadRequestProblem>> GetNormalizedDescriptionById(
 		[FromRoute] Guid id,
 		CancellationToken cancellationToken)
 	{
@@ -302,7 +301,7 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 	[ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict, "application/problem+json")]
 	[EndpointSummary("Merge two normalized descriptions")]
 	[EndpointDescription("Re-links every live ReceiptItem currently pointing at discardId to the canonical row identified by the path {id}, then deletes the discarded row. Returns the count of re-linked items, which is legitimately zero when the discarded row had no live items. Returns 404 if either id does not exist. Admin-only.")]
-	public async Task<Results<Ok<MergeNormalizedDescriptionsResponse>, BadRequest<ProblemDetails>, NotFound<ProblemDetails>, Conflict<ProblemDetails>>> MergeNormalizedDescriptions(
+	public async Task<Results<Ok<MergeNormalizedDescriptionsResponse>, BadRequestProblem, NotFoundProblem, ConflictProblem>> MergeNormalizedDescriptions(
 		[FromRoute] Guid id,
 		[FromBody] MergeNormalizedDescriptionRequest request,
 		CancellationToken cancellationToken)
@@ -344,7 +343,7 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 	[ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict, "application/problem+json")]
 	[EndpointSummary("Detach a receipt item from its normalized description")]
 	[EndpointDescription("Creates a new canonical NormalizedDescription row for the supplied ReceiptItem's raw description and re-points the item at it. Used to unpick bad auto-merges. Admin-only.")]
-	public async Task<Results<Ok<NormalizedDescriptionResponse>, NotFound, BadRequest<ProblemDetails>, ForbiddenProblem, Conflict<ProblemDetails>>> SplitNormalizedDescription(
+	public async Task<Results<Ok<NormalizedDescriptionResponse>, NotFound, BadRequestProblem, ForbiddenProblem, ConflictProblem>> SplitNormalizedDescription(
 		[FromRoute] Guid id,
 		[FromBody] SplitNormalizedDescriptionRequest request,
 		CancellationToken cancellationToken)
@@ -388,7 +387,7 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 	[HttpPatch(RouteUpdateStatus)]
 	[EndpointSummary("Update the status of a normalized description")]
 	[EndpointDescription("Flips a NormalizedDescription between Active and PendingReview. Returns 204 on success and 404 when the row does not exist. Admin-only.")]
-	public async Task<Results<NoContent, NotFound, BadRequest<ProblemDetails>>> UpdateNormalizedDescriptionStatus(
+	public async Task<Results<NoContent, NotFound, BadRequestProblem>> UpdateNormalizedDescriptionStatus(
 		[FromRoute] Guid id,
 		[FromBody] UpdateNormalizedDescriptionStatusRequest request,
 		CancellationToken cancellationToken)
@@ -424,7 +423,7 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 	[HttpPatch(RouteRename)]
 	[EndpointSummary("Set or clear a normalized description's display label")]
 	[EndpointDescription("Changes only the display label — never canonicalName, never the embedding — so a rename cannot change which receipt text resolves to this row. Send a null displayLabel to clear it. Returns 409 when another row already displays that name. Admin-only.")]
-	public async Task<Results<Ok<NormalizedDescriptionResponse>, NotFound<ProblemDetails>, BadRequest<ProblemDetails>, Conflict<ProblemDetails>>> RenameNormalizedDescription(
+	public async Task<Results<Ok<NormalizedDescriptionResponse>, NotFoundProblem, BadRequestProblem, ConflictProblem>> RenameNormalizedDescription(
 		[FromRoute] Guid id,
 		[FromBody] RenameNormalizedDescriptionRequest request,
 		CancellationToken cancellationToken)
@@ -461,7 +460,7 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 	[HttpPost(RouteLinkTemplate)]
 	[EndpointSummary("Record that this row is an existing item template's item")]
 	[EndpointDescription("Points the template's foreign key at its own canonical entry and consolidates the row at {id} into it, deleting {id} unless it already was that entry. Returns the surviving row, the items re-linked, and which of the two happened. Admin-only.")]
-	public async Task<Results<Ok<LinkItemTemplateResponse>, BadRequest<ProblemDetails>, NotFound<ProblemDetails>>> LinkItemTemplateToNormalizedDescription(
+	public async Task<Results<Ok<LinkItemTemplateResponse>, BadRequestProblem, NotFoundProblem>> LinkItemTemplateToNormalizedDescription(
 		[FromRoute] Guid id,
 		[FromBody] LinkItemTemplateRequest request,
 		CancellationToken cancellationToken)
@@ -523,7 +522,7 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 	[HttpPost(RouteRequeuePending)]
 	[EndpointSummary("Delete every pending-review description so the resolver rebuilds it")]
 	[EndpointDescription("Deletes all PendingReview rows and, in the same transaction, nulls the FK and the match score on every receipt item that pointed at one. Returns 409 when expectedFingerprint no longer matches the live pending set. Admin-only.")]
-	public async Task<Results<Ok<RequeuePendingResponse>, BadRequest<ProblemDetails>, Conflict<ProblemDetails>>> RequeuePending(
+	public async Task<Results<Ok<RequeuePendingResponse>, BadRequestProblem, ConflictProblem>> RequeuePending(
 		[FromBody] RequeuePendingRequest request,
 		CancellationToken cancellationToken)
 	{

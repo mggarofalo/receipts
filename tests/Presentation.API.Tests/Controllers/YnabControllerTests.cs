@@ -1,5 +1,6 @@
 using API.Controllers;
 using API.Generated.Dtos;
+using API.Http;
 using API.Mapping.Core;
 using Application.Commands.Ynab.CategoryMapping;
 using Application.Commands.Ynab.MemoSync;
@@ -92,7 +93,7 @@ public class YnabControllerTests
 		_mediatorMock.Setup(m => m.Send(It.IsAny<GetYnabSyncEventsQuery>(), It.IsAny<CancellationToken>()))
 			.ReturnsAsync(paged);
 
-		Results<Ok<YnabSyncEventListResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<YnabSyncEventListResponse>, BadRequestProblem> result =
 			await _controller.GetEvents(cancellationToken: CancellationToken.None);
 
 		Ok<YnabSyncEventListResponse> ok = result.Result.Should().BeOfType<Ok<YnabSyncEventListResponse>>().Subject;
@@ -107,10 +108,10 @@ public class YnabControllerTests
 	[InlineData(0, 50, "bogus")]
 	public async Task GetEvents_ReturnsBadRequest_ForInvalidArguments(int offset, int limit, string? outcome)
 	{
-		Results<Ok<YnabSyncEventListResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<YnabSyncEventListResponse>, BadRequestProblem> result =
 			await _controller.GetEvents(offset: offset, limit: limit, outcome: outcome, cancellationToken: CancellationToken.None);
 
-		result.Result.Should().BeOfType<BadRequest<ProblemDetails>>();
+		result.Result.Should().BeOfType<BadRequestProblem>();
 	}
 
 	[Fact]
@@ -327,7 +328,7 @@ public class YnabControllerTests
 		};
 
 		// Act
-		Results<Created<YnabCategoryMappingResponse>, Conflict<ProblemDetails>, BadRequest<ProblemDetails>> result = await _controller.CreateCategoryMapping(request, CancellationToken.None);
+		Results<Created<YnabCategoryMappingResponse>, ConflictProblem, BadRequestProblem> result = await _controller.CreateCategoryMapping(request, CancellationToken.None);
 
 		// Assert
 		Created<YnabCategoryMappingResponse> createdResult = Assert.IsType<Created<YnabCategoryMappingResponse>>(result.Result);
@@ -353,10 +354,10 @@ public class YnabControllerTests
 		};
 
 		// Act
-		Results<Created<YnabCategoryMappingResponse>, Conflict<ProblemDetails>, BadRequest<ProblemDetails>> result = await _controller.CreateCategoryMapping(request, CancellationToken.None);
+		Results<Created<YnabCategoryMappingResponse>, ConflictProblem, BadRequestProblem> result = await _controller.CreateCategoryMapping(request, CancellationToken.None);
 
 		// Assert
-		Conflict<ProblemDetails> conflictResult = Assert.IsType<Conflict<ProblemDetails>>(result.Result);
+		ConflictProblem conflictResult = Assert.IsType<ConflictProblem>(result.Result);
 		conflictResult.Value!.Detail.Should().Contain("already exists");
 	}
 
@@ -377,10 +378,10 @@ public class YnabControllerTests
 			YnabBudgetId = BudgetB,
 		};
 
-		Results<Created<YnabCategoryMappingResponse>, Conflict<ProblemDetails>, BadRequest<ProblemDetails>> result =
+		Results<Created<YnabCategoryMappingResponse>, ConflictProblem, BadRequestProblem> result =
 			await _controller.CreateCategoryMapping(request, CancellationToken.None);
 
-		BadRequest<ProblemDetails> badRequest = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badRequest = Assert.IsType<BadRequestProblem>(result.Result);
 		badRequest.Value!.Detail.Should().Contain("selected YNAB budget");
 	}
 
@@ -414,7 +415,7 @@ public class YnabControllerTests
 		};
 
 		// Act
-		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result = await _controller.UpdateCategoryMapping(id, request, CancellationToken.None);
+		Results<NoContent, NotFound, BadRequestProblem> result = await _controller.UpdateCategoryMapping(id, request, CancellationToken.None);
 
 		// Assert
 		Assert.IsType<NoContent>(result.Result);
@@ -439,7 +440,7 @@ public class YnabControllerTests
 		};
 
 		// Act
-		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result = await _controller.UpdateCategoryMapping(id, request, CancellationToken.None);
+		Results<NoContent, NotFound, BadRequestProblem> result = await _controller.UpdateCategoryMapping(id, request, CancellationToken.None);
 
 		// Assert
 		Assert.IsType<NotFound>(result.Result);
@@ -470,7 +471,7 @@ public class YnabControllerTests
 			YnabBudgetId = BudgetB,
 		};
 
-		Results<NoContent, NotFound, BadRequest<ProblemDetails>> result =
+		Results<NoContent, NotFound, BadRequestProblem> result =
 			await _controller.UpdateCategoryMapping(id, request, CancellationToken.None);
 
 		Assert.IsType<NotFound>(result.Result);

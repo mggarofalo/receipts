@@ -12,13 +12,12 @@ namespace API.Controllers;
 [ApiVersion("1.0")]
 [ApiController]
 [Route("api/search")]
-[Produces("application/json")]
 [Authorize]
 public class SearchController(IMediator mediator) : ControllerBase
 {
 	[HttpGet("purchases")]
 	[EndpointSummary("Search purchase history")]
-	public async Task<Results<Ok<PurchaseSearchResponse>, BadRequest<ProblemDetails>>> SearchPurchases(
+	public async Task<Results<Ok<PurchaseSearchResponse>, BadRequestProblem>> SearchPurchases(
 		[FromQuery] string? q,
 		CancellationToken cancellationToken,
 		[FromQuery] int offset = 0,

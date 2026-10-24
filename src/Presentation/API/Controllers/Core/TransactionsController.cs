@@ -21,7 +21,6 @@ namespace API.Controllers.Core;
 [ApiVersion("1.0")]
 [ApiController]
 [Route("api/transactions")]
-[Produces("application/json")]
 [Authorize]
 public class TransactionsController(IMediator mediator, TransactionMapper mapper, ILogger<TransactionsController> logger, IEntityChangeNotifier notifier) : ControllerBase
 {
@@ -55,7 +54,7 @@ public class TransactionsController(IMediator mediator, TransactionMapper mapper
 
 	[HttpGet(RouteGetAll)]
 	[EndpointSummary("Get all transactions")]
-	public async Task<Results<Ok<TransactionListResponse>, BadRequest<ProblemDetails>>> GetAllTransactions([FromQuery] Guid? receiptId = null, [FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, CancellationToken cancellationToken = default)
+	public async Task<Results<Ok<TransactionListResponse>, BadRequestProblem>> GetAllTransactions([FromQuery] Guid? receiptId = null, [FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, CancellationToken cancellationToken = default)
 	{
 		if (offset < 0)
 		{
@@ -108,7 +107,7 @@ public class TransactionsController(IMediator mediator, TransactionMapper mapper
 	[HttpGet(RouteGetDeleted)]
 	[EndpointSummary("Get all soft-deleted transactions")]
 	[EndpointDescription("Returns all transactions that have been soft-deleted.")]
-	public async Task<Results<Ok<TransactionListResponse>, BadRequest<ProblemDetails>>> GetDeletedTransactions([FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, CancellationToken cancellationToken = default)
+	public async Task<Results<Ok<TransactionListResponse>, BadRequestProblem>> GetDeletedTransactions([FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, CancellationToken cancellationToken = default)
 	{
 		if (offset < 0)
 		{
@@ -145,7 +144,7 @@ public class TransactionsController(IMediator mediator, TransactionMapper mapper
 
 	[HttpPost(RouteCreate)]
 	[EndpointSummary("Create a single transaction")]
-	public async Task<Results<Ok<TransactionResponse>, Conflict<ProblemDetails>>> CreateTransaction([FromBody] CreateTransactionRequest model, [FromRoute] Guid receiptId, CancellationToken cancellationToken = default)
+	public async Task<Results<Ok<TransactionResponse>, ConflictProblem>> CreateTransaction([FromBody] CreateTransactionRequest model, [FromRoute] Guid receiptId, CancellationToken cancellationToken = default)
 	{
 		Transaction transaction = mapper.ToDomain(model);
 		CreateTransactionCommand command = new([transaction], receiptId);
@@ -164,7 +163,7 @@ public class TransactionsController(IMediator mediator, TransactionMapper mapper
 
 	[HttpPost(RouteCreateBatch)]
 	[EndpointSummary("Create transactions in batch")]
-	public async Task<Results<Ok<List<TransactionResponse>>, Conflict<ProblemDetails>>> CreateTransactions([FromBody] List<CreateTransactionRequest> models, [FromRoute] Guid receiptId, CancellationToken cancellationToken = default)
+	public async Task<Results<Ok<List<TransactionResponse>>, ConflictProblem>> CreateTransactions([FromBody] List<CreateTransactionRequest> models, [FromRoute] Guid receiptId, CancellationToken cancellationToken = default)
 	{
 		List<Transaction> transactions = [.. models.Select(m =>
 		{
@@ -190,7 +189,7 @@ public class TransactionsController(IMediator mediator, TransactionMapper mapper
 
 	[HttpPut(RouteUpdate)]
 	[EndpointSummary("Update a single transaction")]
-	public async Task<Results<NoContent, NotFound, Conflict<ProblemDetails>>> UpdateTransaction([FromBody] UpdateTransactionRequest model, [FromRoute] Guid id, CancellationToken cancellationToken = default)
+	public async Task<Results<NoContent, NotFound, ConflictProblem>> UpdateTransaction([FromBody] UpdateTransactionRequest model, [FromRoute] Guid id, CancellationToken cancellationToken = default)
 	{
 		// Route id is authoritative; ignore any mismatched body id (RECEIPTS-793).
 		model.Id = id;
@@ -218,7 +217,7 @@ public class TransactionsController(IMediator mediator, TransactionMapper mapper
 
 	[HttpPut(RouteUpdateBatch)]
 	[EndpointSummary("Update transactions in batch")]
-	public async Task<Results<NoContent, NotFound, Conflict<ProblemDetails>>> UpdateTransactions([FromBody] List<UpdateTransactionRequest> models, CancellationToken cancellationToken = default)
+	public async Task<Results<NoContent, NotFound, ConflictProblem>> UpdateTransactions([FromBody] List<UpdateTransactionRequest> models, CancellationToken cancellationToken = default)
 	{
 		List<Transaction> transactions = [.. models.Select(m =>
 		{
@@ -250,7 +249,7 @@ public class TransactionsController(IMediator mediator, TransactionMapper mapper
 	[HttpDelete(RouteDelete)]
 	[EndpointSummary("Delete transactions")]
 	[EndpointDescription("Deletes one or more transactions by their IDs. Returns 404 if any transaction is not found.")]
-	public async Task<Results<NoContent, NotFound, Conflict<ProblemDetails>>> DeleteTransactions([FromBody] List<Guid> ids, CancellationToken cancellationToken = default)
+	public async Task<Results<NoContent, NotFound, ConflictProblem>> DeleteTransactions([FromBody] List<Guid> ids, CancellationToken cancellationToken = default)
 	{
 		DeleteTransactionCommand command = new(ids);
 		bool result;
@@ -276,7 +275,7 @@ public class TransactionsController(IMediator mediator, TransactionMapper mapper
 	[HttpPost(RouteRestore)]
 	[EndpointSummary("Restore a soft-deleted transaction")]
 	[EndpointDescription("Restores a previously soft-deleted transaction by clearing its DeletedAt timestamp.")]
-	public async Task<Results<NoContent, NotFound, Conflict<ProblemDetails>>> RestoreTransaction([FromRoute] Guid id, CancellationToken cancellationToken = default)
+	public async Task<Results<NoContent, NotFound, ConflictProblem>> RestoreTransaction([FromRoute] Guid id, CancellationToken cancellationToken = default)
 	{
 		RestoreTransactionCommand command = new(id);
 		bool result;

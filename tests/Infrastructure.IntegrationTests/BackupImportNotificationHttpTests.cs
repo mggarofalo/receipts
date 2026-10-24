@@ -1,6 +1,7 @@
 using System.Data.Common;
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using API.Configuration;
 using API.Controllers;
 using API.Generated.Dtos;
@@ -68,6 +69,10 @@ public class BackupImportNotificationHttpTests(PostgresFixture fixture) : IClass
 		if (failAfterReceiptWrite)
 		{
 			response.StatusCode.Should().Be(HttpStatusCode.BadRequest, await response.Content.ReadAsStringAsync());
+			response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+			using JsonDocument problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+			problem.RootElement.GetProperty("status").GetInt32().Should().Be(400);
+			problem.RootElement.GetProperty("detail").GetString().Should().Contain("invalid data");
 			finalLocation.Should().Be("Before restore");
 			finalAudits.Should().Be(auditBefore);
 			visibleAtEnqueue.Should().BeEmpty();
@@ -76,6 +81,7 @@ public class BackupImportNotificationHttpTests(PostgresFixture fixture) : IClass
 		else
 		{
 			response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+			response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
 			BackupImportResponse result = (await response.Content.ReadFromJsonAsync<BackupImportResponse>())!;
 			result.ReceiptsUpdated.Should().Be(1);
 			finalLocation.Should().Be("Restored receipt");

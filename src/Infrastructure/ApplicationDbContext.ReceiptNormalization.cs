@@ -159,12 +159,7 @@ public partial class ApplicationDbContext
 					}
 				}
 			}
-			if (item.DeletedAt is not null || parents[item.ReceiptId].DeletedAt is not null)
-			{
-				item.NormalizationReviewState = NormalizationReviewState.NeedsReview;
-				item.NormalizationReviewReason = "unavailable";
-				continue;
-			}
+			bool unavailable = item.DeletedAt is not null || parents[item.ReceiptId].DeletedAt is not null;
 			NormalizationSourceMappingEntity? mapping = mappings.GetValueOrDefault(hash);
 			bool mappingValid = mapping is not null && (mapping.Exclude || (mapping.TargetId is Guid mappedTarget
 				&& targets.TryGetValue(mappedTarget, out var mappedIdentity) && mappedIdentity.Status == NormalizedDescriptionStatus.Active));
@@ -194,7 +189,15 @@ public partial class ApplicationDbContext
 				item.ReviewedTargetId == item.NormalizedDescriptionId, targetActive, independentReview,
 				mappingValid && item.NormalizationMappingId == mapping!.Id && item.ReviewMappingRevision == mapping.Revision,
 				item.NormalizationReviewState));
-			if (intent is null && evidenceCurrent) { continue; }
+			// Guarded trash changes availability, not an unchanged independent user decision.
+			// Reuse-dependent proof remains conservative; invalidated proof is never revived here.
+			if (intent is null && evidenceCurrent && (!unavailable || independentReview)) { continue; }
+			if (unavailable)
+			{
+				item.NormalizationReviewState = NormalizationReviewState.NeedsReview;
+				item.NormalizationReviewReason = "unavailable";
+				continue;
+			}
 			// Price/quantity/date writes do not manufacture verification from a legacy link or origin string.
 			if (intent is null && !sourceChanged && entry.State != EntityState.Added && item.NormalizationReviewState == NormalizationReviewState.NeedsReview
 				&& !entry.Property(value => value.NormalizationAssignmentId).IsModified) { continue; }

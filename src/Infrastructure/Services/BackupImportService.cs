@@ -90,6 +90,15 @@ public partial class BackupImportService(
 				await ValidateCurationReferencesAsync(sqlite, cancellationToken);
 			}
 
+			try
+			{
+				await PortableCatalogArchive.ConsumeConsolidationsAsync(context, sqlite, exportVersion, cancellationToken);
+			}
+			catch (InvalidDataException exception)
+			{
+				throw new InvalidOperationException(exception.Message, exception);
+			}
+
 			// Import in dependency order: independent entities first, then dependent ones.
 			// Accounts must come before Cards (FK constraint on Cards.AccountId → Accounts.Id).
 			(int accountsCreated, int accountsUpdated) = await UpsertAccountsAsync(context, sqlite, exportVersion, cancellationToken);
@@ -115,7 +124,14 @@ public partial class BackupImportService(
 			(int normalizedDescriptionSettingsCreated, int normalizedDescriptionSettingsUpdated) = await UpsertNormalizedDescriptionSettingsAsync(context, sqlite, exportVersion, cancellationToken);
 
 			(int acceptedPairsCreated, int acceptedPairsUpdated) = await UpsertAcceptedDuplicatePairsAsync(context, sqlite, exportVersion, priorAcceptedPairs, cancellationToken);
-			await PortableCatalogArchive.ImportAsync(context, sqlite, exportVersion, cancellationToken);
+			try
+			{
+				await PortableCatalogArchive.ImportAsync(context, sqlite, exportVersion, cancellationToken);
+			}
+			catch (InvalidDataException exception)
+			{
+				throw new InvalidOperationException(exception.Message, exception);
+			}
 
 			await transaction.CommitAsync(cancellationToken);
 
@@ -512,7 +528,7 @@ public partial class BackupImportService(
 			{
 				throw new InvalidOperationException($"Backup item template {id} has a default unit price outside the supported range. The import was rolled back.");
 			}
-			Currency? defaultUnitPriceCurrency = reader.IsDBNull(5) ? null : Enum.Parse<Currency>(reader.GetString(5));
+			Currency? defaultUnitPriceCurrency = reader.IsDBNull(5) ? null : ParseCurrency(reader.GetString(5));
 			string? defaultItemCode = reader.IsDBNull(6) ? null : reader.GetString(6);
 			string? description = reader.IsDBNull(7) ? null : reader.GetString(7);
 			Guid? canonicalId = hasCuration ? ReadNullableGuid(reader, 8) : null;
@@ -584,7 +600,7 @@ public partial class BackupImportService(
 			string location = reader.GetString(1);
 			DateOnly date = DateOnly.Parse(reader.GetString(2), CultureInfo.InvariantCulture);
 			decimal taxAmount = reader.GetDecimal(3);
-			Currency taxAmountCurrency = Enum.Parse<Currency>(reader.GetString(4));
+			Currency taxAmountCurrency = ParseCurrency(reader.GetString(4));
 			string? originalImagePath = hasImagePaths && !reader.IsDBNull(5) ? reader.GetString(5) : null;
 			string? processedImagePath = hasImagePaths && !reader.IsDBNull(6) ? reader.GetString(6) : null;
 
@@ -650,9 +666,9 @@ public partial class BackupImportService(
 			string description = reader.GetString(3);
 			decimal quantity = reader.GetDecimal(4);
 			decimal unitPrice = reader.GetDecimal(5);
-			Currency unitPriceCurrency = Enum.Parse<Currency>(reader.GetString(6));
+			Currency unitPriceCurrency = ParseCurrency(reader.GetString(6));
 			decimal totalAmount = reader.GetDecimal(7);
-			Currency totalAmountCurrency = Enum.Parse<Currency>(reader.GetString(8));
+			Currency totalAmountCurrency = ParseCurrency(reader.GetString(8));
 			string category = reader.GetString(9);
 			string? subcategory = reader.IsDBNull(10) ? null : reader.GetString(10);
 			Guid? canonicalId = hasCuration ? ReadNullableGuid(reader, 11) : null;
@@ -742,7 +758,7 @@ public partial class BackupImportService(
 			Guid receiptId = Guid.Parse(reader.GetString(1));
 			Guid cardId = Guid.Parse(reader.GetString(2));
 			decimal amount = reader.GetDecimal(3);
-			Currency amountCurrency = Enum.Parse<Currency>(reader.GetString(4));
+			Currency amountCurrency = ParseCurrency(reader.GetString(4));
 			DateOnly date = DateOnly.Parse(reader.GetString(5), CultureInfo.InvariantCulture);
 
 			TransactionEntity? existing = await context.Transactions
@@ -796,7 +812,7 @@ public partial class BackupImportService(
 			Guid receiptId = Guid.Parse(reader.GetString(1));
 			AdjustmentType type = Enum.Parse<AdjustmentType>(reader.GetString(2));
 			decimal amount = reader.GetDecimal(3);
-			Currency amountCurrency = Enum.Parse<Currency>(reader.GetString(4));
+			Currency amountCurrency = ParseCurrency(reader.GetString(4));
 			string? description = reader.IsDBNull(5) ? null : reader.GetString(5);
 
 			AdjustmentEntity? existing = await context.Adjustments
@@ -1140,5 +1156,16 @@ public partial class BackupImportService(
 
 		await context.SaveChangesAsync(cancellationToken);
 		return (created, updated);
+	}
+	private static Currency ParseCurrency(string value)
+	{
+		if (Enum.TryParse(value, out Currency currency)
+			&& Enum.IsDefined(currency)
+			&& string.Equals(Enum.GetName(currency), value, StringComparison.Ordinal))
+		{
+			return currency;
+		}
+
+		throw new InvalidOperationException("Backup contains an unsupported currency value. The import was rolled back.");
 	}
 }

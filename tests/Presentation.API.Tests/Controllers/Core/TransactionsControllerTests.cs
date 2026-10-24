@@ -1,5 +1,6 @@
 using API.Controllers.Core;
 using API.Generated.Dtos;
+using API.Http;
 using API.Mapping.Core;
 using API.Services;
 using Application.Commands.Transaction.Create;
@@ -108,7 +109,7 @@ public class TransactionsControllerTests
 			.ReturnsAsync(new PagedResult<Transaction>(mediatorReturn, mediatorReturn.Count, 0, 50));
 
 		// Act
-		Results<Ok<TransactionListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetAllTransactions(null, 0, 50, null, null);
+		Results<Ok<TransactionListResponse>, BadRequestProblem> rawResult = await _controller.GetAllTransactions(null, 0, 50, null, null);
 
 		// Assert
 		Ok<TransactionListResponse> result = Assert.IsType<Ok<TransactionListResponse>>(rawResult.Result);
@@ -126,10 +127,10 @@ public class TransactionsControllerTests
 	public async Task GetAllTransactions_ReturnsBadRequest_WhenOffsetIsNegative(int offset, int limit)
 	{
 		// Act
-		Results<Ok<TransactionListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetAllTransactions(null, offset, limit, null, null);
+		Results<Ok<TransactionListResponse>, BadRequestProblem> result = await _controller.GetAllTransactions(null, offset, limit, null, null);
 
 		// Assert
-		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badRequestResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badRequestResult.Value!.Detail.Should().Be("offset must be >= 0");
 	}
 
@@ -140,10 +141,10 @@ public class TransactionsControllerTests
 	public async Task GetAllTransactions_ReturnsBadRequest_WhenLimitIsOutOfRange(int offset, int limit)
 	{
 		// Act
-		Results<Ok<TransactionListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetAllTransactions(null, offset, limit, null, null);
+		Results<Ok<TransactionListResponse>, BadRequestProblem> result = await _controller.GetAllTransactions(null, offset, limit, null, null);
 
 		// Assert
-		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badRequestResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badRequestResult.Value!.Detail.Should().Be("limit must be between 1 and 500");
 	}
 
@@ -153,10 +154,10 @@ public class TransactionsControllerTests
 	public async Task GetDeletedTransactions_ReturnsBadRequest_WhenOffsetIsNegative(int offset, int limit)
 	{
 		// Act
-		Results<Ok<TransactionListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetDeletedTransactions(offset, limit, null, null);
+		Results<Ok<TransactionListResponse>, BadRequestProblem> result = await _controller.GetDeletedTransactions(offset, limit, null, null);
 
 		// Assert
-		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badRequestResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badRequestResult.Value!.Detail.Should().Be("offset must be >= 0");
 	}
 
@@ -167,10 +168,10 @@ public class TransactionsControllerTests
 	public async Task GetDeletedTransactions_ReturnsBadRequest_WhenLimitIsOutOfRange(int offset, int limit)
 	{
 		// Act
-		Results<Ok<TransactionListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetDeletedTransactions(offset, limit, null, null);
+		Results<Ok<TransactionListResponse>, BadRequestProblem> result = await _controller.GetDeletedTransactions(offset, limit, null, null);
 
 		// Assert
-		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badRequestResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badRequestResult.Value!.Detail.Should().Be("limit must be between 1 and 500");
 	}
 
@@ -204,7 +205,7 @@ public class TransactionsControllerTests
 			.ReturnsAsync(new PagedResult<Transaction>(mediatorReturn, mediatorReturn.Count, 0, 50));
 
 		// Act
-		Results<Ok<TransactionListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetAllTransactions(receiptId, 0, 50, null, null);
+		Results<Ok<TransactionListResponse>, BadRequestProblem> rawResult = await _controller.GetAllTransactions(receiptId, 0, 50, null, null);
 
 		// Assert
 		Ok<TransactionListResponse> result = Assert.IsType<Ok<TransactionListResponse>>(rawResult.Result);
@@ -228,7 +229,7 @@ public class TransactionsControllerTests
 			.ReturnsAsync(new PagedResult<Transaction>([], 0, 0, 50));
 
 		// Act
-		Results<Ok<TransactionListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetAllTransactions(receiptId, 0, 50, null, null);
+		Results<Ok<TransactionListResponse>, BadRequestProblem> rawResult = await _controller.GetAllTransactions(receiptId, 0, 50, null, null);
 
 		// Assert
 		Ok<TransactionListResponse> result = Assert.IsType<Ok<TransactionListResponse>>(rawResult.Result);
@@ -249,7 +250,7 @@ public class TransactionsControllerTests
 			.ReturnsAsync(new PagedResult<Transaction>([], 0, 0, 50));
 
 		// Act
-		Results<Ok<TransactionListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetAllTransactions(missingReceiptId, 0, 50, null, null);
+		Results<Ok<TransactionListResponse>, BadRequestProblem> rawResult = await _controller.GetAllTransactions(missingReceiptId, 0, 50, null, null);
 
 		// Assert
 		Ok<TransactionListResponse> result = Assert.IsType<Ok<TransactionListResponse>>(rawResult.Result);
@@ -432,7 +433,7 @@ public class TransactionsControllerTests
 			.ReturnsAsync(true);
 
 		// Act
-		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.UpdateTransaction(controllerInput, id);
+		Results<NoContent, NotFound, ConflictProblem> result = await _controller.UpdateTransaction(controllerInput, id);
 
 		// Assert
 		Assert.IsType<NoContent>(result.Result);
@@ -451,7 +452,7 @@ public class TransactionsControllerTests
 			.ReturnsAsync(false);
 
 		// Act
-		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.UpdateTransaction(controllerInput, id);
+		Results<NoContent, NotFound, ConflictProblem> result = await _controller.UpdateTransaction(controllerInput, id);
 
 		// Assert
 		Assert.IsType<NotFound>(result.Result);
@@ -489,7 +490,7 @@ public class TransactionsControllerTests
 			.ReturnsAsync(true);
 
 		// Act
-		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.UpdateTransactions(controllerInput);
+		Results<NoContent, NotFound, ConflictProblem> result = await _controller.UpdateTransactions(controllerInput);
 
 		// Assert
 		Assert.IsType<NoContent>(result.Result);
@@ -514,7 +515,7 @@ public class TransactionsControllerTests
 			.ReturnsAsync(true);
 
 		// Act
-		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.UpdateTransactions(controllerInput);
+		Results<NoContent, NotFound, ConflictProblem> result = await _controller.UpdateTransactions(controllerInput);
 
 		// Assert
 		Assert.IsType<NoContent>(result.Result);
@@ -540,7 +541,7 @@ public class TransactionsControllerTests
 			.ReturnsAsync(false);
 
 		// Act
-		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.UpdateTransactions(controllerInput);
+		Results<NoContent, NotFound, ConflictProblem> result = await _controller.UpdateTransactions(controllerInput);
 
 		// Assert
 		Assert.IsType<NotFound>(result.Result);
@@ -559,7 +560,7 @@ public class TransactionsControllerTests
 			.ReturnsAsync(false);
 
 		// Act
-		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.UpdateTransactions(controllerInput);
+		Results<NoContent, NotFound, ConflictProblem> result = await _controller.UpdateTransactions(controllerInput);
 
 		// Assert
 		Assert.IsType<NotFound>(result.Result);
@@ -596,7 +597,7 @@ public class TransactionsControllerTests
 			.ReturnsAsync(true);
 
 		// Act
-		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.DeleteTransactions(controllerInput);
+		Results<NoContent, NotFound, ConflictProblem> result = await _controller.DeleteTransactions(controllerInput);
 
 		// Assert
 		Assert.IsType<NoContent>(result.Result);
@@ -614,7 +615,7 @@ public class TransactionsControllerTests
 			.ReturnsAsync(false);
 
 		// Act
-		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.DeleteTransactions(controllerInput);
+		Results<NoContent, NotFound, ConflictProblem> result = await _controller.DeleteTransactions(controllerInput);
 
 		// Assert
 		Assert.IsType<NotFound>(result.Result);
@@ -632,7 +633,7 @@ public class TransactionsControllerTests
 			.ReturnsAsync(false);
 
 		// Act
-		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.DeleteTransactions(controllerInput);
+		Results<NoContent, NotFound, ConflictProblem> result = await _controller.DeleteTransactions(controllerInput);
 
 		// Assert
 		Assert.IsType<NotFound>(result.Result);
@@ -667,7 +668,7 @@ public class TransactionsControllerTests
 			.ReturnsAsync(true);
 
 		// Act
-		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.RestoreTransaction(id);
+		Results<NoContent, NotFound, ConflictProblem> result = await _controller.RestoreTransaction(id);
 
 		// Assert
 		Assert.IsType<NoContent>(result.Result);
@@ -684,7 +685,7 @@ public class TransactionsControllerTests
 			.ReturnsAsync(false);
 
 		// Act
-		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.RestoreTransaction(id);
+		Results<NoContent, NotFound, ConflictProblem> result = await _controller.RestoreTransaction(id);
 
 		// Assert
 		Assert.IsType<NotFound>(result.Result);
@@ -714,7 +715,7 @@ public class TransactionsControllerTests
 		_mediatorMock.Setup(m => m.Send(It.IsAny<UpdateTransactionCommand>(), It.IsAny<CancellationToken>()))
 			.ThrowsAsync(new ConcurrencyConflictException(detail));
 		var result = await _controller.UpdateTransaction(TransactionDtoGenerator.GenerateUpdateRequest(), Guid.NewGuid());
-		var conflict = Assert.IsType<Conflict<ProblemDetails>>(result.Result);
+		var conflict = Assert.IsType<ConflictProblem>(result.Result);
 		conflict.Value!.Status.Should().Be(409);
 		conflict.Value.Detail.Should().Be(detail);
 		_notifierMock.VerifyNoOtherCalls();
@@ -727,7 +728,7 @@ public class TransactionsControllerTests
 		_mediatorMock.Setup(m => m.Send(It.IsAny<UpdateTransactionCommand>(), It.IsAny<CancellationToken>()))
 			.ThrowsAsync(new ConcurrencyConflictException(detail));
 		var result = await _controller.UpdateTransactions(TransactionDtoGenerator.GenerateUpdateRequestList(2));
-		var conflict = Assert.IsType<Conflict<ProblemDetails>>(result.Result);
+		var conflict = Assert.IsType<ConflictProblem>(result.Result);
 		conflict.Value!.Status.Should().Be(409);
 		conflict.Value.Detail.Should().Be(detail);
 		_notifierMock.VerifyNoOtherCalls();
@@ -740,7 +741,7 @@ public class TransactionsControllerTests
 		_mediatorMock.Setup(m => m.Send(It.IsAny<DeleteTransactionCommand>(), It.IsAny<CancellationToken>()))
 			.ThrowsAsync(new ConcurrencyConflictException(detail));
 		var result = await _controller.DeleteTransactions([Guid.NewGuid()]);
-		var conflict = Assert.IsType<Conflict<ProblemDetails>>(result.Result);
+		var conflict = Assert.IsType<ConflictProblem>(result.Result);
 		conflict.Value!.Status.Should().Be(409);
 		conflict.Value.Detail.Should().Be(detail);
 		_notifierMock.VerifyNoOtherCalls();
@@ -753,7 +754,7 @@ public class TransactionsControllerTests
 		_mediatorMock.Setup(m => m.Send(It.IsAny<RestoreTransactionCommand>(), It.IsAny<CancellationToken>()))
 			.ThrowsAsync(new ConcurrencyConflictException(detail));
 		var result = await _controller.RestoreTransaction(Guid.NewGuid());
-		var conflict = Assert.IsType<Conflict<ProblemDetails>>(result.Result);
+		var conflict = Assert.IsType<ConflictProblem>(result.Result);
 		conflict.Value!.Status.Should().Be(409);
 		conflict.Value.Detail.Should().Be(detail);
 		_notifierMock.VerifyNoOtherCalls();
@@ -767,7 +768,7 @@ public class TransactionsControllerTests
 			.ThrowsAsync(new ConcurrencyConflictException(detail));
 		Microsoft.AspNetCore.Http.IResult result = await _controller.CreateTransaction(TransactionDtoGenerator.GenerateCreateRequest(), Guid.NewGuid());
 		var response = result is Microsoft.AspNetCore.Http.INestedHttpResult nested ? nested.Result : result;
-		var conflict = Assert.IsType<Conflict<ProblemDetails>>(response);
+		var conflict = Assert.IsType<ConflictProblem>(response);
 		conflict.Value!.Status.Should().Be(409);
 		conflict.Value.Detail.Should().Be(detail);
 		_notifierMock.VerifyNoOtherCalls();
@@ -781,7 +782,7 @@ public class TransactionsControllerTests
 			.ThrowsAsync(new ConcurrencyConflictException(detail));
 		Microsoft.AspNetCore.Http.IResult result = await _controller.CreateTransactions(TransactionDtoGenerator.GenerateCreateRequestList(2), Guid.NewGuid());
 		var response = result is Microsoft.AspNetCore.Http.INestedHttpResult nested ? nested.Result : result;
-		var conflict = Assert.IsType<Conflict<ProblemDetails>>(response);
+		var conflict = Assert.IsType<ConflictProblem>(response);
 		conflict.Value!.Status.Should().Be(409);
 		conflict.Value.Detail.Should().Be(detail);
 		_notifierMock.VerifyNoOtherCalls();
