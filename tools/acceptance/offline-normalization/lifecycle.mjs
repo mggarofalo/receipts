@@ -9,7 +9,7 @@ import { assertLifecycleResume, assertSettled, assertRevisionTransition, assertU
 
 import { assertCompletionBoundary, assertIndependentProof, assertRestoreDecision, assertCompletionFacts, runWithLifecycleFailureCapture, journalBrowserSave, redactedFailure, bindCompletionEvidence } from './lifecycle-completion.mjs';
 
-import {matchesPurchasePreview,observeResponse,loadBrowserBoundary} from './browser-boundary.mjs';
+import {matchesPurchasePreview,assertPurchasePreview,assertBrowserPurchase,previewRequestChain,observeResponse,loadBrowserBoundary} from './browser-boundary.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const read = p => JSON.parse(fs.readFileSync(p, 'utf8').replace(/^\uFEFF/, ''));
@@ -477,34 +477,48 @@ async function main() {
     return {container,tables:JSON.parse(query(sql))};
   }
   async function browserDraft(future) {
+    // Preview DTOs identify a source/target, not an item. Bind the actual browser
+    // receipt separately to the exact API item and PostgreSQL revision.
+    const expectedSource=source(location,line);
+    const expectedPreview=await request('/api/receipt-items/normalization-preview',{source:expectedSource,query:null,offset:0,limit:10});
+    const expectedItem=await getItem(future.item.id);assert.deepEqual(expectedItem,future.item);
+    const previewPg=postgres();
+    journal('browser-preview-baseline.json',{item:expectedItem,source:expectedSource,preview:expectedPreview,postgres:previewPg});
     await pause(65000);
     const require=createRequire(path.join(root,'src/client/package.json')); const {chromium,expect}=require('@playwright/test');
     const browser=await chromium.launch({headless:true}); const context=await browser.newContext({baseURL:ready.Frontend});
     await context.addInitScript(({accessToken,refreshToken})=>{localStorage.setItem('receipts_access_token',accessToken);localStorage.setItem('receipts_refresh_token',refreshToken);},login);
     const page=await context.newPage();
-    const apiErrors=[],previewRequests=[];
+    const apiErrors=[],previewRequests=[],previewCaptures=[];let savePlanned=false,saveRequest;
+    page.on('request',request=>{if(savePlanned && !saveRequest && request.method()==='PUT' && new URL(request.url()).pathname==='/api/receipt-items/'+future.item.id) saveRequest=request;});
     page.on('requestfailed',request=>{const url=new URL(request.url());if(url.pathname.startsWith('/api/')) apiErrors.push({path:url.pathname,method:request.method(),transportFailed:true});});
     page.on('response',response=>{
       const request=response.request(),url=new URL(response.url());
       if(!url.pathname.startsWith('/api/')) return;
-      if(response.status()>=400 && !(request.method()==='PUT' && url.pathname==='/api/receipt-items/'+future.item.id && response.status()===409)) apiErrors.push({path:url.pathname,method:request.method(),status:response.status()});
+      if(response.status()>=400 && !(request===saveRequest && request.method()==='PUT' && url.pathname==='/api/receipt-items/'+future.item.id && response.status()===409)) apiErrors.push({path:url.pathname,method:request.method(),status:response.status()});
       if(url.pathname==='/api/receipt-items/normalization-preview') {
-        let body;try {body=request.postDataJSON();} catch {}
-        previewRequests.push({path:url.pathname,method:request.method(),status:response.status(),objectBody:!!body && typeof body==='object' && !Array.isArray(body)});
+        const entry={path:url.pathname,method:request.method(),status:response.status(),requestChain:previewRequestChain(request)};
+        previewRequests.push(entry);
+        // Attach both handlers immediately; finally awaits every retained body.
+        previewCaptures.push(response.text().then(text=>{entry.text=text;},error=>{entry.captureError=error.message;}));
       }
     });
     try {
+      const tripResponse=observeResponse(page,r=>new URL(r.url()).pathname==='/api/trips' && r.request().method()==='GET' && r.status()===200);
       await page.goto('/receipts/'+future.receiptId);
+      const trip=await (await tripResponse()).json();assertBrowserPurchase(trip,future,previewPg,expectedSource);
       // The field fetches on mount; register before opening the editor so a fast
       // response cannot be missed. Bind readiness to this purchase's exact source.
-      const previewResponsePromise=observeResponse(page,response=>matchesPurchasePreview(response,source(location,line)));
+      const previewResponsePromise=observeResponse(page,matchesPurchasePreview);
       await page.getByRole('row').filter({hasText:line.description}).getByRole('button',{name:'Edit',exact:true}).click();
       const dialog=page.getByRole('dialog',{name:'Edit Item'});
       await dialog.getByLabel('Unit Price',{exact:false}).fill('8.25');
       await dialog.getByRole('button',{name:'Choose product',exact:true}).click();
       const previewResponse=await previewResponsePromise();
       assert.equal(await previewResponse.finished(),null);
-      const previewEvidence=await previewResponse.json(); assert(previewEvidence.sourceFingerprint);
+      const previewEvidence=await previewResponse.json();
+      journal('browser-preview-response.json',{requestChain:previewRequestChain(previewResponse.request()),status:previewResponse.status(),body:previewEvidence});
+      assertPurchasePreview(previewEvidence,expectedPreview);
       // Review later is enabled even during loading and then clears the choice.
       // Product choices only renders when the successful preview is ready in React.
       await expect(dialog.getByRole('list',{name:'Product choices',exact:true})).toBeAttached();
@@ -513,10 +527,10 @@ async function main() {
       await dialog.getByRole('button',{name:'Review later',exact:true}).click();
       await expect(dialog.getByText('Needs review — saved with the receipt',{exact:true})).toBeVisible();
       assert.deepEqual(apiErrors,[],'Unexpected browser API errors before competing edit');
-      assert(!previewRequests.some(r=>r.method==='POST' && !r.objectBody),'Preview POST had absent or malformed body');
       // The explicit choice captures the observed revision before a competing save.
       await update(await getItem(future.item.id),{unitPrice:4});
       const before=await settled('browser-rejection-settlement'); const portable=await exported('before-browser-rejection.db');
+      savePlanned=true;
       const response=await journalBrowserSave({page,itemId:future.item.id,journal,
         planned:{utc:new Date().toISOString(),itemId:future.item.id,url:'/api/receipt-items/'+future.item.id,method:'PUT',draftUnitPrice:8.25,intentKind:'defer',expectedItemRevision:future.item.normalizationRevision,sourceFingerprint:previewEvidence.sourceFingerprint},
         click:()=>dialog.getByRole('button',{name:'Update Item',exact:true}).click()});
@@ -535,10 +549,10 @@ async function main() {
       await dialog.getByRole('button',{name:'Cancel',exact:true}).click();
       await expect(page.getByRole('row').filter({hasText:line.description})).toContainText('$4.00');
       assert.deepEqual(apiErrors,[],'Unexpected browser API errors');
-      assert(!previewRequests.some(r=>r.method==='POST' && !r.objectBody),'Preview POST had absent or malformed body');
+      await Promise.all(previewCaptures);assert(!previewRequests.some(r=>r.captureError),'Preview response capture failed');
       journal('browser-api-observations.json',{apiErrors,previewRequests});
       await checkpoint('browser-rejection-cache-refresh-draft',{request:body,status:response.status(),problem,refreshed,interception:false});
-    } catch(error) {await page.screenshot({path:path.join(out,'browser-failure.png'),fullPage:true});throw error;} finally {if(!fs.existsSync(path.join(out,'browser-api-observations.json'))) journal('browser-api-observations.json',{apiErrors,previewRequests});await browser.close();}
+    } catch(error) {await page.screenshot({path:path.join(out,'browser-failure.png'),fullPage:true});throw error;} finally {await Promise.all(previewCaptures);if(!fs.existsSync(path.join(out,'browser-api-observations.json'))) journal('browser-api-observations.json',{apiErrors,previewRequests});await browser.close();}
   }
   },captureFailure:async error=>{
     journal('failure.json',{...stamp(),completed,syntheticReceiptIds:created,error:safeError(error)});

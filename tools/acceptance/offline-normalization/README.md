@@ -370,7 +370,21 @@ remain available if the response wait times out; no request is intercepted or re
 
 ## Browser-only completion of the retained null-body stop
 
-`browserPrior` accepts only `lifecycle-completion-18c87514`. It binds the actual
+`browserPrior` accepts `lifecycle-completion-18c87514` and the separately assessed
+`lifecycle-browser-final-a320674d` timeout before any competing edit or save.
+The latter binds the original restore chain, actual timeout assessment, exact two
+GET journals, all 17 portable application tables and the full 11-group PostgreSQL
+authenticated baseline/stop. Its private `browser-retry-assessment.json` binds a
+new read-only 42-table capture. The only earlier-to-current changes must be the
+exact login audit, successful authentication event, and five session fields, with
+old/new values verified against the audit and timestamps inside the retained login
+journal interval. PostgreSQL timestamp comparisons preserve all six stored
+fractional digits (the audit also retains the seventh .NET tick digit). Current
+complete state must equal that capture before a fresh login. The original preview
+request/response bodies remain unavailable; neither this capture nor the retry
+reconstructs them. Both old attempts remain failed.
+
+The original boundary binds the actual
 manual safe-stop assessment, both completed reconfirm/restore checkpoints, all
 21 request/response pairs numbered 2–22, all retained PostgreSQL/portable files
 and the earlier hash manifests. The raw runner log for this attempt is unavailable;
@@ -387,11 +401,16 @@ Only the browser draft scenario runs: the intentional competing price edit is
 3 to 4; the stale 8.25 draft must receive `normalization_item_changed`, survive
 refresh, and leave all other original and lifecycle financial facts exact.
 
-Preview response matching requires POST, success, an object body, the exact
-source and first page. Metadata for every preview response and every unexpected
-API error is retained without request bodies or authentication data. Missing or
-malformed POST bodies and unexpected API errors fail acceptance. Response wait
-rejections are observed immediately and later awaited inside safe-stop capture.
+Preview matching requires the actual POST path and HTTP 200. The complete response
+(source fingerprint, mapping, target revisions, candidates and first-page fields)
+must equal an independent current API preview for the known source. The actual
+browser trip response must contain the exact independently fetched item and its
+PostgreSQL revision/source before opening the editor. Visible product choices and
+loading completion establish React readiness. Full preview responses and available
+redirect-chain request data are retained privately; unavailable automation request
+bodies are diagnostic. Unexpected API errors still fail; only the planned stale
+save may return 409. Response waits and body-capture promises are observed
+immediately and awaited inside safe-stop capture.
 
 From the reviewed, clean harness HEAD, run this archive-only preflight first:
 
@@ -407,11 +426,11 @@ $browserArgs = @(
   "sourceRestart=$runtimeA/controlled-restart-source-final-20261024",
   "freshRestart=$runtimeB/controlled-restart-fresh-final-20261024",
   "followups=$runtimeA/followups-durable-20261024",
-  "browserPrior=$runtimeA/lifecycle-completion-18c87514",
+  "browserPrior=$runtimeA/lifecycle-browser-final-a320674d",
   "transition=$transition", "out=$runtimeA/lifecycle-browser-completion-<new-unique-name>"
 )
 node ./tools/acceptance/offline-normalization/lifecycle.mjs @browserArgs preflightOnly=true
-# Only after the separate live-run authorization, use the same arguments without preflightOnly.
+# The live runner uses the same arguments without preflightOnly after review and commit.
 node ./tools/acceptance/offline-normalization/lifecycle.mjs @browserArgs
 ```
 
