@@ -1,5 +1,6 @@
 using API.Http;
 using Application.Exceptions;
+using Application.Normalization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace API.Middleware;
@@ -54,6 +55,14 @@ public class GlobalExceptionHandlerMiddleware(
 	{
 		switch (exception)
 		{
+			case NormalizationCatalogException normalization:
+				return new ProblemDetails
+				{
+					Status = normalization.StatusCode,
+					Title = normalization.StatusCode switch { 400 => "Bad Request", 403 => "Forbidden", 404 => "Not Found", _ => "Conflict" },
+					Detail = normalization.Message,
+					Extensions = new Dictionary<string, object?>(normalization.Extensions) { ["code"] = normalization.Code },
+				};
 			case ConcurrencyConflictException:
 				logger.LogWarning(exception, "Concurrent update: {Message}", exception.Message);
 				return CreateProblem(StatusCodes.Status409Conflict, "Conflict", "15.5.10", exception.Message);

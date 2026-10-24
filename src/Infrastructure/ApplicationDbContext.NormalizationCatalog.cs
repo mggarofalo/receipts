@@ -15,7 +15,8 @@ public partial class ApplicationDbContext
 		// Load changed-location assignments before audit collection. The database trigger remains
 		// a defense for direct SQL; ordinary application writes produce child audit entries too.
 		Guid[] movedReceipts = ChangeTracker.Entries<ReceiptEntity>().Where(entry => entry.State == EntityState.Modified
-			&& entry.Property(receipt => receipt.Location).IsModified).Select(entry => entry.Entity.Id).ToArray();
+			&& entry.Property(receipt => receipt.Location).IsModified
+			&& entry.Property(receipt => receipt.Location).OriginalValue != entry.Entity.Location).Select(entry => entry.Entity.Id).ToArray();
 		if (movedReceipts.Length > 0)
 		{
 			ReceiptItems.IgnoreQueryFilters().IgnoreAutoIncludes().Where(item => movedReceipts.Contains(item.ReceiptId)
@@ -42,13 +43,14 @@ public partial class ApplicationDbContext
 				: entry.Property(value => value.NormalizationAssignmentId).IsModified;
 			if (linkChanged && !explicitAssignment)
 			{
-				// Legacy writers are explicit human actions unless they stamp their own origin.
+				// Unstamped links retain descriptive provenance only; they never establish reviewed evidence.
 				item.NormalizationOrigin = item.NormalizedDescriptionId.HasValue ? "manual" : "unassigned";
 				item.NormalizationMappingId = null;
 				item.NormalizationAssignmentId = Guid.NewGuid();
 			}
 			if (entry.State == EntityState.Modified
-				&& (entry.Property(value => value.Description).IsModified || entry.Property(value => value.ReceiptItemCode).IsModified)
+				&& ((entry.Property(value => value.Description).IsModified && entry.Property(value => value.Description).OriginalValue != item.Description)
+					|| (entry.Property(value => value.ReceiptItemCode).IsModified && entry.Property(value => value.ReceiptItemCode).OriginalValue != item.ReceiptItemCode))
 				&& item.NormalizationOrigin is "mapped" or "excluded")
 			{
 				item.NormalizedDescriptionId = null;

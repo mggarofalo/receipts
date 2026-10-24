@@ -52,13 +52,12 @@ public sealed partial class NormalizationAiService
 			else
 			{
 				item = await NormalizationCatalogService.SourceItems(read, selection.Source)
-					.Where(item => item.NormalizationOrigin == "unassigned" || item.NormalizationOrigin == "automatic"
-						|| (selection.IncludeLegacyUnknown && item.NormalizationOrigin == "legacy_unknown")
+					.Where(item => (item.NormalizationReviewState == NormalizationReviewState.NeedsReview
+						&& (item.NormalizedDescriptionId == null || selection.IncludeLegacyUnknown))
 						|| ((item.NormalizationOrigin == "mapped" || item.NormalizationOrigin == "excluded") && item.NormalizationAssignmentId != null
 							&& read.NormalizationSourceMappings.Any(mapping => mapping.Id == item.NormalizationMappingId && mapping.State == "revoked" && mapping.TargetId == item.NormalizedDescriptionId)))
-					.Where(item => !read.ItemTemplates.Any(template => template.DeletedAt == null && template.NormalizedDescriptionId != null && template.NormalizedDescriptionId == item.NormalizedDescriptionId)
-						&& !read.NormalizedDescriptions.Any(target => target.Status == Domain.NormalizedDescriptions.NormalizedDescriptionStatus.Rejected
-							&& (target.Id == item.NormalizedDescriptionId || target.CanonicalName.ToLower() == item.Description.Trim(' ').ToLower())))
+					.Where(item => !read.NormalizedDescriptions.Any(target => target.Status == NormalizedDescriptionStatus.Rejected
+						&& (target.Id == item.NormalizedDescriptionId || target.CanonicalName.ToLower() == item.Description.Trim(' ').ToLower())))
 					.OrderBy(item => item.Id).FirstOrDefaultAsync(cancellationToken)
 					?? throw Error(409, "source_changed", "A selected source has no eligible purchases. Refresh the source groups.");
 				if (!(await NormalizationCatalogService.ReadDecisionAsync(read, item, selection.IncludeLegacyUnknown, cancellationToken)).Eligible)

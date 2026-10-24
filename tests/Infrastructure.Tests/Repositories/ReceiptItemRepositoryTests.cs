@@ -142,6 +142,7 @@ public class ReceiptItemRepositoryTests
 		ReceiptItemRepository repository = new(_contextFactory);
 
 		Dictionary<Guid, Guid> originalRevisions = entities.ToDictionary(item => item.Id, item => item.NormalizationRevision);
+		var originalHashes = entities.ToDictionary(item => item.Id, item => item.NormalizationSourceHash);
 		// Modify receipt items
 		entities.ForEach(e =>
 		{
@@ -158,7 +159,9 @@ public class ReceiptItemRepositoryTests
 		// Assert
 		updatedEntities.Should().BeEquivalentTo(entities, opt => opt
 			.Excluding(member => member.Name == nameof(ReceiptItemEntity.Receipt))
-			.Excluding(item => item.NormalizationRevision));
+			.Excluding(item => item.NormalizationRevision)
+			.Excluding(item => item.NormalizationSourceHash));
+		updatedEntities.Should().OnlyContain(item => item.NormalizationSourceHash != null && item.NormalizationSourceHash != originalHashes[item.Id], "source edits recompute the server-owned source fingerprint");
 		updatedEntities.Should().OnlyContain(item => item.NormalizationRevision != Guid.Empty && item.NormalizationRevision != originalRevisions[item.Id],
 			"an edit rotates the server-owned stale-write token independently of detached input");
 

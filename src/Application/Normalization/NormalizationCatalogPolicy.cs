@@ -5,7 +5,8 @@ using System.Text.Json;
 namespace Application.Normalization;
 
 public sealed record CatalogAssignmentFacts(string Origin, bool ItemLive, bool ParentLive,
-	bool TargetRejected, bool SourceRejected, bool TemplateLinked, bool RevokedMappingOwned);
+	bool TargetRejected, bool SourceRejected, bool TemplateLinked, bool RevokedMappingOwned,
+	bool HasReviewedEvidence = false, bool HasLinkedTarget = false);
 public sealed record CatalogAssignmentDecision(string Disposition, bool Protected, bool Eligible);
 
 public static class NormalizationCatalogPolicy
@@ -31,18 +32,15 @@ public static class NormalizationCatalogPolicy
 	{
 		if (!facts.ItemLive || !facts.ParentLive) { return new("unavailable", true, false); }
 		if (facts.TargetRejected || facts.SourceRejected) { return new("rejected", true, false); }
-		if (facts.TemplateLinked || facts.Origin is "manual" or "template") { return new("protected", true, false); }
-		if (facts.Origin == "reviewed") { return new("reviewed", true, false); }
-		if (facts.Origin is "mapped" or "excluded")
+		if (facts.RevokedMappingOwned) { return new("revisable", false, true); }
+		// Provenance strings and template references describe history, not reviewed authority.
+		if (!facts.HasReviewedEvidence)
 		{
-			return facts.RevokedMappingOwned ? new("revisable", false, true) : new(facts.Origin, true, false);
+			if (facts.HasLinkedTarget) { return new("legacy_unknown", false, includeLegacy); }
+			return new(facts.Origin == "automatic" ? "automatic" : "unassigned", false, true);
 		}
-		return facts.Origin switch
-		{
-			"unassigned" or "automatic" => new(facts.Origin, false, true),
-			"legacy_unknown" => new("legacy_unknown", false, includeLegacy),
-			_ => new("unrecognized", true, false)
-		};
+		return facts.Origin is "mapped" or "excluded"
+			? new(facts.Origin, true, false) : new("reviewed", true, false);
 	}
 
 	public static void RequireAction(string state, string action)

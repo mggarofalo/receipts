@@ -59,67 +59,13 @@ public class NormalizedDescriptionService(
 	// of every line item.
 	internal const int MaxSampleRawDescriptions = 3;
 
-	public async Task<GetOrCreateResult> GetOrCreateAsync(string rawDescription, CancellationToken cancellationToken)
-	{
-		string normalized = (rawDescription ?? string.Empty).Trim();
-		if (string.IsNullOrEmpty(normalized))
-		{
-			throw new ArgumentException(NormalizedDescription.CanonicalNameCannotBeEmpty, nameof(rawDescription));
-		}
-
-		using ApplicationDbContext context = contextFactory.CreateDbContext();
-		(double autoAccept, double pendingReview) = await ResolveThresholdsAsync(context, cancellationToken);
-		NormalizationMatchPolicy policy = new(autoAccept, pendingReview);
-		NormalizedDescriptionEntity? exact = await FindExactCaseInsensitiveAsync(context, normalized, cancellationToken);
-		if (exact is not null)
-		{
-			MatchDecision exactDecision = policy.Decide(exact.Status, embeddingAvailable: false, similarity: null);
-			return new GetOrCreateResult(mapper.ToDomain(exact), exactDecision == MatchDecision.Rejected ? null : 1.0);
-		}
-
-		float[]? embeddingData = embeddingService.IsConfigured
-			? await TryGenerateEmbeddingAsync(normalized, cancellationToken, background: true, fallbackWhenFull: false)
-			: null;
-		Vector? embeddingVector = embeddingData is { Length: > 0 } ? new Vector(embeddingData) : null;
-		(NormalizedDescriptionEntity? topMatch, double? topSimilarity) = embeddingVector is not null
-			? await AnnSearchTopOneAsync(context, embeddingVector, cancellationToken)
-			: (null, null);
-		MatchDecision decision = policy.Decide(null, embeddingVector is not null, topMatch is null ? null : topSimilarity);
-
-		if (decision == MatchDecision.ReuseSimilar)
-		{
-			return new GetOrCreateResult(mapper.ToDomain(topMatch!), topSimilarity);
-		}
-		if (decision == MatchDecision.CreatePendingReview)
-		{
-			(NormalizedDescriptionEntity pending, _) = await InsertAsync(
-				context, normalized, NormalizedDescriptionStatus.PendingReview, embeddingVector,
-				cancellationToken, nearestNeighbourId: topMatch!.Id, nearestNeighbourSimilarity: topSimilarity);
-			return new GetOrCreateResult(mapper.ToDomain(pending), topSimilarity);
-		}
-
-		// Missing embeddings and below-floor matches intentionally share the active-creation fallback.
-		(NormalizedDescriptionEntity created, _) = await InsertAsync(
-			context, normalized, NormalizedDescriptionStatus.Active, embeddingVector, cancellationToken);
-		return new GetOrCreateResult(mapper.ToDomain(created), MatchScore: null);
-	}
 
 	/// <summary>
 	/// The canonical entry for a user-declared item template (RECEIPTS-881).
 	/// </summary>
 	/// <remarks>
-	/// Deliberately not a call into <see cref="GetOrCreateAsync"/>. That method answers "what does
-	/// this receipt text probably mean?" — it runs an ANN search and can land the result in the
-	/// review queue. This one records a declaration a user already made by creating the template,
-	/// so it takes the exact-match-or-create path only. New and reinstated rows are <c>Active</c>;
-	/// an existing exact match retains its status, including <c>PendingReview</c>.
-	/// Routing templates through the resolver would ask a human to confirm a grouping the same
-	/// human just made by hand, which is the duplication this issue exists to remove.
-	///
-	/// The embedding is still generated, because the entry has to be findable by ANN search when
-	/// the *same item typed freehand* comes in on a later receipt. That is the whole point: the
-	/// template teaches the registry a name, and the registry then recognises it without the
-	/// template.
+	/// Records the identity metadata named by a user-created template. This does not establish
+	/// receipt verification or a reusable scoped source mapping. Embeddings enrich candidate retrieval only.
 	/// </remarks>
 	public async Task<NormalizedDescription> GetOrCreateForTemplateAsync(string templateName, CancellationToken cancellationToken)
 	{
@@ -284,11 +230,11 @@ public class NormalizedDescriptionService(
 			throw new ArgumentException(MergeIdsMustDiffer, nameof(discardId));
 		}
 
-		using ApplicationDbContext context = contextFactory.CreateDbContext();
+		using ApplicationDbContext read = contextFactory.CreateDbContext();
 
-		NormalizedDescriptionEntity? keep = await context.NormalizedDescriptions
+		NormalizedDescriptionEntity? keep = await read.NormalizedDescriptions
 			.FirstOrDefaultAsync(e => e.Id == keepId, cancellationToken);
-		NormalizedDescriptionEntity? discard = await context.NormalizedDescriptions
+		NormalizedDescriptionEntity? discard = await read.NormalizedDescriptions
 			.FirstOrDefaultAsync(e => e.Id == discardId, cancellationToken);
 
 		// Named individually rather than as one "not found": an admin who merged the wrong way
@@ -309,11 +255,44 @@ public class NormalizedDescriptionService(
 		// has its link silently nulled by the database; a trashed item would then come back from
 		// the recycle bin unlinked, with no error raised anywhere. Same class of bug as the
 		// soft-deleted-transaction stranding fixed in AccountMergeService (RECEIPTS-801).
-		List<ReceiptItemEntity> items = await context.ReceiptItems
+		List<ReceiptItemEntity> observedItems = await read.ReceiptItems
 			.IgnoreQueryFilters()
 			.IgnoreAutoIncludes()
 			.Where(r => r.NormalizedDescriptionId == discardId)
 			.ToListAsync(cancellationToken);
+
+		Guid keepRevision = keep.NormalizationRevision;
+		Guid discardRevision = discard.NormalizationRevision;
+		Dictionary<string, double?> scores = new(StringComparer.Ordinal);
+		foreach (string text in observedItems.Select(item => item.Description).Distinct(StringComparer.Ordinal))
+		{ scores[text] = await SimilarityToKeepAsync(read, text, keep, cancellationToken); }
+
+		using ApplicationDbContext context = contextFactory.CreateDbContext();
+		await using IDbContextTransaction? transaction = context.Database.IsRelational()
+			? await context.Database.BeginTransactionAsync(cancellationToken) : null;
+		await NormalizationWriteGuard.LockTargetsAsync(context, [keepId, discardId], cancellationToken);
+		keep = await context.NormalizedDescriptions.SingleOrDefaultAsync(value => value.Id == keepId, cancellationToken);
+		discard = await context.NormalizedDescriptions.SingleOrDefaultAsync(value => value.Id == discardId, cancellationToken);
+		if (keep is null || discard is null || keep.NormalizationRevision != keepRevision || discard.NormalizationRevision != discardRevision)
+		{ throw new NormalizationCatalogException(409, "merge_target_changed", "A selected identity changed. Review the merge again."); }
+		Guid[] currentIds = await context.ReceiptItems.IgnoreQueryFilters().IgnoreAutoIncludes()
+			.Where(item => item.NormalizedDescriptionId == discardId).Select(item => item.Id).ToArrayAsync(cancellationToken);
+		await NormalizationWriteGuard.LockItemsAsync(context, currentIds, cancellationToken);
+		List<ReceiptItemEntity> items = await context.ReceiptItems.IgnoreQueryFilters().IgnoreAutoIncludes()
+			.Where(item => currentIds.Contains(item.Id) && item.NormalizedDescriptionId == discardId).ToListAsync(cancellationToken);
+		var parents = await context.Receipts.IgnoreQueryFilters().IgnoreAutoIncludes().Where(parent => items.Select(item => item.ReceiptId).Contains(parent.Id))
+			.ToDictionaryAsync(parent => parent.Id, cancellationToken);
+		var oldMappings = await context.NormalizationSourceMappings.Where(mapping => mapping.TargetId == discardId)
+			.ToDictionaryAsync(mapping => mapping.Id, cancellationToken);
+		HashSet<Guid> transferable = items.Where(item => parents.TryGetValue(item.ReceiptId, out var parent)
+			&& ReceiptNormalizationPolicy.EvidenceIsCurrent(new(
+				item.ReviewedSourceHash == NormalizationCatalogPolicy.Hash(new(parent.Location, item.Description, item.ReceiptItemCode)),
+				item.NormalizationReviewDecisionId.HasValue && item.NormalizationReviewDecisionId == item.NormalizationAssignmentId,
+				item.ReviewedTargetId == discardId, discard.Status == NormalizedDescriptionStatus.Active,
+				item.NormalizationReviewReason == "purchase_review",
+				item.NormalizationMappingId is Guid mappingId && oldMappings.TryGetValue(mappingId, out var mapping)
+					&& mapping.State == "active" && mapping.Revision == item.ReviewMappingRevision,
+				item.NormalizationReviewState))).Select(item => item.Id).ToHashSet();
 
 		// Repoint AND rescore. The score on each item was the cosine similarity to the
 		// DISCARDED row's embedding, so once the item points at `keep` it describes a comparison
@@ -331,11 +310,23 @@ public class NormalizedDescriptionService(
 		int rescoredCount = 0;
 		foreach (IGrouping<string, ReceiptItemEntity> group in items.GroupBy(i => i.Description, StringComparer.Ordinal))
 		{
-			double? similarity = await SimilarityToKeepAsync(context, group.Key, keep, cancellationToken);
+			double? similarity = scores.GetValueOrDefault(group.Key);
 
 			foreach (ReceiptItemEntity item in group)
 			{
 				item.NormalizedDescriptionId = keepId;
+				if (transferable.Contains(item.Id))
+				{
+					item.ReviewedTargetId = keepId;
+					item.NormalizationAssignmentId = Guid.NewGuid();
+					item.NormalizationReviewDecisionId = item.NormalizationAssignmentId;
+				}
+				else
+				{
+					var parent = parents[item.ReceiptId];
+					item.NormalizationIntent = new(ReceiptNormalizationIntentKind.Defer, Guid.NewGuid(),
+						NormalizationCatalogPolicy.Hash(new(parent.Location, item.Description, item.ReceiptItemCode)), ExpectedItemRevision: item.NormalizationRevision);
+				}
 				if (item.NormalizedDescriptionMatchScore != similarity)
 				{
 					item.NormalizedDescriptionMatchScore = similarity;
@@ -420,11 +411,6 @@ public class NormalizedDescriptionService(
 			],
 			now);
 
-		// Matching above owns no database locks. Serialize only the final write phase,
-		// before EF can update children and then delete their canonical parent.
-		await using IDbContextTransaction? transaction = context.Database.IsRelational()
-			? await context.Database.BeginTransactionAsync(cancellationToken) : null;
-		await NormalizationWriteGuard.LockTargetsAsync(context, [keepId, discardId], cancellationToken);
 		await context.SaveChangesAsync(cancellationToken);
 		if (transaction is not null)
 		{
@@ -468,7 +454,7 @@ public class NormalizedDescriptionService(
 			throw new ArgumentException(SplitRequiresAtLeastOneItem, nameof(receiptItemIds));
 		}
 
-		// Match the normalization contract from GetOrCreateAsync so that callers can't create
+		// Trim surrounding whitespace so callers cannot create
 		// whitespace-divergent duplicates via Split.
 		string canonicalName = (name ?? string.Empty).Trim();
 		if (string.IsNullOrEmpty(canonicalName))
@@ -476,23 +462,26 @@ public class NormalizedDescriptionService(
 			throw new ArgumentException(NormalizedDescription.CanonicalNameCannotBeEmpty, nameof(name));
 		}
 
-		using ApplicationDbContext context = contextFactory.CreateDbContext();
+		using ApplicationDbContext read = contextFactory.CreateDbContext();
 
 		List<Guid> distinctIds = [.. receiptItemIds.Distinct()];
-		List<ReceiptItemEntity> items = await context.ReceiptItems
+		List<ReceiptItemEntity> observedItems = await read.ReceiptItems
 			.IgnoreAutoIncludes()
 			.Where(r => distinctIds.Contains(r.Id))
 			.ToListAsync(cancellationToken);
 
-		if (items.Count != distinctIds.Count)
+		if (observedItems.Count != distinctIds.Count)
 		{
 			throw new KeyNotFoundException(ReceiptItemNotFound);
 		}
 
-		ReceiptItemEntity item = items[0];
+
+		Guid[] parentIds = observedItems.Select(item => item.ReceiptId).Distinct().ToArray();
+		var parentRevisions = await read.Receipts.IgnoreAutoIncludes().Where(parent => parentIds.Contains(parent.Id))
+			.ToDictionaryAsync(parent => parent.Id, parent => parent.NormalizationRevision, cancellationToken);
 
 		// Generate an embedding for the split item's raw description if possible, so the
-		// new entry is consistent with entries produced by GetOrCreateAsync.
+		// new identity remains available to advisory candidate retrieval.
 		Vector? embeddingVector = null;
 		if (embeddingService.IsConfigured)
 		{
@@ -500,6 +489,78 @@ public class NormalizedDescriptionService(
 			if (data is { Length: > 0 })
 			{
 				embeddingVector = new Vector(data);
+			}
+		}
+
+		var observedTarget = await FindExactCaseInsensitiveAsync(read, canonicalName, cancellationToken);
+		Dictionary<string, Vector> sourceVectors = new(StringComparer.Ordinal);
+		if (embeddingService.IsConfigured && (observedTarget?.Embedding is not null || embeddingVector is not null))
+		{
+			foreach (string text in observedItems.Select(item => item.Description).Distinct(StringComparer.Ordinal))
+			{
+				if (string.Equals(text.Trim(), canonicalName, StringComparison.OrdinalIgnoreCase)) { continue; }
+				float[]? data = await TryGenerateEmbeddingAsync(text.Trim(), cancellationToken);
+				if (data is { Length: > 0 }) { sourceVectors[text] = new Vector(data); }
+			}
+		}
+		using ApplicationDbContext context = contextFactory.CreateDbContext();
+		await using IDbContextTransaction? transaction = context.Database.IsRelational()
+			? await context.Database.BeginTransactionAsync(cancellationToken) : null;
+		await NormalizationWriteGuard.AcquireWriteGateAsync(context, cancellationToken);
+		NormalizedDescriptionEntity? existing = await FindExactCaseInsensitiveAsync(context, canonicalName, cancellationToken);
+		Guid[] targetIds = observedItems.Where(item => item.NormalizedDescriptionId.HasValue).Select(item => item.NormalizedDescriptionId!.Value)
+			.Concat(existing is null ? [] : new[] { existing.Id }).Distinct().Order().ToArray();
+		await NormalizationWriteGuard.LockTargetsAsync(context, targetIds, cancellationToken);
+		if (existing is not null) { await context.Entry(existing).ReloadAsync(cancellationToken); }
+		if (existing?.Id != observedTarget?.Id || existing?.NormalizationRevision != observedTarget?.NormalizationRevision
+			|| existing is not null && existing.Status != NormalizedDescriptionStatus.Active)
+		{ throw new NormalizationCatalogException(409, "split_target_changed", "The chosen identity changed or is not active. Review the selection again."); }
+		await ReceiptFactLock.AcquireAsync(context, parentIds, cancellationToken);
+		var currentParents = await context.Receipts.IgnoreAutoIncludes().Where(parent => parentIds.Contains(parent.Id))
+			.ToDictionaryAsync(parent => parent.Id, parent => parent.NormalizationRevision, cancellationToken);
+		if (currentParents.Count != parentRevisions.Count || parentRevisions.Any(pair => currentParents.GetValueOrDefault(pair.Key) != pair.Value))
+		{ throw new NormalizationCatalogException(409, "split_source_changed", "A selected receipt changed. Review the selection again."); }
+
+		await NormalizationWriteGuard.LockItemsAsync(context, distinctIds.ToArray(), cancellationToken);
+		List<ReceiptItemEntity> items = await context.ReceiptItems.IgnoreAutoIncludes().Where(item => distinctIds.Contains(item.Id)).ToListAsync(cancellationToken);
+		if (items.Count != observedItems.Count || items.Any(item => observedItems.Single(old => old.Id == item.Id).NormalizationRevision != item.NormalizationRevision))
+		{ throw new NormalizationCatalogException(409, "split_source_changed", "A selected purchase changed. Review the selection again."); }
+		string actor = context.ReceiptWriteActor ?? throw new NormalizationCatalogException(403, "review_actor_required", "An enabled signed-in user is required to confirm a normalization choice.");
+		bool wasInserted = existing is null;
+		NormalizedDescriptionEntity created = existing ?? new()
+		{
+			Id = Guid.NewGuid(),
+			CanonicalName = canonicalName,
+			Status = NormalizedDescriptionStatus.Active,
+			Embedding = embeddingVector,
+			EmbeddingModelVersion = embeddingVector is null ? null : OnnxEmbeddingService.EmbeddingSpaceFingerprint,
+			CreatedAt = DateTimeOffset.UtcNow
+		};
+		if (wasInserted)
+		{
+			if (await context.NormalizedDescriptions.AnyAsync(target => target.DisplayLabel != null && target.DisplayLabel.ToLower() == canonicalName.ToLower(), cancellationToken))
+			{ throw new NormalizationCatalogException(409, "normalization_name_exists", "A catalog identity already uses that display name."); }
+			context.NormalizedDescriptions.Add(created);
+			// Materialize the target for local pgvector scoring, without committing this transaction.
+			try
+			{
+				await context.SaveChangesAsync(cancellationToken);
+			}
+			catch (DbUpdateException exception) when (exception.InnerException is Npgsql.PostgresException
+			{ SqlState: Npgsql.PostgresErrorCodes.UniqueViolation, ConstraintName: "IX_NormalizedDescriptions_CanonicalName_Lower" })
+			{
+				// SaveChanges rolled back its savepoint and detached unsuccessful automatic audits.
+				// Reuse only the exact active winner; never retry the insert or commit a partial split.
+				context.Entry(created).State = EntityState.Detached;
+				var winner = await FindExactCaseInsensitiveAsync(context, canonicalName, cancellationToken);
+				if (winner is null) { throw; }
+				await NormalizationWriteGuard.LockTargetsAsync(context, [winner.Id], cancellationToken);
+				await context.Entry(winner).ReloadAsync(cancellationToken);
+				if (winner.Status != NormalizedDescriptionStatus.Active
+					|| !string.Equals(winner.CanonicalName, canonicalName, StringComparison.OrdinalIgnoreCase))
+				{ throw new NormalizationCatalogException(409, "split_target_changed", "The chosen identity changed or is not active. Review the selection again."); }
+				created = winner;
+				wasInserted = false;
 			}
 		}
 
@@ -515,13 +576,6 @@ public class NormalizedDescriptionService(
 			.ToDictionary(g => g.Key, g => g.Count());
 		List<Guid> originIds = [.. originCounts.Keys];
 
-		(NormalizedDescriptionEntity created, bool wasInserted) = await InsertAsync(
-			context,
-			canonicalName,
-			NormalizedDescriptionStatus.Active,
-			embeddingVector,
-			cancellationToken);
-
 		// Repoint AND rescore, for the reason MergeAsync does (RECEIPTS-892): each item's score was
 		// the similarity to the row it is leaving, so once it points at `created` the number
 		// describes a comparison that no longer applies. PreviewThresholdImpactAsync buckets items
@@ -530,7 +584,8 @@ public class NormalizedDescriptionService(
 		// Grouped by description so one embedding serves every item sharing that text.
 		foreach (IGrouping<string, ReceiptItemEntity> group in items.GroupBy(r => r.Description, StringComparer.Ordinal))
 		{
-			double? similarity = await SimilarityToKeepAsync(context, group.Key, created, cancellationToken);
+			double? similarity = string.Equals(group.Key.Trim(), created.CanonicalName, StringComparison.OrdinalIgnoreCase) ? 1.0
+				: sourceVectors.TryGetValue(group.Key, out var vector) ? await SimilarityToAsync(context, vector, created.Id, cancellationToken) : null;
 			foreach (ReceiptItemEntity moved in group)
 			{
 				moved.NormalizedDescriptionId = created.Id;
@@ -609,7 +664,9 @@ public class NormalizedDescriptionService(
 			}
 		}
 
+		await context.RecordReviewedAssignmentsAsync(items, actor, cancellationToken);
 		int changed = await context.SaveChangesAsync(cancellationToken);
+		if (transaction is not null) { await transaction.CommitAsync(cancellationToken); }
 		if (changed > 0)
 		{
 			await committedChangePublisher.PublishAsync(new(
@@ -921,8 +978,7 @@ public class NormalizedDescriptionService(
 		}
 
 		// Consolidating a tombstone away would delete the only record that a reviewer decided this
-		// text was not worth an entry, and the resolver would be free to recreate it on the next
-		// receipt.
+		// text was not worth an entry. Preserve that explicit rejection decision.
 		if (target.Status == NormalizedDescriptionStatus.Rejected)
 		{
 			throw new InvalidOperationException(CannotLinkTemplateToRejected);
@@ -1206,12 +1262,10 @@ public class NormalizedDescriptionService(
 		int linkedItemCount = counts?.Linked ?? 0;
 		int staleMatchScoreCount = counts?.Stale ?? 0;
 
-		// The resolver drains unresolved items at BatchSize per Interval. Approximate on purpose:
-		// the batch is shared with any items that were already unresolved before the requeue, so
-		// this is a floor on the catch-up time, not a promise.
-		int cycles = (int)Math.Ceiling(
-			linkedItemCount / (double)NormalizedDescriptionResolutionService.BatchSize);
-		int seconds = cycles * (int)NormalizedDescriptionResolutionService.Interval.TotalSeconds;
+		// Retained numeric response fields are deprecated compatibility fields. Automatic
+		// similarity rematching is retired; zero indicates no scheduled rematch estimate.
+		const int cycles = 0;
+		const int seconds = 0;
 
 		return new RequeuePendingPreview(
 			pendingIds.Count,
@@ -1755,9 +1809,7 @@ public class NormalizedDescriptionService(
 			return null;
 		}
 
-		// An exact case-insensitive name match is a perfect logical match. GetOrCreateAsync
-		// short-circuits to 1.0 here rather than paying for an embedding, and the score this
-		// writes has to mean the same thing as the score the resolver would have written.
+		// Exact spelling yields an advisory score of one; it is not verification authority.
 		if (string.Equals(normalized, keep.CanonicalName, StringComparison.OrdinalIgnoreCase))
 		{
 			return 1.0;

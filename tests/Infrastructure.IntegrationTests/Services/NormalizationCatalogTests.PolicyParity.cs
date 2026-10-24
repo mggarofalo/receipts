@@ -46,7 +46,7 @@ public sealed partial class NormalizationCatalogTests
 
 			await db.SaveChangesAsync();
 		}
-		var decision = NormalizationCatalogPolicy.Classify(new(origin, true, true, false, scenario == "raw-rejected", scenario == "template-linked", scenario == "revoked-owned"), includeLegacy);
+		var decision = NormalizationCatalogPolicy.Classify(new(origin, true, true, false, scenario == "raw-rejected", scenario == "template-linked", scenario == "revoked-owned", HasReviewedEvidence: false, HasLinkedTarget: origin != "unassigned"), includeLegacy);
 		var all = await service.ListSourcesAsync(Actor, null, "all", 0, 25, CancellationToken.None);
 		var row = all.Items.Should().ContainSingle().Subject;
 		row.ProtectedCount.Should().Be(decision.Protected ? 1 : 0);

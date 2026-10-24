@@ -94,6 +94,19 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 		{
 			Id = ri.Id,
 			NormalizationRevision = ri.NormalizationRevision,
+			NormalizationReviewState = ri.NormalizationReviewState,
+			NormalizationReviewReason = ri.NormalizationReviewReason,
+			NormalizationExclusionReason = ri.NormalizationExclusionReason,
+			NormalizationReviewDecisionId = ri.NormalizationReviewDecisionId,
+			NormalizationSourceHash = ri.NormalizationSourceHash,
+			ReviewedSourceHash = ri.ReviewedSourceHash,
+			ReviewedTargetId = ri.ReviewedTargetId,
+			ReviewedBy = ri.ReviewedBy,
+			ReviewedAt = ri.ReviewedAt,
+			ReviewMappingRevision = ri.ReviewMappingRevision,
+			NormalizationOrigin = ri.NormalizationOrigin,
+			NormalizationAssignmentId = ri.NormalizationAssignmentId,
+			NormalizationMappingId = ri.NormalizationMappingId,
 			ReceiptId = ri.ReceiptId,
 			ReceiptItemCode = ri.ReceiptItemCode,
 			Description = ri.Description,
@@ -168,6 +181,19 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 			{
 				Id = ri.Id,
 				NormalizationRevision = ri.NormalizationRevision,
+				NormalizationReviewState = ri.NormalizationReviewState,
+				NormalizationReviewReason = ri.NormalizationReviewReason,
+				NormalizationExclusionReason = ri.NormalizationExclusionReason,
+				NormalizationReviewDecisionId = ri.NormalizationReviewDecisionId,
+				NormalizationSourceHash = ri.NormalizationSourceHash,
+				ReviewedSourceHash = ri.ReviewedSourceHash,
+				ReviewedTargetId = ri.ReviewedTargetId,
+				ReviewedBy = ri.ReviewedBy,
+				ReviewedAt = ri.ReviewedAt,
+				ReviewMappingRevision = ri.ReviewMappingRevision,
+				NormalizationOrigin = ri.NormalizationOrigin,
+				NormalizationAssignmentId = ri.NormalizationAssignmentId,
+				NormalizationMappingId = ri.NormalizationMappingId,
 				ReceiptId = ri.ReceiptId,
 				ReceiptItemCode = ri.ReceiptItemCode,
 				Description = ri.Description,
@@ -202,15 +228,23 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 		return entities;
 	}
 
-	public async Task<List<ReceiptItemEntity>> CreateAsync(List<ReceiptItemEntity> entities,
+	public Task<List<ReceiptItemEntity>> CreateAsync(List<ReceiptItemEntity> entities,
 		IReadOnlyList<Guid?> templateIds, CancellationToken cancellationToken)
+		=> CreateCoreAsync(entities, templateIds, null, cancellationToken);
+
+	public Task<List<ReceiptItemEntity>> CreateAsync(List<ReceiptItemEntity> entities,
+		IReadOnlyList<Guid?> templateIds, Guid clientRequestId, CancellationToken cancellationToken)
+		=> CreateCoreAsync(entities, templateIds, clientRequestId, cancellationToken);
+
+	private async Task<List<ReceiptItemEntity>> CreateCoreAsync(List<ReceiptItemEntity> entities,
+		IReadOnlyList<Guid?> templateIds, Guid? clientRequestId, CancellationToken cancellationToken)
 	{
 		ArgumentNullException.ThrowIfNull(templateIds);
 		if (templateIds.Count != 0 && templateIds.Count != entities.Count)
 		{
 			throw new ArgumentException("Template IDs must align with receipt items.", nameof(templateIds));
 		}
-		if (templateIds.Count == 0)
+		if (templateIds.Count == 0 && clientRequestId is null)
 		{
 			return await CreateAsync(entities, cancellationToken);
 		}
@@ -224,6 +258,18 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 			await using IDbContextTransaction? transaction = context.Database.IsRelational()
 				? await context.Database.BeginTransactionAsync(cancellationToken) : null;
 			await NormalizationWriteGuard.AcquireWriteGateAsync(context, cancellationToken);
+			ReceiptWriteRequestEntity? request = null;
+			if (clientRequestId is Guid requestId)
+			{
+				request = await Infrastructure.Services.ReceiptWriteIdempotency.FindOrCreateAsync(context, requestId, "item-create",
+					new { ReceiptId = entities[0].ReceiptId, templates = templateIds, items = entities.Select(value => new { value.Description, value.ReceiptItemCode, value.Quantity, value.UnitPrice, value.TotalAmount, value.UnitPriceCurrency, value.TotalAmountCurrency, value.Category, value.Subcategory, value.NormalizationIntent }) }, cancellationToken);
+				if (request.ReceiptId != Guid.Empty)
+				{
+					var saved = await context.ReceiptItems.Where(value => request.ItemIds.Contains(value.Id)).ToListAsync(cancellationToken);
+					if (saved.Count != request.ItemIds.Length) { throw new Application.Normalization.NormalizationCatalogException(409, "receipt_request_deleted", "Items created by this request are no longer live. Restore them instead of repeating creation."); }
+					return request.ItemIds.Select(id => saved.Single(value => value.Id == id)).ToList();
+				}
+			}
 			List<Guid> targetList = await context.ItemTemplates.AsNoTracking()
 				.Where(template => ids.Contains(template.Id) && template.NormalizedDescriptionId != null)
 				.Select(template => template.NormalizedDescriptionId!.Value).Distinct().ToListAsync(cancellationToken);
@@ -250,7 +296,7 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 				ReceiptItemEntity entity = entities[i];
 				entity.NormalizedDescriptionId = null;
 				entity.NormalizedDescriptionMatchScore = null;
-				if (hints[i] is { } templateId && templates.TryGetValue(templateId, out ItemTemplateEntity? template)
+				if (i < hints.Length && hints[i] is { } templateId && templates.TryGetValue(templateId, out ItemTemplateEntity? template)
 					&& template.NormalizedDescriptionId is { } targetId && targets.ContainsKey(targetId))
 				{
 					entity.NormalizedDescriptionId = targetId;
@@ -262,6 +308,7 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 			// Stale/unknown/deleted/unlinked hints are convenience fallbacks. Even repeated
 			// concurrent relinking must not prevent the receipt itself from being saved.
 			context.ReceiptItems.AddRange(entities);
+			if (request is not null) { request.ReceiptId = entities[0].ReceiptId; request.ItemIds = entities.Select(value => value.Id).ToArray(); }
 			await context.SaveChangesAsync(cancellationToken);
 			if (transaction is not null)
 			{
@@ -271,7 +318,13 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 		}
 	}
 
-	public async Task UpdateAsync(List<ReceiptItemEntity> entities, CancellationToken cancellationToken)
+	public Task UpdateAsync(List<ReceiptItemEntity> entities, CancellationToken cancellationToken)
+		=> UpdateCoreAsync(entities, null, cancellationToken);
+
+	public Task UpdateAsync(List<ReceiptItemEntity> entities, Guid clientRequestId, CancellationToken cancellationToken)
+		=> UpdateCoreAsync(entities, clientRequestId, cancellationToken);
+
+	private async Task UpdateCoreAsync(List<ReceiptItemEntity> entities, Guid? clientRequestId, CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		await using IDbContextTransaction? transaction = context.Database.IsRelational()
@@ -280,6 +333,29 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 		// Read after locking: a worker may otherwise fill originally-null metadata before
 		// this edit saves, causing EF to omit its null clears and audit stale original values.
 		// Edits only preserve or clear links, so they need item locks, not canonical locks.
+		await NormalizationWriteGuard.AcquireWriteGateAsync(context, cancellationToken);
+		if (clientRequestId is Guid requestId)
+		{
+			var request = await Infrastructure.Services.ReceiptWriteIdempotency.FindOrCreateAsync(context, requestId, "item-update",
+				entities.Select(value => new
+				{
+					value.Id,
+					value.ReceiptId,
+					value.Description,
+					value.ReceiptItemCode,
+					value.Quantity,
+					value.UnitPrice,
+					value.UnitPriceCurrency,
+					value.TotalAmount,
+					value.TotalAmountCurrency,
+					value.Category,
+					value.Subcategory,
+					value.NormalizationIntent
+				}), cancellationToken);
+			if (request.ReceiptId != Guid.Empty) { return; }
+			request.ReceiptId = entities[0].ReceiptId;
+			request.ItemIds = ids;
+		}
 		await NormalizationWriteGuard.LockItemsAsync(context, ids, cancellationToken);
 		List<ReceiptItemEntity> existingEntities = await context.ReceiptItems
 			.IgnoreAutoIncludes()
@@ -296,6 +372,8 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 				existingEntity.NormalizedDescriptionId = null;
 				existingEntity.NormalizedDescriptionMatchScore = null;
 			}
+
+			existingEntity.NormalizationIntent = entity.NormalizationIntent;
 
 			// Parent identity and deletion metadata are not writable through an item edit.
 			existingEntity.ReceiptItemCode = entity.ReceiptItemCode;

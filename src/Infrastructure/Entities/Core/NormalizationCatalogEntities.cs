@@ -11,6 +11,7 @@ public sealed class NormalizationSourceMappingEntity
 	public Guid? TargetId { get; set; }
 	public string State { get; set; } = "active";
 	public bool Exclude { get; set; }
+	public string? ExclusionReason { get; set; }
 	public string ApprovedBy { get; set; } = "";
 	public DateTimeOffset ApprovedAt { get; set; }
 }

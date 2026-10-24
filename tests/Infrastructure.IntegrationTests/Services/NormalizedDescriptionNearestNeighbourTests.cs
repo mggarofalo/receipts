@@ -59,40 +59,6 @@ public class NormalizedDescriptionNearestNeighbourTests(PostgresFixture fixture)
 		survivor.NearestNeighbourSimilarity.Should().Be(0.86);
 	}
 
-	[Fact]
-	public async Task GetOrCreateAsync_NeighbourDeletedMidFlight_StillCreatesTheRowWithoutTheNearMiss()
-	{
-		// MergeAsync can delete the ANN top-1 match in the window between the search and the
-		// insert, which makes the new row's NearestNeighbourId dangle and Postgres reject the
-		// INSERT with an FK violation. Resolution must survive that: the near-miss is evidence,
-		// not essential data, so the row is written without it rather than failing outright.
-		await ResetTablesAsync();
-
-		Guid phantomId = Guid.NewGuid();
-
-		PhantomNeighbourService service = new(
-			new FixtureDbContextFactory(fixture),
-			new NoOpEmbeddingService(),
-			new NormalizedDescriptionMapper(),
-			new NormalizedDescriptionSettingsMapper(),
-			phantomId,
-			// Between the two thresholds, so GetOrCreateAsync takes the PendingReview branch and
-			// tries to persist the (now-deleted) neighbour.
-			(NormalizedDescriptionService.InitialAutoAcceptThreshold + NormalizedDescriptionService.InitialPendingReviewThreshold) / 2);
-
-		GetOrCreateResult result = await service.GetOrCreateAsync("Vanishing Neighbour", CancellationToken.None);
-
-		result.Description.CanonicalName.Should().Be("Vanishing Neighbour");
-		result.Description.Status.Should().Be(NormalizedDescriptionStatus.PendingReview);
-		result.Description.NearestNeighbourId.Should().BeNull("the cited row no longer exists");
-
-		await using ApplicationDbContext verify = fixture.CreateDbContext();
-		NormalizedDescriptionEntity stored = await verify.NormalizedDescriptions
-			.AsNoTracking()
-			.SingleAsync(e => e.Id == result.Description.Id);
-		stored.NearestNeighbourId.Should().BeNull();
-	}
-
 	private NormalizedDescriptionService BuildService() => new(
 		new FixtureDbContextFactory(fixture),
 		new NoOpEmbeddingService(),
@@ -114,37 +80,12 @@ public class NormalizedDescriptionNearestNeighbourTests(PostgresFixture fixture)
 			NearestNeighbourSimilarity = nearestNeighbourSimilarity,
 		};
 
-	// Returns a top-1 match that is not in the database, standing in for a neighbour that
-	// MergeAsync deleted after the ANN search read it.
-	private sealed class PhantomNeighbourService(
-		IDbContextFactory<ApplicationDbContext> contextFactory,
-		IEmbeddingService embeddingService,
-		NormalizedDescriptionMapper mapper,
-		NormalizedDescriptionSettingsMapper settingsMapper,
-		Guid phantomId,
-		double similarity) : NormalizedDescriptionService(contextFactory, embeddingService, mapper, settingsMapper)
-	{
-		protected override Task<(NormalizedDescriptionEntity? Match, double? Similarity)> AnnSearchTopOneAsync(
-			ApplicationDbContext context, Vector queryVector, CancellationToken cancellationToken)
-		{
-			NormalizedDescriptionEntity phantom = new()
-			{
-				Id = phantomId,
-				CanonicalName = "Already Merged Away",
-				Status = NormalizedDescriptionStatus.Active,
-				CreatedAt = DateTimeOffset.UtcNow,
-			};
-			return Task.FromResult<(NormalizedDescriptionEntity?, double?)>((phantom, similarity));
-		}
-	}
-
 	private sealed class FixtureDbContextFactory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
 	{
 		public ApplicationDbContext CreateDbContext() => fixture.CreateDbContext();
 	}
 
-	// The integration project doesn't reference Moq. IsConfigured=true keeps GetOrCreateAsync on
-	// the embedding path; a non-empty vector is required for the ANN branch to be reached at all.
+	// Fixed vectors keep merge rescoring deterministic without external model access.
 	private sealed class NoOpEmbeddingService : IEmbeddingService
 	{
 		public bool IsConfigured => true;

@@ -208,8 +208,16 @@ public class ReceiptsController(
 	[HttpPost(RouteCreateComplete)]
 	[EndpointSummary("Create a receipt with transactions, items, and adjustments atomically")]
 	[EndpointDescription("Creates a receipt along with its transactions, items, and signed receipt-level adjustments in a single atomic operation. If any part fails, nothing is persisted.")]
-	public async Task<Results<Ok<CompleteReceiptResponse>, BadRequest<ProblemDetails>>> CreateCompleteReceipt([FromBody] CreateCompleteReceiptRequest model, CancellationToken cancellationToken = default)
+	[ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest, "application/problem+json")]
+	[ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden, "application/problem+json")]
+	[ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict, "application/problem+json")]
+	public async Task<Results<Ok<CompleteReceiptResponse>, BadRequest<ProblemDetails>, ForbiddenProblem, Conflict<ProblemDetails>>> CreateCompleteReceipt([FromBody] CreateCompleteReceiptRequest model, CancellationToken cancellationToken = default)
 	{
+		HttpContext?.Response.OnStarting(() =>
+		{
+			if (Response.StatusCode is 400 or 403 or 409) { Response.ContentType = "application/problem+json"; }
+			return Task.CompletedTask;
+		});
 		Receipt receipt = mapper.ToDomain(model.Receipt);
 
 		List<Transaction> transactions = [.. model.Transactions.Select(m =>
@@ -221,7 +229,7 @@ public class ReceiptsController(
 		List<ReceiptItem> items = [.. model.Items.Select(receiptItemMapper.ToDomain)];
 		List<Adjustment> adjustments = [.. (model.Adjustments ?? []).Select(adjustmentMapper.ToDomain)];
 
-		CreateCompleteReceiptCommand command = new(receipt, transactions, items, adjustments);
+		CreateCompleteReceiptCommand command = new(receipt, transactions, items, adjustments, model.ClientRequestId);
 		CreateCompleteReceiptResult result = await mediator.Send(command, cancellationToken);
 
 		CompleteReceiptResponse response = new()

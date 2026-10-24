@@ -20,15 +20,7 @@ import {
   useRequeuePendingPreview,
 } from "@/hooks/useNormalizedDescriptionMaintenance";
 import { useState } from "react";
-/**
- * Operational actions for the normalized-description registry (RECEIPTS-883).
- *
- * The only action today is the requeue: existing PendingReview rows predate near-miss capture
- * (RECEIPTS-873), so they render "No comparison recorded" forever. Deleting them lets the
- * background resolver rebuild each one with real evidence. It is not backfilled, because a
- * neighbour computed now would be measured against today's registry and could name an entry
- * that did not exist when the row was created.
- */
+/** Removes explicitly previewed pending catalog records; purchases return to review. */
 export function MaintenanceTab() {
   const preview = useRequeuePendingPreview();
   const [confirmation, setConfirmation] = useState<null | {
@@ -54,7 +46,6 @@ export function MaintenanceTab() {
     pendingFingerprint,
     linkedItemCount,
     staleMatchScoreCount,
-    estimatedCatchUpSeconds,
   } = preview.data;
   const nothingToDo = pendingDescriptionCount === 0;
 
@@ -64,11 +55,10 @@ export function MaintenanceTab() {
         <CardHeader>
           <CardTitle>Requeue Pending Descriptions</CardTitle>
           <CardDescription>
-            Descriptions created before near-miss evidence was captured have
-            nothing to show in the review queue — their nearest match was never
-            recorded. Requeueing deletes them so the background resolver
-            rebuilds each one from scratch, this time with the evidence
-            attached. Active entries are never touched.
+            Removes the previewed pending catalog entries and clears their
+            purchase links and advisory scores. Purchases then need review;
+            automatic similarity rematching is not scheduled. Active entries are
+            never touched.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -95,7 +85,7 @@ export function MaintenanceTab() {
                   <p className="card-sub">Receipt items</p>
                   <p className="money-med tabular-nums">{linkedItemCount}</p>
                   <p className="text-xs text-muted-foreground">
-                    unnormalized until the resolver catches up
+                    returned to review
                   </p>
                 </div>
                 <div>
@@ -109,13 +99,9 @@ export function MaintenanceTab() {
                 </div>
               </div>
               <p className="text-sm text-muted-foreground">
-                Estimated catch-up:{" "}
-                <span className="font-medium">
-                  {formatCatchUp(estimatedCatchUpSeconds)}
-                </span>{" "}
-                at 50 items per 30-second resolver cycle. Approximate — the
-                resolver shares each batch with any items that were already
-                unresolved.
+                Review these purchases through source groups or receipt entry.
+                Only an approved exact scoped mapping can be reused
+                automatically.
               </p>
             </>
           )}
@@ -146,14 +132,6 @@ export function MaintenanceTab() {
     </div>
   );
 }
-/** "150" -> "2m 30s". Seconds only below a minute, so a tiny backlog doesn't read as "0m". */
-function formatCatchUp(seconds: number) {
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  const remainder = seconds % 60;
-  return remainder === 0 ? `${minutes}m` : `${minutes}m ${remainder}s`;
-}
-
 interface RequeueConfirmDialogProps {
   open: boolean;
   pendingDescriptionCount: number;
@@ -198,9 +176,10 @@ function RequeueConfirmDialog({
             {pendingDescriptionCount === 1 ? "entry" : "entries"} and unlinks{" "}
             {linkedItemCount} receipt {linkedItemCount === 1 ? "item" : "items"}
             . Any review judgement already applied to those entries is
-            discarded, and the items stay unnormalized until the resolver
-            rebuilds them. Active entries are not affected. This cannot be
-            undone — take a backup first if you are running against production.
+            discarded, and the items need review. No automatic similarity
+            rematching is scheduled. Active entries are not affected. This
+            cannot be undone — take a backup first if you are running against
+            production.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>

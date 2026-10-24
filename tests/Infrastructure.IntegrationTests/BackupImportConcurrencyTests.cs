@@ -75,6 +75,13 @@ public class BackupImportConcurrencyTests(PostgresFixture fixture) : IClassFixtu
 			MoveBeforeLock interceptor = new(async cancellationToken =>
 			{
 				await using ApplicationDbContext move = fixture.CreateDbContext();
+				if (kind == "item")
+				{
+					// An application writer waits for the import's NORM gate. This counterexample
+					// deliberately exercises an independent SQL writer after the import snapshot.
+					await move.Database.ExecuteSqlInterpolatedAsync($"""UPDATE receipts."ReceiptItems" SET "ReceiptId"={concurrent} WHERE "Id"={child}""", cancellationToken);
+					return;
+				}
 				object entity = kind switch
 				{
 					"transaction" => await move.Transactions.SingleAsync(row => row.Id == child, cancellationToken),

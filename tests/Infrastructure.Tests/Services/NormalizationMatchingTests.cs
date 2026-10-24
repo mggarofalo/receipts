@@ -26,12 +26,12 @@ public class NormalizationMatchingTests
 	}
 
 	[Theory]
-	[InlineData(0.9, "AutoAccept", NormalizedDescriptionStatus.Active, true)]
-	[InlineData(0.899999, "PendingReview", NormalizedDescriptionStatus.PendingReview, false)]
-	[InlineData(0.5, "PendingReview", NormalizedDescriptionStatus.PendingReview, false)]
-	[InlineData(0.499999, "CreateNew", NormalizedDescriptionStatus.Active, false)]
-	public async Task Matching_ExecutionAndSimulation_AgreeAtThresholdBoundaries(
-		double similarity, string expectedOutcome, NormalizedDescriptionStatus expectedStatus, bool reusesCandidate)
+	[InlineData(0.9, "AutoAccept", true)]
+	[InlineData(0.899999, "PendingReview", false)]
+	[InlineData(0.5, "PendingReview", false)]
+	[InlineData(0.499999, "CreateNew", false)]
+	public async Task TestMatch_AdvisoryThresholdBoundaries_DoNotCreateOrReviewIdentities(
+		double similarity, string expectedOutcome, bool reusesCandidate)
 	{
 		Guid id = Guid.NewGuid();
 		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
@@ -59,13 +59,13 @@ public class NormalizationMatchingTests
 			_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, id, similarity);
 
 		MatchTestResult preview = await service.TestMatchAsync("MLK", 5, null, null, CancellationToken.None);
-		GetOrCreateResult actual = await service.GetOrCreateAsync("MLK", CancellationToken.None);
 
 		preview.SimulatedOutcome.Should().Be(expectedOutcome);
 		preview.SimulatedTargetId.Should().Be(reusesCandidate ? id : null);
-		actual.Description.Status.Should().Be(expectedStatus);
-		(actual.Description.Id == id).Should().Be(reusesCandidate);
-		actual.MatchScore.Should().Be(expectedOutcome == "CreateNew" ? null : similarity);
+		preview.Candidates.Should().ContainSingle().Which.CosineSimilarity.Should().Be(similarity);
+		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		(await verify.NormalizedDescriptions.CountAsync()).Should().Be(1);
+		(await verify.NormalizedDescriptions.SingleAsync()).Status.Should().Be(NormalizedDescriptionStatus.Active);
 	}
 
 	[Fact]
@@ -86,13 +86,10 @@ public class NormalizationMatchingTests
 		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
 
 		MatchTestResult preview = await service.TestMatchAsync(" misc ", 5, null, null, CancellationToken.None);
-		GetOrCreateResult actual = await service.GetOrCreateAsync(" misc ", CancellationToken.None);
 
 		preview.SimulatedOutcome.Should().Be("Rejected");
 		preview.SimulatedTargetId.Should().BeNull();
 		preview.Candidates.Should().ContainSingle().Which.Status.Should().Be("Rejected");
-		actual.IsRejected.Should().BeTrue();
-		actual.MatchScore.Should().BeNull();
 		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
 		(await verify.NormalizedDescriptions.CountAsync()).Should().Be(1);
 		(await verify.NormalizedDescriptions.SingleAsync()).Status.Should().Be(NormalizedDescriptionStatus.Rejected);

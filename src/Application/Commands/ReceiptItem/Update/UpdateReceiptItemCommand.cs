@@ -5,10 +5,11 @@ namespace Application.Commands.ReceiptItem.Update;
 public record UpdateReceiptItemCommand : ICommand<bool>
 {
 	public IReadOnlyList<Domain.Core.ReceiptItem> ReceiptItems { get; }
+	public Guid? ClientRequestId { get; }
 
 	public const string ReceiptItemsCannotBeEmptyExceptionMessage = "ReceiptItems list cannot be empty.";
 
-	public UpdateReceiptItemCommand(List<Domain.Core.ReceiptItem> receiptItems)
+	public UpdateReceiptItemCommand(List<Domain.Core.ReceiptItem> receiptItems, Guid? clientRequestId = null)
 	{
 		ArgumentNullException.ThrowIfNull(receiptItems);
 
@@ -18,5 +19,6 @@ public record UpdateReceiptItemCommand : ICommand<bool>
 		}
 
 		ReceiptItems = receiptItems.AsReadOnly();
+		ClientRequestId = clientRequestId;
 	}
 }

@@ -20,10 +20,12 @@ public interface IReceiptItemRepository
 	Task<int> GetDeletedCountAsync(CancellationToken cancellationToken);
 	Task<List<ReceiptItemEntity>> CreateAsync(List<ReceiptItemEntity> entities, CancellationToken cancellationToken);
 	Task<List<ReceiptItemEntity>> CreateAsync(List<ReceiptItemEntity> entities, IReadOnlyList<Guid?> templateIds, CancellationToken cancellationToken);
+	Task<List<ReceiptItemEntity>> CreateAsync(List<ReceiptItemEntity> entities, IReadOnlyList<Guid?> templateIds, Guid clientRequestId, CancellationToken cancellationToken);
 	/// <summary>
 	/// Updates editable item fields while preserving parent/deletion metadata. A raw description change clears canonical ID and score; other edits preserve them.
 	/// </summary>
 	Task UpdateAsync(List<ReceiptItemEntity> entities, CancellationToken cancellationToken);
+	Task UpdateAsync(List<ReceiptItemEntity> entities, Guid clientRequestId, CancellationToken cancellationToken);
 	Task DeleteAsync(List<Guid> ids, CancellationToken cancellationToken);
 	Task<bool> ExistsAsync(Guid id, CancellationToken cancellationToken);
 	Task<int> GetCountAsync(CancellationToken cancellationToken);

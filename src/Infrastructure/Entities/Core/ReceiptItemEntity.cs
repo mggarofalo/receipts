@@ -1,4 +1,6 @@
+using System.ComponentModel.DataAnnotations.Schema;
 using Common;
+using Domain.NormalizedDescriptions;
 using Infrastructure.Interfaces;
 
 namespace Infrastructure.Entities.Core;
@@ -7,6 +9,18 @@ public class ReceiptItemEntity : ISoftDeletable, IOwnedBy<ReceiptEntity>
 {
 	public Guid Id { get; set; }
 	public Guid NormalizationRevision { get; set; }
+	[NotMapped]
+	public ReceiptNormalizationIntent? NormalizationIntent { get; set; }
+	public NormalizationReviewState NormalizationReviewState { get; set; }
+	public string? NormalizationReviewReason { get; set; }
+	public string? NormalizationExclusionReason { get; set; }
+	public Guid? NormalizationReviewDecisionId { get; set; }
+	public string? NormalizationSourceHash { get; set; }
+	public Guid? ReviewedTargetId { get; set; }
+	public string? ReviewedSourceHash { get; set; }
+	public string? ReviewedBy { get; set; }
+	public DateTimeOffset? ReviewedAt { get; set; }
+	public Guid? ReviewMappingRevision { get; set; }
 	public string NormalizationOrigin { get; set; } = "unassigned";
 	public Guid? NormalizationMappingId { get; set; }
 	public Guid? NormalizationAssignmentId { get; set; }

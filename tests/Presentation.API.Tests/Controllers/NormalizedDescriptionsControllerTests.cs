@@ -670,7 +670,7 @@ public class NormalizedDescriptionsControllerTests
 				It.IsAny<CancellationToken>()))
 			.ReturnsAsync(12);
 
-		Results<Ok<MergeNormalizedDescriptionsResponse>, BadRequest<ProblemDetails>, NotFound<ProblemDetails>> result =
+		var result =
 			await _controller.MergeNormalizedDescriptions(keepId, request, CancellationToken.None);
 
 		Ok<MergeNormalizedDescriptionsResponse> ok = Assert.IsType<Ok<MergeNormalizedDescriptionsResponse>>(result.Result);
@@ -691,7 +691,7 @@ public class NormalizedDescriptionsControllerTests
 			.Setup(m => m.Send(It.IsAny<MergeNormalizedDescriptionsCommand>(), It.IsAny<CancellationToken>()))
 			.ThrowsAsync(new KeyNotFoundException($"Normalized description {discardId} not found."));
 
-		Results<Ok<MergeNormalizedDescriptionsResponse>, BadRequest<ProblemDetails>, NotFound<ProblemDetails>> result =
+		var result =
 			await _controller.MergeNormalizedDescriptions(keepId, request, CancellationToken.None);
 
 		NotFound<ProblemDetails> notFound = Assert.IsType<NotFound<ProblemDetails>>(result.Result);
@@ -712,7 +712,7 @@ public class NormalizedDescriptionsControllerTests
 			.Setup(m => m.Send(It.IsAny<MergeNormalizedDescriptionsCommand>(), It.IsAny<CancellationToken>()))
 			.ReturnsAsync(0);
 
-		Results<Ok<MergeNormalizedDescriptionsResponse>, BadRequest<ProblemDetails>, NotFound<ProblemDetails>> result =
+		var result =
 			await _controller.MergeNormalizedDescriptions(keepId, request, CancellationToken.None);
 
 		Ok<MergeNormalizedDescriptionsResponse> ok = Assert.IsType<Ok<MergeNormalizedDescriptionsResponse>>(result.Result);
@@ -724,7 +724,7 @@ public class NormalizedDescriptionsControllerTests
 	{
 		MergeNormalizedDescriptionRequest request = new() { DiscardId = Guid.NewGuid() };
 
-		Results<Ok<MergeNormalizedDescriptionsResponse>, BadRequest<ProblemDetails>, NotFound<ProblemDetails>> result =
+		var result =
 			await _controller.MergeNormalizedDescriptions(Guid.Empty, request, CancellationToken.None);
 
 		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
@@ -737,7 +737,7 @@ public class NormalizedDescriptionsControllerTests
 	{
 		MergeNormalizedDescriptionRequest request = new() { DiscardId = Guid.Empty };
 
-		Results<Ok<MergeNormalizedDescriptionsResponse>, BadRequest<ProblemDetails>, NotFound<ProblemDetails>> result =
+		var result =
 			await _controller.MergeNormalizedDescriptions(Guid.NewGuid(), request, CancellationToken.None);
 
 		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
@@ -751,7 +751,7 @@ public class NormalizedDescriptionsControllerTests
 		Guid id = Guid.NewGuid();
 		MergeNormalizedDescriptionRequest request = new() { DiscardId = id };
 
-		Results<Ok<MergeNormalizedDescriptionsResponse>, BadRequest<ProblemDetails>, NotFound<ProblemDetails>> result =
+		var result =
 			await _controller.MergeNormalizedDescriptions(id, request, CancellationToken.None);
 
 		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
@@ -792,7 +792,7 @@ public class NormalizedDescriptionsControllerTests
 				It.IsAny<CancellationToken>()))
 			.ReturnsAsync(created);
 
-		Results<Ok<NormalizedDescriptionResponse>, NotFound, BadRequest<ProblemDetails>> result =
+		var result =
 			await _controller.SplitNormalizedDescription(currentId, request, CancellationToken.None);
 
 		Ok<NormalizedDescriptionResponse> ok = Assert.IsType<Ok<NormalizedDescriptionResponse>>(result.Result);
@@ -823,7 +823,7 @@ public class NormalizedDescriptionsControllerTests
 				It.IsAny<CancellationToken>()))
 			.ThrowsAsync(new KeyNotFoundException("Receipt item not found."));
 
-		Results<Ok<NormalizedDescriptionResponse>, NotFound, BadRequest<ProblemDetails>> result =
+		var result =
 			await _controller.SplitNormalizedDescription(currentId, request, CancellationToken.None);
 
 		Assert.IsType<NotFound>(result.Result);
@@ -838,7 +838,7 @@ public class NormalizedDescriptionsControllerTests
 			CanonicalName = "reese cup",
 		};
 
-		Results<Ok<NormalizedDescriptionResponse>, NotFound, BadRequest<ProblemDetails>> result =
+		var result =
 			await _controller.SplitNormalizedDescription(Guid.Empty, request, CancellationToken.None);
 
 		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
@@ -855,7 +855,7 @@ public class NormalizedDescriptionsControllerTests
 			CanonicalName = "reese cup",
 		};
 
-		Results<Ok<NormalizedDescriptionResponse>, NotFound, BadRequest<ProblemDetails>> result =
+		var result =
 			await _controller.SplitNormalizedDescription(Guid.NewGuid(), request, CancellationToken.None);
 
 		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
@@ -872,7 +872,7 @@ public class NormalizedDescriptionsControllerTests
 			CanonicalName = "reese cup",
 		};
 
-		Results<Ok<NormalizedDescriptionResponse>, NotFound, BadRequest<ProblemDetails>> result =
+		var result =
 			await _controller.SplitNormalizedDescription(Guid.NewGuid(), request, CancellationToken.None);
 
 		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
@@ -889,7 +889,7 @@ public class NormalizedDescriptionsControllerTests
 			CanonicalName = "   ",
 		};
 
-		Results<Ok<NormalizedDescriptionResponse>, NotFound, BadRequest<ProblemDetails>> result =
+		var result =
 			await _controller.SplitNormalizedDescription(Guid.NewGuid(), request, CancellationToken.None);
 
 		BadRequest<ProblemDetails> bad = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);

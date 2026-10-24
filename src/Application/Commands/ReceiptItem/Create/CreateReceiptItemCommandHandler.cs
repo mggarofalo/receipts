@@ -18,6 +18,11 @@ public class CreateReceiptItemCommandHandler(
 			throw new KeyNotFoundException($"Receipt {request.ReceiptId} not found.");
 		}
 
+		if (request.ClientRequestId is Guid requestId)
+		{
+			return await receiptitemService.CreateAsync([.. request.ReceiptItems], request.ReceiptId, request.ItemTemplateIds, requestId, cancellationToken);
+		}
+
 		// Provenance stays separate from caller-writable item data. Persistence resolves the
 		// current template under its write guard, rather than stamping a stale domain object.
 		return request.ItemTemplateIds.Count == 0

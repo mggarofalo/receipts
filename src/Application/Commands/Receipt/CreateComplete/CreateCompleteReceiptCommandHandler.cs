@@ -34,6 +34,10 @@ public class CreateCompleteReceiptCommandHandler(
 			}
 		}
 
+		if (request.ClientRequestId is Guid requestId)
+		{
+			return await writer.CreateAsync(request.Receipt, [.. request.Transactions], [.. request.Items], [.. request.Adjustments], requestId, cancellationToken);
+		}
 		return await writer.CreateAsync(
 			request.Receipt,
 			[.. request.Transactions],

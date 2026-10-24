@@ -6,14 +6,9 @@ namespace Application.Interfaces.Services;
 
 public interface INormalizedDescriptionService
 {
-	Task<GetOrCreateResult> GetOrCreateAsync(string rawDescription, CancellationToken cancellationToken);
 
-	// RECEIPTS-881. The canonical entry for a user-declared item template. Distinct from
-	// GetOrCreateAsync because the two answer different questions: that one asks "what does this
-	// receipt text probably mean?" and may land in the review queue, this one records what a user
-	// has already told us the item is. No ANN search, no threshold bands, always Active — asking
-	// someone to review a grouping they just declared by hand is the duplication this issue
-	// exists to remove.
+	// Template identity metadata is a user-selected catalog name, not receipt verification.
+	// No similarity decision or approved scoped mapping is created by this operation.
 	Task<Domain.NormalizedDescriptions.NormalizedDescription> GetOrCreateForTemplateAsync(
 		string templateName,
 		CancellationToken cancellationToken);
@@ -50,7 +45,7 @@ public interface INormalizedDescriptionService
 	// would not survive the template's next edit (ItemTemplateService re-resolves it from the
 	// template's name), and it would leave the row's existing receipt items reporting in their own
 	// bucket, which is the thing the caller is trying to fix. Throws on a Rejected row — deleting a
-	// tombstone would erase a reviewer's decision and let the resolver recreate the text.
+	// tombstone would erase a reviewer's recorded rejection decision.
 	Task<LinkTemplateResult> LinkTemplateAsync(Guid descriptionId, Guid itemTemplateId, CancellationToken cancellationToken);
 
 	// RECEIPTS-883. Preview is read-only and is also how a caller verifies the run afterwards.

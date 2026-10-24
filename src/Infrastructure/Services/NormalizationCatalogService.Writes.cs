@@ -193,7 +193,7 @@ public sealed partial class NormalizationCatalogService
 		if (mapping.State != "revoked")
 		{
 			if (mapping.Revision != expectedRevision) { throw Error(409, "mapping_changed", "The mapping changed. Refresh before revoking it."); }
-			mapping.State = "revoked"; mapping.Revision = Guid.NewGuid();
+			await RevokeMappingAsync(context, mapping, cancellationToken);
 			await context.SaveChangesAsync(cancellationToken);
 			await lease.CommitAsync(cancellationToken);
 		}
@@ -203,7 +203,36 @@ public sealed partial class NormalizationCatalogService
 	{
 		if (operation.MappingId is not Guid mappingId) { return; }
 		var mapping = await context.NormalizationSourceMappings.SingleAsync(value => value.Id == mappingId, ct);
-		if (mapping.State == "active") { mapping.State = "revoked"; mapping.Revision = Guid.NewGuid(); }
+		if (mapping.State == "active") { await RevokeMappingAsync(context, mapping, ct); }
+	}
+
+	private static async Task RevokeMappingAsync(ApplicationDbContext context, NormalizationSourceMappingEntity mapping, CancellationToken ct)
+	{
+		// Revocation invalidates proof, not the operation's ownership of an unchanged assignment.
+		// Carry only the revision change caused by this transaction into its undo observation.
+		var members = await context.NormalizationCatalogMembers.Where(member => member.State == "applied"
+			&& context.NormalizationCatalogOperations.Any(operation => operation.Id == member.OperationId && operation.MappingId == mapping.Id))
+			.ToListAsync(ct);
+		Guid[] ids = members.Select(member => member.ItemId).Distinct().ToArray();
+		await NormalizationWriteGuard.LockTargetsAsync(context, mapping.TargetId is Guid target ? [target] : [], ct);
+		await LockReceiptsAsync(context, members.Select(member => member.ReceiptId).Distinct().ToArray(), ct);
+		await NormalizationWriteGuard.LockItemsAsync(context, ids, ct);
+		var before = await context.ReceiptItems.IgnoreQueryFilters().IgnoreAutoIncludes().AsNoTracking()
+			.Where(item => ids.Contains(item.Id)).Select(item => new { item.Id, item.NormalizationRevision, item.NormalizationAssignmentId })
+			.ToDictionaryAsync(item => item.Id, ct);
+		var current = members.Where(member => before.TryGetValue(member.ItemId, out var item)
+			&& item.NormalizationRevision == member.AppliedRevision && item.NormalizationAssignmentId == member.AssignmentId).ToArray();
+		mapping.State = "revoked";
+		mapping.Revision = Guid.NewGuid();
+		await context.SaveChangesAsync(ct);
+		var after = await context.ReceiptItems.IgnoreQueryFilters().IgnoreAutoIncludes().AsNoTracking()
+			.Where(item => ids.Contains(item.Id)).Select(item => new { item.Id, item.NormalizationRevision, item.NormalizationAssignmentId })
+			.ToDictionaryAsync(item => item.Id, ct);
+		foreach (var member in current)
+		{
+			if (after.TryGetValue(member.ItemId, out var item) && item.NormalizationAssignmentId == member.AssignmentId)
+			{ member.AppliedRevision = item.NormalizationRevision; }
+		}
 	}
 
 	public async Task<NormalizationCatalogOperation> UndoAsync(string actor, Guid id, Guid expectedRevision, CancellationToken cancellationToken)

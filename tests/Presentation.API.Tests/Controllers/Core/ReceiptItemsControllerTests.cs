@@ -416,7 +416,7 @@ public class ReceiptItemsControllerTests
 			.ReturnsAsync(true);
 
 		// Act
-		Results<NoContent, NotFound> result = await _controller.UpdateReceiptItem(controllerInput, id);
+		var result = await _controller.UpdateReceiptItem(controllerInput, id);
 
 		// Assert
 		Assert.IsType<NoContent>(result.Result);
@@ -435,7 +435,7 @@ public class ReceiptItemsControllerTests
 			.ReturnsAsync(false);
 
 		// Act
-		Results<NoContent, NotFound> result = await _controller.UpdateReceiptItem(controllerInput, id);
+		var result = await _controller.UpdateReceiptItem(controllerInput, id);
 
 		// Assert
 		Assert.IsType<NotFound>(result.Result);
@@ -472,7 +472,7 @@ public class ReceiptItemsControllerTests
 			.ReturnsAsync(true);
 
 		// Act
-		Results<NoContent, NotFound> result = await _controller.UpdateReceiptItems(controllerInput);
+		var result = await _controller.UpdateReceiptItems(controllerInput);
 
 		// Assert
 		Assert.IsType<NoContent>(result.Result);
@@ -490,7 +490,7 @@ public class ReceiptItemsControllerTests
 			.ReturnsAsync(false);
 
 		// Act
-		Results<NoContent, NotFound> result = await _controller.UpdateReceiptItems(controllerInput);
+		var result = await _controller.UpdateReceiptItems(controllerInput);
 
 		// Assert
 		Assert.IsType<NotFound>(result.Result);

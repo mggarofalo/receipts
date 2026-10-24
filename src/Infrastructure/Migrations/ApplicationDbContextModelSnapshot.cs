@@ -743,6 +743,34 @@ namespace Infrastructure.Migrations
                     b.ToTable("NormalizationCatalogOperations", "matching");
                 });
 
+            modelBuilder.Entity("Infrastructure.Entities.Core.NormalizationReviewWorkEntity", b =>
+                {
+                    b.Property<Guid>("ItemId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<Guid>("ReceiptId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("SourceHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("SourceRevision")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.HasKey("ItemId");
+
+                    b.HasIndex("SourceHash", "CreatedAt");
+
+                    b.ToTable("NormalizationReviewWork", "matching");
+                });
+
             modelBuilder.Entity("Infrastructure.Entities.Core.NormalizationSourceMappingEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -762,6 +790,9 @@ namespace Infrastructure.Migrations
 
                     b.Property<bool>("Exclude")
                         .HasColumnType("boolean");
+
+                    b.Property<string>("ExclusionReason")
+                        .HasColumnType("text");
 
                     b.Property<string>("ItemCode")
                         .HasColumnType("text");
@@ -951,6 +982,9 @@ namespace Infrastructure.Migrations
                     b.Property<Guid?>("NormalizationAssignmentId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("NormalizationExclusionReason")
+                        .HasColumnType("text");
+
                     b.Property<Guid?>("NormalizationMappingId")
                         .HasColumnType("uuid");
 
@@ -961,10 +995,28 @@ namespace Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasDefaultValue("unassigned");
 
+                    b.Property<Guid?>("NormalizationReviewDecisionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("NormalizationReviewReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("text");
+
+                    b.Property<string>("NormalizationReviewState")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("text")
+                        .HasDefaultValue("NeedsReview");
+
                     b.Property<Guid>("NormalizationRevision")
                         .ValueGeneratedOnAddOrUpdate()
                         .HasColumnType("uuid")
                         .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<string>("NormalizationSourceHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("text");
 
                     b.Property<Guid?>("NormalizedDescriptionId")
                         .HasColumnType("uuid");
@@ -980,6 +1032,23 @@ namespace Infrastructure.Migrations
 
                     b.Property<string>("ReceiptItemCode")
                         .HasColumnType("text");
+
+                    b.Property<Guid?>("ReviewMappingRevision")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("ReviewedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("ReviewedBy")
+                        .HasMaxLength(450)
+                        .HasColumnType("text");
+
+                    b.Property<string>("ReviewedSourceHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("text");
+
+                    b.Property<Guid?>("ReviewedTargetId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Subcategory")
                         .HasColumnType("text");
@@ -1007,6 +1076,37 @@ namespace Infrastructure.Migrations
                     b.HasIndex("ReceiptId");
 
                     b.ToTable("ReceiptItems", "receipts");
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Core.ReceiptWriteRequestEntity", b =>
+                {
+                    b.Property<string>("Actor")
+                        .HasMaxLength(450)
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("uuid");
+
+                    b.PrimitiveCollection<Guid[]>("ItemIds")
+                        .IsRequired()
+                        .HasColumnType("uuid[]");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("ReceiptId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("text");
+
+                    b.HasKey("Actor", "RequestId");
+
+                    b.ToTable("ReceiptWriteRequests", "receipts");
                 });
 
             modelBuilder.Entity("Infrastructure.Entities.Core.SubcategoryEntity", b =>
@@ -1832,6 +1932,15 @@ namespace Infrastructure.Migrations
                     b.HasOne("Infrastructure.Entities.Core.NormalizationCatalogOperationEntity", null)
                         .WithMany("Members")
                         .HasForeignKey("OperationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Core.NormalizationReviewWorkEntity", b =>
+                {
+                    b.HasOne("Infrastructure.Entities.Core.ReceiptItemEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ItemId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

@@ -1,20 +1,36 @@
 # Normalization write ownership
 
-`NormalizedDescriptionResolutionService` runs automatic resolution for unresolved receipt items. Application policies own eligibility and matching decisions; infrastructure owns the factual reads and guarded writes. Resolution does not own editable purchase facts or a user's newer curation. Changing raw description clears canonical identity and score. For an approved scoped mapping, changing the item code or parent receipt location also invalidates the assignment because those fields are part of its source key. Financial-only edits preserve classification.
+`NormalizedDescriptionResolutionService` only reuses reviewed exact scoped mappings for unresolved receipt items. It does not create identities or accept global exact-name or similarity matches. Application policies own verification and eligibility decisions; infrastructure owns factual reads and guarded writes. Resolution does not own editable purchase facts or a user's newer curation. Changing raw description clears canonical identity and score. For an approved scoped mapping, changing the item code or parent receipt location also invalidates the assignment because those fields are part of its source key. Financial-only edits preserve classification.
+
+## Receipt entry verification
+
+`ReceiptNormalizationPolicy` owns intent validation, decision precedence and whether existing source/assignment/identity evidence remains valid. The EF save adapter enforces it for complete receipts, standalone rows, parent scope edits, restore and reviewed catalog writes. It batches local facts and acquires the normalization gate before admission and row locks; no model or embedding call occurs inside the receipt transaction.
+
+Each optional row intent is `knownSource`, `confirmExisting`, `confirmNew`, `exclude` or `defer`. Explicit choices carry a stable draft-row ID and server-computed source fingerprint; edits additionally carry the expected item revision. Existing choices carry the target revision, and explicit `knownSource` requires the previewed mapping revision. A remembered mapping can also carry its revision. Confirming a new product creates it in the same transaction as the receipt, purchase, audit and outstanding-review registration. Remembering a source is separate from confirming one purchase; conflicting persisted or staged source identities reject the whole write.
+
+Verification is `NeedsReview`, `Verified` or `Excluded`, independently of canonical status and suggestion/operation state. Proof binds the source fingerprint, target identity and assignment token, together with reviewer and review time. Mapping-dependent proof additionally binds the approved mapping revision. A display-label or financial edit does not invalidate identity proof. A source change reevaluates it. Revoking a mapping downgrades dependent proof while preserving historical links and independently reviewed purchases.
+
+Old clients can omit intents. A current approved scoped mapping is applied during the atomic save; otherwise the valid financial receipt is saved as NeedsReview. Existing template hints remain convenience provenance and cannot independently verify a purchase. NeedsReview rows create durable `NormalizationReviewWork` in the same transaction. This table is registration for the later inbox workflow, not a claim that the inbox UI or historical backfill is implemented.
+
+Complete creation and standalone create/edit accept an optional caller request ID. An identical retry reuses its result without new identities, mappings or audits; a changed payload with the same actor/request ID conflicts. Caller-generated draft IDs and intent facts are hashed, while server-generated creation IDs and read-only proof metadata are excluded. Replay tombstones survive deletion to prevent accidental recreation.
+
+Portable backup version 8 includes validated receipt verification and replay evidence. Version 7 and older links remain unverified during import, even when the archive includes active mappings. Restored mappings can apply to future saves. Existing persisted links migrate to NeedsReview without inventing historical reviewers; population of the complete historical review queue and its acceptance workflow remains RECEIPTS-1026.
+
+Database guards downgrade evidence after direct SQL source, assignment, mapping or target-status changes; they never manufacture verification. They register a durable dirty observation with a nullable source hash when SQL cannot reconstruct the application fingerprint. The application recomputes that fingerprint before making a decision. A transaction-local list of application-prepared item IDs permits the validated atomic write and is cleared immediately after that save. Financial-only and display-label changes do not downgrade evidence.
 
 ## Reviewed catalog decisions
 
-`Application.Normalization.NormalizationCatalogPolicy.Classify` is the authoritative decision over `CatalogAssignmentFacts`: item/parent liveness, assignment origin, rejection, template protection and ownership by a revoked mapping. Preview, historical application, group suggestion admission and retry consume that decision. Infrastructure projects eligibility facts and parent revisions in bounded batches, and retains SQL grouping/filtering for efficient source pages and coverage; parity tests must keep these read projections consistent with the policy.
+`Application.Normalization.NormalizationCatalogPolicy.Classify` is the authoritative decision over `CatalogAssignmentFacts`: item/parent liveness, reviewed verification evidence, rejection, historical links and ownership by a revoked mapping. Preview, historical application, group suggestion admission and retry consume that decision. Infrastructure projects eligibility facts and parent revisions in bounded batches, and retains SQL grouping/filtering for efficient source pages and coverage; parity tests must keep these read projections consistent with the policy.
 
 `RequireAction` owns the operation-state rules for approval, continuation, cancellation and undo. Restored observations cannot resume or undo. These are concrete catalog policies, not a generic workflow framework.
 
 A source key is exact store-location text, raw description and optional item code, with outer ASCII spaces (U+0020) trimmed consistently by Application and PostgreSQL. Null and space-only codes share the missing-code key; tabs, nonbreaking spaces and other Unicode characters remain significant. Case, punctuation, brand and size text are not silently collapsed. Approved source mappings are separate from canonical product identities and from mutable historical-operation progress.
 
-Existing links migrate as `legacy_unknown`; an Active canonical or null similarity score is not evidence of review. New writes record their assignment origin and a fresh assignment token. Manual, template and reviewed assignments remain protected. Historical unknown links require explicit inclusion. A still-owned assignment from a revoked mapping becomes eligible for a new explicit preview; revocation does not silently rewrite purchases outside an earlier preview.
+Existing links migrate as `legacy_unknown`; an Active canonical or null similarity score is not evidence of review. New writes record assignment provenance separately from verification. Origin strings such as manual, template and reviewed, and a template FK, are not proof. Independently verified purchases remain protected. Any unverified linked history requires explicit inclusion, regardless of its old origin string. A still-owned assignment from a revoked mapping becomes eligible for a new explicit preview; revocation does not silently rewrite purchases outside an earlier preview.
 
 Preview captures historical membership, prior assignments, item revisions and parent receipt revisions. Approval creates the mapping and processes a bounded chunk. The catalog worker continues approved membership in chunks of 100 without provider calls, checking the approving administrator and mapping before each chunk. Changed members become visible conflicts; they are not overwritten. A failed chunk rolls back and pauses with a safe error; continuation is deliberate. Cancellation revokes the mapping and stops future chunks while retaining committed changes.
 
-Undo revokes the mapping and restores only snapshotted assignments whose item revision, assignment token and parent revision still match. Later edits and manual decisions survive. Future purchases resolved from the mapping are not silently added to the original operation's undo scope; a new preview is required to correct those purchases.
+Undo revokes the mapping and restores only snapshotted assignments whose item revision, assignment token and parent revision still match. Revocation downgrades mapping-dependent verification. Under the same locks, only unchanged operation members carry that revocation-induced revision forward into their undo observations; intervening purchase changes are never rebased. Later edits and manual decisions survive. Future purchases resolved from the mapping are not silently added to the original operation's undo scope; a new preview is required to correct those purchases.
 
 ## Candidate evidence and model suggestions
 
@@ -26,17 +42,13 @@ Group suggestions feed the same fresh catalog preview used for manual decisions.
 
 ## Read, resolve, conditionally apply
 
-Approved operations reserve their still-pending snapshotted members from both deterministic and embedding resolvers, including remaining members after cancellation. Reservation holds only while item and parent revisions still match; a changed observation requires fresh resolution or review. Unapproved previews and newly entered purchases are not reserved. This prevents automatic resolution from bypassing historical progress and undo ownership.
+Approved operations reserve their still-pending snapshotted members from automatic resolution, including remaining members after cancellation. Reservation holds only while item and parent revisions still match. Unapproved previews and newly entered purchases are not reserved. This prevents automatic resolution from bypassing historical progress and undo ownership.
 
-A cycle first tries a bounded deterministic batch of approved scoped mappings and exact Active canonical names, even when embeddings or ChatGPT are unavailable. This phase never invents a target for unknown text. It rechecks observed revisions after locking; changed observations wait for a new cycle. If there is no deterministic work, the embedding resolver selects up to 50 candidates and groups identical descriptions to avoid duplicate matching work. Model and similarity calls run without database write locks.
+A cycle selects a bounded batch of unresolved observations with current approved exact scoped mappings. It runs without embeddings or ChatGPT and never creates identities, accepts global exact-name matches or performs similarity matching. Explicitly deferred purchases remain deferred. A rejected unrelated global name does not override an approved scoped mapping; the mapping's actual target must remain Active.
 
-The final phase uses a fresh context and a short transaction. It locks canonical targets before items, reads current state, and accepts only unchanged, live, unresolved snapshots. The revision comparison detects edit-and-revert and manual link/unlink cycles even when the visible values return to their earlier state. A competing resolver's first committed result changes that revision and protects its assignment.
+The write phase takes the normalization gate and locks targets and items, then rechecks source, parent and item revisions, mapping ownership and target status. Edit-and-revert and competing writes invalidate stale observations. The receipt verification adapter records current proof, audit and review-work changes in the same transaction. Accepted links produce one broad, toast-suppressed receipt-item projection repair after commit; skipped or failed batches produce no link notification. Failure before commit rolls back links and audits together.
 
-Ordinary item updates also lock their item rows before the tracked read and hold those locks through the short audited commit. This protects the reverse order: an edit cannot read null metadata, let the worker fill it, and then omit its null clears because EF still sees the earlier null originals. A text edit reads the actual current link before clearing it, so both stored state and audit old values are accurate. Item edits need no canonical gate because they only preserve or clear links.
-
-Targets must still exist, retain the resolved canonical name and remain non-Rejected. An exact-name tombstone for the trimmed source text also blocks attachment to a different fuzzy target. Display-label changes remain cosmetic and do not invalidate matching.
-
-Only accepted items receive canonical ID and score changes. Their tracked `SaveChangesAsync` call writes the changes and automatic audit records atomically under RECEIPTS-956. After the guarded transaction commits at least one link, the worker publishes one broad, toast-suppressed receipt-item projection repair; it publishes nothing for an empty, skipped or failed batch. Skipped snapshots add no link audit; the summary reports them as skipped. Changed unresolved items remain available for a fresh cycle, while rejected text follows the existing tombstone filter. A failure before commit rolls back accepted links and their audits together. Canonical entries created by earlier matching calls have their own existing persistence lifecycle.
+Ordinary item updates take the same gate before row locks and the tracked read. This prevents an edit based on an earlier null link from preserving a worker's later assignment under changed source text. Canonical display-label changes and financial-only edits preserve valid identity evidence.
 
 ## Short write coordination
 
@@ -50,7 +62,7 @@ The gate is deliberately narrow in duration and specific to canonical write coor
 
 ## Revision and test boundaries
 
-The original fuzzy resolver uses `xmin` as a short-lived row observation. Durable AI and catalog snapshots use database-generated GUID revisions for items, canonical targets and parent receipts. These detect edit/revert cycles without making every entity update an optimistic-concurrency API. Revisions are internal observations, not portable business identity.
+Resolver, durable AI and catalog snapshots use database-generated GUID revisions for items, canonical targets and parent receipts. These detect edit/revert cycles without making every entity update an optimistic-concurrency API. Revisions are internal observations, not portable business identity.
 
 Portable backup version 7 preserves scoped mappings, assignment origins/tokens and catalog operation/member observations. Restored operations are inspectable historical evidence, explicitly non-resumable and non-undoable against regenerated source revisions. Older backups restore linked assignments as `legacy_unknown`. Restore holds the normalization gate and fences outstanding operations before business upserts; credentials and provider execution are not part of this archive.
 
@@ -78,18 +90,9 @@ Real PostgreSQL creation-chain and controlled matching/lock-wait tests cover the
 
 ## Matching decisions and threshold previews
 
-`Application.Normalization.NormalizationMatchPolicy` owns the immutable threshold
-configuration and the decision from observed matching facts. Exact Active and
-PendingReview names are reused without embeddings; exact Rejected names suppress
-attachment. Otherwise the top candidate is reused at the inclusive auto-accept
-threshold, creates a pending entry at the inclusive pending-review threshold, or
-creates a new active entry below it. Domain validation rejects nonfinite thresholds.
+`Application.Normalization.NormalizationMatchPolicy` owns the threshold bands used by read-only match tests and impact previews. The historical `AutoAccept`, `PendingReview` and `CreateNew` outcome names remain wire-compatible advisory descriptions; none authorizes a receipt assignment or creates a product. Exact-name observations and threshold boundaries remain visible to administrators. Missing embedding capacity returns `EmbeddingUnavailable`; cancellation propagates.
 
-`NormalizedDescriptionService` supplies exact-name and ANN facts, obtains embeddings,
-and executes the decision through its existing persistence operations. It retains
-the background versus interactive scheduler distinction. Missing embedding capacity
-is an explicit decision: execution retains its new-active fallback while simulation
-reports `EmbeddingUnavailable`. Cancellation is not missing capacity and propagates.
+`NormalizedDescriptionService` supplies exact-name and ANN observations for this simulation. Receipt saves and background resolution use reviewed exact scoped mappings instead. Domain validation still rejects nonfinite threshold settings.
 
 The match-test response adds the `Rejected` outcome with no simulated target. Its
 candidate still identifies the tombstone for explanation; it does not imply a link.

@@ -791,13 +791,19 @@ describe("NormalizedDescriptions action explanations", () => {
     renderWithQueryClient(<NormalizedDescriptions />);
 
     const explainer = await screen.findByTestId("review-queue-explainer");
-    // Why a row is here at all: the near-match band. Without this the queue reads as a list of
-    // arbitrary rows a reviewer is expected to have an opinion about.
+    // Catalog activation and purchase verification are separate decisions.
     expect(explainer).toHaveTextContent(
-      /nearly matches an entry the registry already has/i,
+      /catalog identities awaiting activation/i,
     );
-    // And that the spend is already counted — approving is not what puts it in the reports.
-    expect(explainer).toHaveTextContent(/already appears in reports/i);
+    expect(explainer).toHaveTextContent(
+      /Activating a catalog identity does not verify linked purchases/i,
+    );
+    expect(explainer).toHaveTextContent(
+      /Nothing moves; purchase verification remains a separate decision/i,
+    );
+    expect(explainer).toHaveTextContent(
+      /does not establish that each linked purchase was reviewed/i,
+    );
 
     for (const action of ["Approve", "Merge into…", "Split", "Reject"]) {
       expect(within(explainer).getByText(action)).toBeInTheDocument();
@@ -1198,7 +1204,9 @@ describe("NormalizedDescriptions rename and reject", () => {
     expect(dialog).toHaveTextContent(
       /4 receipt items will become unnormalized/i,
     );
-    expect(dialog).toHaveTextContent(/will not create it again/i);
+    expect(dialog).toHaveTextContent(
+      /unavailable for selection until explicitly reinstated/i,
+    );
 
     await user.click(within(dialog).getByRole("button", { name: "Reject" }));
     expect(mutate).toHaveBeenCalledWith(
@@ -1571,6 +1579,13 @@ describe("NormalizedDescriptions settings tab", () => {
     ) as HTMLInputElement;
     await waitFor(() => expect(autoInput.value).toBe("0.9"));
     expect(pendingInput.value).toBe("0.75");
+    expect(
+      screen.getByText(
+        /legacy threshold bands are advisory simulation settings only/i,
+      ),
+    ).toHaveTextContent(
+      /verification requires an explicit choice or an approved exact scoped mapping/i,
+    );
   });
 
   it("hides settings tab for non-admins", () => {
@@ -1732,7 +1747,7 @@ describe("NormalizedDescriptions — Maintenance tab (RECEIPTS-883)", () => {
     wireDefaults();
   });
 
-  it("shows the blast radius and the resolver catch-up estimate", async () => {
+  it("shows the blast radius without promising automatic review or a catch-up time", async () => {
     const user = userEvent.setup();
     renderWithQueryClient(<NormalizedDescriptions />);
     await user.click(screen.getByRole("tab", { name: "Maintenance" }));
@@ -1741,8 +1756,14 @@ describe("NormalizedDescriptions — Maintenance tab (RECEIPTS-883)", () => {
     expect(within(panel).getByText("4")).toBeInTheDocument();
     expect(within(panel).getByText("120")).toBeInTheDocument();
     expect(within(panel).getByText("118")).toBeInTheDocument();
-    // 90s renders as minutes-and-seconds so the operator isn't reading raw seconds.
-    expect(await screen.findByText("1m 30s")).toBeInTheDocument();
+    // Even a legacy response carrying an estimate cannot promise automatic review.
+    expect(screen.queryByText("1m 30s")).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Only an approved exact scoped mapping can be reused automatically/i,
+      ),
+    ).toBeInTheDocument();
+    expect(within(panel).getByText("returned to review")).toBeInTheDocument();
   });
 
   it("requires confirmation and posts the previewed count", async () => {

@@ -10,6 +10,11 @@ public class ReceiptItemEntityConfiguration : IEntityTypeConfiguration<ReceiptIt
 	{
 		builder.Property(e => e.NormalizationOrigin).HasDefaultValue("unassigned").HasMaxLength(32);
 		builder.ToTable("ReceiptItems", "receipts");
+		builder.Property(e => e.NormalizationReviewState).HasConversion<string>().HasMaxLength(32).HasDefaultValue(Domain.NormalizedDescriptions.NormalizationReviewState.NeedsReview);
+		builder.Property(e => e.NormalizationReviewReason).HasMaxLength(500);
+		builder.Property(e => e.NormalizationSourceHash).HasMaxLength(64);
+		builder.Property(e => e.ReviewedSourceHash).HasMaxLength(64);
+		builder.Property(e => e.ReviewedBy).HasMaxLength(450);
 
 		builder.HasKey(e => e.Id);
 		builder.Property(e => e.NormalizationRevision).HasDefaultValueSql("gen_random_uuid()").ValueGeneratedOnAddOrUpdate();

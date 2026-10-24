@@ -3129,6 +3129,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
+        "409":
+          description: Conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
   /api/normalized-descriptions/{id}/split:
     post:
       operationId: SplitNormalizedDescription
@@ -3171,6 +3178,19 @@ paths:
                 $ref: "#/components/schemas/ProblemDetails"
         "404":
           description: Not Found
+
+        "403":
+          description: Forbidden
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
+          description: Conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
 
   /api/normalized-descriptions/{id}/link-template:
     post:
@@ -3631,6 +3651,20 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
+        "403":
+          description: Normalization choice rejected; no partial receipt or catalog writes.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+        "409":
+          description: Normalization choice rejected; no partial receipt or catalog writes.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
   /api/receipts/batch:
     post:
       operationId: CreateReceipts
@@ -3681,6 +3715,34 @@ paths:
   # Receipt Items
   # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+  /api/receipt-items/normalization-preview:
+    post:
+      operationId: PreviewReceiptNormalization
+      tags: [ReceiptItems]
+      summary: Preview a source decision and search active products without saving
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReceiptNormalizationPreviewRequest"
+      responses:
+        "200":
+          description: Advisory source fingerprint, current remembered decision and active candidates
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReceiptNormalizationPreviewResponse"
+        "400":
+          description: Invalid source or search bounds
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
   /api/receipt-items/{id}:
     get:
       operationId: GetReceiptItemById
@@ -3724,6 +3786,13 @@ paths:
             type: string
             format: uuid
           description: Receipt item ID
+        - name: clientRequestId
+          in: query
+          required: false
+          description: Stable caller request ID for replaying an identical edit after a lost response.
+          schema:
+            type: ["string", "null"]
+            format: uuid
       requestBody:
         required: true
         content:
@@ -3738,6 +3807,27 @@ paths:
               $ref: "#/components/headers/X-Resource-Id"
         "404":
           description: Not Found
+
+        "400":
+          description: Normalization choice rejected; no partial receipt or catalog writes.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+        "403":
+          description: Normalization choice rejected; no partial receipt or catalog writes.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+        "409":
+          description: Normalization choice rejected; no partial receipt or catalog writes.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
 
   /api/receipt-items:
     get:
@@ -3922,6 +4012,14 @@ paths:
       security:
         - BearerAuth: []
         - ApiKey: []
+      parameters:
+        - name: clientRequestId
+          in: query
+          required: false
+          description: Stable caller request ID for replaying an identical edit after a lost response.
+          schema:
+            type: ["string", "null"]
+            format: uuid
       requestBody:
         required: true
         content:
@@ -3936,6 +4034,27 @@ paths:
         "404":
           description: Not Found
 
+        "400":
+          description: Normalization choice rejected; no partial receipt or catalog writes.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+        "403":
+          description: Normalization choice rejected; no partial receipt or catalog writes.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+        "409":
+          description: Normalization choice rejected; no partial receipt or catalog writes.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
   /api/receipts/{receiptId}/receipt-items:
     post:
       operationId: CreateReceiptItem
@@ -3945,6 +4064,13 @@ paths:
         - BearerAuth: []
         - ApiKey: []
       parameters:
+        - name: clientRequestId
+          in: query
+          required: false
+          description: Stable retry key scoped to the signed-in user and immutable request payload.
+          schema:
+            type: [string, "null"]
+            format: uuid
         - name: receiptId
           in: path
           required: true
@@ -3975,6 +4101,20 @@ paths:
                 $ref: "#/components/schemas/ProblemDetails"
 
 
+        "400":
+          description: Normalization choice rejected; no partial receipt or catalog writes.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+        "403":
+          description: Normalization choice rejected; no partial receipt or catalog writes.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
   /api/receipts/{receiptId}/receipt-items/batch:
     post:
       operationId: CreateReceiptItems
@@ -3984,6 +4124,13 @@ paths:
         - BearerAuth: []
         - ApiKey: []
       parameters:
+        - name: clientRequestId
+          in: query
+          required: false
+          description: Stable retry key scoped to the signed-in user and immutable request payload.
+          schema:
+            type: [string, "null"]
+            format: uuid
         - name: receiptId
           in: path
           required: true
@@ -4018,6 +4165,20 @@ paths:
   # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   # Transactions
   # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+        "400":
+          description: Normalization choice rejected; no partial receipt or catalog writes.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+        "403":
+          description: Normalization choice rejected; no partial receipt or catalog writes.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
 
   /api/transactions/{id}:
     get:
@@ -9218,11 +9379,11 @@ components:
         estimatedResolverCycles:
           type: integer
           format: int32
-          description: Approximate number of background-resolver cycles needed to rebuild the unlinked items, at 50 items per cycle. Approximate because the resolver's batch is shared with any items that were already unresolved.
+          description: Legacy compatibility field, always zero. Pending cleanup requires reviewed normalization; no automatic similarity rematching is scheduled.
         estimatedCatchUpSeconds:
           type: integer
           format: int32
-          description: Approximate wall-clock seconds to drain the requeued backlog, at one 50-item cycle per 30 seconds.
+          description: Legacy compatibility field, always zero. No automatic similarity rematching completion time is estimated.
 
     RequeuePendingResponse:
       type: object
@@ -9376,6 +9537,10 @@ components:
       type: object
       required: [receipt, transactions, items]
       properties:
+        clientRequestId:
+          type: [string, "null"]
+          format: uuid
+          description: Stable retry key scoped to the signed-in user. Reusing a key with changed receipt facts or choices returns a conflict.
         receipt:
           $ref: "#/components/schemas/CreateReceiptRequest"
         transactions:
@@ -9414,10 +9579,130 @@ components:
 
     # â”€â”€ Receipt Item â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+    ReceiptNormalizationPreviewRequest:
+      type: object
+      required: [source]
+      properties:
+        source:
+          $ref: "#/components/schemas/NormalizationSourceKey"
+        query:
+          type: [string, "null"]
+          maxLength: 200
+        offset:
+          type: integer
+          format: int32
+          minimum: 0
+          default: 0
+        limit:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 50
+          default: 20
+
+    ReceiptNormalizationCandidate:
+      type: object
+      required: [id, revision, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        revision:
+          type: string
+          format: uuid
+        name:
+          type: string
+
+    ReceiptNormalizationPreviewResponse:
+      type: object
+      required: [sourceFingerprint, excluded, candidates, total, offset, limit]
+      properties:
+        sourceFingerprint:
+          type: string
+        mappingId:
+          type: [string, "null"]
+          format: uuid
+        mappingRevision:
+          type: [string, "null"]
+          format: uuid
+        targetId:
+          type: [string, "null"]
+          format: uuid
+        targetRevision:
+          type: [string, "null"]
+          format: uuid
+        targetName:
+          type: [string, "null"]
+        excluded:
+          type: boolean
+        candidates:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReceiptNormalizationCandidate"
+        total:
+          type: integer
+          format: int32
+        offset:
+          type: integer
+          format: int32
+        limit:
+          type: integer
+          format: int32
+
+    NormalizationReviewState:
+      type: string
+      enum: [needsReview, verified, excluded]
+
+    ReceiptNormalizationIntentKind:
+      type: string
+      enum: [knownSource, confirmExisting, confirmNew, exclude, defer]
+
+    ReceiptNormalizationIntent:
+      type: object
+      required: [kind, clientRowId, sourceFingerprint]
+      properties:
+        kind:
+          $ref: "#/components/schemas/ReceiptNormalizationIntentKind"
+        clientRowId:
+          type: string
+          format: uuid
+        sourceFingerprint:
+          type: string
+          minLength: 64
+          maxLength: 64
+        targetId:
+          type: [string, "null"]
+          format: uuid
+        expectedTargetRevision:
+          type: [string, "null"]
+          format: uuid
+        expectedMappingRevision:
+          type: [string, "null"]
+          format: uuid
+          description: Required for knownSource. Echo the previewed mapping revision so a changed or revoked mapping rejects the choice.
+        expectedItemRevision:
+          type: [string, "null"]
+          format: uuid
+        newName:
+          type: [string, "null"]
+          maxLength: 200
+        rememberSource:
+          type: boolean
+          default: false
+        reason:
+          type: [string, "null"]
+          maxLength: 500
+      description: A source-bound choice for one draft row. Existing identity selection requires its revision; editing requires the current item revision. Exclusion requires a reason. Remembering a source never rewrites historical purchases.
+
     CreateReceiptItemRequest:
       type: object
       required: [description, quantity, unitPrice, category]
       properties:
+        normalizationIntent:
+          oneOf:
+            - $ref: "#/components/schemas/ReceiptNormalizationIntent"
+            - type: "null"
+          description: Omitted means use a current approved scoped mapping or retain NeedsReview; no automatic inference is approved.
         receiptItemCode:
           type: ["string", "null"]
         description:
@@ -9435,24 +9720,17 @@ components:
         itemTemplateId:
           type: ["string", "null"]
           format: uuid
-          description: |
-            The item template this line was entered from, if any (RECEIPTS-881).
-
-            Supplying it stamps the item with the template's canonical normalized description at
-            write time, so the background resolver skips it entirely â€” it only considers items
-            with no normalized description. The user already declared what this item is by
-            picking the template; re-deriving it by embedding search could disagree with them and
-            park the result in the review queue.
-
-            Unknown ids and templates that have no canonical entry yet are ignored rather than
-            rejected: the id is a hint about provenance, not a constraint, and failing a receipt
-            save over a stale template id would be the wrong trade. Such an item simply falls
-            through to the resolver as before.
+          description: Optional provenance hint. A legacy template link does not verify the purchase; explicit source-bound selection or an approved scoped mapping is required.
 
     UpdateReceiptItemRequest:
       type: object
       required: [id, description, quantity, unitPrice, category]
       properties:
+        normalizationIntent:
+          oneOf:
+            - $ref: "#/components/schemas/ReceiptNormalizationIntent"
+            - type: "null"
+          description: Omitted means use a current approved scoped mapping or retain NeedsReview; no automatic inference is approved.
         id:
           type: string
           format: uuid
@@ -9475,6 +9753,18 @@ components:
       type: object
       required: [id, receiptId, description, quantity, unitPrice, category]
       properties:
+        normalizationRevision:
+          type: string
+          format: uuid
+        normalizationReviewState:
+          $ref: "#/components/schemas/NormalizationReviewState"
+        normalizationReviewReason:
+          type: [string, "null"]
+        normalizationExclusionReason:
+          type: [string, "null"]
+        normalizationReviewDecisionId:
+          type: [string, "null"]
+          format: uuid
         id:
           type: string
           format: uuid
@@ -9498,7 +9788,7 @@ components:
         normalizedDescriptionId:
           type: ["string", "null"]
           format: uuid
-          description: "FK to the canonical NormalizedDescription. Null until the resolver links this item."
+          description: "Provisional or reviewed canonical identity. Verification is expressed separately by normalizationReviewState."
         normalizedDescriptionName:
           type: ["string", "null"]
           description: "Denormalized CanonicalName from the linked NormalizedDescription for display."

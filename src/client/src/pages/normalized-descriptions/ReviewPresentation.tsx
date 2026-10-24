@@ -71,19 +71,17 @@ export function ReviewQueueExplainer() {
     >
       <h2 className="card-title">What is in this queue</h2>
       <p className="mt-1 text-muted-foreground">
-        When a receipt item's text nearly matches an entry the registry already
-        has — close enough to be suspicious, not close enough to be certain —
-        the resolver creates a new entry and parks it here instead of guessing.
-        The near-match that caused it is shown on each row. Its receipt items
-        are already linked, and its spending already appears in reports, marked
-        as unreviewed until you decide.
+        These are catalog identities awaiting activation, including historical
+        suggestions. Their existing purchase links are evidence, not proof of
+        review. Activating a catalog identity does not verify linked purchases;
+        review those through receipt entry or scoped source-group approval.
       </p>
       <dl className="mt-3 grid gap-2 sm:grid-cols-2">
         <div>
           <dt className="font-medium">Approve</dt>
           <dd className="text-muted-foreground">
-            This is its own thing. Nothing moves; the “unreviewed” marking
-            clears.
+            Make this identity available for selection. Nothing moves; purchase
+            verification remains a separate decision.
           </dd>
         </div>
         <div>
@@ -105,7 +103,7 @@ export function ReviewQueueExplainer() {
           <dt className="font-medium">Reject</dt>
           <dd className="text-muted-foreground">
             This text does not deserve an entry. Its items become unnormalized
-            and the resolver stops proposing it.
+            and this identity is unavailable for selection.
           </dd>
         </div>
         <div>
@@ -118,9 +116,8 @@ export function ReviewQueueExplainer() {
         </div>
       </dl>
       <p className="mt-3 text-muted-foreground">
-        A row marked “Declared by template” is one somebody already named by
-        hand, which is the strongest reason to approve it — the grouping was a
-        user's decision, not the resolver's guess.
+        “Declared by template” records where a catalog name came from. It does
+        not establish that each linked purchase was reviewed.
       </p>
       <p className="mt-3 text-muted-foreground">
         You can also rename an entry in place. That changes the label only —

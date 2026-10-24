@@ -19,7 +19,7 @@ namespace Infrastructure.IntegrationTests.Services;
 public class EmbeddingFingerprintEligibilityTests(PostgresFixture fixture)
 {
 	[Fact]
-	public async Task GetOrCreateAsync_StaleSemanticMatch_IsIgnoredAndExactCanonicalIdentityStillWorks()
+	public async Task TestMatch_StaleSemanticMatchIsIgnoredButExactCanonicalRemainsDiscoverable()
 	{
 		await ResetTablesAsync();
 		Guid staleId = Guid.NewGuid();
@@ -42,17 +42,12 @@ public class EmbeddingFingerprintEligibilityTests(PostgresFixture fixture)
 			new NormalizedDescriptionMapper(),
 			new NormalizedDescriptionSettingsMapper());
 
-		Application.Models.NormalizedDescriptions.GetOrCreateResult created =
-			await service.GetOrCreateAsync("Brand new concept", CancellationToken.None);
-		Application.Models.NormalizedDescriptions.GetOrCreateResult exact =
-			await service.GetOrCreateAsync("different CANONICAL concept", CancellationToken.None);
-
-		created.Description.Id.Should().NotBe(staleId,
-			"an obsolete vector must not participate in semantic canonical matching");
-		exact.Description.Id.Should().Be(staleId,
-			"fingerprint gating semantic search must not hide exact canonical identity");
+		var semantic = await service.TestMatchAsync("Brand new concept", 5, null, null, CancellationToken.None);
+		var exact = await service.TestMatchAsync("different CANONICAL concept", 5, null, null, CancellationToken.None);
+		semantic.Candidates.Should().BeEmpty("obsolete vectors cannot participate in semantic suggestions");
+		exact.SimulatedTargetId.Should().Be(staleId, "exact lookup remains discoverable without implying purchase verification");
 		await using ApplicationDbContext verify = fixture.CreateDbContext();
-		(await verify.NormalizedDescriptions.CountAsync()).Should().Be(2);
+		(await verify.NormalizedDescriptions.CountAsync()).Should().Be(1, "advisory lookup cannot create identities");
 	}
 
 	[Theory]

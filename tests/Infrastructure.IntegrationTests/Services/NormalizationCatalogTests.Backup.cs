@@ -62,13 +62,7 @@ public sealed partial class NormalizationCatalogTests
 		using (var provider = OfflineProvider())
 		using (var resolver = new NormalizedDescriptionResolutionService(provider.GetRequiredService<Microsoft.Extensions.DependencyInjection.IServiceScopeFactory>(), provider.GetRequiredService<Application.Interfaces.Services.IDescriptionChangeSignal>(), NullLogger<NormalizedDescriptionResolutionService>.Instance))
 		{ await resolver.ProcessPendingResolutionsAsync(CancellationToken.None); }
-		await using (var edit = fixture.CreateDbContext())
-		{
-			var manual = await edit.ReceiptItems.SingleAsync(x => x.Id == future[0]);
-			manual.NormalizationOrigin = "manual";
-			manual.NormalizationAssignmentId = Guid.NewGuid();
-			await edit.SaveChangesAsync();
-		}
+		await ReviewExistingAsync([future[0]], oldTarget);
 		await service.RevokeAsync(Actor, mapping.Id, mapping.Revision, CancellationToken.None);
 		var correction = await service.PreviewAsync(Actor, Request(newTarget), CancellationToken.None);
 		correction.Eligible.Should().Be(2);

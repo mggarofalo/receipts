@@ -94,6 +94,7 @@ public sealed partial class NormalizationAiService
 				proposal.TargetId = target.Id;
 				proposal.State = "applied";
 			}
+			await context.RecordReviewedAssignmentsAsync(selected.Select(proposal => items[proposal.ReceiptItemId]).ToArray(), actor, cancellationToken);
 			// Approval is a single reviewed selection. Unselected suggestions are retained for
 			// history but discarded, so they neither reserve items nor silently acquire new targets.
 			foreach (NormalizationAiProposalEntity unselected in run.Proposals.Where(proposal => proposal.State == "pending"))

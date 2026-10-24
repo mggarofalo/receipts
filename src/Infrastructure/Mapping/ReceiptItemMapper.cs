@@ -21,6 +21,7 @@ public partial class ReceiptItemMapper
 	[MapperIgnoreTarget(nameof(ReceiptItemEntity.NormalizationOrigin))]
 	[MapperIgnoreTarget(nameof(ReceiptItemEntity.NormalizationMappingId))]
 	[MapperIgnoreTarget(nameof(ReceiptItemEntity.NormalizationAssignmentId))]
+	[MapperIgnoreSource(nameof(ReceiptItem.NormalizationRevision))]
 	[MapperIgnoreTarget(nameof(ReceiptItemEntity.NormalizationRevision))]
 	[MapperIgnoreTarget(nameof(ReceiptItemEntity.ReceiptId))]
 	[MapperIgnoreTarget(nameof(ReceiptItemEntity.NormalizedDescription))]
@@ -30,6 +31,20 @@ public partial class ReceiptItemMapper
 	[MapperIgnoreTarget(nameof(ReceiptItemEntity.DeletedByUserId))]
 	[MapperIgnoreTarget(nameof(ReceiptItemEntity.DeletedByApiKeyId))]
 	[MapperIgnoreTarget(nameof(ReceiptItemEntity.CascadeDeletedByParentId))]
+	[MapperIgnoreSource(nameof(ReceiptItem.NormalizationReviewState))]
+	[MapperIgnoreTarget(nameof(ReceiptItemEntity.NormalizationReviewState))]
+	[MapperIgnoreSource(nameof(ReceiptItem.NormalizationReviewReason))]
+	[MapperIgnoreTarget(nameof(ReceiptItemEntity.NormalizationReviewReason))]
+	[MapperIgnoreSource(nameof(ReceiptItem.NormalizationReviewDecisionId))]
+	[MapperIgnoreTarget(nameof(ReceiptItemEntity.NormalizationReviewDecisionId))]
+	[MapperIgnoreTarget(nameof(ReceiptItemEntity.ReviewedSourceHash))]
+	[MapperIgnoreTarget(nameof(ReceiptItemEntity.ReviewedBy))]
+	[MapperIgnoreTarget(nameof(ReceiptItemEntity.ReviewedAt))]
+	[MapperIgnoreTarget(nameof(ReceiptItemEntity.ReviewMappingRevision))]
+	[MapperIgnoreTarget(nameof(ReceiptItemEntity.NormalizationSourceHash))]
+	[MapperIgnoreSource(nameof(ReceiptItem.NormalizationExclusionReason))]
+	[MapperIgnoreTarget(nameof(ReceiptItemEntity.NormalizationExclusionReason))]
+	[MapperIgnoreTarget(nameof(ReceiptItemEntity.ReviewedTargetId))]
 	public partial ReceiptItemEntity ToEntity(ReceiptItem source);
 
 	private Money MapUnitPrice(decimal amount, Currency currency) => new(amount, currency);
@@ -39,7 +54,8 @@ public partial class ReceiptItemMapper
 	[MapperIgnoreSource(nameof(ReceiptItemEntity.NormalizationOrigin))]
 	[MapperIgnoreSource(nameof(ReceiptItemEntity.NormalizationMappingId))]
 	[MapperIgnoreSource(nameof(ReceiptItemEntity.NormalizationAssignmentId))]
-	[MapperIgnoreSource(nameof(ReceiptItemEntity.NormalizationRevision))]
+	[MapperIgnoreTarget(nameof(ReceiptItem.NormalizationIntent))]
+	[MapperIgnoreSource(nameof(ReceiptItemEntity.NormalizationIntent))]
 	[MapperIgnoreSource(nameof(ReceiptItemEntity.UnitPriceCurrency))]
 	[MapperIgnoreSource(nameof(ReceiptItemEntity.TotalAmountCurrency))]
 	[MapperIgnoreSource(nameof(ReceiptItemEntity.NormalizedDescription))]
@@ -48,6 +64,12 @@ public partial class ReceiptItemMapper
 	[MapperIgnoreSource(nameof(ReceiptItemEntity.DeletedByApiKeyId))]
 	[MapperIgnoreSource(nameof(ReceiptItemEntity.CascadeDeletedByParentId))]
 	[MapperIgnoreTarget(nameof(ReceiptItem.NormalizedDescriptionName))]
+	[MapperIgnoreSource(nameof(ReceiptItemEntity.ReviewedSourceHash))]
+	[MapperIgnoreSource(nameof(ReceiptItemEntity.ReviewedBy))]
+	[MapperIgnoreSource(nameof(ReceiptItemEntity.ReviewedAt))]
+	[MapperIgnoreSource(nameof(ReceiptItemEntity.ReviewMappingRevision))]
+	[MapperIgnoreSource(nameof(ReceiptItemEntity.NormalizationSourceHash))]
+	[MapperIgnoreSource(nameof(ReceiptItemEntity.ReviewedTargetId))]
 	private partial ReceiptItem ToDomainPartial(ReceiptItemEntity source);
 
 	public ReceiptItem ToDomain(ReceiptItemEntity source)

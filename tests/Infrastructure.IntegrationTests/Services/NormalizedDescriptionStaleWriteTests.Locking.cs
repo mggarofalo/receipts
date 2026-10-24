@@ -1,6 +1,7 @@
 using System.Data.Common;
 using System.Diagnostics;
 using Application.Interfaces.Services;
+using Application.Models.CommittedChanges;
 using Application.Models.NormalizedDescriptions;
 using Domain.NormalizedDescriptions;
 using FluentAssertions;
@@ -10,6 +11,7 @@ using Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Npgsql;
 
@@ -68,9 +70,7 @@ public partial class NormalizedDescriptionStaleWriteTests
 		TargetAttempt loserAttempt = new();
 		DbContextOptions<ApplicationDbContext> workerOptions = Options(rejectionWins ? loserAttempt : winnerGate);
 		DbContextOptions<ApplicationDbContext> rejectOptions = Options(rejectionWins ? winnerGate : loserAttempt);
-		Mock<INormalizedDescriptionService> canonical = CanonicalMock();
-		canonical.Setup(service => service.GetOrCreateAsync("Milk", It.IsAny<CancellationToken>())).ReturnsAsync(new GetOrCreateResult(new(seed.Milk, "Milk", NormalizedDescriptionStatus.Active, DateTimeOffset.UtcNow), 0.94));
-		using ServiceProvider provider = BuildProvider(canonical.Object, new OptionsFactory(workerOptions));
+		using ServiceProvider provider = BuildProvider(new OptionsFactory(workerOptions));
 		using NormalizedDescriptionResolutionService worker = CreateResolver(provider);
 		NormalizedDescriptionService reviewer = CanonicalService(rejectOptions);
 		Task<NormalizedDescriptionResolutionService.ResolutionSummary>? resolution = null;
@@ -133,10 +133,9 @@ public partial class NormalizedDescriptionStaleWriteTests
 	{
 		Seed seed = await SeedAsync();
 		CommitFailureOnce failure = new();
-		Mock<INormalizedDescriptionService> canonical = CanonicalMock();
-		canonical.Setup(service => service.GetOrCreateAsync("Milk", It.IsAny<CancellationToken>())).ReturnsAsync(new GetOrCreateResult(new(seed.Milk, "Milk", NormalizedDescriptionStatus.Active, DateTimeOffset.UtcNow), 0.94));
-		using ServiceProvider provider = BuildProvider(canonical.Object, new OptionsFactory(Options(failure)));
-		using NormalizedDescriptionResolutionService worker = CreateResolver(provider);
+		using ServiceProvider provider = BuildProvider(new OptionsFactory(Options(failure)));
+		Mock<ICommittedChangePublisher> publisher = new();
+		using NormalizedDescriptionResolutionService worker = new(provider.GetRequiredService<IServiceScopeFactory>(), provider.GetRequiredService<IDescriptionChangeSignal>(), NullLogger<NormalizedDescriptionResolutionService>.Instance, publisher.Object);
 		Func<Task> run = async () => await worker.ProcessPendingResolutionsAsync(CancellationToken.None);
 		await run.Should().ThrowAsync<InvalidOperationException>().WithMessage("Synthetic final commit rejection");
 		await using (ApplicationDbContext verify = fixture.CreateDbContext())
@@ -146,8 +145,10 @@ public partial class NormalizedDescriptionStaleWriteTests
 			unchanged.NormalizedDescriptionMatchScore.Should().BeNull();
 		}
 		(await AuditCountAsync(seed.Item)).Should().Be(1, "the failed transaction cannot leave a normalization audit without its business change");
+		publisher.Verify(p => p.PublishAsync(It.IsAny<CommittedEntityChange>()), Times.Never);
 		(await worker.ProcessPendingResolutionsAsync(CancellationToken.None)).Linked.Should().Be(1);
 		(await AuditCountAsync(seed.Item)).Should().Be(2);
+		publisher.Verify(p => p.PublishAsync(It.IsAny<CommittedEntityChange>()), Times.Once);
 	}
 
 	private sealed class CommitFailureOnce : DbTransactionInterceptor
