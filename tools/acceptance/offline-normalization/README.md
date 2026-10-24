@@ -367,3 +367,60 @@ PostgreSQL stop capture retains the login audit even when no baseline was comple
 Before the browser save click, the runner fsyncs planned intent and attaches actual
 request, response and request-failure observers. Exact issued PUT bodies therefore
 remain available if the response wait times out; no request is intercepted or retried.
+
+## Browser-only completion of the retained null-body stop
+
+`browserPrior` accepts only `lifecycle-completion-18c87514`. It binds the actual
+manual safe-stop assessment, both completed reconfirm/restore checkpoints, all
+21 request/response pairs numbered 2–22, all retained PostgreSQL/portable files
+and the earlier hash manifests. The raw runner log for this attempt is unavailable;
+the continuation records that limitation. The old attempt remains failed.
+
+The original maintained-schema transition establishes the application revision.
+It chains through the completed reconfirm/restore evidence to the exact retained
+post-restore state. Before a new login, current PostgreSQL (including all 42
+public tables), container/mounts and migration history must equal that state.
+A later clean HEAD is permitted only for harness/docs changes by the existing
+shared revision guard. After authentication, a fresh settled baseline and exact
+portable state are captured. No reconfirm, delete, restore or creation is replayed.
+Only the browser draft scenario runs: the intentional competing price edit is
+3 to 4; the stale 8.25 draft must receive `normalization_item_changed`, survive
+refresh, and leave all other original and lifecycle financial facts exact.
+
+Preview response matching requires POST, success, an object body, the exact
+source and first page. Metadata for every preview response and every unexpected
+API error is retained without request bodies or authentication data. Missing or
+malformed POST bodies and unexpected API errors fail acceptance. Response wait
+rejections are observed immediately and later awaited inside safe-stop capture.
+
+From the reviewed, clean harness HEAD, run this archive-only preflight first:
+
+```powershell
+$privateRoot = 'C:/Users/mggar/AppData/Local/Temp/receipts-offline-acceptance-20261024'
+$runtimeA = Join-Path $privateRoot 'receipts-offline-20261024-a-81534240'
+$runtimeB = Join-Path $privateRoot 'receipts-offline-20261024-b-ead23413'
+$transition = Join-Path $privateRoot 'upgrade-preparation/transition-8ada57cc6ff848b582e3dcc7f9ec1a83/maintained-schema-derivation-b281920bd5cd412e921c201d3e312eb2/receipts-offline-20261024-a-81534240/revision-transition.maintained-schema.json'
+$browserArgs = @(
+  "runtime=$runtimeA", "source=$runtimeA/evidence",
+  "sourceRestore=$runtimeA/restore-source-resume-final-20261024",
+  "freshRestore=$runtimeB/restore-fresh-resume-final-20261024",
+  "sourceRestart=$runtimeA/controlled-restart-source-final-20261024",
+  "freshRestart=$runtimeB/controlled-restart-fresh-final-20261024",
+  "followups=$runtimeA/followups-durable-20261024",
+  "browserPrior=$runtimeA/lifecycle-completion-18c87514",
+  "transition=$transition", "out=$runtimeA/lifecycle-browser-completion-<new-unique-name>"
+)
+node ./tools/acceptance/offline-normalization/lifecycle.mjs @browserArgs preflightOnly=true
+# Only after the separate live-run authorization, use the same arguments without preflightOnly.
+node ./tools/acceptance/offline-normalization/lifecycle.mjs @browserArgs
+```
+
+The preflight reads archived evidence and revision provenance, creates no output,
+and performs no authentication or application calls. The live mode additionally
+checks current database state before authentication. To test the real archived
+shape without live calls:
+
+```powershell
+$env:BROWSER_BOUNDARY_RUNTIME = $runtimeA
+node --test ./tools/acceptance/offline-normalization/browser-boundary.test.mjs ./tools/acceptance/offline-normalization/lifecycle-completion.test.mjs ./tools/acceptance/offline-normalization/lifecycle-resume.test.mjs
+```

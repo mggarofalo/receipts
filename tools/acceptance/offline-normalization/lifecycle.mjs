@@ -9,6 +9,8 @@ import { assertLifecycleResume, assertSettled, assertRevisionTransition, assertU
 
 import { assertCompletionBoundary, assertIndependentProof, assertRestoreDecision, assertCompletionFacts, runWithLifecycleFailureCapture, journalBrowserSave, redactedFailure, bindCompletionEvidence } from './lifecycle-completion.mjs';
 
+import {matchesPurchasePreview,observeResponse,loadBrowserBoundary} from './browser-boundary.mjs';
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const read = p => JSON.parse(fs.readFileSync(p, 'utf8').replace(/^\uFEFF/, ''));
 const hash = p => crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
@@ -89,10 +91,15 @@ async function main() {
   const bindings = read(path.join(path.resolve(args.source),'bindings.json'));
   const freeze = read(path.join(path.resolve(args.source),'freeze.json'));
   assert.equal(hash(path.join(path.resolve(args.source),'A.db')), freeze.aSha256);
-  let resume, completion;
-  assert(!(args.prior && args.continuationPrior), 'Choose one assessed boundary');
+  let resume, completion, browserOnly;
+  assert([args.prior,args.continuationPrior,args.browserPrior].filter(Boolean).length<=1, 'Choose one assessed boundary');
   const transition=args.transition?read(path.resolve(args.transition)):null;
   const launchSource=read(path.join(runtime,'source.json'));
+  if(args.browserPrior) {
+    assert(transition && !args.authRecovery,'Browser completion requires the retained transition without auth exceptions');
+    browserOnly=loadBrowserBoundary({prior:args.browserPrior,runtime,runId:ready.RunId,bSha256:records.sourceRestore.bSha256,snapshot,transition});
+    args.continuationPrior=browserOnly.continuation.prior;
+  }
   if(args.prior) {
     assert(transition,'Resume requires transition=PRIVATE_REVISION_RECORD');
     assert.equal(launchSource.RunId,ready.RunId);
@@ -177,9 +184,14 @@ async function main() {
     assert.deepEqual(completion.beforePostgres,completion.stop,'Fresh upgrade must start at the full retained safe stop');
   }
   assert(!args.authRecovery || resume,'Auth recovery requires the assessed lifecycle resume');
+  if(browserOnly) {
+    const priorBaseline=read(path.join(browserOnly.prior,'baseline.json'));
+    assert.equal(priorBaseline.followupHash,followupHash);assert.deepEqual(priorBaseline.snapshot.tables,baseline.tables);
+    completion.beforePostgres=browserOnly.stop;
+  }
   if(args.preflightOnly==='true') {
     assert(completion,'Read-only preflight requires the assessed completion boundary');
-    console.log(JSON.stringify({status:'completion-preflight-passed',runId:ready.RunId,boundFiles:Object.keys(completion.retainedEvidenceFiles).length,newReceiptCreations:0}));
+    console.log(JSON.stringify({status:browserOnly?'browser-preflight-passed':'completion-preflight-passed',runId:ready.RunId,boundFiles:Object.keys(completion.retainedEvidenceFiles).length,newReceiptCreations:0}));
     return;
   }
   fs.mkdirSync(out);
@@ -189,7 +201,7 @@ async function main() {
   let lastRequest=0,requestNumber=0;
   const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
   const journal=(name,value)=>{const fd=fs.openSync(path.join(out,name),'wx');try{fs.writeFileSync(fd,JSON.stringify(value,null,2));fs.fsyncSync(fd);}finally{fs.closeSync(fd);}};
-  const completed=completion?[]:resume?['provider-unavailable-manual-entry']:[];
+  const completed=browserOnly?[...browserOnly.completed]:completion?[]:resume?['provider-unavailable-manual-entry']:[];
   const created=completion?[...completion.created]:resume?[...resume.created]:[];
   const sensitive=[];let capturePostgres,captureExport;
   const safeError=error=>redactedFailure(error,sensitive);
@@ -253,6 +265,10 @@ async function main() {
         assert.equal(transition.postgresContainerId,preAuthPg.container.Id);
         const migrations=migrationHistory();
         assertUpgradePreserved(completion.beforePostgres,preAuthPg,completion.beforeMigrationHistory,migrations,[]);
+        if(browserOnly) {
+          for(const [file,sha] of Object.entries(browserOnly.files)) assert.equal(hash(file),sha,'Prior browser evidence changed before authentication');
+          assert.deepEqual(captureAllTables(preAuthPg.container),browserOnly.allTables,'Complete current PostgreSQL differs from the retained browser stop');
+        }
         journal('upgrade-preserved.json',{...stamp(),postgres:preAuthPg,migrations,...completion.revisions,strictComparisonBeforeAuthentication:true});
       }
       if(resume) {
@@ -277,6 +293,7 @@ async function main() {
   const beforePortable=await exported('before-lifecycle.db');
   if(completion) assertPreservedRows(baseline.tables,beforePortable.tables);
   else assert.deepEqual(beforePortable.tables,resume?.expected.tables ?? baseline.tables,'Current installation differs from retained lifecycle boundary');
+  if(browserOnly) assert.deepEqual(beforePortable.tables,browserOnly.expected.tables,'Current export differs from completed restore');
   save('baseline.json',{...stamp(),followupHash,prerequisites:records,postgres:currentPg,preservationPostgres:originalPg,snapshot:baseline,authenticationCompleted:true});
   if(resume) save('resume.json',{...stamp(),...resume.revisions,prior:resume.prior,files:resume.files,syntheticReceiptIds:resume.created,priorFailureRetained:true,newCreationsBeforeStaleGate:0,originalFailurePassed:false,launchSource:read(path.join(runtime,'source.json')),transition,transitionSha256:hash(path.resolve(args.transition)),authRecovery:resume.authRecovery?.record});
   if(completion) journal('continuation.json',{...stamp(),...completion.revisions,prior:completion.prior,files:completion.files,transition,transitionFiles:completion.transitionFiles,retainedEvidenceFiles:completion.retainedEvidenceFiles,originalFailurePassed:false,newReceiptCreations:0});
@@ -320,6 +337,7 @@ async function main() {
   }
     const availability=await request('/api/normalization-ai/connection'); assert.equal(availability.configured,false,'Use the provider-disabled acceptance runtime');
     if(completion) {
+      if(browserOnly) {await finishBrowserBoundary();return;}
       await finishRestoreBoundary();
       return;
     }
@@ -439,26 +457,52 @@ async function main() {
     journal('final-postgres.json',postgres());
     journal('lifecycle-completion.json',{...stamp(),status:'passed',completed,prior:completion.prior,...completion.revisions,priorFailureRetained:true,originalFailurePassed:false,newReceiptCreations:0,syntheticReceiptIds:created,baselineFollowupHash:followupHash});
   }
+  async function finishBrowserBoundary() {
+    assert.deepEqual(await getItem(browserOnly.future.item.id),browserOnly.future.item,'Existing browser purchase changed');
+    assertIndependentProof(currentPg,browserOnly.independentId);
+    journal('browser-continuation.json',{...stamp(),prior:browserOnly.prior,files:browserOnly.files,completedEarlier:browserOnly.completed,newReceiptCreations:0,rawRunnerLogAvailable:browserOnly.rawRunnerLogAvailable});
+    await browserDraft(browserOnly.future);
+    assertCompletionFacts(browserOnly.expected.facts,(await exported('after-browser-completion.db')).facts,browserOnly.future.item.id);
+    assertRestoreDecision(assertIndependentProof(browserOnly.stop,browserOnly.independentId),assertIndependentProof(postgres(),browserOnly.independentId));
+    for(const [file,sha] of Object.entries(browserOnly.files)) assert.equal(hash(file),sha,'Prior browser evidence changed');
+    journal('final-postgres.json',postgres());
+    journal('lifecycle-browser-completion.json',{...stamp(),status:'passed',completed,prior:browserOnly.prior,...completion.revisions,priorFailureRetained:true,originalFailurePassed:false,newReceiptCreations:0,syntheticReceiptIds:created,baselineFollowupHash:followupHash});
+  }
+  function captureAllTables(container) {
+    const query=sql=>execFileSync('docker',['exec',ready.RunId+'-postgres','sh','-c','PGPASSWORD="$POSTGRES_PASSWORD" exec psql "$@"','sh','-U','postgres','-d','receiptsdb','-X','-q','-A','-t','-v','ON_ERROR_STOP=1','-c',sql],{encoding:'utf8',maxBuffer:64*1024*1024,windowsHide:true});
+    const names=JSON.parse(query("SELECT json_agg(schemaname||'.'||tablename ORDER BY schemaname,tablename) FROM pg_tables WHERE schemaname NOT IN ('pg_catalog','information_schema');"));
+    assert.deepEqual(names,Object.keys(browserOnly.allTables.tables).sort(),'Public PostgreSQL table inventory changed');
+    const quoted=name=>name.split('.').map(part=>'"'+part.replaceAll('"','""')+'"').join('.');
+    const sql='BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY; SELECT json_build_object('+names.map(name=>"'"+name+"',(SELECT coalesce(json_agg(x ORDER BY to_jsonb(x)::text),'[]') FROM "+quoted(name)+' x)').join(',')+'); COMMIT;';
+    return {container,tables:JSON.parse(query(sql))};
+  }
   async function browserDraft(future) {
     await pause(65000);
     const require=createRequire(path.join(root,'src/client/package.json')); const {chromium,expect}=require('@playwright/test');
     const browser=await chromium.launch({headless:true}); const context=await browser.newContext({baseURL:ready.Frontend});
     await context.addInitScript(({accessToken,refreshToken})=>{localStorage.setItem('receipts_access_token',accessToken);localStorage.setItem('receipts_refresh_token',refreshToken);},login);
     const page=await context.newPage();
+    const apiErrors=[],previewRequests=[];
+    page.on('requestfailed',request=>{const url=new URL(request.url());if(url.pathname.startsWith('/api/')) apiErrors.push({path:url.pathname,method:request.method(),transportFailed:true});});
+    page.on('response',response=>{
+      const request=response.request(),url=new URL(response.url());
+      if(!url.pathname.startsWith('/api/')) return;
+      if(response.status()>=400 && !(request.method()==='PUT' && url.pathname==='/api/receipt-items/'+future.item.id && response.status()===409)) apiErrors.push({path:url.pathname,method:request.method(),status:response.status()});
+      if(url.pathname==='/api/receipt-items/normalization-preview') {
+        let body;try {body=request.postDataJSON();} catch {}
+        previewRequests.push({path:url.pathname,method:request.method(),status:response.status(),objectBody:!!body && typeof body==='object' && !Array.isArray(body)});
+      }
+    });
     try {
       await page.goto('/receipts/'+future.receiptId);
       // The field fetches on mount; register before opening the editor so a fast
       // response cannot be missed. Bind readiness to this purchase's exact source.
-      const previewResponsePromise=page.waitForResponse(response=>{
-        if(new URL(response.url()).pathname!=='/api/receipt-items/normalization-preview' || response.request().method()!=='POST' || !response.ok()) return false;
-        const body=response.request().postDataJSON();
-        return body.source?.location===location && body.source?.description===line.description && body.source?.itemCode===line.receiptItemCode && !body.query && body.offset===0;
-      });
+      const previewResponsePromise=observeResponse(page,response=>matchesPurchasePreview(response,source(location,line)));
       await page.getByRole('row').filter({hasText:line.description}).getByRole('button',{name:'Edit',exact:true}).click();
       const dialog=page.getByRole('dialog',{name:'Edit Item'});
       await dialog.getByLabel('Unit Price',{exact:false}).fill('8.25');
       await dialog.getByRole('button',{name:'Choose product',exact:true}).click();
-      const previewResponse=await previewResponsePromise;
+      const previewResponse=await previewResponsePromise();
       assert.equal(await previewResponse.finished(),null);
       const previewEvidence=await previewResponse.json(); assert(previewEvidence.sourceFingerprint);
       // Review later is enabled even during loading and then clears the choice.
@@ -468,6 +512,8 @@ async function main() {
       await expect(dialog.getByRole('status').filter({hasText:'Loading product choices'})).toBeHidden();
       await dialog.getByRole('button',{name:'Review later',exact:true}).click();
       await expect(dialog.getByText('Needs review — saved with the receipt',{exact:true})).toBeVisible();
+      assert.deepEqual(apiErrors,[],'Unexpected browser API errors before competing edit');
+      assert(!previewRequests.some(r=>r.method==='POST' && !r.objectBody),'Preview POST had absent or malformed body');
       // The explicit choice captures the observed revision before a competing save.
       await update(await getItem(future.item.id),{unitPrice:4});
       const before=await settled('browser-rejection-settlement'); const portable=await exported('before-browser-rejection.db');
@@ -477,19 +523,22 @@ async function main() {
       journal('after-browser-save-postgres.json',postgres());
       assert.equal(response.status(),409,'Expected genuine stale-revision server rejection');
       const body=response.request().postDataJSON(); assert.equal(cents(body.unitPrice),825); assert.equal(body.normalizationIntent?.kind,'defer'); assert.equal(body.normalizationIntent?.expectedItemRevision,future.item.normalizationRevision); assert.equal(body.normalizationIntent?.sourceFingerprint,previewEvidence.sourceFingerprint);
-      const problem=await response.json(); assert(problem.detail);
+      const problem=await response.json(); assert(problem.detail);assert.equal(problem.code,'normalization_item_changed');
       await expect(dialog).toBeVisible(); await expect(dialog.getByRole('alert')).toContainText(problem.detail);
       await expect(dialog.getByLabel('Unit Price',{exact:false})).toHaveValue('8.25');
       assert.deepEqual(postgres(),before); assert.deepEqual((await exported('after-browser-rejection.db')).tables,portable.tables);
-      const refresh=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/trips' && r.request().method()==='GET' && r.ok());
+      const refresh=observeResponse(page,r=>new URL(r.url()).pathname==='/api/trips' && r.request().method()==='GET' && r.ok());
       await dialog.getByRole('button',{name:'Refresh saved receipt information',exact:true}).click();
-      const refreshed=await (await refresh).json(); assert.equal(cents(refreshed.receipt.items.find(i=>i.id===future.item.id).unitPrice),400);
+      const refreshed=await (await refresh()).json(); assert.equal(cents(refreshed.receipt.items.find(i=>i.id===future.item.id).unitPrice),400);
       await expect(dialog).toBeVisible(); await expect(dialog.getByLabel('Unit Price',{exact:false})).toHaveValue('8.25');
       await page.screenshot({path:path.join(out,'browser-draft-after-refresh.png'),fullPage:true});
       await dialog.getByRole('button',{name:'Cancel',exact:true}).click();
       await expect(page.getByRole('row').filter({hasText:line.description})).toContainText('$4.00');
+      assert.deepEqual(apiErrors,[],'Unexpected browser API errors');
+      assert(!previewRequests.some(r=>r.method==='POST' && !r.objectBody),'Preview POST had absent or malformed body');
+      journal('browser-api-observations.json',{apiErrors,previewRequests});
       await checkpoint('browser-rejection-cache-refresh-draft',{request:body,status:response.status(),problem,refreshed,interception:false});
-    } catch(error) {await page.screenshot({path:path.join(out,'browser-failure.png'),fullPage:true});throw error;} finally {await browser.close();}
+    } catch(error) {await page.screenshot({path:path.join(out,'browser-failure.png'),fullPage:true});throw error;} finally {if(!fs.existsSync(path.join(out,'browser-api-observations.json'))) journal('browser-api-observations.json',{apiErrors,previewRequests});await browser.close();}
   }
   },captureFailure:async error=>{
     journal('failure.json',{...stamp(),completed,syntheticReceiptIds:created,error:safeError(error)});
