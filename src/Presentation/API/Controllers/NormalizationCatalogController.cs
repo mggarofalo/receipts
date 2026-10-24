@@ -92,6 +92,11 @@ public class NormalizationCatalogController(INormalizationCatalogService service
 			return new NormalizationCatalogCoverageResponse
 			{
 				TotalItems = value.TotalItems,
+				VerifiedItems = value.VerifiedItems,
+				PendingItems = value.PendingItems,
+				PendingSources = value.PendingSources,
+				OldestUnresolvedAt = value.OldestUnresolvedAt,
+				ExcludedItems = value.ExcludedItems,
 				Unassigned = value.Unassigned,
 				LegacyUnknown = value.LegacyUnknown,
 				Automatic = value.Automatic,

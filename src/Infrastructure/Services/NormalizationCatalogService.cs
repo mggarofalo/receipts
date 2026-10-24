@@ -169,10 +169,21 @@ public sealed partial class NormalizationCatalogService(
 				: item.Origin == "mapped" || item.Origin == "excluded" ? item.Origin : "reviewed"
 		}).GroupBy(item => item.Origin).Select(group => new { Origin = group.Key, Count = group.Count() })
 			.ToDictionaryAsync(row => row.Origin, row => row.Count, cancellationToken);
+		var live = Live(context);
+		int verifiedItems = await live.CountAsync(item => item.NormalizationReviewState == NormalizationReviewState.Verified, cancellationToken);
+		int excludedItems = await live.CountAsync(item => item.NormalizationReviewState == NormalizationReviewState.Excluded, cancellationToken);
+		var pending = live.Where(item => item.NormalizationReviewState == NormalizationReviewState.NeedsReview);
+		int pendingItems = await pending.CountAsync(cancellationToken);
+		int pendingSources = await (from item in pending
+									join receipt in context.Receipts on item.ReceiptId equals receipt.Id
+									select new { Location = receipt.Location.Trim(' '), Description = item.Description.Trim(' '), Code = item.ReceiptItemCode == null || item.ReceiptItemCode.Trim(' ') == "" ? null : item.ReceiptItemCode.Trim(' ') }).Distinct().CountAsync(cancellationToken);
+		DateTimeOffset? oldest = await (from work in context.NormalizationReviewWork
+										join item in pending on work.ItemId equals item.Id
+										select (DateTimeOffset?)work.CreatedAt).MinAsync(cancellationToken);
 		return new(counts.Values.Sum(), counts.GetValueOrDefault("unassigned"), counts.GetValueOrDefault("legacy_unknown"),
 			counts.GetValueOrDefault("automatic"), counts.GetValueOrDefault("reviewed"), counts.GetValueOrDefault("mapped"),
 			counts.GetValueOrDefault("protected"), counts.GetValueOrDefault("excluded"),
-			counts.GetValueOrDefault("revisable"));
+			counts.GetValueOrDefault("revisable"), verifiedItems, pendingItems, pendingSources, oldest, excludedItems);
 	}
 
 	public async Task<NormalizationCatalogOperation> PreviewAsync(string actor, NormalizationCatalogPreview request, CancellationToken cancellationToken)

@@ -42,6 +42,7 @@ public class BackupCurationRoundTripTests(PostgresFixture source) : IClassFixtur
 			seed.ReceiptItems.Add(new ReceiptItemEntity { Id = unlinkedItemId, ReceiptId = receiptA, Description = "Intentionally unlinked item", Quantity = 1, UnitPrice = 1, TotalAmount = 1, Category = "Food" });
 			await seed.SaveChangesAsync();
 		}
+		await ReviewedPurchaseFixture.ConfirmActiveAsync(source.CreateOptions(), curatedItemId);
 		DuplicateWorkflowFixture sourceReports = new(new Factory(source.CreateOptions()));
 		(await sourceReports.GetDuplicatesAsync("dateAndLocation", "exact", 0, false, CancellationToken.None)).Groups.Should().ContainSingle();
 		(await sourceReports.AcceptDuplicateGroupAsync([receiptA, receiptB], CancellationToken.None)).Should().Be(1);
@@ -117,7 +118,10 @@ public class BackupCurationRoundTripTests(PostgresFixture source) : IClassFixtur
 				active.CanonicalName.Should().Be("Raw canonical text");
 				active.DisplayLabel.Should().Be("Chosen display label");
 				spending.Items.Should().ContainSingle(row => row.CanonicalName == "Chosen display label" && row.TotalAmount == 3 && row.ItemCount == 1 && row.Status == NormalizedDescriptionStatus.Active);
-				spending.Items.Should().ContainSingle(row => row.CanonicalName == "Pending raw name" && row.TotalAmount == 3 && row.Status == NormalizedDescriptionStatus.PendingReview);
+				spending.Items.Should().ContainSingle(row => row.CanonicalName == "(Needs review)" && row.TotalAmount == 4 && row.ItemCount == 2 && row.Status == null && row.NormalizedDescriptionId == null && row.NormalizationReviewState == "needsReview");
+				spending.TotalCount.Should().Be(2);
+				curated.NormalizationReviewState.Should().Be(NormalizationReviewState.Verified);
+				measured.NormalizationReviewState.Should().Be(NormalizationReviewState.NeedsReview);
 				spending.GrandTotal.Should().Be(7, "restored grouping and human labels must preserve all spending, including the unlinked bucket");
 				active.CreatedAt.Should().Be(createdAt);
 				active.Embedding.Should().BeNull("embedding vectors remain deliberately excluded");

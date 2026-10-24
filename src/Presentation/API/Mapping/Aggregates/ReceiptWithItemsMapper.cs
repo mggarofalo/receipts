@@ -17,6 +17,9 @@ public partial class ReceiptWithItemsMapper
 		return new ReceiptWithItemsResponse
 		{
 			Receipt = _receiptMapper.ToResponse(source.Receipt),
+			VerifiedItemCount = source.Items.Count(item => item.NormalizationReviewState == Domain.NormalizedDescriptions.NormalizationReviewState.Verified),
+			NeedsReviewItemCount = source.Items.Count(item => item.NormalizationReviewState == Domain.NormalizedDescriptions.NormalizationReviewState.NeedsReview),
+			ExcludedItemCount = source.Items.Count(item => item.NormalizationReviewState == Domain.NormalizedDescriptions.NormalizationReviewState.Excluded),
 			Items = [.. source.Items.Select(_receiptItemMapper.ToResponse)],
 			Adjustments = [.. source.Adjustments.Select(_adjustmentMapper.ToResponse)],
 			Subtotal = (double)source.Subtotal.Amount,

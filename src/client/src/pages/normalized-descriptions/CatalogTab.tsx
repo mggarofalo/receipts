@@ -86,6 +86,13 @@ export function CatalogTab() {
             <dl className="grid grid-cols-2 gap-3 md:grid-cols-4">
               {[
                 ["All purchases", coverage.data.totalItems],
+                ["Verified purchases", coverage.data.verifiedItems ?? "Unavailable"],
+                ["Purchases needing review", coverage.data.pendingItems ?? "Unavailable"],
+                ["Distinct pending sources", coverage.data.pendingSources ?? "Unavailable"],
+                ["Excluded purchases", coverage.data.excludedItems ?? "Unavailable"],
+                ["Oldest unresolved work", coverage.data.oldestUnresolvedAt ?? "Unavailable"],
+                ["Naming review coverage", "Unavailable: no persisted naming review evidence"],
+                ["Unresolved consolidation", "Unavailable: no persisted consolidation review evidence"],
                 ["Unassigned", coverage.data.unassigned],
                 ["Unknown legacy", coverage.data.legacyUnknown],
                 ["Automatic", coverage.data.automatic],

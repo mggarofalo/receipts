@@ -82,4 +82,31 @@ public class SearchPurchasesQueryTests
 		result.Should().BeSameAs(expected);
 		reader.VerifyAll();
 	}
+
+	[Theory]
+	[InlineData(null)]
+	[InlineData("")]
+	[InlineData("   ")]
+	public async Task IdentityHistory_AcceptsEmptyPhraseAndPreservesIdentityOptions(string? phrase)
+	{
+		var options = new PurchaseSearchOptions(Location: " Market ",
+				NormalizedDescriptionId: Guid.NewGuid(), IncludeUnreviewed: true);
+		new SearchPurchasesQueryValidator().Validate(new SearchPurchasesQuery(phrase, Options: options))
+				.IsValid.Should().BeTrue();
+		var reader = new Mock<IPurchaseSearchReader>(MockBehavior.Strict);
+		var expected = new PurchaseSearchResult([], 0, 0, 25);
+		var expectedOptions = options with { Location = "Market" };
+		reader.Setup(x => x.SearchAsync("", 0, 25, expectedOptions,
+						CancellationToken.None)).ReturnsAsync(expected);
+		(await new SearchPurchasesQueryHandler(reader.Object).Handle(new(phrase, Options: options),
+				CancellationToken.None)).Should().BeSameAs(expected);
+		reader.VerifyAll();
+	}
+
+	[Theory]
+	[InlineData("a")]
+	[InlineData(" a ")]
+	public void IdentityHistory_RejectsTooShortSuppliedPhrase(string phrase)
+			=> new SearchPurchasesQueryValidator().Validate(new SearchPurchasesQuery(phrase,
+					Options: new(NormalizedDescriptionId: Guid.NewGuid()))).IsValid.Should().BeFalse();
 }

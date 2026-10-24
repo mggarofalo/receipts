@@ -16,7 +16,9 @@ public record SpendingByNormalizedDescriptionItem(
 	int ItemCount,
 	DateTimeOffset? FirstSeen,
 	DateTimeOffset? LastSeen,
-	NormalizedDescriptionStatus? Status);
+	NormalizedDescriptionStatus? Status,
+	Guid? NormalizedDescriptionId = null,
+	string NormalizationReviewState = "needsReview");
 
 public record SpendingByNormalizedDescriptionResult(
 	List<SpendingByNormalizedDescriptionItem> Items,

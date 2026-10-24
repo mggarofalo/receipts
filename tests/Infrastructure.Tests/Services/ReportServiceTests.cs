@@ -698,7 +698,7 @@ public class ReportServiceTests
 	public async Task GetItemCostOverTimeAsync_FiltersByNormalizedDescription_AcrossDifferentRawDescriptions()
 	{
 		// Arrange — two items with different raw descriptions ("2% Milk" vs "Skim Milk") share the
-		// same NormalizedDescriptionId, so filtering by canonical name must return both.
+		// same reviewed NormalizedDescriptionId, so filtering by canonical name must return both.
 		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
 
 		Guid normalizedId = Guid.NewGuid();
@@ -723,6 +723,7 @@ public class ReportServiceTests
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receipt1, Description = "2% Milk", Quantity = 1, UnitPrice = 3.49m, TotalAmount = 3.49m, Category = "Dairy", NormalizedDescriptionId = normalizedId },
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receipt2, Description = "Skim Milk", Quantity = 1, UnitPrice = 3.29m, TotalAmount = 3.29m, Category = "Dairy", NormalizedDescriptionId = normalizedId });
 
+			SeedReviewedReportAssignments(context);
 			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
@@ -768,6 +769,7 @@ public class ReportServiceTests
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Milk", Quantity = 1, UnitPrice = 3.49m, TotalAmount = 3.49m, Category = "Dairy", NormalizedDescriptionId = normalizedId },
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Milk (unlinked)", Quantity = 1, UnitPrice = 99.99m, TotalAmount = 99.99m, Category = "Dairy", NormalizedDescriptionId = null });
 
+			SeedReviewedReportAssignments(context);
 			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
@@ -837,7 +839,7 @@ public class ReportServiceTests
 	// ── GetSpendingByNormalizedDescriptionAsync ──────────────────────────────
 
 	[Fact]
-	public async Task GetSpendingByNormalizedDescriptionAsync_GroupsByCanonicalName_AndBucketsNullFk()
+	public async Task GetSpendingByNormalizedDescriptionAsync_GroupsVerifiedProductIdentity_AndBucketsNeedsReview()
 	{
 		// Arrange
 		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
@@ -900,6 +902,7 @@ public class ReportServiceTests
 					NormalizedDescriptionId = null,
 				});
 
+			SeedReviewedReportAssignments(context);
 			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
@@ -924,13 +927,13 @@ public class ReportServiceTests
 		milkBucket.FirstSeen.Should().NotBeNull();
 		milkBucket.LastSeen.Should().NotBeNull();
 
-		SpendingByNormalizedDescriptionItem notNormalizedBucket = result.Items.Single(i => i.CanonicalName == "(Not Normalized)");
-		notNormalizedBucket.TotalAmount.Should().Be(2.00m);
-		notNormalizedBucket.ItemCount.Should().Be(1);
+		SpendingByNormalizedDescriptionItem needsReviewBucket = result.Items.Single(i => i.CanonicalName == "(Needs review)");
+		needsReviewBucket.TotalAmount.Should().Be(2.00m);
+		needsReviewBucket.ItemCount.Should().Be(1);
 
 		// Ordered by total desc
 		result.Items[0].CanonicalName.Should().Be("Organic Milk");
-		result.Items[1].CanonicalName.Should().Be("(Not Normalized)");
+		result.Items[1].CanonicalName.Should().Be("(Needs review)");
 
 		contextFactory.ResetDatabase();
 	}
@@ -1095,6 +1098,7 @@ public class ReportServiceTests
 					NormalizedDescriptionId = normalizedId,
 				});
 
+			SeedReviewedReportAssignments(context);
 			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}
@@ -2672,4 +2676,26 @@ public class ReportServiceTests
 		}
 	}
 
+	// Report projection fixtures model already-reviewed purchases. Persistence approval is tested separately.
+	// Seed the full current evidence: an FK or origin string alone must remain NeedsReview.
+	private static void SeedReviewedReportAssignments(ApplicationDbContext context)
+	{
+		var receipts = context.ChangeTracker.Entries<ReceiptEntity>().ToDictionary(entry => entry.Entity.Id, entry => entry.Entity);
+		foreach (var entry in context.ChangeTracker.Entries<ReceiptItemEntity>())
+		{
+			ReceiptItemEntity item = entry.Entity;
+			if (item.NormalizedDescriptionId is null) { continue; }
+			string hash = Application.Normalization.NormalizationCatalogPolicy.Hash(new(receipts[item.ReceiptId].Location, item.Description, item.ReceiptItemCode));
+			item.NormalizationOrigin = "reviewed";
+			item.NormalizationAssignmentId = Guid.NewGuid();
+			item.NormalizationReviewDecisionId = item.NormalizationAssignmentId;
+			item.NormalizationReviewState = Domain.NormalizedDescriptions.NormalizationReviewState.Verified;
+			item.NormalizationReviewReason = "purchase_review";
+			item.NormalizationSourceHash = hash;
+			item.ReviewedSourceHash = hash;
+			item.ReviewedTargetId = item.NormalizedDescriptionId;
+			item.ReviewedBy = "report-fixture-reviewer";
+			item.ReviewedAt = DateTimeOffset.UtcNow;
+		}
+	}
 }

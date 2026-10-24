@@ -126,7 +126,7 @@ public class PurchaseSearchReaderTests(PostgresFixture fixture)
 	}
 
 	[Fact]
-	public async Task SearchAsync_SearchesCodeStoreAndActiveCanonicalWithoutDroppingUnlinkedItems()
+	public async Task SearchAsync_SearchesRawFactsWithoutTrustingUnreviewedCanonicalLinks()
 	{
 		await ResetAsync();
 		await using (ApplicationDbContext db = fixture.CreateDbContext())
@@ -147,14 +147,13 @@ public class PurchaseSearchReaderTests(PostgresFixture fixture)
 			await db.SaveChangesAsync();
 		}
 		PurchaseSearchResult result = await Reader().SearchAsync("needle", 0, 25, new PurchaseSearchOptions(), CancellationToken.None);
-		result.Total.Should().Be(4);
-		result.Items.Select(x => x.Id).Should().BeEquivalentTo([Id(1), Id(2), Id(3), Id(6)]);
-		result.Items.Single(x => x.Id == Id(3)).NormalizedDescription.Should().Be("Needle canonical");
+		result.Total.Should().Be(3);
+		result.Items.Select(x => x.Id).Should().BeEquivalentTo([Id(1), Id(2), Id(6)]);
 		result.Items.Single(x => x.Id == Id(1)).NormalizedDescriptionId.Should().BeNull();
 	}
 
 	[Fact]
-	public async Task SearchAsync_FindsBothCanonicalNameAndVisibleLabel()
+	public async Task SearchAsync_IncludeUnreviewedFindsBothCanonicalNameAndVisibleLabel()
 	{
 		await ResetAsync();
 		await using (ApplicationDbContext db = fixture.CreateDbContext())
@@ -169,7 +168,7 @@ public class PurchaseSearchReaderTests(PostgresFixture fixture)
 		}
 		foreach (string phrase in new[] { "canonical milk", "BREAKFAST DRINK" })
 		{
-			PurchaseSearchResult result = await Reader().SearchAsync(phrase, 0, 25, new PurchaseSearchOptions(), CancellationToken.None);
+			PurchaseSearchResult result = await Reader().SearchAsync(phrase, 0, 25, new PurchaseSearchOptions(IncludeUnreviewed: true), CancellationToken.None);
 			result.Total.Should().Be(1);
 			result.Items.Should().ContainSingle().Which.NormalizedDescription.Should().Be("Breakfast drink");
 		}

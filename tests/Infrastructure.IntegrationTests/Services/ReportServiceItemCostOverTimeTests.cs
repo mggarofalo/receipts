@@ -58,6 +58,8 @@ public class ReportServiceItemCostOverTimeTests(PostgresFixture fixture)
 
 			setup.ReceiptItems.AddRange(item1, item2);
 			await setup.SaveChangesAsync();
+			await ReviewedPurchaseFixture.ConfirmActiveAsync(fixture.CreateOptions(),
+					setup.ReceiptItems.Local.Select(item => item.Id).ToArray());
 		}
 
 		ReportService service = new(new FixtureDbContextFactory(fixture));
@@ -107,6 +109,8 @@ public class ReportServiceItemCostOverTimeTests(PostgresFixture fixture)
 
 			setup.ReceiptItems.AddRange(linked, unlinked);
 			await setup.SaveChangesAsync();
+			await ReviewedPurchaseFixture.ConfirmActiveAsync(fixture.CreateOptions(),
+					setup.ReceiptItems.Local.Select(item => item.Id).ToArray());
 		}
 
 		ReportService service = new(new FixtureDbContextFactory(fixture));

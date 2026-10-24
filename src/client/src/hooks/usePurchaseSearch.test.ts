@@ -200,3 +200,25 @@ it("does not display a completed previous search as the new query's results", as
   expect(result.current.isPending).toBe(true);
   expect(result.current.isPlaceholderData).toBe(false);
 });
+
+
+it("separates identity and review scope in the cache and permits GUID history without q", async () => {
+  get.mockResolvedValue({ data: { items: [], total: 1, offset: 0, limit: 25 }, response: new Response() });
+  const firstId = "0d196918-51ca-4ddd-a4cd-039720bab253";
+  const secondId = "cd6a97fd-381d-4230-ad56-f027192b57ba";
+  const { result, rerender } = renderHook(
+    ({ id, includeUnreviewed }) => usePurchaseSearch("", 0, 25, true,
+      { normalizedDescriptionId: id, includeUnreviewed }),
+    { initialProps: { id: firstId, includeUnreviewed: false }, wrapper: createQueryWrapper() },
+  );
+  await waitFor(() => expect(result.current.isSuccess).toBe(true));
+  expect(get).toHaveBeenLastCalledWith("/api/search/purchases", {
+    params: { query: { q: "", offset: 0, limit: 25, normalizedDescriptionId: firstId, includeUnreviewed: false } },
+    signal: expect.any(AbortSignal),
+  });
+  rerender({ id: secondId, includeUnreviewed: false });
+  await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+  rerender({ id: secondId, includeUnreviewed: true });
+  await waitFor(() => expect(get).toHaveBeenCalledTimes(3));
+  expect(get.mock.calls[2][1].params.query).toMatchObject({ normalizedDescriptionId: secondId, includeUnreviewed: true });
+});

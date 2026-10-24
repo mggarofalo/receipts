@@ -79,6 +79,8 @@ export default function PurchaseSearch() {
   usePageTitle("Purchase history");
   const [params, setParams] = useSearchParams();
   const q = (params.get("q") ?? "").trim();
+  const normalizedDescriptionId =
+    params.get("normalizedDescriptionId") ?? undefined;
   const { pageSize: preferredPageSize, setPageSize } =
     usePersistedTablePageSize("purchase-history");
   const requestedSize = Number(params.get("limit"));
@@ -102,7 +104,9 @@ export default function PurchaseSearch() {
   const sortDirection = params.get("sortDirection") === "asc" ? "asc" : "desc";
   const filters = readPurchaseFilters(params);
   const parsedFilters = purchaseFiltersSchema.safeParse(filters);
-  const valid = q.length >= 2 && q.length <= 200;
+  const valid =
+    (q.length === 0 && !!normalizedDescriptionId) ||
+    (q.length >= 2 && q.length <= 200);
   const { data, isPending, isError, isFetching, refetch } = usePurchaseSearch(
     q,
     offset,
@@ -122,6 +126,8 @@ export default function PurchaseSearch() {
       ),
       sortBy,
       sortDirection,
+      includeUnreviewed: params.get("includeUnreviewed") === "true",
+      normalizedDescriptionId,
     },
   );
   function update(updates: Record<string, string>, resetPage = true) {
@@ -154,13 +160,34 @@ export default function PurchaseSearch() {
       <PurchaseQueryForm
         key={q}
         initialQuery={q}
-        onSearch={(value) => update({ q: value })}
+        onSearch={(value) => update({ q: value, normalizedDescriptionId: "" })}
       />
+      {normalizedDescriptionId && (
+        <p className="text-sm">
+          Product identity: <code>{normalizedDescriptionId}</code>{" "}
+          <Button
+            variant="link"
+            onClick={() => update({ normalizedDescriptionId: "" })}
+          >
+            Clear identity filter
+          </Button>
+        </p>
+      )}
       <p className="text-sm text-muted-foreground">
         Find what you paid, where, and when. Search matches a phrase in item
         names, item codes, normalized names, or stores. Prices are recorded per
         item; package sizes and measurement units are not standardized.
       </p>
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={params.get("includeUnreviewed") === "true"}
+          onChange={(event) =>
+            update({ includeUnreviewed: event.target.checked ? "true" : "" })
+          }
+        />
+        Include unreviewed product associations
+      </label>
       <PurchaseFilters
         key={JSON.stringify(filters)}
         initialValues={filters}
@@ -187,7 +214,8 @@ export default function PurchaseSearch() {
         data && (
           <>
             <p role="status">
-              {data.total.toLocaleString()} matching purchases for “{q}”
+              {data.total.toLocaleString()} matching purchases
+              {q ? ` for “${q}”` : " for this product identity"}
             </p>
             {data.items.length === 0 ? (
               <p>
@@ -243,9 +271,19 @@ export default function PurchaseSearch() {
                               Code: {item.receiptItemCode}
                             </div>
                           )}
+                          <div className="text-xs text-muted-foreground">
+                            {item.normalizationReviewState === "verified"
+                              ? "Verified"
+                              : item.normalizationReviewState === "excluded"
+                                ? "Excluded"
+                                : "Needs review"}
+                          </div>
                           {item.normalizedDescription && (
                             <div className="text-xs text-muted-foreground">
-                              Normalized: {item.normalizedDescription}
+                              {item.normalizationReviewState === "verified"
+                                ? "Verified product"
+                                : "Unreviewed association"}
+                              : {item.normalizedDescription}
                             </div>
                           )}
                         </td>

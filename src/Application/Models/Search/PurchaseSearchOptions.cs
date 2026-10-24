@@ -8,4 +8,6 @@ public record PurchaseSearchOptions(
 	DateOnly? StartDate = null,
 	DateOnly? EndDate = null,
 	decimal? MinUnitPrice = null,
-	decimal? MaxUnitPrice = null);
+	decimal? MaxUnitPrice = null,
+	bool IncludeUnreviewed = false,
+	Guid? NormalizedDescriptionId = null);

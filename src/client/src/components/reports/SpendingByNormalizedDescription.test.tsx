@@ -42,6 +42,7 @@ const mockDownloadCsv = vi.mocked(downloadCsv);
 const sampleItems = [
   {
     canonicalName: "Apples",
+    normalizedDescriptionId: "0d196918-51ca-4ddd-a4cd-039720bab253",
     totalAmount: 12.5,
     currency: "USD",
     itemCount: 3,
@@ -327,7 +328,7 @@ describe("SpendingByNormalizedDescription", () => {
     );
   });
 
-  it("links the canonical name cell to the Item Cost Over Time drill-down carrying the current date range", () => {
+  it("links verified history by GUID while carrying the current date range", () => {
     setupMock();
     renderWithQueryClient(<SpendingByNormalizedDescription />, {
       route: "/?startDate=2023-01-01&endDate=2023-06-30",
@@ -336,7 +337,7 @@ describe("SpendingByNormalizedDescription", () => {
     const link = screen.getByRole("link", { name: "Apples" });
     expect(link).toHaveAttribute(
       "href",
-      "/reports?report=item-cost-over-time&normalized=Apples&startDate=2023-01-01&endDate=2023-06-30",
+      "/search?normalizedDescriptionId=0d196918-51ca-4ddd-a4cd-039720bab253&startDate=2023-01-01&endDate=2023-06-30",
     );
   });
 

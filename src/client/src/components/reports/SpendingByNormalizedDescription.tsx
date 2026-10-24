@@ -14,7 +14,6 @@ import { csvFilename } from "@/lib/export-csv";
 import { fetchAllReportPages } from "@/lib/fetch-all-report-pages";
 import { formatCurrency } from "@/lib/format";
 import {
-  buildItemCostDrillDownHref,
   parseDateRangeParam,
   parseEnumParam,
   parsePositiveIntParam,
@@ -167,7 +166,12 @@ export default function SpendingByNormalizedDescription() {
   // Only counts the current page — the endpoint reports no server-side pending total, and
   // claiming a figure that spans pages we never fetched would be a guess.
   const pendingOnPage = useMemo(
-    () => items.filter((item) => isPendingReview(item.status)).length,
+    () =>
+      items.filter(
+        (item) =>
+          item.normalizationReviewState === "needsReview" ||
+          isPendingReview(item.status),
+      ).length,
     [items],
   );
 
@@ -215,7 +219,7 @@ export default function SpendingByNormalizedDescription() {
           item.totalAmount,
           formatShare(Number(item.totalAmount ?? 0), grandTotal),
           item.currency,
-          reviewStatusLabel(item.status),
+          item.normalizationReviewState ?? reviewStatusLabel(item.status),
         ]);
       },
     });
@@ -296,8 +300,7 @@ export default function SpendingByNormalizedDescription() {
         >
           {pendingOnPage} {pendingOnPage === 1 ? "bucket" : "buckets"} on this
           page {pendingOnPage === 1 ? "is" : "are"} still awaiting review. Their
-          spend is included in the totals, but the grouping is the
-          resolver&apos;s own and nobody has confirmed it.
+          spend remains included in the totals. Product identity is unresolved.
           {/* The review queue lives behind AdminRoute, so only offer the link to
               someone who can actually follow it. */}
           {isAdmin() && (
@@ -314,6 +317,12 @@ export default function SpendingByNormalizedDescription() {
           )}
         </p>
       )}
+
+      <p className="text-sm text-muted-foreground">
+        Amounts retain their recorded currencies without conversion. Totals and
+        shares use the dominant currency convention and may combine different
+        currencies; they are not comparable across currencies.
+      </p>
 
       <ChartCard
         title="Top Normalized Descriptions by Spending"
@@ -363,14 +372,29 @@ export default function SpendingByNormalizedDescription() {
         </TableHeader>
         <TableBody>
           {items.map((item) => {
-            const href = buildItemCostDrillDownHref(
-              item.canonicalName,
-              dateRange,
-            );
-            const pending = isPendingReview(item.status);
+            const historyParams = new URLSearchParams();
+            if (item.normalizedDescriptionId)
+              historyParams.set(
+                "normalizedDescriptionId",
+                item.normalizedDescriptionId,
+              );
+            if (dateRange.startDate)
+              historyParams.set("startDate", dateRange.startDate);
+            if (dateRange.endDate)
+              historyParams.set("endDate", dateRange.endDate);
+            const href = item.normalizedDescriptionId
+              ? `/search?${historyParams.toString()}`
+              : undefined;
+            const pending =
+              item.normalizationReviewState === "needsReview" ||
+              isPendingReview(item.status);
             return (
               <TableRow
-                key={item.canonicalName}
+                key={
+                  item.normalizedDescriptionId ??
+                  item.normalizationReviewState ??
+                  item.canonicalName
+                }
                 className={pending ? "text-muted-foreground" : undefined}
               >
                 <TableCell className="font-medium">

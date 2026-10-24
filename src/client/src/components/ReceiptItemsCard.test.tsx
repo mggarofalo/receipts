@@ -456,6 +456,7 @@ describe("ReceiptItemsCard", () => {
         category: "Groceries",
         subcategory: "Produce",
         normalizedDescriptionName: "Grapes",
+        normalizationReviewState: "verified" as const,
       },
     ];
     renderWithQueryClient(
@@ -567,4 +568,13 @@ describe("ReceiptItemsCard", () => {
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(mockDeleteMutate).not.toHaveBeenCalled();
   });
+});
+
+
+it("labels pending associations without claiming they are normalized", () => {
+  renderWithQueryClient(<ReceiptItemsCard receiptId="receipt-1" subtotal={21}
+    items={[{ ...mockItems[0], normalizedDescriptionName: "Proposed widget", normalizationReviewState: "needsReview" }]} />);
+  expect(screen.getByText("Needs review")).toBeVisible();
+  expect(screen.getByText(/Unreviewed association: Proposed widget/)).toBeVisible();
+  expect(screen.queryByText(/normalized as/i)).not.toBeInTheDocument();
 });

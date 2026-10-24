@@ -4,7 +4,7 @@ import { queryKeys } from "@/lib/query-invalidation";
 import type { operations } from "@/generated/api";
 
 export type PurchaseSearchOptions = Omit<
-  operations["SearchPurchases"]["parameters"]["query"],
+  NonNullable<operations["SearchPurchases"]["parameters"]["query"]>,
   "q" | "offset" | "limit"
 >;
 
@@ -26,7 +26,10 @@ export function usePurchaseSearch(
       limit,
       options,
     ],
-    enabled: enabled && search.length >= 2 && search.length <= 200,
+    enabled:
+      enabled &&
+      ((search.length === 0 && !!options.normalizedDescriptionId) ||
+        (search.length >= 2 && search.length <= 200)),
     queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/api/search/purchases", {
         params: { query: { ...options, q: search, offset, limit } },

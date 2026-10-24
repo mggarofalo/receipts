@@ -14,6 +14,7 @@ const item: components["schemas"]["PurchaseSearchItem"] = {
   description: "Whole milk",
   receiptItemCode: "MILK-42",
   normalizedDescription: "Milk",
+  normalizationReviewState: "verified",
   date: "2020-01-15",
   location: "Old store",
   quantity: 2,
@@ -186,7 +187,7 @@ it("shows historical purchase evidence with precision and a receipt link", () =>
   expect(screen.getByText(/USD\s1\.2345/)).toBeInTheDocument();
   expect(screen.getByText(/USD\s2\.47/)).toBeInTheDocument();
   expect(screen.getByText("Code: MILK-42")).toBeInTheDocument();
-  expect(screen.getByText("Normalized: Milk")).toBeInTheDocument();
+  expect(screen.getByText(/Verified product\s*:\s*Milk/)).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "View receipt" })).toHaveAttribute(
     "href",
     "/receipts/receipt-1",
@@ -369,4 +370,30 @@ it("restores submitted query and page with browser Back, discarding the other se
     true,
     expect.objectContaining({ sortBy: "date", sortDirection: "desc" }),
   );
+});
+
+
+it("loads GUID history without a placeholder phrase and clears identity for a new search", async () => {
+  const id = "0d196918-51ca-4ddd-a4cd-039720bab253";
+  renderPage(`/search?normalizedDescriptionId=${id}&startDate=2025-01-01&offset=25`);
+  expect(search).toHaveBeenLastCalledWith("", 25, 25, true,
+    expect.objectContaining({ normalizedDescriptionId: id, includeUnreviewed: false }));
+  expect(screen.getByText(id)).toBeVisible();
+  await userEvent.type(screen.getByRole("textbox", { name: "Search purchases" }), "bread");
+  await userEvent.click(screen.getByRole("button", { name: "Search" }));
+  await waitFor(() => expect(currentParams().get("q")).toBe("bread"));
+  expect(currentParams().get("normalizedDescriptionId")).toBeNull();
+  expect(currentParams().get("offset")).toBeNull();
+  expect(currentParams().get("startDate")).toBe("2025-01-01");
+});
+
+it("includes unreviewed associations only after an explicit opt in", async () => {
+  renderPage("/search?q=milk&offset=25");
+  expect(search).toHaveBeenLastCalledWith("milk", 25, 25, true,
+    expect.objectContaining({ includeUnreviewed: false }));
+  await userEvent.click(screen.getByRole("checkbox", { name: "Include unreviewed product associations" }));
+  expect(currentParams().get("includeUnreviewed")).toBe("true");
+  expect(currentParams().get("offset")).toBeNull();
+  expect(search).toHaveBeenLastCalledWith("milk", 0, 25, true,
+    expect.objectContaining({ includeUnreviewed: true }));
 });

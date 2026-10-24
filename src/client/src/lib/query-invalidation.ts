@@ -99,6 +99,7 @@ const TEMPLATE_CHANGE_QUERY_KEYS = [
 // Keep this separate from the monetary ledger union: renaming or reviewing a
 // description does not change receipt totals or dashboard ranges.
 const NORMALIZED_DESCRIPTION_CHANGE_QUERY_KEYS = [
+  queryKeys.receipts,
   queryKeys.normalizedDescriptions,
   queryKeys.normalizationCatalog,
   queryKeys.normalizationAi,

@@ -124,3 +124,17 @@ it.each(["receipt", "transaction"] as const)(
     client.clear();
   },
 );
+
+
+it("refreshes server receipt counts and identity projections after a review change", async () => {
+  const client = new QueryClient();
+  const keys = [["receipts", "list"], ["receipts", "detail", "receipt-1"],
+    ["receipts-with-items"], ["receipt-items"], ["reports", "purchase-search"],
+    ["reports", "spending-by-normalized-description"]];
+  for (const key of keys) client.setQueryData(key, { cached: true });
+  client.setQueryData(["accounts"], { cached: true });
+  await repairDomainChange(client, "normalized-description", () => true);
+  for (const key of keys) expect(client.getQueryState(key)?.isInvalidated).toBe(true);
+  expect(client.getQueryState(["accounts"])?.isInvalidated).toBe(false);
+  client.clear();
+});

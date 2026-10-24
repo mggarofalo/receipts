@@ -11,7 +11,7 @@ using SampleData.Entities;
 namespace Infrastructure.IntegrationTests.Services;
 
 // Postgres-only coverage for RECEIPTS-841: GetSpendingByNormalizedDescriptionAsync now groups,
-// sorts, and paginates entirely in SQL (GROUP BY canonical-name-or-"(Not Normalized)", ORDER BY,
+// sorts, and paginates entirely in SQL (GROUP BY verified-product-GUID-or-review-bucket, ORDER BY,
 // OFFSET/LIMIT) and runs a second page-scoped query for dominant-currency resolution. The InMemory
 // unit suite client-evaluates all of this, so it can never prove the LINQ actually translates —
 // only a real Postgres connection can catch a translation regression.
@@ -21,7 +21,7 @@ namespace Infrastructure.IntegrationTests.Services;
 public class ReportServiceSpendingByNormalizedDescriptionTests(PostgresFixture fixture)
 {
 	[Fact]
-	public async Task GetSpendingByNormalizedDescriptionAsync_AggregatesByCanonicalName_AndBucketsNullFk()
+	public async Task GetSpendingByNormalizedDescriptionAsync_AggregatesVerifiedPurchases_AndBucketsNullFk()
 	{
 		// Arrange
 		await ResetTablesAsync();
@@ -58,6 +58,8 @@ public class ReportServiceSpendingByNormalizedDescriptionTests(PostgresFixture f
 
 			setup.ReceiptItems.AddRange(linked1, linked2, unlinked);
 			await setup.SaveChangesAsync();
+			await ReviewedPurchaseFixture.ConfirmActiveAsync(fixture.CreateOptions(),
+					setup.ReceiptItems.Local.Where(item => item.DeletedAt is null).Select(item => item.Id).ToArray());
 		}
 
 		ReportService service = new(new FixtureDbContextFactory(fixture));
@@ -78,7 +80,7 @@ public class ReportServiceSpendingByNormalizedDescriptionTests(PostgresFixture f
 		milk.FirstSeen.Should().NotBeNull();
 		milk.LastSeen.Should().NotBeNull();
 
-		SpendingByNormalizedDescriptionItem notNormalized = result.Items.Single(i => i.CanonicalName == "(Not Normalized)");
+		SpendingByNormalizedDescriptionItem notNormalized = result.Items.Single(i => i.CanonicalName == "(Needs review)");
 		notNormalized.TotalAmount.Should().Be(2.00m);
 		notNormalized.ItemCount.Should().Be(1);
 
@@ -88,12 +90,9 @@ public class ReportServiceSpendingByNormalizedDescriptionTests(PostgresFixture f
 		notNormalized.Status.Should().BeNull();
 	}
 
-	// RECEIPTS-875: the report is where approval becomes observable, so a bucket whose canonical
-	// row is still PendingReview has to arrive marked. The status comes from a second page-scoped
-	// query rather than an extra GROUP BY key — a translation regression there would silently
-	// return null for every bucket and quietly un-gate the review queue again.
+	// A pending identity remains provisional even though a legacy foreign key points at it.
 	[Fact]
-	public async Task GetSpendingByNormalizedDescriptionAsync_CarriesPendingReviewStatus()
+	public async Task GetSpendingByNormalizedDescriptionAsync_BucketsPendingReviewWithoutPromotingItsIdentity()
 	{
 		// Arrange
 		await ResetTablesAsync();
@@ -134,6 +133,8 @@ public class ReportServiceSpendingByNormalizedDescriptionTests(PostgresFixture f
 
 			setup.ReceiptItems.AddRange(settled, unconfirmed);
 			await setup.SaveChangesAsync();
+			await ReviewedPurchaseFixture.ConfirmActiveAsync(fixture.CreateOptions(),
+					setup.ReceiptItems.Local.Where(item => item.DeletedAt is null).Select(item => item.Id).ToArray());
 		}
 
 		ReportService service = new(new FixtureDbContextFactory(fixture));
@@ -145,8 +146,19 @@ public class ReportServiceSpendingByNormalizedDescriptionTests(PostgresFixture f
 		// Assert
 		result.Items.Single(i => i.CanonicalName == "Settled Item")
 			.Status.Should().Be(NormalizedDescriptionStatus.Active);
-		result.Items.Single(i => i.CanonicalName == "Unconfirmed Item")
-			.Status.Should().Be(NormalizedDescriptionStatus.PendingReview);
+		SpendingByNormalizedDescriptionItem pending = result.Items.Single(i => i.CanonicalName == "(Needs review)");
+		pending.Status.Should().BeNull();
+		pending.NormalizedDescriptionId.Should().BeNull();
+		pending.NormalizationReviewState.Should().Be("needsReview");
+		pending.TotalAmount.Should().Be(7.00m);
+		pending.ItemCount.Should().Be(1);
+		result.TotalCount.Should().Be(2);
+		await using ApplicationDbContext persisted = fixture.CreateDbContext();
+		ReceiptItemEntity rawPending = await persisted.ReceiptItems.SingleAsync(i => i.NormalizedDescriptionId == pendingId);
+		rawPending.Description.Should().Be("unconfirmed item");
+		rawPending.NormalizationReviewState.Should().Be(NormalizationReviewState.NeedsReview);
+		(await persisted.NormalizedDescriptions.SingleAsync(i => i.Id == pendingId)).Status
+			.Should().Be(NormalizedDescriptionStatus.PendingReview);
 
 		// The unreviewed bucket's money still counts. A report that silently drops it would stop
 		// reconciling against receipt totals, which is the reason pending buckets stay visible
@@ -191,6 +203,8 @@ public class ReportServiceSpendingByNormalizedDescriptionTests(PostgresFixture f
 
 			setup.ReceiptItems.AddRange(inRange, outOfRange);
 			await setup.SaveChangesAsync();
+			await ReviewedPurchaseFixture.ConfirmActiveAsync(fixture.CreateOptions(),
+					setup.ReceiptItems.Local.Where(item => item.DeletedAt is null).Select(item => item.Id).ToArray());
 		}
 
 		ReportService service = new(new FixtureDbContextFactory(fixture));
@@ -253,6 +267,8 @@ public class ReportServiceSpendingByNormalizedDescriptionTests(PostgresFixture f
 
 			setup.ReceiptItems.AddRange(liveItem, softDeletedItem, itemOnDeletedReceipt);
 			await setup.SaveChangesAsync();
+			await ReviewedPurchaseFixture.ConfirmActiveAsync(fixture.CreateOptions(),
+					setup.ReceiptItems.Local.Where(item => item.DeletedAt is null).Select(item => item.Id).ToArray());
 			// Model historical/external data that predates enforced child admission. The child
 			// deliberately stays active so this still verifies the report's parent filter.
 			await setup.Database.ExecuteSqlInterpolatedAsync($"UPDATE receipts.\"Receipts\" SET \"DeletedAt\" = {DateTimeOffset.UtcNow} WHERE \"Id\" = {deleted.Id}");
@@ -349,6 +365,8 @@ public class ReportServiceSpendingByNormalizedDescriptionTests(PostgresFixture f
 			}
 
 			await setup.SaveChangesAsync();
+			await ReviewedPurchaseFixture.ConfirmActiveAsync(fixture.CreateOptions(),
+					setup.ReceiptItems.Local.Where(item => item.DeletedAt is null).Select(item => item.Id).ToArray());
 		}
 
 		ReportService service = new(new FixtureDbContextFactory(fixture));
@@ -407,6 +425,8 @@ public class ReportServiceSpendingByNormalizedDescriptionTests(PostgresFixture f
 			}
 
 			await setup.SaveChangesAsync();
+			await ReviewedPurchaseFixture.ConfirmActiveAsync(fixture.CreateOptions(),
+					setup.ReceiptItems.Local.Where(item => item.DeletedAt is null).Select(item => item.Id).ToArray());
 		}
 
 		ReportService service = new(new FixtureDbContextFactory(fixture));
@@ -423,10 +443,10 @@ public class ReportServiceSpendingByNormalizedDescriptionTests(PostgresFixture f
 	}
 
 	[Fact]
-	public async Task GetSpendingByNormalizedDescriptionAsync_NotNormalizedBucket_AppearsAndPaginatesAlongsideRealNames()
+	public async Task GetSpendingByNormalizedDescriptionAsync_NeedsReviewBucket_AppearsAndPaginatesAlongsideRealNames()
 	{
 		// Arrange — one real canonical name plus a group of items with no NormalizedDescriptionId,
-		// which must bucket into the synthetic "(Not Normalized)" group via COALESCE and remain
+		// which must bucket into the synthetic "(Needs review)" group by review state and remain
 		// sortable/paginatable alongside real names rather than being dropped or NULL-ordered away.
 		await ResetTablesAsync();
 
@@ -462,6 +482,8 @@ public class ReportServiceSpendingByNormalizedDescriptionTests(PostgresFixture f
 
 			setup.ReceiptItems.AddRange(normalizedItem, unnormalizedItem1, unnormalizedItem2);
 			await setup.SaveChangesAsync();
+			await ReviewedPurchaseFixture.ConfirmActiveAsync(fixture.CreateOptions(),
+					setup.ReceiptItems.Local.Where(item => item.DeletedAt is null).Select(item => item.Id).ToArray());
 		}
 
 		ReportService service = new(new FixtureDbContextFactory(fixture));
@@ -480,11 +502,11 @@ public class ReportServiceSpendingByNormalizedDescriptionTests(PostgresFixture f
 
 		// Assert
 		totalCount.Should().Be(2);
-		collected.Should().BeEquivalentTo(["Apples", "(Not Normalized)"]);
+		collected.Should().BeEquivalentTo(["Apples", "(Needs review)"]);
 
 		SpendingByNormalizedDescriptionResult fullResult = await service
 			.GetSpendingByNormalizedDescriptionAsync(null, null, "totalAmount", "desc", 1, 50, CancellationToken.None);
-		SpendingByNormalizedDescriptionItem notNormalized = fullResult.Items.Single(i => i.CanonicalName == "(Not Normalized)");
+		SpendingByNormalizedDescriptionItem notNormalized = fullResult.Items.Single(i => i.CanonicalName == "(Needs review)");
 		notNormalized.TotalAmount.Should().Be(10.00m);
 		notNormalized.ItemCount.Should().Be(2);
 	}
@@ -528,6 +550,8 @@ public class ReportServiceSpendingByNormalizedDescriptionTests(PostgresFixture f
 
 			setup.ReceiptItems.AddRange(item1, item2);
 			await setup.SaveChangesAsync();
+			await ReviewedPurchaseFixture.ConfirmActiveAsync(fixture.CreateOptions(),
+					setup.ReceiptItems.Local.Where(item => item.DeletedAt is null).Select(item => item.Id).ToArray());
 		}
 
 		ReportService service = new(new FixtureDbContextFactory(fixture));
@@ -585,6 +609,8 @@ public class ReportServiceSpendingByNormalizedDescriptionTests(PostgresFixture f
 		}
 
 		await setup.SaveChangesAsync();
+		await ReviewedPurchaseFixture.ConfirmActiveAsync(fixture.CreateOptions(),
+				setup.ReceiptItems.Local.Where(item => item.DeletedAt is null).Select(item => item.Id).ToArray());
 	}
 
 	private async Task ResetTablesAsync()

@@ -38,6 +38,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { formatUnitPrice, formatCurrency } from "@/lib/format";
 import { Pencil } from "lucide-react";
+import type { components } from "@/generated/api";
 
 interface ReceiptItem {
   id: string;
@@ -49,7 +50,7 @@ interface ReceiptItem {
   subcategory?: string | null;
   normalizedDescriptionName?: string | null;
   normalizationRevision?: string;
-  normalizationReviewState?: "verified" | "excluded" | "needsReview";
+  normalizationReviewState?: components["schemas"]["NormalizationReviewState"];
 }
 
 interface ReceiptItemsCardProps {
@@ -257,13 +258,13 @@ export function ReceiptItemsCard({
                       </TableCell>
                       <TableCell className="whitespace-normal break-words max-w-[32ch]">
                         <div>{item.description}</div>
-                        <p className="text-xs text-muted-foreground">
+                        <div className="text-xs text-muted-foreground">
                           {item.normalizationReviewState === "verified"
-                            ? "Reviewed"
+                            ? "Verified"
                             : item.normalizationReviewState === "excluded"
-                              ? "Excluded from product grouping"
+                              ? "Excluded"
                               : "Needs review"}
-                        </p>
+                        </div>
                         {item.normalizedDescriptionName &&
                           item.normalizedDescriptionName !==
                             item.description && (
@@ -271,7 +272,10 @@ export function ReceiptItemsCard({
                               className="text-xs text-muted-foreground"
                               data-testid={`normalized-as-${item.id}`}
                             >
-                              normalized as {item.normalizedDescriptionName}
+                              {item.normalizationReviewState === "verified"
+                                ? "normalized as"
+                                : "Unreviewed association:"}{" "}
+                              {item.normalizedDescriptionName}
                             </div>
                           )}
                       </TableCell>

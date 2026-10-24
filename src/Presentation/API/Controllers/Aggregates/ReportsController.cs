@@ -510,6 +510,8 @@ public class ReportsController(IMediator mediator, IEntityChangeNotifier notifie
 			Items = result.Items.Select(i => new SpendingByNormalizedDescriptionItem
 			{
 				CanonicalName = i.CanonicalName,
+				NormalizedDescriptionId = i.NormalizedDescriptionId,
+				NormalizationReviewState = i.NormalizationReviewState,
 				TotalAmount = (double)i.TotalAmount,
 				Currency = i.Currency,
 				ItemCount = i.ItemCount,
