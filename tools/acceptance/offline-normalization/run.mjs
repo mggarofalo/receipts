@@ -105,7 +105,10 @@ async function browser(login,fn) {
 }
 async function select(page,label,value) {
   await page.getByRole('combobox',{name:label}).click();
-  const option=page.getByRole('option',{name:value,exact:true});
+  // Card options also render their last four digits in the accessible name.
+  // Filtering preserves strict uniqueness while allowing that real UI detail.
+  const option=page.getByRole('option').filter({hasText:value});
+  if(!/^Location/.test(label.source ?? String(label))) {await option.click();return;}
   if(await option.count()) await option.click();
   else {await page.getByPlaceholder('Search locations...').fill(value);await page.getByRole('button',{name:`Use "${value}"`,exact:true}).click();}
 }
