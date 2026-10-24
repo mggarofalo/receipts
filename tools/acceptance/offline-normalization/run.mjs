@@ -6,6 +6,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { assertIdentities, assertHistory, assertFacts, assertInitial, assertPortableGold, assertOperationArchiveUnchanged, assertRestoredOperations, assertRepeatedRestore } from './oracle.mjs';
+import { retainedRestoreUploads, assertFrozenInputs } from './restore-resume.mjs';
 
 // This runner is the independent oracle. Never pass its gold or bindings to a proposer.
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -15,6 +16,7 @@ if (!phase || !args.runtime || !args.out) throw Error('Usage: node run.mjs PHASE
 const runtime = path.resolve(args.runtime), out = path.resolve(args.out);
 assert(!out.toLowerCase().startsWith(root.toLowerCase() + path.sep), 'Evidence must be outside the repository');
 fs.mkdirSync(out,{recursive:true});
+if(phase==='restore-resume')assert.equal(fs.readdirSync(out).length,0,'Resume output must be a new empty evidence directory');
 const gold = JSON.parse(fs.readFileSync(path.join(root,'test-data/offline-normalization-acceptance.json')));
 const read = p => JSON.parse(fs.readFileSync(p,'utf8').replace(/^\uFEFF/,''));
 const save = (name,v) => fs.writeFileSync(path.join(out,name),JSON.stringify(v,null,2),{flag:'wx'});
@@ -27,8 +29,12 @@ const source = path.resolve(args.source ?? out);
 const hash = p => crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
 const facts = p => JSON.parse(execFileSync('python',[path.join(root,'tools/acceptance/offline-normalization/snapshot.py'),p],{encoding:'utf8'}));
 let token;
+const requests=[];
+const recordResponse=(method,url,r)=>requests.push({utc:new Date().toISOString(),method,url,status:r.status});
+const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function api(url,body,method=body===undefined?'GET':'POST') {
   const r = await fetch(new URL(url,ready.Api),{method,headers:{...(token?{Authorization:`Bearer ${token}`} : {}),...(body === undefined ? {} : {'Content-Type':'application/json'})},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(300000)});
+  recordResponse(method,url,r);
   if(!r.ok) throw Error(`${method} ${url}: ${r.status}; inspect private runtime log`);
   return r.status===204 ? null : r.json();
 }
@@ -38,6 +44,7 @@ async function authenticate() {
   let login = await api('/api/auth/login',{email:secrets.AdminEmail,password});
   token=login.accessToken;
   if(login.mustResetPassword) {
+    assert.notEqual(phase,'restore-resume','Read-only resume cannot change a password');
     const replacement = crypto.randomBytes(32).toString('hex')+'aA1!';
     await api('/api/auth/change-password',{currentPassword:password,newPassword:replacement});
     fs.writeFileSync(saved,JSON.stringify({password:replacement}),{flag:'wx'});
@@ -47,6 +54,7 @@ async function authenticate() {
 }
 async function exportDb(name) {
   const r=await fetch(new URL('/api/backup/export',ready.Api),{method:'POST',headers:{Authorization:`Bearer ${token}`},signal:AbortSignal.timeout(300000)});
+  recordResponse('POST','/api/backup/export',r);
   assert(r.ok,`Export ${r.status}`); const dest=path.join(out,name);
   fs.writeFileSync(dest,Buffer.from(await r.arrayBuffer()),{flag:'wx'}); return dest;
 }
@@ -58,6 +66,7 @@ async function importDb(p,expected) {
 }
 async function rejectedAction(url,body) {
   const response=await fetch(new URL(url,ready.Api),{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(300000)});
+  recordResponse('POST',url,response);
   const problem=await response.json();assert.equal(response.status,409,'Restored operation accepted a mutation');assert(problem.detail);return {status:response.status,problem};
 }
 function postgresEvidence() {
@@ -178,27 +187,41 @@ async function assertGold(bindings,followups=false) {
   return {trips,coverage,report,mappings,sources,history,purchaseHistory,searches,identities};
 }
 async function verifyBrowser(login,bindings) {
+  // Production defaults: 100 requests/minute in four sliding segments. Pages issue
+  // multiple real API requests; allow a full window after dense API assertions.
+  await pause(65000);
   await browser(login,async(page,expect)=>{
+    const network=[];page.on('response',r=>{if(new URL(r.url()).pathname.startsWith('/api/'))network.push({utc:new Date().toISOString(),url:r.url(),status:r.status()});});
+    let lastNavigation=0;
+    const pace=async()=>{await pause(Math.max(0,12000-(Date.now()-lastNavigation)));lastNavigation=Date.now();};
+    const navigate=async url=>{await pace();return page.goto(url);};
+    try {
     for(const r of gold.receipts.slice(0,7)) {
-      await page.goto(`/receipts/${bindings.receipts[r.key]}`);
+      await navigate(`/receipts/${bindings.receipts[r.key]}`);
       for(const i of r.items)await expect(page.getByText(i.description.trim(),{exact:true}).first()).toBeVisible();
       const verified=r.items.filter(i=>gold.gold.verifiedItems.includes(i.key)).length,pending=r.items.filter(i=>gold.gold.needsReviewItems.includes(i.key)).length,excluded=r.items.length-verified-pending;
       await expect(page.getByLabel('Purchase verification coverage')).toHaveText(`Purchase review: ${verified} verified · ${pending} needs review · ${excluded} excluded`);
       await page.screenshot({path:path.join(out,`receipt-${r.key}-${Date.now()}.png`),fullPage:true});
     }
-    await page.goto('/receipts');await expect(page.getByRole('main')).toBeVisible();
+    await navigate('/receipts');await expect(page.getByRole('main')).toBeVisible();
     for(const r of gold.receipts.slice(0,7)) {const row=page.getByRole('row').filter({has:page.locator(`a[href="/receipts/${bindings.receipts[r.key]}"]`)});await expect(row).toHaveCount(1);await expect(row).toContainText(/verified/);}
     await page.screenshot({path:path.join(out,`list-${Date.now()}.png`),fullPage:true});
-    for(const q of ['ACME BEEF FRNK 12OZ','Acme Beef Franks 12 oz']) {await page.goto('/search');await page.getByPlaceholder('Item, item code, normalized name, or store').fill(q);await page.getByRole('button',{name:'Search',exact:true}).click();await expect(page.getByRole('table',{name:'Purchase results'})).toBeVisible();await expect(page.locator(`a[href="/receipts/${bindings.receipts.r1}"]`).filter({hasText:'View receipt'})).toBeVisible();await page.screenshot({path:path.join(out,`search-${Date.now()}.png`),fullPage:true});}
-    const evidence=await assertGold(bindings);await page.goto('/search?normalizedDescriptionId='+evidence.identities.beef12+'&sortBy=date&sortDirection=asc&limit=100');
+    for(const q of ['ACME BEEF FRNK 12OZ','Acme Beef Franks 12 oz']) {await navigate('/search');await page.getByPlaceholder('Item, item code, normalized name, or store').fill(q);await page.getByRole('button',{name:'Search',exact:true}).click();await expect(page.getByRole('table',{name:'Purchase results'})).toBeVisible();await expect(page.locator(`a[href="/receipts/${bindings.receipts.r1}"]`).filter({hasText:'View receipt'})).toBeVisible();await page.screenshot({path:path.join(out,`search-${Date.now()}.png`),fullPage:true});}
+    await pause(65000);const evidence=await assertGold(bindings);await pause(65000);await navigate('/search?normalizedDescriptionId='+evidence.identities.beef12+'&sortBy=date&sortDirection=asc&limit=100');
     const rows=page.getByRole('table',{name:'Purchase results'}).locator('tbody tr');await expect(rows).toHaveCount(gold.gold.beefPriceHistory.length);
     for(const [n,expected] of gold.gold.beefPriceHistory.entries()) {await expect(rows.nth(n)).toContainText(Number(expected.unitPrice).toFixed(2));await expect(rows.nth(n).getByRole('link',{name:'View receipt'})).toHaveAttribute('href','/receipts/'+bindings.receipts[expected.itemKey.split('-')[0]]);await expect(rows.nth(n)).toContainText('Verified');}
-    await rows.first().getByRole('link',{name:'View receipt'}).click();await expect(page).toHaveURL(new RegExp('/receipts/'+bindings.receipts.r1+'$'));
-    await page.goto('/reports?report=spending-by-normalized-description&startDate=2026-09-01&endDate=2026-09-30&pageSize=100');
-    for(const group of gold.gold.identities) {const row=page.getByRole('row').filter({hasText:group.name});await expect(row).toHaveCount(1);await expect(row).toContainText(Number(gold.gold.reportGroupSubtotals[group.key]).toFixed(2));}
+    await pace();await rows.first().getByRole('link',{name:'View receipt'}).click();await expect(page).toHaveURL(new RegExp('/receipts/'+bindings.receipts.r1+'$'));
+    await navigate('/reports?report=spending-by-normalized-description&startDate=2026-09-01&endDate=2026-09-30&pageSize=100');
+    const productTable=page.getByRole('table').filter({has:page.getByRole('columnheader',{name:/^Canonical Name/})});
+    await expect(productTable).toHaveCount(1);
+    for(const group of gold.gold.identities) {const row=productTable.getByRole('row').filter({has:page.getByRole('link',{name:group.name,exact:true})});await expect(row).toHaveCount(1);await expect(row).toContainText(Number(gold.gold.reportGroupSubtotals[group.key]).toFixed(2));}
     await page.screenshot({path:path.join(out,`report-${Date.now()}.png`),fullPage:true});
+    assert.deepEqual(network.filter(r=>r.status>=400),[],'Browser API request failed');
+    } finally {save(`browser-network-${Date.now()}.json`,network);}
   });
 }
+let checkpoint='authentication';
+try {
 const login=await authenticate();
 const stamp=()=>({runId:ready.RunId,runtime,revision:read(path.join(runtime,'source.json')),utc:new Date().toISOString(),phase});
 if(phase==='arrange') {
@@ -271,9 +294,46 @@ if(phase==='arrange') {
   const b=path.resolve(args.b);assert.equal(hash(b),args.sha256,'Exact B hash changed');const inspected=facts(b);assertFacts(inspected.facts,read(path.join(source,'baseline.json')).facts);
   assertOperationArchiveUnchanged(inspected.tables,read(path.join(source,'baseline.json')).tables);
   const bindings=read(path.join(source,'bindings.json'));const preflight=assertPortableGold(gold,bindings,inspected);save('pre-import-gold.json',{bSha256:hash(b),identities:preflight});
-  const imports=[];for(let n=1;n<=2;n++){const result=await importDb(b,args.sha256);assert.equal(result.status,200,'Restore rejected');imports.push(result);const exported=await exportDb(`restored-${n}.db`),snapshot=facts(exported);assert.deepEqual(snapshot.facts,inspected.facts);assertRestoredOperations(snapshot.tables,inspected.tables);if(n===2)assertRepeatedRestore(snapshot.tables,facts(path.join(out,'restored-1.db')).tables);}
+  const imports=[];for(let n=1;n<=2;n++){
+    save(`import-${n}-attempt.json`,{...stamp(),bPath:b,bSha256:hash(b),target:args.target});
+    const result=await importDb(b,args.sha256);
+    save(`import-${n}-response.json`,{...stamp(),bPath:b,bSha256:hash(b),target:args.target,...result});
+    assert.equal(result.status,200,'Restore rejected');imports.push(result);const exported=await exportDb(`restored-${n}.db`),snapshot=facts(exported);assert.deepEqual(snapshot.facts,inspected.facts);assertRestoredOperations(snapshot.tables,inspected.tables);if(n===2)assertRepeatedRestore(snapshot.tables,facts(path.join(out,'restored-1.db')).tables);
+  }
   const evidence=await assertGold(bindings);await verifyBrowser(login,bindings);const database=await assertDatabase(bindings,evidence.identities);
   save('restore.json',{...stamp(),target:args.target,bPath:b,bSha256:args.sha256,imports,evidence,database,pending:['API-only restart phase','edit/revoke/merge/delete-restore and draft refresh','negative-copy and sensitivity phases',...(database.portableOperations?[]:['genuine portable historical operation fixture'])]});
+} else if(phase==='restore-resume') {
+  checkpoint='retained-upload-and-artifact-validation';
+  assert(args.prior&&args.b&&args.sha256,'prior=original restore attempt, b=exact B and sha256=recorded hash required');
+  const prior=path.resolve(args.prior),b=path.resolve(args.b);
+  assert.notEqual(prior.toLowerCase(),out.toLowerCase(),'Resume must preserve original evidence');
+  const uploads=retainedRestoreUploads({prior,runtime,runId:ready.RunId,target:args.target,b,sha256:args.sha256});
+  const freeze=read(path.join(source,'freeze.json')),baseline=read(path.join(source,'baseline.json'));
+  const frozenInputs={aPath:path.join(source,'A.db'),goldPath:path.join(root,'test-data/offline-normalization-acceptance.json'),freeze};
+  const frozenHashes=assertFrozenInputs(frozenInputs);
+  assert.deepEqual(facts(path.join(source,'A.db')),baseline,'Original baseline differs from A');
+  const inspected=facts(b);assertFacts(inspected.facts,baseline.facts);assertOperationArchiveUnchanged(inspected.tables,baseline.tables);
+  const bindings=read(path.join(source,'bindings.json')),preflight=assertPortableGold(gold,bindings,inspected);
+  const originalBefore=path.join(prior,'before-restore.db'),beforeSnapshot=facts(originalBefore);
+  if(args.target==='source')assert.deepEqual(beforeSnapshot.tables,baseline.tables,'Original source was not frozen before upload');
+  else assert.equal(beforeSnapshot.tables.receipts.length,0,'Original fresh target contained receipts');
+  const restored=uploads.map(upload=>facts(upload.exportPath));
+  for(const snapshot of restored) {assertFacts(snapshot.facts,inspected.facts);assertRestoredOperations(snapshot.tables,inspected.tables);assertPortableGold(gold,bindings,snapshot);}
+  assertRepeatedRestore(restored[1].tables,restored[0].tables);
+  const retainedFiles=fs.readdirSync(prior).filter(name=>fs.statSync(path.join(prior,name)).isFile()).map(name=>({path:path.join(prior,name),sha256:hash(path.join(prior,name))}));
+  save('resume-preflight.json',{...stamp(),prior,target:args.target,bPath:b,bSha256:hash(b),...frozenHashes,originalBefore:{path:originalBefore,sha256:hash(originalBefore)},uploads,preflight,retainedFiles});
+  checkpoint='current-export-and-postgresql-baseline';
+  const current=await exportDb('resume-before.db');assert.deepEqual(facts(current).tables,restored[1].tables,'Current source no longer equals retained second restore');
+  const pgBefore=postgresEvidence();save('postgres-before.json',pgBefore);
+  checkpoint='all-api-gold';const evidence=await assertGold(bindings);save('api-gold.json',evidence);
+  checkpoint='all-browser-assertions';await verifyBrowser(login,bindings);
+  checkpoint='postgresql-proof-and-inspect-only-rejections';const database=await assertDatabase(bindings,evidence.identities);
+  assert.deepEqual(database.postgres,pgBefore,'Read-only resume changed PostgreSQL');
+  checkpoint='final-portable-state';const after=await exportDb('resume-after.db');assert.deepEqual(facts(after).tables,restored[1].tables,'Read-only resume changed portable state');
+  for(const retained of retainedFiles)assert.equal(hash(retained.path),retained.sha256,'Original evidence changed during resume');
+  assert.equal(hash(b),args.sha256.toLowerCase(),'Exact B changed during resume');
+  assert.deepEqual(assertFrozenInputs(frozenInputs),frozenHashes,'Frozen inputs changed during resume');
+  save('restore.json',{...stamp(),target:args.target,bPath:b,bSha256:hash(b),imports:uploads.map(upload=>({status:upload.response.status,body:upload.response.body})),originalUploads:uploads,resumedFrom:prior,readOnlyResume:true,newUploads:0,evidence,database,requests,resumeEvidence:{preflight:path.join(out,'resume-preflight.json'),before:current,after,originalFiles:retainedFiles},pending:['API-only restart phase','edit/revoke/merge/delete-restore and draft refresh','negative-copy and sensitivity phases']});
 } else if(phase==='restart-api') {
   assert(args.restore,'restore=successful restore evidence directory required');const restored=read(path.join(path.resolve(args.restore),'restore.json'));assert.equal(restored.runId,ready.RunId);
   const bindings=read(path.join(source,'bindings.json'));await assertGold(bindings);const before=postgresEvidence();
@@ -316,3 +376,7 @@ if(phase==='arrange') {
   assert.equal(hash(b),args.sha256);save('sensitivity.json',{...stamp(),semantic:'Detected deliberately wrong turkey-to-beef projected assignment with the same production-used independent oracle',factual:'Detected unit-price tamper in separate SQLite copy using the pre-import factual baseline assertion',bSha256:hash(b),tamperedSha256:hash(tampered)});
 } else throw Error('Unknown phase');
 console.log(`${phase} completed; private evidence: ${out}. This is a phase result, not overall acceptance.`);
+} catch(error) {
+  if(phase==='restore-resume')save('failure-checkpoint.json',{phase,checkpoint,passed:false,error:{name:error.name,message:error.message,stack:error.stack},runtime,prior:args.prior,requests,utc:new Date().toISOString(),newUploads:0});
+  throw error;
+}

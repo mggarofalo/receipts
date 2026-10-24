@@ -99,6 +99,38 @@ Followups are authorized only after frozen restores and restart checks on both i
 
 ## Artifact ledger and remaining gates
 
+If an exact-B restore completed both HTTP 200 uploads and captured both exports,
+but a later assertion failed, use `restore-resume` with a new evidence directory.
+This phase performs no imports or restart, and refuses a password reset. Retain
+the entire original attempt, including its failure evidence:
+
+```powershell
+node $runner restore-resume "runtime=$runtimeA" "source=$evidenceA" `
+  "prior=$restoreA" "out=$(Join-Path $runtimeA 'restore-source-resume')" `
+  "target=source" "b=$b" "sha256=$bHash"
+node --test ./tools/acceptance/offline-normalization/restore-resume.test.mjs
+```
+
+Resume requires two retained successful upload attempt/response records matching
+the exact runtime, target, artifact path and SHA-256, and their original exports.
+It rechecks original A/baseline, original source freeze (or empty fresh target),
+B facts/provenance/gold, restored operation fencing and repeated semantics. The
+current export must exactly equal the second retained restore. Every API/browser
+gold check and PostgreSQL proof/409 mutation rejection reruns. PostgreSQL and
+portable state must remain unchanged. `restore.json` points to the original
+uploads and new verification evidence and records zero new uploads. The original
+failed attempt remains failed evidence; only the completed resume establishes
+the combined restore result.
+
+Browser verification respects the production global default of 100 requests per
+minute with four sliding-window segments: it waits 65 seconds after dense API
+checks and at least 12 seconds between page navigations. It also cools a full
+window before and after the API oracle used during browser verification. Requests
+use the real server with ordinary TLS and rate limiting. Browser response logs
+retain all API statuses; any browser HTTP error fails verification, without
+interception, retries or skipped assertions. Resume failures retain a checkpoint
+and API request ledger. These waits occur asynchronously in the runner.
+
 | Artifact | Meaning |
 | --- | --- |
 | Runtime `source.json`, model/ready manifests, runtime.log | exact candidate revision/dirty state, resource declarations and endpoints |
