@@ -14,6 +14,21 @@ code on later purchases. Receipt entry remains receipt-first: known sources reus
 their product, while unfamiliar or ambiguous sources are saved with a visible review
 requirement. A one-off product choice does not silently become a reusable rule.
 
+Identity evidence and permission for future reuse are separate inputs. For real
+data, obtain an explicit owner/operator reuse policy bound to the exact exported
+source before proposing reusable rules. Record who supplied it and retain its
+hash with the reviewed manifest. A clear product name alone does not authorize
+remembering its source. Review each eligible exact scope for supported identity
+and whole-scope consistency; leave other choices one-off. Eligibility is not
+approval, and the independent reviewer must still justify every remembered rule.
+
+The synthetic acceptance corpus uses a test-author-selected reuse preference,
+provided in a separate policy packet before a fresh proposal/review. This is a
+policy-conditioned identity review. Keep semantic gold and expected assignments
+hidden, and preserve earlier fact-only attempts with their original chronology;
+they cannot be retroactively described as policy-conditioned passes. Synthetic
+preferences confer no authority to reuse sources in an owner's real backup.
+
 The owner freezes the source installation between export A and restore B. Retain A
 byte-for-byte. Work only on a separately named copy B; the exact B must later be
 restored into both the frozen source installation and a fresh isolated database.

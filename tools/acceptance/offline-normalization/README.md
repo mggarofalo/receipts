@@ -34,7 +34,39 @@ node $runner freeze-check "runtime=$runtimeA" "source=$evidenceA" "out=$(Join-Pa
 
 `arrange` requires an empty receipt database, creates account/card/template, enters r1 using actual browser form events and observes the actual POST, enters r4 through receipt-then-items APIs and the remainder through aggregate APIs. Every request is real. Before export, it requires each explicit fragment to have its own reviewed identity and exact fragment name, and every other initial item (including template provenance) to remain pending. It saves these initial API projections in `initial-state.json`. It exports A through the application, captures SHA-256, factual and portable-state baselines, ID bindings and a freeze record. A becomes read-only. Interrupted arrangement is deliberately not resumed automatically; use a new task runtime to avoid duplicating receipts. A phase output directory must be new because evidence files are created with exclusive writes.
 
-Only A goes to the offline proposer/reviewer pipeline, with its hash and independently authorized review process. Do not give the proposer the gold, bindings, expected outcomes or this oracle's output. Keep the original A unchanged. Have that separate pipeline produce B, its reviewed decisions, provenance and independent validation. The runner requires an explicit recorded B hash; it neither copies decisions out of gold nor regenerates B from a database.
+Only A and a separately frozen synthetic operator-policy packet go to the offline proposer/reviewer pipeline, with their hashes and independently authorized review process. Do not give the proposer the gold, bindings, expected outcomes or this oracle's output. Keep the original A unchanged. Have that separate pipeline produce B, its reviewed decisions, provenance and independent validation. The runner requires an explicit recorded B hash; it neither copies decisions out of gold nor regenerates B from a database.
+
+The exact reusable subset is a synthetic scenario preference selected by the test
+author/root from the preregistered fixture, not a claim about the real owner's
+choices. A fact-only blind run cannot infer that preference. The policy-conditioned
+run supplies eligible exact scopes before a new blind proposal and independent
+review; identity/whole-scope consistency remain independent decisions. All other
+choices stay one-off. Keep earlier drafts and gold byte-identical, freeze their
+hashes and record the first attempt as a protocol mismatch, not a pass. The private
+freeze ledger is assessment evidence and must not accompany the blind packet.
+
+Build the private policy from production `inspect` output and arrangement bindings;
+this script never reads the oracle or copies targets, assignments, totals or item
+IDs into the packet. Selection is an explicit test-author input. It copies source
+fingerprints rather than reimplementing application canonicalization. Use a new
+output path under the ACL-restricted runtime:
+
+```powershell
+node ./tools/acceptance/offline-normalization/operator-policy.mjs `
+  "source=$evidenceA/A.db" "inspection=<private production inspection.json>" `
+  "bindings=$evidenceA/bindings.json" eligible=r1-beef,r3-code,r4-code `
+  "out=<new private operator-policy.json>"
+node --check ./tools/acceptance/offline-normalization/operator-policy.mjs
+node --test ./tools/acceptance/offline-normalization/operator-policy.test.mjs
+```
+
+Freeze the resulting packet hash and creation time before dispatching fresh agents.
+Give them only A and that packet, not this README, selection keys, original drafts,
+bindings or ledger. The builder checks inspection/source byte binding and projects
+only normalized source tuples; production inspection must itself be trusted and
+retained privately. This synthetic policy authorizes no real-data reuse. For real
+data, the owner/operator must explicitly supply reuse authority independently of
+the synthetic scenario and independently of semantic correctness.
 
 ```powershell
 $b = 'C:/private/offline-output/B.db'
@@ -83,3 +115,62 @@ Followups are authorized only after frozen restores and restart checks on both i
 Still required before overall acceptance: execute these gates against the integrated runtime and resolve any response/selector mismatches; execute the genuine preview fixture and inspect-only assertions; cache refresh and unsaved-draft behavior; edit/revoke/merge/delete-restore cases. The portable factual snapshot excludes normalization columns/tables but preserves every other table/column, including unknown additions. The legacy backup migration and other existing integration gates remain complementary requirements. Semantic sensitivity currently mutates a restored API projection; a valid but semantically wrong artifact restore is additional evidence, not claimed here.
 
 No acceptance phase has been run against the integrated application when this runner is added. Browser selectors, current response shapes and repeated-import projection stability require actual execution. Failures stop their phase and cannot be reported as passing. A successful phase record is not overall acceptance or permission to mutate hosted data.
+
+## Post-restore lifecycle gates
+
+`lifecycle.mjs` is a separate mutating acceptance driver. Run it only after the
+frozen offline A-to-B review, both exact-B source/fresh restores (two imports
+each), both controlled `restart-api` checks, and seven followups created after
+both restarts. It requires those successful records and runs on the source task
+runtime. It does not read or rewrite gold.
+
+```powershell
+# In a short-lived runner process; do not persist certificate configuration.
+$env:NODE_EXTRA_CA_CERTS = Join-Path $runtimeA 'localhost-trust.pem'
+node ./tools/acceptance/offline-normalization/lifecycle.mjs `
+  "runtime=$runtimeA" "source=$evidenceA" `
+  "sourceRestore=$restoreA" "freshRestore=$restoreB" `
+  "sourceRestart=$(Join-Path $runtimeA 'controlled-restart')" `
+  "freshRestart=$(Join-Path $runtimeB 'controlled-restart')" `
+  "followups=$restoreA" "out=$(Join-Path $runtimeA 'lifecycle-evidence')"
+Remove-Item Env:NODE_EXTRA_CA_CERTS
+```
+
+Keep ordinary TLS verification enabled. Output must be a new directory below the
+ACL-restricted private runtime. A failed run retains `failure.json` and incremental
+creation records; inspect them before deciding recovery rather than blindly
+rerunning mutations. No automatic cleanup hides partial arrangement.
+
+Before adding data, the driver compares the entire current portable state with
+`after-followups.db`, requires 22 items / 15 receipts, and retains that baseline
+and independent PostgreSQL rows. Mutations use additional isolated synthetic
+records. Every checkpoint preserves original portable rows, original purchase
+facts/proof, source A and followup hashes, and PostgreSQL container/mount identity.
+Coverage and spending totals/review buckets reconcile to independently queried
+live PostgreSQL facts, including receipt soft deletion.
+
+The gates cover provider-disabled receipt-first manual entry; financial edits
+that preserve authority; parent-location edits that invalidate scoped authority
+without changing money; stale item/mapping revisions without partial facts, proof,
+replay or audit writes; revocation that retains historical links and independent
+review while stopping future reuse; an intentional same-product merge of isolated
+declarations; and receipt soft-delete/restore.
+
+The actual browser chooses Review later, observes a real competing API edit, and
+must receive HTTP 409 on save. It checks that the unsaved price remains in the
+open dialog, clicks the application's refresh action, observes the real GET with
+the competing saved price, and checks that the draft survives and the saved row
+reflects refreshed data after cancellation. No HTTP interception is used.
+
+`lifecycle.json` is written only after every gate passes. Checkpoint JSON, SQLite
+exports, PostgreSQL rows and browser PNGs are private evidence. The following
+checks exercise only syntax and standalone negative-oracle assertions, without
+runtime access or application mutations:
+
+```powershell
+node --check ./tools/acceptance/offline-normalization/lifecycle.mjs
+node --test ./tools/acceptance/offline-normalization/lifecycle.test.mjs
+```
+
+These checks do not establish executed lifecycle acceptance. Actual API and
+selector mismatches fail explicitly and require assessment before claiming a pass.

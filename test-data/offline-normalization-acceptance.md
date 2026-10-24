@@ -3,9 +3,35 @@
 `offline-normalization-acceptance.json` defines independent gold for
 `named1026offlinebackuproundtrip`. It contains only invented public facts. Keep
 `gold`, `followups` and this document out of the blinded offline review packet.
-Freeze this file's hash before running the normalizer. Reviewers receive A and
-the raw synthetic source facts, not expected assignment lists. Compare their
+Freeze the JSON oracle's hash before running the normalizer. Reviewers receive A
+and the raw synthetic source facts, not expected assignment lists. Compare their
 reviewed decisions with this oracle only after decisions are frozen.
+
+## Synthetic reuse policy is an input
+
+Product identity evidence cannot determine whether an operator wants a clear
+source remembered or kept one-off. The exact remembered subset in the unchanged
+JSON oracle is a synthetic scenario preference selected by the test author/root
+from that preregistered fixture. It is not the actual owner's selection of three
+rules. A fact-only blind attempt cannot establish acceptance of that preference.
+
+For the policy-conditioned run, give fresh blinded proposer and reviewer agents
+only A and a separately frozen operator-policy packet before either starts new
+decisions. The packet binds A's byte SHA-256 and lists only eligible exact
+normalized `Source`/`SourceHash` tuples copied from production inspection, using
+private arrangement bindings to locate the selected observations. Eligibility asks
+for independent identity and whole-scope consistency review; it does not supply a
+target or require approval. All other choices remain one-off. Keep target IDs and
+names, assignment lists, followups, totals, bindings and oracle paths out of the
+packet. Raw descriptions inside source tuples are source facts.
+
+Preserve the first fact-only proposal/review and original gold byte-for-byte,
+record their hashes and the protocol mismatch, and retain their chronology. Never
+relocate their timestamps or report them as a policy-conditioned pass. Create new
+proposal and review files after freezing and delivering the new policy. Independent
+identity decisions and exact-oracle verification remain necessary; disclosure of
+reuse preferences does not turn the result into a fully fact-only blind test.
+See the acceptance runner README for the reproducible policy builder.
 
 ## Arrange through supported routes
 
