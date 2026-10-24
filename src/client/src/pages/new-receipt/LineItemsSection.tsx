@@ -1,4 +1,11 @@
 import { receiptItemDraftSchema } from "@/lib/receipt-item-draft";
+import { ReceiptNormalizationField } from "@/components/ReceiptNormalizationField";
+import {
+  currentNormalizationChoice,
+  receiptNormalizationSource,
+  type ReceiptNormalizationChoice,
+} from "@/lib/receipt-normalization";
+import type { Dispatch, SetStateAction } from "react";
 import { RequestFailure } from "@/components/RequestFailure";
 import {
   calculateSubtotal,
@@ -79,11 +86,12 @@ export interface ReceiptLineItem {
   unitPrice: number;
   category: string;
   subcategory: string;
+  normalizationChoice?: ReceiptNormalizationChoice;
 }
 
 interface LineItemsSectionProps {
   items: ReceiptLineItem[];
-  onChange: (items: ReceiptLineItem[]) => void;
+  onChange: Dispatch<SetStateAction<ReceiptLineItem[]>>;
   location?: string | null;
 }
 
@@ -93,6 +101,9 @@ export function LineItemsSection({
   location,
 }: LineItemsSectionProps) {
   const { preferences } = usePreferences();
+  const [draftRowId, setDraftRowId] = useState(generateId);
+  const [normalizationChoice, setNormalizationChoice] =
+    useState<ReceiptNormalizationChoice>();
   const [showSuggestions, setShowSuggestions] = useState(false);
   const suggestionsListId = "new-receipt-suggestions-list";
   // Index of the keyboard-highlighted row in the description lookup.
@@ -399,15 +410,21 @@ export function LineItemsSection({
   const handleAdd = useCallback(
     (values: ItemFormValues) => {
       const newItem: ReceiptLineItem = {
-        id: generateId(),
+        id: draftRowId,
         receiptItemCode: values.receiptItemCode ?? "",
         description: values.description,
         quantity: values.quantity,
         unitPrice: values.unitPrice,
         category: values.category,
         subcategory: values.subcategory ?? "",
+        normalizationChoice: currentNormalizationChoice(
+          normalizationChoice,
+          receiptNormalizationSource(location, values),
+        ),
       };
       onChange([...items, newItem]);
+      setDraftRowId(generateId());
+      setNormalizationChoice(undefined);
       form.reset({
         receiptItemCode: "",
         description: "",
@@ -421,7 +438,7 @@ export function LineItemsSection({
       // Return focus to the item code field for the next entry.
       setTimeout(() => itemCodeInputRef.current?.focus(), 0);
     },
-    [form, items, onChange],
+    [form, items, onChange, draftRowId, normalizationChoice, location],
   );
 
   const handleRemove = useCallback(
@@ -1016,6 +1033,15 @@ export function LineItemsSection({
                 </Button>
               </div>
             </div>
+            <ReceiptNormalizationField
+              source={receiptNormalizationSource(location, {
+                description,
+                receiptItemCode: itemCode,
+              })}
+              clientRowId={draftRowId}
+              value={normalizationChoice}
+              onChange={setNormalizationChoice}
+            />
           </form>
         </Form>
 
@@ -1176,7 +1202,21 @@ export function LineItemsSection({
                 ) : (
                   <TableRow key={item.id}>
                     <TableCell className="whitespace-normal break-words max-w-[32ch]">
-                      {item.description}
+                      <div>{item.description}</div>
+                      <ReceiptNormalizationField
+                        source={receiptNormalizationSource(location, item)}
+                        clientRowId={item.id}
+                        value={item.normalizationChoice}
+                        onChange={(choice) =>
+                          onChange((current) =>
+                            current.map((row) =>
+                              row.id === item.id
+                                ? { ...row, normalizationChoice: choice }
+                                : row,
+                            ),
+                          )
+                        }
+                      />
                     </TableCell>
                     <TableCell>{item.quantity}</TableCell>
                     <TableCell>{formatUnitPrice(item.unitPrice)}</TableCell>

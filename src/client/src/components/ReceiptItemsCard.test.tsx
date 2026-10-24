@@ -1,10 +1,28 @@
 import { describe, it, expect, vi } from "vitest";
-import { screen } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ReceiptItemsCard } from "./ReceiptItemsCard";
 import { renderWithQueryClient } from "@/test/test-utils";
 import { mockMutationResult, mockQueryResult } from "@/test/mock-hooks";
 import { useReceipt } from "@/hooks/useReceipts";
+vi.mock("@/hooks/useReceiptNormalizationPreview", () => ({
+  useReceiptNormalizationPreview: () => ({
+    isSuccess: true,
+    isFetching: false,
+    isDebouncing: false,
+    isError: false,
+    data: {
+      sourceFingerprint: "fixture",
+      candidates: [],
+      total: 0,
+      offset: 0,
+      limit: 10,
+      sourceAmbiguous: false,
+      excluded: false,
+    },
+    refetch: vi.fn(),
+  }),
+}));
 
 vi.mock("@/hooks/useReceipts", () => ({
   // Both dialogs hide the receipt field; model a disabled detail query without
@@ -70,6 +88,86 @@ const mockItems = [
 ];
 
 describe("ReceiptItemsCard", () => {
+  it("does not present a concurrent new-source identity as reviewed evidence for the retained edit draft", async () => {
+    const original = {
+      ...mockItems[0],
+      normalizationReviewState: "verified" as const,
+      normalizationRevision: "11111111-1111-4111-8111-111111111111",
+      normalizedDescriptionName: "Original product",
+    };
+    const view = renderWithQueryClient(
+      <ReceiptItemsCard
+        receiptId="receipt-1"
+        location="Market"
+        items={[original]}
+        subtotal={21}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: /edit/i }));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText(/Original product/)).toBeVisible();
+    view.rerender(
+      <ReceiptItemsCard
+        receiptId="receipt-1"
+        location="Market"
+        items={[
+          {
+            ...original,
+            description: "Concurrent different source",
+            normalizedDescriptionName: "Foreign product",
+            normalizationRevision: "22222222-2222-4222-8222-222222222222",
+          },
+        ]}
+        subtotal={21}
+      />,
+    );
+    expect(within(dialog).getByDisplayValue("Widget A")).toBeVisible();
+    expect(
+      within(dialog).queryByText(/Foreign product/),
+    ).not.toBeInTheDocument();
+    expect(
+      within(dialog).queryByText(/Original product/),
+    ).not.toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("button", { name: "Choose product" }),
+    ).toBeEnabled();
+  });
+  it.each(["success", "error"] as const)(
+    "ignores a late %s from a previous edit dialog session",
+    async (outcome) => {
+      const { useUpdateReceiptItem } = await import("@/hooks/useReceiptItems");
+      const mutate = vi.fn();
+      vi.mocked(useUpdateReceiptItem).mockReturnValue(
+        mockMutationResult({ mutate, isPending: false }),
+      );
+      renderWithQueryClient(
+        <ReceiptItemsCard
+          receiptId="receipt-1"
+          items={mockItems}
+          subtotal={46}
+        />,
+      );
+      const user = userEvent.setup();
+      await user.click(screen.getAllByRole("button", { name: /edit/i })[0]);
+      await user.click(screen.getByRole("button", { name: "Update Item" }));
+      await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
+      const callbacks = mutate.mock.calls[0][1];
+      await user.click(
+        screen.getByRole("button", { name: "Close" }),
+      );
+      await user.click(
+        (await screen.findAllByRole("button", { name: /edit/i }))[1],
+      );
+      expect(screen.getByDisplayValue("Widget B")).toBeVisible();
+      await act(async () => {
+        if (outcome === "success") callbacks.onSuccess();
+        else callbacks.onError({ status: 409, detail: "Old save failed" });
+      });
+      expect(screen.getByDisplayValue("Widget B")).toBeVisible();
+      expect(screen.queryByText("Old save failed")).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Update Item" })).toBeVisible();
+    },
+  );
   it("shows subcent unit price while the line total and subtotal stay at cents", () => {
     renderWithQueryClient(
       <ReceiptItemsCard
@@ -96,15 +194,9 @@ describe("ReceiptItemsCard", () => {
 
   it("renders empty state when there are no items", () => {
     renderWithQueryClient(
-      <ReceiptItemsCard
-        receiptId="receipt-1"
-        items={[]}
-        subtotal={0}
-      />,
+      <ReceiptItemsCard receiptId="receipt-1" items={[]} subtotal={0} />,
     );
-    expect(
-      screen.getByText("No items for this receipt."),
-    ).toBeInTheDocument();
+    expect(screen.getByText("No items for this receipt.")).toBeInTheDocument();
     expect(screen.getByText("Items (0)")).toBeInTheDocument();
   });
 
@@ -239,9 +331,7 @@ describe("ReceiptItemsCard", () => {
   });
 
   it("opens delete confirmation dialog and calls deleteReceiptItems.mutate on confirm", async () => {
-    const { useDeleteReceiptItems } = await import(
-      "@/hooks/useReceiptItems"
-    );
+    const { useDeleteReceiptItems } = await import("@/hooks/useReceiptItems");
     const mockDeleteMutate = vi.fn();
     vi.mocked(useDeleteReceiptItems).mockReturnValue(
       mockMutationResult({
@@ -259,14 +349,10 @@ describe("ReceiptItemsCard", () => {
       />,
     );
     await user.click(screen.getByLabelText("Select Widget A item"));
-    await user.click(
-      screen.getByRole("button", { name: /delete \(1\)/i }),
-    );
+    await user.click(screen.getByRole("button", { name: /delete \(1\)/i }));
     expect(screen.getByText("Delete Items")).toBeInTheDocument();
     expect(
-      screen.getByText(
-        /are you sure you want to delete 1 item/i,
-      ),
+      screen.getByText(/are you sure you want to delete 1 item/i),
     ).toBeInTheDocument();
     const confirmDelete = screen.getByRole("button", { name: "Delete" });
     await user.click(confirmDelete);
@@ -282,13 +368,13 @@ describe("ReceiptItemsCard", () => {
         subtotal={46}
       />,
     );
-    await user.click(
-      screen.getByRole("button", { name: /add item/i }),
-    );
+    await user.click(screen.getByRole("button", { name: /add item/i }));
     expect(
       screen.getByText("Add Item", { selector: "[id]" }),
     ).toBeInTheDocument();
-    expect(useReceipt).toHaveBeenLastCalledWith("receipt-1", { enabled: false });
+    expect(useReceipt).toHaveBeenLastCalledWith("receipt-1", {
+      enabled: false,
+    });
   });
 
   it("opens edit dialog when Edit button is clicked", async () => {
@@ -303,13 +389,13 @@ describe("ReceiptItemsCard", () => {
     const editButtons = screen.getAllByRole("button", { name: /edit/i });
     await user.click(editButtons[0]);
     expect(screen.getByText("Edit Item")).toBeInTheDocument();
-    expect(useReceipt).toHaveBeenLastCalledWith("receipt-1", { enabled: false });
+    expect(useReceipt).toHaveBeenLastCalledWith("receipt-1", {
+      enabled: false,
+    });
   });
 
   it("renders create form with submit button in create dialog", async () => {
-    const { useCreateReceiptItem } = await import(
-      "@/hooks/useReceiptItems"
-    );
+    const { useCreateReceiptItem } = await import("@/hooks/useReceiptItems");
     const mockCreateMutate = vi.fn();
     vi.mocked(useCreateReceiptItem).mockReturnValue(
       mockMutationResult({
@@ -326,9 +412,7 @@ describe("ReceiptItemsCard", () => {
         subtotal={46}
       />,
     );
-    await user.click(
-      screen.getByRole("button", { name: /add item/i }),
-    );
+    await user.click(screen.getByRole("button", { name: /add item/i }));
     const submitButton = screen.getByRole("button", {
       name: "Create Item",
     });
@@ -336,9 +420,7 @@ describe("ReceiptItemsCard", () => {
   });
 
   it("renders edit form with update button in edit dialog", async () => {
-    const { useUpdateReceiptItem } = await import(
-      "@/hooks/useReceiptItems"
-    );
+    const { useUpdateReceiptItem } = await import("@/hooks/useReceiptItems");
     const mockUpdateMutate = vi.fn();
     vi.mocked(useUpdateReceiptItem).mockReturnValue(
       mockMutationResult({
@@ -463,9 +545,7 @@ describe("ReceiptItemsCard", () => {
   });
 
   it("cancels delete dialog without deleting", async () => {
-    const { useDeleteReceiptItems } = await import(
-      "@/hooks/useReceiptItems"
-    );
+    const { useDeleteReceiptItems } = await import("@/hooks/useReceiptItems");
     const mockDeleteMutate = vi.fn();
     vi.mocked(useDeleteReceiptItems).mockReturnValue(
       mockMutationResult({
@@ -483,9 +563,7 @@ describe("ReceiptItemsCard", () => {
       />,
     );
     await user.click(screen.getByLabelText("Select Widget A item"));
-    await user.click(
-      screen.getByRole("button", { name: /delete \(1\)/i }),
-    );
+    await user.click(screen.getByRole("button", { name: /delete \(1\)/i }));
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(mockDeleteMutate).not.toHaveBeenCalled();
   });

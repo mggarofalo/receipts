@@ -16,6 +16,7 @@ import { clearTokens, setTokens } from "@/lib/auth";
 import { clearServerErrorPageFlag } from "@/lib/server-error-bus";
 import type { ReceiptLineItem } from "./LineItemsSection";
 import type { ReceiptTransaction } from "./TransactionsSection";
+import { normalizationSourceKey } from "@/lib/receipt-normalization";
 import NewReceiptPage from "./NewReceiptPage";
 import "@/test/setup-combobox-polyfills";
 
@@ -38,6 +39,7 @@ vi.mock("./LineItemsSection", () => ({
             unitPrice: 5,
             category: "Food",
             subcategory: "",
+            normalizationChoice: stagedChoice,
           },
         ])
       }
@@ -72,6 +74,7 @@ vi.mock("./TransactionsSection", () => ({
 
 let status: number;
 let bodies: unknown[];
+let stagedChoice: ReceiptLineItem["normalizationChoice"];
 const message = "The receipt could not be saved; keep your entered values";
 const server = setupServer(
   http.get("*/api/receipts/locations", () =>
@@ -135,6 +138,7 @@ afterAll(() => server.close());
 beforeEach(() => {
   status = 400;
   bodies = [];
+  stagedChoice = undefined;
   clearServerErrorPageFlag();
   setTokens(
     `header.${btoa(JSON.stringify({ sub: "alice", email: "alice@example.test", exp: 4102444800 }))}.signature`,
@@ -198,6 +202,7 @@ it.each([400, 503])(
     ).toBeEnabled();
     expect(bodies).toEqual([
       {
+        clientRequestId: expect.any(String),
         receipt: { location: "Market", date: "2024-01-15", taxAmount: 0 },
         transactions: [
           {
@@ -229,9 +234,7 @@ it("preserves the complete-create page's one success toast and saved navigation"
   expect(
     await screen.findByRole("heading", { name: "Saved receipt destination" }),
   ).toBeVisible();
-  expect(
-    await screen.findByText("Receipt created successfully!"),
-  ).toBeVisible();
+  expect(await screen.findByText("Receipt saved")).toBeVisible();
   expect(
     document.querySelectorAll('[data-sonner-toast][data-type="success"]'),
   ).toHaveLength(1);
@@ -240,4 +243,46 @@ it("preserves the complete-create page's one success toast and saved navigation"
   ).toHaveLength(0);
   expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   expect(bodies).toHaveLength(1);
+});
+
+it("keeps an inline new-product intent with its receipt draft after failure and retries the same atomic request", async () => {
+  stagedChoice = {
+    sourceKey: normalizationSourceKey({
+      location: "Market",
+      description: "Milk",
+      itemCode: "",
+    }),
+    label: "Whole milk 1 gallon",
+    intent: {
+      kind: "confirmNew",
+      clientRowId: "11111111-1111-4111-8111-111111111111",
+      sourceFingerprint: "milk-source",
+      newName: "Whole milk 1 gallon",
+      rememberSource: true,
+    },
+  };
+  status = 503;
+  renderPage();
+  const user = await enterAndSubmit();
+  await waitFor(() =>
+    expect(
+      document.querySelector('[aria-live="polite"][aria-atomic="true"]'),
+    ).toHaveTextContent(message),
+  );
+  expect(bodies).toHaveLength(1);
+  const first = bodies[0] as {
+    clientRequestId: string;
+    items: Array<{ normalizationIntent: unknown }>;
+  };
+  expect(first.clientRequestId).toMatch(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+  );
+  expect(first.items[0].normalizationIntent).toEqual(stagedChoice.intent);
+  status = 200;
+  await user.click(
+    screen.getAllByRole("button", { name: "Submit Receipt" })[0],
+  );
+  await screen.findByRole("heading", { name: "Saved receipt destination" });
+  expect(bodies).toHaveLength(2);
+  expect(bodies[1]).toEqual(first);
 });

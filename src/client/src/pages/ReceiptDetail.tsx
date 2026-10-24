@@ -307,6 +307,8 @@ function ReceiptDetail() {
               category: i.category,
               subcategory: i.subcategory,
               normalizedDescriptionName: i.normalizedDescriptionName,
+              normalizationRevision: i.normalizationRevision,
+              normalizationReviewState: i.normalizationReviewState,
             }))}
             subtotal={subtotal}
             location={trip.receipt.receipt.location}

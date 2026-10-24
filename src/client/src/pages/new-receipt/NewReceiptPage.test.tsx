@@ -88,7 +88,13 @@ vi.mock("./TransactionsSection", () => ({
       <button
         onClick={() =>
           onChange([
-            { id: "t1", cardId: "card-1", accountId: "acct-1", amount: 55, date: "2024-01-15" },
+            {
+              id: "t1",
+              cardId: "card-1",
+              accountId: "acct-1",
+              amount: 55,
+              date: "2024-01-15",
+            },
           ])
         }
       >
@@ -182,24 +188,56 @@ describe("NewReceiptPage", () => {
   it("does not toast or navigate from a real pending receipt write after the session changes", async () => {
     const { toast } = await import("sonner");
     const mockedHooks = await import("@/hooks/useReceipts");
-    const actualHooks = await vi.importActual<typeof import("@/hooks/useReceipts")>("@/hooks/useReceipts");
-    const originalImplementation = vi.mocked(mockedHooks.useCreateCompleteReceipt).getMockImplementation()!;
-    vi.mocked(mockedHooks.useCreateCompleteReceipt).mockImplementation(actualHooks.useCreateCompleteReceipt);
+    const actualHooks = await vi.importActual<
+      typeof import("@/hooks/useReceipts")
+    >("@/hooks/useReceipts");
+    const originalImplementation = vi
+      .mocked(mockedHooks.useCreateCompleteReceipt)
+      .getMockImplementation()!;
+    vi.mocked(mockedHooks.useCreateCompleteReceipt).mockImplementation(
+      actualHooks.useCreateCompleteReceipt,
+    );
     let finishResponse!: () => void;
     let markStarted!: () => void;
-    const responseGate = new Promise<void>((resolve) => { finishResponse = resolve; });
-    const requestStarted = new Promise<void>((resolve) => { markStarted = resolve; });
-    const server = setupServer(http.post("*/api/receipts/complete", async () => {
-      markStarted();
-      await responseGate;
-      return HttpResponse.json({ receipt: { id: "Alice-receipt" }, items: [], transactions: [], adjustments: [] });
-    }));
+    const responseGate = new Promise<void>((resolve) => {
+      finishResponse = resolve;
+    });
+    const requestStarted = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const server = setupServer(
+      http.post("*/api/receipts/complete", async () => {
+        markStarted();
+        await responseGate;
+        return HttpResponse.json({
+          receipt: { id: "Alice-receipt" },
+          items: [],
+          transactions: [],
+          adjustments: [],
+        });
+      }),
+    );
     server.listen({ onUnhandledRequest: "error" });
-    const token = (user: string) => `e30.${btoa(JSON.stringify({ sub: user, email: user, role: "User" }))}.sig`;
+    const token = (user: string) =>
+      `e30.${btoa(JSON.stringify({ sub: user, email: user, role: "User" }))}.sig`;
     setTokens(token("Alice"), "Alice-refresh");
     const clients: QueryClient[] = [];
-    const factory = () => { const client = createAppQueryClient(); clients.push(client); return client; };
-    const view = render(<AuthProvider queryClientFactory={factory}><MemoryRouter><AppearanceProvider><TooltipProvider><NewReceiptPage /></TooltipProvider></AppearanceProvider></MemoryRouter></AuthProvider>);
+    const factory = () => {
+      const client = createAppQueryClient();
+      clients.push(client);
+      return client;
+    };
+    const view = render(
+      <AuthProvider queryClientFactory={factory}>
+        <MemoryRouter>
+          <AppearanceProvider>
+            <TooltipProvider>
+              <NewReceiptPage />
+            </TooltipProvider>
+          </AppearanceProvider>
+        </MemoryRouter>
+      </AuthProvider>,
+    );
     try {
       const user = userEvent.setup();
       await user.click(screen.getByRole("combobox"));
@@ -213,7 +251,11 @@ describe("NewReceiptPage", () => {
       await requestStarted;
       const oldMutation = clients[0].getMutationCache().getAll()[0];
 
-      await act(async () => { clearTokens(); setTokens(token("Bob"), "Bob-refresh"); finishResponse(); });
+      await act(async () => {
+        clearTokens();
+        setTokens(token("Bob"), "Bob-refresh");
+        finishResponse();
+      });
       await waitFor(() => expect(oldMutation.state.status).not.toBe("pending"));
 
       expect(oldMutation.state.error).toMatchObject({ name: "AbortError" });
@@ -227,7 +269,9 @@ describe("NewReceiptPage", () => {
       server.close();
       clients.forEach((client) => client.clear());
       clearTokens();
-      vi.mocked(mockedHooks.useCreateCompleteReceipt).mockImplementation(originalImplementation);
+      vi.mocked(mockedHooks.useCreateCompleteReceipt).mockImplementation(
+        originalImplementation,
+      );
     }
   });
 
@@ -396,9 +440,7 @@ describe("NewReceiptPage", () => {
     await user.click(submitButtons[0]);
 
     await vi.waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith(
-        "Add at least one transaction.",
-      );
+      expect(toast.error).toHaveBeenCalledWith("Add at least one transaction.");
     });
   });
 
@@ -425,9 +467,7 @@ describe("NewReceiptPage", () => {
     await user.click(submitButtons[0]);
 
     await vi.waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith(
-        "Add at least one line item.",
-      );
+      expect(toast.error).toHaveBeenCalledWith("Add at least one line item.");
     });
   });
 
@@ -477,10 +517,8 @@ describe("NewReceiptPage", () => {
       );
     });
 
-    expect(toast.success).toHaveBeenCalledWith("Receipt created successfully!");
-    expect(mockNavigate).toHaveBeenCalledWith(
-      "/receipts/receipt-123",
-    );
+    expect(toast.success).toHaveBeenCalledWith("Receipt saved");
+    expect(mockNavigate).toHaveBeenCalledWith("/receipts/receipt-123");
   });
 
   it("updates the sticky itemized equation when receipt contents change", async () => {
@@ -585,9 +623,9 @@ describe("NewReceiptPage", () => {
       expect(toast.error).toHaveBeenCalledWith(
         "Receipt total must equal the transaction total.",
       );
-      expect(document.querySelector("[aria-live='polite']")).toHaveTextContent(
-        "Receipt total must equal the transaction total.",
-      );
+      expect(
+        document.querySelector("[aria-live='polite'][aria-atomic='true']"),
+      ).toHaveTextContent("Receipt total must equal the transaction total.");
     });
   });
 
@@ -620,7 +658,9 @@ describe("NewReceiptPage", () => {
     await user.click(submitButtons[0]);
 
     await vi.waitFor(() => {
-      const liveRegion = document.querySelector("[aria-live='polite']");
+      const liveRegion = document.querySelector(
+        "[aria-live='polite'][aria-atomic='true']",
+      );
       expect(liveRegion).not.toBeNull();
       expect(liveRegion?.textContent?.trim()).toBeTruthy();
     });

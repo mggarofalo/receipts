@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using API.Generated.Dtos;
 using API.Http;
 using API.Mapping.Core;
@@ -38,6 +39,26 @@ public class ReceiptItemsController(IMediator mediator, ReceiptItemMapper mapper
 	public const string RouteRestore = "{id}/restore";
 	public const string RouteGetSuggestions = "suggestions";
 	public const string RouteGetDistinctCategories = "distinct-categories";
+
+	[HttpGet("normalization-candidates")]
+	[EndpointSummary("Get bounded advisory product candidates for receipt entry")]
+	[ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest, "application/problem+json")]
+	[ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden, "application/problem+json")]
+	public async Task<Results<Ok<List<ReceiptNormalizationSuggestionResponse>>, BadRequest<ProblemDetails>, ForbiddenProblem>> GetReceiptNormalizationCandidates(
+		[FromServices] Application.Normalization.IReceiptNormalizationCandidates candidates,
+		string location, string description, string? itemCode = null, CancellationToken cancellationToken = default)
+	{
+		var result = await candidates.GetCandidatesAsync(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty,
+			new(location, description, itemCode), cancellationToken);
+		return TypedResults.Ok(result.Select(candidate => new ReceiptNormalizationSuggestionResponse
+		{
+			Id = candidate.Id,
+			Revision = candidate.Revision,
+			CanonicalName = candidate.CanonicalName,
+			DisplayLabel = candidate.DisplayLabel,
+			Channels = candidate.Channels.ToList(),
+		}).ToList());
+	}
 
 	[HttpPost("normalization-preview")]
 	[EndpointSummary("Preview a source decision and search active products without saving")]

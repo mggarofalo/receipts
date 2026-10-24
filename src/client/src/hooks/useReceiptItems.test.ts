@@ -44,6 +44,65 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
+describe("receipt item retry identity", () => {
+  const body = {
+    receiptItemCode: "123",
+    description: "Milk",
+    quantity: 1,
+    unitPrice: 5,
+    category: "Food",
+    subcategory: "",
+  };
+
+  it("reuses the create request identity after a lost response, and retires it after success", async () => {
+    const post = client.POST as Mock;
+    post
+      .mockRejectedValueOnce(new TypeError("Connection lost"))
+      .mockResolvedValue({ data: { id: "saved-item" } });
+    const { result } = renderHook(() => useCreateReceiptItem(), {
+      wrapper: createWrapper(),
+    });
+    const input = { receiptId: "receipt-a", body };
+    await expect(result.current.mutateAsync(input)).rejects.toThrow(
+      "Connection lost",
+    );
+    await result.current.mutateAsync({ ...input, body: { ...body } });
+    const firstId = post.mock.calls[0][1].params.query.clientRequestId;
+    expect(firstId).toEqual(expect.any(String));
+    expect(firstId).not.toBe("");
+    expect(post.mock.calls[1][1].params.query.clientRequestId).toBe(firstId);
+    await result.current.mutateAsync(input);
+    expect(post.mock.calls[2][1].params.query.clientRequestId).not.toBe(
+      firstId,
+    );
+  });
+
+  it("gives corrected update content a new identity while preserving retries of the same failed update", async () => {
+    const put = client.PUT as Mock;
+    put.mockResolvedValue({
+      error: { status: 409, detail: "Review the changed product" },
+    });
+    const { result } = renderHook(() => useUpdateReceiptItem(), {
+      wrapper: createWrapper(),
+    });
+    const input = { body: { ...body, id: "item-a" } };
+    await expect(result.current.mutateAsync(input)).rejects.toMatchObject({
+      status: 409,
+    });
+    await expect(result.current.mutateAsync(input)).rejects.toMatchObject({
+      status: 409,
+    });
+    const firstId = put.mock.calls[0][1].params.query.clientRequestId;
+    expect(put.mock.calls[1][1].params.query.clientRequestId).toBe(firstId);
+    await expect(
+      result.current.mutateAsync({
+        body: { ...input.body, description: "Whole milk" },
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(put.mock.calls[2][1].params.query.clientRequestId).not.toBe(firstId);
+  });
+});
+
 describe("useReceiptItems", () => {
   it("list query returns data on success", async () => {
     const items = [
@@ -135,7 +194,10 @@ describe("useReceiptItems", () => {
       "/api/receipts/{receiptId}/receipt-items",
       {
         middleware: expect.any(Array),
-        params: { path: { receiptId: "r-1" } },
+        params: {
+          path: { receiptId: "r-1" },
+          query: { clientRequestId: expect.any(String) },
+        },
         body,
       },
     );
@@ -162,7 +224,10 @@ describe("useReceiptItems", () => {
 
     expect(client.PUT).toHaveBeenCalledWith("/api/receipt-items/{id}", {
       middleware: expect.any(Array),
-      params: { path: { id: body.id } },
+      params: {
+        path: { id: body.id },
+        query: { clientRequestId: expect.any(String) },
+      },
       body,
     });
     expect(toast.success).toHaveBeenCalledWith("Receipt item updated");

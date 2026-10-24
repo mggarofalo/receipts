@@ -80,6 +80,17 @@ let catalogReads: number;
 let linkWrites: unknown[];
 let otherWrites: string[];
 const server = setupServer(
+  http.post("*/api/receipt-items/normalization-preview", () =>
+    HttpResponse.json({
+      sourceFingerprint: "template-draft",
+      sourceAmbiguous: false,
+      excluded: false,
+      candidates: [],
+      total: 0,
+      offset: 0,
+      limit: 10,
+    }),
+  ),
   http.get("*/api/item-templates", async ({ request }) => {
     catalogStarted = true;
     catalogReads++;

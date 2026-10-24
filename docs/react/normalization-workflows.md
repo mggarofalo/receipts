@@ -33,6 +33,32 @@ edit use the same schema, including trimmed text and finite numeric validation.
 The standalone persisted-item form extends it to require item code and subcategory;
 the wizard keeps those optional. Inline edit preserves the existing item code.
 Server domain validation and shared financial arithmetic remain separate owners.
+Receipt entry and persisted-item forms share `ReceiptNormalizationField`. Its
+preview reads approved exact-source rules and searchable active catalog names;
+catalog choices are not model-ranked suggestions. A new product is only an intent
+until the receipt is saved atomically. Choosing a product never rewrites the
+original receipt description or financial fields.
+
+Choices bind to store, description and optional item code. Changing those inputs
+clears the choice, including changing away and back. Preview requests debounce and
+cancel; late responses cannot supply evidence for another source. The client
+captures observed mapping, target and item revisions rather than silently updating
+a submitted choice after a refetch. The server makes the final validity decision.
+An existing reviewed purchase retains its one-off assignment during financial-only
+edits. Ambiguous source descriptions permit only per-purchase choices, never a new
+remembered rule.
+
+The default explicit choice applies to this purchase only. Remembering an exact
+source requires an affirmative checkbox. Existing rule changes and historical
+scope remain separate curation operations, reachable without abandoning the draft.
+Lookup failures and unknown descriptions do not disable financial save: the server
+persists unresolved purchases for review. Saved status comes from the returned
+items, not optimistic preview state. Conflicts retain the form and offer recovery;
+pending-name collisions link to the exact review target in a new tab. Mutation
+callbacks are scoped to their dialog session, so an old completion cannot close a
+new draft. Unchanged retries reuse the request key; changed payloads receive a new
+key.
+
 Inline subcategory creation deduplicates by category and normalized name, with each
 request promise owning its cleanup so overlapping requests and failures can retry.
 

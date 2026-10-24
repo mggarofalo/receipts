@@ -3912,6 +3912,53 @@ paths:
   # Receipt Items
   # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+  /api/receipt-items/normalization-candidates:
+    get:
+      operationId: GetReceiptNormalizationCandidates
+      tags: [ReceiptItems]
+      summary: Get bounded advisory product candidates for receipt entry
+      description: Available to enabled receipt-entry users. Returns active product identity and retrieval channels only; approved receipt examples and catalog management data are excluded. Selecting a candidate still requires preview and save revision checks.
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      parameters:
+        - name: location
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: description
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: itemCode
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: At most twenty active candidates in advisory retrieval order
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ReceiptNormalizationSuggestionResponse"
+        "400":
+          description: Invalid source
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
+          description: An enabled signed-in receipt-entry user is required
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
   /api/receipt-items/normalization-preview:
     post:
       operationId: PreviewReceiptNormalization
@@ -9910,6 +9957,24 @@ components:
 
     # â”€â”€ Receipt Item â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+    ReceiptNormalizationSuggestionResponse:
+      type: object
+      required: [id, revision, canonicalName, channels]
+      properties:
+        id:
+          type: string
+          format: uuid
+        revision:
+          type: string
+          format: uuid
+        canonicalName:
+          type: string
+        displayLabel:
+          type: [string, "null"]
+        channels:
+          type: array
+          items:
+            type: string
     ReceiptNormalizationPreviewRequest:
       type: object
       required: [source]

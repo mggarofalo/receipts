@@ -140,6 +140,7 @@ public static class InfrastructureService
 			.AddScoped<IReceiptItemService, ReceiptItemService>()
 			.AddScoped<ICompleteReceiptWriter, CompleteReceiptWriter>()
 			.AddScoped<Application.Normalization.IReceiptNormalizationPreview, ReceiptNormalizationPreviewService>()
+			.AddScoped<Application.Normalization.IReceiptNormalizationCandidates, ReceiptNormalizationCandidatesService>()
 			.AddScoped<IBackupImportService, BackupImportService>()
 			.AddScoped<IItemTemplateService, ItemTemplateService>()
 			.AddScoped<IItemTemplateSimilarityService, ItemTemplateSimilarityService>()
