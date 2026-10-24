@@ -37,6 +37,17 @@ const match = {
   defaultItemCode: "MILK",
 };
 const server = setupServer(
+  http.post("*/api/receipt-items/normalization-preview", () =>
+    HttpResponse.json({
+      sourceFingerprint: "suggestions-draft",
+      sourceAmbiguous: false,
+      excluded: false,
+      candidates: [],
+      total: 0,
+      offset: 0,
+      limit: 10,
+    }),
+  ),
   http.get("*/api/categories", () =>
     HttpResponse.json({
       data: [{ id: "food", name: "Food", isActive: true }],

@@ -45,6 +45,17 @@ let categoryReads: string[];
 let historyFailure: boolean;
 let historyReads: number;
 const server = setupServer(
+  http.post("*/api/receipt-items/normalization-preview", () =>
+    HttpResponse.json({
+      sourceFingerprint: "suggestions-draft",
+      sourceAmbiguous: false,
+      excluded: false,
+      candidates: [],
+      total: 0,
+      offset: 0,
+      limit: 10,
+    }),
+  ),
   http.get("*/api/receipts/locations", () => {
     locationReads++;
     return locationFailure
@@ -390,7 +401,9 @@ it("allows adding a manually entered line while similarity hints remain unavaila
     screen.queryByRole("heading", { name: "Global server error route" }),
   ).not.toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Add Item" }));
-  expect(await screen.findByRole("cell", { name: "Milk" })).toBeVisible();
+  expect(await screen.findByRole("cell", { name: /^Milk / })).toHaveTextContent(
+    "Milk",
+  );
   expect(screen.getAllByRole("cell", { name: "$2.01" })).toHaveLength(2);
   expect(writes).toEqual([]);
 });
@@ -401,7 +414,9 @@ it("shows a successful empty similarity result and still adds a manual line", as
   expect(await screen.findByText("No similar items found")).toBeVisible();
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Add Item" }));
-  expect(await screen.findByRole("cell", { name: "Milk" })).toBeVisible();
+  expect(await screen.findByRole("cell", { name: /^Milk / })).toHaveTextContent(
+    "Milk",
+  );
   expect(writes).toEqual([]);
 });
 

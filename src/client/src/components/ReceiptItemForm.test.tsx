@@ -9,6 +9,12 @@ import type { ReceiptPicker } from "./ReceiptPicker";
 
 const templateFixture = vi.hoisted(() => ({ unitPrice: 3.99 }));
 
+// These field-validation unit tests do not choose a product; the real preview
+// and choice lifecycle are exercised by ReceiptNormalizationField.test.tsx.
+vi.mock("./ReceiptNormalizationField", () => ({
+  ReceiptNormalizationField: () => null,
+}));
+
 vi.mock("@/hooks/useFormShortcuts", () => ({
   useFormShortcuts: vi.fn(),
 }));

@@ -1,4 +1,12 @@
 import { receiptItemDraftSchema } from "@/lib/receipt-item-draft";
+import { ReceiptNormalizationField } from "@/components/ReceiptNormalizationField";
+import {
+  currentNormalizationChoice,
+  receiptNormalizationSource,
+  type ReceiptNormalizationChoice,
+  type ReceiptNormalizationIntent,
+} from "@/lib/receipt-normalization";
+import { generateId } from "@/lib/id";
 import { RequestFailure } from "@/components/RequestFailure";
 import { calculateLineTotal } from "@/lib/receipt-arithmetic";
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
@@ -70,7 +78,9 @@ const receiptItemSchema = receiptItemDraftSchema.extend({
 
 type ReceiptItemSchemaValues = z.output<typeof receiptItemSchema>;
 
-export type ReceiptItemFormValues = ReceiptItemSchemaValues;
+export type ReceiptItemFormValues = ReceiptItemSchemaValues & {
+  normalizationIntent?: ReceiptNormalizationIntent;
+};
 
 interface ReceiptItemFormProps {
   mode: "create" | "edit";
@@ -81,6 +91,10 @@ interface ReceiptItemFormProps {
   serverErrors?: Record<string, string>;
   hideReceiptField?: boolean;
   location?: string | null;
+  normalizationRevision?: string;
+  normalizationReviewState?: "verified" | "excluded" | "needsReview";
+  normalizedDescriptionName?: string | null;
+  normalizationSourceKey?: string;
 }
 
 export function ReceiptItemForm({
@@ -92,8 +106,15 @@ export function ReceiptItemForm({
   serverErrors,
   hideReceiptField,
   location,
+  normalizationRevision,
+  normalizationReviewState,
+  normalizedDescriptionName,
+  normalizationSourceKey: savedSourceKey,
 }: ReceiptItemFormProps) {
   const formRef = useRef<HTMLFormElement>(null);
+  const [clientRowId] = useState(generateId);
+  const [normalizationChoice, setNormalizationChoice] =
+    useState<ReceiptNormalizationChoice>();
   useFormShortcuts({ formRef });
   const { options: descriptionHistoryOptions, add: addDescriptionHistory } =
     useFieldHistory(itemDescriptionHistory);
@@ -192,6 +213,8 @@ export function ReceiptItemForm({
   );
 
   const watchedQuantity = form.watch("quantity");
+  const normalizationDescription = form.watch("description");
+  const normalizationCode = form.watch("receiptItemCode");
   const watchedUnitPrice = form.watch("unitPrice");
 
   // Resolve location: use prop if provided, otherwise derive from selected receipt
@@ -307,7 +330,13 @@ export function ReceiptItemForm({
       }
     }
 
-    onSubmit(values);
+    onSubmit({
+      ...values,
+      normalizationIntent: currentNormalizationChoice(
+        normalizationChoice,
+        receiptNormalizationSource(resolvedLocation, values),
+      )?.intent,
+    });
   }
 
   const computedTotal = calculateLineTotal(
@@ -830,6 +859,33 @@ export function ReceiptItemForm({
         <div className="text-sm text-muted-foreground">
           Total: {formatCurrency(computedTotal)}
         </div>
+
+        <ReceiptNormalizationField
+          source={receiptNormalizationSource(resolvedLocation, {
+            description: normalizationDescription,
+            receiptItemCode: normalizationCode,
+          })}
+          clientRowId={clientRowId}
+          value={normalizationChoice}
+          onChange={setNormalizationChoice}
+          expectedItemRevision={normalizationRevision}
+          currentAssignment={
+            normalizationReviewState && savedSourceKey
+              ? {
+                  sourceKey: savedSourceKey,
+                  state: normalizationReviewState,
+                  name: normalizedDescriptionName,
+                }
+              : undefined
+          }
+          disabled={isSubmitting || (mode === "edit" && !normalizationRevision)}
+        />
+        <p className="text-sm text-muted-foreground">
+          You can save this purchase even if its product still needs review.
+          {mode === "edit" && !normalizationRevision
+            ? " Refresh the saved receipt information before confirming a product."
+            : ""}
+        </p>
 
         <div className="flex justify-end gap-2 pt-4">
           <Button type="button" variant="outline" onClick={onCancel}>

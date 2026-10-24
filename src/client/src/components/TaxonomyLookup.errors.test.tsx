@@ -58,6 +58,17 @@ let createFailure: boolean;
 let writes: unknown[];
 let rows: ReceiptLineItem[];
 const server = setupServer(
+  http.post("*/api/receipt-items/normalization-preview", () =>
+    HttpResponse.json({
+      sourceFingerprint: "taxonomy-draft",
+      sourceAmbiguous: false,
+      excluded: false,
+      candidates: [],
+      total: 0,
+      offset: 0,
+      limit: 10,
+    }),
+  ),
   http.get("*/api/categories", () =>
     categoryFailure
       ? HttpResponse.json(
@@ -200,7 +211,7 @@ function Lines({
     <LineItemsSection
       items={items}
       onChange={(next) => {
-        rows = next;
+        rows = typeof next === "function" ? next(items) : next;
         setItems(next);
       }}
       location="Manual market"

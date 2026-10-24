@@ -1,7 +1,28 @@
 import { RequestFailure } from "@/components/RequestFailure";
-import { calculateSubtotal, sumAmounts, calculateReceiptBalance } from "@/lib/receipt-arithmetic";
-import { assertSessionCurrent, getSessionVersion, isAbortError } from "@/lib/auth";
-import { useState, useCallback, useMemo, useEffect, useRef, useId } from "react";
+import { ReceiptNormalizationError } from "@/components/ReceiptNormalizationError";
+import {
+  currentNormalizationChoice,
+  receiptNormalizationSource,
+} from "@/lib/receipt-normalization";
+import { generateId } from "@/lib/id";
+import {
+  calculateSubtotal,
+  sumAmounts,
+  calculateReceiptBalance,
+} from "@/lib/receipt-arithmetic";
+import {
+  assertSessionCurrent,
+  getSessionVersion,
+  isAbortError,
+} from "@/lib/auth";
+import {
+  useState,
+  useCallback,
+  useMemo,
+  useEffect,
+  useRef,
+  useId,
+} from "react";
 import { useNavigate, useBlocker } from "react-router";
 import { useForm } from "react-hook-form";
 import { z } from "zod/v4";
@@ -64,15 +85,25 @@ export default function NewReceiptPage() {
   usePageTitle("New Receipt");
   const navigate = useNavigate();
   const locationRef = useRef<HTMLButtonElement>(null);
-  const { options: locationOptions, add: addLocation, isError: locationsError, isFetching: locationsFetching, refetch: retryLocations } = useLocationHistory();
+  const {
+    options: locationOptions,
+    add: addLocation,
+    isError: locationsError,
+    isFetching: locationsFetching,
+    refetch: retryLocations,
+  } = useLocationHistory();
 
   const [transactions, setTransactions] = useState<ReceiptTransaction[]>([]);
   const [items, setItems] = useState<ReceiptLineItem[]>([]);
   const [adjustments, setAdjustments] = useState<ReceiptAdjustment[]>([]);
   const [showDiscard, setShowDiscard] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitErrorSummary, setSubmitErrorSummary] = useState<string | null>(null);
+  const [submitErrorSummary, setSubmitErrorSummary] = useState<string | null>(
+    null,
+  );
+  const [saveError, setSaveError] = useState<unknown>();
   const errorSummaryId = useId();
+  const saveAttempt = useRef<{ fingerprint: string; id: string } | null>(null);
 
   const { mutateAsync: createCompleteReceiptAsync } =
     useCreateCompleteReceipt();
@@ -90,16 +121,20 @@ export default function NewReceiptPage() {
   const location = form.watch("location");
   const taxAmount = form.watch("taxAmount");
   const receiptDate = form.watch("date");
+  const unresolvedChoices = items.filter((item) => {
+    const choice = currentNormalizationChoice(
+      item.normalizationChoice,
+      receiptNormalizationSource(location, item),
+    );
+    return !choice || choice.intent.kind === "defer";
+  }).length;
 
   // Auto-focus location on mount
   useEffect(() => {
     locationRef.current?.focus();
   }, []);
 
-  const subtotal = useMemo(
-    () => calculateSubtotal(items),
-    [items],
-  );
+  const subtotal = useMemo(() => calculateSubtotal(items), [items]);
 
   const transactionTotal = useMemo(
     () => sumAmounts(transactions.map((transaction) => transaction.amount)),
@@ -212,17 +247,20 @@ export default function NewReceiptPage() {
     const valid = await form.trigger();
     if (!valid) {
       // Move focus to the first invalid field so keyboard/AT users can recover
-      const firstErrorName = Object.keys(
-        form.formState.errors,
-      )[0] as keyof HeaderFormValues | undefined;
+      const firstErrorName = Object.keys(form.formState.errors)[0] as
+        | keyof HeaderFormValues
+        | undefined;
       if (firstErrorName) {
         form.setFocus(firstErrorName);
       }
-      setSubmitErrorSummary("Please fix the highlighted fields before submitting.");
+      setSubmitErrorSummary(
+        "Please fix the highlighted fields before submitting.",
+      );
       return;
     }
     // Clear any previous error summary on a valid attempt
     setSubmitErrorSummary(null);
+    setSaveError(undefined);
 
     const headerValues = form.getValues();
 
@@ -241,7 +279,7 @@ export default function NewReceiptPage() {
       addLocation(headerValues.location);
 
       const sessionVersion = getSessionVersion();
-      const result = await createCompleteReceiptAsync({
+      const body = {
         receipt: {
           location: headerValues.location,
           date: headerValues.date,
@@ -259,12 +297,24 @@ export default function NewReceiptPage() {
           unitPrice: item.unitPrice,
           category: item.category,
           subcategory: item.subcategory,
+          normalizationIntent: currentNormalizationChoice(
+            item.normalizationChoice,
+            receiptNormalizationSource(headerValues.location, item),
+          )?.intent,
         })),
         adjustments: adjustments.map((adjustment) => ({
           type: adjustment.type,
           amount: adjustment.amount,
           description: adjustment.description || null,
         })),
+      };
+      const fingerprint = JSON.stringify(body);
+      if (saveAttempt.current?.fingerprint !== fingerprint) {
+        saveAttempt.current = { fingerprint, id: generateId() };
+      }
+      const result = await createCompleteReceiptAsync({
+        ...body,
+        clientRequestId: saveAttempt.current.id,
       });
 
       assertSessionCurrent(sessionVersion);
@@ -273,13 +323,22 @@ export default function NewReceiptPage() {
       // Mark saved BEFORE navigating so the unsaved-work blocker lets the
       // success redirect through (RECEIPTS-785).
       hasSavedRef.current = true;
-      toast.success("Receipt created successfully!");
+      const unresolved = result?.items?.filter(
+        (item) =>
+          item.normalizationReviewState !== "verified" &&
+          item.normalizationReviewState !== "excluded",
+      ).length;
+      toast.success(
+        unresolved
+          ? `Receipt saved — ${unresolved} item${unresolved === 1 ? "" : "s"} need review`
+          : "Receipt saved",
+      );
       navigate(`/receipts/${receiptId}`);
     } catch (error) {
       if (isAbortError(error)) return;
-      const message =
-        extractErrorMessage(error) ?? "Failed to create receipt.";
+      const message = extractErrorMessage(error) ?? "Failed to create receipt.";
       setSubmitErrorSummary(message);
+      setSaveError(error);
       toast.error(message);
     } finally {
       setIsSubmitting(false);
@@ -298,6 +357,14 @@ export default function NewReceiptPage() {
   return (
     <div className="space-y-6">
       <h1 className="text-3xl font-bold tracking-tight">New Receipt</h1>
+      <ReceiptNormalizationError error={saveError} />
+      {items.length > 0 && (
+        <p className="text-sm text-muted-foreground" aria-live="polite">
+          {unresolvedChoices} item{unresolvedChoices === 1 ? " has" : "s have"}{" "}
+          no reviewed choice yet. Save keeps all receipt details and checks
+          remembered rules; anything unresolved stays available for review.
+        </p>
+      )}
 
       {/* aria-live region: announced to screen readers when validation fails */}
       <div
@@ -327,10 +394,24 @@ export default function NewReceiptPage() {
                         ref={locationRef}
                         options={locationOptions}
                         value={field.value}
-                        onValueChange={field.onChange}
+                        onValueChange={(value) => {
+                          field.onChange(value);
+                          setItems((current) =>
+                            current.map((item) => ({
+                              ...item,
+                              normalizationChoice: undefined,
+                            })),
+                          );
+                        }}
                         placeholder="e.g. Walmart, Target, Costco"
                         searchPlaceholder="Search locations..."
-                        emptyMessage={locationsError ? "Location suggestions unavailable." : locationsFetching ? "Loading location suggestions..." : "No saved locations."}
+                        emptyMessage={
+                          locationsError
+                            ? "Location suggestions unavailable."
+                            : locationsFetching
+                              ? "Loading location suggestions..."
+                              : "No saved locations."
+                        }
                         allowCustom
                         aria-required="true"
                       />
@@ -339,7 +420,9 @@ export default function NewReceiptPage() {
                     {locationsError && (
                       <RequestFailure
                         message="Location suggestions unavailable. You can enter a location manually."
-                        retry={() => { void retryLocations(); }}
+                        retry={() => {
+                          void retryLocations();
+                        }}
                         isRetrying={locationsFetching}
                       />
                     )}
@@ -403,10 +486,7 @@ export default function NewReceiptPage() {
         </div>
       </div>
 
-      <AdjustmentsSection
-        adjustments={adjustments}
-        onChange={setAdjustments}
-      />
+      <AdjustmentsSection adjustments={adjustments} onChange={setAdjustments} />
 
       {/* Full-width line-item entry table, below the upper container */}
       <LineItemsSection items={items} onChange={setItems} location={location} />
@@ -414,11 +494,12 @@ export default function NewReceiptPage() {
       {/* Sticky action bar — keeps the balance status and Submit/Cancel
           reachable while scrolling the full-width line-item table. The upper
           Balance panel scrolls out of view once the line items grow tall. */}
-      <div className="sticky bottom-0 z-10 -mx-4 border-t bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+      <div className="sticky bottom-0 z-10 border-t bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <span className="text-muted-foreground">
-              Subtotal {formatCurrency(subtotal)} + Tax {formatCurrency(taxAmount)}
+              Subtotal {formatCurrency(subtotal)} + Tax{" "}
+              {formatCurrency(taxAmount)}
               {" + "}Adjustments {formatCurrency(adjustmentTotal)} = Expected{" "}
               {formatCurrency(expectedTotal)} · Transactions{" "}
               {formatCurrency(transactionTotal)}
@@ -445,13 +526,16 @@ export default function NewReceiptPage() {
         </div>
       </div>
 
-      <AlertDialog open={showDiscard} onOpenChange={handleDiscardDialogOpenChange}>
+      <AlertDialog
+        open={showDiscard}
+        onOpenChange={handleDiscardDialogOpenChange}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Discard receipt?</AlertDialogTitle>
             <AlertDialogDescription>
-              You have unsaved receipt data. Are you sure you want to discard it?
-              This action cannot be undone.
+              You have unsaved receipt data. Are you sure you want to discard
+              it? This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

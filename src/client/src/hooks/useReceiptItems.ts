@@ -1,11 +1,13 @@
 import { toastErrorPolicy } from "@/lib/request-error-policy";
 import { invalidateDomainChange, queryKeys } from "@/lib/query-invalidation";
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
+import { generateId } from "@/lib/id";
 import { useStableQuery } from "@/hooks/useStableQuery";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSessionMutation } from "@/hooks/useSessionMutation";
 import client from "@/lib/api-client";
 import { toast } from "sonner";
+import type { ReceiptNormalizationIntent } from "@/lib/receipt-normalization";
 
 export function useReceiptItems(
   offset = 0,
@@ -99,6 +101,7 @@ export function useLinkedReceiptItems(
 
 export function useCreateReceiptItem() {
   const queryClient = useQueryClient();
+  const attempt = useRef<{ fingerprint: string; id: string } | null>(null);
   return useSessionMutation({
     ...toastErrorPolicy.mutation,
     mutationFn: async ({
@@ -115,13 +118,26 @@ export function useCreateReceiptItem() {
         subcategory: string;
         /** Set when the line was entered from a template (RECEIPTS-881). */
         itemTemplateId?: string;
+        normalizationIntent?: ReceiptNormalizationIntent;
       };
     }) => {
+      const fingerprint = JSON.stringify({ receiptId, body });
+      if (attempt.current?.fingerprint !== fingerprint)
+        attempt.current = { fingerprint, id: generateId() };
+      const requestId = attempt.current.id;
       const { data, error } = await client.POST(
         "/api/receipts/{receiptId}/receipt-items",
-        { ...toastErrorPolicy.request, params: { path: { receiptId } }, body },
+        {
+          ...toastErrorPolicy.request,
+          params: {
+            path: { receiptId },
+            query: { clientRequestId: requestId },
+          },
+          body,
+        },
       );
       if (error) throw error;
+      if (attempt.current?.id === requestId) attempt.current = null;
       return data;
     },
     onSuccess: () => {
@@ -133,6 +149,7 @@ export function useCreateReceiptItem() {
 
 export function useUpdateReceiptItem() {
   const queryClient = useQueryClient();
+  const attempt = useRef<{ fingerprint: string; id: string } | null>(null);
   return useSessionMutation({
     ...toastErrorPolicy.mutation,
     mutationFn: async ({
@@ -146,14 +163,23 @@ export function useUpdateReceiptItem() {
         unitPrice: number;
         category: string;
         subcategory: string;
+        normalizationIntent?: ReceiptNormalizationIntent;
       };
     }) => {
+      const fingerprint = JSON.stringify(body);
+      if (attempt.current?.fingerprint !== fingerprint)
+        attempt.current = { fingerprint, id: generateId() };
+      const requestId = attempt.current.id;
       const { error } = await client.PUT("/api/receipt-items/{id}", {
         ...toastErrorPolicy.request,
-        params: { path: { id: body.id } },
+        params: {
+          path: { id: body.id },
+          query: { clientRequestId: requestId },
+        },
         body,
       });
       if (error) throw error;
+      if (attempt.current?.id === requestId) attempt.current = null;
     },
     onSuccess: () => {
       invalidateDomainChange(queryClient, "receipt-item");

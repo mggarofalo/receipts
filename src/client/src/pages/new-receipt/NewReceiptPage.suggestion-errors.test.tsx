@@ -257,6 +257,7 @@ it.each([false, true])(
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(bodies).toEqual([
       {
+        clientRequestId: expect.any(String),
         receipt: {
           location: "Manual market",
           date: "2024-01-15",

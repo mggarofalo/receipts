@@ -1,5 +1,12 @@
 import { calculateLineTotal } from "@/lib/receipt-arithmetic";
-import { useState } from "react";
+import {
+  normalizationSourceKey,
+  receiptNormalizationSource,
+} from "@/lib/receipt-normalization";
+import { useState, useRef } from "react";
+import { ReceiptNormalizationError } from "@/components/ReceiptNormalizationError";
+import { useQueryClient } from "@tanstack/react-query";
+import { invalidateDomainChange } from "@/lib/query-invalidation";
 import {
   useCreateReceiptItem,
   useUpdateReceiptItem,
@@ -9,17 +16,9 @@ import {
   ReceiptItemForm,
   type ReceiptItemFormValues,
 } from "@/components/ReceiptItemForm";
-import {
-  parseProblemDetails,
-  extractFieldErrors,
-} from "@/lib/problem-details";
+import { parseProblemDetails, extractFieldErrors } from "@/lib/problem-details";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -49,6 +48,8 @@ interface ReceiptItem {
   category: string;
   subcategory?: string | null;
   normalizedDescriptionName?: string | null;
+  normalizationRevision?: string;
+  normalizationReviewState?: "verified" | "excluded" | "needsReview";
 }
 
 interface ReceiptItemsCardProps {
@@ -73,9 +74,27 @@ export function ReceiptItemsCard({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [serverErrors, setServerErrors] = useState<Record<string, string>>({});
+  const [saveError, setSaveError] = useState<unknown>();
+  const dialogSession = useRef(0);
+  const queryClient = useQueryClient();
+  const currentEditItem = items.find((item) => item.id === editItem?.id);
+  const needsReview = items.filter(
+    (item) =>
+      item.normalizationReviewState !== "verified" &&
+      item.normalizationReviewState !== "excluded",
+  ).length;
+
+  function closeEditor() {
+    dialogSession.current++;
+    setCreateOpen(false);
+    setEditItem(null);
+    setSaveError(undefined);
+  }
 
   function handleCreate(values: ReceiptItemFormValues) {
     setServerErrors({});
+    setSaveError(undefined);
+    const session = dialogSession.current;
     createReceiptItem.mutate(
       {
         receiptId,
@@ -90,13 +109,16 @@ export function ReceiptItemsCard({
           // matches it. The server uses it to stamp the item's canonical description and skip
           // the resolver (RECEIPTS-881).
           itemTemplateId: values.itemTemplateId,
+          normalizationIntent: values.normalizationIntent,
         },
       },
       {
         onSuccess: () => {
-          setCreateOpen(false);
+          if (session === dialogSession.current) closeEditor();
         },
         onError: (error) => {
+          if (session !== dialogSession.current) return;
+          setSaveError(error);
           const problem = parseProblemDetails(error);
           if (problem) setServerErrors(extractFieldErrors(problem));
         },
@@ -107,6 +129,8 @@ export function ReceiptItemsCard({
   function handleUpdate(values: ReceiptItemFormValues) {
     if (!editItem) return;
     setServerErrors({});
+    setSaveError(undefined);
+    const session = dialogSession.current;
     updateReceiptItem.mutate(
       {
         body: {
@@ -117,13 +141,16 @@ export function ReceiptItemsCard({
           unitPrice: values.unitPrice,
           category: values.category,
           subcategory: values.subcategory,
+          normalizationIntent: values.normalizationIntent,
         },
       },
       {
         onSuccess: () => {
-          setEditItem(null);
+          if (session === dialogSession.current) closeEditor();
         },
         onError: (error) => {
+          if (session !== dialogSession.current) return;
+          setSaveError(error);
           const problem = parseProblemDetails(error);
           if (problem) setServerErrors(extractFieldErrors(problem));
         },
@@ -156,13 +183,28 @@ export function ReceiptItemsCard({
                   Delete ({selectedItems.size})
                 </Button>
               )}
-              <Button size="sm" onClick={() => { setServerErrors({}); setCreateOpen(true); }}>
+              <Button
+                size="sm"
+                onClick={() => {
+                  dialogSession.current++;
+                  setSaveError(undefined);
+                  setServerErrors({});
+                  setCreateOpen(true);
+                }}
+              >
                 Add Item
               </Button>
             </div>
           </div>
         </CardHeader>
         <CardContent>
+          {items.length > 0 && (
+            <p className="mb-3 text-sm" aria-live="polite">
+              {needsReview
+                ? `Saved — ${needsReview} item${needsReview === 1 ? "" : "s"} need review. Use Review product on a line to continue.`
+                : "Fully reviewed"}
+            </p>
+          )}
           {items.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               No items for this receipt.
@@ -215,6 +257,13 @@ export function ReceiptItemsCard({
                       </TableCell>
                       <TableCell className="whitespace-normal break-words max-w-[32ch]">
                         <div>{item.description}</div>
+                        <p className="text-xs text-muted-foreground">
+                          {item.normalizationReviewState === "verified"
+                            ? "Reviewed"
+                            : item.normalizationReviewState === "excluded"
+                              ? "Excluded from product grouping"
+                              : "Needs review"}
+                        </p>
                         {item.normalizedDescriptionName &&
                           item.normalizedDescriptionName !==
                             item.description && (
@@ -233,7 +282,9 @@ export function ReceiptItemsCard({
                         {formatUnitPrice(item.unitPrice)}
                       </TableCell>
                       <TableCell className="text-right">
-                        {formatCurrency(calculateLineTotal(item.quantity, item.unitPrice))}
+                        {formatCurrency(
+                          calculateLineTotal(item.quantity, item.unitPrice),
+                        )}
                       </TableCell>
                       <TableCell>{item.category}</TableCell>
                       <TableCell>{item.subcategory ?? ""}</TableCell>
@@ -243,12 +294,30 @@ export function ReceiptItemsCard({
                           size="icon"
                           aria-label="Edit"
                           onClick={() => {
+                            dialogSession.current++;
+                            setSaveError(undefined);
                             setServerErrors({});
                             setEditItem(item);
                           }}
                         >
                           <Pencil className="h-4 w-4" />
                         </Button>
+                        {item.normalizationReviewState !== "verified" &&
+                          item.normalizationReviewState !== "excluded" && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                dialogSession.current++;
+                                setServerErrors({});
+                                setSaveError(undefined);
+                                setEditItem(item);
+                              }}
+                            >
+                              Review product
+                            </Button>
+                          )}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -271,35 +340,58 @@ export function ReceiptItemsCard({
       </Card>
 
       {/* Create Dialog */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      <Dialog
+        open={createOpen}
+        onOpenChange={(open) => {
+          if (!open) closeEditor();
+        }}
+      >
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Add Item</DialogTitle>
           </DialogHeader>
-          <ReceiptItemForm
-            mode="create"
-            defaultValues={{ receiptId }}
-            hideReceiptField
-            isSubmitting={createReceiptItem.isPending}
-            serverErrors={serverErrors}
-            onCancel={() => setCreateOpen(false)}
-            onSubmit={handleCreate}
-            location={location}
-          />
+          <ReceiptNormalizationError error={saveError} />
+          {createOpen && (
+            <ReceiptItemForm
+              mode="create"
+              defaultValues={{ receiptId }}
+              hideReceiptField
+              isSubmitting={createReceiptItem.isPending}
+              serverErrors={serverErrors}
+              onCancel={closeEditor}
+              onSubmit={handleCreate}
+              location={location}
+            />
+          )}
         </DialogContent>
       </Dialog>
 
       {/* Edit Dialog */}
       <Dialog
         open={editItem !== null}
-        onOpenChange={(open) => !open && setEditItem(null)}
+        onOpenChange={(open) => {
+          if (!open) closeEditor();
+        }}
       >
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Edit Item</DialogTitle>
           </DialogHeader>
+          <ReceiptNormalizationError error={saveError} />
+          {saveError != null && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() =>
+                invalidateDomainChange(queryClient, "receipt-item")
+              }
+            >
+              Refresh saved receipt information
+            </Button>
+          )}
           {editItem && (
             <ReceiptItemForm
+              key={editItem.id}
               mode="edit"
               defaultValues={{
                 receiptId,
@@ -313,9 +405,23 @@ export function ReceiptItemsCard({
               hideReceiptField
               isSubmitting={updateReceiptItem.isPending}
               serverErrors={serverErrors}
-              onCancel={() => setEditItem(null)}
+              onCancel={closeEditor}
               onSubmit={handleUpdate}
               location={location}
+              normalizationRevision={currentEditItem?.normalizationRevision}
+              normalizationReviewState={
+                currentEditItem?.normalizationReviewState
+              }
+              normalizedDescriptionName={
+                currentEditItem?.normalizedDescriptionName
+              }
+              normalizationSourceKey={
+                currentEditItem
+                  ? normalizationSourceKey(
+                      receiptNormalizationSource(location, currentEditItem),
+                    )
+                  : undefined
+              }
             />
           )}
         </DialogContent>
@@ -328,8 +434,8 @@ export function ReceiptItemsCard({
             <DialogTitle>Delete Items</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            Are you sure you want to delete {selectedItems.size} item(s)?
-            This action can be undone by restoring.
+            Are you sure you want to delete {selectedItems.size} item(s)? This
+            action can be undone by restoring.
           </p>
           <div className="flex justify-end gap-2 pt-4">
             <Button variant="outline" onClick={() => setDeleteOpen(false)}>
