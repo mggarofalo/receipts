@@ -117,3 +117,48 @@ test('all 28 purchases and unknown factual tables remain exact except the explic
   }
   assert.throws(()=>assertCompletionFacts(before,after,'unknown'));
 });
+
+// The archived resume writer persists embedded records, never transitionFiles.
+async function retainedEvidenceFixture(t) {
+  const fs=await import('node:fs');const os=await import('node:os');const path=await import('node:path');const crypto=await import('node:crypto');
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'receipts-retained-schema-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  const runtime=path.join(root,'runtime');fs.mkdirSync(runtime);const prior=path.join(runtime,'original');fs.mkdirSync(prior);
+  const hash=file=>crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+  const write=(name,value)=>{const file=path.join(root,name);fs.writeFileSync(file,JSON.stringify(value));return file;};
+  const ref=(name,value)=>{const file=write(name,value);return {path:file,sha256:hash(file)};};
+  const source={RunId:'run',Revision:'launcher'};write('runtime/source.json',source);
+  const before=ref('before.json',{state:[]}),migration=ref('migrations.json',[]),after=ref('after.json',{state:[]});
+  const transition={runId:'run',candidateRevision:'old-app',previousRevision:'launcher',beforePostgresPath:before.path,beforePostgresSha256:before.sha256,beforeMigrationHistoryPath:migration.path,beforeMigrationHistorySha256:migration.sha256,afterPostgresPath:after.path,afterPostgresSha256:after.sha256};
+  const originalTransition=ref('revision-transition.json',transition);
+  const evidence={originalBefore:before,transition:originalTransition,summary:ref('summary.json',{}),addedAudits:ref('audits.json',[]),settled:[ref('settled-1.json',{}),ref('settled-2.json',{})],log:ref('failed.log','failure')};
+  const names=['failure.json','baseline.json','before-stale-item.db',...Array.from({length:3},(_,i)=>`created-${i+1}.json`),...['request','response'].flatMap(prefix=>Array.from({length:26},(_,i)=>`${prefix}-${i+2}.json`))];
+  const files=Object.fromEntries(names.map(name=>{const file=write('runtime/original/'+name,{});return [name,hash(file)];}));
+  const resume={runId:'run',applicationRevision:'old-app',prior,files,launchSource:source,transition,transitionSha256:originalTransition.sha256,authRecovery:{runId:'run',applicationRevision:'old-app',beforePostgresSha256:before.sha256,evidence}};
+  const produced=ref('next-original-transition.json',{...transition,candidateRevision:'new-app',previousRevision:'old-app'});
+  const next={...transition,candidateRevision:'new-app',previousApplicationRevision:'old-app',originalSourcePath:path.join(runtime,'source.json'),originalSourceSha256:hash(path.join(runtime,'source.json')),originalTransitionPath:produced.path,originalTransitionSha256:produced.sha256,derivation:{preservedEvidence:{[before.path]:before.sha256},compiledEvidence:{[after.path]:after.sha256}}};
+  const transitionPath=write('next-transition.json',next);
+  return {fs,hash,resume,runtime,transitionPath,next,evidence};
+}
+
+test('completion preflight binds the actual retained resume schema without transitionFiles',async t=>{
+  const f=await retainedEvidenceFixture(t);const module=await import('./lifecycle-completion.mjs');
+  const bindings=module.bindCompletionEvidence(f);
+  assert.equal(bindings[f.evidence.transition.path],f.resume.transitionSha256);
+  assert.equal(bindings[f.evidence.log.path],f.evidence.log.sha256);
+  assert.equal(bindings[f.transitionPath],f.hash(f.transitionPath));
+  assert.equal(Object.hasOwn(f.resume,'transitionFiles'),false);
+});
+
+test('completion preflight rejects missing or tampered original and derived hash proof',async t=>{
+  const f=await retainedEvidenceFixture(t);const {bindCompletionEvidence}=await import('./lifecycle-completion.mjs');
+  assert(Object.keys(bindCompletionEvidence(f)).length>0);
+  for(const change of [r=>delete r.transitionSha256,r=>delete r.transition.beforePostgresSha256,r=>delete r.authRecovery.evidence.log.sha256,r=>delete r.files['baseline.json'],r=>r.launchSource.Revision='changed',r=>r.authRecovery.evidence.settled=[]]) {
+    const resume=structuredClone(f.resume);change(resume);assert.throws(()=>bindCompletionEvidence({...f,resume}));
+  }
+  for(const file of [f.evidence.log.path,f.evidence.transition.path,f.next.beforePostgresPath,f.next.originalSourcePath]) {
+    const original=f.fs.readFileSync(file);f.fs.appendFileSync(file,' ');assert.throws(()=>bindCompletionEvidence(f));f.fs.writeFileSync(file,original);
+  }
+  for(const change of [n=>delete n.originalSourceSha256,n=>delete n.beforePostgresSha256,n=>delete n.originalTransitionSha256,n=>n.derivation.preservedEvidence={},n=>n.derivation.compiledEvidence[Object.keys(n.derivation.compiledEvidence)[0]]='0'.repeat(64)]) {
+    const next=structuredClone(f.next);change(next);f.fs.writeFileSync(f.transitionPath,JSON.stringify(next));assert.throws(()=>bindCompletionEvidence(f));
+  }
+});

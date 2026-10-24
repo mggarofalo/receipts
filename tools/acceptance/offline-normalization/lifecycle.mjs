@@ -7,7 +7,7 @@ import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
 import { assertLifecycleResume, assertSettled, assertRevisionTransition, assertUpgradePreserved, assertAuthBoundaryRecovery, runAuthenticationBoundary } from './lifecycle-resume.mjs';
 
-import { assertCompletionBoundary, assertIndependentProof, assertRestoreDecision, assertCompletionFacts, runWithLifecycleFailureCapture, journalBrowserSave, redactedFailure } from './lifecycle-completion.mjs';
+import { assertCompletionBoundary, assertIndependentProof, assertRestoreDecision, assertCompletionFacts, runWithLifecycleFailureCapture, journalBrowserSave, redactedFailure, bindCompletionEvidence } from './lifecycle-completion.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const read = p => JSON.parse(fs.readFileSync(p, 'utf8').replace(/^\uFEFF/, ''));
@@ -164,9 +164,8 @@ async function main() {
     assert.deepEqual(transition.allowedAddedMigrations,[],'This repair requires no migrations');
     assert.equal(hash(path.join(prior,'safe-stop-database.sql')),bundle.summary.databaseDumpSha256);
     const retainedResume=load('resume.json');
-    for(const [name,sha] of Object.entries(retainedResume.files)) assert.equal(hash(path.join(retainedResume.prior,name)),sha,'Original lifecycle evidence changed');
-    for(const [file,sha] of Object.entries(retainedResume.transitionFiles)) assert.equal(hash(file),sha,'Original transition evidence changed');
-    completion={...assertCompletionBoundary(bundle,ready.RunId,records.sourceRestore.bSha256),prior,files,revisions,stop:bundle.stop,retainedResume};
+    const retainedEvidenceFiles=bindCompletionEvidence({resume:retainedResume,runtime,transitionPath:path.resolve(args.transition)});
+    completion={...assertCompletionBoundary(bundle,ready.RunId,records.sourceRestore.bSha256),prior,files,revisions,stop:bundle.stop,retainedEvidenceFiles};
     const retainedBaseline=load('baseline.json');
     assert.equal(retainedBaseline.followupHash,followupHash);assert.deepEqual(retainedBaseline.snapshot.tables,baseline.tables);
     completion.originalPg=retainedBaseline.preservationPostgres;
@@ -178,6 +177,11 @@ async function main() {
     assert.deepEqual(completion.beforePostgres,completion.stop,'Fresh upgrade must start at the full retained safe stop');
   }
   assert(!args.authRecovery || resume,'Auth recovery requires the assessed lifecycle resume');
+  if(args.preflightOnly==='true') {
+    assert(completion,'Read-only preflight requires the assessed completion boundary');
+    console.log(JSON.stringify({status:'completion-preflight-passed',runId:ready.RunId,boundFiles:Object.keys(completion.retainedEvidenceFiles).length,newReceiptCreations:0}));
+    return;
+  }
   fs.mkdirSync(out);
   const save = (name,value) => fs.writeFileSync(path.join(out,name), JSON.stringify(value,null,2), {flag:'wx'});
   const stamp = () => ({runId:ready.RunId,utc:new Date().toISOString(),phase:'lifecycle',bSha256:records.sourceRestore.bSha256});
@@ -275,7 +279,7 @@ async function main() {
   else assert.deepEqual(beforePortable.tables,resume?.expected.tables ?? baseline.tables,'Current installation differs from retained lifecycle boundary');
   save('baseline.json',{...stamp(),followupHash,prerequisites:records,postgres:currentPg,preservationPostgres:originalPg,snapshot:baseline,authenticationCompleted:true});
   if(resume) save('resume.json',{...stamp(),...resume.revisions,prior:resume.prior,files:resume.files,syntheticReceiptIds:resume.created,priorFailureRetained:true,newCreationsBeforeStaleGate:0,originalFailurePassed:false,launchSource:read(path.join(runtime,'source.json')),transition,transitionSha256:hash(path.resolve(args.transition)),authRecovery:resume.authRecovery?.record});
-  if(completion) journal('continuation.json',{...stamp(),...completion.revisions,prior:completion.prior,files:completion.files,transition,transitionFiles:completion.transitionFiles,originalFailurePassed:false,newReceiptCreations:0});
+  if(completion) journal('continuation.json',{...stamp(),...completion.revisions,prior:completion.prior,files:completion.files,transition,transitionFiles:completion.transitionFiles,retainedEvidenceFiles:completion.retainedEvidenceFiles,originalFailurePassed:false,newReceiptCreations:0});
   let step = 0;
   async function checkpoint(name, evidence) {
     const pg = postgres(); assert.equal(pg.container.Id,originalPg.container.Id); assert.deepEqual(pg.container.Mounts,originalPg.container.Mounts);
@@ -431,8 +435,7 @@ async function main() {
     assertCompletionFacts(beforePortable.facts,(await exported('after-browser-completion.db')).facts,future.item.id);
     for(const [name,sha] of Object.entries(completion.files)) assert.equal(hash(path.join(completion.prior,name)),sha,'Prior failed evidence changed');
     for(const [file,sha] of Object.entries(completion.transitionFiles)) assert.equal(hash(file),sha,'Upgrade evidence changed');
-    for(const [name,sha] of Object.entries(completion.retainedResume.files)) assert.equal(hash(path.join(completion.retainedResume.prior,name)),sha,'Original lifecycle evidence changed');
-    for(const [file,sha] of Object.entries(completion.retainedResume.transitionFiles)) assert.equal(hash(file),sha,'Original transition evidence changed');
+    for(const [file,sha] of Object.entries(completion.retainedEvidenceFiles)) assert.equal(hash(file),sha,'Retained completion evidence changed');
     journal('final-postgres.json',postgres());
     journal('lifecycle-completion.json',{...stamp(),status:'passed',completed,prior:completion.prior,...completion.revisions,priorFailureRetained:true,originalFailurePassed:false,newReceiptCreations:0,syntheticReceiptIds:created,baselineFollowupHash:followupHash});
   }

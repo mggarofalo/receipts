@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
 
 export function redactedFailure(error,sensitive=[]) {
   return Object.fromEntries(['name','message','stack'].map(key=>[key,sensitive.filter(Boolean).reduce((text,value)=>text.split(value).join('[REDACTED]'),String(error[key]??''))]));
@@ -112,4 +115,62 @@ export function assertCompletionFacts(before,after,browserItemId) {
   }
   const ordered=facts=>Object.fromEntries(Object.entries(facts).map(([table,rows])=>[table,[...rows].sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b)))]));
   assert.deepEqual(ordered(after),ordered(expected),'Continuation changed factual state outside the explicit browser price edit');
+}
+
+// Reconstruct proof from the persisted resume schema. transitionFiles belonged to
+// the old runner's in-memory state and was never written to resume.json.
+export function bindCompletionEvidence({resume,runtime,transitionPath}) {
+  const read=file=>JSON.parse(fs.readFileSync(file,'utf8').replace(/^\uFEFF/,''));
+  const hash=file=>crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+  const bindings={};
+  const bind=(file,sha)=>{
+    assert.equal(typeof file,'string','Evidence path required');assert(path.isAbsolute(file),'Absolute evidence path required');
+    assert.equal(typeof sha,'string','Evidence SHA-256 required');assert.match(sha,/^[a-f0-9]{64}$/i,'Evidence SHA-256 required');
+    file=path.resolve(file);const relative=path.relative(path.dirname(runtime),file);
+    assert(relative && !relative.startsWith('..') && !path.isAbsolute(relative),'Evidence must stay inside private runtime parent');
+    assert.equal(hash(file),sha,'Retained evidence hash mismatch');
+    if(bindings[file]) assert.equal(bindings[file],sha,'Conflicting evidence hashes');
+    bindings[file]=sha;
+  };
+  const names=['failure.json','baseline.json','before-stale-item.db',...Array.from({length:3},(_,i)=>`created-${i+1}.json`),...['request','response'].flatMap(prefix=>Array.from({length:26},(_,i)=>`${prefix}-${i+2}.json`))];
+  assert.deepEqual(Object.keys(resume.files).sort(),names.sort(),'Original lifecycle evidence manifest incomplete');
+  for(const [name,sha] of Object.entries(resume.files)) bind(path.join(resume.prior,name),sha);
+  const transition=read(transitionPath);bind(transitionPath,hash(transitionPath));
+  const bindTransition=record=>{
+    for(const key of ['beforePostgres','beforeMigrationHistory','afterPostgres']) bind(record[key+'Path'],record[key+'Sha256']);
+  };
+  bindTransition(transition);bindTransition(resume.transition);
+  assert.equal(transition.runId,resume.runId);
+  assert.equal(transition.previousApplicationRevision,resume.applicationRevision,'Completion must start at the retained application revision');
+  bind(transition.originalSourcePath,transition.originalSourceSha256);
+  assert.equal(path.resolve(transition.originalSourcePath),path.join(runtime,'source.json'));
+  assert.deepEqual(read(transition.originalSourcePath),resume.launchSource,'Original launcher provenance changed');
+  bind(transition.originalTransitionPath,transition.originalTransitionSha256);
+  const producedTransition=read(transition.originalTransitionPath);bindTransition(producedTransition);
+  assert.equal(producedTransition.runId,transition.runId);
+  assert.equal(producedTransition.previousRevision,resume.applicationRevision);
+  assert.equal(producedTransition.candidateRevision,transition.candidateRevision);
+  for(const key of ['beforePostgresPath','beforePostgresSha256','afterPostgresPath','afterPostgresSha256','beforeMigrationHistoryPath','beforeMigrationHistorySha256','allowedAddedMigrations'])
+    assert.deepEqual(producedTransition[key],transition[key],'Derivation changed retained upgrade evidence');
+  assert(transition.derivation,'Derived transition proof required');
+  for(const key of ['preservedEvidence','compiledEvidence']) {
+    const files=transition.derivation[key];assert(files && Object.keys(files).length>0,'Derived evidence manifest required');
+    for(const [file,sha] of Object.entries(files)) bind(file,sha);
+  }
+  // The assessed recovery embeds the original transition reference and each
+  // archived auth-boundary artifact. It is proof of old history, never permission
+  // for a new completion login exception.
+  const recovery=resume.authRecovery;assert(recovery && recovery.evidence,'Retained auth recovery proof required');
+  assert.equal(recovery.runId,resume.runId);assert.equal(recovery.applicationRevision,resume.applicationRevision);
+  assert.equal(recovery.beforePostgresSha256,resume.transition.beforePostgresSha256);
+  const evidence=recovery.evidence;
+  for(const key of ['originalBefore','transition','summary','addedAudits','log']) bind(evidence[key]?.path,evidence[key]?.sha256);
+  assert(Array.isArray(evidence.settled) && evidence.settled.length===2,'Both retained settlement samples required');
+  assert.notEqual(evidence.settled[0].path,evidence.settled[1].path);
+  for(const entry of evidence.settled) bind(entry.path,entry.sha256);
+  assert.equal(path.resolve(evidence.originalBefore.path),path.resolve(resume.transition.beforePostgresPath));
+  assert.equal(evidence.originalBefore.sha256,resume.transition.beforePostgresSha256);
+  assert.equal(evidence.transition.sha256,resume.transitionSha256);
+  assert.deepEqual(read(evidence.transition.path),resume.transition,'Embedded original transition differs from retained bytes');
+  return bindings;
 }
