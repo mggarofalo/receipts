@@ -15,6 +15,7 @@ public sealed partial class NormalizationCatalogTests
 	[InlineData("PendingReview")]
 	[InlineData("Rejected")]
 	[InlineData("wrong_scope")]
+	[InlineData("dangling_mapping")]
 	public async Task InvalidCatalogArchive_RollsBackFactsTargetsAndMappingChanges(string corruption)
 	{
 		await ResetAsync();
@@ -32,14 +33,20 @@ public sealed partial class NormalizationCatalogTests
 			{
 				await archive.OpenAsync();
 				await using var command = archive.CreateCommand();
-				if (corruption == "wrong_scope")
+				if (corruption is "wrong_scope" or "dangling_mapping")
 				{
-					command.CommandText = "SELECT payload FROM normalization_catalog WHERE kind='mapping'";
+					string kind = corruption == "wrong_scope" ? "mapping" : "assignment";
+					command.CommandText = "SELECT payload FROM normalization_catalog WHERE kind=$kind";
+					command.Parameters.AddWithValue("$kind", kind);
 					var payload = JsonNode.Parse((string)(await command.ExecuteScalarAsync())!)!;
-					var otherScope = Source with { Location = "Other store" };
-					payload["Location"] = otherScope.Location;
-					payload["SourceHash"] = NormalizationCatalogPolicy.Hash(otherScope);
-					command.CommandText = "UPDATE normalization_catalog SET payload=$payload WHERE kind='mapping'";
+					if (corruption == "wrong_scope")
+					{
+						var otherScope = Source with { Location = "Other store" };
+						payload["Location"] = otherScope.Location;
+						payload["SourceHash"] = NormalizationCatalogPolicy.Hash(otherScope);
+					}
+					else { payload["MappingId"] = Guid.NewGuid(); }
+					command.CommandText = "UPDATE normalization_catalog SET payload=$payload WHERE kind=$kind";
 					command.Parameters.AddWithValue("$payload", payload.ToJsonString());
 				}
 				else

@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Application.Normalization;
 using Domain.NormalizedDescriptions;
@@ -77,6 +76,7 @@ internal static partial class PortableCatalogArchive
 			await context.SaveChangesAsync(ct);
 			return;
 		}
+		ImportState state = await LoadImportStateAsync(context, sqlite, version, ct);
 		// Import in dependency order; each payload has an explicit versioned kind and strict shape.
 		foreach (string kind in (version >= 8 ? new[] { "mapping", "operation", "member", "assignment", "review_evidence", "write_request" } : new[] { "mapping", "operation", "member", "assignment" }))
 		{
@@ -84,7 +84,6 @@ internal static partial class PortableCatalogArchive
 			command.CommandText = "SELECT id,payload FROM normalization_catalog WHERE kind=$kind ORDER BY id";
 			command.Parameters.AddWithValue("$kind", kind);
 			await using var reader = await command.ExecuteReaderAsync(ct);
-			int pending = 0;
 			while (await reader.ReadAsync(ct))
 			{
 				Guid id = Guid.Parse(reader.GetString(0));
@@ -93,7 +92,7 @@ internal static partial class PortableCatalogArchive
 				switch (kind)
 				{
 					case "review_evidence":
-						await ImportReviewEvidenceAsync(context, id, Read<ReviewEvidence>(payload), ct);
+						ImportReviewEvidence(context, state, id, Read<ReviewEvidence>(payload));
 						break;
 					case "write_request":
 						var request = Read<ReceiptWriteRequestEntity>(payload);
@@ -107,19 +106,11 @@ internal static partial class PortableCatalogArchive
 						{ throw new InvalidOperationException("Receipt replay evidence conflicts with an existing request."); }
 						break;
 					case "mapping":
-						if (version < 8)
-						{
-							JsonObject legacyMapping = JsonNode.Parse(payload)!.AsObject();
-							if (legacyMapping.ContainsKey("ExclusionReason")) { throw new InvalidOperationException("Legacy mapping contains unsupported evidence."); }
-							legacyMapping.Add("ExclusionReason", null);
-							payload = legacyMapping.ToJsonString();
-						}
-						var mapping = Read<NormalizationSourceMappingEntity>(payload);
-						bool activeMappingTarget = mapping.TargetId is Guid targetId
-							&& await context.NormalizedDescriptions.AnyAsync(target => target.Id == targetId && target.Status == NormalizedDescriptionStatus.Active, ct);
+						var mapping = ReadMapping(payload, version);
+						bool activeMappingTarget = mapping.TargetId is Guid targetId && state.ActiveTargets.Contains(targetId);
 						ValidateMapping(mapping, id, activeMappingTarget);
-						var existingMapping = await context.NormalizationSourceMappings.FindAsync([id], ct);
-						if (existingMapping is null) { context.NormalizationSourceMappings.Add(mapping); }
+						var existingMapping = state.Mappings.GetValueOrDefault(id);
+						if (existingMapping is null) { context.NormalizationSourceMappings.Add(mapping); state.Mappings.Add(id, mapping); }
 						else { context.Entry(existingMapping).CurrentValues.SetValues(mapping); }
 						break;
 					case "operation":
@@ -143,20 +134,21 @@ internal static partial class PortableCatalogArchive
 						break;
 					case "assignment":
 						var assignment = Read<Assignment>(payload);
-						var item = await context.ReceiptItems.IgnoreAutoIncludes().SingleOrDefaultAsync(item => item.Id == id, ct)
+						var item = state.Items.GetValueOrDefault(id)
 							?? throw new InvalidOperationException("Catalog assignment references a missing purchase.");
-						string assignmentLocation = await context.Receipts.Where(receipt => receipt.Id == item.ReceiptId).Select(receipt => receipt.Location).SingleAsync(ct);
+						string assignmentLocation = state.Locations[item.ReceiptId];
 						NormalizationSourceKey assignmentSource = NormalizationCatalogPolicy.Normalize(new(assignmentLocation, item.Description, item.ReceiptItemCode));
 						NormalizationSourceMappingEntity? assignmentMapping = assignment.MappingId is Guid assignmentMappingId
-							? await context.NormalizationSourceMappings.SingleOrDefaultAsync(mapping => mapping.Id == assignmentMappingId, ct) : null;
+							? state.Mappings.GetValueOrDefault(assignmentMappingId) : null;
 						ValidateAssignment(assignment, id, item.NormalizedDescriptionId, assignmentSource, assignmentMapping);
 						item.NormalizationOrigin = assignment.Origin;
 						item.NormalizationMappingId = assignment.MappingId;
 						item.NormalizationAssignmentId = assignment.AssignmentId;
 						break;
 				}
-				if (++pending == 100) { await context.SaveChangesAsync(ct); pending = 0; }
 			}
+			// All imported rows remain tracked throughout the transaction. Saving each kind once
+			// preserves dependency ordering without repeatedly scanning that growing tracker.
 			await context.SaveChangesAsync(ct);
 		}
 		await using var unknown = sqlite.CreateCommand();
@@ -180,15 +172,15 @@ internal static partial class PortableCatalogArchive
 	private static Guid RequestArchiveId(ReceiptWriteRequestEntity request)
 		=> new(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(request.Actor + ":" + request.RequestId))[..16]);
 
-	private static async Task ImportReviewEvidenceAsync(ApplicationDbContext context, Guid id, ReviewEvidence evidence, CancellationToken ct)
+	private static void ImportReviewEvidence(ApplicationDbContext context, ImportState state, Guid id, ReviewEvidence evidence)
 	{
-		var item = await context.ReceiptItems.IgnoreAutoIncludes().SingleOrDefaultAsync(value => value.Id == id, ct)
+		var item = state.Items.GetValueOrDefault(id)
 			?? throw new InvalidOperationException("Review evidence references a missing purchase.");
 		if (id != evidence.Id || !Enum.IsDefined(evidence.State)) { throw new InvalidOperationException("Invalid purchase review state."); }
-		string location = await context.Receipts.Where(value => value.Id == item.ReceiptId).Select(value => value.Location).SingleAsync(ct);
+		string location = state.Locations[item.ReceiptId];
 		NormalizationSourceMappingEntity? mapping = item.NormalizationMappingId is Guid mappingId
-			? await context.NormalizationSourceMappings.SingleOrDefaultAsync(value => value.Id == mappingId, ct) : null;
-		bool activeTarget = await context.NormalizedDescriptions.AnyAsync(target => target.Id == item.NormalizedDescriptionId && target.Status == NormalizedDescriptionStatus.Active, ct);
+			? state.Mappings.GetValueOrDefault(mappingId) : null;
+		bool activeTarget = item.NormalizedDescriptionId is Guid targetId && state.ActiveTargets.Contains(targetId);
 		ValidateReview(evidence, new Assignment(id, item.NormalizationOrigin, item.NormalizationMappingId, item.NormalizationAssignmentId),
 			NormalizationCatalogPolicy.Hash(new(location, item.Description, item.ReceiptItemCode)), item.NormalizedDescriptionId, activeTarget, mapping);
 		item.NormalizationReviewState = evidence.State;

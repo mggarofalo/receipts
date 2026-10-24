@@ -93,11 +93,12 @@ public partial class ApplicationDbContext
 			entry => NormalizationCatalogPolicy.Normalize(new NormalizationSourceKey(parents[entry.Entity.ReceiptId].Location, entry.Entity.Description, entry.Entity.ReceiptItemCode)));
 		var hashes = sources.ToDictionary(pair => pair.Key, pair => NormalizationCatalogPolicy.Hash(pair.Value));
 		string[] sourceHashes = hashes.Values.Distinct().ToArray();
+		HashSet<string> sourceHashSet = sourceHashes.ToHashSet(StringComparer.Ordinal);
 		var mappings = await NormalizationSourceMappings.Where(mapping => sourceHashes.Contains(mapping.SourceHash) && mapping.State == "active")
 			.ToDictionaryAsync(mapping => mapping.SourceHash, ct).ConfigureAwait(false);
 		foreach (var entry in ChangeTracker.Entries<NormalizationSourceMappingEntity>())
 		{
-			if (entry.Entity.State == "active" && sourceHashes.Contains(entry.Entity.SourceHash)) { mappings[entry.Entity.SourceHash] = entry.Entity; }
+			if (entry.Entity.State == "active" && sourceHashSet.Contains(entry.Entity.SourceHash)) { mappings[entry.Entity.SourceHash] = entry.Entity; }
 			else { mappings.Remove(entry.Entity.SourceHash); }
 		}
 		Guid[] targetIds = entries.Select(entry => entry.Entity.NormalizationIntent?.TargetId ?? entry.Entity.NormalizedDescriptionId)
