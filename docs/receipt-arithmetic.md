@@ -6,7 +6,10 @@ Tax, adjustments and payments are added as decimal amounts without rounding indi
 
 ## Ownership
 
-The API mapper remains authoritative for new line totals. Stored receipt subtotals and expected totals remain authoritative when reading a receipt; the client does not replace them with a reconstructed sum of displayed rows. Historical or imported line totals can differ from a fresh calculation within the domain's accepted tolerance. This change does not rewrite that history.
+The API mapper remains authoritative for new line totals. Stored receipt subtotals and expected totals remain authoritative when reading a receipt; the client does not replace them with a reconstructed sum of displayed rows. Historical or imported line totals can differ from a fresh calculation, including beyond the
+current write tolerance. Persistence hydration preserves those facts without applying
+new-write admission rules. Constructors and the persistence write mapper still reject
+inconsistent new or edited line totals. This change does not rewrite that history.
 
 The helper keeps a private decimal.js constructor with 40 significant digits and explicit midpoint rounding. It does not change global library configuration or expose Decimal objects through component props. Forty significant digits cover multiplication of the supported stored operands; this setting is separate from the explicit two-decimal line rounding. See the [decimal.js API](https://mikemcl.github.io/decimal.js/) for independent constructors and rounding operations.
 
