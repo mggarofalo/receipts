@@ -62,10 +62,10 @@ async function rejectedAction(url,body) {
 }
 function postgresEvidence() {
   const name=ready.RunId+'-postgres';
-  const inspected=JSON.parse(execFileSync('docker',['inspect',name,'--format','{{json .}}'],{encoding:'utf8'}));
+  const inspected=JSON.parse(execFileSync('docker',['inspect',name,'--format','{"Id":{{json .Id}},"Name":{{json .Name}},"State":{"Running":{{json .State.Running}}},"Mounts":{{json .Mounts}}}'],{encoding:'utf8'}));
   assert.equal(inspected.Name,'/'+name);assert(inspected.State.Running,'Task PostgreSQL must remain running');
   const query=`SELECT json_build_object('items',(SELECT coalesce(json_agg(x ORDER BY x."Id"),'[]') FROM receipts."ReceiptItems" x WHERE x."DeletedAt" IS NULL),'receipts',(SELECT coalesce(json_agg(x ORDER BY x."Id"),'[]') FROM receipts."Receipts" x WHERE x."DeletedAt" IS NULL),'identities',(SELECT coalesce(json_agg(x ORDER BY x."Id"),'[]') FROM matching."NormalizedDescriptions" x),'mappings',(SELECT coalesce(json_agg(x ORDER BY x."Id"),'[]') FROM matching."NormalizationSourceMappings" x),'operations',(SELECT coalesce(json_agg(x ORDER BY x."Id"),'[]') FROM matching."NormalizationCatalogOperations" x),'members',(SELECT coalesce(json_agg(x ORDER BY x."Id"),'[]') FROM matching."NormalizationCatalogMembers" x));`;
-  const state=JSON.parse(execFileSync('docker',['exec',name,'psql','-U','postgres','-d','receiptsdb','-X','-A','-t','-v','ON_ERROR_STOP=1','-c',query],{encoding:'utf8',maxBuffer:16*1024*1024}));
+  const state=JSON.parse(execFileSync('docker',['exec',name,'sh','-c','PGPASSWORD="$POSTGRES_PASSWORD" exec psql "$@"','sh','-U','postgres','-d','receiptsdb','-X','-A','-t','-v','ON_ERROR_STOP=1','-c',query],{encoding:'utf8',maxBuffer:16*1024*1024}));
   return {containerId:inspected.Id,mounts:inspected.Mounts.map(({Type,Name,Source,Destination})=>({Type,Name,Source,Destination})),state};
 }
 async function assertDatabase(bindings,identities) {
@@ -103,12 +103,12 @@ async function browser(login,fn) {
   const page=await context.newPage();
   try {await fn(page,expect);} catch(e) {await page.screenshot({path:path.join(out,`failure-${Date.now()}.png`),fullPage:true});throw e;} finally {await b.close();}
 }
-async function select(page,label,value) {
+async function select(page,label,value,{allowLocationCreation=false}={}) {
   await page.getByRole('combobox',{name:label}).click();
   // Card options also render their last four digits in the accessible name.
   // Filtering preserves strict uniqueness while allowing that real UI detail.
   const option=page.getByRole('option').filter({hasText:value});
-  if(!/^Location/.test(label.source ?? String(label))) {await option.click();return;}
+  if(!allowLocationCreation) {await option.click();return;}
   if(await option.count()) await option.click();
   else {await page.getByPlaceholder('Search locations...').fill(value);await page.getByRole('button',{name:`Use "${value}"`,exact:true}).click();}
 }
@@ -213,7 +213,7 @@ if(phase==='arrange') {
   const r=gold.receipts[0];
   await browser(login,async(page,expect)=>{
     await page.goto('/receipts/new');
-    await select(page,/^Location/,r.location);
+    await select(page,/^Location/,r.location,{allowLocationCreation:true});
     await page.getByPlaceholder('MM/DD/YYYY').first().fill('09/01/2026');
     for(const i of r.items) {
       await page.getByPlaceholder('Item description').fill(i.description);
