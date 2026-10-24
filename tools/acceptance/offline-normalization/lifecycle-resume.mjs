@@ -1,11 +1,57 @@
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 
-export function assertRevisionTransition(transition,original,head,workingTree) {
+export function assertRevisionTransition(transition,original,head,workingTree,changedPaths=[]) {
   assert.equal(transition.runId,original.RunId);
   for(const key of ['previousRevision','candidateRevision']) assert.match(transition[key],/^[a-f0-9]{40}$/i);
   assert.equal(transition.previousRevision,original.Revision,'Transition does not start at the retained runtime revision');
-  assert.equal(transition.candidateRevision,head,'Transition does not name the integrated checkout revision');
   assert.equal(workingTree.trim(),'','Commit the integrated candidate and harness before resuming');
+  assert.match(head,/^[a-f0-9]{40}$/i);
+  if(transition.candidateRevision!==head) {
+    assert(Array.isArray(changedPaths) && changedPaths.length>0,'A later harness revision requires the complete candidate-to-HEAD path diff');
+    assert(changedPaths.every(p=>p.startsWith('tools/acceptance/offline-normalization/') || p.startsWith('docs/')),'Application source differs from the recorded running candidate');
+  }
+  return {applicationRevision:transition.candidateRevision,harnessRevision:head};
+}
+
+export async function runAuthenticationBoundary({verifyUpgrade,authenticate,captureBaseline}) {
+  await verifyUpgrade();
+  const login=await authenticate();
+  return {login,postgres:await captureBaseline()};
+}
+
+// An explicit private assessment bridges only the single retained login from the
+// known failed attempt. Never filter audit rows or grant an entity-wide exception.
+export function assertAuthBoundaryRecovery({record,before,after,retainedAfter,addedAudits,summary,runId,applicationRevision,beforePostgresSha256}) {
+  assert.equal(record.kind,'assessed-auth-boundary-20261024');
+  assert.equal(record.failedAttempt,'lifecycle-integrated-636a4e0f');
+  assert.equal(record.runId,runId);assert.equal(record.applicationRevision,applicationRevision);
+  assert.equal(record.beforePostgresSha256,beforePostgresSha256);
+  assert.deepEqual(after,retainedAfter,'Live state differs from the independently retained failed boundary');
+  for(const [key,value] of Object.entries({status:'failed-before-lifecycle-mutations',exitCode:1,failedAssertion:'Upgrade changed complete retained PostgreSQL state',settledSamples:2,samplesEqual:true,postgresContainerPreserved:true,newReceiptCreations:0,newLifecycleMutationRequests:0,completedNewLifecycleCheckpoints:0,lifecycleSuccessRecord:false,runnerLoginAddedAuthAudit:true})) assert.equal(summary[key],value,`Unsupported failed-run assessment: ${key}`);
+  assert.equal(addedAudits.length,1,'Only the known single login audit is assessed');
+  const [audit]=addedAudits;
+  const digest=crypto.createHash('sha256').update(JSON.stringify(audit)).digest('hex');
+  assert.equal(digest,record.auditRowSha256,'The retained login audit hash differs');
+  assert.equal(audit.Id,record.auditId);assert.equal(audit.EntityId,record.userId);
+  assert.equal(audit.EntityType,'ApplicationUser');assert.equal(audit.Action,'Update');
+  assert(before.state.audits.some(row=>row.EntityType==='ApplicationUser' && row.EntityId===audit.EntityId),'Assessed user has no independently retained prior audit identity');
+  assert.equal(audit.ChangedByUserId,null);assert.equal(audit.ChangedByApiKeyId,null);
+  const changes=JSON.parse(audit.ChangesJson);
+  assert.deepEqual(changes.map(c=>c.FieldName).sort(),['ConcurrencyStamp','LastLoginAt','RefreshSessionId','RefreshToken','RefreshTokenExpiresAt'].sort());
+  for(const change of changes) assert.deepEqual(Object.keys(change).sort(),['FieldName','OldValue','NewValue'].sort());
+  const at=Date.parse(audit.ChangedAt),start=Date.parse(record.failedRunStartedUtc),stop=Date.parse(record.failedRunStoppedUtc);
+  assert(Number.isFinite(at) && Number.isFinite(start) && Number.isFinite(stop) && start<=at && at<=stop,'Login audit is outside the retained failed execution');
+  const loginAt=Date.parse(changes.find(c=>c.FieldName==='LastLoginAt').NewValue);
+  assert(Number.isFinite(loginAt) && Math.abs(loginAt-at)<5000,'Audit does not describe this login time');
+  assert.equal(summary.auditsBefore,before.state.audits.length);assert.equal(summary.auditsAfter,before.state.audits.length+1);
+  assert(!before.state.audits.some(row=>row.Id===audit.Id),'Assessed row already existed before the upgrade');
+  const expected=structuredClone(before);expected.state.audits.push(audit);
+  // PostgreSQL orders complete JSON rows textually, so compare audit multisets
+  // while preserving each byte of every row and all other snapshot fields.
+  const sorted=pg=>{const result=structuredClone(pg);result.state.audits.sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b)));return result;};
+  assert.deepEqual(sorted(after),sorted(expected),'The assessed login does not explain the complete PostgreSQL difference');
+  return structuredClone(after);
 }
 
 export function assertUpgradePreserved(before,after,beforeMigrations,afterMigrations,allowedAddedMigrations) {

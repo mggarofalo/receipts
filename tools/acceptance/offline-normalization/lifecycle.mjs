@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
-import { assertLifecycleResume, assertSettled, assertRevisionTransition, assertUpgradePreserved } from './lifecycle-resume.mjs';
+import { assertLifecycleResume, assertSettled, assertRevisionTransition, assertUpgradePreserved, assertAuthBoundaryRecovery, runAuthenticationBoundary } from './lifecycle-resume.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const read = p => JSON.parse(fs.readFileSync(p, 'utf8').replace(/^\uFEFF/, ''));
@@ -94,13 +94,15 @@ async function main() {
     assert(transition,'Resume requires transition=PRIVATE_REVISION_RECORD');
     assert.equal(launchSource.RunId,ready.RunId);
     const git=argv=>execFileSync('git',argv,{cwd:root,encoding:'utf8',windowsHide:true}).trim();
-    assertRevisionTransition(transition,launchSource,git(['rev-parse','HEAD']),git(['status','--porcelain','--untracked-files=normal']));
+    const head=git(['rev-parse','HEAD']);
+    assert.match(transition.candidateRevision,/^[a-f0-9]{40}$/i);
+    const revisions=assertRevisionTransition(transition,launchSource,head,git(['status','--porcelain','--untracked-files=normal']),git(['diff','--name-only','--no-renames',transition.candidateRevision,head]).split(/\r?\n/).filter(Boolean));
     const prior=path.resolve(args.prior); assert(inside(runtime,prior) && prior!==runtime);
     const files=['failure.json','baseline.json','before-stale-item.db',...Array.from({length:3},(_,i)=>`created-${i+1}.json`),...Array.from({length:26},(_,i)=>`request-${i+2}.json`),...Array.from({length:26},(_,i)=>`response-${i+2}.json`)];
     assert(!fs.existsSync(path.join(prior,'lifecycle.json')),'Prior lifecycle already passed');
     assert(!fs.readdirSync(prior).some(n=>/^request-\d+\.json$/.test(n) && Number(n.match(/\d+/)[0])>27),'Unsupported later mutation journal');
     const bundle={failure:read(path.join(prior,'failure.json')),baseline:read(path.join(prior,'baseline.json')),created:Array.from({length:3},(_,i)=>read(path.join(prior,`created-${i+1}.json`))),requests:Array.from({length:26},(_,i)=>read(path.join(prior,`request-${i+2}.json`))),responses:Array.from({length:26},(_,i)=>read(path.join(prior,`response-${i+2}.json`)))};
-    resume={...assertLifecycleResume(bundle,ready.RunId,records.sourceRestore.bSha256),prior,baseline:bundle.baseline,expected:snapshot(path.join(prior,'before-stale-item.db')),files:Object.fromEntries(files.map(name=>[name,hash(path.join(prior,name))]))};
+    resume={...assertLifecycleResume(bundle,ready.RunId,records.sourceRestore.bSha256),revisions,prior,baseline:bundle.baseline,expected:snapshot(path.join(prior,'before-stale-item.db')),files:Object.fromEntries(files.map(name=>[name,hash(path.join(prior,name))]))};
     assert.equal(resume.baseline.followupHash,followupHash);
     assert.deepEqual(resume.baseline.snapshot.tables,baseline.tables);
     resume.transitionFiles={[path.resolve(args.transition)]:hash(path.resolve(args.transition)),[path.join(runtime,'source.json')]:hash(path.join(runtime,'source.json'))};
@@ -111,7 +113,37 @@ async function main() {
       resume.transitionFiles[retained]=transition[key+'Sha256'];
       resume[key]=read(retained);
     }
+    if(args.authRecovery) {
+      const recordPath=path.resolve(args.authRecovery);
+      assert(inside(runtime,recordPath),'Auth recovery record must remain private in this runtime');
+      const record=read(recordPath);resume.transitionFiles[recordPath]=hash(recordPath);
+      const failed=path.join(runtime,record.failedAttempt);
+      assert.equal(path.basename(failed),'lifecycle-integrated-636a4e0f');assert.equal(path.dirname(failed),runtime);
+      const load=(entry,expectedParent)=>{
+        const file=path.resolve(entry.path);assert.equal(path.dirname(file),expectedParent);
+        assert.equal(hash(file),entry.sha256,'Private auth recovery evidence hash mismatch');
+        resume.transitionFiles[file]=entry.sha256;return file;
+      };
+      assert.equal(load(record.evidence.originalBefore,path.dirname(path.resolve(transition.beforePostgresPath))),path.resolve(transition.beforePostgresPath));
+      assert.equal(record.evidence.originalBefore.sha256,transition.beforePostgresSha256);
+      assert.equal(load(record.evidence.transition,path.dirname(path.resolve(args.transition))),path.resolve(args.transition));
+      const summaryPath=load(record.evidence.summary,failed),auditsPath=load(record.evidence.addedAudits,failed);
+      assert.equal(path.basename(summaryPath),'safe-stop-summary.json');assert.equal(path.basename(auditsPath),'added-audit-private.json');
+      const summary=read(summaryPath);assert.equal(summary.candidateRevision,transition.candidateRevision);
+      assert.equal(record.evidence.settled.length,2);
+      const samples=record.evidence.settled.map(entry=>{
+        const file=load(entry,failed);assert.match(path.basename(file),/^initial-settlement-\d+\.json$/);return read(file);
+      });
+      assert.notEqual(record.evidence.settled[0].path,record.evidence.settled[1].path);assert.deepEqual(samples[0],samples[1]);
+      const log=load(record.evidence.log,runtime);assert.equal(path.basename(log),record.failedAttempt+'.log');
+      assert.equal(hash(log),summary.logSha256);assert(fs.readFileSync(log,'utf8').includes(summary.failedAssertion));
+      assert(fs.readFileSync(log,'utf8').includes(record.auditId));assert(fs.readFileSync(log,'utf8').includes(record.userId));
+      const logStat=fs.statSync(log);
+      assert.equal(record.failedRunStartedUtc,logStat.birthtime.toISOString());assert.equal(record.failedRunStoppedUtc,logStat.mtime.toISOString());
+      resume.authRecovery={record,summary,addedAudits:read(auditsPath),retainedAfter:samples[0]};
+    }
   }
+  assert(!args.authRecovery || resume,'Auth recovery requires the assessed lifecycle resume');
   fs.mkdirSync(out);
   const save = (name,value) => fs.writeFileSync(path.join(out,name), JSON.stringify(value,null,2), {flag:'wx'});
   const stamp = () => ({runId:ready.RunId,utc:new Date().toISOString(),phase:'lifecycle',bSha256:records.sourceRestore.bSha256});
@@ -133,9 +165,6 @@ async function main() {
   }
   const secrets = read(path.join(runtime,'secrets.json'));
   const password = read(path.join(runtime,'acceptance-password.json')).password;
-  await pause(65000);
-  const login = await request('/api/auth/login',{email:secrets.AdminEmail,password});
-  assert.equal(login.mustResetPassword,false); token = login.accessToken;
   async function exported(name) {
     await pause(Math.max(0,lastRequest+850-Date.now()));lastRequest=Date.now();
     const response = await fetch(new URL('/api/backup/export',ready.Api),{method:'POST',headers:{Authorization:`Bearer ${token}`},signal:AbortSignal.timeout(300000)});
@@ -168,20 +197,31 @@ async function main() {
     }
     throw Error('PostgreSQL projections did not settle; no mutation attempted at this gate');
   }
-  const currentPg=await settled('initial-settlement');
+  const {login,postgres:currentPg}=await runAuthenticationBoundary({
+    verifyUpgrade:async()=>{
+      const preAuthPg=await settled('initial-settlement');
+      if(resume) {
+        assert.equal(transition.postgresContainerId,preAuthPg.container.Id);
+        const migrations=migrationHistory();
+        const expected=resume.authRecovery?assertAuthBoundaryRecovery({...resume.authRecovery,before:resume.beforePostgres,after:preAuthPg,runId:ready.RunId,applicationRevision:resume.revisions.applicationRevision,beforePostgresSha256:transition.beforePostgresSha256}):resume.beforePostgres;
+        assertUpgradePreserved(expected,preAuthPg,resume.beforeMigrationHistory,migrations,transition.allowedAddedMigrations);
+        journal('upgrade-preserved.json',{...stamp(),postgres:preAuthPg,migrations,...resume.revisions,authRecovery:resume.authRecovery?.record,strictComparisonBeforeAuthentication:true});
+      }
+    },
+    authenticate:async()=>{
+      await pause(65000);
+      const value=await request('/api/auth/login',{email:secrets.AdminEmail,password});
+      assert.equal(value.mustResetPassword,false);token=value.accessToken;return value;
+    },
+    captureBaseline:()=>settled('authenticated-lifecycle-settlement')
+  });
   const originalPg=resume?.baseline.postgres ?? currentPg;
-  if(resume) assert.equal(transition.postgresContainerId,currentPg.container.Id);
-  if(resume) {
-    const migrations=migrationHistory();
-    assertUpgradePreserved(resume.beforePostgres,currentPg,resume.beforeMigrationHistory,migrations,transition.allowedAddedMigrations);
-    journal('upgrade-preserved.json',{...stamp(),postgres:currentPg,migrations});
-  }
   assert.equal(currentPg.container.Id,originalPg.container.Id); assert.deepEqual(currentPg.container.Mounts,originalPg.container.Mounts);
   assert.equal(currentPg.state.items.filter(i => !i.DeletedAt).length,resume?25:22);
   assert.equal(currentPg.state.receipts.filter(i => !i.DeletedAt).length,resume?18:15);
   assert.deepEqual((await exported('before-lifecycle.db')).tables,resume?.expected.tables ?? baseline.tables,'Current installation differs from retained lifecycle boundary');
-  save('baseline.json',{...stamp(),followupHash,prerequisites:records,postgres:originalPg,snapshot:baseline});
-  if(resume) save('resume.json',{...stamp(),prior:resume.prior,files:resume.files,syntheticReceiptIds:resume.created,priorFailureRetained:true,newCreationsBeforeStaleGate:0,originalFailurePassed:false,launchSource:read(path.join(runtime,'source.json')),transition,transitionSha256:hash(path.resolve(args.transition))});
+  save('baseline.json',{...stamp(),followupHash,prerequisites:records,postgres:currentPg,preservationPostgres:originalPg,snapshot:baseline,authenticationCompleted:true});
+  if(resume) save('resume.json',{...stamp(),...resume.revisions,prior:resume.prior,files:resume.files,syntheticReceiptIds:resume.created,priorFailureRetained:true,newCreationsBeforeStaleGate:0,originalFailurePassed:false,launchSource:read(path.join(runtime,'source.json')),transition,transitionSha256:hash(path.resolve(args.transition)),authRecovery:resume.authRecovery?.record});
   let step = 0; const completed = resume?['provider-unavailable-manual-entry']:[];
   async function checkpoint(name, evidence) {
     const pg = postgres(); assert.equal(pg.container.Id,originalPg.container.Id); assert.deepEqual(pg.container.Mounts,originalPg.container.Mounts);

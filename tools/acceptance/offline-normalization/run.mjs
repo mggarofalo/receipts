@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { assertIdentities, assertHistory, assertFacts, assertInitial, assertPortableGold, assertOperationArchiveUnchanged, assertRestoredOperations, assertRepeatedRestore } from './oracle.mjs';
 import { retainedRestoreUploads, assertFrozenInputs } from './restore-resume.mjs';
+import { retainCorruptResponse, assertCorruptResponse, completeBusinessEvidence, assertCompleteRollback, assertCorruptRevisionBoundary } from './corrupt-evidence.mjs';
 
 // This runner is the independent oracle. Never pass its gold or bindings to a proposer.
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -48,7 +49,7 @@ async function authenticate() {
   let login = await api('/api/auth/login',{email:secrets.AdminEmail,password});
   token=login.accessToken;
   if(login.mustResetPassword) {
-    assert.notEqual(phase,'restore-resume','Read-only resume cannot change a password');
+    assert(!['restore-resume','reject-corrupt'].includes(phase),'Read-only verification cannot change a password');
     const replacement = crypto.randomBytes(32).toString('hex')+'aA1!';
     await api('/api/auth/change-password',{currentPassword:password,newPassword:replacement});
     fs.writeFileSync(saved,JSON.stringify({password:replacement}),{flag:'wx'});
@@ -62,10 +63,15 @@ async function exportDb(name) {
   assert(r.ok,`Export ${r.status}`); const dest=path.join(out,name);
   fs.writeFileSync(dest,Buffer.from(await r.arrayBuffer()),{flag:'wx'}); return dest;
 }
-async function importDb(p,expected) {
+async function importDb(p,expected,responseName) {
   assert.equal(hash(p),expected,'Exact B hash changed');
   const data=new FormData();data.append('file',new Blob([fs.readFileSync(p)]),'backup.db');
   const r=await fetch(new URL('/api/backup/import',ready.Api),{method:'POST',headers:{Authorization:`Bearer ${token}`},body:data,signal:AbortSignal.timeout(300000)});
+  if(responseName) {
+    recordResponse('POST','/api/backup/import',r);
+    const retained=await retainCorruptResponse(r,path.join(out,responseName));
+    assert.equal(hash(p),expected);return retained;
+  }
   assert.equal(hash(p),expected);return {status:r.status,body:await r.json()};
 }
 async function rejectedAction(url,body) {
@@ -243,6 +249,26 @@ async function verifyBrowser(login,bindings) {
 }
 let checkpoint='authentication';
 try {
+let corruptProvenance,corruptTransition;
+if(phase==='reject-corrupt') {
+  checkpoint='corrupt-revision-preflight';
+  assert(args.b&&args.sha256);assert.equal(hash(path.resolve(args.b)),args.sha256,'Exact B hash changed');
+  const launcherSource=read(path.join(runtime,'source.json'));
+  corruptTransition=args.transition?read(path.resolve(args.transition)):null;
+  const git=argv=>execFileSync('git',argv,{cwd:root,encoding:'utf8'}).trim();
+  const head=git(['rev-parse','HEAD']),workingTree=git(['status','--porcelain','--untracked-files=normal']);
+  const applicationRevision=corruptTransition?.candidateRevision??launcherSource.Revision;
+  assert.match(applicationRevision,/^[a-f0-9]{40}$/i);
+  const changedPaths=git(['diff','--name-only','--no-renames',applicationRevision,head]).split(/\r?\n/).filter(Boolean);
+  const revisions=assertCorruptRevisionBoundary({transition:corruptTransition,launcherSource,runId:ready.RunId,head,workingTree,changedPaths});
+  if(corruptTransition)assert.equal(postgresEvidence().containerId,corruptTransition.postgresContainerId);
+  corruptProvenance={...revisions,harnessDirty:workingTree,
+    launcherSourceSha256:hash(path.join(runtime,'source.json')),
+    runnerSha256:hash(fileURLToPath(import.meta.url)),helperSha256:hash(path.join(root,'tools/acceptance/offline-normalization/corrupt-evidence.mjs')),
+    revisionValidatorSha256:hash(path.join(root,'tools/acceptance/offline-normalization/lifecycle-resume.mjs')),
+    revisionTransition:corruptTransition?{path:path.resolve(args.transition),sha256:hash(path.resolve(args.transition)),record:corruptTransition}:null};
+  durableSave('corrupt-provenance.json',{...stamp(),...corruptProvenance,bPath:path.resolve(args.b),bSha256:hash(path.resolve(args.b))});
+}
 const login=await authenticate();
 if(phase==='arrange') {
   assert.equal(unwrap(await api('/api/receipts?limit=500')).length,0,'Arrange requires empty task database');
@@ -389,15 +415,38 @@ if(phase==='arrange') {
   save('followups.json',{...stamp(),created,evidence:await assertGold(bindings,true)});
 } else if(phase==='reject-corrupt') {
   assert(args.b&&args.sha256);const b=path.resolve(args.b);assert.equal(hash(b),args.sha256);
+  const provenance=corruptProvenance,transition=corruptTransition;
+  const corruptPostgres=()=>{
+    const pg=postgresEvidence();
+    if(transition)assert.equal(pg.containerId,transition.postgresContainerId);
+    const query=q=>execFileSync('docker',['exec',ready.RunId+'-postgres','sh','-c','PGPASSWORD="$POSTGRES_PASSWORD" exec psql "$@"','sh','-U','postgres','-d','receiptsdb','-X','-A','-t','-q','-v','ON_ERROR_STOP=1','-c',q],{encoding:'utf8',maxBuffer:64*1024*1024});
+    return {...pg,completeBusinessAndEntityAudit:completeBusinessEvidence(query)};
+  };
   const results=[];
   for(const name of ['truncated','dangling-mapping','mapping-fingerprint','mapping-revision','review-fingerprint','unsupported-evidence']) {
-    const before=await exportDb(`before-${name}.db`),pgBefore=postgresEvidence(),corrupt=path.join(out,`${name}-B.db`);
+    const before=await exportDb(`before-${name}.db`),pgBefore=corruptPostgres(),corrupt=path.join(out,`${name}-B.db`);
+    durableSave(`postgres-before-${name}.json`,pgBefore);
     if(name==='truncated')fs.writeFileSync(corrupt,fs.readFileSync(b).subarray(0,100),{flag:'wx'});
     else execFileSync('python',[path.join(root,'tools/acceptance/offline-normalization/corrupt.py'),b,corrupt,name],{stdio:'pipe'});
-    const result=await importDb(corrupt,hash(corrupt));assert.equal(result.status,400,`${name} was not explicitly rejected`);assert(result.body.detail,`${name} requires explicit problem detail`);
-    const after=await exportDb(`after-${name}.db`);assert.deepEqual(facts(before).tables,facts(after).tables,`${name} rejection changed portable state`);assert.deepEqual(postgresEvidence(),pgBefore,`${name} rejection changed PostgreSQL`);results.push({case:name,sha256:hash(corrupt),result});
+    durableSave(`request-${name}.json`,{utc:new Date().toISOString(),method:'POST',url:new URL('/api/backup/import',ready.Api).href,case:name,artifactPath:corrupt,artifactSha256:hash(corrupt),artifactBytes:fs.statSync(corrupt).size});
+    const response=await importDb(corrupt,hash(corrupt),`response-${name}.json`);
+    // Preserve both rollback observations even if the response contract fails.
+    const after=await exportDb(`after-${name}.db`),pgAfter=corruptPostgres();
+    durableSave(`postgres-after-${name}.json`,pgAfter);
+    const result={...response,body:assertCorruptResponse(response,name)};
+    assert.deepEqual(facts(before).tables,facts(after).tables,`${name} rejection changed portable state`);
+    assertCompleteRollback(pgBefore,pgAfter,name);
+    assert.deepEqual(pgAfter,pgBefore,`${name} rejection changed PostgreSQL`);results.push({case:name,sha256:hash(corrupt),result});
   }
-  assert.equal(hash(b),args.sha256);save('corrupt.json',{...stamp(),bSha256:hash(b),results});
+  assert.equal(hash(b),args.sha256);
+  assert.equal(hash(path.join(runtime,'source.json')),provenance.launcherSourceSha256,'Runtime source evidence changed');
+  if(transition)assert.equal(hash(path.resolve(args.transition)),provenance.revisionTransition.sha256,'Runtime transition evidence changed');
+  assert.equal(hash(fileURLToPath(import.meta.url)),provenance.runnerSha256,'Runner changed during rejection checks');
+  assert.equal(hash(path.join(root,'tools/acceptance/offline-normalization/corrupt-evidence.mjs')),provenance.helperSha256,'Corrupt helper changed during rejection checks');
+  assert.equal(hash(path.join(root,'tools/acceptance/offline-normalization/lifecycle-resume.mjs')),provenance.revisionValidatorSha256,'Revision validator changed during rejection checks');
+  assert.equal(execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),provenance.harnessRevision,'Harness revision changed');
+  assert.equal(execFileSync('git',['status','--porcelain','--untracked-files=normal'],{cwd:root,encoding:'utf8'}).trim(),'','Harness working tree changed');
+  save('corrupt.json',{...stamp(),...provenance,bSha256:hash(b),results});
 } else if(phase==='sensitivity') {
   assert(args.b&&args.sha256);const b=path.resolve(args.b);assert.equal(hash(b),args.sha256);const bindings=read(path.join(source,'bindings.json'));const evidence=await assertGold(bindings);
   const items=Object.fromEntries(Object.values(evidence.trips).flatMap(t=>t.receipt.items).map(i=>[i.id,structuredClone(i)]));

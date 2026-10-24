@@ -221,8 +221,13 @@ If application fixes are integrated between attempts, preserve the AppHost and
 exact PostgreSQL container/mounts. Retain a private revision transition JSON with
 `runId`, full 40-character `previousRevision` and `candidateRevision`, and
 `postgresContainerId`; pass its path as `transition=<private JSON>`. The previous
-revision must equal the original runtime `source.json` revision; the candidate
-must equal the checkout's actual HEAD, with a completely clean working tree.
+revision must equal the original runtime `source.json` revision. The candidate
+names the actual compiled application revision. The checkout must be completely
+clean. A later harness HEAD is permitted only when the complete
+`git diff --name-only --no-renames <candidateRevision> HEAD` contains paths solely
+under `tools/acceptance/offline-normalization/` or `docs/`. Any application-source
+path stops the run. Evidence records `applicationRevision` and `harnessRevision`
+separately; a harness commit never relabels the running application binaries.
 Commit the integrated product fix and harness before preparing this record.
 Also retain `beforePostgresPath` / `beforePostgresSha256` for the complete settled
 pre-upgrade lifecycle PostgreSQL snapshot, `beforeMigrationHistoryPath` /
@@ -236,6 +241,37 @@ the record and hash separately from original launcher `source.json`. The operato
 must establish that the running binaries match this transition record before
 launching; the record alone does not prove binary identity. Do not reprovision the
 runtime or rerun the original creation phase to obtain a clean baseline.
+
+The strict settled PostgreSQL and migration comparison runs **before** login.
+After successful authentication, the driver captures a separate fresh complete
+PostgreSQL lifecycle baseline. This prevents the driver's own login audit from
+being mistaken for an upgrade write. Every subsequent rejected-write measurement
+still compares complete fresh before/after snapshots, including all audit rows.
+
+The retained `lifecycle-integrated-636a4e0f` attempt logged in before its upgrade
+comparison and stopped before lifecycle mutations. Its one already retained login
+audit can be accounted for only by an explicitly assessed private
+`authRecovery=<private JSON>` record of kind `assessed-auth-boundary-20261024`.
+The record binds the original pre-upgrade snapshot/hash and transition/hash,
+failed-run summary/hash and log/hash, two identical complete failed-run samples,
+and the exact single added audit ID, user ID and SHA-256 of its JSON row. The
+audit time must fall inside that failed log's retained creation/modification
+interval and match its `LastLoginAt`; its five fields must be exactly
+`ConcurrencyStamp`, `LastLoginAt`, `RefreshSessionId`, `RefreshToken`, and
+`RefreshTokenExpiresAt`. The user must also occur in the original retained audit
+history. The log must independently contain that audit/user identity and original
+failure. The assessed samples must equal the original complete snapshot plus
+exactly this row, and current pre-authentication state must equal those samples.
+All other rows, fields, container identity and mounts must match exactly. This
+does not delete an audit, filter authentication entities, authorize additional
+retained login rows, or turn the failed attempt into passing evidence. The record
+and all referenced files are checked again before lifecycle success is written.
+
+For `run.mjs reject-corrupt`, optional `transition=<private JSON>` similarly binds
+the actual application revision to a clean later harness HEAD; the only permitted
+candidate-to-HEAD changes are within the same harness/docs paths. Retain that
+transition/hash and the separate application and harness revisions in corruption
+evidence. This records provenance; it does not itself prove running binary identity.
 
 Resume rechecks all prerequisites, frozen A/followup hashes and the original
 22-item/15-receipt baseline, and requires the current portable state to exactly
