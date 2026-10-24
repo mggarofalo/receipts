@@ -3,6 +3,15 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useLocation } from "react-router";
 import { CatalogTab } from "./CatalogTab";
+import { useNormalizationInboxPreferences } from "@/hooks/useNormalizationInbox";
+vi.mock("@/hooks/useNormalizationInbox", () => ({
+  useNormalizationInboxPreferences: vi.fn(),
+}));
+vi.mock("./CatalogInbox", () => ({
+  CatalogInbox: ({ onRun }: { onRun: (id: string) => void }) => (
+    <button onClick={() => onRun("durable-run")}>Open saved suggestions</button>
+  ),
+}));
 import {
   useCatalogCoverage,
   useCatalogOperation,
@@ -86,6 +95,9 @@ const coverage = {
 beforeEach(() => {
   vi.clearAllMocks();
   callbacks.length = 0;
+  vi.mocked(useNormalizationInboxPreferences).mockReturnValue(
+    ready({ isOwner: false }) as never,
+  );
   vi.mocked(useCatalogCoverage).mockReturnValue(ready(coverage) as never);
   vi.mocked(useCatalogOperations).mockReturnValue(ready([]) as never);
   vi.mocked(useCatalogOperation).mockReturnValue(ready(undefined) as never);
@@ -106,6 +118,25 @@ const show = (url = "/normalized-descriptions?tab=catalog") =>
       <Location />
     </MemoryRouter>,
   );
+
+it("opens the durable suggestion run for the locally configured owner while provider discovery is offline", async () => {
+  vi.mocked(useAiConnection).mockReturnValue({
+    ...ready(undefined),
+    isError: true,
+  } as never);
+  vi.mocked(useNormalizationInboxPreferences).mockReturnValue(
+    ready({ isOwner: true }) as never,
+  );
+  vi.mocked(useAiRun).mockReturnValue(
+    ready({ id: "durable-run", state: "ready", proposals: [] }) as never,
+  );
+  show();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Open saved suggestions" }),
+  );
+  expect(screen.getByLabelText("URL")).toHaveTextContent("aiRun=durable-run");
+  expect(screen.getByText("Catalog AI review")).toBeVisible();
+});
 
 it("renders coverage loading and retryable errors without claiming all linked items are reviewed", () => {
   vi.mocked(useCatalogCoverage).mockReturnValue({

@@ -13,8 +13,14 @@ namespace Infrastructure.NormalizationAi;
 
 public sealed partial class NormalizationAiService
 {
-	public async Task<NormalizationAiRun> StartSourcesAsync(string actor, Guid clientRequestId,
+	public Task<NormalizationAiRun> StartSourcesAsync(string actor, Guid clientRequestId,
 		IReadOnlyList<NormalizationAiSourceSelection> sources, string model, CancellationToken cancellationToken)
+		=> StartSourcesCoreAsync(actor, clientRequestId, sources, model, null, cancellationToken);
+	internal Task<NormalizationAiRun> StartAutomaticSourceAsync(NormalizationAssistanceAttemptEntity attempt, CancellationToken cancellationToken)
+		=> StartSourcesCoreAsync(attempt.OwnerUserId, attempt.ClientRequestId,
+			[new(new(attempt.Location, attempt.Description, attempt.ItemCode), true, false)], attempt.Model, attempt, cancellationToken);
+	private async Task<NormalizationAiRun> StartSourcesCoreAsync(string actor, Guid clientRequestId,
+		IReadOnlyList<NormalizationAiSourceSelection> sources, string model, NormalizationAssistanceAttemptEntity? automatic, CancellationToken cancellationToken)
 	{
 		RequireOwner(actor);
 		if (clientRequestId == Guid.Empty || sources.Count is < 1 or > 50 || string.IsNullOrWhiteSpace(model) || model.Length > 200)
@@ -52,6 +58,8 @@ public sealed partial class NormalizationAiService
 			else
 			{
 				item = await NormalizationCatalogService.SourceItems(read, selection.Source)
+					.Where(item => automatic == null || read.NormalizationReviewWork.Any(work => work.ItemId == item.Id
+						&& work.SourceHash == automatic.SourceHash && work.SourceRevision == item.NormalizationRevision))
 					.Where(item => (item.NormalizationReviewState == NormalizationReviewState.NeedsReview
 						&& (item.NormalizedDescriptionId == null || selection.IncludeLegacyUnknown))
 						|| ((item.NormalizationOrigin == "mapped" || item.NormalizationOrigin == "excluded") && item.NormalizationAssignmentId != null
@@ -133,6 +141,22 @@ public sealed partial class NormalizationAiService
 				|| !await context.ReceiptItems.AnyAsync(item => item.Id == proposal.ReceiptItemId && item.NormalizationRevision == proposal.SourceRevision, cancellationToken)
 				|| !await context.Receipts.AnyAsync(receipt => receipt.Id == proposal.ReceiptId && receipt.NormalizationRevision == proposal.SourceReceiptRevision, cancellationToken))
 			{ throw Error(409, "source_changed", "The source identity changed before the label request could start. Refresh and select it again."); }
+		}
+		if (automatic is not null)
+		{
+			var consent = await context.NormalizationAssistancePreferences.SingleOrDefaultAsync(cancellationToken);
+			var attempt = await context.NormalizationAssistanceAttempts.SingleAsync(value => value.Id == automatic.Id, cancellationToken);
+			if (consent is not { Enabled: true } || consent.OwnerUserId != actor || consent.Revision != automatic.PreferenceRevision
+				|| attempt.Revision != automatic.Revision || attempt.State != "admitting" || attempt.RunId != null)
+			{ throw Error(409, "settings_changed", "Post-save assistance consent changed before admission."); }
+			foreach (var proposal in proposals)
+			{
+				if (!await context.NormalizationReviewWork.AnyAsync(work => work.ItemId == proposal.ReceiptItemId && work.SourceHash == automatic.SourceHash && work.SourceRevision == proposal.SourceRevision, cancellationToken)
+					|| !await context.ReceiptItems.AnyAsync(item => item.Id == proposal.ReceiptItemId && item.DeletedAt == null && item.NormalizationRevision == proposal.SourceRevision && item.NormalizationReviewState == NormalizationReviewState.NeedsReview, cancellationToken)
+					|| !await context.Receipts.AnyAsync(receipt => receipt.Id == proposal.ReceiptId && receipt.DeletedAt == null && receipt.NormalizationRevision == proposal.SourceReceiptRevision, cancellationToken))
+				{ throw Error(409, "source_changed", "The pending purchase changed before assistance admission."); }
+			}
+			attempt.RunId = created.Id; attempt.State = "admitted"; attempt.LeaseExpiresAt = null; attempt.ErrorCode = null; attempt.ErrorDetail = null; attempt.Revision = Guid.NewGuid();
 		}
 		context.NormalizationAiRuns.Add(created);
 		await context.SaveChangesAsync(cancellationToken);

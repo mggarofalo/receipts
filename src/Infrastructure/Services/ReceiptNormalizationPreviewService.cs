@@ -32,6 +32,10 @@ public sealed class ReceiptNormalizationPreviewService(IDbContextFactory<Applica
 		int total = await candidates.CountAsync(cancellationToken);
 		var page = await candidates.OrderBy(value => value.DisplayLabel ?? value.CanonicalName).ThenBy(value => value.Id).Skip(offset).Take(limit)
 			.Select(value => new ReceiptNormalizationCandidate(value.Id, value.NormalizationRevision, value.DisplayLabel ?? value.CanonicalName)).ToListAsync(cancellationToken);
-		return new(hash, mapping?.Id, mapping?.Revision, target?.Id, target?.Revision, target?.Name, mapping?.Exclude == true, page, total, offset, limit);
+		Guid?[] sourceTargets = await NormalizationCatalogService.SourceItems(context, key)
+			.Where(item => item.NormalizedDescriptionId != null).Select(item => item.NormalizedDescriptionId)
+			.Distinct().Take(2).ToArrayAsync(cancellationToken);
+		if (sourceTargets.Length > 1) { mapping = null; target = null; }
+		return new(hash, mapping?.Id, mapping?.Revision, target?.Id, target?.Revision, target?.Name, mapping?.Exclude == true, page, total, offset, limit, sourceTargets.Length > 1);
 	}
 }

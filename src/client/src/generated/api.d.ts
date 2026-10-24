@@ -4,6 +4,58 @@
  */
 
 export interface paths {
+    "/api/normalization-inbox": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List saved purchases still needing review */
+        get: operations["NormalizationInbox_List"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/normalization-inbox/preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read post-save assistance consent */
+        get: operations["NormalizationInbox_GetPreferences"];
+        /** Configure optional post-save suggestions */
+        put: operations["NormalizationInbox_UpdatePreferences"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/normalization-inbox/sources/{sourceHash}/retry-admission": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry a request that never started inference */
+        post: operations["NormalizationInbox_RetryAdmission"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/normalization-catalog/targets/{id}/preview-label": {
         parameters: {
             query?: never;
@@ -3024,6 +3076,62 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        NormalizationReviewReceiptResponse: {
+            /** Format: uuid */
+            receiptId: string;
+            /** Format: uuid */
+            itemId: string;
+            /** Format: date */
+            date: string;
+        };
+        NormalizationReviewInboxSourceResponse: {
+            sourceHash: string;
+            source: components["schemas"]["NormalizationSourceKey"];
+            /** Format: int32 */
+            purchaseCount: number;
+            /** Format: int32 */
+            receiptCount: number;
+            /** Format: date-time */
+            firstSeen: string;
+            receipts: components["schemas"]["NormalizationReviewReceiptResponse"][];
+            assistanceState: string;
+            /** Format: uuid */
+            attemptRevision?: string | null;
+            /** Format: uuid */
+            runId?: string | null;
+            errorCode?: string | null;
+            errorDetail?: string | null;
+        };
+        NormalizationReviewInboxPageResponse: {
+            items: components["schemas"]["NormalizationReviewInboxSourceResponse"][];
+            /** Format: int32 */
+            total: number;
+            /** Format: int32 */
+            offset: number;
+            /** Format: int32 */
+            limit: number;
+        };
+        NormalizationAssistancePreferencesResponse: {
+            isOwner: boolean;
+            enabled: boolean;
+            model?: string | null;
+            /** Format: int32 */
+            dailyLimit: number;
+            /** Format: uuid */
+            revision: string;
+        };
+        NormalizationAssistancePreferenceRequest: {
+            enabled: boolean;
+            model?: string | null;
+            /** Format: int32 */
+            dailyLimit: number;
+            /** Format: uuid */
+            expectedRevision: string;
+        };
+        NormalizationAdmissionRetryRequest: {
+            /** Format: uuid */
+            expectedRevision: string;
+        };
         NormalizationSourceKey: {
             location: string;
             description: string;
@@ -4459,6 +4567,8 @@ export interface components {
         };
         ReceiptNormalizationPreviewResponse: {
             sourceFingerprint: string;
+            /** @description This exact source has multiple recorded product identities; confirm individual purchases instead of remembering one unconditional mapping. */
+            sourceAmbiguous: boolean;
             /** Format: uuid */
             mappingId?: string | null;
             /** Format: uuid */
@@ -5308,6 +5418,244 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    NormalizationInbox_List: {
+        parameters: {
+            query?: {
+                q?: string;
+                offset?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NormalizationReviewInboxPageResponse"];
+                };
+            };
+            /** @description Request rejected */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request rejected */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request rejected */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request rejected */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    NormalizationInbox_GetPreferences: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NormalizationAssistancePreferencesResponse"];
+                };
+            };
+            /** @description Request rejected */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request rejected */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request rejected */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request rejected */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    NormalizationInbox_UpdatePreferences: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NormalizationAssistancePreferenceRequest"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NormalizationAssistancePreferencesResponse"];
+                };
+            };
+            /** @description Request rejected */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request rejected */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request rejected */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request rejected */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    NormalizationInbox_RetryAdmission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sourceHash: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NormalizationAdmissionRetryRequest"];
+            };
+        };
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NormalizationAssistancePreferencesResponse"];
+                };
+            };
+            /** @description Request rejected */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request rejected */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request rejected */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request rejected */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     NormalizationCatalog_PreviewLabel: {
         parameters: {
             query?: never;

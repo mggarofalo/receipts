@@ -58,6 +58,7 @@ public class ReceiptItemsController(IMediator mediator, ReceiptItemMapper mapper
 			TargetRevision = result.TargetRevision,
 			TargetName = result.TargetName,
 			Excluded = result.Excluded,
+			SourceAmbiguous = result.SourceAmbiguous,
 			Candidates = result.Candidates.Select(value => new API.Generated.Dtos.ReceiptNormalizationCandidate { Id = value.Id, Revision = value.Revision, Name = value.Name }).ToList(),
 			Total = result.Total,
 			Offset = result.Offset,

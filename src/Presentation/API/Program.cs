@@ -59,6 +59,8 @@ services.Configure<PiNormalizationRunnerOptions>(builder.Configuration.GetSectio
 services.AddSingleton<IChatGptRunner, PiNormalizationRunner>();
 services.AddScoped<NormalizationAiService>();
 services.AddScoped<NormalizationCatalogService>();
+services.AddScoped<NormalizationReviewInboxService>();
+services.AddScoped<Application.Normalization.INormalizationReviewInboxService>(provider => provider.GetRequiredService<NormalizationReviewInboxService>());
 services.AddScoped<Application.Normalization.INormalizationCatalogService>(provider => provider.GetRequiredService<NormalizationCatalogService>());
 services.AddScoped<INormalizationAiService>(provider => provider.GetRequiredService<NormalizationAiService>());
 
@@ -69,6 +71,7 @@ if (!isContractGeneration && !isChatGptCommand)
 	services.AddInfrastructureBackgroundServices();
 	services.AddHostedService<NormalizationAiWorker>();
 	services.AddHostedService<NormalizationCatalogWorker>();
+	services.AddHostedService<NormalizationReviewInboxWorker>();
 }
 
 // Build application

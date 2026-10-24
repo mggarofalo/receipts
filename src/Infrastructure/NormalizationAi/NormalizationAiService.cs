@@ -295,6 +295,12 @@ public sealed partial class NormalizationAiService(
 		};
 		Finish(run, "cancelled", "retried", "An explicit retry created a new run; earlier usage may still have been incurred.");
 		context.NormalizationAiRuns.Add(retry);
+		var automaticAttempt = await context.NormalizationAssistanceAttempts.SingleOrDefaultAsync(attempt => attempt.RunId == id, cancellationToken);
+		if (automaticAttempt is not null)
+		{
+			// Explicit retries retain inbox ownership; the scheduler still cannot replay inference.
+			automaticAttempt.RunId = retry.Id; automaticAttempt.Revision = Guid.NewGuid();
+		}
 		await context.SaveChangesAsync(cancellationToken);
 		await lease.CommitAsync(cancellationToken);
 		return ToModel(retry);
@@ -343,6 +349,9 @@ public sealed partial class NormalizationAiService(
 	internal static async Task FenceForRestoreAsync(ApplicationDbContext context, CancellationToken cancellationToken)
 	{
 		await NormalizationWriteGuard.AcquireWriteGateAsync(context, cancellationToken);
+		var preference = await context.NormalizationAssistancePreferences.SingleOrDefaultAsync(cancellationToken);
+		if (preference is not null) { preference.Enabled = false; preference.Revision = Guid.NewGuid(); }
+		await Infrastructure.Services.NormalizationReviewInboxService.CancelOutstandingAsync(context, "context_changed", DateTimeOffset.UtcNow, cancellationToken);
 		foreach (var operation in await context.NormalizationCatalogOperations.Where(operation => operation.State == "preview"
 			|| operation.State == "applying" || operation.State == "undoing" || operation.State == "paused" || operation.State == "undo_paused").ToListAsync(cancellationToken))
 		{

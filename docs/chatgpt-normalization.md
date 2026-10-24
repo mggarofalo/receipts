@@ -386,3 +386,51 @@ For local development, install the pinned runner dependencies as described in
 [runner/README.md](../runner/README.md), configure absolute bridge and private home
 paths, and invoke the same CLI switches through the API project. Keep credential
 storage outside the repository.
+
+## Maintaining new purchases after saving
+
+The catalog's **Saved purchases needing review** inbox groups outstanding purchases
+by the exact trimmed store, description and item code. It shows purchase counts,
+receipt links, first-seen dates and assistance status. Saving a valid receipt does
+not depend on ChatGPT being connected. Manual source review works independently of
+the optional connection. A queued, completed or failed suggestion is never evidence
+that a purchase has been verified.
+
+The configured connection owner can explicitly enable post-save suggestions,
+choose a model and set a daily limit (1–100 new source requests per UTC day).
+This sends saved source descriptions and catalog candidate evidence through the
+existing ChatGPT runner. It does not send keystrokes, approve identities, create
+products, merge products or apply a mapping. Review suggestions before applying
+them. The daily limit bounds source requests, not token consumption or billing.
+Repeated purchases of an already attempted exact source do not trigger another
+automatic inference request.
+
+Receipt saves register outstanding work in the same database transaction. A
+30-second database reconciliation repairs missing work markers and dirty direct-SQL
+observations, retaining each purchase's revision. It deliberately does not enroll
+untouched historical purchases; historical cleanup remains an explicit catalog
+operation. Restarts and missed in-process notifications cannot lose registered work.
+
+Admission persists a request ID before external connection/model checks. The short
+guarded write transaction verifies owner consent and source revisions, reserves
+the source and binds the attempt to its durable AI run atomically. The AI worker
+checks source revisions again before dispatch. Admission failures back off from
+30 seconds, with at most five attempts before pausing. Authentication failures
+require intervention. Once a run exists, the inbox never automatically retries
+inference; unknown outcomes may have consumed allowance. Use the existing explicit
+retry/cancel controls. Explicit retries keep the inbox linked to the new run.
+
+Changing assistance settings cancels outstanding automatic admission and queued or
+running automatic runs. Completed suggestions remain reviewable. Connection changes,
+backup restoration or a deployment owner change disable consent; an owner must
+enable it again. These deployment-local preferences and attempt records are not
+part of portable receipt backups. The durable run's existing privacy-retention
+policy continues to govern inference payloads and candidate evidence.
+
+Ownership: `ReceiptNormalizationPolicy` defines trust; the atomic receipt writer
+records purchase evidence and outstanding work; `NormalizationReviewInboxService`
+projects/reconciles pending work and manages opt-in admission; `NormalizationAiService`
+owns provider runs, reservations, cancellation, retry and explicit application.
+React renders those states and collects choices. An exact source with multiple
+recorded identities cannot silently reuse an unconditional mapping; confirm an
+individual purchase or resolve the source history first.
