@@ -1457,6 +1457,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/receipt-items/normalization-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get bounded advisory product candidates for receipt entry
+         * @description Available to enabled receipt-entry users. Returns active product identity and retrieval channels only; approved receipt examples and catalog management data are excluded. Selecting a candidate still requires preview and save revision checks.
+         */
+        get: operations["GetReceiptNormalizationCandidates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/receipt-items/normalization-preview": {
         parameters: {
             query?: never;
@@ -4543,6 +4563,15 @@ export interface components {
             transactions: components["schemas"]["TransactionResponse"][];
             items: components["schemas"]["ReceiptItemResponse"][];
             adjustments: components["schemas"]["AdjustmentResponse"][];
+        };
+        ReceiptNormalizationSuggestionResponse: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            revision: string;
+            canonicalName: string;
+            displayLabel?: string | null;
+            channels: string[];
         };
         ReceiptNormalizationPreviewRequest: {
             source: components["schemas"]["NormalizationSourceKey"];
@@ -9579,6 +9608,48 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReceiptResponse"][];
+                };
+            };
+        };
+    };
+    GetReceiptNormalizationCandidates: {
+        parameters: {
+            query: {
+                location: string;
+                description: string;
+                itemCode?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description At most twenty active candidates in advisory retrieval order */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReceiptNormalizationSuggestionResponse"][];
+                };
+            };
+            /** @description Invalid source */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description An enabled signed-in receipt-entry user is required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
         };

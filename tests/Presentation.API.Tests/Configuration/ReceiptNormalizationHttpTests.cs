@@ -154,8 +154,64 @@ public sealed class ReceiptNormalizationHttpTests
 		mediator.VerifyAll();
 	}
 
+	[Theory]
+	[InlineData("User")]
+	[InlineData("Admin")]
+	public async Task EntryCandidatesRequireAuthenticationAndReturnOnlyAdvisoryIdentity(string role)
+	{
+		var source = new NormalizationSourceKey("Store A", "FRANKS", "001");
+		Guid target = Guid.NewGuid(), revision = Guid.NewGuid();
+		var candidates = new Mock<IReceiptNormalizationCandidates>(MockBehavior.Strict);
+		candidates.Setup(x => x.GetCandidatesAsync("receipt-writer", source, It.IsAny<CancellationToken>()))
+			.ReturnsAsync([new ReceiptNormalizationSuggestion(target, revision, "Franks", "Beef franks", ["lexical"])]);
+		var mediator = new Mock<IMediator>(MockBehavior.Strict);
+		await using var app = await Start(mediator, enforceAuthentication: true, candidates: candidates);
+		using var client = app.GetTestClient();
+		const string url = "/api/receipt-items/normalization-candidates?location=Store%20A&description=FRANKS&itemCode=001";
+		using var anonymous = await client.GetAsync(url);
+		anonymous.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+		candidates.VerifyNoOtherCalls();
+		client.DefaultRequestHeaders.Add("Test-User", "receipt-writer");
+		client.DefaultRequestHeaders.Add("Test-Role", role);
+		using var response = await client.GetAsync(url);
+		response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+		using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+		var item = json.RootElement.EnumerateArray().Should().ContainSingle().Subject;
+		item.EnumerateObject().Select(property => property.Name).Should().BeEquivalentTo("id", "revision", "canonicalName", "displayLabel", "channels");
+		item.GetProperty("id").GetGuid().Should().Be(target);
+		item.GetProperty("revision").GetGuid().Should().Be(revision);
+		candidates.VerifyAll();
+		mediator.VerifyNoOtherCalls();
+	}
+
+	[Fact]
+	public async Task EntryCandidateServiceRejectionReturnsReasonedProblemWithoutCandidatePayload()
+	{
+		var candidates = new Mock<IReceiptNormalizationCandidates>(MockBehavior.Strict);
+		candidates.Setup(x => x.GetCandidatesAsync("receipt-writer", new NormalizationSourceKey("Store A", "FRANKS", "001"), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new NormalizationCatalogException(403, "receipt_entry_actor_required", "Sign in to retrieve receipt product suggestions."));
+		var mediator = new Mock<IMediator>(MockBehavior.Strict);
+		await using var app = await Start(mediator, enforceAuthentication: true, candidates: candidates);
+		using var client = app.GetTestClient();
+		client.DefaultRequestHeaders.Add("Test-User", "receipt-writer");
+
+		using var response = await client.GetAsync("/api/receipt-items/normalization-candidates?location=Store%20A&description=FRANKS&itemCode=001");
+
+		response.StatusCode.Should().Be(HttpStatusCode.Forbidden, await response.Content.ReadAsStringAsync());
+		response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+		using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+		var problem = json.RootElement;
+		problem.GetProperty("status").GetInt32().Should().Be(403);
+		problem.GetProperty("detail").GetString().Should().Be("Sign in to retrieve receipt product suggestions.");
+		problem.GetProperty("code").GetString().Should().Be("receipt_entry_actor_required");
+		problem.EnumerateObject().Select(property => property.Name).Should().NotIntersectWith([
+			"candidates", "data", "id", "revision", "canonicalName", "displayLabel", "channels"]);
+		candidates.VerifyAll();
+		mediator.VerifyNoOtherCalls();
+	}
+
 	private static async Task<WebApplication> Start(Mock<IMediator> mediator, Mock<IEntityChangeNotifier>? notifier = null,
-		Mock<IReceiptNormalizationPreview>? preview = null, bool enforceAuthentication = false)
+		Mock<IReceiptNormalizationPreview>? preview = null, bool enforceAuthentication = false, Mock<IReceiptNormalizationCandidates>? candidates = null)
 	{
 		var builder = WebApplication.CreateBuilder();
 		builder.WebHost.UseTestServer();
@@ -168,6 +224,7 @@ public sealed class ReceiptNormalizationHttpTests
 		builder.Services.AddSingleton(mediator.Object);
 		builder.Services.AddSingleton((notifier ?? new Mock<IEntityChangeNotifier>()).Object);
 		if (preview is not null) { builder.Services.AddSingleton(preview.Object); }
+		if (candidates is not null) { builder.Services.AddSingleton(candidates.Object); }
 		var app = builder.Build();
 		app.UseMiddleware<GlobalExceptionHandlerMiddleware>();
 		app.UseMiddleware<ValidationExceptionMiddleware>();
@@ -185,7 +242,7 @@ public sealed class ReceiptNormalizationHttpTests
 		protected override Task<AuthenticateResult> HandleAuthenticateAsync()
 		{
 			if (!Request.Headers.TryGetValue("Test-User", out var user)) { return Task.FromResult(AuthenticateResult.NoResult()); }
-			var principal = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, user.ToString()), new Claim(ClaimTypes.Role, "User")], Scheme.Name));
+			var principal = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, user.ToString()), new Claim(ClaimTypes.Role, Request.Headers["Test-Role"].FirstOrDefault() ?? "User")], Scheme.Name));
 			return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(principal, Scheme.Name)));
 		}
 	}

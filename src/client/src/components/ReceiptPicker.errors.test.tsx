@@ -103,6 +103,20 @@ const server = setupServer(
     HttpResponse.json({ data: [], total: 0, offset: 0, limit: 50 }),
   ),
   http.get("*/api/receipt-items/suggestions", () => HttpResponse.json([])),
+  http.get("*/api/receipt-items/normalization-candidates", () =>
+    HttpResponse.json([]),
+  ),
+  http.post("*/api/receipt-items/normalization-preview", () =>
+    HttpResponse.json({
+      sourceFingerprint: "receipt-picker-source",
+      sourceAmbiguous: false,
+      excluded: false,
+      candidates: [],
+      total: 0,
+      offset: 0,
+      limit: 10,
+    }),
+  ),
   http.get("*/api/metadata/enums", () =>
     HttpResponse.json({
       adjustmentTypes: [],
@@ -790,3 +804,89 @@ it("seeds an absent detail only as stale immediate context and verifies it with 
     detailGate.resolve();
   }
 });
+
+it.each([false, true])(
+  "stages a suggested identity with remember=%s and preserves the actual money draft until save",
+  async (rememberSource) => {
+    const targetId = "22222222-2222-4222-8222-222222222222";
+    const revision = "33333333-3333-4333-8333-333333333333";
+    const lookups: Record<string, string>[] = [];
+    server.use(
+      http.get(
+        "*/api/receipt-items/normalization-candidates",
+        ({ request }) => {
+          lookups.push(Object.fromEntries(new URL(request.url).searchParams));
+          return HttpResponse.json([
+            {
+              id: targetId,
+              revision,
+              canonicalName: "Whole milk",
+              displayLabel: "Whole milk, 1 gallon",
+              channels: ["lexical"],
+            },
+          ]);
+        },
+      ),
+    );
+    const { queryClient, submitted } = renderForm({
+      hideReceiptField: true,
+      location: "Known market",
+    });
+    await formReady(queryClient);
+    const user = userEvent.setup();
+    const description = screen.getByLabelText(/^Description/);
+    await user.clear(description);
+    await user.type(description, "Current milk draft");
+    const quantity = screen.getByLabelText(/^Quantity/);
+    const unitPrice = screen.getByLabelText(/^Unit Price/);
+    fireEvent.change(quantity, { target: { value: "2" } });
+    fireEvent.change(unitPrice, { target: { value: "4.75" } });
+    await user.click(
+      await screen.findByRole("button", { name: "Choose product" }),
+    );
+    const candidate = await screen.findByRole("button", {
+      name: "Choose suggested Whole milk, 1 gallon",
+    });
+    if (rememberSource) {
+      await user.click(
+        screen.getByRole("checkbox", {
+          name: /Remember this exact description at Known market/,
+        }),
+      );
+    }
+    const moneyDraft = {
+      quantity: (quantity as HTMLInputElement).value,
+      unitPrice: (unitPrice as HTMLInputElement).value,
+    };
+    await user.click(candidate);
+    expect(submitted).not.toHaveBeenCalled();
+    expect(writes).toEqual([]);
+    expect(description).toHaveValue("Current milk draft");
+    expect((quantity as HTMLInputElement).value).toBe(moneyDraft.quantity);
+    expect((unitPrice as HTMLInputElement).value).toBe(moneyDraft.unitPrice);
+    expect(lookups).toEqual([
+      {
+        location: "Known market",
+        description: "Current milk draft",
+        itemCode: "MILK",
+      },
+    ]);
+    await user.click(screen.getByRole("button", { name: /Create Item/i }));
+    await waitFor(() => expect(submitted).toHaveBeenCalledTimes(1));
+    expect(submitted.mock.calls[0][0]).toMatchObject({
+      ...defaults,
+      description: "Current milk draft",
+      quantity: 2,
+      unitPrice: 4.75,
+      normalizationIntent: {
+        kind: "confirmExisting",
+        clientRowId: expect.stringMatching(/^[0-9a-f-]{36}$/i),
+        sourceFingerprint: "receipt-picker-source",
+        targetId,
+        expectedTargetRevision: revision,
+        rememberSource,
+      },
+    });
+    expect(writes).toEqual([]);
+  },
+);

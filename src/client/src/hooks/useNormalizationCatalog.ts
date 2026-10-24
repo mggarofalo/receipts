@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSessionMutation } from "@/hooks/useSessionMutation";
 import client from "@/lib/api-client";
 import { toApiError } from "@/lib/problem-details";
+import { localErrorPolicy } from "@/lib/request-error-policy";
 import { repairDomainChange } from "@/lib/query-invalidation";
 import { getSessionVersion } from "@/lib/auth";
 import { normalizationAiKey, type AiRun } from "./useNormalizationAi";
@@ -61,11 +62,13 @@ export function useCatalogSources(
 
 export function useCatalogCandidates(source: CatalogSource) {
   return useQuery({
+    ...localErrorPolicy.query,
     queryKey: [...normalizationCatalogKey, "candidates", source],
     queryFn: async ({ signal }) => {
       const { data, error, response } = await client.GET(
         "/api/normalization-catalog/candidates",
         {
+          ...localErrorPolicy.request,
           signal,
           params: {
             query: { ...source, itemCode: source.itemCode ?? undefined },

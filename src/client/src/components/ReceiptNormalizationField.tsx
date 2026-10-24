@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RequestFailure } from "@/components/RequestFailure";
+import { ReceiptNormalizationShortlist } from "@/components/ReceiptNormalizationShortlist";
 import {
   currentNormalizationChoice,
   normalizationSourceKey,
@@ -148,7 +149,7 @@ function NormalizationChoices({
   return (
     <fieldset
       disabled={disabled}
-      className="min-w-0 space-y-2 rounded-md border p-3"
+      className="min-w-0 space-y-2 rounded-md border p-3 [overflow-wrap:anywhere]"
       aria-label="Product normalization"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -222,8 +223,18 @@ function NormalizationChoices({
             Match the same product, including known brand, size and variety.
             Choosing a name does not change receipt text or prices.
           </p>
+          <ReceiptNormalizationShortlist
+            source={source}
+            disabled={disabled || !ready}
+            onChoose={(candidate) => choose({
+              kind: "confirmExisting",
+              targetId: candidate.id,
+              expectedTargetRevision: candidate.revision,
+              rememberSource: remember,
+            }, candidate.displayLabel ?? candidate.canonicalName)}
+          />
           <label htmlFor={`${id}-search`} className="block text-sm">
-            Search product names
+            Search all product names
           </label>
           <Input
             id={`${id}-search`}

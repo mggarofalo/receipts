@@ -10,7 +10,9 @@ import {
 } from "@/lib/receipt-normalization";
 import { ReceiptNormalizationField } from "./ReceiptNormalizationField";
 
-vi.mock("@/lib/api-client", () => ({ default: { POST: vi.fn() } }));
+vi.mock("@/lib/api-client", () => ({
+  default: { POST: vi.fn(), GET: vi.fn() },
+}));
 const source = {
   location: "Market A",
   description: "BF FRANKS",
@@ -28,7 +30,13 @@ const preview = {
   offset: 0,
   limit: 10,
 };
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(client.GET).mockResolvedValue({
+    data: [],
+    response: new Response(),
+  } as never);
+});
 
 it("does not attach an automatic known-source intent while the editor is disabled", async () => {
   vi.mocked(client.POST).mockResolvedValue({

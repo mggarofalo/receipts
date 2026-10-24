@@ -222,6 +222,7 @@ it("keeps store and item-code scope on candidate and mapping requests", async ()
   expect(api.GET).toHaveBeenCalledWith(
     "/api/normalization-catalog/candidates",
     {
+      middleware: [expect.objectContaining({ onRequest: expect.any(Function) })],
       signal: expect.any(AbortSignal),
       params: { query: { ...source, itemCode: undefined } },
     },
