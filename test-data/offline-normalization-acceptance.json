@@ -1,0 +1,92 @@
+{
+  "scenario": "named1026offlinebackuproundtrip",
+  "version": 1,
+  "classification": "Public synthetic data; independent semantic gold, never input to blinded decision author",
+  "authoredAgainst": "Owner correction 2026-10-24; API entry schemas, without inspecting normalizer decisions or implementation",
+  "currency": "USD",
+  "currencyPolicy": "USD is the only currently supported currency. Reconcile each supported currency independently; do not invent valid CAD cases. Unknown-currency rejection belongs to the separate corruption suite.",
+  "idPolicy": "Keys below are fixture references, not database IDs. Capture real receipt/item/transaction/adjustment/template/account/card IDs returned by supported APIs into a private run binding. Preserve those exact IDs and parent relationships from A through B and both restores. Generate source fingerprints/revisions only using actual preview API responses.",
+  "account": { "key": "synthetic-account", "request": { "name": "Synthetic offline acceptance cash", "isActive": true } },
+  "card": { "key": "synthetic-card", "accountKey": "synthetic-account", "request": { "cardCode": "SYN1026", "name": "Synthetic offline acceptance card", "isActive": true } },
+  "template": { "key": "template-beef", "request": { "name": "ACME BEEF FRNK", "description": "Acme beef franks 12 oz", "defaultCategory": "Groceries", "defaultUnitPrice": 4.39, "defaultItemCode": "AB12" } },
+  "receipts": [
+    { "key": "r1", "entry": "browser-complete", "location": "Synthetic North Market", "date": "2026-09-01", "taxAmount": 0, "transactionAmount": 8.58, "items": [
+      { "key": "r1-beef", "description": "ACME BEEF FRNK 12OZ", "receiptItemCode": "AB12", "quantity": 1, "unitPrice": 3.99, "category": "Groceries", "fragmentName": "ACME BEEF FRNK 12OZ" },
+      { "key": "r1-turkey", "description": "ACME TURKEY FRANKS 12 OZ", "receiptItemCode": "AT12", "quantity": 1, "unitPrice": 4.49, "category": "Groceries", "fragmentName": "ACME TURKEY FRANKS 12 OZ" },
+      { "key": "r1-fee", "description": "DISPOSABLE BAG FEE", "receiptItemCode": "BAGFEE", "quantity": 1, "unitPrice": 0.10, "category": "Fees" }
+    ] },
+    { "key": "r2", "entry": "api-complete", "location": "Synthetic North Market", "date": "2026-09-03", "taxAmount": 0, "transactionAmount": 19.16, "items": [
+      { "key": "r2-beef", "description": "Acme Beef Franks 12 oz", "receiptItemCode": "AB12", "quantity": 2, "unitPrice": 4.19, "category": "Groceries", "fragmentName": "Acme Beef Franks 12 oz" },
+      { "key": "r2-brand", "description": "BETA BEEF FRANKS 12 OZ", "receiptItemCode": "BB12", "quantity": 1, "unitPrice": 4.29, "category": "Groceries", "fragmentName": "BETA BEEF FRANKS 12 OZ" },
+      { "key": "r2-pack", "description": "ACME BEEF FRANKS 24 OZ", "receiptItemCode": "AB24", "quantity": 1, "unitPrice": 6.49, "category": "Groceries", "fragmentName": "ACME BEEF FRANKS 24 OZ" }
+    ] },
+    { "key": "r3", "entry": "api-complete", "location": "Synthetic North Market", "date": "2026-09-05", "taxAmount": 0, "transactionAmount": 9.89, "items": [
+      { "key": "r3-code", "description": "ACME BEEF FRNK 12OZ", "receiptItemCode": "42", "quantity": 1, "unitPrice": 3.89, "category": "Groceries" },
+      { "key": "r3-ambiguous-a", "description": "HOT DOG", "receiptItemCode": null, "quantity": 1, "unitPrice": 2.50, "category": "Groceries" },
+      { "key": "r3-ambiguous-b", "description": "HOT DOG", "receiptItemCode": null, "quantity": 1, "unitPrice": 3.50, "category": "Groceries" }
+    ] },
+    { "key": "r4", "entry": "api-receipt-then-items", "location": "Synthetic South Market", "date": "2026-09-07", "taxAmount": 0, "transactionAmount": 7.58, "items": [
+      { "key": "r4-code", "description": "ACME TURKEY FRNK 12OZ", "receiptItemCode": "42", "quantity": 1, "unitPrice": 4.59, "category": "Groceries" },
+      { "key": "r4-ambiguous", "description": "HOT DOG", "receiptItemCode": null, "quantity": 1, "unitPrice": 2.99, "category": "Groceries" }
+    ] },
+    { "key": "r5", "entry": "api-complete", "location": "Synthetic North Market", "date": "2026-09-09", "taxAmount": 0, "transactionAmount": 4.99, "items": [
+      { "key": "r5-space", "description": "  acme  beef franks 12 oz  ", "receiptItemCode": "AB12", "quantity": 1, "unitPrice": 4.09, "category": "Groceries", "fragmentName": "acme beef franks 12oz" },
+      { "key": "r5-fractional", "description": "ORCHARD APPLES PER LB", "receiptItemCode": "APL-LB", "quantity": 0.375, "unitPrice": 2.40, "category": "Produce" }
+    ] },
+    { "key": "r6", "entry": "api-complete", "location": "Synthetic North Market", "date": "2026-09-11", "taxAmount": 0, "transactionAmount": 4.39, "items": [
+      { "key": "r6-template", "description": "ACME BEEF FRANKS 12OZ", "receiptItemCode": "AB12", "quantity": 1, "unitPrice": 4.39, "category": "Groceries", "itemTemplateKey": "template-beef" }
+    ] },
+    { "key": "r7", "entry": "api-complete", "location": "Synthetic North Market", "date": "2026-09-13", "taxAmount": 0, "transactionAmount": 3.25, "items": [
+      { "key": "r7-pending", "description": "BAKERY SPECIAL", "receiptItemCode": "BAKE", "quantity": 1, "unitPrice": 3.25, "category": "Groceries" }
+    ] },
+    { "key": "r8", "entry": "api-complete", "location": "Synthetic North Market", "date": "2026-09-15", "taxAmount": 0, "transactionAmount": -3.99, "items": [], "adjustments": [
+      { "key": "r8-refund", "type": "other", "amount": -3.99, "description": "Synthetic refund of one Acme beef franks 12 oz pack from 2026-09-01" }
+    ] }
+  ],
+  "gold": {
+    "identities": [
+      { "key": "beef12", "name": "Acme Beef Franks 12 oz", "members": ["r1-beef", "r2-beef", "r3-code", "r5-space", "r6-template"] },
+      { "key": "turkey12", "name": "Acme Turkey Franks 12 oz", "members": ["r1-turkey", "r4-code"] },
+      { "key": "beta12", "name": "Beta Beef Franks 12 oz", "members": ["r2-brand"] },
+      { "key": "beef24", "name": "Acme Beef Franks 24 oz", "members": ["r2-pack"] },
+      { "key": "apples", "name": "Orchard Apples per lb", "members": ["r5-fractional"] }
+    ],
+    "identityRule": "Every member within each identity must reference the same reviewed identity; all five identity keys must reference distinct identities. Superseded fragments may remain archived with merge provenance, but must not remain duplicate trusted report groups.",
+    "verifiedItems": ["r1-beef", "r2-beef", "r3-code", "r5-space", "r6-template", "r1-turkey", "r4-code", "r2-brand", "r2-pack", "r5-fractional"],
+    "needsReviewItems": ["r3-ambiguous-a", "r3-ambiguous-b", "r4-ambiguous", "r7-pending"],
+    "unresolvedReason": "HOT DOG lacks brand, protein and pack evidence, even within one identical source; differing prices prove no identity. BAKERY SPECIAL lacks product/pack evidence. Preserve explicit unresolved status; do not exclude or trust them.",
+    "excludedItems": [{ "key": "r1-fee", "reason": "Disposable bag charge is a non-product fee", "rememberSource": false }],
+    "rememberedSources": [
+      { "itemKey": "r1-beef", "identityKey": "beef12" },
+      { "itemKey": "r3-code", "identityKey": "beef12" },
+      { "itemKey": "r4-code", "identityKey": "turkey12" }
+    ],
+    "mappingRules": "Each remembered rule is scoped to the exact source location/description/code under the documented fingerprint canonicalization; never universalize code 42, HOT DOG or a template. No other reusable approval is expected. r6-template is a one-off reviewed assignment and must not create a reusable rule for its distinct description.",
+    "counts": { "receipts": 8, "items": 15, "transactions": 8, "adjustments": 1, "templates": 1, "verifiedItems": 10, "needsReviewItems": 4, "excludedItems": 1, "reviewedIdentityGroups": 5, "rememberedSources": 3 },
+    "financial": { "USD": { "itemSubtotal": "57.84", "tax": "0.00", "adjustmentTotal": "-3.99", "expectedTotal": "53.85", "transactionTotal": "53.85", "quantityTotal": "15.375", "verifiedItemSubtotal": "45.50", "needsReviewItemSubtotal": "12.24", "excludedItemSubtotal": "0.10" } },
+    "reportGroupSubtotals": { "beef12": "24.74", "turkey12": "9.08", "beta12": "4.29", "beef24": "6.49", "apples": "0.90" },
+    "beefPriceHistory": [
+      { "itemKey": "r1-beef", "date": "2026-09-01", "unitPrice": "3.99" },
+      { "itemKey": "r2-beef", "date": "2026-09-03", "unitPrice": "4.19" },
+      { "itemKey": "r3-code", "date": "2026-09-05", "unitPrice": "3.89" },
+      { "itemKey": "r5-space", "date": "2026-09-09", "unitPrice": "4.09" },
+      { "itemKey": "r6-template", "date": "2026-09-11", "unitPrice": "4.39" }
+    ],
+    "factualInvariants": ["Every raw description including surrounding/repeated spaces and every null code", "Receipt dates/locations/tax, item quantity/unitPrice/category/subcategory and parents", "All account/card/template, transaction and adjustment fields and parent IDs", "Refund remains signed adjustment and transaction; never reclassify as product purchase", "A remains byte-identical; exact B hash is imported into both targets and on repeated import"]
+  },
+  "followups": [
+    { "key": "known", "location": "Synthetic North Market", "date": "2026-09-20", "description": "ACME BEEF FRNK 12OZ", "receiptItemCode": "AB12", "quantity": 1, "unitPrice": 4.50, "expectedState": "verified", "expectedIdentity": "beef12" },
+    { "key": "new", "location": "Synthetic North Market", "date": "2026-09-21", "description": "ACME CHICKEN FRANKS 12 OZ", "receiptItemCode": "AC12", "quantity": 1, "unitPrice": 4.75, "expectedState": "needsReview", "expectedIdentity": null },
+    { "key": "north-code", "location": "Synthetic North Market", "date": "2026-09-22", "description": "ACME BEEF FRNK 12OZ", "receiptItemCode": "42", "quantity": 1, "unitPrice": 4.60, "expectedState": "verified", "expectedIdentity": "beef12" },
+    { "key": "south-code", "location": "Synthetic South Market", "date": "2026-09-23", "description": "ACME TURKEY FRNK 12OZ", "receiptItemCode": "42", "quantity": 1, "unitPrice": 4.80, "expectedState": "verified", "expectedIdentity": "turkey12" },
+    { "key": "third-store", "location": "Synthetic Third Market", "date": "2026-09-24", "description": "ACME BEEF FRNK 12OZ", "receiptItemCode": "42", "quantity": 1, "unitPrice": 4.90, "expectedState": "needsReview", "expectedIdentity": null },
+    { "key": "oneoff-repeat", "location": "Synthetic North Market", "date": "2026-09-25", "description": "ACME BEEF FRANKS 12OZ", "receiptItemCode": "AB12", "quantity": 1, "unitPrice": 4.40, "itemTemplateKey": "template-beef", "expectedState": "needsReview", "expectedIdentity": null },
+    { "key": "ambiguous-repeat", "location": "Synthetic North Market", "date": "2026-09-26", "description": "HOT DOG", "receiptItemCode": null, "quantity": 1, "unitPrice": 3.00, "expectedState": "needsReview", "expectedIdentity": null }
+  ],
+  "afterFollowups": { "receipts": 15, "items": 22, "transactions": 15, "adjustments": 1, "verifiedItems": 13, "needsReviewItems": 8, "excludedItems": 1, "reviewedIdentityGroups": 5, "rememberedSources": 3, "USD": { "addedSubtotal": "30.95", "itemSubtotal": "88.79", "adjustmentTotal": "-3.99", "transactionTotal": "84.80", "expectedTotal": "84.80", "verifiedItemSubtotal": "59.40", "needsReviewItemSubtotal": "29.29", "excludedItemSubtotal": "0.10" } },
+  "entryLimitations": [
+    "Current supported item entry rejects negative quantity and unitPrice. r8 therefore exercises supported signed refund adjustment/payment, not a negative historical purchase line. Existing v6 backup rehearsal must separately preserve legacy signed lines.",
+    "itemTemplateId on r6 is supported provenance, not fabricated legacy trust. Its initial review state must remain needsReview. Historical pre-policy Active/manual/template states require separate genuine v6 backup restore evidence; never manufacture those states by SQL.",
+    "No acceptance result is implied by this corpus. Browser, API, PostgreSQL, restart, exact-artifact repeated restore and fault evidence must still be executed at the integrated revision."
+  ]
+}
