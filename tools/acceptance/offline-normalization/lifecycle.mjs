@@ -7,6 +7,8 @@ import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
 import { assertLifecycleResume, assertSettled, assertRevisionTransition, assertUpgradePreserved, assertAuthBoundaryRecovery, runAuthenticationBoundary } from './lifecycle-resume.mjs';
 
+import { assertCompletionBoundary, assertIndependentProof, assertRestoreDecision, assertCompletionFacts, runWithLifecycleFailureCapture, journalBrowserSave, redactedFailure } from './lifecycle-completion.mjs';
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const read = p => JSON.parse(fs.readFileSync(p, 'utf8').replace(/^\uFEFF/, ''));
 const hash = p => crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
@@ -87,7 +89,8 @@ async function main() {
   const bindings = read(path.join(path.resolve(args.source),'bindings.json'));
   const freeze = read(path.join(path.resolve(args.source),'freeze.json'));
   assert.equal(hash(path.join(path.resolve(args.source),'A.db')), freeze.aSha256);
-  let resume;
+  let resume, completion;
+  assert(!(args.prior && args.continuationPrior), 'Choose one assessed boundary');
   const transition=args.transition?read(path.resolve(args.transition)):null;
   const launchSource=read(path.join(runtime,'source.json'));
   if(args.prior) {
@@ -143,6 +146,37 @@ async function main() {
       resume.authRecovery={record,summary,addedAudits:read(auditsPath),retainedAfter:samples[0]};
     }
   }
+  if(args.continuationPrior) {
+    assert(transition && !args.authRecovery,'Completion requires a fresh transition without auth exceptions');
+    assert.equal(launchSource.RunId,ready.RunId);
+    const prior=path.resolve(args.continuationPrior);
+    assert.equal(path.dirname(prior),runtime);assert.equal(path.basename(prior),'lifecycle-final-196dbf68');
+    assert(!fs.existsSync(path.join(prior,'lifecycle.json')));
+    const files=Object.fromEntries(fs.readdirSync(prior).map(name=>{
+      assert(fs.statSync(path.join(prior,name)).isFile(),'Unexpected nested prior evidence');return [name,hash(path.join(prior,name))];
+    }));
+    for(const prefix of ['request','response']) assert.deepEqual(Object.keys(files).filter(n=>n.startsWith(prefix+'-')).sort(),Array.from({length:48},(_,i)=>`${prefix}-${i+2}.json`).sort());
+    const load=name=>read(path.join(prior,name));
+    const bundle={failure:load('failure.json'),summary:load('safe-stop-summary.json'),arrangement:load('resumed-existing-arrangement.json'),revoke:load('3-revoke-history-and-future-reuse.json'),merge:load('4-intentional-same-product-merge.json'),stop:load('safe-stop-postgres.json'),requests:Array.from({length:48},(_,i)=>load(`request-${i+2}.json`)),responses:Array.from({length:48},(_,i)=>load(`response-${i+2}.json`))};
+    const git=argv=>execFileSync('git',argv,{cwd:root,encoding:'utf8',windowsHide:true}).trim();
+    const head=git(['rev-parse','HEAD']);
+    const revisions=assertRevisionTransition(transition,launchSource,head,git(['status','--porcelain','--untracked-files=normal']),git(['diff','--name-only','--no-renames',transition.candidateRevision,head]).split(/\r?\n/).filter(Boolean));
+    assert.deepEqual(transition.allowedAddedMigrations,[],'This repair requires no migrations');
+    assert.equal(hash(path.join(prior,'safe-stop-database.sql')),bundle.summary.databaseDumpSha256);
+    const retainedResume=load('resume.json');
+    for(const [name,sha] of Object.entries(retainedResume.files)) assert.equal(hash(path.join(retainedResume.prior,name)),sha,'Original lifecycle evidence changed');
+    for(const [file,sha] of Object.entries(retainedResume.transitionFiles)) assert.equal(hash(file),sha,'Original transition evidence changed');
+    completion={...assertCompletionBoundary(bundle,ready.RunId,records.sourceRestore.bSha256),prior,files,revisions,stop:bundle.stop,retainedResume};
+    const retainedBaseline=load('baseline.json');
+    assert.equal(retainedBaseline.followupHash,followupHash);assert.deepEqual(retainedBaseline.snapshot.tables,baseline.tables);
+    completion.originalPg=retainedBaseline.preservationPostgres;
+    completion.transitionFiles={[path.resolve(args.transition)]:hash(path.resolve(args.transition)),[path.join(runtime,'source.json')]:hash(path.join(runtime,'source.json'))};
+    for(const key of ['beforePostgres','beforeMigrationHistory']) {
+      const file=path.resolve(transition[key+'Path']);assert(inside(path.dirname(runtime),file));
+      assert.equal(hash(file),transition[key+'Sha256']);completion.transitionFiles[file]=transition[key+'Sha256'];completion[key]=read(file);
+    }
+    assert.deepEqual(completion.beforePostgres,completion.stop,'Fresh upgrade must start at the full retained safe stop');
+  }
   assert(!args.authRecovery || resume,'Auth recovery requires the assessed lifecycle resume');
   fs.mkdirSync(out);
   const save = (name,value) => fs.writeFileSync(path.join(out,name), JSON.stringify(value,null,2), {flag:'wx'});
@@ -151,20 +185,31 @@ async function main() {
   let lastRequest=0,requestNumber=0;
   const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
   const journal=(name,value)=>{const fd=fs.openSync(path.join(out,name),'wx');try{fs.writeFileSync(fd,JSON.stringify(value,null,2));fs.fsyncSync(fd);}finally{fs.closeSync(fd);}};
+  const completed=completion?[]:resume?['provider-unavailable-manual-entry']:[];
+  const created=completion?[...completion.created]:resume?[...resume.created]:[];
+  const sensitive=[];let capturePostgres,captureExport;
+  const safeError=error=>redactedFailure(error,sensitive);
+  await runWithLifecycleFailureCapture({run:async()=>{
+  capturePostgres=postgres;captureExport=exported;
   async function request(url, body, method = body === undefined ? 'GET' : 'POST', status) {
     await pause(Math.max(0,lastRequest+850-Date.now()));lastRequest=Date.now();
     const number=++requestNumber;
-    if(token)journal(`request-${number}.json`,{utc:new Date().toISOString(),url,method,body});
+    const authentication=url==='/api/auth/login';
+    if(authentication) journal('authentication-request.json',{utc:new Date().toISOString(),url,method,credentialsRedacted:true});
+    else if(token)journal(`request-${number}.json`,{utc:new Date().toISOString(),url,method,body});
     const response = await fetch(new URL(url,ready.Api), {method,headers:{...(token ? {Authorization:`Bearer ${token}`} : {}),...(body === undefined ? {} : {'Content-Type':'application/json'})},body:body === undefined ? undefined : JSON.stringify(body),signal:AbortSignal.timeout(60000)});
     const text = await response.text();
-    if(token)journal(`response-${number}.json`,{utc:new Date().toISOString(),url,method,status:response.status,text});
-    const value = text ? JSON.parse(text) : null;
+    if(authentication) journal('authentication-response.json',{utc:new Date().toISOString(),url,method,status:response.status,bodyRedacted:true});
+    else if(token)journal(`response-${number}.json`,{utc:new Date().toISOString(),url,method,status:response.status,text});
+    let value;try {value=text?JSON.parse(text):null;} catch(error) {if(authentication) throw Error('Authentication response was not valid JSON; body redacted');throw error;}
+    if(authentication) sensitive.push(value?.accessToken,value?.refreshToken);
     if (status !== undefined) { assert.equal(response.status,status, `${method} ${url}`); assert(value?.detail, 'Reasoned rejection must have RFC 9457 detail'); }
     else assert(response.ok, `${method} ${url}: ${response.status}; inspect private evidence/runtime log`);
     return value;
   }
-  const secrets = read(path.join(runtime,'secrets.json'));
-  const password = read(path.join(runtime,'acceptance-password.json')).password;
+  let secrets,password;
+  try {secrets=read(path.join(runtime,'secrets.json'));password=read(path.join(runtime,'acceptance-password.json')).password;sensitive.push(password);}
+  catch {throw Error('Private authentication configuration unavailable; content redacted');}
   async function exported(name) {
     await pause(Math.max(0,lastRequest+850-Date.now()));lastRequest=Date.now();
     const response = await fetch(new URL('/api/backup/export',ready.Api),{method:'POST',headers:{Authorization:`Bearer ${token}`},signal:AbortSignal.timeout(300000)});
@@ -200,6 +245,12 @@ async function main() {
   const {login,postgres:currentPg}=await runAuthenticationBoundary({
     verifyUpgrade:async()=>{
       const preAuthPg=await settled('initial-settlement');
+      if(completion) {
+        assert.equal(transition.postgresContainerId,preAuthPg.container.Id);
+        const migrations=migrationHistory();
+        assertUpgradePreserved(completion.beforePostgres,preAuthPg,completion.beforeMigrationHistory,migrations,[]);
+        journal('upgrade-preserved.json',{...stamp(),postgres:preAuthPg,migrations,...completion.revisions,strictComparisonBeforeAuthentication:true});
+      }
       if(resume) {
         assert.equal(transition.postgresContainerId,preAuthPg.container.Id);
         const migrations=migrationHistory();
@@ -215,14 +266,17 @@ async function main() {
     },
     captureBaseline:()=>settled('authenticated-lifecycle-settlement')
   });
-  const originalPg=resume?.baseline.postgres ?? currentPg;
+  const originalPg=completion?.originalPg ?? resume?.baseline.postgres ?? currentPg;
   assert.equal(currentPg.container.Id,originalPg.container.Id); assert.deepEqual(currentPg.container.Mounts,originalPg.container.Mounts);
-  assert.equal(currentPg.state.items.filter(i => !i.DeletedAt).length,resume?25:22);
-  assert.equal(currentPg.state.receipts.filter(i => !i.DeletedAt).length,resume?18:15);
-  assert.deepEqual((await exported('before-lifecycle.db')).tables,resume?.expected.tables ?? baseline.tables,'Current installation differs from retained lifecycle boundary');
+  assert.equal(currentPg.state.items.filter(i => !i.DeletedAt).length,completion?28:resume?25:22);
+  assert.equal(currentPg.state.receipts.filter(i => !i.DeletedAt).length,completion?21:resume?18:15);
+  const beforePortable=await exported('before-lifecycle.db');
+  if(completion) assertPreservedRows(baseline.tables,beforePortable.tables);
+  else assert.deepEqual(beforePortable.tables,resume?.expected.tables ?? baseline.tables,'Current installation differs from retained lifecycle boundary');
   save('baseline.json',{...stamp(),followupHash,prerequisites:records,postgres:currentPg,preservationPostgres:originalPg,snapshot:baseline,authenticationCompleted:true});
   if(resume) save('resume.json',{...stamp(),...resume.revisions,prior:resume.prior,files:resume.files,syntheticReceiptIds:resume.created,priorFailureRetained:true,newCreationsBeforeStaleGate:0,originalFailurePassed:false,launchSource:read(path.join(runtime,'source.json')),transition,transitionSha256:hash(path.resolve(args.transition)),authRecovery:resume.authRecovery?.record});
-  let step = 0; const completed = resume?['provider-unavailable-manual-entry']:[];
+  if(completion) journal('continuation.json',{...stamp(),...completion.revisions,prior:completion.prior,files:completion.files,transition,transitionFiles:completion.transitionFiles,originalFailurePassed:false,newReceiptCreations:0});
+  let step = 0;
   async function checkpoint(name, evidence) {
     const pg = postgres(); assert.equal(pg.container.Id,originalPg.container.Id); assert.deepEqual(pg.container.Mounts,originalPg.container.Mounts);
     for (const key of ['items','receipts','transactions','adjustments','mappings','identities','operations','members']) assertPreservedRows({[key]:originalPg.state[key]},{[key]:pg.state[key]});
@@ -244,9 +298,8 @@ async function main() {
   const source = (location,item) => ({location,description:item.description,itemCode:item.receiptItemCode});
   const preview = (location,item) => request('/api/receipt-items/normalization-preview',{source:source(location,item)});
   const update = (item,changes) => request('/api/receipt-items/'+item.id,{id:item.id,description:item.description,receiptItemCode:item.receiptItemCode,quantity:item.quantity,unitPrice:item.unitPrice,category:item.category,subcategory:item.subcategory,...changes},'PUT');
-  const tag = resume?.tag ?? 'Lifecycle '+uuid(); const location = resume?.location ?? tag+' store';
-  const line = resume?.line ?? {description:tag+' RAW OATS 500G',receiptItemCode:'LIFE-500',quantity:2,unitPrice:3,category:'Groceries',subcategory:tag};
-  const created = resume?[...resume.created]:[];
+  const tag = completion?.tag ?? resume?.tag ?? 'Lifecycle '+uuid(); const location = completion?.location ?? resume?.location ?? tag+' store';
+  const line = completion?.line ?? resume?.line ?? {description:tag+' RAW OATS 500G',receiptItemCode:'LIFE-500',quantity:2,unitPrice:3,category:'Groceries',subcategory:tag};
   async function create(item, intent, store=location) {
     // Deliberately receipt-first, then standalone purchase and payment. No SQL arrangement.
     const receipt = await request('/api/receipts',{location:store,date:'2026-10-20',taxAmount:0});
@@ -261,8 +314,11 @@ async function main() {
     assert.equal(cents(receipt.itemSubtotal),expectedCents); assert.equal(cents(receipt.expectedTotal),expectedCents); assert.equal(cents(receipt.transactionTotal),600);
     return receipt;
   }
-  try {
     const availability=await request('/api/normalization-ai/connection'); assert.equal(availability.configured,false,'Use the provider-disabled acceptance runtime');
+    if(completion) {
+      await finishRestoreBoundary();
+      return;
+    }
     let manual,mapped,p,independent,financial;
     if(!resume) {
     const category=rows(await request('/api/categories?limit=500')).find(c=>c.name===line.category && c.isActive); assert(category);
@@ -342,8 +398,43 @@ async function main() {
       for(const [file,sha] of Object.entries(resume.transitionFiles)) assert.equal(hash(file),sha,'Transition evidence changed');
     }
     save('lifecycle.json',{...stamp(),completed,syntheticReceiptIds:created,baselineFollowupHash:followupHash,status:'passed'});
-  } catch(error) {
-    save('failure.json',{...stamp(),completed,syntheticReceiptIds:created,error:{name:error.name,message:error.message,stack:error.stack}}); throw error;
+  async function finishRestoreBoundary() {
+    const {independent,future,failedItem}=completion;
+    assert.deepEqual(await getItem(independent.item.id),failedItem,'Failed purchase changed after the retained boundary');
+    assert.deepEqual(await getItem(future.item.id),future.item,'Existing browser fixture changed');
+    const fresh=await request('/api/receipt-items/normalization-preview',{source:source(location,failedItem),query:independent.item.normalizedDescriptionName,offset:0,limit:20});
+    const target=fresh.candidates.find(c=>c.id===independent.item.normalizedDescriptionId);assert(target?.revision,'Current preview lacks the known synthetic target');
+    const beforeReview=await settled('before-explicit-reconfirmation');journal('before-reconfirmation-postgres.json',beforeReview);
+    await update(failedItem,{normalizationIntent:{kind:'confirmExisting',clientRowId:uuid(),sourceFingerprint:fresh.sourceFingerprint,expectedItemRevision:failedItem.normalizationRevision,targetId:target.id,expectedTargetRevision:target.revision,rememberSource:false}});
+    const reviewed=await getItem(failedItem.id);const reviewedPg=postgres();journal('after-reconfirmation-postgres.json',reviewedPg);
+    assertRevokedHistory(independent.item,reviewed,true);assert.equal(reviewed.normalizationReviewReason,'purchase_review');
+    assert.notEqual(reviewed.normalizationReviewDecisionId,independent.item.normalizationReviewDecisionId,'Reconfirmation must be a fresh decision');
+    const proof=assertIndependentProof(reviewedPg,reviewed.id);
+    assertCompletionFacts(beforePortable.facts,(await exported('after-reconfirmation.db')).facts);
+    await checkpoint('explicit-synthetic-purchase-reconfirmation',{before:failedItem,reviewed,fresh,target});
+    const deleteBefore=await trip(independent.receiptId);const reportBefore=await request('/api/reports/spending-by-normalized-description?pageSize=100');
+    journal('before-repeat-delete-postgres.json',postgres());
+    await request('/api/receipts',[independent.receiptId],'DELETE');
+    const deletedPg=postgres();journal('after-repeat-delete-postgres.json',deletedPg);
+    assert(deletedPg.state.items.find(i=>i.Id===reviewed.id).DeletedAt);
+    assert(rows(await request('/api/receipts/deleted?limit=500')).some(r=>r.id===independent.receiptId));
+    assert(!rows(await request('/api/receipts?limit=500')).some(r=>r.id===independent.receiptId));
+    const reportDeleted=await request('/api/reports/spending-by-normalized-description?pageSize=100');assert.equal(cents(reportDeleted.grandTotal),cents(reportBefore.grandTotal)-600);
+    await request('/api/receipts/'+independent.receiptId+'/restore',{});
+    const restoredItem=await getItem(reviewed.id);const restoredPg=postgres();journal('after-repeat-restore-postgres.json',restoredPg);
+    assertRevokedHistory(reviewed,restoredItem,true);assert.equal(restoredItem.normalizationReviewDecisionId,reviewed.normalizationReviewDecisionId);
+    assertRestoreDecision(proof,assertIndependentProof(restoredPg,reviewed.id));await finances(independent.receiptId);
+    assertCompletionFacts(beforePortable.facts,(await exported('after-repeat-restore.db')).facts);
+    assert.equal(cents((await request('/api/reports/spending-by-normalized-description?pageSize=100')).grandTotal),cents(reportBefore.grandTotal));
+    await checkpoint('soft-delete-restore',{deleteBefore,restored:await trip(independent.receiptId),reportBefore,reportDeleted,reviewed,restoredItem});
+    await browserDraft(future);
+    assertCompletionFacts(beforePortable.facts,(await exported('after-browser-completion.db')).facts,future.item.id);
+    for(const [name,sha] of Object.entries(completion.files)) assert.equal(hash(path.join(completion.prior,name)),sha,'Prior failed evidence changed');
+    for(const [file,sha] of Object.entries(completion.transitionFiles)) assert.equal(hash(file),sha,'Upgrade evidence changed');
+    for(const [name,sha] of Object.entries(completion.retainedResume.files)) assert.equal(hash(path.join(completion.retainedResume.prior,name)),sha,'Original lifecycle evidence changed');
+    for(const [file,sha] of Object.entries(completion.retainedResume.transitionFiles)) assert.equal(hash(file),sha,'Original transition evidence changed');
+    journal('final-postgres.json',postgres());
+    journal('lifecycle-completion.json',{...stamp(),status:'passed',completed,prior:completion.prior,...completion.revisions,priorFailureRetained:true,originalFailurePassed:false,newReceiptCreations:0,syntheticReceiptIds:created,baselineFollowupHash:followupHash});
   }
   async function browserDraft(future) {
     await pause(65000);
@@ -377,9 +468,11 @@ async function main() {
       // The explicit choice captures the observed revision before a competing save.
       await update(await getItem(future.item.id),{unitPrice:4});
       const before=await settled('browser-rejection-settlement'); const portable=await exported('before-browser-rejection.db');
-      const responsePromise=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/receipt-items/'+future.item.id && r.request().method()==='PUT');
-      await dialog.getByRole('button',{name:'Update Item',exact:true}).click();
-      const response=await responsePromise; assert.equal(response.status(),409,'Expected genuine stale-revision server rejection');
+      const response=await journalBrowserSave({page,itemId:future.item.id,journal,
+        planned:{utc:new Date().toISOString(),itemId:future.item.id,url:'/api/receipt-items/'+future.item.id,method:'PUT',draftUnitPrice:8.25,intentKind:'defer',expectedItemRevision:future.item.normalizationRevision,sourceFingerprint:previewEvidence.sourceFingerprint},
+        click:()=>dialog.getByRole('button',{name:'Update Item',exact:true}).click()});
+      journal('after-browser-save-postgres.json',postgres());
+      assert.equal(response.status(),409,'Expected genuine stale-revision server rejection');
       const body=response.request().postDataJSON(); assert.equal(cents(body.unitPrice),825); assert.equal(body.normalizationIntent?.kind,'defer'); assert.equal(body.normalizationIntent?.expectedItemRevision,future.item.normalizationRevision); assert.equal(body.normalizationIntent?.sourceFingerprint,previewEvidence.sourceFingerprint);
       const problem=await response.json(); assert(problem.detail);
       await expect(dialog).toBeVisible(); await expect(dialog.getByRole('alert')).toContainText(problem.detail);
@@ -395,6 +488,12 @@ async function main() {
       await checkpoint('browser-rejection-cache-refresh-draft',{request:body,status:response.status(),problem,refreshed,interception:false});
     } catch(error) {await page.screenshot({path:path.join(out,'browser-failure.png'),fullPage:true});throw error;} finally {await browser.close();}
   }
+  },captureFailure:async error=>{
+    journal('failure.json',{...stamp(),completed,syntheticReceiptIds:created,error:safeError(error)});
+    try {journal('safe-stop-postgres.json',capturePostgres());} catch(captureError) {journal('safe-stop-postgres-error.json',safeError(captureError));}
+    if(token) await captureExport('safe-stop.db').catch(exportError=>journal('safe-stop-export-error.json',safeError(exportError)));
+    else journal('safe-stop-export-unavailable.json',{reason:'No authenticated token; PostgreSQL captured independently'});
+  }});
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();

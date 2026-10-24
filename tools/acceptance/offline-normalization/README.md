@@ -304,3 +304,66 @@ require `resume=true` in the same ledger directory; missing responses replay the
 same idempotency key. Existing successful responses are validated against that
 key and runtime. If a final export already exists, resume retains a separate
 current export and requires exact equality before completing remaining assertions.
+
+## Retained request-49 restore failure continuation
+
+`lifecycle.mjs` also supports only the independently assessed
+`lifecycle-final-196dbf68` stop: five completed earlier checks, 48 retained request
+and response pairs numbered 2–49, completed DELETE 44 and restore 48, and the
+GET 49 independent purchase demotion. This continuation creates zero receipts
+and does not rerun earlier successful lifecycle checks. Its new result is
+`lifecycle-completion.json`; the original failed result remains failed.
+
+Before running, commit the integrated restore fix and harness, independently
+establish the actual running application revision, and capture a **new complete
+settled PostgreSQL state and migration history before upgrade/authentication**.
+Keep the same AppHost, PostgreSQL container, mounts, immutable A/B, and all earlier
+evidence. Create a new private transition record using the fields above with
+`allowedAddedMigrations: []`. Its `beforePostgresPath`/hash must bind the complete
+current state equal to the retained `safe-stop-postgres.json`, including the
+already-demoted purchase and all login audit rows accumulated before this upgrade.
+Do not use the older pre-login snapshot or the earlier `authRecovery` exception.
+Current complete state and migration history are compared before the new login.
+
+After that guard, the continuation explicitly reconfirms the **existing known
+synthetic purchase** through a current preview and supported `confirmExisting`
+PUT with fresh item/source/target revisions and `rememberSource: false`. This is
+a new independent review; it does not repair SQL or resurrect the old proof. It
+then genuinely deletes and restores that receipt, requiring Verified status and
+the exact new decision, assignment, source, target and reviewer proof to survive.
+The existing pending purchase is reused for the real browser rejection, cache
+refresh and unsaved draft scenario. All factual rows, including unknown tables,
+must remain exact except its explicitly intended price change from 3 to 4.
+
+Run from the clean candidate worktree with the ordinary lifecycle prerequisite
+arguments from the completed earlier attempt, replacing `prior` with
+`continuationPrior` and using new transition/output paths:
+
+```powershell
+node ./tools/acceptance/offline-normalization/lifecycle.mjs `
+  "runtime=$runtimeA" "source=$evidenceA" `
+  "sourceRestore=$restoreA" "freshRestore=$restoreB" `
+  "sourceRestart=<retained successful A restart directory>" `
+  "freshRestart=<retained successful B restart directory>" `
+  "followups=$(Join-Path $runtimeA 'followups-durable-20261024')" `
+  "continuationPrior=$(Join-Path $runtimeA 'lifecycle-final-196dbf68')" `
+  "transition=<new private verified no-migration transition JSON>" `
+  "out=<new private continuation directory under runtimeA>"
+node --test ./tools/acceptance/offline-normalization/lifecycle-completion.test.mjs
+```
+
+The runner retains hashes for the entire failed directory, original arrangement,
+and earlier transition evidence. It journals actual mutation requests/responses
+before assertions, complete PostgreSQL snapshots around reconfirm/delete/restore
+and browser save, and portable factual comparisons. A later failed continuation
+is a new assessed stop; never replay it blindly. Its fsynced failure record,
+complete PostgreSQL capture (or explicit capture error), portable stop export
+and request ledger remain in its new private directory.
+
+Failure capture encloses authentication, post-login settlement, baseline export
+and all later checks. Authentication journals contain only endpoint/status metadata;
+passwords and returned tokens are redacted from diagnostics. The complete independent
+PostgreSQL stop capture retains the login audit even when no baseline was completed.
+Before the browser save click, the runner fsyncs planned intent and attaches actual
+request, response and request-failure observers. Exact issued PUT bodies therefore
+remain available if the response wait times out; no request is intercepted or retried.
