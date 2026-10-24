@@ -1,6 +1,7 @@
 using System.Linq.Expressions;
 using Application.Interfaces.Services;
 using Application.Models;
+using Domain.NormalizedDescriptions;
 using Infrastructure.Entities.Core;
 using Infrastructure.Extensions;
 using Infrastructure.Interfaces.Repositories;
@@ -66,6 +67,9 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 			TransactionTotal = context.Transactions.Where(t => t.ReceiptId == r.Id).Sum(t => (decimal?)t.Amount) ?? 0m,
 			TransactionCount = context.Transactions.Count(t => t.ReceiptId == r.Id),
 			ItemCount = context.ReceiptItems.Count(i => i.ReceiptId == r.Id),
+			VerifiedItemCount = context.ReceiptItems.Count(i => i.ReceiptId == r.Id && i.NormalizationReviewState == NormalizationReviewState.Verified),
+			ExcludedItemCount = context.ReceiptItems.Count(i => i.ReceiptId == r.Id && i.NormalizationReviewState == NormalizationReviewState.Excluded),
+			NeedsReviewItemCount = context.ReceiptItems.Count(i => i.ReceiptId == r.Id && i.NormalizationReviewState == NormalizationReviewState.NeedsReview),
 		});
 
 		bool descending = sort.IsDescending;
@@ -126,7 +130,8 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 			return new ReceiptListItem(r.Id, r.Location, r.Date, r.TaxAmount, r.ItemSubtotal, r.AdjustmentTotal, expected,
 				r.TransactionTotal, state, r.ItemCount,
 				Summarize(categoriesByReceipt.GetValueOrDefault(r.Id, [])),
-				Summarize(paymentsByReceipt.GetValueOrDefault(r.Id, [])));
+				Summarize(paymentsByReceipt.GetValueOrDefault(r.Id, [])),
+				r.VerifiedItemCount, r.NeedsReviewItemCount, r.ExcludedItemCount);
 		})];
 	}
 

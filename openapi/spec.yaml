@@ -1440,7 +1440,9 @@ paths:
       description: >
         Searches all active receipt items on active receipts using a trimmed,
         case-insensitive literal substring across description, item code, store,
-        and active canonical description or its display label. Filters apply before
+        and active canonical description or its display label (also pending identities
+        when includeUnreviewed is true). Rejected identities never provide labels or
+        identity history; excluded purchase associations are hidden. Filters apply before
         counting and pagination. Returns individual purchases sorted by receipt date
         descending by default, with receipt ID and item ID ascending as stable ties. Prices retain
         their stored currencies and precision; no currency conversion or physical
@@ -1450,10 +1452,22 @@ paths:
         - BearerAuth: []
         - ApiKey: []
       parameters:
+        - name: includeUnreviewed
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Expose active and pending provisional associations explicitly with their purchase review state; rejected identities and excluded associations remain hidden. Raw purchases always remain searchable.
+        - name: normalizedDescriptionId
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Filter identity history before pagination; verified assignments by default.
         - name: q
           in: query
-          required: true
-          description: Literal search phrase, 2 to 200 characters after trimming.
+          required: false
+          description: Literal search phrase, 2 to 200 characters after trimming. May be omitted or empty only with normalizedDescriptionId for identity history. When supplied, intersects the identity filter.
           schema:
             type: string
         - name: offset
@@ -7467,6 +7481,21 @@ components:
         - protected
         - excluded
       properties:
+        verifiedItems:
+          type: integer
+          format: int32
+        pendingItems:
+          type: integer
+          format: int32
+        pendingSources:
+          type: integer
+          format: int32
+        excludedItems:
+          type: integer
+          format: int32
+        oldestUnresolvedAt:
+          type: [string, "null"]
+          format: date-time
         revisable:
           type: integer
           format: int32
@@ -8022,6 +8051,9 @@ components:
       type: object
       required: [id, receiptId, date, location, description, quantity, unitPrice, unitPriceCurrency, totalAmount, totalAmountCurrency]
       properties:
+        normalizationReviewState:
+          type: string
+          description: Current purchase evidence state; verified, needsReview, or excluded.
         id:
           type: string
           format: uuid
@@ -8042,7 +8074,7 @@ components:
           format: uuid
         normalizedDescription:
           type: [string, "null"]
-          description: Display label (falling back to canonical name) of the active linked description, otherwise null. Use normalizedDescriptionId for identity.
+          description: Display label of the verified identity, or a provisional association when includeUnreviewed is true. Use normalizedDescriptionId for identity.
         quantity:
           type: number
           format: double
@@ -8457,6 +8489,12 @@ components:
       type: object
       required: [canonicalName, totalAmount, currency, itemCount]
       properties:
+        normalizedDescriptionId:
+          type: [string, "null"]
+          format: uuid
+        normalizationReviewState:
+          type: string
+          description: Purchase evidence bucket; verified, needsReview, or excluded.
         canonicalName:
           type: string
           description: Canonical name of the normalized description, or "(Not Normalized)" for receipt items without a normalized description.
@@ -9854,6 +9892,15 @@ components:
       type: object
       required: [id, location, date, taxAmount, itemSubtotal, adjustmentTotal, expectedTotal, transactionTotal, balanceState, itemCount, categorySummary, paymentSummary]
       properties:
+        verifiedItemCount:
+          type: integer
+          format: int32
+        needsReviewItemCount:
+          type: integer
+          format: int32
+        excludedItemCount:
+          type: integer
+          format: int32
         id:
           type: string
           format: uuid
@@ -10190,7 +10237,7 @@ components:
           description: "Provisional or reviewed canonical identity. Verification is expressed separately by normalizationReviewState."
         normalizedDescriptionName:
           type: ["string", "null"]
-          description: "Denormalized CanonicalName from the linked NormalizedDescription for display."
+          description: "Display label of a live active or pending identity. Provisional unless normalizationReviewState is verified; rejected and excluded associations are hidden."
         normalizedDescriptionMatchScore:
           type: ["number", "null"]
           format: double
@@ -10416,6 +10463,15 @@ components:
       type: object
       required: [receipt, items, adjustments, subtotal, adjustmentTotal, expectedTotal, warnings]
       properties:
+        verifiedItemCount:
+          type: integer
+          format: int32
+        needsReviewItemCount:
+          type: integer
+          format: int32
+        excludedItemCount:
+          type: integer
+          format: int32
         receipt:
           $ref: "#/components/schemas/ReceiptResponse"
         items:

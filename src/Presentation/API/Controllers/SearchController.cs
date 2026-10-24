@@ -19,7 +19,7 @@ public class SearchController(IMediator mediator) : ControllerBase
 	[HttpGet("purchases")]
 	[EndpointSummary("Search purchase history")]
 	public async Task<Results<Ok<PurchaseSearchResponse>, BadRequest<ProblemDetails>>> SearchPurchases(
-		[FromQuery] string q,
+		[FromQuery] string? q,
 		CancellationToken cancellationToken,
 		[FromQuery] int offset = 0,
 				[FromQuery] int limit = 25,
@@ -29,11 +29,13 @@ public class SearchController(IMediator mediator) : ControllerBase
 				[FromQuery] DateOnly? startDate = null,
 				[FromQuery] DateOnly? endDate = null,
 				[FromQuery] decimal? minUnitPrice = null,
-				[FromQuery] decimal? maxUnitPrice = null)
+				[FromQuery] decimal? maxUnitPrice = null,
+				[FromQuery] bool includeUnreviewed = false,
+				[FromQuery] Guid? normalizedDescriptionId = null)
 	{
 		Application.Models.Search.PurchaseSearchResult result = await mediator.Send(
 			new SearchPurchasesQuery(q, offset, limit,
-				new PurchaseSearchOptions(sortBy, sortDirection, location, startDate, endDate, minUnitPrice, maxUnitPrice)),
+				new PurchaseSearchOptions(sortBy, sortDirection, location, startDate, endDate, minUnitPrice, maxUnitPrice, includeUnreviewed, normalizedDescriptionId)),
 			cancellationToken);
 		return TypedResults.Ok(new PurchaseSearchResponse
 		{
@@ -47,6 +49,7 @@ public class SearchController(IMediator mediator) : ControllerBase
 				ReceiptItemCode = x.ReceiptItemCode,
 				NormalizedDescriptionId = x.NormalizedDescriptionId,
 				NormalizedDescription = x.NormalizedDescription,
+				NormalizationReviewState = x.NormalizationReviewState,
 				Quantity = (double)x.Quantity,
 				UnitPrice = (double)x.UnitPrice,
 				UnitPriceCurrency = x.UnitPriceCurrency,

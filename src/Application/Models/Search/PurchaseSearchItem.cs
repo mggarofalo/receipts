@@ -13,4 +13,5 @@ public record PurchaseSearchItem(
 	decimal UnitPrice,
 	string UnitPriceCurrency,
 	decimal TotalAmount,
-	string TotalAmountCurrency);
+	string TotalAmountCurrency,
+	string NormalizationReviewState = "needsReview");

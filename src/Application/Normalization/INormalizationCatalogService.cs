@@ -25,7 +25,8 @@ public sealed record NormalizationSourceGroup(NormalizationSourceKey Source, int
 	int LegacyUnknownCount, int AutomaticCount, int ProtectedCount, Guid? MappingId, int RevisableCount = 0, IReadOnlyList<NormalizationLinkedTarget>? LinkedTargets = null, int LinkedTargetCount = 0);
 public sealed record NormalizationSourcePage(IReadOnlyList<NormalizationSourceGroup> Items, int Total);
 public sealed record NormalizationCatalogCoverage(int TotalItems, int Unassigned, int LegacyUnknown,
-	int Automatic, int Reviewed, int Mapped, int Protected, int Excluded, int Revisable = 0);
+	int Automatic, int Reviewed, int Mapped, int Protected, int Excluded, int Revisable = 0, int VerifiedItems = 0, int PendingItems = 0, int PendingSources = 0,
+	DateTimeOffset? OldestUnresolvedAt = null, int ExcludedItems = 0);
 public sealed record NormalizationCatalogPreview(Guid ClientRequestId, NormalizationSourceKey Source,
 	Guid? TargetId, Guid? TargetRevision, string? NewCanonicalName, bool IncludeLegacyUnknown, bool Exclude = false,
 	Guid? SuggestionRunId = null, Guid? SuggestionProposalId = null, Guid? SuggestionRunRevision = null);

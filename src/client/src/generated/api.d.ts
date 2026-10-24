@@ -448,7 +448,7 @@ export interface paths {
         };
         /**
          * Search purchase history
-         * @description Searches all active receipt items on active receipts using a trimmed, case-insensitive literal substring across description, item code, store, and active canonical description or its display label. Filters apply before counting and pagination. Returns individual purchases sorted by receipt date descending by default, with receipt ID and item ID ascending as stable ties. Prices retain their stored currencies and precision; no currency conversion or physical unit comparison is performed. Count and page are live reads and can change during concurrent edits.
+         * @description Searches all active receipt items on active receipts using a trimmed, case-insensitive literal substring across description, item code, store, and active canonical description or its display label (also pending identities when includeUnreviewed is true). Rejected identities never provide labels or identity history; excluded purchase associations are hidden. Filters apply before counting and pagination. Returns individual purchases sorted by receipt date descending by default, with receipt ID and item ID ascending as stable ties. Prices retain their stored currencies and precision; no currency conversion or physical unit comparison is performed. Count and page are live reads and can change during concurrent edits.
          */
         get: operations["SearchPurchases"];
         put?: never;
@@ -3194,6 +3194,16 @@ export interface components {
         };
         NormalizationCatalogCoverageResponse: {
             /** Format: int32 */
+            verifiedItems?: number;
+            /** Format: int32 */
+            pendingItems?: number;
+            /** Format: int32 */
+            pendingSources?: number;
+            /** Format: int32 */
+            excludedItems?: number;
+            /** Format: date-time */
+            oldestUnresolvedAt?: string | null;
+            /** Format: int32 */
             revisable?: number;
             /** Format: int32 */
             totalItems: number;
@@ -3427,6 +3437,8 @@ export interface components {
             limit: number;
         };
         PurchaseSearchItem: {
+            /** @description Current purchase evidence state; verified, needsReview, or excluded. */
+            normalizationReviewState?: string;
             /** Format: uuid */
             id: string;
             /** Format: uuid */
@@ -3438,7 +3450,7 @@ export interface components {
             receiptItemCode?: string | null;
             /** Format: uuid */
             normalizedDescriptionId?: string | null;
-            /** @description Display label (falling back to canonical name) of the active linked description, otherwise null. Use normalizedDescriptionId for identity. */
+            /** @description Display label of the verified identity, or a provisional association when includeUnreviewed is true. Use normalizedDescriptionId for identity. */
             normalizedDescription?: string | null;
             /** Format: double */
             quantity: number;
@@ -3656,6 +3668,10 @@ export interface components {
             toDate?: string | null;
         };
         SpendingByNormalizedDescriptionItem: {
+            /** Format: uuid */
+            normalizedDescriptionId?: string | null;
+            /** @description Purchase evidence bucket; verified, needsReview, or excluded. */
+            normalizationReviewState?: string;
             /** @description Canonical name of the normalized description, or "(Not Normalized)" for receipt items without a normalized description. */
             canonicalName: string;
             /**
@@ -4500,6 +4516,12 @@ export interface components {
             limit: number;
         };
         ReceiptListItemResponse: {
+            /** Format: int32 */
+            verifiedItemCount?: number;
+            /** Format: int32 */
+            needsReviewItemCount?: number;
+            /** Format: int32 */
+            excludedItemCount?: number;
             /** Format: uuid */
             id: string;
             location: string;
@@ -4698,7 +4720,7 @@ export interface components {
              * @description Provisional or reviewed canonical identity. Verification is expressed separately by normalizationReviewState.
              */
             normalizedDescriptionId?: string | null;
-            /** @description Denormalized CanonicalName from the linked NormalizedDescription for display. */
+            /** @description Display label of a live active or pending identity. Provisional unless normalizationReviewState is verified; rejected and excluded associations are hidden. */
             normalizedDescriptionName?: string | null;
             /**
              * Format: double
@@ -4838,6 +4860,12 @@ export interface components {
             severity?: number;
         };
         ReceiptWithItemsResponse: {
+            /** Format: int32 */
+            verifiedItemCount?: number;
+            /** Format: int32 */
+            needsReviewItemCount?: number;
+            /** Format: int32 */
+            excludedItemCount?: number;
             receipt: components["schemas"]["ReceiptResponse"];
             items: components["schemas"]["ReceiptItemResponse"][];
             adjustments: components["schemas"]["AdjustmentResponse"][];
@@ -7141,9 +7169,13 @@ export interface operations {
     };
     SearchPurchases: {
         parameters: {
-            query: {
-                /** @description Literal search phrase, 2 to 200 characters after trimming. */
-                q: string;
+            query?: {
+                /** @description Expose active and pending provisional associations explicitly with their purchase review state; rejected identities and excluded associations remain hidden. Raw purchases always remain searchable. */
+                includeUnreviewed?: boolean;
+                /** @description Filter identity history before pagination; verified assignments by default. */
+                normalizedDescriptionId?: string;
+                /** @description Literal search phrase, 2 to 200 characters after trimming. May be omitted or empty only with normalizedDescriptionId for identity history. When supplied, intersects the identity filter. */
+                q?: string;
                 offset?: number;
                 limit?: number;
                 /** @description Sort column (date, description, location, unitPrice, quantity, or totalAmount). */

@@ -12,4 +12,7 @@ public sealed record ReceiptListItem(
 	string BalanceState,
 	int ItemCount,
 	string CategorySummary,
-	string PaymentSummary);
+	string PaymentSummary,
+	int VerifiedItemCount = 0,
+	int NeedsReviewItemCount = 0,
+	int ExcludedItemCount = 0);

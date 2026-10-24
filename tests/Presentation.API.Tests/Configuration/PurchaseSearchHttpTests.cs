@@ -89,6 +89,32 @@ public class PurchaseSearchHttpTests
 		reader.VerifyAll();
 	}
 
+	[Theory]
+	[InlineData("")]
+	[InlineData("&q=")]
+	[InlineData("&q=%20%20")]
+	public async Task GuidHistory_AcceptsAbsentOrBlankPhraseAndReturnsReviewState(string phrase)
+	{
+		Guid target = Guid.NewGuid();
+		var options = new PurchaseSearchOptions(NormalizedDescriptionId: target);
+		Mock<IPurchaseSearchReader> reader = new(MockBehavior.Strict);
+		reader.Setup(x => x.SearchAsync("", 0, 25,
+			options, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new PurchaseSearchResult([
+				new(Guid.NewGuid(), Guid.NewGuid(), new(2025, 1, 15), "Shop", "RAW", null,
+						target, "Reviewed name", 1m, 2m, "USD", -2m, "USD", "verified")], 1, 0, 25));
+		await using WebApplication app = await StartAsync(reader);
+		using HttpClient client = app.GetTestClient();
+		using var response = await client.GetAsync($"/api/search/purchases?normalizedDescriptionId={target}{phrase}");
+		response.StatusCode.Should().Be(HttpStatusCode.OK);
+		using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+		var item = document.RootElement.GetProperty("items")[0];
+		item.GetProperty("normalizedDescriptionId").GetGuid().Should().Be(target);
+		item.GetProperty("normalizationReviewState").GetString().Should().Be("verified");
+		item.GetProperty("totalAmount").GetDecimal().Should().Be(-2m);
+		reader.VerifyAll();
+	}
+
 	private static async Task<WebApplication> StartAsync(Mock<IPurchaseSearchReader> reader)
 	{
 		WebApplicationBuilder builder = WebApplication.CreateBuilder();

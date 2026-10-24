@@ -111,4 +111,25 @@ public class ReceiptWithItemsMapperTests
 		Assert.Equal(receiptId, actual.Receipt.Id);
 		Assert.Empty(actual.Items);
 	}
+
+	[Fact]
+	public void ToResponse_CountsPersistedReviewStatesIndependentlyOfProductForeignKeys()
+	{
+		var states = new[] { Domain.NormalizedDescriptions.NormalizationReviewState.Verified,
+						Domain.NormalizedDescriptions.NormalizationReviewState.NeedsReview,
+						Domain.NormalizedDescriptions.NormalizationReviewState.Excluded };
+		var aggregate = new ReceiptWithItems
+		{
+			Receipt = new Receipt(Guid.NewGuid(), "Store", new DateOnly(2025, 1, 1), new Money(0, Currency.USD)),
+			Items = states.Select(state => new ReceiptItem(Guid.NewGuid(), null, "Raw", 1,
+					new Money(2, Currency.USD), new Money(2, Currency.USD), "Food", null)
+			{ NormalizationReviewState = state }).ToList(),
+			Adjustments = []
+		};
+		var response = _mapper.ToResponse(aggregate);
+		Assert.Equal(1, response.VerifiedItemCount);
+		Assert.Equal(1, response.NeedsReviewItemCount);
+		Assert.Equal(1, response.ExcludedItemCount);
+		Assert.Equal(3, response.Items.Count);
+	}
 }

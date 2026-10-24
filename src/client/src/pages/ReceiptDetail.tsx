@@ -263,6 +263,14 @@ function ReceiptDetail() {
 
       {trip && !receiptNotFound && (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <p
+            className="text-sm text-muted-foreground"
+            aria-label="Purchase verification coverage"
+          >
+            Purchase review: {trip.receipt.verifiedItemCount ?? 0} verified ·{" "}
+            {trip.receipt.needsReviewItemCount ?? 0} needs review ·{" "}
+            {trip.receipt.excludedItemCount ?? 0} excluded
+          </p>
           {(allWarnings.length > 0 || transactionsImbalanced) && (
             <div className="warn-banner" role="status" aria-live="polite">
               <Icon.AlertTriangle className="ico" aria-hidden="true" />

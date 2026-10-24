@@ -236,6 +236,7 @@ public class ReportService(IDbContextFactory<ApplicationDbContext> contextFactor
 						ri.TotalAmount,
 						ri.Quantity,
 						ri.UnitPrice,
+						ri.NormalizationReviewState,
 						r.Date,
 						CanonicalName = n.CanonicalName,
 						DisplayLabel = n.DisplayLabel,
@@ -249,6 +250,7 @@ public class ReportService(IDbContextFactory<ApplicationDbContext> contextFactor
 		}
 		else if (!string.IsNullOrEmpty(normalizedDescription))
 		{
+			query = query.Where(x => x.NormalizationReviewState == NormalizationReviewState.Verified);
 			string canonicalLower = normalizedDescription.ToLower();
 			bool hasDisplayedMatch = await context.NormalizedDescriptions.AnyAsync(target => (target.DisplayLabel ?? target.CanonicalName).ToLower() == canonicalLower, cancellationToken);
 			query = hasDisplayedMatch
@@ -467,23 +469,29 @@ public class ReportService(IDbContextFactory<ApplicationDbContext> contextFactor
 			receiptsQuery = receiptsQuery.Where(r => r.Date <= toDate.Value);
 		}
 
-		// LEFT JOIN ReceiptItems -> NormalizedDescriptions (via nullable FK), then GROUP BY the
-		// coalesced canonical name. Aggregation happens in SQL (RECEIPTS-841) — the previous
-		// implementation pulled every matching receipt item into memory before grouping, which
-		// cannot support server-side pagination.
-		// Grouped by DISPLAY name, not matched text (RECEIPTS-876). Renaming an entry is meant to
-		// change what the report calls it — a rename that left this report showing the old raw
-		// receipt text would be the same "the action has no observable effect" complaint
-		// RECEIPTS-875 was about. COALESCE mirrors the unique index on
-		// lower(COALESCE("DisplayLabel","CanonicalName")), so two buckets can never share a label.
-		var baseQuery = from ri in context.ReceiptItems.AsNoTracking().Where(ri => ri.DeletedAt == null)
-						join r in receiptsQuery on ri.ReceiptId equals r.Id
-						join n in context.NormalizedDescriptions.AsNoTracking() on ri.NormalizedDescriptionId equals n.Id into gj
-						from n in gj.DefaultIfEmpty()
-						group new { ri.TotalAmount, r.Date } by (n.DisplayLabel ?? n.CanonicalName) ?? NotNormalizedLabel into g
+		// Persisted review state is maintained by the shared evidence policy and database guards.
+		// A label is presentation, never identity: distinct verified products may share one.
+		var assignments = from ri in context.ReceiptItems.AsNoTracking().Where(ri => ri.DeletedAt == null)
+						  join r in receiptsQuery on ri.ReceiptId equals r.Id
+						  join n in context.NormalizedDescriptions.AsNoTracking() on ri.NormalizedDescriptionId equals n.Id into gj
+						  from n in gj.DefaultIfEmpty()
+						  let verified = ri.NormalizationReviewState == NormalizationReviewState.Verified && n != null && n.Status == NormalizedDescriptionStatus.Active
+						  select new
+						  {
+							  Id = verified ? (Guid?)n.Id : null,
+							  Name = verified ? n.DisplayLabel ?? n.CanonicalName : ri.NormalizationReviewState == NormalizationReviewState.Excluded ? "(Excluded)" : "(Needs review)",
+							  State = verified ? "verified" : ri.NormalizationReviewState == NormalizationReviewState.Excluded ? "excluded" : "needsReview",
+							  ri.TotalAmount,
+							  ri.TotalAmountCurrency,
+							  r.Date,
+						  };
+		var baseQuery = from a in assignments
+						group a by new { a.Id, a.Name, a.State } into g
 						select new
 						{
-							CanonicalName = g.Key,
+							g.Key.Id,
+							CanonicalName = g.Key.Name,
+							g.Key.State,
 							Total = g.Sum(x => x.TotalAmount),
 							ItemCount = g.Count(),
 							FirstSeen = g.Min(x => x.Date),
@@ -511,7 +519,7 @@ public class ReportService(IDbContextFactory<ApplicationDbContext> contextFactor
 		// Deterministic total order (same rule as the other paginated reports): the GROUP BY key is
 		// unique per row, so appending it ascending turns the non-unique measure sorts into a total
 		// order and keeps offset pagination from skipping or repeating rows between page requests.
-		sortedQuery = sortedQuery.ThenBy(x => x.CanonicalName);
+		sortedQuery = sortedQuery.ThenBy(x => x.CanonicalName).ThenBy(x => x.Id).ThenBy(x => x.State);
 
 		// Skip/Take BEFORE materializing — the database paginates, only one page crosses the wire.
 		var pagedGroups = await sortedQuery
@@ -524,93 +532,19 @@ public class ReportService(IDbContextFactory<ApplicationDbContext> contextFactor
 			return new SpendingByNormalizedDescriptionResult([], totalCount, grandTotal, from, to);
 		}
 
-		List<string> pagedNames = [.. pagedGroups.Select(x => x.CanonicalName)];
-
-		Dictionary<string, string> dominantCurrencies = await GetDominantCurrenciesAsync(
-			context,
-			receiptsQuery,
-			pagedNames,
-			cancellationToken);
-
-		Dictionary<string, NormalizedDescriptionStatus> statuses = await GetStatusesAsync(
-			context,
-			pagedNames,
-			cancellationToken);
-
+		Guid[] pageIds = [.. pagedGroups.Where(x => x.Id.HasValue).Select(x => x.Id!.Value)];
+		string[] pageStates = [.. pagedGroups.Where(x => !x.Id.HasValue).Select(x => x.State)];
+		var currencyCounts = await assignments.Where(x => (x.Id.HasValue && pageIds.Contains(x.Id.Value)) || (!x.Id.HasValue && pageStates.Contains(x.State)))
+			.GroupBy(x => new { x.Id, x.State, x.TotalAmountCurrency })
+			.Select(g => new { g.Key.Id, g.Key.State, g.Key.TotalAmountCurrency, Count = g.Count() })
+			.ToListAsync(cancellationToken);
 		List<SpendingByNormalizedDescriptionItem> items = [.. pagedGroups.Select(x =>
-			new SpendingByNormalizedDescriptionItem(
-				x.CanonicalName,
-				x.Total,
-				dominantCurrencies.TryGetValue(x.CanonicalName, out string? currency) ? currency : Currency.USD.ToString(),
-				x.ItemCount,
-				ToDateTimeOffset(x.FirstSeen),
-				ToDateTimeOffset(x.LastSeen),
-				statuses.TryGetValue(x.CanonicalName, out NormalizedDescriptionStatus status) ? status : null))];
+			new SpendingByNormalizedDescriptionItem(x.CanonicalName, x.Total,
+				currencyCounts.Where(c => c.Id == x.Id && c.State == x.State).OrderByDescending(c => c.Count).ThenBy(c => c.TotalAmountCurrency).First().TotalAmountCurrency.ToString(),
+				x.ItemCount, ToDateTimeOffset(x.FirstSeen), ToDateTimeOffset(x.LastSeen),
+				x.State == "verified" ? NormalizedDescriptionStatus.Active : null, x.Id, x.State))];
 
 		return new SpendingByNormalizedDescriptionResult(items, totalCount, grandTotal, from, to);
-	}
-
-	/// <summary>
-	/// Resolves the dominant (most frequent) currency for each supplied bucket. Kept as a second,
-	/// page-scoped query because the mode of a column is not expressible in the same grouped SQL
-	/// statement — at most <c>pageSize</c> buckets are ever requested. Ties break on the
-	/// <see cref="Currency"/> enum ordering, matching the pre-pagination behaviour.
-	/// </summary>
-	private static async Task<Dictionary<string, string>> GetDominantCurrenciesAsync(
-		ApplicationDbContext context,
-		IQueryable<ReceiptEntity> receiptsQuery,
-		List<string> canonicalNames,
-		CancellationToken cancellationToken)
-	{
-		var currencyCounts = await (
-			from ri in context.ReceiptItems.AsNoTracking().Where(ri => ri.DeletedAt == null)
-			join r in receiptsQuery on ri.ReceiptId equals r.Id
-			join n in context.NormalizedDescriptions.AsNoTracking() on ri.NormalizedDescriptionId equals n.Id into gj
-			from n in gj.DefaultIfEmpty()
-				// Same display-name key as the aggregate query above, or the dictionary this builds
-				// would miss every renamed bucket and silently fall back to USD (RECEIPTS-876).
-			where canonicalNames.Contains((n.DisplayLabel ?? n.CanonicalName) ?? NotNormalizedLabel)
-			group ri by new { CanonicalName = (n.DisplayLabel ?? n.CanonicalName) ?? NotNormalizedLabel, ri.TotalAmountCurrency } into cg
-			select new
-			{
-				cg.Key.CanonicalName,
-				cg.Key.TotalAmountCurrency,
-				Count = cg.Count(),
-			}).ToListAsync(cancellationToken);
-
-		return currencyCounts
-			.GroupBy(x => x.CanonicalName)
-			.ToDictionary(
-				g => g.Key,
-				g => g.OrderByDescending(x => x.Count)
-					.ThenBy(x => x.TotalAmountCurrency)
-					.Select(x => x.TotalAmountCurrency.ToString())
-					.First());
-	}
-
-	/// <summary>
-	/// Review status for each canonical name on the current page (RECEIPTS-875).
-	/// </summary>
-	/// <remarks>
-	/// A second lookup rather than an extra GROUP BY key. The aggregate query reaches
-	/// NormalizedDescriptions through a LEFT JOIN, so its <c>Status</c> is NULL for every receipt
-	/// item that has no canonical row — and the entity maps that column to a non-nullable enum
-	/// through a value converter, which will not materialize a NULL. Keying off the page's names
-	/// instead keeps the aggregate SQL untouched and costs one indexed read of at most
-	/// <c>pageSize</c> rows. Safe because <c>lower("CanonicalName")</c> is uniquely indexed, so a
-	/// name identifies exactly one row; the synthetic "(Not Normalized)" key simply misses.
-	/// </remarks>
-	private static async Task<Dictionary<string, NormalizedDescriptionStatus>> GetStatusesAsync(
-		ApplicationDbContext context,
-		List<string> canonicalNames,
-		CancellationToken cancellationToken)
-	{
-		var rows = await context.NormalizedDescriptions.AsNoTracking()
-			.Select(n => new { DisplayName = n.DisplayLabel ?? n.CanonicalName, n.Status })
-			.Where(x => canonicalNames.Contains(x.DisplayName))
-			.ToListAsync(cancellationToken);
-
-		return rows.ToDictionary(x => x.DisplayName, x => x.Status);
 	}
 
 	private static DateTimeOffset ToDateTimeOffset(DateOnly date) =>

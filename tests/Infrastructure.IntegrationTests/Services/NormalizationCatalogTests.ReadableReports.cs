@@ -14,6 +14,7 @@ public sealed partial class NormalizationCatalogTests
 		await ResetAsync();
 		var target = await CanonicalAsync("BF FRANKS 8CT");
 		var ids = await ItemsAsync(Source, 2, "manual", target.Id);
+		await ReviewExistingAsync(ids, target);
 		var facts = await FactsAsync(ids);
 		using var provider = OfflineProvider();
 		await provider.GetRequiredService<INormalizedDescriptionService>()

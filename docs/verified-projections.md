@@ -1,0 +1,13 @@
+# Verified purchase projections
+
+Purchase search retains every live raw purchase. Product labels and identity history use persisted purchase verification by default; includeUnreviewed=true explicitly exposes provisional associations with their review state. Identity filters apply before counting and pagination and identify products by GUID. Prices remain recorded amounts and quantities, without comparable-unit claims.
+
+The spending-by-normalized-description report intentionally changes grouping: verified assignments group by product GUID, unresolved and legacy assignments enter (Needs review), and exclusions enter (Excluded). Every live purchase remains in the financial denominator. Display labels can repeat across identities. CSV exports use the same buckets and include purchase review state. Currency remains the existing dominant currency convention; amounts are not converted or claimed comparable across currencies.
+
+Receipt list counts reflect verified, pending and excluded purchase states maintained by the shared evidence policy and write guards. Catalog health reports these counts separately from distinct pending source keys and oldest outstanding work. Naming review coverage and unresolved consolidation are unavailable because no durable review evidence supports those denominators. Existing origin counters remain diagnostic provenance only.
+
+Receipt details expose the same three server-calculated counts and each purchase's persisted review state. Pending identity labels are explicitly provisional. Rejected identity labels and excluded purchase associations are hidden; raw purchase facts remain searchable. Explicit include-unreviewed search admits pending identities and their provisional associations, while rejected identities never establish product history.
+
+Identity history accepts an omitted or empty `q` only alongside `normalizedDescriptionId`. A supplied phrase intersects that identity filter and every ordinary date, store and price filter. Submitting a new phrase clears the product identity filter; the applied identity is visible and can also be cleared directly. Report links preserve the selected inclusive start and end dates without inventing a search phrase. Curation invalidates receipt lists and details because target status changes can invalidate purchase verification. The report displays the existing mixed-currency aggregation caveat alongside totals.
+
+Normalized-name legacy cost charts now exclude unresolved associations. The grouped report opens GUID-filtered purchase history so dates, store, quantity, recorded price and receipt links remain visible. Explicit include-unreviewed history remains available through its checkbox. No database migration is required.

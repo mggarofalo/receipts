@@ -70,6 +70,9 @@ interface ReceiptListItem {
   transactionTotal: number;
   balanceState: "noTransactions" | "balanced" | "outOfBalance";
   itemCount: number;
+  verifiedItemCount?: number;
+  needsReviewItemCount?: number;
+  excludedItemCount?: number;
   categorySummary: string;
   paymentSummary: string;
 }
@@ -807,6 +810,9 @@ function Receipts() {
                           <span>
                             {receipt.itemCount} item
                             {receipt.itemCount === 1 ? "" : "s"}
+                          </span>
+                          <span className="receipt-summary-detail">
+                            {receipt.verifiedItemCount == null ? " · Verification unavailable" : ` · ${receipt.verifiedItemCount} verified · ${receipt.needsReviewItemCount ?? 0} need review · ${receipt.excludedItemCount ?? 0} excluded`}
                           </span>
                           {receipt.categorySummary && (
                             <span className="receipt-summary-detail">

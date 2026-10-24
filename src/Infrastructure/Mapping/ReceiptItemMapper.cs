@@ -83,6 +83,8 @@ public partial class ReceiptItemMapper
 		// item under the old receipt-scanned string would contradict every other surface
 		// (RECEIPTS-876).
 		domain.NormalizedDescriptionName = source.NormalizedDescription is null
+			|| source.NormalizedDescription.Status == Domain.NormalizedDescriptions.NormalizedDescriptionStatus.Rejected
+			|| source.NormalizationReviewState == Domain.NormalizedDescriptions.NormalizationReviewState.Excluded
 			? null
 			: source.NormalizedDescription.DisplayLabel ?? source.NormalizedDescription.CanonicalName;
 		return domain;

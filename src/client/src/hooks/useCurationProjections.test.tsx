@@ -89,6 +89,8 @@ const server = setupServer(
           quantity: 1,
           unitPrice: 10,
           category: "Food",
+          normalizationReviewState:
+            label === "(Not Normalized)" ? "needsReview" : "verified",
           normalizedDescriptionName:
             label === "(Not Normalized)" ? null : label,
         },
@@ -343,6 +345,7 @@ it.each(["local", "remote", "same-session"] as const)(
           quantity: 1,
           unitPrice: 10,
           category: "Food",
+          normalizationReviewState: "verified",
           normalizedDescriptionName: label,
         },
       ],
