@@ -370,6 +370,40 @@ remain available if the response wait times out; no request is intercepted or re
 
 ## Browser-only completion of the retained null-body stop
 
+A later failed attempt at the same boundary can be assessed with a private
+`browser-before-write-assessment.json` instead of adding a per-revision directory
+allowlist. The assessment has kind `assessed-browser-before-write-20261024`,
+status `failed-safe-stop`, runnerExit `1`, failedGate
+`browser-cache-refresh-and-unsaved-draft`, captureWasReadOnly `true`, and
+browserSavePlanned / competingPriceWritePerformed / retryPerformed all `false`.
+Its `evidenceSha256` maps every other file basename in that archive to its exact
+SHA-256, including the new `safe-stop-all-tables.assessed.json` capture and the
+independent failure assessment. The loader requires exactly connection GET,
+item GET, read-only preview POST and item GET journals numbered 2-5, all HTTP
+200; no save intent, competing write or successful completion may exist.
+It binds the full original restore chain through `browser-continuation.prior`,
+all portable application tables, all 11 PostgreSQL groups, and the exact audited
+login delta across all 42 tables. Current complete state must equal that capture
+before authentication. Ancestry is bounded to eight assessed entries. This
+recovery creates no purchases and replays no completed lifecycle phases.
+
+The retained `lifecycle-browser-completion-bafc022e` attempt is such a stop. Its
+actual preview response was captured and matched; its failed shortlist GET lacks
+failure text, query and timing. Intentional cancellation versus network failure
+remains unclassified, and that attempt remains failed. The next browser scenario
+waits for the exact source shortlist's actual HTTP 200, completed response body,
+and visible nonloading state before Review later unmounts the shortlist.
+Every request failure, including ERR_ABORTED, still fails the run; diagnostics
+now retain full URL/query, failure text, timestamp, timing, redirect chain and
+scenario lifecycle. No cancellation exemption is introduced.
+
+For this assessed stop, use the command below with
+`browserPrior=$runtimeA/lifecycle-browser-completion-bafc022e` and a new output
+directory. The archive-only preflight and real-archive test require no new API
+calls or authentication. A clean committed harness remains required by the
+revision guard.
+
+
 `browserPrior` accepts `lifecycle-completion-18c87514` and the separately assessed
 `lifecycle-browser-final-a320674d` timeout before any competing edit or save.
 The latter binds the original restore chain, actual timeout assessment, exact two

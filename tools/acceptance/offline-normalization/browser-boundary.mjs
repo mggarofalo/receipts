@@ -10,6 +10,42 @@ export function matchesPurchasePreview(response) {
   return request.method()==='POST' && new URL(response.url()).pathname==='/api/receipt-items/normalization-preview' && response.status()===200;
 }
 
+export function matchesCandidateLookup(response,source) {
+  const url=new URL(response.url());
+  return response.request().method()==='GET' && response.status()===200 &&
+    url.pathname==='/api/receipt-items/normalization-candidates' &&
+    ['location','description','itemCode'].every(key=>(url.searchParams.get(key)??'')===(source[key]??''));
+}
+
+export async function settleCandidateLookup(response) {
+  assert.equal(await response.finished(),null,'Suggested products request did not finish');
+  const candidates=await response.json();assert(Array.isArray(candidates),'Suggested products response is not a list');
+  return candidates;
+}
+
+export function assertBrowserPreviewSource(source,item,pg) {
+  assert.equal(source.description,item.description);assert.equal(source.itemCode??null,item.receiptItemCode??null);
+  const receipt=pg.state.receipts.find(r=>r.Id===item.receiptId);assert(receipt);
+  assert.equal(source.location,receipt.Location);
+}
+
+export function assertBeforeWriteAssessment(assessment) {
+  assert.equal(assessment.kind,'assessed-browser-before-write-20261024');
+  assert.equal(assessment.status,'failed-safe-stop');assert.equal(assessment.runnerExit,1);
+  assert.equal(assessment.failedGate,'browser-cache-refresh-and-unsaved-draft');assert.equal(assessment.captureWasReadOnly,true);
+  for(const key of ['browserSavePlanned','competingPriceWritePerformed','retryPerformed']) assert.equal(assessment[key],false);
+}
+
+export function browserRequestFailure(request,lifecycle) {
+  const url=new URL(request.url());
+  let failure=null,timing=null;
+  try {failure=request.failure();} catch(error) {failure={errorText:error.message};}
+  try {timing=request.timing();} catch(error) {timing={captureError:error.message};}
+  return {utc:new Date().toISOString(),path:url.pathname,query:url.search,url:url.href,
+    method:request.method(),transportFailed:true,errorText:failure?.errorText??null,
+    lifecycle,timing,requestChain:previewRequestChain(request)};
+}
+
 export function assertPurchasePreview(actual,expected) {
   assert(expected.sourceFingerprint,'Independent preview fingerprint missing');
   for(const key of ['sourceFingerprint','mappingId','mappingRevision','targetId','targetRevision','targetName','excluded','sourceAmbiguous','offset','limit','total','candidates']) assert.deepEqual(actual?.[key],expected[key],`Browser preview differs: ${key}`);
@@ -44,8 +80,10 @@ export function observeResponse(page,predicate) {
   return async()=>{const value=await result;if(value.error) throw value.error;return value.response;};
 }
 
-export function loadBrowserBoundary({prior,runtime,runId,bSha256,snapshot,transition}) {
+export function loadBrowserBoundary({prior,runtime,runId,bSha256,snapshot,transition,_depth=0}) {
   prior=path.resolve(prior);runtime=path.resolve(runtime);
+  assert(_depth<8,'Too many assessed browser continuations');
+  if(fs.existsSync(path.join(prior,'browser-before-write-assessment.json'))) return loadBrowserBeforeWrite({prior,runtime,runId,bSha256,snapshot,transition,_depth});
   if(path.basename(prior)==='lifecycle-browser-final-a320674d') return loadBrowserRetry({prior,runtime,runId,bSha256,snapshot,transition});
   assert.equal(path.dirname(prior),runtime);assert.equal(path.basename(prior),'lifecycle-completion-18c87514');
   const read=name=>JSON.parse(fs.readFileSync(path.join(prior,name),'utf8').replace(/^\uFEFF/,''));
@@ -147,6 +185,64 @@ function loadBrowserRetry(args) {
   assert.deepEqual(allTables.container,stop.container);
   for(const [key,table] of Object.entries(groups)) assert.deepEqual(allTables.tables[table],stop.state[key]);
   return {...original,prior,files,stop,allTables,expected,rawPreviewBodyAvailable:false};
+}
+
+export function assertBeforeWriteJournal(requests,responses,item) {
+  assert.equal(requests.length,4);assert.equal(responses.length,4);
+  const urls=['/api/normalization-ai/connection','/api/receipt-items/'+item.id,'/api/receipt-items/normalization-preview','/api/receipt-items/'+item.id];
+  for(let i=0;i<4;i++) {
+    const req=requests[i],res=responses[i];
+    assert.equal(req.url,urls[i]);assert.equal(req.method,i===2?'POST':'GET');
+    assert.equal(res.url,req.url);assert.equal(res.method,req.method);assert.equal(res.status,200);
+    if(i===1 || i===3) assert.deepEqual(JSON.parse(res.text),item);
+  }
+}
+
+// A continuation is identified by a validated safe boundary, never by a harness SHA.
+function loadBrowserBeforeWrite(args) {
+  const {prior,runtime,runId,bSha256,snapshot}=args;
+  assert.equal(path.dirname(prior),runtime);
+  const read=name=>JSON.parse(fs.readFileSync(path.join(prior,name),'utf8').replace(/^\uFEFF/,''));
+  const digest=file=>crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+  const assessment=read('browser-before-write-assessment.json');
+  assertBeforeWriteAssessment(assessment);
+  const browser=read('browser-continuation.json');
+  assert.notEqual(path.resolve(browser.prior),prior,'Browser continuation cycle');
+  const original=loadBrowserBoundary({...args,prior:browser.prior,_depth:args._depth+1});
+  const files={...original.files};
+  const names=fs.readdirSync(prior);assert(names.every(name=>fs.statSync(path.join(prior,name)).isFile()));
+  for(const name of names) {
+    const file=path.join(prior,name),sha=digest(file);
+    if(name!=='browser-before-write-assessment.json') assert.equal(assessment.evidenceSha256[name],sha,'Assessed archive changed');
+    files[file]=sha;
+  }
+  assert.deepEqual(Object.keys(assessment.evidenceSha256).sort(),names.filter(n=>n!=='browser-before-write-assessment.json').sort());
+  assert(!names.some(n=>n.startsWith('browser-save-') || n==='lifecycle-browser-completion.json' || n==='lifecycle-completion.json'));
+  const failure=read('failure.json'),continuation=read('continuation.json'),baseline=read('baseline.json');
+  for(const record of [failure,continuation,browser,baseline]) {
+    assert.equal(record.runId,runId);assert.equal(record.bSha256,bSha256);assert.equal(record.phase,'lifecycle');
+  }
+  assert.deepEqual(failure.completed,original.completed);assert.deepEqual(browser.completedEarlier,original.completed);
+  assert.equal(browser.newReceiptCreations,0);assert.deepEqual(browser.files,original.files);
+  assert.deepEqual(continuation.transition,args.transition);assert.equal(continuation.prior,original.continuation.prior);
+  assert.deepEqual(read('upgrade-preserved.json').postgres,original.stop);
+  assert.deepEqual(names.filter(n=>/^request-\d+\.json$/.test(n)).sort(),[2,3,4,5].map(n=>`request-${n}.json`));
+  assert.deepEqual(names.filter(n=>/^response-\d+\.json$/.test(n)).sort(),[2,3,4,5].map(n=>`response-${n}.json`));
+  assertBeforeWriteJournal([2,3,4,5].map(n=>read(`request-${n}.json`)),[2,3,4,5].map(n=>read(`response-${n}.json`)),original.future.item);
+  const preview=read('browser-preview-baseline.json'),actual=read('browser-preview-response.json');
+  assert.deepEqual(preview.item,original.future.item);
+  assertBrowserPreviewSource(preview.source,original.future.item,preview.postgres);
+  assert.deepEqual(read('request-4.json').body,{source:preview.source,query:null,offset:0,limit:10});
+  assert.equal(actual.status,200);assertPurchasePreview(actual.body,JSON.parse(read('response-4.json').text));assertPurchasePreview(actual.body,preview.preview);
+  const stop=read('safe-stop-postgres.json');assert.deepEqual(stop,baseline.postgres);assert.deepEqual(preview.postgres,stop);
+  const expected=snapshot(path.join(prior,'before-lifecycle.db'));
+  assert.deepEqual(expected.tables,original.expected.tables);assert.deepEqual(snapshot(path.join(prior,'safe-stop.db')).tables,expected.tables);
+  const allTables=read('safe-stop-all-tables.assessed.json');
+  assertExactLoginEffects(original.allTables,allTables,read('authentication-request.json'),read('authentication-response.json'));
+  const groups={items:'receipts.ReceiptItems',receipts:'receipts.Receipts',transactions:'receipts.Transactions',adjustments:'receipts.Adjustments',identities:'matching.NormalizedDescriptions',mappings:'matching.NormalizationSourceMappings',reviewWork:'matching.NormalizationReviewWork',replays:'receipts.ReceiptWriteRequests',operations:'matching.NormalizationCatalogOperations',members:'matching.NormalizationCatalogMembers',audits:'audit.AuditLogs'};
+  assert.deepEqual(allTables.container,stop.container);
+  for(const [key,table] of Object.entries(groups)) assert.deepEqual(allTables.tables[table],stop.state[key]);
+  return {...original,prior,files,stop,allTables,expected,rawPreviewBodyAvailable:true};
 }
 
 export function assertExactLoginEffects(before,after,request,response) {

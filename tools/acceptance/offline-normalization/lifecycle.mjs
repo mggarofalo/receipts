@@ -9,7 +9,7 @@ import { assertLifecycleResume, assertSettled, assertRevisionTransition, assertU
 
 import { assertCompletionBoundary, assertIndependentProof, assertRestoreDecision, assertCompletionFacts, runWithLifecycleFailureCapture, journalBrowserSave, redactedFailure, bindCompletionEvidence } from './lifecycle-completion.mjs';
 
-import {matchesPurchasePreview,assertPurchasePreview,assertBrowserPurchase,previewRequestChain,observeResponse,loadBrowserBoundary} from './browser-boundary.mjs';
+import {matchesPurchasePreview,assertPurchasePreview,assertBrowserPurchase,previewRequestChain,observeResponse,loadBrowserBoundary,browserRequestFailure,matchesCandidateLookup,settleCandidateLookup} from './browser-boundary.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const read = p => JSON.parse(fs.readFileSync(p, 'utf8').replace(/^\uFEFF/, ''));
@@ -489,9 +489,9 @@ async function main() {
     const browser=await chromium.launch({headless:true}); const context=await browser.newContext({baseURL:ready.Frontend});
     await context.addInitScript(({accessToken,refreshToken})=>{localStorage.setItem('receipts_access_token',accessToken);localStorage.setItem('receipts_refresh_token',refreshToken);},login);
     const page=await context.newPage();
-    const apiErrors=[],previewRequests=[],previewCaptures=[];let savePlanned=false,saveRequest;
+    const apiErrors=[],previewRequests=[],previewCaptures=[];let savePlanned=false,saveRequest;let browserLifecycle='opening-receipt';
     page.on('request',request=>{if(savePlanned && !saveRequest && request.method()==='PUT' && new URL(request.url()).pathname==='/api/receipt-items/'+future.item.id) saveRequest=request;});
-    page.on('requestfailed',request=>{const url=new URL(request.url());if(url.pathname.startsWith('/api/')) apiErrors.push({path:url.pathname,method:request.method(),transportFailed:true});});
+    page.on('requestfailed',request=>{const url=new URL(request.url());if(url.pathname.startsWith('/api/')) apiErrors.push(browserRequestFailure(request,browserLifecycle));});
     page.on('response',response=>{
       const request=response.request(),url=new URL(response.url());
       if(!url.pathname.startsWith('/api/')) return;
@@ -513,6 +513,8 @@ async function main() {
       await page.getByRole('row').filter({hasText:line.description}).getByRole('button',{name:'Edit',exact:true}).click();
       const dialog=page.getByRole('dialog',{name:'Edit Item'});
       await dialog.getByLabel('Unit Price',{exact:false}).fill('8.25');
+      const candidateResponsePromise=observeResponse(page,r=>matchesCandidateLookup(r,expectedSource));
+      browserLifecycle='opening-product-choices';
       await dialog.getByRole('button',{name:'Choose product',exact:true}).click();
       const previewResponse=await previewResponsePromise();
       assert.equal(await previewResponse.finished(),null);
@@ -524,13 +526,25 @@ async function main() {
       await expect(dialog.getByRole('list',{name:'Product choices',exact:true})).toBeAttached();
       await expect(dialog.getByRole('button',{name:'Previous products',exact:true})).toBeVisible();
       await expect(dialog.getByRole('status').filter({hasText:'Loading product choices'})).toBeHidden();
+      // Review later unmounts the shortlist and cancels its consumed query signal.
+      // Settle this unrelated lookup before the stale-save scenario begins.
+      const candidateResponse=await candidateResponsePromise();
+      const candidates=await settleCandidateLookup(candidateResponse);
+      const shortlist=dialog.getByRole('region',{name:'Suggested products'});
+      await expect(shortlist).toBeVisible();
+      await expect(shortlist.getByRole('status')).toBeHidden();
+      await expect(shortlist.getByText('Suggested products are unavailable.',{exact:false})).toBeHidden();
+      journal('browser-candidates-response.json',{requestChain:previewRequestChain(candidateResponse.request()),status:candidateResponse.status(),body:candidates});
+      browserLifecycle='review-later-click';
       await dialog.getByRole('button',{name:'Review later',exact:true}).click();
+      await expect(shortlist).toBeHidden();
+      browserLifecycle='review-later-ready';
       await expect(dialog.getByText('Needs review — saved with the receipt',{exact:true})).toBeVisible();
       assert.deepEqual(apiErrors,[],'Unexpected browser API errors before competing edit');
       // The explicit choice captures the observed revision before a competing save.
       await update(await getItem(future.item.id),{unitPrice:4});
       const before=await settled('browser-rejection-settlement'); const portable=await exported('before-browser-rejection.db');
-      savePlanned=true;
+      browserLifecycle='stale-draft-save';savePlanned=true;
       const response=await journalBrowserSave({page,itemId:future.item.id,journal,
         planned:{utc:new Date().toISOString(),itemId:future.item.id,url:'/api/receipt-items/'+future.item.id,method:'PUT',draftUnitPrice:8.25,intentKind:'defer',expectedItemRevision:future.item.normalizationRevision,sourceFingerprint:previewEvidence.sourceFingerprint},
         click:()=>dialog.getByRole('button',{name:'Update Item',exact:true}).click()});
