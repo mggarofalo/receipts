@@ -93,11 +93,12 @@ public partial class ApplicationDbContext
 			entry => NormalizationCatalogPolicy.Normalize(new NormalizationSourceKey(parents[entry.Entity.ReceiptId].Location, entry.Entity.Description, entry.Entity.ReceiptItemCode)));
 		var hashes = sources.ToDictionary(pair => pair.Key, pair => NormalizationCatalogPolicy.Hash(pair.Value));
 		string[] sourceHashes = hashes.Values.Distinct().ToArray();
+		HashSet<string> sourceHashSet = sourceHashes.ToHashSet(StringComparer.Ordinal);
 		var mappings = await NormalizationSourceMappings.Where(mapping => sourceHashes.Contains(mapping.SourceHash) && mapping.State == "active")
 			.ToDictionaryAsync(mapping => mapping.SourceHash, ct).ConfigureAwait(false);
 		foreach (var entry in ChangeTracker.Entries<NormalizationSourceMappingEntity>())
 		{
-			if (entry.Entity.State == "active" && sourceHashes.Contains(entry.Entity.SourceHash)) { mappings[entry.Entity.SourceHash] = entry.Entity; }
+			if (entry.Entity.State == "active" && sourceHashSet.Contains(entry.Entity.SourceHash)) { mappings[entry.Entity.SourceHash] = entry.Entity; }
 			else { mappings.Remove(entry.Entity.SourceHash); }
 		}
 		Guid[] targetIds = entries.Select(entry => entry.Entity.NormalizationIntent?.TargetId ?? entry.Entity.NormalizedDescriptionId)
@@ -159,12 +160,7 @@ public partial class ApplicationDbContext
 					}
 				}
 			}
-			if (item.DeletedAt is not null || parents[item.ReceiptId].DeletedAt is not null)
-			{
-				item.NormalizationReviewState = NormalizationReviewState.NeedsReview;
-				item.NormalizationReviewReason = "unavailable";
-				continue;
-			}
+			bool unavailable = item.DeletedAt is not null || parents[item.ReceiptId].DeletedAt is not null;
 			NormalizationSourceMappingEntity? mapping = mappings.GetValueOrDefault(hash);
 			bool mappingValid = mapping is not null && (mapping.Exclude || (mapping.TargetId is Guid mappedTarget
 				&& targets.TryGetValue(mappedTarget, out var mappedIdentity) && mappedIdentity.Status == NormalizedDescriptionStatus.Active));
@@ -194,7 +190,15 @@ public partial class ApplicationDbContext
 				item.ReviewedTargetId == item.NormalizedDescriptionId, targetActive, independentReview,
 				mappingValid && item.NormalizationMappingId == mapping!.Id && item.ReviewMappingRevision == mapping.Revision,
 				item.NormalizationReviewState));
-			if (intent is null && evidenceCurrent) { continue; }
+			// Guarded trash changes availability, not an unchanged independent user decision.
+			// Reuse-dependent proof remains conservative; invalidated proof is never revived here.
+			if (intent is null && evidenceCurrent && (!unavailable || independentReview)) { continue; }
+			if (unavailable)
+			{
+				item.NormalizationReviewState = NormalizationReviewState.NeedsReview;
+				item.NormalizationReviewReason = "unavailable";
+				continue;
+			}
 			// Price/quantity/date writes do not manufacture verification from a legacy link or origin string.
 			if (intent is null && !sourceChanged && entry.State != EntityState.Added && item.NormalizationReviewState == NormalizationReviewState.NeedsReview
 				&& !entry.Property(value => value.NormalizationAssignmentId).IsModified) { continue; }

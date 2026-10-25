@@ -26,6 +26,7 @@ public class EmbeddingGenerationService(
 	private const int BatchSize = 50;
 	private const string CanonicalEntityType = "NormalizedDescription";
 	private static readonly TimeSpan Interval = TimeSpan.FromSeconds(30);
+	private static readonly TimeSpan ProductiveBatchDelay = TimeSpan.FromMilliseconds(100);
 	private static readonly TimeSpan InitialDelay = TimeSpan.FromSeconds(10);
 
 	protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -41,12 +42,16 @@ public class EmbeddingGenerationService(
 
 		while (!stoppingToken.IsCancellationRequested)
 		{
+			TimeSpan delay = Interval;
 			try
 			{
 				int processed = await ProcessPendingEmbeddingsAsync(stoppingToken);
 				if (processed > 0)
 				{
 					logger.LogInformation("Generated embeddings for {Count} semantic source rows", processed);
+					// Yield between bounded batches while catching up; reserve the long
+					// cooldown for idle, stale-only, unconfigured, or failed cycles.
+					delay = ProductiveBatchDelay;
 				}
 			}
 			catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -60,7 +65,7 @@ public class EmbeddingGenerationService(
 
 			try
 			{
-				await Task.Delay(Interval, stoppingToken);
+				await Task.Delay(delay, stoppingToken);
 			}
 			catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
 			{

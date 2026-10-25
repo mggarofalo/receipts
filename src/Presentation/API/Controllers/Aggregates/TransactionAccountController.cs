@@ -13,14 +13,13 @@ namespace API.Controllers.Aggregates;
 [ApiVersion("1.0")]
 [ApiController]
 [Route("api/transaction-accounts")]
-[Produces("application/json")]
 [Authorize]
 public class TransactionAccountController(IMediator mediator, TransactionAccountMapper mapper) : ControllerBase
 {
 	[HttpGet("")]
 	[EndpointSummary("Get transaction accounts")]
 	[EndpointDescription("Returns transaction accounts filtered by transaction ID or receipt ID.")]
-	public async Task<Results<Ok<List<TransactionAccountResponse>>, BadRequest<ProblemDetails>>> GetTransactionAccounts([FromQuery] Guid? transactionId = null, [FromQuery] Guid? receiptId = null, CancellationToken cancellationToken = default)
+	public async Task<Results<Ok<List<TransactionAccountResponse>>, BadRequestProblem>> GetTransactionAccounts([FromQuery] Guid? transactionId = null, [FromQuery] Guid? receiptId = null, CancellationToken cancellationToken = default)
 	{
 		if (transactionId.HasValue && receiptId.HasValue)
 		{

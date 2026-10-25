@@ -12,12 +12,11 @@ namespace API.Controllers;
 [ApiVersion("1.0")]
 [ApiController]
 [Route("api/auth/audit")]
-[Produces("application/json")]
 [Authorize]
 public class AuthAuditController(IAuthAuditService authAuditService) : ControllerBase
 {
 	[HttpGet("me")]
-	public async Task<Results<Ok<GeneratedDtos.AuthAuditListResponse>, BadRequest<ProblemDetails>, UnauthorizedHttpResult>> GetMyAuditLog(
+	public async Task<Results<Ok<GeneratedDtos.AuthAuditListResponse>, BadRequestProblem, UnauthorizedHttpResult>> GetMyAuditLog(
 		[FromQuery] int offset = 0,
 		[FromQuery] int limit = 50,
 		[FromQuery] string? sortBy = null,
@@ -57,7 +56,7 @@ public class AuthAuditController(IAuthAuditService authAuditService) : Controlle
 
 	[HttpGet("recent")]
 	[Authorize(Policy = "RequireAdmin")]
-	public async Task<Results<Ok<GeneratedDtos.AuthAuditListResponse>, BadRequest<ProblemDetails>>> GetRecent(
+	public async Task<Results<Ok<GeneratedDtos.AuthAuditListResponse>, BadRequestProblem>> GetRecent(
 		[FromQuery] int offset = 0,
 		[FromQuery] int limit = 50,
 		[FromQuery] string? sortBy = null,
@@ -91,7 +90,7 @@ public class AuthAuditController(IAuthAuditService authAuditService) : Controlle
 
 	[HttpGet("failed")]
 	[Authorize(Policy = "RequireAdmin")]
-	public async Task<Results<Ok<GeneratedDtos.AuthAuditListResponse>, BadRequest<ProblemDetails>>> GetFailed(
+	public async Task<Results<Ok<GeneratedDtos.AuthAuditListResponse>, BadRequestProblem>> GetFailed(
 		[FromQuery] int offset = 0,
 		[FromQuery] int limit = 50,
 		[FromQuery] string? sortBy = null,

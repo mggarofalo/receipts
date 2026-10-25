@@ -244,6 +244,136 @@ public class EmbeddingGenerationServiceTests
 	}
 
 	[Fact]
+	public async Task ExecuteAsync_ProductiveBacklog_ContinuesBoundedBatchesThenCoolsDown()
+	{
+		await using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.AddRange(Enumerable.Range(0, 51).Select(index =>
+				new NormalizedDescriptionEntity
+				{
+					Id = Guid.NewGuid(),
+					CanonicalName = $"Canonical {index:D2}",
+					Status = NormalizedDescriptionStatus.Active,
+					CreatedAt = DateTimeOffset.UtcNow,
+				}));
+			seed.ItemTemplates.Add(new ItemTemplateEntity { Id = Guid.NewGuid(), Name = "Pending item" });
+			await seed.SaveChangesAsync();
+		}
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
+		List<List<string>> batches = [];
+		_embeddingServiceMock
+			.Setup(e => e.GenerateEmbeddingsAsync(
+				It.Is<List<string>>(texts => texts.Count > 0 && texts.Count <= 50),
+				It.IsAny<CancellationToken>()))
+			.Returns<List<string>, CancellationToken>((texts, _) =>
+			{
+				batches.Add([.. texts]);
+				return Task.FromResult(texts.Select(_ => CreateFakeEmbedding()).ToList());
+			});
+		TaskCompletionSource firstBatch = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		TaskCompletionSource secondBatch = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		TaskCompletionSource idleCycle = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		int cycles = 0;
+		_scopeMock.Setup(scope => scope.Dispose()).Callback(() =>
+		{
+			int completed = Interlocked.Increment(ref cycles);
+			if (completed == 1)
+			{
+				firstBatch.TrySetResult();
+			}
+			if (completed == 2)
+			{
+				secondBatch.TrySetResult();
+			}
+			if (completed == 3)
+			{
+				idleCycle.TrySetResult();
+			}
+		});
+		using EmbeddingGenerationService service = CreatePublisherAwareService();
+		using CancellationTokenSource cts = new();
+
+		await service.StartAsync(cts.Token);
+		try
+		{
+			await firstBatch.Task.WaitAsync(TimeSpan.FromSeconds(15));
+			await secondBatch.Task.WaitAsync(TimeSpan.FromSeconds(5));
+			await idleCycle.Task.WaitAsync(TimeSpan.FromSeconds(5));
+			await Task.Delay(500);
+			_scopeFactoryMock.Verify(factory => factory.CreateScope(), Times.Exactly(3));
+		}
+		finally
+		{
+			cts.Cancel();
+			await service.StopAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(1));
+		}
+
+		batches.Should().HaveCount(2);
+		batches[0].Should().HaveCount(50).And.OnlyContain(text => text.StartsWith("Canonical ", StringComparison.Ordinal));
+		batches[1].Should().HaveCount(2).And.Contain("Pending item");
+		await using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		(await verify.NormalizedDescriptions.CountAsync(row =>
+			row.Embedding != null && row.EmbeddingModelVersion == OnnxEmbeddingService.EmbeddingSpaceFingerprint))
+			.Should().Be(51);
+		(await verify.ItemEmbeddings.SingleAsync()).EntityText.Should().Be("Pending item");
+	}
+
+	[Theory]
+	[InlineData("unconfigured")]
+	[InlineData("empty")]
+	[InlineData("stale")]
+	[InlineData("error")]
+	public async Task ExecuteAsync_UnproductiveCycle_CoolsDownAndCancelsPromptly(string outcome)
+	{
+		if (outcome is "stale" or "error")
+		{
+			await using ApplicationDbContext seed = _contextFactory.CreateDbContext();
+			seed.ItemTemplates.Add(new ItemTemplateEntity { Id = Guid.NewGuid(), Name = "Pending item" });
+			await seed.SaveChangesAsync();
+		}
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(outcome != "unconfigured");
+		_embeddingServiceMock
+			.Setup(e => e.GenerateEmbeddingsAsync(
+				It.Is<List<string>>(texts => texts.SequenceEqual(new[] { "Pending item" })),
+				It.IsAny<CancellationToken>()))
+			.Returns(async () =>
+			{
+				if (outcome == "error")
+				{
+					throw new InvalidOperationException("generation failed");
+				}
+				await using ApplicationDbContext mutate = _contextFactory.CreateDbContext();
+				(await mutate.ItemTemplates.IgnoreQueryFilters().SingleAsync()).Name = "Renamed during inference";
+				await mutate.SaveChangesAsync();
+				return new List<float[]> { CreateFakeEmbedding() };
+			});
+		TaskCompletionSource cycleFinished = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		_scopeMock.Setup(scope => scope.Dispose()).Callback(() => cycleFinished.TrySetResult());
+		using EmbeddingGenerationService service = CreatePublisherAwareService();
+		using CancellationTokenSource cts = new();
+
+		await service.StartAsync(cts.Token);
+		try
+		{
+			await cycleFinished.Task.WaitAsync(TimeSpan.FromSeconds(15));
+			await Task.Delay(500);
+			_scopeFactoryMock.Verify(factory => factory.CreateScope(), Times.Once);
+		}
+		finally
+		{
+			cts.Cancel();
+			await service.StopAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(1));
+		}
+
+		await using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		verify.ItemEmbeddings.Should().BeEmpty();
+		_publisherMock.Verify(p => p.PublishAsync(It.IsAny<CommittedEntityChange>()), Times.Never);
+		_embeddingServiceMock.Verify(e => e.GenerateEmbeddingsAsync(
+			It.IsAny<List<string>>(), It.IsAny<CancellationToken>()),
+			outcome is "stale" or "error" ? Times.Once() : Times.Never());
+	}
+
+	[Fact]
 	public async Task ExecuteAsync_SkipsProcessing_WhenEmbeddingServiceNotConfigured()
 	{
 		// Arrange

@@ -27,3 +27,11 @@ provide suggestions rather than canonical foreign keys; see
 transaction create/update and for complete-receipt creation when transactions are present,
 not after delete, restore, or every unrelated child edit; see
 [Receipt arithmetic](../../docs/receipt-arithmetic.md).
+
+Receipt-item persistence reads use an internal stored-state factory exposed only to
+Infrastructure. Hydration preserves the original quantity, unit price, total and raw
+text even when a historical row does not satisfy current admission rules. The public
+constructor and Infrastructure write mapper both enforce current validation; reading
+a historical item does not authorize writing inconsistent financial values back.
+Delete, restore and normalization metadata operations retain their existing direct
+entity operations and do not revalidate untouched historical financial facts.

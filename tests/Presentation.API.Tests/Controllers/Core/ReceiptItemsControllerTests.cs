@@ -1,5 +1,6 @@
 using API.Controllers.Core;
 using API.Generated.Dtos;
+using API.Http;
 using API.Mapping.Core;
 using API.Services;
 using Application.Commands.ReceiptItem.Create;
@@ -108,7 +109,7 @@ public class ReceiptItemsControllerTests
 			.ReturnsAsync(new PagedResult<ReceiptItem>(mediatorReturn, mediatorReturn.Count, 0, 50));
 
 		// Act
-		Results<Ok<ReceiptItemListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetAllReceiptItems(null, 0, 50, null, null);
+		Results<Ok<ReceiptItemListResponse>, BadRequestProblem> rawResult = await _controller.GetAllReceiptItems(null, 0, 50, null, null);
 
 		// Assert
 		Ok<ReceiptItemListResponse> result = Assert.IsType<Ok<ReceiptItemListResponse>>(rawResult.Result);
@@ -126,10 +127,10 @@ public class ReceiptItemsControllerTests
 	public async Task GetAllReceiptItems_ReturnsBadRequest_WhenOffsetIsNegative(int offset, int limit)
 	{
 		// Act
-		Results<Ok<ReceiptItemListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetAllReceiptItems(null, offset, limit, null, null);
+		Results<Ok<ReceiptItemListResponse>, BadRequestProblem> result = await _controller.GetAllReceiptItems(null, offset, limit, null, null);
 
 		// Assert
-		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badRequestResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badRequestResult.Value!.Detail.Should().Be("offset must be >= 0");
 	}
 
@@ -140,10 +141,10 @@ public class ReceiptItemsControllerTests
 	public async Task GetAllReceiptItems_ReturnsBadRequest_WhenLimitIsOutOfRange(int offset, int limit)
 	{
 		// Act
-		Results<Ok<ReceiptItemListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetAllReceiptItems(null, offset, limit, null, null);
+		Results<Ok<ReceiptItemListResponse>, BadRequestProblem> result = await _controller.GetAllReceiptItems(null, offset, limit, null, null);
 
 		// Assert
-		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badRequestResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badRequestResult.Value!.Detail.Should().Be("limit must be between 1 and 500");
 	}
 
@@ -153,10 +154,10 @@ public class ReceiptItemsControllerTests
 	public async Task GetDeletedReceiptItems_ReturnsBadRequest_WhenOffsetIsNegative(int offset, int limit)
 	{
 		// Act
-		Results<Ok<ReceiptItemListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetDeletedReceiptItems(offset, limit, null, null);
+		Results<Ok<ReceiptItemListResponse>, BadRequestProblem> result = await _controller.GetDeletedReceiptItems(offset, limit, null, null);
 
 		// Assert
-		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badRequestResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badRequestResult.Value!.Detail.Should().Be("offset must be >= 0");
 	}
 
@@ -167,10 +168,10 @@ public class ReceiptItemsControllerTests
 	public async Task GetDeletedReceiptItems_ReturnsBadRequest_WhenLimitIsOutOfRange(int offset, int limit)
 	{
 		// Act
-		Results<Ok<ReceiptItemListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetDeletedReceiptItems(offset, limit, null, null);
+		Results<Ok<ReceiptItemListResponse>, BadRequestProblem> result = await _controller.GetDeletedReceiptItems(offset, limit, null, null);
 
 		// Assert
-		BadRequest<ProblemDetails> badRequestResult = Assert.IsType<BadRequest<ProblemDetails>>(result.Result);
+		BadRequestProblem badRequestResult = Assert.IsType<BadRequestProblem>(result.Result);
 		badRequestResult.Value!.Detail.Should().Be("limit must be between 1 and 500");
 	}
 
@@ -202,7 +203,7 @@ public class ReceiptItemsControllerTests
 			.ReturnsAsync(new PagedResult<ReceiptItem>(mediatorReturn, mediatorReturn.Count, 0, 50));
 
 		// Act
-		Results<Ok<ReceiptItemListResponse>, BadRequest<ProblemDetails>> result = await _controller.GetAllReceiptItems(null, 0, 50, null, null, "  Apples  ");
+		Results<Ok<ReceiptItemListResponse>, BadRequestProblem> result = await _controller.GetAllReceiptItems(null, 0, 50, null, null, "  Apples  ");
 
 		// Assert
 		Assert.IsType<Ok<ReceiptItemListResponse>>(result.Result);
@@ -246,7 +247,7 @@ public class ReceiptItemsControllerTests
 			.ReturnsAsync(new PagedResult<ReceiptItem>(mediatorReturn, mediatorReturn.Count, 0, 50));
 
 		// Act
-		Results<Ok<ReceiptItemListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetAllReceiptItems(receiptId, 0, 50, null, null);
+		Results<Ok<ReceiptItemListResponse>, BadRequestProblem> rawResult = await _controller.GetAllReceiptItems(receiptId, 0, 50, null, null);
 
 		// Assert
 		Ok<ReceiptItemListResponse> result = Assert.IsType<Ok<ReceiptItemListResponse>>(rawResult.Result);
@@ -270,7 +271,7 @@ public class ReceiptItemsControllerTests
 			.ReturnsAsync(new PagedResult<ReceiptItem>([], 0, 0, 50));
 
 		// Act
-		Results<Ok<ReceiptItemListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetAllReceiptItems(receiptId, 0, 50, null, null);
+		Results<Ok<ReceiptItemListResponse>, BadRequestProblem> rawResult = await _controller.GetAllReceiptItems(receiptId, 0, 50, null, null);
 
 		// Assert
 		Ok<ReceiptItemListResponse> result = Assert.IsType<Ok<ReceiptItemListResponse>>(rawResult.Result);
@@ -291,7 +292,7 @@ public class ReceiptItemsControllerTests
 			.ReturnsAsync(new PagedResult<ReceiptItem>([], 0, 0, 50));
 
 		// Act
-		Results<Ok<ReceiptItemListResponse>, BadRequest<ProblemDetails>> rawResult = await _controller.GetAllReceiptItems(missingReceiptId, 0, 50, null, null);
+		Results<Ok<ReceiptItemListResponse>, BadRequestProblem> rawResult = await _controller.GetAllReceiptItems(missingReceiptId, 0, 50, null, null);
 
 		// Assert
 		Ok<ReceiptItemListResponse> result = Assert.IsType<Ok<ReceiptItemListResponse>>(rawResult.Result);
@@ -597,7 +598,7 @@ public class ReceiptItemsControllerTests
 			.ReturnsAsync(true);
 
 		// Act
-		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.RestoreReceiptItem(id);
+		Results<NoContent, NotFound, ConflictProblem> result = await _controller.RestoreReceiptItem(id);
 
 		// Assert
 		Assert.IsType<NoContent>(result.Result);
@@ -614,7 +615,7 @@ public class ReceiptItemsControllerTests
 			.ReturnsAsync(false);
 
 		// Act
-		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await _controller.RestoreReceiptItem(id);
+		Results<NoContent, NotFound, ConflictProblem> result = await _controller.RestoreReceiptItem(id);
 
 		// Assert
 		Assert.IsType<NotFound>(result.Result);
@@ -693,7 +694,7 @@ public class ReceiptItemsControllerTests
 			.ThrowsAsync(new ConcurrencyConflictException(detail));
 		Microsoft.AspNetCore.Http.IResult result = await _controller.CreateReceiptItem(ReceiptItemDtoGenerator.GenerateCreateRequest(), Guid.NewGuid());
 		var response = result is Microsoft.AspNetCore.Http.INestedHttpResult nested ? nested.Result : result;
-		var conflict = Assert.IsType<Conflict<ProblemDetails>>(response);
+		var conflict = Assert.IsType<ConflictProblem>(response);
 		conflict.Value!.Status.Should().Be(409);
 		conflict.Value.Detail.Should().Be(detail);
 		_notifierMock.VerifyNoOtherCalls();
@@ -707,7 +708,7 @@ public class ReceiptItemsControllerTests
 			.ThrowsAsync(new ConcurrencyConflictException(detail));
 		Microsoft.AspNetCore.Http.IResult result = await _controller.CreateReceiptItems(ReceiptItemDtoGenerator.GenerateCreateRequestList(2), Guid.NewGuid());
 		var response = result is Microsoft.AspNetCore.Http.INestedHttpResult nested ? nested.Result : result;
-		var conflict = Assert.IsType<Conflict<ProblemDetails>>(response);
+		var conflict = Assert.IsType<ConflictProblem>(response);
 		conflict.Value!.Status.Should().Be(409);
 		conflict.Value.Detail.Should().Be(detail);
 		_notifierMock.VerifyNoOtherCalls();
@@ -721,7 +722,7 @@ public class ReceiptItemsControllerTests
 			.ThrowsAsync(new ConcurrencyConflictException(detail));
 		Microsoft.AspNetCore.Http.IResult result = await _controller.RestoreReceiptItem(Guid.NewGuid());
 		var response = result is Microsoft.AspNetCore.Http.INestedHttpResult nested ? nested.Result : result;
-		var conflict = Assert.IsType<Conflict<ProblemDetails>>(response);
+		var conflict = Assert.IsType<ConflictProblem>(response);
 		conflict.Value!.Status.Should().Be(409);
 		conflict.Value.Detail.Should().Be(detail);
 		_notifierMock.VerifyNoOtherCalls();

@@ -4,7 +4,7 @@ The application supports portable SQLite backups for disaster recovery, migratio
 
 ## What gets backed up
 
-The export (current format `export_version = 6`) includes your domain data plus YNAB
+The export (current format `export_version = 9`) includes your domain data plus YNAB
 configuration/state and normalized-description settings:
 
 - Accounts
@@ -20,6 +20,9 @@ configuration/state and normalized-description settings:
   sync records (current per-transaction sync state)
 - Normalized descriptions, display labels, review/rejection status, recorded neighbour context, and settings
 - Accepted duplicate pairs whose two receipts are included in the export
+- Normalization source mappings, catalog operation observations and membership,
+  purchase assignment provenance and review/exclusion evidence, and receipt-write
+  replay evidence (in `normalization_catalog`)
 
 Soft-deleted records are **excluded** from exports. An accepted pair may survive a receipt's soft deletion in the live database, but a portable backup excludes that pair if either receipt is excluded. Export does not alter the source acceptance.
 
@@ -47,13 +50,34 @@ Format v5 preserves user decisions separately from vectors: canonical item/templ
 
 Import remains an **upsert**, not a replacement of the target database. Records missing from a file are not deleted from the target. For an accepted pair already present under a different local ID, the existing ID is retained and its acceptance timestamp is updated. A fresh restore preserves the exported pair ID. Reusing a pair ID for different receipts is rejected, and constraint failures roll back the complete import. Restoring exchanged canonical names or display labels between included rows is supported; audit history records the original and final values. Names that conflict with an unrelated target row still reject the import.
 
-Version 5 curation references must resolve within the backup itself: item/template links and neighbour IDs require included canonical rows, and accepted pairs require both included receipts. Existing target data cannot supply a missing curation dependency.
+The explicit exception is format 9 offline consolidation authority: reviewed
+`consolidation` records retire named canonical IDs and redirect their purchase,
+template and mapping links to an included active survivor before normal upserts.
+This includes links on purchases in trash. Purchases absent from the artifact
+retain the survivor link but require review again; their old review/mapping
+authority is cleared. Repeated import skips already absent retired IDs. Ordinary
+omissions never authorize retirement. This authority is consumed from the artifact,
+not stored as replayable operation history or included in later app exports.
+See [offline backup normalization](offline-backup-normalization.md) for the reviewed
+manifest, source-freeze and artifact-retention requirements.
 
-Version 5 fields are authoritative, including explicit nulls. Versions 1–4 still import using their original schemas. On a fresh target, fields those formats never carried default to null and no acceptance rows are invented. On an existing target, absent labels, template declarations, and acceptance rows are retained. An item retains an absent canonical link/score only while its raw description is unchanged; importing different text clears that stale classification. A changed canonical matching name also invalidates its existing vector/model version and, for legacy files without replacement evidence, its neighbour comparison history.
+Version 5 and later curation references must resolve within the backup itself: item/template links and neighbour IDs require included canonical rows, and accepted pairs require both included receipts. Existing target data cannot supply a missing curation dependency.
 
-Missing version metadata means legacy version 1. Malformed or unsupported version values are rejected. Version 5 requires its complete table inventory; missing tables cannot silently turn a restore into partial recovery. Use an importer that explicitly supports the file's format version.
+Version 5 and later curation fields are authoritative, including explicit nulls. Versions 1–4 still import using their original schemas. On a fresh target, fields those formats never carried default to null and no acceptance rows are invented. On an existing target, absent labels, template declarations, and acceptance rows are retained. An item retains an absent canonical link/score only while its raw description is unchanged; importing different text clears that stale classification. A changed canonical matching name also invalidates its existing vector/model version and, for legacy files without replacement evidence, its neighbour comparison history.
 
-Canonical embedding vectors are not in the portable file. Freshly restored canonical rows have no vectors; existing vectors survive only when their matching text is unchanged. Automatic canonical-vector rebuilding is separate recovery work (RECEIPTS-959). Until that rebuilding is available, similarity search can be incomplete even though restored grouping, labels, and curation remain available.
+Missing version metadata means legacy version 1. Malformed or unsupported version values are rejected. Versions 5–9 require the complete base table inventory; versions 7–9 also require `normalization_catalog`. Missing tables cannot silently turn a restore into partial recovery. Use an importer that explicitly supports the file's format version.
+
+Formats 6, 7 and 8 remain supported alongside formats 1–5. Format 7 adds catalog
+mappings, operation observations, membership and purchase assignment provenance;
+format 8 adds purchase review/exclusion and receipt-write replay evidence. Older
+files do not invent review authority. Catalog payloads and their dependencies are
+validated, and format 9 adds only explicit consolidation authority. Restored
+normalization operations are inspect-only (`restored`), with fresh revisions;
+create a new preview to change restored purchases. Existing operations are fenced
+before restore so pre-restore inference cannot act on restored data. These portable
+business observations are distinct from the excluded operational audit logs.
+
+Canonical embedding vectors are not in the portable file. Freshly restored canonical rows have no vectors; existing vectors survive only when their matching text is unchanged. When the embedding service is configured, the background worker rebuilds missing or outdated vectors for eligible canonical rows before other semantic sources. Similarity search can be incomplete until rebuilding finishes; restored grouping, labels, and curation remain available.
 
 ## Export consistency and file ownership
 
@@ -134,7 +158,7 @@ The API enqueues a `backup-import` change only after the import service returns 
 
 Local success repairs the current session's restored-data queries even without SignalR. The remote event uses the same repair union, including ledger, taxonomy, templates, normalization settings and all YNAB queries. Authentication, users, roles and API-key queries are excluded. Repair cancels matching in-flight reads before invalidating, including reads still running after navigation. An old result therefore cannot clear staleness and remain infinitely fresh after restore. It marks inactive entries stale and refetches active ones once through a union predicate. Session guards apply after asynchronous cancellation as well as at entry. Reconnection uses this same primitive for unknown missed changes.
 
-Refreshing active YNAB queries may read the remote service; restore does not issue remote YNAB writes. Some optional read error owners remain tracked in RECEIPTS-950. Cache repair does not rebuild excluded vectors or image binaries, and it does not establish the still-pending synchronous producer and background completion guarantees in RECEIPTS-948/959/964.
+Refreshing active YNAB queries may read the remote service; restore does not issue remote YNAB writes. Some optional read error owners remain tracked in RECEIPTS-950. Cache repair does not rebuild excluded vectors or image binaries; vector rebuilding is owned by the background worker described above.
 
 ## Operational notes
 

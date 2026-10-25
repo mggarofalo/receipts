@@ -789,10 +789,12 @@ it("creates the same subcategory name independently per category and releases fa
   }
   async function subcategory() {
     await user.click(screen.getByRole("combobox", { name: /^Subcategory/ }));
-    await user.type(
+    expect(
       screen.getByPlaceholderText("Search subcategories..."),
-      "Shared",
-    );
+    ).toHaveFocus();
+    // This exercises request ownership, so enter the complete search in one
+    // user interaction rather than repeating per-character keyboard updates.
+    await user.paste("Shared");
     await user.click(
       await screen.findByRole("button", { name: 'Use "Shared"' }),
     );
@@ -801,6 +803,11 @@ it("creates the same subcategory name independently per category and releases fa
   await subcategory();
   await subcategory();
   expect(mutateAsync).toHaveBeenCalledTimes(1);
+  expect(mutateAsync).toHaveBeenNthCalledWith(1, {
+    categoryId: "cat-1",
+    name: "Shared",
+    isActive: true,
+  });
   await category("Household");
   await subcategory();
   expect(mutateAsync).toHaveBeenNthCalledWith(2, {
@@ -808,7 +815,9 @@ it("creates the same subcategory name independently per category and releases fa
     name: "Shared",
     isActive: true,
   });
-  rejectFirst(new Error("failed"));
+  await act(async () => {
+    rejectFirst(new Error("failed"));
+  });
   await category("Food");
   await subcategory();
   expect(mutateAsync).toHaveBeenNthCalledWith(3, {
@@ -816,4 +825,5 @@ it("creates the same subcategory name independently per category and releases fa
     name: "Shared",
     isActive: true,
   });
+  expect(mutateAsync).toHaveBeenCalledTimes(3);
 });

@@ -39,6 +39,47 @@ public class ReceiptItem
 
 	public ReceiptItem(Guid id, string? receiptItemCode, string description, decimal quantity, Money unitPrice, Money totalAmount, string category, string? subcategory)
 	{
+		Id = id;
+		ReceiptItemCode = receiptItemCode;
+		Description = description;
+		Quantity = quantity;
+		UnitPrice = unitPrice;
+		TotalAmount = totalAmount;
+		Category = category;
+		Subcategory = subcategory;
+		ValidateForWrite();
+	}
+
+	// Only persistence hydration may retain facts that predate current admission rules.
+	// Infrastructure's write mapper validates the model again before creating an entity.
+	internal static ReceiptItem FromStoredState(Guid id, string? receiptItemCode, string description,
+		decimal quantity, Money unitPrice, Money totalAmount, string category, string? subcategory)
+		=> new()
+		{
+			Id = id,
+			ReceiptItemCode = receiptItemCode,
+			Description = description,
+			Quantity = quantity,
+			UnitPrice = unitPrice,
+			TotalAmount = totalAmount,
+			Category = category,
+			Subcategory = subcategory
+		};
+
+	private ReceiptItem()
+	{
+		Description = string.Empty;
+		Category = string.Empty;
+		UnitPrice = Money.Zero;
+		TotalAmount = Money.Zero;
+	}
+
+	internal void ValidateForWrite()
+		=> ValidateForWrite(Description, Quantity, UnitPrice, TotalAmount, Category);
+
+	private static void ValidateForWrite(string description, decimal quantity, Money unitPrice,
+		Money totalAmount, string category)
+	{
 		if (string.IsNullOrWhiteSpace(description))
 		{
 			throw new ArgumentException(DescriptionCannotBeEmpty, nameof(description));
@@ -64,14 +105,5 @@ public class ReceiptItem
 		{
 			throw new ArgumentException(CategoryCannotBeEmpty, nameof(category));
 		}
-
-		Id = id;
-		ReceiptItemCode = receiptItemCode;
-		Description = description;
-		Quantity = quantity;
-		UnitPrice = unitPrice;
-		TotalAmount = totalAmount;
-		Category = category;
-		Subcategory = subcategory;
 	}
 }

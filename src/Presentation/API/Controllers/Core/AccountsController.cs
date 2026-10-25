@@ -20,7 +20,6 @@ namespace API.Controllers.Core;
 [ApiVersion("1.0")]
 [ApiController]
 [Route("api/accounts")]
-[Produces("application/json")]
 [Authorize]
 public class AccountsController(IMediator mediator, AccountMapper mapper, CardMapper cardMapper, ILogger<AccountsController> logger, IEntityChangeNotifier notifier, IAccountService accountService) : ControllerBase
 {
@@ -53,7 +52,7 @@ public class AccountsController(IMediator mediator, AccountMapper mapper, CardMa
 
 	[HttpGet(RouteGetAll)]
 	[EndpointSummary("Get all accounts")]
-	public async Task<Results<Ok<AccountListResponse>, BadRequest<ProblemDetails>>> GetAllAccounts([FromQuery] bool? isActive = null, [FromQuery] string? q = null, [FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null)
+	public async Task<Results<Ok<AccountListResponse>, BadRequestProblem>> GetAllAccounts([FromQuery] bool? isActive = null, [FromQuery] string? q = null, [FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null)
 	{
 		if (offset < 0)
 		{
@@ -164,7 +163,7 @@ public class AccountsController(IMediator mediator, AccountMapper mapper, CardMa
 	[Authorize(Policy = "RequireAdmin")]
 	[EndpointSummary("Hard-delete an account")]
 	[EndpointDescription("Permanently deletes an account. Requires the Admin role. Returns 409 Conflict if any card or transaction (including soft-deleted) references this account.")]
-	public async Task<Results<NoContent, NotFound, Conflict<ProblemDetails>>> DeleteAccount([FromRoute] Guid id)
+	public async Task<Results<NoContent, NotFound, ConflictProblem>> DeleteAccount([FromRoute] Guid id)
 	{
 		int cardCount = await accountService.GetCardCountByAccountIdAsync(id, HttpContext.RequestAborted);
 		if (cardCount > 0)

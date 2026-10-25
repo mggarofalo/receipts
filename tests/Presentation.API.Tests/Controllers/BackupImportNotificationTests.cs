@@ -1,5 +1,6 @@
 using API.Controllers;
 using API.Generated.Dtos;
+using API.Http;
 using API.Services;
 using Application.Exceptions;
 using Application.Interfaces.Services;
@@ -64,7 +65,7 @@ public class BackupImportNotificationTests : IDisposable
 			.Returns(Task.CompletedTask);
 		using MemoryStream contents = new([1, 2, 3]);
 
-		Task<Results<Ok<BackupImportResponse>, BadRequest<ProblemDetails>, Conflict<ProblemDetails>>> operation = _controller.ImportBackup(Upload(contents));
+		Task<Results<Ok<BackupImportResponse>, BadRequestProblem, ConflictProblem>> operation = _controller.ImportBackup(Upload(contents));
 		await entered.Task;
 		_notifier.VerifyNoOtherCalls();
 		committed.SetResult();
@@ -89,7 +90,7 @@ public class BackupImportNotificationTests : IDisposable
 
 		var response = await _controller.ImportBackup(invalid == "missing" ? null : file.Object);
 
-		response.Result.Should().BeOfType<BadRequest<ProblemDetails>>();
+		response.Result.Should().BeOfType<BadRequestProblem>();
 		_import.VerifyNoOtherCalls();
 		_notifier.VerifyNoOtherCalls();
 	}
@@ -111,7 +112,7 @@ public class BackupImportNotificationTests : IDisposable
 		else
 		{
 			var response = await _controller.ImportBackup(Upload(contents));
-			response.Result.Should().BeOfType<BadRequest<ProblemDetails>>();
+			response.Result.Should().BeOfType<BadRequestProblem>();
 		}
 		_notifier.VerifyNoOtherCalls();
 	}
@@ -166,7 +167,7 @@ public class BackupImportNotificationTests : IDisposable
 
 		var response = await _controller.ImportBackup(Upload(contents));
 
-		ProblemDetails problem = response.Result.Should().BeOfType<Conflict<ProblemDetails>>().Which.Value!;
+		ProblemDetails problem = response.Result.Should().BeOfType<ConflictProblem>().Which.Value!;
 		problem.Status.Should().Be(StatusCodes.Status409Conflict);
 		problem.Detail.Should().Be(reason);
 		_notifier.VerifyNoOtherCalls();

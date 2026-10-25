@@ -45,7 +45,19 @@ public partial class ReceiptItemMapper
 	[MapperIgnoreSource(nameof(ReceiptItem.NormalizationExclusionReason))]
 	[MapperIgnoreTarget(nameof(ReceiptItemEntity.NormalizationExclusionReason))]
 	[MapperIgnoreTarget(nameof(ReceiptItemEntity.ReviewedTargetId))]
-	public partial ReceiptItemEntity ToEntity(ReceiptItem source);
+	private partial ReceiptItemEntity ToEntityPartial(ReceiptItem source);
+
+	public ReceiptItemEntity ToEntity(ReceiptItem source)
+	{
+		source.ValidateForWrite();
+		return ToEntityPartial(source);
+	}
+
+	[ObjectFactory]
+	private static ReceiptItem FromStoredState(ReceiptItemEntity source)
+		=> ReceiptItem.FromStoredState(source.Id, source.ReceiptItemCode, source.Description,
+			source.Quantity, new Money(source.UnitPrice, source.UnitPriceCurrency),
+			new Money(source.TotalAmount, source.TotalAmountCurrency), source.Category, source.Subcategory);
 
 	private Money MapUnitPrice(decimal amount, Currency currency) => new(amount, currency);
 	private Money MapTotalAmount(decimal amount, Currency currency) => new(amount, currency);

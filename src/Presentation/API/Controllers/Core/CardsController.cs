@@ -21,7 +21,6 @@ namespace API.Controllers.Core;
 [ApiVersion("1.0")]
 [ApiController]
 [Route("api/cards")]
-[Produces("application/json")]
 [Authorize]
 public class CardsController(IMediator mediator, CardMapper mapper, ILogger<CardsController> logger, IEntityChangeNotifier notifier, ICardService cardService, IAccountService accountService) : ControllerBase
 {
@@ -57,7 +56,7 @@ public class CardsController(IMediator mediator, CardMapper mapper, ILogger<Card
 
 	[HttpGet(RouteGetAll)]
 	[EndpointSummary("Get all cards")]
-	public async Task<Results<Ok<CardListResponse>, BadRequest<ProblemDetails>>> GetAllCards([FromQuery] bool? isActive = null, [FromQuery] string? q = null, [FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, CancellationToken cancellationToken = default)
+	public async Task<Results<Ok<CardListResponse>, BadRequestProblem>> GetAllCards([FromQuery] bool? isActive = null, [FromQuery] string? q = null, [FromQuery] int offset = 0, [FromQuery] int limit = 50, [FromQuery] string? sortBy = null, [FromQuery] string? sortDirection = null, CancellationToken cancellationToken = default)
 	{
 		if (offset < 0)
 		{
@@ -94,7 +93,7 @@ public class CardsController(IMediator mediator, CardMapper mapper, ILogger<Card
 
 	[HttpPost(RouteCreate)]
 	[EndpointSummary("Create a single card")]
-	public async Task<Results<Ok<CardResponse>, BadRequest<ProblemDetails>>> CreateCard([FromBody] CreateCardRequest model, CancellationToken cancellationToken = default)
+	public async Task<Results<Ok<CardResponse>, BadRequestProblem>> CreateCard([FromBody] CreateCardRequest model, CancellationToken cancellationToken = default)
 	{
 		if (await MissingAccountIdAsync(model.AccountId, cancellationToken))
 		{
@@ -110,7 +109,7 @@ public class CardsController(IMediator mediator, CardMapper mapper, ILogger<Card
 
 	[HttpPost(RouteCreateBatch)]
 	[EndpointSummary("Create cards in batch")]
-	public async Task<Results<Ok<List<CardResponse>>, BadRequest<ProblemDetails>>> CreateCards([FromBody] List<CreateCardRequest> models, CancellationToken cancellationToken = default)
+	public async Task<Results<Ok<List<CardResponse>>, BadRequestProblem>> CreateCards([FromBody] List<CreateCardRequest> models, CancellationToken cancellationToken = default)
 	{
 		Guid? missing = await FirstMissingAccountIdAsync(models.Select(m => m.AccountId), cancellationToken);
 		if (missing.HasValue)
@@ -127,7 +126,7 @@ public class CardsController(IMediator mediator, CardMapper mapper, ILogger<Card
 
 	[HttpPut(RouteUpdate)]
 	[EndpointSummary("Update a single card")]
-	public async Task<Results<NoContent, NotFound, BadRequest<ProblemDetails>>> UpdateCard([FromRoute] Guid id, [FromBody] UpdateCardRequest model, CancellationToken cancellationToken = default)
+	public async Task<Results<NoContent, NotFound, BadRequestProblem>> UpdateCard([FromRoute] Guid id, [FromBody] UpdateCardRequest model, CancellationToken cancellationToken = default)
 	{
 		if (await MissingAccountIdAsync(model.AccountId, cancellationToken))
 		{
@@ -152,7 +151,7 @@ public class CardsController(IMediator mediator, CardMapper mapper, ILogger<Card
 
 	[HttpPut(RouteUpdateBatch)]
 	[EndpointSummary("Update cards in batch")]
-	public async Task<Results<NoContent, NotFound, BadRequest<ProblemDetails>>> UpdateCards([FromBody] List<UpdateCardRequest> models, CancellationToken cancellationToken = default)
+	public async Task<Results<NoContent, NotFound, BadRequestProblem>> UpdateCards([FromBody] List<UpdateCardRequest> models, CancellationToken cancellationToken = default)
 	{
 		Guid? missing = await FirstMissingAccountIdAsync(models.Select(m => m.AccountId), cancellationToken);
 		if (missing.HasValue)
@@ -196,7 +195,7 @@ public class CardsController(IMediator mediator, CardMapper mapper, ILogger<Card
 	[Authorize(Policy = "RequireAdmin")]
 	[EndpointSummary("Hard-delete a card")]
 	[EndpointDescription("Permanently deletes a card. Requires the Admin role. Returns 409 Conflict if transactions reference this card.")]
-	public async Task<Results<NoContent, NotFound, Conflict<ProblemDetails>>> DeleteCard([FromRoute] Guid id, CancellationToken cancellationToken = default)
+	public async Task<Results<NoContent, NotFound, ConflictProblem>> DeleteCard([FromRoute] Guid id, CancellationToken cancellationToken = default)
 	{
 		int transactionCount = await cardService.GetTransactionCountByCardIdAsync(id, cancellationToken);
 		if (transactionCount > 0)
@@ -224,7 +223,7 @@ public class CardsController(IMediator mediator, CardMapper mapper, ILogger<Card
 	[Authorize(Policy = "RequireAdmin")]
 	[EndpointSummary("Merge cards into a target account")]
 	[EndpointDescription("Repoints the listed cards (and their transactions) to the target account and deletes any now-orphaned accounts. Requires the Admin role. One conflicting YNAB budget returns 409 and can be resolved with ynabMappingWinnerAccountId. Conflicts in multiple budgets return 400 and require obsolete mappings to be removed first.")]
-	public async Task<Results<Ok<MergeCardsResponse>, BadRequest<ProblemDetails>, NotFound, Conflict<MergeCardsConflictResponse>>> MergeCards([FromBody] MergeCardsRequest model, CancellationToken cancellationToken = default)
+	public async Task<Results<Ok<MergeCardsResponse>, BadRequestProblem, NotFound, Conflict<MergeCardsConflictResponse>>> MergeCards([FromBody] MergeCardsRequest model, CancellationToken cancellationToken = default)
 	{
 		if (model.SourceCardIds is null || model.SourceCardIds.Count == 0)
 		{
@@ -302,7 +301,7 @@ public class CardsController(IMediator mediator, CardMapper mapper, ILogger<Card
 	[Authorize(Policy = "RequireAdmin")]
 	[EndpointSummary("Preview what a card merge would do")]
 	[EndpointDescription("Runs the merge's validation and reports its impact without writing anything. Requires the Admin role. Conflicts in multiple YNAB budgets return 400 and require obsolete mappings to be removed first.")]
-	public async Task<Results<Ok<MergeCardsPreviewResponse>, BadRequest<ProblemDetails>, NotFound>> PreviewMergeCards(
+	public async Task<Results<Ok<MergeCardsPreviewResponse>, BadRequestProblem, NotFound>> PreviewMergeCards(
 		[FromBody] MergeCardsPreviewRequest model,
 		CancellationToken cancellationToken = default)
 	{

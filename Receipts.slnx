@@ -15,6 +15,9 @@
     <Project Path="src/Tools/DbExporter/DbExporter.csproj" />
     <Project Path="src/Tools/DbSeeder/DbSeeder.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Receipts.BackupNormalizer/Receipts.BackupNormalizer.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Application.Tests/Application.Tests.csproj" />
     <Project Path="tests/Domain.Tests/Domain.Tests.csproj" />

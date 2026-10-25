@@ -34,10 +34,10 @@ public class ProblemDetailsContractTests
 	{
 		CardsController controller = BuildCardsController(out _, out _);
 
-		Results<Ok<CardListResponse>, BadRequest<ProblemDetails>> result =
+		Results<Ok<CardListResponse>, BadRequestProblem> result =
 			await controller.GetAllCards(null, null, -1, 50, null, null);
 
-		ProblemDetails problem = Assert.IsType<BadRequest<ProblemDetails>>(result.Result).Value!;
+		ProblemDetails problem = Assert.IsType<BadRequestProblem>(result.Result).Value!;
 		problem.Status.Should().Be(StatusCodes.Status400BadRequest);
 		problem.Title.Should().Be("Bad Request");
 		problem.Type.Should().Be(BadRequestType);
@@ -53,9 +53,9 @@ public class ProblemDetailsContractTests
 			.Setup(s => s.GetTransactionCountByCardIdAsync(cardId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(3);
 
-		Results<NoContent, NotFound, Conflict<ProblemDetails>> result = await controller.DeleteCard(cardId);
+		Results<NoContent, NotFound, ConflictProblem> result = await controller.DeleteCard(cardId);
 
-		ProblemDetails problem = Assert.IsType<Conflict<ProblemDetails>>(result.Result).Value!;
+		ProblemDetails problem = Assert.IsType<ConflictProblem>(result.Result).Value!;
 		problem.Status.Should().Be(StatusCodes.Status409Conflict);
 		problem.Title.Should().Be("Conflict");
 		problem.Type.Should().Be(ConflictType);
@@ -78,12 +78,12 @@ public class ProblemDetailsContractTests
 
 		ReportsController controller = new(mediator.Object, Mock.Of<global::API.Services.IEntityChangeNotifier>());
 
-		Results<Ok<AcceptDuplicateGroupResponse>, NotFound<ProblemDetails>> result =
+		Results<Ok<AcceptDuplicateGroupResponse>, NotFoundProblem> result =
 			await controller.AcceptDuplicateGroup(
 				new AcceptDuplicateGroupRequest { ReceiptIds = [Guid.NewGuid(), Guid.NewGuid()] },
 				CancellationToken.None);
 
-		ProblemDetails problem = Assert.IsType<NotFound<ProblemDetails>>(result.Result).Value!;
+		ProblemDetails problem = Assert.IsType<NotFoundProblem>(result.Result).Value!;
 		problem.Status.Should().Be(StatusCodes.Status404NotFound);
 		problem.Title.Should().Be("Not Found");
 		problem.Type.Should().Be(NotFoundType);
@@ -97,7 +97,7 @@ public class ProblemDetailsContractTests
 		// reached no consumer at all: the client's normaliser spreads an array into
 		// {0: "…", 1: "…"}, finds no detail and no title, and falls back to a generic
 		// status message — so the user was told nothing about why.
-		BadRequest<ProblemDetails> result = ApiProblem.BadRequest(
+		BadRequestProblem result = ApiProblem.BadRequest(
 			["Passwords must have at least one digit.", "Passwords must have at least one uppercase character."]);
 
 		ProblemDetails problem = result.Value!;
