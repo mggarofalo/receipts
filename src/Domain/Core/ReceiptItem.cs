@@ -7,6 +7,7 @@ public class ReceiptItem
 	public Guid Id { get; set; }
 	public Guid ReceiptId { get; set; }
 	public Guid NormalizationRevision { get; set; }
+	public Domain.Taxonomy.ClassificationIntent? Classification { get; set; }
 	public ReceiptNormalizationIntent? NormalizationIntent { get; set; }
 	public NormalizationReviewState NormalizationReviewState { get; set; }
 	public string? NormalizationReviewReason { get; set; }

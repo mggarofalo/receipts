@@ -66,6 +66,8 @@ public partial class ReceiptItemMapper
 	[MapperIgnoreSource(nameof(ReceiptItemEntity.NormalizationOrigin))]
 	[MapperIgnoreSource(nameof(ReceiptItemEntity.NormalizationMappingId))]
 	[MapperIgnoreSource(nameof(ReceiptItemEntity.NormalizationAssignmentId))]
+	[MapperIgnoreTarget(nameof(ReceiptItem.Classification))]
+	[MapperIgnoreSource(nameof(ReceiptItemEntity.Classification))]
 	[MapperIgnoreTarget(nameof(ReceiptItem.NormalizationIntent))]
 	[MapperIgnoreSource(nameof(ReceiptItemEntity.NormalizationIntent))]
 	[MapperIgnoreSource(nameof(ReceiptItemEntity.UnitPriceCurrency))]

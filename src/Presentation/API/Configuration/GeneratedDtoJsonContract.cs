@@ -25,6 +25,11 @@ internal static class GeneratedDtoJsonContract
 
 		foreach (JsonPropertyInfo property in typeInfo.Properties)
 		{
+			if (typeInfo.Type == typeof(API.Generated.Dtos.ClassificationRequest)
+				&& property.Name is "categoryId" or "expectedAssignmentId")
+			{
+				property.IsRequired = true;
+			}
 			// Required value types need JSON presence checks: DataAnnotations cannot
 			// distinguish an omitted enum from its valid zero value (create).
 			if (typeInfo.Type == typeof(API.Generated.Dtos.TaxonomyChange) && property.Name == "kind")

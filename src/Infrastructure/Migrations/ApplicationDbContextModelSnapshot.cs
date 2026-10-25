@@ -1855,6 +1855,96 @@ namespace Infrastructure.Migrations
                     b.ToTable("__SeedHistory", (string)null);
                 });
 
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.ClassificationOperationEntity", b =>
+                {
+                    b.Property<string>("Actor")
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("OperationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AssignmentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Actor", "OperationId");
+
+                    b.HasIndex("AssignmentId");
+
+                    b.ToTable("AssignmentOperations", "taxonomy");
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.CurrentClassificationEntity", b =>
+                {
+                    b.Property<Guid>("ReceiptItemId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AssignmentId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("ReceiptItemId");
+
+                    b.HasIndex("ReceiptItemId", "AssignmentId");
+
+                    b.ToTable("CurrentAssignments", "taxonomy");
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.PurchaseClassificationEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Actor")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid?>("CategoryId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("OperationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("PreviousAssignmentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("ReceiptItemId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("RecordedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<long>("Sequence")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("TaxonomyRevisionId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReceiptItemId", "PreviousAssignmentId");
+
+                    b.HasIndex("ReceiptItemId", "Sequence")
+                        .IsUnique();
+
+                    b.HasIndex("TaxonomyRevisionId", "CategoryId");
+
+                    b.ToTable("Assignments", "taxonomy", t =>
+                        {
+                            t.HasCheckConstraint("CK_Assignment_Sequence", "\"Sequence\" > 0");
+                        });
+                });
+
             modelBuilder.Entity("Infrastructure.Entities.Taxonomy.TaxonomyHeadEntity", b =>
                 {
                     b.Property<int>("Id")
@@ -2323,6 +2413,51 @@ namespace Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("RunId")
                         .OnDelete(DeleteBehavior.SetNull);
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.ClassificationOperationEntity", b =>
+                {
+                    b.HasOne("Infrastructure.Entities.Taxonomy.PurchaseClassificationEntity", null)
+                        .WithMany()
+                        .HasForeignKey("AssignmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.CurrentClassificationEntity", b =>
+                {
+                    b.HasOne("Infrastructure.Entities.Taxonomy.PurchaseClassificationEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ReceiptItemId", "AssignmentId")
+                        .HasPrincipalKey("ReceiptItemId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.PurchaseClassificationEntity", b =>
+                {
+                    b.HasOne("Infrastructure.Entities.Core.ReceiptItemEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ReceiptItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Infrastructure.Entities.Taxonomy.TaxonomyRevisionEntity", null)
+                        .WithMany()
+                        .HasForeignKey("TaxonomyRevisionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Infrastructure.Entities.Taxonomy.PurchaseClassificationEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ReceiptItemId", "PreviousAssignmentId")
+                        .HasPrincipalKey("ReceiptItemId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Infrastructure.Entities.Taxonomy.TaxonomyNodeEntity", null)
+                        .WithMany()
+                        .HasForeignKey("TaxonomyRevisionId", "CategoryId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("Infrastructure.Entities.Taxonomy.TaxonomyHeadEntity", b =>
