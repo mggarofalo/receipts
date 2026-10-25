@@ -1,0 +1,363 @@
+import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { renderWithQueryClient } from "@/test/test-utils";
+import mockClient, { resetMockClient } from "@/test/mock-api-client";
+import type { components } from "@/generated/api";
+import Taxonomy from "./Taxonomy";
+vi.mock("@/lib/api-client", () => ({ default: mockClient }));
+const permissions = vi.hoisted(() => ({ admin: true }));
+vi.mock("@/hooks/usePermission", () => ({
+  usePermission: () => ({ isAdmin: () => permissions.admin }),
+}));
+type Revision = components["schemas"]["TaxonomyRevisionResponse"];
+const revision: Revision = {
+  id: "rev-1",
+  sequence: 2,
+  previousRevisionId: "rev-0",
+  recordedAt: "2026-10-25T12:00:00Z",
+  actor: "admin",
+  reason: "Set up categories",
+  operationId: "op-1",
+  affectedCount: 5,
+  nodes: [
+    { id: "food", name: "Food", archived: false },
+    { id: "dairy", name: "Dairy", parentId: "food", archived: false },
+    { id: "milk", name: "Milk", parentId: "dairy", archived: false },
+    { id: "plant", name: "Plant", archived: false },
+    { id: "plant-milk", name: "Milk", parentId: "plant", archived: false },
+    { id: "old", name: "Old", parentId: "food", archived: true },
+  ],
+};
+const success = (data: Revision) => ({
+  data,
+  error: undefined,
+  response: new Response(null, { status: 200 }),
+});
+const failure = (status: number, detail: string) => ({
+  data: undefined,
+  error: { status, detail },
+  response: new Response(null, { status }),
+});
+async function renderTree(route = "/taxonomy") {
+  renderWithQueryClient(<Taxonomy />, { route });
+  await screen.findByText("Food / Dairy / Milk");
+}
+async function open(action: string, path: string) {
+  await userEvent.click(
+    screen.getByRole("button", { name: `${action} category: ${path}` }),
+  );
+  return within(screen.getByRole("dialog"));
+}
+beforeEach(() => {
+  resetMockClient();
+  permissions.admin = true;
+  mockClient.GET.mockResolvedValue(success(revision));
+  mockClient.POST.mockResolvedValue(
+    success({ ...revision, id: "rev-2", sequence: 3 }),
+  );
+});
+describe("Category tree", () => {
+  it("shows loading and retries a failed read", async () => {
+    mockClient.GET.mockResolvedValueOnce(failure(503, "Tree unavailable"));
+    renderWithQueryClient(<Taxonomy />);
+    expect(screen.getByRole("status")).toHaveTextContent("Loading");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Tree unavailable",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("Food / Dairy / Milk")).toBeInTheDocument();
+  });
+  it("searches complete paths and distinguishes duplicate labels", async () => {
+    await renderTree();
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Search category paths" }),
+      "milk",
+    );
+    const list = within(screen.getByRole("list", { name: "Category paths" }));
+    expect(list.getByText("Food / Dairy / Milk")).toBeInTheDocument();
+    expect(list.getByText("Plant / Milk")).toBeInTheDocument();
+    expect(list.queryByText(/^Food$/)).not.toBeInTheDocument();
+  });
+  it("supports deep paths without truncation", async () => {
+    let parentId: string | undefined;
+    const nodes = Array.from({ length: 80 }, (_, i) => {
+      const node = {
+        id: `node-${i}`,
+        name: `Level${i}`,
+        parentId,
+        archived: false,
+      };
+      parentId = node.id;
+      return node;
+    });
+    mockClient.GET.mockResolvedValue(success({ ...revision, nodes }));
+    renderWithQueryClient(<Taxonomy />);
+    expect(
+      await screen.findByText(nodes.map((n) => n.name).join(" / ")),
+    ).toBeInTheDocument();
+  });
+  it("preserves legacy navigation for an empty tree", async () => {
+    mockClient.GET.mockResolvedValue(success({ ...revision, nodes: [] }));
+    renderWithQueryClient(<Taxonomy />);
+    expect(
+      await screen.findByText(/The category tree is empty/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Categories" })).toHaveAttribute(
+      "href",
+      "/categories",
+    );
+    expect(screen.getByRole("link", { name: "Subcategories" })).toHaveAttribute(
+      "href",
+      "/subcategories",
+    );
+  });
+  it("hides every editing action for readers", async () => {
+    permissions.admin = false;
+    await renderTree();
+    expect(
+      screen.queryByRole("button", { name: "New category" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Rename category/ }),
+    ).not.toBeInTheDocument();
+    expect(mockClient.POST).not.toHaveBeenCalled();
+  });
+  it("loads history as read-only with revision details on demand", async () => {
+    await renderTree("/taxonomy?revision=rev-1");
+    expect(mockClient.GET).toHaveBeenCalledWith(
+      "/api/taxonomy/revisions/{id}",
+      expect.objectContaining({
+        params: { path: { id: "rev-1" } },
+        signal: expect.any(AbortSignal),
+      }),
+    );
+    expect(
+      screen.getByRole("link", { name: "Back to current tree" }),
+    ).toHaveAttribute("href", "/taxonomy");
+    await userEvent.click(screen.getByText("Revision details · 2"));
+    expect(screen.getByText("Set up categories")).toBeVisible();
+    expect(
+      screen.getByRole("link", { name: "Previous revision" }),
+    ).toHaveAttribute("href", "/taxonomy?revision=rev-0");
+    expect(
+      screen.queryByRole("button", { name: "New category" }),
+    ).not.toBeInTheDocument();
+  });
+  it("creates under a full path against the expected revision", async () => {
+    await renderTree();
+    await userEvent.click(screen.getByRole("button", { name: "New category" }));
+    const d = within(screen.getByRole("dialog"));
+    await userEvent.type(d.getByLabelText("Name"), "Cream");
+    await userEvent.selectOptions(d.getByLabelText("Parent"), "dairy");
+    await userEvent.type(d.getByLabelText("Reason"), "Missing");
+    await userEvent.click(d.getByRole("button", { name: "New category" }));
+    await waitFor(() =>
+      expect(mockClient.POST).toHaveBeenCalledWith(
+        "/api/taxonomy/changes",
+        expect.objectContaining({
+          body: {
+            expectedRevisionId: "rev-1",
+            operationId: expect.any(String),
+            reason: "Missing",
+            changes: [
+              {
+                kind: "create",
+                categoryId: expect.any(String),
+                parentId: "dairy",
+                name: "Cream",
+              },
+            ],
+          },
+        }),
+      ),
+    );
+  });
+  it("discloses rename scope and saves the name", async () => {
+    await renderTree();
+    const d = await open("Rename", "Food / Dairy");
+    expect(d.getByText(/2 categories affected/)).toBeInTheDocument();
+    await userEvent.clear(d.getByLabelText("Name"));
+    await userEvent.type(d.getByLabelText("Name"), "Dairy foods");
+    await userEvent.type(d.getByLabelText("Reason"), "Clarify");
+    await userEvent.click(d.getByRole("button", { name: "Rename category" }));
+    await waitFor(() =>
+      expect(mockClient.POST).toHaveBeenCalledWith(
+        "/api/taxonomy/changes",
+        expect.objectContaining({
+          body: expect.objectContaining({
+            changes: [
+              { kind: "rename", categoryId: "dairy", name: "Dairy foods" },
+            ],
+          }),
+        }),
+      ),
+    );
+  });
+  it("excludes descendants from move targets and surfaces cycle errors", async () => {
+    mockClient.POST.mockResolvedValueOnce(
+      failure(400, "The change would create a cycle."),
+    );
+    await renderTree();
+    const d = await open("Move", "Food");
+    expect(
+      d.queryByRole("option", { name: "Food / Dairy" }),
+    ).not.toBeInTheDocument();
+    await userEvent.selectOptions(d.getByLabelText("Parent"), "plant");
+    await userEvent.type(d.getByLabelText("Reason"), "Reorganize");
+    await userEvent.click(d.getByRole("button", { name: "Move category" }));
+    expect(await d.findByRole("alert")).toHaveTextContent(
+      "The change would create a cycle.",
+    );
+  });
+  it("discloses subtree archive count and single-node restore", async () => {
+    await renderTree();
+    const d = await open("Archive", "Food");
+    expect(d.getByText(/3 categories affected/)).toHaveTextContent(
+      "entire subtree",
+    );
+    await userEvent.type(d.getByLabelText("Reason"), "Retire");
+    await userEvent.click(d.getByRole("button", { name: "Archive category" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    await userEvent.click(screen.getByLabelText("Show archived"));
+    const r = await open("Restore", "Food / Old");
+    expect(r.getByText(/1 category affected/)).toHaveTextContent(
+      "Only this category",
+    );
+    await userEvent.type(r.getByLabelText("Reason"), "Needed");
+    await userEvent.click(r.getByRole("button", { name: "Restore category" }));
+    await waitFor(() =>
+      expect(mockClient.POST).toHaveBeenLastCalledWith(
+        "/api/taxonomy/changes",
+        expect.objectContaining({
+          body: expect.objectContaining({
+            changes: [{ kind: "restore", categoryId: "old" }],
+          }),
+        }),
+      ),
+    );
+  });
+  it("blocks stale retries and refreshes before reviewing the new scope", async () => {
+    mockClient.POST.mockResolvedValueOnce(
+      failure(409, "The expected revision is stale."),
+    );
+    await renderTree();
+    const d = await open("Rename", "Food");
+    await userEvent.type(d.getByLabelText("Reason"), "Update");
+    await userEvent.click(d.getByRole("button", { name: "Rename category" }));
+    expect(await d.findByRole("alert")).toHaveTextContent(
+      "The expected revision is stale.",
+    );
+    expect(d.getByRole("button", { name: "Retry change" })).toBeDisabled();
+    mockClient.GET.mockResolvedValue(
+      success({ ...revision, id: "rev-new", sequence: 3 }),
+    );
+    await userEvent.click(d.getByRole("button", { name: "Refresh tree" }));
+    await d.findByText(/Your draft is preserved/);
+    expect(d.getByLabelText("Reason")).toHaveValue("Update");
+    await userEvent.click(d.getByRole("button", { name: "Rename category" }));
+    await waitFor(() =>
+      expect(mockClient.POST).toHaveBeenLastCalledWith(
+        "/api/taxonomy/changes",
+        expect.objectContaining({
+          body: expect.objectContaining({ expectedRevisionId: "rev-new" }),
+        }),
+      ),
+    );
+  });
+  it("retries uncertain failures with the exact same operation body", async () => {
+    mockClient.POST.mockRejectedValueOnce(new Error("Network interrupted"));
+    await renderTree();
+    const d = await open("Archive", "Food");
+    await userEvent.type(d.getByLabelText("Reason"), "Retire");
+    await userEvent.click(d.getByRole("button", { name: "Archive category" }));
+    await d.findByRole("alert");
+    await userEvent.click(d.getByRole("button", { name: "Retry change" }));
+    await waitFor(() => expect(mockClient.POST).toHaveBeenCalledTimes(2));
+    expect(mockClient.POST.mock.calls[1][1].body).toEqual(
+      mockClient.POST.mock.calls[0][1].body,
+    );
+  });
+  it("supports opening and cancelling with the keyboard", async () => {
+    await renderTree();
+    const button = screen.getByRole("button", {
+      name: "Rename category: Food",
+    });
+    button.focus();
+    await userEvent.keyboard("{Enter}");
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    await waitFor(() => expect(button).toHaveFocus());
+  });
+  it.each(["Cancel", "Close"])(
+    "returns focus to the opener after %s",
+    async (dismiss) => {
+      await renderTree();
+      const button = screen.getByRole("button", {
+        name: "Move category: Food / Dairy",
+      });
+      await userEvent.click(button);
+      await userEvent.click(
+        within(screen.getByRole("dialog")).getByRole("button", {
+          name: dismiss,
+        }),
+      );
+      await waitFor(() => expect(button).toHaveFocus());
+    },
+  );
+  it("returns focus to the renamed row after saving", async () => {
+    mockClient.POST.mockResolvedValueOnce(
+      success({
+        ...revision,
+        id: "rev-2",
+        nodes: revision.nodes.map((node) =>
+          node.id === "food" ? { ...node, name: "Groceries" } : node,
+        ),
+      }),
+    );
+    await renderTree();
+    const d = await open("Rename", "Food");
+    await userEvent.clear(d.getByLabelText("Name"));
+    await userEvent.type(d.getByLabelText("Name"), "Groceries");
+    await userEvent.type(d.getByLabelText("Reason"), "Clarify");
+    await userEvent.click(d.getByRole("button", { name: "Rename category" }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Rename category: Groceries" }),
+      ).toHaveFocus(),
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  it("focuses New category when an archived subtree removes the opener", async () => {
+    mockClient.POST.mockResolvedValueOnce(
+      success({
+        ...revision,
+        id: "rev-2",
+        nodes: revision.nodes.map((node) =>
+          ["food", "dairy", "milk"].includes(node.id)
+            ? { ...node, archived: true }
+            : node,
+        ),
+      }),
+    );
+    await renderTree();
+    const d = await open("Archive", "Food");
+    await userEvent.type(d.getByLabelText("Reason"), "Retire");
+    await userEvent.click(d.getByRole("button", { name: "Archive category" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "Archive category: Food" }),
+      ).not.toBeInTheDocument(),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "New category" }),
+      ).toHaveFocus(),
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+});
