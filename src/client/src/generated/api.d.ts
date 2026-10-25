@@ -4,6 +4,40 @@
  */
 
 export interface paths {
+    "/api/receipt-items/{id}/classification": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Assign purchase classification */
+        put: operations["Classification_Assign"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/receipt-items/{id}/classification-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** History purchase classification */
+        get: operations["Classification_History"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/taxonomy": {
         parameters: {
             query?: never;
@@ -3181,6 +3215,45 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description Manual assignment to any active node or explicit null. Writes are disabled until migration and portable backup validation. Source and actor are server owned. */
+        ClassificationRequest: {
+            /** Format: uuid */
+            categoryId: string | null;
+            /** Format: uuid */
+            taxonomyRevisionId: string;
+            /** Format: uuid */
+            expectedAssignmentId: string | null;
+            /** Format: uuid */
+            operationId: string;
+            reason: string;
+        };
+        ClassificationResponse: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            receiptItemId: string;
+            /** Format: int64 */
+            sequence: number;
+            /** Format: uuid */
+            previousAssignmentId?: string | null;
+            /** Format: uuid */
+            categoryId?: string | null;
+            /** Format: uuid */
+            taxonomyRevisionId: string;
+            /** Format: date-time */
+            recordedAt: string;
+            actor: string;
+            source: string;
+            reason: string;
+            /** Format: uuid */
+            operationId: string;
+            path: components["schemas"]["TaxonomyNodeResponse"][];
+        };
+        ClassificationHistoryResponse: {
+            items: components["schemas"]["ClassificationResponse"][];
+            /** Format: int64 */
+            nextBeforeSequence?: number | null;
+        };
         /** @description Admin only. Actor-scoped operation ID retries return the original result; changed-body reuse or a stale expected revision returns 409. No-op edits keep the current revision. Independent of legacy category suggestions. */
         TaxonomyChangeRequest: {
             /** Format: uuid */
@@ -4805,6 +4878,8 @@ export interface components {
             reason?: string | null;
         };
         CreateReceiptItemRequest: {
+            /** @description Optional explicit manual assignment, atomic with receipt facts. Requires a nonempty clientRequestId query parameter for atomic retries. Omission preserves classification; categoryId null explicitly clears. Legacy labels must agree with the pinned path. */
+            classification?: components["schemas"]["ClassificationRequest"] | null;
             /** @description Omitted means use a current approved scoped mapping or retain NeedsReview; no automatic inference is approved. */
             normalizationIntent?: components["schemas"]["ReceiptNormalizationIntent"] | null;
             receiptItemCode?: string | null;
@@ -4822,6 +4897,8 @@ export interface components {
             itemTemplateId?: string | null;
         };
         UpdateReceiptItemRequest: {
+            /** @description Optional explicit manual assignment, atomic with receipt facts. Requires a nonempty clientRequestId query parameter for atomic retries. Omission preserves classification; categoryId null explicitly clears. Legacy labels must agree with the pinned path. */
+            classification?: components["schemas"]["ClassificationRequest"] | null;
             /** @description Omitted means use a current approved scoped mapping or retain NeedsReview; no automatic inference is approved. */
             normalizationIntent?: components["schemas"]["ReceiptNormalizationIntent"] | null;
             /** Format: uuid */
@@ -5615,6 +5692,116 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    Classification_Assign: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClassificationRequest"];
+            };
+        };
+        responses: {
+            /** @description Purchase classification result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClassificationResponse"];
+                };
+            };
+            /** @description Request rejected */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request rejected */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request rejected */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    Classification_History: {
+        parameters: {
+            query?: {
+                beforeSequence?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Purchase classification result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClassificationHistoryResponse"];
+                };
+            };
+            /** @description Request rejected */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request rejected */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     Taxonomy_GetCurrent: {
         parameters: {
             query?: never;

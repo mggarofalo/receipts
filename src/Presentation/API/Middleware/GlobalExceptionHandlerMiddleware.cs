@@ -55,6 +55,8 @@ public class GlobalExceptionHandlerMiddleware(
 	{
 		switch (exception)
 		{
+			case Application.Taxonomy.TaxonomyException taxonomy:
+				return new ProblemDetails { Status = taxonomy.Status, Title = taxonomy.Status switch { 400 => "Bad Request", 404 => "Not Found", _ => "Conflict" }, Detail = taxonomy.Message };
 			case NormalizationCatalogException normalization:
 				return new ProblemDetails
 				{

@@ -10,6 +10,8 @@ public class ReceiptItemEntity : ISoftDeletable, IOwnedBy<ReceiptEntity>
 	public Guid Id { get; set; }
 	public Guid NormalizationRevision { get; set; }
 	[NotMapped]
+	public Domain.Taxonomy.ClassificationIntent? Classification { get; set; }
+	[NotMapped]
 	public ReceiptNormalizationIntent? NormalizationIntent { get; set; }
 	public NormalizationReviewState NormalizationReviewState { get; set; }
 	public string? NormalizationReviewReason { get; set; }

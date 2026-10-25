@@ -15,7 +15,8 @@ public class CompleteReceiptWriter(
 	ReceiptMapper receiptMapper,
 	TransactionMapper transactionMapper,
 	ReceiptItemMapper receiptItemMapper,
-	AdjustmentMapper adjustmentMapper) : ICompleteReceiptWriter
+	AdjustmentMapper adjustmentMapper,
+		Microsoft.Extensions.Options.IOptions<Application.Taxonomy.ClassificationOptions>? classificationOptions = null) : ICompleteReceiptWriter
 {
 	public Task<CreateCompleteReceiptResult> CreateAsync(Receipt receipt, List<Transaction> transactions, List<ReceiptItem> items,
 		List<Adjustment> adjustments, CancellationToken cancellationToken)
@@ -35,6 +36,7 @@ public class CompleteReceiptWriter(
 		await using ApplicationDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
 		await using IDbContextTransaction? transaction = context.Database.IsRelational() ? await context.Database.BeginTransactionAsync(cancellationToken) : null;
 		await NormalizationWriteGuard.AcquireWriteGateAsync(context, cancellationToken);
+		ClassificationService.RequireRequestId(items.Select(receiptItemMapper.ToEntity), clientRequestId);
 		ReceiptWriteRequestEntity? request = null;
 		if (clientRequestId is Guid requestId)
 		{
@@ -44,7 +46,7 @@ public class CompleteReceiptWriter(
 				receipt.Date,
 				receipt.TaxAmount,
 				transactions = transactions.Select(value => new { value.CardId, value.Amount, value.Date }),
-				items = items.Select(value => new { value.Description, value.ReceiptItemCode, value.Quantity, value.UnitPrice, value.TotalAmount, value.Category, value.Subcategory, value.NormalizationIntent }),
+				items = items.Select(value => new { value.Description, value.ReceiptItemCode, value.Quantity, value.UnitPrice, value.TotalAmount, value.Category, value.Subcategory, value.NormalizationIntent, value.Classification }),
 				adjustments = adjustments.Select(value => new { value.Type, value.Amount, value.Description })
 			}, cancellationToken);
 			if (request.ReceiptId != Guid.Empty)
@@ -101,11 +103,13 @@ public class CompleteReceiptWriter(
 		context.Set<ReceiptItemEntity>().AddRange(itemEntities);
 		context.Set<AdjustmentEntity>().AddRange(adjustmentEntities);
 
+		await ClassificationService.PrepareAggregateAsync(context, itemEntities, classificationOptions?.Value.WritesEnabled == true, cancellationToken);
 		// Load required response state before committing, so a failed read cannot leave
 		// a saved transaction behind a failed create response. Tracking fixes up the cards.
 		List<Guid> cardIds = transactionEntities.Select(entity => entity.CardId).Distinct().ToList();
 		await context.Cards.IgnoreAutoIncludes().Where(card => cardIds.Contains(card.Id)).LoadAsync(cancellationToken);
 		await context.SaveChangesAsync(cancellationToken);
+		await ClassificationService.ApplyAggregateAsync(context, itemEntities, classificationOptions?.Value.WritesEnabled == true, cancellationToken);
 		if (transaction is not null) { await transaction.CommitAsync(cancellationToken); }
 
 

@@ -5,13 +5,14 @@ using Domain.NormalizedDescriptions;
 using Infrastructure.Entities.Core;
 using Infrastructure.Extensions;
 using Infrastructure.Interfaces.Repositories;
+using Infrastructure.Services;
 using Infrastructure.Utilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Infrastructure.Repositories;
 
-public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> contextFactory) : IReceiptItemRepository
+public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> contextFactory, Microsoft.Extensions.Options.IOptions<Application.Taxonomy.ClassificationOptions>? classificationOptions = null) : IReceiptItemRepository
 {
 	private static readonly Dictionary<string, Expression<Func<ReceiptItemEntity, object>>> AllowedSortColumns = new(StringComparer.OrdinalIgnoreCase)
 	{
@@ -220,13 +221,8 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 			.CountAsync(cancellationToken);
 	}
 
-	public async Task<List<ReceiptItemEntity>> CreateAsync(List<ReceiptItemEntity> entities, CancellationToken cancellationToken)
-	{
-		using ApplicationDbContext context = contextFactory.CreateDbContext();
-		context.ReceiptItems.AddRange(entities);
-		await context.SaveChangesAsync(cancellationToken);
-		return entities;
-	}
+	public Task<List<ReceiptItemEntity>> CreateAsync(List<ReceiptItemEntity> entities, CancellationToken cancellationToken)
+		=> CreateCoreAsync(entities, [], null, cancellationToken);
 
 	public Task<List<ReceiptItemEntity>> CreateAsync(List<ReceiptItemEntity> entities,
 		IReadOnlyList<Guid?> templateIds, CancellationToken cancellationToken)
@@ -244,10 +240,6 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 		{
 			throw new ArgumentException("Template IDs must align with receipt items.", nameof(templateIds));
 		}
-		if (templateIds.Count == 0 && clientRequestId is null)
-		{
-			return await CreateAsync(entities, cancellationToken);
-		}
 
 		Guid?[] hints = templateIds.ToArray();
 		Guid[] ids = hints.Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToArray();
@@ -258,11 +250,13 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 			await using IDbContextTransaction? transaction = context.Database.IsRelational()
 				? await context.Database.BeginTransactionAsync(cancellationToken) : null;
 			await NormalizationWriteGuard.AcquireWriteGateAsync(context, cancellationToken);
+			ClassificationService.RequireRequestId(entities, clientRequestId);
+			await ClassificationService.PrepareAggregateAsync(context, entities, classificationOptions?.Value.WritesEnabled == true, cancellationToken);
 			ReceiptWriteRequestEntity? request = null;
 			if (clientRequestId is Guid requestId)
 			{
 				request = await Infrastructure.Services.ReceiptWriteIdempotency.FindOrCreateAsync(context, requestId, "item-create",
-					new { ReceiptId = entities[0].ReceiptId, templates = templateIds, items = entities.Select(value => new { value.Description, value.ReceiptItemCode, value.Quantity, value.UnitPrice, value.TotalAmount, value.UnitPriceCurrency, value.TotalAmountCurrency, value.Category, value.Subcategory, value.NormalizationIntent }) }, cancellationToken);
+					new { ReceiptId = entities[0].ReceiptId, templates = templateIds, items = entities.Select(value => new { value.Description, value.ReceiptItemCode, value.Quantity, value.UnitPrice, value.TotalAmount, value.UnitPriceCurrency, value.TotalAmountCurrency, value.Category, value.Subcategory, value.NormalizationIntent, value.Classification }) }, cancellationToken);
 				if (request.ReceiptId != Guid.Empty)
 				{
 					var saved = await context.ReceiptItems.Where(value => request.ItemIds.Contains(value.Id)).ToListAsync(cancellationToken);
@@ -310,6 +304,7 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 			context.ReceiptItems.AddRange(entities);
 			if (request is not null) { request.ReceiptId = entities[0].ReceiptId; request.ItemIds = entities.Select(value => value.Id).ToArray(); }
 			await context.SaveChangesAsync(cancellationToken);
+			await ClassificationService.ApplyAggregateAsync(context, entities, classificationOptions?.Value.WritesEnabled == true, cancellationToken);
 			if (transaction is not null)
 			{
 				await transaction.CommitAsync(cancellationToken);
@@ -334,6 +329,8 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 		// this edit saves, causing EF to omit its null clears and audit stale original values.
 		// Edits only preserve or clear links, so they need item locks, not canonical locks.
 		await NormalizationWriteGuard.AcquireWriteGateAsync(context, cancellationToken);
+		ClassificationService.RequireRequestId(entities, clientRequestId);
+		await ClassificationService.PrepareAggregateAsync(context, entities, classificationOptions?.Value.WritesEnabled == true, cancellationToken);
 		if (clientRequestId is Guid requestId)
 		{
 			var request = await Infrastructure.Services.ReceiptWriteIdempotency.FindOrCreateAsync(context, requestId, "item-update",
@@ -350,7 +347,8 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 					value.TotalAmountCurrency,
 					value.Category,
 					value.Subcategory,
-					value.NormalizationIntent
+					value.NormalizationIntent,
+					value.Classification
 				}), cancellationToken);
 			if (request.ReceiptId != Guid.Empty) { return; }
 			request.ReceiptId = entities[0].ReceiptId;
@@ -365,6 +363,7 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 		foreach (ReceiptItemEntity entity in entities)
 		{
 			ReceiptItemEntity existingEntity = existingEntities.Single(e => e.Id == entity.Id);
+			await ClassificationService.ProtectLegacyEditAsync(context, entity, existingEntity, cancellationToken);
 			// Canonical identity describes the raw text. Ordinary edits preserve it; a text
 			// change invalidates both fields so the resolver can classify the new description.
 			if (!string.Equals(existingEntity.Description, entity.Description, StringComparison.Ordinal))
@@ -388,6 +387,7 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 		}
 
 		await context.SaveChangesAsync(cancellationToken);
+		await ClassificationService.ApplyAggregateAsync(context, entities, classificationOptions?.Value.WritesEnabled == true, cancellationToken);
 		if (transaction is not null)
 		{
 			await transaction.CommitAsync(cancellationToken);

@@ -8,6 +8,84 @@ info:
     default version (currently 1.0) is assumed.
 
 paths:
+  /api/receipt-items/{id}/classification:
+    put:
+      tags: [Classification]
+      summary: Assign purchase classification
+      operationId: Classification_Assign
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ClassificationRequest"}
+      responses:
+        "200":
+          description: Purchase classification result
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ClassificationResponse"}
+        "401":
+          description: Authentication required
+        "400":
+          description: Request rejected
+          content:
+            application/problem+json:
+              schema: {$ref: "#/components/schemas/ProblemDetails"}
+        "404":
+          description: Request rejected
+          content:
+            application/problem+json:
+              schema: {$ref: "#/components/schemas/ProblemDetails"}
+        "409":
+          description: Request rejected
+          content:
+            application/problem+json:
+              schema: {$ref: "#/components/schemas/ProblemDetails"}
+  /api/receipt-items/{id}/classification-history:
+    get:
+      tags: [Classification]
+      summary: History purchase classification
+      operationId: Classification_History
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: beforeSequence
+          in: query
+          schema: {type: integer, format: int64, minimum: 1}
+        - name: limit
+          in: query
+          schema: {type: integer, format: int32, minimum: 1, maximum: 100, default: 50}
+      responses:
+        "200":
+          description: Purchase classification result
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ClassificationHistoryResponse"}
+        "401":
+          description: Authentication required
+        "400":
+          description: Request rejected
+          content:
+            application/problem+json:
+              schema: {$ref: "#/components/schemas/ProblemDetails"}
+        "404":
+          description: Request rejected
+          content:
+            application/problem+json:
+              schema: {$ref: "#/components/schemas/ProblemDetails"}
   /api/taxonomy:
     get:
       tags: [Taxonomy]
@@ -7385,6 +7463,42 @@ paths:
 
 components:
   schemas:
+    ClassificationRequest:
+      type: object
+      description: Manual assignment to any active node or explicit null. Writes are disabled until migration and portable backup validation. Source and actor are server owned.
+      required: [categoryId, taxonomyRevisionId, expectedAssignmentId, operationId, reason]
+      properties:
+        categoryId: {type: [string, 'null'], format: uuid}
+        taxonomyRevisionId: {type: string, format: uuid}
+        expectedAssignmentId: {type: [string, 'null'], format: uuid}
+        operationId: {type: string, format: uuid}
+        reason: {type: string, minLength: 1}
+    ClassificationResponse:
+      type: object
+      required: [id, receiptItemId, sequence, taxonomyRevisionId, recordedAt, actor, source, reason, operationId, path]
+      properties:
+        id: {type: string, format: uuid}
+        receiptItemId: {type: string, format: uuid}
+        sequence: {type: integer, format: int64}
+        previousAssignmentId: {type: [string, 'null'], format: uuid}
+        categoryId: {type: [string, 'null'], format: uuid}
+        taxonomyRevisionId: {type: string, format: uuid}
+        recordedAt: {type: string, format: date-time}
+        actor: {type: string}
+        source: {type: string}
+        reason: {type: string}
+        operationId: {type: string, format: uuid}
+        path:
+          type: array
+          items: {$ref: '#/components/schemas/TaxonomyNodeResponse'}
+    ClassificationHistoryResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/ClassificationResponse'}
+        nextBeforeSequence: {type: [integer, 'null'], format: int64}
     TaxonomyChangeRequest:
       type: object
       description: Admin only. Actor-scoped operation ID retries return the original result; changed-body reuse or a stale expected revision returns 409. No-op edits keep the current revision. Independent of legacy category suggestions.
@@ -10345,6 +10459,11 @@ components:
       type: object
       required: [description, quantity, unitPrice, category]
       properties:
+        classification:
+          oneOf:
+            - $ref: "#/components/schemas/ClassificationRequest"
+            - type: "null"
+          description: Optional explicit manual assignment, atomic with receipt facts. Requires a nonempty clientRequestId query parameter for atomic retries. Omission preserves classification; categoryId null explicitly clears. Legacy labels must agree with the pinned path.
         normalizationIntent:
           oneOf:
             - $ref: "#/components/schemas/ReceiptNormalizationIntent"
@@ -10373,6 +10492,11 @@ components:
       type: object
       required: [id, description, quantity, unitPrice, category]
       properties:
+        classification:
+          oneOf:
+            - $ref: "#/components/schemas/ClassificationRequest"
+            - type: "null"
+          description: Optional explicit manual assignment, atomic with receipt facts. Requires a nonempty clientRequestId query parameter for atomic retries. Omission preserves classification; categoryId null explicitly clears. Legacy labels must agree with the pinned path.
         normalizationIntent:
           oneOf:
             - $ref: "#/components/schemas/ReceiptNormalizationIntent"

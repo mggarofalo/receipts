@@ -25,6 +25,91 @@ namespace Presentation.API.Tests.Configuration;
 
 public sealed class ReceiptNormalizationHttpTests
 {
+	[Theory]
+	[InlineData(false, "omitted")]
+	[InlineData(false, "null")]
+	[InlineData(false, "clear")]
+	[InlineData(true, "omitted")]
+	[InlineData(true, "null")]
+	[InlineData(true, "clear")]
+	public async Task ReceiptItemWritePreservesOptionalClassificationAndExplicitClear(bool update, string classificationKind)
+	{
+		Guid itemId = Guid.NewGuid(), receiptId = Guid.NewGuid();
+		Domain.Taxonomy.ClassificationIntent? captured = null;
+		var mediator = new Mock<IMediator>(MockBehavior.Strict);
+		if (update)
+		{
+			mediator.Setup(x => x.Send(It.IsAny<UpdateReceiptItemCommand>(), It.IsAny<CancellationToken>()))
+				.Callback<IRequest<bool>, CancellationToken>((command, _) => captured = ((UpdateReceiptItemCommand)command).ReceiptItems.Single().Classification)
+				.ReturnsAsync(true);
+		}
+		else
+		{
+			mediator.Setup(x => x.Send(It.IsAny<CreateReceiptItemCommand>(), It.IsAny<CancellationToken>()))
+				.Callback<IRequest<List<Domain.Core.ReceiptItem>>, CancellationToken>((command, _) => captured = ((CreateReceiptItemCommand)command).ReceiptItems.Single().Classification)
+				.ReturnsAsync((IRequest<List<Domain.Core.ReceiptItem>> command, CancellationToken _) => ((CreateReceiptItemCommand)command).ReceiptItems.ToList());
+		}
+		await using var app = await Start(mediator);
+		using var client = app.GetTestClient();
+		var body = new Dictionary<string, object?>
+		{
+			["id"] = itemId,
+			["description"] = "FRANKS",
+			["quantity"] = 1,
+			["unitPrice"] = 2,
+			["category"] = "Food"
+		};
+		if (classificationKind == "null") { body["classification"] = null; }
+		Guid revisionId = Guid.NewGuid(), operationId = Guid.NewGuid();
+		if (classificationKind == "clear")
+		{
+			body["classification"] = new { categoryId = (Guid?)null, expectedAssignmentId = (Guid?)null, taxonomyRevisionId = revisionId, operationId, reason = "Explicit clear" };
+		}
+
+		using var response = update
+			? await client.PutAsJsonAsync($"/api/receipt-items/{itemId}", body)
+			: await client.PostAsJsonAsync($"/api/receipts/{receiptId}/receipt-items", body);
+
+		response.StatusCode.Should().Be(update ? HttpStatusCode.NoContent : HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+		if (classificationKind == "clear")
+		{
+			captured.Should().Be(new Domain.Taxonomy.ClassificationIntent(null, revisionId, null, operationId, "Explicit clear"));
+		}
+		else { captured.Should().BeNull(); }
+		mediator.VerifyAll();
+	}
+
+	[Theory]
+	[InlineData(false, "categoryId")]
+	[InlineData(false, "expectedAssignmentId")]
+	[InlineData(true, "categoryId")]
+	[InlineData(true, "expectedAssignmentId")]
+	public async Task PresentClassificationRequiresNullableConcurrencyFields(bool update, string omittedField)
+	{
+		Guid itemId = Guid.NewGuid();
+		var mediator = new Mock<IMediator>(MockBehavior.Strict);
+		await using var app = await Start(mediator);
+		using var client = app.GetTestClient();
+		var classification = new Dictionary<string, object?>
+		{
+			["categoryId"] = null,
+			["expectedAssignmentId"] = null,
+			["taxonomyRevisionId"] = Guid.NewGuid(),
+			["operationId"] = Guid.NewGuid(),
+			["reason"] = "Explicit choice"
+		};
+		classification.Remove(omittedField);
+		var body = new { id = itemId, description = "FRANKS", quantity = 1, unitPrice = 2, category = "Food", classification };
+
+		using var response = update
+			? await client.PutAsJsonAsync($"/api/receipt-items/{itemId}?clientRequestId={Guid.NewGuid()}", body)
+			: await client.PostAsJsonAsync($"/api/receipts/{Guid.NewGuid()}/receipt-items?clientRequestId={Guid.NewGuid()}", body);
+
+		response.StatusCode.Should().Be(HttpStatusCode.BadRequest, await response.Content.ReadAsStringAsync());
+		(await response.Content.ReadAsStringAsync()).Should().Contain(omittedField);
+		mediator.VerifyNoOtherCalls();
+	}
+
 	[Fact]
 	public async Task ReviewEditForwardsReplayKeyAndObservedItemRevision()
 	{
