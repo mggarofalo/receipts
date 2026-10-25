@@ -358,13 +358,20 @@ export default function NewReceiptPage() {
     <div className="space-y-6">
       <h1 className="text-3xl font-bold tracking-tight">New Receipt</h1>
       <ReceiptNormalizationError error={saveError} />
-      {items.length > 0 && (
-        <p className="text-sm text-muted-foreground" aria-live="polite">
-          {unresolvedChoices} item{unresolvedChoices === 1 ? " has" : "s have"}{" "}
-          no reviewed choice yet. Save keeps all receipt details and checks
-          remembered rules; anything unresolved stays available for review.
-        </p>
-      )}
+      <div aria-live="polite">
+        {unresolvedChoices > 0 && (
+          <div className="text-sm text-muted-foreground">
+            {unresolvedChoices} item
+            {unresolvedChoices === 1 ? " needs" : "s need"} review. You can
+            still save.{" "}
+            <details>
+              <summary className="cursor-pointer">Review on save</summary>
+              Save checks remembered rules and keeps all receipt details.
+              Unresolved items stay available for review.
+            </details>
+          </div>
+        )}
+      </div>
 
       {/* aria-live region: announced to screen readers when validation fails */}
       <div

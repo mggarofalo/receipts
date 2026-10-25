@@ -41,11 +41,21 @@ describe("BackupRestore", () => {
     ).toBeInTheDocument();
   });
 
-  it("renders the description text", () => {
+  it("keeps backup details in a keyboard-accessible disclosure", async () => {
     renderWithQueryClient(<BackupRestore />);
-    expect(
-      screen.getByText(/export or import a portable sqlite backup/i),
-    ).toBeInTheDocument();
+    const user = (await import("@testing-library/user-event")).default.setup();
+    const summary = screen.getByText("Backup contents");
+    const details = summary.closest("details")!;
+    expect(details).not.toHaveAttribute("open");
+    summary.focus();
+    expect(summary).toHaveFocus();
+    await user.click(summary);
+    expect(details).toHaveAttribute("open");
+    expect(details).toHaveTextContent(
+      /user accounts and authentication settings are excluded/i,
+    );
+    expect(details).toHaveTextContent(/audit logs and YNAB sync history/i);
+    expect(details).toHaveTextContent(/image files are not included/i);
   });
 
   it("renders the Export Backup card", () => {
@@ -56,7 +66,7 @@ describe("BackupRestore", () => {
       }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/download a sqlite backup of your database/i),
+      screen.getByText(/download a portable sqlite backup/i),
     ).toBeInTheDocument();
   });
 
@@ -90,18 +100,17 @@ describe("BackupRestore", () => {
     expect(document.getElementById("backup-file")).toBeInTheDocument();
   });
 
-  it("explains backup contents and the archival-only status of retired photos", () => {
+  it("retains archival image and authentication exclusions in backup contents", () => {
     renderWithQueryClient(<BackupRestore />);
-    expect(
-      screen.getByText(/backups include your receipts/i),
-    ).toBeInTheDocument();
-    const notice = screen.getByText(/backups include your receipts/i);
-    expect(notice).toHaveTextContent("Receipt photos are no longer supported.");
+    const notice = screen.getByText("Backup contents").closest("details")!;
     expect(notice).toHaveTextContent(
-      /Legacy image paths remain in backups for archival compatibility/,
+      /legacy image paths remain in backups for archival compatibility/i,
     );
     expect(notice).toHaveTextContent(
-      /image files are not included and existing files are left untouched/,
+      /image files are not included and existing files are left untouched/i,
+    );
+    expect(notice).toHaveTextContent(
+      /user accounts and authentication settings are excluded/i,
     );
   });
 

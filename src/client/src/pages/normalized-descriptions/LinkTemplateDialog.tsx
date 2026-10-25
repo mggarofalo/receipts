@@ -100,12 +100,7 @@ export function LinkTemplateDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Link to an Item Template</DialogTitle>
-          <DialogDescription>
-            Pick the template whose item this is. Its entry becomes the one that
-            survives, because a template is always represented by the entry
-            named after it — so this entry is consolidated into that one unless
-            it already is that one.
-          </DialogDescription>
+          <DialogDescription>Choose the matching template.</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div>

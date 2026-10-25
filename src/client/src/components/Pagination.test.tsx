@@ -42,7 +42,7 @@ describe("Pagination", () => {
     expect(screen.getByLabelText("Next page")).toBeDisabled();
   });
 
-  it("keeps the page-size control available with an honest empty range", () => {
+  it("hides all pagination chrome when there are no results", () => {
     render(
       <Pagination
         {...defaultProps}
@@ -51,10 +51,19 @@ describe("Pagination", () => {
         onPageSizeChange={vi.fn()}
       />,
     );
-    expect(screen.getByText("Showing 0-0 of 0")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Table pagination")).not.toBeInTheDocument();
+    expect(screen.queryByText("Showing 0-0 of 0")).not.toBeInTheDocument();
     expect(
-      screen.getByRole("combobox", { name: "Rows per page" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("combobox", { name: "Rows per page" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("restores nonempty counts and paging after a zero-result filter clears", () => {
+    const view = render(<Pagination {...defaultProps} totalItems={0} />);
+    view.rerender(
+      <Pagination {...defaultProps} totalItems={3} totalPages={1} />,
+    );
+    expect(screen.getByText("Showing 1-3 of 3")).toBeInTheDocument();
     expect(screen.getByLabelText("Previous page")).toBeDisabled();
     expect(screen.getByLabelText("Next page")).toBeDisabled();
   });

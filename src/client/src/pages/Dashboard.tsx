@@ -116,7 +116,6 @@ function Dashboard() {
         ) : recent.data.length === 0 ? (
           <div className="recent" style={{ gridColumn: "1 / -1" }}>
             <div className="r-store">No receipts yet</div>
-            <div className="r-meta">Add your first receipt to get started.</div>
             <Link to="/receipts/new" className="btn xs ghost" style={{ marginTop: 6 }}>
               <Icon.Plus /> New receipt
             </Link>

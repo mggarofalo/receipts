@@ -346,10 +346,7 @@ export default function YnabSettings() {
 
   return (
     <>
-      <PageHead
-        title="YNAB"
-        sub="Configure your YNAB integration for transaction sync"
-      />
+      <PageHead title="YNAB" />
       <div className="space-y-6">
         <Card>
           <CardHeader>

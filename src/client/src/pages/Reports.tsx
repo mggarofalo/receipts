@@ -62,8 +62,7 @@ const REPORT_GROUPS: ReportGroup[] = [
       {
         slug: "spending-by-location",
         name: "Spending by Location",
-        description:
-          "Total spend, visit count, and average per visit for every store.",
+        description: "Totals, visits, and average per visit.",
         component: lazy(
           () => import("@/components/reports/SpendingByLocation"),
         ),
@@ -71,8 +70,7 @@ const REPORT_GROUPS: ReportGroup[] = [
       {
         slug: "spending-by-normalized-description",
         name: "Spending by Normalized Description",
-        description:
-          "Spend rolled up by canonical item name, so variants of one product total together.",
+        description: "Product variants grouped under a canonical name.",
         component: lazy(
           () => import("@/components/reports/SpendingByNormalizedDescription"),
         ),
@@ -80,15 +78,13 @@ const REPORT_GROUPS: ReportGroup[] = [
       {
         slug: "category-trends",
         name: "Category Trends",
-        description:
-          "Category spending over time, with everything past the top few collapsed into Other.",
+        description: "Smaller categories are grouped into Other.",
         component: lazy(() => import("@/components/reports/CategoryTrends")),
       },
       {
         slug: "item-cost-over-time",
         name: "Item Cost Over Time",
-        description:
-          "Unit-price history for a single item or category, to catch creeping costs.",
+        description: "Unit prices for one item or category.",
         component: lazy(() => import("@/components/reports/ItemCostOverTime")),
       },
     ],
@@ -101,7 +97,7 @@ const REPORT_GROUPS: ReportGroup[] = [
         slug: "out-of-balance",
         name: "Out of Balance",
         description:
-          "Receipts whose items, tax, and adjustments do not add up to the recorded total.",
+          "Items, tax, and adjustments differ from the recorded total.",
         component: lazy(() => import("@/components/reports/OutOfBalance")),
         metric: "outOfBalanceCount",
         formatCount: (n) =>
@@ -110,8 +106,7 @@ const REPORT_GROUPS: ReportGroup[] = [
       {
         slug: "duplicate-detection",
         name: "Duplicate Detection",
-        description:
-          "Receipts that look like double entries because they share a date, location, or total.",
+        description: "Potential duplicates by date, location, or total.",
         component: lazy(
           () => import("@/components/reports/DuplicateDetection"),
         ),
@@ -121,8 +116,7 @@ const REPORT_GROUPS: ReportGroup[] = [
       {
         slug: "uncategorized-items",
         name: "Uncategorized Items",
-        description:
-          "Receipt items still filed under Uncategorized and waiting to be sorted.",
+        description: "Items filed under Uncategorized.",
         component: lazy(
           () => import("@/components/reports/UncategorizedItems"),
         ),
@@ -207,10 +201,6 @@ function OperationalReportLibrary({ counts }: { counts: Counts }) {
         >
           Operational reports
         </h2>
-        <p className="text-muted-foreground mt-2 text-sm leading-6">
-          Review spending detail and resolve data-quality issues in your
-          receipts.
-        </p>
       </div>
       <div className="flex flex-col gap-8">
         {REPORT_GROUPS.map((group) => (
@@ -283,17 +273,10 @@ function Reports() {
   if (!activeReport) {
     return (
       <>
-        <PageHead
-          title="Reports"
-          sub="Purchase history, spending, and data quality"
-        />
+        <PageHead title="Reports" />
         <Card>
           <CardHeader>
-            <CardTitle>What did I pay?</CardTitle>
-            <CardDescription>
-              Search all your line items for prices, dates, stores, and original
-              receipts.
-            </CardDescription>
+            <CardTitle>Purchase history</CardTitle>
             <Button asChild className="w-fit">
               <Link to="/search">Search purchase history</Link>
             </Button>

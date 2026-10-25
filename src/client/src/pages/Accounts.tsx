@@ -207,7 +207,7 @@ function Accounts() {
     <>
       <PageHead
         title="Accounts"
-        sub={`${serverTotal} total${statusFilter === "all" ? "" : ` · ${statusFilter === "true" ? "active" : "inactive"}`}`}
+
         actions={
           <button
             type="button"

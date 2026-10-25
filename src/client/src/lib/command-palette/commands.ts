@@ -15,7 +15,6 @@ import {
   ListChecks,
   LogOut,
   Moon,
-  Package,
   Receipt,
   RotateCcw,
   ScanSearch,
@@ -161,15 +160,6 @@ export const COMMANDS: Command[] = [
     run: (ctx) => runNewItem("/subcategories", ctx),
   },
   {
-    id: "create:item-template",
-    label: "New Item Template",
-    group: "create",
-    icon: Package,
-    keywords: ["add", "create", "autocomplete"],
-    targetPath: "/item-templates",
-    run: (ctx) => runNewItem("/item-templates", ctx),
-  },
-  {
     id: "create:api-key",
     label: "New API Key",
     group: "create",
@@ -277,14 +267,6 @@ export const COMMANDS: Command[] = [
     group: "navigate",
     icon: Tags,
     run: goTo("/subcategories"),
-  },
-  {
-    id: "nav:item-templates",
-    label: "Go to Item Templates",
-    group: "navigate",
-    icon: Package,
-    keywords: ["autocomplete"],
-    run: goTo("/item-templates"),
   },
   {
     id: "nav:security",

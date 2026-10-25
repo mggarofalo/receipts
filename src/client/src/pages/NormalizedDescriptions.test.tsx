@@ -1580,10 +1580,13 @@ describe("NormalizedDescriptions settings tab", () => {
     await waitFor(() => expect(autoInput.value).toBe("0.9"));
     expect(pendingInput.value).toBe("0.75");
     expect(
-      screen.getByText(
-        /legacy threshold bands are advisory simulation settings only/i,
-      ),
-    ).toHaveTextContent(
+      screen.getByText(/Simulations never change or verify purchases/),
+    ).toBeInTheDocument();
+    const help = screen.getByText("How thresholds work").closest("details")!;
+    expect(help).not.toHaveAttribute("open");
+    await user.click(screen.getByText("How thresholds work"));
+    expect(help).toHaveAttribute("open");
+    expect(help).toHaveTextContent(
       /verification requires an explicit choice or an approved exact scoped mapping/i,
     );
   });

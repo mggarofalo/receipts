@@ -44,37 +44,42 @@ describe("Settings", () => {
     ).toBeInTheDocument();
   });
 
-  it("renders the tab list with at least Appearance, Preferences, Export, YNAB", () => {
-    renderWithProviders(<Settings />);
-    expect(
-      screen.getByRole("tab", { name: /appearance/i }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("tab", { name: /preferences/i }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /export/i })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /^ynab$/i })).toBeInTheDocument();
-  });
+  it.each([false, true])(
+    "shows only working Settings tabs for admin=%s",
+    (admin) => {
+      vi.mocked(usePermission).mockReturnValue({
+        isAdmin: () => admin,
+        roles: admin ? ["Admin"] : ["User"],
+        hasRole: () => admin,
+      });
+      renderWithProviders(<Settings />);
+      expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
+        "Appearance",
+        "Preferences",
+        "Export",
+      ]);
+      expect(
+        screen.queryByText(
+          /Settings live here|Configure your workspace|Paper intensity and motion/i,
+        ),
+      ).not.toBeInTheDocument();
+    },
+  );
 
-  it("hides the admin Data & backup tab for non-admin users", () => {
-    renderWithProviders(<Settings />);
-    expect(
-      screen.queryByRole("tab", { name: /data & backup/i }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("shows the Data & backup tab for admin users", async () => {
-    const { usePermission } = await import("@/hooks/usePermission");
-    vi.mocked(usePermission).mockReturnValue({
-      isAdmin: () => true,
-      roles: ["Admin"],
-      hasRole: () => true,
-    });
-    renderWithProviders(<Settings />);
-    expect(
-      screen.getByRole("tab", { name: /data & backup/i }),
-    ).toBeInTheDocument();
-  });
+  it.each(["data", "ynab"])(
+    "opens a visible Appearance panel for retired #%s links",
+    (hash) => {
+      renderWithProviders(<Settings />, { route: `/settings#${hash}` });
+      expect(screen.getByRole("tab", { name: "Appearance" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+      expect(
+        screen.getByRole("tabpanel", { name: "Appearance" }),
+      ).toBeVisible();
+      expect(screen.getByRole("button", { name: "Graphite" })).toBeVisible();
+    },
+  );
 
   it("defaults to the Appearance tab when no hash is present", () => {
     renderWithProviders(<Settings />, { route: "/settings" });

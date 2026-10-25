@@ -68,6 +68,7 @@ describe("RecycleBin", () => {
     expect(
       screen.getByRole("heading", { name: /^trash$/i }),
     ).toBeInTheDocument();
+    expect(screen.queryByText("0 items")).not.toBeInTheDocument();
   });
 
   it("renders loading skeleton when data is loading", async () => {

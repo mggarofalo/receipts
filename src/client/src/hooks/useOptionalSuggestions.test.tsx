@@ -17,7 +17,6 @@ import { useLocationHistory } from "./useLocationHistory";
 import { useLocationSuggestions } from "./useReceipts";
 import { useReceiptItemSuggestions } from "./useReceiptItemSuggestions";
 import { useSimilarItems, useCategoryRecommendations } from "./useSimilarItems";
-import { useTemplateHistoryCandidates } from "./useTemplateHistoryCandidates";
 vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 let failed: boolean;
 let reads: string[];
@@ -29,7 +28,6 @@ const endpoints = [
   "receipt-items/suggestions",
   "item-templates/similar",
   "item-templates/category-suggestions",
-  "item-templates/history-candidates",
 ];
 const server = setupServer(
   ...endpoints.map((endpoint) =>
@@ -42,8 +40,6 @@ const server = setupServer(
         );
       if (endpoint === "receipts/locations")
         return HttpResponse.json({ locations: ["API market"] });
-      if (endpoint === "item-templates/history-candidates")
-        return HttpResponse.json({ data: [], total: 0, offset: 0, limit: 10 });
       return HttpResponse.json([]);
     }),
   ),
@@ -61,7 +57,6 @@ function useAllSuggestions() {
     item: useReceiptItemSuggestions("MILK", "Market"),
     similar: useSimilarItems("Milk"),
     category: useCategoryRecommendations("Milk"),
-    history: useTemplateHistoryCandidates(),
   };
 }
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
@@ -94,16 +89,16 @@ it("keeps each extended suggestion result and retry callback stable across an un
       { value: "API market", label: "API market" },
     ]),
   );
-  expect(reads).toHaveLength(5);
+  expect(reads).toHaveLength(4);
   const previous = result.current;
   rerender();
   for (const key of Object.keys(previous) as (keyof typeof previous)[]) {
     expect(result.current[key]).toBe(previous[key]);
     expect(result.current[key].refetch).toBe(previous[key].refetch);
   }
-  expect(reads).toHaveLength(5);
+  expect(reads).toHaveLength(4);
 });
-it("makes all five actual shared query families local and manually recoverable without automatic retries", async () => {
+it("makes all four actual shared query families local and manually recoverable without automatic retries", async () => {
   failed = true;
   const { result } = renderHook(useAllSuggestions, { wrapper: Wrapper });
   await waitFor(() =>
@@ -125,7 +120,7 @@ it("makes all five actual shared query families local and manually recoverable w
       true,
     ),
   );
-  expect(reads).toHaveLength(10);
+  expect(reads).toHaveLength(8);
   expect(result.current.location.options).toEqual([
     { value: "API market", label: "API market" },
   ]);

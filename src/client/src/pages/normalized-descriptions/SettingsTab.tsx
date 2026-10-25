@@ -134,14 +134,20 @@ function SettingsForm({
         <CardHeader>
           <CardTitle>Thresholds</CardTitle>
           <CardDescription>
-            These legacy threshold bands are advisory simulation settings only.
-            They do not approve receipt assignments or create products. Receipt
-            verification requires an explicit choice or an approved exact scoped
-            mapping. Both values are between 0 and 1, with pending-review below
-            auto-accept.
+            Simulations never change or verify purchases. Use values from 0 to
+            1; pending-review must be below auto-accept.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <details className="text-sm text-muted-foreground">
+            <summary className="cursor-pointer">How thresholds work</summary>
+            <p className="mt-2">
+              These legacy bands only simulate classifier outcomes. They do not
+              approve receipt assignments or create products. Receipt
+              verification requires an explicit choice or an approved exact
+              scoped mapping.
+            </p>
+          </details>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <Label htmlFor="auto-accept-input">Auto-Accept Threshold</Label>
@@ -254,13 +260,18 @@ function SettingsForm({
         <CardHeader>
           <CardTitle>Test a Description</CardTitle>
           <CardDescription>
-            Run any description through the classifier with the currently-edited
-            thresholds (or the live values when the inputs are blank) to see
-            which canonical rows are candidates. This simulation never writes or
-            verifies a purchase.
+            Preview candidate products without changing or verifying purchases.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <details className="text-sm text-muted-foreground">
+            <summary className="cursor-pointer">Simulation inputs</summary>
+            <p className="mt-2">
+              The classifier uses the edited thresholds, or live values when
+              inputs are blank. Top N controls how many candidate rows are
+              returned.
+            </p>
+          </details>
           <div className="flex flex-wrap items-end gap-3">
             <div className="flex-1 min-w-[220px]">
               <Label htmlFor="test-description-input">Description</Label>

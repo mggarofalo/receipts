@@ -58,7 +58,7 @@ function PurchaseQueryForm({
           aria-label="Search purchases"
           aria-invalid={!!errors.q}
           aria-describedby={errors.q ? "purchase-query-error" : undefined}
-          placeholder="Item, item code, normalized name, or store"
+          placeholder="Search item names, codes, or stores"
         />
         <Button type="submit">Search</Button>
       </div>
@@ -153,10 +153,7 @@ export default function PurchaseSearch() {
 
   return (
     <div className="space-y-6">
-      <PageHead
-        title="Purchase history"
-        sub="Search, filter, and compare recorded purchases"
-      />
+      <PageHead title="Purchase history" />
       <PurchaseQueryForm
         key={q}
         initialQuery={q}
@@ -174,9 +171,8 @@ export default function PurchaseSearch() {
         </p>
       )}
       <p className="text-sm text-muted-foreground">
-        Find what you paid, where, and when. Search matches a phrase in item
-        names, item codes, normalized names, or stores. Prices are recorded per
-        item; package sizes and measurement units are not standardized.
+        Prices are recorded per item; package sizes and measurement units are
+        not standardized.
       </p>
       <label className="flex items-center gap-2 text-sm">
         <input
@@ -198,11 +194,7 @@ export default function PurchaseSearch() {
           Some filters are invalid. Adjust them and apply again.
         </p>
       )}
-      {!valid ? (
-        <p>
-          Enter between 2 and 200 characters to search your purchase history.
-        </p>
-      ) : !parsedFilters.success ? null : isError ? (
+      {!valid || !parsedFilters.success ? null : isError ? (
         <RequestFailure
           message="Purchase history could not be loaded."
           retry={() => void refetch()}

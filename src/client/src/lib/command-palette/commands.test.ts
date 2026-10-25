@@ -22,9 +22,18 @@ describe("command registry", () => {
   it("does not navigate a replacement identity to login when old remote logout completes", async () => {
     setTokens("Alice-access", "Alice-refresh");
     let finishLogout!: () => void;
-    const remoteLogout = new Promise<void>((resolve) => { finishLogout = resolve; });
-    const ctx = makeCtx({ logout: vi.fn(() => { clearTokens(); return remoteLogout; }) });
-    const completion = COMMANDS.find((command) => command.id === "pref:sign-out")!.run(ctx);
+    const remoteLogout = new Promise<void>((resolve) => {
+      finishLogout = resolve;
+    });
+    const ctx = makeCtx({
+      logout: vi.fn(() => {
+        clearTokens();
+        return remoteLogout;
+      }),
+    });
+    const completion = COMMANDS.find(
+      (command) => command.id === "pref:sign-out",
+    )!.run(ctx);
     localStorage.setItem("receipts_access_token", "Bob-access");
     localStorage.setItem("receipts_refresh_token", "Bob-refresh");
 
@@ -51,7 +60,6 @@ describe("command registry", () => {
       "nav:cards",
       "nav:categories",
       "nav:subcategories",
-      "nav:item-templates",
       "nav:security",
       "nav:api-keys",
       "nav:ynab",
@@ -66,7 +74,6 @@ describe("command registry", () => {
       "create:card",
       "create:category",
       "create:subcategory",
-      "create:item-template",
       "create:api-key",
       "create:user",
       "pref:shortcuts-help",
@@ -141,9 +148,7 @@ describe("command registry", () => {
     const cmd = COMMANDS.find((c) => c.id === "nav:normalized-descriptions")!;
     cmd.run(ctx);
     expect(ctx.close).toHaveBeenCalled();
-    expect(ctx.navigate).toHaveBeenCalledWith(
-      "/admin/normalized-descriptions",
-    );
+    expect(ctx.navigate).toHaveBeenCalledWith("/admin/normalized-descriptions");
   });
 
   it("palette commands call setPalette with expected values", () => {
@@ -161,7 +166,11 @@ describe("command registry", () => {
 
   it("sign-out still navigates to /login when logout throws", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const ctx = makeCtx({ logout: vi.fn(async () => { throw new Error("network"); }) });
+    const ctx = makeCtx({
+      logout: vi.fn(async () => {
+        throw new Error("network");
+      }),
+    });
     await COMMANDS.find((c) => c.id === "pref:sign-out")!.run(ctx);
     expect(ctx.logout).toHaveBeenCalled();
     expect(ctx.navigate).toHaveBeenCalledWith("/login");
@@ -233,4 +242,13 @@ describe("command registry", () => {
     ).toBe(false);
     dispatchSpy.mockRestore();
   });
+});
+
+it("does not expose commands for the retired templates page", () => {
+  expect(COMMANDS.map((command) => command.id)).not.toContain(
+    "nav:item-templates",
+  );
+  expect(COMMANDS.map((command) => command.id)).not.toContain(
+    "create:item-template",
+  );
 });

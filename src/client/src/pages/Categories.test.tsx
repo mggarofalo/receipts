@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import { renderWithProviders } from "@/test/test-utils";
 import { mockQueryResult, mockMutationResult } from "@/test/mock-hooks";
 import Categories from "./Categories";
@@ -313,7 +313,12 @@ describe("Categories", () => {
     );
 
     renderWithProviders(<Categories />);
-    expect(screen.getByText(/try fewer keywords/i)).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(/No .* match.*xyz/);
+    expect(
+      within(screen.getByRole("status")).getByRole("button", {
+        name: "Clear search",
+      }),
+    ).toBeVisible();
   });
 
   it("closes create dialog when Cancel is clicked", async () => {
@@ -396,5 +401,27 @@ describe("Categories", () => {
     expect(
       screen.getByRole("heading", { name: /create category/i }),
     ).toBeInTheDocument();
+  });
+});
+
+describe("status filter headings", () => {
+  it("keeps filters usable without repeating their count and state under the heading", async () => {
+    const user = (await import("@testing-library/user-event")).default.setup();
+    const { useCategories } = await import("@/hooks/useCategories");
+    vi.mocked(useCategories).mockReturnValue(
+      mockQueryResult({ data: [], total: 0, isLoading: false }),
+    );
+    renderWithProviders(<Categories />);
+    for (const label of ["Active", "Inactive", "All"]) {
+      await user.click(screen.getByRole("tab", { name: label }));
+      expect(screen.getByRole("tab", { name: label })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+      expect(
+        screen.queryByText(/^\d+ total(?: · (?:active|inactive))?$/),
+      ).not.toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Categories" })).toBeVisible();
+    }
   });
 });

@@ -30,8 +30,10 @@ export function Pagination({
   pageSizeOptions = PAGE_SIZE_OPTIONS,
   disabled = false,
 }: PaginationProps) {
+  if (totalItems === 0) return null;
+
   const start =
-    totalItems === 0 || (currentPage - 1) * pageSize >= totalItems
+    (currentPage - 1) * pageSize >= totalItems
       ? 0
       : (currentPage - 1) * pageSize + 1;
   const end = Math.min(currentPage * pageSize, totalItems);

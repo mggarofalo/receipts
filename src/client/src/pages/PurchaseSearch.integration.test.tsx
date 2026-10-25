@@ -81,6 +81,7 @@ it("finds hot dogs through the real query hook and renders a date-descending evi
   expect(requests).toHaveLength(1);
   expect(Object.fromEntries(requests[0].searchParams)).toEqual({
     q: "hot dogs",
+    includeUnreviewed: "false",
     offset: "0",
     limit: "25",
     sortBy: "date",
@@ -146,6 +147,7 @@ it("requests filters and ordering for the whole result, then keeps them while ch
   );
   expect(Object.fromEntries(requests.at(-1)!.searchParams)).toEqual({
     q: "milk",
+    includeUnreviewed: "false",
     offset: "0",
     limit: "100",
     sortBy: "unitPrice",

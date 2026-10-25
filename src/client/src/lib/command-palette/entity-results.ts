@@ -12,7 +12,6 @@ import { useAccounts } from "@/hooks/useAccounts";
 import { useCards } from "@/hooks/useCards";
 import { useCategories } from "@/hooks/useCategories";
 import { useSubcategories } from "@/hooks/useSubcategories";
-import { useItemTemplates } from "@/hooks/useItemTemplates";
 import { useReceipts } from "@/hooks/useReceipts";
 import { useReceiptItems } from "@/hooks/useReceiptItems";
 import { useUsers } from "@/hooks/useUsers";
@@ -61,12 +60,6 @@ interface SubcategoryLike {
   id: string;
   name: string;
   description?: string | null;
-}
-interface ItemTemplateLike {
-  id: string;
-  name: string;
-  description?: string | null;
-  defaultCategory?: string | null;
 }
 interface ReceiptLike {
   id: string;
@@ -150,13 +143,6 @@ export function useEntityResults({
     undefined,
     referenceOptions,
   );
-  // Template q searches names only; palette tokens also include description,
-  // category and the "template" prefix. Preserve those matches within the
-  // existing page ceiling until the server exposes the same search contract.
-  // Admin users likewise retain their existing bounded page.
-  const itemTemplates = useItemTemplates(0, SMALL_LIMIT, undefined, undefined, {
-    enabled: hasQuery,
-  });
   const receipts = useReceipts(
     0,
     LARGE_LIMIT,
@@ -178,13 +164,6 @@ export function useEntityResults({
   const users = useUsers(0, SMALL_LIMIT, undefined, undefined, {
     enabled: isAdmin && hasQuery,
   });
-
-  const { refetch: retryItemTemplates } = itemTemplates;
-  const templateSearchLoading =
-    open &&
-    rawSearch !== undefined &&
-    itemTemplates.data === undefined &&
-    (!hasQuery || itemTemplates.isFetching);
 
   if (!hasQuery) return [];
   {
@@ -250,48 +229,6 @@ export function useEntityResults({
           meta: s.description ?? undefined,
           searchValue: tokens("subcategory", s.name, s.description),
           href: "/subcategories",
-        })),
-      });
-    }
-
-    const itemTemplateData =
-      (itemTemplates.data as ItemTemplateLike[] | undefined) ?? [];
-    if (
-      itemTemplateData.length ||
-      templateSearchLoading ||
-      (hasQuery && itemTemplates.isError)
-    ) {
-      groups.push({
-        id: "item-templates",
-        heading: "Item Templates",
-        icon: Package,
-        failure:
-          hasQuery && itemTemplates.isError
-            ? {
-                message:
-                  "Template search unavailable. Cached matches may be incomplete.",
-                retry: () => {
-                  if (hasQuery) void retryItemTemplates();
-                },
-                isRetrying: itemTemplates.isFetching,
-              }
-            : undefined,
-        isLoading: templateSearchLoading,
-        scopeNotice:
-          hasQuery && itemTemplates.total > itemTemplateData.length
-            ? `Template search covers the first ${itemTemplateData.length} of ${itemTemplates.total} templates.`
-            : undefined,
-        items: itemTemplateData.map((t) => ({
-          id: t.id,
-          label: t.name,
-          meta: t.defaultCategory ?? t.description ?? undefined,
-          searchValue: tokens(
-            "template",
-            t.name,
-            t.description,
-            t.defaultCategory,
-          ),
-          href: "/item-templates",
         })),
       });
     }

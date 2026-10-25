@@ -224,7 +224,6 @@ function AdminUsers() {
     <>
       <PageHead
         title="Users"
-        sub={`${serverTotal} total`}
         actions={
           <button
             type="button"
@@ -370,8 +369,7 @@ function AdminUsers() {
           <DialogHeader>
             <DialogTitle>New user</DialogTitle>
             <DialogDescription>
-              Create a new user account. They will be required to change their
-              password on first login.
+              They must change their password on first login.
             </DialogDescription>
           </DialogHeader>
           <Form {...createForm}>
@@ -480,12 +478,9 @@ function AdminUsers() {
 
       {/* Edit User Dialog */}
       <Dialog open={!!editUser} onOpenChange={() => setEditUser(null)}>
-        <DialogContent>
+        <DialogContent aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>Edit User</DialogTitle>
-            <DialogDescription>
-              Update user details, role, and account status.
-            </DialogDescription>
           </DialogHeader>
           <Form {...editForm}>
             <form
@@ -601,8 +596,7 @@ function AdminUsers() {
           <DialogHeader>
             <DialogTitle>Reset Password</DialogTitle>
             <DialogDescription>
-              Set a new password for this user. They will be required to change
-              it on their next login.
+              They must change this password on their next login.
             </DialogDescription>
           </DialogHeader>
           <Form {...resetForm}>

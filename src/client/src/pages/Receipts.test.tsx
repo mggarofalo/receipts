@@ -1084,7 +1084,12 @@ describe("Receipts", () => {
     );
 
     renderWithProviders(<Receipts />);
-    expect(screen.getByText(/try fewer keywords/i)).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(/No .* match.*xyz/);
+    expect(
+      within(screen.getByRole("status")).getByRole("button", {
+        name: "Clear search",
+      }),
+    ).toBeVisible();
   });
 
   it("opens delete dialog and confirms deletion", async () => {

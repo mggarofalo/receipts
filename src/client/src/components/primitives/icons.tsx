@@ -94,6 +94,20 @@ export const Icon = {
       <path d="M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1" />
     </>,
   ),
+  Lock: makeIcon(
+    "Lock",
+    <>
+      <rect x="5" y="10" width="14" height="11" rx="2" />
+      <path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3" />
+    </>,
+  ),
+  Key: makeIcon(
+    "Key",
+    <>
+      <circle cx="8" cy="8" r="5" />
+      <path d="M11.5 11.5 21 21M16 16l3-3M18 18l3-3" />
+    </>,
+  ),
   Settings: makeIcon(
     "Settings",
     <>

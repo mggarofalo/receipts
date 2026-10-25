@@ -64,14 +64,10 @@ export function CatalogTab() {
     <div className="space-y-6">
       <CatalogInbox onReview={openReview} onRun={(id) => select("aiRun", id)} />
       <section className="space-y-3" aria-label="Catalog coverage">
-        <h2 className="card-title">
-          A maintained catalog for search and reports
-        </h2>
+        <h2 className="card-title">Catalog coverage</h2>
         <p>
-          Bring historical store descriptions under consistent product names,
-          then reuse reviewed mappings for new purchases. Recommendations need
-          your review; a linked item alone is not proof that its name is
-          correct.
+          Review recommendations before using them. A linked item alone does not
+          verify its product name.
         </p>
         {coverage.isPending ? (
           <p role="status">Loading coverage...</p>
@@ -86,13 +82,34 @@ export function CatalogTab() {
             <dl className="grid grid-cols-2 gap-3 md:grid-cols-4">
               {[
                 ["All purchases", coverage.data.totalItems],
-                ["Verified purchases", coverage.data.verifiedItems ?? "Unavailable"],
-                ["Purchases needing review", coverage.data.pendingItems ?? "Unavailable"],
-                ["Distinct pending sources", coverage.data.pendingSources ?? "Unavailable"],
-                ["Excluded purchases", coverage.data.excludedItems ?? "Unavailable"],
-                ["Oldest unresolved work", coverage.data.oldestUnresolvedAt ?? "Unavailable"],
-                ["Naming review coverage", "Unavailable: no persisted naming review evidence"],
-                ["Unresolved consolidation", "Unavailable: no persisted consolidation review evidence"],
+                [
+                  "Verified purchases",
+                  coverage.data.verifiedItems ?? "Unavailable",
+                ],
+                [
+                  "Purchases needing review",
+                  coverage.data.pendingItems ?? "Unavailable",
+                ],
+                [
+                  "Distinct pending sources",
+                  coverage.data.pendingSources ?? "Unavailable",
+                ],
+                [
+                  "Excluded purchases",
+                  coverage.data.excludedItems ?? "Unavailable",
+                ],
+                [
+                  "Oldest unresolved work",
+                  coverage.data.oldestUnresolvedAt ?? "Unavailable",
+                ],
+                [
+                  "Naming review coverage",
+                  "Unavailable: no persisted naming review evidence",
+                ],
+                [
+                  "Unresolved consolidation",
+                  "Unavailable: no persisted consolidation review evidence",
+                ],
                 ["Unassigned", coverage.data.unassigned],
                 ["Unknown legacy", coverage.data.legacyUnknown],
                 ["Automatic", coverage.data.automatic],

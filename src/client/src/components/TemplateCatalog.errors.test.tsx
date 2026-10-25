@@ -18,7 +18,6 @@ import { AppearanceProvider } from "@/contexts/AppearanceContext";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { RootLayout } from "@/components/RootLayout";
 import { ReceiptItemForm } from "./ReceiptItemForm";
-import ItemTemplates from "@/pages/ItemTemplates";
 import NormalizedDescriptions from "@/pages/NormalizedDescriptions";
 import { createAppQueryClient } from "@/lib/query-client";
 import { clearTokens, setTokens } from "@/lib/auth";
@@ -305,48 +304,6 @@ it("keeps successful empty optional template lookup compatible with manual recei
   expect(catalogReads).toBe(1);
   expect(otherWrites).toEqual([]);
 });
-it("retains catalog search, selection and an edited dialog when its list refresh fails", async () => {
-  const { queryClient, router } = renderFeature(<ItemTemplates />);
-  const user = userEvent.setup();
-  const row = (await screen.findByText("Milk template")).closest("tr")!;
-  await user.click(screen.getByRole("checkbox", { name: "Select all rows" }));
-  await user.type(
-    screen.getByRole("textbox", { name: "Search item templates" }),
-    "Milk",
-  );
-  await user.click(within(row).getByRole("button", { name: "Edit" }));
-  const dialog = screen.getByRole("dialog", { name: "Edit Item Template" });
-  await user.clear(within(dialog).getByLabelText("Description (optional)"));
-  await user.type(
-    within(dialog).getByLabelText("Description (optional)"),
-    "Retained template draft",
-  );
-  catalogFailure = true;
-  await act(async () => {
-    await queryClient.invalidateQueries({
-      queryKey: ["itemTemplates", "list"],
-    });
-  });
-  expect(router.state.location.pathname).toBe("/");
-  expect(dialog).toBeInTheDocument();
-  expect(within(dialog).getByLabelText("Description (optional)")).toHaveValue(
-    "Retained template draft",
-  );
-  noGlobalFailure();
-  await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
-  expect(
-    screen.getByRole("textbox", { name: "Search item templates" }),
-  ).toHaveValue("Milk");
-  expect(screen.getByRole("button", { name: /Delete \(1\)/ })).toBeVisible();
-  expect(await screen.findByRole("alert")).toHaveTextContent(/template/i);
-  catalogFailure = false;
-  await user.click(screen.getByRole("button", { name: "Retry" }));
-  await waitFor(() =>
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument(),
-  );
-  expect(screen.getByRole("cell", { name: "Milk template" })).toBeVisible();
-  expect(otherWrites).toEqual([]);
-});
 async function openLinkDialog() {
   const { queryClient, router } = renderFeature(<NormalizedDescriptions />);
   const user = userEvent.setup();
@@ -454,38 +411,6 @@ it("does not reuse a selected target during search debounce, pending search, or 
     expect(linkWrites).toEqual([{ itemTemplateId: "other-template" }]),
   );
   await waitFor(() => expect(dialog).not.toBeInTheDocument());
-});
-
-it("keeps the catalog page and a new dialog draft during its first successful held Retry", async () => {
-  catalogFailure = true;
-  const { queryClient, router } = renderFeature(<ItemTemplates />);
-  const user = userEvent.setup();
-  const failure = await screen.findByRole("alert");
-  noGlobalFailure();
-  expect(
-    screen.queryByText("No item templates yet. Create one to get started."),
-  ).not.toBeInTheDocument();
-  catalogFailure = false;
-  holdCatalog = true;
-  await user.click(within(failure).getByRole("button", { name: "Retry" }));
-  await waitFor(() => expect(queryClient.isFetching()).toBeGreaterThan(0));
-  await user.click(screen.getByRole("button", { name: "New template" }));
-  const dialog = screen.getByRole("dialog", { name: "Create Item Template" });
-  await user.type(
-    within(dialog).getByLabelText(/^Name/),
-    "Unsaved template draft",
-  );
-  expect(dialog).toBeInTheDocument();
-  expect(router.state.location.pathname).toBe("/");
-  await act(async () => {
-    catalogGate.resolve();
-  });
-  await waitFor(() => expect(queryClient.isFetching()).toBe(0));
-  expect(dialog).toBeInTheDocument();
-  expect(within(dialog).getByLabelText(/^Name/)).toHaveValue(
-    "Unsaved template draft",
-  );
-  expect(otherWrites).toEqual([]);
 });
 
 it("retains selected link target after one local write failure and permits a deliberate retry", async () => {

@@ -248,7 +248,7 @@ function Cards() {
     <>
       <PageHead
         title="Cards"
-        sub={`${serverTotal} total${statusFilter === "all" ? "" : ` · ${statusFilter === "true" ? "active" : "inactive"}`}`}
+
         actions={
           <>
             {canMerge ? (

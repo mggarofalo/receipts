@@ -26,9 +26,6 @@ export function NoResults({
         <span className="font-medium text-foreground">{searchTerm}</span>
         &rdquo;
       </p>
-      <p className="mt-1 text-xs text-muted-foreground">
-        Try fewer keywords or check for typos
-      </p>
       <Button
         variant="outline"
         size="sm"

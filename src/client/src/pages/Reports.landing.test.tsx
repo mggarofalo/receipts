@@ -18,7 +18,7 @@ it("makes purchase history and working reports discoverable", () => {
   expect(
     screen.getByRole("heading", { level: 1, name: "Reports" }),
   ).toBeInTheDocument();
-  expect(screen.getByText("What did I pay?")).toBeInTheDocument();
+  expect(screen.getByText("Purchase history")).toBeInTheDocument();
   expect(
     screen.getByRole("link", { name: "Search purchase history" }),
   ).toHaveAttribute("href", "/search");

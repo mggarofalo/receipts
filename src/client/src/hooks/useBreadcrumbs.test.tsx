@@ -92,16 +92,6 @@ describe("useBreadcrumbs", () => {
     });
   });
 
-  it("maps item-templates correctly", () => {
-    const { result } = renderHook(() => useBreadcrumbs(), {
-      wrapper: createWrapper("/item-templates"),
-    });
-    expect(result.current[1]).toEqual({
-      label: "Item Templates",
-      path: "/item-templates",
-    });
-  });
-
   it("builds intermediate segments for nested paths like /receipts/new", () => {
     const { result } = renderHook(() => useBreadcrumbs(), {
       wrapper: createWrapper("/receipts/new"),

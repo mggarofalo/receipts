@@ -94,6 +94,7 @@ describe("Dashboard", () => {
 
     renderWithQueryClient(<Dashboard />);
     expect(screen.getByText("No receipts yet")).toBeInTheDocument();
+    expect(screen.queryByText(/Add your first receipt/)).not.toBeInTheDocument();
     const cta = screen.getAllByRole("link", { name: /new receipt/i });
     // One in the PageHead actions, one in the empty-state card.
     expect(cta.length).toBeGreaterThanOrEqual(2);

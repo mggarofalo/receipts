@@ -267,7 +267,7 @@ function Subcategories() {
     <>
       <PageHead
         title="Subcategories"
-        sub={`${serverTotal} total${statusFilter === "all" ? "" : ` · ${statusFilter === "true" ? "active" : "inactive"}`}`}
+
         actions={
           <>
             <button type="button" className="btn sm" onClick={expandAll}>

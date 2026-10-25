@@ -1,4 +1,5 @@
-import { useState, useCallback } from "react";
+import { RequestFailure } from "@/components/RequestFailure";
+import { useState, useCallback, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSessionMutation } from "@/hooks/useSessionMutation";
 import { usePageTitle } from "@/hooks/usePageTitle";
@@ -14,13 +15,7 @@ import { capitalize } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Icon, PageHead } from "@/components/primitives";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -123,6 +118,7 @@ function ApiKeys() {
   const { isAdmin } = usePermission();
   const { user } = useAuth();
   const [createOpen, setCreateOpen] = useState(false);
+  const createButtonRef = useRef<HTMLButtonElement>(null);
   const [createdKey, setCreatedKey] = useState<string | null>(null);
   const [revokeId, setRevokeId] = useState<string | null>(null);
   const [nameFilter, setNameFilter] = useState("");
@@ -137,7 +133,14 @@ function ApiKeys() {
 
   const anyDialogOpen = createOpen || createdKey !== null || revokeId !== null;
 
-  const { data: apiKeys = EMPTY_API_KEYS, isLoading } = useQuery({
+  const {
+    data: apiKeys = EMPTY_API_KEYS,
+    isLoading,
+    isError,
+    isSuccess,
+    isFetching,
+    refetch,
+  } = useQuery({
     queryKey: ["apiKeys", user?.userId],
     queryFn: async () => {
       const { data, error } = await client.GET("/api/apikeys");
@@ -204,6 +207,7 @@ function ApiKeys() {
           : "asc",
     }));
   }, []);
+  const isEmpty = isSuccess && !isLoading && !isError && apiKeys.length === 0;
   const hasFilters = nameFilter !== "" || statusFilter !== "all";
 
   const createMutation = useSessionMutation({
@@ -285,9 +289,9 @@ function ApiKeys() {
     <>
       <PageHead
         title="API keys"
-        sub="Manage API keys for programmatic access"
         actions={
           <button
+            ref={createButtonRef}
             type="button"
             className="btn primary"
             onClick={handleCreateOpen}
@@ -298,51 +302,57 @@ function ApiKeys() {
       />
       <div className="space-y-6">
         <Card>
-          <CardHeader>
-            <CardTitle>Your API Keys</CardTitle>
-            <CardDescription>
-              API keys allow external applications to authenticate with your
-              account.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="mb-4 flex flex-wrap items-center gap-3">
-              <Input
-                aria-label="Search API keys"
-                placeholder="Search API keys..."
-                value={nameFilter}
-                onChange={(event) => setNameFilter(event.target.value)}
-                className="w-full sm:w-64"
+          <CardContent className="pt-6">
+            {!isEmpty && (
+              <div className="mb-4 flex flex-wrap items-center gap-3">
+                <Input
+                  aria-label="Search API keys"
+                  placeholder="Search..."
+                  value={nameFilter}
+                  onChange={(event) => setNameFilter(event.target.value)}
+                  className="w-full sm:w-64"
+                />
+                <Combobox
+                  aria-label="Filter API keys by status"
+                  options={STATUS_OPTIONS}
+                  value={statusFilter}
+                  onValueChange={setStatusFilter}
+                  className="w-full sm:w-44"
+                />
+                {hasFilters && (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setNameFilter("");
+                      setStatusFilter("all");
+                    }}
+                  >
+                    Clear filters
+                  </Button>
+                )}
+              </div>
+            )}
+            {isError && (
+              <RequestFailure
+                message="Couldn't load API keys."
+                retry={() => {
+                  void refetch();
+                }}
+                isRetrying={isFetching}
               />
-              <Combobox
-                aria-label="Filter API keys by status"
-                options={STATUS_OPTIONS}
-                value={statusFilter}
-                onValueChange={setStatusFilter}
-                className="w-full sm:w-44"
-              />
-              {hasFilters && (
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setNameFilter("");
-                    setStatusFilter("all");
-                  }}
-                >
-                  Clear filters
-                </Button>
-              )}
-            </div>
+            )}
             {isLoading ? (
               <TableSkeleton columns={5} rows={3} showToolbar={false} />
-            ) : apiKeys.length === 0 ? (
-              <p className="text-muted-foreground">
-                No API keys yet. Create one to get started.
+            ) : isEmpty ? (
+              <p role="status" className="text-muted-foreground">
+                No API keys yet.
               </p>
             ) : table.total === 0 ? (
-              <p className="text-muted-foreground">
-                No API keys match your filters. Clear filters to see all keys.
-              </p>
+              isError ? null : (
+                <p role="status" className="text-muted-foreground">
+                  No matching keys.
+                </p>
+              )
             ) : (
               <div ref={tableRef} {...containerProps}>
                 <Table>
@@ -408,7 +418,7 @@ function ApiKeys() {
                 </Table>
               </div>
             )}
-            {!isLoading && (
+            {!isLoading && table.total > 0 && (
               <div className="mt-4">
                 <Pagination
                   currentPage={table.currentPage}
@@ -425,7 +435,12 @@ function ApiKeys() {
 
         {/* Create API Key Dialog */}
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <DialogContent>
+          <DialogContent
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              if (createdKey === null) createButtonRef.current?.focus();
+            }}
+          >
             <DialogHeader>
               <DialogTitle>Create API Key</DialogTitle>
               <DialogDescription>
@@ -505,7 +520,12 @@ function ApiKeys() {
             if (!open) setCreatedKey(null);
           }}
         >
-          <DialogContent>
+          <DialogContent
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              createButtonRef.current?.focus();
+            }}
+          >
             <DialogHeader>
               <DialogTitle>API Key Created</DialogTitle>
             </DialogHeader>

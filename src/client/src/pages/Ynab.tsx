@@ -114,7 +114,7 @@ export default function Ynab() {
       <>
         <PageHead
           title="YNAB status"
-          sub="Integration health and recent sync activity"
+
         />
         <EmptyState
           icon={Icon.Link}
@@ -141,7 +141,7 @@ export default function Ynab() {
     <>
       <PageHead
         title="YNAB status"
-        sub="Integration health and recent sync activity"
+
       />
       <div className="space-y-6">
         <div className="grid gap-4 md:grid-cols-3">
