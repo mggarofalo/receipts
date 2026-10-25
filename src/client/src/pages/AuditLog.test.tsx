@@ -80,6 +80,7 @@ describe("AuditLog", () => {
     expect(
       screen.getByRole("heading", { name: /audit log/i }),
     ).toBeInTheDocument();
+    expect(screen.queryByText("0 entries")).not.toBeInTheDocument();
   });
 
   it("renders the Export CSV button", () => {

@@ -1,3 +1,4 @@
+import { Navigate } from "react-router";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AdminRoute } from "@/components/AdminRoute";
 import { Layout } from "@/components/Layout";
@@ -12,7 +13,6 @@ import Cards from "@/pages/Cards";
 import Categories from "@/pages/Categories";
 import Subcategories from "@/pages/Subcategories";
 import Receipts from "@/pages/Receipts";
-import ItemTemplates from "@/pages/ItemTemplates";
 import Reports from "@/pages/Reports";
 import PurchaseSearch from "@/pages/PurchaseSearch";
 import ReceiptDetail from "@/pages/ReceiptDetail";
@@ -55,7 +55,10 @@ export const routeConfig = [
           { path: "/subcategories", element: <Subcategories /> },
           { path: "/receipts", element: <Receipts /> },
           { path: "/receipts/new", element: <NewReceipt /> },
-          { path: "/item-templates", element: <ItemTemplates /> },
+          {
+            path: "/item-templates",
+            element: <Navigate to="/receipts" replace />,
+          },
           { path: "/reports", element: <Reports /> },
           { path: "/search", element: <PurchaseSearch /> },
           { path: "/receipts/:id", element: <ReceiptDetail /> },

@@ -745,4 +745,15 @@ describe("NewReceiptPage", () => {
     await user.click(screen.getByText("Discard"));
     expect(mockBlocker.proceed).toHaveBeenCalled();
   });
+
+  it("shows review guidance only while items need review", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<NewReceiptPage />);
+    expect(screen.queryByText(/items? need review/)).not.toBeInTheDocument();
+    await user.click(screen.getAllByRole("button", { name: "Add Item" })[0]);
+    expect(
+      screen.getByText(/1 item needs review. You can still save./),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Save checks remembered rules/)).toBeInTheDocument();
+  });
 });

@@ -12,7 +12,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -65,7 +64,9 @@ export function AdjustmentsSection({
     if (editing) {
       onChange(
         adjustments.map((adjustment) =>
-          adjustment.id === editing.id ? { ...adjustment, ...values } : adjustment,
+          adjustment.id === editing.id
+            ? { ...adjustment, ...values }
+            : adjustment,
         ),
       );
     } else {
@@ -85,15 +86,19 @@ export function AdjustmentsSection({
           <div className="space-y-1">
             <CardTitle className="text-lg">Adjustments</CardTitle>
             <p className="text-sm text-muted-foreground">
-              Enter additions such as tips as positive amounts and reductions
-              such as coupons or credits as negative amounts.
+              Tips are positive; coupons and credits are negative.
             </p>
           </div>
           <div className="flex items-center gap-3">
             <span className="text-sm text-muted-foreground">
               Total: {formatCurrency(total)}
             </span>
-            <Button type="button" variant="secondary" size="sm" onClick={openCreate}>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={openCreate}
+            >
               <Plus className="mr-1 h-4 w-4" />
               Add adjustment
             </Button>
@@ -153,14 +158,11 @@ export function AdjustmentsSection({
       )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
+        <DialogContent aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>
               {editing ? "Edit adjustment" : "Add adjustment"}
             </DialogTitle>
-            <DialogDescription>
-              Adjustments change the expected receipt total before it is saved.
-            </DialogDescription>
           </DialogHeader>
           <AdjustmentForm
             mode={editing ? "edit" : "create"}

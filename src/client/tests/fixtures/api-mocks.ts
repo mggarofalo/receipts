@@ -187,6 +187,12 @@ export async function installApiMocks(page: Page, opts: ApiMockOptions = {}): Pr
   await page.route("**/api/subcategories**", (route) => route.fulfill(json({ data: [], totalCount: 0 })));
   await page.route("**/api/item-templates**", (route) => route.fulfill(json({ data: [], totalCount: 0 })));
 
+  // Receipt-entry suggestions are an advisory array, not a paginated list.
+  await page.route(
+    (url) => url.pathname === "/api/receipt-items/normalization-candidates",
+    (route) => route.fulfill(json([])),
+  );
+
   // Receipts — empty so EmptyState shows; tests can override per surface
   await page.route("**/api/receipts?*", (route) => route.fulfill(json({ data: [], totalCount: 0 })));
   await page.route("**/api/receipts/recent**", (route) => route.fulfill(json([])));
@@ -274,7 +280,19 @@ export async function installApiMocks(page: Page, opts: ApiMockOptions = {}): Pr
   });
 
   await page.route("**/api/api-keys**", (route) => route.fulfill(json({ data: [], totalCount: 0 })));
-  await page.route("**/api/audit/**", (route) => route.fulfill(json({ data: [], totalCount: 0 })));
+  // Both entity history and recent activity use the same paginated contract.
+  await page.route(
+    (url) => url.pathname === "/api/audit" || url.pathname === "/api/audit/recent",
+    (route) => {
+      const query = new URL(route.request().url()).searchParams;
+      return route.fulfill(json({
+        data: [],
+        total: 0,
+        offset: Number(query.get("offset") ?? 0),
+        limit: Number(query.get("limit") ?? 50),
+      }));
+    },
+  );
   await page.route("**/api/security/**", (route) => route.fulfill(json({ data: [], totalCount: 0 })));
 
   // SignalR — short-circuit to a 404 so the client falls back gracefully.

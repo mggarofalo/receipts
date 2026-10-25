@@ -42,10 +42,7 @@ export default function NormalizedDescriptions() {
 
   return (
     <>
-      <PageHead
-        title="Normalized Descriptions"
-        sub="Build consistent product names for search and reports, and maintain mappings for new purchases"
-      />
+      <PageHead title="Normalized Descriptions" />
       <Tabs
         value={tab}
         onValueChange={(value) =>

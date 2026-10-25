@@ -31,6 +31,7 @@ describe("NoResults", () => {
   it("displays the search term in the message", () => {
     renderWithProviders(<NoResults {...defaultProps} />);
     expect(screen.getByText("xyz")).toBeInTheDocument();
+    expect(screen.queryByText(/Try fewer keywords/)).not.toBeInTheDocument();
   });
 
   it("uses default entity name 'results'", () => {

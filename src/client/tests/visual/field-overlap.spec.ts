@@ -29,7 +29,9 @@ import { installApiMocks, signInAsFixtureUser } from "../fixtures/api-mocks";
 // a per-field `min-w-[…]`, so fields keep their gap and their minimum usable
 // width and drop to a new row instead of being crushed together.
 
-const WIDTHS = [320, 360, 375, 414, 480, 560, 640, 768, 900, 1024, 1152, 1280, 1440, 1600];
+const WIDTHS = [
+  320, 360, 375, 414, 480, 560, 640, 768, 900, 1024, 1152, 1280, 1440, 1600,
+];
 
 // minControls: the smallest number of form controls the surface must expose
 // at every width, so a page that fails to render can't pass vacuously.
@@ -43,8 +45,6 @@ const SURFACES: {
   // The densest form in the app: header row, transactions row, and both
   // line-item rows — where every reported overlap actually occurred.
   { path: "/receipts/new", ready: "New Receipt", minControls: 8 },
-  // ItemTemplateForm's paired comboboxes only exist inside the create dialog.
-  { path: "/item-templates", ready: "Templates", minControls: 3, openDialog: "New template" },
   { path: "/receipts", ready: "Receipts", minControls: 1 },
 ];
 
@@ -80,7 +80,8 @@ async function collectViolations(page: Page): Promise<Probe> {
         '[data-slot="popover-content"],[data-radix-popper-content-wrapper],[role="dialog"],[data-slot="select-content"]',
       );
 
-    const hidden = (el: Element): boolean => !!el.closest('[aria-hidden="true"]');
+    const hidden = (el: Element): boolean =>
+      !!el.closest('[aria-hidden="true"]');
 
     // Deliberate layering: the element, or an ancestor up to its FormItem, is
     // taken out of normal flow on purpose.
@@ -180,11 +181,16 @@ test.describe("Form fields never overlap", () => {
 
       await page.goto(surface.path);
       await expect(
-        page.getByRole("heading", { name: new RegExp(surface.ready, "i") }).first(),
+        page
+          .getByRole("heading", { name: new RegExp(surface.ready, "i") })
+          .first(),
       ).toBeVisible();
 
       if (surface.openDialog) {
-        await page.getByRole("button", { name: surface.openDialog }).first().click();
+        await page
+          .getByRole("button", { name: surface.openDialog })
+          .first()
+          .click();
         await expect(page.getByRole("dialog")).toBeVisible();
       }
 
@@ -196,7 +202,8 @@ test.describe("Form fields never overlap", () => {
         await page.waitForTimeout(120);
         const { controlCount, violations } = await collectViolations(page);
         minControls = Math.min(minControls, controlCount);
-        for (const v of violations) failures.push(`@${width}px [${v.kind}] ${v.detail}`);
+        for (const v of violations)
+          failures.push(`@${width}px [${v.kind}] ${v.detail}`);
       }
 
       // Guard against a vacuous pass: if the surface renders no form controls
@@ -207,7 +214,10 @@ test.describe("Form fields never overlap", () => {
         `${surface.path} exposed too few form controls to be a meaningful check — the page probably didn't render.`,
       ).toBeGreaterThanOrEqual(surface.minControls);
 
-      expect(failures, `Field layout violations on ${surface.path}:\n${failures.join("\n")}`).toEqual([]);
+      expect(
+        failures,
+        `Field layout violations on ${surface.path}:\n${failures.join("\n")}`,
+      ).toEqual([]);
     });
   }
 });

@@ -55,10 +55,9 @@ export function MaintenanceTab() {
         <CardHeader>
           <CardTitle>Requeue Pending Descriptions</CardTitle>
           <CardDescription>
-            Removes the previewed pending catalog entries and clears their
-            purchase links and advisory scores. Purchases then need review;
-            automatic similarity rematching is not scheduled. Active entries are
-            never touched.
+            Delete the previewed pending entries and clear their purchase links
+            and advisory scores. Purchases return to review without automatic
+            similarity rematching. Active entries stay unchanged.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

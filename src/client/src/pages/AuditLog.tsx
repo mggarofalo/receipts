@@ -239,7 +239,6 @@ function AuditLog() {
     <>
       <PageHead
         title="Audit log"
-        sub={`${logs.length} ${logs.length === 1 ? "entry" : "entries"}`}
         actions={
           <button
             type="button"

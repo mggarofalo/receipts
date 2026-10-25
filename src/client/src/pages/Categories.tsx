@@ -149,7 +149,7 @@ function Categories() {
     <>
       <PageHead
         title="Categories"
-        sub={`${serverTotal} total${statusFilter === "all" ? "" : ` · ${statusFilter === "true" ? "active" : "inactive"}`}`}
+
         actions={
           <button
             type="button"

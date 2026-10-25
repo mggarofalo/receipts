@@ -1,10 +1,10 @@
-import { useCallback, useMemo } from "react";
+import { useCallback } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { useAppearance } from "@/hooks/useAppearance";
 import { usePermission } from "@/hooks/usePermission";
 import { usePreferences } from "@/hooks/usePreferences";
-import { Icon, PageHead } from "@/components/primitives";
+import { PageHead } from "@/components/primitives";
 import {
   Card,
   CardContent,
@@ -16,14 +16,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 
-type SettingsTab = "appearance" | "preferences" | "export" | "data" | "ynab";
+type SettingsTab = "appearance" | "preferences" | "export";
 
-const TABS: { value: SettingsTab; label: string; adminOnly?: boolean }[] = [
+const TABS: { value: SettingsTab; label: string }[] = [
   { value: "appearance", label: "Appearance" },
   { value: "preferences", label: "Preferences" },
   { value: "export", label: "Export" },
-  { value: "data", label: "Data & backup", adminOnly: true },
-  { value: "ynab", label: "YNAB" },
 ];
 
 const DEFAULT_TAB: SettingsTab = "appearance";
@@ -40,11 +38,6 @@ function Settings() {
   const { palette, density, setPalette, setDensity } = useAppearance();
   const { preferences, setShowKeyboardHints } = usePreferences();
 
-  const visibleTabs = useMemo(
-    () => TABS.filter((t) => !t.adminOnly || isAdmin()),
-    [isAdmin],
-  );
-
   // Hash drives the active tab so URLs like /settings#preferences land
   // directly on the right surface. Strip the leading '#'.
   const hash = location.hash.replace(/^#/, "");
@@ -59,18 +52,15 @@ function Settings() {
 
   return (
     <>
-      <PageHead title="Settings" sub="Configure your workspace" />
+      <PageHead title="Settings" />
 
       <Tabs
         value={activeTab}
         onValueChange={handleTabChange}
         className="w-full"
       >
-        {/* Five triggers measure ~453px, so the strip overflowed a 375px
-            viewport and dragged the whole page into horizontal scroll.
-            Wrapping keeps every tab reachable without a scroll affordance. */}
         <TabsList className="h-auto flex-wrap">
-          {visibleTabs.map((tab) => (
+          {TABS.map((tab) => (
             <TabsTrigger key={tab.value} value={tab.value}>
               {tab.label}
             </TabsTrigger>
@@ -82,9 +72,7 @@ function Settings() {
             <CardHeader>
               <CardTitle>Appearance</CardTitle>
               <CardDescription>
-                Palette and density preferences sync across reloads in this
-                browser. Paper intensity and motion are no longer
-                user-configurable.
+                Palette and density for this browser.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -229,54 +217,7 @@ function Settings() {
             </CardContent>
           </Card>
         </TabsContent>
-
-        {isAdmin() && (
-          <TabsContent value="data" className="mt-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Data &amp; backup</CardTitle>
-                <CardDescription>
-                  Backup, restore, and bulk data operations.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  Backup &amp; restore lives at{" "}
-                  <Link to="/admin/backup" className="underline">
-                    Backup &amp; restore
-                  </Link>
-                  .
-                </p>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        )}
-
-        <TabsContent value="ynab" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>YNAB</CardTitle>
-              <CardDescription>
-                Personal-access-token + budget selection.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">
-                Manage YNAB settings at{" "}
-                <Link to="/settings/ynab" className="underline">
-                  YNAB settings
-                </Link>
-                .
-              </p>
-            </CardContent>
-          </Card>
-        </TabsContent>
       </Tabs>
-
-      <div style={{ marginTop: 20 }} className="text-xs text-muted-foreground">
-        <Icon.Settings /> Settings live here. Tabs sync with the URL hash so you
-        can deep-link to a specific section.
-      </div>
     </>
   );
 }

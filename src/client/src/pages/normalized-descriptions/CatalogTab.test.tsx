@@ -165,7 +165,7 @@ it("renders coverage loading and retryable errors without claiming all linked it
   );
   expect(screen.getByText("Unknown legacy")).toBeInTheDocument();
   expect(
-    screen.getByText(/a linked item alone is not proof/),
+    screen.getByText(/A linked item alone does not verify/),
   ).toBeInTheDocument();
 });
 

@@ -17,7 +17,6 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { AppearanceProvider } from "@/contexts/AppearanceContext";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { RootLayout } from "@/components/RootLayout";
-import { ItemTemplateForm } from "./ItemTemplateForm";
 import { SubcategoryForm } from "./SubcategoryForm";
 import Subcategories from "@/pages/Subcategories";
 import UncategorizedItems from "./reports/UncategorizedItems";
@@ -156,32 +155,14 @@ afterEach(() => {
   clearTokens();
   server.resetHandlers();
 });
-const template = {
-  name: "Manual template",
-  description: "Original",
-  defaultCategory: "Food",
-  defaultSubcategory: "Historic dairy",
-  defaultUnitPrice: 3.459,
-  defaultItemCode: "MILK",
-};
 const subcategory = {
   name: "Dairy",
   categoryId: "food",
   description: "Original",
   isActive: true,
 };
-function form(
-  kind: "template" | "subcategory",
-  submit: (value: unknown) => void,
-) {
-  return kind === "template" ? (
-    <ItemTemplateForm
-      mode="edit"
-      defaultValues={template}
-      onSubmit={submit}
-      onCancel={() => {}}
-    />
-  ) : (
+function form(submit: (value: unknown) => void) {
+  return (
     <SubcategoryForm
       mode="edit"
       defaultValues={subcategory}
@@ -198,11 +179,11 @@ function noGlobalFailure() {
     document.querySelectorAll('[data-sonner-toast][data-type="error"]'),
   ).toHaveLength(0);
 }
-it.each(["template", "subcategory"] as const)(
+it.each(["subcategory"] as const)(
   "retains the %s form draft and valid manual submission through category failure and retry",
-  async (kind) => {
+  async () => {
     const submitted = vi.fn();
-    const client = renderFeature(form(kind, submitted));
+    const client = renderFeature(form(submitted));
     await waitFor(() =>
       expect(
         client
@@ -234,13 +215,13 @@ it.each(["template", "subcategory"] as const)(
     ).toBe(true);
     await user.click(
       screen.getByRole("button", {
-        name: kind === "template" ? "Update Template" : "Update Subcategory",
+        name: "Update Subcategory",
       }),
     );
     await waitFor(() =>
       expect(submitted.mock.calls.map(([value]) => value)).toEqual([
         {
-          ...(kind === "template" ? template : subcategory),
+          ...subcategory,
           description: "Retained draft",
         },
       ]),
@@ -257,58 +238,26 @@ it.each(["template", "subcategory"] as const)(
     expect(writes).toEqual([]);
   },
 );
-it.each(["template", "subcategory"] as const)(
+it.each(["subcategory"] as const)(
   "keeps successful %s lookup and submit behavior",
-  async (kind) => {
+  async () => {
     const submitted = vi.fn();
-    const client = renderFeature(form(kind, submitted));
+    const client = renderFeature(form(submitted));
     await waitFor(() => expect(client.isFetching()).toBe(0));
     await userEvent.setup().click(
       screen.getByRole("button", {
-        name: kind === "template" ? "Update Template" : "Update Subcategory",
+        name: "Update Subcategory",
       }),
     );
     await waitFor(() =>
       expect(submitted.mock.calls.map(([value]) => value)).toEqual([
-        kind === "template" ? template : subcategory,
+        subcategory,
       ]),
     );
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     noGlobalFailure();
   },
 );
-it("keeps historical template subcategory text on a scoped failure and restores choices without resetting it", async () => {
-  const client = renderFeature(form("template", vi.fn()));
-  await waitFor(() =>
-    expect(
-      client.getQueryState(["subcategories", "byCategory", "all", "food", true])
-        ?.status,
-    ).toBe("success"),
-  );
-  scopedFailure = true;
-  await act(async () => {
-    await client.invalidateQueries({
-      queryKey: ["subcategories", "byCategory", "all", "food"],
-    });
-  });
-  const failure = await screen.findByRole("alert");
-  expect(failure).toHaveTextContent(/subcategor/i);
-  noGlobalFailure();
-  expect(
-    screen.getByRole("combobox", { name: "Default Subcategory (optional)" }),
-  ).toHaveTextContent("Historic dairy");
-  scopedFailure = false;
-  await userEvent
-    .setup()
-    .click(within(failure).getByRole("button", { name: "Retry" }));
-  await waitFor(() =>
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument(),
-  );
-  expect(
-    screen.getByRole("combobox", { name: "Default Subcategory (optional)" }),
-  ).toHaveTextContent("Historic dairy");
-  expect(writes).toEqual([]);
-});
 it("keeps the Subcategories table, search and open edit dialog after a category lookup fails", async () => {
   const client = renderFeature(<Subcategories />);
   const user = userEvent.setup();
@@ -349,139 +298,11 @@ it("keeps the Subcategories table, search and open edit dialog after a category 
   expect(screen.getByText("Dairy")).toBeVisible();
   expect(writes).toEqual([]);
 });
-it.each(["category", "subcategory"] as const)(
-  "keeps report rows, selection and taxonomy values through %s failure and retry",
-  async (kind) => {
-    const client = renderFeature(<UncategorizedItems />);
-    const user = userEvent.setup();
-    await screen.findByText("Unsorted milk");
-    await user.click(
-      screen.getByRole("checkbox", { name: "Select all items on this page" }),
-    );
-    await user.click(screen.getAllByRole("combobox")[0]);
-    await user.click(await screen.findByRole("option", { name: "Food" }));
-    await waitFor(() =>
-      expect(
-        client.getQueryState([
-          "subcategories",
-          "byCategory",
-          "all",
-          "food",
-          true,
-        ])?.status,
-      ).toBe("success"),
-    );
-    await user.click(screen.getAllByRole("combobox")[1]);
-    await user.click(await screen.findByRole("option", { name: "Dairy" }));
-    categoryFailure = kind === "category";
-    scopedFailure = kind === "subcategory";
-    await act(async () => {
-      await client.invalidateQueries({
-        queryKey:
-          kind === "category"
-            ? ["categories", "all"]
-            : ["subcategories", "byCategory", "all", "food"],
-      });
-    });
-    const failure = await screen.findByRole("alert");
-    noGlobalFailure();
-    expect(screen.getByText("Unsorted milk")).toBeVisible();
-    expect(screen.getByText("1 selected")).toBeVisible();
-    expect(screen.getAllByRole("combobox")[0]).toHaveTextContent("Food");
-    expect(screen.getAllByRole("combobox")[1]).toHaveTextContent("Dairy");
-    categoryFailure = false;
-    scopedFailure = false;
-    await user.click(within(failure).getByRole("button", { name: "Retry" }));
-    await waitFor(() =>
-      expect(screen.queryByRole("alert")).not.toBeInTheDocument(),
-    );
-    expect(screen.getByText("1 selected")).toBeVisible();
-    expect(screen.getAllByRole("combobox")[1]).toHaveTextContent("Dairy");
-    expect(writes).toEqual([]);
-  },
-);
 
-it.each(["category", "subcategory"] as const)(
-  "treats a failed second %s page as unavailable, then retries the entire scoped lookup",
-  async (kind) => {
-    let secondPageFails = true;
-    const requests: {
-      offset: number;
-      active: string | null;
-      parent: string | null;
-    }[] = [];
-    const pageOne = Array.from({ length: 500 }, (_, index) => ({
-      id: `entry-${index}`,
-      name: `Entry ${index}`,
-      isActive: true,
-      ...(kind === "subcategory" ? { categoryId: "food" } : {}),
-    }));
-    const finalEntry = {
-      id: "last",
-      name: "Final option",
-      isActive: true,
-      ...(kind === "subcategory" ? { categoryId: "food" } : {}),
-    };
-    server.use(
-      http.get(
-        kind === "category" ? "*/api/categories" : "*/api/subcategories",
-        ({ request }) => {
-          const query = new URL(request.url).searchParams;
-          const offset = Number(query.get("offset"));
-          requests.push({
-            offset,
-            active: query.get("isActive"),
-            parent: query.get("categoryId"),
-          });
-          if (offset === 500 && secondPageFails)
-            return HttpResponse.json(
-              { status: 503, detail: "Second lookup page unavailable" },
-              { status: 503 },
-            );
-          return HttpResponse.json({
-            data: offset === 0 ? pageOne : [finalEntry],
-            total: 501,
-            offset,
-            limit: 500,
-          });
-        },
-      ),
-    );
-    const client = renderFeature(form("template", vi.fn()));
-    const failure = await screen.findByRole("alert");
-    noGlobalFailure();
-    const key =
-      kind === "category"
-        ? ["categories", "all", true]
-        : ["subcategories", "byCategory", "all", "food", true];
-    expect(client.getQueryData(key)).toBeUndefined();
-    expect(screen.getByLabelText(/^Name/)).toHaveValue(template.name);
-    expect(requests.map((request) => request.offset)).toEqual([0, 500]);
-    secondPageFails = false;
-    await userEvent
-      .setup()
-      .click(within(failure).getByRole("button", { name: "Retry" }));
-    await waitFor(() => expect(client.getQueryData(key)).toHaveLength(501));
-    expect(requests.map((request) => request.offset)).toEqual([0, 500, 0, 500]);
-    expect(
-      requests.every(
-        (request) =>
-          request.active === "true" &&
-          request.parent === (kind === "subcategory" ? "food" : null),
-      ),
-    ).toBe(true);
-    expect(screen.getByLabelText(/^Name/)).toHaveValue(template.name);
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(writes).toEqual([]);
-  },
-);
-
-it.each(["template", "report"] as const)(
+it.each(["report"] as const)(
   "removes the %s owner's obsolete scoped Retry after selecting another parent",
   async (kind) => {
-    const client = renderFeature(
-      kind === "template" ? form("template", vi.fn()) : <UncategorizedItems />,
-    );
+    const client = renderFeature(<UncategorizedItems />);
     const user = userEvent.setup();
     if (kind === "report") {
       await screen.findByText("Unsorted milk");

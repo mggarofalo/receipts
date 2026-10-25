@@ -19,7 +19,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { RootLayout } from "@/components/RootLayout";
 import { ReceiptHeaderForm } from "./ReceiptHeaderForm";
 import { ReceiptItemForm } from "./ReceiptItemForm";
-import { TemplateHistorySuggestions } from "./TemplateHistorySuggestions";
 import { ReceiptForm } from "./ReceiptForm";
 import {
   LineItemsSection,
@@ -42,8 +41,6 @@ let itemFailure: boolean;
 let itemReads: { code: string; location: string | null }[];
 let categoryFailure: boolean;
 let categoryReads: string[];
-let historyFailure: boolean;
-let historyReads: number;
 const server = setupServer(
   http.post("*/api/receipt-items/normalization-preview", () =>
     HttpResponse.json({
@@ -104,30 +101,6 @@ const server = setupServer(
           { status: 503 },
         )
       : HttpResponse.json([]);
-  }),
-  http.get("*/api/item-templates/history-candidates", () => {
-    historyReads++;
-    return historyFailure
-      ? HttpResponse.json(
-          { status: 503, detail: "History unavailable" },
-          { status: 503 },
-        )
-      : HttpResponse.json({
-          data: [
-            {
-              name: "History milk",
-              occurrenceCount: 3,
-              lastPurchasedAt: "2024-01-15",
-              suggestedCategory: "Food",
-              suggestedSubcategory: "Dairy",
-              suggestedUnitPrice: 2.01,
-              suggestedItemCode: "MILK",
-            },
-          ],
-          total: 1,
-          offset: 0,
-          limit: 10,
-        });
   }),
   http.get("*/api/item-templates", () =>
     HttpResponse.json({ data: [], total: 0, offset: 0, limit: 50 }),
@@ -206,8 +179,6 @@ beforeEach(() => {
   itemReads = [];
   categoryFailure = false;
   categoryReads = [];
-  historyFailure = false;
-  historyReads = 0;
   clearServerErrorPageFlag();
   localStorage.clear();
   setTokens(
@@ -614,27 +585,6 @@ it("rejects stale empty item-code no-results after503 and clears obsolete Retry"
   expect(
     screen.queryByRole("button", { name: "Retry" }),
   ).not.toBeInTheDocument();
-});
-
-it("keeps the existing template-history failure owner local and recovers without creating a template", async () => {
-  historyFailure = true;
-  renderFeature(<TemplateHistorySuggestions />);
-  expect(
-    await screen.findByText(/Couldn't load suggestions from your history/),
-  ).toBeVisible();
-  expect(
-    screen.queryByRole("heading", { name: "Global server error route" }),
-  ).not.toBeInTheDocument();
-  expect(
-    document.querySelectorAll('[data-sonner-toast][data-type="error"]'),
-  ).toHaveLength(0);
-  historyFailure = false;
-  await userEvent
-    .setup()
-    .click(screen.getByRole("button", { name: "Try again" }));
-  expect(await screen.findByText("History milk")).toBeVisible();
-  expect(historyReads).toBe(2);
-  expect(writes).toEqual([]);
 });
 
 it("submits valid manual item values while its item-code suggestions remain unavailable", async () => {

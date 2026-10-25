@@ -66,6 +66,7 @@ describe("AdminUsers", () => {
     expect(
       screen.getByRole("heading", { name: /^users$/i }),
     ).toBeInTheDocument();
+    expect(screen.queryByText("0 total")).not.toBeInTheDocument();
   });
 
   it("renders the Create User button", () => {
@@ -129,7 +130,7 @@ describe("AdminUsers", () => {
     await user.click(screen.getByRole("button", { name: /new user/i }));
 
     expect(
-      screen.getByText(/create a new user account/i),
+      screen.getByText(/must change their password on first login/i),
     ).toBeInTheDocument();
   });
 
@@ -157,7 +158,7 @@ describe("AdminUsers", () => {
     await user.click(screen.getByRole("button", { name: /edit/i }));
 
     expect(
-      screen.getByText(/update user details/i),
+      screen.getByRole("heading", { name: "Edit User" }),
     ).toBeInTheDocument();
   });
 
@@ -188,7 +189,7 @@ describe("AdminUsers", () => {
       screen.getByRole("heading", { name: /reset password/i }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/set a new password/i),
+      screen.getByText(/must change this password on their next login/i),
     ).toBeInTheDocument();
   });
 
@@ -386,7 +387,7 @@ describe("AdminUsers", () => {
 
     renderWithProviders(<AdminUsers />);
     await user.click(screen.getByRole("button", { name: /edit/i }));
-    expect(screen.getByText(/update user details/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Edit User" })).toBeInTheDocument();
 
     await user.keyboard("{Escape}");
     await vi.waitFor(() => {

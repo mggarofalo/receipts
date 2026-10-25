@@ -221,3 +221,25 @@ describe("Accounts", () => {
     ).toBeInTheDocument();
   });
 });
+
+describe("status filter headings", () => {
+  it("keeps filters usable without repeating their count and state under the heading", async () => {
+    const user = (await import("@testing-library/user-event")).default.setup();
+    const { useAccounts } = await import("@/hooks/useAccounts");
+    vi.mocked(useAccounts).mockReturnValue(
+      mockQueryResult({ data: [], total: 0, isLoading: false }),
+    );
+    renderWithProviders(<Accounts />);
+    for (const label of ["Active", "Inactive", "All"]) {
+      await user.click(screen.getByRole("tab", { name: label }));
+      expect(screen.getByRole("tab", { name: label })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+      expect(
+        screen.queryByText(/^\d+ total(?: · (?:active|inactive))?$/),
+      ).not.toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Accounts" })).toBeVisible();
+    }
+  });
+});

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider, Outlet } from "react-router";
 import type { ReactNode } from "react";
 
@@ -27,9 +27,6 @@ vi.mock("@/pages/Subcategories", () => ({
 }));
 vi.mock("@/pages/Receipts", () => ({
   default: () => <div data-testid="page-receipts">Receipts</div>,
-}));
-vi.mock("@/pages/ItemTemplates", () => ({
-  default: () => <div data-testid="page-item-templates">ItemTemplates</div>,
 }));
 vi.mock("@/pages/ReceiptDetail", () => ({
   default: () => <div data-testid="page-receipt-detail">ReceiptDetail</div>,
@@ -175,3 +172,22 @@ it("routes a shareable purchase search URL into the application layout", async (
     screen.getByTestId("page-purchase-search"),
   );
 });
+
+it.each(["/item-templates", "/item-templates?new=true&templateId=old#edit"])(
+  "replaces legacy template URL %s with the receipts list and drops template state",
+  async (path) => {
+    const router = createMemoryRouter(routeConfig, {
+      initialEntries: ["/", path],
+      initialIndex: 1,
+    });
+    render(<RouterProvider router={router} />);
+    expect(await screen.findByTestId("page-receipts")).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe("/receipts");
+    expect(router.state.location.search).toBe("");
+    expect(router.state.location.hash).toBe("");
+    expect(router.state.historyAction).toBe("REPLACE");
+    await router.navigate(-1);
+    await waitFor(() => expect(router.state.location.pathname).toBe("/"));
+    router.dispose();
+  },
+);

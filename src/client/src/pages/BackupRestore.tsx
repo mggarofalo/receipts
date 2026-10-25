@@ -20,9 +20,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Spinner } from "@/components/ui/spinner";
-import { DatabaseBackup, Upload, Download, AlertTriangle } from "lucide-react";
+import { Upload, Download, AlertTriangle } from "lucide-react";
 
 function formatFileSize(bytes: number): string {
   if (bytes === 0) return "0 B";
@@ -68,10 +67,7 @@ function BackupRestore() {
 
   return (
     <>
-      <PageHead
-        title="Backup & restore"
-        sub="Export or import a portable SQLite backup of your data"
-      />
+      <PageHead title="Backup & restore" />
       <div className="space-y-6">
         <div className="grid gap-6 md:grid-cols-2">
           {/* Export Card */}
@@ -82,10 +78,8 @@ function BackupRestore() {
                 Export Backup
               </CardTitle>
               <CardDescription>
-                Download a SQLite backup of your database. It can be used to
-                restore your data on another instance. Receipt photos are
-                retired; only legacy image-path metadata is retained for
-                archival compatibility. Image files are not included.
+                Download a portable SQLite backup to restore on another
+                instance.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -145,19 +139,27 @@ function BackupRestore() {
           </Card>
         </div>
 
-        <Alert>
-          <DatabaseBackup className="h-4 w-4" />
-          <AlertDescription>
-            Backups include your receipts, transactions, accounts, categories,
-            item templates, adjustments, YNAB configuration, and normalized
-            descriptions. Receipt photos are no longer supported. Legacy image
-            paths remain in backups for archival compatibility; image files are
-            not included and existing files are left untouched. User accounts
-            and authentication settings are excluded for security reasons. Audit
-            logs and YNAB sync history are not included either &mdash; a backup
-            restores your data, not the record of past activity.
-          </AlertDescription>
-        </Alert>
+        <details className="rounded-lg border p-4 text-sm">
+          <summary className="cursor-pointer font-medium">
+            Backup contents
+          </summary>
+          <div className="mt-3 space-y-2 text-muted-foreground">
+            <p>
+              Backups include your receipts, transactions, accounts, categories,
+              item templates, adjustments, YNAB configuration, and normalized
+              descriptions.
+            </p>
+            <p>
+              User accounts and authentication settings are excluded. Audit logs
+              and YNAB sync history are not included.
+            </p>
+            <p>
+              Legacy image paths remain in backups for archival compatibility;
+              image files are not included and existing files are left
+              untouched.
+            </p>
+          </div>
+        </details>
 
         {/* Import Confirmation Dialog */}
         <AlertDialog

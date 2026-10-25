@@ -205,11 +205,20 @@ for (const width of [1280, 375]) {
         .fill("nonexistent");
       await page.getByRole("button", { name: "Search", exact: true }).click();
       await expect(
-        page.getByText("Showing 0-0 of 0", { exact: true }),
-      ).toBeVisible();
-      await expect(
         page.getByText(/No purchases match this phrase/),
       ).toBeVisible();
+      await expect(
+        page.getByText("Showing 0-0 of 0", { exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        page.getByRole("combobox", { name: "Rows per page" }),
+      ).toHaveCount(0);
+      await expect(
+        page.getByRole("button", { name: "Previous page", exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        page.getByRole("button", { name: "Next page", exact: true }),
+      ).toHaveCount(0);
       await expectNoPageOverflow(page);
       await page
         .getByRole("textbox", { name: "Search purchases", exact: true })

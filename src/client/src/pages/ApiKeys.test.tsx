@@ -77,11 +77,11 @@ describe("API key complete-cache table controls", () => {
       screen.getByRole("textbox", { name: "Search API keys" }),
       "missing",
     );
-    expect(screen.getByText(/No API keys match/)).toBeInTheDocument();
+    expect(screen.getByText(/No matching keys/)).toBeInTheDocument();
     expect(screen.queryByText(/No API keys yet/)).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("combobox", { name: "Rows per page" }),
-    ).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Rows per page" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(screen.getByText("Showing 1-10 of 28")).toBeInTheDocument();
     view.unmount();
     await setupKeys();
     expect(screen.getByText("Showing 1-10 of 28")).toBeInTheDocument();
@@ -167,23 +167,48 @@ describe("ApiKeys", () => {
     ).toBeInTheDocument();
   });
 
-  it("renders the description text", () => {
+  it("shows one title and a concise true-empty state with a create action", async () => {
+    const { useQuery } = await import("@tanstack/react-query");
+    vi.mocked(useQuery).mockReturnValue(
+      mockQueryResult({ data: [], isLoading: false, isSuccess: true }),
+    );
     renderWithQueryClient(<ApiKeys />);
+    expect(screen.getAllByRole("heading")).toHaveLength(1);
+    expect(screen.getByText("No API keys yet.")).toBeInTheDocument();
     expect(
-      screen.getByText(/manage api keys for programmatic access/i),
-    ).toBeInTheDocument();
+      screen.queryByText(
+        /Manage API keys|Your API Keys|authenticate with your account/,
+      ),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("textbox", { name: "Search API keys" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("combobox", { name: "Filter API keys by status" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Table pagination")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New API key" })).toBeEnabled();
   });
 
-  it("renders the Your API Keys card", () => {
+  it("offers retry on failure without announcing an empty account", async () => {
+    const { useQuery } = await import("@tanstack/react-query");
+    const refetch = vi.fn();
+    vi.mocked(useQuery).mockReturnValue(
+      mockQueryResult({
+        data: undefined,
+        isLoading: false,
+        isError: true,
+        refetch,
+      }),
+    );
+    const user = userEvent.setup();
     renderWithQueryClient(<ApiKeys />);
-    expect(screen.getByText(/your api keys/i)).toBeInTheDocument();
-  });
-
-  it("renders empty state when no API keys exist", () => {
-    renderWithQueryClient(<ApiKeys />);
-    expect(
-      screen.getByText(/no api keys yet/i),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Couldn't load API keys.",
+    );
+    expect(screen.queryByText(/No API keys yet/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    expect(refetch).toHaveBeenCalledOnce();
   });
 
   it("renders table with API keys when data exists", async () => {
@@ -364,6 +389,8 @@ describe("ApiKeys", () => {
 
     const { container } = renderWithQueryClient(<ApiKeys />);
     expect(container.querySelector("[data-slot='skeleton']")).toBeInTheDocument();
+    expect(screen.queryByText(/No API keys yet|No matching keys/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Table pagination")).not.toBeInTheDocument();
   });
 
   it("formats dates correctly in the table", async () => {

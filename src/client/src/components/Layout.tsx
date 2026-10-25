@@ -72,7 +72,6 @@ const NAV: readonly NavSection[] = [
       { to: "/cards", label: "Cards", icon: Icon.Card },
       { to: "/categories", label: "Categories", icon: Icon.Tag },
       { to: "/subcategories", label: "Subcategories", icon: Icon.Tag },
-      { to: "/item-templates", label: "Templates", icon: Icon.Sparkle },
       { to: "/settings/ynab", label: "YNAB", icon: Icon.Link },
       { to: "/ynab", label: "YNAB Status", icon: Icon.Chart },
     ],
@@ -81,8 +80,8 @@ const NAV: readonly NavSection[] = [
     title: "Account",
     items: [
       { to: "/settings", label: "Settings", icon: Icon.Settings },
-      { to: "/security", label: "Security", icon: Icon.Settings },
-      { to: "/api-keys", label: "API Keys", icon: Icon.Command },
+      { to: "/security", label: "Security", icon: Icon.Lock },
+      { to: "/api-keys", label: "API Keys", icon: Icon.Key },
     ],
   },
   {
@@ -91,7 +90,12 @@ const NAV: readonly NavSection[] = [
       { to: "/admin/users", label: "Users", icon: Icon.Users, admin: true },
       { to: "/audit", label: "Audit", icon: Icon.Clock, admin: true },
       { to: "/trash", label: "Trash", icon: Icon.Trash, admin: true },
-      { to: "/admin/backup", label: "Backup", icon: Icon.Upload, admin: true },
+      {
+        to: "/admin/backup",
+        label: "Backup & Restore",
+        icon: Icon.Upload,
+        admin: true,
+      },
       {
         to: "/admin/normalized-descriptions",
         label: "Normalized Descriptions",
@@ -183,7 +187,7 @@ export function Layout() {
                   className={cn("nav-item", active && "active")}
                   aria-current={active ? "page" : undefined}
                 >
-                  <IconComp />
+                  <IconComp aria-hidden="true" focusable="false" />
                   {item.label}
                   {preferences.showKeyboardHints && item.kbd && (
                     <span className="kbd">{item.kbd}</span>
@@ -278,6 +282,7 @@ export function Layout() {
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => navigate("/api-keys")}>
+                  <Icon.Key aria-hidden="true" focusable="false" />
                   API Keys
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => navigate("/change-password")}>
@@ -381,7 +386,7 @@ export function Layout() {
                       className={cn("nav-item", active && "active")}
                       aria-current={active ? "page" : undefined}
                     >
-                      <IconComp />
+                      <IconComp aria-hidden="true" focusable="false" />
                       {item.label}
                     </Link>
                   );

@@ -378,7 +378,6 @@ function RecycleBin() {
     <>
       <PageHead
         title="Trash"
-        sub={`${allItems.length} ${allItems.length === 1 ? "item" : "items"}`}
         actions={
           <AlertDialog>
             <AlertDialogTrigger asChild>

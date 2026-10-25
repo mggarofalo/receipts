@@ -246,7 +246,7 @@ describe("useEntityResults", () => {
     const { useCards } = await import("@/hooks/useCards");
     const { useCategories } = await import("@/hooks/useCategories");
     const { useSubcategories } = await import("@/hooks/useSubcategories");
-    const { useItemTemplates } = await import("@/hooks/useItemTemplates");
+
     const { useReceipts } = await import("@/hooks/useReceipts");
     const { useReceiptItems } = await import("@/hooks/useReceiptItems");
     const { useUsers } = await import("@/hooks/useUsers");
@@ -260,7 +260,6 @@ describe("useEntityResults", () => {
       useCards,
       useCategories,
       useSubcategories,
-      useItemTemplates,
       useReceipts,
       useReceiptItems,
       useUsers,
@@ -277,7 +276,7 @@ describe("useEntityResults", () => {
       const { useCards } = await import("@/hooks/useCards");
       const { useCategories } = await import("@/hooks/useCategories");
       const { useSubcategories } = await import("@/hooks/useSubcategories");
-      const { useItemTemplates } = await import("@/hooks/useItemTemplates");
+
       const { useReceipts } = await import("@/hooks/useReceipts");
       const { useReceiptItems } = await import("@/hooks/useReceiptItems");
       const { useUsers } = await import("@/hooks/useUsers");
@@ -293,7 +292,6 @@ describe("useEntityResults", () => {
         useCards,
         useCategories,
         useSubcategories,
-        useItemTemplates,
         useReceipts,
         useReceiptItems,
         useUsers,
@@ -328,12 +326,7 @@ describe("useEntityResults", () => {
           q: "grocer",
         });
       }
-      for (const hook of [
-        useItemTemplates,
-        useReceipts,
-        useReceiptItems,
-        useUsers,
-      ]) {
+      for (const hook of [useReceipts, useReceiptItems, useUsers]) {
         expect(vi.mocked(hook).mock.calls.at(-1)?.at(-1)).toEqual({
           enabled: true,
         });
@@ -351,7 +344,6 @@ describe("useEntityResults", () => {
       import("@/hooks/useCards").then((m) => m.useCards),
       import("@/hooks/useCategories").then((m) => m.useCategories),
       import("@/hooks/useSubcategories").then((m) => m.useSubcategories),
-      import("@/hooks/useItemTemplates").then((m) => m.useItemTemplates),
       import("@/hooks/useReceipts").then((m) => m.useReceipts),
       import("@/hooks/useReceiptItems").then((m) => m.useReceiptItems),
       import("@/hooks/useUsers").then((m) => m.useUsers),
@@ -376,7 +368,6 @@ describe("useEntityResults", () => {
         import("@/hooks/useCards").then((m) => m.useCards),
         import("@/hooks/useCategories").then((m) => m.useCategories),
         import("@/hooks/useSubcategories").then((m) => m.useSubcategories),
-        import("@/hooks/useItemTemplates").then((m) => m.useItemTemplates),
         import("@/hooks/useReceipts").then((m) => m.useReceipts),
         import("@/hooks/useReceiptItems").then((m) => m.useReceiptItems),
         import("@/hooks/useUsers").then((m) => m.useUsers),
@@ -443,7 +434,6 @@ describe("useEntityResults", () => {
       import("@/hooks/useCards").then((m) => m.useCards),
       import("@/hooks/useCategories").then((m) => m.useCategories),
       import("@/hooks/useSubcategories").then((m) => m.useSubcategories),
-      import("@/hooks/useItemTemplates").then((m) => m.useItemTemplates),
       import("@/hooks/useReceipts").then((m) => m.useReceipts),
       import("@/hooks/useReceiptItems").then((m) => m.useReceiptItems),
       import("@/hooks/useUsers").then((m) => m.useUsers),
@@ -507,4 +497,19 @@ it("discloses bounded users honestly and exposes retry without stale failed acco
   expect(accounts?.failure?.message).toBe("Accounts search unavailable.");
   accounts?.failure?.retry();
   expect(retry).toHaveBeenCalledOnce();
+});
+
+it("does not fetch or return templates for palette searches", async () => {
+  const { useItemTemplates } = await import("@/hooks/useItemTemplates");
+
+  vi.mocked(useItemTemplates).mockReturnValue(
+    mockQueryResult({ data: [{ id: "t1", name: "Milk" }] }),
+  );
+  const { result } = renderHook(() =>
+    useEntityResults({ isAdmin: true, open: true, query: "milk" }),
+  );
+  expect(useItemTemplates).not.toHaveBeenCalled();
+  expect(result.current.some((group) => group.id === "item-templates")).toBe(
+    false,
+  );
 });

@@ -178,7 +178,10 @@ test("creates a product and purchase in one receipt save, preserving the draft a
   expect(bodies[1]).toEqual(bodies[0]);
   await expect(page).toHaveURL(/\/receipts\/created-receipt$/);
   await expect(
-    page.getByText("Whole milk 1 gallon", { exact: true }),
+    page.getByRole("cell", {
+      name: "MILK Verified normalized as Whole milk 1 gallon",
+      exact: true,
+    }),
   ).toBeVisible();
 });
 

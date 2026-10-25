@@ -248,7 +248,7 @@ it.each(["-1", "nope", "2147483648", "9007199254740993"])(
 
 it("explains empty search without presenting results", () => {
   renderPage("/search");
-  expect(screen.getByText(/Enter between 2 and 200/)).toBeInTheDocument();
+  expect(screen.getByPlaceholderText("Search item names, codes, or stores")).toBeInTheDocument();
   expect(
     screen.queryByRole("table", { name: "Purchase results" }),
   ).not.toBeInTheDocument();
@@ -372,14 +372,26 @@ it("restores submitted query and page with browser Back, discarding the other se
   );
 });
 
-
 it("loads GUID history without a placeholder phrase and clears identity for a new search", async () => {
   const id = "0d196918-51ca-4ddd-a4cd-039720bab253";
-  renderPage(`/search?normalizedDescriptionId=${id}&startDate=2025-01-01&offset=25`);
-  expect(search).toHaveBeenLastCalledWith("", 25, 25, true,
-    expect.objectContaining({ normalizedDescriptionId: id, includeUnreviewed: false }));
+  renderPage(
+    `/search?normalizedDescriptionId=${id}&startDate=2025-01-01&offset=25`,
+  );
+  expect(search).toHaveBeenLastCalledWith(
+    "",
+    25,
+    25,
+    true,
+    expect.objectContaining({
+      normalizedDescriptionId: id,
+      includeUnreviewed: false,
+    }),
+  );
   expect(screen.getByText(id)).toBeVisible();
-  await userEvent.type(screen.getByRole("textbox", { name: "Search purchases" }), "bread");
+  await userEvent.type(
+    screen.getByRole("textbox", { name: "Search purchases" }),
+    "bread",
+  );
   await userEvent.click(screen.getByRole("button", { name: "Search" }));
   await waitFor(() => expect(currentParams().get("q")).toBe("bread"));
   expect(currentParams().get("normalizedDescriptionId")).toBeNull();
@@ -389,11 +401,44 @@ it("loads GUID history without a placeholder phrase and clears identity for a ne
 
 it("includes unreviewed associations only after an explicit opt in", async () => {
   renderPage("/search?q=milk&offset=25");
-  expect(search).toHaveBeenLastCalledWith("milk", 25, 25, true,
-    expect.objectContaining({ includeUnreviewed: false }));
-  await userEvent.click(screen.getByRole("checkbox", { name: "Include unreviewed product associations" }));
+  expect(search).toHaveBeenLastCalledWith(
+    "milk",
+    25,
+    25,
+    true,
+    expect.objectContaining({ includeUnreviewed: false }),
+  );
+  await userEvent.click(
+    screen.getByRole("checkbox", {
+      name: "Include unreviewed product associations",
+    }),
+  );
   expect(currentParams().get("includeUnreviewed")).toBe("true");
   expect(currentParams().get("offset")).toBeNull();
-  expect(search).toHaveBeenLastCalledWith("milk", 0, 25, true,
-    expect.objectContaining({ includeUnreviewed: true }));
+  expect(search).toHaveBeenLastCalledWith(
+    "milk",
+    0,
+    25,
+    true,
+    expect.objectContaining({ includeUnreviewed: true }),
+  );
+});
+
+it("shows length validation only when a submitted query needs it", async () => {
+  renderPage("/search");
+  expect(screen.queryByText(/Enter between 2 and 200/)).not.toBeInTheDocument();
+  expect(
+    screen.getByPlaceholderText("Search item names, codes, or stores"),
+  ).toBeInTheDocument();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Search" }),
+  );
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Enter at least 2 characters.",
+  );
+  expect(
+    screen.getByText(
+      /package sizes and measurement units are not standardized/,
+    ),
+  ).toBeInTheDocument();
 });

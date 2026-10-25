@@ -160,6 +160,11 @@ describe("YnabSettings – Connection Status", () => {
     );
 
     renderWithProviders(<YnabSettings />);
+    expect(
+      screen.queryByText(
+        "Configure your YNAB integration for transaction sync",
+      ),
+    ).not.toBeInTheDocument();
 
     expect(screen.getByText("Connected")).toBeInTheDocument();
     expect(screen.getByText("No syncs yet")).toBeInTheDocument();
@@ -196,6 +201,11 @@ describe("YnabSettings – Connection Status", () => {
 
     renderWithProviders(<YnabSettings />);
 
+    expect(
+      screen.queryByText(
+        "Configure your YNAB integration for transaction sync",
+      ),
+    ).not.toBeInTheDocument();
     expect(screen.getByText("Not Configured")).toBeInTheDocument();
   });
 

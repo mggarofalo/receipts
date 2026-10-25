@@ -389,7 +389,12 @@ describe("Subcategories", () => {
     );
 
     renderWithProviders(<Subcategories />);
-    expect(screen.getByText(/try fewer keywords/i)).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(/No .* match.*xyz/);
+    expect(
+      within(screen.getByRole("status")).getByRole("button", {
+        name: "Clear search",
+      }),
+    ).toBeVisible();
   });
 
   it("opens edit dialog when Edit button is clicked", async () => {
@@ -451,5 +456,29 @@ describe("Subcategories", () => {
     const columnHeaders = screen.getAllByRole("columnheader");
     expect(columnHeaders).toHaveLength(5);
     expect(screen.queryByText("Related")).not.toBeInTheDocument();
+  });
+});
+
+describe("status filter headings", () => {
+  it("keeps filters usable without repeating their count and state under the heading", async () => {
+    const user = (await import("@testing-library/user-event")).default.setup();
+    const { useSubcategories } = await import("@/hooks/useSubcategories");
+    vi.mocked(useSubcategories).mockReturnValue(
+      mockQueryResult({ data: [], total: 0, isLoading: false }),
+    );
+    renderWithProviders(<Subcategories />);
+    for (const label of ["Active", "Inactive", "All"]) {
+      await user.click(screen.getByRole("tab", { name: label }));
+      expect(screen.getByRole("tab", { name: label })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+      expect(
+        screen.queryByText(/^\d+ total(?: · (?:active|inactive))?$/),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("heading", { name: "Subcategories" }),
+      ).toBeVisible();
+    }
   });
 });

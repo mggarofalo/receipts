@@ -111,6 +111,9 @@ describe("Ynab", () => {
     expect(
       screen.getByRole("heading", { name: /ynab status/i }),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Integration health and recent sync activity"),
+    ).not.toBeInTheDocument();
     expect(screen.getByText(/Connected/i)).toBeInTheDocument();
     expect(screen.getByTestId("ynab-events-table")).toBeInTheDocument();
     // Rate-limit progress bar is present and labelled.
@@ -129,6 +132,13 @@ describe("Ynab", () => {
 
     renderWithProviders(<Ynab />);
 
+    expect(
+      screen.queryByText("Integration health and recent sync activity"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "YNAB settings" })).toHaveAttribute(
+      "href",
+      "/settings/ynab",
+    );
     expect(screen.getByText(/not configured/i)).toBeInTheDocument();
     expect(screen.queryByTestId("ynab-events-table")).not.toBeInTheDocument();
   });

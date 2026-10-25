@@ -241,7 +241,6 @@ describe("Layout active nav resolution", () => {
     ["/ynab", "/ynab"],
     ["/reports", "/reports"],
     ["/accounts", "/accounts"],
-    ["/item-templates", "/item-templates"],
     ["/security", "/security"],
     ["/api-keys", "/api-keys"],
     // React Router compiles route paths case-insensitively unless a route opts
@@ -327,4 +326,53 @@ describe("Layout active nav resolution", () => {
       .find((link) => link.getAttribute("href") === "/settings/ynab");
     expect(ynab).toHaveClass("active");
   });
+});
+
+describe("account and backup navigation", () => {
+  it("offers Backup & Restore only to administrators and keeps its active destination", () => {
+    const { unmount } = renderLayout({}, "/admin/backup");
+    expect(
+      screen.queryByRole("link", { name: "Backup & Restore" }),
+    ).not.toBeInTheDocument();
+    unmount();
+    renderLayout({ user: adminUser }, "/admin/backup");
+    const backup = screen.getByRole("link", { name: "Backup & Restore" });
+    expect(backup).toHaveAttribute("href", "/admin/backup");
+    expect(backup).toHaveAttribute("aria-current", "page");
+  });
+
+  it("keeps Security, API Keys and YNAB configuration destinations reachable", async () => {
+    const user = userEvent.setup();
+    renderLayout();
+    const nav = within(screen.getByRole("navigation", { name: "Primary" }));
+    expect(nav.getByRole("link", { name: "Security" })).toHaveAttribute(
+      "href",
+      "/security",
+    );
+    expect(nav.getByRole("link", { name: "API Keys" })).toHaveAttribute(
+      "href",
+      "/api-keys",
+    );
+    expect(nav.getByRole("link", { name: "YNAB" })).toHaveAttribute(
+      "href",
+      "/settings/ynab",
+    );
+    await user.click(screen.getByRole("button", { name: /^more$/i }));
+    expect(
+      within(screen.getByRole("dialog")).getByRole("link", {
+        name: "API Keys",
+      }),
+    ).toHaveAttribute("href", "/api-keys");
+  });
+});
+
+it("omits the retired Templates destination in sidebar and mobile navigation", async () => {
+  renderLayout();
+  expect(
+    within(sidebar()).queryByRole("link", { name: "Templates" }),
+  ).not.toBeInTheDocument();
+  const drawer = await openMobileDrawer();
+  expect(
+    within(drawer).queryByRole("link", { name: "Templates" }),
+  ).not.toBeInTheDocument();
 });
