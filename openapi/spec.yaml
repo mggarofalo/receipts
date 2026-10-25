@@ -8,6 +8,44 @@ info:
     default version (currently 1.0) is assumed.
 
 paths:
+  /api/jev/status:
+    get:
+      tags: [Jev]
+      summary: Get passive Jev configuration status
+      operationId: Jev_Status
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      responses:
+        '200':
+          description: Connection snapshot; does not establish inference readiness
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JevConnectionResponse'
+        '401':
+          description: Authentication required
+        '403':
+          description: Administrator required
+  /api/jev/check:
+    post:
+      tags: [Jev]
+      summary: Check Jev authentication and list models without inference
+      operationId: Jev_Check
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      responses:
+        '200':
+          description: Connection snapshot; does not establish inference readiness
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JevConnectionResponse'
+        '401':
+          description: Authentication required
+        '403':
+          description: Administrator required
   /api/normalization-inbox:
     get:
       tags:
@@ -7249,6 +7287,22 @@ paths:
 
 components:
   schemas:
+    JevConnectionState:
+      type: string
+      enum: [disabled, missing, configuredUnverified, invalid, unavailable, connected]
+    JevConnectionResponse:
+      type: object
+      required: [state, reason, models]
+      properties:
+        state:
+          $ref: '#/components/schemas/JevConnectionState'
+        reason:
+          type: string
+          description: Safe application-owned reason
+        models:
+          type: array
+          items:
+            type: string
     NormalizationReviewReceiptResponse:
       type: object
       properties:

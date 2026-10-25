@@ -1,3 +1,4 @@
+import { JevConnection } from "./settings/JevConnection";
 import { useCallback } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { usePageTitle } from "@/hooks/usePageTitle";
@@ -218,6 +219,7 @@ function Settings() {
           </Card>
         </TabsContent>
       </Tabs>
+      {isAdmin() && <JevConnection />}
     </>
   );
 }

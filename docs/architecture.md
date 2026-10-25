@@ -58,6 +58,15 @@ fallback for bodiless framework failures, not a replacement for endpoint-owned R
 responses. See [API validation ownership](api-guidelines.md#validation-ownership) and
 [request error ownership](request-errors.md).
 
+### Planned versioned classification
+
+The [versioned classification ADR](decisions/2026-10-25-versioned-classification.md)
+and [contract](classification-contract.md) define the next category model: stable
+category identities, immutable hierarchy revisions, and separate purchase assignment
+history. This is a phased design; current string snapshots remain authoritative
+until migration and compatibility gates pass. External classification providers
+are optional Infrastructure adapters behind Application-owned ports.
+
 ### Receipt use-case ownership
 
 Complete receipt creation is the bounded pilot for application-owned write policy and
