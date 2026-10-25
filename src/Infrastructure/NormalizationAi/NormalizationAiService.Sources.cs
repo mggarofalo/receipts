@@ -36,7 +36,7 @@ public sealed partial class NormalizationAiService
 			var existing = await prior.NormalizationAiRuns.Include(run => run.Proposals).SingleOrDefaultAsync(run => run.OwnerUserId == actor && run.ClientRequestId == clientRequestId, cancellationToken);
 			if (existing is not null) { return existing.RequestHash == hash ? ToModel(existing) : throw Error(409, "request_conflict", "This request ID was used for different inputs."); }
 		}
-		var connection = await GetConnectionAsync(actor, cancellationToken);
+		var connection = await GetConnectionCoreAsync(actor, cancellationToken, admission: true);
 		if (connection.Busy) { throw Error(409, "provider_busy", "Wait for the current ChatGPT operation."); }
 		if (!connection.CredentialsPresent) { throw Error(409, "not_connected", "Sign in to ChatGPT before requesting suggestions."); }
 		if (!connection.Models.Contains(model, StringComparer.Ordinal)) { throw Error(400, "invalid_model", "Choose an available model."); }

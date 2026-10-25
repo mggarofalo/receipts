@@ -68,14 +68,19 @@ export function ChatGptTab() {
                   ? "Credentials are present. Model access is confirmed when a request succeeds."
                   : "Sign in to ChatGPT on the container host to connect."}
             </p>
-            <p className="text-sm">
-              On the server, run{" "}
-              <code className="break-all">
-                docker compose run --rm --no-deps app --chatgpt-login
-              </code>{" "}
-              and complete the device login in your browser. Use{" "}
-              <code>--chatgpt-logout</code> on the server to disconnect.
-            </p>
+            <details id="chatgpt-connection-settings">
+              <summary className="cursor-pointer">
+                Connection settings and reconnect help
+              </summary>
+              <p className="text-sm">
+                On the server, run{" "}
+                <code className="break-all">
+                  docker compose run --rm --no-deps app --chatgpt-login
+                </code>{" "}
+                and complete the device login in your browser. Use{" "}
+                <code>--chatgpt-logout</code> on the server to disconnect.
+              </p>
+            </details>
             <Button
               variant="outline"
               onClick={() => void connection.refetch()}
@@ -125,14 +130,15 @@ export function ChatGptTab() {
               )}
             </>
           )}
-          {(connection.data?.credentialsPresent || connection.data?.busy) && (
-            <AiCandidateSelection
-              key={connection.data.generation}
-              models={connection.data.models}
-              busy={connection.data.busy}
-              onStarted={selectRun}
-            />
-          )}
+          {!runId &&
+            (connection.data?.credentialsPresent || connection.data?.busy) && (
+              <AiCandidateSelection
+                key={connection.data.generation}
+                models={connection.data.models}
+                busy={connection.data.busy}
+                onStarted={selectRun}
+              />
+            )}
           <section className="space-y-2" aria-label="Recent ChatGPT runs">
             <h2 className="card-title">Recent runs</h2>
             {runs.isError ? (

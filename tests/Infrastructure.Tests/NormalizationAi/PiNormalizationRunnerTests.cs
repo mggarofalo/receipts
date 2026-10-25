@@ -133,6 +133,38 @@ public sealed class PiNormalizationRunnerTests : IDisposable
 		Directory.Exists(Path.Combine(directory, "home")).Should().BeFalse();
 	}
 
+	[Fact]
+	public async Task InferAsync_LockedCredentialHomeIsKnownNotDispatched()
+	{
+		var runner = Create("throw new Error('must not start');");
+		Directory.CreateDirectory(Settings().HomeDirectory);
+		using FileStream held = new(Path.Combine(Settings().HomeDirectory, ".runner.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+		Func<Task> action = () => runner.InferAsync(Request(), CancellationToken.None);
+		var exception = (await action.Should().ThrowAsync<ChatGptRunnerException>()).Which;
+		exception.Code.Should().Be("busy");
+		exception.RequestMayHaveStarted.Should().BeFalse();
+		(await runner.GetStatusAsync(CancellationToken.None)).Busy.Should().BeTrue();
+	}
+
+	[Fact]
+	public async Task InferAsync_InvalidHomeIsSetupFailureWithoutDispatch()
+	{
+		var runner = Create("throw new Error('must not start');");
+		File.WriteAllText(Settings().HomeDirectory, "not a directory");
+		Func<Task> action = () => runner.InferAsync(Request(), CancellationToken.None);
+		var exception = (await action.Should().ThrowAsync<ChatGptRunnerException>()).Which;
+		exception.Code.Should().Be("runner_setup_failed");
+		exception.RequestMayHaveStarted.Should().BeFalse();
+	}
+
+	[Fact]
+	public async Task InferAsync_ProtocolFailureAfterDispatchRemainsUncertain()
+	{
+		var runner = Create("for await (const chunk of process.stdin) {} console.log('invalid');");
+		Func<Task> action = () => runner.InferAsync(Request(), CancellationToken.None);
+		(await action.Should().ThrowAsync<ChatGptRunnerException>()).Which.RequestMayHaveStarted.Should().BeTrue();
+	}
+
 	private PiNormalizationRunner Create(string script)
 	{
 		Directory.CreateDirectory(directory);

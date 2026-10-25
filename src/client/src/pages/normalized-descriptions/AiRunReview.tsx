@@ -10,6 +10,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { AiRunStatus } from "./AiRunStatus";
+import { visibleAiProposals } from "./ai-run-state";
 import { extractErrorMessage } from "@/lib/problem-details";
 
 export function AiRunReview({
@@ -25,30 +27,23 @@ export function AiRunReview({
   const { apply, cancel, retry } = useAiActions((run) => onRetried(run.id));
   const pending = apply.isPending || cancel.isPending || retry.isPending;
   const error = apply.error ?? cancel.error ?? retry.error;
-  const applicable = run.state === "ready";
+  const proposals = visibleAiProposals(run);
+  const applicable = run.state === "ready" && proposals.length > 0;
   return (
     <section
       className="space-y-3 rounded-lg border p-4"
       aria-label="Review ChatGPT suggestions"
     >
-      <h2 className="card-title">Review suggestions</h2>
-      <p role="status">
-        Status: {run.state} ... {run.model}
-      </p>
-      {run.errorDetail && (
-        <p role="alert" className="text-destructive">
-          {run.errorDetail}
-        </p>
-      )}
-      {run.usage && (
-        <p className="text-sm text-muted-foreground">
-          Reported usage: {run.usage.input} input tokens, {run.usage.output}{" "}
-          output tokens.
-        </p>
-      )}
+      <h2 className="card-title">
+        {proposals.length === 0
+          ? "Suggestion request"
+          : applicable
+            ? "Review suggestions"
+            : "Suggestion outcomes"}
+      </h2>
+      <AiRunStatus run={run} />
       {["queued", "running", "unknown", "failed"].includes(run.state) && (
         <>
-          <p>You can leave this page and reopen this run later.</p>
           <Button
             variant="outline"
             onClick={() => cancel.mutate(run.id)}
@@ -60,10 +55,6 @@ export function AiRunReview({
       )}
       {["failed", "unknown", "interrupted"].includes(run.state) && (
         <>
-          <p>
-            A retry makes a new model request and may consume allowance again. A
-            previous interrupted request may already have consumed usage.
-          </p>
           <Button
             variant="outline"
             disabled={pending}
@@ -74,59 +65,6 @@ export function AiRunReview({
             Retry as a new request
           </Button>
         </>
-      )}
-      {run.proposals.length > 0 && (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Accept</TableHead>
-              <TableHead>Original item</TableHead>
-              <TableHead>Suggestion</TableHead>
-              <TableHead>Reason</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {run.proposals.map((proposal) => (
-              <TableRow key={proposal.id}>
-                <TableCell>
-                  <Checkbox
-                    aria-label={`Accept suggestion for ${proposal.description}`}
-                    checked={selected.includes(proposal.id)}
-                    disabled={
-                      !applicable ||
-                      proposal.action === "abstain" ||
-                      proposal.state !== "pending" ||
-                      pending
-                    }
-                    onCheckedChange={(checked) => {
-                      setConfirmed(false);
-                      setSelected((current) =>
-                        checked === true
-                          ? [...current, proposal.id]
-                          : current.filter((id) => id !== proposal.id),
-                      );
-                    }}
-                  />
-                </TableCell>
-                <TableCell>{proposal.description}</TableCell>
-                <TableCell>
-                  {proposal.action === "abstain"
-                    ? "No suggestion"
-                    : (proposal.displayLabel ?? proposal.canonicalName)}
-                  <span className="block text-xs text-muted-foreground">
-                    {proposal.action === "reuse"
-                      ? "Link to existing name"
-                      : proposal.action === "create"
-                        ? "Create reviewed name"
-                        : "Needs manual review"}{" "}
-                    ... {proposal.state}
-                  </span>
-                </TableCell>
-                <TableCell>{proposal.reason}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
       )}
       {applicable && (
         <>
@@ -164,6 +102,64 @@ export function AiRunReview({
             {apply.isPending ? "Applying..." : "Apply reviewed suggestions"}
           </Button>
         </>
+      )}
+      {proposals.length > 0 && (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              {applicable && <TableHead>Accept</TableHead>}
+              <TableHead>Original item</TableHead>
+              <TableHead>Suggestion</TableHead>
+              <TableHead>Reason</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {proposals.map((proposal) => (
+              <TableRow key={proposal.id}>
+                {applicable && (
+                  <TableCell>
+                    <Checkbox
+                      aria-label={`Accept suggestion for ${proposal.description}`}
+                      checked={selected.includes(proposal.id)}
+                      disabled={
+                        !applicable ||
+                        proposal.action === "abstain" ||
+                        proposal.state !== "pending" ||
+                        pending
+                      }
+                      onCheckedChange={(checked) => {
+                        setConfirmed(false);
+                        setSelected((current) =>
+                          checked === true
+                            ? [...current, proposal.id]
+                            : current.filter((id) => id !== proposal.id),
+                        );
+                      }}
+                    />
+                  </TableCell>
+                )}
+                <TableCell>{proposal.description}</TableCell>
+                <TableCell>
+                  {proposal.action === "abstain"
+                    ? "No suggestion"
+                    : (proposal.displayLabel ?? proposal.canonicalName)}
+                  <span className="block text-xs text-muted-foreground">
+                    {proposal.action === "reuse"
+                      ? "Link to existing name"
+                      : proposal.action === "create"
+                        ? "Create reviewed name"
+                        : "Needs manual review"}{" "}
+                    ... {proposal.state}
+                  </span>
+                </TableCell>
+                <TableCell>{proposal.reason}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}{" "}
+      {run.state === "ready" && proposals.length === 0 && (
+        <p>No reviewable suggestions were returned.</p>
       )}
       {run.state === "applied" && (
         <p>

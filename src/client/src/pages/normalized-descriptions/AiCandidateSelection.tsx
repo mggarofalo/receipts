@@ -98,6 +98,83 @@ export function AiCandidateSelection({
       {searchForm.formState.errors.q && (
         <p role="alert">Use at most 200 characters.</p>
       )}
+      <p role="status">
+        {selected.length} items selected
+        {selected.length >
+        items.filter((item) => selected.includes(item.id)).length
+          ? " (including other pages)"
+          : ""}
+      </p>
+      <Button
+        type="button"
+        variant="ghost"
+        onClick={() => setSelected([])}
+        disabled={!selected.length || start.isPending}
+      >
+        Clear selection
+      </Button>
+      <form
+        className="space-y-3 rounded-lg border p-4"
+        onSubmit={(event) => {
+          void requestForm.handleSubmit(({ model }) => {
+            const fingerprint = JSON.stringify([model, [...selected].sort()]);
+            const request =
+              intent?.fingerprint === fingerprint
+                ? intent
+                : { fingerprint, id: crypto.randomUUID() };
+            setIntent(request);
+            start.mutate({
+              clientRequestId: request.id,
+              itemIds: selected,
+              model,
+            });
+          })(event);
+        }}
+      >
+        <label className="block space-y-1">
+          <span>ChatGPT model</span>
+          <select
+            className="h-9 max-w-full rounded-md border bg-background px-3"
+            aria-label="ChatGPT model"
+            {...requestForm.register("model")}
+            value={selectedModel}
+            disabled={busy || start.isPending}
+          >
+            <option value="">Choose a model</option>
+            {displayedModels.map((model) => (
+              <option key={model} value={model}>
+                {model}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="text-sm text-muted-foreground">
+          Requesting suggestions sends the selected item descriptions and
+          candidate normalized names to OpenAI using your connected ChatGPT
+          account. Separate store, price, receipt date and payment fields are
+          not sent. This uses your plan allowance; available models are a
+          catalog, not proof of account access. Nothing is applied
+          automatically.
+        </p>
+        {start.isError && (
+          <p role="alert" className="text-destructive">
+            {extractErrorMessage(start.error)}
+          </p>
+        )}
+        <Button
+          type="submit"
+          disabled={
+            busy ||
+            !selected.length ||
+            !models.includes(selectedModel) ||
+            start.isPending
+          }
+        >
+          {start.isPending
+            ? "Requesting..."
+            : `Request suggestions for ${selected.length} items`}
+        </Button>
+      </form>
       {candidates.isError ? (
         <RequestFailure
           message="Items could not be loaded."
@@ -166,83 +243,6 @@ export function AiCandidateSelection({
           />
         </>
       )}
-      <p role="status">
-        {selected.length} items selected
-        {selected.length >
-        items.filter((item) => selected.includes(item.id)).length
-          ? " (including other pages)"
-          : ""}
-      </p>
-      <Button
-        type="button"
-        variant="ghost"
-        onClick={() => setSelected([])}
-        disabled={!selected.length || start.isPending}
-      >
-        Clear selection
-      </Button>
-      <form
-        className="space-y-3 rounded-lg border p-4"
-        onSubmit={(event) => {
-          void requestForm.handleSubmit(({ model }) => {
-            const fingerprint = JSON.stringify([model, [...selected].sort()]);
-            const request =
-              intent?.fingerprint === fingerprint
-                ? intent
-                : { fingerprint, id: crypto.randomUUID() };
-            setIntent(request);
-            start.mutate({
-              clientRequestId: request.id,
-              itemIds: selected,
-              model,
-            });
-          })(event);
-        }}
-      >
-        <label className="block space-y-1">
-          <span>ChatGPT model</span>
-          <select
-            className="h-9 max-w-full rounded-md border bg-background px-3"
-            aria-label="ChatGPT model"
-            {...requestForm.register("model")}
-            value={selectedModel}
-            disabled={busy || start.isPending}
-          >
-            <option value="">Choose a model</option>
-            {displayedModels.map((model) => (
-              <option key={model} value={model}>
-                {model}
-              </option>
-            ))}
-          </select>
-        </label>
-        <p className="text-sm text-muted-foreground">
-          Requesting suggestions sends the selected item descriptions and
-          candidate normalized names to OpenAI using your connected ChatGPT
-          account. Separate store, price, receipt date and payment fields
-          are not sent. This uses your plan allowance; available models are a
-          catalog, not proof of account access. Nothing is applied
-          automatically.
-        </p>
-        {start.isError && (
-          <p role="alert" className="text-destructive">
-            {extractErrorMessage(start.error)}
-          </p>
-        )}
-        <Button
-          type="submit"
-          disabled={
-            busy ||
-            !selected.length ||
-            !models.includes(selectedModel) ||
-            start.isPending
-          }
-        >
-          {start.isPending
-            ? "Requesting..."
-            : `Request suggestions for ${selected.length} items`}
-        </Button>
-      </form>
     </section>
   );
 }

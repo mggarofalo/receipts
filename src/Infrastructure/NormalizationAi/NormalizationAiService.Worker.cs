@@ -55,7 +55,11 @@ public sealed partial class NormalizationAiService
 		{
 			// One bounded inference at a time per deployment/connection, even with API replicas.
 			if (await context.NormalizationAiRuns.AnyAsync(run => run.State == "running", cancellationToken)) { return false; }
-			claimed = await context.NormalizationAiRuns.Include(run => run.Proposals).Where(run => run.State == "queued").OrderBy(run => run.CreatedAt).FirstOrDefaultAsync(cancellationToken);
+			DateTimeOffset now = timeProvider.GetUtcNow();
+			// Queued leases are durable not-before times after confirmed local contention.
+			claimed = await context.NormalizationAiRuns.Include(run => run.Proposals)
+				.Where(run => run.State == "queued" && (run.LeaseExpiresAt == null || run.LeaseExpiresAt <= now))
+				.OrderBy(run => run.CreatedAt).FirstOrDefaultAsync(cancellationToken);
 			if (claimed is null) { return false; }
 			if (claimed.PromptVersion is not ("receipts-normalization-v1" or NormalizationCatalogAiPolicy.Version))
 			{
@@ -82,6 +86,7 @@ public sealed partial class NormalizationAiService
 				}
 			}
 			claimed.State = "running"; claimed.ClaimToken = claim; claimed.Revision = Guid.NewGuid();
+			claimed.ErrorCode = null; claimed.ErrorDetail = null;
 			claimed.LeaseExpiresAt = timeProvider.GetUtcNow() + Settings.LeaseDuration;
 			await context.SaveChangesAsync(cancellationToken);
 			await lease.CommitAsync(cancellationToken);
@@ -116,9 +121,22 @@ public sealed partial class NormalizationAiService
 		catch (NormalizationAiException exception) { outcome = "failed"; code = exception.Code; detail = exception.Message; }
 		catch (ChatGptRunnerException exception)
 		{
-			// A provider error does not prove that a request incurred no usage. Never replay automatically.
-			outcome = "unknown"; code = "unknown_outcome";
-			detail = "The provider did not return a validated result (" + SafeCode(exception.Code) + "). Usage may have occurred.";
+			if (!exception.RequestMayHaveStarted)
+			{
+				bool busy = exception.Code == "busy";
+				bool retry = busy && timeProvider.GetUtcNow() < claimed.CreatedAt + TimeSpan.FromMinutes(5);
+				outcome = retry ? "queued" : "failed";
+				code = busy ? retry ? "runner_busy" : "runner_busy_timeout" : SafeCode(exception.Code);
+				detail = retry ? "Waiting for another local ChatGPT operation. No inference was started."
+					: busy ? "The local ChatGPT runtime stayed busy. Finish the other operation and retry. No inference was started."
+					: "The local ChatGPT runtime could not start (" + SafeCode(exception.Code) + "). Check the runtime configuration and retry. No inference was started.";
+			}
+			else
+			{
+				// A provider error does not prove that a request incurred no usage. Never replay automatically.
+				outcome = "unknown"; code = "unknown_outcome";
+				detail = "The provider did not return a validated result (" + SafeCode(exception.Code) + "). Usage may have occurred.";
+			}
 		}
 		catch (OperationCanceledException) { outcome = "unknown"; code = "unknown_outcome"; detail = "Inference was interrupted. Usage may have occurred; retry only deliberately."; }
 		catch (Exception) { outcome = "unknown"; code = "unknown_outcome"; detail = "The runtime stopped before a validated result. Usage may have occurred."; }
@@ -165,6 +183,11 @@ public sealed partial class NormalizationAiService
 		}
 		runResult.UsageJson = usage is null ? null : JsonSerializer.Serialize(usage);
 		Finish(runResult, outcome, code, detail);
+		if (outcome == "queued")
+		{
+			runResult.CompletedAt = null;
+			runResult.LeaseExpiresAt = timeProvider.GetUtcNow() + TimeSpan.FromSeconds(5);
+		}
 		await final.SaveChangesAsync(completionToken);
 		await finalLease.CommitAsync(completionToken);
 		return true;

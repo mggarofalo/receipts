@@ -62,7 +62,7 @@ public sealed class PiNormalizationRunner(IOptions<PiNormalizationRunnerOptions>
 		string input = JsonSerializer.Serialize(request, JsonOptions);
 		if (Encoding.UTF8.GetByteCount(input) > 256 * 1024)
 		{
-			throw new ChatGptRunnerException("input_limit");
+			throw new ChatGptRunnerException("input_limit", requestMayHaveStarted: false);
 		}
 
 		List<JsonElement> messages = await ExecuteAsync("infer", input, null, cancellationToken);
@@ -101,32 +101,42 @@ public sealed class PiNormalizationRunner(IOptions<PiNormalizationRunnerOptions>
 	{
 		cancellationToken.ThrowIfCancellationRequested();
 		PiNormalizationRunnerOptions settings = options.Value;
-		string home = Path.GetFullPath(settings.HomeDirectory);
-		Directory.CreateDirectory(home);
-		if (!OperatingSystem.IsWindows())
-		{
-			File.SetUnixFileMode(home, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-		}
-
+		string home;
 		FileStream homeLock;
-		try { homeLock = new FileStream(Path.Combine(home, ".runner.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
-		catch (IOException) { throw new ChatGptRunnerException("busy"); }
+		try
+		{
+			home = Path.GetFullPath(settings.HomeDirectory);
+			Directory.CreateDirectory(home);
+			if (!OperatingSystem.IsWindows())
+			{
+				File.SetUnixFileMode(home, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+			}
+			try { homeLock = new FileStream(Path.Combine(home, ".runner.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
+			catch (IOException exception) when (IsLockContention(exception))
+			{ throw new ChatGptRunnerException("busy", requestMayHaveStarted: false); }
+		}
+		catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+		{ throw new ChatGptRunnerException("runner_setup_failed", requestMayHaveStarted: false); }
 		await using FileStream heldLock = homeLock;
 		string work = Path.Combine(home, "work", Guid.NewGuid().ToString("N"));
-		Directory.CreateDirectory(work);
+		try { Directory.CreateDirectory(work); }
+		catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+		{ throw new ChatGptRunnerException("runner_setup_failed", requestMayHaveStarted: false); }
 		using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 		timeout.CancelAfter(command == "login" ? TimeSpan.FromMinutes(20) : TimeSpan.FromSeconds(Math.Clamp(settings.TimeoutSeconds, 1, 600)));
-		using Process process = new() { StartInfo = CreateStartInfo(settings, command, home, work) };
+		using Process process = new();
 		try
 		{
 			try
 			{
+				process.StartInfo = CreateStartInfo(settings, command, home, work);
 				if (!process.Start())
 				{
-					throw new ChatGptRunnerException("unavailable");
+					throw new ChatGptRunnerException("unavailable", requestMayHaveStarted: false);
 				}
 			}
-			catch (System.ComponentModel.Win32Exception) { throw new ChatGptRunnerException("unavailable"); }
+			catch (Exception exception) when (exception is System.ComponentModel.Win32Exception or ArgumentException or IOException or UnauthorizedAccessException)
+			{ throw new ChatGptRunnerException("unavailable", requestMayHaveStarted: false); }
 			using CancellationTokenRegistration cancellation = timeout.Token.Register(() => Kill(process));
 			Task<List<JsonElement>> output = ReadOutputAsync(process.StandardOutput, displayCode, timeout.Token);
 			Task errors = DrainErrorsAsync(process.StandardError, timeout.Token);
@@ -164,6 +174,10 @@ public sealed class PiNormalizationRunner(IOptions<PiNormalizationRunnerOptions>
 			try { Directory.Delete(work, recursive: true); } catch (IOException) { }
 		}
 	}
+
+	private static bool IsLockContention(IOException exception)
+		// Windows sharing/lock violations; Unix FileStream advisory lock reports EAGAIN.
+		=> (exception.HResult & 0xffff) is 32 or 33 || (!OperatingSystem.IsWindows() && (exception.HResult & 0xffff) == 11);
 
 	private static ProcessStartInfo CreateStartInfo(PiNormalizationRunnerOptions settings, string command, string home, string work)
 	{

@@ -11,6 +11,131 @@ namespace Infrastructure.IntegrationTests.Services;
 
 public sealed partial class NormalizationAiWorkflowTests
 {
+	[Fact]
+	public async Task PreDispatchContention_ResumedInferenceReportsRunningWithoutWaitingDiagnostics()
+	{
+		var ids = await SeedAsync();
+		var service = Service();
+		var run = await service.StartAsync(Owner, Guid.NewGuid(), ids, "test-model", CancellationToken.None);
+		runner.Setup(x => x.InferAsync(It.IsAny<ChatGptInferenceRequest>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new ChatGptRunnerException("busy", requestMayHaveStarted: false));
+		await service.ProcessNextAsync(CancellationToken.None);
+		var waiting = (await Service().GetRunAsync(Owner, run.Id, CancellationToken.None))!;
+		waiting.State.Should().Be("queued");
+		waiting.ErrorCode.Should().Be("runner_busy");
+		waiting.ErrorDetail.Should().Contain("No inference was started");
+		await using (var db = fixture.CreateDbContext())
+		{
+			var saved = await db.NormalizationAiRuns.FindAsync(run.Id);
+			saved!.LeaseExpiresAt = DateTimeOffset.UtcNow.AddSeconds(-1);
+			await db.SaveChangesAsync();
+		}
+
+		TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		runner.Setup(x => x.InferAsync(It.IsAny<ChatGptInferenceRequest>(), It.IsAny<CancellationToken>()))
+			.Returns(async (ChatGptInferenceRequest request, CancellationToken _) =>
+			{
+				entered.TrySetResult();
+				await release.Task;
+				return Response(request);
+			});
+		var work = Service().ProcessNextAsync(CancellationToken.None);
+		try
+		{
+			await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
+			var running = (await Service().GetRunAsync(Owner, run.Id, CancellationToken.None))!;
+			running.State.Should().Be("running");
+			running.ErrorCode.Should().BeNull("inference has resumed after the local contention backoff");
+			running.ErrorDetail.Should().BeNull("an active inference must not claim that no inference was started");
+			(await Service().ProcessNextAsync(CancellationToken.None)).Should().BeFalse();
+		}
+		finally
+		{
+			release.TrySetResult();
+			await work.WaitAsync(TimeSpan.FromSeconds(15));
+		}
+		var ready = (await Service().GetRunAsync(Owner, run.Id, CancellationToken.None))!;
+		ready.State.Should().Be("ready");
+		ready.Proposals.Should().NotBeEmpty();
+		runner.Verify(x => x.InferAsync(It.IsAny<ChatGptInferenceRequest>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
+	}
+
+	[Fact]
+	public async Task PreDispatchContention_RestartDispatchesSameRequestOnlyAfterBackoff()
+	{
+		var ids = await SeedAsync();
+		var service = Service();
+		var run = await service.StartAsync(Owner, Guid.NewGuid(), ids, "test-model", CancellationToken.None);
+		int attempts = 0;
+		runner.Setup(x => x.InferAsync(It.IsAny<ChatGptInferenceRequest>(), It.IsAny<CancellationToken>()))
+			.Returns((ChatGptInferenceRequest request, CancellationToken _) => ++attempts == 1
+				? Task.FromException<ChatGptInferenceResult>(new ChatGptRunnerException("busy", requestMayHaveStarted: false))
+				: Task.FromResult(Response(request)));
+		await service.ProcessNextAsync(CancellationToken.None);
+		(await Service().GetConnectionAsync(Owner, CancellationToken.None)).Busy.Should().BeTrue();
+		runner.Verify(x => x.GetStatusAsync(It.IsAny<CancellationToken>()), Times.Once, "queued refresh must not contend with inference");
+		(await Service().ProcessNextAsync(CancellationToken.None)).Should().BeFalse();
+		await using (var db = fixture.CreateDbContext())
+		{
+			var saved = await db.NormalizationAiRuns.FindAsync(run.Id);
+			saved!.LeaseExpiresAt = DateTimeOffset.UtcNow.AddSeconds(-1);
+			await db.SaveChangesAsync();
+		}
+		await Service().ProcessNextAsync(CancellationToken.None);
+		var ready = (await Service().GetRunAsync(Owner, run.Id, CancellationToken.None))!;
+		ready.State.Should().Be("ready");
+		ready.Id.Should().Be(run.Id);
+		ready.ErrorCode.Should().BeNull();
+		(await Service().ProcessNextAsync(CancellationToken.None)).Should().BeFalse();
+		attempts.Should().Be(2, "only the second local attempt dispatched inference");
+	}
+
+	[Fact]
+	public async Task PreDispatchContention_BackoffSurvivesRestartAndCancellationPreventsDispatch()
+	{
+		var ids = await SeedAsync();
+		var service = Service();
+		var run = await service.StartAsync(Owner, Guid.NewGuid(), ids, "test-model", CancellationToken.None);
+		runner.Setup(x => x.InferAsync(It.IsAny<ChatGptInferenceRequest>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new ChatGptRunnerException("busy", requestMayHaveStarted: false));
+		await service.ProcessNextAsync(CancellationToken.None);
+		var waiting = (await Service().GetRunAsync(Owner, run.Id, CancellationToken.None))!;
+		waiting.State.Should().Be("queued");
+		waiting.ErrorCode.Should().Be("runner_busy");
+		waiting.ErrorDetail.Should().NotContain("may have occurred");
+		(await Service().ProcessNextAsync(CancellationToken.None)).Should().BeFalse();
+		await service.CancelAsync(Owner, run.Id, CancellationToken.None);
+		(await Service().ProcessNextAsync(CancellationToken.None)).Should().BeFalse();
+		runner.Verify(x => x.InferAsync(It.IsAny<ChatGptInferenceRequest>(), It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	[Theory]
+	[InlineData(false)]
+	[InlineData(true)]
+	public async Task PreDispatchFailure_IsActionableWithoutUnknownUsage(bool contentionExhausted)
+	{
+		var ids = await SeedAsync();
+		var service = Service();
+		var run = await service.StartAsync(Owner, Guid.NewGuid(), ids, "test-model", CancellationToken.None);
+		if (contentionExhausted)
+		{
+			await using var db = fixture.CreateDbContext();
+			var saved = await db.NormalizationAiRuns.FindAsync(run.Id);
+			saved!.CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-6);
+			await db.SaveChangesAsync();
+		}
+		runner.Setup(x => x.InferAsync(It.IsAny<ChatGptInferenceRequest>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new ChatGptRunnerException(contentionExhausted ? "busy" : "runner_setup_failed", requestMayHaveStarted: false));
+		await service.ProcessNextAsync(CancellationToken.None);
+		var failed = (await Service().GetRunAsync(Owner, run.Id, CancellationToken.None))!;
+		failed.State.Should().Be("failed");
+		failed.ErrorCode.Should().Be(contentionExhausted ? "runner_busy_timeout" : "runner_setup_failed");
+		failed.ErrorDetail.Should().Contain("No inference was started");
+		(await Service().ProcessNextAsync(CancellationToken.None)).Should().BeFalse();
+		runner.Verify(x => x.InferAsync(It.IsAny<ChatGptInferenceRequest>(), It.IsAny<CancellationToken>()), Times.Once);
+	}
+
 	[Theory]
 	[InlineData("rate_limited")]
 	[InlineData("auth_failed")]
