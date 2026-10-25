@@ -86,58 +86,67 @@ public partial class TemplatePricePrecisionTests
 	[InlineData("-99999999999999.99994", true)]
 	public async Task LegacyPriceBoundary_PreservesRepresentableValues_OrRollsBackEarlierAccountWritesAndAudits(string backupPrice, bool fits)
 	{
-		Guid templateId = Guid.NewGuid(), existingAccount = Guid.NewGuid(), newAccount = Guid.NewGuid();
-		await using (ApplicationDbContext seed = fixture.CreateDbContext())
-		{
-			seed.Accounts.AddRange(new AccountEntity { Id = existingAccount, Name = "Backup name", IsActive = true }, new AccountEntity { Id = newAccount, Name = "New backup account", IsActive = true });
-			seed.ItemTemplates.Add(new() { Id = templateId, Name = $"Legacy price {templateId}", DefaultUnitPrice = 1.25m, DefaultUnitPriceCurrency = Currency.USD });
-			await seed.SaveChangesAsync();
-		}
-		string path = await new BackupService(new Factory(fixture), NullLogger<BackupService>.Instance).ExportToSqliteAsync();
+		PostgresFixture isolated = new();
+		await isolated.InitializeAsync();
 		try
 		{
-			await using (SqliteConnection sqlite = new($"Data Source={path};Pooling=False"))
+			Guid templateId = Guid.NewGuid(), existingAccount = Guid.NewGuid(), newAccount = Guid.NewGuid();
+			await using (ApplicationDbContext seed = fixture.CreateDbContext())
 			{
-				await sqlite.OpenAsync();
-				await using SqliteCommand command = sqlite.CreateCommand();
-				command.CommandText = "UPDATE backup_metadata SET value='4' WHERE key='export_version'; UPDATE item_templates SET default_unit_price=$price WHERE id=$id";
-				command.Parameters.AddWithValue("$price", backupPrice);
-				command.Parameters.AddWithValue("$id", templateId.ToString());
-				await command.ExecuteNonQueryAsync();
+				seed.Accounts.AddRange(new AccountEntity { Id = existingAccount, Name = "Backup name", IsActive = true }, new AccountEntity { Id = newAccount, Name = "New backup account", IsActive = true });
+				seed.ItemTemplates.Add(new() { Id = templateId, Name = $"Legacy price {templateId}", DefaultUnitPrice = 1.25m, DefaultUnitPriceCurrency = Currency.USD });
+				await seed.SaveChangesAsync();
 			}
-			int auditCount;
-			await using (ApplicationDbContext target = fixture.CreateDbContext())
+			string path = await new BackupService(new Factory(fixture), NullLogger<BackupService>.Instance).ExportToSqliteAsync();
+			try
 			{
-				(await target.Accounts.SingleAsync(row => row.Id == existingAccount)).Name = "Target name";
-				target.Accounts.Remove(await target.Accounts.SingleAsync(row => row.Id == newAccount));
-				await target.SaveChangesAsync();
-				auditCount = await target.AuditLogs.CountAsync();
-			}
-			await using FileStream stream = File.OpenRead(path);
-			Func<Task> import = () => new BackupImportService(new Factory(fixture), NullLogger<BackupImportService>.Instance).ImportFromSqliteAsync(stream, CancellationToken.None);
-			if (fits)
-			{
-				await import();
-			}
-			else
-			{
-				(await import.Should().ThrowAsync<InvalidOperationException>()).Which.Message.Should().Contain("default unit price outside the supported range");
-			}
+				await using (SqliteConnection sqlite = new($"Data Source={path};Pooling=False"))
+				{
+					await sqlite.OpenAsync();
+					await using SqliteCommand command = sqlite.CreateCommand();
+					command.CommandText = "UPDATE backup_metadata SET value='4' WHERE key='export_version'; UPDATE item_templates SET default_unit_price=$price WHERE id=$id";
+					command.Parameters.AddWithValue("$price", backupPrice);
+					command.Parameters.AddWithValue("$id", templateId.ToString());
+					await command.ExecuteNonQueryAsync();
+				}
+				int auditCount;
+				await using (ApplicationDbContext target = isolated.CreateDbContext())
+				{
+					target.Accounts.Add(new AccountEntity { Id = existingAccount, Name = "Target name", IsActive = true });
+					await target.SaveChangesAsync();
+					auditCount = await target.AuditLogs.CountAsync();
+				}
+				await using FileStream stream = File.OpenRead(path);
+				Func<Task> import = () => new BackupImportService(new Factory(isolated), NullLogger<BackupImportService>.Instance).ImportFromSqliteAsync(stream, CancellationToken.None);
+				if (fits)
+				{
+					await import();
+				}
+				else
+				{
+					(await import.Should().ThrowAsync<InvalidOperationException>()).Which.Message.Should().Contain("default unit price outside the supported range");
+				}
 
-			await using ApplicationDbContext verify = fixture.CreateDbContext();
-			(await verify.Accounts.SingleAsync(row => row.Id == existingAccount)).Name.Should().Be(fits ? "Backup name" : "Target name");
-			(await verify.Accounts.AnyAsync(row => row.Id == newAccount)).Should().Be(fits);
-			decimal expectedPrice = fits ? decimal.Round(decimal.Parse(backupPrice, CultureInfo.InvariantCulture), 4, MidpointRounding.AwayFromZero) : 1.25m;
-			(await verify.ItemTemplates.SingleAsync(row => row.Id == templateId)).DefaultUnitPrice.Should().Be(expectedPrice);
-			if (fits)
-			{
-				(await verify.AuditLogs.CountAsync()).Should().BeGreaterThan(auditCount);
+				await using ApplicationDbContext verify = isolated.CreateDbContext();
+				(await verify.Accounts.SingleAsync(row => row.Id == existingAccount)).Name.Should().Be(fits ? "Backup name" : "Target name");
+				(await verify.Accounts.AnyAsync(row => row.Id == newAccount)).Should().Be(fits);
+				if (fits)
+				{
+					decimal expectedPrice = decimal.Round(decimal.Parse(backupPrice, CultureInfo.InvariantCulture), 4, MidpointRounding.AwayFromZero);
+					(await verify.ItemTemplates.SingleAsync(row => row.Id == templateId)).DefaultUnitPrice.Should().Be(expectedPrice);
+				}
+				else { (await verify.ItemTemplates.AnyAsync(row => row.Id == templateId)).Should().BeFalse(); }
+				if (fits)
+				{
+					(await verify.AuditLogs.CountAsync()).Should().BeGreaterThan(auditCount);
+				}
+				else
+				{
+					(await verify.AuditLogs.CountAsync()).Should().Be(auditCount);
+				}
 			}
-			else
-			{
-				(await verify.AuditLogs.CountAsync()).Should().Be(auditCount);
-			}
+			finally { File.Delete(path); }
 		}
-		finally { File.Delete(path); }
+		finally { await isolated.DisposeAsync(); }
 	}
 }

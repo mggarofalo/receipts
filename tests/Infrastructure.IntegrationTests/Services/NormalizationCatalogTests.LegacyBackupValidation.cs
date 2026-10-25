@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using FluentAssertions;
+using Infrastructure.IntegrationTests.Fixtures;
 using Infrastructure.Services;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -57,11 +58,24 @@ public sealed partial class NormalizationCatalogTests
 				(await command.ExecuteNonQueryAsync()).Should().Be(1);
 			}
 
-			await using var stream = File.OpenRead(path);
-			Func<Task> import = () => new BackupImportService(new Factory(fixture), NullLogger<BackupImportService>.Instance)
-				.ImportFromSqliteAsync(stream, CancellationToken.None);
-			var rejection = await import.Should().ThrowAsync<InvalidOperationException>().WithMessage(reason);
-			rejection.Which.InnerException.Should().BeOfType<InvalidDataException>().Which.Message.Should().Be(reason);
+			// Historic archives are admitted only into fresh installations. Keep the
+			// source untouched and prove rejection rolls back the isolated destination.
+			var destination = new PostgresFixture();
+			await destination.InitializeAsync();
+			try
+			{
+				await using var stream = File.OpenRead(path);
+				Func<Task> import = () => new BackupImportService(new Factory(destination), NullLogger<BackupImportService>.Instance)
+					.ImportFromSqliteAsync(stream, CancellationToken.None);
+				var rejection = await import.Should().ThrowAsync<InvalidOperationException>().WithMessage(reason);
+				rejection.Which.InnerException.Should().BeOfType<InvalidDataException>().Which.Message.Should().Be(reason);
+				await using var destinationRead = destination.CreateDbContext();
+				(await destinationRead.ReceiptItems.IgnoreQueryFilters().CountAsync()).Should().Be(0);
+				(await destinationRead.NormalizationSourceMappings.CountAsync()).Should().Be(0);
+				(await destinationRead.LegacyMigrations.CountAsync()).Should().Be(0);
+				(await destinationRead.TaxonomyRevisions.CountAsync()).Should().Be(1);
+			}
+			finally { await destination.DisposeAsync(); }
 			(await FactsAsync(ids)).Should().BeEquivalentTo(facts);
 			var itemAfter = (await ReadAsync(ids)).Single();
 			itemAfter.NormalizationAssignmentId.Should().Be(itemBefore.NormalizationAssignmentId);

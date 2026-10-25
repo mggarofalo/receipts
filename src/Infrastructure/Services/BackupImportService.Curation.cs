@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using Application.Exceptions;
 using Domain.NormalizedDescriptions;
 using Infrastructure.Entities.Core;
@@ -178,7 +179,7 @@ public partial class BackupImportService
 		}
 
 		await StageCanonicalNamesAsync(context, cancellationToken);
-		await context.SaveChangesAsync(cancellationToken);
+		await SaveImportedChangesAsync(context, cancellationToken);
 		if (hasCuration)
 		{
 			foreach ((NormalizedDescriptionEntity entity, Guid? neighbourId, double? similarity) in references)
@@ -187,7 +188,7 @@ public partial class BackupImportService
 				// A deleted neighbour may leave a historical score with no remaining ID.
 				entity.NearestNeighbourSimilarity = similarity;
 			}
-			await context.SaveChangesAsync(cancellationToken);
+			await SaveImportedChangesAsync(context, cancellationToken);
 		}
 		return (created, updated);
 	}
@@ -276,7 +277,9 @@ public partial class BackupImportService
 
 		int created = 0, updated = 0;
 		await using SqliteCommand cmd = sqlite.CreateCommand();
-		cmd.CommandText = "SELECT id, receipt_id_a, receipt_id_b, accepted_at FROM accepted_duplicate_pairs";
+		cmd.CommandText = exportVersion >= 10
+			? "SELECT p.id, p.receipt_id_a, p.receipt_id_b, p.accepted_at, d.payload FROM accepted_duplicate_pairs p JOIN portable_deletion_state d ON d.kind='accepted_duplicate_pairs' AND d.id=p.id ORDER BY json_extract(d.payload, '$.DeletedAt') IS NULL"
+			: "SELECT id, receipt_id_a, receipt_id_b, accepted_at FROM accepted_duplicate_pairs";
 		await using SqliteDataReader reader = await cmd.ExecuteReaderAsync(cancellationToken);
 		while (await reader.ReadAsync(cancellationToken))
 		{
@@ -284,6 +287,8 @@ public partial class BackupImportService
 			Guid first = Guid.Parse(reader.GetString(1));
 			Guid second = Guid.Parse(reader.GetString(2));
 			DateTimeOffset acceptedAt = ParseTimestamp(reader.GetString(3));
+			PortableTaxonomyArchive.DeletionState? sourceDeletion = exportVersion >= 10
+				? JsonSerializer.Deserialize<PortableTaxonomyArchive.DeletionState>(reader.GetString(4)) : null;
 			if (first.CompareTo(second) >= 0)
 			{
 				throw new InvalidOperationException($"Accepted duplicate pair {id} must contain two distinct receipt IDs in canonical order.");
@@ -296,8 +301,8 @@ public partial class BackupImportService
 				throw new InvalidOperationException($"Accepted duplicate pair ID {id} already belongs to different receipts.");
 			}
 
-			// The pair is the user decision; an existing target can have assigned another ID
-			// to the same assertion. Keep that target identity rather than duplicating it.
+			// Legacy imports reuse semantic identity. Version 10 restores exact source IDs
+			// and their explicit deletion state.
 			AcceptedDuplicatePairEntity? active = await context.AcceptedDuplicatePairs
 				.FirstOrDefaultAsync(pair => pair.ReceiptIdA == first && pair.ReceiptIdB == second, cancellationToken);
 			AcceptedDuplicatePairEntity? prior = null;
@@ -306,27 +311,43 @@ public partial class BackupImportService
 				prior = await context.AcceptedDuplicatePairs.IgnoreQueryFilters()
 					.FirstOrDefaultAsync(pair => pair.Id == priorId, cancellationToken);
 			}
-			AcceptedDuplicatePairEntity? entity = active ?? prior ?? byId;
+			AcceptedDuplicatePairEntity? entity = exportVersion >= 10 ? byId : active ?? prior ?? byId;
+			if (exportVersion >= 10 && sourceDeletion!.DeletedAt is null && active is not null && active.Id != id)
+			{
+				// Exact source identities own v10 decisions. Retain the displaced target
+				// identity as history, and release its unique active pair before revival.
+				context.AcceptedDuplicatePairs.Remove(active);
+				await context.SaveChangesAsync(cancellationToken);
+			}
 			if (entity is null)
 			{
-				context.AcceptedDuplicatePairs.Add(new AcceptedDuplicatePairEntity
+				entity = new AcceptedDuplicatePairEntity
 				{
 					Id = id,
 					ReceiptIdA = first,
 					ReceiptIdB = second,
 					AcceptedAt = acceptedAt,
-				});
+				};
+				context.AcceptedDuplicatePairs.Add(entity);
 				created++;
 			}
 			else
 			{
 				entity.AcceptedAt = acceptedAt;
-				ClearSoftDelete(entity);
+				if (exportVersion < 10 || sourceDeletion!.DeletedAt is null) { ClearSoftDelete(entity); }
 				updated++;
+			}
+			if (sourceDeletion?.DeletedAt is not null)
+			{
+				entity.DeletedAt = sourceDeletion.DeletedAt;
+				entity.DeletedByUserId = sourceDeletion.DeletedByUserId;
+				entity.DeletedByApiKeyId = sourceDeletion.DeletedByApiKeyId;
+				entity.CascadeDeletedByParentId = sourceDeletion.CascadeDeletedByParentId;
+				await SaveImportedChangesAsync(context, cancellationToken);
 			}
 		}
 
-		await context.SaveChangesAsync(cancellationToken);
+		await SaveImportedChangesAsync(context, cancellationToken);
 		return (created, updated);
 	}
 }

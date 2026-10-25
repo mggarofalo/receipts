@@ -2,59 +2,37 @@ using Application.Models;
 using Common;
 using FluentAssertions;
 using Infrastructure.Entities.Core;
+using Infrastructure.IntegrationTests.Fixtures;
 using Infrastructure.Services;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Infrastructure.Tests.Services;
+namespace Infrastructure.IntegrationTests.Services;
 
-public class BackupImportServiceTests : IDisposable
+[Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
+public class BackupImportServiceTests : IAsyncLifetime
 {
-	private readonly string _inMemoryDbName;
-	private readonly DbContextOptions<ApplicationDbContext> _options;
-	private readonly BackupImportService _service;
-	private readonly string _tempDir;
-
-	public BackupImportServiceTests()
+	private readonly PostgresFixture _fixture = new();
+	private DbContextOptions<ApplicationDbContext> _options = null!;
+	private BackupImportService _service = null!;
+	private readonly string _tempDir = Path.Combine(Path.GetTempPath(), $"legacy-import-{Guid.NewGuid()}");
+	public async Task InitializeAsync()
 	{
-		_inMemoryDbName = Guid.NewGuid().ToString();
-		_options = new DbContextOptionsBuilder<ApplicationDbContext>()
-			.UseInMemoryDatabase(databaseName: _inMemoryDbName)
-			.ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))
-			.Options;
-
-		Moq.Mock<IDbContextFactory<ApplicationDbContext>> factoryMock = new();
-		factoryMock
-			.Setup(f => f.CreateDbContextAsync(Moq.It.IsAny<CancellationToken>()))
-			.Returns(() => Task.FromResult(new ApplicationDbContext(_options)));
-
-		ILogger<BackupImportService> logger = NullLogger<BackupImportService>.Instance;
-		_service = new BackupImportService(factoryMock.Object, logger);
-
-		_tempDir = Path.Combine(Path.GetTempPath(), $"backup-import-test-{Guid.NewGuid():N}");
+		await _fixture.InitializeAsync(); _options = _fixture.CreateOptions();
+		var factory = new Moq.Mock<IDbContextFactory<ApplicationDbContext>>();
+		factory.Setup(f => f.CreateDbContextAsync(Moq.It.IsAny<CancellationToken>())).Returns(() => Task.FromResult(new ApplicationDbContext(_options)));
+		_service = new(factory.Object, NullLogger<BackupImportService>.Instance);
 		Directory.CreateDirectory(_tempDir);
 	}
+	public async Task DisposeAsync() { Directory.Delete(_tempDir, true); await _fixture.DisposeAsync(); }
 
 	/// <summary>
 	/// Creates a fresh context for seeding/asserting that shares the same in-memory database.
 	/// </summary>
 	private ApplicationDbContext CreateAssertionContext() => new(_options);
-
-	public void Dispose()
-	{
-		try
-		{
-			Directory.Delete(_tempDir, recursive: true);
-		}
-		catch
-		{
-			// Best effort cleanup
-		}
-		GC.SuppressFinalize(this);
-	}
 
 	[Fact]
 	public async Task ImportFromSqliteAsync_InvalidFile_ThrowsInvalidOperationException()
@@ -115,8 +93,10 @@ public class BackupImportServiceTests : IDisposable
 		Guid accountId = Guid.NewGuid();
 		await using (ApplicationDbContext seedCtx = CreateAssertionContext())
 		{
+			seedCtx.Accounts.Add(new AccountEntity { Id = accountId, Name = "Existing account", IsActive = true });
 			seedCtx.Cards.Add(new CardEntity
 			{
+				AccountId = accountId,
 				Id = accountId,
 				CardCode = "OLD001",
 				Name = "Old Name",
@@ -152,7 +132,7 @@ public class BackupImportServiceTests : IDisposable
 		// Arrange
 		Guid categoryId = Guid.NewGuid();
 		string sqlitePath = CreateSqliteDatabaseWithCategories(
-			(categoryId, "Groceries", "Food and household items", true));
+			(categoryId, "Imported historical category", "Food and household items", true));
 
 		await using FileStream stream = File.OpenRead(sqlitePath);
 
@@ -197,8 +177,10 @@ public class BackupImportServiceTests : IDisposable
 		Guid existingId = Guid.NewGuid();
 		await using (ApplicationDbContext seedCtx = CreateAssertionContext())
 		{
+			seedCtx.Accounts.Add(new AccountEntity { Id = existingId, Name = "Existing account", IsActive = true });
 			seedCtx.Cards.Add(new CardEntity
 			{
+				AccountId = existingId,
 				Id = existingId,
 				CardCode = "EXIST",
 				Name = "Existing",
@@ -583,6 +565,16 @@ public class BackupImportServiceTests : IDisposable
 		using SqliteConnection conn = new($"Data Source={path};Pooling=False");
 		conn.Open();
 
+		using (var parents = conn.CreateCommand())
+		{
+			parents.CommandText = "CREATE TABLE accounts(id TEXT PRIMARY KEY,account_code TEXT,name TEXT,is_active INTEGER); CREATE TABLE receipts(id TEXT PRIMARY KEY,location TEXT,date TEXT,tax_amount TEXT,tax_amount_currency TEXT)";
+			parents.ExecuteNonQuery();
+			foreach (var row in transactions)
+			{
+				parents.CommandText = "INSERT OR IGNORE INTO accounts VALUES($card,'CARD01','Primary',1); INSERT OR IGNORE INTO receipts VALUES($receipt,'Walmart','2025-06-01','0','USD')";
+				parents.Parameters.Clear(); parents.Parameters.AddWithValue("$card", row.CardId.ToString()); parents.Parameters.AddWithValue("$receipt", row.ReceiptId.ToString()); parents.ExecuteNonQuery();
+			}
+		}
 		using SqliteCommand metaCmd = conn.CreateCommand();
 		metaCmd.CommandText = """
 			CREATE TABLE backup_metadata (key TEXT NOT NULL PRIMARY KEY, value TEXT NOT NULL);

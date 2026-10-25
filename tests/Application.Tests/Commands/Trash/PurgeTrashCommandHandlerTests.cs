@@ -10,12 +10,14 @@ public class PurgeTrashCommandHandlerTests
 	public async Task Handle_CallsPurgeAllDeletedAsync()
 	{
 		Mock<ITrashService> mockService = new();
+		PurgeTrashResult expected = new(2, 3, "History retained");
+		mockService.Setup(s => s.PurgeAllDeletedAsync(CancellationToken.None)).ReturnsAsync(expected);
 		PurgeTrashCommandHandler handler = new(mockService.Object);
 
 		PurgeTrashCommand command = new();
-		bool result = await handler.Handle(command, CancellationToken.None);
+		PurgeTrashResult result = await handler.Handle(command, CancellationToken.None);
 
-		Assert.True(result);
+		Assert.Equal(expected, result);
 		mockService.Verify(s => s.PurgeAllDeletedAsync(CancellationToken.None), Times.Once);
 	}
 }

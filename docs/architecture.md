@@ -329,3 +329,7 @@ creation, restoration and reparenting lock receipt parents and validate that the
 are active, allowing parents created/restored in the same atomic save. Receipt
 lifecycle repositories lock before loading cascade children. See
 [the receipt lifecycle locking obligations](duplicate-acceptance-invalidation.md).
+
+### Trash and classification history
+
+Empty Trash preserves receipts with any classification history, including history on deleted items. Their items, adjustments, payments, sync records and linked duplicate receipts remain restorable. Unrelated eligible trash is permanently deleted. The purge returns retained receipt and item counts with an explanation when anything remains. Cards and accounts remain available to restored payments; category and template names on receipt items are stored values, not foreign keys.

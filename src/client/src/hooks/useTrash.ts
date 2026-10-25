@@ -8,12 +8,17 @@ export function usePurgeTrash() {
   const queryClient = useQueryClient();
   return useSessionMutation({
     mutationFn: async () => {
-      const { error } = await client.POST("/api/trash/purge");
+      const { data, error } = await client.POST("/api/trash/purge");
       if (error) throw error;
+      return data;
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       invalidateDomainChange(queryClient, "trash-purge");
-      toast.success("Trash emptied successfully");
+      if (result) {
+        toast.info(`${result.retainedRecords} records kept in trash. ${result.reason}`);
+      } else {
+        toast.success("Trash emptied successfully");
+      }
     },
   });
 }

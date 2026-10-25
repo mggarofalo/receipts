@@ -21,13 +21,14 @@ public sealed class ClassificationService(IDbContextFactory<ApplicationDbContext
 	}
 
 	internal static async Task<PurchaseClassification> AssignInTransactionAsync(ApplicationDbContext db, string actor, Guid itemId,
-		ClassificationCommand command, bool enabled, TimeProvider clock, CancellationToken ct)
+		ClassificationCommand command, bool enabled, TimeProvider clock, CancellationToken ct, bool prepared = false)
 	{
 		if (string.IsNullOrWhiteSpace(actor) || command.OperationId == Guid.Empty || command.TaxonomyRevisionId == Guid.Empty
 			|| string.IsNullOrWhiteSpace(command.Reason) || command.Reason.Contains('\0'))
 		{ throw new TaxonomyException(400, "Actor, operation ID, taxonomy revision and reason are required."); }
 		if (!enabled) { throw new TaxonomyException(409, "Classification writes require completed migration and portable backup validation."); }
 		TaxonomyHeadEntity head = await db.TaxonomyHeads.FromSqlRaw("SELECT * FROM taxonomy.\"Head\" WHERE \"Id\" = 1 FOR UPDATE").SingleAsync(ct);
+		if (!prepared) { await RequireReadyAsync(db, ct); }
 		string hash = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new { itemId, command })));
 		ClassificationOperationEntity? replay = await db.ClassificationOperations.AsNoTracking().SingleOrDefaultAsync(x => x.Actor == actor && x.OperationId == command.OperationId, ct);
 		if (replay != null)
@@ -44,6 +45,17 @@ public sealed class ClassificationService(IDbContextFactory<ApplicationDbContext
 		if (current?.AssignmentId != command.ExpectedAssignmentId) { throw new TaxonomyException(409, "Classification changed. Refresh before retrying."); }
 		if (command.CategoryId is Guid category && !await db.TaxonomyNodes.AnyAsync(x => x.RevisionId == head.RevisionId && x.CategoryId == category && !x.Archived, ct))
 		{ throw new TaxonomyException(400, "Category must be selectable in the expected taxonomy revision."); }
+		PurchaseClassificationEntity assignment = await AppendAsync(db, actor, itemId, command.CategoryId, head.RevisionId,
+			current, command.OperationId, "manual", command.Reason, clock, ct);
+		db.ClassificationOperations.Add(new() { Actor = actor, OperationId = command.OperationId, RequestHash = hash, AssignmentId = assignment.Id });
+		await db.SaveChangesAsync(ct);
+		return await ReadAsync(db, assignment, ct);
+	}
+
+	private static async Task<PurchaseClassificationEntity> AppendAsync(ApplicationDbContext db, string actor, Guid itemId,
+		Guid? categoryId, Guid revisionId, CurrentClassificationEntity? current, Guid operationId, string source, string reason,
+		TimeProvider clock, CancellationToken ct, string? legacyCategory = null, string? legacySubcategory = null, string? legacyResolution = null)
+	{
 		long sequence = current == null ? 1 : 1 + await db.Classifications.Where(x => x.Id == current.AssignmentId).Select(x => x.Sequence).SingleAsync(ct);
 		// Persist and return the same PostgreSQL microsecond precision so retries reproduce the original result exactly.
 		DateTimeOffset now = clock.GetUtcNow();
@@ -54,21 +66,21 @@ public sealed class ClassificationService(IDbContextFactory<ApplicationDbContext
 			ReceiptItemId = itemId,
 			Sequence = sequence,
 			PreviousAssignmentId = current?.AssignmentId,
-			CategoryId = command.CategoryId,
-			TaxonomyRevisionId = head.RevisionId,
+			CategoryId = categoryId,
+			TaxonomyRevisionId = revisionId,
 			RecordedAt = now,
 			Actor = actor,
-			Source = "manual",
-			Reason = command.Reason,
-			OperationId = command.OperationId
+			Source = source,
+			Reason = reason,
+			OperationId = operationId,
+			LegacyCategory = legacyCategory,
+			LegacySubcategory = legacySubcategory,
+			LegacyResolution = legacyResolution
 		};
 		db.Classifications.Add(assignment);
 		if (current == null) { db.CurrentClassifications.Add(new() { ReceiptItemId = itemId, AssignmentId = assignment.Id }); }
 		else { current.AssignmentId = assignment.Id; }
-		db.ClassificationOperations.Add(new() { Actor = actor, OperationId = command.OperationId, RequestHash = hash, AssignmentId = assignment.Id });
-		await db.SaveChangesAsync(ct);
-		PurchaseClassification result = await ReadAsync(db, assignment, ct);
-		return result;
+		return assignment;
 	}
 
 	internal static void RequireRequestId(IEnumerable<ReceiptItemEntity> items, Guid? requestId)
@@ -77,32 +89,90 @@ public sealed class ClassificationService(IDbContextFactory<ApplicationDbContext
 		{ throw new TaxonomyException(400, "Explicit aggregate classification requires a nonempty clientRequestId for atomic retries."); }
 	}
 
-	internal static async Task ProtectLegacyEditAsync(ApplicationDbContext db, ReceiptItemEntity incoming, ReceiptItemEntity stored, CancellationToken ct)
+	private sealed class AggregateState
 	{
-		if (incoming.Classification == null && (incoming.Category != stored.Category || incoming.Subcategory != stored.Subcategory)
-			&& await db.CurrentClassifications.AnyAsync(x => x.ReceiptItemId == stored.Id, ct))
-		{ throw new TaxonomyException(409, "This item has a versioned classification. Use an explicit classification choice to change its category."); }
+		public Guid? RevisionId { get; set; }
+		public List<TaxonomyNodeEntity> Nodes { get; set; } = [];
+		public HashSet<Guid> Changed { get; } = [];
+		public HashSet<Guid> Existing { get; } = [];
+	}
+	private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<ApplicationDbContext, AggregateState> Aggregates = new();
+
+	private static async Task RequireReadyAsync(ApplicationDbContext db, CancellationToken ct)
+	{
+		if (!await db.LegacyMigrations.AnyAsync(x => x.OperationKind == LegacyTaxonomyMigrationService.InitialOperationKind, ct))
+		{ throw new TaxonomyException(409, "Classification writes require a completed legacy backfill and portable backup validation."); }
+		if (await db.ReceiptItems.IgnoreQueryFilters().IgnoreAutoIncludes().AnyAsync(item =>
+			!db.CurrentClassifications.Any(current => current.ReceiptItemId == item.Id), ct))
+		{ throw new TaxonomyException(409, "Classification backfill is incomplete: existing receipt items have no assignment. Repair or restore the missing classification evidence before retrying."); }
+	}
+
+	internal static Task ProtectLegacyEditAsync(ApplicationDbContext db, ReceiptItemEntity incoming, ReceiptItemEntity stored, CancellationToken ct)
+	{
+		AggregateState state = Aggregates.GetOrCreateValue(db);
+		state.Existing.Add(stored.Id);
+		if (incoming.Classification == null && (incoming.Category != stored.Category || incoming.Subcategory != stored.Subcategory))
+		{ state.Changed.Add(stored.Id); }
+		return Task.CompletedTask;
 	}
 
 	internal static async Task PrepareAggregateAsync(ApplicationDbContext db, IEnumerable<ReceiptItemEntity> items, bool enabled, CancellationToken ct)
 	{
-		if (!items.Any(x => x.Classification != null)) { return; }
-		if (!enabled) { throw new TaxonomyException(409, "Classification writes require completed migration and portable backup validation."); }
-		await db.TaxonomyHeads.FromSqlRaw("SELECT * FROM taxonomy.\"Head\" WHERE \"Id\" = 1 FOR UPDATE").SingleAsync(ct);
+		bool explicitWrite = items.Any(x => x.Classification != null);
+		if (explicitWrite && !enabled)
+		{ throw new TaxonomyException(409, "Classification writes require completed migration and portable backup validation."); }
+		bool migrated = await db.LegacyMigrations.AnyAsync(x => x.OperationKind == LegacyTaxonomyMigrationService.InitialOperationKind, ct);
+		if (!explicitWrite && !migrated) { return; }
+		TaxonomyHeadEntity head = db.Database.IsNpgsql()
+			? await db.TaxonomyHeads.FromSqlRaw("SELECT * FROM taxonomy.\"Head\" WHERE \"Id\" = 1 FOR UPDATE").SingleAsync(ct)
+			: await db.TaxonomyHeads.SingleAsync(ct);
+		if (explicitWrite) { await RequireReadyAsync(db, ct); }
+		AggregateState state = Aggregates.GetOrCreateValue(db);
+		if (migrated)
+		{
+			state.RevisionId = head.RevisionId;
+			state.Nodes = await db.TaxonomyNodes.AsNoTracking().Where(x => x.RevisionId == head.RevisionId).ToListAsync(ct);
+		}
+	}
+
+	private static Guid? ResolveLegacy(AggregateState state, string? category, string? subcategory)
+	{
+		// Empty and dirty evidence remains distinct from a deliberate null choice.
+		if (string.IsNullOrEmpty(category)) { return null; }
+		var roots = state.Nodes.Where(x => x.ParentId == null && x.Name == category).ToList();
+		if (roots.Count != 1 || roots[0].Archived) { return null; }
+		if (subcategory == null) { return roots[0].CategoryId; }
+		var children = state.Nodes.Where(x => x.ParentId == roots[0].CategoryId && x.Name == subcategory).ToList();
+		return children.Count == 1 && !children[0].Archived ? children[0].CategoryId : null;
 	}
 
 	internal static async Task ApplyAggregateAsync(ApplicationDbContext db, IEnumerable<ReceiptItemEntity> items, bool enabled, CancellationToken ct)
 	{
+		AggregateState state = Aggregates.GetOrCreateValue(db);
 		foreach (ReceiptItemEntity item in items.OrderBy(x => x.Id))
 		{
-			if (item.Classification is not { } intent) { continue; }
-			string actor = db.ReceiptWriteActor ?? throw new TaxonomyException(400, "A signed-in actor is required for classification.");
-			PurchaseClassification result = await AssignInTransactionAsync(db, actor, item.Id,
-				new(intent.CategoryId, intent.TaxonomyRevisionId, intent.ExpectedAssignmentId, intent.OperationId, intent.Reason), enabled, TimeProvider.System, ct);
-			string category = result.Path.FirstOrDefault()?.Name ?? item.Category;
-			string? subcategory = result.Path.Skip(1).FirstOrDefault()?.Name;
-			if (intent.CategoryId != null && (item.Category != category || item.Subcategory != subcategory))
-			{ throw new TaxonomyException(409, "Legacy category labels contradict the explicit classification path."); }
+			if (item.Classification is { } intent)
+			{
+				string actor = db.ReceiptWriteActor ?? throw new TaxonomyException(400, "A signed-in actor is required for classification.");
+				PurchaseClassification result = await AssignInTransactionAsync(db, actor, item.Id,
+					new(intent.CategoryId, intent.TaxonomyRevisionId, intent.ExpectedAssignmentId, intent.OperationId, intent.Reason), enabled, TimeProvider.System, ct, prepared: true);
+				string category = result.Path.FirstOrDefault()?.Name ?? item.Category;
+				string? subcategory = result.Path.Skip(1).FirstOrDefault()?.Name;
+				if (intent.CategoryId != null && (item.Category != category || item.Subcategory != subcategory))
+				{ throw new TaxonomyException(409, "Legacy category labels contradict the explicit classification path."); }
+				continue;
+			}
+			if (state.RevisionId is not Guid revision) { continue; }
+			CurrentClassificationEntity? current = await db.CurrentClassifications.SingleOrDefaultAsync(x => x.ReceiptItemId == item.Id, ct);
+			if (state.Existing.Contains(item.Id) && !state.Changed.Contains(item.Id)) { continue; }
+			Guid? target = ResolveLegacy(state, item.Category, item.Subcategory);
+			if (state.Existing.Contains(item.Id) && target == null)
+			{ throw new TaxonomyException(409, "Legacy category labels do not identify one selectable root or two-level path. Refresh and use an explicit classification choice."); }
+			string legacyActor = db.ReceiptWriteActor ?? throw new TaxonomyException(400, "A signed-in actor is required for classification.");
+			await AppendAsync(db, legacyActor, item.Id, target, revision, current, Guid.NewGuid(), "legacy_write",
+				"Observed legacy category labels during receipt save.", TimeProvider.System, ct, item.Category, item.Subcategory,
+				target == null ? "unresolved_path" : "resolved_path");
+			await db.SaveChangesAsync(ct);
 		}
 	}
 
@@ -129,6 +199,6 @@ public sealed class ClassificationService(IDbContextFactory<ApplicationDbContext
 			path.Reverse();
 		}
 		return new(row.Id, row.ReceiptItemId, row.Sequence, row.PreviousAssignmentId, row.CategoryId, row.TaxonomyRevisionId,
-			row.RecordedAt, row.Actor, row.Source, row.Reason, row.OperationId, path);
+			row.RecordedAt, row.Actor, row.Source, row.Reason, row.OperationId, path, row.LegacyCategory, row.LegacySubcategory, row.LegacyResolution);
 	}
 }

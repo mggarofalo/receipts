@@ -17,7 +17,14 @@ namespace Infrastructure.IntegrationTests;
 
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class BackupCurationImportTests(PostgresFixture target) : IClassFixture<PostgresFixture>
+public partial class BackupCurationImportTests : IAsyncLifetime
+{
+	private readonly PostgresFixture target = new();
+	public Task InitializeAsync() => target.InitializeAsync();
+	public Task DisposeAsync() => target.DisposeAsync();
+}
+
+public partial class BackupCurationImportTests
 {
 	[Fact]
 	public async Task ImportCanonicalRename_WinsRaceWithOldNameWorker_AndQueuesRenamedTextForRebuild()
@@ -39,7 +46,7 @@ public class BackupCurationImportTests(PostgresFixture target) : IClassFixture<P
 			});
 			await seed.SaveChangesAsync();
 		}
-		using Artifact artifact = await Artifact.Create(5);
+		using Artifact artifact = await Artifact.Create(10, target);
 		artifact.Execute(
 			"INSERT INTO normalized_descriptions (id, canonical_name, status, created_at, display_label, nearest_neighbour_id, nearest_neighbour_similarity) VALUES ($id, 'Imported canonical name', 'Active', '2024-01-01T00:00:00Z', 'Imported label', NULL, NULL)",
 			("$id", canonicalId.ToString()));
@@ -67,7 +74,8 @@ public class BackupCurationImportTests(PostgresFixture target) : IClassFixture<P
 		await using (stream)
 		{
 			Task<BackupImportResult> import = importer.ImportFromSqliteAsync(stream, CancellationToken.None);
-			await importBarrier.CanonicalRead.Task.WaitAsync(TimeSpan.FromSeconds(10));
+			await Task.Delay(100);
+			import.IsCompleted.Should().BeFalse("restore must wait for the worker transaction before changing canonical text");
 			workerBarrier.Release.TrySetResult();
 			await Task.WhenAll(generation, import).WaitAsync(TimeSpan.FromSeconds(15));
 		}
@@ -102,7 +110,7 @@ public class BackupCurationImportTests(PostgresFixture target) : IClassFixture<P
 	[InlineData("different-active")]
 	[InlineData("same-tombstone")]
 	[InlineData("tombstone-and-active")]
-	public async Task ImportPairs_UsesSemanticIdentity_AndRepeatsWithoutDuplicateActives(string existing)
+	public async Task ImportPairs_PreservesSourceIdentity_AndRepeatsWithoutDuplicateActives(string existing)
 	{
 		Guid[] receipts = [.. new[] { Guid.NewGuid(), Guid.NewGuid() }.Order()];
 		Guid sourceId = Guid.NewGuid();
@@ -110,7 +118,7 @@ public class BackupCurationImportTests(PostgresFixture target) : IClassFixture<P
 		DateTimeOffset accepted = new(2024, 2, 1, 0, 0, 0, TimeSpan.Zero);
 		await using (ApplicationDbContext seed = target.CreateDbContext())
 		{
-			seed.Receipts.AddRange(receipts.Select(Receipt));
+			seed.Receipts.AddRange(receipts.Select(id => new ReceiptEntity { Id = id, Location = "Imported", Date = new(2024, 1, 1) }));
 			if (existing is "same-tombstone" or "tombstone-and-active")
 			{
 				seed.AcceptedDuplicatePairs.Add(new() { Id = sourceId, ReceiptIdA = receipts[0], ReceiptIdB = receipts[1], AcceptedAt = accepted.AddDays(-1), DeletedAt = accepted });
@@ -121,25 +129,56 @@ public class BackupCurationImportTests(PostgresFixture target) : IClassFixture<P
 			}
 			await seed.SaveChangesAsync();
 		}
-		using Artifact artifact = await Artifact.Create(5);
+		using Artifact artifact = await Artifact.Create(10, target);
 		artifact.AddReceipts(receipts);
 		artifact.AddPair(sourceId, receipts[0], receipts[1], accepted);
 
 		for (int pass = 0; pass < 2; pass++)
 		{
 			BackupImportResult result = await Import(artifact);
-			result.AcceptedDuplicatePairsCreated.Should().Be(0);
-			result.AcceptedDuplicatePairsUpdated.Should().Be(1);
+			result.AcceptedDuplicatePairsCreated.Should().Be(pass == 0 && existing == "different-active" ? 1 : 0);
+			result.AcceptedDuplicatePairsUpdated.Should().Be(pass == 0 && existing == "different-active" ? 0 : 1);
 		}
 
 		await using ApplicationDbContext read = target.CreateDbContext();
 		List<AcceptedDuplicatePairEntity> active = await read.AcceptedDuplicatePairs.Where(row => row.ReceiptIdA == receipts[0] && row.ReceiptIdB == receipts[1]).ToListAsync();
 		active.Should().ContainSingle();
-		active[0].Id.Should().Be(activeId);
+		active[0].Id.Should().Be(sourceId);
 		active[0].AcceptedAt.Should().Be(accepted);
-		if (existing == "tombstone-and-active")
+		if (activeId != sourceId)
 		{
-			(await read.AcceptedDuplicatePairs.IgnoreQueryFilters().SingleAsync(row => row.Id == sourceId)).DeletedAt.Should().NotBeNull();
+			(await read.AcceptedDuplicatePairs.IgnoreQueryFilters().SingleAsync(row => row.Id == activeId)).DeletedAt.Should().NotBeNull();
+		}
+	}
+
+	[Fact]
+	public async Task ImportPairs_RestoresSourceTombstoneAndActiveIdentity_WithoutRevivingHistory()
+	{
+		Guid[] receipts = [.. new[] { Guid.NewGuid(), Guid.NewGuid() }.Order()];
+		Guid historicalId = Guid.NewGuid(), activeId = Guid.NewGuid();
+		DateTimeOffset accepted = new(2024, 2, 1, 0, 0, 0, TimeSpan.Zero);
+		DateTimeOffset deleted = accepted.AddDays(1);
+		await using (ApplicationDbContext seed = target.CreateDbContext())
+		{
+			seed.Receipts.AddRange(receipts.Select(id => new ReceiptEntity { Id = id, Location = "Imported", Date = new(2024, 1, 1) }));
+			seed.AcceptedDuplicatePairs.Add(new() { Id = historicalId, ReceiptIdA = receipts[0], ReceiptIdB = receipts[1], AcceptedAt = accepted });
+			await seed.SaveChangesAsync();
+		}
+		using Artifact artifact = await Artifact.Create(10, target);
+		artifact.AddReceipts(receipts);
+		artifact.AddPair(historicalId, receipts[0], receipts[1], accepted, deleted);
+		artifact.AddPair(activeId, receipts[0], receipts[1], accepted.AddDays(2));
+		for (int pass = 0; pass < 2; pass++)
+		{
+			BackupImportResult result = await Import(artifact);
+			result.AcceptedDuplicatePairsCreated.Should().Be(pass == 0 ? 1 : 0);
+			result.AcceptedDuplicatePairsUpdated.Should().Be(pass == 0 ? 1 : 2);
+			await using ApplicationDbContext read = target.CreateDbContext();
+			(await read.AcceptedDuplicatePairs.SingleAsync()).Id.Should().Be(activeId);
+			var history = await read.AcceptedDuplicatePairs.IgnoreQueryFilters().ToListAsync();
+			history.Should().HaveCount(2);
+			history.Single(row => row.Id == historicalId).DeletedAt.Should().Be(deleted);
+			history.Single(row => row.Id == historicalId).AcceptedAt.Should().Be(accepted);
 		}
 	}
 
@@ -154,7 +193,7 @@ public class BackupCurationImportTests(PostgresFixture target) : IClassFixture<P
 			seed.AcceptedDuplicatePairs.Add(new() { Id = pairId, ReceiptIdA = receipts[0], ReceiptIdB = receipts[1], AcceptedAt = DateTimeOffset.UtcNow });
 			await seed.SaveChangesAsync();
 		}
-		using Artifact artifact = await Artifact.Create(5);
+		using Artifact artifact = await Artifact.Create(10, target);
 		artifact.AddReceipts(receipts); // Changes exact location, but supplies no new acknowledgment.
 
 		BackupImportResult result = await Import(artifact);
@@ -178,7 +217,7 @@ public class BackupCurationImportTests(PostgresFixture target) : IClassFixture<P
 			seed.AcceptedDuplicatePairs.Add(new() { Id = pairId, ReceiptIdA = ids[0], ReceiptIdB = ids[2], AcceptedAt = DateTimeOffset.UtcNow });
 			await seed.SaveChangesAsync();
 		}
-		using Artifact artifact = await Artifact.Create(5);
+		using Artifact artifact = await Artifact.Create(10, target);
 		artifact.AddReceipts(ids);
 		artifact.AddPair(pairId, ids[0], ids[1], DateTimeOffset.UtcNow);
 
@@ -196,7 +235,7 @@ public class BackupCurationImportTests(PostgresFixture target) : IClassFixture<P
 	public async Task ImportPairs_MissingEndpoint_RollsBackEntireImport()
 	{
 		Guid[] ids = [.. new[] { Guid.NewGuid(), Guid.NewGuid() }.Order()];
-		using Artifact artifact = await Artifact.Create(5);
+		using Artifact artifact = await Artifact.Create(10, target);
 		artifact.AddReceipts([ids[0]]);
 		artifact.AddPair(Guid.NewGuid(), ids[0], ids[1], DateTimeOffset.UtcNow);
 
@@ -213,7 +252,7 @@ public class BackupCurationImportTests(PostgresFixture target) : IClassFixture<P
 	public async Task ImportCanonicalForwardReference_PreservesNeighbourEvidenceBeforeLinkingItems()
 	{
 		Guid pending = Guid.NewGuid(), neighbour = Guid.NewGuid(), receipt = Guid.NewGuid(), item = Guid.NewGuid();
-		using Artifact artifact = await Artifact.Create(5);
+		using Artifact artifact = await Artifact.Create(10, target);
 		artifact.AddReceipts([receipt]);
 		artifact.Execute("INSERT INTO normalized_descriptions (id, canonical_name, status, created_at, display_label, nearest_neighbour_id, nearest_neighbour_similarity) VALUES ($id, $name, 'PendingReview', '2024-01-01T00:00:00Z', NULL, $neighbour, '0.78')", ("$id", pending.ToString()), ("$name", $"Pending {pending}"), ("$neighbour", neighbour.ToString()));
 		artifact.Execute("INSERT INTO normalized_descriptions (id, canonical_name, status, created_at, display_label, nearest_neighbour_id, nearest_neighbour_similarity) VALUES ($id, $name, 'Active', '2024-01-01T00:00:00Z', NULL, NULL, NULL)", ("$id", neighbour.ToString()), ("$name", $"Neighbour {neighbour}"));
@@ -234,7 +273,7 @@ public class BackupCurationImportTests(PostgresFixture target) : IClassFixture<P
 	[InlineData(2)]
 	[InlineData(3)]
 	[InlineData(4)]
-	public async Task LegacyFreshImport_DefaultsAbsentCuration_AndLeavesExistingDecisionsAlone(int version)
+	public async Task LegacyFreshImport_DefaultsAbsentCuration_AndLeavesUnrelatedReceiptDecisionsAlone(int version)
 	{
 		Guid receipt = Guid.NewGuid(), item = Guid.NewGuid(), template = Guid.NewGuid(), canonical = Guid.NewGuid();
 		Guid[] existingReceipts = [.. new[] { Guid.NewGuid(), Guid.NewGuid() }.Order()];
@@ -279,7 +318,7 @@ public class BackupCurationImportTests(PostgresFixture target) : IClassFixture<P
 	[Theory]
 	[InlineData(false)]
 	[InlineData(true)]
-	public async Task LegacyV4Upsert_PreservesAbsentCanonicalEvidence_AndInvalidatesOnlyChangedItemText(bool changed)
+	public async Task LegacyV4Merge_RejectsUnrelatedClassificationTarget_AndPreservesEvidence(bool changed)
 	{
 		Guid receipt = Guid.NewGuid(), item = Guid.NewGuid(), canonical = Guid.NewGuid(), neighbour = Guid.NewGuid(), template = Guid.NewGuid();
 		string canonicalName = $"Milk canonical {canonical}";
@@ -301,6 +340,44 @@ public class BackupCurationImportTests(PostgresFixture target) : IClassFixture<P
 		artifact.Execute("CREATE TABLE item_templates (id TEXT PRIMARY KEY, name TEXT, default_category TEXT, default_subcategory TEXT, default_unit_price TEXT, default_unit_price_currency TEXT, default_item_code TEXT, description TEXT)");
 		artifact.Execute("INSERT INTO item_templates VALUES ($id, $name, NULL, NULL, NULL, NULL, NULL, NULL)", ("$id", template.ToString()), ("$name", $"Updated template {template}"));
 
+		await FluentActions.Awaiting(() => Import(artifact)).Should().ThrowAsync<InvalidOperationException>().WithMessage("*fresh*");
+
+		await using ApplicationDbContext read = target.CreateDbContext();
+		ReceiptItemEntity stored = await read.ReceiptItems.SingleAsync(row => row.Id == item);
+		stored.NormalizedDescriptionId.Should().Be(canonical);
+		stored.NormalizedDescriptionMatchScore.Should().Be(0.79);
+		(await read.ItemTemplates.SingleAsync(row => row.Id == template)).NormalizedDescriptionId.Should().Be(canonical);
+		NormalizedDescriptionEntity row = await read.NormalizedDescriptions.SingleAsync(row => row.Id == canonical);
+		row.DisplayLabel.Should().Be($"Human label {canonical}");
+		row.NearestNeighbourId.Should().Be(neighbour);
+		row.NearestNeighbourSimilarity.Should().Be(0.86);
+		row.Status.Should().Be(NormalizedDescriptionStatus.Active);
+	}
+
+	[Theory]
+	[InlineData(false)]
+	[InlineData(true)]
+	public async Task CurrentMerge_RestoresCanonicalEvidence_AndExplicitItemDecisions(bool changed)
+	{
+		Guid receipt = Guid.NewGuid(), item = Guid.NewGuid(), canonical = Guid.NewGuid(), neighbour = Guid.NewGuid(), template = Guid.NewGuid();
+		string canonicalName = $"Milk canonical {canonical}";
+		await using (ApplicationDbContext seed = target.CreateDbContext())
+		{
+			seed.Receipts.Add(Receipt(receipt));
+			seed.NormalizedDescriptions.AddRange(
+				new() { Id = neighbour, CanonicalName = $"Neighbour {neighbour}", Status = NormalizedDescriptionStatus.Active, CreatedAt = DateTimeOffset.UtcNow },
+				new() { Id = canonical, CanonicalName = canonicalName, DisplayLabel = $"Human label {canonical}", Status = NormalizedDescriptionStatus.Active, CreatedAt = DateTimeOffset.UtcNow, NearestNeighbourId = neighbour, NearestNeighbourSimilarity = 0.86 });
+			seed.ReceiptItems.Add(new() { Id = item, ReceiptId = receipt, Description = "Milk", Quantity = 1, UnitPrice = 3, TotalAmount = 3, Category = "Food", NormalizedDescriptionId = canonical, NormalizedDescriptionMatchScore = 0.79 });
+			seed.ItemTemplates.Add(new() { Id = template, Name = $"Template {template}", NormalizedDescriptionId = canonical });
+			await seed.SaveChangesAsync();
+		}
+		using Artifact artifact = await Artifact.Create(10, target);
+		artifact.AddReceipts([receipt]);
+		artifact.AddItem(item, receipt, changed ? "Bread" : "Milk", changed ? null : canonical, changed ? null : 0.79);
+		artifact.Execute("INSERT INTO normalized_descriptions (id,canonical_name,status,created_at,display_label,nearest_neighbour_id,nearest_neighbour_similarity) VALUES ($id,$name,'Active','2024-01-01T00:00:00Z',$label,$neighbour,'0.86')", ("$id", canonical.ToString()), ("$name", canonicalName), ("$label", $"Human label {canonical}"), ("$neighbour", neighbour.ToString()));
+		artifact.Execute("INSERT INTO normalized_descriptions (id,canonical_name,status,created_at) VALUES ($id,$name,'Active','2024-01-01T00:00:00Z')", ("$id", neighbour.ToString()), ("$name", $"Neighbour {neighbour}"));
+		artifact.Execute("INSERT INTO item_templates(id,name,normalized_description_id) VALUES ($id,$name,$canonical)", ("$id", template.ToString()), ("$name", $"Updated template {template}"), ("$canonical", canonical.ToString()));
+
 		await Import(artifact);
 
 		await using ApplicationDbContext read = target.CreateDbContext();
@@ -312,7 +389,7 @@ public class BackupCurationImportTests(PostgresFixture target) : IClassFixture<P
 		row.DisplayLabel.Should().Be($"Human label {canonical}");
 		row.NearestNeighbourId.Should().Be(neighbour);
 		row.NearestNeighbourSimilarity.Should().Be(0.86);
-		row.Status.Should().Be(NormalizedDescriptionStatus.PendingReview);
+		row.Status.Should().Be(NormalizedDescriptionStatus.Active);
 	}
 
 	[Fact]
@@ -327,7 +404,7 @@ public class BackupCurationImportTests(PostgresFixture target) : IClassFixture<P
 				new() { Id = b, CanonicalName = $"Raw B {b}", DisplayLabel = x, CreatedAt = DateTimeOffset.UtcNow });
 			await seed.SaveChangesAsync();
 		}
-		using Artifact artifact = await Artifact.Create(5);
+		using Artifact artifact = await Artifact.Create(10, target);
 		artifact.Execute("INSERT INTO normalized_descriptions (id, canonical_name, status, created_at, display_label) VALUES ($id, $name, 'Active', '2024-01-01T00:00:00Z', $label)", ("$id", a.ToString()), ("$name", $"Raw A {a}"), ("$label", x));
 		artifact.Execute("INSERT INTO normalized_descriptions (id, canonical_name, status, created_at, display_label) VALUES ($id, $name, 'Active', '2024-01-01T00:00:00Z', $label)", ("$id", b.ToString()), ("$name", $"Raw B {b}"), ("$label", y));
 
@@ -356,7 +433,7 @@ public class BackupCurationImportTests(PostgresFixture target) : IClassFixture<P
 				new() { Id = outside, CanonicalName = $"Outside {outside}", DisplayLabel = taken, CreatedAt = DateTimeOffset.UtcNow });
 			await seed.SaveChangesAsync();
 		}
-		using Artifact artifact = await Artifact.Create(5);
+		using Artifact artifact = await Artifact.Create(10, target);
 		artifact.Execute("INSERT INTO accounts VALUES ($id, 'Earlier imported account', 1)", ("$id", account.ToString()));
 		artifact.Execute("INSERT INTO normalized_descriptions (id, canonical_name, status, created_at, display_label) VALUES ($id, $name, 'Active', '2024-01-01T00:00:00Z', $label)", ("$id", a.ToString()), ("$name", $"Raw {a}"), ("$label", taken));
 
@@ -384,7 +461,7 @@ public class BackupCurationImportTests(PostgresFixture target) : IClassFixture<P
 			seed.Receipts.Add(Receipt(externalReceipt));
 			await seed.SaveChangesAsync();
 		}
-		using Artifact artifact = await Artifact.Create(5);
+		using Artifact artifact = await Artifact.Create(10, target);
 		artifact.AddReceipts([receipt]);
 		artifact.Execute("INSERT INTO accounts VALUES ($id, 'Earlier imported account', 1)", ("$id", account.ToString()));
 		switch (relation)
@@ -519,6 +596,9 @@ public class BackupCurationImportTests(PostgresFixture target) : IClassFixture<P
 	private sealed class Artifact : IDisposable
 	{
 		private readonly int _version;
+		private PostgresFixture? _source;
+		private bool _completed;
+		private readonly Dictionary<Guid, DateTimeOffset> _pairTombstones = [];
 		private readonly SqliteConnection _sqlite;
 		public string Path { get; } = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"curation-import-{Guid.NewGuid():N}.db");
 		private Artifact(int version)
@@ -527,12 +607,13 @@ public class BackupCurationImportTests(PostgresFixture target) : IClassFixture<P
 			_sqlite = new(new SqliteConnectionStringBuilder { DataSource = Path, Pooling = false, ForeignKeys = false }.ToString());
 			_sqlite.Open();
 		}
-		public static async Task<Artifact> Create(int version)
+		public static async Task<Artifact> Create(int version, PostgresFixture? source = null)
 		{
 			Artifact artifact = new(version);
+			artifact._source = source;
 			if (version >= 5)
 			{
-				await BackupService.CreateSchemaAsync(artifact._sqlite, CancellationToken.None);
+				await BackupService.CreateSchemaAsync(artifact._sqlite, CancellationToken.None, version);
 			}
 			else if (version > 0)
 			{
@@ -560,8 +641,9 @@ public class BackupCurationImportTests(PostgresFixture target) : IClassFixture<P
 				Execute($"INSERT INTO receipts VALUES ($id, 'Imported', '2024-01-01', '0', 'USD'{(_version >= 4 ? ", NULL, NULL" : "")})", ("$id", id.ToString()));
 			}
 		}
-		public void AddPair(Guid id, Guid a, Guid b, DateTimeOffset accepted)
+		public void AddPair(Guid id, Guid a, Guid b, DateTimeOffset accepted, DateTimeOffset? deletedAt = null)
 		{
+			if (deletedAt.HasValue) { _pairTombstones.Add(id, deletedAt.Value); }
 			if (_version < 5)
 			{
 				Execute("CREATE TABLE accepted_duplicate_pairs (id TEXT PRIMARY KEY, receipt_id_a TEXT, receipt_id_b TEXT, accepted_at TEXT)");
@@ -587,7 +669,19 @@ public class BackupCurationImportTests(PostgresFixture target) : IClassFixture<P
 			}
 			command.ExecuteNonQuery();
 		}
-		public void CloseForRead() => _sqlite.Close();
+		public void CloseForRead()
+		{
+			if (_version >= 10 && !_completed)
+			{
+				CurrentBackupFixture.CompleteAsync(_sqlite, _source!).GetAwaiter().GetResult();
+				foreach (var (id, deletedAt) in _pairTombstones)
+				{
+					Execute("UPDATE portable_deletion_state SET payload=json_set(payload,'$.DeletedAt',$deleted) WHERE kind='accepted_duplicate_pairs' AND id=$id", ("$deleted", deletedAt.ToString("O")), ("$id", id.ToString()));
+				}
+				_completed = true;
+			}
+			_sqlite.Close();
+		}
 		public void Dispose()
 		{
 			_sqlite.Dispose();

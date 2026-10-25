@@ -16,6 +16,72 @@ namespace Infrastructure.IntegrationTests.Services;
 
 public sealed partial class ClassificationTests
 {
+	[Fact]
+	public async Task DeepAssignmentSurvivesUnchangedLegacyEchoAfterTaxonomyRename()
+	{
+		var seed = await SeedAsync();
+		Guid leaf = Guid.NewGuid();
+		var deep = await Tree().ChangeAsync(Actor, new(seed.Revision, Guid.NewGuid(), "Add deep node",
+				[new TaxonomyEdit("create", leaf, seed.Child, "Deep leaf")]));
+		await using var db = fixture.CreateDbContext();
+		var item = await db.ReceiptItems.AsNoTracking().SingleAsync(x => x.Id == seed.Item);
+		string rootName = deep.Nodes.Single(x => x.Id == seed.Root).Name;
+		item.Category = rootName; item.Subcategory = "Child";
+		item.Classification = new(leaf, deep.Id, seed.Assignment, Guid.NewGuid(), "Explicit deep choice");
+		var repository = new Infrastructure.Repositories.ReceiptItemRepository(new ActorFactory(fixture),
+				Options.Create(new ClassificationOptions { WritesEnabled = true }));
+		await repository.UpdateAsync([item], Guid.NewGuid(), default);
+		var original = (await Service().HistoryAsync(item.Id, null, 1)).Items.Single();
+		original.Path.Select(x => x.Id).Should().Equal(seed.Root, seed.Child, leaf);
+		var renamed = await Tree().ChangeAsync(Actor, new(deep.Id, Guid.NewGuid(), "Rename current root",
+				[new TaxonomyEdit("rename", seed.Root, Name: "Renamed " + Guid.NewGuid())]));
+		item.Classification = null; item.Description = "Fact edit retaining old labels";
+		item.UnitPrice += 1; item.TotalAmount = decimal.Round(item.Quantity * item.UnitPrice, 2, MidpointRounding.AwayFromZero);
+		await new Infrastructure.Repositories.ReceiptItemRepository(new ActorFactory(fixture)).UpdateAsync([item], default);
+		var history = await Service().HistoryAsync(item.Id, null, 10);
+		history.Items.Should().HaveCount(2);
+		history.Items.First().Should().BeEquivalentTo(original);
+		var stored = await db.ReceiptItems.AsNoTracking().SingleAsync(x => x.Id == item.Id);
+		stored.Category.Should().Be(rootName); stored.Subcategory.Should().Be("Child");
+		stored.Description.Should().Be(item.Description); stored.TotalAmount.Should().Be(item.TotalAmount);
+		(await db.CurrentClassifications.SingleAsync(x => x.ReceiptItemId == item.Id)).AssignmentId.Should().Be(original.Id);
+
+		// A changed lossy path must not infer the third-level target from the leaf's name.
+		item.Category = renamed.Nodes.Single(x => x.Id == seed.Root).Name;
+		item.Subcategory = "Deep leaf"; item.Description = "Rejected lossy edit";
+		Func<Task> rejected = () => repository.UpdateAsync([item], default);
+		(await rejected.Should().ThrowAsync<TaxonomyException>()).Which.Status.Should().Be(409);
+		(await db.ReceiptItems.AsNoTracking().SingleAsync(x => x.Id == item.Id)).Description.Should().Be(stored.Description);
+		(await Service().HistoryAsync(item.Id, null, 10)).Items.Should().BeEquivalentTo(history.Items);
+	}
+
+	[Fact]
+	public async Task LegacyCommitWinsAgainstExplicitAssignmentWaitingOnHeadWithoutLosingEitherHistory()
+	{
+		var seed = await SeedAsync();
+		await using var db = fixture.CreateDbContext();
+		var item = await db.ReceiptItems.AsNoTracking().SingleAsync(x => x.Id == seed.Item);
+		item.Category = await db.TaxonomyNodes.Where(x => x.RevisionId == seed.Revision && x.CategoryId == seed.Root).Select(x => x.Name).SingleAsync();
+		item.Subcategory = "Child"; item.Description = "Committed legacy edit";
+		var barrier = new CommitBarrier();
+		var legacy = new Infrastructure.Repositories.ReceiptItemRepository(new BarrierFactory(fixture, barrier)).UpdateAsync([item], default);
+		int blocker = await barrier.Entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
+		var explicitWrite = Service().AssignAsync(Actor, item.Id,
+				new(seed.Root, seed.Revision, seed.Assignment, Guid.NewGuid(), "Competing explicit choice"));
+		try { await WaitForDatabaseBlockAsync(blocker); explicitWrite.IsCompleted.Should().BeFalse(); }
+		finally { barrier.Release.TrySetResult(); }
+		await legacy;
+		Func<Task> rejected = async () => { await explicitWrite; };
+		(await rejected.Should().ThrowAsync<TaxonomyException>()).Which.Status.Should().Be(409);
+		var history = await Service().HistoryAsync(item.Id, null, 10);
+		history.Items.Should().HaveCount(2);
+		history.Items.First().Source.Should().Be("legacy_write");
+		history.Items.First().CategoryId.Should().Be(seed.Child);
+		history.Items.First().PreviousAssignmentId.Should().Be(seed.Assignment);
+		(await db.ReceiptItems.AsNoTracking().SingleAsync(x => x.Id == item.Id)).Description.Should().Be(item.Description);
+		(await db.CurrentClassifications.SingleAsync(x => x.ReceiptItemId == item.Id)).AssignmentId.Should().Be(history.Items.First().Id);
+	}
+
 	private sealed class CommitBarrier : DbTransactionInterceptor
 	{
 		public TaskCompletionSource<int> Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -55,15 +121,15 @@ public sealed partial class ClassificationTests
 			new(seed.Revision, Guid.NewGuid(), "Controlled archive", [new TaxonomyEdit("archive", seed.Root)]));
 		int blocker = await barrier.Entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
 		Task<PurchaseClassification> assignment = Service().AssignAsync(Actor, seed.Item,
-			new(seed.Child, seed.Revision, null, Guid.NewGuid(), "Blocked stale choice"));
+						new(seed.Child, seed.Revision, seed.Assignment, Guid.NewGuid(), "Blocked stale choice"));
 		try { await WaitForDatabaseBlockAsync(blocker); assignment.IsCompleted.Should().BeFalse(); }
 		finally { barrier.Release.TrySetResult(); }
 		var revision = await edit;
 		Func<Task> rejected = async () => { await assignment; };
 		(await rejected.Should().ThrowAsync<TaxonomyException>()).Which.Status.Should().Be(409);
 		await using var db = fixture.CreateDbContext();
-		(await db.Classifications.AnyAsync(x => x.ReceiptItemId == seed.Item)).Should().BeFalse();
-		(await db.CurrentClassifications.AnyAsync(x => x.ReceiptItemId == seed.Item)).Should().BeFalse();
+		(await db.Classifications.Where(x => x.ReceiptItemId == seed.Item).Select(x => x.Id).ToListAsync()).Should().Equal(seed.Assignment);
+		(await db.CurrentClassifications.SingleAsync(x => x.ReceiptItemId == seed.Item)).AssignmentId.Should().Be(seed.Assignment);
 		(await Tree().ReadAsync(null))!.Id.Should().Be(revision.Id);
 	}
 	[Fact]
@@ -76,14 +142,14 @@ public sealed partial class ClassificationTests
 		var deletion = new Infrastructure.Repositories.ReceiptRepository(new BarrierFactory(fixture, barrier)).DeleteAsync([receiptId], default);
 		int blocker = await barrier.Entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
 		Task<PurchaseClassification> assignment = Service().AssignAsync(Actor, seed.Item,
-			new(seed.Child, seed.Revision, null, Guid.NewGuid(), "Blocked deleted choice"));
+						new(seed.Child, seed.Revision, seed.Assignment, Guid.NewGuid(), "Blocked deleted choice"));
 		try { await WaitForDatabaseBlockAsync(blocker); assignment.IsCompleted.Should().BeFalse(); }
 		finally { barrier.Release.TrySetResult(); }
 		await deletion;
 		Func<Task> rejected = async () => { await assignment; };
 		(await rejected.Should().ThrowAsync<TaxonomyException>()).Which.Status.Should().Be(404);
-		(await db.Classifications.AnyAsync(x => x.ReceiptItemId == seed.Item)).Should().BeFalse();
-		(await db.CurrentClassifications.AnyAsync(x => x.ReceiptItemId == seed.Item)).Should().BeFalse();
+		(await db.Classifications.Where(x => x.ReceiptItemId == seed.Item).Select(x => x.Id).ToListAsync()).Should().Equal(seed.Assignment);
+		(await db.CurrentClassifications.SingleAsync(x => x.ReceiptItemId == seed.Item)).AssignmentId.Should().Be(seed.Assignment);
 		(await db.Receipts.AnyAsync(x => x.Id == receiptId)).Should().BeFalse();
 	}
 	[Theory]

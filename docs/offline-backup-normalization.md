@@ -50,7 +50,7 @@ prints status only. Input must be a closed standalone SQLite backup without WAL,
 SHM or journal sidecars. Inspection uses read-only SQLite, integrity/foreign-key
 checks, a writer-denying source handle and before/after source SHA-256.
 
-App-exported source formats 6, 8 and 9 are supported; apply publishes format 9.
+App-exported source formats 6, 8, 9 and 10 are supported. Apply preserves format 10 for current exports and publishes format 9 for older sources. Format 10 taxonomy, classification history, migration evidence and deletion rows are validated before and after transformation and preserved unchanged. Product normalization does not change classification. Unsupported future formats and schemas are rejected rather than rewritten.
 A previous offline output B cannot become a new source A: embedded offline lineage
 metadata or consolidation authority causes rejection. Preserve the original A,
 revise and separately review its manifest, and apply to a new output path instead.

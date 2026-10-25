@@ -1973,7 +1973,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Permanently delete all soft-deleted items */
+        /** Permanently delete eligible soft-deleted items */
         post: operations["PurgeTrash"];
         delete?: never;
         options?: never;
@@ -3215,6 +3215,25 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        PurgeTrashResult: {
+            /**
+             * Format: int32
+             * @description Deleted receipts retained to preserve classification history and linked records.
+             */
+            retainedReceipts: number;
+            /**
+             * Format: int32
+             * @description Deleted receipt items retained, including items on active receipts.
+             */
+            retainedItems: number;
+            /**
+             * Format: int32
+             * @description Total deleted records retained, including receipt children and duplicate annotations.
+             */
+            retainedRecords: number;
+            /** @description Why these receipts and their dependencies remain restorable in trash. */
+            reason: string;
+        };
         /** @description Manual assignment to any active node or explicit null. Writes are disabled until migration and portable backup validation. Source and actor are server owned. */
         ClassificationRequest: {
             /** Format: uuid */
@@ -3247,6 +3266,9 @@ export interface components {
             reason: string;
             /** Format: uuid */
             operationId: string;
+            legacyCategory?: string | null;
+            legacySubcategory?: string | null;
+            legacyResolution?: string | null;
             path: components["schemas"]["TaxonomyNodeResponse"][];
         };
         ClassificationHistoryResponse: {
@@ -11275,6 +11297,15 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description Eligible trash purged; classification history and linked receipts retained. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurgeTrashResult"];
+                };
+            };
             /** @description No Content */
             204: {
                 headers: {

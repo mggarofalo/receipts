@@ -5,7 +5,7 @@ namespace Application.Taxonomy;
 public sealed record ClassificationCommand(Guid? CategoryId, Guid TaxonomyRevisionId, Guid? ExpectedAssignmentId, Guid OperationId, string Reason);
 public sealed record PurchaseClassification(Guid Id, Guid ReceiptItemId, long Sequence, Guid? PreviousAssignmentId,
 	Guid? CategoryId, Guid TaxonomyRevisionId, DateTimeOffset RecordedAt, string Actor, string Source, string Reason,
-	Guid OperationId, IReadOnlyList<TaxonomyNode> Path);
+	Guid OperationId, IReadOnlyList<TaxonomyNode> Path, string? LegacyCategory = null, string? LegacySubcategory = null, string? LegacyResolution = null);
 public sealed record ClassificationHistory(IReadOnlyList<PurchaseClassification> Items, long? NextBeforeSequence);
 public sealed class ClassificationOptions { public bool WritesEnabled { get; set; } }
 public interface IClassificationService

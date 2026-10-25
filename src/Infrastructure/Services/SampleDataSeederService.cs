@@ -56,11 +56,17 @@ public static class SampleDataSeederService
 		ApplicationDbContext dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 		ILogger logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger(nameof(SampleDataSeederService));
 
+		await using var seedTransaction = dbContext.Database.IsRelational() ? await dbContext.Database.BeginTransactionAsync() : null;
+		await Infrastructure.Utilities.NormalizationWriteGuard.AcquireWriteGateAsync(dbContext, default);
+
 		if (await dbContext.SeedHistory.AnyAsync(s => s.SeedId == SampleDataSeedId))
 		{
 			logger.LogInformation("Seed operation '{SeedId}' already applied — skipping.", SampleDataSeedId);
 			return;
 		}
+
+		if (await dbContext.LegacyMigrations.AnyAsync())
+		{ throw new InvalidOperationException("Sample data cannot be seeded after legacy classification migration. Seed a fresh database before backfill."); }
 
 		logger.LogInformation("Generating sample dataset ({Years} years of history)...", YearsOfHistory);
 
@@ -86,6 +92,7 @@ public static class SampleDataSeederService
 		});
 
 		await dbContext.SaveChangesAsync();
+		if (seedTransaction is not null) { await seedTransaction.CommitAsync(); }
 
 		logger.LogInformation(
 			"Sample data seeded: {Accounts} accounts, {Cards} cards, {Receipts} receipts, "

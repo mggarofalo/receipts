@@ -31,7 +31,7 @@ internal static partial class PortableCatalogArchive
 		await using (SqliteCommand version = sqlite.CreateCommand())
 		{
 			version.CommandText = "SELECT value FROM backup_metadata WHERE key='export_version'";
-			Require(Convert.ToString(await version.ExecuteScalarAsync(ct)) == "9", "Consolidation requires format 9.");
+			Require(Convert.ToString(await version.ExecuteScalarAsync(ct)) is "9" or "10", "Consolidation requires format 9 or 10.");
 		}
 		Dictionary<Guid, string> targets = [];
 		await using (SqliteCommand command = sqlite.CreateCommand())
@@ -84,6 +84,7 @@ internal static partial class PortableCatalogArchive
 		if (version < 9) { return; }
 		await ValidateArchiveAsync(sqlite, ct);
 		List<Consolidation> records = await ValidateConsolidationsAsync(sqlite, ct);
+		Dictionary<Guid, Guid> archiveAssignments = await LoadLegacyAssignmentIdsAsync(sqlite, version, ct);
 		foreach (Consolidation record in records)
 		{
 			NormalizedDescriptionEntity? loser = await context.NormalizedDescriptions.FindAsync([record.RetiredId], ct);
@@ -113,7 +114,9 @@ internal static partial class PortableCatalogArchive
 				item.NormalizedDescriptionMatchScore = null;
 				item.NormalizationOrigin = "legacy_unknown";
 				item.NormalizationMappingId = null;
-				item.NormalizationAssignmentId = Guid.NewGuid();
+				// Install the archive's final legacy identity with the relink and proof invalidation.
+				item.NormalizationAssignmentId = archiveAssignments.TryGetValue(item.Id, out Guid assignmentId)
+					? assignmentId : Guid.NewGuid();
 				item.NormalizationReviewState = Domain.NormalizedDescriptions.NormalizationReviewState.NeedsReview;
 				item.NormalizationReviewReason = "legacy_unknown";
 				item.NormalizationExclusionReason = null;

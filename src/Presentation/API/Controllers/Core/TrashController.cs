@@ -1,5 +1,6 @@
 using API.Services;
 using Application.Commands.Trash.Purge;
+using Application.Interfaces.Services;
 using Asp.Versioning;
 using Mediator;
 using Microsoft.AspNetCore.Authorization;
@@ -16,13 +17,13 @@ namespace API.Controllers.Core;
 public class TrashController(IMediator mediator, ILogger<TrashController> logger, IEntityChangeNotifier notifier) : ControllerBase
 {
 	[HttpPost("purge")]
-	[EndpointSummary("Permanently delete all soft-deleted items")]
+	[EndpointSummary("Permanently delete eligible soft-deleted items")]
 	[Authorize(Policy = "RequireAdmin")]
-	public async Task<NoContent> PurgeTrash(CancellationToken cancellationToken = default)
+	public async Task<Results<Ok<PurgeTrashResult>, NoContent>> PurgeTrash(CancellationToken cancellationToken = default)
 	{
-		logger.LogWarning("PurgeTrash called — permanently deleting all soft-deleted items");
+		logger.LogWarning("PurgeTrash called — permanently deleting eligible soft-deleted items");
 		PurgeTrashCommand command = new();
-		await mediator.Send(command, cancellationToken);
+		PurgeTrashResult result = await mediator.Send(command, cancellationToken);
 
 		string[] entityTypes = ["receipt", "receipt-item", "transaction", "adjustment", "account", "category", "subcategory", "item-template"];
 		foreach (string entityType in entityTypes)
@@ -30,6 +31,7 @@ public class TrashController(IMediator mediator, ILogger<TrashController> logger
 			await notifier.NotifyAllChanged(entityType, "deleted");
 		}
 
-		return TypedResults.NoContent();
+		return result.RetainedRecords > 0 || result.RetainedReceipts > 0 || result.RetainedItems > 0
+			? TypedResults.Ok(result) : TypedResults.NoContent();
 	}
 }

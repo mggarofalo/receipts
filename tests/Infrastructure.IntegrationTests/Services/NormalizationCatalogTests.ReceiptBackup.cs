@@ -52,6 +52,17 @@ public sealed partial class NormalizationCatalogTests
 	[Fact]
 	public async Task ReceiptBackup_VersionSevenMappingsDoNotBlessImportedHistoryButCanRecognizeNewPurchases()
 	{
+		var isolated = new Infrastructure.IntegrationTests.Fixtures.PostgresFixture();
+		try
+		{
+			await isolated.InitializeAsync();
+			await new NormalizationCatalogTests(isolated).VersionSevenMappingsCoreAsync();
+		}
+		finally { await isolated.DisposeAsync(); }
+	}
+
+	private async Task VersionSevenMappingsCoreAsync()
+	{
 		await ResetAsync();
 		var target = await CanonicalAsync("Reviewed reusable product");
 		var saved = await EntryWriter().CreateAsync(EntryReceipt(), [], [EntryItem(new(ReceiptNormalizationIntentKind.ConfirmExisting, Guid.NewGuid(), NormalizationCatalogPolicy.Hash(Source), target.Id, target.NormalizationRevision, RememberSource: true))], [], CancellationToken.None);
