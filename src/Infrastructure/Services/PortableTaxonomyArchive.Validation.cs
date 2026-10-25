@@ -52,7 +52,8 @@ internal static partial class PortableTaxonomyArchive
 			var plan = DeserializeStrict<LegacyMigrationPlan>(m.PlanJson)
 				?? throw new InvalidDataException("Null migration plan.");
 			Require(plan.SourceDataset == m.SourceDataset && plan.OperationId == m.OperationId
-				&& plan.OperationKind == m.OperationKind && plan.Actor == m.Actor && plan.ObservedAt == m.ObservedAt
+				&& plan.OperationKind == m.OperationKind && plan.Actor == m.Actor && Utc(plan.ObservedAt)
+				&& StoredMigrationObservedAt(plan.ObservedAt) == m.ObservedAt
 				&& plan.RequestHash == m.RequestHash && plan.RevisionId == m.RevisionId && plan.CanCommit,
 				"Migration plan differs from metadata.");
 			// Recompute the deterministic result from its immutable source evidence, rather than trusting counts or outcomes.
@@ -103,6 +104,19 @@ internal static partial class PortableTaxonomyArchive
 			&& o.RevisionId == r.Id && o.AffectedCount == r.AffectedCount) || s.Migrations.Any(m => m.RevisionId == r.Id)), "Revision lacks its authoritative operation.");
 		Require(s.Assignments.All(a => s.ClassificationOperations.Any(o => o.AssignmentId == a.Id)
 			|| s.MigrationItems.Any(i => i.AssignmentId == a.Id) || a.Source == "legacy_write"), "Assignment lacks its authoritative operation.");
+	}
+
+	// The frozen plan (and its request hash) retains every .NET tick. Its relational
+	// timestamps use Npgsql's exact microsecond projection relative to PostgreSQL's
+	// epoch, with integer division toward zero. Do not normalize immutable evidence
+	// or accept a tolerance window: metadata must equal this one storage value.
+	private static DateTimeOffset StoredMigrationObservedAt(DateTimeOffset observedAt)
+	{
+		// Npgsql's default infinity conversion preserves the maximum-value sentinel.
+		if (observedAt == DateTimeOffset.MaxValue) { return observedAt; }
+		long epochTicks = new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero).Ticks;
+		long ticks = (observedAt.Ticks - epochTicks) / TimeSpan.TicksPerMicrosecond * TimeSpan.TicksPerMicrosecond + epochTicks;
+		return new DateTimeOffset(ticks, TimeSpan.Zero);
 	}
 	internal static async Task<List<DeletionState>> ReadDeletionStateAsync(SqliteConnection sqlite, State taxonomy, CancellationToken ct)
 	{
