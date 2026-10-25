@@ -43,6 +43,7 @@ public static class ApplicationConfiguration
 
 		services.AddControllers(options =>
 			{
+				options.ModelMetadataDetailsProviders.Add(new TaxonomyScalarLengthMetadata());
 				options.Filters.Add<FluentValidationActionFilter>();
 				options.Filters.Add<ResourceIdResultFilter>();
 			})

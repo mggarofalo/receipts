@@ -1855,6 +1855,171 @@ namespace Infrastructure.Migrations
                     b.ToTable("__SeedHistory", (string)null);
                 });
 
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.TaxonomyHeadEntity", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("RevisionId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RevisionId");
+
+                    b.ToTable("Head", "taxonomy", t =>
+                        {
+                            t.HasCheckConstraint("CK_TaxonomyHead_Singleton", "\"Id\" = 1");
+                        });
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            RevisionId = new Guid("e0450000-0000-0000-0000-000000000000")
+                        });
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.TaxonomyIdentityEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Identities", "taxonomy");
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.TaxonomyNodeEntity", b =>
+                {
+                    b.Property<Guid>("RevisionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CategoryId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("Archived")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Definition")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .UseCollation("C");
+
+                    b.Property<Guid?>("ParentId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("RevisionId", "CategoryId");
+
+                    b.HasIndex("CategoryId");
+
+                    b.HasIndex("RevisionId", "Name")
+                        .IsUnique()
+                        .HasFilter("NOT \"Archived\" AND \"ParentId\" IS NULL");
+
+                    b.HasIndex("RevisionId", "ParentId", "Name")
+                        .IsUnique()
+                        .HasFilter("NOT \"Archived\" AND \"ParentId\" IS NOT NULL");
+
+                    b.ToTable("Nodes", "taxonomy", t =>
+                        {
+                            t.HasCheckConstraint("CK_TaxonomyNode_DefinitionLength", "char_length(\"Definition\") <= 4000");
+
+                            t.HasCheckConstraint("CK_TaxonomyNode_NameLength", "char_length(\"Name\") BETWEEN 1 AND 200");
+                        });
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.TaxonomyOperationEntity", b =>
+                {
+                    b.Property<string>("Actor")
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("OperationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("AffectedCount")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("RecordedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("RevisionId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Actor", "OperationId");
+
+                    b.HasIndex("RevisionId");
+
+                    b.ToTable("Operations", "taxonomy");
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.TaxonomyRevisionEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Actor")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("AffectedCount")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("OperationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("PreviousRevisionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("RecordedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<long>("Sequence")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("WriteTransaction")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValueSql("txid_current()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PreviousRevisionId");
+
+                    b.HasIndex("Sequence")
+                        .IsUnique();
+
+                    b.ToTable("Revisions", "taxonomy");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("e0450000-0000-0000-0000-000000000000"),
+                            Actor = "system",
+                            AffectedCount = 0,
+                            OperationId = new Guid("e0450000-0000-0000-0000-000000000000"),
+                            Reason = "Empty taxonomy foundation; legacy import is separate.",
+                            RecordedAt = new DateTimeOffset(new DateTime(2026, 10, 25, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Sequence = 0L,
+                            WriteTransaction = 0L
+                        });
+                });
+
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole", b =>
                 {
                     b.Property<string>("Id")
@@ -2158,6 +2323,52 @@ namespace Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("RunId")
                         .OnDelete(DeleteBehavior.SetNull);
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.TaxonomyHeadEntity", b =>
+                {
+                    b.HasOne("Infrastructure.Entities.Taxonomy.TaxonomyRevisionEntity", null)
+                        .WithMany()
+                        .HasForeignKey("RevisionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.TaxonomyNodeEntity", b =>
+                {
+                    b.HasOne("Infrastructure.Entities.Taxonomy.TaxonomyIdentityEntity", null)
+                        .WithMany()
+                        .HasForeignKey("CategoryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Infrastructure.Entities.Taxonomy.TaxonomyRevisionEntity", null)
+                        .WithMany()
+                        .HasForeignKey("RevisionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Infrastructure.Entities.Taxonomy.TaxonomyNodeEntity", null)
+                        .WithMany()
+                        .HasForeignKey("RevisionId", "ParentId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.TaxonomyOperationEntity", b =>
+                {
+                    b.HasOne("Infrastructure.Entities.Taxonomy.TaxonomyRevisionEntity", null)
+                        .WithMany()
+                        .HasForeignKey("RevisionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.TaxonomyRevisionEntity", b =>
+                {
+                    b.HasOne("Infrastructure.Entities.Taxonomy.TaxonomyRevisionEntity", null)
+                        .WithMany()
+                        .HasForeignKey("PreviousRevisionId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>

@@ -34,17 +34,30 @@ public class MigrationSafetyTests(PostgresFixture fixture)
 		linked.NormalizedDescriptionId = canonical.Id;
 		unresolved.NormalizedDescriptionId = null;
 		var expectedFacts = (linked.Description, linked.Quantity, linked.UnitPrice, linked.TotalAmount);
-		await using var context = fixture.CreateDbContext();
+		await using MigrationDatabase database = await MigrationDatabase.CreateAsync(fixture, priorMigration);
+		await using var context = database.CreateDbContext();
 		var migrator = context.GetInfrastructure().GetRequiredService<IMigrator>();
 		try
 		{
-			context.AddRange(receipt, canonical, linked, unresolved);
-			await context.SaveChangesAsync();
+			await InsertReceiptAsync(context, receipt);
+			await context.Database.ExecuteSqlRawAsync(
+				"""INSERT INTO matching."NormalizedDescriptions" ("Id", "CanonicalName", "Status", "CreatedAt") VALUES ({0}, {1}, {2}, {3});""",
+				canonical.Id, canonical.CanonicalName, canonical.Status.ToString(), canonical.CreatedAt);
+			foreach (ReceiptItemEntity item in new[] { linked, unresolved })
+			{
+				await context.Database.ExecuteSqlRawAsync(
+					"""
+					INSERT INTO receipts."ReceiptItems"
+					("Id", "ReceiptId", "Description", "Quantity", "UnitPrice", "UnitPriceCurrency", "TotalAmount", "TotalAmountCurrency", "Category", "NormalizedDescriptionId")
+					VALUES ({0}, {1}, {2}, {3}, {4}, {5}, {6}, {7}, {8}, {9});
+					""",
+					item.Id, receipt.Id, item.Description, item.Quantity, item.UnitPrice, item.UnitPriceCurrency.ToString(),
+					item.TotalAmount, item.TotalAmountCurrency.ToString(), item.Category, item.NormalizedDescriptionId!);
+			}
 			context.ChangeTracker.Clear();
-			await migrator.MigrateAsync(priorMigration);
 			await migrator.MigrateAsync();
 
-			await using var verify = fixture.CreateDbContext();
+			await using var verify = database.CreateDbContext();
 			var persisted = await verify.ReceiptItems.SingleAsync(x => x.Id == linked.Id);
 			persisted.NormalizedDescriptionId.Should().Be(canonical.Id);
 			persisted.NormalizationOrigin.Should().Be("legacy_unknown");
@@ -55,7 +68,7 @@ public class MigrationSafetyTests(PostgresFixture fixture)
 		finally
 		{
 			await migrator.MigrateAsync();
-			await using var cleanup = fixture.CreateDbContext();
+			await using var cleanup = database.CreateDbContext();
 			await cleanup.ReceiptItems.IgnoreQueryFilters().Where(x => x.ReceiptId == receipt.Id).ExecuteDeleteAsync();
 			await cleanup.Receipts.IgnoreQueryFilters().Where(x => x.Id == receipt.Id).ExecuteDeleteAsync();
 			await cleanup.NormalizedDescriptions.IgnoreQueryFilters().Where(x => x.Id == canonical.Id).ExecuteDeleteAsync();
@@ -74,14 +87,21 @@ public class MigrationSafetyTests(PostgresFixture fixture)
 		Guid pendingRecordId = Guid.NewGuid();
 		Guid failedRecordId = Guid.NewGuid();
 
-		await using ApplicationDbContext context = fixture.CreateDbContext();
+		await using MigrationDatabase database = await MigrationDatabase.CreateAsync(fixture, priorMigration);
+		await using ApplicationDbContext context = database.CreateDbContext();
 		IMigrator migrator = context.GetInfrastructure().GetRequiredService<IMigrator>();
 		try
 		{
-			context.AddRange(account, card, receipt, transaction);
+			context.AddRange(account, card);
 			await context.SaveChangesAsync();
+			await InsertReceiptAsync(context, receipt);
+			await context.Database.ExecuteSqlRawAsync(
+				"""
+				INSERT INTO "Transactions" ("Id", "ReceiptId", "CardId", "Amount", "AmountCurrency", "Date")
+				VALUES ({0}, {1}, {2}, {3}, {4}, {5});
+				""",
+				transaction.Id, receipt.Id, card.Id, transaction.Amount, transaction.AmountCurrency.ToString(), transaction.Date);
 			context.ChangeTracker.Clear();
-			await migrator.MigrateAsync(priorMigration);
 			await context.Database.ExecuteSqlRawAsync(
 				"""
 				INSERT INTO ynab."YnabSyncRecords"
@@ -121,7 +141,7 @@ public class MigrationSafetyTests(PostgresFixture fixture)
 		finally
 		{
 			await migrator.MigrateAsync();
-			await using ApplicationDbContext cleanup = fixture.CreateDbContext();
+			await using ApplicationDbContext cleanup = database.CreateDbContext();
 			await cleanup.YnabSyncRecords.IgnoreQueryFilters()
 				.Where(row => row.Id == pendingRecordId || row.Id == failedRecordId).ExecuteDeleteAsync();
 			await cleanup.Transactions.IgnoreQueryFilters().Where(row => row.Id == transaction.Id).ExecuteDeleteAsync();
@@ -150,11 +170,11 @@ public class MigrationSafetyTests(PostgresFixture fixture)
 		ReceiptEntity receipt = ReceiptEntityGenerator.Generate();
 		TransactionEntity transaction = TransactionEntityGenerator.Generate(receipt.Id, account.Id, card.Id);
 
-		await using ApplicationDbContext migrationContext = fixture.CreateDbContext();
+		await using MigrationDatabase database = await MigrationDatabase.CreateAsync(fixture, priorMigration);
+		await using ApplicationDbContext migrationContext = database.CreateDbContext();
 		IMigrator migrator = migrationContext.GetInfrastructure().GetRequiredService<IMigrator>();
 		try
 		{
-			await migrator.MigrateAsync(priorMigration);
 			migrationContext.AddRange(account, card);
 			await migrationContext.SaveChangesAsync();
 			// Seed the historical receipt shape; the current EF model includes revision
@@ -210,7 +230,9 @@ public class MigrationSafetyTests(PostgresFixture fixture)
 				YnabSyncType.TransactionPush.ToString(), YnabSyncStatus.Synced.ToString());
 			migrationContext.ChangeTracker.Clear();
 
-			await migrator.MigrateAsync();
+			// Exercise the historical Down guard before the later taxonomy migration,
+			// whose intentional rollback refusal would otherwise mask this guard.
+			await migrator.MigrateAsync("20261024161720_IsolateCanonicalBusinessRevision");
 
 			(await migrationContext.YnabAccountMappings.SingleAsync(row => row.Id == accountMappingAId))
 				.YnabBudgetId.Should().Be(budgetA);
@@ -257,7 +279,7 @@ public class MigrationSafetyTests(PostgresFixture fixture)
 			(await migrationContext.YnabCategoryMappings.CountAsync(row => row.ReceiptsCategory == receiptsCategory)).Should().Be(2);
 			(await migrationContext.YnabSyncRecords.CountAsync(row => row.LocalTransactionId == transaction.Id)).Should().Be(2);
 
-			await AssertUniqueViolationAsync(async duplicateContext =>
+			await AssertUniqueViolationAsync(database, async duplicateContext =>
 			{
 				duplicateContext.YnabAccountMappings.Add(new YnabAccountMappingEntity
 				{
@@ -293,7 +315,7 @@ public class MigrationSafetyTests(PostgresFixture fixture)
 				""")
 				.SingleAsync();
 			scopedIndexCount.Should().Be(3);
-			await AssertUniqueViolationAsync(async duplicateContext =>
+			await AssertUniqueViolationAsync(database, async duplicateContext =>
 			{
 				duplicateContext.YnabCategoryMappings.Add(new YnabCategoryMappingEntity
 				{
@@ -323,7 +345,7 @@ public class MigrationSafetyTests(PostgresFixture fixture)
 		finally
 		{
 			await migrator.MigrateAsync();
-			await using ApplicationDbContext cleanup = fixture.CreateDbContext();
+			await using ApplicationDbContext cleanup = database.CreateDbContext();
 			await cleanup.YnabSyncRecords.IgnoreQueryFilters()
 				.Where(row => row.LocalTransactionId == transaction.Id).ExecuteDeleteAsync();
 			await cleanup.YnabCategoryMappings
@@ -342,9 +364,17 @@ public class MigrationSafetyTests(PostgresFixture fixture)
 		}
 	}
 
-	private async Task AssertUniqueViolationAsync(Func<ApplicationDbContext, Task> action)
+	private static Task InsertReceiptAsync(ApplicationDbContext context, ReceiptEntity receipt) =>
+		context.Database.ExecuteSqlRawAsync(
+			"""
+			INSERT INTO "Receipts" ("Id", "Location", "Date", "TaxAmount", "TaxAmountCurrency")
+			VALUES ({0}, {1}, {2}, {3}, {4});
+			""",
+			receipt.Id, receipt.Location, receipt.Date, receipt.TaxAmount, receipt.TaxAmountCurrency.ToString());
+
+	private static async Task AssertUniqueViolationAsync(MigrationDatabase database, Func<ApplicationDbContext, Task> action)
 	{
-		await using ApplicationDbContext context = fixture.CreateDbContext();
+		await using ApplicationDbContext context = database.CreateDbContext();
 		Func<Task> act = () => action(context);
 		DbUpdateException exception = (await act.Should().ThrowAsync<DbUpdateException>()).Which;
 		exception.InnerException.Should().BeOfType<PostgresException>()
@@ -353,7 +383,7 @@ public class MigrationSafetyTests(PostgresFixture fixture)
 
 	// RECEIPTS-574: the PromoteTransactionCardIdNotNull migration includes a pre-check
 	// guard that refuses to apply if any Transactions.CardId IS NULL rows remain.
-	// This test exercises that guard by rolling the DB back to the prior (nullable)
+	// This test exercises that guard on a fresh database at the prior (nullable)
 	// state, inserting a row with NULL CardId, then attempting to reapply — and
 	// asserts that the migration throws with the specific guard error message.
 	[Fact]
@@ -361,11 +391,11 @@ public class MigrationSafetyTests(PostgresFixture fixture)
 	{
 		const string priorMigration = "20260419022200_AddCardIdToTransactions";
 
-		await using ApplicationDbContext context = fixture.CreateDbContext();
+		await using MigrationDatabase database = await MigrationDatabase.CreateAsync(fixture, priorMigration);
+		await using ApplicationDbContext context = database.CreateDbContext();
 		IMigrator migrator = context.GetInfrastructure().GetRequiredService<IMigrator>();
 
-		// Roll back to the pre-574 state where CardId is nullable.
-		await migrator.MigrateAsync(priorMigration);
+		// The isolated database starts at the pre-574 state where CardId is nullable.
 
 		// Insert a minimal Transaction row with NULL CardId. Use raw SQL to bypass EF's
 		// non-null CardId constraint on the current entity model.
@@ -395,8 +425,7 @@ public class MigrationSafetyTests(PostgresFixture fixture)
 		// SQL against the unqualified table name (resolved via search_path to public):
 		// the forward migration aborted at the 574 guard, before RECEIPTS-746 re-applied,
 		// so the tables are still in `public` — not the `receipts` schema the EF model
-		// maps `context.Transactions` to. (RECEIPTS-746's Down now correctly returns the
-		// tables to public, which is what makes the schema-qualified query miss them here.)
+		// maps `context.Transactions` to.
 		await context.Database.OpenConnectionAsync();
 		try
 		{
@@ -415,9 +444,7 @@ public class MigrationSafetyTests(PostgresFixture fixture)
 			await context.Database.CloseConnectionAsync();
 		}
 
-		// Clean up: delete the offending row so later tests (which share the fixture)
-		// are not blocked, then reapply the migration to leave the fixture in its
-		// canonical post-migration state.
+		// Remove the offending row and verify the same database can migrate forward.
 		await context.Database.ExecuteSqlRawAsync("""DELETE FROM "Transactions" WHERE "Id" = {0};""", txId);
 		await context.Database.ExecuteSqlRawAsync("""DELETE FROM "Receipts" WHERE "Id" = {0};""", receiptId);
 		await context.Database.ExecuteSqlRawAsync("""DELETE FROM "Accounts" WHERE "Id" = {0};""", accountId);
@@ -434,11 +461,11 @@ public class MigrationSafetyTests(PostgresFixture fixture)
 	{
 		const string priorMigration = "20260419022200_AddCardIdToTransactions";
 
-		await using ApplicationDbContext context = fixture.CreateDbContext();
+		await using MigrationDatabase database = await MigrationDatabase.CreateAsync(fixture, priorMigration);
+		await using ApplicationDbContext context = database.CreateDbContext();
 		IMigrator migrator = context.GetInfrastructure().GetRequiredService<IMigrator>();
 
-		// Roll back to a state where Cards.AccountId is nullable.
-		await migrator.MigrateAsync(priorMigration);
+		// The isolated database starts with nullable Cards.AccountId.
 
 		// Insert an orphan Card directly — no matching Account, AccountId NULL.
 		Guid cardId = Guid.NewGuid();
