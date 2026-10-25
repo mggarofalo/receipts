@@ -294,6 +294,10 @@ public class PushYnabTransactionsCommandHandler(
 
 			YnabCreateTransactionRequest persistedRequest = claim.Operation.Request
 				?? throw new InvalidOperationException($"Claimed YNAB operation {claim.Operation.SyncRecordId} has no request snapshot.");
+			// Another attempt may have completed between preparation and our claim.
+			// Its outcome was not observed, so only recovery is safe in that case.
+			hasAmbiguousPredecessor |= claim.Operation.AttemptCount != operation.AttemptCount + 1;
+			bool createStarted = false;
 
 			try
 			{
@@ -336,9 +340,15 @@ public class PushYnabTransactionsCommandHandler(
 					}
 				}
 
+				if (hasAmbiguousPredecessor)
+				{
+					throw new InvalidOperationException("The earlier send could not be found by its saved reference. Review YNAB before resolving this operation; no new transaction was sent.");
+				}
+
 				YnabCreateTransactionResponse ynabResponse;
 				try
 				{
+					createStarted = true;
 					ynabResponse = await ynabApiClient.CreateTransactionAsync(
 						budgetId, persistedRequest, cancellationToken);
 				}
@@ -460,11 +470,11 @@ public class PushYnabTransactionsCommandHandler(
 			}
 			catch (Exception ex)
 			{
-				YnabSyncStatus failureStatus = createDefinitelyRejected && !hasAmbiguousPredecessor
+				YnabSyncStatus failureStatus = (createDefinitelyRejected || !createStarted) && !hasAmbiguousPredecessor
 					? YnabSyncStatus.Failed
 					: YnabSyncStatus.Unknown;
 				string operationError = failureStatus == YnabSyncStatus.Unknown
-					? $"YNAB may have accepted the transaction: {ex.Message}. Retry to reconcile the saved import ID before another send."
+					? $"YNAB may have accepted the transaction: {ex.Message}. Retry to look up the saved operation reference."
 					: ex.Message;
 				try
 				{

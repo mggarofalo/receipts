@@ -10,6 +10,7 @@ using Infrastructure.Ynab.Models;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Polly.CircuitBreaker;
 
 namespace Infrastructure.Services;
 
@@ -172,11 +173,11 @@ public class YnabApiClient(
 			AccountId = request.AccountId,
 			Date = request.Date.ToString("yyyy-MM-dd"),
 			Amount = request.Amount,
-			Memo = request.Memo,
+			Memo = BuildPushMemo(request.Memo, request.ImportId),
 			PayeeName = request.PayeeName,
 			CategoryId = request.CategoryId,
 			Approved = request.Approved,
-			ImportId = request.ImportId,
+			Cleared = "uncleared",
 		};
 
 		if (request.SubTransactions is { Count: > 0 })
@@ -196,8 +197,16 @@ public class YnabApiClient(
 
 		YnabSaveTransactionWrapper body = new() { Transaction = transactionDto };
 
-		YnabCreateTransactionResponseEnvelope envelope = await PostAsync<YnabSaveTransactionWrapper, YnabCreateTransactionResponseEnvelope>(
-			$"budgets/{Uri.EscapeDataString(budgetId)}/transactions", body, cancellationToken);
+		YnabCreateTransactionResponseEnvelope envelope;
+		try
+		{
+			envelope = await PostAsync<YnabSaveTransactionWrapper, YnabCreateTransactionResponseEnvelope>(
+				$"budgets/{Uri.EscapeDataString(budgetId)}/transactions", body, cancellationToken);
+		}
+		catch (BrokenCircuitException ex)
+		{
+			throw new YnabRequestNotSentException("The YNAB circuit is open; the transaction was not sent. Retry after the connection recovers.", ex);
+		}
 
 		string transactionId = envelope.Data.TransactionIds.FirstOrDefault()
 			?? envelope.Data.Transaction?.Id
@@ -253,10 +262,38 @@ public class YnabApiClient(
 			return null;
 		}
 
-		YnabTransactionDto? match = envelope.Data.Transactions
-			.FirstOrDefault(t => !t.Deleted && t.AccountId == accountId && t.ImportId == importId);
+		// ImportId remains the durable local operation key. Older sends used it as
+		// a YNAB import_id; manual transactions carry the same key in their memo.
+		string marker = PushMemoMarker(importId);
+		List<string> matches = envelope.Data.Transactions
+			.Where(t => !t.Deleted && t.AccountId == accountId &&
+				(t.ImportId == importId || t.Memo?.Contains(marker, StringComparison.Ordinal) == true))
+			.Select(t => t.Id).Distinct(StringComparer.Ordinal).ToList();
+		if (matches.Count > 1)
+		{
+			throw new InvalidOperationException("Multiple YNAB transactions contain the saved operation reference. Review them before retrying.");
+		}
+		return matches.SingleOrDefault();
+	}
 
-		return match?.Id;
+	private static string PushMemoMarker(string operationId) => $"[Receipts push:{operationId}]";
+
+	private static string? BuildPushMemo(string? memo, string? operationId)
+	{
+		if (string.IsNullOrWhiteSpace(operationId))
+		{
+			return memo;
+		}
+
+		// Keep the complete recovery reference at the start, even for long payees.
+		string marker = PushMemoMarker(operationId);
+		const int maxLength = 200;
+		if (marker.Length > maxLength)
+		{
+			throw new ArgumentException("The YNAB operation reference exceeds the memo limit.", nameof(operationId));
+		}
+		string result = string.IsNullOrWhiteSpace(memo) ? marker : $"{marker} {memo}";
+		return result.Length <= maxLength ? result : result[..maxLength];
 	}
 
 	public async Task UpdateTransactionMemoAsync(string budgetId, string transactionId, string memo, CancellationToken cancellationToken)

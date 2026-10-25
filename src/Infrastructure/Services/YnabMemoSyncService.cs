@@ -307,29 +307,45 @@ public class YnabMemoSyncService(
 
 	internal static string FormatMemo(string? existingMemo, string receiptLink)
 	{
+		// Memo sync must not erase a push's recovery identity while adding a link.
+		if (existingMemo?.StartsWith("[Receipts push:", StringComparison.Ordinal) == true)
+		{
+			int markerEnd = existingMemo.IndexOf(']');
+			if (markerEnd >= 0 && markerEnd < YnabMemoMaxLength - 1)
+			{
+				string marker = existingMemo[..(markerEnd + 1)];
+				return marker + " " + FormatMemoCore(existingMemo[(markerEnd + 1)..].TrimStart(),
+					receiptLink, YnabMemoMaxLength - marker.Length - 1);
+			}
+		}
+		return FormatMemoCore(existingMemo, receiptLink, YnabMemoMaxLength);
+	}
+
+	private static string FormatMemoCore(string? existingMemo, string receiptLink, int maxLength)
+	{
 		string receiptTag = $"Receipt: {receiptLink}";
 
 		if (string.IsNullOrWhiteSpace(existingMemo))
 		{
-			return receiptTag.Length > YnabMemoMaxLength
-				? receiptTag[..YnabMemoMaxLength]
+			return receiptTag.Length > maxLength
+				? receiptTag[..maxLength]
 				: receiptTag;
 		}
 
 		string combined = $"{existingMemo}{MemoSeparator}{receiptTag}";
-		if (combined.Length <= YnabMemoMaxLength)
+		if (combined.Length <= maxLength)
 		{
 			return combined;
 		}
 
 		// Truncate existing memo to fit the receipt tag
 		int receiptTagWithSeparatorLength = MemoSeparator.Length + receiptTag.Length;
-		int availableForExisting = YnabMemoMaxLength - receiptTagWithSeparatorLength;
+		int availableForExisting = maxLength - receiptTagWithSeparatorLength;
 
 		if (availableForExisting <= 0)
 		{
 			// Receipt tag alone exceeds limit — just use the tag truncated
-			return receiptTag[..YnabMemoMaxLength];
+			return receiptTag[..maxLength];
 		}
 
 		string truncatedExisting = existingMemo[..availableForExisting];
