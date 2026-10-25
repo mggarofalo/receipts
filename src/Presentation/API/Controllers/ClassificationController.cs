@@ -60,6 +60,9 @@ public sealed class ClassificationController(IClassificationService service) : C
 		Source = row.Source,
 		Reason = row.Reason,
 		OperationId = row.OperationId,
+		LegacyCategory = row.LegacyCategory,
+		LegacySubcategory = row.LegacySubcategory,
+		LegacyResolution = row.LegacyResolution,
 		Path = row.Path.Select(node => new TaxonomyNodeResponse { Id = node.Id, ParentId = node.ParentId, Name = node.Name, Definition = node.Definition, Archived = node.Archived }).ToList()
 	};
 }

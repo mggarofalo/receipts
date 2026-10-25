@@ -487,8 +487,8 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           <AlertDialogHeader>
             <AlertDialogTitle>Empty Trash?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete every item in the Recycle Bin. This
-              action cannot be undone.
+              Eligible items will be permanently deleted. Receipts with classification
+              history and their linked records will stay in trash and can be restored.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

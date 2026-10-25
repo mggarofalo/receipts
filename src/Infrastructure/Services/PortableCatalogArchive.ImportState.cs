@@ -9,6 +9,22 @@ namespace Infrastructure.Services;
 
 internal static partial class PortableCatalogArchive
 {
+	internal static async Task<Dictionary<Guid, Guid>> LoadLegacyAssignmentIdsAsync(SqliteConnection sqlite, int version, CancellationToken ct)
+	{
+		Dictionary<Guid, Guid> assignments = [];
+		if (version < 10) { return assignments; }
+		await using SqliteCommand command = sqlite.CreateCommand();
+		command.CommandText = "SELECT payload FROM normalization_catalog WHERE kind='assignment'";
+		await using SqliteDataReader reader = await command.ExecuteReaderAsync(ct);
+		while (await reader.ReadAsync(ct))
+		{
+			Assignment assignment = Read<Assignment>(reader.GetString(0));
+			if (assignment.Origin == "legacy_unknown" && assignment.MappingId is null && assignment.AssignmentId is Guid id)
+			{ assignments.Add(assignment.Id, id); }
+		}
+		return assignments;
+	}
+
 	private sealed record ImportState(
 		Dictionary<Guid, ReceiptItemEntity> Items,
 		Dictionary<Guid, string> Locations,
@@ -60,10 +76,10 @@ internal static partial class PortableCatalogArchive
 
 		// The normalization write gate keeps these snapshots current until commit.
 		// Key them by archive references, never by the whole target database.
-		Dictionary<Guid, ReceiptItemEntity> items = await context.ReceiptItems.IgnoreAutoIncludes()
+		Dictionary<Guid, ReceiptItemEntity> items = await (version >= 10 ? context.ReceiptItems.IgnoreQueryFilters() : context.ReceiptItems).IgnoreAutoIncludes()
 			.Where(item => itemIds.Contains(item.Id)).ToDictionaryAsync(item => item.Id, ct);
 		Guid[] receiptIds = items.Values.Select(item => item.ReceiptId).Distinct().ToArray();
-		Dictionary<Guid, string> locations = await context.Receipts.IgnoreAutoIncludes().AsNoTracking()
+		Dictionary<Guid, string> locations = await (version >= 10 ? context.Receipts.IgnoreQueryFilters() : context.Receipts).IgnoreAutoIncludes().AsNoTracking()
 			.Where(receipt => receiptIds.Contains(receipt.Id)).Select(receipt => new { receipt.Id, receipt.Location })
 			.ToDictionaryAsync(receipt => receipt.Id, receipt => receipt.Location, ct);
 		mappingIds.UnionWith(items.Values.Where(item => item.NormalizationMappingId.HasValue)

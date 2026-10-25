@@ -59,7 +59,7 @@ public class BackupServiceTests : IDisposable
 		await using SqliteCommand versionCmd = conn.CreateCommand();
 		versionCmd.CommandText = "SELECT value FROM backup_metadata WHERE key='export_version'";
 		string? version = (string?)await versionCmd.ExecuteScalarAsync();
-		version.Should().Be("9");
+		version.Should().Be("10");
 	}
 
 	[Fact]
@@ -106,7 +106,7 @@ public class BackupServiceTests : IDisposable
 	}
 
 	[Fact]
-	public async Task ExportToSqliteAsync_WithCategories_ExcludesSoftDeleted()
+	public async Task ExportToSqliteAsync_WithCategories_IncludesSoftDeleted()
 	{
 		// Arrange
 		await using (ApplicationDbContext ctx = await _dbContextFactory.CreateDbContextAsync())
@@ -128,9 +128,9 @@ public class BackupServiceTests : IDisposable
 		await using SqliteCommand cmd = conn.CreateCommand();
 		cmd.CommandText = "SELECT COUNT(*) FROM categories";
 		long count = (long)(await cmd.ExecuteScalarAsync())!;
-		count.Should().Be(1);
+		count.Should().Be(2);
 
-		cmd.CommandText = "SELECT name FROM categories";
+		cmd.CommandText = "SELECT name FROM categories WHERE name='Active'";
 		string? name = (string?)await cmd.ExecuteScalarAsync();
 		name.Should().Be("Active");
 	}

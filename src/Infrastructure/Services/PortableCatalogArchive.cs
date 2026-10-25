@@ -42,7 +42,7 @@ internal static partial class PortableCatalogArchive
 		{ await WriteAsync("operation", operation.Id, operation); }
 		await foreach (var member in source.NormalizationCatalogMembers.AsNoTracking().AsAsyncEnumerable().WithCancellation(ct))
 		{ await WriteAsync("member", member.Id, member); }
-		await foreach (var item in source.ReceiptItems.IgnoreAutoIncludes().AsNoTracking().Where(item => item.DeletedAt == null).AsAsyncEnumerable().WithCancellation(ct))
+		await foreach (var item in source.ReceiptItems.IgnoreQueryFilters().IgnoreAutoIncludes().AsNoTracking().AsAsyncEnumerable().WithCancellation(ct))
 		{
 			await WriteAsync("assignment", item.Id, new Assignment(item.Id, item.NormalizationOrigin, item.NormalizationMappingId, item.NormalizationAssignmentId));
 			await WriteAsync("review_evidence", item.Id, new ReviewEvidence(item.Id, item.NormalizationReviewState, item.ReviewedSourceHash, item.ReviewedTargetId,

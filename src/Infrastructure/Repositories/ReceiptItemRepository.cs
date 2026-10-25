@@ -354,6 +354,7 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 			request.ReceiptId = entities[0].ReceiptId;
 			request.ItemIds = ids;
 		}
+		await ReceiptFactLock.AcquireAsync(context, await context.ReceiptItems.IgnoreAutoIncludes().Where(x => ids.Contains(x.Id)).Select(x => x.ReceiptId).Distinct().ToListAsync(cancellationToken), cancellationToken);
 		await NormalizationWriteGuard.LockItemsAsync(context, ids, cancellationToken);
 		List<ReceiptItemEntity> existingEntities = await context.ReceiptItems
 			.IgnoreAutoIncludes()

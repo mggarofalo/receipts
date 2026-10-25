@@ -3,11 +3,10 @@ using Mediator;
 
 namespace Application.Commands.Trash.Purge;
 
-public class PurgeTrashCommandHandler(ITrashService trashService) : IRequestHandler<PurgeTrashCommand, bool>
+public class PurgeTrashCommandHandler(ITrashService trashService) : IRequestHandler<PurgeTrashCommand, PurgeTrashResult>
 {
-	public async ValueTask<bool> Handle(PurgeTrashCommand request, CancellationToken cancellationToken)
+	public async ValueTask<PurgeTrashResult> Handle(PurgeTrashCommand request, CancellationToken cancellationToken)
 	{
-		await trashService.PurgeAllDeletedAsync(cancellationToken);
-		return true;
+		return await trashService.PurgeAllDeletedAsync(cancellationToken);
 	}
 }

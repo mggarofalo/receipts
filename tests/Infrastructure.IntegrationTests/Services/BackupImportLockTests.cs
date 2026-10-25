@@ -11,11 +11,13 @@ namespace Infrastructure.IntegrationTests.Services;
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class BackupImportLockTests(PostgresFixture fixture)
+public class BackupImportLockTests
 {
 	[Fact]
 	public async Task Import_WaitsForHistoricalCrossInstanceLock_CancelsWithoutWriting_AndRetriesAfterRelease()
 	{
+		PostgresFixture isolated = new();
+		await isolated.InitializeAsync();
 		Guid receiptId = Guid.NewGuid();
 		string path = Path.Combine(Path.GetTempPath(), $"backup-lock-{Guid.NewGuid():N}.db");
 		try
@@ -29,13 +31,13 @@ public class BackupImportLockTests(PostgresFixture fixture)
 				seed.Parameters.AddWithValue("$id", receiptId.ToString());
 				await seed.ExecuteNonQueryAsync();
 			}
-			await using NpgsqlConnection legacyInstance = new(fixture.ConnectionString);
+			await using NpgsqlConnection legacyInstance = new(isolated.ConnectionString);
 			await legacyInstance.OpenAsync();
 			await using NpgsqlTransaction legacyTransaction = await legacyInstance.BeginTransactionAsync();
 			// Historical literal, independent of the renamed helper: upgrades must retain this cross-instance lock.
 			await using NpgsqlCommand acquire = new("SELECT pg_advisory_xact_lock(23157103317831764)", legacyInstance, legacyTransaction);
 			await acquire.ExecuteNonQueryAsync();
-			BackupImportService service = new(new ContextFactory(fixture), NullLogger<BackupImportService>.Instance);
+			BackupImportService service = new(new ContextFactory(isolated), NullLogger<BackupImportService>.Instance);
 			using CancellationTokenSource cancellation = new();
 			await using FileStream firstStream = File.OpenRead(path);
 			Task import = service.ImportFromSqliteAsync(firstStream, cancellation.Token);
@@ -53,14 +55,15 @@ public class BackupImportLockTests(PostgresFixture fixture)
 			observedWait.Should().BeTrue("the actual import must wait on the legacy advisory lock before applying rows");
 			cancellation.Cancel();
 			await FluentActions.Awaiting(async () => await import).Should().ThrowAsync<OperationCanceledException>();
-			await using (ApplicationDbContext verify = fixture.CreateDbContext())
+			await using (ApplicationDbContext verify = isolated.CreateDbContext())
 			{
 				(await verify.Receipts.AnyAsync(x => x.Id == receiptId)).Should().BeFalse();
 			}
 			await legacyTransaction.RollbackAsync();
 			await using FileStream retryStream = File.OpenRead(path);
-			await service.ImportFromSqliteAsync(retryStream, timeout.Token);
-			await using ApplicationDbContext restored = fixture.CreateDbContext();
+			using CancellationTokenSource retryTimeout = new(TimeSpan.FromSeconds(30));
+			await service.ImportFromSqliteAsync(retryStream, retryTimeout.Token);
+			await using ApplicationDbContext restored = isolated.CreateDbContext();
 			var receipt = await restored.Receipts.SingleAsync(x => x.Id == receiptId);
 			receipt.Location.Should().Be("Archived store");
 			receipt.OriginalImagePath.Should().Be("historical/original.jpg");
@@ -69,6 +72,7 @@ public class BackupImportLockTests(PostgresFixture fixture)
 		finally
 		{
 			File.Delete(path);
+			await isolated.DisposeAsync();
 		}
 	}
 

@@ -751,10 +751,10 @@ describe("CommandPalette", () => {
     );
     await user.click(screen.getByText("Empty Trash"));
     const dialog = await screen.findByRole("alertdialog");
-    const confirm = within(dialog).getByRole("button", {
-      name: /empty trash/i,
-    });
-    await user.click(confirm);
+    expect(within(dialog).getByText(/classification history and their linked records/)).toBeInTheDocument();
+    const confirm = within(dialog).getByRole("button", { name: /empty trash/i });
+    confirm.focus();
+    await user.keyboard("{Enter}");
     await waitFor(() => {
       expect(purgeTrashMutateAsync).toHaveBeenCalled();
     });

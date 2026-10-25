@@ -57,7 +57,7 @@ public sealed partial class NormalizationCatalogTests
 		{
 			byte[] original = await File.ReadAllBytesAsync(source);
 			var baseline = await new OfflinePortableBackupInspection().InspectAsync(source);
-			baseline.Observations.Should().NotContain(x => x.EntityId == trashedId, "trash is absent from portable purchase facts");
+			baseline.Observations.Should().Contain(x => x.EntityId == trashedId, "format 10 preserves trashed purchase facts");
 			var merge = new OfflineConsolidationDecision(Guid.NewGuid(), loser.Id, survivor.Id);
 			var name = new OfflineCanonicalDecision(Guid.NewGuid(), survivor.Id, survivor.CanonicalName, null);
 			var now = DateTimeOffset.UtcNow.AddSeconds(-1);
@@ -68,6 +68,19 @@ public sealed partial class NormalizationCatalogTests
 			await File.WriteAllTextAsync(manifestPath, JsonSerializer.Serialize(manifest, OfflineNormalizationManifestPolicy.JsonOptions));
 			var offline = new PortableBackupNormalizationService();
 			await offline.ApplyAsync(source, manifestPath, output);
+			var transformed = await new OfflinePortableBackupInspection().InspectAsync(output);
+			transformed.FormatVersion.Should().Be(10);
+			new OfflinePortableBackupInspection().VerifyBaseline(baseline, transformed);
+			Guid archiveAssignmentId;
+			await using (var sqlite = new SqliteConnection($"Data Source={output};Mode=ReadOnly;Pooling=False"))
+			{
+				await sqlite.OpenAsync();
+				await using var assignment = sqlite.CreateCommand();
+				assignment.CommandText = "SELECT payload FROM normalization_catalog WHERE kind='assignment' AND id=$id";
+				assignment.Parameters.AddWithValue("$id", trashedId.ToString());
+				using var payload = JsonDocument.Parse((string)(await assignment.ExecuteScalarAsync())!);
+				archiveAssignmentId = payload.RootElement.GetProperty("AssignmentId").GetGuid();
+			}
 			await using (var stream = File.OpenRead(output))
 			{
 				await new BackupImportService(new Factory(fixture), NullLogger<BackupImportService>.Instance).ImportFromSqliteAsync(stream, CancellationToken.None);
@@ -77,7 +90,7 @@ public sealed partial class NormalizationCatalogTests
 				var trashed = await db.ReceiptItems.IgnoreQueryFilters().SingleAsync(x => x.Id == trashedId);
 				trashed.DeletedAt.Should().BeCloseTo(deletedAt, TimeSpan.FromMilliseconds(1));
 				AssertNoAuthority(trashed);
-				trashed.NormalizationAssignmentId.Should().NotBeNull();
+				trashed.NormalizationAssignmentId.Should().Be(archiveAssignmentId);
 				trashed.NormalizationAssignmentId.Should().NotBe(beforeTrash.NormalizationAssignmentId.GetValueOrDefault());
 				(await db.ReceiptItems.SingleAsync(x => x.Id == liveIds.Single())).NormalizedDescriptionId.Should().Be(survivor.Id);
 				(await db.NormalizedDescriptions.AnyAsync(x => x.Id == loser.Id)).Should().BeFalse();
@@ -137,7 +150,7 @@ public sealed partial class NormalizationCatalogTests
 		{
 			byte[] original = await File.ReadAllBytesAsync(source);
 			var baseline = await new OfflinePortableBackupInspection().InspectAsync(source);
-			baseline.FormatVersion.Should().Be(9);
+			baseline.FormatVersion.Should().Be(10);
 			// Product identities and do-not-merge expectations are arranged above independently.
 			// Observation data binds those choices to the exact exported source.
 			var assignments = beefIds.Select(id => Choice(id, beef.Id, true))

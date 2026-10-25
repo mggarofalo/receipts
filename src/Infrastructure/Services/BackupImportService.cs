@@ -57,6 +57,41 @@ public partial class BackupImportService(
 	private async Task<BackupImportResult> ImportFromFileAsync(string sqlitePath, CancellationToken cancellationToken)
 	{
 		ValidateSqliteFile(sqlitePath);
+		PortableTaxonomyArchive.State? taxonomy = null;
+		Application.Taxonomy.LegacyMigrationRequest? legacyTaxonomy = null;
+		List<PortableTaxonomyArchive.DeletionState>? deletion = null;
+		await using (SqliteConnection preflight = new($"Data Source={sqlitePath};Mode=ReadOnly;Pooling=False"))
+		{
+			await preflight.OpenAsync(cancellationToken);
+			int preflightVersion = ReadExportVersion(preflight);
+			if (preflightVersion >= 5)
+			{
+				foreach (string table in PortableBackupFormat.RequiredTablesFor(preflightVersion))
+				{
+					if (!TableExists(preflight, table))
+					{
+						throw new InvalidOperationException($"Backup export_version={preflightVersion} is missing required '{table}' table.");
+					}
+				}
+			}
+			if (preflightVersion >= 10)
+			{
+				try
+				{
+					taxonomy = await PortableTaxonomyArchive.ReadAsync(preflight, cancellationToken);
+					deletion = await PortableTaxonomyArchive.ReadDeletionStateAsync(preflight, taxonomy, cancellationToken);
+				}
+				catch (Exception exception) when (exception is InvalidDataException or System.Text.Json.JsonException or ArgumentException)
+				{ throw new InvalidOperationException("Invalid portable taxonomy archive. " + exception.Message, exception); }
+			}
+		}
+
+		if (taxonomy == null)
+		{
+			await using SqliteConnection legacySource = new($"Data Source={sqlitePath};Mode=ReadOnly;Pooling=False");
+			await legacySource.OpenAsync(cancellationToken);
+			legacyTaxonomy = await CaptureLegacyTaxonomyAsync(legacySource, sqlitePath, ReadExportVersion(legacySource), cancellationToken);
+		}
 
 		await using IAsyncDisposable importLease =
 			await BackupImportLock.AcquireLocalAsync(cancellationToken);
@@ -65,10 +100,34 @@ public partial class BackupImportService(
 		await using Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction =
 			await context.Database.BeginTransactionAsync(cancellationToken);
 		await BackupImportLock.AcquireDatabaseAsync(context, cancellationToken);
+		if (legacyTaxonomy != null)
+		{
+			LegacyImportPreparation preparation = await PrepareLegacyTaxonomyAsync(context, legacyTaxonomy, cancellationToken);
+			legacyTaxonomy = preparation.Source;
+			if (preparation.IsReplay)
+			{
+				// Exact legacy replays are observations already imported; preserve later edits.
+				await transaction.CommitAsync(cancellationToken);
+				return new BackupImportResult(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+			}
+		}
+		if (taxonomy != null)
+		{
+			await PortableTaxonomyArchive.LockDestinationAsync(context, cancellationToken);
+			try { await PortableTaxonomyArchive.PreflightDestinationAsync(context, taxonomy, cancellationToken); }
+			catch (InvalidDataException exception) { throw new InvalidOperationException(exception.Message, exception); }
+		}
+
+		if (deletion != null)
+		{
+			ImportDeletionStates.Add(context, deletion.ToDictionary(r => (r.Table, r.Id)));
+			await StageImportedTombstonesAsync(context, deletion, cancellationToken);
+		}
+
 		// Restored business rows cannot be used by a pre-restore inference, even if
 		// the imported values happen to be identical and EF emits no row update.
 		await Infrastructure.NormalizationAi.NormalizationAiService.FenceForRestoreAsync(context, cancellationToken);
-		await context.SaveChangesAsync(cancellationToken);
+		await SaveImportedChangesAsync(context, cancellationToken);
 
 		try
 		{
@@ -80,7 +139,7 @@ public partial class BackupImportService(
 			{ throw new InvalidOperationException("Backup export_version=7 is missing required 'normalization_catalog' table."); }
 			if (exportVersion >= 5)
 			{
-				foreach (string table in PortableBackupFormat.RequiredTables)
+				foreach (string table in PortableBackupFormat.RequiredTablesFor(exportVersion))
 				{
 					if (!TableExists(sqlite, table))
 					{
@@ -133,6 +192,15 @@ public partial class BackupImportService(
 				throw new InvalidOperationException(exception.Message, exception);
 			}
 
+			if (taxonomy != null)
+			{
+				await PortableTaxonomyArchive.RestoreAsync(context, taxonomy, deletion!, cancellationToken);
+			}
+
+			if (legacyTaxonomy != null)
+			{
+				await LegacyTaxonomyMigrationService.AppendInTransactionAsync(context, legacyTaxonomy, cancellationToken);
+			}
 			await transaction.CommitAsync(cancellationToken);
 
 			BackupImportResult result = new(
@@ -277,7 +345,7 @@ public partial class BackupImportService(
 				}
 			}
 
-			await context.SaveChangesAsync(cancellationToken);
+			await SaveImportedChangesAsync(context, cancellationToken);
 			return (created, updated);
 		}
 
@@ -322,7 +390,7 @@ public partial class BackupImportService(
 			}
 		}
 
-		await context.SaveChangesAsync(cancellationToken);
+		await SaveImportedChangesAsync(context, cancellationToken);
 		return (legacyCreated, legacyUpdated);
 	}
 
@@ -396,7 +464,7 @@ public partial class BackupImportService(
 			}
 		}
 
-		await context.SaveChangesAsync(cancellationToken);
+		await SaveImportedChangesAsync(context, cancellationToken);
 		return (created, updated);
 	}
 
@@ -444,7 +512,7 @@ public partial class BackupImportService(
 			}
 		}
 
-		await context.SaveChangesAsync(cancellationToken);
+		await SaveImportedChangesAsync(context, cancellationToken);
 		return (created, updated);
 	}
 
@@ -495,7 +563,7 @@ public partial class BackupImportService(
 			}
 		}
 
-		await context.SaveChangesAsync(cancellationToken);
+		await SaveImportedChangesAsync(context, cancellationToken);
 		return (created, updated);
 	}
 
@@ -570,7 +638,7 @@ public partial class BackupImportService(
 			}
 		}
 
-		await context.SaveChangesAsync(cancellationToken);
+		await SaveImportedChangesAsync(context, cancellationToken);
 		return (created, updated);
 	}
 
@@ -639,7 +707,7 @@ public partial class BackupImportService(
 			}
 		}
 
-		await context.SaveChangesAsync(cancellationToken);
+		await SaveImportedChangesAsync(context, cancellationToken);
 		return (created, updated);
 	}
 
@@ -651,6 +719,7 @@ public partial class BackupImportService(
 			return (0, 0);
 		}
 
+		Dictionary<Guid, Guid> archiveAssignments = await PortableCatalogArchive.LoadLegacyAssignmentIdsAsync(sqlite, exportVersion, cancellationToken);
 		int created = 0, updated = 0;
 		await using SqliteCommand cmd = sqlite.CreateCommand();
 		bool hasCuration = exportVersion >= 5;
@@ -685,6 +754,11 @@ public partial class BackupImportService(
 			{
 				// Older formats cannot restore a link for new text. Preserve absent metadata only
 				// while the raw description still matches the target's existing classification.
+				bool preserveAssignment = archiveAssignments.TryGetValue(id, out Guid archiveAssignmentId)
+					&& existing.NormalizationAssignmentId == archiveAssignmentId
+					&& existing.NormalizationOrigin == "legacy_unknown" && existing.NormalizationMappingId is null
+					&& existing.NormalizedDescriptionId == canonicalId && existing.NormalizedDescriptionMatchScore == matchScore
+					&& existing.ReceiptId == receiptId && existing.Description == description && existing.ReceiptItemCode == receiptItemCode;
 				if (hasCuration || !string.Equals(existing.Description, description, StringComparison.Ordinal))
 				{
 					existing.NormalizedDescriptionId = canonicalId;
@@ -693,7 +767,7 @@ public partial class BackupImportService(
 				existing.ReceiptId = receiptId;
 				existing.NormalizationOrigin = existing.NormalizedDescriptionId.HasValue ? "legacy_unknown" : "unassigned";
 				existing.NormalizationMappingId = null;
-				existing.NormalizationAssignmentId = Guid.NewGuid();
+				if (!preserveAssignment) { existing.NormalizationAssignmentId = Guid.NewGuid(); }
 				existing.ReceiptItemCode = receiptItemCode;
 				existing.Description = description;
 				existing.Quantity = quantity;
@@ -730,7 +804,7 @@ public partial class BackupImportService(
 			}
 		}
 
-		await context.SaveChangesAsync(cancellationToken);
+		await SaveImportedChangesAsync(context, cancellationToken);
 		return (created, updated);
 	}
 
@@ -789,7 +863,7 @@ public partial class BackupImportService(
 			}
 		}
 
-		await context.SaveChangesAsync(cancellationToken);
+		await SaveImportedChangesAsync(context, cancellationToken);
 		return (created, updated);
 	}
 
@@ -843,7 +917,7 @@ public partial class BackupImportService(
 			}
 		}
 
-		await context.SaveChangesAsync(cancellationToken);
+		await SaveImportedChangesAsync(context, cancellationToken);
 		return (created, updated);
 	}
 
@@ -891,7 +965,7 @@ public partial class BackupImportService(
 			}
 		}
 
-		await context.SaveChangesAsync(cancellationToken);
+		await SaveImportedChangesAsync(context, cancellationToken);
 		return (created, updated);
 	}
 
@@ -946,7 +1020,7 @@ public partial class BackupImportService(
 			}
 		}
 
-		await context.SaveChangesAsync(cancellationToken);
+		await SaveImportedChangesAsync(context, cancellationToken);
 		return (created, updated);
 	}
 
@@ -1003,7 +1077,7 @@ public partial class BackupImportService(
 			}
 		}
 
-		await context.SaveChangesAsync(cancellationToken);
+		await SaveImportedChangesAsync(context, cancellationToken);
 		return (created, updated);
 	}
 
@@ -1107,7 +1181,7 @@ public partial class BackupImportService(
 			}
 		}
 
-		await context.SaveChangesAsync(cancellationToken);
+		await SaveImportedChangesAsync(context, cancellationToken);
 		return (created, updated);
 	}
 
@@ -1154,7 +1228,7 @@ public partial class BackupImportService(
 			}
 		}
 
-		await context.SaveChangesAsync(cancellationToken);
+		await SaveImportedChangesAsync(context, cancellationToken);
 		return (created, updated);
 	}
 	private static Currency ParseCurrency(string value)

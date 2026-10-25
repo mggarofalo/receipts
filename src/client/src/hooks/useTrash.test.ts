@@ -49,6 +49,16 @@ describe("usePurgeTrash", () => {
     expect(toast.success).toHaveBeenCalledWith("Trash emptied successfully");
   });
 
+  it("explains retained history without claiming all trash is gone", async () => {
+    const reason = "Classification history is preserved. These receipts can still be restored.";
+    (client.POST as Mock).mockResolvedValue({ data: { retainedReceipts: 1, retainedItems: 2, retainedRecords: 3, reason } });
+    const { result } = renderHook(() => usePurgeTrash(), { wrapper: createWrapper() });
+    result.current.mutate();
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(toast.info).toHaveBeenCalledWith(`3 records kept in trash. ${reason}`);
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
   it("shows error toast on failure", async () => {
     (client.POST as Mock).mockResolvedValue({
       error: { message: "Server error" },

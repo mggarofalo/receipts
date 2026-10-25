@@ -1892,6 +1892,98 @@ namespace Infrastructure.Migrations
                     b.ToTable("CurrentAssignments", "taxonomy");
                 });
 
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.LegacyMigrationCrosswalkEntity", b =>
+                {
+                    b.Property<string>("Actor")
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("OperationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("SourceTable")
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("SourceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("EvidenceJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("TargetId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Actor", "OperationId", "SourceTable", "SourceId");
+
+                    b.ToTable("LegacyCrosswalks", "taxonomy");
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.LegacyMigrationEntity", b =>
+                {
+                    b.Property<string>("Actor")
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("OperationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("OperationKind")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("ObservedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("PlanJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("RevisionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("SourceDataset")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Actor", "OperationId", "OperationKind");
+
+                    b.HasIndex("RevisionId")
+                        .IsUnique();
+
+                    b.ToTable("LegacyMigrations", "taxonomy");
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.LegacyMigrationItemEntity", b =>
+                {
+                    b.Property<string>("Actor")
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("OperationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ReceiptItemId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AssignmentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("EvidenceJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Resolution")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Actor", "OperationId", "ReceiptItemId");
+
+                    b.HasIndex("AssignmentId");
+
+                    b.ToTable("LegacyItemOutcomes", "taxonomy");
+                });
+
             modelBuilder.Entity("Infrastructure.Entities.Taxonomy.PurchaseClassificationEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1903,6 +1995,15 @@ namespace Infrastructure.Migrations
 
                     b.Property<Guid?>("CategoryId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("LegacyCategory")
+                        .HasColumnType("text");
+
+                    b.Property<string>("LegacyResolution")
+                        .HasColumnType("text");
+
+                    b.Property<string>("LegacySubcategory")
+                        .HasColumnType("text");
 
                     b.Property<Guid>("OperationId")
                         .HasColumnType("uuid");
@@ -2430,6 +2531,24 @@ namespace Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("ReceiptItemId", "AssignmentId")
                         .HasPrincipalKey("ReceiptItemId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.LegacyMigrationEntity", b =>
+                {
+                    b.HasOne("Infrastructure.Entities.Taxonomy.TaxonomyRevisionEntity", null)
+                        .WithMany()
+                        .HasForeignKey("RevisionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.LegacyMigrationItemEntity", b =>
+                {
+                    b.HasOne("Infrastructure.Entities.Taxonomy.PurchaseClassificationEntity", null)
+                        .WithMany()
+                        .HasForeignKey("AssignmentId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

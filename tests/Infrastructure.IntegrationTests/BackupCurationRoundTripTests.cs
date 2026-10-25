@@ -53,7 +53,7 @@ public class BackupCurationRoundTripTests(PostgresFixture source) : IClassFixtur
 			expectedPair = await read.AcceptedDuplicatePairs.AsNoTracking().SingleAsync();
 		}
 
-		// Acceptance survives trash in the source, but a portable file excludes the trashed endpoint.
+		// Version 10 preserves acceptance and the trashed endpoint for recovery.
 		Guid excludedReceipt = Guid.NewGuid();
 		await using (ApplicationDbContext seed = source.CreateDbContext())
 		{
@@ -93,7 +93,7 @@ public class BackupCurationRoundTripTests(PostgresFixture source) : IClassFixtur
 				await using (FileStream stream = File.OpenRead(path))
 				{
 					BackupImportResult result = await importer.ImportFromSqliteAsync(stream, CancellationToken.None);
-					result.AcceptedDuplicatePairsCreated.Should().Be(1);
+					result.AcceptedDuplicatePairsCreated.Should().Be(2);
 				}
 				await using ApplicationDbContext restored = target.CreateDbContext();
 				ReceiptItemEntity curated = await restored.ReceiptItems.IgnoreAutoIncludes().SingleAsync(row => row.Id == curatedItemId);
@@ -131,8 +131,9 @@ public class BackupCurationRoundTripTests(PostgresFixture source) : IClassFixtur
 				rejected.Status.Should().Be(NormalizedDescriptionStatus.Rejected);
 				historical.NearestNeighbourId.Should().BeNull();
 				historical.NearestNeighbourSimilarity.Should().Be(0.86, "deleting a neighbour deliberately retains historical similarity evidence");
-				(await restored.Receipts.IgnoreQueryFilters().AnyAsync(row => row.Id == excludedReceipt)).Should().BeFalse();
-				pairs.Should().ContainSingle("a pair with an intentionally excluded receipt must not enter the portable file");
+				(await restored.Receipts.IgnoreQueryFilters().SingleAsync(row => row.Id == excludedReceipt)).DeletedAt.Should().NotBeNull();
+				pairs.Should().HaveCount(2, "acceptance involving trash is portable recovery state");
+				pairs = pairs.Where(pair => pair.Id == expectedPair.Id).ToList();
 				if (pairs.Count == 1)
 				{
 					pairs[0].Id.Should().Be(expectedPair.Id);
@@ -166,7 +167,7 @@ public class BackupCurationRoundTripTests(PostgresFixture source) : IClassFixtur
 					await using FileStream stream = File.OpenRead(path);
 					BackupImportResult result = await importer.ImportFromSqliteAsync(stream, CancellationToken.None);
 					result.AcceptedDuplicatePairsCreated.Should().Be(0);
-					result.AcceptedDuplicatePairsUpdated.Should().Be(1);
+					result.AcceptedDuplicatePairsUpdated.Should().Be(2);
 				}
 				await using ApplicationDbContext upserted = target.CreateDbContext();
 				ReceiptItemEntity explicitlyUnlinked = await upserted.ReceiptItems.SingleAsync(row => row.Id == unlinkedItemId);
@@ -181,8 +182,8 @@ public class BackupCurationRoundTripTests(PostgresFixture source) : IClassFixtur
 				restoredRejected.DisplayLabel.Should().BeNull();
 				restoredRejected.NearestNeighbourId.Should().BeNull();
 				restoredRejected.NearestNeighbourSimilarity.Should().BeNull();
-				(await upserted.AcceptedDuplicatePairs.CountAsync()).Should().Be(1);
-				(await upserted.AcceptedDuplicatePairs.SingleAsync()).Id.Should().Be(expectedPair.Id);
+				(await upserted.AcceptedDuplicatePairs.CountAsync()).Should().Be(2);
+				(await upserted.AcceptedDuplicatePairs.SingleAsync(pair => pair.Id == expectedPair.Id)).Id.Should().Be(expectedPair.Id);
 			}
 			finally
 			{

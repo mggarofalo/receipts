@@ -45,7 +45,7 @@ public sealed class PortableBackupNormalizationService(IOfflinePortableBackupIns
 				await sqlite.OpenAsync(cancellationToken);
 				await TransformAsync(sqlite, manifest, baseline, digest, cancellationToken);
 			}
-			await ValidateFileAsync(temporary, 9, cancellationToken);
+			await ValidateFileAsync(temporary, OutputVersion(baseline.FormatVersion), cancellationToken);
 			OfflineBackupInspection candidate = await inspection.InspectAsync(temporary, cancellationToken);
 			inspection.VerifyBaseline(baseline, candidate);
 			sourceLease.Position = 0;
@@ -91,10 +91,10 @@ public sealed class PortableBackupNormalizationService(IOfflinePortableBackupIns
 		Lineage lineage = JsonSerializer.Deserialize<Lineage>(await File.ReadAllBytesAsync(output + ".lineage.json", ct), OfflineNormalizationManifestPolicy.JsonOptions)
 			?? throw new InvalidDataException("Missing output lineage.");
 		OfflineBackupInspection candidate = await inspection.InspectAsync(output, ct);
-		if (lineage != new Lineage(baseline.SourceSha256, digest, manifest.ToolRevision, candidate.SourceSha256) || candidate.FormatVersion != 9)
+		if (lineage != new Lineage(baseline.SourceSha256, digest, manifest.ToolRevision, candidate.SourceSha256) || candidate.FormatVersion != OutputVersion(baseline.FormatVersion))
 		{ throw new InvalidDataException("Output lineage or checksum mismatch."); }
 		inspection.VerifyBaseline(baseline, candidate);
-		await ValidateFileAsync(output, 9, ct);
+		await ValidateFileAsync(output, OutputVersion(baseline.FormatVersion), ct);
 		await using SqliteConnection sqlite = Open(output, true);
 		await sqlite.OpenAsync(ct);
 		foreach ((string key, string expected) in new[] { ("offline_source_sha256", baseline.SourceSha256), ("offline_manifest_sha256", digest), ("offline_tool_revision", manifest.ToolRevision) })
@@ -209,6 +209,11 @@ public sealed class PortableBackupNormalizationService(IOfflinePortableBackupIns
 				PortableCatalogArchive.ReviewEvidence evidence = reviews[item.EntityId];
 				Guid assignmentId = Id("consolidation-assignment:" + decision.DecisionId + ":" + item.EntityId);
 				assignments[item.EntityId] = assignment with { AssignmentId = assignmentId };
+				if (evidence.State == NormalizationReviewState.NeedsReview && evidence.Reason == "unavailable")
+				{
+					assignments[item.EntityId] = new(item.EntityId, "legacy_unknown", null, assignmentId);
+					reviews[item.EntityId] = new(item.EntityId, NormalizationReviewState.NeedsReview, null, null, "legacy_unknown", null, null, null, null, null);
+				}
 				if (evidence.State != NormalizationReviewState.NeedsReview)
 				{
 					reviews[item.EntityId] = evidence with
@@ -262,7 +267,7 @@ public sealed class PortableBackupNormalizationService(IOfflinePortableBackupIns
 		foreach (NormalizationSourceMappingEntity mapping in mappings.Values) { await Write("mapping", mapping.Id, mapping); }
 		foreach (PortableCatalogArchive.Assignment assignment in assignments.Values) { await Write("assignment", assignment.Id, assignment); }
 		foreach (PortableCatalogArchive.ReviewEvidence review in reviews.Values) { await Write("review_evidence", review.Id, review); }
-		foreach ((string key, string value) in new[] { ("export_version", "9"), ("offline_source_sha256", baseline.SourceSha256), ("offline_manifest_sha256", digest), ("offline_tool_revision", manifest.ToolRevision) })
+		foreach ((string key, string value) in new[] { ("export_version", OutputVersion(baseline.FormatVersion).ToString(System.Globalization.CultureInfo.InvariantCulture)), ("offline_source_sha256", baseline.SourceSha256), ("offline_manifest_sha256", digest), ("offline_tool_revision", manifest.ToolRevision) })
 		{
 			await Execute("INSERT INTO backup_metadata(key,value) VALUES($key,$value) ON CONFLICT(key) DO UPDATE SET value=excluded.value", ("$key", key), ("$value", value));
 		}
@@ -288,18 +293,28 @@ public sealed class PortableBackupNormalizationService(IOfflinePortableBackupIns
 		}
 	}
 
+	private static int OutputVersion(int sourceVersion) => sourceVersion == 10 ? 10 : 9;
+
 	private static async Task ValidateFileAsync(string path, int version, CancellationToken ct)
 	{
 		await using SqliteConnection sqlite = Open(path, true);
 		await sqlite.OpenAsync(ct);
 		await using SqliteConnection expected = new("Data Source=:memory:");
 		await expected.OpenAsync(ct);
-		await BackupService.CreateSchemaAsync(expected, ct);
+		await BackupService.CreateSchemaAsync(expected, ct, version);
 		if (version >= 8)
 		{
 			await using SqliteCommand catalogSchema = expected.CreateCommand();
 			catalogSchema.CommandText = "CREATE TABLE normalization_catalog(kind TEXT NOT NULL,id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(kind,id))";
 			await catalogSchema.ExecuteNonQueryAsync(ct);
+		}
+		if (version == 10)
+		{
+			await using SqliteCommand taxonomySchema = expected.CreateCommand();
+			taxonomySchema.CommandText = "CREATE TABLE taxonomy_archive(kind TEXT NOT NULL, id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(kind,id)); CREATE TABLE portable_deletion_state(kind TEXT NOT NULL, id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(kind,id));";
+			await taxonomySchema.ExecuteNonQueryAsync(ct);
+			var taxonomy = await PortableTaxonomyArchive.ReadAsync(sqlite, ct);
+			await PortableTaxonomyArchive.ReadDeletionStateAsync(sqlite, taxonomy, ct);
 		}
 		await using (SqliteCommand objects = sqlite.CreateCommand())
 		{

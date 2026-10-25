@@ -60,7 +60,7 @@ public class BackupService(
 			//
 			// Excluding all log/audit and regenerable-cursor tables is the consistent choice: a
 			// backup restores your data, not the history of how it got there.
-			await CreateSchemaAsync(sqlite, cancellationToken);
+			await CreateSchemaAsync(sqlite, cancellationToken, PortableBackupFormat.CurrentVersion);
 			await ExportNormalizedDescriptionsAsync(source, sqlite, cancellationToken);
 			await ExportAccountsAsync(source, sqlite, cancellationToken);
 			await ExportCardsAsync(source, sqlite, cancellationToken);
@@ -78,6 +78,7 @@ public class BackupService(
 			await ExportNormalizedDescriptionSettingsAsync(source, sqlite, cancellationToken);
 			await ExportAcceptedDuplicatePairsAsync(source, sqlite, cancellationToken);
 			await PortableCatalogArchive.ExportAsync(source, sqlite, cancellationToken);
+			await PortableTaxonomyArchive.ExportAsync(source, sqlite, cancellationToken);
 			await WriteMetadataAsync(sqlite, cancellationToken);
 
 
@@ -99,7 +100,7 @@ public class BackupService(
 		}
 	}
 
-	internal static async Task CreateSchemaAsync(SqliteConnection sqlite, CancellationToken cancellationToken)
+	internal static async Task CreateSchemaAsync(SqliteConnection sqlite, CancellationToken cancellationToken, int exportVersion = 9)
 	{
 		string[] ddl =
 		[
@@ -303,7 +304,7 @@ public class BackupService(
 		foreach (string sql in ddl)
 		{
 			await using SqliteCommand cmd = sqlite.CreateCommand();
-			cmd.CommandText = sql;
+			cmd.CommandText = exportVersion >= 10 ? sql.Replace("UNIQUE (receipt_id_a, receipt_id_b),", "", StringComparison.Ordinal) : sql;
 			await cmd.ExecuteNonQueryAsync(cancellationToken);
 		}
 	}
@@ -346,7 +347,7 @@ public class BackupService(
 	{
 		List<CategoryEntity> categories = await source.Categories
 			.AsNoTracking()
-			.Where(c => c.DeletedAt == null)
+			.IgnoreQueryFilters().IgnoreAutoIncludes()
 			.ToListAsync(cancellationToken);
 
 		const string sql = "INSERT INTO categories (id, name, description, is_active) VALUES ($id, $name, $desc, $active)";
@@ -366,7 +367,7 @@ public class BackupService(
 	{
 		List<SubcategoryEntity> subcategories = await source.Subcategories
 			.AsNoTracking()
-			.Where(s => s.DeletedAt == null)
+			.IgnoreQueryFilters().IgnoreAutoIncludes()
 			.ToListAsync(cancellationToken);
 
 		const string sql = "INSERT INTO subcategories (id, name, category_id, description, is_active) VALUES ($id, $name, $catId, $desc, $active)";
@@ -387,7 +388,7 @@ public class BackupService(
 	{
 		List<ItemTemplateEntity> templates = await source.ItemTemplates
 			.AsNoTracking()
-			.Where(t => t.DeletedAt == null)
+			.IgnoreQueryFilters().IgnoreAutoIncludes()
 			.ToListAsync(cancellationToken);
 
 		const string sql = """
@@ -418,7 +419,7 @@ public class BackupService(
 	{
 		List<ReceiptEntity> receipts = await source.Receipts
 			.AsNoTracking()
-			.Where(r => r.DeletedAt == null)
+			.IgnoreQueryFilters().IgnoreAutoIncludes()
 			.ToListAsync(cancellationToken);
 
 		const string sql = "INSERT INTO receipts (id, location, date, tax_amount, tax_amount_currency, original_image_path, processed_image_path) VALUES ($id, $loc, $date, $tax, $taxCurrency, $origImg, $procImg)";
@@ -441,7 +442,7 @@ public class BackupService(
 	{
 		List<ReceiptItemEntity> items = await source.ReceiptItems
 			.AsNoTracking()
-			.Where(i => i.DeletedAt == null)
+			.IgnoreQueryFilters().IgnoreAutoIncludes()
 			.ToListAsync(cancellationToken);
 
 		const string sql = """
@@ -477,7 +478,7 @@ public class BackupService(
 	{
 		List<TransactionEntity> transactions = await source.Transactions
 			.AsNoTracking()
-			.Where(t => t.DeletedAt == null)
+			.IgnoreQueryFilters().IgnoreAutoIncludes()
 			.ToListAsync(cancellationToken);
 
 		const string sql = "INSERT INTO transactions (id, receipt_id, card_id, amount, amount_currency, date) VALUES ($id, $receiptId, $cardId, $amt, $amtCurrency, $date)";
@@ -499,7 +500,7 @@ public class BackupService(
 	{
 		List<AdjustmentEntity> adjustments = await source.Adjustments
 			.AsNoTracking()
-			.Where(a => a.DeletedAt == null)
+			.IgnoreQueryFilters().IgnoreAutoIncludes()
 			.ToListAsync(cancellationToken);
 
 		const string sql = "INSERT INTO adjustments (id, receipt_id, type, amount, amount_currency, description) VALUES ($id, $receiptId, $type, $amt, $amtCurrency, $desc)";
@@ -592,7 +593,7 @@ public class BackupService(
 	// the export behaviour of the other soft-deletable tables.
 	private static async Task ExportYnabSyncRecordsAsync(ApplicationDbContext source, SqliteConnection sqlite, CancellationToken cancellationToken)
 	{
-		List<YnabSyncRecordEntity> records = await source.YnabSyncRecords.AsNoTracking().ToListAsync(cancellationToken);
+		List<YnabSyncRecordEntity> records = await source.YnabSyncRecords.IgnoreQueryFilters().IgnoreAutoIncludes().AsNoTracking().ToListAsync(cancellationToken);
 
 		const string sql = """
 			INSERT INTO ynab_sync_records (id, local_transaction_id, ynab_transaction_id, ynab_budget_id,
@@ -680,11 +681,8 @@ public class BackupService(
 
 	private static async Task ExportAcceptedDuplicatePairsAsync(ApplicationDbContext source, SqliteConnection sqlite, CancellationToken cancellationToken)
 	{
-		// Acceptances survive receipt soft deletion locally. Portable backups exclude trash,
-		// so only assertions whose two endpoints are included can be restored independently.
-		List<AcceptedDuplicatePairEntity> pairs = await source.AcceptedDuplicatePairs.AsNoTracking()
-			.Where(pair => source.Receipts.Any(receipt => receipt.Id == pair.ReceiptIdA)
-				&& source.Receipts.Any(receipt => receipt.Id == pair.ReceiptIdB))
+		// v10 preserves all accepted pairs, including trash, with their receipt dependencies.
+		List<AcceptedDuplicatePairEntity> pairs = await source.AcceptedDuplicatePairs.IgnoreQueryFilters().IgnoreAutoIncludes().AsNoTracking()
 			.ToListAsync(cancellationToken);
 		foreach (AcceptedDuplicatePairEntity pair in pairs)
 		{

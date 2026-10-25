@@ -5170,11 +5170,17 @@ paths:
     post:
       operationId: PurgeTrash
       tags: [Trash]
-      summary: Permanently delete all soft-deleted items
+      summary: Permanently delete eligible soft-deleted items
       security:
         - BearerAuth: []
         - ApiKey: []
       responses:
+        "200":
+          description: Eligible trash purged; classification history and linked receipts retained.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurgeTrashResult"
         "204":
           description: No Content
 
@@ -7463,6 +7469,25 @@ paths:
 
 components:
   schemas:
+    PurgeTrashResult:
+      type: object
+      required: [retainedReceipts, retainedItems, retainedRecords, reason]
+      properties:
+        retainedReceipts:
+          type: integer
+          format: int32
+          description: Deleted receipts retained to preserve classification history and linked records.
+        retainedItems:
+          type: integer
+          format: int32
+          description: Deleted receipt items retained, including items on active receipts.
+        retainedRecords:
+          type: integer
+          format: int32
+          description: Total deleted records retained, including receipt children and duplicate annotations.
+        reason:
+          type: string
+          description: Why these receipts and their dependencies remain restorable in trash.
     ClassificationRequest:
       type: object
       description: Manual assignment to any active node or explicit null. Writes are disabled until migration and portable backup validation. Source and actor are server owned.
@@ -7488,6 +7513,9 @@ components:
         source: {type: string}
         reason: {type: string}
         operationId: {type: string, format: uuid}
+        legacyCategory: {type: [string, 'null']}
+        legacySubcategory: {type: [string, 'null']}
+        legacyResolution: {type: [string, 'null']}
         path:
           type: array
           items: {$ref: '#/components/schemas/TaxonomyNodeResponse'}

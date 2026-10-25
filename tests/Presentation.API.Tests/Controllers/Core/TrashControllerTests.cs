@@ -1,6 +1,7 @@
 using API.Controllers.Core;
 using API.Services;
 using Application.Commands.Trash.Purge;
+using Application.Interfaces.Services;
 using FluentAssertions;
 using Mediator;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -25,16 +26,25 @@ public class TrashControllerTests
 	}
 
 	[Fact]
+	public async Task PurgeTrash_ReturnsRetainedCountsAndReason()
+	{
+		PurgeTrashResult retained = new(0, 0, "Classification history retained", 1);
+		_mediatorMock.Setup(m => m.Send(It.IsAny<PurgeTrashCommand>(), It.IsAny<CancellationToken>())).ReturnsAsync(retained);
+		var result = await _controller.PurgeTrash();
+		Assert.Equal(retained, Assert.IsType<Ok<PurgeTrashResult>>(result.Result).Value);
+	}
+
+	[Fact]
 	public async Task PurgeTrash_ReturnsNoContent_AndNotifiesAllEntityTypes()
 	{
 		_mediatorMock.Setup(m => m.Send(
 			It.IsAny<PurgeTrashCommand>(),
 			It.IsAny<CancellationToken>()))
-			.ReturnsAsync(true);
+			.ReturnsAsync(new PurgeTrashResult(0, 0, ""));
 
-		NoContent result = await _controller.PurgeTrash();
+		var result = await _controller.PurgeTrash();
 
-		Assert.IsType<NoContent>(result);
+		Assert.IsType<NoContent>(result.Result);
 
 		string[] expectedEntityTypes = ["receipt", "receipt-item", "transaction", "adjustment", "account", "category", "subcategory", "item-template"];
 		foreach (string entityType in expectedEntityTypes)

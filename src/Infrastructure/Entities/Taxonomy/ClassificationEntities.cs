@@ -11,6 +11,9 @@ public sealed class PurchaseClassificationEntity
 	public DateTimeOffset RecordedAt { get; set; }
 	public string Actor { get; set; } = "";
 	public string Source { get; set; } = "manual";
+	public string? LegacyCategory { get; set; }
+	public string? LegacySubcategory { get; set; }
+	public string? LegacyResolution { get; set; }
 	public string Reason { get; set; } = "";
 	public Guid OperationId { get; set; }
 }

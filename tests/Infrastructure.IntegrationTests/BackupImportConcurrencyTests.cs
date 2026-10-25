@@ -24,7 +24,7 @@ public class BackupImportConcurrencyTests(PostgresFixture fixture) : IClassFixtu
 	[InlineData("item", false)]
 	[InlineData("adjustment", true)]
 	[InlineData("adjustment", false)]
-	public async Task Import_ParentSnapshot_RejectsMovesAndLocksPartialArchiveDestinations(string kind, bool competingMove)
+	public async Task Import_CurrentArchive_FencesCompetingWriters_AndRejectsMissingParents(string kind, bool competingMove)
 	{
 		Guid original = Guid.NewGuid(), destination = Guid.NewGuid(), concurrent = Guid.NewGuid(), partner = Guid.NewGuid();
 		Guid child = Guid.NewGuid(), account = Guid.NewGuid(), card = Guid.NewGuid(), importedAccount = Guid.NewGuid(), pair = Guid.NewGuid();
@@ -50,9 +50,9 @@ public class BackupImportConcurrencyTests(PostgresFixture fixture) : IClassFixtu
 			await using (SqliteConnection sqlite = new(new SqliteConnectionStringBuilder { DataSource = path, Pooling = false, ForeignKeys = false }.ToString()))
 			{
 				await sqlite.OpenAsync();
-				await BackupService.CreateSchemaAsync(sqlite, CancellationToken.None);
+				await BackupService.CreateSchemaAsync(sqlite, CancellationToken.None, 10);
 				await using SqliteCommand sql = sqlite.CreateCommand();
-				sql.CommandText = "INSERT INTO backup_metadata VALUES ('export_version', '5'); INSERT INTO accounts VALUES ($account, 'Imported earlier', 1); INSERT INTO receipts VALUES ($receipt, 'Imported', '2024-01-01', '0', 'USD', NULL, NULL);" + (kind switch
+				sql.CommandText = "INSERT INTO backup_metadata VALUES ('export_version', '10'); INSERT INTO accounts VALUES ($account, 'Imported earlier', 1); INSERT INTO receipts VALUES ($receipt, 'Imported', '2024-01-01', '0', 'USD', NULL, NULL);" + (kind switch
 				{
 					"transaction" => "INSERT INTO transactions VALUES ($child, $receipt, $card, '2', 'USD', '2024-01-01');",
 					"item" => "INSERT INTO receipt_items VALUES ($child, $receipt, NULL, 'Imported', '1', '2', 'USD', '2', 'USD', 'Food', NULL, NULL, NULL);",
@@ -63,63 +63,49 @@ public class BackupImportConcurrencyTests(PostgresFixture fixture) : IClassFixtu
 				sql.Parameters.AddWithValue("$child", child.ToString());
 				sql.Parameters.AddWithValue("$card", card.ToString());
 				await sql.ExecuteNonQueryAsync();
+				if (kind == "transaction")
+				{
+					sql.CommandText = "INSERT INTO accounts VALUES ($existing, 'Existing', 1); INSERT INTO cards VALUES ($card, '1234', 'Existing', 1, $existing)";
+					sql.Parameters.AddWithValue("$existing", account.ToString());
+					await sql.ExecuteNonQueryAsync();
+				}
 				if (!competingMove)
 				{
 					sql.CommandText = "DELETE FROM receipts";
 					await sql.ExecuteNonQueryAsync();
 				}
+				await CurrentBackupFixture.CompleteAsync(sqlite, fixture);
 			}
 
-			// The import has read the child's old parent but has acquired no parent locks yet.
-			// Commit a real competing move before letting its planned lock query execute.
-			MoveBeforeLock interceptor = new(async cancellationToken =>
-			{
-				await using ApplicationDbContext move = fixture.CreateDbContext();
-				if (kind == "item")
-				{
-					// An application writer waits for the import's NORM gate. This counterexample
-					// deliberately exercises an independent SQL writer after the import snapshot.
-					await move.Database.ExecuteSqlInterpolatedAsync($"""UPDATE receipts."ReceiptItems" SET "ReceiptId"={concurrent} WHERE "Id"={child}""", cancellationToken);
-					return;
-				}
-				object entity = kind switch
-				{
-					"transaction" => await move.Transactions.SingleAsync(row => row.Id == child, cancellationToken),
-					"item" => await move.ReceiptItems.SingleAsync(row => row.Id == child, cancellationToken),
-					_ => await move.Adjustments.SingleAsync(row => row.Id == child, cancellationToken),
-				};
-				move.Entry(entity).Property("ReceiptId").CurrentValue = concurrent;
-				await move.SaveChangesAsync(cancellationToken);
-			});
-			DestinationLockProbe probe = new(fixture, destination);
-			DbContextOptions<ApplicationDbContext> options = new DbContextOptionsBuilder<ApplicationDbContext>(fixture.CreateOptions()).AddInterceptors(competingMove ? interceptor : probe).Options;
+			// A direct SQL contender must fail NOWAIT while the restore owns its destination lock.
+			DestinationLockProbe probe = new(fixture);
+			DbContextOptions<ApplicationDbContext> options = new DbContextOptionsBuilder<ApplicationDbContext>(fixture.CreateOptions()).AddInterceptors(probe).Options;
 			BackupImportService service = new(new Factory(options), NullLogger<BackupImportService>.Instance);
 			using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(30));
 			await using FileStream stream = File.OpenRead(path);
 			Func<Task> import = async () => await service.ImportFromSqliteAsync(stream, timeout.Token);
 			if (competingMove)
 			{
-				await import.Should().ThrowAsync<ConcurrencyConflictException>();
-				interceptor.Moved.Should().BeTrue();
+				await import();
+				probe.Protected.Should().BeTrue("current restore fences competing writers before its child snapshot");
 			}
 			else
 			{
-				await import();
-				probe.Protected.Should().BeTrue("a destination omitted from the archive receipts table must still be locked before graph writes");
+				await import.Should().ThrowAsync<InvalidOperationException>().WithMessage("*dependency is missing*");
 			}
 
 			await using ApplicationDbContext read = fixture.CreateDbContext();
-			(await read.Accounts.AnyAsync(row => row.Id == importedAccount)).Should().Be(!competingMove);
-			(await read.AuditLogs.AnyAsync(row => row.EntityId == importedAccount.ToString())).Should().Be(!competingMove);
-			(await read.Receipts.SingleAsync(row => row.Id == destination)).Location.Should().Be("Before");
-			(await read.AcceptedDuplicatePairs.AnyAsync(row => row.Id == pair)).Should().Be(competingMove || kind != "transaction");
+			(await read.Accounts.AnyAsync(row => row.Id == importedAccount)).Should().Be(competingMove);
+			(await read.AuditLogs.AnyAsync(row => row.EntityId == importedAccount.ToString())).Should().Be(competingMove);
+			(await read.Receipts.SingleAsync(row => row.Id == destination)).Location.Should().Be(competingMove ? "Imported" : "Before");
+			(await read.AcceptedDuplicatePairs.AnyAsync(row => row.Id == pair)).Should().Be(!competingMove);
 			Guid actualParent = kind switch
 			{
 				"transaction" => await read.Transactions.Where(row => row.Id == child).Select(row => row.ReceiptId).SingleAsync(),
 				"item" => await read.ReceiptItems.Where(row => row.Id == child).Select(row => row.ReceiptId).SingleAsync(),
 				_ => await read.Adjustments.Where(row => row.Id == child).Select(row => row.ReceiptId).SingleAsync(),
 			};
-			actualParent.Should().Be(competingMove ? concurrent : destination);
+			actualParent.Should().Be(competingMove ? destination : original);
 		}
 		finally
 		{
@@ -127,7 +113,7 @@ public class BackupImportConcurrencyTests(PostgresFixture fixture) : IClassFixtu
 		}
 	}
 
-	private sealed class DestinationLockProbe(PostgresFixture fixture, Guid destination) : DbCommandInterceptor
+	private sealed class DestinationLockProbe(PostgresFixture fixture) : DbCommandInterceptor
 	{
 		public bool Protected { get; private set; }
 		private bool _checked;
@@ -138,11 +124,11 @@ public class BackupImportConcurrencyTests(PostgresFixture fixture) : IClassFixtu
 				_checked = true;
 				await using NpgsqlConnection competitor = new(fixture.ConnectionString);
 				await competitor.OpenAsync(cancellationToken);
+				await using NpgsqlTransaction transaction = await competitor.BeginTransactionAsync(cancellationToken);
 				try
 				{
-					await using NpgsqlCommand probe = new("SELECT \"Id\" FROM receipts.\"Receipts\" WHERE \"Id\" = $1 FOR UPDATE NOWAIT", competitor);
-					probe.Parameters.AddWithValue(destination);
-					await probe.ExecuteScalarAsync(cancellationToken);
+					await using NpgsqlCommand probe = new("LOCK TABLE receipts.\"Receipts\" IN ROW EXCLUSIVE MODE NOWAIT", competitor, transaction);
+					await probe.ExecuteNonQueryAsync(cancellationToken);
 				}
 				catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.LockNotAvailable)
 				{
@@ -158,17 +144,4 @@ public class BackupImportConcurrencyTests(PostgresFixture fixture) : IClassFixtu
 		public Task<ApplicationDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default) => Task.FromResult(CreateDbContext());
 	}
 
-	private sealed class MoveBeforeLock(Func<CancellationToken, Task> move) : DbCommandInterceptor
-	{
-		public bool Moved { get; private set; }
-		public override async ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
-		{
-			if (!Moved && command.CommandText.Contains("FROM \"receipts\".\"Receipts\"", StringComparison.Ordinal) && command.CommandText.Contains("FOR UPDATE", StringComparison.Ordinal))
-			{
-				Moved = true;
-				await move(cancellationToken);
-			}
-			return result;
-		}
-	}
 }

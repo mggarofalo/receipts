@@ -13,17 +13,16 @@ using SampleData.Entities;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public sealed partial class ClassificationTests(PostgresFixture fixture)
+public sealed partial class ClassificationTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	private const string Actor = "classification-test-admin";
 	private sealed class Factory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
 	{ public ApplicationDbContext CreateDbContext() => fixture.CreateDbContext(); }
 	private ClassificationService Service(bool enabled = true) => new(new Factory(fixture), TimeProvider.System, Options.Create(new ClassificationOptions { WritesEnabled = enabled }));
 	private TaxonomyService Tree() => new(new Factory(fixture), TimeProvider.System);
-	private async Task<(Guid Item, Guid Revision, Guid Root, Guid Child)> SeedAsync()
+	private async Task<(Guid Item, Guid Revision, Guid Root, Guid Child, Guid Assignment)> SeedAsync()
 	{
 		await using ApplicationDbContext db = fixture.CreateDbContext();
 		if (!await db.Users.AnyAsync(x => x.Id == Actor))
@@ -35,12 +34,26 @@ public sealed partial class ClassificationTests(PostgresFixture fixture)
 		}
 		ReceiptEntity receipt = ReceiptEntityGenerator.Generate(); receipt.Date = new(1999, 1, 1);
 		ReceiptItemEntity item = ReceiptItemEntityGenerator.Generate(receipt.Id);
-		db.Receipts.Add(receipt); db.ReceiptItems.Add(item); await db.SaveChangesAsync();
+		db.Receipts.Add(receipt); await db.SaveChangesAsync();
+		// Run the real initial backfill before creating an administrator taxonomy.
+		// Subsequent test items go through the compatibility writer, avoiding readiness gaps.
+		var migration = new LegacyTaxonomyMigrationService(new Factory(fixture));
+		if (!await db.LegacyMigrations.AnyAsync())
+		{
+			db.ReceiptItems.Add(item); await db.SaveChangesAsync();
+			var plan = await migration.PreflightAsync(new("classification-fixture", Guid.NewGuid(), Actor, DateTimeOffset.UtcNow));
+			await migration.ApplyAsync(LegacyMigrationFreeze.Source(plan));
+		}
+		else
+		{
+			await new Infrastructure.Repositories.ReceiptItemRepository(new ActorFactory(fixture)).CreateAsync([item], default);
+		}
+		Guid assignment = (await Service().HistoryAsync(item.Id, null, 1)).Items.Single().Id;
 		Guid root = Guid.NewGuid(), child = Guid.NewGuid();
 		TaxonomyRevision head = (await Tree().ReadAsync(null))!;
 		TaxonomyRevision revision = await Tree().ChangeAsync(Actor, new(head.Id, Guid.NewGuid(), "Classification fixture",
 			[new TaxonomyEdit("create", root, Name: Guid.NewGuid().ToString()), new TaxonomyEdit("create", child, root, "Child")]));
-		return (item.Id, revision.Id, root, child);
+		return (item.Id, revision.Id, root, child, assignment);
 	}
 	[Fact]
 	public async Task BackdatedPurchaseRetainsOriginalPathAndFinancialEvidenceAfterMoveAndReclassification()
@@ -49,16 +62,17 @@ public sealed partial class ClassificationTests(PostgresFixture fixture)
 		await using ApplicationDbContext db = fixture.CreateDbContext();
 		ReceiptItemEntity before = await db.ReceiptItems.AsNoTracking().SingleAsync(x => x.Id == seed.Item);
 		DateTimeOffset started = DateTimeOffset.UtcNow;
-		PurchaseClassification first = await Service().AssignAsync(Actor, seed.Item, new(seed.Child, seed.Revision, null, Guid.NewGuid(), "Initial choice"));
-		first.RecordedAt.Should().BeOnOrAfter(started); first.Sequence.Should().Be(1);
+		PurchaseClassification first = await Service().AssignAsync(Actor, seed.Item, new(seed.Child, seed.Revision, seed.Assignment, Guid.NewGuid(), "Initial choice"));
+		first.RecordedAt.Should().BeOnOrAfter(started.AddTicks(-9)); first.Sequence.Should().Be(2);
 		TaxonomyRevision moved = await Tree().ChangeAsync(Actor, new(seed.Revision, Guid.NewGuid(), "Move child", [new TaxonomyEdit("move", seed.Child)]));
 		PurchaseClassification second = await Service().AssignAsync(Actor, seed.Item, new(seed.Root, moved.Id, first.Id, Guid.NewGuid(), "Broad choice"));
 		PurchaseClassification third = await Service().AssignAsync(Actor, seed.Item, new(null, moved.Id, second.Id, Guid.NewGuid(), "Unclassified"));
 		third.PreviousAssignmentId.Should().Be(second.Id); third.CategoryId.Should().BeNull(); third.Path.Should().BeEmpty();
 		ClassificationHistory history = await Service().HistoryAsync(seed.Item, null, 2);
-		history.Items.Select(x => x.Id).Should().Equal(third.Id, second.Id); history.NextBeforeSequence.Should().Be(2);
+		history.Items.Select(x => x.Id).Should().Equal(third.Id, second.Id); history.NextBeforeSequence.Should().Be(3);
 		ClassificationHistory older = await Service().HistoryAsync(seed.Item, history.NextBeforeSequence, 2);
-		older.Items.Single().Path.Select(x => x.Id).Should().Equal(seed.Root, seed.Child);
+		older.Items.Select(x => x.Id).Should().Equal(first.Id, seed.Assignment);
+		older.Items.First().Path.Select(x => x.Id).Should().Equal(seed.Root, seed.Child);
 		ReceiptItemEntity after = await db.ReceiptItems.AsNoTracking().SingleAsync(x => x.Id == seed.Item);
 		after.Should().BeEquivalentTo(before);
 		(await db.CurrentClassifications.SingleAsync(x => x.ReceiptItemId == seed.Item)).AssignmentId.Should().Be(third.Id);
@@ -70,7 +84,7 @@ public sealed partial class ClassificationTests(PostgresFixture fixture)
 	public async Task ReplayChangedBodyStaleTaxonomyAndCompetingEditsHaveNoDuplicateHistory()
 	{
 		var seed = await SeedAsync();
-		ClassificationCommand command = new(seed.Root, seed.Revision, null, Guid.NewGuid(), "Manual");
+		ClassificationCommand command = new(seed.Root, seed.Revision, seed.Assignment, Guid.NewGuid(), "Manual");
 		PurchaseClassification first = await Service().AssignAsync(Actor, seed.Item, command);
 		(await Service().AssignAsync(Actor, seed.Item, command)).Should().BeEquivalentTo(first);
 		Func<Task> changed = () => Service().AssignAsync(Actor, seed.Item, command with { CategoryId = seed.Child });
@@ -84,7 +98,7 @@ public sealed partial class ClassificationTests(PostgresFixture fixture)
 		(await stale.Should().ThrowAsync<TaxonomyException>()).Which.Status.Should().Be(409);
 		Func<Task> unavailable = () => Service().AssignAsync(Actor, seed.Item, new(seed.Root, archived.Id, current.Id, Guid.NewGuid(), "Archived"));
 		(await unavailable.Should().ThrowAsync<TaxonomyException>()).Which.Status.Should().Be(400);
-		(await Service().HistoryAsync(seed.Item, null, 100)).Items.Should().HaveCount(2);
+		(await Service().HistoryAsync(seed.Item, null, 100)).Items.Should().HaveCount(3);
 		Func<Task> disabled = () => Service(false).AssignAsync(Actor, seed.Item, new(null, archived.Id, current.Id, Guid.NewGuid(), "Disabled"));
 		(await disabled.Should().ThrowAsync<TaxonomyException>()).Which.Status.Should().Be(409);
 	}

@@ -29,3 +29,28 @@ The existing `/categories` and `/subcategories` routes, query parameters and lib
 links remain compatible until the legacy migration/retirement gates. The tree links
 to those views even when genesis is empty; it does not imply legacy receipt data has
 been imported or hide that data. Taxonomy management does not invoke a provider.
+
+
+### Older portable backup conversion
+
+Portable v1–9 imports derive initial classification only from the file's exact
+category, subcategory and receipt-item evidence. The source dataset is the export
+version plus SHA-256 of the complete SQLite file; a deterministic UUID identifies
+the import operation. The initial revision and assignments use `legacy_import`
+provenance with the server actor `legacy_backup_import`, immutable source strings,
+and the first successful import observation time, never the purchase date. The
+existing initial-migration planner and transactional append path create the
+snapshot, crosswalks, outcomes, current assignments and readiness marker together
+with the imported business data. Earlier classification history remains unknown.
+
+A destination must have untouched genesis and no receipt items. Only exact,
+untouched application seed suggestions may already exist; seed rows absent from
+the file stay in the suggestion library and do not become imported taxonomy
+evidence. Other populated legacy targets and versioned targets reject before any
+business upsert, independent of `Classification:WritesEnabled`. Restore those
+files into a fresh database; merging unrelated source sets requires reviewed
+reconciliation. A byte-identical previously imported file is a no-op: its stored
+plan is revalidated with the original observation boundary and returns zero
+created/updated counts, preserving any later receipt edits and assignments. A
+modified/repacked file has a different dataset fingerprint and does not qualify
+as that replay.

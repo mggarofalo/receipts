@@ -5,9 +5,37 @@ namespace Infrastructure.Services;
 
 public class TrashService(ApplicationDbContext context) : ITrashService
 {
-	public async Task PurgeAllDeletedAsync(CancellationToken cancellationToken)
+	public async Task<PurgeTrashResult> PurgeAllDeletedAsync(CancellationToken cancellationToken)
 	{
 		await using Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+
+		await Infrastructure.Utilities.NormalizationWriteGuard.AcquireWriteGateAsync(context, cancellationToken);
+		// History protects the entire aggregate, including previously trashed siblings.
+		Guid[] retainedReceiptIds = await context.ReceiptItems.IgnoreQueryFilters().IgnoreAutoIncludes()
+			.Where(item => context.Classifications.Any(assignment => assignment.ReceiptItemId == item.Id))
+			.Select(item => item.ReceiptId).Distinct().ToArrayAsync(cancellationToken);
+		// Preserve both ends of duplicate annotations to avoid cascade-erasing retained records.
+		while (true)
+		{
+			var pairs = await context.AcceptedDuplicatePairs.IgnoreQueryFilters()
+				.Where(pair => retainedReceiptIds.Contains(pair.ReceiptIdA) || retainedReceiptIds.Contains(pair.ReceiptIdB))
+				.Select(pair => new { pair.ReceiptIdA, pair.ReceiptIdB }).ToListAsync(cancellationToken);
+			Guid[] expanded = retainedReceiptIds.Concat(pairs.SelectMany(pair => new[] { pair.ReceiptIdA, pair.ReceiptIdB })).Distinct().ToArray();
+			if (expanded.Length == retainedReceiptIds.Length) { break; }
+			retainedReceiptIds = expanded;
+		}
+		int retainedReceipts = await context.Receipts.IgnoreQueryFilters()
+			.CountAsync(row => row.DeletedAt != null && retainedReceiptIds.Contains(row.Id), cancellationToken);
+		int retainedItems = await context.ReceiptItems.IgnoreQueryFilters().IgnoreAutoIncludes()
+			.CountAsync(row => row.DeletedAt != null && retainedReceiptIds.Contains(row.ReceiptId), cancellationToken);
+		IQueryable<Guid> retainedTransactions = context.Transactions.IgnoreQueryFilters().IgnoreAutoIncludes()
+			.Where(row => retainedReceiptIds.Contains(row.ReceiptId)).Select(row => row.Id);
+
+		int retainedRecords = retainedReceipts + retainedItems
+			+ await context.Adjustments.IgnoreQueryFilters().CountAsync(row => row.DeletedAt != null && retainedReceiptIds.Contains(row.ReceiptId), cancellationToken)
+			+ await context.Transactions.IgnoreQueryFilters().IgnoreAutoIncludes().CountAsync(row => row.DeletedAt != null && retainedReceiptIds.Contains(row.ReceiptId), cancellationToken)
+			+ await context.YnabSyncRecords.IgnoreQueryFilters().CountAsync(row => row.DeletedAt != null && retainedTransactions.Contains(row.LocalTransactionId), cancellationToken)
+			+ await context.AcceptedDuplicatePairs.IgnoreQueryFilters().CountAsync(row => row.DeletedAt != null && (retainedReceiptIds.Contains(row.ReceiptIdA) || retainedReceiptIds.Contains(row.ReceiptIdB)), cancellationToken);
 
 		// Delete in FK dependency order (children first)
 		// Delete both soft-deleted sync records AND active sync records whose parent
@@ -18,10 +46,10 @@ public class TrashService(ApplicationDbContext context) : ITrashService
 		// first keeps the operation FK-safe even for historical orphans. See RECEIPTS-755.
 		await context.YnabSyncRecords
 			.IgnoreQueryFilters()
-			.Where(s => s.DeletedAt != null
+			.Where(s => !retainedTransactions.Contains(s.LocalTransactionId) && (s.DeletedAt != null
 				|| context.Transactions
 					.IgnoreQueryFilters()
-					.Any(t => t.Id == s.LocalTransactionId && t.DeletedAt != null))
+					.Any(t => t.Id == s.LocalTransactionId && t.DeletedAt != null)))
 			.ExecuteDeleteAsync(cancellationToken);
 
 		// Un-accepted duplicate pairs (RECEIPTS-834). These are soft-deleted so the un-accept shows up
@@ -30,27 +58,27 @@ public class TrashService(ApplicationDbContext context) : ITrashService
 		// the pair rows are FK children of Receipts.
 		await context.AcceptedDuplicatePairs
 			.IgnoreQueryFilters()
-			.Where(e => e.DeletedAt != null)
+			.Where(e => e.DeletedAt != null && !retainedReceiptIds.Contains(e.ReceiptIdA) && !retainedReceiptIds.Contains(e.ReceiptIdB))
 			.ExecuteDeleteAsync(cancellationToken);
 
 		await context.Adjustments
 			.IgnoreQueryFilters()
-			.Where(e => e.DeletedAt != null)
+			.Where(e => e.DeletedAt != null && !retainedReceiptIds.Contains(e.ReceiptId))
 			.ExecuteDeleteAsync(cancellationToken);
 
 		await context.ReceiptItems
 			.IgnoreQueryFilters()
-			.Where(e => e.DeletedAt != null)
+			.Where(e => e.DeletedAt != null && !retainedReceiptIds.Contains(e.ReceiptId))
 			.ExecuteDeleteAsync(cancellationToken);
 
 		await context.Transactions
 			.IgnoreQueryFilters()
-			.Where(e => e.DeletedAt != null)
+			.Where(e => e.DeletedAt != null && !retainedReceiptIds.Contains(e.ReceiptId))
 			.ExecuteDeleteAsync(cancellationToken);
 
 		await context.Receipts
 			.IgnoreQueryFilters()
-			.Where(e => e.DeletedAt != null)
+			.Where(e => e.DeletedAt != null && !retainedReceiptIds.Contains(e.Id))
 			.ExecuteDeleteAsync(cancellationToken);
 
 		await context.ItemTemplates
@@ -77,5 +105,6 @@ public class TrashService(ApplicationDbContext context) : ITrashService
 			.ExecuteDeleteAsync(cancellationToken);
 
 		await transaction.CommitAsync(cancellationToken);
+		return new(retainedReceipts, retainedItems, "Receipts with classification history and their linked records stay in trash to preserve history. They can still be restored.", retainedRecords);
 	}
 }
