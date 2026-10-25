@@ -8,6 +8,104 @@ info:
     default version (currently 1.0) is assumed.
 
 paths:
+  /api/taxonomy:
+    get:
+      tags: [Taxonomy]
+      summary: Get the complete current taxonomy
+      operationId: Taxonomy_GetCurrent
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      responses:
+        "200":
+          description: Complete revision including archived identities
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaxonomyRevisionResponse"
+        "401":
+          description: Authentication required
+        "404":
+          description: Request rejected
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /api/taxonomy/revisions/{id}:
+    get:
+      tags: [Taxonomy]
+      summary: Get an immutable taxonomy revision
+      operationId: Taxonomy_GetRevision
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: Complete revision including archived identities
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaxonomyRevisionResponse"
+        "401":
+          description: Authentication required
+        "404":
+          description: Request rejected
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /api/taxonomy/changes:
+    post:
+      tags: [Taxonomy]
+      summary: Apply an atomic taxonomy change batch
+      operationId: Taxonomy_Change
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaxonomyChangeRequest"
+      responses:
+        "200":
+          description: Complete revision including archived identities
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaxonomyRevisionResponse"
+        "401":
+          description: Authentication required
+        "400":
+          description: Request rejected
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
+          description: Request rejected
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
+          description: Request rejected
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
+          description: Request rejected
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
   /api/jev/status:
     get:
       tags: [Jev]
@@ -7287,6 +7385,55 @@ paths:
 
 components:
   schemas:
+    TaxonomyChangeRequest:
+      type: object
+      description: Admin only. Actor-scoped operation ID retries return the original result; changed-body reuse or a stale expected revision returns 409. No-op edits keep the current revision. Independent of legacy category suggestions.
+      required: [expectedRevisionId, operationId, reason, changes]
+      properties:
+        expectedRevisionId: {type: string, format: uuid}
+        operationId: {type: string, format: uuid}
+        reason: {type: string, minLength: 1}
+        changes:
+          type: array
+          minItems: 1
+          items: {$ref: '#/components/schemas/TaxonomyChange'}
+    TaxonomyChangeKind:
+      type: string
+      enum: [create, rename, move, define, archive, restore]
+    TaxonomyChange:
+      type: object
+      description: Create requires a new categoryId and name; rename requires name; move sets parentId (null for root); define sets definition (null clears); archive includes the subtree; restore requires active ancestors. Other fields must be absent or null. Exact ordinal sibling names, no surrounding whitespace, no depth bound. Validation applies to the final tree.
+      required: [kind, categoryId]
+      properties:
+        kind: {$ref: '#/components/schemas/TaxonomyChangeKind'}
+        categoryId: {type: string, format: uuid}
+        parentId: {type: [string, 'null'], format: uuid}
+        name: {type: [string, 'null'], maxLength: 200}
+        definition: {type: [string, 'null'], maxLength: 4000}
+    TaxonomyRevisionResponse:
+      type: object
+      required: [id, sequence, recordedAt, actor, reason, operationId, nodes, affectedCount]
+      properties:
+        id: {type: string, format: uuid}
+        sequence: {type: integer, format: int64}
+        previousRevisionId: {type: [string, 'null'], format: uuid}
+        recordedAt: {type: string, format: date-time}
+        actor: {type: string}
+        reason: {type: string}
+        operationId: {type: string, format: uuid}
+        affectedCount: {type: integer, format: int32}
+        nodes:
+          type: array
+          items: {$ref: '#/components/schemas/TaxonomyNodeResponse'}
+    TaxonomyNodeResponse:
+      type: object
+      required: [id, name, archived]
+      properties:
+        id: {type: string, format: uuid}
+        parentId: {type: [string, 'null'], format: uuid}
+        name: {type: string, maxLength: 200}
+        definition: {type: [string, 'null'], maxLength: 4000}
+        archived: {type: boolean}
     JevConnectionState:
       type: string
       enum: [disabled, missing, configuredUnverified, invalid, unavailable, connected]

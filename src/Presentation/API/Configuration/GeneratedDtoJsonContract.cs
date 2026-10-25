@@ -25,6 +25,12 @@ internal static class GeneratedDtoJsonContract
 
 		foreach (JsonPropertyInfo property in typeInfo.Properties)
 		{
+			// Required value types need JSON presence checks: DataAnnotations cannot
+			// distinguish an omitted enum from its valid zero value (create).
+			if (typeInfo.Type == typeof(API.Generated.Dtos.TaxonomyChange) && property.Name == "kind")
+			{
+				property.IsRequired = true;
+			}
 			Type propertyType = Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType;
 			if (!propertyType.IsEnum || property.AttributeProvider is not ICustomAttributeProvider attributes)
 			{
