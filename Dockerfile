@@ -94,7 +94,8 @@ RUN case ${TARGETARCH} in \
     esac && \
     dotnet restore src/Presentation/API/API.csproj -r linux-${DOTNET_ARCH} -p:PublishReadyToRun=true && \
     dotnet restore src/Tools/DbMigrator/DbMigrator.csproj -r linux-${DOTNET_ARCH} && \
-    dotnet restore src/Tools/DbSeeder/DbSeeder.csproj -r linux-${DOTNET_ARCH}
+    dotnet restore src/Tools/DbSeeder/DbSeeder.csproj -r linux-${DOTNET_ARCH} && \
+    dotnet restore tools/Receipts.TaxonomyMigration/Receipts.TaxonomyMigration.csproj -r linux-${DOTNET_ARCH}
 
 # Copy remaining source
 COPY src/ src/
@@ -123,6 +124,10 @@ RUN case ${TARGETARCH} in \
       -r linux-${DOTNET_ARCH} && \
     dotnet publish src/Tools/DbSeeder/DbSeeder.csproj \
       -c Release -o /app/tools/DbSeeder --no-restore \
+      -p:MinVerVersionOverride=${VERSION} \
+      -r linux-${DOTNET_ARCH} && \
+    dotnet publish tools/Receipts.TaxonomyMigration/Receipts.TaxonomyMigration.csproj \
+      -c Release -o /app/tools/TaxonomyMigration --no-restore \
       -p:MinVerVersionOverride=${VERSION} \
       -r linux-${DOTNET_ARCH}
 

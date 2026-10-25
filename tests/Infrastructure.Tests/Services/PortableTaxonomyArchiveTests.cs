@@ -161,12 +161,16 @@ public sealed class PortableTaxonomyArchiveTests
 			.WithMessage("*Duplicate*");
 	}
 
-	[Fact]
-	public void Validate_RecomputesMigrationPlanFromFrozenEvidence()
+	[Theory]
+	[InlineData(0)]
+	[InlineData(1)]
+	[InlineData(9)]
+	public void Validate_RecomputesMigrationPlanFromFrozenEvidence(int submicrosecondTicks)
 	{
 		var state = EmptyState();
+		DateTimeOffset stored = state.Revisions[0].RecordedAt.AddSeconds(1);
 		var plan = LegacyTaxonomyMigrationPlanner.Plan(new("dataset", Guid.NewGuid(),
-			LegacyTaxonomyMigrationService.InitialOperationKind, "actor", state.Revisions[0].RecordedAt.AddSeconds(1), [], [], []));
+			LegacyTaxonomyMigrationService.InitialOperationKind, "actor", stored.AddTicks(submicrosecondTicks), [], [], []));
 		state.Revisions.Add(new()
 		{
 			Id = plan.RevisionId,
@@ -174,7 +178,7 @@ public sealed class PortableTaxonomyArchiveTests
 			PreviousRevisionId = state.Revisions[0].Id,
 			Actor = plan.Actor,
 			OperationId = plan.OperationId,
-			RecordedAt = plan.ObservedAt,
+			RecordedAt = stored,
 			Reason = "observed"
 		});
 		state.Heads[0].RevisionId = plan.RevisionId;
@@ -186,11 +190,19 @@ public sealed class PortableTaxonomyArchiveTests
 			SourceDataset = plan.SourceDataset,
 			RequestHash = plan.RequestHash,
 			RevisionId = plan.RevisionId,
-			ObservedAt = plan.ObservedAt,
+			ObservedAt = stored,
 			PlanJson = JsonSerializer.Serialize(plan)
 		};
 		state.Migrations.Add(migration);
 		PortableTaxonomyArchive.Validate(state);
+		migration.PlanJson.Should().Be(JsonSerializer.Serialize(plan));
+		migration.ObservedAt = stored.AddTicks(1);
+		FluentActions.Invoking(() => PortableTaxonomyArchive.Validate(state)).Should().Throw<InvalidDataException>()
+			.WithMessage("*Migration plan differs from metadata*");
+		migration.ObservedAt = stored;
+		migration.PlanJson = JsonSerializer.Serialize(plan with { ObservedAt = stored.AddTicks(submicrosecondTicks == 1 ? 2 : 1) });
+		FluentActions.Invoking(() => PortableTaxonomyArchive.Validate(state)).Should().Throw<InvalidDataException>()
+			.WithMessage("*frozen source*");
 		migration.PlanJson = JsonSerializer.Serialize(plan with { Counts = plan.Counts with { Items = 1 } });
 		FluentActions.Invoking(() => PortableTaxonomyArchive.Validate(state)).Should().Throw<InvalidDataException>()
 			.WithMessage("*frozen source*");
