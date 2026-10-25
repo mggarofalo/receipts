@@ -33,7 +33,15 @@ const preview = {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(client.GET).mockResolvedValue({
-    data: [],
+    data: [
+      {
+        id: targetId,
+        revision,
+        canonicalName: "Beef franks 8 count",
+        displayLabel: null,
+        channels: ["lexical"],
+      },
+    ],
     response: new Response(),
   } as never);
 });
@@ -100,9 +108,13 @@ it("chooses an existing identity for this purchase without creating or linking a
   } as never);
   const { observed } = renderField();
   const user = userEvent.setup();
-  await user.click(screen.getByRole("button", { name: "Choose product" }));
+  expect(
+    screen.queryByLabelText("Search all product names"),
+  ).not.toBeInTheDocument();
   await user.click(
-    await screen.findByRole("button", { name: "Use Beef franks 8 count" }),
+    await screen.findByRole("button", {
+      name: "Choose suggested Beef franks 8 count",
+    }),
   );
   expect(observed).toHaveBeenLastCalledWith(
     expect.objectContaining({
@@ -133,7 +145,9 @@ it("stages New product and use it together with an explicit remembered scope, wi
   const { observed } = renderField();
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: "Choose product" }));
-  await screen.findByRole("button", { name: "Use Beef franks 8 count" });
+  await screen.findByRole("button", {
+    name: "Choose suggested Beef franks 8 count",
+  });
   await user.click(
     screen.getByRole("checkbox", {
       name: /Remember this exact description at Market A/,
@@ -305,16 +319,183 @@ it("prevents an unconditional remembered rule for a source with conflicting reco
   const { observed } = renderField();
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: "Choose product" }));
-  await screen.findByRole("button", { name: "Use Beef franks 8 count" });
+  await screen.findByRole("button", {
+    name: "Choose suggested Beef franks 8 count",
+  });
   expect(
     screen.getByRole("checkbox", { name: /Remember this exact description/ }),
   ).toBeDisabled();
   await user.click(
-    screen.getByRole("button", { name: "Use Beef franks 8 count" }),
+    screen.getByRole("button", {
+      name: "Choose suggested Beef franks 8 count",
+    }),
   );
   expect(observed).toHaveBeenLastCalledWith(
     expect.objectContaining({
       intent: expect.objectContaining({ rememberSource: false }),
     }),
   );
+});
+
+it("does not show the alphabetical catalog until an explicit search is entered", async () => {
+  vi.mocked(client.POST).mockResolvedValue({
+    data: preview,
+    response: new Response(),
+  } as never);
+  renderField();
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Choose product" }));
+  await screen.findByRole("button", {
+    name: "Choose suggested Beef franks 8 count",
+  });
+  expect(
+    screen.queryByRole("button", { name: "Use Beef franks 8 count" }),
+  ).not.toBeInTheDocument();
+  await user.type(screen.getByLabelText("Search all product names"), "Beef");
+  expect(
+    await screen.findByRole("button", { name: "Use Beef franks 8 count" }),
+  ).toBeEnabled();
+});
+
+it("clears an inline product choice immediately when receipt source changes", async () => {
+  vi.mocked(client.POST).mockResolvedValue({
+    data: preview,
+    response: new Response(),
+  } as never);
+  const changed = vi.fn();
+  const cache = createQueryClient();
+  const choice = {
+    sourceKey: normalizationSourceKey(source),
+    label: "Beef franks",
+    intent: {
+      kind: "confirmExisting" as const,
+      targetId,
+      expectedTargetRevision: revision,
+      clientRowId: rowId,
+      sourceFingerprint: "observed-source",
+      rememberSource: false,
+    },
+  };
+  const { rerender } = renderWithProviders(
+    <QueryClientProvider client={cache}>
+      <ReceiptNormalizationField
+        source={source}
+        clientRowId={rowId}
+        value={choice}
+        onChange={changed}
+      />
+    </QueryClientProvider>,
+  );
+  rerender(
+    <QueryClientProvider client={cache}>
+      <ReceiptNormalizationField
+        source={{ ...source, description: "Turkey" }}
+        clientRowId={rowId}
+        value={choice}
+        onChange={changed}
+      />
+    </QueryClientProvider>,
+  );
+  await waitFor(() => expect(changed).toHaveBeenCalledWith(undefined));
+  expect(
+    screen.queryByText(/Selected for this purchase/),
+  ).not.toBeInTheDocument();
+});
+
+it("supports explicitly remembering an inline choice and staging exclusion", async () => {
+  vi.mocked(client.POST).mockResolvedValue({
+    data: preview,
+    response: new Response(),
+  } as never);
+  const { observed } = renderField();
+  const user = userEvent.setup();
+  await user.click(
+    screen.getByRole("checkbox", { name: /Remember this exact description/ }),
+  );
+  await user.click(
+    await screen.findByRole("button", {
+      name: "Choose suggested Beef franks 8 count",
+    }),
+  );
+  expect(observed).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      intent: expect.objectContaining({
+        kind: "confirmExisting",
+        rememberSource: true,
+      }),
+    }),
+  );
+  await user.click(screen.getByRole("button", { name: "Change product" }));
+  await user.click(
+    screen.getByRole("button", { name: "Exclude from product grouping" }),
+  );
+  expect(observed).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      intent: expect.objectContaining({
+        kind: "exclude",
+        sourceFingerprint: "observed-source",
+        rememberSource: true,
+      }),
+    }),
+  );
+});
+
+it("reopens alternatives after choosing a product and replaces the staged choice", async () => {
+  const replacementId = "44444444-4444-4444-8444-444444444444";
+  vi.mocked(client.POST).mockResolvedValue({
+    data: preview,
+    response: new Response(),
+  } as never);
+  vi.mocked(client.GET).mockResolvedValue({
+    data: [
+      {
+        id: targetId,
+        revision,
+        canonicalName: "Beef franks 8 count",
+        channels: ["lexical"],
+      },
+      {
+        id: replacementId,
+        revision,
+        canonicalName: "Turkey franks 8 count",
+        channels: ["lexical"],
+      },
+    ],
+    response: new Response(),
+  } as never);
+  const { observed } = renderField();
+  const user = userEvent.setup();
+  await user.click(
+    await screen.findByRole("button", {
+      name: "Choose suggested Beef franks 8 count",
+    }),
+  );
+  expect(
+    screen.queryByRole("button", {
+      name: "Choose suggested Turkey franks 8 count",
+    }),
+  ).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Change product" }));
+  await user.click(
+    await screen.findByRole("button", {
+      name: "Choose suggested Turkey franks 8 count",
+    }),
+  );
+  expect(observed).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      label: "Turkey franks 8 count",
+      intent: expect.objectContaining({
+        kind: "confirmExisting",
+        targetId: replacementId,
+        expectedTargetRevision: revision,
+        clientRowId: rowId,
+        sourceFingerprint: "observed-source",
+        rememberSource: false,
+      }),
+    }),
+  );
+  expect(
+    screen.getByText(/Selected for this purchase/),
+  ).toHaveTextContent("Selected for this purchase: Turkey franks 8 count");
+  expect(client.POST).toHaveBeenCalledTimes(1);
 });

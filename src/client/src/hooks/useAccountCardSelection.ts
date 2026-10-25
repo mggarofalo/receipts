@@ -1,6 +1,7 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAllAccounts, useAccountCards } from "@/hooks/useAccounts";
+import { useAllCards } from "@/hooks/useCards";
 import { accountToOption, cardToOption } from "@/lib/combobox-options";
 import type { components } from "@/generated/api";
 
@@ -27,6 +28,7 @@ export function useAccountCardSelection({
   cardId,
 }: AccountCardSelection) {
   const queryClient = useQueryClient();
+  const [historical] = useState(() => ({ accountId, cardId }));
   // Fetch every page and retain an inactive current account for historical edits.
   const {
     data: accountData,
@@ -40,26 +42,47 @@ export function useAccountCardSelection({
     isError: cardsError,
     refetch: retryCards,
   } = useAccountCards(accountId || null);
+  const allCards = useAllCards(undefined, { enabled: !accountId });
+  const availableCards = accountId ? cardData : allCards.data;
+  const availableCardsLoading = accountId ? cardsLoading : allCards.isLoading;
+  const availableCardsError = accountId ? cardsError : allCards.isError;
+  const retryAvailableCards = accountId ? retryCards : allCards.refetch;
   const accountOptions = useMemo(
     () =>
       (accountData ?? [])
-        .filter((account) => account.isActive || account.id === accountId)
+        .filter(
+          (account) => account.isActive || account.id === historical.accountId,
+        )
         .map(accountToOption),
-    [accountData, accountId],
+    [accountData, historical.accountId],
   );
   const cardOptions = useMemo(
     () =>
-      (cardData ?? [])
+      (availableCards ?? [])
         .filter(
           (card) =>
-            card.accountId === accountId &&
-            (card.isActive || card.id === cardId),
+            (!accountId || card.accountId === accountId) &&
+            !!card.accountId &&
+            (card.isActive || card.id === historical.cardId) &&
+            !!accountData?.some(
+              (account) =>
+                account.id === card.accountId &&
+                (account.isActive || account.id === historical.accountId),
+            ),
         )
         .map((card) => ({
           ...cardToOption(card),
           label: card.isActive ? card.name : `${card.name} (inactive)`,
+          sublabel: `${card.cardCode} / ${accountData?.find((account) => account.id === card.accountId)?.name ?? card.accountId}`,
+          accountId: card.accountId!,
         })),
-    [cardData, accountId, cardId],
+    [
+      availableCards,
+      accountData,
+      accountId,
+      historical.cardId,
+      historical.accountId,
+    ],
   );
   const selectionError = membershipError({ accountId, cardId }, cardData);
   // Read the latest successful result at submission, including a response that arrived
@@ -83,9 +106,9 @@ export function useAccountCardSelection({
       accountsLoading,
       accountsError,
       retryAccounts,
-      cardsLoading,
-      cardsError,
-      retryCards,
+      cardsLoading: availableCardsLoading,
+      cardsError: availableCardsError,
+      retryCards: retryAvailableCards,
       selectionError,
       validate,
     }),
@@ -97,9 +120,9 @@ export function useAccountCardSelection({
       accountsLoading,
       accountsError,
       retryAccounts,
-      cardsLoading,
-      cardsError,
-      retryCards,
+      availableCardsLoading,
+      availableCardsError,
+      retryAvailableCards,
       selectionError,
       validate,
     ],

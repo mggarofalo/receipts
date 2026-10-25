@@ -8,6 +8,41 @@ import { useSimilarItems } from "@/hooks/useSimilarItems";
 import { usePromoteToTemplate } from "@/hooks/usePromoteToTemplate";
 import { LineItemsSection, type ReceiptLineItem } from "./LineItemsSection";
 
+vi.mock("@/hooks/useReceiptNormalizationPreview", () => ({
+  useReceiptNormalizationPreview: () => ({
+    ...mockQueryResult({
+      data: {
+        sourceFingerprint: "line-source",
+        sourceAmbiguous: false,
+        excluded: false,
+        candidates: [],
+        total: 0,
+        offset: 0,
+        limit: 10,
+      },
+    }),
+    isSuccess: true,
+    isFetching: false,
+    isDebouncing: false,
+  }),
+}));
+vi.mock("@/hooks/useReceiptNormalizationCandidates", () => ({
+  useReceiptNormalizationCandidates: () =>
+    mockQueryResult({
+      isPending: false,
+      isFetching: false,
+      data: [
+        {
+          id: "22222222-2222-4222-8222-222222222222",
+          revision: "33333333-3333-4333-8333-333333333333",
+          canonicalName: "Beef franks",
+          displayLabel: null,
+          channels: ["lexical"],
+        },
+      ],
+    }),
+}));
+
 vi.mock("@/hooks/useCategories", () => ({
   useAllCategories: vi.fn(() =>
     mockQueryResult({
@@ -826,4 +861,39 @@ it("creates the same subcategory name independently per category and releases fa
     isActive: true,
   });
   expect(mutateAsync).toHaveBeenCalledTimes(3);
+});
+
+it("selects a product inline while retaining the raw receipt description on the added line", async () => {
+  const user = userEvent.setup();
+  const onChange = vi.fn();
+  renderWithProviders(
+    <LineItemsSection items={[]} onChange={onChange} location="Market" />,
+  );
+  await user.type(screen.getByPlaceholderText("Item description"), "BF FRANKS");
+  await user.click(
+    await screen.findByRole("button", { name: "Choose suggested Beef franks" }),
+  );
+  expect(screen.getByPlaceholderText("Item description")).toHaveValue(
+    "BF FRANKS",
+  );
+  await user.click(screen.getByRole("combobox", { name: /^Category/ }));
+  await user.click(screen.getByRole("option", { name: "Food" }));
+  await user.click(screen.getByRole("button", { name: /add item/i }));
+  await waitFor(() =>
+    expect(onChange).toHaveBeenCalledWith([
+      expect.objectContaining({
+        description: "BF FRANKS",
+        normalizationChoice: expect.objectContaining({
+          label: "Beef franks",
+          intent: expect.objectContaining({
+            kind: "confirmExisting",
+            targetId: "22222222-2222-4222-8222-222222222222",
+            expectedTargetRevision: "33333333-3333-4333-8333-333333333333",
+            sourceFingerprint: "line-source",
+            rememberSource: false,
+          }),
+        }),
+      }),
+    ]),
+  );
 });

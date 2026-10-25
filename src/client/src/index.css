@@ -109,7 +109,7 @@ html[data-palette="graphite"] {
   --popover: var(--surface-2);
   --popover-foreground: var(--ink);
   --command-selection-background: var(--surface);
-  --command-selection-marker: var(--accent);
+  --command-selection-marker: var(--ink-2);
   --primary: var(--accent);
   --primary-foreground: var(--accent-ink);
   --secondary: var(--surface-2);
@@ -169,7 +169,7 @@ html[data-palette="paper"] {
    Keep this local to command rows: accent-surface also styles unrelated controls. */
 [data-slot="command-item"][data-selected="true"] {
   background-color: var(--command-selection-background);
-  box-shadow: inset 0 0 0 2px var(--command-selection-marker);
+  box-shadow: inset 3px 0 0 var(--command-selection-marker);
 }
 
 /* ── Density modifier ───────────────────────────────────────────────── */
@@ -440,7 +440,7 @@ table.sr-only {
 
 /* ── Focus rings & selection ────────────────────────────────────────── */
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 1.5px solid var(--ink-2);
   outline-offset: 2px;
 }
 

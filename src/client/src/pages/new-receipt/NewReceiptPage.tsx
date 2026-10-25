@@ -5,11 +5,7 @@ import {
   receiptNormalizationSource,
 } from "@/lib/receipt-normalization";
 import { generateId } from "@/lib/id";
-import {
-  calculateSubtotal,
-  sumAmounts,
-  calculateReceiptBalance,
-} from "@/lib/receipt-arithmetic";
+import { calculateSubtotal, sumAmounts } from "@/lib/receipt-arithmetic";
 import {
   assertSessionCurrent,
   getSessionVersion,
@@ -43,9 +39,7 @@ import { BalanceSidebar } from "./BalanceSidebar";
 import { Combobox } from "@/components/ui/combobox";
 import { DateInput } from "@/components/ui/date-input";
 import { CurrencyInput } from "@/components/ui/currency-input";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { formatCurrency, isFutureDate } from "@/lib/format";
+import { isFutureDate } from "@/lib/format";
 import {
   Form,
   FormControl,
@@ -121,19 +115,6 @@ export default function NewReceiptPage() {
   const location = form.watch("location");
   const taxAmount = form.watch("taxAmount");
   const receiptDate = form.watch("date");
-  const unresolvedChoices = items.filter((item) => {
-    const choice = currentNormalizationChoice(
-      item.normalizationChoice,
-      receiptNormalizationSource(location, item),
-    );
-    return !choice || choice.intent.kind === "defer";
-  }).length;
-
-  // Auto-focus location on mount
-  useEffect(() => {
-    locationRef.current?.focus();
-  }, []);
-
   const subtotal = useMemo(() => calculateSubtotal(items), [items]);
 
   const transactionTotal = useMemo(
@@ -145,14 +126,6 @@ export default function NewReceiptPage() {
     () => sumAmounts(adjustments.map((adjustment) => adjustment.amount)),
     [adjustments],
   );
-
-  // Both submit buttons use the same decimal arithmetic and backend tolerance.
-  const expectedTotal = sumAmounts([subtotal, taxAmount, adjustmentTotal]);
-  const {
-    absoluteDifference: balanceDiff,
-    isWithinCreationTolerance: isBalanced,
-    expectedExceedsPayments: isOver,
-  } = calculateReceiptBalance(expectedTotal, transactionTotal);
 
   const hasData =
     location !== "" ||
@@ -244,14 +217,12 @@ export default function NewReceiptPage() {
 
   const handleSubmit = useCallback(async () => {
     // Validate header form first
-    const valid = await form.trigger();
+    const valid = await form.trigger(undefined, { shouldFocus: true });
     if (!valid) {
-      // Move focus to the first invalid field so keyboard/AT users can recover
-      const firstErrorName = Object.keys(form.formState.errors)[0] as
-        | keyof HeaderFormValues
-        | undefined;
-      if (firstErrorName) {
-        form.setFocus(firstErrorName);
+      // The custom location trigger uses its own ref; other fields are registered
+      // directly with React Hook Form and receive focus through shouldFocus.
+      if (form.getFieldState("location").invalid) {
+        locationRef.current?.focus();
       }
       setSubmitErrorSummary(
         "Please fix the highlighted fields before submitting.",
@@ -323,16 +294,7 @@ export default function NewReceiptPage() {
       // Mark saved BEFORE navigating so the unsaved-work blocker lets the
       // success redirect through (RECEIPTS-785).
       hasSavedRef.current = true;
-      const unresolved = result?.items?.filter(
-        (item) =>
-          item.normalizationReviewState !== "verified" &&
-          item.normalizationReviewState !== "excluded",
-      ).length;
-      toast.success(
-        unresolved
-          ? `Receipt saved — ${unresolved} item${unresolved === 1 ? "" : "s"} need review`
-          : "Receipt saved",
-      );
+      toast.success("Receipt saved");
       navigate(`/receipts/${receiptId}`);
     } catch (error) {
       if (isAbortError(error)) return;
@@ -355,24 +317,9 @@ export default function NewReceiptPage() {
   ]);
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-3xl font-bold tracking-tight">New Receipt</h1>
+    <div className="min-w-0 space-y-4">
+      <h1 className="text-2xl font-semibold tracking-tight">New Receipt</h1>
       <ReceiptNormalizationError error={saveError} />
-      <div aria-live="polite">
-        {unresolvedChoices > 0 && (
-          <div className="text-sm text-muted-foreground">
-            {unresolvedChoices} item
-            {unresolvedChoices === 1 ? " needs" : "s need"} review. You can
-            still save.{" "}
-            <details>
-              <summary className="cursor-pointer">Review on save</summary>
-              Save checks remembered rules and keeps all receipt details.
-              Unresolved items stay available for review.
-            </details>
-          </div>
-        )}
-      </div>
-
       {/* aria-live region: announced to screen readers when validation fails */}
       <div
         id={errorSummaryId}
@@ -383,154 +330,111 @@ export default function NewReceiptPage() {
         {submitErrorSummary}
       </div>
 
-      {/* Upper container: receipt metadata + transactions (left), balance panel (right) */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(300px,360px)]">
-        {/* Upper-left — receipt metadata and transactions */}
-        <div className="space-y-6 min-w-0">
-          {/* Receipt Header */}
-          <Form {...form}>
-            <div className="flex flex-wrap gap-4">
-              <FormField
-                control={form.control}
-                name="location"
-                render={({ field }) => (
-                  <FormItem className="min-w-[220px] flex-1">
-                    <FormLabel required>Location</FormLabel>
-                    <FormControl>
-                      <Combobox
-                        ref={locationRef}
-                        options={locationOptions}
-                        value={field.value}
-                        onValueChange={(value) => {
-                          field.onChange(value);
-                          setItems((current) =>
-                            current.map((item) => ({
-                              ...item,
-                              normalizationChoice: undefined,
-                            })),
-                          );
-                        }}
-                        placeholder="e.g. Walmart, Target, Costco"
-                        searchPlaceholder="Search locations..."
-                        emptyMessage={
-                          locationsError
-                            ? "Location suggestions unavailable."
-                            : locationsFetching
-                              ? "Loading location suggestions..."
-                              : "No saved locations."
-                        }
-                        allowCustom
-                        aria-required="true"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                    {locationsError && (
-                      <RequestFailure
-                        message="Location suggestions unavailable. You can enter a location manually."
-                        retry={() => {
-                          void retryLocations();
-                        }}
-                        isRetrying={locationsFetching}
-                      />
-                    )}
-                  </FormItem>
+      <Form {...form}>
+        <div className="flex min-w-0 flex-wrap gap-4 rounded-xl border bg-card p-4">
+          <FormField
+            control={form.control}
+            name="location"
+            render={({ field }) => (
+              <FormItem className="min-w-[220px] flex-[2_1_220px]">
+                <FormLabel required>Location</FormLabel>
+                <FormControl>
+                  <Combobox
+                    ref={locationRef}
+                    options={locationOptions}
+                    value={field.value}
+                    onValueChange={(value) => {
+                      field.onChange(value);
+                      setItems((current) =>
+                        current.map((item) => ({
+                          ...item,
+                          normalizationChoice: undefined,
+                        })),
+                      );
+                    }}
+                    placeholder="e.g. Walmart, Target, Costco"
+                    searchPlaceholder="Search locations..."
+                    emptyMessage={
+                      locationsError
+                        ? "Location suggestions unavailable."
+                        : locationsFetching
+                          ? "Loading location suggestions..."
+                          : "No saved locations."
+                    }
+                    allowCustom
+                    aria-required="true"
+                  />
+                </FormControl>
+                <FormMessage />
+                {locationsError && (
+                  <RequestFailure
+                    message="Location suggestions unavailable. You can enter a location manually."
+                    retry={() => {
+                      void retryLocations();
+                    }}
+                    isRetrying={locationsFetching}
+                  />
                 )}
-              />
+              </FormItem>
+            )}
+          />
 
-              <FormField
-                control={form.control}
-                name="date"
-                render={({ field }) => (
-                  <FormItem className="min-w-[170px] flex-1">
-                    <FormLabel required>Date</FormLabel>
-                    <FormControl>
-                      <DateInput
-                        aria-required="true"
-                        max={new Date().toISOString().split("T")[0]}
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+          <FormField
+            control={form.control}
+            name="date"
+            render={({ field }) => (
+              <FormItem className="min-w-[170px] flex-1">
+                <FormLabel required>Date</FormLabel>
+                <FormControl>
+                  <DateInput
+                    aria-required="true"
+                    max={new Date().toISOString().split("T")[0]}
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
 
-              <FormField
-                control={form.control}
-                name="taxAmount"
-                render={({ field }) => (
-                  <FormItem className="min-w-[150px] flex-1">
-                    <FormLabel>Tax Amount</FormLabel>
-                    <FormControl>
-                      <CurrencyInput {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-          </Form>
-
-          {/* Transactions */}
-          <TransactionsSection
-            transactions={transactions}
-            defaultDate={receiptDate}
-            onChange={setTransactions}
+          <FormField
+            control={form.control}
+            name="taxAmount"
+            render={({ field }) => (
+              <FormItem className="min-w-[150px] flex-1">
+                <FormLabel>Tax Amount</FormLabel>
+                <FormControl>
+                  <CurrencyInput {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
           />
         </div>
+      </Form>
 
-        {/* Upper-right — balance panel */}
-        <div>
-          <BalanceSidebar
-            subtotal={subtotal}
-            taxAmount={taxAmount}
-            adjustmentTotal={adjustmentTotal}
-            transactionTotal={transactionTotal}
-            isSubmitting={isSubmitting}
-            onSubmit={handleSubmit}
-            onCancel={handleCancel}
-          />
-        </div>
-      </div>
+      <LineItemsSection items={items} onChange={setItems} location={location} />
 
       <AdjustmentsSection adjustments={adjustments} onChange={setAdjustments} />
 
-      {/* Full-width line-item entry table, below the upper container */}
-      <LineItemsSection items={items} onChange={setItems} location={location} />
+      <div className="min-w-0">
+        <TransactionsSection
+          transactions={transactions}
+          defaultDate={receiptDate}
+          onChange={setTransactions}
+        />
+      </div>
 
-      {/* Sticky action bar — keeps the balance status and Submit/Cancel
-          reachable while scrolling the full-width line-item table. The upper
-          Balance panel scrolls out of view once the line items grow tall. */}
-      <div className="sticky bottom-0 z-10 border-t bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            <span className="text-muted-foreground">
-              Subtotal {formatCurrency(subtotal)} + Tax{" "}
-              {formatCurrency(taxAmount)}
-              {" + "}Adjustments {formatCurrency(adjustmentTotal)} = Expected{" "}
-              {formatCurrency(expectedTotal)} · Transactions{" "}
-              {formatCurrency(transactionTotal)}
-            </span>
-            <Badge variant={isBalanced ? "default" : "secondary"}>
-              {isBalanced
-                ? "Balanced"
-                : isOver
-                  ? `Over by ${formatCurrency(balanceDiff)}`
-                  : `Remaining: ${formatCurrency(balanceDiff)}`}
-            </Badge>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" onClick={handleCancel}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSubmit}
-              disabled={isSubmitting || !isBalanced}
-            >
-              {isSubmitting ? "Submitting..." : "Submit Receipt"}
-            </Button>
-          </div>
-        </div>
+      <div className="sticky bottom-0 z-10 rounded-t-xl border bg-background/95 p-3 backdrop-blur [@media(max-width:900px)]:bottom-[60px] supports-[backdrop-filter]:bg-background/90">
+        <BalanceSidebar
+          subtotal={subtotal}
+          taxAmount={taxAmount}
+          adjustmentTotal={adjustmentTotal}
+          transactionTotal={transactionTotal}
+          isSubmitting={isSubmitting}
+          onSubmit={handleSubmit}
+          onCancel={handleCancel}
+        />
       </div>
 
       <AlertDialog

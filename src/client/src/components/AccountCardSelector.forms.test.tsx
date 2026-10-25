@@ -161,17 +161,17 @@ async function select(
 describe.each(["detail", "wizard"] as const)(
   "%s transaction account cascade",
   (kind) => {
-    it("puts Account first and waits for an account before enabling Card", async () => {
+    it("offers Card first without requiring an account", async () => {
       mount(kind);
       await waitFor(() =>
         expect(
           screen.getByRole("combobox", { name: /^Account/ }),
         ).not.toHaveAttribute("aria-busy", "true"),
       );
-      expect(screen.getAllByRole("combobox")[0]).toHaveAccessibleName(
-        /^Account/,
+      expect(screen.getAllByRole("combobox")[0]).toHaveAccessibleName(/^Card/);
+      await waitFor(() =>
+        expect(screen.getByRole("combobox", { name: /^Card/ })).toBeEnabled(),
       );
-      expect(screen.getByRole("combobox", { name: /^Card/ })).toBeDisabled();
     });
 
     it("clears an incompatible card when the account changes and refuses to submit it", async () => {
@@ -229,7 +229,7 @@ describe.each(["detail", "wizard"] as const)("%s cascade recovery", (kind) => {
     });
     expect(requestedAccounts).toContain("account-52");
     if (kind === "wizard")
-      expect(screen.getByRole("combobox", { name: /^Account/ })).toHaveFocus();
+      expect(screen.getByRole("combobox", { name: /^Card/ })).toHaveFocus();
   });
   it("explains an empty account with a route to create a card", async () => {
     const user = userEvent.setup();
@@ -465,6 +465,104 @@ describe.each(["detail", "wizard"] as const)(
         accountId: "account-2",
         cardId: "card-2",
       });
+    });
+  },
+);
+
+describe.each(["detail", "wizard"] as const)(
+  "%s direct card selection",
+  (kind) => {
+    it.each(["1111", "First card"])(
+      "finds a card by %s and derives its account",
+      async (search) => {
+        const user = userEvent.setup();
+        const { onSubmit, submit } = mount(kind);
+        const card = screen.getByRole("combobox", { name: /^Card/ });
+        await waitFor(() => expect(card).toBeEnabled());
+        await user.click(card);
+        await user.type(screen.getByPlaceholderText("Search cards..."), search);
+        const option = await screen.findByRole("option", {
+          name: /First card.*1111.*Account 1/,
+        });
+        await user.click(option);
+        expect(
+          screen.getByRole("combobox", { name: /^Account/ }),
+        ).toHaveTextContent("Account 1");
+        if (kind === "wizard")
+          await user.type(screen.getByLabelText(/amount/i), "7");
+        await user.click(submit());
+        await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+        expect(
+          kind === "wizard"
+            ? onSubmit.mock.calls[0][0][0]
+            : onSubmit.mock.calls[0][0],
+        ).toMatchObject({ cardId: "card-1", accountId: "account-1" });
+      },
+    );
+
+    it("shows duplicate card codes with their accounts and requires an explicit choice", async () => {
+      server.use(
+        http.get("http://selector.test/api/cards", () =>
+          HttpResponse.json({
+            data: [
+              cards[0],
+              { ...cards[1], name: "First card", cardCode: "1111" },
+            ],
+            total: 2,
+            offset: 0,
+            limit: 500,
+          }),
+        ),
+      );
+      const user = userEvent.setup();
+      mount(kind);
+      const card = screen.getByRole("combobox", { name: /^Card/ });
+      await waitFor(() => expect(card).toBeEnabled());
+      await user.click(card);
+      await user.type(screen.getByPlaceholderText("Search cards..."), "1111");
+      expect(screen.getAllByRole("option")).toHaveLength(2);
+      expect(card).toHaveTextContent("Select a card");
+      await user.click(screen.getByRole("option", { name: /Account 2/ }));
+      expect(
+        screen.getByRole("combobox", { name: /^Account/ }),
+      ).toHaveTextContent("Account 2");
+    });
+
+    it("keeps cash and nonnumeric codes searchable while excluding inactive choices", async () => {
+      server.use(
+        http.get("http://selector.test/api/cards", () =>
+          HttpResponse.json({
+            data: [
+              { ...cards[0], name: "Wallet", cardCode: "CASH" },
+              cards[3],
+              { ...cards[1], accountId: "inactive-account" },
+            ],
+            total: 3,
+            offset: 0,
+            limit: 500,
+          }),
+        ),
+      );
+      server.use(
+        http.get("http://selector.test/api/accounts/account-1/cards", () =>
+          HttpResponse.json([
+            { ...cards[0], name: "Wallet", cardCode: "CASH" },
+          ]),
+        ),
+      );
+      const user = userEvent.setup();
+      mount(kind);
+      const card = screen.getByRole("combobox", { name: /^Card/ });
+      await waitFor(() => expect(card).toBeEnabled());
+      await user.click(card);
+      expect(screen.getAllByRole("option")).toHaveLength(1);
+      await user.type(screen.getByPlaceholderText("Search cards..."), "CASH");
+      await user.click(screen.getByRole("option", { name: /Wallet.*CASH/ }));
+      await waitFor(() =>
+        expect(
+          screen.getByRole("combobox", { name: /^Card/ }),
+        ).toHaveTextContent("Wallet"),
+      );
     });
   },
 );

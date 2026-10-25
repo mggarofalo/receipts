@@ -16,9 +16,21 @@ describe("BalanceSidebar", () => {
 
   it("renders balance summary values", () => {
     renderWithProviders(<BalanceSidebar {...defaultProps} />);
-    expect(screen.getByText("Balance")).toBeInTheDocument();
+    expect(screen.getByText("Balance details")).toBeInTheDocument();
     expect(screen.getByText("$50.00")).toBeInTheDocument(); // subtotal
     expect(screen.getByText("$5.00")).toBeInTheDocument(); // tax
+  });
+
+  it("keeps the breakdown collapsed until requested", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<BalanceSidebar {...defaultProps} />);
+    expect(screen.getByText("Subtotal").closest("details")).not.toHaveAttribute(
+      "open",
+    );
+    await user.click(screen.getByText("Balance details"));
+    expect(screen.getByText("Subtotal").closest("details")).toHaveAttribute(
+      "open",
+    );
   });
 
   it("shows Balanced badge when balanced", () => {
@@ -88,28 +100,40 @@ describe("BalanceSidebar", () => {
     // Expected total = subtotal + tax = 55
     // Transaction total = 55
     const fiftyFives = screen.getAllByText("$55.00");
-    expect(fiftyFives).toHaveLength(2);
+    expect(fiftyFives).toHaveLength(3);
   });
 
   it("adds positive adjustments to the expected total", () => {
     renderWithProviders(
-      <BalanceSidebar {...defaultProps} adjustmentTotal={3} transactionTotal={58} />,
+      <BalanceSidebar
+        {...defaultProps}
+        adjustmentTotal={3}
+        transactionTotal={58}
+      />,
     );
 
     expect(screen.getByText("Adjustments")).toBeInTheDocument();
     expect(screen.getByText("$3.00")).toBeInTheDocument();
-    expect(screen.getAllByText("$58.00")).toHaveLength(2);
+    expect(screen.getAllByText("$58.00")).toHaveLength(3);
     expect(screen.getByText("Balanced")).toBeInTheDocument();
   });
 
   it("subtracts negative adjustments from the expected total", () => {
     renderWithProviders(
-      <BalanceSidebar {...defaultProps} adjustmentTotal={-5} transactionTotal={50} />,
+      <BalanceSidebar
+        {...defaultProps}
+        adjustmentTotal={-5}
+        transactionTotal={50}
+      />,
     );
 
     expect(screen.getByText("-$5.00")).toBeInTheDocument();
-    expect(screen.getByText("Expected Total").nextElementSibling).toHaveTextContent("$50.00");
-    expect(screen.getByText("Transaction Total").nextElementSibling).toHaveTextContent("$50.00");
+    expect(
+      screen.getByText("Expected Total").nextElementSibling,
+    ).toHaveTextContent("$50.00");
+    expect(
+      screen.getByText("Transaction Total").nextElementSibling,
+    ).toHaveTextContent("$50.00");
     expect(screen.getByText("Balanced")).toBeInTheDocument();
   });
 });

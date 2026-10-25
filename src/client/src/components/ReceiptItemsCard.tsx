@@ -79,11 +79,6 @@ export function ReceiptItemsCard({
   const dialogSession = useRef(0);
   const queryClient = useQueryClient();
   const currentEditItem = items.find((item) => item.id === editItem?.id);
-  const needsReview = items.filter(
-    (item) =>
-      item.normalizationReviewState !== "verified" &&
-      item.normalizationReviewState !== "excluded",
-  ).length;
 
   function closeEditor() {
     dialogSession.current++;
@@ -199,13 +194,6 @@ export function ReceiptItemsCard({
           </div>
         </CardHeader>
         <CardContent>
-          {items.length > 0 && (
-            <p className="mb-3 text-sm" aria-live="polite">
-              {needsReview
-                ? `Saved — ${needsReview} item${needsReview === 1 ? "" : "s"} need review. Use Review product on a line to continue.`
-                : "Fully reviewed"}
-            </p>
-          )}
           {items.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               No items for this receipt.
@@ -263,7 +251,7 @@ export function ReceiptItemsCard({
                             ? "Verified"
                             : item.normalizationReviewState === "excluded"
                               ? "Excluded"
-                              : "Needs review"}
+                              : null}
                         </div>
                         {item.normalizedDescriptionName &&
                           item.normalizedDescriptionName !==
@@ -306,22 +294,6 @@ export function ReceiptItemsCard({
                         >
                           <Pencil className="h-4 w-4" />
                         </Button>
-                        {item.normalizationReviewState !== "verified" &&
-                          item.normalizationReviewState !== "excluded" && (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                dialogSession.current++;
-                                setServerErrors({});
-                                setSaveError(undefined);
-                                setEditItem(item);
-                              }}
-                            >
-                              Review product
-                            </Button>
-                          )}
                       </TableCell>
                     </TableRow>
                   ))}

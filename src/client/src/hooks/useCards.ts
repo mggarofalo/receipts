@@ -66,10 +66,14 @@ export function useCards(
 }
 
 /** Fetches the complete card list for pickers and entity lookups. */
-export function useAllCards(isActive?: boolean | null) {
+export function useAllCards(
+  isActive?: boolean | null,
+  options: { enabled?: boolean } = {},
+) {
   return useQuery({
     ...localErrorPolicy.query,
     queryKey: [...queryKeys.cards, "all", isActive ?? undefined],
+    enabled: options.enabled ?? true,
     queryFn: async ({ signal }) => {
       const pageSize = 500;
       const fetchPage = async (offset: number) => {

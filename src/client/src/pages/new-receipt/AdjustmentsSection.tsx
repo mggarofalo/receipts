@@ -80,12 +80,12 @@ export function AdjustmentsSection({
   }
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
+    <Card className="gap-0 py-3">
+      <CardHeader className="px-4 py-0">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="space-y-1">
-            <CardTitle className="text-lg">Adjustments</CardTitle>
-            <p className="text-sm text-muted-foreground">
+            <CardTitle className="text-sm font-medium">Adjustments</CardTitle>
+            <p className="text-xs text-muted-foreground">
               Tips are positive; coupons and credits are negative.
             </p>
           </div>
@@ -106,7 +106,7 @@ export function AdjustmentsSection({
         </div>
       </CardHeader>
       {adjustments.length > 0 && (
-        <CardContent>
+        <CardContent className="px-4 pt-3">
           <Table>
             <TableHeader>
               <TableRow>

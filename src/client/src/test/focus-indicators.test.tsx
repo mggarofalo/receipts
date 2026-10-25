@@ -25,7 +25,7 @@ describe("focus indicators", () => {
       ":focus-visible {",
     ]);
     expect(css).toMatch(
-      /:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--accent\);[^}]*outline-offset:\s*2px;/s,
+      /:focus-visible\s*\{[^}]*outline:\s*1\.5px solid var\(--ink-2\);[^}]*outline-offset:\s*2px;/s,
     );
   });
 

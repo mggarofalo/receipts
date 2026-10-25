@@ -152,9 +152,7 @@ describe("ReceiptItemsCard", () => {
       await user.click(screen.getByRole("button", { name: "Update Item" }));
       await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
       const callbacks = mutate.mock.calls[0][1];
-      await user.click(
-        screen.getByRole("button", { name: "Close" }),
-      );
+      await user.click(screen.getByRole("button", { name: "Close" }));
       await user.click(
         (await screen.findAllByRole("button", { name: /edit/i }))[1],
       );
@@ -570,11 +568,27 @@ describe("ReceiptItemsCard", () => {
   });
 });
 
-
 it("labels pending associations without claiming they are normalized", () => {
-  renderWithQueryClient(<ReceiptItemsCard receiptId="receipt-1" subtotal={21}
-    items={[{ ...mockItems[0], normalizedDescriptionName: "Proposed widget", normalizationReviewState: "needsReview" }]} />);
-  expect(screen.getByText("Needs review")).toBeVisible();
-  expect(screen.getByText(/Unreviewed association: Proposed widget/)).toBeVisible();
+  renderWithQueryClient(
+    <ReceiptItemsCard
+      receiptId="receipt-1"
+      subtotal={21}
+      items={[
+        {
+          ...mockItems[0],
+          normalizedDescriptionName: "Proposed widget",
+          normalizationReviewState: "needsReview",
+        },
+      ]}
+    />,
+  );
+  expect(screen.queryByText("Needs review")).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "Review product" }),
+  ).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Edit" })).toBeEnabled();
+  expect(
+    screen.getByText(/Unreviewed association: Proposed widget/),
+  ).toBeVisible();
   expect(screen.queryByText(/normalized as/i)).not.toBeInTheDocument();
 });

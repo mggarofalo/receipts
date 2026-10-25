@@ -64,7 +64,7 @@ export function TransactionsSection({
   const formRef = useRef<HTMLFormElement>(null);
   const sectionRef = useRef<HTMLDivElement>(null);
   const focusScopeActiveRef = useRef(false);
-  const accountRef = useRef<HTMLButtonElement>(null);
+  const cardRef = useRef<HTMLButtonElement>(null);
   const { data: accounts } = useAllAccounts();
   useFormShortcuts({ formRef });
 
@@ -94,9 +94,11 @@ export function TransactionsSection({
 
   const account = useController({ control: form.control, name: "accountId" });
   const card = useController({ control: form.control, name: "cardId" });
-  const selection = useAccountCardSelection({ accountId: account.field.value, cardId: card.field.value });
+  const selection = useAccountCardSelection({
+    accountId: account.field.value,
+    cardId: card.field.value,
+  });
   const validateSelection = selection.validate;
-
 
   // Sync the date field when the receipt date changes and the field is empty
   const prevDefaultDateRef = useRef(defaultDate);
@@ -134,11 +136,11 @@ export function TransactionsSection({
     [form, defaultDate, transactions, onChange, validateSelection],
   );
 
-  // Focus account field after adding a transaction for rapid entry
+  // Focus the card field after adding a transaction for rapid entry
   const prevCountRef = useRef(transactions.length);
   useEffect(() => {
     if (transactions.length > prevCountRef.current) {
-      accountRef.current?.focus();
+      cardRef.current?.focus();
     }
     prevCountRef.current = transactions.length;
   }, [transactions.length]);
@@ -219,7 +221,7 @@ export function TransactionsSection({
           <form
             ref={formRef}
             onSubmit={form.handleSubmit(handleAdd)}
-            className="flex flex-wrap items-end gap-4"
+            className="flex flex-wrap items-start gap-4"
           >
             <AccountCardSelector
               selection={selection}
@@ -229,15 +231,15 @@ export function TransactionsSection({
                 form.clearErrors("cardId");
               }}
               accountInput={{
-                ref: (element) => {
-                  account.field.ref(element);
-                  accountRef.current = element;
-                },
+                ref: account.field.ref,
                 onBlur: account.field.onBlur,
                 error: account.fieldState.error?.message,
               }}
               cardInput={{
-                ref: card.field.ref,
+                ref: (element) => {
+                  card.field.ref(element);
+                  cardRef.current = element;
+                },
                 onBlur: card.field.onBlur,
                 error: card.fieldState.error?.message,
               }}
@@ -276,7 +278,7 @@ export function TransactionsSection({
               type="submit"
               variant="secondary"
               size="sm"
-              className="mb-0.5 shrink-0"
+              className="mt-[22px] h-9 shrink-0"
             >
               <Plus className="mr-1 h-4 w-4" />
               Add
@@ -339,8 +341,18 @@ function TransactionCardName({
   cardId: string;
 }) {
   const cardsQuery = useAccountCards(accountId);
-  return <>
-    {cardsQuery.data?.find((card) => card.id === cardId)?.name ?? cardId}
-    {cardsQuery.isError && <RequestFailure message="This account’s card names are unavailable." retry={() => { if (accountId) void cardsQuery.refetch(); }} isRetrying={cardsQuery.isFetching} />}
-  </>;
+  return (
+    <>
+      {cardsQuery.data?.find((card) => card.id === cardId)?.name ?? cardId}
+      {cardsQuery.isError && (
+        <RequestFailure
+          message="This account’s card names are unavailable."
+          retry={() => {
+            if (accountId) void cardsQuery.refetch();
+          }}
+          isRetrying={cardsQuery.isFetching}
+        />
+      )}
+    </>
+  );
 }

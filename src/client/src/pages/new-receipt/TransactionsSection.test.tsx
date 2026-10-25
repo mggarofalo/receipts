@@ -23,9 +23,21 @@ vi.mock("@/hooks/useAccounts", () => ({
   ),
   useAccountCards: vi.fn((accountId: string | null) => ({
     data: [
-      { id: "card-1", name: "Visa 4321", cardCode: "V4321", isActive: true, accountId: "acct-1" },
-      { id: "card-2", name: "Amex 7777", cardCode: "A7777", isActive: true, accountId: "acct-2" },
-    ].filter(card => card.accountId === accountId),
+      {
+        id: "card-1",
+        name: "Visa 4321",
+        cardCode: "V4321",
+        isActive: true,
+        accountId: "acct-1",
+      },
+      {
+        id: "card-2",
+        name: "Amex 7777",
+        cardCode: "A7777",
+        isActive: true,
+        accountId: "acct-2",
+      },
+    ].filter((card) => card.accountId === accountId),
     isLoading: false,
     isError: false,
   })),
@@ -35,8 +47,20 @@ vi.mock("@/hooks/useCards", () => ({
   useAllCards: vi.fn(() =>
     mockQueryResult({
       data: [
-        { id: "card-1", name: "Visa 4321", cardCode: "V4321", isActive: true, accountId: "acct-1" },
-        { id: "card-2", name: "Amex 7777", cardCode: "A7777", isActive: true, accountId: null },
+        {
+          id: "card-1",
+          name: "Visa 4321",
+          cardCode: "V4321",
+          isActive: true,
+          accountId: "acct-1",
+        },
+        {
+          id: "card-2",
+          name: "Amex 7777",
+          cardCode: "A7777",
+          isActive: true,
+          accountId: "acct-2",
+        },
       ],
       total: 2,
       isLoading: false,
@@ -47,7 +71,13 @@ vi.mock("@/hooks/useCards", () => ({
 
 describe("TransactionsSection", () => {
   const defaultProps = {
-    transactions: [] as { id: string; cardId: string; accountId: string; amount: number; date: string }[],
+    transactions: [] as {
+      id: string;
+      cardId: string;
+      accountId: string;
+      amount: number;
+      date: string;
+    }[],
     defaultDate: "2024-01-15",
     onChange: vi.fn(),
   };
@@ -69,9 +99,7 @@ describe("TransactionsSection", () => {
 
   it("renders Add button", () => {
     renderWithQueryClient(<TransactionsSection {...defaultProps} />);
-    expect(
-      screen.getByRole("button", { name: /add/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /add/i })).toBeInTheDocument();
   });
 
   it("shows draft validation only after an Add attempt", async () => {
@@ -120,7 +148,9 @@ describe("TransactionsSection", () => {
     await user.click(screen.getByRole("button", { name: /add/i }));
     expect(await screen.findByText("Card is required")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Outside transactions" }));
+    await user.click(
+      screen.getByRole("button", { name: "Outside transactions" }),
+    );
 
     expect(screen.queryByText("Card is required")).not.toBeInTheDocument();
     expect(screen.queryByText("Account is required")).not.toBeInTheDocument();
@@ -142,7 +172,9 @@ describe("TransactionsSection", () => {
     await user.click(screen.getByRole("button", { name: /add/i }));
     expect(await screen.findByText("Card is required")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Outside transactions" }));
+    await user.click(
+      screen.getByRole("button", { name: "Outside transactions" }),
+    );
     await waitFor(() => {
       expect(screen.queryByText("Card is required")).not.toBeInTheDocument();
     });
@@ -185,10 +217,14 @@ describe("TransactionsSection", () => {
       expect(screen.getByText("Amount is required")).toBeInTheDocument();
       expect(screen.getByText(`${fieldName} is required`)).toBeInTheDocument();
 
-      await user.click(screen.getByRole("button", { name: "Outside transactions" }));
+      await user.click(
+        screen.getByRole("button", { name: "Outside transactions" }),
+      );
 
       expect(screen.queryByText("Amount is required")).not.toBeInTheDocument();
-      expect(screen.queryByText(`${fieldName} is required`)).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(`${fieldName} is required`),
+      ).not.toBeInTheDocument();
     },
   );
 
@@ -199,7 +235,13 @@ describe("TransactionsSection", () => {
 
   it("renders existing transactions", () => {
     const transactions = [
-      { id: "1", cardId: "card-1", accountId: "acct-1", amount: 25.5, date: "2024-01-15" },
+      {
+        id: "1",
+        cardId: "card-1",
+        accountId: "acct-1",
+        amount: 25.5,
+        date: "2024-01-15",
+      },
     ];
     renderWithQueryClient(
       <TransactionsSection {...defaultProps} transactions={transactions} />,
@@ -246,7 +288,13 @@ describe("TransactionsSection", () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
     const transactions = [
-      { id: "1", cardId: "card-1", accountId: "acct-1", amount: 25.5, date: "2024-01-15" },
+      {
+        id: "1",
+        cardId: "card-1",
+        accountId: "acct-1",
+        amount: 25.5,
+        date: "2024-01-15",
+      },
     ];
     renderWithQueryClient(
       <TransactionsSection
@@ -295,12 +343,58 @@ describe("TransactionsSection", () => {
 
   it("displays running total with existing transactions", () => {
     const transactions = [
-      { id: "1", cardId: "card-1", accountId: "acct-1", amount: 25.5, date: "2024-01-15" },
-      { id: "2", cardId: "card-2", accountId: "acct-2", amount: 10.0, date: "2024-01-15" },
+      {
+        id: "1",
+        cardId: "card-1",
+        accountId: "acct-1",
+        amount: 25.5,
+        date: "2024-01-15",
+      },
+      {
+        id: "2",
+        cardId: "card-2",
+        accountId: "acct-2",
+        amount: 10.0,
+        date: "2024-01-15",
+      },
     ];
     renderWithQueryClient(
       <TransactionsSection {...defaultProps} transactions={transactions} />,
     );
     expect(screen.getByText("Total: $35.50")).toBeInTheDocument();
   });
+});
+
+it("adds a card-first split payment without dropping existing payments", async () => {
+  const user = userEvent.setup();
+  const onChange = vi.fn();
+  const existing = {
+    id: "first",
+    cardId: "card-1",
+    accountId: "acct-1",
+    amount: 5,
+    date: "2024-01-15",
+  };
+  renderWithQueryClient(
+    <TransactionsSection
+      transactions={[existing]}
+      defaultDate="2024-01-15"
+      onChange={onChange}
+    />,
+  );
+  await user.click(screen.getByRole("combobox", { name: /^Card/ }));
+  await user.type(screen.getByPlaceholderText("Search cards..."), "A7777");
+  await user.click(screen.getByRole("option", { name: /Amex 7777/ }));
+  await user.type(screen.getByLabelText(/amount/i), "7");
+  await user.click(screen.getByRole("button", { name: /^Add$/ }));
+  await waitFor(() =>
+    expect(onChange).toHaveBeenCalledWith([
+      existing,
+      expect.objectContaining({
+        cardId: "card-2",
+        accountId: "acct-2",
+        amount: 7,
+      }),
+    ]),
+  );
 });
