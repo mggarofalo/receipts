@@ -5,6 +5,10 @@ import { renderWithProviders } from "@/test/test-utils";
 import Settings from "./Settings";
 import { usePermission } from "@/hooks/usePermission";
 
+vi.mock("./settings/JevConnection", () => ({
+  JevConnection: () => <div>Jev connection setup</div>,
+}));
+
 vi.mock("@/hooks/usePageTitle", () => ({
   usePageTitle: vi.fn(),
 }));
@@ -53,6 +57,7 @@ describe("Settings", () => {
         hasRole: () => admin,
       });
       renderWithProviders(<Settings />);
+      expect(screen.queryByText("Jev connection setup") !== null).toBe(admin);
       expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
         "Appearance",
         "Preferences",

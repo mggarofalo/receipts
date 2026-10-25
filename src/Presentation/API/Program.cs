@@ -54,6 +54,8 @@ IServiceCollection services = builder.Services
 	.RegisterApplicationServices(builder.Configuration)
 	.RegisterInfrastructureServices(builder.Configuration);
 
+services.AddJevServices();
+
 services.Configure<NormalizationAiOptions>(builder.Configuration.GetSection("ChatGpt"));
 services.Configure<PiNormalizationRunnerOptions>(builder.Configuration.GetSection("ChatGptRunner"));
 services.AddSingleton<IChatGptRunner, PiNormalizationRunner>();
