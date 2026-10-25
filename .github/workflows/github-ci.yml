@@ -3,9 +3,15 @@ name: CI
 on:
   push:
     branches: ["main"]
+    paths-ignore:
+      - "**/*.json"
+      - "**/LICENSE"
   pull_request:
     types: [opened, edited, synchronize, labeled, unlabeled, reopened]
     branches: ["main"]
+    paths-ignore:
+      - "**/*.json"
+      - "**/LICENSE"
 
 env:
   DOTNET_VERSION: "10.0.x"
