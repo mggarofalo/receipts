@@ -94,6 +94,25 @@ public class YnabMemoSyncServiceTests
 		_syncRecordServiceMock.Verify(s => s.UpdateStatusAsync(It.IsAny<Guid>(), YnabSyncStatus.Failed, It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
 	}
 
+	[Theory]
+	[InlineData(20)]
+	[InlineData(250)]
+	public void FormatMemo_WithPushIdentity_PreservesCompleteMarkerWhenClipping(int linkLength)
+	{
+		const string marker = "[Receipts push:YNAB:receipt:1]";
+		string link = "/receipts/" + new string('a', linkLength);
+
+		string result = YnabMemoSyncService.FormatMemo(marker + " " + new string('x', 180), link);
+
+		result.Should().StartWith(marker + " ");
+		result.Should().Contain("Receipt: /receipts/");
+		result.Length.Should().BeLessThanOrEqualTo(200);
+		if (linkLength == 20)
+		{
+			result.Should().EndWith(link);
+		}
+	}
+
 	#region FormatMemo Tests
 
 	[Fact]

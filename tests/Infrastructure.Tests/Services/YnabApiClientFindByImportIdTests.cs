@@ -144,4 +144,89 @@ public class YnabApiClientFindByImportIdTests
 
 		result.Should().BeNull();
 	}
+	[Theory]
+	[InlineData("[Receipts push:operation-1] receipt", "acc-1", false, "tx-1")]
+	[InlineData("Bank memo [Receipts push:operation-1] receipt", "acc-1", false, "tx-1")]
+	[InlineData("[Receipts push:operation-10] receipt", "acc-1", false, null)]
+	[InlineData("[Receipts push:operation-1 receipt", "acc-1", false, null)]
+	[InlineData("operation-1", "acc-1", false, null)]
+	[InlineData("[Receipts push:operation-1] receipt", "acc-2", false, null)]
+	[InlineData("[Receipts push:operation-1] receipt", "acc-1", true, null)]
+	public async Task MemoRecovery_RequiresCompleteMarkerAndActiveMatchingAccount(
+		string memo, string accountId, bool deleted, string? expected)
+	{
+		string json = TransactionsListJson(new
+		{
+			id = "tx-1",
+			date = "2026-04-01",
+			amount = -10000L,
+			memo,
+			cleared = "uncleared",
+			approved = false,
+			account_id = accountId,
+			import_id = (string?)null,
+			deleted,
+		});
+		YnabApiClient client = CreateClient(CreateHandler(HttpStatusCode.OK, json));
+
+		string? result = await client.FindTransactionByImportIdAsync(
+			"budget-1", "acc-1", "operation-1", new DateOnly(2026, 4, 1), CancellationToken.None);
+
+		result.Should().Be(expected);
+	}
+
+	[Theory]
+	[InlineData(false)]
+	[InlineData(true)]
+	public async Task MultipleDistinctRecoveryMatches_RejectsAmbiguousLink(bool legacyMatch)
+	{
+		string json = TransactionsListJson(
+			new
+			{
+				id = "tx-1",
+				date = "2026-04-01",
+				amount = -10000L,
+				memo = "[Receipts push:operation-1] receipt",
+				account_id = "acc-1",
+				deleted = false
+			},
+			new
+			{
+				id = "tx-2",
+				date = "2026-04-01",
+				amount = -10000L,
+				memo = legacyMatch ? null : "[Receipts push:operation-1] receipt",
+				import_id = legacyMatch ? "operation-1" : null,
+				account_id = "acc-1",
+				deleted = false
+			});
+		YnabApiClient client = CreateClient(CreateHandler(HttpStatusCode.OK, json));
+
+		Func<Task> action = () => client.FindTransactionByImportIdAsync(
+			"budget-1", "acc-1", "operation-1", new DateOnly(2026, 4, 1), CancellationToken.None);
+
+		await action.Should().ThrowAsync<InvalidOperationException>();
+	}
+
+	[Fact]
+	public async Task SameTransactionMatchesLegacyIdentityAndMemo_ReturnsSingleLink()
+	{
+		string json = TransactionsListJson(new
+		{
+			id = "tx-1",
+			date = "2026-04-01",
+			amount = -10000L,
+			memo = "[Receipts push:operation-1] receipt",
+			import_id = "operation-1",
+			account_id = "acc-1",
+			deleted = false,
+		});
+		YnabApiClient client = CreateClient(CreateHandler(HttpStatusCode.OK, json));
+
+		string? result = await client.FindTransactionByImportIdAsync(
+			"budget-1", "acc-1", "operation-1", new DateOnly(2026, 4, 1), CancellationToken.None);
+
+		result.Should().Be("tx-1");
+	}
+
 }

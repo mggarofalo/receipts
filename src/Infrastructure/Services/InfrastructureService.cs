@@ -204,16 +204,16 @@ public static class InfrastructureService
 		})
 		.AddResilienceHandler("ynab", builder =>
 		{
-			builder.AddRetry(new HttpRetryStrategyOptions
+			HttpRetryStrategyOptions retryOptions = new()
 			{
 				MaxRetryAttempts = 3,
 				BackoffType = DelayBackoffType.Exponential,
 				UseJitter = true,
 				ShouldHandle = new PredicateBuilder<HttpResponseMessage>()
-					.Handle<HttpRequestException>()
-					.HandleResult(r => r.StatusCode is System.Net.HttpStatusCode.TooManyRequests
-						or System.Net.HttpStatusCode.ServiceUnavailable
-						or System.Net.HttpStatusCode.GatewayTimeout),
+				.Handle<HttpRequestException>()
+				.HandleResult(r => r.StatusCode is System.Net.HttpStatusCode.TooManyRequests
+					or System.Net.HttpStatusCode.ServiceUnavailable
+					or System.Net.HttpStatusCode.GatewayTimeout),
 				DelayGenerator = args =>
 				{
 					if (args.Outcome.Result?.Headers.RetryAfter?.Delta is TimeSpan delta)
@@ -223,7 +223,11 @@ public static class InfrastructureService
 
 					return ValueTask.FromResult<TimeSpan?>(null); // fall back to exponential backoff
 				},
-			});
+			};
+			// Manual YNAB transactions have no remote idempotency key. Retrying a
+			// POST after a lost response can create duplicate spending.
+			retryOptions.DisableForUnsafeHttpMethods();
+			builder.AddRetry(retryOptions);
 			builder.AddCircuitBreaker(new HttpCircuitBreakerStrategyOptions
 			{
 				SamplingDuration = TimeSpan.FromSeconds(30),

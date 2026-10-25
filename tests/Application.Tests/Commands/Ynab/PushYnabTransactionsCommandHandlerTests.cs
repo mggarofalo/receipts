@@ -169,11 +169,10 @@ public class PushYnabTransactionsCommandHandlerTests
 	}
 
 	[Theory]
-	[InlineData(YnabSyncStatus.Unknown, true)]
-	[InlineData(YnabSyncStatus.Pending, false)]
-	public async Task Handle_AmbiguousPredecessorThenDefiniteRetryRejection_RemainsUnknown(
-		YnabSyncStatus predecessorStatus,
-		bool useAuthRejection)
+	[InlineData(YnabSyncStatus.Unknown)]
+	[InlineData(YnabSyncStatus.Pending)]
+	public async Task Handle_AmbiguousPredecessorNotFound_RemainsUnknownWithoutResending(
+		YnabSyncStatus predecessorStatus)
 	{
 		SetupHappyPath();
 		Guid operationId = Guid.NewGuid();
@@ -191,12 +190,6 @@ public class PushYnabTransactionsCommandHandlerTests
 		_ynabApiClientMock.Setup(s => s.FindTransactionByImportIdAsync(
 				_budgetId, snapshot.AccountId, snapshot.ImportId!, snapshot.Date.AddDays(-1), It.IsAny<CancellationToken>()))
 			.ReturnsAsync((string?)null);
-		Exception rejection = useAuthRejection
-			? new YnabAuthException("token expired")
-			: new YnabNotFoundException("destination account missing");
-		_ynabApiClientMock.Setup(s => s.CreateTransactionAsync(
-				_budgetId, snapshot, It.IsAny<CancellationToken>()))
-			.ThrowsAsync(rejection);
 
 		PushYnabTransactionsResult result = await _handler.Handle(
 			new PushYnabTransactionsCommand(_receiptId), CancellationToken.None);
@@ -206,6 +199,95 @@ public class PushYnabTransactionsCommandHandlerTests
 		_syncRecordServiceMock.Verify(s => s.CompletePushOperationAsync(
 			It.IsAny<Guid>(), It.IsAny<Guid>(), YnabSyncStatus.Unknown, null,
 			It.Is<string>(error => error.Contains("may have accepted")), It.IsAny<CancellationToken>()), Times.Once);
+		_ynabApiClientMock.Verify(s => s.CreateTransactionAsync(
+			It.IsAny<string>(), It.IsAny<YnabCreateTransactionRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+		_ynabApiClientMock.Verify(s => s.FindTransactionByImportIdAsync(
+			_budgetId, snapshot.AccountId, snapshot.ImportId!, snapshot.Date.AddDays(-1),
+			It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	[Fact]
+	public async Task Handle_DefinitelyFailedPersistedOperation_RetriesOriginalRequest()
+	{
+		SetupHappyPath();
+		Guid operationId = Guid.NewGuid();
+		YnabCreateTransactionRequest snapshot = new(
+			_ynabAccountId, new DateOnly(2026, 8, 31), -9999,
+			"persisted memo", "Original store", "ynab-cat-1", false, ImportId: "YNAB:persisted:1");
+		YnabPushOperation operation = new(
+			operationId, YnabSyncStatus.Failed, snapshot, "source", "hash", 1, null, "definite rejection");
+		_syncRecordServiceMock.Setup(s => s.PreparePushOperationAsync(
+			_transactionId, _budgetId, It.IsAny<YnabCreateTransactionRequest>(), It.IsAny<string>(),
+			It.IsAny<CancellationToken>())).ReturnsAsync(operation);
+		_syncRecordServiceMock.Setup(s => s.TryClaimPushOperationAsync(operationId, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new YnabPushOperationClaim(operation with { AttemptCount = 2 }, Guid.NewGuid()));
+
+		PushYnabTransactionsResult result = await _handler.Handle(
+			new PushYnabTransactionsCommand(_receiptId), CancellationToken.None);
+
+		result.Success.Should().BeTrue();
+		result.PushedTransactions.Should().ContainSingle().Which.YnabTransactionId.Should().Be("ynab-tx-1");
+		_ynabApiClientMock.Verify(s => s.CreateTransactionAsync(
+			_budgetId, snapshot, It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	[Fact]
+	public async Task Handle_DefinitelyFailedOperation_ReconciliationFailureRemainsRetryable()
+	{
+		SetupHappyPath();
+		Guid operationId = Guid.NewGuid();
+		YnabCreateTransactionRequest snapshot = new(
+			_ynabAccountId, new DateOnly(2026, 8, 31), -9999,
+			"persisted memo", "Original store", "ynab-cat-1", false, ImportId: "YNAB:persisted:1");
+		YnabPushOperation operation = new(
+			operationId, YnabSyncStatus.Failed, snapshot, "source", "hash", 1, null, "definite rejection");
+		_syncRecordServiceMock.Setup(s => s.PreparePushOperationAsync(
+			_transactionId, _budgetId, It.IsAny<YnabCreateTransactionRequest>(), It.IsAny<string>(),
+			It.IsAny<CancellationToken>())).ReturnsAsync(operation);
+		_syncRecordServiceMock.Setup(s => s.TryClaimPushOperationAsync(operationId, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new YnabPushOperationClaim(operation with { AttemptCount = 2 }, Guid.NewGuid()));
+
+		_ynabApiClientMock.Setup(s => s.FindTransactionByImportIdAsync(
+			_budgetId, snapshot.AccountId, snapshot.ImportId!, snapshot.Date.AddDays(-1),
+			It.IsAny<CancellationToken>())).ThrowsAsync(new HttpRequestException("lookup unavailable"));
+
+		PushYnabTransactionsResult result = await _handler.Handle(
+			new PushYnabTransactionsCommand(_receiptId), CancellationToken.None);
+
+		result.Success.Should().BeFalse();
+		result.OperationStatus.Should().Be(YnabSyncStatus.Failed);
+		_ynabApiClientMock.Verify(s => s.CreateTransactionAsync(
+			_budgetId, It.IsAny<YnabCreateTransactionRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+		_syncRecordServiceMock.Verify(s => s.CompletePushOperationAsync(
+			operationId, It.IsAny<Guid>(), YnabSyncStatus.Failed, null, It.IsAny<string>(),
+			It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	[Theory]
+	[InlineData(YnabSyncStatus.Failed)]
+	[InlineData(YnabSyncStatus.Pending)]
+	public async Task Handle_ClaimRevealsInterveningAttempt_DoesNotResend(YnabSyncStatus preparedStatus)
+	{
+		SetupHappyPath();
+		Guid operationId = Guid.NewGuid();
+		YnabCreateTransactionRequest snapshot = new(
+			_ynabAccountId, new DateOnly(2026, 8, 31), -9999,
+			"persisted memo", "Original store", "ynab-cat-1", false, ImportId: "YNAB:persisted:1");
+		YnabPushOperation operation = new(
+			operationId, preparedStatus, snapshot, "source", "hash", 1, null, "definite rejection");
+		_syncRecordServiceMock.Setup(s => s.PreparePushOperationAsync(
+			_transactionId, _budgetId, It.IsAny<YnabCreateTransactionRequest>(), It.IsAny<string>(),
+			It.IsAny<CancellationToken>())).ReturnsAsync(operation);
+		_syncRecordServiceMock.Setup(s => s.TryClaimPushOperationAsync(operationId, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new YnabPushOperationClaim(operation with { AttemptCount = 3 }, Guid.NewGuid()));
+
+		PushYnabTransactionsResult result = await _handler.Handle(
+			new PushYnabTransactionsCommand(_receiptId), CancellationToken.None);
+
+		result.Success.Should().BeFalse();
+		result.OperationStatus.Should().Be(YnabSyncStatus.Unknown);
+		_ynabApiClientMock.Verify(s => s.CreateTransactionAsync(
+			_budgetId, It.IsAny<YnabCreateTransactionRequest>(), It.IsAny<CancellationToken>()), Times.Never);
 	}
 
 	[Fact]
