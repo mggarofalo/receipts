@@ -43,7 +43,10 @@ let connection: {
   generation: string;
   models: string[];
 };
-let currentRun: ReturnType<typeof readyRun>;
+let currentRun: Omit<
+  ReturnType<typeof readyRun>,
+  "errorCode" | "errorDetail"
+> & { errorCode: string | null; errorDetail: string | null };
 function readyRun() {
   return {
     id: runId,
@@ -203,8 +206,8 @@ it("retains selected items after failed start and reuses intent ID for deliberat
   );
   expect(api.POST.mock.calls[1][1]?.body).toEqual(first);
   expect(
-    screen.getByRole("checkbox", { name: "Select RAW MLK" }),
-  ).not.toBeChecked();
+    screen.queryByRole("region", { name: "Select items for ChatGPT" }),
+  ).not.toBeInTheDocument();
 });
 
 it("clears selected candidates when applying a different item search", async () => {
@@ -433,9 +436,7 @@ it("navigates to the retry run before invalidation remounts the cancelled origin
     name: "Review ChatGPT suggestions",
   });
   await waitFor(() =>
-    expect(within(review).getByRole("status")).toHaveTextContent(
-      "Status: queued",
-    ),
+    expect(within(review).getByRole("status")).toHaveTextContent("Queued"),
   );
   expect(api.POST).toHaveBeenCalledTimes(1);
 });
@@ -460,8 +461,12 @@ it("keeps the chosen model and item draft consistent through a busy refresh", as
     });
   });
   await screen.findByText(/ChatGPT is busy/);
-  expect(screen.getByRole("combobox", { name: "ChatGPT model" })).toHaveValue("test-model");
-  expect(screen.getByRole("combobox", { name: "ChatGPT model" })).toBeDisabled();
+  expect(screen.getByRole("combobox", { name: "ChatGPT model" })).toHaveValue(
+    "test-model",
+  );
+  expect(
+    screen.getByRole("combobox", { name: "ChatGPT model" }),
+  ).toBeDisabled();
   expect(
     screen.getByRole("checkbox", { name: "Select RAW MLK" }),
   ).toBeChecked();
@@ -495,4 +500,100 @@ it("keeps the chosen model and item draft consistent through a busy refresh", as
       }),
     ),
   );
+});
+
+it.each([
+  ["queued", "runner_busy", "Queued"],
+  ["running", null, "Preparing suggestions"],
+  ["unknown", "unknown_outcome", "Outcome uncertain"],
+  ["failed", "runner_busy_timeout", "Failed before request"],
+  ["failed", "runner_setup_failed", "Failed before request"],
+  ["failed", "auth_required", "Reconnect"],
+])(
+  "keeps %s placeholder rows out of the review and new selection",
+  async (state, errorCode, label) => {
+    currentRun = { ...currentRun, state: state!, errorCode };
+    connection.busy = true;
+    mount(`/normalized-descriptions?tab=chatgpt&aiRun=${runId}`);
+    const review = await screen.findByRole("region", {
+      name: "Review ChatGPT suggestions",
+    });
+    expect(within(review).getByRole("status")).toHaveTextContent(label!);
+    expect(
+      within(review).getByRole("heading", { name: "Suggestion request" }),
+    ).toBeVisible();
+    expect(
+      within(review).queryByRole("heading", { name: "Review suggestions" }),
+    ).not.toBeInTheDocument();
+    expect(within(review).queryByRole("table")).not.toBeInTheDocument();
+    expect(within(review).queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("region", { name: "Select items for ChatGPT" }),
+    ).not.toBeInTheDocument();
+    expect(api.POST).not.toHaveBeenCalled();
+    if (errorCode?.startsWith("runner_")) {
+      expect(
+        within(review).queryByText(/may have consumed|allowance again/),
+      ).not.toBeInTheDocument();
+    }
+    if (state === "unknown")
+      expect(within(review).getAllByText(/allowance again/)).toHaveLength(1);
+    if (errorCode === "auth_required")
+      expect(
+        within(review).getByRole("link", { name: /connection settings/ }),
+      ).toHaveAttribute(
+        "href",
+        "/admin/normalized-descriptions?tab=chatgpt#chatgpt-connection-settings",
+      );
+  },
+);
+
+it("closes the active run to select another request, with controls before items", async () => {
+  const user = userEvent.setup();
+  mount(`/normalized-descriptions?tab=chatgpt&aiRun=${runId}`);
+  await user.click(await screen.findByRole("button", { name: "Close run" }));
+  const selection = await screen.findByRole("region", {
+    name: "Select items for ChatGPT",
+  });
+  const model = within(selection).getByRole("combobox", {
+    name: "ChatGPT model",
+  });
+  const item = await within(selection).findByRole("checkbox", {
+    name: "Select RAW MLK",
+  });
+  expect(
+    model.compareDocumentPosition(item) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(
+    screen.queryByRole("region", { name: "Review ChatGPT suggestions" }),
+  ).not.toBeInTheDocument();
+  expect(screen.getByLabelText("Current URL")).toHaveTextContent("tab=chatgpt");
+});
+
+it("keeps connected setup commands behind a disclosure without asserting model access", async () => {
+  mount();
+  const summary = await screen.findByText(
+    "Connection settings and reconnect help",
+  );
+  expect(summary.closest("details")).not.toHaveAttribute("open");
+  expect(screen.getByText(/Credentials are present/)).toHaveTextContent(
+    "Model access is confirmed when a request succeeds",
+  );
+});
+
+it("shows applied outcomes without acceptance controls", async () => {
+  currentRun = {
+    ...currentRun,
+    state: "applied",
+    proposals: currentRun.proposals.map((p) => ({ ...p, state: "applied" })),
+  };
+  mount(`/normalized-descriptions?aiRun=${runId}`);
+  const review = await screen.findByRole("region", {
+    name: "Review ChatGPT suggestions",
+  });
+  expect(within(review).getByText("Whole milk")).toBeVisible();
+  expect(within(review).queryByRole("checkbox")).not.toBeInTheDocument();
+  expect(
+    within(review).getByText(/Accepted suggestions were applied/),
+  ).toBeVisible();
 });

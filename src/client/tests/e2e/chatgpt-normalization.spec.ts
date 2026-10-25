@@ -29,7 +29,8 @@ for (const width of [1280, 375]) {
           const respond = (data: unknown, status = 200) =>
             route.fulfill({
               status,
-              contentType: status >= 400 ? "application/problem+json" : "application/json",
+              contentType:
+                status >= 400 ? "application/problem+json" : "application/json",
               body: JSON.stringify(data),
             });
           if (route.request().method() === "POST") {
@@ -168,7 +169,7 @@ for (const width of [1280, 375]) {
     });
     rejectApply = false;
     await apply.click();
-    await expect(review.getByRole("status")).toContainText("Status: applied");
+    await expect(review.getByRole("status")).toContainText("Applied");
     expect(writes).toHaveLength(3);
     const overflow = await page.evaluate(
       () =>
@@ -176,5 +177,122 @@ for (const width of [1280, 375]) {
         document.documentElement.clientWidth + 1,
     );
     expect(overflow).toBe(false);
+  });
+}
+
+for (const width of [1280, 375]) {
+  test(`Unknown busy run stays concise and closes to new selection at ${width}px`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    const id = "10000000-0000-0000-0000-000000000001";
+    const run: components["schemas"]["NormalizationAiRunResponse"] = {
+      id,
+      revision: id,
+      clientRequestId: id,
+      state: "unknown",
+      model: "test-model",
+      createdAt: "2026-01-01T00:00:00Z",
+      completedAt: null,
+      errorCode: "unknown_outcome",
+      errorDetail: "Inference may have started; usage may have occurred.",
+      usage: null,
+      proposals: Array.from({ length: 25 }, (_, i) => ({
+        id: `${id.slice(0, -2)}${String(i).padStart(2, "0")}`,
+        receiptItemId: id,
+        description: `Synthetic item ${i}`,
+        action: "pending",
+        targetId: null,
+        canonicalName: null,
+        displayLabel: null,
+        reason: null,
+        state: "pending",
+      })),
+    };
+    let writes = 0;
+    await installApiMocks(page, {
+      freezeClock: false,
+      user: ADMIN_FIXTURE_USER,
+      overrides: {
+        "**/api/normalization-ai/**": async (route) => {
+          if (route.request().method() !== "GET") writes++;
+          const path = new URL(route.request().url()).pathname;
+          const data = path.endsWith("/connection")
+            ? {
+                configured: true,
+                isOwner: true,
+                credentialsPresent: true,
+                busy: true,
+                generation: id,
+                models: ["test-model"],
+              }
+            : path.endsWith("/candidates")
+              ? {
+                  items: [
+                    {
+                      id,
+                      receiptId: id,
+                      description: "SYNTHETIC ITEM",
+                      location: "Test store",
+                      date: "2026-01-01",
+                    },
+                  ],
+                  total: 1,
+                }
+              : path.endsWith("/runs")
+                ? [run]
+                : run;
+          await route.fulfill({
+            contentType: "application/json",
+            body: JSON.stringify(data),
+          });
+        },
+      },
+    });
+    await signInAs(page, ADMIN_FIXTURE_USER);
+    await page.goto(`/admin/normalized-descriptions?tab=chatgpt&aiRun=${id}`);
+    const review = page.getByRole("region", {
+      name: "Review ChatGPT suggestions",
+    });
+    await expect(review.getByRole("status")).toContainText("Outcome uncertain");
+    await expect(review.getByRole("table")).toHaveCount(0);
+    await expect(review.getByRole("checkbox")).toHaveCount(0);
+    await expect(review.getByText(/allowance again/)).toHaveCount(1);
+    await expect(
+      page.getByRole("region", { name: "Select items for ChatGPT" }),
+    ).toHaveCount(0);
+    await expect(
+      review.getByRole("button", { name: "Retry as a new request" }),
+    ).toBeEnabled();
+    await expect(
+      page.locator("#chatgpt-connection-settings"),
+    ).not.toHaveAttribute("open");
+    await page.screenshot({
+      path: testInfo.outputPath(`run-ui-unknown-busy-${width}.png`),
+      fullPage: true,
+    });
+    await page.getByRole("button", { name: "Close run" }).click();
+    const selection = page.getByRole("region", {
+      name: "Select items for ChatGPT",
+    });
+    await expect(selection).toBeVisible();
+    const model = selection.getByRole("combobox", { name: "ChatGPT model" });
+    const request = selection.getByRole("button", {
+      name: "Request suggestions for 0 items",
+    });
+    await expect(request).toBeDisabled();
+    const modelBox = await model.boundingBox();
+    const itemBox = await selection
+      .getByRole("checkbox", { name: "Select SYNTHETIC ITEM" })
+      .boundingBox();
+    expect(modelBox!.y).toBeLessThan(itemBox!.y);
+    expect(writes).toBe(0);
+    expect(
+      await page.evaluate(
+        () =>
+          document.documentElement.scrollWidth >
+          document.documentElement.clientWidth + 1,
+      ),
+    ).toBe(false);
   });
 }

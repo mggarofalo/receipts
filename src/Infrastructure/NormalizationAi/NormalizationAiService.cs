@@ -52,6 +52,9 @@ public sealed partial class NormalizationAiService(
 			?? throw Error(404, "run_not_found", "The normalization run was not found.");
 
 	public async Task<NormalizationAiConnection> GetConnectionAsync(string actor, CancellationToken cancellationToken)
+		=> await GetConnectionCoreAsync(actor, cancellationToken, admission: false);
+
+	private async Task<NormalizationAiConnection> GetConnectionCoreAsync(string actor, CancellationToken cancellationToken, bool admission)
 	{
 		bool configured = Settings.Enabled && !string.IsNullOrWhiteSpace(Settings.OwnerUserId);
 		bool owner = configured && actor == Settings.OwnerUserId;
@@ -63,6 +66,10 @@ public sealed partial class NormalizationAiService(
 			NormalizationAiConnectionEntity connection = await ConnectionAsync(context, cancellationToken);
 			generation = connection.Generation;
 			if (connection.Changing) { return new(true, true, false, generation, [], Busy: true); }
+			// Once work is reserved, refreshes must not take the rotating-credential lock.
+			// An already-started read may overlap admission; the worker safely backs off.
+			if (!admission && await context.NormalizationAiRuns.AnyAsync(run => run.State == "queued" || run.State == "running", cancellationToken))
+			{ return new(true, true, false, generation, [], Busy: true); }
 			await lease.CommitAsync(cancellationToken);
 		}
 		try
@@ -136,7 +143,7 @@ public sealed partial class NormalizationAiService(
 			NormalizationAiRunEntity? prior = await priorContext.NormalizationAiRuns.AsNoTracking().Include(run => run.Proposals).SingleOrDefaultAsync(run => run.OwnerUserId == actor && run.ClientRequestId == clientRequestId, cancellationToken);
 			if (prior is not null) { return prior.RequestHash == hash ? ToModel(prior) : throw Error(409, "request_conflict", "This request ID was already used for different input."); }
 		}
-		NormalizationAiConnection connection = await GetConnectionAsync(actor, cancellationToken);
+		NormalizationAiConnection connection = await GetConnectionCoreAsync(actor, cancellationToken, admission: true);
 		if (connection.Busy) { throw Error(409, "provider_busy", "ChatGPT is busy. Wait for the current operation before starting another run."); }
 		if (!connection.CredentialsPresent) { throw Error(409, "not_connected", "Sign in to ChatGPT on the deployment before starting a run."); }
 		if (!connection.Models.Contains(model, StringComparer.Ordinal)) { throw Error(400, "invalid_model", "Select a model offered by the current ChatGPT runtime."); }

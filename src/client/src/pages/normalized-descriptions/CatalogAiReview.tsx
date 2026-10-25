@@ -4,6 +4,8 @@ import type { CatalogSource } from "@/hooks/useNormalizationCatalog";
 import type { CatalogSuggestion } from "./CatalogSourceReview";
 import { CatalogLabelReview } from "./CatalogLabelReview";
 import { Button } from "@/components/ui/button";
+import { AiRunStatus } from "./AiRunStatus";
+import { visibleAiProposals } from "./ai-run-state";
 import { extractErrorMessage } from "@/lib/problem-details";
 
 export function CatalogAiReview({
@@ -26,16 +28,13 @@ export function CatalogAiReview({
       aria-label="Catalog suggestions"
     >
       <h2 className="card-title">ChatGPT suggestions</h2>
-      <p role="status">
-        {run.state} · {run.model}
-      </p>
+      <AiRunStatus run={run} />
       <p>
         Suggestions do not change your catalog. Review each source and preview
         its current historical scope before approving. A confident explanation
         can still be wrong.
       </p>
-      {run.errorDetail && <p role="alert">{run.errorDetail}</p>}
-      {run.proposals.map((proposal) => (
+      {visibleAiProposals(run).map((proposal) => (
         <article key={proposal.id} className="space-y-2 rounded border p-3">
           <h3 className="font-medium">{proposal.description}</h3>
           {proposal.source && (
@@ -153,10 +152,6 @@ export function CatalogAiReview({
       )}
       {["failed", "unknown", "interrupted"].includes(run.state) && (
         <>
-          <p>
-            A new request may consume model allowance again, even if the
-            previous request was interrupted.
-          </p>
           <Button
             disabled={pending}
             onClick={() =>

@@ -237,11 +237,13 @@ it("retains unknown outcome guidance and retries only on explicit action using s
       onRetried={vi.fn()}
     />,
   );
-  expect(screen.getByRole("alert")).toHaveTextContent("may have processed");
+  expect(screen.getByRole("alert")).toHaveTextContent(
+    "may have consumed allowance",
+  );
   expect(retry).not.toHaveBeenCalled();
   expect(
-    screen.getByRole("button", { name: "Review source and preview" }),
-  ).toBeDisabled();
+    screen.queryByRole("button", { name: "Review source and preview" }),
+  ).not.toBeInTheDocument();
   await user.click(
     screen.getByRole("button", { name: "Retry as a new request" }),
   );
@@ -277,3 +279,66 @@ it("shows a human override honestly and prevents replaying the original model de
     screen.getByRole("button", { name: "Review source and preview" }),
   ).toBeDisabled();
 });
+
+it.each(["queued", "running", "failed", "unknown"])(
+  "hides unvalidated catalog proposals for %s",
+  (state) => {
+    render(
+      <CatalogAiReview
+        run={{ ...run, state }}
+        onReview={vi.fn()}
+        onRetried={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText(source.description)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Review source and preview" }),
+    ).not.toBeInTheDocument();
+  },
+);
+
+it.each(["applied", "overridden", "no_change"])(
+  "preserves %s evidence after discarding a partially reviewed run",
+  async (state) => {
+    const reviewed = { ...proposal, state };
+    const pending = {
+      ...proposal,
+      id: "10000000-0000-0000-0000-000000000002",
+      description: "Unreviewed sibling",
+    };
+    const onReview = vi.fn();
+    const onRetried = vi.fn();
+    const partialRun = { ...run, proposals: [reviewed, pending] };
+    const { rerender } = render(
+      <CatalogAiReview
+        run={partialRun}
+        onReview={onReview}
+        onRetried={onRetried}
+      />,
+    );
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Discard suggestions" }));
+    expect(cancel).toHaveBeenCalledWith(run.id);
+    rerender(
+      <CatalogAiReview
+        run={{ ...partialRun, state: "cancelled" }}
+        onReview={onReview}
+        onRetried={onRetried}
+      />,
+    );
+    expect(
+      screen.getByRole("heading", { name: source.description }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("heading", { name: "Unreviewed sibling" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Cancelled");
+    expect(
+      screen.queryByRole("button", { name: "Discard suggestions" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Review source and preview" }),
+    ).toBeDisabled();
+  },
+);
