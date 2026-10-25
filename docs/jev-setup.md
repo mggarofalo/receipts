@@ -2,6 +2,12 @@
 
 The canonical API-server credential is `TYPESAFE_API_KEY`. Configure local development with:
 
+The API project declares its own stable `UserSecretsId`; AppHost has a separate
+identity. The offline classification harness can explicitly reuse the API store
+in live mode with `--api-user-secrets` (see
+[prepared evaluation command](classification-evaluation/README.md)). No second
+credential configuration is required.
+
 ```powershell
 dotnet user-secrets set TYPESAFE_API_KEY "<your-key>" --project src/Presentation/API
 ```
