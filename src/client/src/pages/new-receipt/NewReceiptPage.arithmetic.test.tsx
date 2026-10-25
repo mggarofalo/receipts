@@ -36,7 +36,7 @@ vi.mock("react-router", async (importOriginal) => ({
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 // Supply exact user-entered values at the child-input boundaries; the page,
-// BalanceSidebar, sticky action bar, header validation and submission stay real.
+// sticky balance summary, header validation and submission stay real.
 vi.mock("./LineItemsSection", () => ({
   LineItemsSection: ({
     onChange,
@@ -116,57 +116,51 @@ beforeEach(() => {
 });
 
 describe("receipt calculation composition", () => {
-  it.each([0, 1])(
-    "rounds each fractional line before summing and permits submit button %i",
-    async (buttonIndex) => {
-      const user = await enterReceipt();
-      expect(screen.getByText("Subtotal").nextElementSibling).toHaveTextContent(
-        "$2.02",
-      );
-      expect(document.querySelector(".sticky.bottom-0")).toHaveTextContent(
-        "Subtotal $2.02",
-      );
-      const submits = screen.getAllByRole("button", { name: "Submit Receipt" });
-      expect(submits).toHaveLength(2);
-      submits.forEach((button) => expect(button).toBeEnabled());
-      await user.click(submits[buttonIndex]);
-      await waitFor(() => expect(createReceipt).toHaveBeenCalledOnce());
-      expect(createReceipt).toHaveBeenCalledWith(
-        expect.objectContaining({
-          items: [
-            expect.objectContaining({ quantity: 0.5, unitPrice: 2.01 }),
-            expect.objectContaining({ quantity: 0.5, unitPrice: 2.01 }),
-          ],
-          transactions: [expect.objectContaining({ amount: 2.02 })],
-        }),
-      );
-      expect(navigate).toHaveBeenCalledWith("/receipts/created");
-    },
-  );
+  it("rounds each fractional line before summing and submits through the single primary action", async () => {
+    const user = await enterReceipt();
+    expect(screen.getByText("Subtotal").nextElementSibling).toHaveTextContent(
+      "$2.02",
+    );
+    expect(document.querySelector(".sticky.bottom-0")).toHaveTextContent(
+      "Receipt total$2.02",
+    );
+    const submits = screen.getAllByRole("button", { name: "Submit Receipt" });
+    expect(submits).toHaveLength(1);
+    submits.forEach((button) => expect(button).toBeEnabled());
+    await user.click(submits[0]);
+    await waitFor(() => expect(createReceipt).toHaveBeenCalledOnce());
+    expect(createReceipt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        items: [
+          expect.objectContaining({ quantity: 0.5, unitPrice: 2.01 }),
+          expect.objectContaining({ quantity: 0.5, unitPrice: 2.01 }),
+        ],
+        transactions: [expect.objectContaining({ amount: 2.02 })],
+      }),
+    );
+    expect(navigate).toHaveBeenCalledWith("/receipts/created");
+  });
 
-  it.each([
-    [1.01, 0],
-    [1.01, 1],
-    [0.99, 0],
-    [0.99, 1],
-  ])(
-    "accepts the server's exact one-cent boundary with payment %s through button %i",
-    async (payment, buttonIndex) => {
+  it.each([1.01, 0.99])(
+    "accepts the server's exact one-cent boundary with payment %s",
+    async (payment) => {
       Object.assign(fixture, { quantity: 1, unitPrice: 1, count: 1, payment });
       const user = await enterReceipt();
       const submits = screen.getAllByRole("button", { name: "Submit Receipt" });
+      expect(submits).toHaveLength(1);
       submits.forEach((button) => expect(button).toBeEnabled());
-      await user.click(submits[buttonIndex]);
+      await user.click(submits[0]);
       await waitFor(() => expect(createReceipt).toHaveBeenCalledOnce());
     },
   );
 
   it.each([0.98, 1.02])(
-    "keeps both submits disabled beyond one cent with payment %s",
+    "keeps the primary submit disabled beyond one cent with payment %s",
     async (payment) => {
       Object.assign(fixture, { quantity: 1, unitPrice: 1, count: 1, payment });
       const user = await enterReceipt();
       const submits = screen.getAllByRole("button", { name: "Submit Receipt" });
+      expect(submits).toHaveLength(1);
       for (const button of submits) {
         expect(button).toBeDisabled();
         await user.click(button);
@@ -174,7 +168,7 @@ describe("receipt calculation composition", () => {
       expect(createReceipt).not.toHaveBeenCalled();
       expect(
         screen.getAllByText(payment < 1 ? "Over by $0.02" : "Remaining: $0.02"),
-      ).toHaveLength(2);
+      ).toHaveLength(1);
     },
   );
 

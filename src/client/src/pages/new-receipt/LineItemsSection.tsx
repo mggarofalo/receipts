@@ -567,12 +567,12 @@ export function LineItemsSection({
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleAdd)} className="space-y-4">
             {/* Row 1: Item Code, Description, Category */}
-            <div className="flex flex-wrap gap-4">
+            <div className="flex flex-wrap items-start gap-4">
               <FormField
                 control={form.control}
                 name="receiptItemCode"
                 render={({ field }) => (
-                  <FormItem className="min-w-[180px] flex-1">
+                  <FormItem className="min-w-[12rem] flex-1">
                     <FormLabel>Item Code</FormLabel>
                     <Popover
                       open={isItemCodeSuggestionsOpen}
@@ -694,7 +694,7 @@ export function LineItemsSection({
                 control={form.control}
                 name="description"
                 render={({ field }) => (
-                  <FormItem className="min-w-[200px] flex-[2]">
+                  <FormItem className="w-full min-w-0 flex-none sm:w-auto sm:min-w-[16rem] sm:flex-[2]">
                     <FormLabel required>Description</FormLabel>
                     <Popover
                       open={isSuggestionsOpen}
@@ -773,6 +773,9 @@ export function LineItemsSection({
                           }}
                         >
                           <CommandList id={suggestionsListId}>
+                            <p className="px-3 py-2 text-xs text-muted-foreground">
+                              Receipt history � raw descriptions
+                            </p>
                             <CommandEmpty>No similar items found</CommandEmpty>
                             {similarItems?.map((item, index) => (
                               <CommandItem
@@ -856,6 +859,15 @@ export function LineItemsSection({
                       </PopoverContent>
                     </Popover>
                     <FormMessage />
+                    <ReceiptNormalizationField
+                      source={receiptNormalizationSource(location, {
+                        description,
+                        receiptItemCode: itemCode,
+                      })}
+                      clientRowId={draftRowId}
+                      value={normalizationChoice}
+                      onChange={setNormalizationChoice}
+                    />
                     {similarItemsError &&
                       description.length >= 2 &&
                       !similarItemsDebouncing && (
@@ -875,7 +887,7 @@ export function LineItemsSection({
                 control={form.control}
                 name="category"
                 render={({ field }) => (
-                  <FormItem className="min-w-[200px] flex-1">
+                  <FormItem className="min-w-[12rem] flex-1">
                     <FormLabel required>Category</FormLabel>
                     <FormControl>
                       <Combobox
@@ -941,12 +953,12 @@ export function LineItemsSection({
             </div>
 
             {/* Row 2: Subcategory, Quantity, Unit Price, Add Item */}
-            <div className="flex flex-wrap items-end gap-4">
+            <div className="flex flex-wrap items-start gap-4">
               <FormField
                 control={form.control}
                 name="subcategory"
                 render={({ field }) => (
-                  <FormItem className="min-w-[200px] flex-1">
+                  <FormItem className="min-w-[14rem] flex-[2]">
                     <FormLabel>Subcategory (optional)</FormLabel>
                     <FormControl>
                       <Combobox
@@ -996,7 +1008,7 @@ export function LineItemsSection({
                 control={form.control}
                 name="quantity"
                 render={({ field }) => (
-                  <FormItem className="min-w-[110px]">
+                  <FormItem className="min-w-[5rem] flex-1">
                     <FormLabel required>Qty</FormLabel>
                     <FormControl>
                       <DecimalInput
@@ -1016,7 +1028,7 @@ export function LineItemsSection({
                 control={form.control}
                 name="unitPrice"
                 render={({ field }) => (
-                  <FormItem className="min-w-[150px]">
+                  <FormItem className="min-w-[8rem] flex-1">
                     <FormLabel required>Unit Price</FormLabel>
                     <FormControl>
                       <CurrencyInput {...field} precision={4} />
@@ -1026,22 +1038,18 @@ export function LineItemsSection({
                 )}
               />
 
-              <div className="mb-0.5 flex justify-end">
-                <Button type="submit" variant="secondary" size="sm">
+              <div className="flex justify-end sm:pt-[22px]">
+                <Button
+                  type="submit"
+                  variant="secondary"
+                  size="sm"
+                  className="h-9"
+                >
                   <Plus className="mr-1 h-4 w-4" />
                   Add Item
                 </Button>
               </div>
             </div>
-            <ReceiptNormalizationField
-              source={receiptNormalizationSource(location, {
-                description,
-                receiptItemCode: itemCode,
-              })}
-              clientRowId={draftRowId}
-              value={normalizationChoice}
-              onChange={setNormalizationChoice}
-            />
           </form>
         </Form>
 
@@ -1204,6 +1212,7 @@ export function LineItemsSection({
                     <TableCell className="whitespace-normal break-words max-w-[32ch]">
                       <div>{item.description}</div>
                       <ReceiptNormalizationField
+                        inlineSuggestions={false}
                         source={receiptNormalizationSource(location, item)}
                         clientRowId={item.id}
                         value={item.normalizationChoice}

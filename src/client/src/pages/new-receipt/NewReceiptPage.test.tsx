@@ -164,7 +164,10 @@ vi.mock("./BalanceSidebar", () => ({
     onSubmit,
     onCancel,
     isSubmitting,
+    subtotal,
+    taxAmount,
     adjustmentTotal,
+    transactionTotal,
   }: {
     subtotal: number;
     taxAmount: number;
@@ -175,7 +178,11 @@ vi.mock("./BalanceSidebar", () => ({
     onCancel: () => void;
   }) => (
     <div data-testid="balance-sidebar">
+      <span>Balance details</span>
       <span data-testid="sidebar-adjustment-total">{adjustmentTotal}</span>
+      <span data-testid="sidebar-subtotal">{subtotal}</span>
+      <span data-testid="sidebar-payment-total">{transactionTotal}</span>
+      <span data-testid="sidebar-tax">{taxAmount}</span>
       <button onClick={onSubmit} disabled={isSubmitting}>
         {isSubmitting ? "Submitting..." : "Submit Receipt"}
       </button>
@@ -317,47 +324,32 @@ describe("NewReceiptPage", () => {
 
   it("renders balance sidebar", () => {
     renderWithProviders(<NewReceiptPage />);
-    expect(screen.getAllByTestId("balance-sidebar").length).toBeGreaterThan(0);
+    expect(screen.getByText("Balance details")).toBeInTheDocument();
   });
 
-  it("renders the line-item table full-width below the upper container, not trapped in the narrow grid column (WCAG 1.4.10)", () => {
-    // The upper-left column sits in a `grid-cols-[1fr_minmax(...)]` track and
-    // keeps `min-w-0` so its `1fr` track can shrink below content min-width
-    // (letting an inner table's `overflow-x-auto` engage instead of widening
-    // the page). The line-item table is moved out of that track to full-width
-    // block flow below the grid, so it is never constrained to the narrow
-    // `1fr` column.
+  it("places full-width items before payments with one reachable save action", () => {
     renderWithProviders(<NewReceiptPage />);
-
-    const upperLeft = screen
-      .getByTestId("transactions-section")
-      .closest("div.min-w-0");
-    expect(upperLeft).not.toBeNull();
-    expect(upperLeft).toHaveClass("min-w-0");
-
-    const lineItems = screen.getByTestId("line-items-section");
-    expect(upperLeft?.contains(lineItems)).toBe(false);
-  });
-
-  it("renders a sticky action bar with the balance status and Submit/Cancel", () => {
-    // The Balance panel sits in the upper container and scrolls out of view
-    // once the line-item table grows tall. The sticky action bar keeps the
-    // balance status and Submit/Cancel reachable at the bottom of the viewport.
-    renderWithProviders(<NewReceiptPage />);
-
+    const items = screen.getByTestId("line-items-section");
+    const payments = screen.getByTestId("transactions-section");
+    expect(
+      items.compareDocumentPosition(payments) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      screen.getAllByRole("button", { name: "Submit Receipt" }),
+    ).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Cancel" })).toHaveLength(1);
     const stickyBar = document.querySelector(".sticky.bottom-0");
-    expect(stickyBar).not.toBeNull();
-    expect(stickyBar?.textContent).toContain("Submit Receipt");
-    expect(stickyBar?.textContent).toContain("Cancel");
-    // No data yet → expected and transaction totals are both 0 → balanced.
-    expect(stickyBar?.textContent).toContain("Balanced");
-    expect(stickyBar?.textContent).toContain(
-      "Subtotal $0.00 + Tax $0.00 + Adjustments $0.00 = Expected $0.00 · Transactions $0.00",
+    expect(stickyBar).toContainElement(
+      screen.getByRole("button", { name: "Submit Receipt" }),
     );
+    expect(stickyBar).toContainElement(screen.getByTestId("balance-sidebar"));
+    expect(stickyBar?.contains(items)).toBe(false);
+  });
 
-    // The sticky bar is a sibling below the line-item table, not nested in it.
-    const lineItems = screen.getByTestId("line-items-section");
-    expect(stickyBar?.contains(lineItems)).toBe(false);
+  it("leaves focus with the browser when entry opens", () => {
+    renderWithProviders(<NewReceiptPage />);
+    expect(screen.getByRole("combobox")).not.toHaveFocus();
   });
 
   it("navigates directly to /receipts when cancel clicked with no data", async () => {
@@ -521,7 +513,7 @@ describe("NewReceiptPage", () => {
     expect(mockNavigate).toHaveBeenCalledWith("/receipts/receipt-123");
   });
 
-  it("updates the sticky itemized equation when receipt contents change", async () => {
+  it("passes updated amounts to the single sticky balance surface", async () => {
     const user = userEvent.setup();
     renderWithProviders(<NewReceiptPage />);
 
@@ -530,10 +522,12 @@ describe("NewReceiptPage", () => {
     await user.click(screen.getByRole("button", { name: "Add Adjustment" }));
 
     const stickyBar = document.querySelector(".sticky.bottom-0");
-    expect(stickyBar).toHaveTextContent(
-      "Subtotal $50.00 + Tax $0.00 + Adjustments $5.00 = Expected $55.00 · Transactions $55.00",
+    expect(stickyBar).toContainElement(screen.getByTestId("balance-sidebar"));
+    expect(screen.getByTestId("sidebar-adjustment-total")).toHaveTextContent(
+      "5",
     );
-    expect(stickyBar).toHaveTextContent("Balanced");
+    expect(screen.getByTestId("sidebar-subtotal")).toHaveTextContent("50");
+    expect(screen.getByTestId("sidebar-payment-total")).toHaveTextContent("55");
   });
 
   it("includes adjustments in the complete-receipt payload", async () => {
@@ -638,14 +632,8 @@ describe("NewReceiptPage", () => {
     const submitButtons = screen.getAllByText("Submit Receipt");
     await user.click(submitButtons[0]);
 
-    // The form has validation errors; the location combobox (first required field)
-    // should receive focus. We verify by checking that document.activeElement is
-    // inside the location FormItem (the first field rendered).
     await vi.waitFor(() => {
-      const activeEl = document.activeElement;
-      // The combobox trigger is a button; it should be focused
-      expect(activeEl).not.toBeNull();
-      expect(activeEl?.tagName).not.toBe("BODY");
+      expect(screen.getByRole("combobox")).toHaveFocus();
     });
   });
 
@@ -746,14 +734,11 @@ describe("NewReceiptPage", () => {
     expect(mockBlocker.proceed).toHaveBeenCalled();
   });
 
-  it("shows review guidance only while items need review", async () => {
+  it("lets unknown items remain ordinary receipt entries without a review nag", async () => {
     const user = userEvent.setup();
     renderWithProviders(<NewReceiptPage />);
-    expect(screen.queryByText(/items? need review/)).not.toBeInTheDocument();
-    await user.click(screen.getAllByRole("button", { name: "Add Item" })[0]);
-    expect(
-      screen.getByText(/1 item needs review. You can still save./),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/Save checks remembered rules/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Add Item" }));
+    expect(screen.queryByText(/items? needs? review/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Review on save")).not.toBeInTheDocument();
   });
 });

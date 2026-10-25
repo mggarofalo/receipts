@@ -247,6 +247,7 @@ for (const width of [1280, 375]) {
     });
     await choose.focus();
     await page.keyboard.press("Enter");
+    await page.getByLabel("Search all product names").fill("Whole milk");
     await expect(
       page.getByRole("button", { name: "Use Whole milk 1 gallon" }),
     ).toBeVisible();
@@ -255,9 +256,21 @@ for (const width of [1280, 375]) {
     expect(writes).toBe(0);
     await expect
       .poll(() =>
-        page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+        page.evaluate(() =>
+          Array.from(document.querySelectorAll("*"), (element) => {
+            const box = element.getBoundingClientRect();
+            return {
+              tag: element.tagName,
+              className: element.className,
+              text: element.textContent?.slice(0, 60),
+              left: box.left,
+              right: box.right,
+              width: box.width,
+            };
+          }).filter((box) => box.right > innerWidth + 1 && box.width > 0),
+        ),
       )
-      .toBe(true);
+      .toEqual([]);
     await page.getByRole("button", { name: "New product and use it" }).focus();
     await page.keyboard.press("Enter");
     await expect(page.getByText(/Organic whole milk/)).toBeVisible();

@@ -58,6 +58,9 @@ let createFailure: boolean;
 let writes: unknown[];
 let rows: ReceiptLineItem[];
 const server = setupServer(
+  http.get("*/api/receipt-items/normalization-candidates", () =>
+    HttpResponse.json([]),
+  ),
   http.post("*/api/receipt-items/normalization-preview", () =>
     HttpResponse.json({
       sourceFingerprint: "taxonomy-draft",

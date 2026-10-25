@@ -79,6 +79,9 @@ let catalogReads: number;
 let linkWrites: unknown[];
 let otherWrites: string[];
 const server = setupServer(
+  http.get("*/api/receipt-items/normalization-candidates", () =>
+    HttpResponse.json([]),
+  ),
   http.post("*/api/receipt-items/normalization-preview", () =>
     HttpResponse.json({
       sourceFingerprint: "template-draft",

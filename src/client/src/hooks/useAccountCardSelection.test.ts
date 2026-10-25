@@ -25,6 +25,7 @@ function setup(cards?: (typeof card)[]) {
     ["accounts", "all", undefined],
     [{ id: "account-1", name: "Historic account", isActive: false }],
   );
+  queryClient.setQueryData(["cards", "all", undefined], []);
   if (cards) queryClient.setQueryData(key, cards);
   function wrapper({ children }: { children: ReactNode }) {
     return createElement(
@@ -100,10 +101,14 @@ describe("useAccountCardSelection", () => {
   it("preserves a previously verified historical card through a failed refetch", async () => {
     vi.mocked(client.GET).mockRejectedValue(new Error("offline"));
     const { result } = setup([card]);
-    await act(async () => { await result.current.retryCards(); });
+    await act(async () => {
+      await result.current.retryCards();
+    });
     await waitFor(() => expect(result.current.cardsError).toBe(true));
-    expect(result.current.cardOptions[0]).toMatchObject({ value: "card-1", label: "Historic card (inactive)" });
+    expect(result.current.cardOptions[0]).toMatchObject({
+      value: "card-1",
+      label: "Historic card (inactive)",
+    });
     expect(result.current.validate(pair)).toBeUndefined();
   });
-
 });

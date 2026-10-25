@@ -21,7 +21,7 @@ interface AccountCardSelectorProps {
   fieldClassName?: string;
 }
 
-/** Account drives card selection; independent of a particular form library. */
+/** Select a card directly, or narrow its choices by account. */
 export function AccountCardSelector({
   selection,
   onChange,
@@ -52,17 +52,82 @@ export function AccountCardSelector({
   return (
     <>
       <div className={`grid gap-2 ${fieldClassName ?? ""}`}>
-        <Label htmlFor={`${id}-account`}>
-          Account
+        <Label htmlFor={`${id}-card`}>
+          Card
           <span aria-hidden="true" className="text-destructive">
             *
           </span>
         </Label>
         <Combobox
+          id={`${id}-card`}
+          ref={cardInput?.ref}
+          onBlur={cardInput?.onBlur}
+          options={cardOptions}
+          value={value.cardId}
+          onValueChange={(cardId) => {
+            // Reject stale options if the account or its available cards changed.
+            const card = cardOptions.find((option) => option.value === cardId);
+            if (card) onChange({ accountId: card.accountId, cardId });
+          }}
+          placeholder="Select a card..."
+          searchPlaceholder="Search cards..."
+          loading={cardsLoading && !value.cardId}
+          disabled={
+            cardsLoading ||
+            cardsError ||
+            accountsLoading ||
+            accountsError ||
+            noCards
+          }
+          aria-required="true"
+          aria-invalid={!!cardError}
+          aria-describedby={`${id}-card-error ${id}-card-status`}
+        />
+        {(cardsError || noCards) && (
+          <div id={`${id}-card-status`} className="text-sm">
+            {cardsError && (
+              <p role="alert" className="text-destructive">
+                Could not load this account’s cards.{" "}
+                <Button
+                  type="button"
+                  variant="link"
+                  onClick={() => void retryCards()}
+                >
+                  Retry cards
+                </Button>
+              </p>
+            )}
+            {noCards && (
+              <p role="status" className="text-muted-foreground">
+                This account has no active cards.{" "}
+                <Link
+                  className="underline"
+                  to="/cards"
+                  state={{ openNew: true }}
+                >
+                  Create a card
+                </Link>{" "}
+                or choose another account.
+              </p>
+            )}
+          </div>
+        )}
+        <p
+          id={`${id}-card-error`}
+          role={cardError ? "alert" : undefined}
+          aria-hidden={!cardError || undefined}
+          className="min-h-5 text-sm font-medium text-destructive"
+        >
+          {cardError}
+        </p>
+      </div>
+      <div className={`grid gap-2 ${fieldClassName ?? ""}`}>
+        <Label htmlFor={`${id}-account`}>Account</Label>
+        <Combobox
           id={`${id}-account`}
           ref={accountInput?.ref}
           onBlur={accountInput?.onBlur}
-          options={accountOptions}
+          options={[{ value: "", label: "All accounts" }, ...accountOptions]}
           value={value.accountId}
           onValueChange={(accountId) =>
             onChange({
@@ -70,11 +135,10 @@ export function AccountCardSelector({
               cardId: accountId === value.accountId ? value.cardId : "",
             })
           }
-          placeholder="Select an account..."
+          placeholder="All accounts"
           searchPlaceholder="Search accounts..."
           loading={accountsLoading && !value.accountId}
           disabled={accountsLoading || accountsError}
-          aria-required="true"
           aria-invalid={!!accountInput?.error}
           aria-describedby={`${id}-account-error`}
         />
@@ -97,67 +161,6 @@ export function AccountCardSelector({
           className="min-h-5 text-sm font-medium text-destructive"
         >
           {accountInput?.error}
-        </p>
-      </div>
-      <div className={`grid gap-2 ${fieldClassName ?? ""}`}>
-        <Label htmlFor={`${id}-card`}>
-          Card
-          <span aria-hidden="true" className="text-destructive">
-            *
-          </span>
-        </Label>
-        <Combobox
-          key={value.accountId}
-          id={`${id}-card`}
-          ref={cardInput?.ref}
-          onBlur={cardInput?.onBlur}
-          options={cardOptions}
-          value={value.cardId}
-          onValueChange={(cardId) => {
-            // Reject stale options if the account or its available cards changed.
-            if (cardOptions.some((card) => card.value === cardId))
-              onChange({ accountId: value.accountId, cardId });
-          }}
-          placeholder={
-            value.accountId ? "Select a card..." : "Select an account first"
-          }
-          searchPlaceholder="Search cards..."
-          loading={cardsLoading && !value.cardId}
-          disabled={!value.accountId || cardsLoading || cardsError || noCards}
-          aria-required="true"
-          aria-invalid={!!cardError}
-          aria-describedby={`${id}-card-error ${id}-card-status`}
-        />
-        <div id={`${id}-card-status`} className="text-sm">
-          {cardsError && (
-            <p role="alert" className="text-destructive">
-              Could not load this account’s cards.{" "}
-              <Button
-                type="button"
-                variant="link"
-                onClick={() => void retryCards()}
-              >
-                Retry cards
-              </Button>
-            </p>
-          )}
-          {noCards && (
-            <p role="status" className="text-muted-foreground">
-              This account has no active cards.{" "}
-              <Link className="underline" to="/cards" state={{ openNew: true }}>
-                Create a card
-              </Link>{" "}
-              or choose another account.
-            </p>
-          )}
-        </div>
-        <p
-          id={`${id}-card-error`}
-          role={cardError ? "alert" : undefined}
-          aria-hidden={!cardError || undefined}
-          className="min-h-5 text-sm font-medium text-destructive"
-        >
-          {cardError}
         </p>
       </div>
     </>

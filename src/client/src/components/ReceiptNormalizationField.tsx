@@ -26,6 +26,7 @@ export interface ReceiptNormalizationFieldProps {
     name?: string | null;
   };
   disabled?: boolean;
+  inlineSuggestions?: boolean;
 }
 
 export function ReceiptNormalizationField(
@@ -38,20 +39,9 @@ export function ReceiptNormalizationField(
     if (value && value.sourceKey !== sourceKey) onChange(undefined);
   }, [value, sourceKey, onChange]);
   if (!props.source.location.trim() || !props.source.description.trim()) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        Enter a store and description to recognize this purchase. You can save
-        it for review.
-      </p>
-    );
+    return null;
   }
-  if (sourceKey !== settledKey) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        Checking this description… You can still save for review.
-      </p>
-    );
-  }
+  if (sourceKey !== settledKey) return null;
   return (
     <NormalizationChoices
       key={`${props.clientRowId}:${sourceKey}`}
@@ -68,6 +58,7 @@ function NormalizationChoices({
   expectedItemRevision,
   currentAssignment,
   disabled,
+  inlineSuggestions = true,
 }: ReceiptNormalizationFieldProps) {
   const [expanded, setExpanded] = useState(false);
   const [query, setQuery] = useState("");
@@ -149,7 +140,7 @@ function NormalizationChoices({
   return (
     <fieldset
       disabled={disabled}
-      className="min-w-0 space-y-2 rounded-md border p-3 [overflow-wrap:anywhere]"
+      className="min-w-0 space-y-2 [overflow-wrap:anywhere]"
       aria-label="Product normalization"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -175,13 +166,11 @@ function NormalizationChoices({
             "Excluded from product grouping"
           ) : preview.isFetching || preview.isDebouncing ? (
             "Checking known descriptions…"
-          ) : (
-            "Needs review"
-          )}
+          ) : null}
         </p>
         <Button
           type="button"
-          variant="outline"
+          variant="ghost"
           size="sm"
           onClick={() => {
             if (expanded) {
@@ -207,7 +196,6 @@ function NormalizationChoices({
             : choice.intent.rememberSource
               ? "Will remember this exact store, description and item code when you save."
               : "This purchase only."}{" "}
-          Final checks happen when you save.
         </p>
       )}
       {preview.isError && (
@@ -217,22 +205,45 @@ function NormalizationChoices({
           isRetrying={preview.isFetching}
         />
       )}
+      {(inlineSuggestions || expanded) && (!choice || expanded) && (
+        <label className="flex items-start gap-2 text-sm">
+          <Checkbox
+            checked={remember && !sourceAmbiguous}
+            disabled={sourceAmbiguous}
+            onCheckedChange={(checked) => setRemember(checked === true)}
+          />
+          <span>
+            Remember this exact description at {source.location}
+            {source.itemCode
+              ? ` (code ${source.itemCode})`
+              : " (without an item code)"}
+            .
+          </span>
+        </label>
+      )}
+      {(expanded ||
+        (inlineSuggestions &&
+          !choice &&
+          existing?.state !== "verified" &&
+          existing?.state !== "excluded")) && (
+        <ReceiptNormalizationShortlist
+          source={source}
+          disabled={disabled || !ready}
+          onChoose={(candidate) =>
+            choose(
+              {
+                kind: "confirmExisting",
+                targetId: candidate.id,
+                expectedTargetRevision: candidate.revision,
+                rememberSource: remember,
+              },
+              candidate.displayLabel ?? candidate.canonicalName,
+            )
+          }
+        />
+      )}
       {expanded && (
         <div className="space-y-3">
-          <p className="text-xs text-muted-foreground">
-            Match the same product, including known brand, size and variety.
-            Choosing a name does not change receipt text or prices.
-          </p>
-          <ReceiptNormalizationShortlist
-            source={source}
-            disabled={disabled || !ready}
-            onChoose={(candidate) => choose({
-              kind: "confirmExisting",
-              targetId: candidate.id,
-              expectedTargetRevision: candidate.revision,
-              rememberSource: remember,
-            }, candidate.displayLabel ?? candidate.canonicalName)}
-          />
           <label htmlFor={`${id}-search`} className="block text-sm">
             Search all product names
           </label>
@@ -275,85 +286,72 @@ function NormalizationChoices({
               .
             </p>
           )}
-          <label className="flex items-start gap-2 text-sm">
-            <Checkbox
-              checked={remember && !sourceAmbiguous}
-              disabled={sourceAmbiguous}
-              onCheckedChange={(checked) => setRemember(checked === true)}
-            />
-            <span>
-              Remember this exact description at {source.location}
-              {source.itemCode
-                ? ` (code ${source.itemCode})`
-                : " (without an item code)"}
-              . Leave unchecked for this purchase only.
-            </span>
-          </label>
           {sourceAmbiguous && (
             <p className="text-sm">
               This description has been used for different products. Choose for
               this purchase only; it cannot safely become a remembered rule.
             </p>
           )}
-          {preview.isFetching || preview.isDebouncing ? (
-            <p role="status">Loading product choices…</p>
-          ) : (
-            evidence && (
-              <>
-                <ul className="space-y-1" aria-label="Product choices">
-                  {evidence.candidates.map((candidate) => (
-                    <li key={candidate.id}>
-                      <Button
-                        className="h-auto max-w-full whitespace-normal break-words text-left"
-                        type="button"
-                        variant="outline"
-                        onClick={() =>
-                          choose(
-                            {
-                              kind: "confirmExisting",
-                              targetId: candidate.id,
-                              expectedTargetRevision: candidate.revision,
-                              rememberSource: remember,
-                            },
-                            candidate.name,
-                          )
-                        }
-                      >
-                        Use {candidate.name}
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-                {!evidence.candidates.length && (
-                  <p>
-                    No matching product names. Search another name or name a new
-                    product below.
-                  </p>
-                )}
-                <div className="flex flex-wrap items-center gap-2 text-sm">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    disabled={offset === 0}
-                    onClick={() => setOffset(Math.max(0, offset - 10))}
-                  >
-                    Previous products
-                  </Button>
-                  <span>{evidence.total} products</span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    disabled={offset + evidence.limit >= evidence.total}
-                    onClick={() => setOffset(offset + 10)}
-                  >
-                    Next products
-                  </Button>
-                </div>
-              </>
-            )
-          )}
+          {query.trim() &&
+            (preview.isFetching || preview.isDebouncing ? (
+              <p role="status">Loading product choices…</p>
+            ) : (
+              evidence && (
+                <>
+                  <ul className="space-y-1" aria-label="Product choices">
+                    {evidence.candidates.map((candidate) => (
+                      <li key={candidate.id}>
+                        <Button
+                          className="h-auto max-w-full whitespace-normal break-words text-left"
+                          type="button"
+                          variant="outline"
+                          onClick={() =>
+                            choose(
+                              {
+                                kind: "confirmExisting",
+                                targetId: candidate.id,
+                                expectedTargetRevision: candidate.revision,
+                                rememberSource: remember,
+                              },
+                              candidate.name,
+                            )
+                          }
+                        >
+                          Use {candidate.name}
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                  {!evidence.candidates.length && (
+                    <p>
+                      No matching product names. Search another name or name a
+                      new product below.
+                    </p>
+                  )}
+                  <div className="flex flex-wrap items-center gap-2 text-sm">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={offset === 0}
+                      onClick={() => setOffset(Math.max(0, offset - 10))}
+                    >
+                      Previous products
+                    </Button>
+                    <span>{evidence.total} products</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={offset + evidence.limit >= evidence.total}
+                      onClick={() => setOffset(offset + 10)}
+                    >
+                      Next products
+                    </Button>
+                  </div>
+                </>
+              )
+            ))}
           <div className="space-y-2 border-t pt-3">
             <label htmlFor={`${id}-name`} className="block text-sm">
               New product name
@@ -390,6 +388,19 @@ function NormalizationChoices({
               and changed choices are checked again.
             </p>
           </div>
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={!ready}
+            onClick={() =>
+              choose(
+                { kind: "exclude", rememberSource: remember },
+                "Excluded from product grouping",
+              )
+            }
+          >
+            Exclude from product grouping
+          </Button>
           <Button
             type="button"
             variant="ghost"

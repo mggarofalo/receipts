@@ -42,6 +42,9 @@ let itemReads: { code: string; location: string | null }[];
 let categoryFailure: boolean;
 let categoryReads: string[];
 const server = setupServer(
+  http.get("*/api/receipt-items/normalization-candidates", () =>
+    HttpResponse.json([]),
+  ),
   http.post("*/api/receipt-items/normalization-preview", () =>
     HttpResponse.json({
       sourceFingerprint: "suggestions-draft",
