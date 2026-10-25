@@ -30,7 +30,8 @@ export async function resolveCredential({ mode, apiUserSecrets = false }, { env 
     const base = platform === 'win32' ? env.APPDATA : (env.HOME || home());
     if (!base) throw missing();
     const path = platform === 'win32' ? join(base, 'Microsoft', 'UserSecrets', id, 'secrets.json') : join(base, '.microsoft', 'usersecrets', id, 'secrets.json');
-    const value = JSON.parse(await read(path, 'utf8'))?.TYPESAFE_API_KEY;
+    const secretsJson = (await read(path, 'utf8')).replace(/^\uFEFF/, '');
+    const value = JSON.parse(secretsJson)?.TYPESAFE_API_KEY;
     if (typeof value !== 'string' || !value.trim()) throw missing();
     return value;
   } catch {

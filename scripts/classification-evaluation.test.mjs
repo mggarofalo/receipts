@@ -24,6 +24,18 @@ test('live opt-in resolves only API UserSecretsId and canonical named key on bot
     assert.ok(paths[1].replaceAll('\\', '/').endsWith(platform === 'win32' ? '/Microsoft/UserSecrets/fake-api-id/secrets.json' : '/.microsoft/usersecrets/fake-api-id/secrets.json'));
   }
 });
+test('live opt-in accepts one leading BOM while preserving key content and rejecting malformed JSON', async () => {
+  const resolveFake = secrets => {
+    let calls = 0;
+    return resolveCredential({ mode: 'live', apiUserSecrets: true }, { platform: 'win32', env: { APPDATA: '/fake-only' }, read: async () => ++calls === 1 ? '<UserSecretsId>fake-id</UserSecretsId>' : secrets });
+  };
+  const json = JSON.stringify({ TYPESAFE_API_KEY: 'fake-\uFEFF-key' });
+  assert.equal(await resolveFake(`\uFEFF${json}`), 'fake-\uFEFF-key');
+  for (const malformed of [`\uFEFF\uFEFF${json}`, ` \uFEFF${json}`, `\uFEFF${json} trailing`, '\uFEFFSECRET invalid JSON']) {
+    await assert.rejects(resolveFake(malformed), error => error.message.includes('TYPESAFE_API_KEY') && !error.message.includes('SECRET') && !error.message.includes('fake-') && !error.message.includes('/fake-only'));
+  }
+});
+
 test('tracked API project declares the same usable identity resolved by the harness without reading real secrets', async () => {
   const project = await readFile(new URL('../src/Presentation/API/API.csproj', import.meta.url), 'utf8');
   const expectedId = project.match(/<UserSecretsId>([^<]+)<\/UserSecretsId>/)?.[1];
