@@ -206,16 +206,17 @@ public class MigrationSafetyTests(PostgresFixture fixture)
 				YnabAccountName = "Account A",
 				YnabBudgetId = legacyBudgetA,
 			});
-			migrationContext.YnabCategoryMappings.Add(new YnabCategoryMappingEntity
-			{
-				Id = categoryMappingAId,
-				ReceiptsCategory = receiptsCategory,
-				YnabCategoryId = "category-A",
-				YnabCategoryName = "Category A",
-				YnabCategoryGroupName = "Group A",
-				YnabBudgetId = legacyBudgetA,
-			});
 			await migrationContext.SaveChangesAsync();
+			// Use the row shape that existed before stable category identities.
+			await migrationContext.Database.ExecuteSqlRawAsync(
+					"""
+                                INSERT INTO ynab."YnabCategoryMappings"
+                                        ("Id", "ReceiptsCategory", "YnabCategoryId", "YnabCategoryName",
+                                         "YnabCategoryGroupName", "YnabBudgetId", "CreatedAt", "UpdatedAt")
+                                VALUES ({0}, {1}, {2}, {3}, {4}, {5}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+                                """,
+					categoryMappingAId, receiptsCategory, "category-A", "Category A",
+					"Group A", legacyBudgetA);
 			// This database is deliberately at the historical predecessor. Insert the
 			// historical row shape directly so later YnabSyncRecord columns from the
 			// current EF model are not projected into SQL against the older schema.
@@ -236,8 +237,9 @@ public class MigrationSafetyTests(PostgresFixture fixture)
 
 			(await migrationContext.YnabAccountMappings.SingleAsync(row => row.Id == accountMappingAId))
 				.YnabBudgetId.Should().Be(budgetA);
-			(await migrationContext.YnabCategoryMappings.SingleAsync(row => row.Id == categoryMappingAId))
-				.YnabBudgetId.Should().Be(budgetA);
+			(await migrationContext.Database.SqlQueryRaw<string>(
+					"""SELECT "YnabBudgetId" AS "Value" FROM ynab."YnabCategoryMappings" WHERE "Id" = {0}""",
+					categoryMappingAId).SingleAsync()).Should().Be(budgetA);
 			(await migrationContext.YnabSyncRecords.SingleAsync(row => row.Id == syncRecordAId))
 				.YnabBudgetId.Should().Be(budgetA);
 			string normalizedSelection = await migrationContext.Database
@@ -255,15 +257,15 @@ public class MigrationSafetyTests(PostgresFixture fixture)
 				YnabAccountName = "Account B",
 				YnabBudgetId = budgetB,
 			});
-			migrationContext.YnabCategoryMappings.Add(new YnabCategoryMappingEntity
-			{
-				Id = Guid.NewGuid(),
-				ReceiptsCategory = receiptsCategory,
-				YnabCategoryId = "category-B",
-				YnabCategoryName = "Category B",
-				YnabCategoryGroupName = "Group B",
-				YnabBudgetId = budgetB,
-			});
+			await migrationContext.Database.ExecuteSqlRawAsync(
+					"""
+                                INSERT INTO ynab."YnabCategoryMappings"
+                                        ("Id", "ReceiptsCategory", "YnabCategoryId", "YnabCategoryName",
+                                         "YnabCategoryGroupName", "YnabBudgetId", "CreatedAt", "UpdatedAt")
+                                VALUES ({0}, {1}, {2}, {3}, {4}, {5}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+                                """,
+					Guid.NewGuid(), receiptsCategory, "category-B", "Category B",
+					"Group B", budgetB);
 			migrationContext.YnabSyncRecords.Add(new YnabSyncRecordEntity
 			{
 				Id = Guid.NewGuid(),
@@ -276,7 +278,9 @@ public class MigrationSafetyTests(PostgresFixture fixture)
 			await migrationContext.SaveChangesAsync();
 
 			(await migrationContext.YnabAccountMappings.CountAsync(row => row.ReceiptsAccountId == account.Id)).Should().Be(2);
-			(await migrationContext.YnabCategoryMappings.CountAsync(row => row.ReceiptsCategory == receiptsCategory)).Should().Be(2);
+			(await migrationContext.Database.SqlQueryRaw<int>(
+					"""SELECT COUNT(*)::int AS "Value" FROM ynab."YnabCategoryMappings" WHERE "ReceiptsCategory" = {0}""",
+					receiptsCategory).SingleAsync()).Should().Be(2);
 			(await migrationContext.YnabSyncRecords.CountAsync(row => row.LocalTransactionId == transaction.Id)).Should().Be(2);
 
 			await AssertUniqueViolationAsync(database, async duplicateContext =>
@@ -301,7 +305,9 @@ public class MigrationSafetyTests(PostgresFixture fixture)
 			(await migrationContext.Database.GetAppliedMigrationsAsync())
 				.Should().Contain("20260910081448_ScopeYnabDestinationIdentity");
 			(await migrationContext.YnabAccountMappings.CountAsync(row => row.ReceiptsAccountId == account.Id)).Should().Be(2);
-			(await migrationContext.YnabCategoryMappings.CountAsync(row => row.ReceiptsCategory == receiptsCategory)).Should().Be(2);
+			(await migrationContext.Database.SqlQueryRaw<int>(
+					"""SELECT COUNT(*)::int AS "Value" FROM ynab."YnabCategoryMappings" WHERE "ReceiptsCategory" = {0}""",
+					receiptsCategory).SingleAsync()).Should().Be(2);
 			(await migrationContext.YnabSyncRecords.CountAsync(row => row.LocalTransactionId == transaction.Id)).Should().Be(2);
 			int scopedIndexCount = await migrationContext.Database.SqlQueryRaw<int>(
 				"""
@@ -315,19 +321,17 @@ public class MigrationSafetyTests(PostgresFixture fixture)
 				""")
 				.SingleAsync();
 			scopedIndexCount.Should().Be(3);
-			await AssertUniqueViolationAsync(database, async duplicateContext =>
-			{
-				duplicateContext.YnabCategoryMappings.Add(new YnabCategoryMappingEntity
-				{
-					Id = Guid.NewGuid(),
-					ReceiptsCategory = receiptsCategory,
-					YnabCategoryId = "other-category-B",
-					YnabCategoryName = "Duplicate",
-					YnabCategoryGroupName = "Duplicate",
-					YnabBudgetId = budgetB,
-				});
-				await duplicateContext.SaveChangesAsync();
-			});
+			Func<Task> duplicateCategoryInsert = () => migrationContext.Database.ExecuteSqlRawAsync(
+					"""
+                                INSERT INTO ynab."YnabCategoryMappings"
+                                        ("Id", "ReceiptsCategory", "YnabCategoryId", "YnabCategoryName",
+                                         "YnabCategoryGroupName", "YnabBudgetId", "CreatedAt", "UpdatedAt")
+                                VALUES ({0}, {1}, {2}, {3}, {4}, {5}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+                                """,
+					Guid.NewGuid(), receiptsCategory, "other-category-B", "Duplicate",
+					"Duplicate", budgetB);
+			PostgresException duplicateCategory = (await duplicateCategoryInsert.Should().ThrowAsync<PostgresException>()).Which;
+			duplicateCategory.SqlState.Should().Be(PostgresErrorCodes.UniqueViolation);
 			// The failed downgrade may legitimately have removed migrations newer than
 			// ScopeYnabDestinationIdentity. Exercise its surviving scoped index using
 			// that migration's row shape, not today's later-expanded EF entity model.
