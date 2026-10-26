@@ -1,3 +1,4 @@
+import { taxonomyFixture, dairyClassification } from "@/test/taxonomy-fixture";
 vi.hoisted(() => vi.stubEnv("VITE_API_URL", "http://template-catalog.test"));
 import type { ReactNode } from "react";
 import {
@@ -79,6 +80,7 @@ let catalogReads: number;
 let linkWrites: unknown[];
 let otherWrites: string[];
 const server = setupServer(
+  http.get("*/api/taxonomy", () => HttpResponse.json(taxonomyFixture)),
   http.get("*/api/receipt-items/normalization-candidates", () =>
     HttpResponse.json([]),
   ),
@@ -250,6 +252,7 @@ it("retains a receipt-item draft after held optional template503 and allows manu
   const submitted = vi.fn();
   const { router } = renderFeature(
     <ReceiptItemForm
+      currentClassification={dairyClassification}
       mode="edit"
       hideReceiptField
       location="Manual market"
@@ -289,6 +292,7 @@ it("keeps successful empty optional template lookup compatible with manual recei
   const submitted = vi.fn();
   const { queryClient } = renderFeature(
     <ReceiptItemForm
+      currentClassification={dairyClassification}
       mode="edit"
       hideReceiptField
       location="Manual market"

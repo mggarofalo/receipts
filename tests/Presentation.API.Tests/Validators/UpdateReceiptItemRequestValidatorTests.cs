@@ -91,10 +91,10 @@ public class UpdateReceiptItemRequestValidatorTests
 	}
 
 	[Fact]
-	public void Should_Fail_When_CategoryIsEmpty()
+	public void Should_Fail_When_CategoryIsNull()
 	{
 		// Arrange
-		UpdateReceiptItemRequest request = new() { Id = Guid.NewGuid(), UnitPrice = 9.99, Description = "Test", Quantity = 1, Category = "" };
+		UpdateReceiptItemRequest request = new() { Id = Guid.NewGuid(), UnitPrice = 9.99, Description = "Test", Quantity = 1, Category = null! };
 
 		// Act
 		FluentValidation.Results.ValidationResult result = _validator.Validate(request);
@@ -102,5 +102,11 @@ public class UpdateReceiptItemRequestValidatorTests
 		// Assert
 		Assert.False(result.IsValid);
 		Assert.Contains(result.Errors, e => e.ErrorMessage == UpdateReceiptItemRequestValidator.CategoryMustNotBeEmpty);
+	}
+	[Fact]
+	public void Should_Pass_When_CategoryIsEmpty()
+	{
+		UpdateReceiptItemRequest request = new() { Id = Guid.NewGuid(), UnitPrice = 9.99, Description = "Uncertain item", Quantity = 1, Category = "" };
+		Assert.True(_validator.Validate(request).IsValid);
 	}
 }

@@ -1,3 +1,4 @@
+import { taxonomyFixture } from "../../src/test/taxonomy-fixture";
 import { expect, test } from "@playwright/test";
 import {
   ADMIN_FIXTURE_USER,
@@ -43,13 +44,7 @@ test("creates a product and purchase in one receipt save, preserving the draft a
             },
           ],
         }),
-      "**/api/categories**": (route) =>
-        route.fulfill({
-          json: {
-            data: [{ id: "food", name: "Food", isActive: true }],
-            total: 1,
-          },
-        }),
+      "**/api/taxonomy": (route) => route.fulfill({ json: taxonomyFixture }),
       "**/api/item-templates/similar*": (route) => route.fulfill({ json: [] }),
       "**/api/receipt-items/suggestions*": (route) =>
         route.fulfill({ json: [] }),
@@ -125,7 +120,7 @@ test("creates a product and purchase in one receipt save, preserving the draft a
   await page.getByPlaceholder("MM/DD/YYYY").first().fill("10/23/2026");
   await page.getByPlaceholder("Item description").fill("MILK");
   await page.getByRole("combobox", { name: /^Category/ }).click();
-  await page.getByRole("option", { name: "Food", exact: true }).click();
+  await page.getByRole("option", { name: "Food / Dairy", exact: true }).click();
   await page.getByLabel("Unit Price", { exact: false }).fill("5");
   await page
     .getByRole("button", { name: "Choose product", exact: true })
@@ -159,6 +154,12 @@ test("creates a product and purchase in one receipt save, preserving the draft a
         description: "MILK",
         quantity: 1,
         unitPrice: 5,
+        classification: {
+          categoryId: taxonomyFixture.nodes[1].id,
+          taxonomyRevisionId: taxonomyFixture.id,
+          expectedAssignmentId: null,
+          operationId: expect.any(String),
+        },
         normalizationIntent: {
           kind: "confirmNew",
           newName: "Whole milk 1 gallon",

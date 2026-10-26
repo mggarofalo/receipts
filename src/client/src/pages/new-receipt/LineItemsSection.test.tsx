@@ -1,4 +1,19 @@
-import { useCreateSubcategory } from "@/hooks/useSubcategories";
+vi.mock("@/hooks/useCategoryTaxonomy", () => ({
+  useCategoryTaxonomy: () => ({
+    data: {
+      id: "revision-1",
+      nodes: [
+        { id: "food", name: "Food", archived: false },
+        { id: "house", name: "Household", archived: false },
+        { id: "fruit", name: "Fruit", parentId: "food", archived: false },
+      ],
+    },
+    isLoading: false,
+    isError: false,
+    isFetching: false,
+    refetch: vi.fn(),
+  }),
+}));
 import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "@/test/test-utils";
@@ -785,7 +800,7 @@ it("normalizes equivalent add and edit drafts identically while preserving item 
   await user.click(screen.getByRole("button", { name: /add item/i }));
   await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
   const added = onChange.mock.calls[0][0][0] as ReceiptLineItem;
-  expect(added).toEqual({
+  expect(added).toMatchObject({
     id: expect.any(String),
     description: "Milk",
     receiptItemCode: "CODE",
@@ -802,65 +817,38 @@ it("normalizes equivalent add and edit drafts identically while preserving item 
   expect(onChange).toHaveBeenLastCalledWith([added]);
 });
 
-it("creates the same subcategory name independently per category and releases failed requests", async () => {
-  let rejectFirst!: (error: Error) => void;
-  const mutateAsync = vi
-    .fn()
-    .mockImplementationOnce(
-      () =>
-        new Promise((_resolve, reject) => {
-          rejectFirst = reject;
-        }),
-    )
-    .mockResolvedValue(undefined);
-  vi.mocked(useCreateSubcategory).mockReturnValue(
-    mockMutationResult({ mutateAsync }),
-  );
+it("retains an explicit nested category identity and operation while editing unrelated facts", async () => {
   const user = userEvent.setup();
-  renderWithProviders(<LineItemsSection items={[]} onChange={vi.fn()} />);
-  async function category(name: string) {
-    await user.click(screen.getByRole("combobox", { name: /^Category/ }));
-    await user.click(await screen.findByRole("option", { name }));
-  }
-  async function subcategory() {
-    await user.click(screen.getByRole("combobox", { name: /^Subcategory/ }));
-    expect(
-      screen.getByPlaceholderText("Search subcategories..."),
-    ).toHaveFocus();
-    // This exercises request ownership, so enter the complete search in one
-    // user interaction rather than repeating per-character keyboard updates.
-    await user.paste("Shared");
-    await user.click(
-      await screen.findByRole("button", { name: 'Use "Shared"' }),
-    );
-  }
-  await category("Food");
-  await subcategory();
-  await subcategory();
-  expect(mutateAsync).toHaveBeenCalledTimes(1);
-  expect(mutateAsync).toHaveBeenNthCalledWith(1, {
-    categoryId: "cat-1",
-    name: "Shared",
-    isActive: true,
+  const onChange = vi.fn();
+  const { rerender } = renderWithProviders(
+    <LineItemsSection items={[]} onChange={onChange} />,
+  );
+  await user.type(screen.getByPlaceholderText("Item description"), "Apple");
+  await user.click(screen.getByRole("combobox", { name: /^Category/ }));
+  await user.click(screen.getByRole("option", { name: "Food / Fruit" }));
+  await user.click(screen.getByRole("button", { name: /add item/i }));
+  await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
+  const added = onChange.mock.calls[0][0][0] as ReceiptLineItem;
+  expect(added).toMatchObject({
+    category: "Food",
+    subcategory: "Fruit",
+    categoryChoice: {
+      categoryId: "fruit",
+      taxonomyRevisionId: "revision-1",
+      path: expect.any(Array),
+    },
+    categoryOperationId: expect.any(String),
   });
-  await category("Household");
-  await subcategory();
-  expect(mutateAsync).toHaveBeenNthCalledWith(2, {
-    categoryId: "cat-2",
-    name: "Shared",
-    isActive: true,
+  rerender(<LineItemsSection items={[added]} onChange={onChange} />);
+  await user.click(screen.getByRole("button", { name: /edit/i }));
+  await user.clear(screen.getByLabelText("Edit description"));
+  await user.type(screen.getByLabelText("Edit description"), "Apple slices");
+  await user.click(screen.getByRole("button", { name: /save/i }));
+  expect(onChange.mock.calls[1][0][0]).toMatchObject({
+    description: "Apple slices",
+    categoryChoice: added.categoryChoice,
+    categoryOperationId: added.categoryOperationId,
   });
-  await act(async () => {
-    rejectFirst(new Error("failed"));
-  });
-  await category("Food");
-  await subcategory();
-  expect(mutateAsync).toHaveBeenNthCalledWith(3, {
-    categoryId: "cat-1",
-    name: "Shared",
-    isActive: true,
-  });
-  expect(mutateAsync).toHaveBeenCalledTimes(3);
 });
 
 it("selects a product inline while retaining the raw receipt description on the added line", async () => {

@@ -67,6 +67,8 @@ describe("receipt item retry identity", () => {
       "Connection lost",
     );
     await result.current.mutateAsync({ ...input, body: { ...body } });
+    expect(post.mock.calls[0][1].body.subcategory).toBeNull();
+    expect(post.mock.calls[1][1].body).toEqual(post.mock.calls[0][1].body);
     const firstId = post.mock.calls[0][1].params.query.clientRequestId;
     expect(firstId).toEqual(expect.any(String));
     expect(firstId).not.toBe("");
@@ -92,6 +94,7 @@ describe("receipt item retry identity", () => {
     await expect(result.current.mutateAsync(input)).rejects.toMatchObject({
       status: 409,
     });
+    expect(put.mock.calls[0][1].body.subcategory).toBeNull();
     const firstId = put.mock.calls[0][1].params.query.clientRequestId;
     expect(put.mock.calls[1][1].params.query.clientRequestId).toBe(firstId);
     await expect(

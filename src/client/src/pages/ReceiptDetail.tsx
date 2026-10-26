@@ -313,6 +313,7 @@ function ReceiptDetail() {
               quantity: Number(i.quantity ?? 0),
               unitPrice: Number(i.unitPrice ?? 0),
               category: i.category,
+              currentClassification: i.currentClassification,
               subcategory: i.subcategory,
               normalizedDescriptionName: i.normalizedDescriptionName,
               normalizationRevision: i.normalizationRevision,

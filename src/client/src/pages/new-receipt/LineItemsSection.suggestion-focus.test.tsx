@@ -48,18 +48,19 @@ const server = setupServer(
       limit: 10,
     }),
   ),
-  http.get("*/api/categories", () =>
+  http.get("*/api/taxonomy", () =>
     HttpResponse.json({
-      data: [{ id: "food", name: "Food", isActive: true }],
-      total: 1,
-    }),
-  ),
-  http.get("*/api/subcategories", () =>
-    HttpResponse.json({
-      data: [
-        { id: "dairy", categoryId: "food", name: "Dairy", isActive: true },
+      id: "taxonomy-r1",
+      sequence: 1,
+      recordedAt: "2026-10-26T00:00:00Z",
+      actor: "test",
+      reason: "Fixture",
+      operationId: "taxonomy-operation",
+      affectedCount: 2,
+      nodes: [
+        { id: "food", name: "Food", archived: false },
+        { id: "dairy", parentId: "food", name: "Dairy", archived: false },
       ],
-      total: 1,
     }),
   ),
   http.get("*/api/item-templates/similar", async () => {
@@ -130,19 +131,17 @@ async function prepare() {
 }
 
 it.each(["empty", "matching"] as const)(
-  "does not reopen obsolete description suggestions after a late %s response while subcategory owns focus",
+  "does not reopen obsolete description suggestions after a late %s response while category owns focus",
   async (kind) => {
     withMatch = kind === "matching";
     const { user, description } = await prepare();
     await user.clear(screen.getByLabelText(/^Unit Price/));
     await user.type(screen.getByLabelText(/^Unit Price/), "2.01");
-    const subcategory = screen.getByRole("combobox", { name: /^Subcategory/ });
-    await user.click(subcategory);
-    const search = await screen.findByPlaceholderText(
-      "Search subcategories...",
-    );
+    const category = screen.getByRole("combobox", { name: /^Category/ });
+    await user.click(category);
+    const search = await screen.findByPlaceholderText("Search category paths…");
     await waitFor(() => expect(search).toHaveFocus());
-    expect(subcategory).toHaveAttribute("aria-expanded", "true");
+    expect(category).toHaveAttribute("aria-expanded", "true");
     await act(async () => {
       responseGate.resolve();
     });
@@ -161,7 +160,7 @@ it.each(["empty", "matching"] as const)(
     await user.keyboard("{Escape}");
     expect.soft(descriptionBeforeEscape).not.toBe("true");
     await waitFor(() =>
-      expect(subcategory).toHaveAttribute("aria-expanded", "false"),
+      expect(category).toHaveAttribute("aria-expanded", "false"),
     );
     expect(description).toHaveValue("Manual milk");
     expect(screen.getByLabelText(/^Unit Price/)).toHaveValue("2.0100");

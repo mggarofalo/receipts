@@ -1,3 +1,4 @@
+import { taxonomyFixture } from "../../src/test/taxonomy-fixture";
 import type { Page, Route } from "@playwright/test";
 
 // Deterministic API fixtures shared by the visual-regression suite
@@ -183,6 +184,7 @@ export async function installApiMocks(page: Page, opts: ApiMockOptions = {}): Pr
   // Reference data — empty lists keep layout predictable
   await page.route("**/api/accounts**", (route) => route.fulfill(json({ data: [], totalCount: 0 })));
   await page.route("**/api/cards**", (route) => route.fulfill(json({ data: [], totalCount: 0 })));
+  await page.route("**/api/taxonomy", (route) => route.fulfill(json(taxonomyFixture)));
   await page.route("**/api/categories**", (route) => route.fulfill(json({ data: [], totalCount: 0 })));
   await page.route("**/api/subcategories**", (route) => route.fulfill(json({ data: [], totalCount: 0 })));
   await page.route("**/api/item-templates**", (route) => route.fulfill(json({ data: [], totalCount: 0 })));

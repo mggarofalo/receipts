@@ -1,3 +1,4 @@
+import { taxonomyFixture, dairyClassification } from "@/test/taxonomy-fixture";
 vi.hoisted(() => vi.stubEnv("VITE_API_URL", "http://receipt-suggestions.test"));
 import { useState, type ReactNode } from "react";
 import {
@@ -42,6 +43,7 @@ let itemReads: { code: string; location: string | null }[];
 let categoryFailure: boolean;
 let categoryReads: string[];
 const server = setupServer(
+  http.get("*/api/taxonomy", () => HttpResponse.json(taxonomyFixture)),
   http.get("*/api/receipt-items/normalization-candidates", () =>
     HttpResponse.json([]),
   ),
@@ -317,7 +319,10 @@ function Lines() {
 }
 async function enterLine() {
   const user = userEvent.setup();
-  await user.click(screen.getByText("Select category..."));
+  await waitFor(() =>
+    expect(screen.getByRole("combobox", { name: /^Category/ })).toBeEnabled(),
+  );
+  await user.click(screen.getByRole("combobox", { name: /^Category/ }));
   await user.click(await screen.findByRole("option", { name: "Food" }));
   await user.clear(screen.getByLabelText(/^Unit Price/));
   await user.type(screen.getByLabelText(/^Unit Price/), "2.01");
@@ -470,33 +475,45 @@ it("does not turn a failed background refresh of empty similarity data into succ
   expect(screen.getByPlaceholderText("Item description")).toHaveValue("Milk");
 });
 
-it("owns category failures only while a valid description needs a category, allowing manual selection", async () => {
+it("keeps category lookup failures local while the description changes and permits selection after Retry", async () => {
   categoryFailure = true;
   emptySimilar = true;
+  server.use(
+    http.get("*/api/taxonomy", () =>
+      categoryFailure
+        ? HttpResponse.json({ status: 503 }, { status: 503 })
+        : HttpResponse.json(taxonomyFixture),
+    ),
+  );
   renderFeature(<Lines />);
   const user = userEvent.setup();
   const description = screen.getByPlaceholderText("Item description");
   await user.type(description, "Milk");
-  expect(await screen.findByRole("alert")).toHaveTextContent(
-    /category suggestions/i,
-  );
+  const failure = await screen.findByRole("alert");
+  expect(failure).toHaveTextContent(/categor/i);
   await user.type(description, "shake");
-  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  await screen.findByRole("alert");
-  expect(categoryReads).toEqual(["Milk", "Milkshake"]);
-  await user.click(screen.getByText("Select category..."));
-  await user.click(await screen.findByRole("option", { name: "Food" }));
-  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  expect(
-    screen.queryByRole("button", { name: "Retry" }),
-  ).not.toBeInTheDocument();
   expect(description).toHaveValue("Milkshake");
+  categoryFailure = false;
+  await user.click(within(failure).getByRole("button", { name: "Retry" }));
+  await waitFor(() =>
+    expect(screen.getByRole("combobox", { name: /^Category/ })).toBeEnabled(),
+  );
+  await user.click(screen.getByRole("combobox", { name: /^Category/ }));
+  await user.click(screen.getByRole("option", { name: "Food" }));
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(categoryReads).toEqual([]);
   expect(writes).toEqual([]);
 });
-
-it("retries category hints without assigning a category or creating taxonomy", async () => {
+it("retries taxonomy without assigning a category or creating taxonomy", async () => {
   categoryFailure = true;
   emptySimilar = true;
+  server.use(
+    http.get("*/api/taxonomy", () =>
+      categoryFailure
+        ? HttpResponse.json({ status: 503 }, { status: 503 })
+        : HttpResponse.json(taxonomyFixture),
+    ),
+  );
   renderFeature(<Lines />);
   const user = userEvent.setup();
   await user.type(screen.getByPlaceholderText("Item description"), "Milk");
@@ -506,8 +523,10 @@ it("retries category hints without assigning a category or creating taxonomy", a
   await waitFor(() =>
     expect(screen.queryByRole("alert")).not.toBeInTheDocument(),
   );
-  expect(screen.getByText("Select category...")).toBeVisible();
-  expect(categoryReads).toEqual(["Milk", "Milk"]);
+  expect(screen.getByRole("combobox", { name: /^Category/ })).toHaveTextContent(
+    "Choose category",
+  );
+  expect(categoryReads).toEqual([]);
   expect(writes).toEqual([]);
 });
 
@@ -528,6 +547,7 @@ it.each(["edit", "new"] as const)(
     renderFeature(
       kind === "edit" ? (
         <ReceiptItemForm
+          currentClassification={dairyClassification}
           mode="edit"
           hideReceiptField
           location="Manual market"
@@ -595,6 +615,7 @@ it("submits valid manual item values while its item-code suggestions remain unav
   const submitted = vi.fn();
   renderFeature(
     <ReceiptItemForm
+      currentClassification={dairyClassification}
       mode="edit"
       hideReceiptField
       location="Manual market"

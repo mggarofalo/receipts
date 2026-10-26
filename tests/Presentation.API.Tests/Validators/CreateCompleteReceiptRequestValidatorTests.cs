@@ -62,6 +62,15 @@ public class CreateCompleteReceiptRequestValidatorTests
 			error.ErrorMessage == CreateTransactionRequestValidator.DateMustBePriorToCurrentDate);
 	}
 
+	[Fact]
+	public void Validate_UnclassifiedItem_Passes()
+	{
+		var request = ValidRequest();
+		request.Items.First().Category = "";
+		request.Items.First().Subcategory = null;
+		_validator.Validate(request).IsValid.Should().BeTrue();
+	}
+
 	private static CreateCompleteReceiptRequest ValidRequest()
 	{
 		CreateCompleteReceiptRequest request = new()
