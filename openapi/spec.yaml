@@ -457,7 +457,135 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-
+  /api/category-assistance/status:
+    get:
+      tags: [CategoryAssistance]
+      summary: Read capability and persisted consent
+      operationId: CategoryAssistance_Status
+      security: [{BearerAuth: []}, {ApiKey: []}]
+      responses:
+        "200":
+          description: Capability and consent; readiness alone does not authorize dispatch
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CategoryAssistanceStatusResponse'}
+        "401": {description: Authentication required}
+  /api/category-assistance/settings:
+    get:
+      tags: [CategoryAssistance]
+      summary: Read deployment-wide settings (Admin)
+      operationId: CategoryAssistance_Settings
+      security: [{BearerAuth: []}, {ApiKey: []}]
+      responses:
+        "200":
+          description: Persisted settings without credentials
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CategoryAssistanceSettings'}
+        "401": {description: Authentication required}
+        "403": {description: Admin required}
+    put:
+      tags: [CategoryAssistance]
+      summary: Update audited consent and limits (Admin)
+      operationId: CategoryAssistance_UpdateSettings
+      security: [{BearerAuth: []}, {ApiKey: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CategoryAssistanceSettingsRequest'}
+      responses:
+        "200":
+          description: Saved settings with new revision
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CategoryAssistanceSettings'}
+        "400": {description: Invalid settings, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ProblemDetails'}}}}
+        "401": {description: Authentication required}
+        "403": {description: Admin required, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ProblemDetails'}}}}
+        "409": {description: Revision changed, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ProblemDetails'}}}}
+  /api/category-assistance/suggestions:
+    get:
+      tags: [CategoryAssistance]
+      summary: Page durable review suggestions
+      operationId: CategoryAssistance_Suggestions
+      security: [{BearerAuth: []}, {ApiKey: []}]
+      parameters:
+        - {name: offset, in: query, schema: {type: integer, format: int32, minimum: 0, default: 0}}
+        - {name: limit, in: query, schema: {type: integer, format: int32, minimum: 1, maximum: 100, default: 25}}
+      responses:
+        "200":
+          description: Completed suggestions only; empty when unavailable or consent disabled
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CategoryAssistanceSuggestionPage'}
+        "400": {description: Invalid pagination, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ProblemDetails'}}}}
+        "401": {description: Authentication required}
+  /api/category-assistance/activity:
+    get:
+      tags: [CategoryAssistance]
+      summary: Read aggregate attempt activity (Admin)
+      operationId: CategoryAssistance_Activity
+      security: [{BearerAuth: []}, {ApiKey: []}]
+      responses:
+        "200":
+          description: Counts and today's global dispatch usage
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CategoryAssistanceActivity'}
+        "401": {description: Authentication required}
+        "403": {description: Admin required}
+  /api/category-assistance/suggestions/{attemptId}/items:
+    get:
+      tags: [CategoryAssistance]
+      summary: Page eligible receipt items for a suggestion
+      operationId: CategoryAssistance_EligibleItems
+      security: [{BearerAuth: []}, {ApiKey: []}]
+      parameters:
+        - {name: attemptId, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: offset, in: query, schema: {type: integer, format: int32, minimum: 0, default: 0}}
+        - {name: limit, in: query, schema: {type: integer, format: int32, minimum: 1, maximum: 100, default: 25}}
+      responses:
+        "200": {description: Eligible item IDs, content: {application/json: {schema: {$ref: '#/components/schemas/CategoryAssistanceEligibleItemPage'}}}}
+        "400": {description: Invalid pagination, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ProblemDetails'}}}}
+        "401": {description: Authentication required}
+        "404": {description: Suggestion missing, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ProblemDetails'}}}}
+  /api/category-assistance/suggestions/{attemptId}/accept:
+    post:
+      tags: [CategoryAssistance]
+      summary: Accept a suggestion for selected receipt items
+      operationId: CategoryAssistance_Accept
+      security: [{BearerAuth: []}, {ApiKey: []}]
+      parameters:
+        - {name: attemptId, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/CategoryAssistanceDecisionRequest'}}}
+      responses:
+        "200": {description: Committed selected items, content: {application/json: {schema: {$ref: '#/components/schemas/CategoryAssistanceDecisionResult'}}}}
+        "400": {description: Invalid selection, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ProblemDetails'}}}}
+        "401": {description: Authentication required}
+        "403": {description: Active writer required, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ProblemDetails'}}}}
+        "404": {description: Suggestion missing, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ProblemDetails'}}}}
+        "409": {description: Stale suggestion or selection, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ProblemDetails'}}}}
+  /api/category-assistance/suggestions/{attemptId}/dismiss:
+    post:
+      tags: [CategoryAssistance]
+      summary: Dismiss a suggestion
+      operationId: CategoryAssistance_Dismiss
+      security: [{BearerAuth: []}, {ApiKey: []}]
+      parameters:
+        - {name: attemptId, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/CategoryAssistanceDismissRequest'}}}
+      responses:
+        "200": {description: Durable dismissal, content: {application/json: {schema: {$ref: '#/components/schemas/CategoryAssistanceDecisionResult'}}}}
+        "400": {description: Invalid operation, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ProblemDetails'}}}}
+        "401": {description: Authentication required}
+        "403": {description: Active writer required, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ProblemDetails'}}}}
+        "404": {description: Suggestion missing, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ProblemDetails'}}}}
+        "409": {description: Stale suggestion, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ProblemDetails'}}}}
   /api/category-mappings/inspect:
     post:
       tags: [CategoryMappings]
@@ -8782,7 +8910,99 @@ components:
           type:
             - 'null'
             - string
-
+    CategoryAssistanceStatusResponse:
+      type: object
+      required: [capability, consentEnabled, suggestionsAvailable, provider, models]
+      properties:
+        capability: {type: string}
+        consentEnabled: {type: boolean}
+        suggestionsAvailable: {type: boolean}
+        provider: {type: string}
+        models: {type: array, items: {type: string}}
+    CategoryAssistanceSettings:
+      type: object
+      required: [enabled, provider, model, dailyLimit, pendingLimit, revision]
+      properties:
+        enabled: {type: boolean}
+        provider: {type: [string, 'null']}
+        model: {type: [string, 'null']}
+        dailyLimit: {type: integer, format: int32, minimum: 1, maximum: 100}
+        pendingLimit: {type: integer, format: int32, minimum: 1, maximum: 20}
+        revision: {type: string, format: uuid}
+    CategoryAssistanceSettingsRequest:
+      type: object
+      required: [enabled, provider, model, dailyLimit, pendingLimit, expectedRevision]
+      properties:
+        enabled: {type: boolean}
+        provider: {type: [string, 'null']}
+        model: {type: [string, 'null']}
+        dailyLimit: {type: integer, format: int32, minimum: 1, maximum: 100}
+        pendingLimit: {type: integer, format: int32, minimum: 1, maximum: 20}
+        expectedRevision: {type: string, format: uuid}
+    CategoryAssistanceSuggestionPage:
+      type: object
+      required: [total, offset, limit, items]
+      properties:
+        total: {type: integer, format: int32}
+        offset: {type: integer, format: int32}
+        limit: {type: integer, format: int32}
+        items: {type: array, items: {$ref: '#/components/schemas/CategoryAssistanceSuggestionRead'}}
+    CategoryAssistanceSuggestionRead:
+      type: object
+      required: [attemptId, source, originalDescription, affectedCount, proposedPath, abstentionReason, confidence, state, isCurrent, createdAt, completedAt]
+      properties:
+        attemptId: {type: string, format: uuid}
+        source: {$ref: '#/components/schemas/NormalizationSourceKey'}
+        originalDescription: {type: [string, 'null']}
+        affectedCount: {type: integer, format: int32}
+        proposedPath: {type: array, items: {type: string, format: uuid}}
+        abstentionReason: {type: [string, 'null']}
+        confidence: {type: [number, 'null'], format: double}
+        state: {type: string}
+        isCurrent: {type: boolean}
+        createdAt: {type: string, format: date-time}
+        completedAt: {type: [string, 'null'], format: date-time}
+    CategoryAssistanceActivity:
+      type: object
+      required: [queued, dispatching, suggested, abstained, failed, stale, indeterminate, todayAttempts]
+      properties:
+        queued: {type: integer, format: int32}
+        dispatching: {type: integer, format: int32}
+        suggested: {type: integer, format: int32}
+        abstained: {type: integer, format: int32}
+        failed: {type: integer, format: int32}
+        stale: {type: integer, format: int32}
+        indeterminate: {type: integer, format: int32}
+        todayAttempts: {type: integer, format: int32}
+    CategoryAssistanceEligibleItemPage:
+      type: object
+      required: [total, offset, limit, itemIds]
+      properties:
+        total: {type: integer, format: int32}
+        offset: {type: integer, format: int32}
+        limit: {type: integer, format: int32}
+        itemIds: {type: array, items: {type: string, format: uuid}}
+    CategoryAssistanceDecisionRequest:
+      type: object
+      required: [operationId, expectedTaxonomyRevision, itemIds]
+      properties:
+        operationId: {type: string, format: uuid}
+        expectedTaxonomyRevision: {type: string, format: uuid}
+        itemIds: {type: array, minItems: 1, maxItems: 100, uniqueItems: true, items: {type: string, format: uuid}}
+        categoryId: {type: [string, 'null'], format: uuid}
+    CategoryAssistanceDismissRequest:
+      type: object
+      required: [operationId]
+      properties:
+        operationId: {type: string, format: uuid}
+    CategoryAssistanceDecisionResult:
+      type: object
+      required: [attemptId, decision, affectedItemIds, categoryId]
+      properties:
+        attemptId: {type: string, format: uuid}
+        decision: {type: string, enum: [accepted, dismissed]}
+        affectedItemIds: {type: array, items: {type: string, format: uuid}}
+        categoryId: {type: [string, 'null'], format: uuid}
     CategoryMappingSourceRequest:
       type: object
       required: [source]

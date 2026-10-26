@@ -8,9 +8,11 @@ public sealed class CategoryAssistanceAttemptConfiguration : IEntityTypeConfigur
 {
 	public void Configure(EntityTypeBuilder<CategoryAssistanceAttemptEntity> b)
 	{
-		b.ToTable("Attempts", "category_assistance", t => t.HasCheckConstraint("CK_CategoryAssistance_AttemptState", "\"State\" IN ('queued','dispatching','suggested','abstained','failed','stale','indeterminate')"));
+		b.ToTable("Attempts", "category_assistance", t => t.HasCheckConstraint("CK_CategoryAssistance_AttemptState", "\"State\" IN ('queued','dispatching','suggested','abstained','failed','stale','indeterminate','accepted','dismissed')"));
 		b.HasKey(x => x.Id);
 		b.HasIndex(x => x.RequestId).IsUnique();
+		b.HasIndex(x => new { x.DecisionActor, x.DecisionOperationId }).IsUnique();
+		b.Property(x => x.DecisionActor).HasMaxLength(450);
 		// A bounded index protects PostgreSQL's btree tuple limit. Readers still compare the exact tuple;
 		// a hypothetical SHA-256 collision is skipped rather than attached to another source.
 		b.HasIndex(x => new { x.RestoreGeneration, x.SourceHash, x.TaxonomyRevision, x.Provider, x.Model, x.QuestionPolicyVersion, x.ConnectionGeneration }).IsUnique();

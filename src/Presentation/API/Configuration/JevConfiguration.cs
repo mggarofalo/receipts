@@ -23,6 +23,8 @@ public static class JevConfiguration
 		services.AddScoped<ICategoryAssistanceConnectionBinding>(provider =>
 				provider.GetRequiredService<CategoryAssistanceConnectionCoordinator>());
 		services.AddScoped<ICategoryAssistanceDispatchStore, CategoryAssistanceDispatchStore>();
+		services.AddScoped<ICategoryAssistanceReadStore, CategoryAssistanceReadStore>();
+		services.AddScoped<ICategoryAssistanceDecisionStore, CategoryAssistanceDecisionStore>();
 		services.AddScoped<CategoryAssistanceDispatcher>();
 		services.AddScoped<JevCategoryAssistanceSelectedProvider>();
 		services.AddScoped<ICategoryAssistanceSelectedProvider>(provider =>

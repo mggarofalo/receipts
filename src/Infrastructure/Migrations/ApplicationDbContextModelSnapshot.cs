@@ -274,6 +274,16 @@ namespace Infrastructure.Migrations
                     b.Property<DateOnly?>("DebitUtcDay")
                         .HasColumnType("date");
 
+                    b.Property<string>("DecisionActor")
+                        .HasMaxLength(450)
+                        .HasColumnType("text");
+
+                    b.Property<string>("DecisionJson")
+                        .HasColumnType("text");
+
+                    b.Property<Guid?>("DecisionOperationId")
+                        .HasColumnType("uuid");
+
                     b.Property<int>("Deferrals")
                         .HasColumnType("integer");
 
@@ -361,6 +371,9 @@ namespace Infrastructure.Migrations
                     b.HasIndex("RequestId")
                         .IsUnique();
 
+                    b.HasIndex("DecisionActor", "DecisionOperationId")
+                        .IsUnique();
+
                     b.HasIndex("State", "NextEligibleAt", "LeaseExpiresAt");
 
                     b.HasIndex("RestoreGeneration", "SourceHash", "TaxonomyRevision", "Provider", "Model", "QuestionPolicyVersion", "ConnectionGeneration")
@@ -368,7 +381,7 @@ namespace Infrastructure.Migrations
 
                     b.ToTable("Attempts", "category_assistance", t =>
                         {
-                            t.HasCheckConstraint("CK_CategoryAssistance_AttemptState", "\"State\" IN ('queued','dispatching','suggested','abstained','failed','stale','indeterminate')");
+                            t.HasCheckConstraint("CK_CategoryAssistance_AttemptState", "\"State\" IN ('queued','dispatching','suggested','abstained','failed','stale','indeterminate','accepted','dismissed')");
                         });
                 });
 

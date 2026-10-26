@@ -1,0 +1,159 @@
+using System.Text.Json;
+using Application.Classification;
+using Application.Normalization;
+using Common;
+using FluentAssertions;
+using Infrastructure.Entities.CategoryAssistance;
+using Infrastructure.Entities.Core;
+using Infrastructure.IntegrationTests.Fixtures;
+using Infrastructure.Services;
+using Microsoft.EntityFrameworkCore;
+
+namespace Infrastructure.IntegrationTests.Services;
+
+[Collection(PostgresCollection.Name)]
+[Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
+public sealed class CategoryAssistanceReadStoreTests(PostgresFixture fixture)
+{
+	private sealed class Factory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
+	{ public ApplicationDbContext CreateDbContext() => fixture.CreateDbContext(); }
+
+	[Fact]
+	public async Task CompletedPageOmitsFailuresAndMarksMissingEvidenceStale()
+	{
+		Guid restore = Guid.NewGuid(), category = Guid.NewGuid();
+		var now = DateTimeOffset.UtcNow;
+		await using (var db = fixture.CreateDbContext())
+		{
+			db.CategoryAssistanceAttempts.Add(new CategoryAssistanceAttemptEntity
+			{
+				Id = Guid.NewGuid(),
+				RequestId = Guid.NewGuid(),
+				RestoreGeneration = restore,
+				SourceHash = new string('A', 64),
+				Location = "Store",
+				Description = "Original item",
+				SourceRevision = Guid.NewGuid(),
+				TaxonomyRevision = Guid.NewGuid(),
+				Provider = "jev",
+				Model = CategorySuggestionPolicy.Model,
+				QuestionPolicyVersion = CategorySuggestionPolicy.Version,
+				SettingsRevision = Guid.NewGuid(),
+				ConnectionGeneration = Guid.NewGuid(),
+				ReceiptId = Guid.NewGuid(),
+				ReceiptRevision = Guid.NewGuid(),
+				ItemId = Guid.NewGuid(),
+				ItemRevision = Guid.NewGuid(),
+				State = "suggested",
+				CreatedAt = now,
+				CompletedAt = now,
+				ResultJson = JsonSerializer.Serialize(new CategoryAssistanceCompletion(
+					CategoryAssistanceAttemptOutcome.Suggested,
+					new CategorySuggestion(category.ToString(), [category.ToString()], null, 0.9, 0.9, 0.9,
+						new SuggestionProvenance("jev", CategorySuggestionPolicy.Model,
+							CategorySuggestionPolicy.Version, Guid.NewGuid().ToString(), 1, 1))))
+			});
+			db.CategoryAssistanceAttempts.Add(new CategoryAssistanceAttemptEntity
+			{
+				Id = Guid.NewGuid(),
+				RequestId = Guid.NewGuid(),
+				RestoreGeneration = Guid.NewGuid(),
+				SourceHash = new string('B', 64),
+				Location = "Store",
+				Description = "Failed item",
+				SourceRevision = Guid.NewGuid(),
+				TaxonomyRevision = Guid.NewGuid(),
+				Provider = "jev",
+				Model = CategorySuggestionPolicy.Model,
+				QuestionPolicyVersion = CategorySuggestionPolicy.Version,
+				SettingsRevision = Guid.NewGuid(),
+				ConnectionGeneration = Guid.NewGuid(),
+				ReceiptId = Guid.NewGuid(),
+				ReceiptRevision = Guid.NewGuid(),
+				ItemId = Guid.NewGuid(),
+				ItemRevision = Guid.NewGuid(),
+				State = "failed",
+				CreatedAt = now
+			});
+			await db.SaveChangesAsync();
+		}
+		var store = new CategoryAssistanceReadStore(new Factory(fixture), TimeProvider.System);
+
+		var page = await store.ListSuggestionsAsync(0, 1, CancellationToken.None);
+
+		page.Total.Should().BeGreaterThanOrEqualTo(1);
+		page.Items.Should().ContainSingle();
+		page.Items[0].OriginalDescription.Should().BeNull();
+		page.Items[0].AffectedCount.Should().Be(0);
+		page.Items[0].IsCurrent.Should().BeFalse();
+		page.Items[0].ProposedPath.Should().Equal(category);
+	}
+
+	[Fact]
+	public async Task OriginalDescriptionUsesUnchangedRawReceiptText()
+	{
+		var receiptId = Guid.NewGuid();
+		var itemId = Guid.NewGuid();
+		var receiptRevision = Guid.NewGuid();
+		var itemRevision = Guid.NewGuid();
+		var source = NormalizationCatalogPolicy.Normalize(new(" Store ", "  Raw purchase  ", null));
+		var attemptId = Guid.NewGuid();
+		await using (var db = fixture.CreateDbContext())
+		{
+			db.Receipts.Add(new ReceiptEntity
+			{
+				Id = receiptId,
+				NormalizationRevision = receiptRevision,
+				Location = " Store ",
+				Date = new DateOnly(2020, 1, 1),
+				TaxAmountCurrency = Currency.USD
+			});
+			db.ReceiptItems.Add(new ReceiptItemEntity
+			{
+				Id = itemId,
+				ReceiptId = receiptId,
+				NormalizationRevision = itemRevision,
+				Description = "  Raw purchase  ",
+				UnitPriceCurrency = Currency.USD,
+				TotalAmountCurrency = Currency.USD
+			});
+			await db.SaveChangesAsync();
+			receiptRevision = await db.Receipts.Where(x => x.Id == receiptId)
+				.Select(x => x.NormalizationRevision).SingleAsync();
+			itemRevision = await db.ReceiptItems.Where(x => x.Id == itemId)
+				.Select(x => x.NormalizationRevision).SingleAsync();
+			db.CategoryAssistanceAttempts.Add(new CategoryAssistanceAttemptEntity
+			{
+				Id = attemptId,
+				RequestId = Guid.NewGuid(),
+				RestoreGeneration = Guid.NewGuid(),
+				SourceHash = NormalizationCatalogPolicy.Hash(source),
+				Location = source.Location,
+				Description = source.Description,
+				SourceRevision = Guid.NewGuid(),
+				TaxonomyRevision = Guid.NewGuid(),
+				Provider = "jev",
+				Model = CategorySuggestionPolicy.Model,
+				QuestionPolicyVersion = CategorySuggestionPolicy.Version,
+				SettingsRevision = Guid.NewGuid(),
+				ConnectionGeneration = Guid.NewGuid(),
+				ReceiptId = receiptId,
+				ReceiptRevision = receiptRevision,
+				ItemId = itemId,
+				ItemRevision = itemRevision,
+				State = "abstained",
+				CreatedAt = DateTimeOffset.UtcNow,
+				CompletedAt = DateTimeOffset.UtcNow,
+				ResultJson = JsonSerializer.Serialize(new CategoryAssistanceCompletion(
+					CategoryAssistanceAttemptOutcome.Abstained, null))
+			});
+			await db.SaveChangesAsync();
+		}
+		var store = new CategoryAssistanceReadStore(new Factory(fixture), TimeProvider.System);
+
+		var page = await store.ListSuggestionsAsync(0, 100, CancellationToken.None);
+
+		page.Items.Single(x => x.AttemptId == attemptId).OriginalDescription.Should().Be("  Raw purchase  ");
+	}
+}
