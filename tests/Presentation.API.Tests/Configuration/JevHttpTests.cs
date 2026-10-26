@@ -6,6 +6,7 @@ using API.Configuration;
 using API.Controllers;
 using Application.Classification;
 using FluentAssertions;
+using Infrastructure.Jev;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.TestHost;
@@ -65,9 +66,31 @@ public class JevHttpTests
 		}
 	}
 
-	private static async Task<WebApplication> Start(CountingHandler handler, string? key = null)
+	[Fact]
+	public async Task SuggestionInferenceRequiresExplicitOptInAndDoesNotInheritRetries()
 	{
-		WebApplicationBuilder builder = ConfiguredApiTestHost.CreateBuilder(new Dictionary<string, string?> { ["TYPESAFE_API_KEY"] = key });
+		CountingHandler handler = new(HttpStatusCode.TooManyRequests);
+		CategorySuggestionRequest request = new("purchase", "revision", [new("category", "Category", "Purchases", null)]);
+		await using (WebApplication disabled = await Start(handler, "fake-key"))
+		{
+			ICategorySuggestionProvider provider = disabled.Services.GetRequiredService<ICategorySuggestionProvider>();
+			provider.IsAvailable.Should().BeFalse();
+			(await provider.SuggestAsync(request, default)).Failure.Should().Be(SuggestionFailure.Disabled);
+			handler.Calls.Should().Be(0);
+		}
+		await using WebApplication enabled = await Start(handler, "fake-key", true);
+		ICategorySuggestionProvider available = enabled.Services.GetRequiredService<ICategorySuggestionProvider>();
+		available.IsAvailable.Should().BeTrue();
+		for (int index = 0; index < 3; index++)
+		{
+			(await available.SuggestAsync(request, default)).Failure.Should().Be(SuggestionFailure.RateLimited);
+			handler.Calls.Should().Be(index + 1);
+		}
+	}
+
+	private static async Task<WebApplication> Start(CountingHandler handler, string? key = null, bool inference = false)
+	{
+		WebApplicationBuilder builder = ConfiguredApiTestHost.CreateBuilder(new Dictionary<string, string?> { ["TYPESAFE_API_KEY"] = key, ["Jev:InferenceEnabled"] = inference.ToString() });
 		builder.AddServiceDefaults();
 		builder.Logging.SetMinimumLevel(LogLevel.Warning);
 		builder.Services.AddAuthentication("Test").AddScheme<AuthenticationSchemeOptions, TestAuth>("Test", _ => { });
@@ -75,6 +98,7 @@ public class JevHttpTests
 		builder.Services.AddVersioningServices().AddApplicationServices(builder.Configuration);
 		builder.Services.AddControllers().AddApplicationPart(typeof(JevController).Assembly);
 		builder.Services.AddJevServices().ConfigurePrimaryHttpMessageHandler(() => handler);
+		builder.Services.AddHttpClient<ICategorySuggestionProvider, JevSuggestionProvider>().ConfigurePrimaryHttpMessageHandler(() => handler);
 		WebApplication app = builder.Build();
 		app.UseAuthentication(); app.UseAuthorization(); app.MapControllers();
 		await app.StartAsync();

@@ -1,0 +1,73 @@
+using System.Net;
+using Application.Classification;
+using Infrastructure.Jev;
+using Microsoft.Extensions.Options;
+using Moq;
+
+namespace Infrastructure.Tests.Jev;
+
+public class JevSuggestionProviderBoundaryTests
+{
+	private static readonly CategorySuggestionRequest Request = new("purchase", "revision", [new("category", "Category", "Purchases", null)]);
+	private const string ValidResponse = """{"model":"jev-1.14.0","answers":{"category":{"type":"choice","choice":"category","confidence":1,"probabilities":{"category":1}},"fits":{"type":"noul","noul":0.9}},"usage":{"input_tokens":100,"output_tokens":10}}""";
+
+	[Theory]
+	[InlineData(null)]
+	[InlineData("")]
+	[InlineData("   ")]
+	public async Task MissingCredentialWithOptInIsUnavailableWithoutDispatch(string? key)
+	{
+		JevOptions options = new() { InferenceEnabled = true, ApiKey = key };
+		Handler handler = new(() => new(HttpStatusCode.OK));
+		JevSuggestionProvider provider = Provider(handler, () => options);
+		Assert.False(provider.IsAvailable);
+		CategorySuggestionResult result = await provider.SuggestAsync(Request, default);
+		Assert.Equal(SuggestionFailure.MissingCredential, result.Failure);
+		Assert.Null(result.Suggestion);
+		Assert.Equal(0, handler.Calls);
+	}
+
+	[Theory]
+	[InlineData(false)]
+	[InlineData(true)]
+	public async Task DisableOrCredentialChangeDuringDispatchDiscardsOtherwiseValidResult(bool rotateKey)
+	{
+		JevOptions options = new() { InferenceEnabled = true, ApiKey = "first-key" };
+		Handler handler = new(() =>
+		{
+			options = rotateKey ? new() { InferenceEnabled = true, ApiKey = "changed-key" } : new() { ApiKey = "first-key" };
+			return new(HttpStatusCode.OK) { Content = new StringContent(ValidResponse) };
+		});
+		CategorySuggestionResult result = await Provider(handler, () => options).SuggestAsync(Request, default);
+		Assert.Equal(SuggestionFailure.Disabled, result.Failure);
+		Assert.Null(result.Suggestion);
+		Assert.Equal(1, handler.Calls);
+	}
+
+	[Fact]
+	public async Task OversizeProviderBodyFailsWithoutSuggestionOrRetry()
+	{
+		Handler handler = new(() => new(HttpStatusCode.OK) { Content = new StringContent(new string('x', 100001)) });
+		CategorySuggestionResult result = await Provider(handler, () => new() { InferenceEnabled = true, ApiKey = "test-key" }).SuggestAsync(Request, default);
+		Assert.NotNull(result.Failure);
+		Assert.Null(result.Suggestion);
+		Assert.Equal(1, handler.Calls);
+	}
+
+	private static JevSuggestionProvider Provider(Handler handler, Func<JevOptions> current)
+	{
+		Mock<IOptionsMonitor<JevOptions>> options = new();
+		options.SetupGet(value => value.CurrentValue).Returns(current);
+		return new(new HttpClient(handler), options.Object, new());
+	}
+
+	private sealed class Handler(Func<HttpResponseMessage> response) : HttpMessageHandler
+	{
+		public int Calls { get; private set; }
+		protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+		{
+			Calls++;
+			return Task.FromResult(response());
+		}
+	}
+}
