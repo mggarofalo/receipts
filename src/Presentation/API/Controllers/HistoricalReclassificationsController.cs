@@ -13,8 +13,23 @@ namespace API.Controllers;
 [Authorize]
 [Route("api/historical-reclassifications")]
 [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-public sealed class HistoricalReclassificationsController(IHistoricalOperationService service) : ControllerBase
+public sealed class HistoricalReclassificationsController(IHistoricalOperationService service,
+	IHistoricalGroupReader groups) : ControllerBase
 {
+	[HttpGet("groups")]
+	[EndpointSummary("Browse live exact-source historical purchase groups")]
+	public async Task<Results<Ok<HistoricalGroupPage>, BadRequestProblem>> Groups(
+		[FromQuery] int offset = 0, [FromQuery] int limit = 25, [FromQuery(Name = "q")] string? search = null,
+		[FromQuery] bool conflictsOnly = false, [FromQuery] bool migratedBroadOnly = false,
+		[FromQuery] bool unresolvedOnly = false, [FromQuery] bool unassignedOnly = false,
+		CancellationToken ct = default)
+	{
+		if (offset < 0 || limit is < 1 or > 25 || search is { Length: > 200 } || search?.Contains('\0') == true)
+		{ return ApiProblem.BadRequest("Use a nonnegative offset, limit of 1 to 25, and search of at most 200 characters."); }
+		return TypedResults.Ok(await groups.BrowseAsync(new(offset, limit, search,
+			conflictsOnly, migratedBroadOnly, unresolvedOnly, unassignedOnly), ct));
+	}
+
 	[HttpPost]
 	[EndpointSummary("Capture an exact historical classification preview")]
 	public Task<Results<Ok<HistoricalProgress>, BadRequestProblem, NotFoundProblem, ConflictProblem>> Preview(
