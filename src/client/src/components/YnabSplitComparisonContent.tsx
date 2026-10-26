@@ -1,11 +1,12 @@
 import { RequestFailure } from "@/components/RequestFailure";
 import { extractErrorMessage } from "@/lib/problem-details";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router";
 import {
   useYnabSplitComparison,
   type SplitLineDto,
   type TransactionSplitComparisonDto,
+  type YnabSplitCategoryView,
 } from "@/hooks/useYnab";
 import {
   Card,
@@ -43,8 +44,10 @@ function formatMilliunits(milliunits: number): string {
 export function YnabSplitComparisonContent({
   receiptId,
 }: YnabSplitComparisonContentProps) {
+  const [categoryView, setCategoryView] =
+    useState<YnabSplitCategoryView>("asClassified");
   const { data, isLoading, error, refetch, isFetching } =
-    useYnabSplitComparison(receiptId, true);
+    useYnabSplitComparison(receiptId, true, categoryView);
 
   // Derived values — memoized so downstream render stays stable regardless of
   // which branch we render. Safe because we only derive from `data`.
@@ -72,13 +75,48 @@ export function YnabSplitComparisonContent({
   return (
     <Card className="border-0 shadow-none">
       <CardHeader>
-        <CardTitle className="text-base">Split comparison</CardTitle>
+        <CardTitle className="text-base">
+          {categoryView === "currentHierarchy"
+            ? "Split comparison preview"
+            : "Split comparison"}
+        </CardTitle>
         <CardDescription>
           Expected category split (computed locally) vs. the actual state
           currently stored in YNAB.
         </CardDescription>
       </CardHeader>
       <CardContent>
+        <div className="mb-4 space-y-2">
+          <label
+            htmlFor="ynab-split-category-view"
+            className="text-sm font-medium"
+          >
+            Expected split view
+          </label>
+          <select
+            id="ynab-split-category-view"
+            className="block rounded-md border bg-background px-3 py-2 text-sm"
+            value={categoryView}
+            onChange={(event) =>
+              setCategoryView(event.target.value as YnabSplitCategoryView)
+            }
+          >
+            <option value="asClassified">As recorded</option>
+            <option value="currentHierarchy">Preview current hierarchy</option>
+          </select>
+          <p className="text-sm text-muted-foreground">
+            {categoryView === "currentHierarchy"
+              ? "Preview only: expected splits use the current category hierarchy. This does not change what is pushed to YNAB."
+              : "Expected splits use the category hierarchy recorded with this receipt."}
+          </p>
+          {categoryView === "currentHierarchy" &&
+            data?.categoryView === "currentHierarchy" &&
+            data.capturedCurrentRevisionId && (
+              <p className="text-xs text-muted-foreground">
+                Current hierarchy revision: {data.capturedCurrentRevisionId}
+              </p>
+            )}
+        </div>
         {isLoading ? (
           <div className="space-y-2">
             <Skeleton className="h-4 w-full" />
