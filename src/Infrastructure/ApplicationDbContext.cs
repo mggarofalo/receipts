@@ -440,7 +440,7 @@ public partial class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 			Type entryType = entry.Entity.GetType();
 
 			// Taxonomy has an immutable, actor-attributed operation/revision audit in its own transaction.
-			if (excludedTypes.Contains(entryType) || entryType.Namespace == "Infrastructure.Entities.Taxonomy")
+			if (excludedTypes.Contains(entryType) || entryType.Namespace is "Infrastructure.Entities.Taxonomy" or "Infrastructure.Entities.CategoryAssistance")
 			{
 				continue;
 			}
