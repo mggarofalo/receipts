@@ -60,6 +60,10 @@ paths:
           schema:
             type: boolean
             default: false
+        - name: dispositionFilter
+          in: query
+          schema:
+            $ref: '#/components/schemas/HistoricalDispositionFilter'
       responses:
         '200':
           description: OK
@@ -75,7 +79,67 @@ paths:
                 $ref: '#/components/schemas/ProblemDetails'
         '401':
           description: Authentication required
+  /api/historical-reclassifications/groups/disposition:
+    put:
+      operationId: HistoricalReclassifications_SetDisposition
+      security: [{BearerAuth: []}, {ApiKey: []}]
+      tags: [HistoricalReclassifications]
+      summary: Set own exact-source review disposition
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HistoricalDispositionRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HistoricalDispositionRecord'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Authentication required
+        '409':
+          description: Conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
   /api/historical-reclassifications:
+    get:
+      operationId: HistoricalReclassifications_List
+      security: [{BearerAuth: []}, {ApiKey: []}]
+      tags: [HistoricalReclassifications]
+      summary: List own recent historical operations for resumption
+      parameters:
+        - name: offset
+          in: query
+          schema: {type: integer, format: int32, minimum: 0, default: 0}
+        - name: limit
+          in: query
+          schema: {type: integer, format: int32, minimum: 1, maximum: 25, default: 25}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HistoricalOperationPage'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Authentication required
     post:
       operationId: HistoricalReclassifications_Preview
       security: [{BearerAuth: []}, {ApiKey: []}]
@@ -8294,7 +8358,7 @@ components:
           format: int32
     HistoricalGroupSummary:
       type: object
-      required: [group, purchaseCount, conflict, migratedBroad, unresolved, unassigned, currentCategories]
+      required: [group, purchaseCount, conflict, migratedBroad, unresolved, unassigned, currentCategories, disposition, dispositionVersion]
       properties:
         group:
           $ref: '#/components/schemas/HistoricalGroupKey'
@@ -8313,6 +8377,13 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/HistoricalGroupCategory'
+        disposition:
+          oneOf:
+            - $ref: '#/components/schemas/HistoricalGroupDisposition'
+            - type: 'null'
+        dispositionVersion:
+          type: integer
+          format: int64
     HistoricalGroupPage:
       type: object
       required: [items, totalGroups, nextOffset]
@@ -8340,6 +8411,15 @@ components:
             - 'null'
             - string
           format: uuid
+    HistoricalGroupSelection:
+      required: [group, targetCategoryId]
+      type: object
+      properties:
+        group:
+          $ref: '#/components/schemas/HistoricalGroupKey'
+        targetCategoryId:
+          type: ['null', string]
+          format: uuid
     HistoricalGroupKey:
       required:
         - store
@@ -8359,6 +8439,83 @@ components:
           type:
             - 'null'
             - string
+    HistoricalGroupDisposition:
+      type: string
+      enum: [later, leaveAsIs]
+    HistoricalDispositionFilter:
+      type: string
+      enum: [visible, all, later, leaveAsIs]
+      default: visible
+    HistoricalDispositionRequest:
+      type: object
+      required: [group, disposition, expectedVersion, operationId]
+      properties:
+        group:
+          $ref: '#/components/schemas/HistoricalGroupKey'
+        disposition:
+          oneOf:
+            - $ref: '#/components/schemas/HistoricalGroupDisposition'
+            - type: 'null'
+        expectedVersion:
+          type: integer
+          format: int64
+          minimum: 0
+        operationId:
+          type: string
+          format: uuid
+    HistoricalDispositionRecord:
+      type: object
+      required: [group, disposition, version, operationId, updatedAt]
+      properties:
+        group:
+          $ref: '#/components/schemas/HistoricalGroupKey'
+        disposition:
+          oneOf:
+            - $ref: '#/components/schemas/HistoricalGroupDisposition'
+            - type: 'null'
+        version:
+          type: integer
+          format: int64
+        operationId:
+          type: string
+          format: uuid
+        updatedAt:
+          type: string
+          format: date-time
+    HistoricalOperationSummary:
+      type: object
+      required: [operationId, state, capturedAt, taxonomyRevisionId, reason, groups, progress]
+      properties:
+        operationId:
+          type: string
+          format: uuid
+        state:
+          $ref: '#/components/schemas/HistoricalOperationState'
+        capturedAt:
+          type: string
+          format: date-time
+        taxonomyRevisionId:
+          type: string
+          format: uuid
+        reason:
+          type: string
+        groups:
+          type: array
+          items:
+            $ref: '#/components/schemas/HistoricalGroupSelection'
+        progress:
+          $ref: '#/components/schemas/HistoricalProgress'
+    HistoricalOperationPage:
+      type: object
+      required: [items, nextOffset]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/HistoricalOperationSummary'
+        nextOffset:
+          type: [integer, 'null']
+          format: int32
     HistoricalItemPage:
       required:
         - items

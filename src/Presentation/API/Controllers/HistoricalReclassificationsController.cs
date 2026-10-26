@@ -22,12 +22,39 @@ public sealed class HistoricalReclassificationsController(IHistoricalOperationSe
 		[FromQuery] int offset = 0, [FromQuery] int limit = 25, [FromQuery(Name = "q")] string? search = null,
 		[FromQuery] bool conflictsOnly = false, [FromQuery] bool migratedBroadOnly = false,
 		[FromQuery] bool unresolvedOnly = false, [FromQuery] bool unassignedOnly = false,
+				[FromQuery] HistoricalDispositionFilter dispositionFilter = HistoricalDispositionFilter.Visible,
 		CancellationToken ct = default)
 	{
-		if (offset < 0 || limit is < 1 or > 25 || search is { Length: > 200 } || search?.Contains('\0') == true)
+		if (offset < 0 || limit is < 1 or > 25 || search is { Length: > 200 } || search?.Contains('\0') == true ||
+				!Enum.IsDefined(dispositionFilter))
 		{ return ApiProblem.BadRequest("Use a nonnegative offset, limit of 1 to 25, and search of at most 200 characters."); }
 		return TypedResults.Ok(await groups.BrowseAsync(new(offset, limit, search,
-			conflictsOnly, migratedBroadOnly, unresolvedOnly, unassignedOnly), ct));
+						conflictsOnly, migratedBroadOnly, unresolvedOnly, unassignedOnly, Actor(), dispositionFilter), ct));
+	}
+
+	[HttpGet]
+	[EndpointSummary("List own recent historical operations for resumption")]
+	public Task<Results<Ok<HistoricalOperationPage>, BadRequestProblem>> List(
+			[FromQuery] int offset = 0, [FromQuery] int limit = 25, CancellationToken ct = default) =>
+			offset < 0 || limit is < 1 or > 25
+					? Task.FromResult<Results<Ok<HistoricalOperationPage>, BadRequestProblem>>(
+							ApiProblem.BadRequest("Use a nonnegative offset and limit of 1 to 25."))
+					: ListValid(offset, limit, ct);
+
+	private async Task<Results<Ok<HistoricalOperationPage>, BadRequestProblem>> ListValid(
+			int offset, int limit, CancellationToken ct) =>
+			TypedResults.Ok(await service.ListAsync(Actor(), offset, limit, ct));
+
+	[HttpPut("groups/disposition")]
+	[EndpointSummary("Set own exact-source review disposition with compare-and-set version")]
+	public async Task<Results<Ok<HistoricalDispositionRecord>, BadRequestProblem, ConflictProblem>> SetDisposition(
+			[FromBody] HistoricalDispositionRequest body, CancellationToken ct)
+	{
+		try { return TypedResults.Ok(await service.SetDispositionAsync(Actor(), body, ct)); }
+		catch (TaxonomyException error)
+		{
+			return error.Status == 409 ? ApiProblem.Conflict(error.Message) : ApiProblem.BadRequest(error.Message);
+		}
 	}
 
 	[HttpPost]

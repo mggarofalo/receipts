@@ -21,7 +21,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/historical-reclassifications": {
+    "/api/historical-reclassifications/groups/disposition": {
         parameters: {
             query?: never;
             header?: never;
@@ -29,6 +29,24 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
+        /** Set own exact-source review disposition */
+        put: operations["HistoricalReclassifications_SetDisposition"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/historical-reclassifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List own recent historical operations for resumption */
+        get: operations["HistoricalReclassifications_List"];
         put?: never;
         /** Capture an exact historical classification preview */
         post: operations["HistoricalReclassifications_Preview"];
@@ -3514,6 +3532,9 @@ export interface components {
             unresolved: boolean;
             unassigned: boolean;
             currentCategories: components["schemas"]["HistoricalGroupCategory"][];
+            disposition: components["schemas"]["HistoricalGroupDisposition"] | null;
+            /** Format: int64 */
+            dispositionVersion: number;
         };
         HistoricalGroupPage: {
             items: components["schemas"]["HistoricalGroupSummary"][];
@@ -3527,10 +3548,57 @@ export interface components {
             /** Format: uuid */
             targetCategoryId: null | string;
         };
+        HistoricalGroupSelection: {
+            group: components["schemas"]["HistoricalGroupKey"];
+            /** Format: uuid */
+            targetCategoryId: null | string;
+        };
         HistoricalGroupKey: {
             store: string;
             rawDescription: string;
             itemCode: null | string;
+        };
+        /** @enum {string} */
+        HistoricalGroupDisposition: "later" | "leaveAsIs";
+        /**
+         * @default visible
+         * @enum {string}
+         */
+        HistoricalDispositionFilter: "visible" | "all" | "later" | "leaveAsIs";
+        HistoricalDispositionRequest: {
+            group: components["schemas"]["HistoricalGroupKey"];
+            disposition: components["schemas"]["HistoricalGroupDisposition"] | null;
+            /** Format: int64 */
+            expectedVersion: number;
+            /** Format: uuid */
+            operationId: string;
+        };
+        HistoricalDispositionRecord: {
+            group: components["schemas"]["HistoricalGroupKey"];
+            disposition: components["schemas"]["HistoricalGroupDisposition"] | null;
+            /** Format: int64 */
+            version: number;
+            /** Format: uuid */
+            operationId: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        HistoricalOperationSummary: {
+            /** Format: uuid */
+            operationId: string;
+            state: components["schemas"]["HistoricalOperationState"];
+            /** Format: date-time */
+            capturedAt: string;
+            /** Format: uuid */
+            taxonomyRevisionId: string;
+            reason: string;
+            groups: components["schemas"]["HistoricalGroupSelection"][];
+            progress: components["schemas"]["HistoricalProgress"];
+        };
+        HistoricalOperationPage: {
+            items: components["schemas"]["HistoricalOperationSummary"][];
+            /** Format: int32 */
+            nextOffset: number | null;
         };
         HistoricalItemPage: {
             items: components["schemas"]["HistoricalItemResult"][];
@@ -6291,6 +6359,7 @@ export interface operations {
                 migratedBroadOnly?: boolean;
                 unresolvedOnly?: boolean;
                 unassignedOnly?: boolean;
+                dispositionFilter?: components["schemas"]["HistoricalDispositionFilter"];
             };
             header?: {
                 "api-version"?: string;
@@ -6307,6 +6376,94 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HistoricalGroupPage"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    HistoricalReclassifications_SetDisposition: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HistoricalDispositionRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoricalDispositionRecord"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    HistoricalReclassifications_List: {
+        parameters: {
+            query?: {
+                offset?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoricalOperationPage"];
                 };
             };
             /** @description Bad Request */

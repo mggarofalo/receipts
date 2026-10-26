@@ -5,7 +5,8 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 namespace Infrastructure.Configurations;
 
 public sealed class HistoricalOperationConfiguration : IEntityTypeConfiguration<HistoricalOperationEntity>,
-	IEntityTypeConfiguration<HistoricalOperationItemEntity>
+		IEntityTypeConfiguration<HistoricalOperationItemEntity>, IEntityTypeConfiguration<HistoricalGroupDispositionEntity>,
+		IEntityTypeConfiguration<HistoricalDispositionOperationEntity>
 {
 	public void Configure(EntityTypeBuilder<HistoricalOperationEntity> b)
 	{
@@ -35,5 +36,30 @@ public sealed class HistoricalOperationConfiguration : IEntityTypeConfiguration<
 		b.HasOne<PurchaseClassificationEntity>().WithMany().HasForeignKey(x => x.ExpectedAssignmentId).OnDelete(DeleteBehavior.Restrict);
 		b.HasOne<PurchaseClassificationEntity>().WithMany().HasForeignKey(x => x.AppliedAssignmentId).OnDelete(DeleteBehavior.Restrict);
 		b.HasOne<PurchaseClassificationEntity>().WithMany().HasForeignKey(x => x.UndoAssignmentId).OnDelete(DeleteBehavior.Restrict);
+	}
+
+	public void Configure(EntityTypeBuilder<HistoricalGroupDispositionEntity> b)
+	{
+		b.ToTable("HistoricalGroupDispositions", "taxonomy");
+		b.HasKey(x => x.Id);
+		b.Property(x => x.Id).ValueGeneratedNever();
+		b.Property(x => x.Actor).UseCollation("C");
+		b.Property(x => x.Store).UseCollation("C");
+		b.Property(x => x.RawDescription).UseCollation("C");
+		b.Property(x => x.ItemCode).UseCollation("C");
+		b.Property(x => x.Disposition).HasConversion<string>();
+		b.HasIndex(x => new { x.Actor, x.SourceHash }).IsUnique();
+	}
+
+	public void Configure(EntityTypeBuilder<HistoricalDispositionOperationEntity> b)
+	{
+		b.ToTable("HistoricalDispositionOperations", "taxonomy");
+		b.HasKey(x => x.OperationId);
+		b.Property(x => x.OperationId).ValueGeneratedNever();
+		b.Property(x => x.Actor).UseCollation("C");
+		b.Property(x => x.Store).UseCollation("C");
+		b.Property(x => x.RawDescription).UseCollation("C");
+		b.Property(x => x.ItemCode).UseCollation("C");
+		b.Property(x => x.Disposition).HasConversion<string>();
 	}
 }
