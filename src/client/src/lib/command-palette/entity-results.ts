@@ -5,13 +5,12 @@ import {
   Package,
   Receipt,
   Tag,
-  Tags,
   Users,
 } from "lucide-react";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useCards } from "@/hooks/useCards";
-import { useCategories } from "@/hooks/useCategories";
-import { useSubcategories } from "@/hooks/useSubcategories";
+import { useCategoryTaxonomy } from "@/hooks/useCategoryTaxonomy";
+import { categoryPaths } from "@/lib/category-paths";
 import { useReceipts } from "@/hooks/useReceipts";
 import { useReceiptItems } from "@/hooks/useReceiptItems";
 import { useUsers } from "@/hooks/useUsers";
@@ -50,16 +49,6 @@ interface CardLike {
   id: string;
   name: string;
   cardCode?: string | null;
-}
-interface CategoryLike {
-  id: string;
-  name: string;
-  description?: string | null;
-}
-interface SubcategoryLike {
-  id: string;
-  name: string;
-  description?: string | null;
 }
 interface ReceiptLike {
   id: string;
@@ -127,22 +116,7 @@ export function useEntityResults({
     undefined,
     referenceOptions,
   );
-  const categories = useCategories(
-    0,
-    SMALL_LIMIT,
-    undefined,
-    undefined,
-    undefined,
-    referenceOptions,
-  );
-  const subcategories = useSubcategories(
-    0,
-    SMALL_LIMIT,
-    undefined,
-    undefined,
-    undefined,
-    referenceOptions,
-  );
+  const categories = useCategoryTaxonomy(hasQuery);
   const receipts = useReceipts(
     0,
     LARGE_LIMIT,
@@ -200,38 +174,31 @@ export function useEntityResults({
       });
     }
 
-    const categoryData = (categories.data as CategoryLike[] | undefined) ?? [];
-    if (categoryData.length) {
-      groups.push({
-        id: "categories",
-        heading: "Categories",
-        icon: Tag,
-        items: categoryData.map((c) => ({
-          id: c.id,
-          label: c.name,
-          meta: c.description ?? undefined,
-          searchValue: tokens("category", c.name, c.description),
-          href: "/categories",
-        })),
-      });
-    }
-
-    const subcategoryData =
-      (subcategories.data as SubcategoryLike[] | undefined) ?? [];
-    if (subcategoryData.length) {
-      groups.push({
-        id: "subcategories",
-        heading: "Subcategories",
-        icon: Tags,
-        items: subcategoryData.map((s) => ({
-          id: s.id,
-          label: s.name,
-          meta: s.description ?? undefined,
-          searchValue: tokens("subcategory", s.name, s.description),
-          href: "/subcategories",
-        })),
-      });
-    }
+    const categoryData = categoryPaths(categories.data?.nodes ?? []);
+    groups.push({
+      id: "categories",
+      heading: "Categories",
+      icon: Tag,
+      items: categoryData.map((entry) => ({
+        id: entry.node.id,
+        label: entry.label,
+        searchValue: tokens("category", entry.label),
+        href: "/categories",
+      })),
+      isLoading: categories.isLoading,
+      ...(categories.isError
+        ? {
+            items: [],
+            failure: {
+              message: "Categories search unavailable.",
+              retry: () => {
+                void categories.refetch();
+              },
+              isRetrying: categories.isFetching,
+            },
+          }
+        : {}),
+    });
 
     const receiptData = (receipts.data as ReceiptLike[] | undefined) ?? [];
     if (receiptData.length) {
@@ -300,13 +267,6 @@ export function useEntityResults({
     const sources = [
       { id: "accounts", heading: "Accounts", icon: Building2, query: accounts },
       { id: "cards", heading: "Cards", icon: CreditCard, query: cards },
-      { id: "categories", heading: "Categories", icon: Tag, query: categories },
-      {
-        id: "subcategories",
-        heading: "Subcategories",
-        icon: Tags,
-        query: subcategories,
-      },
       { id: "receipts", heading: "Receipts", icon: Receipt, query: receipts },
       {
         id: "receipt-items",

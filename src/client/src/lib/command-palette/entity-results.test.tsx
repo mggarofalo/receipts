@@ -9,11 +9,8 @@ vi.mock("@/hooks/useAccounts", () => ({
 vi.mock("@/hooks/useCards", () => ({
   useCards: vi.fn(() => mockQueryResult()),
 }));
-vi.mock("@/hooks/useCategories", () => ({
-  useCategories: vi.fn(() => mockQueryResult()),
-}));
-vi.mock("@/hooks/useSubcategories", () => ({
-  useSubcategories: vi.fn(() => mockQueryResult()),
+vi.mock("@/hooks/useCategoryTaxonomy", () => ({
+  useCategoryTaxonomy: vi.fn(() => mockQueryResult()),
 }));
 vi.mock("@/hooks/useItemTemplates", () => ({
   useItemTemplates: vi.fn(() => mockQueryResult()),
@@ -244,8 +241,6 @@ describe("useEntityResults", () => {
   it("does not enable any entity hook when the palette input is empty", async () => {
     const { useAccounts } = await import("@/hooks/useAccounts");
     const { useCards } = await import("@/hooks/useCards");
-    const { useCategories } = await import("@/hooks/useCategories");
-    const { useSubcategories } = await import("@/hooks/useSubcategories");
 
     const { useReceipts } = await import("@/hooks/useReceipts");
     const { useReceiptItems } = await import("@/hooks/useReceiptItems");
@@ -258,8 +253,6 @@ describe("useEntityResults", () => {
     for (const mock of [
       useAccounts,
       useCards,
-      useCategories,
-      useSubcategories,
       useReceipts,
       useReceiptItems,
       useUsers,
@@ -274,8 +267,6 @@ describe("useEntityResults", () => {
     try {
       const { useAccounts } = await import("@/hooks/useAccounts");
       const { useCards } = await import("@/hooks/useCards");
-      const { useCategories } = await import("@/hooks/useCategories");
-      const { useSubcategories } = await import("@/hooks/useSubcategories");
 
       const { useReceipts } = await import("@/hooks/useReceipts");
       const { useReceiptItems } = await import("@/hooks/useReceiptItems");
@@ -290,8 +281,6 @@ describe("useEntityResults", () => {
       for (const hook of [
         useAccounts,
         useCards,
-        useCategories,
-        useSubcategories,
         useReceipts,
         useReceiptItems,
         useUsers,
@@ -300,12 +289,7 @@ describe("useEntityResults", () => {
           enabled: false,
         });
       }
-      for (const hook of [
-        useAccounts,
-        useCards,
-        useCategories,
-        useSubcategories,
-      ]) {
+      for (const hook of [useAccounts, useCards]) {
         expect(vi.mocked(hook).mock.calls.at(-1)?.at(-1)).toEqual({
           enabled: false,
           q: undefined,
@@ -315,12 +299,7 @@ describe("useEntityResults", () => {
       await act(() => vi.advanceTimersByTimeAsync(200));
       rerender({ query: "  grocer  " });
 
-      for (const hook of [
-        useAccounts,
-        useCards,
-        useCategories,
-        useSubcategories,
-      ]) {
+      for (const hook of [useAccounts, useCards]) {
         expect(vi.mocked(hook).mock.calls.at(-1)?.at(-1)).toEqual({
           enabled: true,
           q: "grocer",
@@ -342,8 +321,6 @@ describe("useEntityResults", () => {
     const hooks = await Promise.all([
       import("@/hooks/useAccounts").then((m) => m.useAccounts),
       import("@/hooks/useCards").then((m) => m.useCards),
-      import("@/hooks/useCategories").then((m) => m.useCategories),
-      import("@/hooks/useSubcategories").then((m) => m.useSubcategories),
       import("@/hooks/useReceipts").then((m) => m.useReceipts),
       import("@/hooks/useReceiptItems").then((m) => m.useReceiptItems),
       import("@/hooks/useUsers").then((m) => m.useUsers),
@@ -366,13 +343,11 @@ describe("useEntityResults", () => {
       const hooks = await Promise.all([
         import("@/hooks/useAccounts").then((m) => m.useAccounts),
         import("@/hooks/useCards").then((m) => m.useCards),
-        import("@/hooks/useCategories").then((m) => m.useCategories),
-        import("@/hooks/useSubcategories").then((m) => m.useSubcategories),
         import("@/hooks/useReceipts").then((m) => m.useReceipts),
         import("@/hooks/useReceiptItems").then((m) => m.useReceiptItems),
         import("@/hooks/useUsers").then((m) => m.useUsers),
       ]);
-      const searchableHooks = hooks.slice(0, 4);
+      const searchableHooks = hooks.slice(0, 2);
       const { rerender } = renderHook(
         ({ open, query }) => useEntityResults({ isAdmin: true, open, query }),
         { initialProps: { open: true, query: "old search" } },
@@ -432,8 +407,6 @@ describe("useEntityResults", () => {
     const hooks = await Promise.all([
       import("@/hooks/useAccounts").then((m) => m.useAccounts),
       import("@/hooks/useCards").then((m) => m.useCards),
-      import("@/hooks/useCategories").then((m) => m.useCategories),
-      import("@/hooks/useSubcategories").then((m) => m.useSubcategories),
       import("@/hooks/useReceipts").then((m) => m.useReceipts),
       import("@/hooks/useReceiptItems").then((m) => m.useReceiptItems),
       import("@/hooks/useUsers").then((m) => m.useUsers),
@@ -512,4 +485,39 @@ it("does not fetch or return templates for palette searches", async () => {
   expect(result.current.some((group) => group.id === "item-templates")).toBe(
     false,
   );
+});
+
+it("searches current complete category paths in one group without legacy lookups", async () => {
+  const { useCategoryTaxonomy } = await import("@/hooks/useCategoryTaxonomy");
+  vi.mocked(useCategoryTaxonomy).mockReturnValue(
+    mockQueryResult({
+      data: {
+        nodes: [
+          { id: "food", name: "Food", archived: false },
+          { id: "milk", name: "Milk", parentId: "food", archived: false },
+          { id: "old", name: "Old", archived: true },
+        ],
+      },
+    }) as ReturnType<typeof useCategoryTaxonomy>,
+  );
+  const { result } = renderHook(() =>
+    useEntityResults({ isAdmin: false, open: true, query: "milk" }),
+  );
+  expect(useCategoryTaxonomy).toHaveBeenLastCalledWith(true);
+  const group = result.current.find((g) => g.id === "categories")!;
+  expect(group.items.map((item) => item.label)).toEqual([
+    "Food",
+    "Food / Milk",
+  ]);
+  expect(group.items[1].href).toBe("/categories");
+  expect(result.current.some((g) => g.id === "subcategories")).toBe(false);
+});
+it("keeps category lookup disabled while the palette is closed or empty", async () => {
+  const { useCategoryTaxonomy } = await import("@/hooks/useCategoryTaxonomy");
+  renderHook(() =>
+    useEntityResults({ isAdmin: false, open: false, query: "milk" }),
+  );
+  expect(useCategoryTaxonomy).toHaveBeenLastCalledWith(false);
+  renderHook(() => useEntityResults({ isAdmin: false, open: true, query: "" }));
+  expect(useCategoryTaxonomy).toHaveBeenLastCalledWith(false);
 });

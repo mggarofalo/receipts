@@ -380,22 +380,11 @@ export default function Taxonomy() {
           )
         }
       />
-      <p className="mb-4 text-sm text-muted-foreground">
-        Receipt categories are still available in{" "}
-        <Link className="underline" to="/categories">
-          Categories
-        </Link>{" "}
-        and{" "}
-        <Link className="underline" to="/subcategories">
-          Subcategories
-        </Link>{" "}
-        while legacy data is migrated.
-      </p>
       {historicalId && (
         <p className="mb-4">
           Historical revision ·{" "}
-          <Link className="underline" to="/taxonomy">
-            Back to current tree
+          <Link className="underline" to="/categories">
+            Back to categories
           </Link>
         </p>
       )}
@@ -424,8 +413,7 @@ export default function Taxonomy() {
       {query.isError && (
         <div role="alert">
           <p>
-            {extractErrorMessage(query.error) ??
-              "Could not load the category tree."}
+            {extractErrorMessage(query.error) ?? "Could not load categories."}
           </p>
           <Button variant="outline" onClick={() => void query.refetch()}>
             Retry
@@ -451,7 +439,7 @@ export default function Taxonomy() {
             {query.data.previousRevisionId && (
               <Link
                 className="mt-2 inline-block text-sm underline"
-                to={`/taxonomy?revision=${query.data.previousRevisionId}`}
+                to={`/categories?revision=${query.data.previousRevisionId}`}
               >
                 Previous revision
               </Link>

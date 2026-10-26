@@ -59,7 +59,6 @@ describe("command registry", () => {
       "nav:accounts",
       "nav:cards",
       "nav:categories",
-      "nav:subcategories",
       "nav:security",
       "nav:api-keys",
       "nav:ynab",
@@ -72,8 +71,6 @@ describe("command registry", () => {
       "create:receipt",
       "create:account",
       "create:card",
-      "create:category",
-      "create:subcategory",
       "create:api-key",
       "create:user",
       "pref:shortcuts-help",
@@ -251,4 +248,18 @@ it("does not expose commands for the retired templates page", () => {
   expect(COMMANDS.map((command) => command.id)).not.toContain(
     "create:item-template",
   );
+});
+
+it("offers one canonical category navigation command and no legacy create actions", () => {
+  expect(
+    COMMANDS.some(
+      (c) =>
+        c.id === "nav:subcategories" ||
+        c.id === "create:subcategory" ||
+        c.id === "create:category",
+    ),
+  ).toBe(false);
+  const ctx = makeCtx();
+  COMMANDS.find((c) => c.id === "nav:categories")!.run(ctx);
+  expect(ctx.navigate).toHaveBeenCalledWith("/categories");
 });

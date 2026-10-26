@@ -40,7 +40,7 @@ const failure = (status: number, detail: string) => ({
   error: { status, detail },
   response: new Response(null, { status }),
 });
-async function renderTree(route = "/taxonomy") {
+async function renderTree(route = "/categories") {
   renderWithQueryClient(<Taxonomy />, { route });
   await screen.findByRole("tree");
   await userEvent.click(screen.getByRole("button", { name: "Expand all" }));
@@ -112,20 +112,21 @@ describe("Category tree", () => {
       }),
     ).toHaveAttribute("aria-level", "80");
   });
-  it("preserves legacy navigation for an empty tree", async () => {
+  it("presents one Categories page even when the tree is empty", async () => {
     mockClient.GET.mockResolvedValue(success({ ...revision, nodes: [] }));
     renderWithQueryClient(<Taxonomy />);
     expect(
       await screen.findByText(/The category tree is empty/),
     ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Categories" })).toHaveAttribute(
-      "href",
-      "/categories",
-    );
-    expect(screen.getByRole("link", { name: "Subcategories" })).toHaveAttribute(
-      "href",
-      "/subcategories",
-    );
+    expect(
+      screen.getByRole("heading", { name: "Categories" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "Subcategories" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/legacy data is migrated/),
+    ).not.toBeInTheDocument();
   });
   it("hides every editing action for readers", async () => {
     permissions.admin = false;
@@ -139,7 +140,7 @@ describe("Category tree", () => {
     expect(mockClient.POST).not.toHaveBeenCalled();
   });
   it("loads history as read-only with revision details on demand", async () => {
-    await renderTree("/taxonomy?revision=rev-1");
+    await renderTree("/categories?revision=rev-1");
     expect(mockClient.GET).toHaveBeenCalledWith(
       "/api/taxonomy/revisions/{id}",
       expect.objectContaining({
@@ -148,13 +149,13 @@ describe("Category tree", () => {
       }),
     );
     expect(
-      screen.getByRole("link", { name: "Back to current tree" }),
-    ).toHaveAttribute("href", "/taxonomy");
+      screen.getByRole("link", { name: "Back to categories" }),
+    ).toHaveAttribute("href", "/categories");
     await userEvent.click(screen.getByText("Revision details · 2"));
     expect(screen.getByText("Set up categories")).toBeVisible();
     expect(
       screen.getByRole("link", { name: "Previous revision" }),
-    ).toHaveAttribute("href", "/taxonomy?revision=rev-0");
+    ).toHaveAttribute("href", "/categories?revision=rev-0");
     expect(
       screen.queryByRole("button", { name: "New category" }),
     ).not.toBeInTheDocument();
