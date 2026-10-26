@@ -1,3 +1,5 @@
+using Application.Models.Reports;
+
 namespace Application.Models.Search;
 
 /// <summary>Validated whole-result filters and ordering, independent of transport and paging.</summary>
@@ -10,4 +12,8 @@ public record PurchaseSearchOptions(
 	decimal? MinUnitPrice = null,
 	decimal? MaxUnitPrice = null,
 	bool IncludeUnreviewed = false,
-	Guid? NormalizedDescriptionId = null);
+		Guid? NormalizedDescriptionId = null,
+		CategoryReportView CategoryView = CategoryReportView.AsClassified,
+		Guid? CategoryId = null,
+		DateTimeOffset? KnowledgeCutoff = null,
+		Guid? CapturedCurrentRevisionId = null);

@@ -11,6 +11,8 @@ const search = vi.mocked(usePurchaseSearch);
 const item: components["schemas"]["PurchaseSearchItem"] = {
   id: "item-1",
   receiptId: "receipt-1",
+  categoryState: "unclassified",
+  categoryPath: [],
   description: "Whole milk",
   receiptItemCode: "MILK-42",
   normalizedDescription: "Milk",
@@ -48,7 +50,14 @@ beforeEach(() => {
   search.mockReturnValue(
     mockQueryResult({
       isPending: false,
-      data: { items: [item], total: 26, offset: 0, limit: 25 },
+      data: {
+        categoryView: "asClassified",
+        assignmentSelection: "currentPointer",
+        items: [item],
+        total: 26,
+        offset: 0,
+        limit: 25,
+      },
     }),
   );
 });
@@ -248,7 +257,9 @@ it.each(["-1", "nope", "2147483648", "9007199254740993"])(
 
 it("explains empty search without presenting results", () => {
   renderPage("/search");
-  expect(screen.getByPlaceholderText("Search item names, codes, or stores")).toBeInTheDocument();
+  expect(
+    screen.getByPlaceholderText("Search item names, codes, or stores"),
+  ).toBeInTheDocument();
   expect(
     screen.queryByRole("table", { name: "Purchase results" }),
   ).not.toBeInTheDocument();
@@ -279,7 +290,14 @@ it("distinguishes a stale empty page from no matching purchases", async () => {
   search.mockReturnValue(
     mockQueryResult({
       isPending: false,
-      data: { items: [], total: 1, offset: 25, limit: 25 },
+      data: {
+        categoryView: "asClassified",
+        assignmentSelection: "currentPointer",
+        items: [],
+        total: 1,
+        offset: 25,
+        limit: 25,
+      },
     }),
   );
   renderPage("/search?q=milk&offset=25");
@@ -287,7 +305,14 @@ it("distinguishes a stale empty page from no matching purchases", async () => {
   search.mockReturnValue(
     mockQueryResult({
       isPending: false,
-      data: { items: [], total: 0, offset: 0, limit: 25 },
+      data: {
+        categoryView: "asClassified",
+        assignmentSelection: "currentPointer",
+        items: [],
+        total: 0,
+        offset: 0,
+        limit: 25,
+      },
     }),
   );
   await userEvent.click(screen.getByRole("button", { name: "First page" }));
@@ -430,9 +455,7 @@ it("shows length validation only when a submitted query needs it", async () => {
   expect(
     screen.getByPlaceholderText("Search item names, codes, or stores"),
   ).toBeInTheDocument();
-  await userEvent.click(
-    screen.getByRole("button", { name: "Search" }),
-  );
+  await userEvent.click(screen.getByRole("button", { name: "Search" }));
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "Enter at least 2 characters.",
   );

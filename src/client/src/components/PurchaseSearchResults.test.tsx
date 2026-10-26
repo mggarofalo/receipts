@@ -16,6 +16,8 @@ const search = vi.mocked(usePurchaseSearch);
 const item: components["schemas"]["PurchaseSearchItem"] = {
   id: "i1",
   receiptId: "r1",
+  categoryState: "unclassified",
+  categoryPath: [],
   description: "Historic milk",
   date: "2020-01-15",
   location: "Store",
@@ -54,7 +56,14 @@ beforeEach(() => {
   search.mockReturnValue(
     mockQueryResult({
       isPending: false,
-      data: { items: [item], total: 42, offset: 0, limit: 5 },
+      data: {
+        categoryView: "asClassified",
+        assignmentSelection: "currentPointer",
+        items: [item],
+        total: 42,
+        offset: 0,
+        limit: 5,
+      },
     }),
   );
 });
@@ -84,7 +93,14 @@ it("hides obsolete results during debounce and does not search while closed", as
   search.mockReturnValue(
     mockQueryResult({
       isPending: false,
-      data: { items: [], total: 0, offset: 0, limit: 25 },
+      data: {
+        categoryView: "asClassified",
+        assignmentSelection: "currentPointer",
+        items: [],
+        total: 0,
+        offset: 0,
+        limit: 25,
+      },
     }),
   );
   await act(async () => {

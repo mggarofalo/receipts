@@ -1,3 +1,6 @@
+using Application.Models.Reports;
+using Domain.Taxonomy;
+
 namespace Application.Models.Search;
 
 public record PurchaseSearchItem(
@@ -14,4 +17,10 @@ public record PurchaseSearchItem(
 	string UnitPriceCurrency,
 	decimal TotalAmount,
 	string TotalAmountCurrency,
-	string NormalizationReviewState = "needsReview");
+		string NormalizationReviewState = "needsReview")
+{
+	public Guid? PathRevisionId { get; init; }
+	public Guid? CategoryId { get; init; }
+	public CategoryReportState CategoryState { get; init; } = CategoryReportState.MissingAssignment;
+	public IReadOnlyList<TaxonomyNode> CategoryPath { get; init; } = [];
+}

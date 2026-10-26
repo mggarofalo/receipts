@@ -3900,6 +3900,12 @@ export interface components {
             expectedRevision: string;
         };
         PurchaseSearchResponse: {
+            categoryView: components["schemas"]["PurchaseSearchResponseCategoryView"];
+            assignmentSelection: components["schemas"]["PurchaseSearchResponseAssignmentSelection"];
+            /** Format: uuid */
+            currentRevisionId?: string | null;
+            /** Format: date-time */
+            knowledgeCutoff?: string | null;
             items: components["schemas"]["PurchaseSearchItem"][];
             /** Format: int32 */
             total: number;
@@ -3909,6 +3915,12 @@ export interface components {
             limit: number;
         };
         PurchaseSearchItem: {
+            /** Format: uuid */
+            categoryId?: string | null;
+            /** Format: uuid */
+            pathRevisionId?: string | null;
+            categoryState: components["schemas"]["PurchaseSearchItemCategoryState"];
+            categoryPath: components["schemas"]["CategoryReportPathNode"][];
             /** @description Current purchase evidence state; verified, needsReview, or excluded. */
             normalizationReviewState?: string;
             /** Format: uuid */
@@ -3938,6 +3950,12 @@ export interface components {
             /** @description Stored currency code without conversion. */
             totalAmountCurrency: string;
         };
+        /** @enum {string} */
+        PurchaseSearchResponseCategoryView: "asClassified" | "currentHierarchy";
+        /** @enum {string} */
+        PurchaseSearchResponseAssignmentSelection: "currentPointer" | "latestRecordedAtOrBeforeCutoff";
+        /** @enum {string} */
+        PurchaseSearchItemCategoryState: "classified" | "unclassified" | "missingAssignment" | "unresolvedLegacy" | "unresolvedPath" | "beforeMigrationHistory";
         /** @description RFC 9457 problem document. Every 4xx this API raises with a reason answers in this shape; the human-readable reason is always in `detail`. Some responses add machine-readable members alongside these (for example `transactionCount` on a 409 from a delete that is blocked by references) â€” RFC 9457 permits such extension members, and they appear at the top level of the object. */
         ProblemDetails: {
             type?: string | null;
@@ -8464,7 +8482,15 @@ export interface operations {
                 includeUnreviewed?: boolean;
                 /** @description Filter identity history before pagination; verified assignments by default. */
                 normalizedDescriptionId?: string;
-                /** @description Literal search phrase, 2 to 200 characters after trimming. May be omitted or empty only with normalizedDescriptionId for identity history. When supplied, intersects the identity filter. */
+                /** @description Select recorded classification paths or the captured current taxonomy hierarchy. */
+                categoryView?: "asClassified" | "currentHierarchy";
+                /** @description Stable category ID; includes descendants in the selected view before count and pagination. Unresolved classifications are excluded. */
+                categoryId?: string;
+                /** @description Inclusive UTC recorded-at cutoff for latest known assignment (Z suffix required); monetary facts remain current. */
+                knowledgeCutoff?: string;
+                /** @description Immutable taxonomy revision to reuse with currentHierarchy across pages. */
+                capturedCurrentRevisionId?: string;
+                /** @description Literal search phrase, 2 to 200 characters after trimming. May be omitted or empty with normalizedDescriptionId or categoryId. When supplied, intersects the filters. */
                 q?: string;
                 offset?: number;
                 limit?: number;

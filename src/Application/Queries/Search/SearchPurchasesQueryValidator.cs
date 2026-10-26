@@ -8,9 +8,9 @@ public class SearchPurchasesQueryValidator : AbstractValidator<SearchPurchasesQu
 	public SearchPurchasesQueryValidator()
 	{
 		RuleFor(x => x.Q).Must((request, q) =>
-			(string.IsNullOrWhiteSpace(q) && request.Options?.NormalizedDescriptionId is not null)
+						(string.IsNullOrWhiteSpace(q) && (request.Options?.NormalizedDescriptionId is not null || request.Options?.CategoryId is not null))
 			|| (q is not null && q.Trim().Length is >= 2 and <= 200))
-			.WithMessage("q must contain between 2 and 200 characters after trimming, or be empty with normalizedDescriptionId.");
+						.WithMessage("q must contain between 2 and 200 characters after trimming, or be empty with normalizedDescriptionId or categoryId.");
 		RuleFor(x => x.Offset).GreaterThanOrEqualTo(0);
 		RuleFor(x => x.Limit).InclusiveBetween(1, 100);
 		RuleFor(x => x.Options!).SetValidator(new PurchaseSearchOptionsValidator());
@@ -33,5 +33,11 @@ internal class PurchaseSearchOptionsValidator : AbstractValidator<PurchaseSearch
 		RuleFor(x => x.MaxUnitPrice).GreaterThanOrEqualTo(0)
 			.Must((options, max) => !max.HasValue || !options.MinUnitPrice.HasValue || max >= options.MinUnitPrice)
 			.WithMessage("maxUnitPrice must not be less than minUnitPrice.");
+		RuleFor(x => x.CategoryView).IsInEnum();
+		RuleFor(x => x.CategoryId).Must(id => id != Guid.Empty);
+		RuleFor(x => x.CapturedCurrentRevisionId).Must(id => id != Guid.Empty);
+		RuleFor(x => x.CapturedCurrentRevisionId)
+				.Must((options, id) => !id.HasValue || options.CategoryView == Application.Models.Reports.CategoryReportView.CurrentHierarchy)
+				.WithMessage("capturedCurrentRevisionId requires currentHierarchy.");
 	}
 }

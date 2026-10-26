@@ -1,13 +1,18 @@
+using System.Data.Common;
 using Application.Models;
+using Application.Models.Reports;
 using Application.Models.Search;
 using Common;
 using Domain.NormalizedDescriptions;
 using FluentAssertions;
+using Infrastructure.Configurations;
 using Infrastructure.Entities.Core;
+using Infrastructure.Entities.Taxonomy;
 using Infrastructure.IntegrationTests.Fixtures;
 using Infrastructure.Repositories;
 using Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace Infrastructure.IntegrationTests.Services;
 
@@ -16,6 +21,121 @@ namespace Infrastructure.IntegrationTests.Services;
 [Trait("Prerequisite", "Postgres")]
 public class PurchaseSearchReaderTests(PostgresFixture server) : IsolatedPostgresTest(server)
 {
+	[Fact]
+	public async Task SearchAsync_FiltersStableSubtreesBeforeCountAndPageAndReturnsSelectedPaths()
+	{
+		await ResetAsync();
+		Guid old = Guid.NewGuid(), current = Guid.NewGuid();
+		Guid groceries = Guid.NewGuid(), home = Guid.NewGuid(), moved = Guid.NewGuid(), duplicate = Guid.NewGuid();
+		DateTimeOffset firstTime = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+		await using (var db = fixture.CreateDbContext())
+		{
+			await using var transaction = await db.Database.BeginTransactionAsync();
+			long nextSequence = await db.TaxonomyRevisions.MaxAsync(row => row.Sequence) + 1;
+			Guid previous = (await db.TaxonomyHeads.SingleAsync()).RevisionId;
+			db.TaxonomyIdentities.AddRange(new[] { groceries, home, moved, duplicate }
+					.Select(id => new TaxonomyIdentityEntity { Id = id }));
+			db.TaxonomyRevisions.AddRange(
+					new TaxonomyRevisionEntity { Id = old, Sequence = nextSequence, PreviousRevisionId = previous },
+					new TaxonomyRevisionEntity { Id = current, Sequence = nextSequence + 1, PreviousRevisionId = old });
+			foreach (Guid revision in new[] { old, current })
+			{
+				db.TaxonomyNodes.AddRange(
+						new TaxonomyNodeEntity { RevisionId = revision, CategoryId = groceries, Name = revision == old ? "Groceries" : "Food" },
+						new TaxonomyNodeEntity { RevisionId = revision, CategoryId = home, Name = "Home" },
+						new TaxonomyNodeEntity
+						{
+							RevisionId = revision,
+							CategoryId = moved,
+							ParentId = revision == old ? groceries : home,
+							Name = "Shared",
+							Archived = revision == current
+						},
+						new TaxonomyNodeEntity
+						{
+							RevisionId = revision,
+							CategoryId = duplicate,
+							ParentId = home,
+							Name = "Shared"
+						});
+			}
+			(await db.TaxonomyHeads.SingleAsync()).RevisionId = current;
+			var receipt = Receipt(1); db.Receipts.Add(receipt);
+			for (int number = 1; number <= 6; number++)
+			{ db.ReceiptItems.Add(Item(number, receipt.Id, $"Milk {number}")); }
+			for (int number = 7; number <= 1506; number++)
+			{ db.ReceiptItems.Add(Item(number, receipt.Id, "Bread")); }
+			Guid[] ids = Enumerable.Range(1, 5).Select(_ => Guid.NewGuid()).ToArray();
+			Guid?[] categories = [groceries, moved, duplicate, null, groceries];
+			for (int index = 0; index < 5; index++)
+			{
+				var assignment = new PurchaseClassificationEntity
+				{
+					Id = ids[index],
+					ReceiptItemId = Id(index + 1),
+					Sequence = 1,
+					CategoryId = categories[index],
+					TaxonomyRevisionId = old,
+					RecordedAt = firstTime,
+					Source = index == 0 ? "legacy_import" : "manual",
+					LegacyResolution = index == 4 ? "unresolved_path" : null
+				};
+				db.Classifications.Add(assignment);
+				db.CurrentClassifications.Add(new CurrentClassificationEntity
+				{ ReceiptItemId = assignment.ReceiptItemId, AssignmentId = assignment.Id });
+			}
+			db.Classifications.Add(new PurchaseClassificationEntity
+			{
+				Id = Guid.NewGuid(),
+				ReceiptItemId = Id(1),
+				Sequence = 2,
+				PreviousAssignmentId = ids[0],
+				CategoryId = home,
+				TaxonomyRevisionId = current,
+				RecordedAt = firstTime.AddDays(1)
+			});
+			db.CurrentClassifications.Local.Single(row => row.ReceiptItemId == Id(1)).AssignmentId =
+					db.Classifications.Local.Single(row => row.ReceiptItemId == Id(1) && row.Sequence == 2).Id;
+			await db.SaveChangesAsync();
+			await transaction.CommitAsync();
+		}
+
+		var historical = new PurchaseSearchOptions(CategoryId: groceries, KnowledgeCutoff: firstTime);
+		PurchaseSearchResult first = await Reader().SearchAsync("", 0, 1, historical, CancellationToken.None);
+		PurchaseSearchResult second = await Reader().SearchAsync("", 1, 1, historical, CancellationToken.None);
+		first.Total.Should().Be(2); second.Total.Should().Be(2);
+		first.Items.Concat(second.Items).Select(row => row.Id).Should().BeEquivalentTo([Id(1), Id(2)]);
+		first.Items.Concat(second.Items).Should().OnlyContain(row => row.CategoryPath[0].Name == "Groceries");
+		first.AssignmentSelection.Should().Be(CategoryReportAssignmentSelection.LatestRecordedAtOrBeforeCutoff);
+		(await Reader().SearchAsync("", 0, 10, historical with { KnowledgeCutoff = null }, CancellationToken.None))
+				.Items.Select(row => row.Id).Should().Equal(Id(2));
+
+		var currentView = new PurchaseSearchOptions(CategoryView: CategoryReportView.CurrentHierarchy,
+				CategoryId: groceries, CapturedCurrentRevisionId: current, KnowledgeCutoff: firstTime);
+		var commands = new CountCommands();
+		PurchaseSearchResult currentRows = await new PurchaseSearchReader(new CountingContextFactory(fixture, commands))
+				.SearchAsync("", 0, 10, currentView, CancellationToken.None);
+		commands.Count.Should().Be(4); // revision validation, count, page, page-path snapshot
+		currentRows.Total.Should().Be(1);
+		currentRows.Items.Single().Id.Should().Be(Id(1));
+		currentRows.Items.Single().CategoryPath.Single().Name.Should().Be("Food");
+		currentRows.CurrentRevisionId.Should().Be(current);
+		PurchaseSearchResult movedRows = await Reader().SearchAsync("", 0, 10,
+				currentView with { CategoryId = home }, CancellationToken.None);
+		movedRows.Items.Select(row => row.Id).Should().BeEquivalentTo([Id(2), Id(3)]);
+		movedRows.Items.Single(row => row.Id == Id(2)).CategoryPath.Last().Archived.Should().BeTrue();
+		PurchaseSearchResult unfiltered = await Reader().SearchAsync("Milk", 0, 10,
+				currentView with { CategoryId = null }, CancellationToken.None);
+		unfiltered.Items.Single(row => row.Id == Id(4)).CategoryState.Should().Be(CategoryReportState.Unclassified);
+		unfiltered.Items.Single(row => row.Id == Id(5)).CategoryState.Should().Be(CategoryReportState.UnresolvedLegacy);
+		unfiltered.Items.Single(row => row.Id == Id(6)).CategoryState.Should().Be(CategoryReportState.MissingAssignment);
+		unfiltered.Items.Single(row => row.Id == Id(2)).CategoryPath.Last().Archived.Should().BeTrue();
+		PurchaseSearchResult all = await Reader().SearchAsync("Milk", 0, 10,
+				new PurchaseSearchOptions(KnowledgeCutoff: firstTime.AddTicks(-1)), CancellationToken.None);
+		all.Total.Should().Be(6);
+		all.Items.Single(row => row.Id == Id(1)).CategoryState.Should().Be(CategoryReportState.BeforeMigrationHistory);
+		all.Items.Where(row => row.Id != Id(1)).Should().OnlyContain(row => row.CategoryState == CategoryReportState.MissingAssignment);
+	}
 	[Theory]
 	[InlineData("date")]
 	[InlineData("description")]
@@ -273,5 +393,22 @@ public class PurchaseSearchReaderTests(PostgresFixture server) : IsolatedPostgre
 	private sealed class ContextFactory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
 	{
 		public ApplicationDbContext CreateDbContext() => fixture.CreateDbContext();
+	}
+	private sealed class CountingContextFactory(PostgresFixture fixture, CountCommands commands)
+			: IDbContextFactory<ApplicationDbContext>
+	{
+		public ApplicationDbContext CreateDbContext() => new(new DbContextOptionsBuilder<ApplicationDbContext>(
+				fixture.CreateOptions()).AddInterceptors(commands).Options);
+	}
+	private sealed class CountCommands : DbCommandInterceptor
+	{
+		public int Count { get; private set; }
+		public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(DbCommand command,
+				CommandEventData eventData, InterceptionResult<DbDataReader> result,
+				CancellationToken cancellationToken = default)
+		{
+			Count++;
+			return ValueTask.FromResult(result);
+		}
 	}
 }

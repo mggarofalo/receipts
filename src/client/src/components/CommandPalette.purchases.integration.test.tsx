@@ -14,6 +14,8 @@ vi.mock("@/lib/command-palette/entity-results", () => ({
 const purchase: components["schemas"]["PurchaseSearchItem"] = {
   id: "item1",
   receiptId: "receipt1",
+  categoryState: "unclassified",
+  categoryPath: [],
   date: "2025-07-04",
   description: "Beef hot dogs",
   location: "Market",
@@ -49,6 +51,8 @@ beforeEach(() => {
   server.use(
     http.get("*/api/search/purchases", ({ request }) =>
       HttpResponse.json({
+        categoryView: "asClassified",
+        assignmentSelection: "currentPointer",
         items: [
           purchase,
           {

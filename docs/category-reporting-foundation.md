@@ -3,7 +3,7 @@
 The shared `CategoryReportReader` and `CategoryReportProjection` power
 `GET /api/dashboard/spending-by-category`, including explicit historical and
 current-hierarchy views. Category trends now uses the same reader with a server-side
-period grouping dimension. Integration with search, exports and their UI remains required. Focused PostgreSQL query-plan evidence lives
+period grouping dimension. Integration with exports and the remaining UI remains required. Focused PostgreSQL query-plan evidence lives
 in the external RECEIPTS-1050 review/cutoff artifacts; production-scale acceptance remains open.
 
 ## Meaning of a view
@@ -145,5 +145,13 @@ The response captures one current revision across every period. The cutoff recon
 classification knowledge only; monetary facts remain current. No location filter existed
 on this endpoint before this cutover.
 
-Next consumers: dashboard summary most-used category; purchase search; item-description,
+Purchase search accepts a stable category UUID, `categoryView`, optional inclusive UTC
+`knowledgeCutoff`, and optional `capturedCurrentRevisionId` for current-hierarchy pages.
+It resolves descendants by revision from taxonomy IDs and applies the resulting
+assignment predicate in SQL before counting and paging. Search returns full recorded
+or current paths, archive flags, and unresolved states for each page item. The
+category filter excludes unresolved evidence; an unfiltered search retains it.
+Classification cutoff captures knowledge only, while monetary facts stay live.
+
+Next consumers: dashboard summary most-used category; item-description,
 item-cost category and uncategorized reports; dashboard/report/search UI and CSV exports.
