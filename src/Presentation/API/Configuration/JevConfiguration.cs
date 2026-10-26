@@ -1,5 +1,6 @@
 using Application.Classification;
 using Infrastructure.Jev;
+using Infrastructure.Services;
 
 namespace API.Configuration;
 
@@ -16,10 +17,24 @@ public static class JevConfiguration
 			});
 #pragma warning disable EXTEXP0001 // Framework API explicitly removes inherited resilience for this one-shot check.
 		services.AddSingleton<JevSuggestionConcurrency>();
-		services.AddHttpClient<ICategorySuggestionProvider, JevSuggestionProvider>()
-			.RemoveAllResilienceHandlers()
-			.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false })
-			.RemoveAllLoggers();
+		services.AddScoped<CategoryAssistanceConnectionCoordinator>();
+		services.AddScoped<ICategoryAssistanceConnectionReconciler>(provider =>
+				provider.GetRequiredService<CategoryAssistanceConnectionCoordinator>());
+		services.AddScoped<ICategoryAssistanceConnectionBinding>(provider =>
+				provider.GetRequiredService<CategoryAssistanceConnectionCoordinator>());
+		services.AddScoped<ICategoryAssistanceDispatchStore, CategoryAssistanceDispatchStore>();
+		services.AddScoped<CategoryAssistanceDispatcher>();
+		services.AddScoped<JevCategoryAssistanceSelectedProvider>();
+		services.AddScoped<ICategoryAssistanceSelectedProvider>(provider =>
+				provider.GetRequiredService<JevCategoryAssistanceSelectedProvider>());
+		services.AddScoped<ICategoryAssistanceCapabilitySource>(provider =>
+				provider.GetRequiredService<JevCategoryAssistanceSelectedProvider>());
+		services.AddHttpClient<JevSuggestionProvider>()
+	.RemoveAllResilienceHandlers()
+	.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false })
+	.RemoveAllLoggers();
+		services.AddScoped<ICategorySuggestionProvider>(provider =>
+				provider.GetRequiredService<JevSuggestionProvider>());
 		return services.AddHttpClient<IClassificationProviderConnection, JevConnection>()
 			// An explicit user check is one bounded attempt, without inherited retries or circuits.
 			.RemoveAllResilienceHandlers()
