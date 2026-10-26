@@ -846,7 +846,7 @@ export function LineItemsSection({
                 )}
               />
 
-              <div className="flex justify-end sm:pt-[22px]">
+              <div className="flex justify-end pb-7">
                 <Button
                   type="submit"
                   variant="secondary"

@@ -1,3 +1,4 @@
+import { taxonomyFixture, dairyClassification } from "@/test/taxonomy-fixture";
 vi.hoisted(() => vi.stubEnv("VITE_API_URL", "http://receipt-picker.test"));
 import type { ComponentProps } from "react";
 import {
@@ -48,6 +49,7 @@ let receiptGate: ReturnType<typeof deferred>;
 let receiptStarted: ReturnType<typeof deferred>;
 let writes: string[];
 const server = setupServer(
+  http.get("*/api/taxonomy", () => HttpResponse.json(taxonomyFixture)),
   http.get("*/api/receipts", async ({ request }) => {
     const params = new URL(request.url).searchParams;
     const offset = Number(params.get("offset") ?? 0);
@@ -146,6 +148,7 @@ function renderForm(
           path: "/",
           element: (
             <ReceiptItemForm
+              currentClassification={dairyClassification}
               mode="create"
               defaultValues={defaults}
               onSubmit={submitted}
@@ -175,7 +178,7 @@ async function formReady(queryClient: ReturnType<typeof createAppQueryClient>) {
     expect(
       queryClient
         .getQueryCache()
-        .findAll({ queryKey: ["categories"] })
+        .findAll({ queryKey: ["taxonomy", "current"] })
         .some((query) => query.state.status === "success"),
     ).toBe(true),
   );

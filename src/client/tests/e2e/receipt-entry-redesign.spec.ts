@@ -1,3 +1,4 @@
+import { taxonomyFixture } from "../../src/test/taxonomy-fixture";
 import { expect, test } from "@playwright/test";
 import {
   ADMIN_FIXTURE_USER,
@@ -64,15 +65,8 @@ for (const width of [1280, 900, 375, 320]) {
             route.fulfill({
               json: { data: cards, total: 2, offset: 0, limit: 50 },
             }),
-          "**/api/categories**": (route) =>
-            route.fulfill({
-              json: {
-                data: [{ id: "food", name: "Food", isActive: true }],
-                total: 1,
-                offset: 0,
-                limit: 50,
-              },
-            }),
+          "**/api/taxonomy": (route) =>
+            route.fulfill({ json: taxonomyFixture }),
           "**/api/receipt-items/similar*": (route) =>
             route.fulfill({ json: [] }),
           "**/api/item-templates/similar*": (route) =>
@@ -134,7 +128,9 @@ for (const width of [1280, 900, 375, 320]) {
       await page.getByPlaceholder("MM/DD/YYYY").first().fill("10/23/2026");
       await page.getByPlaceholder("Item description").fill("MILK");
       await page.getByRole("combobox", { name: /^Category/ }).click();
-      await page.getByRole("option", { name: "Food", exact: true }).click();
+      await page
+        .getByRole("option", { name: "Food / Dairy", exact: true })
+        .click();
       await expect(page.getByRole("listbox")).toHaveCount(0);
       await page.getByLabel("Unit Price", { exact: false }).fill("5");
       await page.keyboard.press("Escape");
@@ -263,6 +259,12 @@ for (const width of [1280, 900, 375, 320]) {
           {
             description: "MILK",
             unitPrice: 5,
+            classification: {
+              categoryId: taxonomyFixture.nodes[1].id,
+              taxonomyRevisionId: taxonomyFixture.id,
+              expectedAssignmentId: null,
+              operationId: expect.any(String),
+            },
             ...(known
               ? {
                   normalizationIntent: {

@@ -218,7 +218,7 @@ it.each([400, 503])(
             quantity: 1,
             unitPrice: 5,
             category: "Food",
-            subcategory: "",
+            subcategory: null,
           },
         ],
         adjustments: [],
