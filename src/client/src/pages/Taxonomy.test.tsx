@@ -116,7 +116,7 @@ describe("Category tree", () => {
     mockClient.GET.mockResolvedValue(success({ ...revision, nodes: [] }));
     renderWithQueryClient(<Taxonomy />);
     expect(
-      await screen.findByText(/The category tree is empty/),
+      await screen.findByText("No categories yet."),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: "Categories" }),
