@@ -78,6 +78,9 @@ public sealed class CategoryAssistanceAttemptEntity
 	public Guid? AssignmentId { get; set; }
 	public string RequestJson { get; set; } = "";
 	public string? ResultJson { get; set; }
+	public Guid? DecisionOperationId { get; set; }
+	public string? DecisionActor { get; set; }
+	public string? DecisionJson { get; set; }
 	public string State { get; set; } = "queued";
 	public Guid? ClaimToken { get; set; }
 	public DateTimeOffset? LeaseExpiresAt { get; set; }

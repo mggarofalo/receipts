@@ -141,6 +141,161 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/category-assistance/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read capability and persisted consent */
+        get: operations["CategoryAssistance_Status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/category-assistance/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read deployment-wide settings (Admin) */
+        get: operations["CategoryAssistance_Settings"];
+        /** Update audited consent and limits (Admin) */
+        put: operations["CategoryAssistance_UpdateSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/category-assistance/suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Page durable review suggestions */
+        get: operations["CategoryAssistance_Suggestions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/category-assistance/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read aggregate attempt activity (Admin) */
+        get: operations["CategoryAssistance_Activity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/category-assistance/suggestions/{attemptId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read one durable category suggestion for review */
+        get: operations["CategoryAssistance_Suggestion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/category-assistance/suggestions/{attemptId}/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Page eligible receipt items for a suggestion */
+        get: operations["CategoryAssistance_EligibleItems"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/category-assistance/suggestions/{attemptId}/review-preference": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the current actor's review state and excluded receipt items */
+        get: operations["CategoryAssistance_ReviewPreference"];
+        /** Set actor review state and excluded receipt items */
+        put: operations["CategoryAssistance_UpdateReviewPreference"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/category-assistance/suggestions/{attemptId}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept a suggestion for selected receipt items */
+        post: operations["CategoryAssistance_Accept"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/category-assistance/suggestions/{attemptId}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dismiss a suggestion */
+        post: operations["CategoryAssistance_Dismiss"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/category-mappings/inspect": {
         parameters: {
             query?: never;
@@ -3682,6 +3837,155 @@ export interface components {
             undoAssignmentId: null | string;
             reason: null | string;
         };
+        CategoryAssistanceStatusResponse: {
+            capability: string;
+            consentEnabled: boolean;
+            suggestionsAvailable: boolean;
+            provider: string;
+            models: string[];
+        };
+        CategoryAssistanceSettings: {
+            enabled: boolean;
+            provider: string | null;
+            model: string | null;
+            /** Format: int32 */
+            dailyLimit: number;
+            /** Format: int32 */
+            pendingLimit: number;
+            /** Format: uuid */
+            revision: string;
+        };
+        CategoryAssistanceSettingsRequest: {
+            enabled: boolean;
+            provider: string | null;
+            model: string | null;
+            /** Format: int32 */
+            dailyLimit: number;
+            /** Format: int32 */
+            pendingLimit: number;
+            /** Format: uuid */
+            expectedRevision: string;
+        };
+        CategoryAssistanceSuggestionPage: {
+            /** Format: int32 */
+            total: number;
+            /** Format: int32 */
+            offset: number;
+            /** Format: int32 */
+            limit: number;
+            items: components["schemas"]["CategoryAssistanceSuggestionRead"][];
+        };
+        CategoryAssistanceSuggestionRead: {
+            /** Format: uuid */
+            attemptId: string;
+            source: components["schemas"]["NormalizationSourceKey"];
+            originalDescription: string | null;
+            /** Format: int32 */
+            affectedCount: number;
+            proposedPath: string[];
+            abstentionReason: string | null;
+            /** Format: double */
+            confidence: number | null;
+            /** Format: double */
+            fitProbability: number | null;
+            /** Format: double */
+            categoryProbability: number | null;
+            state: string;
+            /** @enum {string} */
+            reviewState?: "active" | "later" | "left_as_is";
+            /** Format: uuid */
+            reviewRevision?: string;
+            /** Format: int32 */
+            excludedItemCount?: number;
+            isCurrent: boolean;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            completedAt: string | null;
+        };
+        CategoryAssistanceReviewPreference: {
+            /** Format: uuid */
+            attemptId: string;
+            /** @enum {string} */
+            state: "active" | "later" | "left_as_is";
+            /** Format: uuid */
+            revision: string;
+            excludedItemIds: string[];
+        };
+        CategoryAssistanceReviewPreferenceRequest: {
+            /** Format: uuid */
+            operationId: string;
+            /** Format: uuid */
+            expectedRevision: string;
+            /** @enum {string} */
+            state: "active" | "later" | "left_as_is";
+            excludedItemIds: string[];
+        };
+        CategoryAssistanceActivity: {
+            /** Format: int32 */
+            queued: number;
+            /** Format: int32 */
+            dispatching: number;
+            /** Format: int32 */
+            suggested: number;
+            /** Format: int32 */
+            abstained: number;
+            /** Format: int32 */
+            failed: number;
+            /** Format: int32 */
+            stale: number;
+            /** Format: int32 */
+            indeterminate: number;
+            /** Format: int32 */
+            todayAttempts: number;
+        };
+        CategoryAssistanceEligibleItemPage: {
+            /** Format: int32 */
+            total: number;
+            /** Format: int32 */
+            offset: number;
+            /** Format: int32 */
+            limit: number;
+            itemIds: string[];
+            items: components["schemas"]["CategoryAssistanceEligibleItem"][];
+        };
+        CategoryAssistanceEligibleItem: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            receiptId: string;
+            /** Format: date */
+            date: string;
+            description: string;
+            store: string;
+            /** Format: double */
+            quantity: number;
+            /** Format: double */
+            totalAmount: number;
+            currency: string;
+        };
+        CategoryAssistanceDecisionRequest: {
+            /** Format: uuid */
+            operationId: string;
+            /** Format: uuid */
+            expectedTaxonomyRevision: string;
+            itemIds: string[];
+            /** Format: uuid */
+            categoryId?: string | null;
+        };
+        CategoryAssistanceDismissRequest: {
+            /** Format: uuid */
+            operationId: string;
+        };
+        CategoryAssistanceDecisionResult: {
+            /** Format: uuid */
+            attemptId: string;
+            /** @enum {string} */
+            decision: "accepted" | "dismissed";
+            affectedItemIds: string[];
+            /** Format: uuid */
+            categoryId: string | null;
+        };
         CategoryMappingSourceRequest: {
             source: components["schemas"]["NormalizationSourceKey"];
         };
@@ -6857,6 +7161,559 @@ export interface operations {
                 };
             };
             /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    CategoryAssistance_Status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Capability and consent; readiness alone does not authorize dispatch */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryAssistanceStatusResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CategoryAssistance_Settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Persisted settings without credentials */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryAssistanceSettings"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Admin required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CategoryAssistance_UpdateSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CategoryAssistanceSettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description Saved settings with new revision */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryAssistanceSettings"];
+                };
+            };
+            /** @description Invalid settings */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Admin required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Revision changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    CategoryAssistance_Suggestions: {
+        parameters: {
+            query?: {
+                offset?: number;
+                limit?: number;
+                review?: "active" | "later" | "left_as_is" | "all";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Completed suggestions only; empty when unavailable or consent disabled */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryAssistanceSuggestionPage"];
+                };
+            };
+            /** @description Invalid pagination */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CategoryAssistance_Activity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Counts and today's global dispatch usage */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryAssistanceActivity"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Admin required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CategoryAssistance_Suggestion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Completed suggestion */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryAssistanceSuggestionRead"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Suggestion unavailable */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    CategoryAssistance_EligibleItems: {
+        parameters: {
+            query?: {
+                offset?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Eligible item IDs */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryAssistanceEligibleItemPage"];
+                };
+            };
+            /** @description Invalid pagination */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Suggestion missing */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    CategoryAssistance_ReviewPreference: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Actor review state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryAssistanceReviewPreference"];
+                };
+            };
+            /** @description Invalid suggestion ID */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Active writer required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Suggestion missing */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Review conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    CategoryAssistance_UpdateReviewPreference: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CategoryAssistanceReviewPreferenceRequest"];
+            };
+        };
+        responses: {
+            /** @description Saved actor review state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryAssistanceReviewPreference"];
+                };
+            };
+            /** @description Invalid review preferences */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Active writer required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Suggestion missing */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Revision or operation conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    CategoryAssistance_Accept: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CategoryAssistanceDecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Committed selected items */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryAssistanceDecisionResult"];
+                };
+            };
+            /** @description Invalid selection */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Active writer required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Suggestion missing */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Stale suggestion or selection */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    CategoryAssistance_Dismiss: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CategoryAssistanceDismissRequest"];
+            };
+        };
+        responses: {
+            /** @description Durable dismissal */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryAssistanceDecisionResult"];
+                };
+            };
+            /** @description Invalid operation */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Active writer required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Suggestion missing */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Stale suggestion */
             409: {
                 headers: {
                     [name: string]: unknown;

@@ -457,7 +457,548 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-
+  /api/category-assistance/status:
+    get:
+      tags: [CategoryAssistance]
+      summary: Read capability and persisted consent
+      operationId: CategoryAssistance_Status
+      security: [{ BearerAuth: [] }, { ApiKey: [] }]
+      responses:
+        "200":
+          description: Capability and consent; readiness alone does not authorize dispatch
+          content:
+            application/json:
+              schema:
+                {
+                  $ref: "#/components/schemas/CategoryAssistanceStatusResponse",
+                }
+        "401": { description: Authentication required }
+  /api/category-assistance/settings:
+    get:
+      tags: [CategoryAssistance]
+      summary: Read deployment-wide settings (Admin)
+      operationId: CategoryAssistance_Settings
+      security: [{ BearerAuth: [] }, { ApiKey: [] }]
+      responses:
+        "200":
+          description: Persisted settings without credentials
+          content:
+            application/json:
+              schema:
+                { $ref: "#/components/schemas/CategoryAssistanceSettings" }
+        "401": { description: Authentication required }
+        "403": { description: Admin required }
+    put:
+      tags: [CategoryAssistance]
+      summary: Update audited consent and limits (Admin)
+      operationId: CategoryAssistance_UpdateSettings
+      security: [{ BearerAuth: [] }, { ApiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              { $ref: "#/components/schemas/CategoryAssistanceSettingsRequest" }
+      responses:
+        "200":
+          description: Saved settings with new revision
+          content:
+            application/json:
+              schema:
+                { $ref: "#/components/schemas/CategoryAssistanceSettings" }
+        "400":
+          {
+            description: Invalid settings,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/ProblemDetails" } },
+              },
+          }
+        "401": { description: Authentication required }
+        "403":
+          {
+            description: Admin required,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/ProblemDetails" } },
+              },
+          }
+        "409":
+          {
+            description: Revision changed,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/ProblemDetails" } },
+              },
+          }
+  /api/category-assistance/suggestions:
+    get:
+      tags: [CategoryAssistance]
+      summary: Page durable review suggestions
+      operationId: CategoryAssistance_Suggestions
+      security: [{ BearerAuth: [] }, { ApiKey: [] }]
+      parameters:
+        - {
+            name: offset,
+            in: query,
+            schema: { type: integer, format: int32, minimum: 0, default: 0 },
+          }
+        - {
+            name: limit,
+            in: query,
+            schema:
+              {
+                type: integer,
+                format: int32,
+                minimum: 1,
+                maximum: 100,
+                default: 25,
+              },
+          }
+        - {
+            name: review,
+            in: query,
+            schema:
+              {
+                type: string,
+                enum: [active, later, left_as_is, all],
+                default: active,
+              },
+          }
+      responses:
+        "200":
+          description: Completed suggestions only; empty when unavailable or consent disabled
+          content:
+            application/json:
+              schema:
+                {
+                  $ref: "#/components/schemas/CategoryAssistanceSuggestionPage",
+                }
+        "400":
+          {
+            description: Invalid pagination,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/ProblemDetails" } },
+              },
+          }
+        "401": { description: Authentication required }
+  /api/category-assistance/activity:
+    get:
+      tags: [CategoryAssistance]
+      summary: Read aggregate attempt activity (Admin)
+      operationId: CategoryAssistance_Activity
+      security: [{ BearerAuth: [] }, { ApiKey: [] }]
+      responses:
+        "200":
+          description: Counts and today's global dispatch usage
+          content:
+            application/json:
+              schema:
+                { $ref: "#/components/schemas/CategoryAssistanceActivity" }
+        "401": { description: Authentication required }
+        "403": { description: Admin required }
+  /api/category-assistance/suggestions/{attemptId}:
+    get:
+      tags: [CategoryAssistance]
+      summary: Read one durable category suggestion for review
+      operationId: CategoryAssistance_Suggestion
+      security: [{ BearerAuth: [] }, { ApiKey: [] }]
+      parameters:
+        - {
+            name: attemptId,
+            in: path,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+      responses:
+        "200":
+          {
+            description: Completed suggestion,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      {
+                        $ref: "#/components/schemas/CategoryAssistanceSuggestionRead",
+                      },
+                  },
+              },
+          }
+        "401": { description: Authentication required }
+        "404":
+          {
+            description: Suggestion unavailable,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/ProblemDetails" } },
+              },
+          }
+  /api/category-assistance/suggestions/{attemptId}/items:
+    get:
+      tags: [CategoryAssistance]
+      summary: Page eligible receipt items for a suggestion
+      operationId: CategoryAssistance_EligibleItems
+      security: [{ BearerAuth: [] }, { ApiKey: [] }]
+      parameters:
+        - {
+            name: attemptId,
+            in: path,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+        - {
+            name: offset,
+            in: query,
+            schema: { type: integer, format: int32, minimum: 0, default: 0 },
+          }
+        - {
+            name: limit,
+            in: query,
+            schema:
+              {
+                type: integer,
+                format: int32,
+                minimum: 1,
+                maximum: 100,
+                default: 25,
+              },
+          }
+      responses:
+        "200":
+          {
+            description: Eligible item IDs,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      {
+                        $ref: "#/components/schemas/CategoryAssistanceEligibleItemPage",
+                      },
+                  },
+              },
+          }
+        "400":
+          {
+            description: Invalid pagination,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/ProblemDetails" } },
+              },
+          }
+        "401": { description: Authentication required }
+        "404":
+          {
+            description: Suggestion missing,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/ProblemDetails" } },
+              },
+          }
+  /api/category-assistance/suggestions/{attemptId}/review-preference:
+    get:
+      tags: [CategoryAssistance]
+      summary: Read the current actor's review state and excluded receipt items
+      operationId: CategoryAssistance_ReviewPreference
+      security: [{ BearerAuth: [] }, { ApiKey: [] }]
+      parameters:
+        - {
+            name: attemptId,
+            in: path,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+      responses:
+        "200":
+          {
+            description: Actor review state,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      {
+                        $ref: "#/components/schemas/CategoryAssistanceReviewPreference",
+                      },
+                  },
+              },
+          }
+        "400":
+          {
+            description: Invalid suggestion ID,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/ProblemDetails" } },
+              },
+          }
+        "401": { description: Authentication required }
+        "403":
+          {
+            description: Active writer required,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/ProblemDetails" } },
+              },
+          }
+        "404":
+          {
+            description: Suggestion missing,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/ProblemDetails" } },
+              },
+          }
+        "409":
+          {
+            description: Review conflict,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/ProblemDetails" } },
+              },
+          }
+    put:
+      tags: [CategoryAssistance]
+      summary: Set actor review state and excluded receipt items
+      operationId: CategoryAssistance_UpdateReviewPreference
+      security: [{ BearerAuth: [] }, { ApiKey: [] }]
+      parameters:
+        - {
+            name: attemptId,
+            in: path,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+      requestBody:
+        required: true
+        content:
+          {
+            application/json:
+              {
+                schema:
+                  {
+                    $ref: "#/components/schemas/CategoryAssistanceReviewPreferenceRequest",
+                  },
+              },
+          }
+      responses:
+        "200":
+          {
+            description: Saved actor review state,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      {
+                        $ref: "#/components/schemas/CategoryAssistanceReviewPreference",
+                      },
+                  },
+              },
+          }
+        "400":
+          {
+            description: Invalid review preferences,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/ProblemDetails" } },
+              },
+          }
+        "401": { description: Authentication required }
+        "403":
+          {
+            description: Active writer required,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/ProblemDetails" } },
+              },
+          }
+        "404":
+          {
+            description: Suggestion missing,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/ProblemDetails" } },
+              },
+          }
+        "409":
+          {
+            description: Revision or operation conflict,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/ProblemDetails" } },
+              },
+          }
+  /api/category-assistance/suggestions/{attemptId}/accept:
+    post:
+      tags: [CategoryAssistance]
+      summary: Accept a suggestion for selected receipt items
+      operationId: CategoryAssistance_Accept
+      security: [{ BearerAuth: [] }, { ApiKey: [] }]
+      parameters:
+        - {
+            name: attemptId,
+            in: path,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+      requestBody:
+        required: true
+        content:
+          {
+            application/json:
+              {
+                schema:
+                  {
+                    $ref: "#/components/schemas/CategoryAssistanceDecisionRequest",
+                  },
+              },
+          }
+      responses:
+        "200":
+          {
+            description: Committed selected items,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      {
+                        $ref: "#/components/schemas/CategoryAssistanceDecisionResult",
+                      },
+                  },
+              },
+          }
+        "400":
+          {
+            description: Invalid selection,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/ProblemDetails" } },
+              },
+          }
+        "401": { description: Authentication required }
+        "403":
+          {
+            description: Active writer required,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/ProblemDetails" } },
+              },
+          }
+        "404":
+          {
+            description: Suggestion missing,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/ProblemDetails" } },
+              },
+          }
+        "409":
+          {
+            description: Stale suggestion or selection,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/ProblemDetails" } },
+              },
+          }
+  /api/category-assistance/suggestions/{attemptId}/dismiss:
+    post:
+      tags: [CategoryAssistance]
+      summary: Dismiss a suggestion
+      operationId: CategoryAssistance_Dismiss
+      security: [{ BearerAuth: [] }, { ApiKey: [] }]
+      parameters:
+        - {
+            name: attemptId,
+            in: path,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+      requestBody:
+        required: true
+        content:
+          {
+            application/json:
+              {
+                schema:
+                  {
+                    $ref: "#/components/schemas/CategoryAssistanceDismissRequest",
+                  },
+              },
+          }
+      responses:
+        "200":
+          {
+            description: Durable dismissal,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      {
+                        $ref: "#/components/schemas/CategoryAssistanceDecisionResult",
+                      },
+                  },
+              },
+          }
+        "400":
+          {
+            description: Invalid operation,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/ProblemDetails" } },
+              },
+          }
+        "401": { description: Authentication required }
+        "403":
+          {
+            description: Active writer required,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/ProblemDetails" } },
+              },
+          }
+        "404":
+          {
+            description: Suggestion missing,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/ProblemDetails" } },
+              },
+          }
+        "409":
+          {
+            description: Stale suggestion,
+            content:
+              {
+                application/problem+json:
+                  { schema: { $ref: "#/components/schemas/ProblemDetails" } },
+              },
+          }
   /api/category-mappings/inspect:
     post:
       tags: [CategoryMappings]
@@ -471,20 +1012,24 @@ paths:
         required: true
         content:
           application/json:
-            schema: {$ref: "#/components/schemas/CategoryMappingSourceRequest"}
+            schema:
+              { $ref: "#/components/schemas/CategoryMappingSourceRequest" }
       responses:
         "200":
           description: Exact-source mapping evidence
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/CategoryMappingInspectionResponse"}
+              schema:
+                {
+                  $ref: "#/components/schemas/CategoryMappingInspectionResponse",
+                }
         "401":
           description: Authentication required
         "400":
           description: Request rejected
           content:
             application/problem+json:
-              schema: {$ref: "#/components/schemas/ProblemDetails"}
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
   /api/category-mappings/history:
     post:
       tags: [CategoryMappings]
@@ -498,20 +1043,22 @@ paths:
         required: true
         content:
           application/json:
-            schema: {$ref: "#/components/schemas/CategoryMappingHistoryRequest"}
+            schema:
+              { $ref: "#/components/schemas/CategoryMappingHistoryRequest" }
       responses:
         "200":
           description: Exact-source mapping evidence
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/CategoryMappingHistoryResponse"}
+              schema:
+                { $ref: "#/components/schemas/CategoryMappingHistoryResponse" }
         "401":
           description: Authentication required
         "400":
           description: Request rejected
           content:
             application/problem+json:
-              schema: {$ref: "#/components/schemas/ProblemDetails"}
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
   /api/category-mappings/changes:
     post:
       tags: [CategoryMappings]
@@ -525,30 +1072,32 @@ paths:
         required: true
         content:
           application/json:
-            schema: {$ref: "#/components/schemas/CategoryMappingChangeRequest"}
+            schema:
+              { $ref: "#/components/schemas/CategoryMappingChangeRequest" }
       responses:
         "200":
           description: Exact-source mapping evidence
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/CategoryMappingRevisionResponse"}
+              schema:
+                { $ref: "#/components/schemas/CategoryMappingRevisionResponse" }
         "401":
           description: Authentication required
         "400":
           description: Request rejected
           content:
             application/problem+json:
-              schema: {$ref: "#/components/schemas/ProblemDetails"}
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
         "403":
           description: Request rejected
           content:
             application/problem+json:
-              schema: {$ref: "#/components/schemas/ProblemDetails"}
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
         "409":
           description: Request rejected
           content:
             application/problem+json:
-              schema: {$ref: "#/components/schemas/ProblemDetails"}
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
   /api/receipt-items/{id}/classification:
     put:
       tags: [Classification]
@@ -561,35 +1110,35 @@ paths:
         - name: id
           in: path
           required: true
-          schema: {type: string, format: uuid}
+          schema: { type: string, format: uuid }
       requestBody:
         required: true
         content:
           application/json:
-            schema: {$ref: "#/components/schemas/ClassificationRequest"}
+            schema: { $ref: "#/components/schemas/ClassificationRequest" }
       responses:
         "200":
           description: Purchase classification result
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/ClassificationResponse"}
+              schema: { $ref: "#/components/schemas/ClassificationResponse" }
         "401":
           description: Authentication required
         "400":
           description: Request rejected
           content:
             application/problem+json:
-              schema: {$ref: "#/components/schemas/ProblemDetails"}
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
         "404":
           description: Request rejected
           content:
             application/problem+json:
-              schema: {$ref: "#/components/schemas/ProblemDetails"}
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
         "409":
           description: Request rejected
           content:
             application/problem+json:
-              schema: {$ref: "#/components/schemas/ProblemDetails"}
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
   /api/receipt-items/{id}/classification-history:
     get:
       tags: [Classification]
@@ -602,31 +1151,39 @@ paths:
         - name: id
           in: path
           required: true
-          schema: {type: string, format: uuid}
+          schema: { type: string, format: uuid }
         - name: beforeSequence
           in: query
-          schema: {type: integer, format: int64, minimum: 1}
+          schema: { type: integer, format: int64, minimum: 1 }
         - name: limit
           in: query
-          schema: {type: integer, format: int32, minimum: 1, maximum: 100, default: 50}
+          schema:
+            {
+              type: integer,
+              format: int32,
+              minimum: 1,
+              maximum: 100,
+              default: 50,
+            }
       responses:
         "200":
           description: Purchase classification result
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/ClassificationHistoryResponse"}
+              schema:
+                { $ref: "#/components/schemas/ClassificationHistoryResponse" }
         "401":
           description: Authentication required
         "400":
           description: Request rejected
           content:
             application/problem+json:
-              schema: {$ref: "#/components/schemas/ProblemDetails"}
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
         "404":
           description: Request rejected
           content:
             application/problem+json:
-              schema: {$ref: "#/components/schemas/ProblemDetails"}
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
   /api/taxonomy:
     get:
       tags: [Taxonomy]
@@ -662,7 +1219,7 @@ paths:
         - name: id
           in: path
           required: true
-          schema: {type: string, format: uuid}
+          schema: { type: string, format: uuid }
       responses:
         "200":
           description: Complete revision including archived identities
@@ -734,15 +1291,15 @@ paths:
         - BearerAuth: []
         - ApiKey: []
       responses:
-        '200':
+        "200":
           description: Connection snapshot; does not establish inference readiness
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/JevConnectionResponse'
-        '401':
+                $ref: "#/components/schemas/JevConnectionResponse"
+        "401":
           description: Authentication required
-        '403':
+        "403":
           description: Administrator required
   /api/jev/check:
     post:
@@ -753,15 +1310,15 @@ paths:
         - BearerAuth: []
         - ApiKey: []
       responses:
-        '200':
+        "200":
           description: Connection snapshot; does not establish inference readiness
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/JevConnectionResponse'
-        '401':
+                $ref: "#/components/schemas/JevConnectionResponse"
+        "401":
           description: Authentication required
-        '403':
+        "403":
           description: Administrator required
   /api/normalization-inbox:
     get:
@@ -773,36 +1330,36 @@ paths:
         - BearerAuth: []
         - ApiKey: []
       responses:
-        '200':
+        "200":
           description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/NormalizationReviewInboxPageResponse'
-        '400':
+                $ref: "#/components/schemas/NormalizationReviewInboxPageResponse"
+        "400":
           description: Request rejected
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '403':
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
           description: Request rejected
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '404':
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
           description: Request rejected
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '409':
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
           description: Request rejected
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
+                $ref: "#/components/schemas/ProblemDetails"
       parameters:
         - name: q
           in: query
@@ -833,36 +1390,36 @@ paths:
         - BearerAuth: []
         - ApiKey: []
       responses:
-        '200':
+        "200":
           description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/NormalizationAssistancePreferencesResponse'
-        '400':
+                $ref: "#/components/schemas/NormalizationAssistancePreferencesResponse"
+        "400":
           description: Request rejected
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '403':
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
           description: Request rejected
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '404':
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
           description: Request rejected
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '409':
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
           description: Request rejected
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
+                $ref: "#/components/schemas/ProblemDetails"
     put:
       tags:
         - NormalizationInbox
@@ -872,42 +1429,42 @@ paths:
         - BearerAuth: []
         - ApiKey: []
       responses:
-        '200':
+        "200":
           description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/NormalizationAssistancePreferencesResponse'
-        '400':
+                $ref: "#/components/schemas/NormalizationAssistancePreferencesResponse"
+        "400":
           description: Request rejected
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '403':
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
           description: Request rejected
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '404':
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
           description: Request rejected
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '409':
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
           description: Request rejected
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
+                $ref: "#/components/schemas/ProblemDetails"
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/NormalizationAssistancePreferenceRequest'
+              $ref: "#/components/schemas/NormalizationAssistancePreferenceRequest"
   /api/normalization-inbox/sources/{sourceHash}/retry-admission:
     post:
       tags:
@@ -918,42 +1475,42 @@ paths:
         - BearerAuth: []
         - ApiKey: []
       responses:
-        '200':
+        "200":
           description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/NormalizationAssistancePreferencesResponse'
-        '400':
+                $ref: "#/components/schemas/NormalizationAssistancePreferencesResponse"
+        "400":
           description: Request rejected
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '403':
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
           description: Request rejected
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '404':
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
           description: Request rejected
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '409':
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
           description: Request rejected
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
+                $ref: "#/components/schemas/ProblemDetails"
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/NormalizationAdmissionRetryRequest'
+              $ref: "#/components/schemas/NormalizationAdmissionRetryRequest"
       parameters:
         - name: sourceHash
           in: path
@@ -980,38 +1537,38 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/NormalizationCatalogLabelPreviewRequest'
+              $ref: "#/components/schemas/NormalizationCatalogLabelPreviewRequest"
       responses:
-        '200':
+        "200":
           description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/NormalizationCatalogLabelReviewResponse'
-        '400':
+                $ref: "#/components/schemas/NormalizationCatalogLabelReviewResponse"
+        "400":
           description: Invalid request
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '403':
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
           description: Administrator access required
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '404':
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
           description: Not found
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '409':
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
           description: State conflict
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
+                $ref: "#/components/schemas/ProblemDetails"
   /api/normalization-catalog/targets/{id}/approve-label:
     post:
       tags: [NormalizationCatalog]
@@ -1032,38 +1589,38 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/NormalizationCatalogLabelApprovalRequest'
+              $ref: "#/components/schemas/NormalizationCatalogLabelApprovalRequest"
       responses:
-        '200':
+        "200":
           description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/NormalizationCatalogLabelReviewResponse'
-        '400':
+                $ref: "#/components/schemas/NormalizationCatalogLabelReviewResponse"
+        "400":
           description: Invalid request
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '403':
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
           description: Administrator access required
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '404':
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
           description: Not found
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '409':
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
           description: State conflict
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
+                $ref: "#/components/schemas/ProblemDetails"
   /api/normalization-catalog/sources:
     get:
       tags:
@@ -1100,36 +1657,36 @@ paths:
             format: int32
             default: 25
       responses:
-        '200':
+        "200":
           description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/NormalizationSourcePageResponse'
-        '400':
+                $ref: "#/components/schemas/NormalizationSourcePageResponse"
+        "400":
           description: Invalid request
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '403':
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
           description: Administrator access required
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '404':
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
           description: Not found
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '409':
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
           description: State conflict
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
+                $ref: "#/components/schemas/ProblemDetails"
   /api/normalization-catalog/coverage:
     get:
       tags:
@@ -1140,36 +1697,36 @@ paths:
         - BearerAuth: []
         - ApiKey: []
       responses:
-        '200':
+        "200":
           description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/NormalizationCatalogCoverageResponse'
-        '400':
+                $ref: "#/components/schemas/NormalizationCatalogCoverageResponse"
+        "400":
           description: Invalid request
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '403':
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
           description: Administrator access required
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '404':
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
           description: Not found
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '409':
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
           description: State conflict
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
+                $ref: "#/components/schemas/ProblemDetails"
   /api/normalization-catalog/candidates:
     get:
       tags:
@@ -1196,38 +1753,38 @@ paths:
           schema:
             type: string
       responses:
-        '200':
+        "200":
           description: Success
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/NormalizationCatalogCandidateResponse'
-        '400':
+                  $ref: "#/components/schemas/NormalizationCatalogCandidateResponse"
+        "400":
           description: Invalid request
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '403':
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
           description: Administrator access required
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '404':
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
           description: Not found
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '409':
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
           description: State conflict
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
+                $ref: "#/components/schemas/ProblemDetails"
   /api/normalization-catalog/mappings:
     get:
       tags:
@@ -1254,38 +1811,38 @@ paths:
           schema:
             type: string
       responses:
-        '200':
+        "200":
           description: Success
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/NormalizationSourceMappingResponse'
-        '400':
+                  $ref: "#/components/schemas/NormalizationSourceMappingResponse"
+        "400":
           description: Invalid request
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '403':
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
           description: Administrator access required
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '404':
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
           description: Not found
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '409':
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
           description: State conflict
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
+                $ref: "#/components/schemas/ProblemDetails"
   /api/normalization-catalog/operations:
     get:
       tags:
@@ -1296,38 +1853,38 @@ paths:
         - BearerAuth: []
         - ApiKey: []
       responses:
-        '200':
+        "200":
           description: Success
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/NormalizationCatalogOperationResponse'
-        '400':
+                  $ref: "#/components/schemas/NormalizationCatalogOperationResponse"
+        "400":
           description: Invalid request
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '403':
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
           description: Administrator access required
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '404':
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
           description: Not found
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '409':
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
           description: State conflict
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
+                $ref: "#/components/schemas/ProblemDetails"
     post:
       tags:
         - NormalizationCatalog
@@ -1341,38 +1898,38 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/NormalizationCatalogPreviewRequest'
+              $ref: "#/components/schemas/NormalizationCatalogPreviewRequest"
       responses:
-        '200':
+        "200":
           description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/NormalizationCatalogOperationResponse'
-        '400':
+                $ref: "#/components/schemas/NormalizationCatalogOperationResponse"
+        "400":
           description: Invalid request
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '403':
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
           description: Administrator access required
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '404':
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
           description: Not found
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '409':
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
           description: State conflict
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
+                $ref: "#/components/schemas/ProblemDetails"
   /api/normalization-catalog/operations/{id}:
     get:
       tags:
@@ -1390,36 +1947,36 @@ paths:
             type: string
             format: uuid
       responses:
-        '200':
+        "200":
           description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/NormalizationCatalogOperationResponse'
-        '400':
+                $ref: "#/components/schemas/NormalizationCatalogOperationResponse"
+        "400":
           description: Invalid request
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '403':
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
           description: Administrator access required
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '404':
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
           description: Not found
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '409':
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
           description: State conflict
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
+                $ref: "#/components/schemas/ProblemDetails"
   /api/normalization-catalog/operations/{id}/approve:
     post:
       tags:
@@ -1441,38 +1998,38 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/NormalizationCatalogRevisionRequest'
+              $ref: "#/components/schemas/NormalizationCatalogRevisionRequest"
       responses:
-        '200':
+        "200":
           description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/NormalizationCatalogOperationResponse'
-        '400':
+                $ref: "#/components/schemas/NormalizationCatalogOperationResponse"
+        "400":
           description: Invalid request
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '403':
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
           description: Administrator access required
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '404':
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
           description: Not found
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '409':
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
           description: State conflict
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
+                $ref: "#/components/schemas/ProblemDetails"
   /api/normalization-catalog/operations/{id}/resume:
     post:
       tags:
@@ -1490,36 +2047,36 @@ paths:
             type: string
             format: uuid
       responses:
-        '200':
+        "200":
           description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/NormalizationCatalogOperationResponse'
-        '400':
+                $ref: "#/components/schemas/NormalizationCatalogOperationResponse"
+        "400":
           description: Invalid request
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '403':
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
           description: Administrator access required
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '404':
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
           description: Not found
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '409':
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
           description: State conflict
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
+                $ref: "#/components/schemas/ProblemDetails"
   /api/normalization-catalog/operations/{id}/cancel:
     post:
       tags:
@@ -1541,38 +2098,38 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/NormalizationCatalogRevisionRequest'
+              $ref: "#/components/schemas/NormalizationCatalogRevisionRequest"
       responses:
-        '200':
+        "200":
           description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/NormalizationCatalogOperationResponse'
-        '400':
+                $ref: "#/components/schemas/NormalizationCatalogOperationResponse"
+        "400":
           description: Invalid request
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '403':
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
           description: Administrator access required
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '404':
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
           description: Not found
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '409':
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
           description: State conflict
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
+                $ref: "#/components/schemas/ProblemDetails"
   /api/normalization-catalog/operations/{id}/undo:
     post:
       tags:
@@ -1594,38 +2151,38 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/NormalizationCatalogRevisionRequest'
+              $ref: "#/components/schemas/NormalizationCatalogRevisionRequest"
       responses:
-        '200':
+        "200":
           description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/NormalizationCatalogOperationResponse'
-        '400':
+                $ref: "#/components/schemas/NormalizationCatalogOperationResponse"
+        "400":
           description: Invalid request
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '403':
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
           description: Administrator access required
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '404':
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
           description: Not found
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '409':
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
           description: State conflict
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
+                $ref: "#/components/schemas/ProblemDetails"
   /api/normalization-catalog/mappings/{id}/revoke:
     post:
       tags:
@@ -1647,38 +2204,38 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/NormalizationCatalogRevisionRequest'
+              $ref: "#/components/schemas/NormalizationCatalogRevisionRequest"
       responses:
-        '200':
+        "200":
           description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/NormalizationSourceMappingResponse'
-        '400':
+                $ref: "#/components/schemas/NormalizationSourceMappingResponse"
+        "400":
           description: Invalid request
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '403':
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
           description: Administrator access required
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '404':
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
           description: Not found
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '409':
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
           description: State conflict
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
+                $ref: "#/components/schemas/ProblemDetails"
   /api/normalization-ai/source-runs:
     post:
       tags:
@@ -1693,44 +2250,44 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/StartNormalizationAiSourcesRequest'
+              $ref: "#/components/schemas/StartNormalizationAiSourcesRequest"
       responses:
-        '200':
+        "200":
           description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/NormalizationAiRunResponse'
-        '400':
+                $ref: "#/components/schemas/NormalizationAiRunResponse"
+        "400":
           description: Invalid request
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '403':
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
           description: Administrator access required
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '404':
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
           description: Not found
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '409':
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
           description: State conflict
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '503':
+                $ref: "#/components/schemas/ProblemDetails"
+        "503":
           description: Provider unavailable
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
+                $ref: "#/components/schemas/ProblemDetails"
   /api/normalization-ai/connection/sign-in:
     post:
       operationId: StartChatGptSignIn
@@ -1745,38 +2302,38 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ChatGptSignInRequest'
+              $ref: "#/components/schemas/ChatGptSignInRequest"
       responses:
-        '200':
+        "200":
           description: Browser-safe snapshot (Cache-Control no-store)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ChatGptSignInResponse'
-        '400':
+                $ref: "#/components/schemas/ChatGptSignInResponse"
+        "400":
           description: Explicit consent required or invalid request
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '403':
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
           description: Configured owner required
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '409':
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
           description: Connection busy
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '503':
+                $ref: "#/components/schemas/ProblemDetails"
+        "503":
           description: Connection unavailable
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
+                $ref: "#/components/schemas/ProblemDetails"
   /api/normalization-ai/connection/sign-in/{id}:
     get:
       operationId: GetChatGptSignIn
@@ -1794,36 +2351,36 @@ paths:
             type: string
             format: uuid
       responses:
-        '200':
+        "200":
           description: Browser-safe snapshot (Cache-Control no-store)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ChatGptSignInResponse'
-        '400':
+                $ref: "#/components/schemas/ChatGptSignInResponse"
+        "400":
           description: Explicit consent required or invalid request
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '403':
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
           description: Configured owner required
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '409':
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
           description: Connection busy
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '503':
+                $ref: "#/components/schemas/ProblemDetails"
+        "503":
           description: Connection unavailable
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
+                $ref: "#/components/schemas/ProblemDetails"
   /api/normalization-ai/connection/sign-in/{id}/cancel:
     post:
       operationId: CancelChatGptSignIn
@@ -1841,36 +2398,36 @@ paths:
             type: string
             format: uuid
       responses:
-        '200':
+        "200":
           description: Browser-safe snapshot (Cache-Control no-store)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ChatGptSignInResponse'
-        '400':
+                $ref: "#/components/schemas/ChatGptSignInResponse"
+        "400":
           description: Explicit consent required or invalid request
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '403':
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
           description: Configured owner required
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '409':
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
           description: Connection busy
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '503':
+                $ref: "#/components/schemas/ProblemDetails"
+        "503":
           description: Connection unavailable
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
+                $ref: "#/components/schemas/ProblemDetails"
   /api/normalization-ai/connection/disconnect:
     post:
       operationId: DisconnectChatGpt
@@ -1881,32 +2438,32 @@ paths:
         - BearerAuth: []
         - ApiKey: []
       responses:
-        '204':
+        "204":
           description: Disconnected
-        '400':
+        "400":
           description: Explicit consent required or invalid request
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '403':
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
           description: Configured owner required
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '409':
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
           description: Connection busy
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '503':
+                $ref: "#/components/schemas/ProblemDetails"
+        "503":
           description: Connection unavailable
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
+                $ref: "#/components/schemas/ProblemDetails"
   /api/normalization-ai/connection/reconnect:
     post:
       operationId: ReconnectChatGpt
@@ -1921,38 +2478,38 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ChatGptSignInRequest'
+              $ref: "#/components/schemas/ChatGptSignInRequest"
       responses:
-        '200':
+        "200":
           description: Browser-safe snapshot (Cache-Control no-store)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ChatGptSignInResponse'
-        '400':
+                $ref: "#/components/schemas/ChatGptSignInResponse"
+        "400":
           description: Explicit consent required or invalid request
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '403':
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
           description: Configured owner required
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '409':
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
           description: Connection busy
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '503':
+                $ref: "#/components/schemas/ProblemDetails"
+        "503":
           description: Connection unavailable
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
+                $ref: "#/components/schemas/ProblemDetails"
   /api/normalization-ai/connection:
     get:
       operationId: GetNormalizationAiConnection
@@ -1966,42 +2523,42 @@ paths:
         - BearerAuth: []
         - ApiKey: []
       responses:
-        '200':
+        "200":
           description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/NormalizationAiConnectionResponse'
-        '400':
+                $ref: "#/components/schemas/NormalizationAiConnectionResponse"
+        "400":
           description: Invalid request
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '403':
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
           description: Forbidden
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '404':
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
           description: Not found
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '409':
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
           description: Operation or source state conflict
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '503':
+                $ref: "#/components/schemas/ProblemDetails"
+        "503":
           description: ChatGPT is unavailable
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
+                $ref: "#/components/schemas/ProblemDetails"
   /api/normalization-ai/candidates:
     get:
       operationId: ListNormalizationAiCandidates
@@ -2015,47 +2572,47 @@ paths:
         - BearerAuth: []
         - ApiKey: []
       responses:
-        '200':
+        "200":
           description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/NormalizationAiCandidatePageResponse'
-        '400':
+                $ref: "#/components/schemas/NormalizationAiCandidatePageResponse"
+        "400":
           description: Invalid request
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '403':
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
           description: Forbidden
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '404':
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
           description: Not found
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '409':
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
           description: Operation or source state conflict
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '503':
+                $ref: "#/components/schemas/ProblemDetails"
+        "503":
           description: ChatGPT is unavailable
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
+                $ref: "#/components/schemas/ProblemDetails"
       parameters:
         - name: q
           in: query
           schema:
-            type: [string, 'null']
+            type: [string, "null"]
         - name: offset
           in: query
           schema:
@@ -2081,44 +2638,44 @@ paths:
         - BearerAuth: []
         - ApiKey: []
       responses:
-        '200':
+        "200":
           description: Success
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/NormalizationAiRunResponse'
-        '400':
+                  $ref: "#/components/schemas/NormalizationAiRunResponse"
+        "400":
           description: Invalid request
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '403':
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
           description: Forbidden
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '404':
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
           description: Not found
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '409':
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
           description: Operation or source state conflict
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '503':
+                $ref: "#/components/schemas/ProblemDetails"
+        "503":
           description: ChatGPT is unavailable
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
+                $ref: "#/components/schemas/ProblemDetails"
     post:
       operationId: StartNormalizationAiRun
       tags:
@@ -2131,48 +2688,48 @@ paths:
         - BearerAuth: []
         - ApiKey: []
       responses:
-        '200':
+        "200":
           description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/NormalizationAiRunResponse'
-        '400':
+                $ref: "#/components/schemas/NormalizationAiRunResponse"
+        "400":
           description: Invalid request
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '403':
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
           description: Forbidden
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '404':
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
           description: Not found
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '409':
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
           description: Operation or source state conflict
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '503':
+                $ref: "#/components/schemas/ProblemDetails"
+        "503":
           description: ChatGPT is unavailable
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
+                $ref: "#/components/schemas/ProblemDetails"
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/StartNormalizationAiRunRequest'
+              $ref: "#/components/schemas/StartNormalizationAiRunRequest"
   /api/normalization-ai/runs/{id}:
     get:
       operationId: GetNormalizationAiRun
@@ -2186,42 +2743,42 @@ paths:
         - BearerAuth: []
         - ApiKey: []
       responses:
-        '200':
+        "200":
           description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/NormalizationAiRunResponse'
-        '400':
+                $ref: "#/components/schemas/NormalizationAiRunResponse"
+        "400":
           description: Invalid request
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '403':
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
           description: Forbidden
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '404':
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
           description: Not found
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '409':
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
           description: Operation or source state conflict
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '503':
+                $ref: "#/components/schemas/ProblemDetails"
+        "503":
           description: ChatGPT is unavailable
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
+                $ref: "#/components/schemas/ProblemDetails"
       parameters:
         - name: id
           in: path
@@ -2242,42 +2799,42 @@ paths:
         - BearerAuth: []
         - ApiKey: []
       responses:
-        '200':
+        "200":
           description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/NormalizationAiRunResponse'
-        '400':
+                $ref: "#/components/schemas/NormalizationAiRunResponse"
+        "400":
           description: Invalid request
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '403':
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
           description: Forbidden
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '404':
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
           description: Not found
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '409':
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
           description: Operation or source state conflict
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '503':
+                $ref: "#/components/schemas/ProblemDetails"
+        "503":
           description: ChatGPT is unavailable
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
+                $ref: "#/components/schemas/ProblemDetails"
       parameters:
         - name: id
           in: path
@@ -2298,42 +2855,42 @@ paths:
         - BearerAuth: []
         - ApiKey: []
       responses:
-        '200':
+        "200":
           description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/NormalizationAiRunResponse'
-        '400':
+                $ref: "#/components/schemas/NormalizationAiRunResponse"
+        "400":
           description: Invalid request
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '403':
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
           description: Forbidden
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '404':
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
           description: Not found
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '409':
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
           description: Operation or source state conflict
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '503':
+                $ref: "#/components/schemas/ProblemDetails"
+        "503":
           description: ChatGPT is unavailable
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
+                $ref: "#/components/schemas/ProblemDetails"
       parameters:
         - name: id
           in: path
@@ -2346,7 +2903,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RetryNormalizationAiRunRequest'
+              $ref: "#/components/schemas/RetryNormalizationAiRunRequest"
   /api/normalization-ai/runs/{id}/apply:
     post:
       operationId: ApplyNormalizationAiRun
@@ -2360,42 +2917,42 @@ paths:
         - BearerAuth: []
         - ApiKey: []
       responses:
-        '200':
+        "200":
           description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/NormalizationAiRunResponse'
-        '400':
+                $ref: "#/components/schemas/NormalizationAiRunResponse"
+        "400":
           description: Invalid request
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '403':
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
           description: Forbidden
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '404':
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
           description: Not found
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '409':
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
           description: Operation or source state conflict
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '503':
+                $ref: "#/components/schemas/ProblemDetails"
+        "503":
           description: ChatGPT is unavailable
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/ProblemDetails'
+                $ref: "#/components/schemas/ProblemDetails"
       parameters:
         - name: id
           in: path
@@ -2408,7 +2965,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ApplyNormalizationAiRunRequest'
+              $ref: "#/components/schemas/ApplyNormalizationAiRunRequest"
   /api/search/purchases:
     get:
       operationId: SearchPurchases
@@ -2557,8 +3114,7 @@ paths:
           description: OK
           content:
             application/json:
-              schema:
-                {}
+              schema: {}
 
   # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   # Metadata
@@ -4731,7 +5287,6 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
-
   /api/receipts/locations:
     get:
       operationId: GetReceiptLocations
@@ -4829,7 +5384,6 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
-
 
   /api/receipts/complete:
     post:
@@ -5263,7 +5817,6 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
-
   /api/receipt-items/batch:
     put:
       operationId: UpdateReceiptItems
@@ -5360,7 +5913,6 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
-
         "400":
           description: Normalization choice rejected; no partial receipt or catalog writes.
           content:
@@ -5421,10 +5973,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
-
-  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  # Transactions
-  # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # Transactions
+        # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
         "400":
           description: Normalization choice rejected; no partial receipt or catalog writes.
@@ -5503,7 +6054,6 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
-
   /api/transactions:
     get:
       operationId: GetAllTransactions
@@ -5564,7 +6114,6 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
-
   /api/transactions/deleted:
     get:
       operationId: GetDeletedTransactions
@@ -5622,7 +6171,6 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
-
   /api/transactions/batch:
     put:
       operationId: UpdateTransactions
@@ -5650,7 +6198,6 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
-
 
   /api/receipts/{receiptId}/transactions:
     post:
@@ -5690,7 +6237,6 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
-
   /api/receipts/{receiptId}/transactions/batch:
     post:
       operationId: CreateTransactions
@@ -5729,7 +6275,6 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
-
 
   # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   # Adjustments
@@ -5797,7 +6342,6 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
-
 
   /api/adjustments:
     get:
@@ -5910,7 +6454,6 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
-
   /api/receipts/{receiptId}/adjustments:
     post:
       operationId: CreateAdjustment
@@ -5948,7 +6491,6 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
-
 
   # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   # Trash
@@ -8797,80 +9339,287 @@ components:
           type:
             - 'null'
             - string
-
+    CategoryAssistanceStatusResponse:
+      type: object
+      required:
+        [capability, consentEnabled, suggestionsAvailable, provider, models]
+      properties:
+        capability: { type: string }
+        consentEnabled: { type: boolean }
+        suggestionsAvailable: { type: boolean }
+        provider: { type: string }
+        models: { type: array, items: { type: string } }
+    CategoryAssistanceSettings:
+      type: object
+      required: [enabled, provider, model, dailyLimit, pendingLimit, revision]
+      properties:
+        enabled: { type: boolean }
+        provider: { type: [string, "null"] }
+        model: { type: [string, "null"] }
+        dailyLimit: { type: integer, format: int32, minimum: 1, maximum: 100 }
+        pendingLimit: { type: integer, format: int32, minimum: 1, maximum: 20 }
+        revision: { type: string, format: uuid }
+    CategoryAssistanceSettingsRequest:
+      type: object
+      required:
+        [enabled, provider, model, dailyLimit, pendingLimit, expectedRevision]
+      properties:
+        enabled: { type: boolean }
+        provider: { type: [string, "null"] }
+        model: { type: [string, "null"] }
+        dailyLimit: { type: integer, format: int32, minimum: 1, maximum: 100 }
+        pendingLimit: { type: integer, format: int32, minimum: 1, maximum: 20 }
+        expectedRevision: { type: string, format: uuid }
+    CategoryAssistanceSuggestionPage:
+      type: object
+      required: [total, offset, limit, items]
+      properties:
+        total: { type: integer, format: int32 }
+        offset: { type: integer, format: int32 }
+        limit: { type: integer, format: int32 }
+        items:
+          {
+            type: array,
+            items:
+              { $ref: "#/components/schemas/CategoryAssistanceSuggestionRead" },
+          }
+    CategoryAssistanceSuggestionRead:
+      type: object
+      required:
+        [
+          attemptId,
+          source,
+          originalDescription,
+          affectedCount,
+          proposedPath,
+          abstentionReason,
+          confidence,
+          state,
+          isCurrent,
+          createdAt,
+          completedAt,
+          fitProbability,
+          categoryProbability,
+        ]
+      properties:
+        attemptId: { type: string, format: uuid }
+        source: { $ref: "#/components/schemas/NormalizationSourceKey" }
+        originalDescription: { type: [string, "null"] }
+        affectedCount: { type: integer, format: int32 }
+        proposedPath: { type: array, items: { type: string, format: uuid } }
+        abstentionReason: { type: [string, "null"] }
+        confidence: { type: [number, "null"], format: double }
+        fitProbability: { type: [number, "null"], format: double }
+        categoryProbability: { type: [number, "null"], format: double }
+        state: { type: string }
+        reviewState: { type: string, enum: [active, later, left_as_is] }
+        reviewRevision: { type: string, format: uuid }
+        excludedItemCount: { type: integer, format: int32 }
+        isCurrent: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        completedAt: { type: [string, "null"], format: date-time }
+    CategoryAssistanceReviewPreference:
+      type: object
+      required: [attemptId, state, revision, excludedItemIds]
+      properties:
+        attemptId: { type: string, format: uuid }
+        state: { type: string, enum: [active, later, left_as_is] }
+        revision: { type: string, format: uuid }
+        excludedItemIds:
+          { type: array, maxItems: 1000, items: { type: string, format: uuid } }
+    CategoryAssistanceReviewPreferenceRequest:
+      type: object
+      required: [operationId, expectedRevision, state, excludedItemIds]
+      properties:
+        operationId: { type: string, format: uuid }
+        expectedRevision: { type: string, format: uuid }
+        state: { type: string, enum: [active, later, left_as_is] }
+        excludedItemIds:
+          {
+            type: array,
+            maxItems: 1000,
+            uniqueItems: true,
+            items: { type: string, format: uuid },
+          }
+    CategoryAssistanceActivity:
+      type: object
+      required:
+        [
+          queued,
+          dispatching,
+          suggested,
+          abstained,
+          failed,
+          stale,
+          indeterminate,
+          todayAttempts,
+        ]
+      properties:
+        queued: { type: integer, format: int32 }
+        dispatching: { type: integer, format: int32 }
+        suggested: { type: integer, format: int32 }
+        abstained: { type: integer, format: int32 }
+        failed: { type: integer, format: int32 }
+        stale: { type: integer, format: int32 }
+        indeterminate: { type: integer, format: int32 }
+        todayAttempts: { type: integer, format: int32 }
+    CategoryAssistanceEligibleItemPage:
+      type: object
+      required: [total, offset, limit, itemIds, items]
+      properties:
+        total: { type: integer, format: int32 }
+        offset: { type: integer, format: int32 }
+        limit: { type: integer, format: int32 }
+        itemIds: { type: array, items: { type: string, format: uuid } }
+        items:
+          {
+            type: array,
+            items:
+              { $ref: "#/components/schemas/CategoryAssistanceEligibleItem" },
+          }
+    CategoryAssistanceEligibleItem:
+      type: object
+      required:
+        [
+          id,
+          receiptId,
+          date,
+          description,
+          store,
+          quantity,
+          totalAmount,
+          currency,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        receiptId: { type: string, format: uuid }
+        date: { type: string, format: date }
+        description: { type: string }
+        store: { type: string }
+        quantity: { type: number, format: double }
+        totalAmount: { type: number, format: double }
+        currency: { type: string }
+    CategoryAssistanceDecisionRequest:
+      type: object
+      required: [operationId, expectedTaxonomyRevision, itemIds]
+      properties:
+        operationId: { type: string, format: uuid }
+        expectedTaxonomyRevision: { type: string, format: uuid }
+        itemIds:
+          {
+            type: array,
+            minItems: 1,
+            maxItems: 100,
+            uniqueItems: true,
+            items: { type: string, format: uuid },
+          }
+        categoryId: { type: [string, "null"], format: uuid }
+    CategoryAssistanceDismissRequest:
+      type: object
+      required: [operationId]
+      properties:
+        operationId: { type: string, format: uuid }
+    CategoryAssistanceDecisionResult:
+      type: object
+      required: [attemptId, decision, affectedItemIds, categoryId]
+      properties:
+        attemptId: { type: string, format: uuid }
+        decision: { type: string, enum: [accepted, dismissed] }
+        affectedItemIds: { type: array, items: { type: string, format: uuid } }
+        categoryId: { type: [string, "null"], format: uuid }
     CategoryMappingSourceRequest:
       type: object
       required: [source]
       properties:
-        source: {$ref: "#/components/schemas/NormalizationSourceKey"}
+        source: { $ref: "#/components/schemas/NormalizationSourceKey" }
     CategoryMappingHistoryRequest:
       type: object
       required: [source, limit]
       properties:
-        source: {$ref: "#/components/schemas/NormalizationSourceKey"}
-        beforeRevisionId: {type: [string, 'null'], format: uuid}
-        limit: {type: integer, format: int32, minimum: 1, maximum: 100}
+        source: { $ref: "#/components/schemas/NormalizationSourceKey" }
+        beforeRevisionId: { type: [string, "null"], format: uuid }
+        limit: { type: integer, format: int32, minimum: 1, maximum: 100 }
     CategoryMappingCategory:
       type: object
       required: [id]
       properties:
-        id: {type: string, format: uuid}
+        id: { type: string, format: uuid }
     CategoryMappingChangeRequest:
       type: object
-      required: [source, sourceFingerprint, expectedMappingRevisionId, expectedTaxonomyRevisionId, category, operationId, reason]
+      required:
+        [
+          source,
+          sourceFingerprint,
+          expectedMappingRevisionId,
+          expectedTaxonomyRevisionId,
+          category,
+          operationId,
+          reason,
+        ]
       properties:
-        source: {$ref: "#/components/schemas/NormalizationSourceKey"}
-        sourceFingerprint: {type: string, pattern: '^[A-F0-9]{64}$'}
-        expectedMappingRevisionId: {type: [string, 'null'], format: uuid}
-        expectedTaxonomyRevisionId: {type: string, format: uuid}
+        source: { $ref: "#/components/schemas/NormalizationSourceKey" }
+        sourceFingerprint: { type: string, pattern: "^[A-F0-9]{64}$" }
+        expectedMappingRevisionId: { type: [string, "null"], format: uuid }
+        expectedTaxonomyRevisionId: { type: string, format: uuid }
         category:
           oneOf:
-            - {$ref: "#/components/schemas/CategoryMappingCategory"}
-            - {type: 'null'}
-        operationId: {type: string, format: uuid}
-        reason: {type: string, minLength: 1, maxLength: 4000}
+            - { $ref: "#/components/schemas/CategoryMappingCategory" }
+            - { type: "null" }
+        operationId: { type: string, format: uuid }
+        reason: { type: string, minLength: 1, maxLength: 4000 }
     CategoryMappingRevisionResponse:
       type: object
-      required: [id, source, sourceFingerprint, taxonomyRevisionId, actor, operationId, reason, recordedAt]
+      required:
+        [
+          id,
+          source,
+          sourceFingerprint,
+          taxonomyRevisionId,
+          actor,
+          operationId,
+          reason,
+          recordedAt,
+        ]
       properties:
-        id: {type: string, format: uuid}
-        previousRevisionId: {type: [string, 'null'], format: uuid}
-        source: {$ref: "#/components/schemas/NormalizationSourceKey"}
-        sourceFingerprint: {type: string}
+        id: { type: string, format: uuid }
+        previousRevisionId: { type: [string, "null"], format: uuid }
+        source: { $ref: "#/components/schemas/NormalizationSourceKey" }
+        sourceFingerprint: { type: string }
         category:
           oneOf:
-            - {$ref: "#/components/schemas/CategoryMappingCategory"}
-            - {type: 'null'}
-        taxonomyRevisionId: {type: string, format: uuid}
-        semanticFingerprint: {type: [string, 'null']}
-        actor: {type: string}
-        operationId: {type: string, format: uuid}
-        reason: {type: string}
-        recordedAt: {type: string, format: date-time}
+            - { $ref: "#/components/schemas/CategoryMappingCategory" }
+            - { type: "null" }
+        taxonomyRevisionId: { type: string, format: uuid }
+        semanticFingerprint: { type: [string, "null"] }
+        actor: { type: string }
+        operationId: { type: string, format: uuid }
+        reason: { type: string }
+        recordedAt: { type: string, format: date-time }
     CategoryMappingInspectionResponse:
       type: object
       required: [source, sourceFingerprint, disposition, taxonomyRevisionId]
       properties:
-        source: {$ref: "#/components/schemas/NormalizationSourceKey"}
-        sourceFingerprint: {type: string}
-        disposition: {type: string}
-        taxonomyRevisionId: {type: string, format: uuid}
+        source: { $ref: "#/components/schemas/NormalizationSourceKey" }
+        sourceFingerprint: { type: string }
+        disposition: { type: string }
+        taxonomyRevisionId: { type: string, format: uuid }
         category:
           oneOf:
-            - {$ref: "#/components/schemas/CategoryMappingCategory"}
-            - {type: 'null'}
+            - { $ref: "#/components/schemas/CategoryMappingCategory" }
+            - { type: "null" }
         mapping:
           oneOf:
-            - {$ref: "#/components/schemas/CategoryMappingRevisionResponse"}
-            - {type: 'null'}
+            - { $ref: "#/components/schemas/CategoryMappingRevisionResponse" }
+            - { type: "null" }
     CategoryMappingHistoryResponse:
       type: object
       required: [items]
       properties:
         items:
           type: array
-          items: {$ref: "#/components/schemas/CategoryMappingRevisionResponse"}
-        nextBeforeRevisionId: {type: [string, 'null'], format: uuid}
+          items:
+            { $ref: "#/components/schemas/CategoryMappingRevisionResponse" }
+        nextBeforeRevisionId: { type: [string, "null"], format: uuid }
     PurgeTrashResult:
       type: object
       required: [retainedReceipts, retainedItems, retainedRecords, reason]
@@ -8893,54 +9642,73 @@ components:
     ClassificationRequest:
       type: object
       description: Manual assignment to any active node or explicit null. Writes are disabled until migration and portable backup validation. Source and actor are server owned.
-      required: [categoryId, taxonomyRevisionId, expectedAssignmentId, operationId, reason]
+      required:
+        [
+          categoryId,
+          taxonomyRevisionId,
+          expectedAssignmentId,
+          operationId,
+          reason,
+        ]
       properties:
-        categoryId: {type: [string, 'null'], format: uuid}
-        taxonomyRevisionId: {type: string, format: uuid}
-        expectedAssignmentId: {type: [string, 'null'], format: uuid}
-        operationId: {type: string, format: uuid}
-        reason: {type: string, minLength: 1}
+        categoryId: { type: [string, "null"], format: uuid }
+        taxonomyRevisionId: { type: string, format: uuid }
+        expectedAssignmentId: { type: [string, "null"], format: uuid }
+        operationId: { type: string, format: uuid }
+        reason: { type: string, minLength: 1 }
     ClassificationResponse:
       type: object
-      required: [id, receiptItemId, sequence, taxonomyRevisionId, recordedAt, actor, source, reason, operationId, path]
+      required:
+        [
+          id,
+          receiptItemId,
+          sequence,
+          taxonomyRevisionId,
+          recordedAt,
+          actor,
+          source,
+          reason,
+          operationId,
+          path,
+        ]
       properties:
-        id: {type: string, format: uuid}
-        receiptItemId: {type: string, format: uuid}
-        sequence: {type: integer, format: int64}
-        previousAssignmentId: {type: [string, 'null'], format: uuid}
-        categoryId: {type: [string, 'null'], format: uuid}
-        taxonomyRevisionId: {type: string, format: uuid}
-        recordedAt: {type: string, format: date-time}
-        actor: {type: string}
-        source: {type: string}
-        reason: {type: string}
-        operationId: {type: string, format: uuid}
-        legacyCategory: {type: [string, 'null']}
-        legacySubcategory: {type: [string, 'null']}
-        legacyResolution: {type: [string, 'null']}
+        id: { type: string, format: uuid }
+        receiptItemId: { type: string, format: uuid }
+        sequence: { type: integer, format: int64 }
+        previousAssignmentId: { type: [string, "null"], format: uuid }
+        categoryId: { type: [string, "null"], format: uuid }
+        taxonomyRevisionId: { type: string, format: uuid }
+        recordedAt: { type: string, format: date-time }
+        actor: { type: string }
+        source: { type: string }
+        reason: { type: string }
+        operationId: { type: string, format: uuid }
+        legacyCategory: { type: [string, "null"] }
+        legacySubcategory: { type: [string, "null"] }
+        legacyResolution: { type: [string, "null"] }
         path:
           type: array
-          items: {$ref: '#/components/schemas/TaxonomyNodeResponse'}
+          items: { $ref: "#/components/schemas/TaxonomyNodeResponse" }
     ClassificationHistoryResponse:
       type: object
       required: [items]
       properties:
         items:
           type: array
-          items: {$ref: '#/components/schemas/ClassificationResponse'}
-        nextBeforeSequence: {type: [integer, 'null'], format: int64}
+          items: { $ref: "#/components/schemas/ClassificationResponse" }
+        nextBeforeSequence: { type: [integer, "null"], format: int64 }
     TaxonomyChangeRequest:
       type: object
       description: Admin only. Actor-scoped operation ID retries return the original result; changed-body reuse or a stale expected revision returns 409. No-op edits keep the current revision. Independent of legacy category suggestions.
       required: [expectedRevisionId, operationId, reason, changes]
       properties:
-        expectedRevisionId: {type: string, format: uuid}
-        operationId: {type: string, format: uuid}
-        reason: {type: string, minLength: 1}
+        expectedRevisionId: { type: string, format: uuid }
+        operationId: { type: string, format: uuid }
+        reason: { type: string, minLength: 1 }
         changes:
           type: array
           minItems: 1
-          items: {$ref: '#/components/schemas/TaxonomyChange'}
+          items: { $ref: "#/components/schemas/TaxonomyChange" }
     TaxonomyChangeKind:
       type: string
       enum: [create, rename, move, define, archive, restore]
@@ -8949,44 +9717,62 @@ components:
       description: Create requires a new categoryId and name; rename requires name; move sets parentId (null for root); define sets definition (null clears); archive includes the subtree; restore requires active ancestors. Other fields must be absent or null. Exact ordinal sibling names, no surrounding whitespace, no depth bound. Validation applies to the final tree.
       required: [kind, categoryId]
       properties:
-        kind: {$ref: '#/components/schemas/TaxonomyChangeKind'}
-        categoryId: {type: string, format: uuid}
-        parentId: {type: [string, 'null'], format: uuid}
-        name: {type: [string, 'null'], maxLength: 200}
-        definition: {type: [string, 'null'], maxLength: 4000}
+        kind: { $ref: "#/components/schemas/TaxonomyChangeKind" }
+        categoryId: { type: string, format: uuid }
+        parentId: { type: [string, "null"], format: uuid }
+        name: { type: [string, "null"], maxLength: 200 }
+        definition: { type: [string, "null"], maxLength: 4000 }
     TaxonomyRevisionResponse:
       type: object
-      required: [id, sequence, recordedAt, actor, reason, operationId, nodes, affectedCount]
+      required:
+        [
+          id,
+          sequence,
+          recordedAt,
+          actor,
+          reason,
+          operationId,
+          nodes,
+          affectedCount,
+        ]
       properties:
-        id: {type: string, format: uuid}
-        sequence: {type: integer, format: int64}
-        previousRevisionId: {type: [string, 'null'], format: uuid}
-        recordedAt: {type: string, format: date-time}
-        actor: {type: string}
-        reason: {type: string}
-        operationId: {type: string, format: uuid}
-        affectedCount: {type: integer, format: int32}
+        id: { type: string, format: uuid }
+        sequence: { type: integer, format: int64 }
+        previousRevisionId: { type: [string, "null"], format: uuid }
+        recordedAt: { type: string, format: date-time }
+        actor: { type: string }
+        reason: { type: string }
+        operationId: { type: string, format: uuid }
+        affectedCount: { type: integer, format: int32 }
         nodes:
           type: array
-          items: {$ref: '#/components/schemas/TaxonomyNodeResponse'}
+          items: { $ref: "#/components/schemas/TaxonomyNodeResponse" }
     TaxonomyNodeResponse:
       type: object
       required: [id, name, archived]
       properties:
-        id: {type: string, format: uuid}
-        parentId: {type: [string, 'null'], format: uuid}
-        name: {type: string, maxLength: 200}
-        definition: {type: [string, 'null'], maxLength: 4000}
-        archived: {type: boolean}
+        id: { type: string, format: uuid }
+        parentId: { type: [string, "null"], format: uuid }
+        name: { type: string, maxLength: 200 }
+        definition: { type: [string, "null"], maxLength: 4000 }
+        archived: { type: boolean }
     JevConnectionState:
       type: string
-      enum: [disabled, missing, configuredUnverified, invalid, unavailable, connected]
+      enum:
+        [
+          disabled,
+          missing,
+          configuredUnverified,
+          invalid,
+          unavailable,
+          connected,
+        ]
     JevConnectionResponse:
       type: object
       required: [state, reason, models]
       properties:
         state:
-          $ref: '#/components/schemas/JevConnectionState'
+          $ref: "#/components/schemas/JevConnectionState"
         reason:
           type: string
           description: Safe application-owned reason
@@ -9016,7 +9802,7 @@ components:
         sourceHash:
           type: string
         source:
-          $ref: '#/components/schemas/NormalizationSourceKey'
+          $ref: "#/components/schemas/NormalizationSourceKey"
         purchaseCount:
           type: integer
           format: int32
@@ -9029,27 +9815,27 @@ components:
         receipts:
           type: array
           items:
-            $ref: '#/components/schemas/NormalizationReviewReceiptResponse'
+            $ref: "#/components/schemas/NormalizationReviewReceiptResponse"
         assistanceState:
           type: string
         attemptRevision:
           type:
             - string
-            - 'null'
+            - "null"
           format: uuid
         runId:
           type:
             - string
-            - 'null'
+            - "null"
           format: uuid
         errorCode:
           type:
             - string
-            - 'null'
+            - "null"
         errorDetail:
           type:
             - string
-            - 'null'
+            - "null"
       required:
         - sourceHash
         - source
@@ -9064,7 +9850,7 @@ components:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/NormalizationReviewInboxSourceResponse'
+            $ref: "#/components/schemas/NormalizationReviewInboxSourceResponse"
         total:
           type: integer
           format: int32
@@ -9089,7 +9875,7 @@ components:
         model:
           type:
             - string
-            - 'null'
+            - "null"
         dailyLimit:
           type: integer
           format: int32
@@ -9109,7 +9895,7 @@ components:
         model:
           type:
             - string
-            - 'null'
+            - "null"
         dailyLimit:
           type: integer
           format: int32
@@ -9145,7 +9931,7 @@ components:
           maxLength: 200
           type:
             - string
-            - 'null'
+            - "null"
     NormalizationLinkedTargetResponse:
       type: object
       required: [id, name, status]
@@ -9156,7 +9942,7 @@ components:
         name:
           type: string
         status:
-          $ref: '#/components/schemas/NormalizedDescriptionStatus'
+          $ref: "#/components/schemas/NormalizedDescriptionStatus"
     NormalizationSourceGroupResponse:
       type: object
       required:
@@ -9175,12 +9961,12 @@ components:
           type: array
           description: Up to five current linked identities, for explicit review navigation. Missing entries do not imply a single identity.
           items:
-            $ref: '#/components/schemas/NormalizationLinkedTargetResponse'
+            $ref: "#/components/schemas/NormalizationLinkedTargetResponse"
         revisableCount:
           type: integer
           format: int32
         source:
-          $ref: '#/components/schemas/NormalizationSourceKey'
+          $ref: "#/components/schemas/NormalizationSourceKey"
         itemCount:
           type: integer
           format: int32
@@ -9199,7 +9985,7 @@ components:
         mappingId:
           type:
             - string
-            - 'null'
+            - "null"
           format: uuid
     NormalizationSourcePageResponse:
       type: object
@@ -9210,7 +9996,7 @@ components:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/NormalizationSourceGroupResponse'
+            $ref: "#/components/schemas/NormalizationSourceGroupResponse"
         total:
           type: integer
           format: int32
@@ -9288,7 +10074,7 @@ components:
         displayLabel:
           type:
             - string
-            - 'null'
+            - "null"
         channels:
           type: array
           items:
@@ -9309,21 +10095,21 @@ components:
           type: string
           format: uuid
         source:
-          $ref: '#/components/schemas/NormalizationSourceKey'
+          $ref: "#/components/schemas/NormalizationSourceKey"
         targetId:
           type:
             - string
-            - 'null'
+            - "null"
           format: uuid
         targetRevision:
           type:
             - string
-            - 'null'
+            - "null"
           format: uuid
         newCanonicalName:
           type:
             - string
-            - 'null'
+            - "null"
           maxLength: 200
         includeLegacyUnknown:
           type: boolean
@@ -9332,17 +10118,17 @@ components:
         suggestionRunId:
           type:
             - string
-            - 'null'
+            - "null"
           format: uuid
         suggestionProposalId:
           type:
             - string
-            - 'null'
+            - "null"
           format: uuid
         suggestionRunRevision:
           type:
             - string
-            - 'null'
+            - "null"
           format: uuid
     NormalizationCatalogRevisionRequest:
       type: object
@@ -9368,16 +10154,16 @@ components:
           type: string
           format: uuid
         source:
-          $ref: '#/components/schemas/NormalizationSourceKey'
+          $ref: "#/components/schemas/NormalizationSourceKey"
         targetId:
           type:
             - string
-            - 'null'
+            - "null"
           format: uuid
         targetName:
           type:
             - string
-            - 'null'
+            - "null"
         state:
           type: string
         approvedAt:
@@ -9410,21 +10196,21 @@ components:
         state:
           type: string
         source:
-          $ref: '#/components/schemas/NormalizationSourceKey'
+          $ref: "#/components/schemas/NormalizationSourceKey"
         mappingId:
           type:
             - string
-            - 'null'
+            - "null"
           format: uuid
         targetId:
           type:
             - string
-            - 'null'
+            - "null"
           format: uuid
         newCanonicalName:
           type:
             - string
-            - 'null'
+            - "null"
         includeLegacyUnknown:
           type: boolean
         total:
@@ -9454,17 +10240,17 @@ components:
         targetName:
           type:
             - string
-            - 'null'
+            - "null"
         exclude:
           type: boolean
         errorCode:
           type:
             - string
-            - 'null'
+            - "null"
         errorDetail:
           type:
             - string
-            - 'null'
+            - "null"
     NormalizationAiSourceSelection:
       type: object
       required:
@@ -9472,7 +10258,7 @@ components:
         - includeLegacyUnknown
       properties:
         source:
-          $ref: '#/components/schemas/NormalizationSourceKey'
+          $ref: "#/components/schemas/NormalizationSourceKey"
         includeLegacyUnknown:
           type: boolean
         labelOnly:
@@ -9482,14 +10268,14 @@ components:
       type: object
       properties:
         displayLabel:
-          type: [string, 'null']
+          type: [string, "null"]
           maxLength: 200
     NormalizationCatalogLabelApprovalRequest:
       type: object
       required: [expectedTargetRevision, expectedAffectedItemCount]
       properties:
         displayLabel:
-          type: [string, 'null']
+          type: [string, "null"]
           maxLength: 200
         expectedTargetRevision:
           type: string
@@ -9499,13 +10285,13 @@ components:
           format: int32
           minimum: 0
         suggestionRunId:
-          type: [string, 'null']
+          type: [string, "null"]
           format: uuid
         suggestionProposalId:
-          type: [string, 'null']
+          type: [string, "null"]
           format: uuid
         suggestionRunRevision:
-          type: [string, 'null']
+          type: [string, "null"]
           format: uuid
     NormalizationCatalogLabelReviewResponse:
       type: object
@@ -9520,9 +10306,9 @@ components:
         canonicalName:
           type: string
         currentDisplayLabel:
-          type: [string, 'null']
+          type: [string, "null"]
         proposedDisplayLabel:
-          type: [string, 'null']
+          type: [string, "null"]
         affectedItemCount:
           type: integer
           format: int32
@@ -9539,7 +10325,7 @@ components:
         sources:
           type: array
           items:
-            $ref: '#/components/schemas/NormalizationAiSourceSelection'
+            $ref: "#/components/schemas/NormalizationAiSourceSelection"
           minItems: 1
           maxItems: 50
         model:
@@ -9564,13 +10350,13 @@ components:
           type: string
           description: starting, waiting, success, cancelled, expired, rejected, busy, reconnect or restart. Terminal states contain no ceremony values.
         verificationUrl:
-          type: [string, 'null']
+          type: [string, "null"]
           description: Temporary URL; never log, cache or send to telemetry.
         userCode:
-          type: [string, 'null']
+          type: [string, "null"]
           description: Temporary code; never log, cache or send to telemetry.
         localExpiresAt:
-          type: [string, 'null']
+          type: [string, "null"]
           format: date-time
           description: Deadline calculated from the runner-reported sign-in lifetime. Poll for authoritative terminal status; not an entitlement guarantee.
     NormalizationAiConnectionResponse:
@@ -9629,7 +10415,7 @@ components:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/NormalizationAiCandidateResponse'
+            $ref: "#/components/schemas/NormalizationAiCandidateResponse"
         total:
           type: integer
           format: int32
@@ -9675,37 +10461,37 @@ components:
         targetId:
           type:
             - string
-            - 'null'
+            - "null"
           format: uuid
         canonicalName:
           type:
             - string
-            - 'null'
+            - "null"
         displayLabel:
           type:
             - string
-            - 'null'
+            - "null"
         reason:
           type:
             - string
-            - 'null'
+            - "null"
         state:
           type: string
         source:
           oneOf:
-            - $ref: '#/components/schemas/NormalizationSourceKey'
-            - type: 'null'
+            - $ref: "#/components/schemas/NormalizationSourceKey"
+            - type: "null"
         targetRevision:
           type:
             - string
-            - 'null'
+            - "null"
           format: uuid
         includeLegacyUnknown:
           type: boolean
         labelOnly:
           type: boolean
         suggestedDisplayLabel:
-          type: [string, 'null']
+          type: [string, "null"]
     NormalizationAiRunResponse:
       type: object
       required:
@@ -9736,24 +10522,24 @@ components:
         completedAt:
           type:
             - string
-            - 'null'
+            - "null"
           format: date-time
         errorCode:
           type:
             - string
-            - 'null'
+            - "null"
         errorDetail:
           type:
             - string
-            - 'null'
+            - "null"
         proposals:
           type: array
           items:
-            $ref: '#/components/schemas/NormalizationAiProposalResponse'
+            $ref: "#/components/schemas/NormalizationAiProposalResponse"
         usage:
           oneOf:
-            - $ref: '#/components/schemas/NormalizationAiUsageResponse'
-            - type: 'null'
+            - $ref: "#/components/schemas/NormalizationAiUsageResponse"
+            - type: "null"
     StartNormalizationAiRunRequest:
       type: object
       required:
@@ -9967,7 +10753,18 @@ components:
 
     OutOfBalanceItem:
       type: object
-      required: [receiptId, location, date, itemSubtotal, taxAmount, adjustmentTotal, expectedTotal, transactionTotal, difference]
+      required:
+        [
+          receiptId,
+          location,
+          date,
+          itemSubtotal,
+          taxAmount,
+          adjustmentTotal,
+          expectedTotal,
+          transactionTotal,
+          difference,
+        ]
       properties:
         receiptId:
           type: string
@@ -10026,7 +10823,6 @@ components:
         averagePerVisit:
           type: number
           format: double
-
 
     ItemDescriptionsResponse:
       type: object
@@ -10414,7 +11210,14 @@ components:
 
     DashboardSummaryResponse:
       type: object
-      required: [totalReceipts, totalSpent, averageTripAmount, mostUsedAccount, mostUsedCategory]
+      required:
+        [
+          totalReceipts,
+          totalSpent,
+          averageTripAmount,
+          mostUsedAccount,
+          mostUsedCategory,
+        ]
       properties:
         totalReceipts:
           type: integer
@@ -10487,7 +11290,8 @@ components:
 
     SpendingCategoryItem:
       type: object
-      required: [categoryName, amount, percentage, currency, state, path, purchaseCount]
+      required:
+        [categoryName, amount, percentage, currency, state, path, purchaseCount]
       properties:
         currency:
           type: string
@@ -10813,7 +11617,13 @@ components:
     MergeCardsPreviewResponse:
       type: object
       required:
-        [accountsToRemove, cardsToMove, transactionsToRepoint, trashedTransactionsToRepoint, ynabMappingsToMove]
+        [
+          accountsToRemove,
+          cardsToMove,
+          transactionsToRepoint,
+          trashedTransactionsToRepoint,
+          ynabMappingsToMove,
+        ]
       description: >
         What the merge would do, computed without writing. Every count is zero and
         `accountsToRemove` empty when the merge would change nothing. When `conflicts`
@@ -10859,7 +11669,8 @@ components:
 
     YnabMappingConflict:
       type: object
-      required: [accountId, accountName, ynabBudgetId, ynabAccountId, ynabAccountName]
+      required:
+        [accountId, accountName, ynabBudgetId, ynabAccountId, ynabAccountName]
       properties:
         accountId:
           type: string
@@ -11287,7 +12098,16 @@ components:
     EmbeddingCoverageResponse:
       type: object
       required:
-        [fingerprint, canonicalReady, canonicalTotal, canonicalPending, itemReady, itemTotal, itemPending, isComplete]
+        [
+          fingerprint,
+          canonicalReady,
+          canonicalTotal,
+          canonicalPending,
+          itemReady,
+          itemTotal,
+          itemPending,
+          isComplete,
+        ]
       properties:
         fingerprint:
           type: string
@@ -11375,7 +12195,8 @@ components:
 
     MatchCandidateDto:
       type: object
-      required: [normalizedDescriptionId, canonicalName, cosineSimilarity, status]
+      required:
+        [normalizedDescriptionId, canonicalName, cosineSimilarity, status]
       properties:
         normalizedDescriptionId:
           type: string
@@ -11431,7 +12252,8 @@ components:
 
     ReclassificationDeltasDto:
       type: object
-      required: [autoToPending, pendingToAuto, unresolvedToAuto, unresolvedToPending]
+      required:
+        [autoToPending, pendingToAuto, unresolvedToAuto, unresolvedToPending]
       properties:
         autoToPending:
           type: integer
@@ -11464,7 +12286,15 @@ components:
     NormalizedDescriptionResponse:
       type: object
       required:
-        [id, canonicalName, displayName, status, createdAt, linkedItemCount, sampleRawDescriptions]
+        [
+          id,
+          canonicalName,
+          displayName,
+          status,
+          createdAt,
+          linkedItemCount,
+          sampleRawDescriptions,
+        ]
       properties:
         id:
           type: string
@@ -11816,7 +12646,21 @@ components:
 
     ReceiptListItemResponse:
       type: object
-      required: [id, location, date, taxAmount, itemSubtotal, adjustmentTotal, expectedTotal, transactionTotal, balanceState, itemCount, categorySummary, paymentSummary]
+      required:
+        [
+          id,
+          location,
+          date,
+          taxAmount,
+          itemSubtotal,
+          adjustmentTotal,
+          expectedTotal,
+          transactionTotal,
+          balanceState,
+          itemCount,
+          categorySummary,
+          paymentSummary,
+        ]
       properties:
         verifiedItemCount:
           type: integer
@@ -11984,7 +12828,16 @@ components:
 
     ReceiptNormalizationPreviewResponse:
       type: object
-      required: [sourceFingerprint, excluded, candidates, total, offset, limit, sourceAmbiguous]
+      required:
+        [
+          sourceFingerprint,
+          excluded,
+          candidates,
+          total,
+          offset,
+          limit,
+          sourceAmbiguous,
+        ]
       properties:
         sourceFingerprint:
           type: string
@@ -12136,13 +12989,13 @@ components:
       description: Current assignment pinned to its recorded taxonomy revision.
       required: [assignmentId, taxonomyRevisionId, recordedPath]
       properties:
-        assignmentId: {type: string, format: uuid}
-        categoryId: {type: [string, "null"], format: uuid}
-        taxonomyRevisionId: {type: string, format: uuid}
+        assignmentId: { type: string, format: uuid }
+        categoryId: { type: [string, "null"], format: uuid }
+        taxonomyRevisionId: { type: string, format: uuid }
         recordedPath:
           type: array
           description: Root-to-leaf path in the recorded revision, unaffected by later renames, moves, or archives. Empty for unclassified assignments.
-          items: {$ref: '#/components/schemas/TaxonomyNodeResponse'}
+          items: { $ref: "#/components/schemas/TaxonomyNodeResponse" }
 
     ReceiptItemResponse:
       type: object
@@ -12151,8 +13004,8 @@ components:
         currentClassification:
           description: Null when no assignment exists; an explicit unclassified assignment has a null categoryId and an empty recordedPath. Legacy category and subcategory strings are retained independently.
           oneOf:
-            - $ref: '#/components/schemas/CurrentClassificationResponse'
-            - type: 'null'
+            - $ref: "#/components/schemas/CurrentClassificationResponse"
+            - type: "null"
         normalizationRevision:
           type: string
           format: uuid
@@ -12415,7 +13268,16 @@ components:
 
     ReceiptWithItemsResponse:
       type: object
-      required: [receipt, items, adjustments, subtotal, adjustmentTotal, expectedTotal, warnings]
+      required:
+        [
+          receipt,
+          items,
+          adjustments,
+          subtotal,
+          adjustmentTotal,
+          expectedTotal,
+          warnings,
+        ]
       properties:
         verifiedItemCount:
           type: integer
@@ -12608,7 +13470,15 @@ components:
 
     TokenResponse:
       type: object
-      required: [accessToken, refreshToken, expiresIn, mustResetPassword, tokenType, scope]
+      required:
+        [
+          accessToken,
+          refreshToken,
+          expiresIn,
+          mustResetPassword,
+          tokenType,
+          scope,
+        ]
       properties:
         accessToken:
           type: string
@@ -13042,7 +13912,15 @@ components:
 
     YnabStatusResponse:
       type: object
-      required: [isConfigured, pushCountLast24h, pushCountLast7d, pushCountLast30d, pushSuccessLast30d, pushFailureLast30d]
+      required:
+        [
+          isConfigured,
+          pushCountLast24h,
+          pushCountLast7d,
+          pushCountLast30d,
+          pushSuccessLast30d,
+          pushFailureLast30d,
+        ]
       properties:
         isConfigured:
           type: boolean
@@ -13156,7 +14034,16 @@ components:
 
     YnabSyncRecordResponse:
       type: object
-      required: [id, localTransactionId, ynabBudgetId, syncType, syncStatus, createdAt, updatedAt]
+      required:
+        [
+          id,
+          localTransactionId,
+          ynabBudgetId,
+          syncType,
+          syncStatus,
+          createdAt,
+          updatedAt,
+        ]
       properties:
         id:
           type: string
@@ -13254,7 +14141,16 @@ components:
 
     YnabAccountMappingResponse:
       type: object
-      required: [id, receiptsAccountId, ynabAccountId, ynabAccountName, ynabBudgetId, createdAt, updatedAt]
+      required:
+        [
+          id,
+          receiptsAccountId,
+          ynabAccountId,
+          ynabAccountName,
+          ynabBudgetId,
+          createdAt,
+          updatedAt,
+        ]
       properties:
         id:
           type: string
@@ -13286,7 +14182,8 @@ components:
 
     CreateYnabAccountMappingRequest:
       type: object
-      required: [receiptsAccountId, ynabAccountId, ynabAccountName, ynabBudgetId]
+      required:
+        [receiptsAccountId, ynabAccountId, ynabAccountName, ynabBudgetId]
       properties:
         receiptsAccountId:
           type: string
@@ -13346,7 +14243,17 @@ components:
 
     YnabCategoryMappingResponse:
       type: object
-      required: [id, receiptsCategory, ynabCategoryId, ynabCategoryName, ynabCategoryGroupName, ynabBudgetId, createdAt, updatedAt]
+      required:
+        [
+          id,
+          receiptsCategory,
+          ynabCategoryId,
+          ynabCategoryName,
+          ynabCategoryGroupName,
+          ynabBudgetId,
+          createdAt,
+          updatedAt,
+        ]
       properties:
         id:
           type: string
@@ -13389,7 +14296,14 @@ components:
 
     CreateYnabCategoryMappingRequest:
       type: object
-      required: [receiptsCategory, ynabCategoryId, ynabCategoryName, ynabCategoryGroupName, ynabBudgetId]
+      required:
+        [
+          receiptsCategory,
+          ynabCategoryId,
+          ynabCategoryName,
+          ynabCategoryGroupName,
+          ynabBudgetId,
+        ]
       properties:
         receiptsCategory:
           type: string
@@ -13408,7 +14322,8 @@ components:
 
     UpdateYnabCategoryMappingRequest:
       type: object
-      required: [ynabCategoryId, ynabCategoryName, ynabCategoryGroupName, ynabBudgetId]
+      required:
+        [ynabCategoryId, ynabCategoryName, ynabCategoryGroupName, ynabBudgetId]
       properties:
         ynabCategoryId:
           type: string
@@ -13485,7 +14400,8 @@ components:
 
     PushedTransactionInfo:
       type: object
-      required: [localTransactionId, ynabTransactionId, milliunits, subTransactionCount]
+      required:
+        [localTransactionId, ynabTransactionId, milliunits, subTransactionCount]
       properties:
         localTransactionId:
           type: string
@@ -13726,7 +14642,16 @@ components:
 
     YnabMemoSyncOutcome:
       type: string
-      enum: [synced, alreadySynced, noMatch, ambiguous, currencySkipped, reconciledSkipped, failed]
+      enum:
+        [
+          synced,
+          alreadySynced,
+          noMatch,
+          ambiguous,
+          currencySkipped,
+          reconciledSkipped,
+          failed,
+        ]
 
     YnabSyncType:
       type: string
