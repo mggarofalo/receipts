@@ -24,7 +24,7 @@ public class CreateYnabCategoryMappingCommandHandler(
 			request.ReceiptsCategory,
 			budgetId,
 			cancellationToken);
-		if (existing is not null)
+		if (existing is not null && request.ReceiptsCategoryId is null)
 		{
 			throw new DuplicateEntityException($"A mapping for receipts category '{request.ReceiptsCategory}' already exists.");
 		}
@@ -38,6 +38,7 @@ public class CreateYnabCategoryMappingCommandHandler(
 			request.YnabCategoryName,
 			request.YnabCategoryGroupName,
 			budgetId,
-			cancellationToken);
+			cancellationToken,
+			request.ReceiptsCategoryId);
 	}
 }

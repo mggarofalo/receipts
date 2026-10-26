@@ -6053,6 +6053,10 @@ export interface components {
             /** Format: uuid */
             id: string;
             receiptsCategory: string;
+            /** Format: uuid */
+            receiptsCategoryId?: string | null;
+            legacyResolution?: string;
+            legacyCandidateCategoryIds?: string[];
             ynabCategoryId: string;
             ynabCategoryName: string;
             ynabCategoryGroupName: string;
@@ -6067,6 +6071,8 @@ export interface components {
         };
         CreateYnabCategoryMappingRequest: {
             receiptsCategory: string;
+            /** Format: uuid */
+            receiptsCategoryId?: string | null;
             ynabCategoryId: string;
             ynabCategoryName: string;
             ynabCategoryGroupName: string;

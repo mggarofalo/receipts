@@ -13021,6 +13021,16 @@ components:
           format: uuid
         receiptsCategory:
           type: string
+        receiptsCategoryId:
+          type: [string, "null"]
+          format: uuid
+        legacyResolution:
+          type: string
+        legacyCandidateCategoryIds:
+          type: array
+          items:
+            type: string
+            format: uuid
         ynabCategoryId:
           type: string
         ynabCategoryName:
@@ -13051,6 +13061,9 @@ components:
       properties:
         receiptsCategory:
           type: string
+        receiptsCategoryId:
+          type: [string, "null"]
+          format: uuid
         ynabCategoryId:
           type: string
         ynabCategoryName:

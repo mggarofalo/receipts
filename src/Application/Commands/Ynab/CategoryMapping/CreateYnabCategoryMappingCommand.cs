@@ -8,4 +8,5 @@ public record CreateYnabCategoryMappingCommand(
 	string YnabCategoryId,
 	string YnabCategoryName,
 	string YnabCategoryGroupName,
-	string YnabBudgetId) : ICommand<YnabCategoryMappingDto>;
+	string YnabBudgetId,
+	Guid? ReceiptsCategoryId = null) : ICommand<YnabCategoryMappingDto>;

@@ -4,6 +4,7 @@ using System.Text.Json;
 using Application.Interfaces.Services;
 using Application.Models;
 using Application.Models.Ynab;
+using Application.Taxonomy;
 using Application.Utilities;
 using Common;
 using Domain.Aggregates;
@@ -78,37 +79,9 @@ public class PushYnabTransactionsCommandHandler(
 			return new PushYnabTransactionsResult(false, [], Error: "No YNAB budget selected.");
 		}
 
-		// 3. Check all categories are mapped for the selected budget (fail-fast)
-		List<string> distinctCategories = items.Select(i => i.Category).Distinct().ToList();
-		List<YnabCategoryMappingDto> allMappings = await categoryMappingService.GetByBudgetIdAsync(budgetId, cancellationToken);
-		Dictionary<string, string> categoryToYnabId = allMappings
-			.ToDictionary(m => m.ReceiptsCategory, m => m.YnabCategoryId);
-
-		List<string> unmapped = distinctCategories.Where(c => !categoryToYnabId.ContainsKey(c)).ToList();
-		if (unmapped.Count > 0)
-		{
-			return new PushYnabTransactionsResult(false, [], UnmappedCategories: unmapped, Error: "Unmapped categories found.");
-		}
-
-		// 4. Get account mappings for the transactions
-		List<YnabAccountMappingDto> accountMappingsList = await accountMappingService.GetByBudgetIdAsync(budgetId, cancellationToken);
-		Dictionary<Guid, string> accountToYnabId = accountMappingsList
-			.ToDictionary(m => m.ReceiptsAccountId, m => m.YnabAccountId);
-
-		// Check all transaction accounts have YNAB mappings
-		List<Guid> unmappedAccountIds = transactions
-			.Select(t => t.AccountId)
-			.Distinct()
-			.Where(id => !accountToYnabId.ContainsKey(id))
-			.ToList();
-
-		if (unmappedAccountIds.Count > 0)
-		{
-			return new PushYnabTransactionsResult(false, [], Error: "Some transaction accounts are not mapped to YNAB accounts.");
-		}
-
-		// 5. Pre-load existing sync records (Synced → skip; Failed/Pending → reuse on retry)
+		// 3. Read durable operations before resolving mutable classifications or mappings.
 		Dictionary<Guid, YnabSyncRecordDto> existingSyncRecords = [];
+		Dictionary<Guid, YnabPushOperation> capturedOperations = [];
 		foreach (Domain.Core.Transaction tx in transactions)
 		{
 			YnabSyncRecordDto? existingSync = await syncRecordService.GetByTransactionTypeAndBudgetAsync(
@@ -116,6 +89,43 @@ public class PushYnabTransactionsCommandHandler(
 			if (existingSync is not null)
 			{
 				existingSyncRecords[tx.Id] = existingSync;
+				if (existingSync.SyncStatus != YnabSyncStatus.Synced)
+				{
+					YnabPushOperation? captured = await syncRecordService.GetCapturedPushOperationAsync(
+							tx.Id, budgetId, cancellationToken);
+					if (captured is not null)
+					{
+						capturedOperations[tx.Id] = captured;
+					}
+				}
+			}
+		}
+
+		bool allTransactionsDurable = transactions.All(tx =>
+				existingSyncRecords.TryGetValue(tx.Id, out YnabSyncRecordDto? record) &&
+				(record.SyncStatus == YnabSyncStatus.Synced || capturedOperations.ContainsKey(tx.Id)));
+
+		Dictionary<Guid, string> accountToYnabId = [];
+		Dictionary<string, string> categoryToYnabId = [];
+		if (!allTransactionsDurable)
+		{
+			// A new send still requires current classification and destination preflight.
+			List<YnabCategoryMappingDto> allMappings = await categoryMappingService.GetByBudgetIdAsync(budgetId, cancellationToken);
+			(categoryToYnabId, List<string> unmapped) =
+					YnabReceiptMappingResolver.Resolve(items, budgetId, allMappings);
+			if (unmapped.Count > 0)
+			{
+				return new PushYnabTransactionsResult(false, [], UnmappedCategories: unmapped, Error: "Unmapped categories found.");
+			}
+
+			List<YnabAccountMappingDto> accountMappingsList = await accountMappingService.GetByBudgetIdAsync(budgetId, cancellationToken);
+			accountToYnabId = accountMappingsList.ToDictionary(m => m.ReceiptsAccountId, m => m.YnabAccountId);
+			if (transactions.Any(tx =>
+					(!existingSyncRecords.TryGetValue(tx.Id, out YnabSyncRecordDto? record) ||
+							record.SyncStatus != YnabSyncStatus.Synced && !capturedOperations.ContainsKey(tx.Id)) &&
+					!accountToYnabId.ContainsKey(tx.AccountId)))
+			{
+				return new PushYnabTransactionsResult(false, [], Error: "Some transaction accounts are not mapped to YNAB accounts.");
 			}
 		}
 
@@ -127,16 +137,27 @@ public class PushYnabTransactionsCommandHandler(
 			Adjustments = adjustments,
 		};
 
-		// 7. Compute waterfall splits
+		// 7. Captured operations carry their own immutable amount and category allocation.
 		YnabSplitResult splitResult;
-		try
+		if (allTransactionsDurable)
 		{
-			splitResult = splitCalculator.ComputeWaterfallSplits(
-				receiptWithItems, transactions, categoryToYnabId);
+			splitResult = new YnabSplitResult(transactions
+					.Where(tx => capturedOperations.ContainsKey(tx.Id))
+					.Select(tx => new YnabTransactionSplit(tx.Id,
+							capturedOperations[tx.Id].Request!.Amount, []))
+					.ToList());
 		}
-		catch (InvalidOperationException ex)
+		else
 		{
-			return new PushYnabTransactionsResult(false, [], Error: ex.Message);
+			try
+			{
+				splitResult = splitCalculator.ComputeWaterfallSplits(
+					receiptWithItems, transactions, categoryToYnabId);
+			}
+			catch (InvalidOperationException ex)
+			{
+				return new PushYnabTransactionsResult(false, [], Error: ex.Message);
+			}
 		}
 
 		// 8. Preserve every immutable operation identity for this receipt. A receipt edit can
@@ -169,6 +190,13 @@ public class PushYnabTransactionsCommandHandler(
 		Dictionary<Guid, string> importIdByTransactionId = operationIdentities
 			.GroupBy(identity => identity.LocalTransactionId)
 			.ToDictionary(group => group.Key, group => group.First().ImportId);
+		foreach ((Guid transactionId, YnabPushOperation captured) in capturedOperations)
+		{
+			if (captured.Request?.ImportId is not null)
+			{
+				importIdByTransactionId[transactionId] = captured.Request.ImportId;
+			}
+		}
 		HashSet<string> reservedImportIds = operationIdentities
 			.Select(identity => identity.ImportId)
 			.ToHashSet(StringComparer.Ordinal);
@@ -213,7 +241,9 @@ public class PushYnabTransactionsCommandHandler(
 				continue;
 			}
 
-			string ynabAccountId = accountToYnabId[localTx.AccountId];
+			string ynabAccountId = capturedOperations.TryGetValue(localTx.Id, out YnabPushOperation? capturedOperation)
+					? capturedOperation.Request!.AccountId
+					: accountToYnabId[localTx.AccountId];
 
 			// import_id was assigned deterministically in the first pass above so occurrence
 			// numbering stays stable across retries.
@@ -234,19 +264,20 @@ public class PushYnabTransactionsCommandHandler(
 					.ToList();
 			}
 
-			YnabCreateTransactionRequest proposedRequest = new(
-				AccountId: ynabAccountId,
-				Date: localTx.Date,
-				Amount: txSplit.TotalMilliunits,
-				Memo: $"Receipt: {receipt.Location} ({receipt.Date:yyyy-MM-dd})",
-				PayeeName: receipt.Location,
-				CategoryId: categoryId,
-				Approved: false,
-				SubTransactions: subTransactions,
-				ImportId: importId);
+			YnabCreateTransactionRequest proposedRequest = capturedOperation?.Request ?? new(
+	AccountId: ynabAccountId,
+	Date: localTx.Date,
+	Amount: txSplit.TotalMilliunits,
+	Memo: $"Receipt: {receipt.Location} ({receipt.Date:yyyy-MM-dd})",
+	PayeeName: receipt.Location,
+	CategoryId: categoryId,
+	Approved: false,
+	SubTransactions: subTransactions,
+	ImportId: importId);
 
 			YnabPushOperation operation;
-			string proposedSourceVersion = ComputeSourceVersion(request.ReceiptId, localTx.Id, proposedRequest);
+			string proposedSourceVersion = capturedOperation?.SourceVersion ??
+					ComputeSourceVersion(request.ReceiptId, localTx.Id, proposedRequest);
 			bool createDefinitelyRejected = false;
 			try
 			{

@@ -17,6 +17,29 @@ namespace Infrastructure.IntegrationTests.Services;
 public sealed partial class ClassificationTests
 {
 	[Fact]
+	public async Task ReceiptItemRepository_HydratesRecordedParentForYnabExport()
+	{
+		var seed = await SeedAsync();
+		PurchaseClassification assignment = await Service().AssignAsync(Actor, seed.Item,
+				new(seed.Child, seed.Revision, seed.Assignment, Guid.NewGuid(), "Recorded child"));
+		await using var db = fixture.CreateDbContext();
+		Guid receiptId = await db.ReceiptItems.Where(item => item.Id == seed.Item)
+				.Select(item => item.ReceiptId).SingleAsync();
+		var repository = new Infrastructure.Repositories.ReceiptItemRepository(new Factory(fixture));
+
+		var item = (await repository.GetByReceiptIdAsync(receiptId, 0, 50,
+				new Application.Models.SortParams("Description", "asc"), default))
+				.Single(row => row.Id == seed.Item);
+
+		item.CurrentClassification.Should().NotBeNull();
+		item.CurrentClassification!.AssignmentId.Should().Be(assignment.Id);
+		item.CurrentClassification.CategoryId.Should().Be(seed.Child);
+		item.CurrentClassification.TaxonomyRevisionId.Should().Be(seed.Revision);
+		item.CurrentClassification.RecordedPath.Select(node => node.Id)
+				.Should().Equal(seed.Root, seed.Child);
+	}
+
+	[Fact]
 	public async Task DeepAssignmentSurvivesUnchangedLegacyEchoAfterTaxonomyRename()
 	{
 		var seed = await SeedAsync();

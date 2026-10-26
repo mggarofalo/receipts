@@ -1,6 +1,7 @@
 using Application.Interfaces.Services;
 using Application.Models;
 using Application.Models.Ynab;
+using Application.Taxonomy;
 using Common;
 using Domain.Aggregates;
 using Mediator;
@@ -80,12 +81,9 @@ public class GetReceiptYnabSplitComparisonQueryHandler(
 		}
 
 		// Category mapping check — surface unmapped list as structured data
-		List<string> distinctCategories = items.Select(i => i.Category).Distinct().ToList();
 		List<YnabCategoryMappingDto> allMappings = await categoryMappingService.GetByBudgetIdAsync(budgetId, cancellationToken);
-		Dictionary<string, string> categoryToYnabId = allMappings
-			.ToDictionary(m => m.ReceiptsCategory, m => m.YnabCategoryId);
-
-		List<string> unmapped = distinctCategories.Where(c => !categoryToYnabId.ContainsKey(c)).ToList();
+		(Dictionary<string, string> categoryToYnabId, List<string> unmapped) =
+			YnabReceiptMappingResolver.Resolve(items, budgetId, allMappings);
 		if (unmapped.Count > 0)
 		{
 			return new ReceiptYnabSplitComparisonResult(

@@ -1,4 +1,5 @@
 using Application.Interfaces.Services;
+using Application.Taxonomy;
 using Domain.Aggregates;
 using Domain.Core;
 using Infrastructure.Utilities;
@@ -26,7 +27,8 @@ public class YnabSplitCalculator : IYnabSplitCalculator
 		Dictionary<string, decimal> categoryPreTaxSums = new();
 		foreach (ReceiptItem item in items)
 		{
-			if (!categoryToYnabCategoryId.TryGetValue(item.Category, out string? ynabCategoryId))
+			if (!categoryToYnabCategoryId.TryGetValue(YnabReceiptMappingResolver.ItemKey(item.Id), out string? ynabCategoryId)
+				&& !categoryToYnabCategoryId.TryGetValue(item.Category, out ynabCategoryId))
 			{
 				throw new InvalidOperationException(
 					$"No YNAB category mapping found for item category '{item.Category}'. " +

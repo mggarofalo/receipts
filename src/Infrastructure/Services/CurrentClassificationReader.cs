@@ -32,9 +32,15 @@ internal static class CurrentClassificationReader
 		{
 			List<TaxonomyNode> path = [];
 			Guid? cursor = assignment.CategoryId;
+			HashSet<Guid> visited = [];
 			while (cursor is Guid categoryId)
 			{
-				TaxonomyNodeEntity node = nodesById[(assignment.TaxonomyRevisionId, categoryId)];
+				if (!visited.Add(categoryId) || !nodesById.TryGetValue((assignment.TaxonomyRevisionId, categoryId), out TaxonomyNodeEntity? node))
+				{
+					// Preserve assignment identity while exposing an unresolved path to consumers.
+					path.Clear();
+					break;
+				}
 				path.Add(new(node.CategoryId, node.ParentId, node.Name, node.Definition, node.Archived));
 				cursor = node.ParentId;
 			}

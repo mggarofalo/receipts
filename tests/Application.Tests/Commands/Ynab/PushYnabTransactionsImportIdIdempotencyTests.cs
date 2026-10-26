@@ -78,7 +78,7 @@ public class PushYnabTransactionsImportIdIdempotencyTests
 
 		List<Domain.Core.ReceiptItem> items =
 		[
-			new(Guid.NewGuid(), null, "Item1", 1, new Money(categoryTotal), new Money(categoryTotal), "Groceries", null),
+						YnabRecordedCategoryFixture.Classified(new(Guid.NewGuid(), null, "Item1", 1, new Money(categoryTotal), new Money(categoryTotal), "Groceries", null)),
 		];
 		_receiptItemServiceMock.Setup(s => s.GetByReceiptIdAsync(_receiptId, 0, 10000, It.IsAny<SortParams>(), It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new PagedResult<Domain.Core.ReceiptItem>(items, items.Count, 0, 10000));
@@ -93,7 +93,7 @@ public class PushYnabTransactionsImportIdIdempotencyTests
 
 		_categoryMappingServiceMock.Setup(s => s.GetByBudgetIdAsync(_budgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync([
-				new YnabCategoryMappingDto(Guid.NewGuid(), "Groceries", "ynab-cat-1", "Groceries", "Food", _budgetId, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow),
+								YnabRecordedCategoryFixture.Mapped(new YnabCategoryMappingDto(Guid.NewGuid(), "Groceries", "ynab-cat-1", "Groceries", "Food", _budgetId, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow)),
 			]);
 
 		_budgetSelectionServiceMock.Setup(s => s.GetSelectedBudgetIdAsync(It.IsAny<CancellationToken>()))

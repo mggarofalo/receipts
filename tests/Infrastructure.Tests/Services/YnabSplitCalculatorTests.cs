@@ -1,4 +1,5 @@
 using Application.Interfaces.Services;
+using Application.Taxonomy;
 using Common;
 using Domain;
 using Domain.Aggregates;
@@ -10,6 +11,22 @@ namespace Infrastructure.Tests.Services;
 
 public class YnabSplitCalculatorTests
 {
+	[Fact]
+	public void ItemIdentityTargetsSeparateSameDisplayNamesWithoutChangingTotals()
+	{
+		ReceiptItem first = MakeItem("Same", 10m);
+		ReceiptItem second = MakeItem("Same", 20m);
+		ReceiptWithItems receipt = new() { Receipt = MakeReceipt(3m), Items = [first, second], Adjustments = [] };
+		var allocations = YnabSplitCalculator.ComputeCategoryAllocations(receipt, new()
+		{
+			[YnabReceiptMappingResolver.ItemKey(first.Id)] = "ynab-a",
+			[YnabReceiptMappingResolver.ItemKey(second.Id)] = "ynab-b",
+		});
+		allocations.Should().HaveCount(2);
+		allocations.Sum(a => a.Total).Should().Be(33m);
+		allocations.Single(a => a.YnabCategoryId == "ynab-a").PreTaxAmount.Should().Be(10m);
+		allocations.Single(a => a.YnabCategoryId == "ynab-b").PreTaxAmount.Should().Be(20m);
+	}
 	private readonly YnabSplitCalculator _calculator = new();
 
 	// ── Helpers ─────────────────────────────────────

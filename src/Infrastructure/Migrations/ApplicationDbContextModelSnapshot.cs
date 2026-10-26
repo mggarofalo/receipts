@@ -1672,10 +1672,22 @@ namespace Infrastructure.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamptz");
 
+                    b.Property<string>("LegacyCandidateCategoryIds")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("LegacyResolution")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("text");
+
                     b.Property<string>("ReceiptsCategory")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("text");
+
+                    b.Property<Guid?>("ReceiptsCategoryId")
+                        .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamptz");
@@ -1702,8 +1714,11 @@ namespace Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ReceiptsCategory", "YnabBudgetId")
-                        .IsUnique();
+                    b.HasIndex("ReceiptsCategory", "YnabBudgetId");
+
+                    b.HasIndex("ReceiptsCategoryId", "YnabBudgetId")
+                        .IsUnique()
+                        .HasFilter("\"ReceiptsCategoryId\" IS NOT NULL");
 
                     b.ToTable("YnabCategoryMappings", "ynab");
                 });

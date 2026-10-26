@@ -141,6 +141,27 @@ public class ReceiptItemServiceTests
 	}
 
 	[Fact]
+	public async Task GetByReceiptIdAsync_PreservesRecordedClassificationForExport()
+	{
+		Guid receiptId = Guid.NewGuid();
+		Guid categoryId = Guid.NewGuid();
+		Guid revisionId = Guid.NewGuid();
+		ReceiptItemEntity entity = ReceiptItemEntityGenerator.Generate();
+		entity.CurrentClassification = new Domain.Taxonomy.CurrentClassification(
+			Guid.NewGuid(), categoryId, revisionId,
+			[new Domain.Taxonomy.TaxonomyNode(categoryId, null, "Old name", "", false)]);
+		_mockRepository.Setup(r => r.GetByReceiptIdCountAsync(receiptId, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(1);
+		_mockRepository.Setup(r => r.GetByReceiptIdAsync(receiptId, 0, 50,
+			It.IsAny<SortParams>(), It.IsAny<CancellationToken>())).ReturnsAsync([entity]);
+
+		PagedResult<ReceiptItem> actual = await _service.GetByReceiptIdAsync(
+			receiptId, 0, 50, SortParams.Default, CancellationToken.None);
+
+		actual.Data.Single().CurrentClassification.Should().BeEquivalentTo(entity.CurrentClassification);
+	}
+
+	[Fact]
 	public async Task GetByReceiptIdAsync_NonExistingReceiptId_ReturnsEmptyPagedResult()
 	{
 		// Arrange

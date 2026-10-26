@@ -2,6 +2,7 @@ using Application.Interfaces.Services;
 using Application.Models;
 using Application.Models.Ynab;
 using Application.Queries.Core.Ynab;
+using Application.Tests.Commands.Ynab;
 using Common;
 using Domain;
 using Domain.Aggregates;
@@ -56,7 +57,7 @@ public class GetReceiptYnabSplitComparisonQueryHandlerTests
 
 		List<Domain.Core.ReceiptItem> items =
 		[
-			new(Guid.NewGuid(), null, "Item1", 1, new Money(10.00m), new Money(10.00m), "Groceries", null),
+						YnabRecordedCategoryFixture.Classified(new(Guid.NewGuid(), null, "Item1", 1, new Money(10.00m), new Money(10.00m), "Groceries", null)),
 		];
 		_receiptItemServiceMock.Setup(s => s.GetByReceiptIdAsync(_receiptId, 0, 10000, It.IsAny<SortParams>(), It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new PagedResult<Domain.Core.ReceiptItem>(items, items.Count, 0, 10000));
@@ -78,7 +79,7 @@ public class GetReceiptYnabSplitComparisonQueryHandlerTests
 
 		_categoryMappingServiceMock.Setup(s => s.GetByBudgetIdAsync(_budgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync([
-				new YnabCategoryMappingDto(Guid.NewGuid(), "Groceries", "ynab-cat-1", "Groceries", "Food", _budgetId, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow),
+								YnabRecordedCategoryFixture.Mapped(new YnabCategoryMappingDto(Guid.NewGuid(), "Groceries", "ynab-cat-1", "Groceries", "Food", _budgetId, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow)),
 			]);
 
 		_budgetSelectionServiceMock.Setup(s => s.GetSelectedBudgetIdAsync(It.IsAny<CancellationToken>()))
@@ -124,7 +125,7 @@ public class GetReceiptYnabSplitComparisonQueryHandlerTests
 		// Override items to include an unmapped category
 		_receiptItemServiceMock.Setup(s => s.GetByReceiptIdAsync(_receiptId, 0, 10000, It.IsAny<SortParams>(), It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new PagedResult<Domain.Core.ReceiptItem>([
-				new(Guid.NewGuid(), null, "A", 1, new Money(5m), new Money(5m), "Groceries", null),
+								YnabRecordedCategoryFixture.Classified(new(Guid.NewGuid(), null, "A", 1, new Money(5m), new Money(5m), "Groceries", null)),
 				new(Guid.NewGuid(), null, "B", 1, new Money(3m), new Money(3m), "Gas", null),
 			], 2, 0, 10000));
 
@@ -133,7 +134,8 @@ public class GetReceiptYnabSplitComparisonQueryHandlerTests
 
 		result.CanComputeExpected.Should().BeFalse();
 		result.ExpectedUnavailableReason.Should().Contain("Unmapped");
-		result.UnmappedCategories.Should().Contain("Gas");
+		result.UnmappedCategories.Should().ContainSingle()
+				.Which.Should().StartWith("Gas (item ").And.EndWith(": Unassigned)");
 	}
 
 	[Fact]

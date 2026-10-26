@@ -141,6 +141,9 @@ public partial class YnabMapper
 		{
 			Id = source.Id,
 			ReceiptsCategory = source.ReceiptsCategory,
+			ReceiptsCategoryId = source.ReceiptsCategoryId,
+			LegacyResolution = source.LegacyResolution,
+			LegacyCandidateCategoryIds = System.Text.Json.JsonSerializer.Deserialize<List<Guid>>(source.LegacyCandidateCategoryIds) ?? [],
 			YnabCategoryId = source.YnabCategoryId,
 			YnabCategoryName = source.YnabCategoryName,
 			YnabCategoryGroupName = source.YnabCategoryGroupName,
