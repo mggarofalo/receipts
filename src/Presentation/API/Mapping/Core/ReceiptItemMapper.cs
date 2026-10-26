@@ -64,5 +64,20 @@ public partial class ReceiptItemMapper
 			value.ClientRowId, value.SourceFingerprint, value.TargetId, value.ExpectedTargetRevision, value.ExpectedMappingRevision,
 			value.ExpectedItemRevision, value.NewName, value.RememberSource, value.Reason);
 
+	private static CurrentClassificationResponse MapCurrentClassification(Domain.Taxonomy.CurrentClassification source) => new()
+	{
+		AssignmentId = source.AssignmentId,
+		CategoryId = source.CategoryId,
+		TaxonomyRevisionId = source.TaxonomyRevisionId,
+		RecordedPath = source.RecordedPath.Select(node => new TaxonomyNodeResponse
+		{
+			Id = node.Id,
+			ParentId = node.ParentId,
+			Name = node.Name,
+			Definition = node.Definition,
+			Archived = node.Archived
+		}).ToList()
+	};
+
 	private double MapDecimalToDouble(decimal value) => (double)value;
 }

@@ -26,13 +26,15 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 	public async Task<ReceiptItemEntity?> GetByIdAsync(Guid id, CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
-		return await context.ReceiptItems.FindAsync([id], cancellationToken);
+		ReceiptItemEntity? item = await context.ReceiptItems.FindAsync([id], cancellationToken);
+		if (item is not null) { await CurrentClassificationReader.PopulateAsync(context, [item], cancellationToken); }
+		return item;
 	}
 
 	public async Task<List<ReceiptItemEntity>> GetByReceiptIdAsync(Guid receiptId, int offset, int limit, SortParams sort, CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
-		return await context.ReceiptItems
+		List<ReceiptItemEntity> items = await context.ReceiptItems
 			.IgnoreAutoIncludes()
 			.Where(ri => ri.ReceiptId == receiptId)
 			.AsNoTracking()
@@ -41,6 +43,8 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 			.Take(limit)
 			.Select(ProjectListRow(context))
 			.ToListAsync(cancellationToken);
+		await CurrentClassificationReader.PopulateAsync(context, items, cancellationToken);
+		return items;
 	}
 
 	public async Task<int> GetByReceiptIdCountAsync(Guid receiptId, CancellationToken cancellationToken)
@@ -70,12 +74,14 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 			.IgnoreAutoIncludes()
 			.AsNoTracking();
 		query = ApplyFilters(query, q, normalizedDescriptionId);
-		return await query
+		List<ReceiptItemEntity> items = await query
 			.ApplySort(sort, AllowedSortColumns, e => e.Description, e => e.Id)
 			.Skip(offset)
 			.Take(limit)
 			.Select(ProjectListRow(context))
 			.ToListAsync(cancellationToken);
+		await CurrentClassificationReader.PopulateAsync(context, items, cancellationToken);
+		return items;
 	}
 
 	/// <summary>
@@ -172,7 +178,7 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 	public async Task<List<ReceiptItemEntity>> GetDeletedAsync(int offset, int limit, SortParams sort, CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
-		return await context.ReceiptItems
+		List<ReceiptItemEntity> items = await context.ReceiptItems
 			.OnlyDeleted()
 			.Where(ri => ri.CascadeDeletedByParentId == null)
 			.IgnoreAutoIncludes()
@@ -210,6 +216,8 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 			.Skip(offset)
 			.Take(limit)
 			.ToListAsync(cancellationToken);
+		await CurrentClassificationReader.PopulateAsync(context, items, cancellationToken);
+		return items;
 	}
 
 	public async Task<int> GetDeletedCountAsync(CancellationToken cancellationToken)
@@ -261,6 +269,7 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 				{
 					var saved = await context.ReceiptItems.Where(value => request.ItemIds.Contains(value.Id)).ToListAsync(cancellationToken);
 					if (saved.Count != request.ItemIds.Length) { throw new Application.Normalization.NormalizationCatalogException(409, "receipt_request_deleted", "Items created by this request are no longer live. Restore them instead of repeating creation."); }
+					await CurrentClassificationReader.PopulateAsync(context, saved, cancellationToken);
 					return request.ItemIds.Select(id => saved.Single(value => value.Id == id)).ToList();
 				}
 			}
@@ -305,6 +314,7 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 			if (request is not null) { request.ReceiptId = entities[0].ReceiptId; request.ItemIds = entities.Select(value => value.Id).ToArray(); }
 			await context.SaveChangesAsync(cancellationToken);
 			await ClassificationService.ApplyAggregateAsync(context, entities, classificationOptions?.Value.WritesEnabled == true, cancellationToken);
+			await CurrentClassificationReader.PopulateAsync(context, entities, cancellationToken);
 			if (transaction is not null)
 			{
 				await transaction.CommitAsync(cancellationToken);

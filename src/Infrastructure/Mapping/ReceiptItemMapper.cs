@@ -13,6 +13,8 @@ public partial class ReceiptItemMapper
 	[MapProperty(nameof(ReceiptItem.UnitPrice.Currency), nameof(ReceiptItemEntity.UnitPriceCurrency))]
 	[MapProperty(nameof(ReceiptItem.TotalAmount.Amount), nameof(ReceiptItemEntity.TotalAmount))]
 	[MapProperty(nameof(ReceiptItem.TotalAmount.Currency), nameof(ReceiptItemEntity.TotalAmountCurrency))]
+	[MapperIgnoreSource(nameof(ReceiptItem.CurrentClassification))]
+	[MapperIgnoreTarget(nameof(ReceiptItemEntity.CurrentClassification))]
 	[MapperIgnoreSource(nameof(ReceiptItem.ReceiptId))]
 	[MapperIgnoreSource(nameof(ReceiptItem.NormalizedDescriptionId))]
 	[MapperIgnoreSource(nameof(ReceiptItem.NormalizedDescriptionMatchScore))]
