@@ -62,7 +62,7 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 		// The canonical write gate holds source/assignment/taxonomy evidence stable throughout capture.
 		foreach (HistoricalGroupSelection selection in groups)
 		{
-			int captured = await db.Database.ExecuteSqlInterpolatedAsync($"""
+			await db.Database.ExecuteSqlInterpolatedAsync($"""
                 INSERT INTO taxonomy."HistoricalOperationItems"
                 ("OperationId", "ItemId", "ReceiptId", "Store", "RawDescription", "ItemCode",
                  "ItemRevision", "ReceiptRevision", "ExpectedAssignmentId", "PreviousCategoryId", "TargetCategoryId",
@@ -78,7 +78,6 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
                   AND i."Description" COLLATE "C" = {selection.Group.RawDescription}
                   AND i."ReceiptItemCode" COLLATE "C" IS NOT DISTINCT FROM {selection.Group.ItemCode}
                 """, ct);
-			if (captured == 0) { throw new TaxonomyException(400, "Selected exact source has no available items."); }
 		}
 		await transaction.CommitAsync(ct);
 		return await ProgressAsync(db, operation, ct);

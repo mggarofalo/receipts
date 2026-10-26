@@ -105,15 +105,19 @@ public sealed partial class ClassificationTests
 			intent.Reason,
 			groups = Enumerable.Range(0, 26).Select(_ => intent.Groups[0]).ToArray()
 		})), HttpStatusCode.BadRequest);
-		await HistoricalJson(await client.PostAsync(route, HistoricalBody(new
+		Guid emptyOperationId = Guid.NewGuid();
+		JsonElement emptyPreview = await HistoricalJson(await client.PostAsync(route, HistoricalBody(new
 		{
-			operationId = Guid.NewGuid(),
+			operationId = emptyOperationId,
 			intent.TaxonomyRevisionId,
 			intent.Reason,
 			groups = new[] { new
 						{ group = new { store = "Absent store", rawDescription = "Absent item", itemCode = (string?)null },
 								targetCategoryId = (Guid?)seed.Root } }
-		})), HttpStatusCode.BadRequest);
+		})));
+		emptyPreview.GetProperty("total").GetInt32().Should().Be(0);
+		(await HistoricalJson(await client.PostAsync($"{route}/{emptyOperationId}/apply",
+						HistoricalBody(new { limit = 1 })))).GetProperty("state").GetString().Should().Be("completed");
 		JsonElement preview = await HistoricalJson(await client.PostAsync(route, HistoricalBody(body)));
 		preview.GetProperty("total").GetInt32().Should().Be(1);
 		preview.GetProperty("pending").GetInt32().Should().Be(1);
