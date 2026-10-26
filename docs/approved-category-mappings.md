@@ -29,10 +29,32 @@ retains the original approval revision while a new purchase uses the current rev
 Explicit selections, including clearing the category, take precedence; an invalid
 explicit selection returns a rejection disposition without falling back to a mapping.
 
-This is an internal foundation, not a completed entry workflow. Resolution is advisory.
-The purchase write integration must acquire `taxonomy.Head` first, recheck source,
-current mapping revision, semantic validity and explicit choice, then atomically append
-classification evidence. Never use a preview alone to authorize a later write.
+Aggregate receipt saves now reuse approvals for genuinely new items with no explicit
+classification intent and empty legacy category/subcategory labels, when classification
+writes are enabled and the legacy migration is complete. Existing assignments, including
+manual clear, survive incidental financial or source edits. Nonempty legacy labels retain
+the compatibility writer's behavior; they may be deliberate or imported evidence and do
+not constitute a request to apply a mapping. Future contextual defaults must preserve this
+distinction.
+
+The aggregate writer holds `taxonomy.Head` before reading the mapping through its own
+DbContext and transaction. Approval, revocation and taxonomy changes take the same lock.
+It checks normalized source values as well as the fingerprint and current semantic
+validity, then appends classification and operation evidence atomically with receipt
+facts. A preview alone never authorizes a write. Missing, revoked, stale or unavailable
+mappings retain the existing `legacy_write` fallback (including unresolved null), without
+calling a model/provider.
+
+Mapping assignments use source `approved_mapping`, the current taxonomy revision, and a
+JSON `CategoryMappingReuseEvidence` reason containing the immutable mapping revision,
+original approval taxonomy revision and exact source fingerprint. The assignment actor
+is the receipt writer; the referenced mapping retains the original approving actor,
+operation, reason and timestamp. A deterministic item/mapping operation ID and the
+aggregate receipt request replay prevent duplicate assignment evidence. Format 11
+preserves the reason and authoritative classification operation unchanged.
+
+This is still internal workflow integration: approval/revocation HTTP contracts and
+review UI remain required before the feature is enabled or released.
 
 ## Required before enabling or releasing
 
@@ -40,10 +62,10 @@ classification evidence. Never use a preview alone to authorize a later write.
 - Add spec-first HTTP contracts and review UI for explicit approval and revocation,
   conflict handling and current mapping provenance. Use a single nested category field.
   Provide a read surface for current mapping/revision and category paths.
-- Integrate aggregate purchase entry atomically, with explicit choice winning,
-  source-edit invalidation, idempotent retries and current classification provenance.
-  Add backend and frontend tests covering this actual user flow. Keep model/provider
-  adapters outside these application-owned rules.
+- Add frontend tests covering the eventual approval and entry user flow. The internal
+  aggregate reuse path has PostgreSQL tests for precedence, revocation races, atomic
+  rollback, retries and portable provenance. Keep model/provider adapters outside these
+  application-owned rules.
 
 ## Portable history (format 11)
 

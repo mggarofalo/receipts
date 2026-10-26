@@ -25,6 +25,10 @@ public interface ICategoryMappingService
 		CategoryMappingExplicitChoice? explicitChoice = null, CancellationToken ct = default);
 }
 
+// Stored as the reason on approved_mapping assignments. Mapping evidence remains immutable and
+// retains its original approval taxonomy; the assignment uses the current taxonomy revision.
+public sealed record CategoryMappingReuseEvidence(Guid MappingRevisionId, Guid ApprovalTaxonomyRevisionId, string SourceFingerprint);
+
 public sealed record CategoryMappingExplicitChoice(Guid? CategoryId, Guid TaxonomyRevisionId);
 
 public static class CategoryMappingPolicy
