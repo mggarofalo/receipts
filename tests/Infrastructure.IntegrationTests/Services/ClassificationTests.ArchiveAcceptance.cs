@@ -111,12 +111,12 @@ public sealed partial class ClassificationTests
 			byte[] original = await File.ReadAllBytesAsync(source);
 			var inspection = new OfflinePortableBackupInspection();
 			var baseline = await inspection.InspectAsync(source);
-			baseline.FormatVersion.Should().Be(12);
+			baseline.FormatVersion.Should().Be(13);
 			baseline.RowCounts["historical_operation_archive"].Should().BeGreaterThan(0);
 			var merge = new OfflineConsolidationDecision(Guid.NewGuid(), loser, survivor);
 			var name = new OfflineCanonicalDecision(Guid.NewGuid(), survivor, "Survivor " + survivor, null);
 			var now = DateTimeOffset.UtcNow.AddSeconds(-1);
-			var manifest = new OfflineNormalizationManifest(1, baseline.SourceSha256, 12, baseline.FactualBaselineSha256,
+			var manifest = new OfflineNormalizationManifest(1, baseline.SourceSha256, baseline.FormatVersion, baseline.FactualBaselineSha256,
 				"archive-acceptance", "synthetic-proposer", now.AddMinutes(-1), [name], [], [merge], [],
 				new("synthetic-reviewer", now, [new(merge.DecisionId, "Same synthetic product identity"), new(name.DecisionId, "Reviewed synthetic survivor name")]));
 			await File.WriteAllTextAsync(manifestPath, JsonSerializer.Serialize(manifest, OfflineNormalizationManifestPolicy.JsonOptions));
@@ -124,7 +124,7 @@ public sealed partial class ClassificationTests
 			await service.ApplyAsync(source, manifestPath, output);
 			await service.VerifyAsync(source, manifestPath, output);
 			var transformed = await inspection.InspectAsync(output);
-			transformed.FormatVersion.Should().Be(12);
+			transformed.FormatVersion.Should().Be(13);
 			inspection.VerifyBaseline(baseline, transformed);
 			transformed.FactualTableSha256["historical_operation_archive"].Should().Be(baseline.FactualTableSha256["historical_operation_archive"]);
 			transformed.FactualTableSha256["source_revision_archive"].Should().Be(baseline.FactualTableSha256["source_revision_archive"]);

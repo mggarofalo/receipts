@@ -47,7 +47,7 @@ public static class OfflineNormalizationManifestPolicy
 
 	public static void Validate(OfflineNormalizationManifest manifest, bool requireReviewed, DateTimeOffset now)
 	{
-		Require(manifest.ManifestVersion == 1 && manifest.SourceFormatVersion is 6 or 8 or 9 or 10 or 11 or 12, "Unsupported manifest or source format.");
+		Require(manifest.ManifestVersion == 1 && manifest.SourceFormatVersion is 6 or 8 or 9 or 10 or 11 or 12 or 13, "Unsupported manifest or source format.");
 		Require(IsSha256(manifest.SourceSha256) && IsSha256(manifest.FactualBaselineSha256), "SHA-256 values must be uppercase hexadecimal.");
 		Require(Text(manifest.ToolRevision, 200) && Text(manifest.ProposedBy, 300), "Tool revision and proposer identity are required.");
 		Require(manifest.ProposedAt != default && manifest.ProposedAt <= now, "Proposal requires an actual timestamp.");

@@ -1,9 +1,11 @@
 using System.Globalization;
+using System.Text.Json;
 using Application.Models;
 using Common;
 using Domain.NormalizedDescriptions;
 using FluentAssertions;
 using Infrastructure.Entities.Core;
+using Infrastructure.Entities.Taxonomy;
 using Infrastructure.IntegrationTests.Fixtures;
 using Infrastructure.Services;
 using Microsoft.Data.Sqlite;
@@ -382,6 +384,272 @@ public class BackupRoundTripFidelityTests(PostgresFixture server) : IClassFixtur
 		settings.UpdatedAt.Should().Be(ts);
 	}
 
+
+	[Fact]
+	public async Task V13_YnabStableMappings_RestoreFreshReplayAndPreserveOnV12Import()
+	{
+		Guid categoryId = Guid.NewGuid(), revisionId = Guid.NewGuid(), mappingId = Guid.NewGuid(), operationId = Guid.NewGuid();
+		Guid ambiguousA = Guid.NewGuid(), ambiguousB = Guid.NewGuid(), otherRoot = Guid.NewGuid();
+		Guid ambiguousMappingId = Guid.NewGuid();
+		string ambiguousCandidates = $"[\"{ambiguousA}\",\"{ambiguousB}\"]";
+		DateTimeOffset recordedAt = DateTimeOffset.UtcNow;
+		const string candidateJson = "[]";
+		await using (ApplicationDbContext source = Source())
+		{
+			await using var transaction = await source.Database.BeginTransactionAsync();
+			source.TaxonomyIdentities.AddRange(new[] { categoryId, ambiguousA, ambiguousB, otherRoot }
+					.Select(id => new TaxonomyIdentityEntity { Id = id }));
+			source.TaxonomyRevisions.Add(new TaxonomyRevisionEntity
+			{
+				Id = revisionId,
+				Sequence = 1,
+				PreviousRevisionId = (await source.TaxonomyHeads.SingleAsync()).RevisionId,
+				RecordedAt = recordedAt,
+				Actor = "backup-test",
+				Reason = "Create category",
+				OperationId = operationId,
+				AffectedCount = 4,
+			});
+			source.TaxonomyOperations.Add(new TaxonomyOperationEntity
+			{
+				Actor = "backup-test",
+				OperationId = operationId,
+				RequestHash = new string('a', 64),
+				RevisionId = revisionId,
+				AffectedCount = 4,
+				RecordedAt = recordedAt,
+				Reason = "Create category",
+			});
+			source.TaxonomyNodes.AddRange(
+					new TaxonomyNodeEntity { RevisionId = revisionId, CategoryId = categoryId, Name = "Food" },
+					new TaxonomyNodeEntity { RevisionId = revisionId, CategoryId = otherRoot, Name = "Home" },
+					new TaxonomyNodeEntity { RevisionId = revisionId, CategoryId = ambiguousA, ParentId = categoryId, Name = "Shared" },
+					new TaxonomyNodeEntity { RevisionId = revisionId, CategoryId = ambiguousB, ParentId = otherRoot, Name = "Shared" });
+			(await source.TaxonomyHeads.SingleAsync()).RevisionId = revisionId;
+			source.YnabCategoryMappings.Add(new YnabCategoryMappingEntity
+			{
+				Id = mappingId,
+				ReceiptsCategory = "Food",
+				ReceiptsCategoryId = categoryId,
+				LegacyResolution = "Explicit",
+				LegacyCandidateCategoryIds = candidateJson,
+				YnabCategoryId = "ynab-food",
+				YnabCategoryName = "Food",
+				YnabCategoryGroupName = "Daily",
+				YnabBudgetId = "budget",
+				CreatedAt = DateTimeOffset.UtcNow,
+				UpdatedAt = DateTimeOffset.UtcNow,
+			});
+			source.YnabCategoryMappings.Add(new YnabCategoryMappingEntity
+			{
+				Id = ambiguousMappingId,
+				ReceiptsCategory = "Shared",
+				ReceiptsCategoryId = null,
+				LegacyResolution = "Ambiguous",
+				LegacyCandidateCategoryIds = ambiguousCandidates,
+				YnabCategoryId = "ynab-shared",
+				YnabCategoryName = "Shared",
+				YnabCategoryGroupName = "Daily",
+				YnabBudgetId = "budget",
+				CreatedAt = recordedAt,
+				UpdatedAt = recordedAt,
+			});
+			await source.SaveChangesAsync();
+			await transaction.CommitAsync();
+		}
+
+		string path = await new BackupService(new Factory(_source.CreateOptions()), NullLogger<BackupService>.Instance).ExportToSqliteAsync();
+		SqliteConnection.ClearAllPools();
+		try
+		{
+			BackupImportService importer = new(new Factory(_target.CreateOptions()), NullLogger<BackupImportService>.Instance);
+			async Task Restore()
+			{
+				await using FileStream stream = File.OpenRead(path);
+				await importer.ImportFromSqliteAsync(stream, CancellationToken.None);
+			}
+			await Restore();
+			await using (ApplicationDbContext target = Target())
+			{
+				YnabCategoryMappingEntity row = (await target.YnabCategoryMappings.FindAsync(mappingId))!;
+				row.ReceiptsCategoryId.Should().Be(categoryId);
+				row.LegacyResolution.Should().Be("Explicit");
+				row.LegacyCandidateCategoryIds.Should().Be(candidateJson);
+				YnabCategoryMappingEntity ambiguous = (await target.YnabCategoryMappings.FindAsync(ambiguousMappingId))!;
+				ambiguous.ReceiptsCategoryId.Should().BeNull();
+				ambiguous.LegacyResolution.Should().Be("Ambiguous");
+				JsonSerializer.Deserialize<Guid[]>(ambiguous.LegacyCandidateCategoryIds)
+						.Should().Equal(ambiguousA, ambiguousB);
+			}
+
+			// A second archive must not silently rebind an existing mapping ID.
+			await using (SqliteConnection sqlite = new($"Data Source={path};Pooling=False"))
+			{
+				await sqlite.OpenAsync();
+				await using SqliteCommand command = sqlite.CreateCommand();
+				command.CommandText = "UPDATE ynab_category_mappings SET receipts_category_id=$replacement WHERE id=$id";
+				command.Parameters.AddWithValue("$replacement", otherRoot.ToString());
+				command.Parameters.AddWithValue("$id", mappingId.ToString());
+				await command.ExecuteNonQueryAsync();
+			}
+			await FluentActions.Invoking(Restore).Should().ThrowAsync<InvalidOperationException>();
+			await using (ApplicationDbContext target = Target())
+			{
+				(await target.YnabCategoryMappings.FindAsync(mappingId))!
+						.ReceiptsCategoryId.Should().Be(categoryId);
+			}
+			await using (SqliteConnection sqlite = new($"Data Source={path};Pooling=False"))
+			{
+				await sqlite.OpenAsync();
+				await using SqliteCommand command = sqlite.CreateCommand();
+				command.CommandText = "UPDATE ynab_category_mappings SET receipts_category_id=$original WHERE id=$id";
+				command.Parameters.AddWithValue("$original", categoryId.ToString());
+				command.Parameters.AddWithValue("$id", mappingId.ToString());
+				await command.ExecuteNonQueryAsync();
+			}
+			await using (SqliteConnection sqlite = new($"Data Source={path};Pooling=False"))
+			{
+				await sqlite.OpenAsync();
+				await using SqliteCommand command = sqlite.CreateCommand();
+				command.CommandText = "UPDATE ynab_category_mappings SET ynab_budget_id='other-budget' WHERE id=$id";
+				command.Parameters.AddWithValue("$id", mappingId.ToString());
+				await command.ExecuteNonQueryAsync();
+			}
+			await FluentActions.Invoking(Restore).Should().ThrowAsync<InvalidOperationException>();
+			await using (SqliteConnection sqlite = new($"Data Source={path};Pooling=False"))
+			{
+				await sqlite.OpenAsync();
+				await using SqliteCommand command = sqlite.CreateCommand();
+				command.CommandText = "UPDATE ynab_category_mappings SET ynab_budget_id='budget' WHERE id=$id";
+				command.Parameters.AddWithValue("$id", mappingId.ToString());
+				await command.ExecuteNonQueryAsync();
+			}
+			await using (SqliteConnection sqlite = new($"Data Source={path};Pooling=False"))
+			{
+				await sqlite.OpenAsync();
+				await using SqliteCommand command = sqlite.CreateCommand();
+				command.CommandText = "UPDATE ynab_category_mappings SET receipts_category_id=NULL, legacy_resolution='Unmatched' WHERE id=$id";
+				command.Parameters.AddWithValue("$id", mappingId.ToString());
+				await command.ExecuteNonQueryAsync();
+			}
+			await FluentActions.Invoking(Restore).Should().ThrowAsync<InvalidOperationException>();
+			await using (SqliteConnection sqlite = new($"Data Source={path};Pooling=False"))
+			{
+				await sqlite.OpenAsync();
+				await using SqliteCommand command = sqlite.CreateCommand();
+				command.CommandText = "UPDATE ynab_category_mappings SET receipts_category_id=$original, legacy_resolution='Explicit' WHERE id=$id";
+				command.Parameters.AddWithValue("$original", categoryId.ToString());
+				command.Parameters.AddWithValue("$id", mappingId.ToString());
+				await command.ExecuteNonQueryAsync();
+			}
+			await using (SqliteConnection sqlite = new($"Data Source={path};Pooling=False"))
+			{
+				await sqlite.OpenAsync();
+				await using SqliteCommand command = sqlite.CreateCommand();
+				command.CommandText = "UPDATE ynab_category_mappings SET receipts_category_id='bad-guid' WHERE id=$id";
+				command.Parameters.AddWithValue("$id", mappingId.ToString());
+				await command.ExecuteNonQueryAsync();
+			}
+			await FluentActions.Invoking(Restore).Should().ThrowAsync<InvalidOperationException>()
+					.WithMessage("*Invalid stable category ID*");
+			await using (SqliteConnection sqlite = new($"Data Source={path};Pooling=False"))
+			{
+				await sqlite.OpenAsync();
+				await using SqliteCommand command = sqlite.CreateCommand();
+				command.CommandText = "UPDATE ynab_category_mappings SET receipts_category_id=$original WHERE id=$id";
+				command.Parameters.AddWithValue("$original", categoryId.ToString());
+				command.Parameters.AddWithValue("$id", mappingId.ToString());
+				await command.ExecuteNonQueryAsync();
+			}
+			await using (SqliteConnection sqlite = new($"Data Source={path};Pooling=False"))
+			{
+				await sqlite.OpenAsync();
+				await using SqliteCommand command = sqlite.CreateCommand();
+				command.CommandText = "UPDATE ynab_category_mappings SET legacy_candidate_category_ids=$candidates WHERE id=$id";
+				command.Parameters.AddWithValue("$candidates", $"[\"{ambiguousA}\",\"{Guid.NewGuid()}\"]");
+				command.Parameters.AddWithValue("$id", ambiguousMappingId.ToString());
+				await command.ExecuteNonQueryAsync();
+			}
+			await FluentActions.Invoking(Restore).Should().ThrowAsync<InvalidOperationException>()
+					.WithMessage("*Unknown taxonomy identity*");
+			await using (SqliteConnection sqlite = new($"Data Source={path};Pooling=False"))
+			{
+				await sqlite.OpenAsync();
+				await using SqliteCommand command = sqlite.CreateCommand();
+				command.CommandText = "UPDATE ynab_category_mappings SET legacy_candidate_category_ids=$candidates WHERE id=$id";
+				command.Parameters.AddWithValue("$candidates", ambiguousCandidates);
+				command.Parameters.AddWithValue("$id", ambiguousMappingId.ToString());
+				await command.ExecuteNonQueryAsync();
+			}
+			await using (ApplicationDbContext target = Target())
+			{
+				YnabCategoryMappingEntity row = (await target.YnabCategoryMappings.FindAsync(mappingId))!;
+				row.ReceiptsCategoryId = null;
+				row.LegacyResolution = "Unmatched";
+				await target.SaveChangesAsync();
+			}
+			await Restore();
+			await using (ApplicationDbContext target = Target())
+			{
+				YnabCategoryMappingEntity row = (await target.YnabCategoryMappings.FindAsync(mappingId))!;
+				row.ReceiptsCategoryId.Should().Be(categoryId);
+				row.LegacyResolution.Should().Be("Explicit");
+			}
+			await using (SqliteConnection sqlite = new($"Data Source={path};Pooling=False"))
+			{
+				await sqlite.OpenAsync();
+				await using SqliteCommand command = sqlite.CreateCommand();
+				command.CommandText = "UPDATE ynab_category_mappings SET legacy_resolution='Unique'";
+				await command.ExecuteNonQueryAsync();
+			}
+			await FluentActions.Invoking(Restore).Should().ThrowAsync<InvalidOperationException>();
+			await using (ApplicationDbContext target = Target())
+			{
+				(await target.YnabCategoryMappings.FindAsync(mappingId))!.ReceiptsCategoryId.Should().Be(categoryId);
+			}
+			await using (SqliteConnection sqlite = new($"Data Source={path};Pooling=False"))
+			{
+				await sqlite.OpenAsync();
+				await using SqliteCommand command = sqlite.CreateCommand();
+				command.CommandText = "UPDATE ynab_category_mappings SET legacy_resolution='Explicit'";
+				await command.ExecuteNonQueryAsync();
+			}
+
+			// A v12 file has only the legacy text; replay must retain the bound identity.
+			await using (SqliteConnection sqlite = new($"Data Source={path};Pooling=False"))
+			{
+				await sqlite.OpenAsync();
+				await using SqliteCommand command = sqlite.CreateCommand();
+				command.CommandText = "UPDATE backup_metadata SET value='12' WHERE key='export_version'; " +
+						"ALTER TABLE ynab_category_mappings DROP COLUMN receipts_category_id; " +
+						"ALTER TABLE ynab_category_mappings DROP COLUMN legacy_resolution; " +
+						"ALTER TABLE ynab_category_mappings DROP COLUMN legacy_candidate_category_ids";
+				await command.ExecuteNonQueryAsync();
+			}
+			await Restore();
+			await using (ApplicationDbContext target = Target())
+			{
+				YnabCategoryMappingEntity row = (await target.YnabCategoryMappings.FindAsync(mappingId))!;
+				row.ReceiptsCategoryId.Should().Be(categoryId);
+				row.LegacyResolution.Should().Be("Explicit");
+			}
+			await using PostgresFixture olderTarget = await server.CreateIsolatedAsync();
+			BackupImportService olderImporter = new(new Factory(olderTarget.CreateOptions()), NullLogger<BackupImportService>.Instance);
+			await using (FileStream stream = File.OpenRead(path))
+			{
+				await olderImporter.ImportFromSqliteAsync(stream, CancellationToken.None);
+			}
+			await using (ApplicationDbContext older = olderTarget.CreateDbContext())
+			{
+				YnabCategoryMappingEntity row = (await older.YnabCategoryMappings.FindAsync(mappingId))!;
+				row.ReceiptsCategoryId.Should().BeNull();
+				row.LegacyResolution.Should().Be("Unmatched");
+				(await older.YnabCategoryMappings.FindAsync(ambiguousMappingId))!
+						.ReceiptsCategoryId.Should().BeNull();
+			}
+		}
+		finally { SqliteConnection.ClearAllPools(); File.Delete(path); }
+	}
 
 	public async Task DisposeAsync()
 	{
