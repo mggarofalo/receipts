@@ -46,6 +46,9 @@ for (const width of [375, 1280]) {
       waitUntil: "domcontentloaded",
       timeout: 30_000,
     });
+    await expect(
+      page.getByRole("link", { name: "Clean up history", exact: true }),
+    ).toHaveCount(1);
     await page.getByRole("link", { name: "Clean up history" }).click();
     await expect(page).toHaveURL(/\/categories\/cleanup$/);
     await expect(page.getByText("MILK 2% GAL")).toBeVisible();

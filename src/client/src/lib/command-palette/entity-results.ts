@@ -10,7 +10,10 @@ import {
 import { useAccounts } from "@/hooks/useAccounts";
 import { useCards } from "@/hooks/useCards";
 import { useCategoryTaxonomy } from "@/hooks/useCategoryTaxonomy";
-import { categoryPaths } from "@/lib/category-paths";
+import {
+  categoryPaths,
+  type CurrentClassification,
+} from "@/lib/category-paths";
 import { useReceipts } from "@/hooks/useReceipts";
 import { useReceiptItems } from "@/hooks/useReceiptItems";
 import { useUsers } from "@/hooks/useUsers";
@@ -62,6 +65,7 @@ interface ReceiptItemLike {
   receiptItemCode?: string | null;
   category?: string | null;
   subcategory?: string | null;
+  currentClassification?: CurrentClassification | null;
 }
 interface UserLike {
   userId: string;
@@ -75,6 +79,19 @@ function tokens(...parts: Array<string | null | undefined>): string {
     .filter((p): p is string => Boolean(p))
     .join(" ")
     .toLowerCase();
+}
+
+function itemCategoryLabel(item: ReceiptItemLike): string {
+  const classification = item.currentClassification;
+  if (classification) {
+    if (classification.categoryId === null) return "Unclassified";
+    if (!classification.recordedPath.length) return "Unresolved category path";
+    return classification.recordedPath.map((node) => node.name).join(" / ");
+  }
+  const legacyPath = [item.category, item.subcategory]
+    .filter(Boolean)
+    .join(" / ");
+  return legacyPath ? `Legacy: ${legacyPath}` : "Unresolved category";
 }
 
 export function useEntityResults({
@@ -223,21 +240,23 @@ export function useEntityResults({
         id: "receipt-items",
         heading: "Receipt Items",
         icon: Package,
-        items: receiptItemData.map((i) => ({
-          id: i.id,
-          label: i.description,
-          meta:
-            [i.receiptItemCode, i.category].filter(Boolean).join(" · ") ||
-            undefined,
-          searchValue: tokens(
-            "item",
-            i.description,
-            i.receiptItemCode,
-            i.category,
-            i.subcategory,
-          ),
-          href: `/receipts/${i.receiptId}`,
-        })),
+        items: receiptItemData.map((i) => {
+          const categoryLabel = itemCategoryLabel(i);
+          return {
+            id: i.id,
+            label: i.description,
+            meta: [i.receiptItemCode, categoryLabel]
+              .filter(Boolean)
+              .join(" · "),
+            searchValue: tokens(
+              "item",
+              i.description,
+              i.receiptItemCode,
+              categoryLabel,
+            ),
+            href: `/receipts/${i.receiptId}`,
+          };
+        }),
       });
     }
 

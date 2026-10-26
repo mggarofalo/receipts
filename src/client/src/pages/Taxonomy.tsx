@@ -363,6 +363,20 @@ export default function Taxonomy() {
   const editable = isAdmin() && !historicalId;
   return (
     <>
+      <nav
+        aria-label="Classification workspace"
+        className="mb-4 flex flex-wrap gap-3 text-sm"
+      >
+        <Link className="underline" to="/classification">
+          Suggestions
+        </Link>
+        <span aria-current="page" className="font-semibold">
+          Browse categories
+        </span>
+        <Link className="underline" to="/categories/cleanup">
+          Clean up history
+        </Link>
+      </nav>
       <PageHead
         title="Categories"
         actions={
@@ -380,14 +394,6 @@ export default function Taxonomy() {
           )
         }
       />
-      {!historicalId && (
-        <Link
-          className="mb-4 inline-block text-sm text-primary underline"
-          to="/categories/cleanup"
-        >
-          Clean up history
-        </Link>
-      )}
       {historicalId && (
         <p className="mb-4">
           Historical revision ·{" "}

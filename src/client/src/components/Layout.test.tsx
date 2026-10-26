@@ -378,15 +378,20 @@ it("omits the retired Templates destination in sidebar and mobile navigation", a
 });
 
 it.each([defaultAuth.user, adminUser])(
-  "offers one Categories link to readers and administrators",
+  "offers one Classification link to readers and administrators",
   (user) => {
-    renderLayout({ user }, "/categories");
+    renderLayout({ user }, "/classification");
     const nav = within(screen.getByRole("navigation", { name: /^primary$/i }));
-    expect(nav.getAllByRole("link", { name: "Categories" })).toHaveLength(1);
-    expect(nav.getByRole("link", { name: "Categories" })).toHaveAttribute(
-      "href",
-      "/categories",
+    expect(nav.getAllByRole("link", { name: "Classification" })).toHaveLength(
+      1,
     );
+    expect(nav.getByRole("link", { name: "Classification" })).toHaveAttribute(
+      "href",
+      "/classification",
+    );
+    expect(
+      nav.queryByRole("link", { name: "Categories" }),
+    ).not.toBeInTheDocument();
     expect(
       nav.queryByRole("link", { name: "Subcategories" }),
     ).not.toBeInTheDocument();

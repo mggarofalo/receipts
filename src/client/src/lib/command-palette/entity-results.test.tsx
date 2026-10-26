@@ -96,6 +96,72 @@ describe("useEntityResults", () => {
     expect(receiptItems!.items[0].label).toBe("Organic bananas");
   });
 
+  it("uses the recorded nested path for item subtitles and search tokens", async () => {
+    const { useReceiptItems } = await import("@/hooks/useReceiptItems");
+    vi.mocked(useReceiptItems).mockReturnValue(
+      mockQueryResult({
+        data: [
+          {
+            id: "ri1",
+            receiptId: "r1",
+            description: "Milk",
+            receiptItemCode: "MILK",
+            category: "Stale category",
+            subcategory: "Stale child",
+            currentClassification: {
+              assignmentId: "a1",
+              categoryId: "leaf",
+              taxonomyRevisionId: "rev1",
+              recordedPath: [
+                { id: "root", name: "Recorded Food", archived: false },
+                {
+                  id: "middle",
+                  name: "Dairy",
+                  parentId: "root",
+                  archived: false,
+                },
+                {
+                  id: "leaf",
+                  name: "Milk",
+                  parentId: "middle",
+                  archived: false,
+                },
+              ],
+            },
+          },
+          {
+            id: "ri2",
+            receiptId: "r2",
+            description: "Bread",
+            category: "Bakery",
+            subcategory: "Loaves",
+          },
+          {
+            id: "ri3",
+            receiptId: "r3",
+            description: "Unknown",
+            category: "",
+            currentClassification: {
+              assignmentId: "a3",
+              categoryId: "leaf",
+              taxonomyRevisionId: "rev1",
+              recordedPath: [],
+            },
+          },
+        ],
+      }),
+    );
+    const { result } = renderHook(() =>
+      useEntityResults({ isAdmin: false, open: true, query: "milk" }),
+    );
+    const items = result.current.find((g) => g.id === "receipt-items")!.items;
+    expect(items[0].meta).toBe("MILK · Recorded Food / Dairy / Milk");
+    expect(items[0].searchValue).toContain("recorded food / dairy / milk");
+    expect(items[0].searchValue).not.toContain("stale category");
+    expect(items[1].meta).toBe("Legacy: Bakery / Loaves");
+    expect(items[2].meta).toBe("Unresolved category path");
+  });
+
   it("hides user group when not admin", async () => {
     const { useUsers } = await import("@/hooks/useUsers");
     vi.mocked(useUsers).mockReturnValue(

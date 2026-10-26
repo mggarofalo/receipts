@@ -209,12 +209,14 @@ describe("ReceiptItemsCard", () => {
     expect(screen.getByText("Items (2)")).toBeInTheDocument();
     expect(screen.getByText("ITEM001")).toBeInTheDocument();
     expect(screen.getByText("Widget A")).toBeInTheDocument();
-    expect(screen.getByText("Hardware")).toBeInTheDocument();
-    expect(screen.getByText("Fasteners")).toBeInTheDocument();
+    expect(
+      screen.getByText("Legacy: Hardware / Fasteners"),
+    ).toBeInTheDocument();
     expect(screen.getByText("ITEM002")).toBeInTheDocument();
     expect(screen.getByText("Widget B")).toBeInTheDocument();
-    expect(screen.getByText("Electronics")).toBeInTheDocument();
-    expect(screen.getByText("Components")).toBeInTheDocument();
+    expect(
+      screen.getByText("Legacy: Electronics / Components"),
+    ).toBeInTheDocument();
   });
 
   it("renders table headers when items exist", () => {
@@ -231,8 +233,64 @@ describe("ReceiptItemsCard", () => {
     expect(screen.getByText("Unit Price")).toBeInTheDocument();
     expect(screen.getByText("Total")).toBeInTheDocument();
     expect(screen.getByText("Category")).toBeInTheDocument();
-    expect(screen.getByText("Subcategory")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("columnheader", { name: "Subcategory" }),
+    ).not.toBeInTheDocument();
     expect(screen.getByText("Actions")).toBeInTheDocument();
+  });
+
+  it("shows the full recorded path and honest non-path states in one column", () => {
+    const recorded = {
+      assignmentId: "a1",
+      categoryId: "leaf",
+      taxonomyRevisionId: "r1",
+      recordedPath: [
+        { id: "root", name: "Old Food", archived: false },
+        { id: "middle", name: "Dairy", parentId: "root", archived: false },
+        { id: "leaf", name: "Milk", parentId: "middle", archived: false },
+      ],
+    };
+    renderWithQueryClient(
+      <ReceiptItemsCard
+        receiptId="receipt-1"
+        items={[
+          { ...mockItems[0], currentClassification: recorded },
+          {
+            ...mockItems[1],
+            currentClassification: {
+              ...recorded,
+              categoryId: null,
+              recordedPath: [],
+            },
+          },
+          {
+            ...mockItems[0],
+            id: "item-3",
+            description: "Unknown",
+            currentClassification: { ...recorded, recordedPath: [] },
+          },
+          {
+            ...mockItems[0],
+            id: "item-4",
+            description: "Archived",
+            currentClassification: {
+              ...recorded,
+              recordedPath: [{ ...recorded.recordedPath[0], archived: true }],
+            },
+          },
+        ]}
+        subtotal={46}
+      />,
+    );
+    expect(screen.getByText("Old Food / Dairy / Milk")).toBeInTheDocument();
+    expect(screen.getByText("Unclassified")).toBeInTheDocument();
+    expect(screen.getByText("Unresolved category path")).toBeInTheDocument();
+    expect(
+      screen.getByText("Old Food (archived in recorded revision)"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Legacy: Hardware / Fasteners"),
+    ).not.toBeInTheDocument();
   });
 
   it("renders the subtotal in the footer", () => {

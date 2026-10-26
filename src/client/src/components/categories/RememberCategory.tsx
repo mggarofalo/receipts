@@ -30,10 +30,16 @@ import {
 export function RememberCategory({
   source,
   classification,
+  preferredCategoryId,
+  confirmDifferentMapping = false,
+  onSaved,
   dialog = false,
 }: {
   source: MappingSource;
   classification?: CurrentClassification | null;
+  preferredCategoryId?: string;
+  confirmDifferentMapping?: boolean;
+  onSaved?: () => void;
   dialog?: boolean;
 }) {
   const { isAdmin } = usePermission();
@@ -42,6 +48,7 @@ export function RememberCategory({
   const [choice, setChoice] = useState<CategoryChoice>();
   const [reason, setReason] = useState("");
   const [saved, setSaved] = useState(false);
+  const [confirmedHeadId, setConfirmedHeadId] = useState<string>();
   const request = useRef<MappingChange | null>(null);
   const busy = useRef(false);
   const status = parseProblemDetails(change.error)?.status;
@@ -53,15 +60,17 @@ export function RememberCategory({
     status !== 408;
   const locked = change.isPending || change.isError;
   const currentRows = categoryPaths(taxonomy.data?.nodes ?? []);
+  const preselectedCategoryId =
+    classification?.categoryId || preferredCategoryId;
   // Only a recorded category identity can prefill the choice; legacy labels are not approval.
   const selected =
     choice ??
-    (classification?.categoryId && taxonomy.data
+    (preselectedCategoryId && taxonomy.data
       ? {
-          categoryId: classification.categoryId,
+          categoryId: preselectedCategoryId,
           taxonomyRevisionId: taxonomy.data.id,
           path:
-            currentRows.find((row) => row.node.id === classification.categoryId)
+            currentRows.find((row) => row.node.id === preselectedCategoryId)
               ?.path ?? [],
         }
       : undefined);
@@ -71,12 +80,29 @@ export function RememberCategory({
     currentRows.some((row) => row.node.id === selected.categoryId);
   const inspected = inspection.data;
   const head = inspected?.mapping;
+  const differentMapping = !!(
+    confirmDifferentMapping &&
+    head?.category &&
+    head.category.id !== selected?.categoryId
+  );
+  const alreadyRemembered = !!(
+    confirmDifferentMapping &&
+    head?.category &&
+    head.category.id === preferredCategoryId
+  );
   const approvedPath = categoryPaths(approvedTaxonomy.data?.nodes ?? []).find(
     (row) => row.node.id === head?.category?.id,
   )?.label;
 
   function submit(revoke: boolean) {
-    if (!isAdmin() || busy.current || conflict) return;
+    if (
+      !isAdmin() ||
+      busy.current ||
+      conflict ||
+      alreadyRemembered ||
+      (differentMapping && confirmedHeadId !== head?.id)
+    )
+      return;
     if (!request.current) {
       if (
         !inspected ||
@@ -108,6 +134,7 @@ export function RememberCategory({
         request.current = null;
         setSaved(true);
         setReason("");
+        onSaved?.();
       },
       onSettled: () => {
         busy.current = false;
@@ -120,6 +147,7 @@ export function RememberCategory({
     request.current = null;
     change.reset();
     setSaved(false);
+    setConfirmedHeadId(undefined);
     await Promise.all([inspection.refetch(), taxonomy.refetch()]);
   }
 
@@ -158,6 +186,12 @@ export function RememberCategory({
           )}
         </div>
       )}
+      {alreadyRemembered && (
+        <p role="status">
+          This exact source is already remembered with the saved category. No
+          mapping change is needed.
+        </p>
+      )}
       <details className="text-muted-foreground">
         <summary className="cursor-pointer">
           Matching details and history
@@ -176,6 +210,21 @@ export function RememberCategory({
       </details>
       {isAdmin() ? (
         <>
+          {differentMapping && !alreadyRemembered && (
+            <label className="flex items-start gap-2">
+              <input
+                type="checkbox"
+                checked={confirmedHeadId === head?.id}
+                onChange={(event) =>
+                  setConfirmedHeadId(
+                    event.target.checked ? head?.id : undefined,
+                  )
+                }
+              />
+              Replace the current remembered category for this exact source
+              after reviewing it
+            </label>
+          )}
           <CategoryPathPicker
             aria-label="Category for future matches"
             revision={taxonomy.data}
@@ -211,6 +260,8 @@ export function RememberCategory({
                 disabled={
                   locked ||
                   !valid ||
+                  alreadyRemembered ||
+                  (differentMapping && confirmedHeadId !== head?.id) ||
                   !inspected ||
                   inspection.isFetching ||
                   taxonomy.isFetching ||
