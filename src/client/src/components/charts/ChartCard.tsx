@@ -36,16 +36,23 @@ export function ChartCard({
 
   return (
     <Card className={cn("flex flex-col", className)}>
-      <CardHeader>
+      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:justify-between">
         <div>
           <CardTitle id={titleId}>{title}</CardTitle>
           {subtitle && <CardDescription>{subtitle}</CardDescription>}
         </div>
-        {action && <CardAction>{action}</CardAction>}
+        {action && (
+          <CardAction className="w-full min-w-0 sm:w-auto">{action}</CardAction>
+        )}
       </CardHeader>
       <CardContent className="flex-1">
         {loading ? (
-          <div role="status" aria-live="polite" aria-busy="true" className="space-y-3">
+          <div
+            role="status"
+            aria-live="polite"
+            aria-busy="true"
+            className="space-y-3"
+          >
             <span className="sr-only">Loading…</span>
             <Skeleton aria-hidden="true" className="h-4 w-full" />
             <Skeleton aria-hidden="true" className="h-4 w-3/4" />

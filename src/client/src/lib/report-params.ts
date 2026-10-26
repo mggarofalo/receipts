@@ -12,6 +12,37 @@ export function parseCategoryViewParam(
     : "asClassified";
 }
 
+/** Category selection shared by report URLs. Invalid optional values are ignored. */
+export function parseCategoryReportParams(params: URLSearchParams) {
+  const categoryView = parseCategoryViewParam(params);
+  const uuid = (value: string | null) =>
+    value &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      value,
+    )
+      ? value
+      : undefined;
+  const cutoff = params.get("knowledgeCutoff");
+  return {
+    categoryView,
+    rollup:
+      params.get("rollup") === "root"
+        ? ("root" as const)
+        : ("assignedCategory" as const),
+    categoryId: uuid(params.get("categoryId")),
+    knowledgeCutoff:
+      cutoff &&
+      /^\d{4}-\d{2}-\d{2}T.*Z$/.test(cutoff) &&
+      Number.isFinite(Date.parse(cutoff))
+        ? new Date(cutoff).toISOString()
+        : undefined,
+    capturedCurrentRevisionId:
+      categoryView === "currentHierarchy"
+        ? uuid(params.get("capturedCurrentRevisionId"))
+        : undefined,
+  };
+}
+
 /**
  * The standard default date range for every date-filtered report: the
  * trailing 12 months through today. Centralized here so reports can't drift

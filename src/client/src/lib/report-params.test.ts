@@ -3,6 +3,7 @@ import { format, subMonths } from "date-fns";
 import {
   getDefaultRange,
   parseCategoryViewParam,
+  parseCategoryReportParams,
   parseDateRangeParam,
   serializeDateRangeParam,
   parseEnumParam,
@@ -422,5 +423,29 @@ describe("buildItemCostDrillDownHref", () => {
 
   it("returns null for an empty canonical name", () => {
     expect(buildItemCostDrillDownHref("", range)).toBeNull();
+  });
+});
+
+it("parses category identity, cutoff and reused revision only for current hierarchy", () => {
+  const query = new URLSearchParams(
+    "categoryView=currentHierarchy&rollup=root&categoryId=11111111-1111-1111-1111-111111111111&knowledgeCutoff=2026-01-01T00:00:00Z&capturedCurrentRevisionId=22222222-2222-2222-2222-222222222222",
+  );
+  expect(parseCategoryReportParams(query)).toEqual({
+    categoryView: "currentHierarchy",
+    rollup: "root",
+    categoryId: "11111111-1111-1111-1111-111111111111",
+    knowledgeCutoff: "2026-01-01T00:00:00.000Z",
+    capturedCurrentRevisionId: "22222222-2222-2222-2222-222222222222",
+  });
+  query.set("categoryView", "garbage");
+  query.set("categoryId", "garbage");
+  query.set("knowledgeCutoff", "garbage");
+  query.set("rollup", "garbage");
+  expect(parseCategoryReportParams(query)).toEqual({
+    categoryView: "asClassified",
+    rollup: "assignedCategory",
+    categoryId: undefined,
+    knowledgeCutoff: undefined,
+    capturedCurrentRevisionId: undefined,
   });
 });

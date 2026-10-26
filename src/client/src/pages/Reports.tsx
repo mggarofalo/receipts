@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useMemo } from "react";
 import { Link, Navigate, useSearchParams } from "react-router";
+import { parseCategoryViewParam } from "@/lib/report-params";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { useReportsHealthSummary } from "@/hooks/useReportsHealthSummary";
 import {
@@ -188,7 +189,13 @@ function PickerBadge({
   );
 }
 
-function OperationalReportLibrary({ counts }: { counts: Counts }) {
+function OperationalReportLibrary({
+  counts,
+  sharedParams,
+}: {
+  counts: Counts;
+  sharedParams: string;
+}) {
   return (
     <section
       className="border-border mt-10 border-t pt-8"
@@ -215,7 +222,7 @@ function OperationalReportLibrary({ counts }: { counts: Counts }) {
               {group.reports.map((report) => (
                 <Link
                   key={report.slug}
-                  to={`/reports?report=${report.slug}`}
+                  to={`/reports?${sharedParams}&report=${report.slug}`}
                   className="rounded-xl"
                 >
                   <Card className="h-full gap-3">
@@ -242,6 +249,15 @@ function OperationalReportLibrary({ counts }: { counts: Counts }) {
 function Reports() {
   const [searchParams, setSearchParams] = useSearchParams();
 
+  const categoryView = parseCategoryViewParam(searchParams);
+  const sharedParams = useMemo(() => {
+    const params = new URLSearchParams({ categoryView });
+    for (const key of ["startDate", "endDate"]) {
+      const value = searchParams.get(key);
+      if (value) params.set(key, value);
+    }
+    return params.toString();
+  }, [searchParams, categoryView]);
   const rawReport = searchParams.get("report");
 
   const activeReport = useMemo(
@@ -255,16 +271,15 @@ function Reports() {
 
   const handleReportChange = useCallback(
     (slug: string) => {
-      // Replace rather than merge: any filter params belong to the report being
-      // navigated away from and must not leak into the next one.
-      setSearchParams({ report: slug }, { replace: true });
+      // Preserve shared dates and category view while resetting report-specific filters.
+      setSearchParams(`${sharedParams}&report=${slug}`, { replace: true });
     },
-    [setSearchParams],
+    [setSearchParams, sharedParams],
   );
 
   const handleBackToHub = useCallback(() => {
-    setSearchParams({}, { replace: true });
-  }, [setSearchParams]);
+    setSearchParams(sharedParams, { replace: true });
+  }, [setSearchParams, sharedParams]);
 
   if (rawReport === "normalized-descriptions") {
     return <Navigate to={NORMALIZED_DESCRIPTIONS_REDIRECT} replace />;
@@ -278,11 +293,13 @@ function Reports() {
           <CardHeader>
             <CardTitle>Purchase history</CardTitle>
             <Button asChild className="w-fit">
-              <Link to="/search">Search purchase history</Link>
+              <Link to={`/search?categoryView=${categoryView}`}>
+                Search purchase history
+              </Link>
             </Button>
           </CardHeader>
         </Card>
-        <OperationalReportLibrary counts={counts} />
+        <OperationalReportLibrary counts={counts} sharedParams={sharedParams} />
       </>
     );
   }
@@ -298,7 +315,9 @@ function Reports() {
               All reports
             </Button>
             <Button asChild variant="outline">
-              <Link to="/search">Search purchase history</Link>
+              <Link to={`/search?categoryView=${categoryView}`}>
+                Search purchase history
+              </Link>
             </Button>
             <Select
               value={activeReport.slug}
