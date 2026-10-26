@@ -78,6 +78,81 @@ async function reason() {
   );
 }
 describe("RememberCategory", () => {
+  it("requires fresh confirmation before replacing another remembered category from a completed decision", async () => {
+    const other = {
+      ...inspection,
+      mapping: { ...inspection.mapping, category: { id: "other" } },
+    };
+    post.mockImplementation(
+      async (path) =>
+        ({ data: path.endsWith("/inspect") ? other : { id: "new" } }) as never,
+    );
+    renderWithQueryClient(
+      <RememberCategory
+        source={source}
+        preferredCategoryId="dairy"
+        confirmDifferentMapping
+      />,
+    );
+    await screen.findByText("Remembered category: other");
+    const change = screen.getByRole("button", {
+      name: "Change remembered category",
+    });
+    expect(change).toBeDisabled();
+    await userEvent.click(
+      screen.getByRole("checkbox", {
+        name: /Replace the current remembered category/i,
+      }),
+    );
+    expect(change).toBeEnabled();
+    await userEvent.click(change);
+    await waitFor(() => expect(writes()).toHaveLength(1));
+    expect(writes()[0][1]).toEqual(
+      expect.objectContaining({
+        body: expect.objectContaining({
+          expectedMappingRevisionId: "mapping",
+          category: { id: "dairy" },
+          sourceFingerprint: "fingerprint",
+        }),
+      }),
+    );
+  });
+  it("recognizes an already approved saved category without another change", async () => {
+    renderWithQueryClient(
+      <RememberCategory
+        source={source}
+        preferredCategoryId="dairy"
+        confirmDifferentMapping
+      />,
+    );
+    await ready();
+    expect(
+      screen.getByText(/already remembered with the saved category/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Change remembered category" }),
+    ).toBeDisabled();
+    expect(writes()).toHaveLength(0);
+  });
+  it("prefills an approved item category without inventing a receipt assignment", async () => {
+    renderWithQueryClient(
+      <RememberCategory source={source} preferredCategoryId="dairy" />,
+    );
+    await ready();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Change remembered category" }),
+    );
+    await waitFor(() => expect(writes()).toHaveLength(1));
+    expect(writes()[0][1]).toEqual(
+      expect.objectContaining({
+        body: expect.objectContaining({
+          category: { id: "dairy" },
+          expectedMappingRevisionId: "mapping",
+          sourceFingerprint: "fingerprint",
+        }),
+      }),
+    );
+  });
   it("loads lazily from the receipt affordance, shows exact scope and never approves on inspection", async () => {
     renderWithQueryClient(
       <RememberCategoryControl

@@ -13,6 +13,8 @@ import Accounts from "@/pages/Accounts";
 import Cards from "@/pages/Cards";
 import Taxonomy from "@/pages/Taxonomy";
 import HistoricalCleanup from "@/pages/HistoricalCleanup";
+import ClassificationWorkspace from "@/pages/ClassificationWorkspace";
+import CategoryAssistanceSettings from "@/pages/settings/CategoryAssistanceSettings";
 import Receipts from "@/pages/Receipts";
 import Reports from "@/pages/Reports";
 import PurchaseSearch from "@/pages/PurchaseSearch";
@@ -55,6 +57,15 @@ export const routeConfig = [
           { path: "/taxonomy", element: <CategoryRedirect preserveRevision /> },
           { path: "/categories", element: <Taxonomy /> },
           { path: "/categories/cleanup", element: <HistoricalCleanup /> },
+          { path: "/classification", element: <ClassificationWorkspace /> },
+          {
+            path: "/admin/category-assistance",
+            element: (
+              <AdminRoute>
+                <CategoryAssistanceSettings />
+              </AdminRoute>
+            ),
+          },
           { path: "/subcategories", element: <CategoryRedirect /> },
           { path: "/receipts", element: <Receipts /> },
           { path: "/receipts/new", element: <NewReceipt /> },

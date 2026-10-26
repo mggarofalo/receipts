@@ -63,6 +63,24 @@ interface ReceiptItemsCardProps {
   location?: string | null;
 }
 
+function categoryLabel(item: ReceiptItem): string {
+  const classification = item.currentClassification;
+  if (classification) {
+    if (classification.categoryId === null) return "Unclassified";
+    if (!classification.recordedPath.length) return "Unresolved category path";
+    const path = classification.recordedPath
+      .map((node) => node.name)
+      .join(" / ");
+    return classification.recordedPath.some((node) => node.archived)
+      ? `${path} (archived in recorded revision)`
+      : path;
+  }
+  const legacyPath = [item.category, item.subcategory]
+    .filter(Boolean)
+    .join(" / ");
+  return legacyPath ? `Legacy: ${legacyPath}` : "Unresolved category";
+}
+
 export function ReceiptItemsCard({
   receiptId,
   items,
@@ -232,7 +250,6 @@ export function ReceiptItemsCard({
                     <TableHead className="text-right">Unit Price</TableHead>
                     <TableHead className="text-right">Total</TableHead>
                     <TableHead>Category</TableHead>
-                    <TableHead>Subcategory</TableHead>
                     <TableHead className="w-24">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -284,11 +301,7 @@ export function ReceiptItemsCard({
                         )}
                       </TableCell>
                       <TableCell>
-                        {item.currentClassification
-                          ? item.currentClassification.recordedPath
-                              .map((node) => node.name)
-                              .join(" / ") || "Unclassified"
-                          : item.category}{" "}
+                        {categoryLabel(item)}{" "}
                         {location && (
                           <RememberCategoryControl
                             key={normalizationSourceKey(
@@ -298,11 +311,6 @@ export function ReceiptItemsCard({
                             classification={item.currentClassification}
                           />
                         )}
-                      </TableCell>
-                      <TableCell>
-                        {item.currentClassification
-                          ? ""
-                          : (item.subcategory ?? "")}
                       </TableCell>
                       <TableCell>
                         <Button
@@ -330,7 +338,7 @@ export function ReceiptItemsCard({
                     <TableCell className="text-right font-bold">
                       {formatCurrency(subtotal)}
                     </TableCell>
-                    <TableCell colSpan={3} />
+                    <TableCell colSpan={2} />
                   </TableRow>
                 </TableFooter>
               </Table>

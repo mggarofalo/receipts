@@ -70,7 +70,7 @@ const NAV: readonly NavSection[] = [
     items: [
       { to: "/accounts", label: "Accounts", icon: Icon.Wallet },
       { to: "/cards", label: "Cards", icon: Icon.Card },
-      { to: "/categories", label: "Categories", icon: Icon.Tag },
+      { to: "/classification", label: "Classification", icon: Icon.Tag },
       { to: "/settings/ynab", label: "YNAB", icon: Icon.Link },
       { to: "/ynab", label: "YNAB Status", icon: Icon.Chart },
     ],
@@ -86,6 +86,7 @@ const NAV: readonly NavSection[] = [
   {
     title: "Admin",
     items: [
+      { to: "/admin/category-assistance", label: "Category Assistance", icon: Icon.Settings, admin: true },
       { to: "/admin/users", label: "Users", icon: Icon.Users, admin: true },
       { to: "/audit", label: "Audit", icon: Icon.Clock, admin: true },
       { to: "/trash", label: "Trash", icon: Icon.Trash, admin: true },
