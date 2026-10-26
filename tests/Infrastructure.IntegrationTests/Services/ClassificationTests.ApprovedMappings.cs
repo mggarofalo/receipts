@@ -62,7 +62,7 @@ public sealed partial class ClassificationTests
 	}
 
 	[Fact]
-	public async Task MappingAssignmentAndOriginalApprovalRoundTripThroughV11()
+	public async Task MappingAssignmentAndOriginalApprovalRoundTripThroughV12()
 	{
 		var entry = await MappingEntryAsync();
 		var saved = await MappingWriter().CreateAsync(new Infrastructure.Mapping.ReceiptMapper().ToDomain(entry.Receipt), [],
@@ -72,7 +72,7 @@ public sealed partial class ClassificationTests
 		var target = new PostgresFixture();
 		try
 		{
-			(await new OfflinePortableBackupInspection().InspectAsync(path)).FormatVersion.Should().Be(11);
+			(await new OfflinePortableBackupInspection().InspectAsync(path)).FormatVersion.Should().Be(12);
 			await target.InitializeAsync();
 			await using var input = File.OpenRead(path);
 			await new BackupImportService(new Factory(target), NullLogger<BackupImportService>.Instance).ImportFromSqliteAsync(input, default);

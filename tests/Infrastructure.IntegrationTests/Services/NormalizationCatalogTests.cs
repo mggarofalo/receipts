@@ -17,7 +17,7 @@ namespace Infrastructure.IntegrationTests.Services;
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public sealed partial class NormalizationCatalogTests(PostgresFixture fixture)
+public sealed partial class NormalizationCatalogTests(PostgresFixture server) : IsolatedPostgresTest(server)
 {
 	private const string Actor = "catalog-test-admin";
 	private static readonly NormalizationSourceKey Source = new("Store A", "BF FRANKS 8CT", "123");
@@ -151,15 +151,20 @@ public sealed partial class NormalizationCatalogTests(PostgresFixture fixture)
 	private static NormalizationCatalogPreview Request(NormalizedDescriptionEntity target) =>
 		new(Guid.NewGuid(), Source, target.Id, target.NormalizationRevision, null, false);
 
+	private async Task StartFreshDatabaseAsync()
+	{
+		await ReplaceDatabaseAsync();
+		await ResetAsync();
+		await using var db = fixture.CreateDbContext();
+		(await db.ReceiptItems.CountAsync()).Should().Be(0);
+		(await db.NormalizedDescriptions.CountAsync()).Should().Be(0);
+		(await db.NormalizationSourceMappings.CountAsync()).Should().Be(0);
+	}
+
 	private async Task ResetAsync()
 	{
 		publisher.Setup(x => x.PublishAsync(It.IsAny<CommittedEntityChange>())).Returns(Task.CompletedTask);
 		await using var db = fixture.CreateDbContext();
-		await db.Database.ExecuteSqlRawAsync("""
-			TRUNCATE matching."NormalizationCatalogMembers", matching."NormalizationCatalogOperations",
-			matching."NormalizationSourceMappings", matching."NormalizationAiRuns",
-			receipts."ReceiptItems", receipts."Receipts", matching."NormalizedDescriptions" CASCADE;
-			""");
 		if (!await db.Users.AnyAsync(x => x.Id == Actor))
 		{
 			db.Users.Add(new ApplicationUser { Id = Actor, UserName = Actor, NormalizedUserName = Actor.ToUpperInvariant(), SecurityStamp = Guid.NewGuid().ToString(), CreatedAt = DateTimeOffset.UtcNow });

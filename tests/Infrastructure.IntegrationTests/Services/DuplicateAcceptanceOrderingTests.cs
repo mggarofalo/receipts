@@ -14,7 +14,7 @@ namespace Infrastructure.IntegrationTests.Services;
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class DuplicateAcceptanceOrderingTests(PostgresFixture fixture)
+public class DuplicateAcceptanceOrderingTests(PostgresFixture server) : IsolatedPostgresTest(server)
 {
 	[Fact]
 	public async Task AcceptanceHoldingReceiptLocks_EditWaitsThenInvalidatesCommittedAcceptance()
@@ -133,7 +133,6 @@ public class DuplicateAcceptanceOrderingTests(PostgresFixture fixture)
 	private async Task<Guid[]> SeedAsync()
 	{
 		await using ApplicationDbContext context = fixture.CreateDbContext();
-		await context.Database.ExecuteSqlRawAsync("""TRUNCATE "receipts"."AcceptedDuplicatePairs", "receipts"."Transactions", "receipts"."ReceiptItems", "receipts"."Adjustments", "receipts"."Receipts" RESTART IDENTITY CASCADE;""");
 		AccountEntity account = AccountEntityGenerator.Generate();
 		CardEntity card = CardEntityGenerator.Generate();
 		card.AccountId = account.Id;

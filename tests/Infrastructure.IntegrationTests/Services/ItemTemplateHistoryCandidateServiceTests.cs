@@ -18,13 +18,13 @@ namespace Infrastructure.IntegrationTests.Services;
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class ItemTemplateHistoryCandidateServiceTests(PostgresFixture fixture)
+public class ItemTemplateHistoryCandidateServiceTests(PostgresFixture server) : IsolatedPostgresTest(server)
 {
 	[Fact]
 	public async Task GetHistoryCandidatesAsync_GroupsDescriptionsCaseInsensitively()
 	{
 		// Arrange
-		await ResetAsync();
+
 		ReceiptEntity older = Receipt(new DateOnly(2026, 1, 10));
 		ReceiptEntity newer = Receipt(new DateOnly(2026, 3, 20));
 
@@ -51,7 +51,7 @@ public class ItemTemplateHistoryCandidateServiceTests(PostgresFixture fixture)
 	public async Task GetHistoryCandidatesAsync_ExcludesDescriptionsMatchingAnExistingTemplate()
 	{
 		// Arrange
-		await ResetAsync();
+
 		ReceiptEntity receipt = Receipt(new DateOnly(2026, 2, 1));
 
 		await SeedAsync(
@@ -77,7 +77,7 @@ public class ItemTemplateHistoryCandidateServiceTests(PostgresFixture fixture)
 	public async Task GetHistoryCandidatesAsync_IgnoresSoftDeletedTemplates()
 	{
 		// Arrange
-		await ResetAsync();
+
 		ReceiptEntity receipt = Receipt(new DateOnly(2026, 2, 1));
 
 		ItemTemplateEntity deletedTemplate = Template("Whole Milk");
@@ -102,7 +102,7 @@ public class ItemTemplateHistoryCandidateServiceTests(PostgresFixture fixture)
 	public async Task GetHistoryCandidatesAsync_AppliesMinCountFloor()
 	{
 		// Arrange
-		await ResetAsync();
+
 		ReceiptEntity receipt = Receipt(new DateOnly(2026, 2, 1));
 
 		await SeedAsync(
@@ -129,7 +129,7 @@ public class ItemTemplateHistoryCandidateServiceTests(PostgresFixture fixture)
 	public async Task GetHistoryCandidatesAsync_ExcludesSoftDeletedReceiptItemsAndReceipts()
 	{
 		// Arrange
-		await ResetAsync();
+
 		ReceiptEntity live = Receipt(new DateOnly(2026, 2, 1));
 		ReceiptEntity deletedReceipt = Receipt(new DateOnly(2026, 2, 2));
 
@@ -164,7 +164,7 @@ public class ItemTemplateHistoryCandidateServiceTests(PostgresFixture fixture)
 	public async Task GetHistoryCandidatesAsync_SuggestsMostFrequentCategoryPairAndItemCode()
 	{
 		// Arrange
-		await ResetAsync();
+
 		ReceiptEntity receipt = Receipt(new DateOnly(2026, 2, 1));
 
 		await SeedAsync(
@@ -188,7 +188,7 @@ public class ItemTemplateHistoryCandidateServiceTests(PostgresFixture fixture)
 	public async Task GetHistoryCandidatesAsync_SuggestsMostRecentUnitPrice()
 	{
 		// Arrange
-		await ResetAsync();
+
 		ReceiptEntity older = Receipt(new DateOnly(2026, 1, 5));
 		ReceiptEntity newer = Receipt(new DateOnly(2026, 4, 5));
 
@@ -212,7 +212,7 @@ public class ItemTemplateHistoryCandidateServiceTests(PostgresFixture fixture)
 	public async Task GetHistoryCandidatesAsync_IgnoresNullItemCodesWhenSuggesting()
 	{
 		// Arrange
-		await ResetAsync();
+
 		ReceiptEntity receipt = Receipt(new DateOnly(2026, 2, 1));
 
 		await SeedAsync(
@@ -234,7 +234,7 @@ public class ItemTemplateHistoryCandidateServiceTests(PostgresFixture fixture)
 	public async Task GetHistoryCandidatesAsync_ReturnsNullSuggestions_WhenNoItemCodeExists()
 	{
 		// Arrange
-		await ResetAsync();
+
 		ReceiptEntity receipt = Receipt(new DateOnly(2026, 2, 1));
 
 		await SeedAsync(
@@ -261,7 +261,7 @@ public class ItemTemplateHistoryCandidateServiceTests(PostgresFixture fixture)
 		// on ReceiptItemEntity (empty strings reach it only via legacy/imported data, since the
 		// domain layer rejects them for entered items), so it is seeded directly here rather than
 		// through the domain's own validation.
-		await ResetAsync();
+
 		ReceiptEntity receipt = Receipt(new DateOnly(2026, 2, 1));
 
 		await SeedAsync(
@@ -287,7 +287,7 @@ public class ItemTemplateHistoryCandidateServiceTests(PostgresFixture fixture)
 	public async Task GetHistoryCandidatesAsync_OrdersByOccurrenceCountThenName()
 	{
 		// Arrange
-		await ResetAsync();
+
 		ReceiptEntity receipt = Receipt(new DateOnly(2026, 2, 1));
 
 		await SeedAsync(
@@ -313,7 +313,7 @@ public class ItemTemplateHistoryCandidateServiceTests(PostgresFixture fixture)
 	public async Task GetHistoryCandidatesAsync_PagesResultsWithStableTotal()
 	{
 		// Arrange
-		await ResetAsync();
+
 		ReceiptEntity receipt = Receipt(new DateOnly(2026, 2, 1));
 
 		await SeedAsync(
@@ -346,7 +346,6 @@ public class ItemTemplateHistoryCandidateServiceTests(PostgresFixture fixture)
 	public async Task GetHistoryCandidatesAsync_ReturnsEmptyPage_WhenNoHistoryExists()
 	{
 		// Arrange
-		await ResetAsync();
 
 		// Act
 		PagedResult<ItemTemplateHistoryCandidate> result = await CreateService().GetHistoryCandidatesAsync(0, 50, 2, CancellationToken.None);
@@ -360,12 +359,6 @@ public class ItemTemplateHistoryCandidateServiceTests(PostgresFixture fixture)
 
 	private ItemTemplateHistoryCandidateService CreateService() => new(new FixtureDbContextFactory(fixture));
 
-	private async Task ResetAsync()
-	{
-		await using ApplicationDbContext context = fixture.CreateDbContext();
-		await context.Database.ExecuteSqlRawAsync(
-			"""TRUNCATE "ReceiptItems", "Receipts", "ItemTemplates", "DistinctDescriptions" RESTART IDENTITY CASCADE;""");
-	}
 
 	private async Task SeedAsync(
 		IEnumerable<ReceiptEntity> receipts,

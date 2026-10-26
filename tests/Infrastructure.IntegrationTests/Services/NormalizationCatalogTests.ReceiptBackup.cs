@@ -52,13 +52,7 @@ public sealed partial class NormalizationCatalogTests
 	[Fact]
 	public async Task ReceiptBackup_VersionSevenMappingsDoNotBlessImportedHistoryButCanRecognizeNewPurchases()
 	{
-		var isolated = new Infrastructure.IntegrationTests.Fixtures.PostgresFixture();
-		try
-		{
-			await isolated.InitializeAsync();
-			await new NormalizationCatalogTests(isolated).VersionSevenMappingsCoreAsync();
-		}
-		finally { await isolated.DisposeAsync(); }
+		await VersionSevenMappingsCoreAsync();
 	}
 
 	private async Task VersionSevenMappingsCoreAsync()
@@ -77,7 +71,7 @@ public sealed partial class NormalizationCatalogTests
 				command.CommandText = "UPDATE backup_metadata SET value='7' WHERE key='export_version'; DELETE FROM normalization_catalog WHERE kind IN ('review_evidence','write_request'); UPDATE normalization_catalog SET payload=json_remove(payload,'$.ExclusionReason') WHERE kind='mapping';";
 				await command.ExecuteNonQueryAsync();
 			}
-			await ResetAsync();
+			await StartFreshDatabaseAsync();
 			await using (var stream = File.OpenRead(path))
 			{
 				await new BackupImportService(new Factory(fixture), NullLogger<BackupImportService>.Instance).ImportFromSqliteAsync(stream, CancellationToken.None);
@@ -111,7 +105,7 @@ public sealed partial class NormalizationCatalogTests
 		string path = await new BackupService(new Factory(fixture), NullLogger<BackupService>.Instance).ExportToSqliteAsync();
 		try
 		{
-			await ResetAsync();
+			await StartFreshDatabaseAsync();
 			await using (var stream = File.OpenRead(path))
 			{
 				await new BackupImportService(new Factory(fixture), NullLogger<BackupImportService>.Instance).ImportFromSqliteAsync(stream, CancellationToken.None);

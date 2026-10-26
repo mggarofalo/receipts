@@ -11,7 +11,7 @@ namespace Infrastructure.IntegrationTests.Services;
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class DuplicateAcceptanceInvalidationTests(PostgresFixture fixture)
+public class DuplicateAcceptanceInvalidationTests(PostgresFixture server) : IsolatedPostgresTest(server)
 {
 	[Theory]
 	[InlineData("date")]
@@ -292,8 +292,6 @@ public class DuplicateAcceptanceInvalidationTests(PostgresFixture fixture)
 	private async Task<Seeded> SeedAsync(bool independentlyDeletedPayment = false)
 	{
 		await using ApplicationDbContext context = fixture.CreateDbContext();
-		await context.Database.ExecuteSqlRawAsync(
-			"""TRUNCATE "receipts"."AcceptedDuplicatePairs", "receipts"."Transactions", "receipts"."ReceiptItems", "receipts"."Adjustments", "receipts"."Receipts" RESTART IDENTITY CASCADE;""");
 		AccountEntity account = AccountEntityGenerator.Generate();
 		CardEntity card = CardEntityGenerator.Generate();
 		card.AccountId = account.Id;

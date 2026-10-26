@@ -24,7 +24,7 @@ namespace Infrastructure.IntegrationTests.Services;
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class AcceptedDuplicatePairTests(PostgresFixture fixture)
+public class AcceptedDuplicatePairTests(PostgresFixture server) : IsolatedPostgresTest(server)
 {
 	#region Check constraint
 
@@ -560,11 +560,7 @@ public class AcceptedDuplicatePairTests(PostgresFixture fixture)
 	{
 		await using ApplicationDbContext context = fixture.CreateDbContext();
 
-		// The report and the acceptance table are both global, so isolate from the rest of the
-		// collection. AcceptedDuplicatePairs is included explicitly because CASCADE from Receipts only
-		// covers rows whose receipt is being truncated.
-		await context.Database.ExecuteSqlRawAsync(
-			"""TRUNCATE "AcceptedDuplicatePairs", "Transactions", "ReceiptItems", "Adjustments", "Receipts" RESTART IDENTITY CASCADE;""");
+		// The per-test database isolates global report and acceptance queries.
 
 		AccountEntity account = AccountEntityGenerator.Generate();
 		account.Id = accountId;

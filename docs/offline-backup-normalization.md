@@ -50,7 +50,7 @@ prints status only. Input must be a closed standalone SQLite backup without WAL,
 SHM or journal sidecars. Inspection uses read-only SQLite, integrity/foreign-key
 checks, a writer-denying source handle and before/after source SHA-256.
 
-App-exported source formats 6, 8, 9, 10 and 11 are supported. Apply preserves formats 10 and 11 for current exports and publishes format 9 for older sources. Format 10 taxonomy, classification history, migration evidence and deletion rows are validated before and after transformation and preserved unchanged. Product normalization does not change classification. Unsupported future formats and schemas are rejected rather than rewritten.
+App-exported source formats 6, 8, 9, 10, 11 and 12 are supported. Apply preserves formats 10, 11 and 12 for current exports and publishes format 9 for older sources. Format 10 taxonomy, classification history, migration evidence and deletion rows are validated before and after transformation and preserved unchanged. Product normalization does not change classification. Unsupported future formats and schemas are rejected rather than rewritten.
 A previous offline output B cannot become a new source A: embedded offline lineage
 metadata or consolidation authority causes rejection. Preserve the original A,
 revise and separately review its manifest, and apply to a new output path instead.
@@ -151,3 +151,9 @@ on import.
 
 Format 11 additionally preserves and validates category mapping history and heads,
 including revocations, fingerprints, operation hashes and referenced taxonomy.
+
+Format 12 additionally validates and preserves `historical_operation_archive`,
+including frozen exact-group intent and partial apply/undo evidence. Its rows are
+part of the factual baseline, so normalization verification rejects alteration or
+loss of this evidence. Historical resume across restore remains blocked on source
+revision fidelity; see [backup restore](backup-restore.md#historical-category-operations-in-format-12-internal-checkpoint).

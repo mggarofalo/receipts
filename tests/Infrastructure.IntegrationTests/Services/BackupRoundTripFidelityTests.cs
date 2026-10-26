@@ -4,69 +4,64 @@ using Common;
 using Domain.NormalizedDescriptions;
 using FluentAssertions;
 using Infrastructure.Entities.Core;
+using Infrastructure.IntegrationTests.Fixtures;
 using Infrastructure.Services;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Infrastructure.Tests.Services;
+namespace Infrastructure.IntegrationTests.Services;
 
 /// <summary>
 /// End-to-end export → import round-trip coverage for RECEIPTS-771/770/789: culture-safe decimals,
 /// the v4 YNAB/normalized-description tables, receipt image paths, and backward compatibility with
-/// pre-v4 backups. Export runs against one in-memory database and import against a second so the
-/// round-trip is genuine.
+/// pre-v4 backups. Export and import use separate, migrated PostgreSQL databases.
 /// </summary>
-public class BackupRoundTripFidelityTests : IDisposable
+[Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
+public class BackupRoundTripFidelityTests(PostgresFixture server) : IClassFixture<PostgresFixture>, IAsyncLifetime
 {
-	private readonly DbContextOptions<ApplicationDbContext> _sourceOptions;
-	private readonly DbContextOptions<ApplicationDbContext> _targetOptions;
-	private readonly BackupService _exportService;
-	private readonly BackupImportService _importService;
-	private readonly string _tempDir;
+	private PostgresFixture _source = null!;
+	private PostgresFixture _target = null!;
 
-	public BackupRoundTripFidelityTests()
+	public async Task InitializeAsync()
 	{
-		_sourceOptions = BuildOptions($"BackupRtSource_{Guid.NewGuid()}");
-		_targetOptions = BuildOptions($"BackupRtTarget_{Guid.NewGuid()}");
-		_exportService = new BackupService(new Factory(_sourceOptions), NullLogger<BackupService>.Instance);
-		_importService = new BackupImportService(new Factory(_targetOptions), NullLogger<BackupImportService>.Instance);
-		_tempDir = Path.Combine(Path.GetTempPath(), $"backup-roundtrip-test-{Guid.NewGuid():N}");
-		Directory.CreateDirectory(_tempDir);
+		_source = await server.CreateIsolatedAsync();
+		try
+		{
+			_target = await server.CreateIsolatedAsync();
+			// Migrations seed default settings; this test supplies its own row
+			// and expects the destination to begin without application data.
+			await using (ApplicationDbContext source = Source())
+			{
+				await source.NormalizedDescriptionSettings.ExecuteDeleteAsync();
+			}
+
+			await using (ApplicationDbContext target = Target())
+			{
+				await target.NormalizedDescriptionSettings.ExecuteDeleteAsync();
+			}
+		}
+		catch
+		{
+			if (_target is not null)
+			{
+				await _target.DisposeAsync();
+			}
+
+			await _source.DisposeAsync();
+			throw;
+		}
 	}
 
-	private static DbContextOptions<ApplicationDbContext> BuildOptions(string name) =>
-		new DbContextOptionsBuilder<ApplicationDbContext>()
-			.UseInMemoryDatabase(name)
-			.ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))
-			.Options;
-
-	private ApplicationDbContext Source() => new(_sourceOptions);
-	private ApplicationDbContext Target() => new(_targetOptions);
+	private ApplicationDbContext Source() => _source.CreateDbContext();
+	private ApplicationDbContext Target() => _target.CreateDbContext();
 
 	private async Task<BackupImportResult> RoundTripAsync()
 	{
-		// Production migrations seed taxonomy; avoid unrelated business seeds here.
-		foreach (var options in new[] { _sourceOptions, _targetOptions })
-		{
-			await using var db = new ApplicationDbContext(options);
-			if (!await db.TaxonomyHeads.AnyAsync())
-			{
-				var genesis = Infrastructure.Configurations.TaxonomyConfiguration.GenesisId;
-				db.TaxonomyRevisions.Add(new()
-				{
-					Id = genesis,
-					Actor = "system",
-					OperationId = genesis,
-					Reason = "Empty taxonomy foundation; legacy import is separate.",
-					RecordedAt = new DateTimeOffset(2026, 10, 25, 0, 0, 0, TimeSpan.Zero)
-				});
-				db.TaxonomyHeads.Add(new() { Id = 1, RevisionId = genesis });
-				await db.SaveChangesAsync();
-			}
-		}
-		string path = await _exportService.ExportToSqliteAsync();
+		BackupService exporter = new(new Factory(_source.CreateOptions()), NullLogger<BackupService>.Instance);
+		BackupImportService importer = new(new Factory(_target.CreateOptions()), NullLogger<BackupImportService>.Instance);
+		string path = await exporter.ExportToSqliteAsync();
 		// The exporter uses a pooled SQLite connection; clear the pool so the underlying file
 		// handle is released before we open the file for import (Windows otherwise reports the
 		// file as locked). Production streams the file via FileOptions.DeleteOnClose instead.
@@ -74,7 +69,7 @@ public class BackupRoundTripFidelityTests : IDisposable
 		try
 		{
 			await using FileStream stream = File.OpenRead(path);
-			return await _importService.ImportFromSqliteAsync(stream, CancellationToken.None);
+			return await importer.ImportFromSqliteAsync(stream, CancellationToken.None);
 		}
 		finally
 		{
@@ -388,17 +383,17 @@ public class BackupRoundTripFidelityTests : IDisposable
 	}
 
 
-	public void Dispose()
+	public async Task DisposeAsync()
 	{
-		try
+		if (_target is not null)
 		{
-			Directory.Delete(_tempDir, recursive: true);
+			await _target.DisposeAsync();
 		}
-		catch
+
+		if (_source is not null)
 		{
-			// Best effort cleanup
+			await _source.DisposeAsync();
 		}
-		GC.SuppressFinalize(this);
 	}
 
 	private sealed class Factory(DbContextOptions<ApplicationDbContext> options) : IDbContextFactory<ApplicationDbContext>

@@ -18,13 +18,12 @@ namespace Infrastructure.IntegrationTests.Services;
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class ReportServiceSpendingByNormalizedDescriptionTests(PostgresFixture fixture)
+public class ReportServiceSpendingByNormalizedDescriptionTests(PostgresFixture server) : IsolatedPostgresTest(server)
 {
 	[Fact]
 	public async Task GetSpendingByNormalizedDescriptionAsync_AggregatesVerifiedPurchases_AndBucketsNullFk()
 	{
 		// Arrange
-		await ResetTablesAsync();
 
 		Guid normalizedId = Guid.NewGuid();
 		ReceiptEntity receipt = ReceiptEntityGenerator.Generate();
@@ -95,7 +94,6 @@ public class ReportServiceSpendingByNormalizedDescriptionTests(PostgresFixture f
 	public async Task GetSpendingByNormalizedDescriptionAsync_BucketsPendingReviewWithoutPromotingItsIdentity()
 	{
 		// Arrange
-		await ResetTablesAsync();
 
 		Guid activeId = Guid.NewGuid();
 		Guid pendingId = Guid.NewGuid();
@@ -170,7 +168,6 @@ public class ReportServiceSpendingByNormalizedDescriptionTests(PostgresFixture f
 	public async Task GetSpendingByNormalizedDescriptionAsync_FiltersByDateRange()
 	{
 		// Arrange
-		await ResetTablesAsync();
 
 		Guid normalizedId = Guid.NewGuid();
 
@@ -231,7 +228,6 @@ public class ReportServiceSpendingByNormalizedDescriptionTests(PostgresFixture f
 	public async Task GetSpendingByNormalizedDescriptionAsync_IgnoresSoftDeletedItemsAndReceipts()
 	{
 		// Arrange
-		await ResetTablesAsync();
 
 		Guid normalizedId = Guid.NewGuid();
 		ReceiptEntity live = ReceiptEntityGenerator.Generate();
@@ -294,7 +290,7 @@ public class ReportServiceSpendingByNormalizedDescriptionTests(PostgresFixture f
 	public async Task GetSpendingByNormalizedDescriptionAsync_SortsByCanonicalName_InSql(string direction)
 	{
 		// Arrange
-		await ResetTablesAsync();
+
 		await SeedThreeBucketsAsync();
 
 		ReportService service = new(new FixtureDbContextFactory(fixture));
@@ -316,7 +312,7 @@ public class ReportServiceSpendingByNormalizedDescriptionTests(PostgresFixture f
 	public async Task GetSpendingByNormalizedDescriptionAsync_SortsByItemCount_InSql(string direction)
 	{
 		// Arrange — Apples: 1 item, Cherries: 2 items, Bananas: 3 items.
-		await ResetTablesAsync();
+
 		await SeedThreeBucketsAsync();
 
 		ReportService service = new(new FixtureDbContextFactory(fixture));
@@ -337,7 +333,6 @@ public class ReportServiceSpendingByNormalizedDescriptionTests(PostgresFixture f
 	{
 		// Arrange — five buckets that all tie on totalAmount, forcing the ThenBy(CanonicalName)
 		// tiebreaker to keep offset pagination stable and gap-free across page requests.
-		await ResetTablesAsync();
 
 		string[] names = ["Alpha", "Bravo", "Charlie", "Delta", "Echo"];
 
@@ -390,7 +385,6 @@ public class ReportServiceSpendingByNormalizedDescriptionTests(PostgresFixture f
 	public async Task GetSpendingByNormalizedDescriptionAsync_TotalCountAndGrandTotal_SpanAllBuckets_NotJustRequestedPage()
 	{
 		// Arrange
-		await ResetTablesAsync();
 
 		(string Name, decimal Total)[] buckets =
 		[
@@ -448,7 +442,6 @@ public class ReportServiceSpendingByNormalizedDescriptionTests(PostgresFixture f
 		// Arrange — one real canonical name plus a group of items with no NormalizedDescriptionId,
 		// which must bucket into the synthetic "(Needs review)" group by review state and remain
 		// sortable/paginatable alongside real names rather than being dropped or NULL-ordered away.
-		await ResetTablesAsync();
 
 		Guid normalizedId = Guid.NewGuid();
 
@@ -519,7 +512,6 @@ public class ReportServiceSpendingByNormalizedDescriptionTests(PostgresFixture f
 		// correctly for a multi-item bucket. NOTE: Common.Currency currently defines only USD, so a
 		// true mixed-currency tie-break cannot be constructed against the real enum today — this
 		// exercises the resolution path (multiple items, one currency) rather than an actual tie.
-		await ResetTablesAsync();
 
 		Guid normalizedId = Guid.NewGuid();
 
@@ -613,12 +605,6 @@ public class ReportServiceSpendingByNormalizedDescriptionTests(PostgresFixture f
 				setup.ReceiptItems.Local.Where(item => item.DeletedAt is null).Select(item => item.Id).ToArray());
 	}
 
-	private async Task ResetTablesAsync()
-	{
-		await using ApplicationDbContext context = fixture.CreateDbContext();
-		await context.Database.ExecuteSqlRawAsync(
-			"""TRUNCATE "ReceiptItems", "Receipts", "NormalizedDescriptions", "DistinctDescriptions" RESTART IDENTITY CASCADE;""");
-	}
 
 	private sealed class FixtureDbContextFactory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
 	{

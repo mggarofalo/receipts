@@ -15,17 +15,22 @@ internal static partial class PortableTaxonomyArchive
 			await db.ClassificationOperations.AsNoTracking().ToListAsync(ct), await db.LegacyMigrations.AsNoTracking().ToListAsync(ct),
 			await db.LegacyMigrationCrosswalks.AsNoTracking().ToListAsync(ct), await db.LegacyMigrationItems.AsNoTracking().ToListAsync(ct))
 		{
+			IncludesHistorical = true,
+			HistoricalOperations = await db.HistoricalOperations.AsNoTracking().ToListAsync(ct),
+			HistoricalItems = await db.HistoricalOperationItems.AsNoTracking().ToListAsync(ct),
 			IncludesMappings = true,
 			MappingRevisions = await db.CategoryMappingRevisions.AsNoTracking().ToListAsync(ct),
 			MappingHeads = await db.CategoryMappingHeads.AsNoTracking().ToListAsync(ct)
 		};
 		ValidateDestination(existing, incoming);
+		await PreflightSourceRevisionsAsync(db, incoming, ct);
 	}
 
 	internal static void ValidateDestination(State existing, State incoming)
 	{
 		Validate(existing); Validate(incoming);
 		ValidateMappingDestination(existing, incoming);
+		ValidateHistoricalDestination(existing, incoming);
 		// A destination is a strict prefix of the archive, including all immutable rows.
 		// Reject stale backups even when their head happens to share a revision ID.
 		Require(existing.Revisions.Count <= incoming.Revisions.Count, "Restore would rewind taxonomy head.");

@@ -313,6 +313,7 @@ public sealed class PortableBackupNormalizationService(IOfflinePortableBackupIns
 			await using SqliteCommand taxonomySchema = expected.CreateCommand();
 			taxonomySchema.CommandText = "CREATE TABLE taxonomy_archive(kind TEXT NOT NULL, id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(kind,id)); CREATE TABLE portable_deletion_state(kind TEXT NOT NULL, id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(kind,id));";
 			if (version >= 11) { taxonomySchema.CommandText += " CREATE TABLE category_mapping_archive(kind TEXT NOT NULL, id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(kind,id));"; }
+			if (version >= 12) { taxonomySchema.CommandText += " CREATE TABLE historical_operation_archive(kind TEXT NOT NULL, id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(kind,id)); CREATE TABLE source_revision_archive(kind TEXT NOT NULL, id TEXT NOT NULL, revision TEXT NOT NULL, PRIMARY KEY(kind,id));"; }
 			await taxonomySchema.ExecuteNonQueryAsync(ct);
 			var taxonomy = await PortableTaxonomyArchive.ReadAsync(sqlite, ct, version);
 			await PortableTaxonomyArchive.ReadDeletionStateAsync(sqlite, taxonomy, ct);

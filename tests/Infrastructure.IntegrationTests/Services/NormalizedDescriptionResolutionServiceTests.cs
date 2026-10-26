@@ -17,7 +17,7 @@ namespace Infrastructure.IntegrationTests.Services;
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class NormalizedDescriptionResolutionServiceTests(PostgresFixture fixture)
+public class NormalizedDescriptionResolutionServiceTests(PostgresFixture server) : IsolatedPostgresTest(server)
 {
 	[Fact]
 	public async Task ProcessPendingResolutionsAsync_OfflineApprovedScopeDoesNotInventMatchesForUnknownDescriptions()
@@ -380,8 +380,6 @@ public class NormalizedDescriptionResolutionServiceTests(PostgresFixture fixture
 		await using ApplicationDbContext context = fixture.CreateDbContext();
 		// Reset every table the resolver touches or depends on. DistinctDescriptions is
 		// reconciled by the DbContext SaveChanges hook so it needs a clean slate too.
-		await context.Database.ExecuteSqlRawAsync(
-			"""TRUNCATE matching."NormalizationSourceMappings", "ReceiptItems", "Receipts", "NormalizedDescriptions", "DistinctDescriptions" RESTART IDENTITY CASCADE;""");
 	}
 
 	private sealed class FixtureDbContextFactory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>

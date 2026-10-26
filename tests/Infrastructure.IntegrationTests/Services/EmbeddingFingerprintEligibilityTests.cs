@@ -16,12 +16,12 @@ namespace Infrastructure.IntegrationTests.Services;
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class EmbeddingFingerprintEligibilityTests(PostgresFixture fixture)
+public class EmbeddingFingerprintEligibilityTests(PostgresFixture server) : IsolatedPostgresTest(server)
 {
 	[Fact]
 	public async Task TestMatch_StaleSemanticMatchIsIgnoredButExactCanonicalRemainsDiscoverable()
 	{
-		await ResetTablesAsync();
+
 		Guid staleId = Guid.NewGuid();
 		await using (ApplicationDbContext seed = fixture.CreateDbContext())
 		{
@@ -57,7 +57,8 @@ public class EmbeddingFingerprintEligibilityTests(PostgresFixture fixture)
 		bool currentFingerprint,
 		double expectedSemanticSimilarity)
 	{
-		await ResetTablesAsync();
+		await SeededTemplateCleanup.RemoveFromFreshDatabaseAsync(fixture);
+
 		string fingerprint = currentFingerprint
 			? OnnxEmbeddingService.EmbeddingSpaceFingerprint
 			: "obsolete-space";
@@ -92,7 +93,8 @@ public class EmbeddingFingerprintEligibilityTests(PostgresFixture fixture)
 	[Fact]
 	public async Task GetSimilarItemsAsync_HybridSearch_IgnoresCurrentFingerprintForOldSourceText()
 	{
-		await ResetTablesAsync();
+		await SeededTemplateCleanup.RemoveFromFreshDatabaseAsync(fixture);
+
 		Guid templateId = Guid.NewGuid();
 		await using (ApplicationDbContext seed = fixture.CreateDbContext())
 		{
@@ -125,7 +127,8 @@ public class EmbeddingFingerprintEligibilityTests(PostgresFixture fixture)
 	[Fact]
 	public async Task GetEmbeddingCoverageAsync_ConcurrentCanonicalInsert_ReturnsOneCoherentSnapshot()
 	{
-		await ResetTablesAsync();
+		await SeededTemplateCleanup.RemoveFromFreshDatabaseAsync(fixture);
+
 		await using (ApplicationDbContext seed = fixture.CreateDbContext())
 		{
 			seed.NormalizedDescriptions.Add(CurrentCanonical("Original canonical"));
@@ -178,12 +181,6 @@ public class EmbeddingFingerprintEligibilityTests(PostgresFixture fixture)
 		return new Vector(values);
 	}
 
-	private async Task ResetTablesAsync()
-	{
-		await using ApplicationDbContext context = fixture.CreateDbContext();
-		await context.Database.ExecuteSqlRawAsync(
-			"""TRUNCATE library."ItemTemplates", matching."ItemEmbeddings", matching."NormalizedDescriptions" RESTART IDENTITY CASCADE;""");
-	}
 
 	private sealed class FixtureDbContextFactory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
 	{

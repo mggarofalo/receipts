@@ -145,7 +145,16 @@ public class BackupCurationRoundTripTests(PostgresFixture source) : IClassFixtur
 				includingAccepted.Groups.Should().ContainSingle();
 				includingAccepted.Groups.Should().OnlyContain(group => group.IsAccepted);
 
-				// A new-format explicit null clears target curation; it is not the legacy absent-field case.
+				// Replaying an unchanged v12 archive is idempotent.
+				for (int pass = 0; pass < 2; pass++)
+				{
+					await using FileStream stream = File.OpenRead(path);
+					BackupImportResult result = await importer.ImportFromSqliteAsync(stream, CancellationToken.None);
+					result.AcceptedDuplicatePairsCreated.Should().Be(0);
+					result.AcceptedDuplicatePairsUpdated.Should().Be(2);
+				}
+
+				// A different destination source revision must reject the whole v12 restore.
 				await using (ApplicationDbContext change = target.CreateDbContext())
 				{
 					ReceiptItemEntity previouslyUnlinked = await change.ReceiptItems.SingleAsync(row => row.Id == unlinkedItemId);
@@ -162,26 +171,25 @@ public class BackupCurationRoundTripTests(PostgresFixture source) : IClassFixtur
 					(await change.NormalizedDescriptions.SingleAsync(row => row.Id == activeId)).DisplayLabel = "Target override";
 					await change.SaveChangesAsync();
 				}
-				for (int pass = 0; pass < 2; pass++)
+				await using (FileStream stream = File.OpenRead(path))
 				{
-					await using FileStream stream = File.OpenRead(path);
-					BackupImportResult result = await importer.ImportFromSqliteAsync(stream, CancellationToken.None);
-					result.AcceptedDuplicatePairsCreated.Should().Be(0);
-					result.AcceptedDuplicatePairsUpdated.Should().Be(2);
+					Func<Task> import = async () => await importer.ImportFromSqliteAsync(stream, CancellationToken.None);
+					(await import.Should().ThrowAsync<InvalidOperationException>())
+							.WithMessage("*Restore conflicts with destination source revision*");
 				}
 				await using ApplicationDbContext upserted = target.CreateDbContext();
 				ReceiptItemEntity explicitlyUnlinked = await upserted.ReceiptItems.SingleAsync(row => row.Id == unlinkedItemId);
-				explicitlyUnlinked.NormalizedDescriptionId.Should().BeNull();
-				explicitlyUnlinked.NormalizedDescriptionMatchScore.Should().BeNull();
-				(await upserted.ReceiptItems.SingleAsync(row => row.Id == curatedItemId)).NormalizedDescriptionMatchScore.Should().BeNull();
-				(await upserted.ReceiptItems.SingleAsync(row => row.Id == measuredItemId)).NormalizedDescriptionId.Should().Be(pendingId);
-				(await upserted.ItemTemplates.SingleAsync(row => row.Id == templateId)).NormalizedDescriptionId.Should().Be(activeId);
-				(await upserted.ItemTemplates.SingleAsync(row => row.Id == unlinkedTemplateId)).NormalizedDescriptionId.Should().BeNull();
-				(await upserted.NormalizedDescriptions.SingleAsync(row => row.Id == activeId)).DisplayLabel.Should().Be("Chosen display label");
+				explicitlyUnlinked.NormalizedDescriptionId.Should().Be(activeId);
+				explicitlyUnlinked.NormalizedDescriptionMatchScore.Should().Be(0.91);
+				(await upserted.ReceiptItems.SingleAsync(row => row.Id == curatedItemId)).NormalizedDescriptionMatchScore.Should().Be(0.99);
+				(await upserted.ReceiptItems.SingleAsync(row => row.Id == measuredItemId)).NormalizedDescriptionId.Should().Be(activeId);
+				(await upserted.ItemTemplates.SingleAsync(row => row.Id == templateId)).NormalizedDescriptionId.Should().BeNull();
+				(await upserted.ItemTemplates.SingleAsync(row => row.Id == unlinkedTemplateId)).NormalizedDescriptionId.Should().Be(activeId);
+				(await upserted.NormalizedDescriptions.SingleAsync(row => row.Id == activeId)).DisplayLabel.Should().Be("Target override");
 				NormalizedDescriptionEntity restoredRejected = await upserted.NormalizedDescriptions.SingleAsync(row => row.Id == rejectedId);
-				restoredRejected.DisplayLabel.Should().BeNull();
-				restoredRejected.NearestNeighbourId.Should().BeNull();
-				restoredRejected.NearestNeighbourSimilarity.Should().BeNull();
+				restoredRejected.DisplayLabel.Should().Be("Target-only label");
+				restoredRejected.NearestNeighbourId.Should().Be(activeId);
+				restoredRejected.NearestNeighbourSimilarity.Should().Be(0.95);
 				(await upserted.AcceptedDuplicatePairs.CountAsync()).Should().Be(2);
 				(await upserted.AcceptedDuplicatePairs.SingleAsync(pair => pair.Id == expectedPair.Id)).Id.Should().Be(expectedPair.Id);
 			}

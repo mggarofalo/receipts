@@ -77,6 +77,7 @@ public sealed partial class PortableTaxonomyArchiveTests
 		await db.Database.EnsureCreatedAsync();
 		await PortableTaxonomyArchive.RestoreAsync(db, state, [], CancellationToken.None);
 		await using var sqlite = new SqliteConnection("Data Source=:memory:"); await sqlite.OpenAsync();
+		await BackupService.CreateSchemaAsync(sqlite, CancellationToken.None);
 		await PortableTaxonomyArchive.ExportAsync(db, sqlite, CancellationToken.None);
 		var captured = await PortableTaxonomyArchive.ReadAsync(sqlite, CancellationToken.None);
 		captured.MappingRevisions.Should().BeEquivalentTo(state.MappingRevisions);

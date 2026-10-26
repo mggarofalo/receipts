@@ -22,7 +22,7 @@ namespace Infrastructure.IntegrationTests.Services;
 
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public partial class TemplateNormalizationOwnershipTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
+public partial class TemplateNormalizationOwnershipTests(PostgresFixture server) : IsolatedPostgresTest(server), IClassFixture<PostgresFixture>
 {
 	[Theory]
 	[InlineData(1)]
@@ -146,7 +146,6 @@ public partial class TemplateNormalizationOwnershipTests(PostgresFixture fixture
 	private async Task<Seed> SeedAsync()
 	{
 		await using ApplicationDbContext context = fixture.CreateDbContext();
-		await context.Database.ExecuteSqlRawAsync("""TRUNCATE "ReceiptItems", "Receipts", "ItemTemplates", "NormalizedDescriptions", "DistinctDescriptions" RESTART IDENTITY CASCADE;""");
 		ReceiptEntity receipt = ReceiptEntityGenerator.Generate();
 		Guid milk = Guid.NewGuid(), bread = Guid.NewGuid(), template = Guid.NewGuid();
 		context.NormalizedDescriptions.AddRange(new() { Id = milk, CanonicalName = "Milk", Status = NormalizedDescriptionStatus.Active, CreatedAt = DateTimeOffset.UtcNow }, new() { Id = bread, CanonicalName = "Bread", Status = NormalizedDescriptionStatus.Active, CreatedAt = DateTimeOffset.UtcNow });

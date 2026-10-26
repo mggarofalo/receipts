@@ -6,16 +6,54 @@ namespace Infrastructure.IntegrationTests.Fixtures;
 
 public class PostgresFixture : IAsyncLifetime
 {
-	private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("pgvector/pgvector:pg17")
-		.Build();
+	private readonly PostgreSqlContainer? _container;
+	private readonly string? _adminConnectionString;
+	private readonly string? _databaseName;
+	private readonly string? _isolatedConnectionString;
+
+	public PostgresFixture() => _container = new PostgreSqlBuilder("pgvector/pgvector:pg17").Build();
+
+	private PostgresFixture(string adminConnectionString, string databaseName)
+	{
+		_adminConnectionString = adminConnectionString;
+		_databaseName = databaseName;
+		_isolatedConnectionString = new NpgsqlConnectionStringBuilder(adminConnectionString) { Database = databaseName }.ConnectionString;
+	}
+
+	// Each test owns a database, while the collection shares only the PostgreSQL server.
+	// Disposal drops that test database; immutable application evidence is never reset.
+	public async Task<PostgresFixture> CreateIsolatedAsync()
+	{
+		string name = $"test_{Guid.NewGuid():N}";
+		await using (NpgsqlConnection admin = new(ConnectionString))
+		{
+			await admin.OpenAsync();
+			await using NpgsqlCommand create = new($"CREATE DATABASE \"{name}\"", admin);
+			await create.ExecuteNonQueryAsync();
+		}
+		PostgresFixture isolated = new(ConnectionString, name);
+		try
+		{
+			await isolated.InitializeAsync();
+			return isolated;
+		}
+		catch
+		{
+			await isolated.DisposeAsync();
+			throw;
+		}
+	}
 
 	private NpgsqlDataSource? _dataSource;
 
-	public string ConnectionString => _container.GetConnectionString();
+	public string ConnectionString => _isolatedConnectionString ?? _container!.GetConnectionString();
 
 	public async Task InitializeAsync()
 	{
-		await _container.StartAsync();
+		if (_container is not null)
+		{
+			await _container.StartAsync();
+		}
 
 		// RECEIPTS-746: tables live in bounded-context schemas (receipts, library, matching,
 		// ynab, audit, identity), not public. Set a search_path spanning every schema so the
@@ -81,7 +119,17 @@ public class PostgresFixture : IAsyncLifetime
 			await _dataSource.DisposeAsync();
 		}
 
-		await _container.DisposeAsync();
+		if (_container is not null)
+		{
+			await _container.DisposeAsync();
+		}
+		else
+		{
+			await using NpgsqlConnection admin = new(_adminConnectionString!);
+			await admin.OpenAsync();
+			await using NpgsqlCommand drop = new($"DROP DATABASE \"{_databaseName}\" WITH (FORCE)", admin);
+			await drop.ExecuteNonQueryAsync();
+		}
 		GC.SuppressFinalize(this);
 	}
 }

@@ -25,7 +25,7 @@ namespace Infrastructure.IntegrationTests.Services;
 
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public partial class SubcategoryUsageScopeTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
+public partial class SubcategoryUsageScopeTests(PostgresFixture server) : IsolatedPostgresTest(server), IClassFixture<PostgresFixture>
 {
 	[Theory]
 	[InlineData("subcategory", "A")]
@@ -70,7 +70,6 @@ public partial class SubcategoryUsageScopeTests(PostgresFixture fixture) : IClas
 	private async Task<Seed> SeedAsync()
 	{
 		await using ApplicationDbContext context = fixture.CreateDbContext();
-		await context.Database.ExecuteSqlRawAsync("""TRUNCATE receipts."ReceiptItems", receipts."Receipts", library."Categories" CASCADE""");
 		Guid a = Guid.NewGuid(), b = Guid.NewGuid(), childA = Guid.NewGuid(), childB = Guid.NewGuid();
 		context.Categories.AddRange(new CategoryEntity { Id = a, Name = "A", IsActive = true }, new CategoryEntity { Id = b, Name = "B", IsActive = true });
 		context.Subcategories.AddRange(new SubcategoryEntity { Id = childA, CategoryId = a, Name = "Shared", IsActive = true }, new SubcategoryEntity { Id = childB, CategoryId = b, Name = "Shared", IsActive = true });

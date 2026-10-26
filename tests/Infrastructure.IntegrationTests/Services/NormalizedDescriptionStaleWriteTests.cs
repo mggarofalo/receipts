@@ -22,7 +22,7 @@ namespace Infrastructure.IntegrationTests.Services;
 
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public partial class NormalizedDescriptionStaleWriteTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
+public partial class NormalizedDescriptionStaleWriteTests(PostgresFixture server) : IsolatedPostgresTest(server), IClassFixture<PostgresFixture>
 {
 	[Theory]
 	[InlineData("unchanged")]
@@ -268,7 +268,6 @@ public partial class NormalizedDescriptionStaleWriteTests(PostgresFixture fixtur
 	private async Task<Seed> SeedAsync(bool approximate = false)
 	{
 		await using ApplicationDbContext context = fixture.CreateDbContext();
-		await context.Database.ExecuteSqlRawAsync("""TRUNCATE matching."NormalizationSourceMappings", "ReceiptItems", "Receipts", "NormalizedDescriptions", "DistinctDescriptions" RESTART IDENTITY CASCADE;""");
 		ReceiptEntity receipt = ReceiptEntityGenerator.Generate();
 		ReceiptItemEntity item = ReceiptItemEntityGenerator.Generate(receipt.Id);
 		item.Description = "Milk";
