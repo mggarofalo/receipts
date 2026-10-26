@@ -157,6 +157,8 @@ public class ReportServiceHealthSummaryTests(PostgresFixture server) : IsolatedP
 		// Arrange
 		Guid accountId = Guid.NewGuid();
 		Guid cardId = Guid.NewGuid();
+		Guid revisionId = Guid.NewGuid();
+		Guid categoryId = Guid.NewGuid();
 
 		Guid unbalanced = Guid.NewGuid();        // items 30, transaction 100 => difference -70
 		Guid balanced = Guid.NewGuid();          // items 50, transaction 50  => excluded
@@ -167,17 +169,18 @@ public class ReportServiceHealthSummaryTests(PostgresFixture server) : IsolatedP
 
 		await SeedAsync(accountId, cardId, seed =>
 		{
+			AddTaxonomyCategory(seed, revisionId, categoryId);
 			AddReceipt(seed, unbalanced, new DateOnly(2025, 1, 1), "Solo Store A", tax: 0m);
-			AddItem(seed, unbalanced, 30m, "Food");
+			Classify(seed, AddItem(seed, unbalanced, 30m, "Uncategorized"), revisionId, categoryId);
 			AddTransaction(seed, unbalanced, accountId, cardId, 100m);
 
 			AddReceipt(seed, balanced, new DateOnly(2025, 1, 2), "Solo Store B", tax: 0m);
-			AddItem(seed, balanced, 50m, "Food");
+			Classify(seed, AddItem(seed, balanced, 50m, "Food"), revisionId, categoryId);
 			AddTransaction(seed, balanced, accountId, cardId, 50m);
 
 			AddReceipt(seed, uncategorizedHost, new DateOnly(2025, 1, 3), "Solo Store C", tax: 0m);
-			AddItem(seed, uncategorizedHost, 1m, "Uncategorized");
-			AddItem(seed, uncategorizedHost, 2m, "Uncategorized");
+			AddItem(seed, uncategorizedHost, 1m, "Food");
+			AddItem(seed, uncategorizedHost, 2m, "Food");
 			AddTransaction(seed, uncategorizedHost, accountId, cardId, 3m);
 
 			// Three receipts sharing date + location collapse into ONE duplicate group...
@@ -215,15 +218,18 @@ public class ReportServiceHealthSummaryTests(PostgresFixture server) : IsolatedP
 	[Fact]
 	public async Task GetHealthSummaryAsync_ReturnsZeros_WhenNothingNeedsAttention()
 	{
-		// Arrange — one balanced receipt with a categorized item and a unique date + location.
+		// Arrange — one balanced receipt with a current classification and a unique date + location.
 		Guid accountId = Guid.NewGuid();
 		Guid cardId = Guid.NewGuid();
 		Guid receiptId = Guid.NewGuid();
+		Guid revisionId = Guid.NewGuid();
+		Guid categoryId = Guid.NewGuid();
 
 		await SeedAsync(accountId, cardId, seed =>
 		{
+			AddTaxonomyCategory(seed, revisionId, categoryId);
 			AddReceipt(seed, receiptId, new DateOnly(2025, 7, 4), "Only Store", tax: 2m);
-			AddItem(seed, receiptId, 8m, "Food");
+			Classify(seed, AddItem(seed, receiptId, 8m, "Uncategorized"), revisionId, categoryId);
 			AddTransaction(seed, receiptId, accountId, cardId, 10m);
 		});
 
@@ -268,7 +274,7 @@ public class ReportServiceHealthSummaryTests(PostgresFixture server) : IsolatedP
 		context.Receipts.Add(receipt);
 	}
 
-	private static void AddItem(ApplicationDbContext context, Guid receiptId, decimal totalAmount, string category)
+	private static ReceiptItemEntity AddItem(ApplicationDbContext context, Guid receiptId, decimal totalAmount, string category)
 	{
 		ReceiptItemEntity item = ReceiptItemEntityGenerator.Generate(receiptId);
 		item.Quantity = 1m;
@@ -276,6 +282,47 @@ public class ReportServiceHealthSummaryTests(PostgresFixture server) : IsolatedP
 		item.TotalAmount = totalAmount;
 		item.Category = category;
 		context.ReceiptItems.Add(item);
+		return item;
+	}
+
+	private static void AddTaxonomyCategory(ApplicationDbContext context, Guid revisionId, Guid categoryId)
+	{
+		context.TaxonomyIdentities.Add(new TaxonomyIdentityEntity { Id = categoryId });
+		context.TaxonomyRevisions.Add(new TaxonomyRevisionEntity
+		{
+			Id = revisionId,
+			Sequence = 1,
+			PreviousRevisionId = TaxonomyConfiguration.GenesisId
+		});
+		context.TaxonomyNodes.Add(new TaxonomyNodeEntity
+		{
+			RevisionId = revisionId,
+			CategoryId = categoryId,
+			Name = "Food"
+		});
+		context.TaxonomyHeads.Single().RevisionId = revisionId;
+	}
+
+	private static void Classify(ApplicationDbContext context, ReceiptItemEntity item, Guid revisionId, Guid categoryId)
+	{
+		Guid assignmentId = Guid.NewGuid();
+		context.Classifications.Add(new PurchaseClassificationEntity
+		{
+			Id = assignmentId,
+			ReceiptItemId = item.Id,
+			Sequence = 1,
+			CategoryId = categoryId,
+			TaxonomyRevisionId = revisionId,
+			Actor = "report-test",
+			Source = "manual",
+			Reason = "fixture",
+			OperationId = Guid.NewGuid()
+		});
+		context.CurrentClassifications.Add(new CurrentClassificationEntity
+		{
+			ReceiptItemId = item.Id,
+			AssignmentId = assignmentId
+		});
 	}
 
 	private static void AddTransaction(ApplicationDbContext context, Guid receiptId, Guid accountId, Guid cardId, decimal amount)
