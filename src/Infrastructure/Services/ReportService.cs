@@ -216,9 +216,24 @@ public class ReportService(IDbContextFactory<ApplicationDbContext> contextFactor
 		DateOnly? endDate,
 		string granularity,
 		string? normalizedDescription,
-		CancellationToken cancellationToken)
+			CancellationToken cancellationToken) =>
+			await GetItemCostOverTimeAsync(description, category, startDate, endDate, granularity,
+					normalizedDescription, cancellationToken, new());
+
+	public async Task<ItemCostOverTimeResult> GetItemCostOverTimeAsync(
+			string? description, string? category, DateOnly? startDate, DateOnly? endDate,
+			string granularity, string? normalizedDescription, CancellationToken cancellationToken,
+			CategoryReportOptions options)
 	{
 		await using ApplicationDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
+		if (options.CapturedCurrentRevisionId.HasValue &&
+				(options.View != CategoryReportView.CurrentHierarchy || options.CapturedCurrentRevisionId == Guid.Empty ||
+				 !await context.TaxonomyRevisions.AsNoTracking().AnyAsync(row => row.Id == options.CapturedCurrentRevisionId, cancellationToken)))
+		{ throw new ArgumentException("capturedCurrentRevisionId must identify an existing revision and requires currentHierarchy", "capturedCurrentRevisionId"); }
+		Guid? head = options.CapturedCurrentRevisionId ?? (options.View == CategoryReportView.CurrentHierarchy
+				? await context.TaxonomyHeads.AsNoTracking().Where(row => row.Id == 1)
+						.Select(row => (Guid?)row.RevisionId).SingleOrDefaultAsync(cancellationToken) : null);
+		DateTimeOffset? cutoff = options.KnowledgeCutoff?.ToUniversalTime();
 
 		// The normalized-description filter needs the canonical name of the item's linked
 		// NormalizedDescription, so it is projected alongside the raw columns (LEFT JOIN — items
@@ -236,13 +251,15 @@ public class ReportService(IDbContextFactory<ApplicationDbContext> contextFactor
 						ri.TotalAmount,
 						ri.Quantity,
 						ri.UnitPrice,
+						ri.UnitPriceCurrency,
+						ri.Id,
 						ri.NormalizationReviewState,
 						r.Date,
 						CanonicalName = n.CanonicalName,
 						DisplayLabel = n.DisplayLabel,
 					};
 
-		// Precedence mirrors the OpenAPI contract: description > normalizedDescription > category.
+		// Text selections retain their historical precedence; stable category ID supersedes legacy text.
 		if (!string.IsNullOrEmpty(description))
 		{
 			string descLower = description.ToLower();
@@ -256,6 +273,30 @@ public class ReportService(IDbContextFactory<ApplicationDbContext> contextFactor
 			query = hasDisplayedMatch
 				? query.Where(x => (x.DisplayLabel ?? x.CanonicalName) != null && (x.DisplayLabel ?? x.CanonicalName)!.ToLower() == canonicalLower)
 				: query.Where(x => x.CanonicalName != null && x.CanonicalName.ToLower() == canonicalLower);
+		}
+		else if (options.CategoryId is Guid categoryId)
+		{
+			IQueryable<Infrastructure.Entities.Taxonomy.PurchaseClassificationEntity> assignments =
+					context.Classifications.AsNoTracking().Where(assignment =>
+							cutoff.HasValue
+									? assignment.RecordedAt <= cutoff.Value
+											&& !context.Classifications.Any(later => later.ReceiptItemId == assignment.ReceiptItemId
+													&& later.RecordedAt <= cutoff.Value
+													&& (later.RecordedAt > assignment.RecordedAt
+															|| later.RecordedAt == assignment.RecordedAt && later.Sequence > assignment.Sequence))
+									: context.CurrentClassifications.Any(pointer => pointer.ReceiptItemId == assignment.ReceiptItemId
+											&& pointer.AssignmentId == assignment.Id));
+			IQueryable<Infrastructure.Entities.Taxonomy.TaxonomyNodeEntity> eligible =
+					PurchaseSearchReader.EligibleCategoryNodes(context, categoryId,
+							options.View == CategoryReportView.CurrentHierarchy ? head : null);
+			bool historical = options.View == CategoryReportView.AsClassified;
+			query = query.Where(item => assignments.Any(assignment => assignment.ReceiptItemId == item.Id
+					&& assignment.CategoryId.HasValue
+					&& assignment.LegacyResolution != "unresolved_path"
+					&& !context.LegacyMigrationItems.Any(evidence => evidence.AssignmentId == assignment.Id
+							&& evidence.Resolution == "Unresolved")
+					&& eligible.Any(node => node.CategoryId == assignment.CategoryId
+							&& (!historical || node.RevisionId == assignment.TaxonomyRevisionId))));
 		}
 		else if (!string.IsNullOrEmpty(category))
 		{
@@ -279,36 +320,36 @@ public class ReportService(IDbContextFactory<ApplicationDbContext> contextFactor
 		{
 			case "monthly":
 				var monthlyData = await query
-					.GroupBy(x => new { x.Date.Year, x.Date.Month })
-					.Select(g => new { g.Key.Year, g.Key.Month, Amount = g.Average(x => x.UnitPrice) })
-					.OrderBy(x => x.Year).ThenBy(x => x.Month)
+									.GroupBy(x => new { x.Date.Year, x.Date.Month, x.UnitPriceCurrency })
+									.Select(g => new { g.Key.Year, g.Key.Month, g.Key.UnitPriceCurrency, Amount = g.Average(x => x.UnitPrice) })
+									.OrderBy(x => x.Year).ThenBy(x => x.Month).ThenBy(x => x.UnitPriceCurrency)
 					.ToListAsync(cancellationToken);
 
 				buckets = monthlyData
-					.Select(x => new ItemCostBucket($"{x.Year}-{x.Month:D2}", x.Amount))
+									.Select(x => new ItemCostBucket($"{x.Year}-{x.Month:D2}", x.Amount, x.UnitPriceCurrency.ToString()))
 					.ToList();
 				break;
 
 			case "yearly":
 				var yearlyData = await query
-					.GroupBy(x => x.Date.Year)
-					.Select(g => new { Year = g.Key, Amount = g.Average(x => x.UnitPrice) })
-					.OrderBy(x => x.Year)
+									.GroupBy(x => new { x.Date.Year, x.UnitPriceCurrency })
+									.Select(g => new { g.Key.Year, g.Key.UnitPriceCurrency, Amount = g.Average(x => x.UnitPrice) })
+									.OrderBy(x => x.Year).ThenBy(x => x.UnitPriceCurrency)
 					.ToListAsync(cancellationToken);
 
 				buckets = yearlyData
-					.Select(x => new ItemCostBucket(x.Year.ToString(), x.Amount))
+									.Select(x => new ItemCostBucket(x.Year.ToString(), x.Amount, x.UnitPriceCurrency.ToString()))
 					.ToList();
 				break;
 
 			default: // "exact"
 				var exactData = await query
-					.Select(x => new { x.Date, x.UnitPrice })
-					.OrderBy(x => x.Date)
+									.Select(x => new { x.Date, x.UnitPrice, x.UnitPriceCurrency })
+									.OrderBy(x => x.Date).ThenBy(x => x.UnitPriceCurrency)
 					.ToListAsync(cancellationToken);
 
 				buckets = exactData
-					.Select(x => new ItemCostBucket(x.Date.ToString("yyyy-MM-dd"), x.UnitPrice))
+									.Select(x => new ItemCostBucket(x.Date.ToString("yyyy-MM-dd"), x.UnitPrice, x.UnitPriceCurrency.ToString()))
 					.ToList();
 				break;
 		}

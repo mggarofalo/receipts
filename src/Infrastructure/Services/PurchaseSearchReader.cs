@@ -192,7 +192,7 @@ public class PurchaseSearchReader(IDbContextFactory<ApplicationDbContext> contex
 	// The first walk validates the filter node's path to a root in each immutable revision.
 	// The second walks its subtree. Both use stable IDs and guard against corrupt cycles.
 	// Keeping this as a composable relation lets PostgreSQL filter before count and paging.
-	private static IQueryable<TaxonomyNodeEntity> EligibleCategoryNodes(
+	internal static IQueryable<TaxonomyNodeEntity> EligibleCategoryNodes(
 			ApplicationDbContext context, Guid categoryId, Guid? revisionId)
 			=> context.TaxonomyNodes.FromSqlInterpolated($"""
                         WITH RECURSIVE ancestors AS (

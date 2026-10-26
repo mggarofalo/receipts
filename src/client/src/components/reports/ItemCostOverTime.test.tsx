@@ -1,4 +1,5 @@
 import { screen, waitFor } from "@testing-library/react";
+import "@/test/setup-combobox-polyfills";
 import userEvent from "@testing-library/user-event";
 import { renderWithQueryClient } from "@/test/test-utils";
 import ItemCostOverTime from "./ItemCostOverTime";
@@ -6,6 +7,28 @@ import ItemCostOverTime from "./ItemCostOverTime";
 vi.mock("@/hooks/useItemCostOverTime", () => ({
   useItemDescriptions: vi.fn(),
   useItemCostOverTime: vi.fn(),
+}));
+vi.mock("@/hooks/useCategoryTaxonomy", () => ({
+  useCategoryTaxonomy: () => ({
+    data: {
+      id: "revision",
+      nodes: [
+        {
+          id: "11111111-1111-1111-1111-111111111111",
+          name: "Food",
+          archived: false,
+        },
+        {
+          id: "22222222-2222-2222-2222-222222222222",
+          parentId: "11111111-1111-1111-1111-111111111111",
+          name: "Dairy",
+          archived: false,
+        },
+      ],
+    },
+    isLoading: false,
+    isError: false,
+  }),
 }));
 
 vi.mock("@/components/dashboard/DateRangeSelector", () => ({
@@ -43,12 +66,25 @@ vi.mock("@/components/charts", () => ({
       {empty ? <p>{emptyMessage}</p> : children}
     </div>
   ),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  AreaTimeChart: ({ trendlineData }: any) => (
+  AreaTimeChart: ({
+    trendlineData,
+    data,
+    formatValue,
+    "aria-label": label,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  }: any) => (
     <div
       data-testid="area-chart"
       data-has-trendline={trendlineData ? "true" : "false"}
-    />
+      aria-label={label}
+    >
+      {data
+        .map(
+          (point: { period: string; amount: number }) =>
+            `${point.period}: ${formatValue(point.amount)}`,
+        )
+        .join(", ")}
+    </div>
   ),
 }));
 
@@ -68,8 +104,8 @@ function setupMocks(overrides: Record<string, unknown> = {}) {
   mockCostHook.mockReturnValue({
     data: {
       buckets: [
-        { period: "2023-01", amount: 1.5 },
-        { period: "2023-02", amount: 1.75 },
+        { period: "2023-01", amount: 1.5, currency: "USD" },
+        { period: "2023-02", amount: 1.75, currency: "USD" },
       ],
     },
     isLoading: false,
@@ -89,7 +125,7 @@ describe("ItemCostOverTime", () => {
 
     expect(screen.getByText("Item Cost Over Time")).toBeInTheDocument();
     expect(
-      screen.getByText(/search for an item above/i),
+      screen.getByText(/choose an item or category above/i),
     ).toBeInTheDocument();
     expect(screen.queryByTestId("chart-card")).not.toBeInTheDocument();
   });
@@ -100,13 +136,10 @@ describe("ItemCostOverTime", () => {
       route: "/?item=Milk&category=Dairy",
     });
 
-    expect(
-      screen.getByRole("heading", { name: "Milk" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Milk" })).toBeInTheDocument();
     expect(mockCostHook).toHaveBeenLastCalledWith(
       expect.objectContaining({
         description: "Milk",
-        category: undefined,
       }),
     );
   });
@@ -120,10 +153,44 @@ describe("ItemCostOverTime", () => {
     expect(screen.getByText("Category: Dairy")).toBeInTheDocument();
     expect(mockCostHook).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        description: undefined,
         category: "Dairy",
       }),
     );
+  });
+
+  it("loads stable category URLs with hierarchy, cutoff, and captured revision", () => {
+    setupMocks();
+    renderWithQueryClient(<ItemCostOverTime />, {
+      route:
+        "/?categoryId=22222222-2222-2222-2222-222222222222&categoryView=currentHierarchy&knowledgeCutoff=2026-01-01T00%3A00%3A00.000Z&capturedCurrentRevisionId=33333333-3333-3333-3333-333333333333&granularity=monthly",
+    });
+    expect(screen.getByText("Category: Food / Dairy")).toBeInTheDocument();
+    expect(mockCostHook).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        categoryId: "22222222-2222-2222-2222-222222222222",
+        categoryView: "currentHierarchy",
+        knowledgeCutoff: "2026-01-01T00:00:00.000Z",
+        capturedCurrentRevisionId: "33333333-3333-3333-3333-333333333333",
+        granularity: "monthly",
+      }),
+    );
+  });
+
+  it("keeps unlike currencies in separate labeled charts", () => {
+    setupMocks({
+      data: {
+        buckets: [
+          { period: "2026-01", amount: 2, currency: "USD" },
+          { period: "2026-01", amount: 3, currency: "EUR" },
+        ],
+      },
+    });
+    renderWithQueryClient(<ItemCostOverTime />, {
+      route: "/?item=Milk&category=Dairy",
+    });
+    expect(screen.getAllByTestId("area-chart")).toHaveLength(2);
+    expect(screen.getByLabelText("Milk · USD")).toHaveTextContent("$2.00");
+    expect(screen.getByLabelText("Milk · EUR")).toHaveTextContent("€3.00");
   });
 
   it("falls back to no selection when category is missing (malformed item params)", () => {
@@ -143,9 +210,7 @@ describe("ItemCostOverTime", () => {
         "/?item=Milk&category=Dairy&startDate=garbage&endDate=garbage&granularity=bogus&trendline=maybe&windowSize=99",
     });
 
-    expect(
-      screen.getByRole("heading", { name: "Milk" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Milk" })).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Each purchase" }),
     ).toHaveAttribute("data-variant", "default");
@@ -155,26 +220,41 @@ describe("ItemCostOverTime", () => {
     );
   });
 
-  it("toggles category-only mode and clears the selected item", async () => {
+  it("selects a nested category by ID and clears the selected item", async () => {
     const user = userEvent.setup();
     setupMocks();
     renderWithQueryClient(<ItemCostOverTime />, {
       route: "/?item=Milk&category=Dairy",
     });
 
-    expect(
-      screen.getByRole("heading", { name: "Milk" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Milk" })).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Category" }));
+    await user.click(screen.getByRole("combobox", { name: "Category path" }));
+    await user.click(screen.getByText("Food / Dairy"));
 
-    expect(screen.getByText("Item Cost Over Time")).toBeInTheDocument();
+    expect(screen.getByText("Category: Food / Dairy")).toBeInTheDocument();
     expect(
       screen.queryByRole("heading", { name: "Milk" }),
     ).not.toBeInTheDocument();
+    expect(mockCostHook).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        categoryId: "22222222-2222-2222-2222-222222222222",
+      }),
+    );
+  });
+
+  it("does not offer an Unclassified filter that the report cannot query", async () => {
+    const user = userEvent.setup();
+    setupMocks();
+    renderWithQueryClient(<ItemCostOverTime />);
+
+    await user.click(screen.getByRole("combobox", { name: "Category path" }));
     expect(
-      screen.getByRole("button", { name: "Category" }),
-    ).toHaveAttribute("data-variant", "default");
+      screen.queryByRole("option", { name: "Unclassified" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "Food / Dairy" }),
+    ).toBeInTheDocument();
   });
 
   it("changes granularity via button click", async () => {
@@ -260,7 +340,9 @@ describe("ItemCostOverTime", () => {
       expect(
         screen.getByRole("heading", { name: "Normalized: Organic Milk" }),
       ).toBeInTheDocument();
-      expect(screen.getByRole("combobox")).toHaveTextContent("Organic Milk");
+      expect(
+        screen.getByRole("combobox", { name: "Search items" }),
+      ).toHaveTextContent("Organic Milk");
 
       const lastCall = mockCostHook.mock.calls.at(-1)?.[0];
       expect(lastCall).toMatchObject({
@@ -290,7 +372,7 @@ describe("ItemCostOverTime", () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any);
 
-      await user.click(screen.getByRole("combobox"));
+      await user.click(screen.getByRole("combobox", { name: "Search items" }));
       await user.type(
         screen.getByPlaceholderText("Type to search items..."),
         "Mi",
@@ -304,15 +386,13 @@ describe("ItemCostOverTime", () => {
       expect(
         screen.queryByRole("heading", { name: /^normalized:/i }),
       ).not.toBeInTheDocument();
-      expect(
-        screen.getByRole("heading", { name: "Milk" }),
-      ).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Milk" })).toBeInTheDocument();
       const lastCall = mockCostHook.mock.calls.at(-1)?.[0];
-      expect(lastCall).toMatchObject({ description: "Milk", category: undefined });
+      expect(lastCall).toMatchObject({ description: "Milk" });
       expect(lastCall).not.toHaveProperty("normalizedDescription");
     });
 
-    it("clears the normalized drill-down when toggling Category mode", async () => {
+    it("clears the normalized drill-down when choosing a category path", async () => {
       const user = userEvent.setup();
       setupMocks();
       renderWithQueryClient(<ItemCostOverTime />, {
@@ -323,16 +403,18 @@ describe("ItemCostOverTime", () => {
         screen.getByRole("heading", { name: "Normalized: Organic Milk" }),
       ).toBeInTheDocument();
 
-      await user.click(screen.getByRole("button", { name: "Category" }));
+      await user.click(screen.getByRole("combobox", { name: "Category path" }));
+      await user.click(screen.getByText("Food / Dairy"));
 
       expect(
         screen.queryByRole("heading", { name: /^normalized:/i }),
       ).not.toBeInTheDocument();
-      expect(screen.getByText("Item Cost Over Time")).toBeInTheDocument();
-      // Neither an item nor a normalized description is selected any more.
+      expect(screen.getByText("Category: Food / Dairy")).toBeInTheDocument();
       const lastCall = mockCostHook.mock.calls.at(-1)?.[0];
       expect(lastCall).not.toHaveProperty("normalizedDescription");
-      expect(lastCall).toMatchObject({ description: undefined, category: undefined });
+      expect(lastCall).toMatchObject({
+        categoryId: "22222222-2222-2222-2222-222222222222",
+      });
     });
   });
 });

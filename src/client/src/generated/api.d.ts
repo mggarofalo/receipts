@@ -2749,7 +2749,7 @@ export interface paths {
         };
         /**
          * Get item cost over time
-         * @description Returns time-series cost data for a specific item description, normalized description, or category, optionally filtered by date range and bucketed by granularity.
+         * @description Returns unit-price observations for an item description, normalized description, or stable category subtree. Buckets are separated by currency. Category assignments default to their historical as-classified view.
          */
         get: operations["GetItemCostOverTime"];
         put?: never;
@@ -4347,6 +4347,8 @@ export interface components {
             period: string;
             /** Format: double */
             amount: number;
+            /** @description Currency of the unit price; amounts from different currencies are never averaged together. */
+            currency: string;
         };
         DuplicatesResponse: {
             /** Format: int32 */
@@ -13914,11 +13916,19 @@ export interface operations {
     GetItemCostOverTime: {
         parameters: {
             query?: {
-                /** @description Item description to filter by. Exactly one of description, normalizedDescription, or category is required. */
+                /** @description Raw item description to filter by. Takes precedence over normalizedDescription, categoryId, and legacy category. */
                 description?: string;
-                /** @description Normalized description canonical name to filter by. Matches every receipt item linked to that normalized description regardless of its raw description text, so it is the drill-down target from the Spending by Normalized Description report. Takes precedence over category; description takes precedence over both. */
+                /** @description Normalized description canonical name to filter by. Takes precedence over categoryId and legacy category. */
                 normalizedDescription?: string;
-                /** @description Item category to filter by. Exactly one of description, normalizedDescription, or category is required. */
+                /** @description Stable taxonomy category ID. Includes descendants in the selected category view. Takes precedence over legacy category. */
+                categoryId?: string;
+                /** @description Historical assignment hierarchy or hierarchy at capturedCurrentRevisionId (current head when omitted). */
+                categoryView?: "asClassified" | "currentHierarchy";
+                /** @description ISO UTC timestamp ending in Z. Selects the latest assignment recorded at or before this time. */
+                knowledgeCutoff?: string;
+                /** @description Captured taxonomy revision for currentHierarchy; rejected with asClassified. */
+                capturedCurrentRevisionId?: string;
+                /** @description Legacy category text filter retained for existing clients. Prefer categoryId. */
                 category?: string;
                 /** @description Start date (ISO date string). Defaults to no lower bound. */
                 startDate?: string;
