@@ -1,3 +1,6 @@
+using System.Net;
+using System.Text;
+using System.Text.Json;
 using Application.Classification;
 using Application.Taxonomy;
 using Common;
@@ -8,18 +11,150 @@ using Infrastructure.Entities.Core;
 using Infrastructure.Entities.NormalizationAi;
 using Infrastructure.Entities.Taxonomy;
 using Infrastructure.IntegrationTests.Fixtures;
+using Infrastructure.Jev;
 using Infrastructure.Services;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Moq;
 
 namespace Infrastructure.IntegrationTests.Services;
 
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public sealed class CategoryAssistanceDispatchStoreTests(PostgresFixture fixture)
+public sealed class CategoryAssistanceDispatchStoreTests
 {
+	private PostgresFixture fixture;
+
+	public CategoryAssistanceDispatchStoreTests(PostgresFixture server)
+	{
+		fixture = server;
+	}
+
+	[Fact]
+	public async Task WorkerSendsOneBoundedRequestFromDurableConsentAndPersistsSuggestion()
+	{
+		// Keep the transport boundary case independent of categories accumulated by other tests.
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		fixture = isolated;
+		var seed = await SeedAsync("worker acceptance " + Guid.NewGuid());
+		try
+		{
+			var handler = new CountingSuggestionHandler(seed.CategoryId);
+			var options = new JevOptions { Enabled = true, ApiKey = "jev-test-key" };
+			var monitor = new Mock<IOptionsMonitor<JevOptions>>();
+			monitor.SetupGet(x => x.CurrentValue).Returns(() => options);
+			var coordinator = Connection();
+			ServiceCollection registrations = new();
+			registrations.AddSingleton<IDbContextFactory<ApplicationDbContext>>(new Factory(fixture));
+			registrations.AddSingleton<ICategoryAssistanceSettingsStore>(Settings());
+			registrations.AddSingleton<ICategoryAssistanceConnectionReconciler>(coordinator);
+			registrations.AddSingleton<ICategoryAssistanceConnectionBinding>(coordinator);
+			registrations.AddSingleton<ICategoryAssistanceDispatchStore>(Dispatch());
+			registrations.AddSingleton<IOptionsMonitor<JevOptions>>(monitor.Object);
+			registrations.AddSingleton(new JevSuggestionConcurrency());
+			registrations.AddSingleton(new HttpClient(handler));
+			registrations.AddSingleton<JevSuggestionProvider>();
+			registrations.AddSingleton<JevCategoryAssistanceSelectedProvider>();
+			registrations.AddSingleton<ICategoryAssistanceSelectedProvider>(p => p.GetRequiredService<JevCategoryAssistanceSelectedProvider>());
+			registrations.AddSingleton<ICategoryAssistanceCapabilitySource>(p => p.GetRequiredService<JevCategoryAssistanceSelectedProvider>());
+			registrations.AddSingleton<TimeProvider>(TimeProvider.System);
+			registrations.AddScoped<CategoryAssistanceDispatcher>();
+			using ServiceProvider services = registrations.BuildServiceProvider();
+			var worker = new CategoryAssistanceWorker(services.GetRequiredService<IServiceScopeFactory>(),
+					monitor.Object, NullLogger<CategoryAssistanceWorker>.Instance);
+
+			options.Enabled = false;
+			(await worker.RunOnceAsync()).Should().BeFalse();
+			options.Enabled = true;
+			options.ApiKey = null;
+			(await worker.RunOnceAsync()).Should().BeFalse();
+			handler.Calls.Should().Be(0);
+			options.ApiKey = "jev-test-key";
+			(await worker.RunOnceAsync()).Should().BeTrue();
+			handler.Calls.Should().Be(1);
+			(await worker.RunOnceAsync()).Should().BeFalse();
+			handler.Calls.Should().Be(1);
+			await using (var verify = fixture.CreateDbContext())
+			{
+				var attempt = await verify.CategoryAssistanceAttempts.AsNoTracking()
+						.SingleAsync(x => x.ItemId == seed.ItemId);
+				attempt.State.Should().Be("suggested");
+				attempt.ResultJson.Should().NotBeNull();
+				(await verify.CategoryAssistanceDailyUsage.Where(x => x.UtcDay == DateOnly.FromDateTime(DateTime.UtcNow))
+						.Select(x => x.DispatchAttempts).SingleAsync()).Should().Be(1);
+			}
+
+			Guid revokedItem = Guid.NewGuid();
+			await using (var db = fixture.CreateDbContext())
+			{
+				db.ReceiptItems.Add(new ReceiptItemEntity
+				{
+					Id = revokedItem,
+					ReceiptId = seed.ReceiptId,
+					Description = "revoked pending " + Guid.NewGuid(),
+					Category = "",
+					UnitPriceCurrency = Currency.USD,
+					TotalAmountCurrency = Currency.USD
+				});
+				await db.SaveChangesAsync();
+			}
+			await using (var db = fixture.CreateDbContext())
+			await using (var tx = await db.Database.BeginTransactionAsync())
+			{
+				(await CategoryAssistanceObservationWriter.RecordNoChoiceSaveAsync(db,
+						seed.Actor, Guid.NewGuid(), revokedItem, false, false)).Should().BeTrue();
+				await tx.CommitAsync();
+			}
+			await DisableAsync(seed.Actor);
+			(await worker.RunOnceAsync()).Should().BeFalse();
+			options.Enabled = false;
+			(await worker.RunOnceAsync()).Should().BeFalse();
+			options.Enabled = true;
+			options.ApiKey = null;
+			(await worker.RunOnceAsync()).Should().BeFalse();
+			handler.Calls.Should().Be(1);
+		}
+		finally { await DisableAsync(seed.Actor); }
+	}
+
+	private sealed class CountingSuggestionHandler(Guid categoryId) : HttpMessageHandler
+	{
+		public int Calls { get; private set; }
+		protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+		{
+			Calls++;
+			request.RequestUri!.AbsoluteUri.Should().Be("https://api.typesafe.ai/v1/systemone");
+			request.Headers.Authorization!.Parameter.Should().Be("jev-test-key");
+			string id = categoryId.ToString("D");
+			using var requestBody = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct));
+			var probabilities = requestBody.RootElement.GetProperty("state").GetProperty("categories")
+				.EnumerateArray().Select(category => category.GetProperty("id").GetString()!)
+				.ToDictionary(category => category, category => category == id ? 1.0 : 0.0);
+			probabilities.Should().ContainKey(id);
+			string body = JsonSerializer.Serialize(new
+			{
+				model = "jev-1.14.0",
+				answers = new
+				{
+					category = new
+					{
+						type = "choice",
+						choice = id,
+						confidence = 0.9,
+						probabilities
+					},
+					fits = new { type = "noul", noul = 0.9 }
+				},
+				usage = new { input_tokens = 1, output_tokens = 1 }
+			});
+			return new HttpResponseMessage(HttpStatusCode.OK)
+			{ Content = new StringContent(body, Encoding.UTF8, "application/json") };
+		}
+	}
 	private sealed class Factory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
 	{ public ApplicationDbContext CreateDbContext() => fixture.CreateDbContext(); }
 	private sealed class FaultFactory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
@@ -310,7 +445,7 @@ public sealed class CategoryAssistanceDispatchStoreTests(PostgresFixture fixture
 		finally { await DisableAsync(seed.Actor); await Connection().InvalidateAsync(); }
 	}
 
-	private async Task<(string Actor, Guid ReceiptId, Guid ItemId, Guid Taxonomy, CategoryAssistanceSettings Settings)> SeedAsync(string description)
+	private async Task<(string Actor, Guid ReceiptId, Guid ItemId, Guid Taxonomy, Guid CategoryId, CategoryAssistanceSettings Settings)> SeedAsync(string description)
 	{
 		string actor = "assistance-dispatch-" + Guid.NewGuid();
 		Guid receiptId = Guid.NewGuid(), itemId = Guid.NewGuid(), categoryId = Guid.NewGuid();
@@ -359,7 +494,7 @@ public sealed class CategoryAssistanceDispatchStoreTests(PostgresFixture fixture
 			(await CategoryAssistanceObservationWriter.RecordNoChoiceSaveAsync(db, actor, Guid.NewGuid(), itemId, false, false)).Should().BeTrue();
 			await tx.CommitAsync();
 		}
-		return (actor, receiptId, itemId, taxonomy, settings);
+		return (actor, receiptId, itemId, taxonomy, categoryId, settings);
 	}
 
 	[Fact]

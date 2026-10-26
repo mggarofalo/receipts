@@ -12,18 +12,19 @@ public sealed class JevSuggestionProvider(HttpClient client, IOptionsMonitor<Jev
 	public bool IsAvailable => options.CurrentValue.Enabled && options.CurrentValue.InferenceEnabled && !string.IsNullOrWhiteSpace(options.CurrentValue.ApiKey);
 
 	public async Task<CategorySuggestionResult> SuggestAsync(CategorySuggestionRequest request, CancellationToken cancellationToken)
-		=> await SuggestCoreAsync(request, null, cancellationToken);
+				=> await SuggestCoreAsync(request, null, requireLegacyGate: true, cancellationToken);
 
 	internal Task<CategorySuggestionResult> SuggestBoundAsync(CategorySuggestionRequest request,
 		Func<string, CancellationToken, Task<bool>> isCurrent, CancellationToken cancellationToken)
-		=> SuggestCoreAsync(request, isCurrent, cancellationToken);
+				=> SuggestCoreAsync(request, isCurrent, requireLegacyGate: false, cancellationToken);
 
 	private async Task<CategorySuggestionResult> SuggestCoreAsync(CategorySuggestionRequest request,
-		Func<string, CancellationToken, Task<bool>>? isCurrent, CancellationToken cancellationToken)
+				Func<string, CancellationToken, Task<bool>>? isCurrent, bool requireLegacyGate,
+				CancellationToken cancellationToken)
 	{
 		cancellationToken.ThrowIfCancellationRequested();
 		JevOptions current = options.CurrentValue;
-		bool enabled = current.Enabled && current.InferenceEnabled;
+		bool enabled = current.Enabled && (!requireLegacyGate || current.InferenceEnabled);
 		string? key = current.ApiKey;
 		if (!enabled)
 		{
@@ -71,7 +72,7 @@ public sealed class JevSuggestionProvider(HttpClient client, IOptionsMonitor<Jev
 			}
 			JevOptions beforeSend = options.CurrentValue;
 			cancellationToken.ThrowIfCancellationRequested();
-			if (!beforeSend.Enabled || !beforeSend.InferenceEnabled || beforeSend.ApiKey != key)
+			if (!beforeSend.Enabled || (requireLegacyGate && !beforeSend.InferenceEnabled) || beforeSend.ApiKey != key)
 			{
 				return CategorySuggestionResult.Failed(SuggestionFailure.Disabled);
 			}
@@ -107,7 +108,7 @@ public sealed class JevSuggestionProvider(HttpClient client, IOptionsMonitor<Jev
 				root.GetProperty("usage").GetProperty("input_tokens").GetInt64(), root.GetProperty("usage").GetProperty("output_tokens").GetInt64());
 			JevOptions latest = options.CurrentValue;
 			cancellationToken.ThrowIfCancellationRequested();
-			if (!latest.Enabled || !latest.InferenceEnabled || latest.ApiKey != key)
+			if (!latest.Enabled || (requireLegacyGate && !latest.InferenceEnabled) || latest.ApiKey != key)
 			{
 				return CategorySuggestionResult.Failed(SuggestionFailure.Disabled);
 			}

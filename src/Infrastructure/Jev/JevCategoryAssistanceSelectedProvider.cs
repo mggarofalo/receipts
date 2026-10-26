@@ -62,6 +62,6 @@ public sealed class JevCategoryAssistanceSelectedProvider(
 	public static CategoryAssistanceConnectionCoordinator.Configuration ConfigurationFor(string key) =>
 		new("jev", CategorySuggestionPolicy.Model, key, Server, TransportOptions);
 
-	private static bool Available(JevOptions value) => value.Enabled && value.InferenceEnabled
-		&& !string.IsNullOrWhiteSpace(value.ApiKey);
+	private static bool Available(JevOptions value) => value.Enabled
+	&& !string.IsNullOrWhiteSpace(value.ApiKey);
 }

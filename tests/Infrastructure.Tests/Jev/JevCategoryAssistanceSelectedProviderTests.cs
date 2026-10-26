@@ -32,7 +32,7 @@ public sealed class JevCategoryAssistanceSelectedProviderTests
 	[Fact]
 	public async Task ReadyCapabilityAndBoundSendUseSamePayloadAndCapturedKey()
 	{
-		JevOptions current = new() { InferenceEnabled = true, ApiKey = "original-key" };
+		JevOptions current = new() { ApiKey = "original-key" };
 		Guid generation = Guid.NewGuid();
 		var (provider, handler, binding) = Create(() => current, async message =>
 		{
@@ -87,7 +87,7 @@ public sealed class JevCategoryAssistanceSelectedProviderTests
 			{
 				current = rotate
 					? new() { InferenceEnabled = true, ApiKey = "replacement-key" }
-					: new() { ApiKey = "original-key" };
+										: new() { Enabled = false, ApiKey = "original-key" };
 				return true;
 			});
 
@@ -102,7 +102,7 @@ public sealed class JevCategoryAssistanceSelectedProviderTests
 	[Fact]
 	public async Task DisabledAndOversizeRequestsNeverCheckGenerationOrSend()
 	{
-		JevOptions current = new() { ApiKey = "configured-key" };
+		JevOptions current = new() { Enabled = false, ApiKey = "configured-key" };
 		var (provider, handler, binding) = Create(() => current);
 		Assert.False(provider.IsAvailable);
 		Assert.Equal(CategoryAssistanceCapabilityState.Unavailable, (await provider.GetAsync(default)).State);

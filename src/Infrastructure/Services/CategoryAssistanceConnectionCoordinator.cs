@@ -11,8 +11,14 @@ namespace Infrastructure.Services;
 /// ReconcileAsync after loading its live configuration and IsCurrentAsync immediately
 /// before a send. Neither operation sends a request to the provider.
 /// </summary>
+public interface ICategoryAssistanceConnectionReconciler
+{
+	Task<Guid> ReconcileAsync(CategoryAssistanceConnectionCoordinator.Configuration configuration,
+			CancellationToken ct = default);
+}
+
 public sealed class CategoryAssistanceConnectionCoordinator(IDbContextFactory<ApplicationDbContext> factory)
-	: ICategoryAssistanceConnectionBinding
+		: ICategoryAssistanceConnectionBinding, ICategoryAssistanceConnectionReconciler
 {
 	public sealed record Configuration(string Provider, string Model, string Credential,
 		Uri Server, string TransportOptions);
