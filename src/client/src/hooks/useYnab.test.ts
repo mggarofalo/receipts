@@ -176,8 +176,12 @@ describe("useYnab", () => {
       const eventsKey = ["ynab", "events", { page: 2 }] as const;
       const statusKey = ["ynab", "status"] as const;
       const unrelatedKey = ["ynab", "account-mappings"] as const;
-      const eventsQuery = vi.fn().mockResolvedValue({ source: "events-refetch" });
-      const statusQuery = vi.fn().mockResolvedValue({ source: "status-refetch" });
+      const eventsQuery = vi
+        .fn()
+        .mockResolvedValue({ source: "events-refetch" });
+      const statusQuery = vi
+        .fn()
+        .mockResolvedValue({ source: "status-refetch" });
       const unrelatedQuery = vi
         .fn()
         .mockResolvedValue({ source: "unrelated-refetch" });
@@ -198,10 +202,9 @@ describe("useYnab", () => {
       const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
       (client.GET as Mock).mockResolvedValue(response);
 
-      const { result, unmount } = renderHook(
-        () => useYnabConnectionStatus(),
-        { wrapper: createWrapper(queryClient) },
-      );
+      const { result, unmount } = renderHook(() => useYnabConnectionStatus(), {
+        wrapper: createWrapper(queryClient),
+      });
 
       await waitFor(() => expect(result.current[terminalState]).toBe(true));
       await waitFor(() => {
@@ -710,6 +713,7 @@ describe("useYnab", () => {
 
     await result.current.mutateAsync({
       receiptsCategory: "Groceries",
+      receiptsCategoryId: "stable-groceries",
       ynabCategoryId: "cat-1",
       ynabCategoryName: "Groceries",
       ynabCategoryGroupName: "Needs",
@@ -721,6 +725,7 @@ describe("useYnab", () => {
       expect.objectContaining({
         body: {
           receiptsCategory: "Groceries",
+          receiptsCategoryId: "stable-groceries",
           ynabCategoryId: "cat-1",
           ynabCategoryName: "Groceries",
           ynabCategoryGroupName: "Needs",
@@ -807,6 +812,7 @@ describe("useYnab", () => {
     await expect(
       result.current.mutateAsync({
         receiptsCategory: "Groceries",
+        receiptsCategoryId: "stable-groceries",
         ynabCategoryId: "cat-1",
         ynabCategoryName: "Groceries",
         ynabCategoryGroupName: "Needs",
@@ -1201,7 +1207,12 @@ describe("useYnab", () => {
       results: [
         {
           receiptId: "r1",
-          result: { success: true, operationStatus: "synced" as const, pushedTransactions: [], error: null },
+          result: {
+            success: true,
+            operationStatus: "synced" as const,
+            pushedTransactions: [],
+            error: null,
+          },
         },
         {
           receiptId: "r2",
@@ -1295,11 +1306,21 @@ describe("useYnab", () => {
       results: [
         {
           receiptId: "r1",
-          result: { success: true, operationStatus: "synced" as const, pushedTransactions: [], error: null },
+          result: {
+            success: true,
+            operationStatus: "synced" as const,
+            pushedTransactions: [],
+            error: null,
+          },
         },
         {
           receiptId: "r2",
-          result: { success: true, operationStatus: "synced" as const, pushedTransactions: [], error: null },
+          result: {
+            success: true,
+            operationStatus: "synced" as const,
+            pushedTransactions: [],
+            error: null,
+          },
         },
       ],
     };
