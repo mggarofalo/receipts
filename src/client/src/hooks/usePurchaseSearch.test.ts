@@ -4,6 +4,10 @@ import { createQueryWrapper } from "@/test/test-utils";
 import { usePurchaseSearch } from "./usePurchaseSearch";
 const { get } = vi.hoisted(() => ({ get: vi.fn() }));
 vi.mock("@/lib/api-client", () => ({ default: { GET: get } }));
+const classification = {
+  categoryView: "asClassified",
+  assignmentSelection: "currentPointer",
+} as const;
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -11,6 +15,7 @@ it("sends whole-result controls and separates cached queries when sort or filter
   get.mockImplementation((_path, request) =>
     Promise.resolve({
       data: {
+        ...classification,
         items: [],
         total: request.params.query.location === "Market" ? 12 : 3,
         offset: 0,
@@ -46,6 +51,7 @@ it("sends whole-result controls and separates cached queries when sort or filter
 it("sends the literal trimmed phrase and page with an abort signal", async () => {
   get.mockResolvedValue({
     data: {
+      ...classification,
       items: [],
       total: 0,
       offset: 25,
@@ -88,6 +94,7 @@ it("cancels the obsolete query and never carries its results into another phrase
   });
   get.mockResolvedValueOnce({
     data: {
+      ...classification,
       items: [],
       total: 0,
       offset: 0,
@@ -105,6 +112,7 @@ it("cancels the obsolete query and never carries its results into another phrase
   expect(result.current.data).toBeUndefined();
   await waitFor(() =>
     expect(result.current.data).toEqual({
+      ...classification,
       items: [],
       total: 0,
       offset: 0,
@@ -121,6 +129,7 @@ it("exposes a failed request and retries the same query", async () => {
   });
   get.mockResolvedValueOnce({
     data: {
+      ...classification,
       items: [],
       total: 0,
       offset: 0,
@@ -147,6 +156,7 @@ it.each(["receipt-item", "normalized-description"] as const)(
     const { invalidateDomainChange } = await import("@/lib/query-invalidation");
     get.mockResolvedValue({
       data: {
+        ...classification,
         items: [],
         total: 0,
         offset: 0,
@@ -174,6 +184,8 @@ it("does not display a completed previous search as the new query's results", as
       {
         id: "old",
         receiptId: "receipt-old",
+        categoryState: "unclassified",
+        categoryPath: [],
         date: "2020-01-15",
         description: "Milk",
         location: "Store",
@@ -184,6 +196,7 @@ it("does not display a completed previous search as the new query's results", as
         totalAmountCurrency: "USD",
       },
     ],
+    ...classification,
     total: 1,
     offset: 0,
     limit: 25,
@@ -201,24 +214,43 @@ it("does not display a completed previous search as the new query's results", as
   expect(result.current.isPlaceholderData).toBe(false);
 });
 
-
 it("separates identity and review scope in the cache and permits GUID history without q", async () => {
-  get.mockResolvedValue({ data: { items: [], total: 1, offset: 0, limit: 25 }, response: new Response() });
+  get.mockResolvedValue({
+    data: { ...classification, items: [], total: 1, offset: 0, limit: 25 },
+    response: new Response(),
+  });
   const firstId = "0d196918-51ca-4ddd-a4cd-039720bab253";
   const secondId = "cd6a97fd-381d-4230-ad56-f027192b57ba";
   const { result, rerender } = renderHook(
-    ({ id, includeUnreviewed }) => usePurchaseSearch("", 0, 25, true,
-      { normalizedDescriptionId: id, includeUnreviewed }),
-    { initialProps: { id: firstId, includeUnreviewed: false }, wrapper: createQueryWrapper() },
+    ({ id, includeUnreviewed }) =>
+      usePurchaseSearch("", 0, 25, true, {
+        normalizedDescriptionId: id,
+        includeUnreviewed,
+      }),
+    {
+      initialProps: { id: firstId, includeUnreviewed: false },
+      wrapper: createQueryWrapper(),
+    },
   );
   await waitFor(() => expect(result.current.isSuccess).toBe(true));
   expect(get).toHaveBeenLastCalledWith("/api/search/purchases", {
-    params: { query: { q: "", offset: 0, limit: 25, normalizedDescriptionId: firstId, includeUnreviewed: false } },
+    params: {
+      query: {
+        q: "",
+        offset: 0,
+        limit: 25,
+        normalizedDescriptionId: firstId,
+        includeUnreviewed: false,
+      },
+    },
     signal: expect.any(AbortSignal),
   });
   rerender({ id: secondId, includeUnreviewed: false });
   await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
   rerender({ id: secondId, includeUnreviewed: true });
   await waitFor(() => expect(get).toHaveBeenCalledTimes(3));
-  expect(get.mock.calls[2][1].params.query).toMatchObject({ normalizedDescriptionId: secondId, includeUnreviewed: true });
+  expect(get.mock.calls[2][1].params.query).toMatchObject({
+    normalizedDescriptionId: secondId,
+    includeUnreviewed: true,
+  });
 });

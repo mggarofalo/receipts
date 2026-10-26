@@ -1991,10 +1991,35 @@ paths:
             type: string
             format: uuid
           description: Filter identity history before pagination; verified assignments by default.
+        - name: categoryView
+          in: query
+          description: Select recorded classification paths or the captured current taxonomy hierarchy.
+          schema:
+            type: string
+            enum: [asClassified, currentHierarchy]
+            default: asClassified
+        - name: categoryId
+          in: query
+          description: Stable category ID; includes descendants in the selected view before count and pagination. Unresolved classifications are excluded.
+          schema:
+            type: string
+            format: uuid
+        - name: knowledgeCutoff
+          in: query
+          description: Inclusive UTC recorded-at cutoff for latest known assignment (Z suffix required); monetary facts remain current.
+          schema:
+            type: string
+            format: date-time
+        - name: capturedCurrentRevisionId
+          in: query
+          description: Immutable taxonomy revision to reuse with currentHierarchy across pages.
+          schema:
+            type: string
+            format: uuid
         - name: q
           in: query
           required: false
-          description: Literal search phrase, 2 to 200 characters after trimming. May be omitted or empty only with normalizedDescriptionId for identity history. When supplied, intersects the identity filter.
+          description: Literal search phrase, 2 to 200 characters after trimming. May be omitted or empty with normalizedDescriptionId or categoryId. When supplied, intersects the filters.
           schema:
             type: string
         - name: offset
@@ -8861,8 +8886,18 @@ components:
           format: uuid
     PurchaseSearchResponse:
       type: object
-      required: [items, total, offset, limit]
+      required: [items, total, offset, limit, categoryView, assignmentSelection]
       properties:
+        categoryView:
+          $ref: "#/components/schemas/PurchaseSearchResponseCategoryView"
+        assignmentSelection:
+          $ref: "#/components/schemas/PurchaseSearchResponseAssignmentSelection"
+        currentRevisionId:
+          type: [string, "null"]
+          format: uuid
+        knowledgeCutoff:
+          type: [string, "null"]
+          format: date-time
         items:
           type: array
           items:
@@ -8879,8 +8914,20 @@ components:
 
     PurchaseSearchItem:
       type: object
-      required: [id, receiptId, date, location, description, quantity, unitPrice, unitPriceCurrency, totalAmount, totalAmountCurrency]
+      required: [id, receiptId, date, location, description, quantity, unitPrice, unitPriceCurrency, totalAmount, totalAmountCurrency, categoryState, categoryPath]
       properties:
+        categoryId:
+          type: [string, "null"]
+          format: uuid
+        pathRevisionId:
+          type: [string, "null"]
+          format: uuid
+        categoryState:
+          $ref: "#/components/schemas/PurchaseSearchItemCategoryState"
+        categoryPath:
+          type: array
+          items:
+            $ref: "#/components/schemas/CategoryReportPathNode"
         normalizationReviewState:
           type: string
           description: Current purchase evidence state; verified, needsReview, or excluded.
@@ -8923,6 +8970,18 @@ components:
           description: Stored currency code without conversion.
 
     # â”€â”€ Errors â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    PurchaseSearchResponseCategoryView:
+      type: string
+      enum: [asClassified, currentHierarchy]
+
+    PurchaseSearchResponseAssignmentSelection:
+      type: string
+      enum: [currentPointer, latestRecordedAtOrBeforeCutoff]
+
+    PurchaseSearchItemCategoryState:
+      type: string
+      enum: [classified, unclassified, missingAssignment, unresolvedLegacy, unresolvedPath, beforeMigrationHistory]
 
     ProblemDetails:
       type: object
