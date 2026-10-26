@@ -1,29 +1,27 @@
 # Jev suggestion adapter
 
-RECEIPTS-1057 introduces a server-side adapter contract for **user-confirmed suggestions only**. It does not classify purchases automatically, write receipt data, normalize items, expose an inference endpoint, or enable dependent UI.
+Category assistance produces **user-confirmed suggestions only**. It never assigns a category, approves a remembered mapping, or rewrites a receipt automatically. Manual entry remains available without Jev.
 
-`ICategorySuggestionProvider` accepts a description and a complete taxonomy snapshot: stable IDs, names, definitions, parent IDs, and revision. Application policy validates the hierarchy and provider judgment, then either returns a suggestion with its full path or a valid abstention. Failures have a separate `SuggestionFailure`; provider errors never become a no-fit answer. Consumers must check the current taxonomy revision again before accepting a suggestion.
+`ICategorySuggestionProvider` accepts a description and the complete category snapshot: stable IDs, names, definitions, parent IDs, and revision. The application validates both the hierarchy and provider judgment. It returns a full category path, a valid abstention, or a separate `SuggestionFailure`. Provider errors are not no-fit answers. Acceptance rechecks the current source, assignment, taxonomy, consent, and connection revisions.
 
-The evaluated policy is `classification-questions-v4` on `jev-1.14.0`. Fit probability <= 0.3 abstains as `no-fit`, < 0.7 abstains as `uncertain-fit`, and >= 0.7 suggests the selected category. Direct parent suggestions are valid. Confidence is retained for provenance and is not an acceptance gate. The application validates model, revision, known IDs, complete normalized probability distributions, selected maximum, finite probabilities, and nonnegative safe-integer token usage before any suggestion or abstention.
+## Hierarchy policy
+
+The policy is `classification-questions-v5` on `jev-1.14.0`. One HTTP request contains a global fit question, a choice among roots, and an independent choice for each internal category among itself and its immediate children. Parent-self permits a broad category when the evidence does not support a narrower one. All questions are answered independently; the reducer validates every answer before traversing the selected path.
+
+Fit probability <= 0.3 abstains as `no-fit`, < 0.7 abstains as `uncertain-fit`, and >= 0.7 allows a suggestion. The returned category probability and confidence describe the final local choice (`ProbabilityScope=local_choice`), not the probability of the complete path. They are not multiplied together and are not an automatic acceptance threshold. Older stored flat-choice results retain `global_choice` scope.
+
+The provider receives the description and category definitions, not payment or account details. Receipt text is untrusted evidence, not instructions. Validation checks the model, revision, known IDs, exact answer and criterion sets, normalized finite probability distributions, selected maximum, and nonnegative safe-integer token usage.
 
 ## Configuration and transport
 
-`TYPESAFE_API_KEY` uses the existing API configuration/User Secrets path. `Jev:Enabled` continues to govern administrative connectivity. **`Jev:InferenceEnabled` defaults to false** and is a separate explicit opt-in; a configured key or successful administrative check cannot enable inference. Both flags and a credential are required for the adapter's passive `IsAvailable` capability. This capability is not yet published through an API.
+Configure `TYPESAFE_API_KEY` through the API server's configuration/User Secrets path; see [Jev setup](jev-setup.md). `Jev:Enabled=false` disables connectivity. The registered assistance worker requires persisted administrator consent and current connection binding in addition to a configured credential. A successful connection check does not grant consent. The direct adapter's separate `Jev:InferenceEnabled` flag defaults to false; the registered worker uses its generation-bound dispatch authorization instead.
 
-The inference client removes inherited resilience handlers and HTTP loggers, disables redirects, and sends one attempt with a 10-second linked timeout. Caller cancellation propagates. A shared singleton semaphore permits one in-flight request per server process and rejects additional requests as busy. There is no queue, retry, fallback, automatic restart, or provider error/body logging. Configuration changes during a request discard its result.
+The client removes inherited resilience handlers and HTTP loggers, disables redirects, and makes one send with a 10-second linked timeout. Caller cancellation propagates. One singleton semaphore bounds concurrent transport use; busy attempts do not silently retry. Configuration changes fence in-flight results. The durable local queue and daily budget are documented in [category assistance](category-assistance.md).
 
-Requests reject invalid hierarchies, absent definitions, more than 255 categories, and serialized payloads above 12,000 UTF-8 bytes. The full tree is sent or the request fails; it is never silently truncated. Responses buffer at most 100,000 bytes. The conservative payload limit may reject real production taxonomies; no production-size accuracy or context-budget claim follows from the synthetic evaluation.
+The full hierarchy is sent or the request fails; it is never truncated. Each Choice supports at most 255 alternatives: up to 255 roots, or 254 immediate children plus their parent-self alternative. Total category count can exceed 255. Serialized requests are limited to 65,536 UTF-8 bytes and responses to 1 MiB. Byte limits do not establish model token limits for every possible taxonomy.
 
-## Frozen semantics and validation
+## Release evaluation
 
-`tests/Infrastructure.Tests/Fixtures/jev-suggestion-v4.json` is an offline frozen request from the first heldout v5 synthetic case, produced by `payloadFor` in RECEIPTS-1056's unchanged harness. Its constructed grocery definitions are test input only. The adapter has no hardcoded grocery taxonomy. A semantic JSON comparison checks question wording, criteria, state shape, ID paths, display paths, and model against the fixture.
+The frozen hierarchy evaluation used meaningful synthetic categories and the actual C# adapter. Across 32 attempts, 30 matched their fixed expected outcomes, one conservatively abstained where a broad category was expected, and one response was rejected as invalid. All 12 untouched holdouts matched. Two separate diagnostic requests did not reproduce the invalid response and do not replace that failure. No observed category path was wrong. This limited evidence supports human-reviewed assistance, not automatic assignment or a guarantee for arbitrary receipt descriptions.
 
-Source harness SHA-256: `9B388994543BFE3D352041A1F8D416C554D9BE0798531A9AF289F921E86FA1C6`.
-
-Fixture SHA-256: `38012949092970C0A002D3923F4E2FCD3165C3C84AC62BE7CD4ED4978C8E4C1A`.
-
-Offline tests cover policy boundaries, broad parent suggestions, no-fit, unknown IDs, malformed responses, model drift, usage validation, authentication rejection, rate limiting, timeouts, cancellation, payload bounds, shared concurrency and production dependency injection without inherited retries. Implementation tests made no live requests. A separately budgeted independent acceptance probe then exercised the actual C# adapter with four synthetic requests, including a 22-category UUID tree, a broad parent and no-fit input. All passed; usage was 16,615 input and 3,174 output tokens, estimated $0.000697830 under verified model pricing. Current official documentation was fetched during that review. These contract probes do not establish production accuracy or validate every user taxonomy.
-
-Remaining delivery work includes independent code review, a separately allocated live adapter contract probe, production taxonomy sizing and definitions, authenticated capability/API contracts, UI gating and confirmation flow, stale-revision acceptance checks, and the standard combined checks. Automatic classification remains NO-GO.
-
-
+The production category snapshot (309 active categories) serialized offline to 55,499 bytes without truncation. Boundary tests cover wider and deeper trees, malformed and oversized responses, authentication, timeout, cancellation, concurrency, configuration changes, and one-send behavior. A separate live request with a frozen 58,896-byte synthetic hierarchy returned the expected nested path in one send (22,643 input tokens). This checks one production-sized payload, not every possible taxonomy. Private receipt data and credentials are not part of the checked-in evaluation fixtures.

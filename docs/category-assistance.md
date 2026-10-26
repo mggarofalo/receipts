@@ -2,11 +2,11 @@
 
 Category assistance is a deployment-wide, opt-in service. Configuring credentials does not enable it. Any active Admin may change consent and limits; eligible saves come from authenticated receipt writers. Manual category choices and approved exact-source mappings take precedence.
 
-The current foundation is dormant: the dispatch store and Application orchestrator are not registered as a running worker, and the transport inference gate remains closed. Runtime transport binding, scheduling, settings/read/accept APIs and capability-driven UI are separate required integration work.
+A registered background worker processes eligible saves and explicit historical requests. Administrator settings control consent and deployment-wide daily and pending limits. The category workspace exposes manual selection independently of provider availability; suggestion and historical-request controls require a configured provider and consent. Results require explicit acceptance, and remembering an exact-source mapping is a separate action.
 
 ## Dispatch evidence
 
-Only trusted post-consent, no-choice save observations can enroll an attempt. Exact normalized store, description and optional item code are compared alongside the source hash; deduplication also includes taxonomy, provider/model, question policy and deployment generations. The provider receives the description and taxonomy, not receipt payment or account details.
+Trusted post-consent, no-choice save observations and explicit, bounded historical requests can enroll an attempt. Historical requests accept at most 25 selected groups with at most 100 purchases per group; they preserve an operation ID for recovery and never silently scan or submit all history. Exact normalized store, description and optional item code are compared alongside the source hash; deduplication also includes taxonomy, provider/model, question policy and deployment generations. The provider receives the description and taxonomy, not receipt payment or account details.
 
 Queued claims use bounded leases and deferral. Dispatch start atomically checks current consent, source and receipt/item revisions, assignment, mapping, taxonomy and connection state, then debits the deployment-wide UTC-day allowance. A dispatched attempt is never automatically resent after an uncertain outcome. Completed results remain suggestions and do not assign categories or approve mappings.
 

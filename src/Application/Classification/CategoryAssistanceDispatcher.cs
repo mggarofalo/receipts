@@ -109,10 +109,14 @@ public sealed class CategoryAssistanceDispatcher(
 			return false;
 		}
 
-		if (!ValidQueuedWork(work) || provider.Provider != work.Provider || provider.Model != work.Model
-			|| !provider.FitsPayload(work.Request))
+		if (!ValidQueuedWork(work) || provider.Provider != work.Provider || provider.Model != work.Model)
 		{
 			await store.RejectQueuedAsync(work, SuggestionFailure.InvalidInput, ct);
+			return true;
+		}
+		if (!provider.FitsPayload(work.Request))
+		{
+			await store.RejectQueuedAsync(work, SuggestionFailure.PayloadTooLarge, ct);
 			return true;
 		}
 

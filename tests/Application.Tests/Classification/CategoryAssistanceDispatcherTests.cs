@@ -131,7 +131,7 @@ public class CategoryAssistanceDispatcherTests
 	{
 		Queue();
 		provider.Setup(x => x.FitsPayload(work.Request)).Returns(false);
-		store.Setup(x => x.RejectQueuedAsync(work, SuggestionFailure.InvalidInput,
+		store.Setup(x => x.RejectQueuedAsync(work, SuggestionFailure.PayloadTooLarge,
 			It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
 		Assert.True(await Dispatcher().DispatchOneAsync());

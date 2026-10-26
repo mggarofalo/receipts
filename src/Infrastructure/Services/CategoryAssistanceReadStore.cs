@@ -124,7 +124,8 @@ public sealed class CategoryAssistanceReadStore(IDbContextFactory<ApplicationDbC
 			{
 				ReviewState = preference?.State ?? "active",
 				ReviewRevision = preference?.Revision ?? Guid.Empty,
-				ExcludedItemCount = excluded.Length
+				ExcludedItemCount = excluded.Length,
+				ProbabilityScope = suggestion?.ProbabilityScope ?? "global_choice"
 			});
 		}
 		return items;
@@ -139,8 +140,17 @@ public sealed class CategoryAssistanceReadStore(IDbContextFactory<ApplicationDbC
 		var day = DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime);
 		int attempts = await db.CategoryAssistanceDailyUsage.AsNoTracking()
 			.Where(x => x.UtcDay == day).Select(x => x.DispatchAttempts).SingleOrDefaultAsync(ct);
+		var recent = await db.CategoryAssistanceAttempts.AsNoTracking()
+				.Where(x => x.State == "failed" && x.CompletedAt != null)
+				.OrderByDescending(x => x.CompletedAt).ThenByDescending(x => x.Id)
+				.Take(10).Select(x => new { x.Id, x.ResultJson, x.CompletedAt }).ToListAsync(ct);
 		return new(Count("queued"), Count("dispatching"), Count("suggested"), Count("abstained"),
-			Count("failed"), Count("stale"), Count("indeterminate"), attempts);
+				Count("failed"), Count("stale"), Count("indeterminate"), attempts)
+		{
+			RecentFailures = recent.Select(x => new CategoryAssistanceFailureRead(x.Id,
+					CategoryAssistanceFailureCode.Read(x.ResultJson) ?? "Unknown",
+					x.CompletedAt!.Value)).ToArray()
+		};
 	}
 
 	private static async Task<bool> IsCurrentAsync(ApplicationDbContext db, CategoryAssistanceAttemptEntity row,

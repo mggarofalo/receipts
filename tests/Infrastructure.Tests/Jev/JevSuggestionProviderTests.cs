@@ -27,7 +27,7 @@ public class JevSuggestionProviderTests
 	private static HttpResponseMessage Response(string body = ValidResponse) => new(HttpStatusCode.OK) { Content = new StringContent(body) };
 
 	[Fact]
-	public void FrozenEvaluatedPayloadHasExactSemanticParity()
+	public void PayloadContainsIndependentRootAndBranchChoices()
 	{
 		JsonNode expected = JsonNode.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "jev-suggestion-v4.json")))!;
 		JsonNode state = expected["state"]!;
@@ -37,7 +37,11 @@ public class JevSuggestionProviderTests
 			return new SuggestionCategory(node["id"]!.GetValue<string>(), node["name"]!.GetValue<string>(), node["definition"]!.GetValue<string>(), path.Length > 1 ? path[^2] : null);
 		}).ToArray();
 		CategorySuggestionRequest request = new(state["receiptLine"]!["untrustedDescription"]!.GetValue<string>(), state["taxonomyRevision"]!.GetValue<string>(), categories);
-		Assert.True(JsonNode.DeepEquals(expected, JsonNode.Parse(JevSuggestionQuestions.Serialize(request))));
+		JsonNode actual = JsonNode.Parse(JevSuggestionQuestions.Serialize(request))!;
+		Assert.Equal("jev-1.14.0", actual["model"]!.GetValue<string>());
+		Assert.Equal(categories.Count(x => x.ParentId is null), actual["questions"]!["category"]!["criteria"]!.AsObject().Count);
+		Assert.Equal(1 + categories.Count(x => categories.Any(y => y.ParentId == x.Id)) + 1, actual["questions"]!.AsObject().Count);
+		Assert.NotNull(actual["questions"]!["fits"]);
 	}
 
 	[Fact]
@@ -121,9 +125,81 @@ public class JevSuggestionProviderTests
 	public async Task OversizePayloadIsRejectedWithoutTruncatingTaxonomyOrSending()
 	{
 		Handler handler = new((_, _) => Task.FromResult(Response()));
-		CategorySuggestionRequest request = Request with { Categories = [new("parent", "Parent", new string('x', 7000), null)] };
+		CategorySuggestionRequest request = Request with { Categories = [new("parent", "Parent", new string('x', 65500), null)] };
 		Assert.Equal(SuggestionFailure.PayloadTooLarge, (await Provider(handler).SuggestAsync(request, default)).Failure);
 		Assert.Equal(0, handler.Calls);
+	}
+
+	[Fact]
+	public async Task LargeHierarchyIsCompleteAndUsesOneRequest()
+	{
+		SuggestionCategory[] roots = Enumerable.Range(0, 68)
+				.Select(i => new SuggestionCategory($"r{i}", $"Root {i}", $"General purchases of type {i}", null)).ToArray();
+		SuggestionCategory[] children = Enumerable.Range(0, 241)
+				.Select(i => new SuggestionCategory($"c{i}", $"Child {i}", $"Specific purchases of type {i}", $"r{i % 68}")).ToArray();
+		CategorySuggestionRequest request = Request with { Categories = [.. roots, .. children] };
+		byte[] payload = JevSuggestionQuestions.Serialize(request);
+		JsonNode questions = JsonNode.Parse(payload)!["questions"]!;
+		Assert.InRange(payload.Length, 1, CategorySuggestionPolicy.MaximumPayloadBytes);
+		Assert.Equal(70, questions.AsObject().Count);
+		Assert.Equal(68, questions["category"]!["criteria"]!.AsObject().Count);
+		Assert.Equal(309, questions.AsObject().Where(x => x.Key != "fits")
+				.Sum(x => x.Value!["criteria"]!.AsObject().Count) - 68);
+		string response = ResponseFor(questions, "r0", "c0");
+		Handler handler = new((_, _) => Task.FromResult(Response(response)));
+		CategorySuggestionResult result = await Provider(handler).SuggestAsync(request, default);
+		Assert.Null(result.Failure);
+		Assert.Equal("c0", result.Suggestion!.CategoryId);
+		Assert.Equal(new[] { "r0", "c0" }, result.Suggestion.Path);
+		Assert.Equal("local_choice", result.Suggestion.ProbabilityScope);
+		Assert.Equal(1, handler.Calls);
+	}
+
+	[Fact]
+	public async Task MissingExtraAndMalformedBranchAnswersFail()
+	{
+		CategorySuggestionRequest request = Request with { Categories = [new("r", "Root", "Broad", null), new("c", "Child", "Specific", "r")] };
+		JsonNode questions = JsonNode.Parse(JevSuggestionQuestions.Serialize(request))!["questions"]!;
+		JsonNode valid = JsonNode.Parse(ResponseFor(questions, "r", "c"))!;
+		var bad = new List<JsonNode>();
+		JsonNode missing = valid.DeepClone(); missing["answers"]!.AsObject().Remove("branch_0"); bad.Add(missing);
+		JsonNode extra = valid.DeepClone(); extra["answers"]!["branch_extra"] = valid["answers"]!["branch_0"]!.DeepClone(); bad.Add(extra);
+		JsonNode distribution = valid.DeepClone(); distribution["answers"]!["branch_0"]!["probabilities"]!["unknown"] = 0.1; bad.Add(distribution);
+		JsonNode choice = valid.DeepClone(); choice["answers"]!["branch_0"]!["choice"] = "unknown"; bad.Add(choice);
+		foreach (JsonNode body in bad)
+		{
+			Handler handler = new((_, _) => Task.FromResult(Response(body.ToJsonString())));
+			Assert.Equal(SuggestionFailure.InvalidResponse, (await Provider(handler).SuggestAsync(request, default)).Failure);
+		}
+	}
+
+	private static string ResponseFor(JsonNode questions, string root, string child)
+	{
+		var answers = new Dictionary<string, object>();
+		foreach (var (key, node) in questions.AsObject())
+		{
+			if (key == "fits")
+			{
+				continue;
+			}
+
+			string[] ids = node!["criteria"]!.AsObject().Select(x => x.Key).ToArray();
+			string selected = key == "category" ? root : ids.Contains(child) && ids.Contains(root) ? child : ids[0];
+			answers[key] = new
+			{
+				type = "choice",
+				choice = selected,
+				confidence = 0.8,
+				probabilities = ids.ToDictionary(id => id, id => id == selected ? 1.0 : 0.0)
+			};
+		}
+		answers["fits"] = new { type = "noul", noul = 0.9 };
+		return JsonSerializer.Serialize(new
+		{
+			model = CategorySuggestionPolicy.Model,
+			answers,
+			usage = new { input_tokens = 100L, output_tokens = 10L }
+		});
 	}
 
 	[Fact]

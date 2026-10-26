@@ -76,7 +76,7 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 
 			if (!await EligibleAsync(db, marker, head.RevisionId, ct)) { marker.DispatchSkipped = true; continue; }
 			var request = await BuildRequestAsync(db, marker.Description, head.RevisionId, ct);
-			if (request == null || !CategorySuggestionPolicy.IsValid(request)) { marker.DispatchSkipped = true; continue; }
+			bool invalidRequest = request == null || !CategorySuggestionPolicy.IsValid(request);
 			var attempt = new CategoryAssistanceAttemptEntity
 			{
 				Id = Guid.NewGuid(),
@@ -99,7 +99,12 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 				ItemId = marker.ReceiptItemId,
 				ItemRevision = marker.ItemRevision,
 				AssignmentId = marker.AssignmentId,
-				RequestJson = JsonSerializer.Serialize(request),
+				RequestJson = invalidRequest ? "" : JsonSerializer.Serialize(request),
+				State = invalidRequest ? "failed" : "queued",
+				ResultJson = invalidRequest ? JsonSerializer.Serialize(
+										new CategoryAssistanceCompletion(CategoryAssistanceAttemptOutcome.Failed,
+												Failure: SuggestionFailure.InvalidInput)) : null,
+				CompletedAt = invalidRequest ? now : null,
 				CreatedAt = now
 			};
 			db.CategoryAssistanceAttempts.Add(attempt);
@@ -315,7 +320,7 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 	{
 		var nodes = await db.TaxonomyNodes.AsNoTracking().Where(x => x.RevisionId == revision && !x.Archived)
 			.OrderBy(x => x.CategoryId).ToListAsync(ct);
-		if (nodes.Count == 0 || nodes.Count > CategorySuggestionPolicy.MaximumCategories)
+		if (nodes.Count == 0)
 		{
 			return null;
 		}
@@ -327,7 +332,7 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 		}
 
 		return new(description, revision.ToString("D"), nodes.Select(x => new SuggestionCategory(
-			x.CategoryId.ToString("D"), x.Name, x.Definition ?? x.Name, x.ParentId?.ToString("D"))).ToArray());
+						x.CategoryId.ToString("D"), x.Name, string.IsNullOrWhiteSpace(x.Definition) ? x.Name : x.Definition, x.ParentId?.ToString("D"))).ToArray());
 	}
 
 	private static CategoryAssistanceQueuedWork ToWork(CategoryAssistanceAttemptEntity row)

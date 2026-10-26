@@ -92,20 +92,38 @@ public sealed class JevSuggestionProvider(HttpClient client, IOptionsMonitor<Jev
 				return CategorySuggestionResult.Failed(SuggestionFailure.Unavailable);
 			}
 
-			await response.Content.LoadIntoBufferAsync(100000, timeout.Token);
+			await response.Content.LoadIntoBufferAsync(1048576, timeout.Token);
 			using JsonDocument document = JsonDocument.Parse(await response.Content.ReadAsByteArrayAsync(timeout.Token));
 			JsonElement root = document.RootElement;
-			JsonElement choice = root.GetProperty("answers").GetProperty("category");
-			JsonElement fits = root.GetProperty("answers").GetProperty("fits");
-			if (choice.GetProperty("type").GetString() != "choice" || fits.GetProperty("type").GetString() != "noul")
+			JsonElement answers = root.GetProperty("answers");
+			JsonElement fits = answers.GetProperty("fits");
+			int expectedChoices = 1 + request.Categories.Count(x => request.Categories.Any(y => y.ParentId == x.Id));
+			if (answers.ValueKind != JsonValueKind.Object || answers.EnumerateObject().Count() != expectedChoices + 1 ||
+				fits.GetProperty("type").GetString() != "noul")
 			{
 				return CategorySuggestionResult.Failed(SuggestionFailure.InvalidResponse);
 			}
+			Dictionary<string, CategoryChoiceJudgment> choices = new(StringComparer.Ordinal);
+			foreach (JsonProperty answer in answers.EnumerateObject())
+			{
+				if (answer.Name == "fits")
+				{
+					continue;
+				}
 
-			Dictionary<string, double> probabilities = choice.GetProperty("probabilities").EnumerateObject().ToDictionary(property => property.Name, property => property.Value.GetDouble(), StringComparer.Ordinal);
-			CategoryJudgment judgment = new(root.GetProperty("model").GetString()!, request.TaxonomyRevision,
-				choice.GetProperty("choice").GetString()!, fits.GetProperty("noul").GetDouble(), choice.GetProperty("confidence").GetDouble(), probabilities,
-				root.GetProperty("usage").GetProperty("input_tokens").GetInt64(), root.GetProperty("usage").GetProperty("output_tokens").GetInt64());
+				JsonElement choice = answer.Value;
+				if (choice.GetProperty("type").GetString() != "choice")
+				{
+					return CategorySuggestionResult.Failed(SuggestionFailure.InvalidResponse);
+				}
+
+				Dictionary<string, double> probabilities = choice.GetProperty("probabilities").EnumerateObject()
+					.ToDictionary(property => property.Name, property => property.Value.GetDouble(), StringComparer.Ordinal);
+				choices.Add(answer.Name, new(choice.GetProperty("choice").GetString()!, choice.GetProperty("confidence").GetDouble(), probabilities));
+			}
+			CategoryHierarchyJudgment judgment = new(root.GetProperty("model").GetString()!, request.TaxonomyRevision,
+					fits.GetProperty("noul").GetDouble(), choices,
+	root.GetProperty("usage").GetProperty("input_tokens").GetInt64(), root.GetProperty("usage").GetProperty("output_tokens").GetInt64());
 			JevOptions latest = options.CurrentValue;
 			cancellationToken.ThrowIfCancellationRequested();
 			if (!latest.Enabled || (requireLegacyGate && !latest.InferenceEnabled) || latest.ApiKey != key)

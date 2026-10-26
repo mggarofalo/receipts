@@ -47,10 +47,20 @@ public class JevSuggestionProviderBoundaryTests
 	[Fact]
 	public async Task OversizeProviderBodyFailsWithoutSuggestionOrRetry()
 	{
-		Handler handler = new(() => new(HttpStatusCode.OK) { Content = new StringContent(new string('x', 100001)) });
+		Handler handler = new(() => new(HttpStatusCode.OK) { Content = new StringContent(ValidResponse + new string(' ', 1048576)) });
 		CategorySuggestionResult result = await Provider(handler, () => new() { InferenceEnabled = true, ApiKey = "test-key" }).SuggestAsync(Request, default);
 		Assert.NotNull(result.Failure);
 		Assert.Null(result.Suggestion);
+		Assert.Equal(1, handler.Calls);
+	}
+
+	[Fact]
+	public async Task LargeValidResponseIsBufferedAndAcceptedOnce()
+	{
+		Handler handler = new(() => new(HttpStatusCode.OK) { Content = new StringContent(ValidResponse + new string(' ', 150000)) });
+		CategorySuggestionResult result = await Provider(handler, () => new() { InferenceEnabled = true, ApiKey = "test-key" }).SuggestAsync(Request, default);
+		Assert.Null(result.Failure);
+		Assert.Equal("category", result.Suggestion!.CategoryId);
 		Assert.Equal(1, handler.Calls);
 	}
 

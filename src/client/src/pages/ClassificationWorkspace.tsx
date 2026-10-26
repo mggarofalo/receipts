@@ -17,8 +17,10 @@ import { Button } from "@/components/ui/button";
 
 type Suggestion = components["schemas"]["CategoryAssistanceSuggestionRead"];
 type Decision = components["schemas"]["CategoryAssistanceDecisionRequest"];
-type ReviewPreference = components["schemas"]["CategoryAssistanceReviewPreference"];
-type ReviewRequest = components["schemas"]["CategoryAssistanceReviewPreferenceRequest"];
+type ReviewPreference =
+  components["schemas"]["CategoryAssistanceReviewPreference"];
+type ReviewRequest =
+  components["schemas"]["CategoryAssistanceReviewPreferenceRequest"];
 type ReviewState = ReviewPreference["state"];
 type ReviewFilter = ReviewState | "all";
 type PendingRemember = {
@@ -868,8 +870,11 @@ function SuggestionCard({
             )}
           </section>
           <p className="text-sm">
-            Source: {item.source.description} at {item.source.location}.
-            Confidence:{" "}
+            Source: {item.source.description} at {item.source.location}.{" "}
+            {item.probabilityScope === "local_choice"
+              ? "Final choice confidence"
+              : "Confidence"}
+            :{" "}
             {item.confidence == null
               ? "not provided"
               : `${Math.round(item.confidence * 100)}%`}

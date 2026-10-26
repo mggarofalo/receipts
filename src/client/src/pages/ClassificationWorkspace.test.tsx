@@ -72,6 +72,7 @@ const suggestion = {
   proposedPath: [revision.nodes[0].id, revision.nodes[1].id],
   abstentionReason: null,
   confidence: 0.9,
+  probabilityScope: "global_choice",
   state: "suggested",
   isCurrent: true,
   createdAt: "2026-10-25T12:00:00Z",
@@ -331,6 +332,30 @@ it("keeps manual browse available when assistance capability is absent", async (
     screen.getByRole("link", { name: "Browse categories" }),
   ).toHaveAttribute("href", "/categories");
   expect(mockClient.GET).toHaveBeenCalledTimes(1);
+});
+
+it.each([
+  ["local_choice", "Final choice confidence: 90%"],
+  ["global_choice", "Confidence: 90%"],
+])("labels %s suggestion scores accurately", async (scope, expected) => {
+  const get = mockClient.GET.getMockImplementation()!;
+  mockClient.GET.mockImplementation(async (path: string, options: unknown) => {
+    if (path.endsWith("/suggestions"))
+      return ok({
+        total: 1,
+        offset: 0,
+        limit: 25,
+        items: [{ ...suggestion, probabilityScope: scope }],
+      });
+    return get(path, options);
+  });
+  renderWithQueryClient(<ClassificationWorkspace />);
+  await screen.findByText("Whole Milk");
+  await userEvent.click(screen.getByRole("button", { name: "Review details" }));
+  expect(await screen.findByText(new RegExp(expected))).toBeInTheDocument();
+  expect(
+    screen.getByRole("link", { name: "Browse categories" }),
+  ).toHaveAttribute("href", "/categories");
 });
 
 it("hides provider actions while capability loads or is unknown", async () => {
@@ -684,20 +709,47 @@ it("preserves older exclusions when adding an item and changing review state", a
   const originalGet = mockClient.GET.getMockImplementation()!;
   mockClient.GET.mockImplementation(async (path: string, options: unknown) => {
     if (path.endsWith("/review-preference"))
-      return ok({ attemptId, state: "active", revision: currentRevision, excludedItemIds });
+      return ok({
+        attemptId,
+        state: "active",
+        revision: currentRevision,
+        excludedItemIds,
+      });
     return originalGet(path, options);
   });
-  mockClient.PUT.mockImplementation(async (_path: string, options: { body: { state: string; expectedRevision: string; excludedItemIds: string[] } }) => {
-    expect(options.body.expectedRevision).toBe(currentRevision);
-    excludedItemIds = options.body.excludedItemIds;
-    currentRevision = crypto.randomUUID();
-    return ok({ attemptId, state: options.body.state, revision: currentRevision, excludedItemIds });
-  });
+  mockClient.PUT.mockImplementation(
+    async (
+      _path: string,
+      options: {
+        body: {
+          state: string;
+          expectedRevision: string;
+          excludedItemIds: string[];
+        };
+      },
+    ) => {
+      expect(options.body.expectedRevision).toBe(currentRevision);
+      excludedItemIds = options.body.excludedItemIds;
+      currentRevision = crypto.randomUUID();
+      return ok({
+        attemptId,
+        state: options.body.state,
+        revision: currentRevision,
+        excludedItemIds,
+      });
+    },
+  );
   renderWithQueryClient(<ClassificationWorkspace />);
-  await userEvent.click(await screen.findByRole("button", { name: "Review details" }));
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Review details" }),
+  );
   await screen.findByRole("checkbox", { name: `Excluded item ${olderItemId}` });
-  await userEvent.click(screen.getByRole("checkbox", { name: /Select Whole Milk/i }));
-  await userEvent.click(screen.getByRole("button", { name: "Exclude selected from assistance" }));
+  await userEvent.click(
+    screen.getByRole("checkbox", { name: /Select Whole Milk/i }),
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: "Exclude selected from assistance" }),
+  );
   await waitFor(() => expect(excludedItemIds).toEqual([olderItemId, itemA]));
   await userEvent.click(screen.getByRole("button", { name: "Leave as is" }));
   await waitFor(() => expect(mockClient.PUT).toHaveBeenCalledTimes(2));
