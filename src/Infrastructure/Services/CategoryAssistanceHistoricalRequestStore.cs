@@ -244,7 +244,12 @@ public sealed class CategoryAssistanceHistoricalRequestStore(
 			var states = groupMarkers.Select(m => m.AttemptId is Guid id && attempts.TryGetValue(id, out var a)
 				? a.State : m.DispatchSkipped || !current ? "stale" : "waiting").ToArray();
 			return new CategoryAssistanceHistoricalGroupProgress(g.key, g.ItemIds.Length,
-				groupMarkers.Where(x => x.AttemptId != null).Select(x => x.AttemptId!.Value).Distinct().ToArray(), states);
+								groupMarkers.Where(x => x.AttemptId != null).Select(x => x.AttemptId!.Value).Distinct().ToArray(), states)
+			{
+				FailureReasons = groupMarkers.Select(m => m.AttemptId is Guid id &&
+						attempts.TryGetValue(id, out var a) && a.State == "failed"
+						? CategoryAssistanceFailureCode.Read(a.ResultJson) ?? "Unknown" : null).ToArray()
+			};
 		}).ToArray();
 		var allStates = progress.SelectMany(x => x.States).ToArray();
 		string state = allStates.All(x => x is "suggested" or "abstained" or "accepted" or "dismissed") ? "ready" :

@@ -20,6 +20,56 @@ public sealed class CategoryAssistanceReadStoreTests(PostgresFixture fixture)
 	{ public ApplicationDbContext CreateDbContext() => fixture.CreateDbContext(); }
 
 	[Fact]
+	public async Task ActivityBoundsRecentFailuresAndNeverExposesStoredProviderText()
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		var newest = DateTimeOffset.UtcNow.AddMinutes(1);
+		Guid newestId = Guid.NewGuid();
+		await using (var db = isolated.CreateDbContext())
+		{
+			for (int i = 0; i < 12; i++)
+			{
+				db.CategoryAssistanceAttempts.Add(new CategoryAssistanceAttemptEntity
+				{
+					Id = i == 0 ? newestId : Guid.NewGuid(),
+					RequestId = Guid.NewGuid(),
+					RestoreGeneration = Guid.NewGuid(),
+					SourceHash = new string('C', 64),
+					Location = "Store",
+					Description = $"Failure {i}",
+					SourceRevision = Guid.NewGuid(),
+					TaxonomyRevision = Guid.NewGuid(),
+					Provider = "jev",
+					Model = CategorySuggestionPolicy.Model,
+					QuestionPolicyVersion = CategorySuggestionPolicy.Version,
+					SettingsRevision = Guid.NewGuid(),
+					ConnectionGeneration = Guid.NewGuid(),
+					ReceiptId = Guid.NewGuid(),
+					ReceiptRevision = Guid.NewGuid(),
+					ItemId = Guid.NewGuid(),
+					ItemRevision = Guid.NewGuid(),
+					State = "failed",
+					CreatedAt = newest.AddMinutes(-i),
+					CompletedAt = newest.AddMinutes(-i),
+					ResultJson = i == 0 ? "provider-secret-details" :
+								JsonSerializer.Serialize(new CategoryAssistanceCompletion(
+										CategoryAssistanceAttemptOutcome.Failed,
+										Failure: SuggestionFailure.Timeout))
+				});
+			}
+			await db.SaveChangesAsync();
+		}
+
+		var activity = await new CategoryAssistanceReadStore(new Factory(isolated), TimeProvider.System)
+				.GetActivityAsync(default);
+		activity.RecentFailures.Should().HaveCount(10);
+		activity.RecentFailures[0].AttemptId.Should().Be(newestId);
+		activity.RecentFailures[0].Failure.Should().Be("Unknown");
+		activity.RecentFailures.Skip(1).Should().OnlyContain(x => x.Failure == "Timeout");
+		activity.RecentFailures.Should().BeInDescendingOrder(x => x.CompletedAt);
+	}
+
+	[Fact]
 	public async Task CompletedPageOmitsFailuresAndMarksMissingEvidenceStale()
 	{
 		Guid restore = Guid.NewGuid(), category = Guid.NewGuid(), failedAttempt = Guid.NewGuid();

@@ -3920,6 +3920,8 @@ export interface components {
             itemCount: number;
             attemptIds: string[];
             states: string[];
+            /** @description Sanitized failure codes aligned with states and the captured item order. */
+            failureReasons: (string | null)[];
         };
         CategoryAssistanceHistoricalProgress: {
             /** Format: uuid */
@@ -3989,6 +3991,8 @@ export interface components {
             fitProbability: number | null;
             /** Format: double */
             categoryProbability: number | null;
+            /** @enum {string} */
+            probabilityScope: "global_choice" | "local_choice";
             state: string;
             /** @enum {string} */
             reviewState?: "active" | "later" | "left_as_is";
@@ -4037,6 +4041,15 @@ export interface components {
             indeterminate: number;
             /** Format: int32 */
             todayAttempts: number;
+            recentFailures: components["schemas"]["CategoryAssistanceFailureRead"][];
+        };
+        CategoryAssistanceFailureRead: {
+            /** Format: uuid */
+            attemptId: string;
+            /** @enum {string} */
+            failure: "Disabled" | "MissingCredential" | "InvalidInput" | "PayloadTooLarge" | "Busy" | "Authentication" | "RateLimited" | "Timeout" | "Unavailable" | "InvalidResponse" | "Unknown";
+            /** Format: date-time */
+            completedAt: string;
         };
         CategoryAssistanceEligibleItemPage: {
             /** Format: int32 */

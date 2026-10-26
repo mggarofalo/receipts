@@ -29,7 +29,7 @@ public sealed partial class CategoryAssistanceHistoricalRequestStoreTests(Postgr
 		return new(new Factory(fixture), capability.Object, TimeProvider.System);
 	}
 
-	private static async Task<(string Actor, Guid Taxonomy, Guid First, Guid Other)> SeedAsync(PostgresFixture fixture)
+	private static async Task<(string Actor, Guid Taxonomy, Guid First, Guid Other)> SeedAsync(PostgresFixture fixture, bool archived = false)
 	{
 		string actor = "historical-assistance-" + Guid.NewGuid();
 		Guid first = Guid.NewGuid(), other = Guid.NewGuid();
@@ -49,7 +49,7 @@ public sealed partial class CategoryAssistanceHistoricalRequestStoreTests(Postgr
 			RecordedAt = DateTimeOffset.UtcNow
 		});
 		db.TaxonomyIdentities.Add(new TaxonomyIdentityEntity { Id = category });
-		db.TaxonomyNodes.Add(new TaxonomyNodeEntity { RevisionId = taxonomy, CategoryId = category, Name = "Food" });
+		db.TaxonomyNodes.Add(new TaxonomyNodeEntity { RevisionId = taxonomy, CategoryId = category, Name = "Food", Archived = archived });
 		head.RevisionId = taxonomy;
 		var settings = await db.CategoryAssistanceSettings.SingleAsync();
 		settings.Enabled = true; settings.Provider = "jev"; settings.Model = "jev-1.14.0";
@@ -78,8 +78,35 @@ public sealed partial class CategoryAssistanceHistoricalRequestStoreTests(Postgr
 				TotalAmountCurrency = Currency.USD
 			});
 		}
+
+
 		await db.SaveChangesAsync();
 		return (actor, taxonomy, first, other);
+	}
+
+	[Fact]
+	public async Task UnsupportedActiveTreePersistsScopedFailureWithoutDailyDebit()
+	{
+		await using var fixture = await server.CreateIsolatedAsync();
+		var seed = await SeedAsync(fixture, archived: true);
+		var request = new CategoryAssistanceHistoricalRequest(Guid.NewGuid(), seed.Taxonomy,
+				[new HistoricalGroupKey("Shop", " milk ", null)]);
+		var store = Store(fixture);
+		await store.EnrollAsync(seed.Actor, request, default);
+		var dispatch = new CategoryAssistanceDispatchStore(new Factory(fixture), TimeProvider.System);
+		(await dispatch.ClaimQueuedAsync(default)).Should().BeNull();
+		var progress = await store.GetAsync(seed.Actor, request.OperationId, default);
+		progress.State.Should().Be("failed");
+		progress.Groups.Single().States.Should().Equal("failed");
+		progress.Groups.Single().FailureReasons.Should().Equal("InvalidInput");
+		Func<Task> otherActor = () => store.GetAsync("someone else", request.OperationId, default);
+		await otherActor.Should().ThrowAsync<TaxonomyException>().Where(x => x.Status == 404);
+		await using var verify = fixture.CreateDbContext();
+		(await verify.CategoryAssistanceAttempts.SingleAsync()).DebitUtcDay.Should().BeNull();
+		(await verify.CategoryAssistanceDailyUsage.CountAsync()).Should().Be(0);
+		var activity = await new CategoryAssistanceReadStore(new Factory(fixture), TimeProvider.System)
+				.GetActivityAsync(default);
+		activity.RecentFailures.Should().ContainSingle(x => x.Failure == "InvalidInput");
 	}
 
 	[Fact]

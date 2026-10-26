@@ -9495,12 +9495,16 @@ components:
           items: { $ref: "#/components/schemas/HistoricalGroupKey" }
     CategoryAssistanceHistoricalGroupProgress:
       type: object
-      required: [group, itemCount, attemptIds, states]
+      required: [group, itemCount, attemptIds, states, failureReasons]
       properties:
         group: { $ref: "#/components/schemas/HistoricalGroupKey" }
         itemCount: { type: integer, format: int32 }
         attemptIds: { type: array, items: { type: string, format: uuid } }
         states: { type: array, items: { type: string } }
+        failureReasons:
+          description: Sanitized failure codes aligned with states and the captured item order.
+          type: array
+          items: { type: [string, "null"] }
     CategoryAssistanceHistoricalProgress:
       type: object
       required: [operationId, createdAt, groupCount, itemCount, state, groups]
@@ -9574,6 +9578,7 @@ components:
           completedAt,
           fitProbability,
           categoryProbability,
+          probabilityScope,
         ]
       properties:
         attemptId: { type: string, format: uuid }
@@ -9585,6 +9590,7 @@ components:
         confidence: { type: [number, "null"], format: double }
         fitProbability: { type: [number, "null"], format: double }
         categoryProbability: { type: [number, "null"], format: double }
+        probabilityScope: { type: string, enum: [global_choice, local_choice] }
         state: { type: string }
         reviewState: { type: string, enum: [active, later, left_as_is] }
         reviewRevision: { type: string, format: uuid }
@@ -9627,6 +9633,7 @@ components:
           stale,
           indeterminate,
           todayAttempts,
+          recentFailures,
         ]
       properties:
         queued: { type: integer, format: int32 }
@@ -9637,6 +9644,19 @@ components:
         stale: { type: integer, format: int32 }
         indeterminate: { type: integer, format: int32 }
         todayAttempts: { type: integer, format: int32 }
+        recentFailures:
+          type: array
+          maxItems: 10
+          items: { $ref: "#/components/schemas/CategoryAssistanceFailureRead" }
+    CategoryAssistanceFailureRead:
+      type: object
+      required: [attemptId, failure, completedAt]
+      properties:
+        attemptId: { type: string, format: uuid }
+        failure:
+          type: string
+          enum: [Disabled, MissingCredential, InvalidInput, PayloadTooLarge, Busy, Authentication, RateLimited, Timeout, Unavailable, InvalidResponse, Unknown]
+        completedAt: { type: string, format: date-time }
     CategoryAssistanceEligibleItemPage:
       type: object
       required: [total, offset, limit, itemIds, items]

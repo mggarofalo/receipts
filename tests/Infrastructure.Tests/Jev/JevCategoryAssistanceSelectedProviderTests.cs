@@ -112,7 +112,7 @@ public sealed class JevCategoryAssistanceSelectedProviderTests
 		current = new() { ApiKey = "configured-key", InferenceEnabled = true };
 		CategorySuggestionRequest large = Request with
 		{
-			Categories = [new("category", "Category", new string('x', 7000), null)]
+			Categories = [new("category", "Category", new string('x', 65500), null)]
 		};
 		Assert.False(provider.FitsPayload(large));
 		Assert.Equal(SuggestionFailure.PayloadTooLarge,

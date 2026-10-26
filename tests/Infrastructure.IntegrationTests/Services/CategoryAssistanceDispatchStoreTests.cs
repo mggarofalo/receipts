@@ -134,24 +134,32 @@ public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime
 			request.Headers.Authorization!.Parameter.Should().Be("jev-test-key");
 			string id = categoryId.ToString("D");
 			using var requestBody = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct));
-			var probabilities = requestBody.RootElement.GetProperty("state").GetProperty("categories")
-				.EnumerateArray().Select(category => category.GetProperty("id").GetString()!)
-				.ToDictionary(category => category, category => category == id ? 1.0 : 0.0);
-			probabilities.Should().ContainKey(id);
+			var questions = requestBody.RootElement.GetProperty("questions");
+			var answers = new Dictionary<string, object>();
+			foreach (var question in questions.EnumerateObject())
+			{
+				if (question.Name == "fits")
+				{
+					continue;
+				}
+
+				string[] ids = question.Value.GetProperty("criteria").EnumerateObject()
+						.Select(criterion => criterion.Name).ToArray();
+				ids.Should().Contain(id);
+				answers[question.Name] = new
+				{
+					type = "choice",
+					choice = id,
+					confidence = 0.9,
+					probabilities = ids.ToDictionary(category => category,
+								category => category == id ? 1.0 : 0.0)
+				};
+			}
+			answers["fits"] = new { type = "noul", noul = 0.9 };
 			string body = JsonSerializer.Serialize(new
 			{
 				model = "jev-1.14.0",
-				answers = new
-				{
-					category = new
-					{
-						type = "choice",
-						choice = id,
-						confidence = 0.9,
-						probabilities
-					},
-					fits = new { type = "noul", noul = 0.9 }
-				},
+				answers,
 				usage = new { input_tokens = 1, output_tokens = 1 }
 			});
 			return new HttpResponseMessage(HttpStatusCode.OK)
