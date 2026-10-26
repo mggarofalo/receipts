@@ -72,16 +72,28 @@ public sealed class CategoryMappingHistoryIntegrityTests(PostgresFixture fixture
 		CategoryMappingRevision approval = await service.ChangeAsync(actor, command);
 		await using ApplicationDbContext db = fixture.CreateDbContext();
 		string[] applied = (await db.Database.GetAppliedMigrationsAsync()).ToArray();
-		applied[^1].Should().Be("20261026102840_AddApprovedCategoryMappings");
+		const string mappingMigration = "20261026102840_AddApprovedCategoryMappings";
+		int mappingIndex = Array.IndexOf(applied, mappingMigration);
+		mappingIndex.Should().BeGreaterThan(0);
 		CategoryMappingRevisionEntity original = await db.CategoryMappingRevisions.AsNoTracking().SingleAsync(row => row.Id == approval.Id);
 
-		Func<Task> downgrade = () => db.GetService<IMigrator>().MigrateAsync(applied[^2]);
-		(await downgrade.Should().ThrowAsync<PostgresException>()).Which.MessageText.Should().Contain("Mapping history is retained");
+		try
+		{
+			Func<Task> downgrade = () => db.GetService<IMigrator>().MigrateAsync(applied[mappingIndex - 1]);
+			var refusal = (await downgrade.Should().ThrowAsync<PostgresException>()).Which;
+			refusal.SqlState.Should().Be(PostgresErrorCodes.RaiseException);
+			refusal.MessageText.Should().Be("Mapping history is retained; restore a verified backup explicitly instead.");
 
-		(await db.Database.GetAppliedMigrationsAsync()).Should().Equal(applied);
-		(await db.CategoryMappingRevisions.AsNoTracking().SingleAsync(row => row.Id == approval.Id)).Should().BeEquivalentTo(original);
-		(await db.CategoryMappingHeads.SingleAsync(row => row.SourceFingerprint == command.SourceFingerprint)).RevisionId.Should().Be(approval.Id);
-		(await service.ChangeAsync(actor, command)).Should().Be(approval);
+			// Later migrations may commit their Down before this retained-history boundary refuses.
+			(await db.Database.GetAppliedMigrationsAsync()).Should().Equal(applied.Take(mappingIndex + 1));
+			(await db.CategoryMappingRevisions.AsNoTracking().SingleAsync(row => row.Id == approval.Id)).Should().BeEquivalentTo(original);
+			(await db.CategoryMappingHeads.SingleAsync(row => row.SourceFingerprint == command.SourceFingerprint)).RevisionId.Should().Be(approval.Id);
+			(await service.ChangeAsync(actor, command)).Should().Be(approval);
+		}
+		finally
+		{
+			await db.GetService<IMigrator>().MigrateAsync(applied[^1]);
+		}
 	}
 
 	private async Task<(string Actor, CategoryMappingCommand Command, CategoryMappingService Service)> CreateApprovalCommandAsync()

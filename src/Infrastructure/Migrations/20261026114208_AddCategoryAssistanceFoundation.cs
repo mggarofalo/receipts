@@ -109,6 +109,13 @@ public partial class AddCategoryAssistanceFoundation : Migration
 	/// <inheritdoc />
 	protected override void Down(MigrationBuilder migrationBuilder)
 	{
+		migrationBuilder.Sql("""
+                DO $$ BEGIN
+                    IF EXISTS (SELECT 1 FROM category_assistance."SettingsAudit") THEN
+                        RAISE EXCEPTION 'Category assistance settings audit must be retained; downgrade refused';
+                    END IF;
+                END $$;
+                """);
 		migrationBuilder.Sql("DROP FUNCTION category_assistance.reject_audit_mutation() CASCADE");
 		migrationBuilder.DropTable(
 			name: "Observations",

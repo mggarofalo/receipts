@@ -103,15 +103,25 @@ public sealed class LegacyClassificationWriterTests : IClassFixture<PostgresFixt
 		applied.Should().Equal(db.Database.GetMigrations());
 		int legacyEvidenceIndex = Array.IndexOf(applied, legacyEvidenceMigration);
 		legacyEvidenceIndex.Should().BeGreaterThan(0);
-		Func<Task> downgrade = () => db.GetService<IMigrator>().MigrateAsync(applied[legacyEvidenceIndex - 1]);
-		var refusal = (await downgrade.Should().ThrowAsync<PostgresException>()).Which;
-		refusal.SqlState.Should().Be(PostgresErrorCodes.RaiseException);
-		refusal.MessageText.Should().Be("Mapping history is retained; restore a verified backup explicitly instead.");
-		(await db.Database.GetAppliedMigrationsAsync()).Should().Equal(applied);
-		var retained = await db.Classifications.AsNoTracking().SingleAsync(x => x.Id == unknown.Id);
-		retained.LegacyCategory.Should().Be("  unknown  ");
-		retained.LegacySubcategory.Should().Be("");
-		retained.LegacyResolution.Should().Be("unresolved_path");
-		(await classifications.HistoryAsync(unresolved.Id, null, 10)).Items.Single().Should().BeEquivalentTo(unknown);
+		int mappingIndex = Array.IndexOf(applied, "20261026102840_AddApprovedCategoryMappings");
+		mappingIndex.Should().BeGreaterThan(legacyEvidenceIndex);
+		try
+		{
+			Func<Task> downgrade = () => db.GetService<IMigrator>().MigrateAsync(applied[legacyEvidenceIndex - 1]);
+			var refusal = (await downgrade.Should().ThrowAsync<PostgresException>()).Which;
+			refusal.SqlState.Should().Be(PostgresErrorCodes.RaiseException);
+			refusal.MessageText.Should().Be("Mapping history is retained; restore a verified backup explicitly instead.");
+			// Later migrations may commit their Down before the mapping-history guard refuses.
+			(await db.Database.GetAppliedMigrationsAsync()).Should().Equal(applied.Take(mappingIndex + 1));
+			var retained = await db.Classifications.AsNoTracking().SingleAsync(x => x.Id == unknown.Id);
+			retained.LegacyCategory.Should().Be("  unknown  ");
+			retained.LegacySubcategory.Should().Be("");
+			retained.LegacyResolution.Should().Be("unresolved_path");
+			(await classifications.HistoryAsync(unresolved.Id, null, 10)).Items.Single().Should().BeEquivalentTo(unknown);
+		}
+		finally
+		{
+			await db.GetService<IMigrator>().MigrateAsync(applied[^1]);
+		}
 	}
 }
