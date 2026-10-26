@@ -1,12 +1,15 @@
 import { join } from 'node:path';
 import { classifyError } from './errors.mjs';
 import { runCommand } from './protocol.mjs';
+import { acquireLifetimeLock } from './lifetime-lock.mjs';
 
 process.umask(0o077);
 const command = process.argv[2];
 const emit = message => process.stdout.write(JSON.stringify(message) + '\n');
+let release;
 try {
   if (!process.env.RECEIPTS_CHATGPT_HOME) throw new Error('auth_required');
+  release = acquireLifetimeLock(process.env.RECEIPTS_CHATGPT_HOME, process.env.RECEIPTS_RUNNER_PERMIT);
   const { ModelRuntime } = await import('@earendil-works/pi-coding-agent');
   const runtime = await ModelRuntime.create({
     authPath: join(process.env.RECEIPTS_CHATGPT_HOME, 'auth.json'),
@@ -31,4 +34,6 @@ try {
   const code = classifyError(error, command === 'infer' ? 'inference' : 'auth');
   emit({ type: 'error', code });
   process.exitCode = code === 'auth_required' ? 20 : code === 'rate_limited' ? 22 : 21;
+} finally {
+  release?.();
 }

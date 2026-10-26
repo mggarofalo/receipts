@@ -83,10 +83,10 @@ test('device login uses only device-code selection and emits the approved URL/co
   const f = setup({ login: async (actualProvider, method, handlers) => {
     assert.equal(actualProvider, provider); assert.equal(method, 'oauth');
     assert.equal(await handlers.prompt({ type: 'select', options: [{ id: 'browser' }, { id: 'device_code' }] }), 'device_code');
-    handlers.notify({ type: 'device_code', verificationUri: deviceUrl, userCode: 'ABCD-1234' });
+    handlers.notify({ type: 'device_code', verificationUri: deviceUrl, userCode: 'ABCD-1234', expiresInSeconds: 900 });
   } });
   await runCommand(f.runtime, 'login', undefined, f.emit);
-  assert.deepEqual(f.emitted, [{ type: 'device_code', url: deviceUrl, code: 'ABCD-1234' }, { type: 'ready' }]);
+  assert.deepEqual(f.emitted, [{ type: 'device_code', url: deviceUrl, code: 'ABCD-1234', expiresInSeconds: 900 }, { type: 'ready' }]);
 });
 
 for (const event of [
@@ -117,3 +117,18 @@ for (const [error, expected] of [
     assert.equal(classifyError(error), expected);
   });
 }
+
+for (const expiresInSeconds of [undefined, 0, -1, 1201, 1.5, '900']) {
+  test(`rejects invalid device expiry ${expiresInSeconds}`, async () => {
+    const f = setup({ login: async (_, __, handlers) => handlers.notify({
+      type: 'device_code', verificationUri: deviceUrl, userCode: 'ABCD-1234', expiresInSeconds
+    }) });
+    await assert.rejects(runCommand(f.runtime, 'login', undefined, f.emit), /invalid_device_code/);
+    assert.deepEqual(f.emitted, []);
+  });
+}
+
+test('device expiry and rejection use fixed diagnostic categories', () => {
+  assert.equal(classifyError(new Error('Device flow timed out'), 'auth'), 'device_expired');
+  assert.equal(classifyError(new Error('deviceauth_authorization_denied secret'), 'auth'), 'device_rejected');
+});

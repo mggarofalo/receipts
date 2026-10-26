@@ -1190,6 +1190,228 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
+  /api/normalization-ai/connection/sign-in:
+    post:
+      operationId: StartChatGptSignIn
+      tags: [NormalizationAi]
+      summary: Start explicit owner sign-in
+      description: Requires Admin and configured owner claims. Never cache, log or send ceremony values to telemetry. Cancellation does not log out; credentials may have been saved. Sign-in never enables automatic assistance.
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatGptSignInRequest'
+      responses:
+        '200':
+          description: Browser-safe snapshot (Cache-Control no-store)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatGptSignInResponse'
+        '400':
+          description: Explicit consent required or invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Configured owner required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Connection busy
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: Connection unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/normalization-ai/connection/sign-in/{id}:
+    get:
+      operationId: GetChatGptSignIn
+      tags: [NormalizationAi]
+      summary: Get sign-in attempt
+      description: Requires Admin and configured owner claims. Never cache, log or send ceremony values to telemetry. Cancellation does not log out; credentials may have been saved. Sign-in never enables automatic assistance.
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Browser-safe snapshot (Cache-Control no-store)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatGptSignInResponse'
+        '400':
+          description: Explicit consent required or invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Configured owner required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Connection busy
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: Connection unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/normalization-ai/connection/sign-in/{id}/cancel:
+    post:
+      operationId: CancelChatGptSignIn
+      tags: [NormalizationAi]
+      summary: Cancel sign-in without logout
+      description: Requires Admin and configured owner claims. Never cache, log or send ceremony values to telemetry. Cancellation does not log out; credentials may have been saved. Sign-in never enables automatic assistance.
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Browser-safe snapshot (Cache-Control no-store)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatGptSignInResponse'
+        '400':
+          description: Explicit consent required or invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Configured owner required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Connection busy
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: Connection unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/normalization-ai/connection/disconnect:
+    post:
+      operationId: DisconnectChatGpt
+      tags: [NormalizationAi]
+      summary: Disconnect ChatGPT
+      description: Requires Admin and configured owner claims. Never cache, log or send ceremony values to telemetry. Cancellation does not log out; credentials may have been saved. Sign-in never enables automatic assistance.
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      responses:
+        '204':
+          description: Disconnected
+        '400':
+          description: Explicit consent required or invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Configured owner required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Connection busy
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: Connection unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/normalization-ai/connection/reconnect:
+    post:
+      operationId: ReconnectChatGpt
+      tags: [NormalizationAi]
+      summary: Start fresh explicit owner sign-in
+      description: Requires Admin and configured owner claims. Never cache, log or send ceremony values to telemetry. Cancellation does not log out; credentials may have been saved. Sign-in never enables automatic assistance.
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatGptSignInRequest'
+      responses:
+        '200':
+          description: Browser-safe snapshot (Cache-Control no-store)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatGptSignInResponse'
+        '400':
+          description: Explicit consent required or invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Configured owner required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Connection busy
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: Connection unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
   /api/normalization-ai/connection:
     get:
       operationId: GetNormalizationAiConnection
@@ -8181,6 +8403,33 @@ components:
           type: string
           minLength: 1
           maxLength: 200
+    ChatGptSignInRequest:
+      type: object
+      required: [ownerConsent]
+      properties:
+        ownerConsent:
+          type: boolean
+          description: Explicit attestation that the authenticated owner owns and authorizes use of this ChatGPT plan.
+    ChatGptSignInResponse:
+      type: object
+      required: [id, state]
+      properties:
+        id:
+          type: string
+          format: uuid
+        state:
+          type: string
+          description: starting, waiting, success, cancelled, expired, rejected, busy, reconnect or restart. Terminal states contain no ceremony values.
+        verificationUrl:
+          type: [string, 'null']
+          description: Temporary URL; never log, cache or send to telemetry.
+        userCode:
+          type: [string, 'null']
+          description: Temporary code; never log, cache or send to telemetry.
+        localExpiresAt:
+          type: [string, 'null']
+          format: date-time
+          description: Deadline calculated from the runner-reported sign-in lifetime. Poll for authoritative terminal status; not an entitlement guarantee.
     NormalizationAiConnectionResponse:
       type: object
       required:

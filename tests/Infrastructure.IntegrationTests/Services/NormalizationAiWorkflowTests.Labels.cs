@@ -128,7 +128,7 @@ public sealed partial class NormalizationAiWorkflowTests
 		SetupLabelResponse(target.Id, label);
 		var ai = new NormalizationAiService(new Factory(fixture), runner.Object, matching.Object,
 			Options.Create(new NormalizationAiOptions { Enabled = true, OwnerUserId = Owner, PendingRunLimit = 1 }),
-			TimeProvider.System, publisher.Object);
+			TimeProvider.System, publisher.Object, runnerOptions: bindingOptions);
 		var selection = new NormalizationAiSourceSelection(new("Synthetic store", "Milk", null), false, true);
 		var run = await ai.StartSourcesAsync(Owner, Guid.NewGuid(), [selection], "test-model", CancellationToken.None);
 		await ai.ProcessNextAsync(CancellationToken.None);

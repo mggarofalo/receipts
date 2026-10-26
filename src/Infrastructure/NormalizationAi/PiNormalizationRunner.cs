@@ -15,7 +15,7 @@ public sealed class PiNormalizationRunner(IOptions<PiNormalizationRunnerOptions>
 		"auth_required", "rate_limited", "access_denied", "model_access_denied", "transport_failed",
 		"provider_unavailable", "request_rejected", "auth_failed", "inference_failed", "context_limit",
 		"input_limit", "output_limit", "model_unavailable", "incomplete_response", "invalid_device_code",
-		"unsupported_auth_interaction", "unknown_command"];
+				"unsupported_auth_interaction", "unknown_command", "device_expired", "device_rejected", "busy"];
 
 	public async Task<ChatGptRunnerStatus> GetStatusAsync(CancellationToken cancellationToken = default)
 	{
@@ -118,6 +118,14 @@ public sealed class PiNormalizationRunner(IOptions<PiNormalizationRunnerOptions>
 		catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
 		{ throw new ChatGptRunnerException("runner_setup_failed", requestMayHaveStarted: false); }
 		await using FileStream heldLock = homeLock;
+		// Reap only an OS-proven dead child. A surviving orphan excludes all new runtime work.
+		using (ChatGptRunnerIdleLease.AcquireChild(home))
+		{
+			foreach (string stalePermit in Directory.EnumerateFiles(home, ".permit-*")) { File.Delete(stalePermit); }
+		}
+		string permit = Guid.NewGuid().ToString("N");
+		string permitPath = Path.Combine(home, ".permit-" + permit);
+		File.WriteAllText(permitPath, "");
 		string work = Path.Combine(home, "work", Guid.NewGuid().ToString("N"));
 		try { Directory.CreateDirectory(work); }
 		catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
@@ -130,6 +138,7 @@ public sealed class PiNormalizationRunner(IOptions<PiNormalizationRunnerOptions>
 			try
 			{
 				process.StartInfo = CreateStartInfo(settings, command, home, work);
+				process.StartInfo.Environment["RECEIPTS_RUNNER_PERMIT"] = permit;
 				if (!process.Start())
 				{
 					throw new ChatGptRunnerException("unavailable", requestMayHaveStarted: false);
@@ -171,6 +180,7 @@ public sealed class PiNormalizationRunner(IOptions<PiNormalizationRunnerOptions>
 		{
 			Kill(process);
 			try { await process.WaitForExitAsync(CancellationToken.None); } catch (InvalidOperationException) { }
+			File.Delete(permitPath);
 			try { Directory.Delete(work, recursive: true); } catch (IOException) { }
 		}
 	}
@@ -248,7 +258,14 @@ public sealed class PiNormalizationRunner(IOptions<PiNormalizationRunnerOptions>
 						throw new ChatGptRunnerException("invalid_device_code");
 					}
 
-					displayCode(new(url.GetString()!, userCode));
+					int? expiresInSeconds = null;
+					if (message.TryGetProperty("expiresInSeconds", out JsonElement expiry))
+					{
+						if (!expiry.TryGetInt32(out int seconds) || seconds is < 1 or > 1200)
+						{ throw new ChatGptRunnerException("invalid_device_code"); }
+						expiresInSeconds = seconds;
+					}
+					displayCode(new(url.GetString()!, userCode, expiresInSeconds));
 				}
 			}
 		}

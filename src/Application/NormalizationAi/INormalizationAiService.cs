@@ -14,6 +14,8 @@ public interface INormalizationAiService
 	Task<NormalizationAiRun> ApplyAsync(string actor, Guid id, IReadOnlyList<Guid> proposalIds, Guid expectedRevision, CancellationToken cancellationToken);
 	Task<Guid> BeginConnectionChangeAsync(CancellationToken cancellationToken);
 	Task CompleteConnectionChangeAsync(Guid changeId, CancellationToken cancellationToken);
+	Task<bool> RecoverConnectionChangeAsync(CancellationToken cancellationToken);
+	Task BindConnectionChangeAsync(Guid changeId, string consentingOwner, CancellationToken cancellationToken);
 }
 
 public sealed record NormalizationAiConnection(bool Configured, bool IsOwner, bool CredentialsPresent, Guid Generation, IReadOnlyList<string> Models, bool Busy = false);

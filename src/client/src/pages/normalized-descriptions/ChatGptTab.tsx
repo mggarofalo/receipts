@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { RequestFailure } from "@/components/RequestFailure";
 import { AiCandidateSelection } from "./AiCandidateSelection";
 import { AiRunReview } from "./AiRunReview";
+import { ChatGptSignIn } from "./ChatGptSignIn";
 
 export function ChatGptTab() {
   const connection = useAiConnection();
@@ -66,8 +67,14 @@ export function ChatGptTab() {
                 ? "ChatGPT is busy. You can follow or cancel existing runs below."
                 : connection.data.credentialsPresent
                   ? "Credentials are present. Model access is confirmed when a request succeeds."
-                  : "Sign in to ChatGPT on the container host to connect."}
+                  : "Sign in with your ChatGPT account to connect."}
             </p>
+            {user?.roles.includes("Admin") && (
+              <ChatGptSignIn
+                key={user.userId}
+                connected={connection.data.credentialsPresent}
+              />
+            )}
             <details id="chatgpt-connection-settings">
               <summary className="cursor-pointer">
                 Connection settings and reconnect help
