@@ -8,6 +8,7 @@ import { extractErrorMessage } from "@/lib/problem-details";
 import { useSessionMutation } from "@/hooks/useSessionMutation";
 import { usePermission } from "@/hooks/usePermission";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import { CategoryTree } from "@/components/categories/CategoryTree";
 import { PageHead } from "@/components/primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -118,7 +119,13 @@ function TaxonomyEditor({
       if (status && status >= 400 && status < 500 && status !== 409)
         setRequest(undefined);
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
+      // A background read may predate this change, including one started while
+      // the change was saving. Cancel it before publishing the saved revision.
+      await cache.cancelQueries({
+        queryKey: ["taxonomy", "current"],
+        exact: true,
+      });
       cache.setQueryData(["taxonomy", "current"], data);
       onClose();
     },
@@ -319,7 +326,7 @@ function TaxonomyEditor({
 }
 
 export default function Taxonomy() {
-  usePageTitle("Category tree");
+  usePageTitle("Categories");
   const { isAdmin } = usePermission();
   const [params] = useSearchParams();
   const historicalId = params.get("revision");
@@ -347,20 +354,11 @@ export default function Taxonomy() {
       return result.data;
     },
   });
-  const rows = useMemo(
-    () => project(query.data?.nodes ?? []),
-    [query.data?.nodes],
-  );
-  const visible = rows.filter(
-    (row) =>
-      (showArchived || !row.archived) &&
-      row.path.toLocaleLowerCase().includes(search.toLocaleLowerCase()),
-  );
   const editable = isAdmin() && !historicalId;
   return (
     <>
       <PageHead
-        title="Category tree"
+        title="Categories"
         actions={
           editable &&
           query.data && (
@@ -453,64 +451,37 @@ export default function Taxonomy() {
               </Link>
             )}
           </details>
-          {!visible.length && (
-            <p>
-              {rows.length
-                ? "No matching categories."
-                : "The category tree is empty. Legacy receipt categories remain available above."}
-            </p>
-          )}
-          <ul aria-label="Category paths" className="space-y-2">
-            {visible.map((node) => (
-              <li
-                key={node.id}
-                className="flex flex-col gap-3 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div className="min-w-0">
-                  <p className="break-words font-medium">
-                    {node.path}
-                    {node.archived && (
-                      <span className="ml-2 text-sm text-muted-foreground">
-                        Archived
-                      </span>
-                    )}
-                  </p>
-                  {node.definition && (
-                    <p className="mt-1 break-words text-sm text-muted-foreground">
-                      {node.definition}
-                    </p>
-                  )}
-                  <details className="mt-1 text-sm text-muted-foreground">
-                    <summary className="cursor-pointer">
-                      Category details
-                    </summary>
-                    <p className="break-all">{node.id}</p>
-                  </details>
-                </div>
-                {editable && (
-                  <div className="flex shrink-0 flex-wrap gap-1">
-                    {(node.archived
-                      ? (["restore"] as const)
-                      : (["rename", "move", "archive"] as const)
-                    ).map((action) => (
-                      <Button
-                        key={action}
-                        variant="outline"
-                        size="sm"
-                        onClick={(event) => {
-                          editorOpener.current = event.currentTarget;
-                          setEditor({ action, node, revision: query.data! });
-                        }}
-                        aria-label={`${titles[action]}: ${node.path}`}
-                      >
-                        {action[0].toUpperCase() + action.slice(1)}
-                      </Button>
-                    ))}
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
+          <CategoryTree
+            nodes={query.data.nodes}
+            search={search}
+            showArchived={showArchived}
+            renderActions={
+              editable
+                ? (node, path, focused) => (
+                    <div className="flex shrink-0 flex-wrap gap-1">
+                      {(node.archived
+                        ? (["restore"] as const)
+                        : (["rename", "move", "archive"] as const)
+                      ).map((action) => (
+                        <Button
+                          key={action}
+                          variant="outline"
+                          size="sm"
+                          tabIndex={focused ? 0 : -1}
+                          onClick={(event) => {
+                            editorOpener.current = event.currentTarget;
+                            setEditor({ action, node, revision: query.data! });
+                          }}
+                          aria-label={`${titles[action]}: ${path}`}
+                        >
+                          {action[0].toUpperCase() + action.slice(1)}
+                        </Button>
+                      ))}
+                    </div>
+                  )
+                : undefined
+            }
+          />
         </>
       )}
       {editor && editable && (
