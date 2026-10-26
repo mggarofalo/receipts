@@ -1,3 +1,9 @@
+import { CategoryPathPicker } from "@/components/categories/CategoryPathPicker";
+import { useCategoryTaxonomy } from "@/hooks/useCategoryTaxonomy";
+import {
+  categoryLegacyLabels,
+  type CategoryChoice,
+} from "@/lib/category-paths";
 import { receiptItemDraftSchema } from "@/lib/receipt-item-draft";
 import { ReceiptNormalizationField } from "@/components/ReceiptNormalizationField";
 import {
@@ -16,15 +22,7 @@ import { generateId } from "@/lib/id";
 import { useForm } from "react-hook-form";
 import { z } from "zod/v4";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useAllCategories } from "@/hooks/useCategories";
-import {
-  useAllSubcategoriesByCategoryId,
-  useCreateSubcategory,
-} from "@/hooks/useSubcategories";
-import {
-  useSimilarItems,
-  useCategoryRecommendations,
-} from "@/hooks/useSimilarItems";
+import { useSimilarItems } from "@/hooks/useSimilarItems";
 import { useReceiptItemSuggestions } from "@/hooks/useReceiptItemSuggestions";
 import { usePromoteToTemplate } from "@/hooks/usePromoteToTemplate";
 import { usePreferences } from "@/hooks/usePreferences";
@@ -43,7 +41,6 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import { Combobox } from "@/components/ui/combobox";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { DecimalInput } from "@/components/ui/decimal-input";
 import { Badge } from "@/components/ui/badge";
@@ -67,7 +64,6 @@ import {
   Plus,
   Trash2,
   Loader2,
-  Sparkles,
   Pencil,
   Check,
   X,
@@ -87,6 +83,8 @@ export interface ReceiptLineItem {
   category: string;
   subcategory: string;
   normalizationChoice?: ReceiptNormalizationChoice;
+  categoryChoice?: CategoryChoice;
+  categoryOperationId?: string;
 }
 
 interface LineItemsSectionProps {
@@ -108,16 +106,9 @@ export function LineItemsSection({
   const suggestionsListId = "new-receipt-suggestions-list";
   // Index of the keyboard-highlighted row in the description lookup.
   const [descriptionActiveIndex, setDescriptionActiveIndex] = useState(0);
-  const categoriesQuery = useAllCategories(true);
-  const { data: categories } = categoriesQuery;
-
-  const categoryOptions = useMemo(
-    () =>
-      ((categories as { id: string; name: string }[] | undefined) ?? []).map(
-        (c) => ({ value: c.name, label: c.name }),
-      ),
-    [categories],
-  );
+  const taxonomy = useCategoryTaxonomy();
+  const [categoryChoice, setCategoryChoice] = useState<CategoryChoice>();
+  const [categoryOperationId, setCategoryOperationId] = useState(generateId);
 
   const form = useForm<ItemFormValues>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -135,7 +126,6 @@ export function LineItemsSection({
   // eslint-disable-next-line react-hooks/incompatible-library
   const itemCode = form.watch("receiptItemCode");
   const description = form.watch("description");
-  const selectedCategory = form.watch("category");
 
   // Item code autocomplete
   const [showItemCodeSuggestions, setShowItemCodeSuggestions] = useState(false);
@@ -170,12 +160,6 @@ export function LineItemsSection({
     (suggestion: NonNullable<typeof itemCodeSuggestions>[number]) => {
       form.setValue("receiptItemCode", suggestion.itemCode);
       form.setValue("description", suggestion.description);
-      if (suggestion.category) {
-        form.setValue("category", suggestion.category);
-      }
-      if (suggestion.subcategory) {
-        form.setValue("subcategory", suggestion.subcategory);
-      }
       if (suggestion.unitPrice != null) {
         form.setValue("unitPrice", Number(suggestion.unitPrice));
       }
@@ -238,78 +222,6 @@ export function LineItemsSection({
   const isSuggestionsOpen =
     showSuggestions && (hasResults || hasNoResultsMessage);
 
-  const {
-    data: categoryRecs,
-    isError: categoryRecsError,
-    isFetching: categoryRecsFetching,
-    isDebouncing: categoryRecsDebouncing,
-    refetch: retryCategoryRecs,
-  } = useCategoryRecommendations(description, {
-    enabled: description.length >= 2 && !selectedCategory,
-  });
-
-  const selectedCategoryObj = useMemo(
-    () =>
-      ((categories as { id: string; name: string }[] | undefined) ?? []).find(
-        (c) => c.name === selectedCategory,
-      ),
-    [categories, selectedCategory],
-  );
-
-  const subcategoriesQuery = useAllSubcategoriesByCategoryId(
-    selectedCategoryObj?.id ?? null,
-  );
-  const { data: subcategories } = subcategoriesQuery;
-  const createSubcategory = useCreateSubcategory();
-  const pendingSubcategories = useRef(new Set<string>());
-
-  const subcategoryOptions = useMemo(
-    () =>
-      (
-        (subcategories as
-          | { id: string; name: string; isActive: boolean }[]
-          | undefined) ?? []
-      )
-        .filter((subcategory) => subcategory.isActive)
-        .map((s) => ({ value: s.name, label: s.name })),
-    [subcategories],
-  );
-
-  // Shared subcategory selection: applies the value and creates the
-  // subcategory on the fly when the user enters a name that doesn't exist.
-  const handleSubcategorySelect = useCallback(
-    (
-      next: string,
-      categoryId: string | undefined,
-      existing: { name: string }[],
-      canCreate: boolean,
-      setValue: (v: string) => void,
-    ) => {
-      next = next.trim();
-      const pendingKey = JSON.stringify([categoryId, next]);
-      setValue(next);
-      const isExisting = existing.some((o) => o.name === next);
-      if (
-        canCreate &&
-        !isExisting &&
-        next &&
-        categoryId &&
-        !pendingSubcategories.current.has(pendingKey)
-      ) {
-        pendingSubcategories.current.add(pendingKey);
-        // Each request owns its cleanup. Per-call mutate callbacks only run for
-        // the latest observer and would strand earlier concurrent pending keys.
-        void createSubcategory
-          .mutateAsync({ categoryId, name: next, isActive: true })
-          .finally(() => pendingSubcategories.current.delete(pendingKey))
-          .catch(() => {
-            /* The mutation hook owns error presentation. */
-          });
-      }
-    },
-    [createSubcategory],
-  );
-
   const subtotal = useMemo(() => calculateSubtotal(items), [items]);
 
   const applySuggestion = useCallback(
@@ -351,16 +263,6 @@ export function LineItemsSection({
       });
     },
     [promote, isPromoting],
-  );
-
-  const applyCategoryRec = useCallback(
-    (rec: NonNullable<typeof categoryRecs>[number]) => {
-      form.setValue("category", rec.category);
-      if (rec.subcategory) {
-        form.setValue("subcategory", rec.subcategory);
-      }
-    },
-    [form],
   );
 
   // Reset the highlight to the first row whenever the result set changes.
@@ -415,6 +317,8 @@ export function LineItemsSection({
         description: values.description,
         quantity: values.quantity,
         unitPrice: values.unitPrice,
+        categoryChoice,
+        categoryOperationId,
         category: values.category,
         subcategory: values.subcategory ?? "",
         normalizationChoice: currentNormalizationChoice(
@@ -425,6 +329,8 @@ export function LineItemsSection({
       onChange([...items, newItem]);
       setDraftRowId(generateId());
       setNormalizationChoice(undefined);
+      setCategoryChoice(undefined);
+      setCategoryOperationId(generateId());
       form.reset({
         receiptItemCode: "",
         description: "",
@@ -438,7 +344,16 @@ export function LineItemsSection({
       // Return focus to the item code field for the next entry.
       setTimeout(() => itemCodeInputRef.current?.focus(), 0);
     },
-    [form, items, onChange, draftRowId, normalizationChoice, location],
+    [
+      form,
+      items,
+      onChange,
+      draftRowId,
+      normalizationChoice,
+      location,
+      categoryChoice,
+      categoryOperationId,
+    ],
   );
 
   const handleRemove = useCallback(
@@ -455,6 +370,8 @@ export function LineItemsSection({
     unitPrice: number;
     category: string;
     subcategory: string;
+    categoryChoice?: CategoryChoice;
+    categoryOperationId?: string;
   }>({
     description: "",
     quantity: 1,
@@ -463,38 +380,14 @@ export function LineItemsSection({
     subcategory: "",
   });
 
-  // Subcategory options for the row currently being edited.
-  const editCategoryObj = useMemo(
-    () =>
-      ((categories as { id: string; name: string }[] | undefined) ?? []).find(
-        (c) => c.name === editDraft.category,
-      ),
-    [categories, editDraft.category],
-  );
-
-  const editSubcategoriesQuery = useAllSubcategoriesByCategoryId(
-    editCategoryObj?.id ?? null,
-  );
-  const { data: editSubcategories } = editSubcategoriesQuery;
-
-  const editSubcategoryOptions = useMemo(
-    () =>
-      (
-        (editSubcategories as
-          | { id: string; name: string; isActive: boolean }[]
-          | undefined) ?? []
-      )
-        .filter((subcategory) => subcategory.isActive)
-        .map((s) => ({ value: s.name, label: s.name })),
-    [editSubcategories],
-  );
-
   const startEditing = useCallback((item: ReceiptLineItem) => {
     setEditingItemId(item.id);
     setEditDraft({
       description: item.description,
       quantity: item.quantity,
       unitPrice: item.unitPrice,
+      categoryChoice: item.categoryChoice,
+      categoryOperationId: item.categoryOperationId,
       category: item.category,
       subcategory: item.subcategory,
     });
@@ -518,6 +411,8 @@ export function LineItemsSection({
               description: draft.description,
               quantity: draft.quantity,
               unitPrice: draft.unitPrice,
+              categoryChoice: editDraft.categoryChoice,
+              categoryOperationId: editDraft.categoryOperationId,
               category: draft.category,
               subcategory: draft.subcategory,
             }
@@ -555,15 +450,6 @@ export function LineItemsSection({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {categoriesQuery.isError && (
-          <RequestFailure
-            message="Category choices unavailable. Cached choices and existing values are retained."
-            retry={() => {
-              void categoriesQuery.refetch();
-            }}
-            isRetrying={categoriesQuery.isFetching}
-          />
-        )}
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleAdd)} className="space-y-4">
             {/* Row 1: Item Code, Description, Category */}
@@ -888,122 +774,44 @@ export function LineItemsSection({
                 name="category"
                 render={({ field }) => (
                   <FormItem className="min-w-[12rem] flex-1">
-                    <FormLabel required>Category</FormLabel>
+                    <FormLabel>Category</FormLabel>
                     <FormControl>
-                      <Combobox
-                        options={categoryOptions}
-                        value={field.value}
-                        onValueChange={(v) => {
-                          field.onChange(v);
-                          form.setValue("subcategory", "");
+                      <CategoryPathPicker
+                        ref={field.ref}
+                        onBlur={field.onBlur}
+                        name={field.name}
+                        revision={taxonomy.data}
+                        value={categoryChoice}
+                        loading={taxonomy.isLoading}
+                        error={taxonomy.isError}
+                        onValueChange={(choice) => {
+                          setCategoryChoice(choice);
+                          setCategoryOperationId(generateId());
+                          const labels = categoryLegacyLabels(choice);
+                          field.onChange(labels.category);
+                          form.setValue(
+                            "subcategory",
+                            labels.subcategory ?? "",
+                          );
                         }}
-                        placeholder="Select category..."
-                        searchPlaceholder="Search categories..."
-                        emptyMessage={
-                          categoriesQuery.isError
-                            ? "Category choices unavailable."
-                            : categoriesQuery.isLoading
-                              ? "Loading category choices…"
-                              : "No categories found."
-                        }
-                        aria-required="true"
-                      />
-                    </FormControl>
-                    {categoryRecs &&
-                      categoryRecs.length > 0 &&
-                      !selectedCategory && (
-                        <div
-                          className="flex flex-wrap gap-1 pt-1"
-                          role="group"
-                          aria-label="Suggested categories"
-                        >
-                          <Sparkles
-                            className="h-3 w-3 text-muted-foreground mt-1"
-                            aria-hidden="true"
-                          />
-                          {categoryRecs.map((rec) => (
-                            <button
-                              key={`${rec.category}-${rec.subcategory ?? ""}`}
-                              type="button"
-                              className="inline-flex items-center rounded-full border px-3 py-1 text-xs min-h-[24px] text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
-                              onClick={() => applyCategoryRec(rec)}
-                            >
-                              {rec.category}
-                              {rec.subcategory ? ` / ${rec.subcategory}` : ""}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    <FormMessage />
-                    {categoryRecsError &&
-                      description.length >= 2 &&
-                      !selectedCategory &&
-                      !categoryRecsDebouncing && (
-                        <RequestFailure
-                          message="Category suggestions unavailable. You can choose a category manually."
-                          retry={() => {
-                            void retryCategoryRecs();
-                          }}
-                          isRetrying={categoryRecsFetching}
-                        />
-                      )}
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            {/* Row 2: Subcategory, Quantity, Unit Price, Add Item */}
-            <div className="flex flex-wrap items-start gap-4">
-              <FormField
-                control={form.control}
-                name="subcategory"
-                render={({ field }) => (
-                  <FormItem className="min-w-[14rem] flex-[2]">
-                    <FormLabel>Subcategory (optional)</FormLabel>
-                    <FormControl>
-                      <Combobox
-                        options={subcategoryOptions}
-                        value={field.value ?? ""}
-                        onValueChange={(v: string) =>
-                          handleSubcategorySelect(
-                            v,
-                            selectedCategoryObj?.id,
-                            subcategories ?? [],
-                            categoriesQuery.isSuccess &&
-                              !categoriesQuery.isFetching &&
-                              subcategoriesQuery.isSuccess &&
-                              !subcategoriesQuery.isFetching,
-                            field.onChange,
-                          )
-                        }
-                        placeholder="Select subcategory..."
-                        searchPlaceholder="Search subcategories..."
-                        emptyMessage={
-                          subcategoriesQuery.isError
-                            ? "Subcategory choices unavailable."
-                            : subcategoriesQuery.isLoading
-                              ? "Loading subcategory choices…"
-                              : "No subcategories found."
-                        }
-                        allowCustom
-                        disabled={!selectedCategory}
                       />
                     </FormControl>
                     <FormMessage />
-                    {selectedCategoryObj?.id && subcategoriesQuery.isError && (
+                    {taxonomy.isError && (
                       <RequestFailure
-                        message="Subcategory choices unavailable. You can keep or enter a receipt label manually."
+                        message="Categories unavailable. Your draft is retained."
                         retry={() => {
-                          if (selectedCategoryObj?.id)
-                            void subcategoriesQuery.refetch();
+                          void taxonomy.refetch();
                         }}
-                        isRetrying={subcategoriesQuery.isFetching}
+                        isRetrying={taxonomy.isFetching}
                       />
                     )}
                   </FormItem>
                 )}
               />
+            </div>
 
+            <div className="flex flex-wrap items-end gap-3">
               <FormField
                 control={form.control}
                 name="quantity"
@@ -1118,72 +926,23 @@ export function LineItemsSection({
                     </TableCell>
                     <TableCell>
                       <div className="flex min-w-[12rem] flex-col gap-1">
-                        <Combobox
-                          options={categoryOptions}
-                          value={editDraft.category}
-                          onValueChange={(v) =>
+                        <CategoryPathPicker
+                          aria-label="Edit category"
+                          revision={taxonomy.data}
+                          value={editDraft.categoryChoice}
+                          loading={taxonomy.isLoading}
+                          error={taxonomy.isError}
+                          onValueChange={(choice) => {
+                            const labels = categoryLegacyLabels(choice);
                             setEditDraft((d) => ({
                               ...d,
-                              category: v,
-                              subcategory: "",
-                            }))
-                          }
-                          placeholder="Category..."
-                          searchPlaceholder="Search categories..."
-                          emptyMessage={
-                            categoriesQuery.isError
-                              ? "Category choices unavailable."
-                              : categoriesQuery.isLoading
-                                ? "Loading category choices…"
-                                : "No categories found."
-                          }
-                          className="h-8"
-                          aria-label="Edit category"
+                              categoryChoice: choice,
+                              categoryOperationId: generateId(),
+                              category: labels.category,
+                              subcategory: labels.subcategory ?? "",
+                            }));
+                          }}
                         />
-                        <Combobox
-                          options={editSubcategoryOptions}
-                          value={editDraft.subcategory}
-                          onValueChange={(v) =>
-                            handleSubcategorySelect(
-                              v,
-                              editCategoryObj?.id,
-                              editSubcategories ?? [],
-                              categoriesQuery.isSuccess &&
-                                !categoriesQuery.isFetching &&
-                                editSubcategoriesQuery.isSuccess &&
-                                !editSubcategoriesQuery.isFetching,
-                              (next) =>
-                                setEditDraft((d) => ({
-                                  ...d,
-                                  subcategory: next,
-                                })),
-                            )
-                          }
-                          placeholder="Subcategory..."
-                          searchPlaceholder="Search subcategories..."
-                          emptyMessage={
-                            editSubcategoriesQuery.isError
-                              ? "Subcategory choices unavailable."
-                              : editSubcategoriesQuery.isLoading
-                                ? "Loading subcategory choices…"
-                                : "No subcategories found."
-                          }
-                          allowCustom
-                          disabled={!editDraft.category}
-                          className="h-8"
-                          aria-label="Edit subcategory"
-                        />
-                        {editCategoryObj?.id &&
-                          editSubcategoriesQuery.isError && (
-                            <RequestFailure
-                              message="Subcategory choices unavailable. You can keep or enter a receipt label manually."
-                              retry={() => {
-                                if (editCategoryObj?.id)
-                                  void editSubcategoriesQuery.refetch();
-                              }}
-                              isRetrying={editSubcategoriesQuery.isFetching}
-                            />
-                          )}
                       </div>
                     </TableCell>
                     <TableCell>
@@ -1235,8 +994,11 @@ export function LineItemsSection({
                       )}
                     </TableCell>
                     <TableCell>
-                      {item.category}
-                      {item.subcategory ? ` / ${item.subcategory}` : ""}
+                      {item.categoryChoice
+                        ? item.categoryChoice.path
+                            .map((node) => node.name)
+                            .join(" / ") || "Unclassified"
+                        : `${item.category}${item.subcategory ? ` / ${item.subcategory}` : ""}`}
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1">

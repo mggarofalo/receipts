@@ -25,7 +25,7 @@ public class CreateReceiptItemRequestValidator : AbstractValidator<CreateReceipt
 			.WithMessage(QuantityMustBePositive);
 
 		RuleFor(x => x.Category)
-			.NotEmpty()
+			.NotNull()
 			.WithMessage(CategoryMustNotBeEmpty);
 	}
 }

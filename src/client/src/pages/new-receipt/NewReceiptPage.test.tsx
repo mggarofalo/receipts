@@ -503,6 +503,7 @@ describe("NewReceiptPage", () => {
             expect.objectContaining({
               description: "Milk",
               category: "Food",
+              subcategory: null,
             }),
           ],
         }),

@@ -88,8 +88,6 @@ public class ReceiptItemTests
 	}
 
 	[Theory]
-	[InlineData("")]
-	[InlineData(" ")]
 	[InlineData(null)]
 	public void Constructor_InvalidDescription_ThrowsArgumentException(string invalidDescription)
 	{
@@ -127,8 +125,6 @@ public class ReceiptItemTests
 	}
 
 	[Theory]
-	[InlineData("")]
-	[InlineData(" ")]
 	[InlineData(null)]
 	public void Constructor_InvalidCategory_ThrowsArgumentException(string invalidCategory)
 	{
@@ -146,4 +142,11 @@ public class ReceiptItemTests
 		Assert.StartsWith(ReceiptItem.CategoryCannotBeEmpty, exception.Message);
 	}
 
+	[Fact]
+	public void Constructor_EmptyCategory_AllowsUnclassifiedItem()
+	{
+		ReceiptItem item = new(Guid.NewGuid(), null, "Uncertain item", 1, new Money(2), new Money(2), "", null);
+		Assert.Equal("", item.Category);
+		Assert.Null(item.Subcategory);
+	}
 }

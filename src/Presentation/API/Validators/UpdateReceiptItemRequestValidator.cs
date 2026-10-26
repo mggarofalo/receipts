@@ -30,7 +30,7 @@ public class UpdateReceiptItemRequestValidator : AbstractValidator<UpdateReceipt
 			.WithMessage(QuantityMustBePositive);
 
 		RuleFor(x => x.Category)
-			.NotEmpty()
+			.NotNull()
 			.WithMessage(CategoryMustNotBeEmpty);
 	}
 }

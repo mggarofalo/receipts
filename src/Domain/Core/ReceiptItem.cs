@@ -103,7 +103,7 @@ public class ReceiptItem
 			throw new ArgumentException(TotalAmountExceedsTolerance, nameof(totalAmount));
 		}
 
-		if (string.IsNullOrWhiteSpace(category))
+		if (category is null)
 		{
 			throw new ArgumentException(CategoryCannotBeEmpty, nameof(category));
 		}

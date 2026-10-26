@@ -21,14 +21,11 @@ describe("receipt item draft", () => {
       subcategory: "Dairy",
     });
   });
-  it.each(["description", "category"])(
-    "rejects whitespace-only %s",
-    (field) => {
-      expect(
-        receiptItemDraftSchema.safeParse({ ...valid, [field]: " \t " }).success,
-      ).toBe(false);
-    },
-  );
+  it.each(["description"])("rejects whitespace-only %s", (field) => {
+    expect(
+      receiptItemDraftSchema.safeParse({ ...valid, [field]: " \t " }).success,
+    ).toBe(false);
+  });
   it.each([0, -1, NaN, Infinity, -Infinity])(
     "rejects quantity %s",
     (quantity) => {
@@ -59,4 +56,13 @@ describe("receipt item draft", () => {
       unitPrice: 0,
     });
   });
+});
+
+it("accepts parent and Unclassified compatibility snapshots", () => {
+  expect(
+    receiptItemDraftSchema.parse({ ...valid, category: "", subcategory: "" }),
+  ).toMatchObject({ category: "", subcategory: "" });
+  expect(
+    receiptItemDraftSchema.parse({ ...valid, subcategory: "" }),
+  ).toMatchObject({ category: "Food", subcategory: "" });
 });

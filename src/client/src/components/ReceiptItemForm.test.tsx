@@ -1,3 +1,20 @@
+import { useCategoryTaxonomy } from "@/hooks/useCategoryTaxonomy";
+vi.mock("@/hooks/useCategoryTaxonomy", () => ({
+  useCategoryTaxonomy: vi.fn(() => ({
+    data: {
+      id: "revision-1",
+      nodes: [
+        { id: "root", name: "Food", archived: false },
+        { id: "produce", parentId: "root", name: "Produce", archived: false },
+        { id: "fruit", parentId: "produce", name: "Fruit", archived: false },
+      ],
+    },
+    isLoading: false,
+    isError: false,
+    isFetching: false,
+    refetch: vi.fn(),
+  })),
+}));
 import "@/test/setup-combobox-polyfills";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -152,7 +169,7 @@ describe("ReceiptItemForm", () => {
     expect(screen.getByLabelText(/^Quantity/)).toBeInTheDocument();
     expect(screen.getByLabelText(/^Unit Price/)).toBeInTheDocument();
     expect(screen.getByText(/^Category/)).toBeInTheDocument();
-    expect(screen.getByText(/^Subcategory/)).toBeInTheDocument();
+    expect(screen.queryByText(/^Subcategory/)).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /create item/i }),
     ).toBeInTheDocument();
@@ -203,8 +220,6 @@ describe("ReceiptItemForm", () => {
       expect(screen.getByText("Receipt is required")).toBeInTheDocument();
       expect(screen.getByText("Item code is required")).toBeInTheDocument();
       expect(screen.getByText("Description is required")).toBeInTheDocument();
-      expect(screen.getByText("Category is required")).toBeInTheDocument();
-      expect(screen.getByText("Subcategory is required")).toBeInTheDocument();
     });
     expect(defaultProps.onSubmit).not.toHaveBeenCalled();
   });
@@ -604,7 +619,7 @@ describe("ReceiptItemForm", () => {
     await user.click(categoryCombobox);
 
     // Type a non-existent category (like a store name)
-    const searchInput = screen.getByPlaceholderText("Search categories...");
+    const searchInput = screen.getByPlaceholderText("Search category paths…");
     await user.type(searchInput, "Costco");
 
     // Should NOT show a "Use" button for arbitrary text
@@ -663,7 +678,7 @@ it("normalizes persisted item text with the same draft rules", async () => {
   });
 });
 
-it.each(["description", "receiptItemCode", "subcategory"])(
+it.each(["description", "receiptItemCode"])(
   "rejects whitespace-only persisted-item %s",
   async (field) => {
     const onSubmit = vi.fn();
@@ -692,3 +707,111 @@ it.each(["description", "receiptItemCode", "subcategory"])(
     expect(onSubmit).not.toHaveBeenCalled();
   },
 );
+
+const classificationDefaults = {
+  receiptId: "r-1",
+  receiptItemCode: "A",
+  description: "Apple",
+  quantity: 1,
+  unitPrice: 2,
+  category: "Food",
+  subcategory: "Produce",
+};
+const recorded = {
+  assignmentId: "assignment-1",
+  categoryId: "fruit",
+  taxonomyRevisionId: "revision-old",
+  recordedPath: [
+    { id: "root", name: "Old Food", archived: false },
+    { id: "produce", name: "Old Produce", archived: false },
+    { id: "fruit", name: "Old Fruit", archived: true },
+  ],
+};
+
+describe("classification submissions", () => {
+  it("preserves a deep recorded path and omits untouched assignment mutation even when taxonomy is unavailable", async () => {
+    const user = userEvent.setup();
+    const submit = vi.fn();
+    vi.mocked(useCategoryTaxonomy).mockReturnValueOnce({
+      ...vi.mocked(useCategoryTaxonomy)(),
+      data: undefined,
+      isError: true,
+    } as ReturnType<typeof useCategoryTaxonomy>);
+    render(
+      <ReceiptItemForm
+        mode="edit"
+        defaultValues={classificationDefaults}
+        currentClassification={recorded}
+        onSubmit={submit}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByRole("combobox", { name: /Category/ }),
+    ).toHaveTextContent("Old Food / Old Produce / Old Fruit");
+    await user.click(screen.getByRole("button", { name: "Update Item" }));
+    await waitFor(() => expect(submit).toHaveBeenCalled());
+    expect(submit.mock.calls[0][0].classification).toBeUndefined();
+  });
+  it.each([
+    ["Food", "root", "Food", ""],
+    ["Food / Produce", "produce", "Food", "Produce"],
+    ["Unclassified", null, "", ""],
+    ["Food / Produce / Fruit", "fruit", "Food", "Produce"],
+  ])(
+    "submits %s with exact identity and stable operation across retry",
+    async (label, categoryId, category, subcategory) => {
+      const user = userEvent.setup();
+      const submit = vi.fn();
+      const { rerender } = render(
+        <ReceiptItemForm
+          mode="edit"
+          defaultValues={classificationDefaults}
+          currentClassification={recorded}
+          onSubmit={submit}
+          onCancel={vi.fn()}
+        />,
+      );
+      await user.click(screen.getByRole("combobox", { name: /Category/ }));
+      await user.click(screen.getByRole("option", { name: label }));
+      await user.click(screen.getByRole("button", { name: "Update Item" }));
+      await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+      const first = submit.mock.calls[0][0];
+      expect(first).toMatchObject({
+        category,
+        subcategory,
+        classification: {
+          categoryId,
+          taxonomyRevisionId: "revision-1",
+          expectedAssignmentId: "assignment-1",
+          reason: expect.any(String),
+          operationId: expect.any(String),
+        },
+      });
+      rerender(
+        <ReceiptItemForm
+          mode="edit"
+          defaultValues={classificationDefaults}
+          currentClassification={{
+            ...recorded,
+            assignmentId: "assignment-from-background-refresh",
+          }}
+          serverErrors={{ category: "Taxonomy changed; review your selection" }}
+          onSubmit={submit}
+          onCancel={vi.fn()}
+        />,
+      );
+      expect(
+        screen.getByText("Taxonomy changed; review your selection"),
+      ).toBeInTheDocument();
+      expect(screen.getByPlaceholderText("Enter item code...")).toHaveValue(
+        "A",
+      );
+      await user.click(screen.getByRole("button", { name: "Update Item" }));
+      await waitFor(() => expect(submit).toHaveBeenCalledTimes(2));
+      expect(submit.mock.calls[1][0].classification).toEqual(
+        first.classification,
+      );
+    },
+  );
+});

@@ -7,6 +7,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSessionMutation } from "@/hooks/useSessionMutation";
 import client from "@/lib/api-client";
 import { toast } from "sonner";
+import type { ClassificationRequest } from "@/lib/category-paths";
 import type { ReceiptNormalizationIntent } from "@/lib/receipt-normalization";
 
 export function useReceiptItems(
@@ -119,6 +120,7 @@ export function useCreateReceiptItem() {
         /** Set when the line was entered from a template (RECEIPTS-881). */
         itemTemplateId?: string;
         normalizationIntent?: ReceiptNormalizationIntent;
+        classification?: ClassificationRequest;
       };
     }) => {
       const fingerprint = JSON.stringify({ receiptId, body });
@@ -133,7 +135,7 @@ export function useCreateReceiptItem() {
             path: { receiptId },
             query: { clientRequestId: requestId },
           },
-          body,
+          body: { ...body, subcategory: body.subcategory || null },
         },
       );
       if (error) throw error;
@@ -164,6 +166,7 @@ export function useUpdateReceiptItem() {
         category: string;
         subcategory: string;
         normalizationIntent?: ReceiptNormalizationIntent;
+        classification?: ClassificationRequest;
       };
     }) => {
       const fingerprint = JSON.stringify(body);
@@ -176,7 +179,7 @@ export function useUpdateReceiptItem() {
           path: { id: body.id },
           query: { clientRequestId: requestId },
         },
-        body,
+        body: { ...body, subcategory: body.subcategory || null },
       });
       if (error) throw error;
       if (attempt.current?.id === requestId) attempt.current = null;

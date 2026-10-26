@@ -1,3 +1,12 @@
+import { CategoryPathPicker } from "@/components/categories/CategoryPathPicker";
+import { useCategoryTaxonomy } from "@/hooks/useCategoryTaxonomy";
+import {
+  categoryLegacyLabels,
+  classificationChange,
+  type CategoryChoice,
+  type CurrentClassification,
+  type ClassificationRequest,
+} from "@/lib/category-paths";
 import { receiptItemDraftSchema } from "@/lib/receipt-item-draft";
 import { ReceiptNormalizationField } from "@/components/ReceiptNormalizationField";
 import {
@@ -17,18 +26,12 @@ import Fuse from "fuse.js";
 import { useFormShortcuts } from "@/hooks/useFormShortcuts";
 import { useFieldHistory } from "@/hooks/useFieldHistory";
 import { useReceipt } from "@/hooks/useReceipts";
-import { useAllCategories } from "@/hooks/useCategories";
-import {
-  useAllSubcategoriesByCategoryId,
-  useCreateSubcategory,
-} from "@/hooks/useSubcategories";
 import { useItemTemplates } from "@/hooks/useItemTemplates";
 import { useReceiptItemSuggestions } from "@/hooks/useReceiptItemSuggestions";
 import { itemDescriptionHistory, itemCodeHistory } from "@/lib/field-history";
 import { ReceiptPicker } from "@/components/ReceiptPicker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Combobox } from "@/components/ui/combobox";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import {
   Popover,
@@ -69,7 +72,6 @@ interface ItemTemplate {
 const receiptItemSchema = receiptItemDraftSchema.extend({
   receiptId: z.string().min(1, "Receipt is required"),
   receiptItemCode: z.string().trim().min(1, "Item code is required"),
-  subcategory: z.string().trim().min(1, "Subcategory is required"),
   // Provenance, not user input — there is no control bound to it (RECEIPTS-881). Set when a
   // template is applied and cleared the moment the description stops matching that template's
   // name, so the server never stamps an item with a canonical entry the text no longer means.
@@ -80,10 +82,12 @@ type ReceiptItemSchemaValues = z.output<typeof receiptItemSchema>;
 
 export type ReceiptItemFormValues = ReceiptItemSchemaValues & {
   normalizationIntent?: ReceiptNormalizationIntent;
+  classification?: ClassificationRequest;
 };
 
 interface ReceiptItemFormProps {
   mode: "create" | "edit";
+  currentClassification?: CurrentClassification | null;
   defaultValues?: Partial<ReceiptItemFormValues>;
   onSubmit: (values: ReceiptItemFormValues) => void;
   onCancel: () => void;
@@ -99,6 +103,7 @@ interface ReceiptItemFormProps {
 
 export function ReceiptItemForm({
   mode,
+  currentClassification,
   defaultValues,
   onSubmit,
   onCancel,
@@ -121,28 +126,25 @@ export function ReceiptItemForm({
   const { options: itemCodeOptions, add: addItemCodeHistory } =
     useFieldHistory(itemCodeHistory);
 
-  const categoriesQuery = useAllCategories(true);
-  const { data: categories } = categoriesQuery;
+  const taxonomy = useCategoryTaxonomy();
+  const [initialClassification] = useState(currentClassification);
+  const [categoryChoice, setCategoryChoice] = useState<
+    CategoryChoice | undefined
+  >(() =>
+    initialClassification
+      ? {
+          ...initialClassification,
+          categoryId: initialClassification.categoryId ?? null,
+          path: initialClassification.recordedPath,
+        }
+      : undefined,
+  );
+  const [categoryOperationId, setCategoryOperationId] = useState(generateId);
   const templatesQuery = useItemTemplates();
   const { data: itemTemplatesData } = templatesQuery;
   const templates = useMemo(
     () => (itemTemplatesData as ItemTemplate[] | undefined) ?? [],
     [itemTemplatesData],
-  );
-
-  const categoryOptions = useMemo(
-    () =>
-      (
-        (categories as
-          | { id: string; name: string; isActive: boolean }[]
-          | undefined) ?? []
-      )
-        .filter((c) => c.isActive)
-        .map((c) => ({
-          value: c.name,
-          label: c.name,
-        })),
-    [categories],
   );
 
   const form = useForm<ReceiptItemSchemaValues>({
@@ -175,42 +177,6 @@ export function ReceiptItemForm({
       form.setError(field, { type: "server", message });
     });
   }, [serverErrors, form]);
-
-  // eslint-disable-next-line react-hooks/incompatible-library
-  const watchedCategory = form.watch("category");
-
-  const selectedCategoryId = useMemo(() => {
-    if (!categories || !watchedCategory) return null;
-    return categories?.find((c) => c.name === watchedCategory)?.id ?? null;
-  }, [categories, watchedCategory]);
-
-  const subcategoriesQuery =
-    useAllSubcategoriesByCategoryId(selectedCategoryId);
-  const { data: subcategoriesData } = subcategoriesQuery;
-  const createSubcategory = useCreateSubcategory();
-
-  const subcategoryOptions = useMemo(
-    () =>
-      (
-        (subcategoriesData as
-          | { id: string; name: string; isActive: boolean }[]
-          | undefined) ?? []
-      )
-        .filter((s) => s.isActive)
-        .map((s) => ({
-          value: s.name,
-          label: s.name,
-        })),
-    [subcategoriesData],
-  );
-
-  const handleCategoryChange = useCallback(
-    (value: string) => {
-      form.setValue("category", value, { shouldValidate: true });
-      form.setValue("subcategory", "");
-    },
-    [form],
-  );
 
   const watchedQuantity = form.watch("quantity");
   const normalizationDescription = form.watch("description");
@@ -284,10 +250,6 @@ export function ReceiptItemForm({
     form.setValue("description", suggestion.description);
     setDescriptionInput(suggestion.description);
     clearTemplateProvenance(suggestion.description);
-    form.setValue("category", suggestion.category);
-    if (suggestion.subcategory) {
-      form.setValue("subcategory", suggestion.subcategory);
-    }
     if (suggestion.unitPrice != null) {
       form.setValue("unitPrice", Number(suggestion.unitPrice));
     }
@@ -301,37 +263,13 @@ export function ReceiptItemForm({
     addDescriptionHistory(values.description);
     addItemCodeHistory(values.receiptItemCode);
 
-    const isCustomSubcategory =
-      values.subcategory &&
-      !subcategoriesData?.some(
-        (subcategory) => subcategory.name === values.subcategory,
-      );
-
-    // Only complete, settled lookups can establish that a taxonomy name is new.
-    // Manual receipt labels remain valid while these optional reads are unavailable.
-    if (
-      isCustomSubcategory &&
-      selectedCategoryId &&
-      categoriesQuery.isSuccess &&
-      !categoriesQuery.isFetching &&
-      subcategoriesQuery.isSuccess &&
-      !subcategoriesQuery.isFetching
-    ) {
-      try {
-        await createSubcategory.mutateAsync({
-          name: values.subcategory,
-          categoryId: selectedCategoryId,
-          isActive: true,
-        });
-      } catch {
-        // The mutation owns feedback. Keep the draft and stop this submission;
-        // React Hook Form rethrows an unhandled onValid rejection.
-        return;
-      }
-    }
-
     onSubmit({
       ...values,
+      classification: classificationChange(
+        categoryChoice,
+        initialClassification,
+        categoryOperationId,
+      ),
       normalizationIntent: currentNormalizationChoice(
         normalizationChoice,
         receiptNormalizationSource(resolvedLocation, values),
@@ -427,12 +365,6 @@ export function ReceiptItemForm({
     form.setValue("itemTemplateId", template.id);
     form.setValue("description", template.name);
     setDescriptionInput(template.name);
-    if (template.defaultCategory) {
-      form.setValue("category", template.defaultCategory);
-    }
-    if (template.defaultSubcategory) {
-      form.setValue("subcategory", template.defaultSubcategory);
-    }
     if (template.defaultUnitPrice != null) {
       form.setValue("unitPrice", template.defaultUnitPrice);
     }
@@ -750,69 +682,43 @@ export function ReceiptItemForm({
             name="category"
             render={({ field }) => (
               <FormItem className="min-w-[200px] flex-1">
-                <FormLabel required>Category</FormLabel>
+                <FormLabel>Category</FormLabel>
                 <FormControl>
-                  <Combobox
-                    options={categoryOptions}
-                    value={field.value}
-                    onValueChange={handleCategoryChange}
-                    placeholder="Select category..."
-                    searchPlaceholder="Search categories..."
-                    emptyMessage={
-                      categoriesQuery.isError
-                        ? "Category choices unavailable."
-                        : categoriesQuery.isLoading
-                          ? "Loading category choices…"
-                          : "No categories found."
-                    }
+                  <CategoryPathPicker
+                    ref={field.ref}
+                    onBlur={field.onBlur}
+                    name={field.name}
+                    revision={taxonomy.data}
+                    value={categoryChoice}
+                    loading={taxonomy.isLoading}
+                    error={taxonomy.isError}
+                    disabled={isSubmitting}
+                    onValueChange={(choice) => {
+                      setCategoryChoice(choice);
+                      setCategoryOperationId(generateId());
+                      const labels = categoryLegacyLabels(choice);
+                      field.onChange(labels.category);
+                      form.setValue("subcategory", labels.subcategory ?? "");
+                    }}
                   />
                 </FormControl>
-                <FormMessage />
-                {categoriesQuery.isError && (
-                  <RequestFailure
-                    message="Category choices unavailable. Cached choices and existing values are retained."
-                    retry={() => {
-                      void categoriesQuery.refetch();
-                    }}
-                    isRetrying={categoriesQuery.isFetching}
-                  />
+                {!categoryChoice && field.value && (
+                  <p className="text-sm text-muted-foreground">
+                    Saved category: {field.value}
+                    {form.getValues("subcategory")
+                      ? ` / ${form.getValues("subcategory")}`
+                      : ""}
+                    . Choose a category to classify this item.
+                  </p>
                 )}
-              </FormItem>
-            )}
-          />
-
-          <FormField
-            control={form.control}
-            name="subcategory"
-            render={({ field }) => (
-              <FormItem className="min-w-[200px] flex-1">
-                <FormLabel required>Subcategory</FormLabel>
-                <FormControl>
-                  <Combobox
-                    options={subcategoryOptions}
-                    value={field.value}
-                    onValueChange={field.onChange}
-                    placeholder="Select subcategory..."
-                    searchPlaceholder="Search subcategories..."
-                    emptyMessage={
-                      subcategoriesQuery.isError
-                        ? "Subcategory choices unavailable."
-                        : subcategoriesQuery.isLoading
-                          ? "Loading subcategory choices…"
-                          : "No subcategories found."
-                    }
-                    allowCustom
-                    disabled={!watchedCategory}
-                  />
-                </FormControl>
                 <FormMessage />
-                {subcategoriesQuery.isError && selectedCategoryId && (
+                {taxonomy.isError && (
                   <RequestFailure
-                    message="Subcategory choices unavailable. Cached choices and existing values are retained."
+                    message="Categories unavailable. Your item and saved category are retained."
                     retry={() => {
-                      if (selectedCategoryId) void subcategoriesQuery.refetch();
+                      void taxonomy.refetch();
                     }}
-                    isRetrying={subcategoriesQuery.isFetching}
+                    isRetrying={taxonomy.isFetching}
                   />
                 )}
               </FormItem>

@@ -1,3 +1,4 @@
+import { type CurrentClassification } from "@/lib/category-paths";
 import { calculateLineTotal } from "@/lib/receipt-arithmetic";
 import {
   normalizationSourceKey,
@@ -47,6 +48,7 @@ interface ReceiptItem {
   quantity: number;
   unitPrice: number;
   category: string;
+  currentClassification?: CurrentClassification | null;
   subcategory?: string | null;
   normalizedDescriptionName?: string | null;
   normalizationRevision?: string;
@@ -106,6 +108,7 @@ export function ReceiptItemsCard({
           // the resolver (RECEIPTS-881).
           itemTemplateId: values.itemTemplateId,
           normalizationIntent: values.normalizationIntent,
+          classification: values.classification,
         },
       },
       {
@@ -138,6 +141,7 @@ export function ReceiptItemsCard({
           category: values.category,
           subcategory: values.subcategory,
           normalizationIntent: values.normalizationIntent,
+          classification: values.classification,
         },
       },
       {
@@ -278,8 +282,18 @@ export function ReceiptItemsCard({
                           calculateLineTotal(item.quantity, item.unitPrice),
                         )}
                       </TableCell>
-                      <TableCell>{item.category}</TableCell>
-                      <TableCell>{item.subcategory ?? ""}</TableCell>
+                      <TableCell>
+                        {item.currentClassification
+                          ? item.currentClassification.recordedPath
+                              .map((node) => node.name)
+                              .join(" / ") || "Unclassified"
+                          : item.category}
+                      </TableCell>
+                      <TableCell>
+                        {item.currentClassification
+                          ? ""
+                          : (item.subcategory ?? "")}
+                      </TableCell>
                       <TableCell>
                         <Button
                           variant="ghost"
@@ -369,6 +383,7 @@ export function ReceiptItemsCard({
             <ReceiptItemForm
               key={editItem.id}
               mode="edit"
+              currentClassification={editItem.currentClassification}
               defaultValues={{
                 receiptId,
                 receiptItemCode: editItem.receiptItemCode ?? "",

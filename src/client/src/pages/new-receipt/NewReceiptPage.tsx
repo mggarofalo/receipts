@@ -1,3 +1,4 @@
+import { classificationChange } from "@/lib/category-paths";
 import { RequestFailure } from "@/components/RequestFailure";
 import { ReceiptNormalizationError } from "@/components/ReceiptNormalizationError";
 import {
@@ -267,7 +268,14 @@ export default function NewReceiptPage() {
           quantity: item.quantity,
           unitPrice: item.unitPrice,
           category: item.category,
-          subcategory: item.subcategory,
+          classification: item.categoryOperationId
+            ? classificationChange(
+                item.categoryChoice,
+                undefined,
+                item.categoryOperationId,
+              )
+            : undefined,
+          subcategory: item.subcategory || null,
           normalizationIntent: currentNormalizationChoice(
             item.normalizationChoice,
             receiptNormalizationSource(headerValues.location, item),
