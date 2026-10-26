@@ -40,6 +40,16 @@ for (const width of [1280, 375]) {
           "**/api/taxonomy": (route) => route.fulfill({ json: current }),
           "**/api/taxonomy/revisions/*": (route) =>
             route.fulfill({ json: { ...taxonomyFixture, id: historicalId } }),
+          "**/api/category-assistance/status": (route) =>
+            route.fulfill({
+              json: {
+                capability: "unconfigured",
+                consentEnabled: false,
+                suggestionsAvailable: false,
+                provider: null,
+                models: [],
+              },
+            }),
         },
       });
       await signInAs(page, user);
@@ -76,8 +86,11 @@ for (const width of [1280, 375]) {
           ? page.getByRole("dialog")
           : page.getByRole("navigation", { name: "Primary", exact: true });
       await expect(
-        navigation.getByRole("link", { name: "Categories", exact: true }),
+        navigation.getByRole("link", { name: "Classification", exact: true }),
       ).toHaveCount(1);
+      await expect(
+        navigation.getByRole("link", { name: "Categories", exact: true }),
+      ).toHaveCount(0);
       await expect(
         navigation.getByRole("link", { name: /Subcategories|Category tree/ }),
       ).toHaveCount(0);
@@ -86,7 +99,19 @@ for (const width of [1280, 375]) {
         fullPage: true,
         animations: "disabled",
       });
-      if (width === 375) await page.keyboard.press("Escape");
+      await navigation
+        .getByRole("link", { name: "Classification", exact: true })
+        .click();
+      await expect(page).toHaveURL(/\/classification$/);
+      await expect(
+        page.getByRole("heading", { name: "Classification", exact: true }),
+      ).toBeVisible();
+      await expect(page.getByText(/suggestions are unavailable/i)).toBeVisible();
+      await page.getByRole("link", { name: "Browse categories" }).click();
+      await expect(page).toHaveURL(/\/categories$/);
+      await expect(
+        page.getByRole("treeitem", { name: "Food", exact: true }),
+      ).toBeVisible();
       await page.getByRole("button", { name: "Search or jump to…" }).click();
       await page.getByRole("combobox").fill("dairy");
       await expect(
