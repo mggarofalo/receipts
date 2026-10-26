@@ -89,10 +89,11 @@ public sealed partial class ClassificationTests
 		}
 		(await browse.BrowseAsync(new(Search: source.RawDescription))).Items.Single(x => x.Group == source)
 			.PurchaseCount.Should().Be(1);
+		await new ReceiptRepository(new ActorFactory(fixture)).DeleteAsync([otherStore.Id], default);
 		await using (var db = fixture.CreateDbContext())
 		{
-			await db.Receipts.Where(x => x.Id == otherStore.Id)
-				.ExecuteUpdateAsync(s => s.SetProperty(x => x.DeletedAt, DateTimeOffset.UtcNow));
+			(await db.ReceiptItems.IgnoreQueryFilters().SingleAsync(x => x.Id == otherStoreItem.Id))
+					.DeletedAt.Should().NotBeNull();
 		}
 		(await browse.BrowseAsync(new(Search: source.RawDescription))).Items
 			.Should().NotContain(x => x.Group.Store == otherStore.Location);
