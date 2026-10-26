@@ -1,5 +1,8 @@
+using System.Globalization;
+using System.Text.Json;
 using API.Generated.Dtos;
 using Application.Models.Dashboard;
+using Application.Models.Reports;
 using Application.Queries.Aggregates.Dashboard;
 using Asp.Versioning;
 using Mediator;
@@ -111,7 +114,12 @@ public class DashboardController(IMediator mediator) : ControllerBase
 		[FromQuery] DateOnly? startDate,
 		[FromQuery] DateOnly? endDate,
 		[FromQuery] int limit = 10,
-		CancellationToken cancellationToken = default)
+		CancellationToken cancellationToken = default,
+		[FromQuery] string? categoryView = null,
+		[FromQuery] string? rollup = null,
+		[FromQuery] Guid? categoryId = null,
+		[FromQuery] string? knowledgeCutoff = null,
+		[FromQuery] Guid? capturedCurrentRevisionId = null)
 	{
 		DateOnly start = startDate ?? DateOnly.MinValue;
 		DateOnly end = endDate ?? DateOnly.FromDateTime(DateTime.Today);
@@ -126,15 +134,58 @@ public class DashboardController(IMediator mediator) : ControllerBase
 			return ApiProblem.BadRequest("limit must be between 1 and 100");
 		}
 
-		GetSpendingByCategoryQuery query = new(start, end, limit);
-		SpendingByCategoryResult result = await mediator.Send(query, cancellationToken);
+		CategoryReportView view;
+		switch (categoryView)
+		{
+			case null or "asClassified": view = CategoryReportView.AsClassified; break;
+			case "currentHierarchy": view = CategoryReportView.CurrentHierarchy; break;
+			default: return ApiProblem.BadRequest("categoryView must be asClassified or currentHierarchy");
+		}
+		CategoryReportRollup level;
+		switch (rollup)
+		{
+			case null or "assignedCategory": level = CategoryReportRollup.AssignedCategory; break;
+			case "root": level = CategoryReportRollup.Root; break;
+			default: return ApiProblem.BadRequest("rollup must be assignedCategory or root");
+		}
+		DateTimeOffset? cutoff = null;
+		if (knowledgeCutoff is not null)
+		{
+			if (!knowledgeCutoff.EndsWith('Z') || !DateTimeOffset.TryParseExact(knowledgeCutoff,
+				["yyyy-MM-dd'T'HH:mm:ss'Z'", "yyyy-MM-dd'T'HH:mm:ss.FFFFFFF'Z'"],
+				CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out DateTimeOffset parsed))
+			{ return ApiProblem.BadRequest("knowledgeCutoff must be an ISO UTC timestamp with a Z suffix"); }
+			cutoff = parsed.ToUniversalTime();
+		}
+		if (categoryId == Guid.Empty || capturedCurrentRevisionId == Guid.Empty)
+		{ return ApiProblem.BadRequest("categoryId and capturedCurrentRevisionId must be non-empty UUIDs"); }
+		if (capturedCurrentRevisionId.HasValue && view != CategoryReportView.CurrentHierarchy)
+		{ return ApiProblem.BadRequest("capturedCurrentRevisionId requires currentHierarchy"); }
+		GetSpendingByCategoryQuery query = new(start, end, limit)
+		{ CategoryOptions = new(view, level, categoryId, cutoff, capturedCurrentRevisionId) };
+		SpendingByCategoryResult result;
+		try { result = await mediator.Send(query, cancellationToken); }
+		catch (ArgumentException exception) when (exception.ParamName == "capturedCurrentRevisionId")
+		{ return ApiProblem.BadRequest(exception.Message); }
 
 		return TypedResults.Ok(new SpendingByCategoryResponse
 		{
+			View = JsonNamingPolicy.CamelCase.ConvertName((result.Snapshot?.View ?? view).ToString()),
+			Rollup = JsonNamingPolicy.CamelCase.ConvertName((result.Snapshot?.Rollup ?? level).ToString()),
+			AssignmentSelection = JsonNamingPolicy.CamelCase.ConvertName((result.Snapshot?.AssignmentSelection ?? CategoryReportAssignmentSelection.CurrentPointer).ToString()),
+			CurrentRevisionId = result.Snapshot?.CurrentRevisionId,
+			KnowledgeCutoff = result.Snapshot?.KnowledgeCutoff,
 			Items = result.Items.Select(i => new SpendingCategoryItem
 			{
 				CategoryName = i.CategoryName,
 				Amount = (double)i.Amount,
+				Currency = i.Bucket?.Currency ?? "",
+				State = JsonNamingPolicy.CamelCase.ConvertName((i.Bucket?.State ?? CategoryReportState.MissingAssignment).ToString()),
+				PathRevisionId = i.Bucket?.PathRevisionId,
+				CategoryId = i.Bucket?.CategoryId,
+				PurchaseCount = i.Bucket?.PurchaseCount ?? 0,
+				Path = i.Bucket?.Path.Select(node => new CategoryReportPathNode
+				{ CategoryId = node.Id, Name = node.Name, Archived = node.Archived }).ToList() ?? [],
 				Percentage = (double)i.Percentage
 			}).ToList()
 		});

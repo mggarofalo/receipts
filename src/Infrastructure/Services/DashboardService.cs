@@ -1,5 +1,6 @@
 using Application.Interfaces.Services;
 using Application.Models.Dashboard;
+using Application.Models.Reports;
 using Infrastructure.Entities.Core;
 using Microsoft.EntityFrameworkCore;
 
@@ -135,38 +136,32 @@ public class DashboardService(IDbContextFactory<ApplicationDbContext> contextFac
 		return new SpendingOverTimeResult(buckets);
 	}
 
-	public async Task<SpendingByCategoryResult> GetSpendingByCategoryAsync(DateOnly startDate, DateOnly endDate, int limit, CancellationToken cancellationToken)
+	public Task<SpendingByCategoryResult> GetSpendingByCategoryAsync(DateOnly startDate, DateOnly endDate, int limit, CancellationToken cancellationToken)
+		=> GetSpendingByCategoryAsync(startDate, endDate, limit, cancellationToken, new CategoryReportOptions());
+
+	public async Task<SpendingByCategoryResult> GetSpendingByCategoryAsync(DateOnly startDate, DateOnly endDate, int limit, CancellationToken cancellationToken, CategoryReportOptions options)
 	{
+		if (limit is < 1 or > 100) { throw new ArgumentOutOfRangeException(nameof(limit)); }
 		await using ApplicationDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
-
-		IQueryable<Guid> receiptIds = context.Receipts
-			.AsNoTracking()
-			.Where(r => r.Date >= startDate && r.Date <= endDate)
-			.Select(r => r.Id);
-
-		// Single query: materialize all categories (bounded by distinct category count, typically < 50),
-		// then compute total in memory to avoid enumerating the IQueryable twice.
-		var allCategories = await context.ReceiptItems
-			.AsNoTracking()
-			.Where(ri => receiptIds.Contains(ri.ReceiptId))
-			.GroupBy(ri => ri.Category)
-			.Select(g => new { Category = g.Key, Amount = g.Sum(ri => ri.TotalAmount) })
-			.OrderByDescending(g => g.Amount)
-			.ToListAsync(cancellationToken);
-
-		decimal total = allCategories.Sum(c => c.Amount);
-
-		var categorySpending = allCategories
-			.Take(limit);
-
-		List<SpendingCategoryItemResult> items = categorySpending
-			.Select(c => new SpendingCategoryItemResult(
-				c.Category,
-				c.Amount,
-				total > 0 ? Math.Round(c.Amount / total * 100, 2, MidpointRounding.AwayFromZero) : 0))
-			.ToList();
-
-		return new SpendingByCategoryResult(items);
+		if (options.CapturedCurrentRevisionId is Guid revision
+			&& (options.View != CategoryReportView.CurrentHierarchy || revision == Guid.Empty
+				|| !await context.TaxonomyRevisions.AsNoTracking().AnyAsync(row => row.Id == revision, cancellationToken)))
+		{
+			throw new ArgumentException("capturedCurrentRevisionId must identify an existing revision and requires currentHierarchy", "capturedCurrentRevisionId");
+		}
+		CategoryReportResult snapshot = await CategoryReportReader.ReadAsync(context, context.ReceiptItems,
+			startDate, endDate, options.View, options.Rollup, options.CategoryId, cancellationToken,
+			options.KnowledgeCutoff, options.CapturedCurrentRevisionId);
+		Dictionary<string, decimal> totals = snapshot.Buckets.GroupBy(bucket => bucket.Currency)
+			.ToDictionary(group => group.Key, group => group.Sum(bucket => bucket.Amount));
+		List<SpendingCategoryItemResult> items = snapshot.Buckets.OrderByDescending(bucket => bucket.Amount)
+			.ThenBy(bucket => bucket.PathRevisionId).ThenBy(bucket => bucket.CategoryId)
+			.ThenBy(bucket => bucket.State).ThenBy(bucket => bucket.Currency, StringComparer.Ordinal).Take(limit)
+			.Select(bucket => new SpendingCategoryItemResult(
+				bucket.Path.Count > 0 ? bucket.Path[^1].Name : bucket.State.ToString(), bucket.Amount,
+				totals[bucket.Currency] > 0 ? Math.Round(bucket.Amount / totals[bucket.Currency] * 100, 2, MidpointRounding.AwayFromZero) : 0)
+			{ Bucket = bucket }).ToList();
+		return new SpendingByCategoryResult(items) { Snapshot = snapshot };
 	}
 
 	public async Task<SpendingByAccountResult> GetSpendingByAccountAsync(DateOnly startDate, DateOnly endDate, CancellationToken cancellationToken)

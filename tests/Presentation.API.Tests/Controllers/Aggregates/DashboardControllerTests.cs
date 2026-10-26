@@ -654,4 +654,59 @@ public class DashboardControllerTests
 	}
 
 	#endregion
+	[Theory]
+	[InlineData("bogus", null, null)]
+	[InlineData("0", null, null)]
+	[InlineData(null, "bogus", null)]
+	[InlineData(null, null, "2026-10-01")]
+	[InlineData(null, null, "2026-10-01T00:00:00+01:00")]
+	[InlineData(null, null, "badZ")]
+	public async Task CategorySelection_InvalidInput_ReturnsReasonedProblem(string? view, string? rollup, string? cutoff)
+	{
+		var result = await _controller.GetSpendingByCategory(null, null, categoryView: view, rollup: rollup, knowledgeCutoff: cutoff);
+		Assert.IsType<BadRequestProblem>(result.Result).Value.Detail.Should().NotBeNullOrEmpty();
+		_mediatorMock.VerifyNoOtherCalls();
+	}
+
+	[Fact]
+	public async Task CategorySelection_RejectsCapturedRevisionInHistoricalView()
+	{
+		var result = await _controller.GetSpendingByCategory(null, null, capturedCurrentRevisionId: Guid.NewGuid());
+		Assert.IsType<BadRequestProblem>(result.Result).Value.Detail.Should().Contain("currentHierarchy");
+		_mediatorMock.VerifyNoOtherCalls();
+	}
+
+	[Fact]
+	public async Task CategorySelection_MapsSnapshotAndStablePathToActualGeneratedDto()
+	{
+		Guid revision = Guid.NewGuid();
+		Guid category = Guid.NewGuid();
+		DateTimeOffset cutoff = DateTimeOffset.Parse("2026-10-01T00:00:00Z");
+		Application.Models.Reports.CategoryReportBucket bucket = new(revision, category,
+			Application.Models.Reports.CategoryReportState.Classified,
+			[new Domain.Taxonomy.TaxonomyNode(category, null, "Archived food", null, true)], "USD", 12.3456m, 2);
+		SpendingByCategoryResult expected = new([new("Archived food", bucket.Amount, 100) { Bucket = bucket }])
+		{
+			Snapshot = new(Application.Models.Reports.CategoryReportView.CurrentHierarchy, revision, [bucket],
+			Application.Models.Reports.CategoryReportRollup.Root, cutoff,
+			Application.Models.Reports.CategoryReportAssignmentSelection.LatestRecordedAtOrBeforeCutoff)
+		};
+		_mediatorMock.Setup(m => m.Send(It.Is<GetSpendingByCategoryQuery>(q =>
+			q.CategoryOptions!.View == Application.Models.Reports.CategoryReportView.CurrentHierarchy
+			&& q.CategoryOptions.CategoryId == category && q.CategoryOptions.CapturedCurrentRevisionId == revision
+			&& q.CategoryOptions.KnowledgeCutoff == cutoff), CancellationToken.None)).ReturnsAsync(expected);
+		var result = await _controller.GetSpendingByCategory(null, null, categoryView: "currentHierarchy", rollup: "root",
+			categoryId: category, knowledgeCutoff: "2026-10-01T00:00:00Z", capturedCurrentRevisionId: revision);
+		SpendingByCategoryResponse actual = Assert.IsType<Ok<SpendingByCategoryResponse>>(result.Result).Value!;
+		actual.View.Should().Be("currentHierarchy");
+		actual.CurrentRevisionId.Should().Be(revision);
+		actual.KnowledgeCutoff.Should().Be(cutoff);
+		actual.AssignmentSelection.Should().Be("latestRecordedAtOrBeforeCutoff");
+		actual.Items.Single().Amount.Should().Be(12.3456);
+		actual.Items.Single().Currency.Should().Be("USD");
+		actual.Items.Single().CategoryId.Should().Be(category);
+		actual.Items.Single().PathRevisionId.Should().Be(revision);
+		actual.Items.Single().Path.Single().Archived.Should().BeTrue();
+		typeof(DashboardController).GetCustomAttributes(typeof(Microsoft.AspNetCore.Authorization.AuthorizeAttribute), true).Should().ContainSingle();
+	}
 }
