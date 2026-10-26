@@ -81,7 +81,9 @@ public class BackupImportConcurrencyTests(PostgresFixture fixture) : IClassFixtu
 			DestinationLockProbe probe = new(fixture);
 			DbContextOptions<ApplicationDbContext> options = new DbContextOptionsBuilder<ApplicationDbContext>(fixture.CreateOptions()).AddInterceptors(probe).Options;
 			BackupImportService service = new(new Factory(options), NullLogger<BackupImportService>.Instance);
-			using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(30));
+			// BackupImportLock is process-wide. In the full suite another restore can
+			// hold its local lease for over 40 seconds before this import can start.
+			using CancellationTokenSource timeout = new(TimeSpan.FromMinutes(2));
 			await using FileStream stream = File.OpenRead(path);
 			Func<Task> import = async () => await service.ImportFromSqliteAsync(stream, timeout.Token);
 			if (competingMove)

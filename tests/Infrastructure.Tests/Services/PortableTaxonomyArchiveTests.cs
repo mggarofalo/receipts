@@ -19,7 +19,9 @@ public sealed partial class PortableTaxonomyArchiveTests
 		PortableBackupFormat.RequiredTablesFor(9).Should().NotContain("taxonomy_archive");
 		PortableBackupFormat.RequiredTablesFor(9).Should().NotContain("portable_deletion_state");
 		PortableBackupFormat.RequiredTablesFor(10).Should().Contain(["taxonomy_archive", "portable_deletion_state"]);
-		FluentActions.Invoking(() => PortableBackupFormat.RequiredTablesFor(13)).Should().Throw<InvalidOperationException>();
+		PortableBackupFormat.RequiredTablesFor(13).Should().Contain(["taxonomy_archive", "portable_deletion_state"]);
+		FluentActions.Invoking(() => PortableBackupFormat.RequiredTablesFor(PortableBackupFormat.CurrentVersion + 1))
+				.Should().Throw<InvalidOperationException>();
 	}
 
 	[Fact]
