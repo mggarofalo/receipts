@@ -256,7 +256,7 @@ Refreshing active YNAB queries may read the remote service; restore does not iss
   deployment recovery point, also retain a verified PostgreSQL backup and the
   deployment's separately protected configuration/secrets. The Compose
   `scripts/backup.cs` and `scripts/restore.cs` operate on PostgreSQL `.sql.gz`
-  dumps, not portable SQLite files. Follow the [cutover procedure](legacy-taxonomy-migration.md)
+  dumps, not portable SQLite files. Raw restore stops the Compose app, saves category assistance usage outside the dump, and reconciles its consent and dispatch fence before restart. Keep the app stopped on a failed restore and follow the [raw restore recovery procedure](category-assistance.md#connection-and-restore-fences). Follow the [cutover procedure](legacy-taxonomy-migration.md)
   before using deployment restart or rollback automation.
 - Backups are self-contained SQLite files — no external dependencies needed to read them
 - Import is transactional: if any step fails, the entire import is rolled back
