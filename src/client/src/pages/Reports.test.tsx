@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Routes, Route } from "react-router";
+import { MemoryRouter, Routes, Route, useLocation } from "react-router";
 import { renderWithProviders } from "@/test/test-utils";
 import Reports, { REPORTS, REPORT_GROUPS } from "./Reports";
 
@@ -15,7 +15,8 @@ beforeAll(() => {
     Element.prototype.setPointerCapture = () => {};
   }
   if (
-    !(Element.prototype as unknown as { scrollIntoView?: unknown }).scrollIntoView
+    !(Element.prototype as unknown as { scrollIntoView?: unknown })
+      .scrollIntoView
   ) {
     Element.prototype.scrollIntoView = () => {};
   }
@@ -84,6 +85,54 @@ beforeEach(() => {
 });
 
 describe("Reports", () => {
+  it("preserves shared dates and category view through hub, picker and return navigation", async () => {
+    function Location() {
+      const location = useLocation();
+      return <output data-testid="report-location">{location.search}</output>;
+    }
+    renderWithProviders(
+      <>
+        <Reports />
+        <Location />
+      </>,
+      {
+        route:
+          "/reports?categoryView=currentHierarchy&startDate=2026-01-01&endDate=2026-02-28&topN=3",
+      },
+    );
+    await userEvent.click(
+      screen.getByRole("link", { name: /Category Trends Smaller categories/ }),
+    );
+    expect(
+      await screen.findByTestId("report-category-trends"),
+    ).toBeInTheDocument();
+    const expectSharedSelection = (report: string | null) => {
+      const params = new URLSearchParams(
+        screen.getByTestId("report-location").textContent!,
+      );
+      expect(params.get("startDate")).toBe("2026-01-01");
+      expect(params.get("endDate")).toBe("2026-02-28");
+      expect(params.get("categoryView")).toBe("currentHierarchy");
+      expect(params.get("report")).toBe(report);
+      expect(params.has("topN")).toBe(false);
+    };
+    expectSharedSelection("category-trends");
+    await userEvent.click(screen.getByRole("combobox"));
+    await userEvent.click(
+      screen.getByRole("option", { name: /duplicate detection/i }),
+    );
+    expect(
+      await screen.findByTestId("report-duplicate-detection"),
+    ).toBeInTheDocument();
+    expectSharedSelection("duplicate-detection");
+    await userEvent.click(screen.getByRole("button", { name: "All reports" }));
+    expectSharedSelection(null);
+    const link = screen.getByRole("link", {
+      name: /Category Trends Smaller categories/,
+    });
+    expect(link.getAttribute("href")).toContain("startDate=2026-01-01");
+    expect(link.getAttribute("href")).toContain("endDate=2026-02-28");
+  });
   it("renders the page heading", () => {
     renderWithProviders(<Reports />, { route: "/reports" });
     expect(
@@ -116,7 +165,13 @@ describe("Reports", () => {
         const link = screen.getByRole("link", {
           name: new RegExp(report.name, "i"),
         });
-        expect(link).toHaveAttribute("href", `/reports?report=${report.slug}`);
+        const url = new URL(
+          link.getAttribute("href")!,
+          "https://receipts.test",
+        );
+        expect(url.pathname).toBe("/reports");
+        expect(url.searchParams.get("report")).toBe(report.slug);
+        expect(url.searchParams.get("categoryView")).toBe("asClassified");
       }
     });
 
@@ -181,7 +236,9 @@ describe("Reports", () => {
     });
 
     it("falls back to the hub for an invalid query param", () => {
-      renderWithProviders(<Reports />, { route: "/reports?report=nonexistent" });
+      renderWithProviders(<Reports />, {
+        route: "/reports?report=nonexistent",
+      });
 
       expect(screen.queryByTestId("report-out-of-balance")).toBeNull();
       expect(
@@ -197,7 +254,9 @@ describe("Reports", () => {
         await screen.findByTestId("report-out-of-balance"),
       ).toBeInTheDocument();
 
-      await userEvent.click(screen.getByRole("button", { name: /all reports/i }));
+      await userEvent.click(
+        screen.getByRole("button", { name: /all reports/i }),
+      );
 
       expect(screen.queryByTestId("report-out-of-balance")).toBeNull();
       expect(
@@ -218,7 +277,9 @@ describe("Reports", () => {
       });
       await userEvent.click(screen.getByRole("combobox"));
 
-      expect(screen.getByRole("group", { name: "Spending" })).toBeInTheDocument();
+      expect(
+        screen.getByRole("group", { name: "Spending" }),
+      ).toBeInTheDocument();
       expect(
         screen.getByRole("group", { name: "Data Quality" }),
       ).toBeInTheDocument();
@@ -298,7 +359,9 @@ describe("Reports", () => {
       renderWithProviders(<Reports />, {
         route: "/reports?report=duplicate-detection",
       });
-      expect(usePageTitle).toHaveBeenCalledWith("Reports - Duplicate Detection");
+      expect(usePageTitle).toHaveBeenCalledWith(
+        "Reports - Duplicate Detection",
+      );
     });
   });
 

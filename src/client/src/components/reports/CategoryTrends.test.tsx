@@ -1,7 +1,33 @@
 import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithQueryClient } from "@/test/test-utils";
+import { useNavigate, useLocation } from "react-router";
 import CategoryTrends from "./CategoryTrends";
+
+const { exportCsv } = vi.hoisted(() => ({ exportCsv: vi.fn() }));
+vi.mock("@/hooks/useCsvExport", () => ({
+  useCsvExport: () => ({ exportCsv, isExporting: false }),
+}));
+function Navigation() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  return (
+    <>
+      <output data-testid="url">{location.search}</output>
+      <button
+        onClick={() =>
+          navigate(
+            "?categoryView=currentHierarchy&report=category-trends&unrelated=keep",
+          )
+        }
+      >
+        Shared link
+      </button>
+      <button onClick={() => navigate(-1)}>Back</button>
+      <button onClick={() => navigate(1)}>Forward</button>
+    </>
+  );
+}
 
 vi.mock("@/hooks/useCategoryTrendsReport", () => ({
   useCategoryTrendsReport: vi.fn(),
@@ -51,6 +77,30 @@ function setupMock(overrides: Record<string, unknown> = {}) {
   mockHook.mockReturnValue({
     data: {
       categories: ["Groceries", "Dining"],
+      view: "asClassified",
+      rollup: "assignedCategory",
+      assignmentSelection: "currentPointer",
+      series: [
+        {
+          currency: "USD",
+          state: "classified",
+          isOther: false,
+          purchaseCount: 2,
+          categoryId: "cat-1",
+          pathRevisionId: "rev-1",
+          path: [{ categoryId: "cat-1", name: "Groceries", archived: false }],
+        },
+        {
+          currency: "USD",
+          state: "classified",
+          isOther: false,
+          purchaseCount: 2,
+          categoryId: "cat-2",
+          pathRevisionId: "rev-1",
+          path: [{ categoryId: "cat-2", name: "Dining", archived: false }],
+        },
+      ],
+      currencyTotals: [{ currency: "USD", amount: 345, purchaseCount: 4 }],
       buckets: [
         { period: "2025-01", amounts: [100, 50] },
         { period: "2025-02", amounts: [120, 75] },
@@ -65,6 +115,111 @@ function setupMock(overrides: Record<string, unknown> = {}) {
 describe("CategoryTrends", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it("reads the shared category selection and clears captured revision on view change", async () => {
+    setupMock();
+    renderWithQueryClient(<CategoryTrends />, {
+      route:
+        "/?report=category-trends&categoryView=currentHierarchy&rollup=root&categoryId=11111111-1111-1111-1111-111111111111&knowledgeCutoff=2026-01-01T00:00:00Z&capturedCurrentRevisionId=22222222-2222-2222-2222-222222222222",
+    });
+    expect(mockHook).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        categoryView: "currentHierarchy",
+        rollup: "root",
+        categoryId: "11111111-1111-1111-1111-111111111111",
+        knowledgeCutoff: "2026-01-01T00:00:00.000Z",
+        capturedCurrentRevisionId: "22222222-2222-2222-2222-222222222222",
+      }),
+    );
+    await userEvent.selectOptions(
+      screen.getByLabelText("Category view"),
+      "asClassified",
+    );
+    expect(mockHook).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        categoryView: "asClassified",
+        capturedCurrentRevisionId: undefined,
+        rollup: "root",
+      }),
+    );
+  });
+
+  it("shows errors with a retry action", async () => {
+    const refetch = vi.fn();
+    setupMock({ data: undefined, isError: true, refetch });
+    renderWithQueryClient(<CategoryTrends />);
+    expect(screen.getByRole("alert")).toHaveTextContent("could not be loaded");
+    await userEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(refetch).toHaveBeenCalledOnce();
+    expect(screen.getByRole("button", { name: "Export CSV" })).toBeDisabled();
+  });
+
+  it("tracks shared-link navigation, back/forward and preserves unrelated URL parameters", async () => {
+    setupMock();
+    renderWithQueryClient(
+      <>
+        <Navigation />
+        <CategoryTrends />
+      </>,
+      { route: "/?categoryView=asClassified&report=category-trends" },
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Shared link" }));
+    expect(screen.getByLabelText("Category view")).toHaveValue(
+      "currentHierarchy",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByLabelText("Category view")).toHaveValue("asClassified");
+    await userEvent.click(screen.getByRole("button", { name: "Forward" }));
+    expect(screen.getByLabelText("Category view")).toHaveValue(
+      "currentHierarchy",
+    );
+    await userEvent.selectOptions(
+      screen.getByLabelText("Category view"),
+      "asClassified",
+    );
+    expect(screen.getByTestId("url")).toHaveTextContent("unrelated=keep");
+    expect(screen.getByTestId("url")).toHaveTextContent(
+      "report=category-trends",
+    );
+  });
+
+  it("captures one returned report for export even when view changes before download", async () => {
+    setupMock();
+    let finish: (() => void) | undefined;
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    let captured: unknown;
+    exportCsv.mockImplementationOnce(async (request) => {
+      await pending;
+      captured = request;
+    });
+    renderWithQueryClient(<CategoryTrends />);
+    await userEvent.click(screen.getByRole("button", { name: "Export CSV" }));
+    const report = mockHook.mock.results[0].value.data;
+    report.buckets[0].amounts[0] = 999;
+    report.view = "currentHierarchy";
+    await userEvent.selectOptions(
+      screen.getByLabelText("Category view"),
+      "currentHierarchy",
+    );
+    finish!();
+    await pending;
+    await Promise.resolve();
+    expect(captured).toEqual(
+      expect.objectContaining({
+        rows: expect.arrayContaining([
+          expect.arrayContaining(["asClassified", 100]),
+        ]),
+      }),
+    );
+  });
+
+  it("disables export while loading", () => {
+    setupMock({ data: undefined, isLoading: true });
+    renderWithQueryClient(<CategoryTrends />);
+    expect(screen.getByRole("button", { name: "Export CSV" })).toBeDisabled();
   });
 
   it("initializes with the shared 12-month default date range (RECEIPTS-840)", () => {
@@ -154,7 +309,8 @@ describe("CategoryTrends", () => {
   it("reads date range, granularity, and topN from the URL on load", () => {
     setupMock();
     renderWithQueryClient(<CategoryTrends />, {
-      route: "/?startDate=2022-01-01&endDate=2022-06-30&granularity=quarterly&topN=10",
+      route:
+        "/?startDate=2022-01-01&endDate=2022-06-30&granularity=quarterly&topN=10",
     });
 
     expect(mockHook).toHaveBeenLastCalledWith(
@@ -170,7 +326,8 @@ describe("CategoryTrends", () => {
   it("falls back to defaults for malformed URL params instead of crashing", () => {
     setupMock();
     renderWithQueryClient(<CategoryTrends />, {
-      route: "/?startDate=not-a-date&endDate=also-not-a-date&granularity=bogus&topN=999",
+      route:
+        "/?startDate=not-a-date&endDate=also-not-a-date&granularity=bogus&topN=999",
     });
 
     expect(screen.getByText("Category Trends")).toBeInTheDocument();
