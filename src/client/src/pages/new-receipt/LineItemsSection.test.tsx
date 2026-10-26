@@ -14,13 +14,12 @@ vi.mock("@/hooks/useCategoryTaxonomy", () => ({
     refetch: vi.fn(),
   }),
 }));
-import { act, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "@/test/test-utils";
 import { mockQueryResult, mockMutationResult } from "@/test/mock-hooks";
 import "@/test/setup-combobox-polyfills";
 import { useSimilarItems } from "@/hooks/useSimilarItems";
-import { usePromoteToTemplate } from "@/hooks/usePromoteToTemplate";
 import { LineItemsSection, type ReceiptLineItem } from "./LineItemsSection";
 
 vi.mock("@/hooks/useReceiptNormalizationPreview", () => ({
@@ -106,9 +105,6 @@ vi.mock("@/hooks/useReceiptItemSuggestions", () => ({
   ),
 }));
 
-vi.mock("@/hooks/usePromoteToTemplate", () => ({
-  usePromoteToTemplate: vi.fn(() => mockMutationResult()),
-}));
 
 describe("LineItemsSection", () => {
   it("shows rounded midpoint lines and sums the rounded lines in the subtotal", () => {
@@ -137,45 +133,11 @@ describe("LineItemsSection", () => {
     window.dispatchEvent(new StorageEvent("storage", { key: null }));
   });
 
-  it("removes and restores the description shortcut hint and its accessible association together", () => {
+  it("does not advertise retired template shortcuts", () => {
     renderWithProviders(<LineItemsSection {...defaultProps} />);
     const description = screen.getByPlaceholderText("Item description");
-    expect(description).toHaveAttribute(
-      "aria-describedby",
-      "description-shortcuts-hint",
-    );
-    expect(
-      screen.getByText(/press Shift\+Enter to save it as a template/),
-    ).toBeInTheDocument();
-    act(() => {
-      localStorage.setItem(
-        "receipts:preferences",
-        '{"showKeyboardHints":false}',
-      );
-      window.dispatchEvent(
-        new StorageEvent("storage", { key: "receipts:preferences" }),
-      );
-    });
-    expect(description).not.toHaveAttribute(
-      "aria-describedby",
-      "description-shortcuts-hint",
-    );
-    expect(
-      screen.queryByText(/press Shift\+Enter to save it as a template/),
-    ).not.toBeInTheDocument();
-    act(() => {
-      localStorage.removeItem("receipts:preferences");
-      window.dispatchEvent(
-        new StorageEvent("storage", { key: "receipts:preferences" }),
-      );
-    });
-    expect(description).toHaveAttribute(
-      "aria-describedby",
-      "description-shortcuts-hint",
-    );
-    expect(
-      screen.getByText(/press Shift\+Enter to save it as a template/),
-    ).toBeInTheDocument();
+    expect(description).not.toHaveAttribute("aria-describedby", "description-shortcuts-hint");
+    expect(screen.queryByText(/Shift\+Enter to save it as a template/)).not.toBeInTheDocument();
   });
 
   it("renders the card title", () => {
@@ -499,276 +461,44 @@ describe("LineItemsSection", () => {
 
   // --- Save-as-template promotion tests ---
 
-  describe("promote to template", () => {
+  describe("receipt history suggestions", () => {
     const historySuggestion = {
       name: "Milk (gallon)",
       similarity: 0.9,
       semanticSimilarity: null,
       combinedScore: 0.9,
       source: "history" as const,
-      defaultCategory: "Food",
-      defaultSubcategory: "Dairy",
+      defaultCategory: "Legacy Food",
+      defaultSubcategory: "Legacy Dairy",
       defaultUnitPrice: 3.5,
       defaultItemCode: "MILK-GAL",
     };
-    const templateSuggestion = {
-      name: "Milk chocolate",
-      similarity: 0.8,
-      semanticSimilarity: null,
-      combinedScore: 0.8,
-      source: "template" as const,
-      defaultCategory: "Food",
-      defaultSubcategory: null,
-      defaultUnitPrice: null,
-      defaultItemCode: null,
-    };
 
-    function mockSuggestions() {
-      vi.mocked(useSimilarItems).mockReturnValue(
-        mockQueryResult({
-          data: [historySuggestion, templateSuggestion],
-          isFetching: false,
-          isSuccess: true,
-        }),
-      );
-    }
-
-    function mockPromote() {
-      const mutate = vi.fn();
-      vi.mocked(usePromoteToTemplate).mockReturnValue(
-        mockMutationResult({ mutate }),
-      );
-      return mutate;
-    }
-
-    it("promotes a history suggestion without selecting it or closing the popover", async () => {
-      const user = userEvent.setup();
-      mockSuggestions();
-      const mutate = mockPromote();
-      renderWithProviders(<LineItemsSection {...defaultProps} />);
-
-      const input = screen.getByPlaceholderText("Item description");
-      await user.type(input, "mi");
-
-      const promoteButton = await screen.findByRole("button", {
-        name: 'Save "Milk (gallon)" as template',
-      });
-      await user.click(promoteButton);
-
-      expect(mutate).toHaveBeenCalledWith({
-        name: "Milk (gallon)",
-        defaultCategory: "Food",
-        defaultSubcategory: "Dairy",
-        defaultUnitPrice: 3.5,
-        defaultItemCode: "MILK-GAL",
-      });
-      // The click must not apply the suggestion to the form...
-      expect(input).toHaveValue("mi");
-      // ...and must not close the popover.
-      expect(
-        screen.getByRole("option", { name: /milk \(gallon\)/i }),
-      ).toBeInTheDocument();
-    });
-
-    it("recognizes a history suggestion whose source the API sent PascalCase (real API behavior diverges from the lowercase-only generated type)", async () => {
+    it("keeps raw description selection while hiding legacy defaults and promotion", async () => {
       const user = userEvent.setup();
       vi.mocked(useSimilarItems).mockReturnValue(
-        mockQueryResult({
-          data: [
-            {
-              ...historySuggestion,
-              source: "History" as unknown as "history",
-            },
-          ],
-          isFetching: false,
-          isSuccess: true,
-        }),
+        mockQueryResult({ data: [historySuggestion], isFetching: false, isSuccess: true }),
       );
-      const mutate = mockPromote();
       renderWithProviders(<LineItemsSection {...defaultProps} />);
 
       const input = screen.getByPlaceholderText("Item description");
       await user.type(input, "mi");
-
-      const promoteButton = await screen.findByRole("button", {
-        name: 'Save "Milk (gallon)" as template',
-      });
-      await user.click(promoteButton);
-
-      expect(mutate).toHaveBeenCalledWith(
-        expect.objectContaining({ name: "Milk (gallon)" }),
-      );
-    });
-
-    it.each([true, false])(
-      "promotes the highlighted history suggestion with Shift+Enter without applying it (hints=%s)",
-      async (showKeyboardHints) => {
-        localStorage.setItem(
-          "receipts:preferences",
-          JSON.stringify({ showKeyboardHints }),
-        );
-        const user = userEvent.setup();
-        mockSuggestions();
-        const mutate = mockPromote();
-        renderWithProviders(<LineItemsSection {...defaultProps} />);
-
-        const input = screen.getByPlaceholderText("Item description");
-        await user.type(input, "mi");
-        await screen.findByRole("option", { name: /milk \(gallon\)/i });
-
-        // The first result (the history suggestion) is highlighted by default.
-        await user.keyboard("{Shift>}{Enter}{/Shift}");
-
-        expect(mutate).toHaveBeenCalledWith({
-          name: "Milk (gallon)",
-          defaultCategory: "Food",
-          defaultSubcategory: "Dairy",
-          defaultUnitPrice: 3.5,
-          defaultItemCode: "MILK-GAL",
-        });
-        // Shift+Enter must not apply the suggestion to the form...
-        expect(input).toHaveValue("mi");
-        // ...and must not close the popover.
-        expect(
-          screen.getByRole("option", { name: /milk \(gallon\)/i }),
-        ).toBeInTheDocument();
-      },
-    );
-
-    it("plain Enter still applies (does not promote) a highlighted history suggestion", async () => {
-      const user = userEvent.setup();
-      mockSuggestions();
-      const mutate = mockPromote();
-      renderWithProviders(<LineItemsSection {...defaultProps} />);
-
-      const input = screen.getByPlaceholderText("Item description");
-      await user.type(input, "mi");
-      await screen.findByRole("option", { name: /milk \(gallon\)/i });
-
+      const option = await screen.findByRole("option", { name: /milk \(gallon\)/i });
+      expect(option).not.toHaveTextContent("Legacy Food");
+      expect(option).not.toHaveTextContent("Legacy Dairy");
+      expect(screen.queryByRole("button", { name: /save.*as template/i })).not.toBeInTheDocument();
       await user.keyboard("{Enter}");
-
-      expect(mutate).not.toHaveBeenCalled();
       expect(input).toHaveValue("Milk (gallon)");
     });
 
-    it("does not render a promote button on template-source suggestions", async () => {
-      const user = userEvent.setup();
-      mockSuggestions();
-      mockPromote();
-      renderWithProviders(<LineItemsSection {...defaultProps} />);
-
-      await user.type(screen.getByPlaceholderText("Item description"), "mi");
-
-      await screen.findByRole("button", {
-        name: 'Save "Milk (gallon)" as template',
-      });
-      expect(
-        screen.queryByRole("button", {
-          name: 'Save "Milk chocolate" as template',
-        }),
-      ).not.toBeInTheDocument();
-    });
-
-    it("promotes an entered line item from the table row action", async () => {
-      const user = userEvent.setup();
-      const mutate = mockPromote();
-      const items: ReceiptLineItem[] = [
-        {
-          id: "1",
-          receiptItemCode: "MILK-GAL",
-          description: "Milk (gallon)",
-          quantity: 2,
-          unitPrice: 3.5,
-          category: "Food",
-          subcategory: "Dairy",
-        },
-      ];
+    it("does not expose template promotion on entered rows", () => {
+      const items: ReceiptLineItem[] = [{
+        id: "1", receiptItemCode: "MILK-GAL", description: "Milk (gallon)",
+        quantity: 2, unitPrice: 3.5, category: "Food", subcategory: "Dairy",
+      }];
       renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
-
-      await user.click(
-        screen.getByRole("button", { name: "Save as template" }),
-      );
-
-      expect(mutate).toHaveBeenCalledWith({
-        name: "Milk (gallon)",
-        defaultCategory: "Food",
-        defaultSubcategory: "Dairy",
-        defaultUnitPrice: 3.5,
-        defaultItemCode: "MILK-GAL",
-      });
-    });
-
-    it("does not fire another promote while one is pending", async () => {
-      const user = userEvent.setup();
-      const mutate = vi.fn();
-      vi.mocked(usePromoteToTemplate).mockReturnValue(
-        mockMutationResult({ mutate, isPending: true, status: "pending" }),
-      );
-      const items: ReceiptLineItem[] = [
-        {
-          id: "1",
-          receiptItemCode: "",
-          description: "Milk",
-          quantity: 1,
-          unitPrice: 3.5,
-          category: "Food",
-          subcategory: "",
-        },
-      ];
-      renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
-
-      await user.click(
-        screen.getByRole("button", { name: "Save as template" }),
-      );
-
-      expect(mutate).not.toHaveBeenCalled();
-    });
-
-    it("disables the line-item promote button while a promotion is pending", () => {
-      vi.mocked(usePromoteToTemplate).mockReturnValue(
-        mockMutationResult({
-          mutate: vi.fn(),
-          isPending: true,
-          status: "pending",
-        }),
-      );
-      const items: ReceiptLineItem[] = [
-        {
-          id: "1",
-          receiptItemCode: "",
-          description: "Milk",
-          quantity: 1,
-          unitPrice: 3.5,
-          category: "Food",
-          subcategory: "",
-        },
-      ];
-      renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
-
-      expect(
-        screen.getByRole("button", { name: "Save as template" }),
-      ).toBeDisabled();
-    });
-
-    it("disables the popover promote button while a promotion is pending", async () => {
-      const user = userEvent.setup();
-      mockSuggestions();
-      vi.mocked(usePromoteToTemplate).mockReturnValue(
-        mockMutationResult({
-          mutate: vi.fn(),
-          isPending: true,
-          status: "pending",
-        }),
-      );
-      renderWithProviders(<LineItemsSection {...defaultProps} />);
-
-      await user.type(screen.getByPlaceholderText("Item description"), "mi");
-
-      expect(
-        await screen.findByRole("button", {
-          name: 'Save "Milk (gallon)" as template',
-        }),
-      ).toBeDisabled();
+      expect(screen.queryByRole("button", { name: /save as template/i })).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
     });
   });
 });

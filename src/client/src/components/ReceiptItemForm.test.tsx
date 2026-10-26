@@ -334,6 +334,9 @@ describe("ReceiptItemForm", () => {
     await waitFor(() => {
       expect(screen.getByText("Item Templates")).toBeInTheDocument();
     });
+    const templates = screen.getByText("Item Templates").closest("[cmdk-group]")!;
+    expect(templates).not.toHaveTextContent("Groceries");
+    expect(templates).not.toHaveTextContent("Dairy");
   });
 
   // ── RECEIPTS-881: template provenance reaches the server ──────
