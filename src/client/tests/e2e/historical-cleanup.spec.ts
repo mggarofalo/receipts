@@ -1,9 +1,14 @@
 import { expect, test } from "@playwright/test";
+import { mkdir } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { installApiMocks, signInAs } from "../fixtures/api-mocks";
 
 const group = {
   group: { store: "Market", rawDescription: "MILK 2% GAL", itemCode: null },
   purchaseCount: 12,
+  impactAmount: 42.5,
+  impactCurrency: "USD",
   conflict: false,
   migratedBroad: true,
   unresolved: false,
@@ -14,6 +19,13 @@ const group = {
   disposition: null,
   dispositionVersion: 0,
 };
+const groups = [
+  group,
+  ...Array.from({ length: 24 }, (_, index) => ({
+    ...group,
+    group: { ...group.group, rawDescription: `ITEM ${index + 2}` },
+  })),
+];
 
 for (const width of [375, 1280]) {
   test(`cleanup link, keyboard choice and mobile width (${width}px)`, async ({
@@ -23,7 +35,7 @@ for (const width of [375, 1280]) {
     await installApiMocks(page, { freezeClock: false });
     await page.route("**/api/historical-reclassifications/groups?*", (route) =>
       route.fulfill({
-        json: { items: [group], totalGroups: 1, nextOffset: null },
+        json: { items: groups, totalGroups: groups.length, nextOffset: null },
       }),
     );
     await page.route("**/api/historical-reclassifications?*", (route) =>
@@ -53,10 +65,16 @@ for (const width of [375, 1280]) {
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth),
     ).toBeLessThanOrEqual(width);
-    await page.waitForTimeout(250);
+    const artifactDir = join(tmpdir(), "receipts-e2e-artifacts");
+    await mkdir(artifactDir, { recursive: true });
     await page.screenshot({
-      path: `C:/Users/mggar/Source/receipts-017-artifacts/1053/cleanup-${width}.png`,
+      path: join(artifactDir, `cleanup-${width}.png`),
       fullPage: true,
     });
+    await page.getByLabel("Select visible page").check();
+    await expect(page.getByText("Selected groups (25/25)")).toBeVisible();
+    await expect(page.getByRole("checkbox", { name: /^Select ITEM / })).toHaveCount(24);
+    await page.getByLabel("Select visible page").uncheck();
+    await expect(page.getByText("Selected groups (25/25)")).toBeHidden();
   });
 }
