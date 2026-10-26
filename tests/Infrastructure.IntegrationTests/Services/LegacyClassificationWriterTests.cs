@@ -9,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Options;
+using Npgsql;
 
 namespace Infrastructure.IntegrationTests.Services;
 
@@ -95,11 +96,17 @@ public sealed class LegacyClassificationWriterTests : IClassFixture<PostgresFixt
 		Func<Task> gap = () => classifications.AssignAsync("legacy-writer", original.Id, new(null, first.TaxonomyRevisionId, first.Id, Guid.NewGuid(), "Cannot cross gap"));
 		(await gap.Should().ThrowAsync<TaxonomyException>()).Which.Message.Should().Contain("missing classification evidence");
 
-		// A downgrade must fail before dropping immutable legacy-write evidence.
+		// A downgrade must fail at the retained-history guard before dropping legacy-write evidence.
 		string[] applied = (await db.Database.GetAppliedMigrationsAsync()).ToArray();
-		applied.Last().Should().Be("20261025191938_AddLegacyWriteClassificationEvidence");
-		Func<Task> downgrade = () => db.GetService<IMigrator>().MigrateAsync(applied[^2]);
-		await downgrade.Should().ThrowAsync<InvalidOperationException>();
+		const string legacyEvidenceMigration = "20261025191938_AddLegacyWriteClassificationEvidence";
+		applied.Should().Contain(legacyEvidenceMigration);
+		applied.Should().Equal(db.Database.GetMigrations());
+		int legacyEvidenceIndex = Array.IndexOf(applied, legacyEvidenceMigration);
+		legacyEvidenceIndex.Should().BeGreaterThan(0);
+		Func<Task> downgrade = () => db.GetService<IMigrator>().MigrateAsync(applied[legacyEvidenceIndex - 1]);
+		var refusal = (await downgrade.Should().ThrowAsync<PostgresException>()).Which;
+		refusal.SqlState.Should().Be(PostgresErrorCodes.RaiseException);
+		refusal.MessageText.Should().Be("Mapping history is retained; restore a verified backup explicitly instead.");
 		(await db.Database.GetAppliedMigrationsAsync()).Should().Equal(applied);
 		var retained = await db.Classifications.AsNoTracking().SingleAsync(x => x.Id == unknown.Id);
 		retained.LegacyCategory.Should().Be("  unknown  ");

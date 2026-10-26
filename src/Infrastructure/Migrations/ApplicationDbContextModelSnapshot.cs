@@ -1855,6 +1855,95 @@ namespace Infrastructure.Migrations
                     b.ToTable("__SeedHistory", (string)null);
                 });
 
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.CategoryMappingHeadEntity", b =>
+                {
+                    b.Property<string>("SourceFingerprint")
+                        .HasMaxLength(64)
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("RevisionId")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uuid");
+
+                    b.HasKey("SourceFingerprint");
+
+                    b.HasIndex("RevisionId");
+
+                    b.ToTable("CategoryMappingHeads", "taxonomy");
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.CategoryMappingRevisionEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Actor")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("text");
+
+                    b.Property<Guid?>("CategoryId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("text");
+
+                    b.Property<string>("ItemCode")
+                        .HasMaxLength(200)
+                        .HasColumnType("text");
+
+                    b.Property<string>("Location")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("OperationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("PreviousRevisionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("RecordedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("text");
+
+                    b.Property<string>("SemanticFingerprint")
+                        .HasMaxLength(64)
+                        .HasColumnType("text");
+
+                    b.Property<string>("SourceFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("TaxonomyRevisionId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PreviousRevisionId");
+
+                    b.HasIndex("SourceFingerprint");
+
+                    b.HasIndex("Actor", "OperationId")
+                        .IsUnique();
+
+                    b.HasIndex("TaxonomyRevisionId", "CategoryId");
+
+                    b.ToTable("CategoryMappingRevisions", "taxonomy");
+                });
+
             modelBuilder.Entity("Infrastructure.Entities.Taxonomy.ClassificationOperationEntity", b =>
                 {
                     b.Property<string>("Actor")
@@ -2514,6 +2603,34 @@ namespace Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("RunId")
                         .OnDelete(DeleteBehavior.SetNull);
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.CategoryMappingHeadEntity", b =>
+                {
+                    b.HasOne("Infrastructure.Entities.Taxonomy.CategoryMappingRevisionEntity", null)
+                        .WithMany()
+                        .HasForeignKey("RevisionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.CategoryMappingRevisionEntity", b =>
+                {
+                    b.HasOne("Infrastructure.Entities.Taxonomy.CategoryMappingRevisionEntity", null)
+                        .WithMany()
+                        .HasForeignKey("PreviousRevisionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Infrastructure.Entities.Taxonomy.TaxonomyRevisionEntity", null)
+                        .WithMany()
+                        .HasForeignKey("TaxonomyRevisionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Infrastructure.Entities.Taxonomy.TaxonomyNodeEntity", null)
+                        .WithMany()
+                        .HasForeignKey("TaxonomyRevisionId", "CategoryId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("Infrastructure.Entities.Taxonomy.ClassificationOperationEntity", b =>
