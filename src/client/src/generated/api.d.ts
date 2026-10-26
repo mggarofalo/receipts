@@ -3965,14 +3965,40 @@ export interface components {
             amount: number;
         };
         SpendingByCategoryResponse: {
+            /** @description asClassified or currentHierarchy. */
+            view: string;
+            /** @description assignedCategory or root. */
+            rollup: string;
+            /** @description currentPointer or latestRecordedAtOrBeforeCutoff. */
+            assignmentSelection: string;
+            /** Format: uuid */
+            currentRevisionId?: string | null;
+            /** Format: date-time */
+            knowledgeCutoff?: string | null;
             items: components["schemas"]["SpendingCategoryItem"][];
         };
         SpendingCategoryItem: {
+            currency: string;
+            /** @description classified, unclassified, missingAssignment, unresolvedLegacy, unresolvedPath or beforeMigrationHistory. */
+            state: string;
+            /** Format: uuid */
+            pathRevisionId?: string | null;
+            /** Format: uuid */
+            categoryId?: string | null;
+            /** Format: int32 */
+            purchaseCount: number;
+            path: components["schemas"]["CategoryReportPathNode"][];
             categoryName: string;
             /** Format: double */
             amount: number;
             /** Format: double */
             percentage: number;
+        };
+        CategoryReportPathNode: {
+            /** Format: uuid */
+            categoryId: string;
+            name: string;
+            archived: boolean;
         };
         SpendingByAccountResponse: {
             items: components["schemas"]["SpendingAccountItem"][];
@@ -12690,12 +12716,22 @@ export interface operations {
     GetSpendingByCategory: {
         parameters: {
             query?: {
-                /** @description Start date (ISO date string). Defaults to 30 days ago. */
+                /** @description Start date (ISO date string). Defaults to the earliest supported date. */
                 startDate?: string;
                 /** @description End date (ISO date string). Defaults to today. */
                 endDate?: string;
                 /** @description Maximum number of categories to return (top N). */
                 limit?: number;
+                /** @description Classification view. Defaults to asClassified. */
+                categoryView?: "asClassified" | "currentHierarchy";
+                /** @description Bucket level. Defaults to assignedCategory. */
+                rollup?: "assignedCategory" | "root";
+                /** @description Include this category and descendants in the selected view. */
+                categoryId?: string;
+                /** @description Inclusive UTC classification knowledge cutoff with Z suffix. Financial facts remain current. */
+                knowledgeCutoff?: string;
+                /** @description Reuse an existing immutable revision; requires currentHierarchy. */
+                capturedCurrentRevisionId?: string;
             };
             header?: never;
             path?: never;

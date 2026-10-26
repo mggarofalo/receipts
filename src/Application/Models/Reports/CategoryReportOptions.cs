@@ -1,0 +1,8 @@
+namespace Application.Models.Reports;
+
+public sealed record CategoryReportOptions(
+	CategoryReportView View = CategoryReportView.AsClassified,
+	CategoryReportRollup Rollup = CategoryReportRollup.AssignedCategory,
+	Guid? CategoryId = null,
+	DateTimeOffset? KnowledgeCutoff = null,
+	Guid? CapturedCurrentRevisionId = null);

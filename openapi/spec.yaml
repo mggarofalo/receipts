@@ -6650,7 +6650,7 @@ paths:
           schema:
             type: string
             format: date
-          description: Start date (ISO date string). Defaults to 30 days ago.
+          description: Start date (ISO date string). Defaults to the earliest supported date.
         - name: endDate
           in: query
           required: false
@@ -6667,6 +6667,43 @@ paths:
             maximum: 100
             default: 10
           description: Maximum number of categories to return (top N).
+        - name: categoryView
+          in: query
+          required: false
+          description: Classification view. Defaults to asClassified.
+          schema:
+            type: string
+            enum: [asClassified, currentHierarchy]
+            default: asClassified
+        - name: rollup
+          in: query
+          required: false
+          description: Bucket level. Defaults to assignedCategory.
+          schema:
+            type: string
+            enum: [assignedCategory, root]
+            default: assignedCategory
+        - name: categoryId
+          in: query
+          required: false
+          description: Include this category and descendants in the selected view.
+          schema:
+            type: string
+            format: uuid
+        - name: knowledgeCutoff
+          in: query
+          required: false
+          description: Inclusive UTC classification knowledge cutoff with Z suffix. Financial facts remain current.
+          schema:
+            type: string
+            format: date-time
+        - name: capturedCurrentRevisionId
+          in: query
+          required: false
+          description: Reuse an existing immutable revision; requires currentHierarchy.
+          schema:
+            type: string
+            format: uuid
       responses:
         "200":
           description: OK
@@ -8925,8 +8962,23 @@ components:
 
     SpendingByCategoryResponse:
       type: object
-      required: [items]
+      required: [items, view, rollup, assignmentSelection]
       properties:
+        view:
+          type: string
+          description: asClassified or currentHierarchy.
+        rollup:
+          type: string
+          description: assignedCategory or root.
+        assignmentSelection:
+          type: string
+          description: currentPointer or latestRecordedAtOrBeforeCutoff.
+        currentRevisionId:
+          type: [string, "null"]
+          format: uuid
+        knowledgeCutoff:
+          type: [string, "null"]
+          format: date-time
         items:
           type: array
           items:
@@ -8934,8 +8986,26 @@ components:
 
     SpendingCategoryItem:
       type: object
-      required: [categoryName, amount, percentage]
+      required: [categoryName, amount, percentage, currency, state, path, purchaseCount]
       properties:
+        currency:
+          type: string
+        state:
+          type: string
+          description: classified, unclassified, missingAssignment, unresolvedLegacy, unresolvedPath or beforeMigrationHistory.
+        pathRevisionId:
+          type: [string, "null"]
+          format: uuid
+        categoryId:
+          type: [string, "null"]
+          format: uuid
+        purchaseCount:
+          type: integer
+          format: int32
+        path:
+          type: array
+          items:
+            $ref: "#/components/schemas/CategoryReportPathNode"
         categoryName:
           type: string
         amount:
@@ -8944,6 +9014,18 @@ components:
         percentage:
           type: number
           format: double
+
+    CategoryReportPathNode:
+      type: object
+      required: [categoryId, name, archived]
+      properties:
+        categoryId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        archived:
+          type: boolean
 
     SpendingByAccountResponse:
       type: object

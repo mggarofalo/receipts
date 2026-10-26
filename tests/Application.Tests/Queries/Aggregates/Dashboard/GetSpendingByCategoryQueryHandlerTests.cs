@@ -61,4 +61,20 @@ public class GetSpendingByCategoryQueryHandlerTests
 		// Assert
 		mockService.Verify(s => s.GetSpendingByCategoryAsync(startDate, endDate, limit, It.IsAny<CancellationToken>()), Times.Once);
 	}
+	[Fact]
+	public async Task Handle_ForwardsAllCategorySelectionOptions()
+	{
+		DateOnly start = new(2020, 1, 1);
+		DateOnly end = new(2020, 12, 31);
+		Application.Models.Reports.CategoryReportOptions options = new(
+			Application.Models.Reports.CategoryReportView.CurrentHierarchy,
+			Application.Models.Reports.CategoryReportRollup.Root, Guid.NewGuid(),
+			DateTimeOffset.Parse("2026-10-01T00:00:00Z"), Guid.NewGuid());
+		Mock<IDashboardService> service = new(MockBehavior.Strict);
+		SpendingByCategoryResult expected = new([]);
+		service.Setup(s => s.GetSpendingByCategoryAsync(start, end, 7, CancellationToken.None, options)).ReturnsAsync(expected);
+		GetSpendingByCategoryQueryHandler handler = new(service.Object);
+		(await handler.Handle(new(start, end, 7) { CategoryOptions = options }, CancellationToken.None)).Should().BeSameAs(expected);
+		service.VerifyAll();
+	}
 }

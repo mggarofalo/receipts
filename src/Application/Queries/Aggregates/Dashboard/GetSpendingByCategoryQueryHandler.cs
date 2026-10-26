@@ -9,6 +9,8 @@ public class GetSpendingByCategoryQueryHandler(IDashboardService dashboardServic
 {
 	public async ValueTask<SpendingByCategoryResult> Handle(GetSpendingByCategoryQuery request, CancellationToken cancellationToken)
 	{
-		return await dashboardService.GetSpendingByCategoryAsync(request.StartDate, request.EndDate, request.Limit, cancellationToken);
+		return request.CategoryOptions is null
+			? await dashboardService.GetSpendingByCategoryAsync(request.StartDate, request.EndDate, request.Limit, cancellationToken)
+			: await dashboardService.GetSpendingByCategoryAsync(request.StartDate, request.EndDate, request.Limit, cancellationToken, request.CategoryOptions);
 	}
 }
