@@ -171,9 +171,11 @@ public sealed partial class ClassificationTests
 		if (retainedAudit)
 		{
 			string before = await AcceptanceDatabaseFacts(db);
+			before.Should().Contain("sourceaudit:", "the downgrade must encounter retained restore evidence");
 			Func<Task> downgrade = () => db.GetService<IMigrator>().MigrateAsync(applied[index - 1]);
 			(await downgrade.Should().ThrowAsync<PostgresException>()).Which.MessageText.Should().Contain("retained source restore evidence");
-			(await db.Database.GetAppliedMigrationsAsync()).Should().Equal(applied);
+			(await db.Database.GetAppliedMigrationsAsync()).Should().Equal(applied.Take(index + 1),
+					"the protected source restore migration and every prior migration must remain applied");
 			(await AcceptanceDatabaseFacts(db)).Should().Be(before);
 		}
 		else

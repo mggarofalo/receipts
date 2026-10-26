@@ -57,8 +57,8 @@ public class BackupService(
 			//     the next sync (regenerable derived data, like the embedding vectors also omitted),
 			//     so restoring a stale cursor would only risk a bad delta window.
 			//   - ASP.NET Identity users and authentication settings: excluded for security.
-			//   - category_assistance settings, settings audit and save observations: deployment-local
-			//     consent/operational state; never transfer consent through portable archives.
+			//   - category_assistance settings, connection, audit, observations, attempts and usage:
+			//     deployment-local consent/operational state; never transfer through portable archives.
 			//
 			// Excluding all log/audit and regenerable-cursor tables is the consistent choice: a
 			// backup restores your data, not the history of how it got there.

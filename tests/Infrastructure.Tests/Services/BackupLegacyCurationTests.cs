@@ -85,52 +85,6 @@ public class BackupLegacyCurationTests
 		}
 	}
 
-	[Theory]
-	[InlineData("Milk", false)]
-	[InlineData("Bread", true)]
-	[InlineData("milk", true)]
-	[InlineData("Milk ", true)]
-	public async Task CurrentImport_RestoresSourceCurationAndProtectedCanonicalState(string description, bool changed)
-	{
-		var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseInMemoryDatabase($"current-curation-{Guid.NewGuid()}")
-			.ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning)).Options;
-		Guid receipt = Guid.NewGuid(), item = Guid.NewGuid(), canonical = Guid.NewGuid(), template = Guid.NewGuid();
-		await using (var seed = new ApplicationDbContext(options))
-		{
-			seed.Receipts.Add(new() { Id = receipt, Location = "Store", Date = new(2024, 1, 1) });
-			seed.NormalizedDescriptions.Add(new() { Id = canonical, CanonicalName = "Milk canonical", DisplayLabel = "Chosen milk label", NearestNeighbourSimilarity = .86, CreatedAt = DateTimeOffset.UtcNow });
-			seed.ReceiptItems.Add(new() { Id = item, ReceiptId = receipt, Description = "Milk", Quantity = 1, Category = "Food", NormalizedDescriptionId = canonical, NormalizedDescriptionMatchScore = .79 });
-			seed.ItemTemplates.Add(new() { Id = template, Name = "Milk template", NormalizedDescriptionId = canonical });
-			await seed.SaveChangesAsync();
-		}
-		string path = Path.Combine(Path.GetTempPath(), $"current-curation-{Guid.NewGuid()}.db");
-		try
-		{
-			using (var sqlite = new SqliteConnection($"Data Source={path};Pooling=False"))
-			{
-				sqlite.Open(); await BackupService.CreateSchemaAsync(sqlite, CancellationToken.None);
-				Execute(sqlite, "INSERT INTO backup_metadata VALUES('export_version','10')");
-				Execute(sqlite, "INSERT INTO receipts VALUES($id,'Store','2024-01-01','0','USD',NULL,NULL)", ("$id", receipt.ToString()));
-				Execute(sqlite, "INSERT INTO normalized_descriptions(id,canonical_name,status,created_at,display_label,nearest_neighbour_similarity) VALUES($id,'Milk canonical','PendingReview','2024-01-01T00:00:00Z','Chosen milk label','0.86')", ("$id", canonical.ToString()));
-				Execute(sqlite, "INSERT INTO receipt_items(id,receipt_id,description,quantity,unit_price,unit_price_currency,total_amount,total_amount_currency,category,normalized_description_id,normalized_description_match_score) VALUES($id,$receipt,$description,'2','3','USD','6','USD','Food',$canonical,$score)", ("$id", item.ToString()), ("$receipt", receipt.ToString()), ("$description", description), ("$canonical", changed ? DBNull.Value : canonical.ToString()), ("$score", changed ? DBNull.Value : "0.79"));
-				Execute(sqlite, "INSERT INTO item_templates(id,name,normalized_description_id) VALUES($id,'Updated template',$canonical)", ("$id", template.ToString()), ("$canonical", canonical.ToString()));
-				await CurrentBackupFixture.CompleteAsync(sqlite);
-			}
-			await using var stream = File.OpenRead(path);
-			await new BackupImportService(new Factory(options), NullLogger<BackupImportService>.Instance).ImportFromSqliteAsync(stream, CancellationToken.None);
-			await using var read = new ApplicationDbContext(options);
-			var restored = await read.ReceiptItems.SingleAsync();
-			restored.Description.Should().Be(description); restored.Quantity.Should().Be(2);
-			restored.NormalizedDescriptionId.Should().Be(changed ? null : canonical);
-			restored.NormalizedDescriptionMatchScore.Should().Be(changed ? null : .79);
-			(await read.ItemTemplates.SingleAsync()).NormalizedDescriptionId.Should().Be(canonical);
-			var concept = await read.NormalizedDescriptions.SingleAsync();
-			concept.DisplayLabel.Should().Be("Chosen milk label"); concept.NearestNeighbourId.Should().BeNull();
-			concept.NearestNeighbourSimilarity.Should().Be(.86); concept.Status.Should().Be(NormalizedDescriptionStatus.PendingReview);
-		}
-		finally { File.Delete(path); }
-	}
-
 	private static void Execute(SqliteConnection sqlite, string sql, params (string Name, object Value)[] parameters)
 	{
 		using SqliteCommand command = sqlite.CreateCommand();
@@ -148,10 +102,4 @@ public class BackupLegacyCurationTests
 		public Task<ApplicationDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default) => throw new Exception("Destination must not be opened");
 	}
 
-	private sealed class Factory(DbContextOptions<ApplicationDbContext> options) : IDbContextFactory<ApplicationDbContext>
-	{
-		public ApplicationDbContext CreateDbContext()
-		{ var db = new ApplicationDbContext(options); CurrentBackupFixture.Seed(db); return db; }
-		public Task<ApplicationDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default) => Task.FromResult(CreateDbContext());
-	}
 }

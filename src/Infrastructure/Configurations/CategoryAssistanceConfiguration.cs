@@ -28,5 +28,22 @@ public sealed class CategoryAssistanceConfiguration : IEntityTypeConfiguration<C
 		b.ToTable("Observations", "category_assistance"); b.HasKey(x => new { x.SaveId, x.ReceiptItemId });
 		b.Property(x => x.Actor).HasMaxLength(450);
 		b.HasIndex(x => x.SourceHash);
+		b.HasIndex(x => x.AttemptId);
+		b.HasOne<CategoryAssistanceAttemptEntity>().WithMany().HasForeignKey(x => x.AttemptId).OnDelete(DeleteBehavior.Restrict);
+	}
+}
+
+public sealed class CategoryAssistanceConnectionConfiguration : IEntityTypeConfiguration<CategoryAssistanceConnectionEntity>
+{
+	public void Configure(EntityTypeBuilder<CategoryAssistanceConnectionEntity> b)
+	{
+		b.ToTable("Connection", "category_assistance", t =>
+				t.HasCheckConstraint("CK_CategoryAssistance_ConnectionSingleton", "\"Id\" = 1"));
+		b.HasKey(x => x.Id);
+		b.Property(x => x.Id).ValueGeneratedNever();
+		b.Property(x => x.Provider).HasMaxLength(100);
+		b.Property(x => x.Model).HasMaxLength(200);
+		b.Property(x => x.ConfigurationFingerprint).HasMaxLength(64);
+		b.HasData(new CategoryAssistanceConnectionEntity());
 	}
 }

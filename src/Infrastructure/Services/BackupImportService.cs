@@ -128,6 +128,7 @@ public partial class BackupImportService(
 		// Restored business rows cannot be used by a pre-restore inference, even if
 		// the imported values happen to be identical and EF emits no row update.
 		await Infrastructure.NormalizationAi.NormalizationAiService.FenceForRestoreAsync(context, cancellationToken);
+		await CategoryAssistanceRestoreFence.FenceAsync(context, cancellationToken);
 		await SaveImportedChangesAsync(context, cancellationToken);
 
 		try
