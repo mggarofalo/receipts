@@ -10,6 +10,33 @@ namespace Infrastructure.Services;
 
 public sealed class CategoryMappingService(IDbContextFactory<ApplicationDbContext> factory, TimeProvider clock) : ICategoryMappingService
 {
+	public async Task<CategoryMappingHistory> ReadHistoryAsync(NormalizationSourceKey source, Guid? beforeRevisionId, int limit, CancellationToken ct = default)
+	{
+		if (limit is < 1 or > 100 || beforeRevisionId == Guid.Empty)
+		{ throw new TaxonomyException(400, "History limit must be between 1 and 100 and cursor must be a valid revision."); }
+		source = NormalizationCatalogPolicy.Normalize(source);
+		string fingerprint = NormalizationCatalogPolicy.Hash(source);
+		await using ApplicationDbContext db = await factory.CreateDbContextAsync(ct);
+		var rows = db.CategoryMappingRevisions.AsNoTracking().Where(row => row.SourceFingerprint == fingerprint
+			&& row.Location == source.Location && row.Description == source.Description && row.ItemCode == source.ItemCode);
+		Guid? next;
+		if (beforeRevisionId is Guid cursor)
+		{
+			CategoryMappingRevisionEntity? before = await rows.SingleOrDefaultAsync(row => row.Id == cursor, ct);
+			if (before == null) { throw new TaxonomyException(400, "History cursor does not belong to this exact source."); }
+			next = before.PreviousRevisionId;
+		}
+		else { next = await db.CategoryMappingHeads.Where(row => row.SourceFingerprint == fingerprint).Select(row => (Guid?)row.RevisionId).SingleOrDefaultAsync(ct); }
+		List<CategoryMappingRevision> result = [];
+		while (next is Guid id && result.Count < limit)
+		{
+			CategoryMappingRevisionEntity? row = await rows.SingleOrDefaultAsync(row => row.Id == id, ct);
+			if (row == null) { break; }
+			result.Add(Read(row)); next = row.PreviousRevisionId;
+		}
+		return new(result, next == null || result.Count == 0 ? null : result[^1].Id);
+	}
+
 	public async Task<CategoryMappingRevision> ChangeAsync(string actor, CategoryMappingCommand command, CancellationToken ct = default)
 	{
 		NormalizationSourceKey source = NormalizationCatalogPolicy.Normalize(command.Source);
@@ -20,7 +47,7 @@ public sealed class CategoryMappingService(IDbContextFactory<ApplicationDbContex
 			|| command.Reason.Length > 4000 || command.Reason.Contains('\0') || actor.Contains('\0')
 			|| source.Location.Contains('\0') || source.Description.Contains('\0') || source.ItemCode?.Contains('\0') == true)
 		{ throw new TaxonomyException(400, "Valid actor, operation, revisions, source and reason are required."); }
-		if (fingerprint != command.SourceFingerprint) { throw new TaxonomyException(409, "Source changed. Review the current source before approving."); }
+		if (fingerprint != command.SourceFingerprint) { throw new TaxonomyException(409, "Source changed. Review the current source before approving.", new Dictionary<string, object?> { ["sourceFingerprint"] = fingerprint, ["expectedSourceFingerprint"] = command.SourceFingerprint }); }
 		string requestHash = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(command with { Source = source })));
 		await using ApplicationDbContext db = await factory.CreateDbContextAsync(ct);
 		await using var transaction = db.Database.IsRelational() ? await db.Database.BeginTransactionAsync(ct) : null;
@@ -40,8 +67,16 @@ public sealed class CategoryMappingService(IDbContextFactory<ApplicationDbContex
 			return Read(replay);
 		}
 		CategoryMappingHeadEntity? head = await db.CategoryMappingHeads.SingleOrDefaultAsync(row => row.SourceFingerprint == fingerprint, ct);
-		if (head?.RevisionId != command.ExpectedMappingRevisionId) { throw new TaxonomyException(409, "Category mapping changed. Refresh before retrying."); }
-		if (taxonomy.RevisionId != command.ExpectedTaxonomyRevisionId) { throw new TaxonomyException(409, "Taxonomy changed. Refresh before approving."); }
+		TaxonomyException Conflict(string detail) => new(409, detail, new Dictionary<string, object?>
+		{
+			["sourceFingerprint"] = fingerprint,
+			["currentMappingRevisionId"] = head?.RevisionId,
+			["expectedMappingRevisionId"] = command.ExpectedMappingRevisionId,
+			["currentTaxonomyRevisionId"] = taxonomy.RevisionId,
+			["expectedTaxonomyRevisionId"] = command.ExpectedTaxonomyRevisionId
+		});
+		if (head?.RevisionId != command.ExpectedMappingRevisionId) { throw Conflict("Category mapping changed. Refresh before retrying."); }
+		if (taxonomy.RevisionId != command.ExpectedTaxonomyRevisionId) { throw Conflict("Taxonomy changed. Refresh before approving."); }
 		string? semantics = command.CategoryId is Guid categoryId
 			? CategoryMappingPolicy.SemanticFingerprint(await NodesAsync(db, taxonomy.RevisionId, ct), categoryId) : null;
 		if (command.CategoryId != null && semantics == null) { throw new TaxonomyException(409, "Select an active category with active ancestors."); }
