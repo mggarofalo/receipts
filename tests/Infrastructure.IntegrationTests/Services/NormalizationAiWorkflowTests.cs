@@ -25,8 +25,11 @@ namespace Infrastructure.IntegrationTests.Services;
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public sealed partial class NormalizationAiWorkflowTests(PostgresFixture fixture)
+public sealed partial class NormalizationAiWorkflowTests(PostgresFixture fixture) : IDisposable
 {
+	private readonly IOptions<PiNormalizationRunnerOptions> bindingOptions = Options.Create(new PiNormalizationRunnerOptions
+	{ HomeDirectory = Path.Combine(Path.GetTempPath(), "receipts-workflow-binding-" + Guid.NewGuid().ToString("N")) });
+	public void Dispose() { if (Directory.Exists(bindingOptions.Value.HomeDirectory)) { Directory.Delete(bindingOptions.Value.HomeDirectory, true); } }
 	private const string Owner = "normalization-test-owner";
 	private readonly Mock<IChatGptRunner> runner = new(MockBehavior.Strict);
 	private readonly Mock<INormalizedDescriptionService> matching = new(MockBehavior.Strict);
@@ -183,7 +186,7 @@ public sealed partial class NormalizationAiWorkflowTests(PostgresFixture fixture
 		int audits = await AuditCountAsync(ids);
 		var options = new DbContextOptionsBuilder<ApplicationDbContext>(fixture.CreateOptions()).AddInterceptors(new RejectCommit()).Options;
 		var failing = new NormalizationAiService(new OptionsFactory(options), runner.Object, matching.Object,
-			Options.Create(new NormalizationAiOptions { Enabled = true, OwnerUserId = Owner }), TimeProvider.System, publisher.Object);
+			Options.Create(new NormalizationAiOptions { Enabled = true, OwnerUserId = Owner }), TimeProvider.System, publisher.Object, runnerOptions: bindingOptions);
 		Func<Task> apply = () => failing.ApplyAsync(Owner, ready.Id, ready.Proposals.Select(x => x.Id).ToArray(), ready.Revision, CancellationToken.None);
 		await apply.Should().ThrowAsync<InvalidOperationException>().WithMessage("Injected apply commit failure");
 		await AssertUnchangedAsync(ids);
@@ -299,6 +302,7 @@ public sealed partial class NormalizationAiWorkflowTests(PostgresFixture fixture
 	{
 		var ids = await SeedAsync();
 		var service = Service();
+		using var operation = ChatGptOperatorLease.Acquire(bindingOptions.Value);
 		Guid first = await service.BeginConnectionChangeAsync(CancellationToken.None);
 		Guid second = await service.BeginConnectionChangeAsync(CancellationToken.None);
 		await service.CompleteConnectionChangeAsync(first, CancellationToken.None);
@@ -307,7 +311,7 @@ public sealed partial class NormalizationAiWorkflowTests(PostgresFixture fixture
 		status.CredentialsPresent.Should().BeFalse();
 		Func<Task> start = () => service.StartAsync(Owner, Guid.NewGuid(), ids, "test-model", CancellationToken.None);
 		await start.Should().ThrowAsync<NormalizationAiException>();
-		await service.CompleteConnectionChangeAsync(second, CancellationToken.None);
+		await service.BindConnectionChangeAsync(second, Owner, CancellationToken.None);
 		(await service.GetConnectionAsync(Owner, CancellationToken.None)).Busy.Should().BeFalse();
 		(await service.StartAsync(Owner, Guid.NewGuid(), ids, "test-model", CancellationToken.None)).State.Should().Be("queued");
 	}
@@ -419,7 +423,7 @@ public sealed partial class NormalizationAiWorkflowTests(PostgresFixture fixture
 	{
 		var ids = await SeedAsync();
 		var service = new NormalizationAiService(new Factory(fixture), runner.Object, matching.Object,
-			Options.Create(new NormalizationAiOptions { Enabled = true, OwnerUserId = Owner, PendingRunLimit = 1 }), TimeProvider.System, publisher.Object);
+			Options.Create(new NormalizationAiOptions { Enabled = true, OwnerUserId = Owner, PendingRunLimit = 1 }), TimeProvider.System, publisher.Object, runnerOptions: bindingOptions);
 		Guid intent = Guid.NewGuid();
 		var first = await service.StartAsync(Owner, intent, [ids[0]], "test-model", CancellationToken.None);
 		(await service.StartAsync(Owner, intent, [ids[0]], "test-model", CancellationToken.None)).Id.Should().Be(first.Id);
@@ -476,7 +480,7 @@ public sealed partial class NormalizationAiWorkflowTests(PostgresFixture fixture
 				finally { stopped = true; }
 			});
 		var service = new NormalizationAiService(factory, runner.Object, matching.Object,
-			Options.Create(new NormalizationAiOptions { Enabled = true, OwnerUserId = Owner }), TimeProvider.System, publisher.Object);
+			Options.Create(new NormalizationAiOptions { Enabled = true, OwnerUserId = Owner }), TimeProvider.System, publisher.Object, runnerOptions: bindingOptions);
 		var run = await service.StartAsync(Owner, Guid.NewGuid(), ids, "test-model", CancellationToken.None);
 		await service.ProcessNextAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(10));
 		stopped.Should().BeTrue("worker must terminate and observe the provider task even when database polling throws");
@@ -572,7 +576,7 @@ public sealed partial class NormalizationAiWorkflowTests(PostgresFixture fixture
 	private NormalizationAiService Service()
 	{
 		return new(new Factory(fixture), runner.Object, matching.Object,
-			Options.Create(new NormalizationAiOptions { Enabled = true, OwnerUserId = Owner }), TimeProvider.System, publisher.Object);
+			Options.Create(new NormalizationAiOptions { Enabled = true, OwnerUserId = Owner }), TimeProvider.System, publisher.Object, runnerOptions: bindingOptions);
 	}
 
 	private async Task<Guid[]> SeedAsync()
@@ -613,6 +617,10 @@ public sealed partial class NormalizationAiWorkflowTests(PostgresFixture fixture
 			TotalAmountCurrency = Currency.USD,
 			Category = "Food",
 		}).ToArray();
+		var connection = new Infrastructure.Entities.NormalizationAi.NormalizationAiConnectionEntity();
+		db.NormalizationAiConnection.Add(connection);
+		Directory.CreateDirectory(bindingOptions.Value.HomeDirectory);
+		new ChatGptCredentialBinding(bindingOptions.Value).Publish(Owner, connection.Generation, DateTimeOffset.UtcNow);
 		db.ReceiptItems.AddRange(items); await db.SaveChangesAsync();
 		return items.Select(x => x.Id).ToArray();
 	}

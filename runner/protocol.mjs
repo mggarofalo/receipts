@@ -14,7 +14,9 @@ export async function runCommand(runtime, command, request, emit) {
           if (event.type !== 'device_code') return;
           if (event.verificationUri !== deviceUrl || !/^[A-Za-z0-9-]{1,32}$/.test(event.userCode))
             throw new Error('invalid_device_code');
-          emit({ type: 'device_code', url: deviceUrl, code: event.userCode });
+          if (!Number.isSafeInteger(event.expiresInSeconds) || event.expiresInSeconds < 1 || event.expiresInSeconds > 1200)
+            throw new Error('invalid_device_code');
+          emit({ type: 'device_code', url: deviceUrl, code: event.userCode, expiresInSeconds: event.expiresInSeconds });
         },
       });
       emit({ type: 'ready' });

@@ -101,6 +101,28 @@ public sealed class PiNormalizationRunnerTests : IDisposable
 	}
 
 	[Fact]
+	public async Task Login_ForwardsBoundedDeviceExpiry()
+	{
+		var runner = Create("console.log(JSON.stringify({type:'device_code',url:'https://auth.openai.com/codex/device',code:'ABCD-1234',expiresInSeconds:900}));console.log(JSON.stringify({type:'ready'}));");
+		ChatGptDeviceCode? shown = null;
+		await runner.LoginAsync(code => shown = code, CancellationToken.None);
+		shown.Should().Be(new ChatGptDeviceCode("https://auth.openai.com/codex/device", "ABCD-1234", 900));
+	}
+
+	[Theory]
+	[InlineData("0")]
+	[InlineData("1201")]
+	[InlineData("1.5")]
+	public async Task Login_RejectsInvalidDeviceExpiry(string expiry)
+	{
+		var runner = Create("console.log(JSON.stringify({type:'device_code',url:'https://auth.openai.com/codex/device',code:'ABCD-1234',expiresInSeconds:" + expiry + "}));console.log(JSON.stringify({type:'ready'}));");
+		bool shown = false;
+		Func<Task> login = () => runner.LoginAsync(_ => shown = true, CancellationToken.None);
+		(await login.Should().ThrowAsync<ChatGptRunnerException>()).Which.Code.Should().Be("invalid_device_code");
+		shown.Should().BeFalse();
+	}
+
+	[Fact]
 	public async Task Login_RejectsSpoofedDeviceUrlBeforeExposingItToOperator()
 	{
 		var runner = Create("console.log(JSON.stringify({type:'device_code',url:'https://auth.openai.com.evil.test/codex/device',code:'ABCD-1234'})); console.log(JSON.stringify({type:'result'}));");

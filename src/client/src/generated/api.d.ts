@@ -414,6 +414,106 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/normalization-ai/connection/sign-in": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start explicit owner sign-in
+         * @description Requires Admin and configured owner claims. Never cache, log or send ceremony values to telemetry. Cancellation does not log out; credentials may have been saved. Sign-in never enables automatic assistance.
+         */
+        post: operations["StartChatGptSignIn"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/normalization-ai/connection/sign-in/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get sign-in attempt
+         * @description Requires Admin and configured owner claims. Never cache, log or send ceremony values to telemetry. Cancellation does not log out; credentials may have been saved. Sign-in never enables automatic assistance.
+         */
+        get: operations["GetChatGptSignIn"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/normalization-ai/connection/sign-in/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel sign-in without logout
+         * @description Requires Admin and configured owner claims. Never cache, log or send ceremony values to telemetry. Cancellation does not log out; credentials may have been saved. Sign-in never enables automatic assistance.
+         */
+        post: operations["CancelChatGptSignIn"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/normalization-ai/connection/disconnect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Disconnect ChatGPT
+         * @description Requires Admin and configured owner claims. Never cache, log or send ceremony values to telemetry. Cancellation does not log out; credentials may have been saved. Sign-in never enables automatic assistance.
+         */
+        post: operations["DisconnectChatGpt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/normalization-ai/connection/reconnect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start fresh explicit owner sign-in
+         * @description Requires Admin and configured owner claims. Never cache, log or send ceremony values to telemetry. Cancellation does not log out; credentials may have been saved. Sign-in never enables automatic assistance.
+         */
+        post: operations["ReconnectChatGpt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/normalization-ai/connection": {
         parameters: {
             query?: never;
@@ -3574,6 +3674,25 @@ export interface components {
             clientRequestId: string;
             sources: components["schemas"]["NormalizationAiSourceSelection"][];
             model: string;
+        };
+        ChatGptSignInRequest: {
+            /** @description Explicit attestation that the authenticated owner owns and authorizes use of this ChatGPT plan. */
+            ownerConsent: boolean;
+        };
+        ChatGptSignInResponse: {
+            /** Format: uuid */
+            id: string;
+            /** @description starting, waiting, success, cancelled, expired, rejected, busy, reconnect or restart. Terminal states contain no ceremony values. */
+            state: string;
+            /** @description Temporary URL; never log, cache or send to telemetry. */
+            verificationUrl?: string | null;
+            /** @description Temporary code; never log, cache or send to telemetry. */
+            userCode?: string | null;
+            /**
+             * Format: date-time
+             * @description Deadline calculated from the runner-reported sign-in lifetime. Poll for authoritative terminal status; not an entitlement guarantee.
+             */
+            localExpiresAt?: string | null;
         };
         NormalizationAiConnectionResponse: {
             configured: boolean;
@@ -7210,6 +7329,296 @@ export interface operations {
                 };
             };
             /** @description Provider unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    StartChatGptSignIn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatGptSignInRequest"];
+            };
+        };
+        responses: {
+            /** @description Browser-safe snapshot (Cache-Control no-store) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatGptSignInResponse"];
+                };
+            };
+            /** @description Explicit consent required or invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Configured owner required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Connection busy */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Connection unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    GetChatGptSignIn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Browser-safe snapshot (Cache-Control no-store) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatGptSignInResponse"];
+                };
+            };
+            /** @description Explicit consent required or invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Configured owner required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Connection busy */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Connection unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    CancelChatGptSignIn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Browser-safe snapshot (Cache-Control no-store) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatGptSignInResponse"];
+                };
+            };
+            /** @description Explicit consent required or invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Configured owner required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Connection busy */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Connection unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    DisconnectChatGpt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Disconnected */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Explicit consent required or invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Configured owner required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Connection busy */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Connection unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    ReconnectChatGpt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatGptSignInRequest"];
+            };
+        };
+        responses: {
+            /** @description Browser-safe snapshot (Cache-Control no-store) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatGptSignInResponse"];
+                };
+            };
+            /** @description Explicit consent required or invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Configured owner required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Connection busy */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Connection unavailable */
             503: {
                 headers: {
                     [name: string]: unknown;

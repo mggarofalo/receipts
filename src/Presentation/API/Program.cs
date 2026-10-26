@@ -59,6 +59,7 @@ services.AddJevServices();
 services.Configure<NormalizationAiOptions>(builder.Configuration.GetSection("ChatGpt"));
 services.Configure<PiNormalizationRunnerOptions>(builder.Configuration.GetSection("ChatGptRunner"));
 services.AddSingleton<IChatGptRunner, PiNormalizationRunner>();
+services.AddChatGptConnectionServices(!isContractGeneration && !isChatGptCommand);
 services.AddScoped<NormalizationAiService>();
 services.AddScoped<NormalizationCatalogService>();
 services.AddScoped<NormalizationReviewInboxService>();

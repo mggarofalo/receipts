@@ -12,7 +12,7 @@ public interface IChatGptRunner
 }
 
 public sealed record ChatGptRunnerStatus(bool CredentialsPresent, bool Busy = false);
-public sealed record ChatGptDeviceCode(string Url, string Code);
+public sealed record ChatGptDeviceCode(string Url, string Code, int? ExpiresInSeconds = null);
 public sealed record ChatGptInferenceRequest(string Model, string Instructions, string Prompt, JsonElement Schema, string Reasoning = "medium");
 public sealed record ChatGptInferenceResult(string Text, ChatGptUsage? Usage = null);
 public sealed record ChatGptUsage(long Input, long Output, long CacheRead, long CacheWrite);

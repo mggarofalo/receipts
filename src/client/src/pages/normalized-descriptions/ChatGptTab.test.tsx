@@ -86,13 +86,28 @@ function Probe() {
     </output>
   );
 }
-function mount(route = "/normalized-descriptions?tab=chatgpt") {
+function mount(
+  route = "/normalized-descriptions?tab=chatgpt",
+  roles = ["Admin"],
+) {
   return render(
     <>
       <ChatGptTab />
       <Probe />
     </>,
-    { wrapper: createQueryWrapper({ route }) },
+    {
+      wrapper: createQueryWrapper({
+        route,
+        auth: {
+          user: {
+            userId: "owner",
+            email: "owner@example.test",
+            roles,
+            mustResetPassword: false,
+          },
+        },
+      }),
+    },
   );
 }
 beforeEach(() => {
@@ -126,6 +141,29 @@ beforeEach(() => {
     if (path.endsWith("/runs")) return ok([currentRun]) as never;
     throw new Error("Unexpected GET " + path);
   });
+});
+
+it.each(["not-owner", "not-admin", "not-configured"])(
+  "hides device sign-in from %s",
+  async (gate) => {
+    if (gate === "not-owner") connection.isOwner = false;
+    if (gate === "not-configured") connection.configured = false;
+    mount(undefined, gate === "not-admin" ? ["User"] : ["Admin"]);
+    await screen.findByRole("heading", { name: "ChatGPT normalization" });
+    expect(
+      screen.queryByRole("button", {
+        name: /^(Sign in with|Reconnect) ChatGPT$/,
+      }),
+    ).not.toBeInTheDocument();
+  },
+);
+
+it("exposes reconnect to configured owner administrator while preserving CLI help", async () => {
+  mount();
+  expect(
+    await screen.findByRole("button", { name: "Reconnect ChatGPT" }),
+  ).toBeDisabled();
+  expect(screen.getByText(/docker compose run/)).toBeInTheDocument();
 });
 
 it("shows loading then a retryable connection failure", async () => {

@@ -271,12 +271,33 @@ Expiry also removes discarded proposals from partially accepted runs; accepted
 proposal provenance remains. These are local admission/retention controls, not a
 guarantee about provider billing or usage.
 
+## Sign in through Receipts
+
+As the configured administrator and connection owner, open the admin Catalog's
+ChatGPT tab and select **Sign in with ChatGPT**. Confirm account ownership, open
+the OpenAI link and enter the displayed code. Receipts polls for completion; the
+displayed deadline comes from the runner and does not establish model access.
+After connecting, select a model below or follow **Set up post-save ChatGPT
+suggestions** to configure optional assistance. Signing in does not enable it.
+
+Cancel stops the attempt; credentials may already have been saved. Use the
+separate **Disconnect ChatGPT** action to remove them. Reconnect starts a fresh
+sign-in with explicit consent. Codes and links are transient and are not stored
+in browser preferences or portable backups.
+
+Credentials now require an owner-consent binding tied to the database connection
+generation. Existing unbound credentials, an owner change or a restored database
+require fresh sign-in before inference. Deploy the updated API and runner together
+and stop old runner processes before restarting; recovery never steals a lock
+from an active or unverifiable process. A busy state can require stopping an old
+process before retrying. Ordinary status/model discovery does not grant consent.
+
 ## Sign in on the Docker host
 
 With the deployment database running, start the one-off setup command:
 
 ```sh
-docker compose run --rm --no-deps app --chatgpt-login
+docker compose run --rm --no-deps app --chatgpt-login --owner YOUR-EXISTING-RECEIPTS-ADMIN-USER-ID --consent
 ```
 
 Open the printed OpenAI device-approval URL on any computer or phone and approve

@@ -21,9 +21,30 @@ public sealed partial class NormalizationAiService(
 	IOptions<NormalizationAiOptions> options,
 	TimeProvider timeProvider,
 	ICommittedChangePublisher publisher,
-	IEmbeddingService? candidateEmbeddingService = null) : INormalizationAiService
+	IEmbeddingService? candidateEmbeddingService = null,
+		IOptions<PiNormalizationRunnerOptions>? runnerOptions = null) : INormalizationAiService
 {
 	private NormalizationAiOptions Settings => options.Value;
+	private ChatGptCredentialBinding? Binding => runnerOptions is null ? null : new(runnerOptions.Value);
+	private bool IsBound(Guid generation) => Binding?.Matches(Settings.OwnerUserId, generation) == true;
+	private async Task<bool> EnsureBoundAsync(ApplicationDbContext context, NormalizationAiConnectionEntity connection, CancellationToken token)
+	{
+		if (IsBound(connection.Generation)) { return true; }
+		// Reconcile observed owner/session mismatches while holding both fences. Busy is unavailable.
+		if (!connection.Changing && Binding is { } binding && (binding.Exists
+			|| await context.NormalizationAssistancePreferences.AnyAsync(p => p.Enabled, token)))
+		{
+			try
+			{
+				using ChatGptOperatorLease operatorLease = ChatGptOperatorLease.Acquire(runnerOptions!.Value);
+				binding.Invalidate();
+				await FenceForRestoreAsync(context, token);
+				await context.SaveChangesAsync(token);
+			}
+			catch (ChatGptRunnerException error) when (error.Code == "operator_busy") { }
+		}
+		return false;
+	}
 	private static readonly string[] ReservingStates = NormalizationAiDecisionPolicy.ReservingStates;
 	private void RequireOwner(string actor)
 	{
@@ -59,6 +80,8 @@ public sealed partial class NormalizationAiService(
 		bool configured = Settings.Enabled && !string.IsNullOrWhiteSpace(Settings.OwnerUserId);
 		bool owner = configured && actor == Settings.OwnerUserId;
 		if (!owner) { return new(configured, false, false, Guid.Empty, []); }
+		// Every status/admission retry also repairs failed finalization in a still-running host.
+		if (!await RecoverConnectionChangeAsync(cancellationToken)) { return new(true, true, false, Guid.Empty, [], Busy: true); }
 		Guid generation;
 		await using (ApplicationDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken))
 		await using (NormalizationAiStoreLock lease = await NormalizationAiStoreLock.AcquireAsync(context, cancellationToken))
@@ -66,6 +89,7 @@ public sealed partial class NormalizationAiService(
 			NormalizationAiConnectionEntity connection = await ConnectionAsync(context, cancellationToken);
 			generation = connection.Generation;
 			if (connection.Changing) { return new(true, true, false, generation, [], Busy: true); }
+			if (!await EnsureBoundAsync(context, connection, cancellationToken)) { await lease.CommitAsync(cancellationToken); return new(true, true, false, connection.Generation, []); }
 			// Once work is reserved, refreshes must not take the rotating-credential lock.
 			// An already-started read may overlap admission; the worker safely backs off.
 			if (!admission && await context.NormalizationAiRuns.AnyAsync(run => run.State == "queued" || run.State == "running", cancellationToken))
@@ -318,6 +342,7 @@ public sealed partial class NormalizationAiService(
 		await using ApplicationDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
 		await using NormalizationAiStoreLock lease = await NormalizationAiStoreLock.AcquireAsync(context, cancellationToken);
 		NormalizationAiConnectionEntity connection = await ConnectionAsync(context, cancellationToken);
+		Binding?.Invalidate();
 		connection.Generation = Guid.NewGuid();
 		connection.Changing = true;
 		await FenceForRestoreAsync(context, cancellationToken);
@@ -326,23 +351,39 @@ public sealed partial class NormalizationAiService(
 		return connection.Generation;
 	}
 
-	public async Task CompleteConnectionChangeAsync(Guid changeId, CancellationToken cancellationToken)
+	public Task CompleteConnectionChangeAsync(Guid changeId, CancellationToken cancellationToken)
+			=> CompleteConnectionCoreAsync(changeId, null, cancellationToken);
+
+	public Task BindConnectionChangeAsync(Guid changeId, string consentingOwner, CancellationToken cancellationToken)
+	{
+		RequireOwner(consentingOwner);
+		if (Binding is null) { throw Error(503, "not_configured", "Credential binding storage is unavailable."); }
+		return CompleteConnectionCoreAsync(changeId, consentingOwner, cancellationToken);
+	}
+
+	private async Task CompleteConnectionCoreAsync(Guid changeId, string? consentingOwner, CancellationToken cancellationToken)
 	{
 		await using ApplicationDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
 		await using NormalizationAiStoreLock lease = await NormalizationAiStoreLock.AcquireAsync(context, cancellationToken);
 		NormalizationAiConnectionEntity connection = await ConnectionAsync(context, cancellationToken);
-		if (!connection.Changing || connection.Generation != changeId) { return; }
+		if (!connection.Changing || connection.Generation != changeId)
+		{
+			if (consentingOwner is not null) { throw Error(409, "connection_changed", "The connection changed before consent could be saved."); }
+			return;
+		}
 		connection.Generation = Guid.NewGuid();
 		connection.Changing = false;
 		await FenceForRestoreAsync(context, cancellationToken);
 		await context.SaveChangesAsync(cancellationToken);
 		await lease.CommitAsync(cancellationToken);
+		// Failure here leaves an unavailable, unbound session. Never publish before DB finalization.
+		if (consentingOwner is not null) { Binding!.Publish(consentingOwner, connection.Generation, timeProvider.GetUtcNow()); }
 	}
 
-	private static async Task<bool> ConnectionUnavailableAsync(ApplicationDbContext context, Guid generation, CancellationToken cancellationToken)
+	private async Task<bool> ConnectionUnavailableAsync(ApplicationDbContext context, Guid generation, CancellationToken cancellationToken)
 	{
 		NormalizationAiConnectionEntity connection = await ConnectionAsync(context, cancellationToken);
-		return connection.Changing || connection.Generation != generation;
+		return connection.Changing || connection.Generation != generation || !IsBound(generation);
 	}
 
 	private Task<bool> OwnerAuthorizedAsync(ApplicationDbContext context, string owner, CancellationToken cancellationToken)
@@ -356,6 +397,9 @@ public sealed partial class NormalizationAiService(
 	internal static async Task FenceForRestoreAsync(ApplicationDbContext context, CancellationToken cancellationToken)
 	{
 		await NormalizationWriteGuard.AcquireWriteGateAsync(context, cancellationToken);
+		// Generation changes only at credential/context fences, never model selection or settings reads.
+		NormalizationAiConnectionEntity connection = await ConnectionAsync(context, cancellationToken);
+		connection.Generation = Guid.NewGuid();
 		var preference = await context.NormalizationAssistancePreferences.SingleOrDefaultAsync(cancellationToken);
 		if (preference is not null) { preference.Enabled = false; preference.Revision = Guid.NewGuid(); }
 		await Infrastructure.Services.NormalizationReviewInboxService.CancelOutstandingAsync(context, "context_changed", DateTimeOffset.UtcNow, cancellationToken);

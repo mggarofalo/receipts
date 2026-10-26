@@ -66,7 +66,7 @@ public sealed partial class NormalizationAiService
 				Finish(claimed, "failed", "unsupported_protocol", "This saved request uses an unsupported protocol. Create a new request.");
 				await context.SaveChangesAsync(cancellationToken); await lease.CommitAsync(cancellationToken); return true;
 			}
-			if (claimed.OwnerUserId != Settings.OwnerUserId || await ConnectionUnavailableAsync(context, claimed.ConnectionGeneration, cancellationToken)
+			if (!await EnsureBoundAsync(context, await ConnectionAsync(context, cancellationToken), cancellationToken) || claimed.OwnerUserId != Settings.OwnerUserId || await ConnectionUnavailableAsync(context, claimed.ConnectionGeneration, cancellationToken)
 				|| !await OwnerAuthorizedAsync(context, claimed.OwnerUserId, cancellationToken))
 			{ Finish(claimed, "cancelled", "connection_changed", "The connection owner or generation changed."); await context.SaveChangesAsync(cancellationToken); await lease.CommitAsync(cancellationToken); return true; }
 			if (await context.NormalizationAssistanceAttempts.AnyAsync(attempt => attempt.RunId == claimed.Id, cancellationToken))
@@ -112,7 +112,7 @@ public sealed partial class NormalizationAiService
 				if (inference.IsCompleted) { break; }
 				await using ApplicationDbContext polling = await contextFactory.CreateDbContextAsync(inferenceCancellation.Token);
 				bool active = await polling.NormalizationAiRuns.AsNoTracking().AnyAsync(run => run.Id == claimed.Id && run.State == "running" && run.ClaimToken == claim, inferenceCancellation.Token);
-				if (!active) { inferenceCancellation.Cancel(); break; }
+				if (!active || claimed.OwnerUserId != Settings.OwnerUserId || await ConnectionUnavailableAsync(polling, claimed.ConnectionGeneration, inferenceCancellation.Token)) { inferenceCancellation.Cancel(); break; }
 			}
 			ChatGptInferenceResult response = await inference;
 			usage = response.Usage;

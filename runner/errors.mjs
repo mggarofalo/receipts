@@ -4,7 +4,7 @@ export function classifyError(error, phase = 'inference') {
   const matched = errorRules.find(rule => rule.pattern.test(rule.includeCause ? message + ' ' + cause : message));
   if (matched) return matched.code;
   if (['context_limit', 'input_limit', 'output_limit', 'model_unavailable', 'incomplete_response',
-    'invalid_device_code', 'unsupported_auth_interaction', 'unknown_command'].includes(message)) return message;
+    'invalid_device_code', 'unsupported_auth_interaction', 'unknown_command', 'busy'].includes(message)) return message;
   return phase === 'auth' ? 'auth_failed' : 'inference_failed';
 }
 
@@ -13,6 +13,8 @@ function diagnosticText(error) {
 }
 
 const errorRules = [
+  { pattern: /Device flow timed out|expired_token|deviceauth.*expired/i, code: 'device_expired', includeCause: false },
+  { pattern: /access_denied|authorization_declined|deviceauth.*denied/i, code: 'device_rejected', includeCause: false },
   { pattern: /429|rate.?limit|usage.?limit|usage_not_included|too many requests/i, code: 'rate_limited', includeCause: false },
   { pattern: /invalid_image|image.*(invalid|corrupt|decode|unsupported)|(?:invalid|corrupt).*image|image_parse_error/i, code: 'image_rejected', includeCause: false },
   { pattern: /model.*(?:not supported|unsupported|does not exist|not found|no access|not available)|model_not_found/i, code: 'model_access_denied', includeCause: false },
