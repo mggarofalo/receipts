@@ -94,9 +94,17 @@ public sealed class CategoryAssistanceDecisionStoreTests(PostgresFixture server)
 				.Select(_ => Guid.NewGuid()).ToArray()), CancellationToken.None);
 		await overLimit.Should().ThrowAsync<TaxonomyException>().Where(x => x.Status == 400);
 
-		var reopenRequest = new CategoryAssistanceReviewPreferenceRequest(Guid.NewGuid(), later.Revision,
-			"active", []);
+		var retained = await preferences.UpdateAsync(seed.Actor, seed.Attempt,
+				new(Guid.NewGuid(), later.Revision, "left_as_is", [seed.Item]), CancellationToken.None);
+		retained.ExcludedItemIds.Should().Equal(seed.Item);
+		(await decisions.ListEligibleItemsAsync(seed.Actor, seed.Attempt, 0, 10, CancellationToken.None))
+				.ItemIds.Should().BeEmpty();
+
+		var reopenRequest = new CategoryAssistanceReviewPreferenceRequest(Guid.NewGuid(), retained.Revision,
+	"active", []);
 		var reopened = await preferences.UpdateAsync(seed.Actor, seed.Attempt, reopenRequest, CancellationToken.None);
+		(await decisions.ListEligibleItemsAsync(seed.Actor, seed.Attempt, 0, 10, CancellationToken.None))
+				.ItemIds.Should().Equal(seed.Item);
 		(await preferences.UpdateAsync(seed.Actor, seed.Attempt, laterRequest, CancellationToken.None))
 			.Should().BeEquivalentTo(later);
 		(await preferences.GetAsync(seed.Actor, seed.Attempt, CancellationToken.None)).Revision
