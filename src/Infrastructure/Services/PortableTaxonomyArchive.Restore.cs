@@ -61,6 +61,8 @@ internal static partial class PortableTaxonomyArchive
 		await Append(incoming.Migrations);
 		await Append(incoming.Crosswalks);
 		await Append(incoming.MigrationItems);
+		await Append(incoming.HistoricalOperations);
+		await Append(incoming.HistoricalItems);
 
 		// History is authoritative: rebuild projections from its latest per-item assignment.
 		var current = await db.CurrentClassifications.ToDictionaryAsync(c => c.ReceiptItemId, ct);

@@ -19,13 +19,12 @@ namespace Infrastructure.IntegrationTests.Services;
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class ReportServiceItemCostOverTimeTests(PostgresFixture fixture)
+public class ReportServiceItemCostOverTimeTests(PostgresFixture server) : IsolatedPostgresTest(server)
 {
 	[Fact]
 	public async Task GetItemCostOverTimeAsync_FiltersByNormalizedDescription_AcrossDifferentRawDescriptions()
 	{
 		// Arrange
-		await ResetTablesAsync();
 
 		Guid normalizedId = Guid.NewGuid();
 		ReceiptEntity receipt1 = ReceiptEntityGenerator.Generate();
@@ -78,7 +77,6 @@ public class ReportServiceItemCostOverTimeTests(PostgresFixture fixture)
 	public async Task GetItemCostOverTimeAsync_NormalizedDescriptionFilter_ExcludesItemsWithNullFk()
 	{
 		// Arrange
-		await ResetTablesAsync();
 
 		Guid normalizedId = Guid.NewGuid();
 		ReceiptEntity receipt = ReceiptEntityGenerator.Generate();
@@ -131,7 +129,6 @@ public class ReportServiceItemCostOverTimeTests(PostgresFixture fixture)
 		// Arrange — regression guard: the LEFT JOIN added for normalizedDescription filtering must
 		// not duplicate rows for items that DO have a normalized description, nor drop rows for items
 		// that don't, when the caller filters by `description` instead.
-		await ResetTablesAsync();
 
 		Guid normalizedId = Guid.NewGuid();
 		ReceiptEntity receipt1 = ReceiptEntityGenerator.Generate();
@@ -185,7 +182,6 @@ public class ReportServiceItemCostOverTimeTests(PostgresFixture fixture)
 	{
 		// Arrange — same regression guard as the description case, but for the category path, which
 		// sits behind both description and normalizedDescription in the precedence chain.
-		await ResetTablesAsync();
 
 		Guid normalizedId = Guid.NewGuid();
 		ReceiptEntity receipt1 = ReceiptEntityGenerator.Generate();
@@ -244,12 +240,6 @@ public class ReportServiceItemCostOverTimeTests(PostgresFixture fixture)
 		result.Buckets.Select(b => b.Amount).Should().BeEquivalentTo([3.49m, 5.99m]);
 	}
 
-	private async Task ResetTablesAsync()
-	{
-		await using ApplicationDbContext context = fixture.CreateDbContext();
-		await context.Database.ExecuteSqlRawAsync(
-			"""TRUNCATE "ReceiptItems", "Receipts", "NormalizedDescriptions", "DistinctDescriptions" RESTART IDENTITY CASCADE;""");
-	}
 
 	private sealed class FixtureDbContextFactory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
 	{

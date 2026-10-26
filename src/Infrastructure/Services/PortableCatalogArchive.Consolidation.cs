@@ -31,7 +31,7 @@ internal static partial class PortableCatalogArchive
 		await using (SqliteCommand version = sqlite.CreateCommand())
 		{
 			version.CommandText = "SELECT value FROM backup_metadata WHERE key='export_version'";
-			Require(Convert.ToString(await version.ExecuteScalarAsync(ct)) is "9" or "10" or "11", "Consolidation requires format 9, 10 or 11.");
+			Require(Convert.ToString(await version.ExecuteScalarAsync(ct)) is "9" or "10" or "11" or "12", "Consolidation requires format 9, 10, 11 or 12.");
 		}
 		Dictionary<Guid, string> targets = [];
 		await using (SqliteCommand command = sqlite.CreateCommand())

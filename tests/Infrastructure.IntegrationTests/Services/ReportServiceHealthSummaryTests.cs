@@ -17,7 +17,7 @@ namespace Infrastructure.IntegrationTests.Services;
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class ReportServiceHealthSummaryTests(PostgresFixture fixture)
+public class ReportServiceHealthSummaryTests(PostgresFixture server) : IsolatedPostgresTest(server)
 {
 	[Fact]
 	public async Task GetHealthSummaryAsync_TracksPairCompletenessWithoutLoadingReceiptTotals()
@@ -133,8 +133,6 @@ public class ReportServiceHealthSummaryTests(PostgresFixture fixture)
 		await using ApplicationDbContext context = fixture.CreateDbContext();
 
 		// The summary counts across ALL receipts globally, so isolate from other tests in the collection.
-		await context.Database.ExecuteSqlRawAsync(
-			"""TRUNCATE "Transactions", "ReceiptItems", "Adjustments", "Receipts" RESTART IDENTITY CASCADE;""");
 
 		// Transactions need valid Account + Card FKs (both Restrict, NOT NULL).
 		AccountEntity account = AccountEntityGenerator.Generate();

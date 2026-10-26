@@ -19,14 +19,13 @@ namespace Infrastructure.IntegrationTests.Repositories;
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class ReceiptRepositoryLocationFilterTests(PostgresFixture fixture)
+public class ReceiptRepositoryLocationFilterTests(PostgresFixture server) : IsolatedPostgresTest(server)
 {
 	[Fact]
 	public async Task GetAllAsync_LocationFilter_ReturnsOnlyExactMatch_NotLongerPrefixMatch()
 	{
 		// Arrange — drill-downs from the Spending by Location report must land on exactly the rows
 		// the aggregate counted. "Target" must not also pull in "Target Optical".
-		await ResetTablesAsync();
 
 		Guid target = Guid.NewGuid();
 		Guid targetOptical = Guid.NewGuid();
@@ -55,7 +54,6 @@ public class ReceiptRepositoryLocationFilterTests(PostgresFixture fixture)
 		// Arrange — the Spending by Location report groups on the raw Location column, so "Walmart"
 		// and "walmart" are two separate report rows with separate visit counts. A case-insensitive
 		// drill-down filter would return the union of both and contradict the count the user clicked.
-		await ResetTablesAsync();
 
 		Guid titleCase = Guid.NewGuid();
 		Guid lowerCase = Guid.NewGuid();
@@ -85,7 +83,6 @@ public class ReceiptRepositoryLocationFilterTests(PostgresFixture fixture)
 		// because nothing in the write path trims Location. The drill-down filter must not trim
 		// either: filtering for "Target " must land only on the padded receipt, and filtering for
 		// "Target" must land only on the unpadded one. Regression guard for RECEIPTS-841 BUG-002.
-		await ResetTablesAsync();
 
 		Guid padded = Guid.NewGuid();
 		Guid unpadded = Guid.NewGuid();
@@ -120,7 +117,6 @@ public class ReceiptRepositoryLocationFilterTests(PostgresFixture fixture)
 		// LIKE/ILIKE pattern match, so '%' carries no special meaning: a location containing a
 		// literal '%' must match only the receipt with that exact string, never a receipt whose
 		// location happens to share the same prefix as if '%' were a wildcard.
-		await ResetTablesAsync();
 
 		Guid literalMatch = Guid.NewGuid();
 		Guid wouldMatchIfWildcard = Guid.NewGuid();
@@ -149,7 +145,6 @@ public class ReceiptRepositoryLocationFilterTests(PostgresFixture fixture)
 		// Arrange — same rationale as GetAllAsync_LocationFilter_TreatsPercentSignLiterally_NotAsWildcard
 		// above: ApplyLocationFilter is a plain equality, not a LIKE/ILIKE pattern match, so '_'
 		// carries no special meaning and must be matched literally.
-		await ResetTablesAsync();
 
 		Guid literalMatch = Guid.NewGuid();
 		Guid wouldMatchIfWildcard = Guid.NewGuid();
@@ -176,7 +171,6 @@ public class ReceiptRepositoryLocationFilterTests(PostgresFixture fixture)
 	public async Task GetCountAsync_LocationFilter_CountsOnlyExactMatches()
 	{
 		// Arrange
-		await ResetTablesAsync();
 
 		await using (ApplicationDbContext seed = fixture.CreateDbContext())
 		{
@@ -201,7 +195,6 @@ public class ReceiptRepositoryLocationFilterTests(PostgresFixture fixture)
 		// Arrange — q (substring match) alone would return both "Target" and "Target Store", but
 		// location (exact match) narrows that down to just "Target": the two filters AND together
 		// rather than the location filter simply replacing q.
-		await ResetTablesAsync();
 
 		Guid exactTarget = Guid.NewGuid();
 
@@ -234,7 +227,6 @@ public class ReceiptRepositoryLocationFilterTests(PostgresFixture fixture)
 	{
 		// Arrange — this deliberately exercises the relational provider. The in-memory provider
 		// accepts projection shapes that PostgreSQL's EF translator may reject at execution time.
-		await ResetTablesAsync();
 
 		ReceiptEntity receipt = ReceiptEntityGenerator.Generate();
 		receipt.TaxAmount = 1.005m;
@@ -290,7 +282,6 @@ public class ReceiptRepositoryLocationFilterTests(PostgresFixture fixture)
 	{
 		// Arrange — the newest row is a decoy. If the repository paginates first and filters the
 		// materialized page afterward, limit=1 produces an empty result instead of the older match.
-		await ResetTablesAsync();
 
 		Guid matchingReceipt = Guid.NewGuid();
 		await using (ApplicationDbContext seed = fixture.CreateDbContext())
@@ -324,12 +315,6 @@ public class ReceiptRepositoryLocationFilterTests(PostgresFixture fixture)
 		context.Receipts.Add(receipt);
 	}
 
-	private async Task ResetTablesAsync()
-	{
-		await using ApplicationDbContext context = fixture.CreateDbContext();
-		await context.Database.ExecuteSqlRawAsync(
-			"""TRUNCATE "Transactions", "ReceiptItems", "Adjustments", "Receipts" RESTART IDENTITY CASCADE;""");
-	}
 
 	private sealed class FixtureDbContextFactory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
 	{

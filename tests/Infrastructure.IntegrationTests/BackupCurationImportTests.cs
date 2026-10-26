@@ -29,11 +29,7 @@ public partial class BackupCurationImportTests
 	[Fact]
 	public async Task ImportCanonicalRename_WinsRaceWithOldNameWorker_AndQueuesRenamedTextForRebuild()
 	{
-		await using (ApplicationDbContext reset = target.CreateDbContext())
-		{
-			await reset.Database.ExecuteSqlRawAsync(
-				"""TRUNCATE matching."NormalizedDescriptions" RESTART IDENTITY CASCADE;""");
-		}
+		await SeededTemplateCleanup.RemoveFromFreshDatabaseAsync(target);
 		Guid canonicalId = Guid.NewGuid();
 		await using (ApplicationDbContext seed = target.CreateDbContext())
 		{

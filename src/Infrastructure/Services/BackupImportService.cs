@@ -202,6 +202,7 @@ public partial class BackupImportService(
 			{
 				await LegacyTaxonomyMigrationService.AppendInTransactionAsync(context, legacyTaxonomy, cancellationToken);
 			}
+			if (taxonomy != null) { await PortableTaxonomyArchive.RestoreSourceRevisionsAsync(context, taxonomy, cancellationToken); }
 			await transaction.CommitAsync(cancellationToken);
 
 			BackupImportResult result = new(

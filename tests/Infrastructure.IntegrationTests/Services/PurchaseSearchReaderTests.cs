@@ -14,7 +14,7 @@ namespace Infrastructure.IntegrationTests.Services;
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class PurchaseSearchReaderTests(PostgresFixture fixture)
+public class PurchaseSearchReaderTests(PostgresFixture server) : IsolatedPostgresTest(server)
 {
 	[Theory]
 	[InlineData("date")]
@@ -25,7 +25,7 @@ public class PurchaseSearchReaderTests(PostgresFixture fixture)
 	[InlineData("totalAmount")]
 	public async Task SearchAsync_SortsTheWholeResultBeforePagingInBothDirections(string column)
 	{
-		await ResetAsync();
+
 		// The largest sort values have the smallest IDs; sorting one downloaded
 		// page or using the default date order cannot satisfy both directions.
 		await using (var db = fixture.CreateDbContext())
@@ -56,7 +56,7 @@ public class PurchaseSearchReaderTests(PostgresFixture fixture)
 	[Fact]
 	public async Task SearchAsync_AppliesEveryInclusiveBoundaryBeforeCountAndPage()
 	{
-		await ResetAsync();
+
 		await using (var db = fixture.CreateDbContext())
 		{
 			for (int id = 1; id <= 8; id++)
@@ -82,7 +82,7 @@ public class PurchaseSearchReaderTests(PostgresFixture fixture)
 	[InlineData("desc")]
 	public async Task SearchAsync_UsesStableReceiptAndItemTieBreakersForPriceSort(string direction)
 	{
-		await ResetAsync();
+
 		await SeedAsync(Receipt(2), Item(1, Id(2), "Milk"));
 		await SeedAsync(Receipt(1), Item(3, Id(1), "Milk"), Item(2, Id(1), "Milk"));
 		var options = new PurchaseSearchOptions("unitPrice", direction);
@@ -93,7 +93,7 @@ public class PurchaseSearchReaderTests(PostgresFixture fixture)
 	[Fact]
 	public async Task SearchAsync_FindsOldPurchasesBeyondTwoHundredAndCountsAllPages()
 	{
-		await ResetAsync();
+
 		await using (ApplicationDbContext db = fixture.CreateDbContext())
 		{
 			for (int index = 0; index < 205; index++)
@@ -118,7 +118,7 @@ public class PurchaseSearchReaderTests(PostgresFixture fixture)
 	[InlineData("a\\b", "ab")]
 	public async Task SearchAsync_TreatsWildcardAndEscapeCharactersAsLiteral(string phrase, string decoy)
 	{
-		await ResetAsync();
+
 		await SeedAsync(Receipt(1), Item(1, Id(1), "prefix " + phrase + " suffix"), Item(2, Id(1), decoy));
 		PurchaseSearchResult result = await Reader().SearchAsync(phrase, 0, 25, new PurchaseSearchOptions(), CancellationToken.None);
 		result.Total.Should().Be(1);
@@ -128,7 +128,7 @@ public class PurchaseSearchReaderTests(PostgresFixture fixture)
 	[Fact]
 	public async Task SearchAsync_SearchesRawFactsWithoutTrustingUnreviewedCanonicalLinks()
 	{
-		await ResetAsync();
+
 		await using (ApplicationDbContext db = fixture.CreateDbContext())
 		{
 			ReceiptEntity ordinary = Receipt(1);
@@ -155,7 +155,7 @@ public class PurchaseSearchReaderTests(PostgresFixture fixture)
 	[Fact]
 	public async Task SearchAsync_IncludeUnreviewedFindsBothCanonicalNameAndVisibleLabel()
 	{
-		await ResetAsync();
+
 		await using (ApplicationDbContext db = fixture.CreateDbContext())
 		{
 			NormalizedDescriptionEntity canonical = Canonical(10, "Canonical milk", NormalizedDescriptionStatus.Active);
@@ -177,7 +177,7 @@ public class PurchaseSearchReaderTests(PostgresFixture fixture)
 	[Fact]
 	public async Task SearchAsync_ExcludesDeletedChildrenAndDeletedParents()
 	{
-		await ResetAsync();
+
 		ReceiptEntity live = Receipt(1);
 		ReceiptEntity deleted = Receipt(2);
 		ReceiptItemEntity deletedItem = Item(2, live.Id, "Milk"); deletedItem.DeletedAt = DateTimeOffset.UtcNow;
@@ -195,7 +195,7 @@ public class PurchaseSearchReaderTests(PostgresFixture fixture)
 	[Fact]
 	public async Task SearchAsync_PreservesHistoricalPricesAndOrdersTiesAcrossPages()
 	{
-		await ResetAsync();
+
 		ReceiptEntity receipt = Receipt(1);
 		ReceiptItemEntity precise = Item(1, receipt.Id, "Milk");
 		precise.Quantity = 1.2345m; precise.UnitPrice = 2.3456m; precise.TotalAmount = 2.90m;
@@ -225,7 +225,7 @@ public class PurchaseSearchReaderTests(PostgresFixture fixture)
 	[InlineData("a\\b", "ab")]
 	public async Task ReceiptItemSearch_TreatsPatternCharactersLiterallyAcrossAllSearchableFields(string phrase, string decoy)
 	{
-		await ResetAsync();
+
 		ReceiptItemEntity description = Item(1, Id(1), phrase);
 		ReceiptItemEntity code = Item(2, Id(1)); code.ReceiptItemCode = phrase;
 		ReceiptItemEntity category = Item(3, Id(1)); category.Category = phrase;
@@ -269,11 +269,6 @@ public class PurchaseSearchReaderTests(PostgresFixture fixture)
 	{
 		await using ApplicationDbContext db = fixture.CreateDbContext();
 		db.Receipts.Add(receipt); db.ReceiptItems.AddRange(items); await db.SaveChangesAsync();
-	}
-	private async Task ResetAsync()
-	{
-		await using ApplicationDbContext db = fixture.CreateDbContext();
-		await db.Database.ExecuteSqlRawAsync("""TRUNCATE "ReceiptItems", "Receipts", "NormalizedDescriptions", "DistinctDescriptions" RESTART IDENTITY CASCADE;""");
 	}
 	private sealed class ContextFactory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
 	{

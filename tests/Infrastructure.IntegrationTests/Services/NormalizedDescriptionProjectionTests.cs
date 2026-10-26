@@ -16,16 +16,11 @@ namespace Infrastructure.IntegrationTests.Services;
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class NormalizedDescriptionProjectionTests(PostgresFixture fixture)
+public class NormalizedDescriptionProjectionTests(PostgresFixture server) : IsolatedPostgresTest(server)
 {
 	[Fact]
 	public async Task GetAllAsync_DuplicateRawDescriptions_ReturnsDistinctAlphabeticalCappedSamplesOnPostgres()
 	{
-		await using (ApplicationDbContext cleanup = fixture.CreateDbContext())
-		{
-			await cleanup.Database.ExecuteSqlRawAsync(
-				"""TRUNCATE "ReceiptItems", "Receipts", "NormalizedDescriptions" RESTART IDENTITY CASCADE;""");
-		}
 
 		Guid normalizedId = Guid.NewGuid();
 		ReceiptEntity receipt = ReceiptEntityGenerator.Generate();

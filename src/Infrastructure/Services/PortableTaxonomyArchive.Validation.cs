@@ -11,6 +11,8 @@ internal static partial class PortableTaxonomyArchive
 	private static bool Utc(DateTimeOffset value) => value != default && value.Offset == TimeSpan.Zero;
 	private static string ArchiveKey<T>(T value) => JsonSerializer.Serialize(value switch
 	{
+		HistoricalOperationEntity r => r.Id,
+		HistoricalOperationItemEntity r => new { r.OperationId, r.ItemId },
 		CategoryMappingRevisionEntity r => r.Id,
 		CategoryMappingHeadEntity r => r.SourceFingerprint,
 		TaxonomyIdentityEntity r => (object)r.Id,

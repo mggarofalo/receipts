@@ -25,7 +25,7 @@ namespace Infrastructure.IntegrationTests.Services;
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public sealed partial class NormalizationAiWorkflowTests(PostgresFixture fixture) : IDisposable
+public sealed partial class NormalizationAiWorkflowTests(PostgresFixture server) : IsolatedPostgresTest(server), IDisposable
 {
 	private readonly IOptions<PiNormalizationRunnerOptions> bindingOptions = Options.Create(new PiNormalizationRunnerOptions
 	{ HomeDirectory = Path.Combine(Path.GetTempPath(), "receipts-workflow-binding-" + Guid.NewGuid().ToString("N")) });
@@ -589,7 +589,6 @@ public sealed partial class NormalizationAiWorkflowTests(PostgresFixture fixture
 			.ReturnsAsync(new MatchTestResult([], MatchTestOutcomes.EmbeddingUnavailable, null));
 		publisher.Setup(x => x.PublishAsync(It.IsAny<CommittedEntityChange>())).Returns(Task.CompletedTask);
 		await using var db = fixture.CreateDbContext();
-		await db.Database.ExecuteSqlRawAsync("""TRUNCATE matching."NormalizationCatalogMembers", matching."NormalizationCatalogOperations", matching."NormalizationSourceMappings", matching."NormalizationAiRuns", matching."NormalizationAiConnection", receipts."ReceiptItems", receipts."Receipts", matching."NormalizedDescriptions", matching."DistinctDescriptions" CASCADE;""");
 		var owner = await db.Users.FindAsync(Owner);
 		if (owner is null)
 		{

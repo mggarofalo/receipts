@@ -18,7 +18,7 @@ namespace Infrastructure.IntegrationTests.Services;
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class NormalizedDescriptionNearestNeighbourTests(PostgresFixture fixture)
+public class NormalizedDescriptionNearestNeighbourTests(PostgresFixture server) : IsolatedPostgresTest(server)
 {
 	[Fact]
 	public async Task MergeAsync_DeletingANeighbour_NullsTheReferenceInsteadOfDeletingTheReferrer()
@@ -26,7 +26,6 @@ public class NormalizedDescriptionNearestNeighbourTests(PostgresFixture fixture)
 		// The FK is ON DELETE SET NULL rather than Cascade. If that ever regresses to Cascade,
 		// merging one canonical row away would silently delete every unrelated pending row that
 		// merely cited it as its nearest neighbour — data loss disguised as a merge.
-		await ResetTablesAsync();
 
 		Guid keepId = Guid.NewGuid();
 		Guid discardId = Guid.NewGuid();
@@ -97,10 +96,4 @@ public class NormalizedDescriptionNearestNeighbourTests(PostgresFixture fixture)
 			=> Task.FromResult(texts.Select(_ => new float[OnnxEmbeddingService.EmbeddingDimension]).ToList());
 	}
 
-	private async Task ResetTablesAsync()
-	{
-		await using ApplicationDbContext context = fixture.CreateDbContext();
-		await context.Database.ExecuteSqlRawAsync(
-			"""TRUNCATE "ReceiptItems", "Receipts", "NormalizedDescriptions", "DistinctDescriptions" RESTART IDENTITY CASCADE;""");
-	}
 }

@@ -18,7 +18,7 @@ public sealed partial class NormalizationCatalogTests
 		List<(int Reads, int Saves)> repeatedImports = [];
 		foreach (int count in new[] { 2, 220 })
 		{
-			await ResetAsync();
+			await StartFreshDatabaseAsync();
 			var target = await CanonicalAsync("Reviewed product restore scaling");
 			var ids = await ItemsAsync(Source, count);
 			var service = Service();
@@ -47,7 +47,7 @@ public sealed partial class NormalizationCatalogTests
 			string path = await new BackupService(new Factory(fixture), NullLogger<BackupService>.Instance).ExportToSqliteAsync();
 			try
 			{
-				await ResetAsync();
+				await StartFreshDatabaseAsync();
 				for (int attempt = 0; attempt < 2; attempt++)
 				{
 					RestoreReferenceReads reads = new();
