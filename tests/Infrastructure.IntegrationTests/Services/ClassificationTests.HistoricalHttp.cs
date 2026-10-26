@@ -46,6 +46,8 @@ public sealed partial class ClassificationTests
 		builder.Services.AddApplicationServices(builder.Configuration);
 		builder.Services.AddControllers().AddApplicationPart(typeof(HistoricalReclassificationsController).Assembly);
 		builder.Services.AddSingleton<Application.Taxonomy.IHistoricalOperationService>(Historical());
+		builder.Services.AddSingleton<Application.Taxonomy.IHistoricalGroupReader>(
+			new Infrastructure.Services.HistoricalGroupReader(new Factory(fixture)));
 		WebApplication app = builder.Build();
 		app.UseAuthentication(); app.UseAuthorization(); app.MapControllers();
 		await app.StartAsync();

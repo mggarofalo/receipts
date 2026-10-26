@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/api/historical-reclassifications/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Browse live exact-source historical purchase groups */
+        get: operations["HistoricalReclassifications_Groups"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/historical-reclassifications": {
         parameters: {
             query?: never;
@@ -3481,6 +3498,30 @@ export interface components {
             /** Format: int32 */
             limit: number | string;
         };
+        HistoricalGroupCategory: {
+            /** Format: uuid */
+            categoryId: string | null;
+            path: string | null;
+            /** Format: int32 */
+            purchaseCount: number;
+        };
+        HistoricalGroupSummary: {
+            group: components["schemas"]["HistoricalGroupKey"];
+            /** Format: int32 */
+            purchaseCount: number;
+            conflict: boolean;
+            migratedBroad: boolean;
+            unresolved: boolean;
+            unassigned: boolean;
+            currentCategories: components["schemas"]["HistoricalGroupCategory"][];
+        };
+        HistoricalGroupPage: {
+            items: components["schemas"]["HistoricalGroupSummary"][];
+            /** Format: int32 */
+            totalGroups: number;
+            /** Format: int32 */
+            nextOffset: number | null;
+        };
         HistoricalGroupChoiceBody: {
             group: components["schemas"]["HistoricalGroupKey"];
             /** Format: uuid */
@@ -6240,6 +6281,52 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    HistoricalReclassifications_Groups: {
+        parameters: {
+            query?: {
+                offset?: number;
+                limit?: number;
+                q?: string;
+                conflictsOnly?: boolean;
+                migratedBroadOnly?: boolean;
+                unresolvedOnly?: boolean;
+                unassignedOnly?: boolean;
+            };
+            header?: {
+                "api-version"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoricalGroupPage"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     HistoricalReclassifications_Preview: {
         parameters: {
             query?: never;

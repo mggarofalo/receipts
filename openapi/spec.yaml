@@ -8,6 +8,73 @@ info:
     default version (currently 1.0) is assumed.
 
 paths:
+  /api/historical-reclassifications/groups:
+    get:
+      operationId: HistoricalReclassifications_Groups
+      security: [{BearerAuth: []}, {ApiKey: []}]
+      tags:
+        - HistoricalReclassifications
+      summary: Browse live exact-source historical purchase groups
+      parameters:
+        - name: api-version
+          in: header
+          schema:
+            type: string
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            format: int32
+            minimum: 0
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 25
+            default: 25
+        - name: q
+          in: query
+          schema:
+            type: string
+            maxLength: 200
+        - name: conflictsOnly
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: migratedBroadOnly
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: unresolvedOnly
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: unassignedOnly
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HistoricalGroupPage'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Authentication required
   /api/historical-reclassifications:
     post:
       operationId: HistoricalReclassifications_Preview
@@ -8212,6 +8279,53 @@ components:
           type:
             - integer
             - string
+          format: int32
+    HistoricalGroupCategory:
+      type: object
+      required: [categoryId, path, purchaseCount]
+      properties:
+        categoryId:
+          type: [string, 'null']
+          format: uuid
+        path:
+          type: [string, 'null']
+        purchaseCount:
+          type: integer
+          format: int32
+    HistoricalGroupSummary:
+      type: object
+      required: [group, purchaseCount, conflict, migratedBroad, unresolved, unassigned, currentCategories]
+      properties:
+        group:
+          $ref: '#/components/schemas/HistoricalGroupKey'
+        purchaseCount:
+          type: integer
+          format: int32
+        conflict:
+          type: boolean
+        migratedBroad:
+          type: boolean
+        unresolved:
+          type: boolean
+        unassigned:
+          type: boolean
+        currentCategories:
+          type: array
+          items:
+            $ref: '#/components/schemas/HistoricalGroupCategory'
+    HistoricalGroupPage:
+      type: object
+      required: [items, totalGroups, nextOffset]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/HistoricalGroupSummary'
+        totalGroups:
+          type: integer
+          format: int32
+        nextOffset:
+          type: [integer, 'null']
           format: int32
     HistoricalGroupChoiceBody:
       required:
