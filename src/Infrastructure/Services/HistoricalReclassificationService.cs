@@ -9,9 +9,8 @@ using Microsoft.Extensions.Options;
 
 namespace Infrastructure.Services;
 
-// Deliberately unregistered until migration, archive support and PostgreSQL acceptance are complete.
 public sealed class HistoricalReclassificationService(IDbContextFactory<ApplicationDbContext> factory,
-	TimeProvider clock, IOptions<ClassificationOptions> options)
+		TimeProvider clock, IOptions<ClassificationOptions> options) : IHistoricalOperationService
 {
 	public async Task<HistoricalProgress> SavePreviewAsync(HistoricalPreviewRequest request, CancellationToken ct = default)
 	{

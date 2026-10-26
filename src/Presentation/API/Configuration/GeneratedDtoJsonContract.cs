@@ -17,6 +17,19 @@ internal static class GeneratedDtoJsonContract
 
 	private static void RemoveGeneratedEnumPropertyConverters(JsonTypeInfo typeInfo)
 	{
+		if (typeInfo.Kind == JsonTypeInfoKind.Object)
+		{
+			foreach (JsonPropertyInfo property in typeInfo.Properties)
+			{
+				// Missing nullable intent must not silently select a no-code group or clear a category.
+				if ((typeInfo.Type == typeof(API.Controllers.HistoricalGroupChoiceBody)
+						&& property.Name is "group" or "targetCategoryId")
+					|| (typeInfo.Type == typeof(Application.Taxonomy.HistoricalGroupKey)
+						&& property.Name is "store" or "rawDescription" or "itemCode"))
+				{ property.IsRequired = true; }
+			}
+		}
+
 		if (typeInfo.Kind != JsonTypeInfoKind.Object
 			|| typeInfo.Type.Namespace != GeneratedDtoNamespace)
 		{
