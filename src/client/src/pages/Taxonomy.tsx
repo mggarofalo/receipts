@@ -394,14 +394,6 @@ export default function Taxonomy() {
           )
         }
       />
-      {!historicalId && (
-        <Link
-          className="mb-4 inline-block text-sm text-primary underline"
-          to="/categories/cleanup"
-        >
-          Clean up history
-        </Link>
-      )}
       {historicalId && (
         <p className="mb-4">
           Historical revision ·{" "}
