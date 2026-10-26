@@ -10,6 +10,7 @@ public enum CommittedEntityType
 	YnabMapping,
 	YnabSyncRecord,
 	YnabSyncEvent,
+	Taxonomy,
 }
 
 public enum CommittedChangeType

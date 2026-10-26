@@ -25,11 +25,17 @@ vi.mock("@microsoft/signalr", () => ({
     return mockBuilder;
   }),
   LogLevel: { Debug: 1, Critical: 5, None: 6 },
-  HubConnectionState: { Disconnected: "Disconnected", Connecting: "Connecting", Connected: "Connected", Reconnecting: "Reconnecting", Disconnecting: "Disconnecting" },
+  HubConnectionState: {
+    Disconnected: "Disconnected",
+    Connecting: "Connecting",
+    Connected: "Connected",
+    Reconnecting: "Reconnecting",
+    Disconnecting: "Disconnecting",
+  },
 }));
 
 vi.mock("@tanstack/react-query", async (importOriginal) => ({
-  ...await importOriginal<typeof import("@tanstack/react-query")>(),
+  ...(await importOriginal<typeof import("@tanstack/react-query")>()),
   useQueryClient: vi.fn(),
 }));
 
@@ -43,8 +49,13 @@ vi.mock("@/lib/signalr-toast-buffer", () => ({
 }));
 
 vi.mock("@/lib/auth", async (importOriginal) => ({
-  ...await importOriginal<typeof import("@/lib/auth")>(),
-  getAccessToken: vi.fn().mockImplementation(() => `header.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 }))}.signature`),
+  ...(await importOriginal<typeof import("@/lib/auth")>()),
+  getAccessToken: vi
+    .fn()
+    .mockImplementation(
+      () =>
+        `header.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 }))}.signature`,
+    ),
   parseJwtPayload: vi.fn().mockReturnValue({
     userId: "current-user-id",
     email: "user@example.com",
@@ -59,40 +70,79 @@ vi.mock("@/lib/signalr-connection", () => ({
 }));
 
 import { useSignalR } from "./useSignalR";
-import { QueryClient, QueryObserver, useQueryClient } from "@tanstack/react-query";
+import {
+  QueryClient,
+  QueryObserver,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { toast } from "sonner";
 import { bufferToast } from "@/lib/signalr-toast-buffer";
 import { act } from "@testing-library/react";
 import { setConnectionId, getConnectionId } from "@/lib/signalr-connection";
-import { clearTokens, getAccessToken, parseJwtPayload, setTokens } from "@/lib/auth";
+import {
+  clearTokens,
+  getAccessToken,
+  parseJwtPayload,
+  setTokens,
+} from "@/lib/auth";
 
 let eventClient: QueryClient;
 const eventCacheKeys = [
-  ["receipts"], ["receipts-with-items"], ["trips"], ["receipt-items"],
-  ["transactions"], ["adjustments"], ["reports"], ["cards"], ["transaction-accounts"],
-  ["ynab", "split-comparison"], ["ynab", "receipt-sync-statuses"],
-  ["ynab", "account-mappings"], ["ynab", "category-mappings"], ["ynab", "stale-mappings"],
-  ["ynab", "sync-status"], ["ynab", "connection-status"], ["ynab", "events"], ["ynab", "status"],
+  ["taxonomy", "current"],
+  ["dashboard", "spending-by-category", "currentHierarchy"],
+  ["receipts"],
+  ["receipts-with-items"],
+  ["trips"],
+  ["receipt-items"],
+  ["transactions"],
+  ["adjustments"],
+  ["reports"],
+  ["cards"],
+  ["transaction-accounts"],
+  ["ynab", "split-comparison"],
+  ["ynab", "receipt-sync-statuses"],
+  ["ynab", "account-mappings"],
+  ["ynab", "category-mappings"],
+  ["ynab", "stale-mappings"],
+  ["ynab", "sync-status"],
+  ["ynab", "connection-status"],
+  ["ynab", "events"],
+  ["ynab", "status"],
 ];
 async function expectEventInvalidation(client: QueryClient, prefix: string[]) {
-  await waitFor(() => expect(client.getQueryState([...prefix, "cached-view"])?.isInvalidated).toBe(true));
-  expect(client.getQueryState(["api-keys", "private"])?.isInvalidated).toBe(false);
+  await waitFor(() =>
+    expect(
+      client.getQueryState([...prefix, "cached-view"])?.isInvalidated,
+    ).toBe(true),
+  );
+  expect(client.getQueryState(["api-keys", "private"])?.isInvalidated).toBe(
+    false,
+  );
   expect(client.getQueryState(["ynab", "budgets"])?.isInvalidated).toBe(false);
 }
 afterEach(() => eventClient.clear());
 beforeEach(() => {
   vi.clearAllMocks();
-  eventClient = new QueryClient({ defaultOptions: { queries: { gcTime: Infinity } } });
+  eventClient = new QueryClient({
+    defaultOptions: { queries: { gcTime: Infinity } },
+  });
   vi.spyOn(eventClient, "invalidateQueries");
   vi.spyOn(eventClient, "cancelQueries");
   vi.mocked(useQueryClient).mockReturnValue(eventClient);
   clearTokens();
-  vi.mocked(getAccessToken).mockImplementation(() => `header.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 }))}.signature`);
+  vi.mocked(getAccessToken).mockImplementation(
+    () =>
+      `header.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 }))}.signature`,
+  );
   mockConnection.state = "Disconnected";
   // Callback tests use a native-state-aware SDK boundary; lifecycle scheduling
   // and distinct StrictMode instances are exercised by recovery.test.tsx.
-  mockConnection.start.mockImplementation(async () => { mockConnection.state = "Connected"; });
-  mockConnection.stop.mockImplementation(async () => { mockConnection.state = "Disconnected"; });
+  mockConnection.start.mockImplementation(async () => {
+    mockConnection.state = "Connected";
+  });
+  mockConnection.stop.mockImplementation(async () => {
+    mockConnection.state = "Disconnected";
+  });
   mockConnection.connectionId = "mock-conn-id";
   vi.mocked(getConnectionId).mockReturnValue("mock-conn-id");
 });
@@ -116,7 +166,9 @@ async function renderEnabled() {
 }
 
 /** Helper: find the registered handler for a given hub event name. */
-function getOnHandler(eventName: string): ((...args: unknown[]) => void) | undefined {
+function getOnHandler(
+  eventName: string,
+): ((...args: unknown[]) => void) | undefined {
   const call = mockConnection.on.mock.calls.find(
     (c: unknown[]) => c[0] === eventName,
   );
@@ -131,7 +183,13 @@ describe("useSignalR", () => {
     unmount();
     vi.clearAllMocks();
 
-    act(() => { handler({ entityType: "receipt", changeType: "created", id: "Alice-receipt" }); });
+    act(() => {
+      handler({
+        entityType: "receipt",
+        changeType: "created",
+        id: "Alice-receipt",
+      });
+    });
 
     expect(queryClient.invalidateQueries).not.toHaveBeenCalled();
     expect(bufferToast).not.toHaveBeenCalled();
@@ -139,12 +197,19 @@ describe("useSignalR", () => {
 
   it("does not restore a disposed connection ID when start finishes late", async () => {
     let finishStart!: () => void;
-    mockConnection.start.mockImplementationOnce(() => new Promise<void>((resolve) => { finishStart = resolve; }));
+    mockConnection.start.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishStart = resolve;
+        }),
+    );
     const { unmount } = renderHook(() => useSignalR(true));
     unmount();
     vi.mocked(setConnectionId).mockClear();
 
-    await act(async () => { finishStart(); });
+    await act(async () => {
+      finishStart();
+    });
 
     expect(setConnectionId).not.toHaveBeenCalledWith("mock-conn-id");
   });
@@ -152,15 +217,26 @@ describe("useSignalR", () => {
   it("stops the old session immediately and ignores its queued reconnect callback", async () => {
     setTokens("Alice-access", "Alice-refresh");
     await renderEnabled();
-    const reconnected = mockConnection.onreconnected.mock.calls[0][0] as () => void;
+    const reconnected = mockConnection.onreconnected.mock
+      .calls[0][0] as () => void;
     const handler = getOnHandler("EntityChanged")!;
     const queryClient = vi.mocked(useQueryClient)();
     vi.clearAllMocks();
 
-    act(() => { clearTokens(); setTokens("Bob-access", "Bob-refresh"); });
+    act(() => {
+      clearTokens();
+      setTokens("Bob-access", "Bob-refresh");
+    });
     expect(mockConnection.stop).toHaveBeenCalled();
     vi.mocked(setConnectionId).mockClear();
-    act(() => { reconnected(); handler({ entityType: "receipt", changeType: "created", id: "Alice-receipt" }); });
+    act(() => {
+      reconnected();
+      handler({
+        entityType: "receipt",
+        changeType: "created",
+        id: "Alice-receipt",
+      });
+    });
 
     expect(setConnectionId).not.toHaveBeenCalledWith("mock-conn-id");
     expect(queryClient.invalidateQueries).not.toHaveBeenCalled();
@@ -238,7 +314,9 @@ describe("useSignalR", () => {
       await renderEnabled();
 
       const withUrlCall = mockBuilder.withUrl.mock.calls[0];
-      const options = withUrlCall[1] as { accessTokenFactory: () => Promise<string> };
+      const options = withUrlCall[1] as {
+        accessTokenFactory: () => Promise<string>;
+      };
       const result = options.accessTokenFactory();
 
       await expect(result).resolves.toBe(getAccessToken());
@@ -251,10 +329,14 @@ describe("useSignalR", () => {
       await renderEnabled();
 
       const withUrlCall = mockBuilder.withUrl.mock.calls[0];
-      const options = withUrlCall[1] as { accessTokenFactory: () => Promise<string> };
+      const options = withUrlCall[1] as {
+        accessTokenFactory: () => Promise<string>;
+      };
       const result = options.accessTokenFactory();
 
-      await expect(result).rejects.toThrow("Unable to obtain an unexpired connection token");
+      await expect(result).rejects.toThrow(
+        "Unable to obtain an unexpired connection token",
+      );
       await act(async () => {});
     });
   });
@@ -277,7 +359,8 @@ describe("useSignalR", () => {
       // Set connectionId to null for reconnect
       mockConnection.connectionId = null as unknown as string;
 
-      const reconnectedCb = mockConnection.onreconnected.mock.calls[0][0] as () => void;
+      const reconnectedCb = mockConnection.onreconnected.mock
+        .calls[0][0] as () => void;
       act(() => {
         mockConnection.state = "Connected";
         reconnectedCb();
@@ -297,7 +380,15 @@ describe("useSignalR", () => {
       expect(handler).toBeDefined();
 
       await act(async () => {
-        handler!({ entityType: "receipt", changeType: "created", id: "abc-123", count: 1, userId: "other-user-id", authMethod: "jwt", connectionId: "other-conn" });
+        handler!({
+          entityType: "receipt",
+          changeType: "created",
+          id: "abc-123",
+          count: 1,
+          userId: "other-user-id",
+          authMethod: "jwt",
+          connectionId: "other-conn",
+        });
       });
 
       await expectEventInvalidation(mockQueryClient, ["receipts"]);
@@ -313,7 +404,12 @@ describe("useSignalR", () => {
       ]) {
         await expectEventInvalidation(mockQueryClient, queryKey);
       }
-      expect(bufferToast).toHaveBeenCalledWith("receipt", "created", 1, "other-user");
+      expect(bufferToast).toHaveBeenCalledWith(
+        "receipt",
+        "created",
+        1,
+        "other-user",
+      );
       expect(toast.info).not.toHaveBeenCalled();
     });
 
@@ -326,12 +422,25 @@ describe("useSignalR", () => {
       expect(handler).toBeDefined();
 
       await act(async () => {
-        handler!({ entityType: "card", changeType: "updated", id: "abc-123", count: 1, userId: "other-user-id", authMethod: "jwt", connectionId: "other-conn" });
+        handler!({
+          entityType: "card",
+          changeType: "updated",
+          id: "abc-123",
+          count: 1,
+          userId: "other-user-id",
+          authMethod: "jwt",
+          connectionId: "other-conn",
+        });
       });
 
       await expectEventInvalidation(mockQueryClient, ["cards"]);
       await expectEventInvalidation(mockQueryClient, ["transaction-accounts"]);
-      expect(bufferToast).toHaveBeenCalledWith("card", "updated", 1, "other-user");
+      expect(bufferToast).toHaveBeenCalledWith(
+        "card",
+        "updated",
+        1,
+        "other-user",
+      );
       expect(toast.info).not.toHaveBeenCalled();
     });
 
@@ -344,14 +453,27 @@ describe("useSignalR", () => {
       expect(handler).toBeDefined();
 
       await act(async () => {
-        handler!({ entityType: "transaction", changeType: "deleted", id: "abc-123", count: 1, userId: "other-user-id", authMethod: "jwt", connectionId: "other-conn" });
+        handler!({
+          entityType: "transaction",
+          changeType: "deleted",
+          id: "abc-123",
+          count: 1,
+          userId: "other-user-id",
+          authMethod: "jwt",
+          connectionId: "other-conn",
+        });
       });
 
       await expectEventInvalidation(mockQueryClient, ["transactions"]);
       await expectEventInvalidation(mockQueryClient, ["receipts-with-items"]);
       await expectEventInvalidation(mockQueryClient, ["trips"]);
       await expectEventInvalidation(mockQueryClient, ["transaction-accounts"]);
-      expect(bufferToast).toHaveBeenCalledWith("transaction", "deleted", 1, "other-user");
+      expect(bufferToast).toHaveBeenCalledWith(
+        "transaction",
+        "deleted",
+        1,
+        "other-user",
+      );
       expect(toast.info).not.toHaveBeenCalled();
     });
 
@@ -361,7 +483,15 @@ describe("useSignalR", () => {
       const handler = getOnHandler("EntityChanged");
 
       await act(async () => {
-        handler!({ entityType: "adjustment", changeType: "updated", id: "adj-1", count: 1, userId: "other-user-id", authMethod: "jwt", connectionId: "other-conn" });
+        handler!({
+          entityType: "adjustment",
+          changeType: "updated",
+          id: "adj-1",
+          count: 1,
+          userId: "other-user-id",
+          authMethod: "jwt",
+          connectionId: "other-conn",
+        });
       });
 
       for (const queryKey of [
@@ -378,6 +508,8 @@ describe("useSignalR", () => {
     });
 
     it.each([
+      ["taxonomy", ["taxonomy", "current"]],
+      ["taxonomy", ["dashboard", "spending-by-category", "currentHierarchy"]],
       ["ynab-mapping", ["ynab", "category-mappings"]],
       ["ynab-sync-record", ["ynab", "receipt-sync-statuses"]],
       ["ynab-sync-record", ["ynab", "connection-status"]],
@@ -435,7 +567,9 @@ describe("useSignalR", () => {
       });
 
       await waitFor(() =>
-        expect(eventClient.getQueryData(queryKey)).toEqual({ lastSuccessfulSyncUtc: "new" }),
+        expect(eventClient.getQueryData(queryKey)).toEqual({
+          lastSuccessfulSyncUtc: "new",
+        }),
       );
       unsubscribe();
     });
@@ -494,10 +628,23 @@ describe("useSignalR", () => {
       expect(handler).toBeDefined();
 
       act(() => {
-        handler!({ entityType: "receipt-item", changeType: "created", id: "abc", count: 1, userId: "other-user-id", authMethod: "jwt", connectionId: "other-conn" });
+        handler!({
+          entityType: "receipt-item",
+          changeType: "created",
+          id: "abc",
+          count: 1,
+          userId: "other-user-id",
+          authMethod: "jwt",
+          connectionId: "other-conn",
+        });
       });
 
-      expect(bufferToast).toHaveBeenCalledWith("receipt item", "created", 1, "other-user");
+      expect(bufferToast).toHaveBeenCalledWith(
+        "receipt item",
+        "created",
+        1,
+        "other-user",
+      );
       expect(toast.info).not.toHaveBeenCalled();
     });
 
@@ -508,10 +655,23 @@ describe("useSignalR", () => {
       expect(handler).toBeDefined();
 
       act(() => {
-        handler!({ entityType: "item-template", changeType: "updated", id: "abc", count: 1, userId: "other-user-id", authMethod: "jwt", connectionId: "other-conn" });
+        handler!({
+          entityType: "item-template",
+          changeType: "updated",
+          id: "abc",
+          count: 1,
+          userId: "other-user-id",
+          authMethod: "jwt",
+          connectionId: "other-conn",
+        });
       });
 
-      expect(bufferToast).toHaveBeenCalledWith("item template", "updated", 1, "other-user");
+      expect(bufferToast).toHaveBeenCalledWith(
+        "item template",
+        "updated",
+        1,
+        "other-user",
+      );
       expect(toast.info).not.toHaveBeenCalled();
     });
 
@@ -524,7 +684,15 @@ describe("useSignalR", () => {
       expect(handler).toBeDefined();
 
       await act(async () => {
-        handler!({ entityType: "receipt", changeType: "created", id: "abc", count: 1, userId: "current-user-id", authMethod: "jwt", connectionId: "mock-conn-id" });
+        handler!({
+          entityType: "receipt",
+          changeType: "created",
+          id: "abc",
+          count: 1,
+          userId: "current-user-id",
+          authMethod: "jwt",
+          connectionId: "mock-conn-id",
+        });
       });
 
       // Queries still invalidated
@@ -540,10 +708,23 @@ describe("useSignalR", () => {
       expect(handler).toBeDefined();
 
       act(() => {
-        handler!({ entityType: "receipt", changeType: "updated", id: "abc", count: 1, userId: "current-user-id", authMethod: "apikey", connectionId: null });
+        handler!({
+          entityType: "receipt",
+          changeType: "updated",
+          id: "abc",
+          count: 1,
+          userId: "current-user-id",
+          authMethod: "apikey",
+          connectionId: null,
+        });
       });
 
-      expect(bufferToast).toHaveBeenCalledWith("receipt", "updated", 1, "api-key");
+      expect(bufferToast).toHaveBeenCalledWith(
+        "receipt",
+        "updated",
+        1,
+        "api-key",
+      );
     });
 
     it("calls bufferToast with other-session origin when same userId, different connectionId", async () => {
@@ -553,10 +734,23 @@ describe("useSignalR", () => {
       expect(handler).toBeDefined();
 
       act(() => {
-        handler!({ entityType: "receipt", changeType: "created", id: "abc", count: 1, userId: "current-user-id", authMethod: "jwt", connectionId: "different-conn" });
+        handler!({
+          entityType: "receipt",
+          changeType: "created",
+          id: "abc",
+          count: 1,
+          userId: "current-user-id",
+          authMethod: "jwt",
+          connectionId: "different-conn",
+        });
       });
 
-      expect(bufferToast).toHaveBeenCalledWith("receipt", "created", 1, "other-session");
+      expect(bufferToast).toHaveBeenCalledWith(
+        "receipt",
+        "created",
+        1,
+        "other-session",
+      );
     });
 
     it("calls bufferToast with other-user origin when different userId", async () => {
@@ -566,10 +760,23 @@ describe("useSignalR", () => {
       expect(handler).toBeDefined();
 
       act(() => {
-        handler!({ entityType: "receipt", changeType: "deleted", id: "abc", count: 1, userId: "someone-else", authMethod: "jwt", connectionId: "other-conn" });
+        handler!({
+          entityType: "receipt",
+          changeType: "deleted",
+          id: "abc",
+          count: 1,
+          userId: "someone-else",
+          authMethod: "jwt",
+          connectionId: "other-conn",
+        });
       });
 
-      expect(bufferToast).toHaveBeenCalledWith("receipt", "deleted", 1, "other-user");
+      expect(bufferToast).toHaveBeenCalledWith(
+        "receipt",
+        "deleted",
+        1,
+        "other-user",
+      );
     });
 
     it("skips query invalidation for unknown entity type", async () => {
@@ -581,13 +788,26 @@ describe("useSignalR", () => {
       expect(handler).toBeDefined();
 
       act(() => {
-        handler!({ entityType: "unknown-entity", changeType: "created", id: "abc", count: 1, userId: "other-user-id", authMethod: "jwt", connectionId: "other-conn" });
+        handler!({
+          entityType: "unknown-entity",
+          changeType: "created",
+          id: "abc",
+          count: 1,
+          userId: "other-user-id",
+          authMethod: "jwt",
+          connectionId: "other-conn",
+        });
       });
 
       // No query invalidation since entity type is not in queryKeyMap
       expect(mockQueryClient.invalidateQueries).not.toHaveBeenCalled();
       // But toast still fires with entityType as display name (fallback)
-      expect(bufferToast).toHaveBeenCalledWith("unknown-entity", "created", 1, "other-user");
+      expect(bufferToast).toHaveBeenCalledWith(
+        "unknown-entity",
+        "created",
+        1,
+        "other-user",
+      );
     });
 
     it("uses entityType as display name for unmapped entity type", async () => {
@@ -597,10 +817,23 @@ describe("useSignalR", () => {
       expect(handler).toBeDefined();
 
       act(() => {
-        handler!({ entityType: "custom-widget", changeType: "deleted", id: "abc", count: 1, userId: "other-user-id", authMethod: "jwt", connectionId: "other-conn" });
+        handler!({
+          entityType: "custom-widget",
+          changeType: "deleted",
+          id: "abc",
+          count: 1,
+          userId: "other-user-id",
+          authMethod: "jwt",
+          connectionId: "other-conn",
+        });
       });
 
-      expect(bufferToast).toHaveBeenCalledWith("custom-widget", "deleted", 1, "other-user");
+      expect(bufferToast).toHaveBeenCalledWith(
+        "custom-widget",
+        "deleted",
+        1,
+        "other-user",
+      );
     });
 
     it("defaults count to 1 when notification.count is undefined", async () => {
@@ -610,10 +843,22 @@ describe("useSignalR", () => {
       expect(handler).toBeDefined();
 
       act(() => {
-        handler!({ entityType: "receipt", changeType: "created", id: "abc", userId: "other-user-id", authMethod: "jwt", connectionId: "other-conn" });
+        handler!({
+          entityType: "receipt",
+          changeType: "created",
+          id: "abc",
+          userId: "other-user-id",
+          authMethod: "jwt",
+          connectionId: "other-conn",
+        });
       });
 
-      expect(bufferToast).toHaveBeenCalledWith("receipt", "created", 1, "other-user");
+      expect(bufferToast).toHaveBeenCalledWith(
+        "receipt",
+        "created",
+        1,
+        "other-user",
+      );
     });
 
     it("classifies as other-user when getAccessToken returns null", async () => {
@@ -625,11 +870,24 @@ describe("useSignalR", () => {
       vi.mocked(getAccessToken).mockReturnValueOnce(null);
 
       act(() => {
-        handler!({ entityType: "receipt", changeType: "created", id: "abc", count: 1, userId: "current-user-id", authMethod: "jwt", connectionId: "different-conn" });
+        handler!({
+          entityType: "receipt",
+          changeType: "created",
+          id: "abc",
+          count: 1,
+          userId: "current-user-id",
+          authMethod: "jwt",
+          connectionId: "different-conn",
+        });
       });
 
       // When token is null, parseJwtPayload is not called, myUserId is null → other-user
-      expect(bufferToast).toHaveBeenCalledWith("receipt", "created", 1, "other-user");
+      expect(bufferToast).toHaveBeenCalledWith(
+        "receipt",
+        "created",
+        1,
+        "other-user",
+      );
     });
 
     it("classifies as other-user when notification has null userId and null connectionId", async () => {
@@ -639,10 +897,23 @@ describe("useSignalR", () => {
       expect(handler).toBeDefined();
 
       act(() => {
-        handler!({ entityType: "receipt", changeType: "created", id: "abc", count: 1, userId: null, authMethod: null, connectionId: null });
+        handler!({
+          entityType: "receipt",
+          changeType: "created",
+          id: "abc",
+          count: 1,
+          userId: null,
+          authMethod: null,
+          connectionId: null,
+        });
       });
 
-      expect(bufferToast).toHaveBeenCalledWith("receipt", "created", 1, "other-user");
+      expect(bufferToast).toHaveBeenCalledWith(
+        "receipt",
+        "created",
+        1,
+        "other-user",
+      );
     });
 
     it("classifies as other-user when parseJwtPayload returns null", async () => {
@@ -654,10 +925,23 @@ describe("useSignalR", () => {
       expect(handler).toBeDefined();
 
       act(() => {
-        handler!({ entityType: "receipt", changeType: "created", id: "abc", count: 1, userId: "current-user-id", authMethod: "jwt", connectionId: "different-conn" });
+        handler!({
+          entityType: "receipt",
+          changeType: "created",
+          id: "abc",
+          count: 1,
+          userId: "current-user-id",
+          authMethod: "jwt",
+          connectionId: "different-conn",
+        });
       });
 
-      expect(bufferToast).toHaveBeenCalledWith("receipt", "created", 1, "other-user");
+      expect(bufferToast).toHaveBeenCalledWith(
+        "receipt",
+        "created",
+        1,
+        "other-user",
+      );
     });
   });
 
@@ -666,7 +950,8 @@ describe("useSignalR", () => {
       const { result } = await renderEnabled();
       expect(result.current.connectionState).toBe("connected");
 
-      const reconnectingCb = mockConnection.onreconnecting.mock.calls[0][0] as () => void;
+      const reconnectingCb = mockConnection.onreconnecting.mock
+        .calls[0][0] as () => void;
 
       act(() => {
         mockConnection.state = "Reconnecting";
@@ -680,7 +965,8 @@ describe("useSignalR", () => {
       const { result } = await renderEnabled();
 
       // Simulate reconnecting first
-      const reconnectingCb = mockConnection.onreconnecting.mock.calls[0][0] as () => void;
+      const reconnectingCb = mockConnection.onreconnecting.mock
+        .calls[0][0] as () => void;
       act(() => {
         mockConnection.state = "Reconnecting";
         reconnectingCb();
@@ -688,7 +974,8 @@ describe("useSignalR", () => {
       expect(result.current.connectionState).toBe("reconnecting");
 
       // Now reconnected
-      const reconnectedCb = mockConnection.onreconnected.mock.calls[0][0] as () => void;
+      const reconnectedCb = mockConnection.onreconnected.mock
+        .calls[0][0] as () => void;
       act(() => {
         mockConnection.state = "Connected";
         reconnectedCb();
@@ -731,7 +1018,8 @@ describe("useSignalR", () => {
       vi.mocked(setConnectionId).mockClear();
       mockConnection.connectionId = "new-conn-id";
 
-      const reconnectedCb = mockConnection.onreconnected.mock.calls[0][0] as () => void;
+      const reconnectedCb = mockConnection.onreconnected.mock
+        .calls[0][0] as () => void;
       act(() => {
         mockConnection.state = "Connected";
         reconnectedCb();
@@ -743,7 +1031,9 @@ describe("useSignalR", () => {
 
   describe("error handling", () => {
     it("sets state to disconnected when start() rejects", async () => {
-      mockConnection.start.mockRejectedValueOnce(new Error("Connection failed"));
+      mockConnection.start.mockRejectedValueOnce(
+        new Error("Connection failed"),
+      );
 
       const { result } = renderHook(() => useSignalR(true));
 
@@ -783,7 +1073,8 @@ describe("useSignalR", () => {
 
       await renderEnabled();
 
-      const reconnectingCb = mockConnection.onreconnecting.mock.calls[0][0] as () => void;
+      const reconnectingCb = mockConnection.onreconnecting.mock
+        .calls[0][0] as () => void;
       act(() => {
         mockConnection.state = "Reconnecting";
         reconnectingCb();
@@ -798,7 +1089,8 @@ describe("useSignalR", () => {
 
       await renderEnabled();
 
-      const reconnectedCb = mockConnection.onreconnected.mock.calls[0][0] as () => void;
+      const reconnectedCb = mockConnection.onreconnected.mock
+        .calls[0][0] as () => void;
       act(() => {
         mockConnection.state = "Connected";
         reconnectedCb();
@@ -832,7 +1124,15 @@ describe("useSignalR", () => {
       expect(handler).toBeDefined();
 
       act(() => {
-        handler!({ entityType: "receipt", changeType: "created", id: "abc", count: 1, userId: "other-user-id", authMethod: "jwt", connectionId: "other-conn" });
+        handler!({
+          entityType: "receipt",
+          changeType: "created",
+          id: "abc",
+          count: 1,
+          userId: "other-user-id",
+          authMethod: "jwt",
+          connectionId: "other-conn",
+        });
       });
 
       expect(debugSpy).not.toHaveBeenCalled();
@@ -841,7 +1141,9 @@ describe("useSignalR", () => {
 
     it("suppresses console.debug on start() error", async () => {
       const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
-      mockConnection.start.mockRejectedValueOnce(new Error("Connection failed"));
+      mockConnection.start.mockRejectedValueOnce(
+        new Error("Connection failed"),
+      );
 
       renderHook(() => useSignalR(true));
       await act(async () => {});

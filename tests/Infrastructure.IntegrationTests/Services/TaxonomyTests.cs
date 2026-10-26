@@ -1,3 +1,5 @@
+using Application.Interfaces.Services;
+using Application.Models.CommittedChanges;
 using Application.Taxonomy;
 using Common;
 using Domain.Taxonomy;
@@ -7,6 +9,7 @@ using Infrastructure.IntegrationTests.Fixtures;
 using Infrastructure.Services;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Moq;
 
 namespace Infrastructure.IntegrationTests.Services;
 
@@ -33,6 +36,38 @@ public sealed class TaxonomyTests(PostgresFixture fixture)
 		return (await Service().ReadAsync(null))!;
 	}
 	private static TaxonomyChangeCommand Command(Guid revision, params TaxonomyEdit[] edits) => new(revision, Guid.NewGuid(), "Taxonomy acceptance", edits);
+
+	[Fact]
+	public async Task CommittedChangesAreVisibleToOtherReadersAndRollbackReplayAndNoopStaySilent()
+	{
+		TaxonomyRevision start = await StartAsync();
+		Guid category = Guid.NewGuid();
+		TaxonomyChangeCommand command = Command(start.Id, new TaxonomyEdit("create", category, Name: Guid.NewGuid().ToString()));
+		Mock<ICommittedChangePublisher> publisher = new(MockBehavior.Strict);
+		publisher.Setup(x => x.PublishAsync(It.Is<CommittedEntityChange>(x => x.EntityType == CommittedEntityType.Taxonomy && x.ChangeType == CommittedChangeType.Updated)))
+			.Returns(async () =>
+			{
+				// A separate connection must see the committed head before notification.
+				TaxonomyRevision visible = (await Service().ReadAsync(null))!;
+				visible.Nodes.Should().Contain(x => x.Id == category);
+			});
+		TaxonomyService failing = new(new FailingFactory(fixture), TimeProvider.System, publisher.Object);
+		Func<Task> rollback = () => failing.ChangeAsync(Actor, command);
+		await rollback.Should().ThrowAsync<InvalidOperationException>();
+		publisher.VerifyNoOtherCalls();
+		TaxonomyService service = new(new Factory(fixture), TimeProvider.System, publisher.Object);
+		TaxonomyRevision created = await service.ChangeAsync(Actor, command);
+		await service.ChangeAsync(Actor, command);
+		await service.ChangeAsync(Actor, Command(created.Id, new TaxonomyEdit("move", category)));
+		publisher.Verify(x => x.PublishAsync(It.IsAny<CommittedEntityChange>()), Times.Once);
+		TaxonomyRevision renamed = await service.ChangeAsync(Actor, Command(created.Id, new TaxonomyEdit("rename", category, Name: Guid.NewGuid().ToString())));
+		Guid parent = Guid.NewGuid();
+		TaxonomyRevision expanded = await service.ChangeAsync(Actor, Command(renamed.Id, new TaxonomyEdit("create", parent, Name: Guid.NewGuid().ToString())));
+		TaxonomyRevision moved = await service.ChangeAsync(Actor, Command(expanded.Id, new TaxonomyEdit("move", category, parent)));
+		await service.ChangeAsync(Actor, Command(moved.Id, new TaxonomyEdit("archive", category)));
+		publisher.Verify(x => x.PublishAsync(It.IsAny<CommittedEntityChange>()), Times.Exactly(5));
+		publisher.VerifyNoOtherCalls();
+	}
 
 	[Fact]
 	public async Task PublishedSnapshotsRejectAppendedNodesIncludingTheEmptyGenesis()

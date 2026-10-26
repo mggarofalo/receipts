@@ -9,6 +9,7 @@ public sealed class CommittedChangePublisher(IEntityChangeNotifier notifier) : I
 	{
 		string entityType = change.EntityType switch
 		{
+			CommittedEntityType.Taxonomy => "taxonomy",
 			CommittedEntityType.ReceiptItem => "receipt-item",
 			CommittedEntityType.ItemEmbedding => "item-embedding",
 			CommittedEntityType.NormalizedDescription => "normalized-description",

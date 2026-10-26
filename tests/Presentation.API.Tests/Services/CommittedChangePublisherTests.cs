@@ -40,6 +40,7 @@ public class CommittedChangePublisherTests
 	}
 
 	[Theory]
+	[InlineData(CommittedEntityType.Taxonomy, CommittedChangeType.Updated, "taxonomy", "updated")]
 	[InlineData(CommittedEntityType.NormalizedDescription, CommittedChangeType.Updated, "normalized-description", "updated")]
 	[InlineData(CommittedEntityType.NormalizedDescriptionSettings, CommittedChangeType.Created, "normalized-description-settings", "created")]
 	[InlineData(CommittedEntityType.YnabBudget, CommittedChangeType.Updated, "ynab-budget", "updated")]

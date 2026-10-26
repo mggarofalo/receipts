@@ -7,6 +7,17 @@ import {
 
 // Preserve cache identities while sharing their prefixes between reads and writes.
 export const queryKeys = {
+  taxonomyCurrent: ["taxonomy", "current"],
+  categoryTrendsCurrentHierarchy: [
+    "reports",
+    "category-trends",
+    { categoryView: "currentHierarchy" },
+  ],
+  categoryCurrentHierarchy: [
+    "dashboard",
+    "spending-by-category",
+    "currentHierarchy",
+  ],
   receipts: ["receipts"],
   receiptItems: ["receipt-items"],
   transactions: ["transactions"],
@@ -147,6 +158,7 @@ const ITEM_EMBEDDING_CHANGE_QUERY_KEYS = [
 const BACKUP_IMPORT_QUERY_KEYS = [
   ...LEDGER_CHANGE_QUERY_KEYS,
   ...CARD_CHANGE_QUERY_KEYS,
+  queryKeys.taxonomyCurrent,
   queryKeys.categories,
   queryKeys.subcategories,
   ...TEMPLATE_CHANGE_QUERY_KEYS,
@@ -154,6 +166,11 @@ const BACKUP_IMPORT_QUERY_KEYS = [
 ] as const;
 
 const DOMAIN_CHANGE_QUERY_KEYS = {
+  taxonomy: [
+    queryKeys.taxonomyCurrent,
+    queryKeys.categoryCurrentHierarchy,
+    queryKeys.categoryTrendsCurrentHierarchy,
+  ],
   receipt: LEDGER_CHANGE_QUERY_KEYS,
   "receipt-item": LEDGER_CHANGE_QUERY_KEYS,
   transaction: LEDGER_CHANGE_QUERY_KEYS,
