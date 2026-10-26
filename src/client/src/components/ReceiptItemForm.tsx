@@ -361,7 +361,7 @@ export function ReceiptItemForm({
 
   function applyTemplate(template: ItemTemplate) {
     // Recorded so the server can stamp the item with the template's canonical description and
-    // skip the resolver (RECEIPTS-881). The user picking a template *is* the classification;
+    // skip the resolver (RECEIPTS-881). The template records product identity;
     // re-deriving it from an embedding search could disagree and park the line in the review
     // queue for a human to confirm what a human just said.
     form.setValue("itemTemplateId", template.id);
@@ -646,14 +646,6 @@ export function ReceiptItemForm({
                                 <span className="font-medium">
                                   {template.name}
                                 </span>
-                                {template.defaultCategory && (
-                                  <span className="text-xs text-muted-foreground">
-                                    {template.defaultCategory}
-                                    {template.defaultSubcategory
-                                      ? ` / ${template.defaultSubcategory}`
-                                      : ""}
-                                  </span>
-                                )}
                               </div>
                             </CommandItem>
                           ))}

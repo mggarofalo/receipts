@@ -135,8 +135,8 @@ export function LinkTemplateDialog({
                 data-testid="link-template-empty"
               >
                 {debouncedSearch
-                  ? "No templates match your search."
-                  : "You have no item templates yet. Create one from the Item Templates page first."}
+                  ? "No existing items match your search."
+                  : "No existing items are available to link."}
               </p>
             ) : (
               <ul className="divide-y">
@@ -154,16 +154,6 @@ export function LinkTemplateDialog({
                         }}
                       />
                       <span className="font-medium">{t.name}</span>
-                      {/* The defaults are what makes a template a template, and they are what
-                          the reviewer is really identifying the item by. */}
-                      {t.defaultCategory && (
-                        <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-                          {t.defaultCategory}
-                          {t.defaultSubcategory
-                            ? ` · ${t.defaultSubcategory}`
-                            : ""}
-                        </span>
-                      )}
                     </label>
                   </li>
                 ))}

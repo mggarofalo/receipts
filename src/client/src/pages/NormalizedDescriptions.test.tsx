@@ -1311,6 +1311,7 @@ describe("NormalizedDescriptions template evidence and linking", () => {
 
     const dialog = await screen.findByRole("dialog");
     const target = within(dialog).getByText("Gallon of Milk").closest("label")!;
+    expect(target).not.toHaveTextContent("Groceries");
     await user.click(within(target).getByRole("radio"));
     await user.click(within(dialog).getByRole("button", { name: "Link" }));
 
@@ -1527,7 +1528,7 @@ describe("NormalizedDescriptions template evidence and linking", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("points at the Item Templates page when there are none to link", async () => {
+  it("explains when no existing items are available to link", async () => {
     vi.mocked(useItemTemplates).mockReturnValue(
       mockQueryResult({
         data: [],
@@ -1548,7 +1549,7 @@ describe("NormalizedDescriptions template evidence and linking", () => {
 
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByTestId("link-template-empty")).toHaveTextContent(
-      /no item templates yet/i,
+      /no existing items are available to link/i,
     );
   });
 

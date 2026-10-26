@@ -25,8 +25,6 @@ import { z } from "zod/v4";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useSimilarItems } from "@/hooks/useSimilarItems";
 import { useReceiptItemSuggestions } from "@/hooks/useReceiptItemSuggestions";
-import { usePromoteToTemplate } from "@/hooks/usePromoteToTemplate";
-import { usePreferences } from "@/hooks/usePreferences";
 import { formatUnitPrice, formatCurrency } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -68,7 +66,6 @@ import {
   Pencil,
   Check,
   X,
-  BookmarkPlus,
 } from "lucide-react";
 
 const itemSchema = receiptItemDraftSchema;
@@ -99,7 +96,6 @@ export function LineItemsSection({
   onChange,
   location,
 }: LineItemsSectionProps) {
-  const { preferences } = usePreferences();
   const [draftRowId, setDraftRowId] = useState(generateId);
   const [normalizationChoice, setNormalizationChoice] =
     useState<ReceiptNormalizationChoice>();
@@ -236,37 +232,6 @@ export function LineItemsSection({
     [form],
   );
 
-  const promoteToTemplate = usePromoteToTemplate();
-  const { mutate: promote, isPending: isPromoting } = promoteToTemplate;
-
-  const promoteSuggestion = useCallback(
-    (suggestion: NonNullable<typeof similarItems>[number]) => {
-      if (isPromoting) return;
-      promote({
-        name: suggestion.name,
-        defaultCategory: suggestion.defaultCategory,
-        defaultSubcategory: suggestion.defaultSubcategory,
-        defaultUnitPrice: suggestion.defaultUnitPrice,
-        defaultItemCode: suggestion.defaultItemCode,
-      });
-    },
-    [promote, isPromoting],
-  );
-
-  const promoteLineItem = useCallback(
-    (item: ReceiptLineItem) => {
-      if (isPromoting) return;
-      promote({
-        name: item.description,
-        defaultCategory: item.category,
-        defaultSubcategory: item.subcategory,
-        defaultUnitPrice: item.unitPrice,
-        defaultItemCode: item.receiptItemCode,
-      });
-    },
-    [promote, isPromoting],
-  );
-
   // Reset the highlight to the first row whenever the result set changes.
   useEffect(() => {
     setDescriptionActiveIndex(0);
@@ -291,14 +256,7 @@ export function LineItemsSection({
         if (suggestion) {
           // Prevent the form from submitting — Enter picks the suggestion.
           e.preventDefault();
-          // Shift+Enter saves a highlighted history suggestion as a
-          // template instead of applying it, mirroring the pointer-only
-          // "Save as template" button for keyboard/screen-reader users.
-          if (e.shiftKey && suggestion.source.toLowerCase() === "history") {
-            promoteSuggestion(suggestion);
-          } else {
-            applySuggestion(suggestion);
-          }
+          applySuggestion(suggestion);
         }
       }
     },
@@ -307,7 +265,6 @@ export function LineItemsSection({
       similarItems,
       descriptionActiveIndex,
       applySuggestion,
-      promoteSuggestion,
     ],
   );
 
@@ -598,11 +555,6 @@ export function LineItemsSection({
                               aria-autocomplete="list"
                               aria-expanded={isSuggestionsOpen}
                               aria-controls={suggestionsListId}
-                              aria-describedby={
-                                preferences.showKeyboardHints
-                                  ? "description-shortcuts-hint"
-                                  : undefined
-                              }
                               autoComplete="off"
                               {...field}
                               onChange={(e) => {
@@ -622,16 +574,6 @@ export function LineItemsSection({
                               }}
                               onKeyDown={handleDescriptionKeyDown}
                             />
-                            {preferences.showKeyboardHints && (
-                              <span
-                                id="description-shortcuts-hint"
-                                className="sr-only"
-                              >
-                                When a suggestion from your history is
-                                highlighted, press Shift+Enter to save it as a
-                                template.
-                              </span>
-                            )}
                             {isFetchingSimilar && description.length >= 2 && (
                               <>
                                 <Loader2
@@ -676,17 +618,6 @@ export function LineItemsSection({
                                     <span className="font-medium">
                                       {item.name}
                                     </span>
-                                    {item.defaultCategory && (
-                                      <span className="text-xs text-muted-foreground">
-                                        {item.defaultCategory}
-                                        {item.defaultSubcategory
-                                          ? ` / ${item.defaultSubcategory}`
-                                          : ""}
-                                        {item.defaultUnitPrice != null
-                                          ? ` · ${formatUnitPrice(Number(item.defaultUnitPrice))}`
-                                          : ""}
-                                      </span>
-                                    )}
                                   </div>
                                   <div className="flex items-center gap-1.5">
                                     <Badge
@@ -703,41 +634,6 @@ export function LineItemsSection({
                                       )}
                                       %
                                     </span>
-                                    {item.source.toLowerCase() === "history" ? (
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-6 w-6 shrink-0"
-                                        aria-label={`Save "${item.name}" as template`}
-                                        disabled={isPromoting}
-                                        onPointerDown={(e) => {
-                                          // Keep the press from stealing focus
-                                          // or registering on the cmdk item.
-                                          e.preventDefault();
-                                          e.stopPropagation();
-                                        }}
-                                        onClick={(e) => {
-                                          // Must not select the suggestion or
-                                          // close the popover.
-                                          e.preventDefault();
-                                          e.stopPropagation();
-                                          promoteSuggestion(item);
-                                        }}
-                                      >
-                                        <BookmarkPlus
-                                          className="h-3.5 w-3.5"
-                                          aria-hidden="true"
-                                        />
-                                      </Button>
-                                    ) : (
-                                      // Placeholder keeps badge/score columns
-                                      // aligned across rows (no layout shift).
-                                      <span
-                                        className="h-6 w-6 shrink-0"
-                                        aria-hidden="true"
-                                      />
-                                    )}
                                   </div>
                                 </div>
                               </CommandItem>
@@ -1006,15 +902,6 @@ export function LineItemsSection({
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => promoteLineItem(item)}
-                          disabled={isPromoting}
-                          aria-label="Save as template"
-                        >
-                          <BookmarkPlus className="h-4 w-4" />
-                        </Button>
                         <Button
                           variant="ghost"
                           size="icon"
