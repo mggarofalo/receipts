@@ -83,6 +83,19 @@ names or display labels between included rows is supported; local audit records
 describe the restore changes. Names conflicting with an unrelated target row still
 reject the import. Excluded source audit logs are never replayed.
 
+For format 10, a completely pristine migrated destination receives exact portable
+business contents: the importer removes its category, subcategory and template
+bootstrap suggestions and default normalization settings before restoring the
+archive's rows. This exception requires every mapped
+business table (including trash, audit, seed-run and immutable history tables) to
+match its complete EF seed set and every scalar seed value. Only database-generated
+concurrency tokens are ignored. Identity/security state and authentication audit
+logs are excluded from this proof. Any missing, edited, additional or referenced
+business row disables cleanup for the whole destination; normal upserts then apply.
+The proof is rechecked under business-table write locks, and removal and import
+commit or roll back together. Existing business history is never removed. Formats
+1–9 retain their conversion/replay rules and do not perform this cleanup.
+
 ### Formats 1–9: fresh-target conversion
 
 Older portable imports automatically derive the initial taxonomy and assignments
