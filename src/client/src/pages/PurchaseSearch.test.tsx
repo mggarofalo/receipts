@@ -5,9 +5,15 @@ import { useLocation, useNavigate } from "react-router";
 import { renderWithProviders } from "@/test/test-utils";
 import { mockQueryResult } from "@/test/mock-hooks";
 import { usePurchaseSearch } from "@/hooks/usePurchaseSearch";
+import { useCategoryTaxonomy } from "@/hooks/useCategoryTaxonomy";
+import { taxonomyFixture } from "@/test/taxonomy-fixture";
 import PurchaseSearch from "./PurchaseSearch";
 vi.mock("@/hooks/usePurchaseSearch", () => ({ usePurchaseSearch: vi.fn() }));
+vi.mock("@/hooks/useCategoryTaxonomy", () => ({
+  useCategoryTaxonomy: vi.fn(),
+}));
 const search = vi.mocked(usePurchaseSearch);
+const taxonomy = vi.mocked(useCategoryTaxonomy);
 const item: components["schemas"]["PurchaseSearchItem"] = {
   id: "item-1",
   receiptId: "receipt-1",
@@ -47,6 +53,13 @@ function renderPage(route = "/search?q=milk") {
 beforeEach(() => {
   localStorage.clear();
   search.mockReset();
+  taxonomy.mockReturnValue(
+    mockQueryResult({
+      isPending: false,
+      isLoading: false,
+      data: taxonomyFixture,
+    }),
+  );
   search.mockReturnValue(
     mockQueryResult({
       isPending: false,
@@ -329,7 +342,7 @@ it("distinguishes a stale empty page from no matching purchases", async () => {
     expect.objectContaining({ sortBy: "date", sortDirection: "desc" }),
   );
   expect(
-    screen.getByText(/No purchases match this phrase/),
+    screen.getByText(/No purchases match these filters/),
   ).toBeInTheDocument();
 });
 
@@ -412,7 +425,7 @@ it("loads GUID history without a placeholder phrase and clears identity for a ne
       includeUnreviewed: false,
     }),
   );
-  expect(screen.getByText(id)).toBeVisible();
+  expect(screen.getByText(/Filtered to one product identity/)).toBeVisible();
   await userEvent.type(
     screen.getByRole("textbox", { name: "Search purchases" }),
     "bread",
@@ -463,5 +476,126 @@ it("shows length validation only when a submitted query needs it", async () => {
     screen.getByText(
       /package sizes and measurement units are not standardized/,
     ),
+  ).toBeInTheDocument();
+});
+
+it("loads category-only history from a shared URL and changes category views without losing filters", async () => {
+  const categoryId = taxonomyFixture.nodes[1].id;
+  renderPage(
+    `/search?categoryId=${categoryId}&categoryView=currentHierarchy&location=Market&offset=25`,
+  );
+  expect(search).toHaveBeenLastCalledWith(
+    "",
+    25,
+    25,
+    true,
+    expect.objectContaining({
+      categoryId,
+      categoryView: "currentHierarchy",
+      location: "Market",
+    }),
+  );
+  expect(screen.getByRole("combobox", { name: "Category" })).toHaveTextContent(
+    "Food / Dairy",
+  );
+  await userEvent.selectOptions(
+    screen.getByLabelText("Category view"),
+    "asClassified",
+  );
+  expect(currentParams().get("offset")).toBeNull();
+  expect(currentParams().get("location")).toBe("Market");
+  expect(search).toHaveBeenLastCalledWith(
+    "",
+    0,
+    25,
+    true,
+    expect.objectContaining({
+      categoryId,
+      categoryView: "asClassified",
+      location: "Market",
+    }),
+  );
+});
+
+it("selects a nested path, resets paging, and shows category paths and unresolved states", async () => {
+  search.mockReturnValue(
+    mockQueryResult({
+      isPending: false,
+      data: {
+        categoryView: "asClassified",
+        assignmentSelection: "currentPointer",
+        items: [
+          {
+            ...item,
+            categoryState: "classified",
+            categoryPath: [
+              {
+                categoryId: taxonomyFixture.nodes[0].id,
+                name: "Food",
+                archived: false,
+              },
+              {
+                categoryId: taxonomyFixture.nodes[1].id,
+                name: "Dairy",
+                archived: false,
+              },
+            ],
+          },
+          {
+            ...item,
+            id: "item-2",
+            categoryState: "unresolvedLegacy",
+            categoryPath: [],
+          },
+        ],
+        total: 2,
+        offset: 0,
+        limit: 25,
+      },
+    }),
+  );
+  renderPage("/search?q=milk&offset=25&sortBy=quantity");
+  await userEvent.click(screen.getByRole("combobox", { name: "Category" }));
+  await userEvent.click(screen.getByRole("option", { name: /Food \/ Dairy/ }));
+  expect(currentParams().get("categoryId")).toBe(taxonomyFixture.nodes[1].id);
+  expect(currentParams().get("offset")).toBeNull();
+  expect(currentParams().get("sortBy")).toBe("quantity");
+  expect(
+    screen.getByText("Food / Dairy", { selector: "div" }),
+  ).toBeInTheDocument();
+  expect(screen.getByText("Legacy category unresolved")).toBeInTheDocument();
+});
+
+it("preserves a category filter when the current taxonomy cannot resolve it", () => {
+  const oldId = "95000000-0000-4000-8000-000000000099";
+  renderPage(`/search?categoryId=${oldId}`);
+  expect(
+    screen.getByText(/no longer in the current taxonomy/),
+  ).toBeInTheDocument();
+  expect(search).toHaveBeenLastCalledWith(
+    "",
+    0,
+    25,
+    true,
+    expect.objectContaining({ categoryId: oldId }),
+  );
+});
+
+it("shows the API reason when a captured hierarchy revision is invalid", () => {
+  search.mockReturnValue(
+    mockQueryResult({
+      isPending: false,
+      isError: true,
+      error: {
+        status: 400,
+        detail: "The captured taxonomy revision is unavailable.",
+      },
+    }),
+  );
+  renderPage(
+    `/search?categoryId=${taxonomyFixture.nodes[1].id}&categoryView=currentHierarchy&capturedCurrentRevisionId=95000000-0000-4000-8000-000000000099`,
+  );
+  expect(
+    screen.getByText("The captured taxonomy revision is unavailable."),
   ).toBeInTheDocument();
 });

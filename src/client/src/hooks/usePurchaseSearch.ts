@@ -28,7 +28,8 @@ export function usePurchaseSearch(
     ],
     enabled:
       enabled &&
-      ((search.length === 0 && !!options.normalizedDescriptionId) ||
+      ((search.length === 0 &&
+        (!!options.normalizedDescriptionId || !!options.categoryId)) ||
         (search.length >= 2 && search.length <= 200)),
     queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/api/search/purchases", {

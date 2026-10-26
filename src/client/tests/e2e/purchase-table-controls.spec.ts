@@ -205,7 +205,7 @@ for (const width of [1280, 375]) {
         .fill("nonexistent");
       await page.getByRole("button", { name: "Search", exact: true }).click();
       await expect(
-        page.getByText(/No purchases match this phrase/),
+        page.getByText(/No purchases match these filters/),
       ).toBeVisible();
       await expect(
         page.getByText("Showing 0-0 of 0", { exact: true }),

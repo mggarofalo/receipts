@@ -254,3 +254,27 @@ it("separates identity and review scope in the cache and permits GUID history wi
     includeUnreviewed: true,
   });
 });
+
+it("requests category-only history with view, cutoff, and captured revision", async () => {
+  get.mockResolvedValue({
+    data: { ...classification, items: [], total: 0, offset: 0, limit: 25 },
+    response: new Response(),
+  });
+  const options = {
+    categoryId: "95000000-0000-4000-8000-000000000011",
+    categoryView: "currentHierarchy" as const,
+    knowledgeCutoff: "2026-10-01T12:00:00.000Z",
+    capturedCurrentRevisionId: "95000000-0000-4000-8000-000000000001",
+  };
+  const { result } = renderHook(
+    () => usePurchaseSearch("", 0, 25, true, options),
+    {
+      wrapper: createQueryWrapper(),
+    },
+  );
+  await waitFor(() => expect(result.current.isSuccess).toBe(true));
+  expect(get).toHaveBeenCalledWith("/api/search/purchases", {
+    params: { query: { ...options, q: "", offset: 0, limit: 25 } },
+    signal: expect.any(AbortSignal),
+  });
+});

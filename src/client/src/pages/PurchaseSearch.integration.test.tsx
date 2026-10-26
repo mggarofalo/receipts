@@ -4,6 +4,13 @@ import { http, HttpResponse } from "msw";
 import { server } from "@/test/msw/server";
 import { renderWithQueryClient } from "@/test/test-utils";
 import PurchaseSearch from "./PurchaseSearch";
+import { taxonomyFixture } from "@/test/taxonomy-fixture";
+
+beforeEach(() => {
+  server.use(
+    http.get("*/api/taxonomy", () => HttpResponse.json(taxonomyFixture)),
+  );
+});
 
 it("finds hot dogs through the real query hook and renders a date-descending evidence table", async () => {
   const requests: URL[] = [];
@@ -80,6 +87,7 @@ it("finds hot dogs through the real query hook and renders a date-descending evi
   ).toHaveAttribute("href", "/receipts/old-receipt");
   expect(requests).toHaveLength(1);
   expect(Object.fromEntries(requests[0].searchParams)).toEqual({
+    categoryView: "asClassified",
     q: "hot dogs",
     includeUnreviewed: "false",
     offset: "0",
@@ -87,6 +95,39 @@ it("finds hot dogs through the real query hook and renders a date-descending evi
     sortBy: "date",
     sortDirection: "desc",
   });
+});
+
+it("loads a category-only link and pins the current hierarchy for later pages", async () => {
+  const requests: URL[] = [];
+  server.use(
+    http.get("*/api/search/purchases", ({ request }) => {
+      requests.push(new URL(request.url));
+      return HttpResponse.json({
+        categoryView: "currentHierarchy",
+        assignmentSelection: "currentPointer",
+        currentRevisionId: taxonomyFixture.id,
+        total: 0,
+        offset: 0,
+        limit: 25,
+        items: [],
+      });
+    }),
+  );
+  renderWithQueryClient(<PurchaseSearch />, {
+    route: `/search?categoryId=${taxonomyFixture.nodes[1].id}&categoryView=currentHierarchy`,
+  });
+  await waitFor(() =>
+    expect(requests.at(-1)?.searchParams.get("capturedCurrentRevisionId")).toBe(
+      taxonomyFixture.id,
+    ),
+  );
+  expect(
+    await screen.findByText(/matching purchases in this category/),
+  ).toBeInTheDocument();
+  expect(requests.at(-1)?.searchParams.get("categoryId")).toBe(
+    taxonomyFixture.nodes[1].id,
+  );
+  expect(requests.at(-1)?.searchParams.get("q")).toBe("");
 });
 
 it("requests filters and ordering for the whole result, then keeps them while changing page size", async () => {
@@ -146,6 +187,7 @@ it("requests filters and ordering for the whole result, then keeps them while ch
     expect(requests.at(-1)?.searchParams.get("limit")).toBe("100"),
   );
   expect(Object.fromEntries(requests.at(-1)!.searchParams)).toEqual({
+    categoryView: "asClassified",
     q: "milk",
     includeUnreviewed: "false",
     offset: "0",

@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -10,10 +11,15 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/format";
 import { formatPurchasePrice } from "@/lib/purchase-search";
+import { extractErrorMessage } from "@/lib/problem-details";
 
 import { Pagination } from "@/components/Pagination";
 import { SortableTableHead } from "@/components/SortableTableHead";
 import { PurchaseFilters } from "@/components/PurchaseFilters";
+import { CategoryPathPicker } from "@/components/categories/CategoryPathPicker";
+import { useCategoryTaxonomy } from "@/hooks/useCategoryTaxonomy";
+import { categoryPaths } from "@/lib/category-paths";
+import { parseCategoryViewParam } from "@/lib/report-params";
 import { usePersistedTablePageSize } from "@/hooks/usePersistedTablePageSize";
 import { isPageSize } from "@/lib/page-size";
 import {
@@ -24,23 +30,22 @@ import {
   type PurchaseSortColumn,
 } from "@/lib/purchase-table";
 const searchSchema = z.object({
-  q: z
-    .string()
-    .trim()
-    .min(2, "Enter at least 2 characters.")
-    .max(200, "Use at most 200 characters."),
+  q: z.string().trim().max(200, "Use at most 200 characters."),
 });
 
 function PurchaseQueryForm({
   initialQuery,
   onSearch,
+  allowEmpty,
 }: {
   initialQuery: string;
   onSearch: (query: string) => void;
+  allowEmpty: boolean;
 }) {
   const {
     register,
     handleSubmit,
+    setError,
     formState: { errors },
   } = useForm<z.infer<typeof searchSchema>>({
     resolver: zodResolver(searchSchema),
@@ -50,7 +55,13 @@ function PurchaseQueryForm({
     <form
       className="space-y-2"
       noValidate
-      onSubmit={handleSubmit(({ q }) => onSearch(q))}
+      onSubmit={handleSubmit(({ q }) => {
+        if (!allowEmpty && q.length < 2) {
+          setError("q", { message: "Enter at least 2 characters." });
+          return;
+        }
+        onSearch(q);
+      })}
     >
       <div className="flex gap-2">
         <Input
@@ -81,6 +92,23 @@ export default function PurchaseSearch() {
   const q = (params.get("q") ?? "").trim();
   const normalizedDescriptionId =
     params.get("normalizedDescriptionId") ?? undefined;
+  const taxonomy = useCategoryTaxonomy();
+  const categoryView = parseCategoryViewParam(params);
+  const categoryId = params.get("categoryId") || undefined;
+  const selectedCategory = categoryPaths(taxonomy.data?.nodes ?? []).find(
+    (row) => row.node.id === categoryId,
+  );
+  const rawCutoff = params.get("knowledgeCutoff");
+  const knowledgeCutoff =
+    rawCutoff &&
+    /^\d{4}-\d{2}-\d{2}T.*Z$/.test(rawCutoff) &&
+    Number.isFinite(Date.parse(rawCutoff))
+      ? new Date(rawCutoff).toISOString()
+      : undefined;
+  const capturedCurrentRevisionId =
+    categoryView === "currentHierarchy"
+      ? params.get("capturedCurrentRevisionId") || undefined
+      : undefined;
   const { pageSize: preferredPageSize, setPageSize } =
     usePersistedTablePageSize("purchase-history");
   const requestedSize = Number(params.get("limit"));
@@ -105,14 +133,10 @@ export default function PurchaseSearch() {
   const filters = readPurchaseFilters(params);
   const parsedFilters = purchaseFiltersSchema.safeParse(filters);
   const valid =
-    (q.length === 0 && !!normalizedDescriptionId) ||
+    (q.length === 0 && !!(normalizedDescriptionId || categoryId)) ||
     (q.length >= 2 && q.length <= 200);
-  const { data, isPending, isError, isFetching, refetch } = usePurchaseSearch(
-    q,
-    offset,
-    pageSize,
-    valid && parsedFilters.success,
-    {
+  const { data, error, isPending, isError, isFetching, refetch } =
+    usePurchaseSearch(q, offset, pageSize, valid && parsedFilters.success, {
       ...purchaseFilterOptions(
         parsedFilters.success
           ? parsedFilters.data
@@ -128,8 +152,39 @@ export default function PurchaseSearch() {
       sortDirection,
       includeUnreviewed: params.get("includeUnreviewed") === "true",
       normalizedDescriptionId,
-    },
-  );
+      categoryId,
+      categoryView,
+      knowledgeCutoff,
+      capturedCurrentRevisionId,
+    });
+  // Pin the taxonomy used by a loaded current-hierarchy page so later pages
+  // retain the same meaning if the hierarchy changes in another session.
+  useEffect(() => {
+    if (
+      categoryView !== "currentHierarchy" ||
+      capturedCurrentRevisionId ||
+      !data?.currentRevisionId ||
+      isPending ||
+      isError
+    )
+      return;
+    setParams(
+      (previous) => {
+        if (previous.get("capturedCurrentRevisionId")) return previous;
+        const next = new URLSearchParams(previous);
+        next.set("capturedCurrentRevisionId", data.currentRevisionId!);
+        return next;
+      },
+      { replace: true },
+    );
+  }, [
+    categoryView,
+    capturedCurrentRevisionId,
+    data?.currentRevisionId,
+    isPending,
+    isError,
+    setParams,
+  ]);
   function update(updates: Record<string, string>, resetPage = true) {
     setParams((previous) => {
       const next = new URLSearchParams(previous);
@@ -157,11 +212,137 @@ export default function PurchaseSearch() {
       <PurchaseQueryForm
         key={q}
         initialQuery={q}
-        onSearch={(value) => update({ q: value, normalizedDescriptionId: "" })}
+        allowEmpty={!!(categoryId || normalizedDescriptionId)}
+        onSearch={(value) =>
+          update({
+            q: value,
+            normalizedDescriptionId: value
+              ? ""
+              : (normalizedDescriptionId ?? ""),
+          })
+        }
       />
+      <section
+        aria-label="Category search"
+        className="space-y-3 rounded-lg border bg-card p-4"
+      >
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1">
+            <label className="text-sm font-medium" htmlFor="purchase-category">
+              Category
+            </label>
+            <CategoryPathPicker
+              id="purchase-category"
+              aria-label="Category"
+              revision={taxonomy.data}
+              loading={taxonomy.isLoading}
+              error={taxonomy.isError}
+              value={
+                selectedCategory && taxonomy.data
+                  ? {
+                      categoryId: selectedCategory.node.id,
+                      taxonomyRevisionId: taxonomy.data.id,
+                      path: selectedCategory.path,
+                    }
+                  : undefined
+              }
+              onValueChange={(choice) =>
+                update({
+                  categoryId: choice.categoryId ?? "",
+                  capturedCurrentRevisionId: "",
+                })
+              }
+            />
+            {categoryId &&
+              !taxonomy.isLoading &&
+              !taxonomy.isError &&
+              !selectedCategory && (
+                <p role="status" className="text-sm text-muted-foreground">
+                  Selected category is no longer in the current taxonomy.
+                  Results still use its saved ID.
+                </p>
+              )}
+            {taxonomy.isError && (
+              <p role="status" className="text-sm text-muted-foreground">
+                Categories could not be loaded. Existing search filters still
+                work.
+              </p>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Includes subcategories.
+            </p>
+            {categoryId && (
+              <Button
+                variant="link"
+                className="h-auto p-0"
+                onClick={() =>
+                  update({ categoryId: "", capturedCurrentRevisionId: "" })
+                }
+              >
+                Clear category
+              </Button>
+            )}
+          </div>
+          <div className="space-y-1">
+            <label
+              htmlFor="purchase-category-view"
+              className="text-sm font-medium"
+            >
+              Category view
+            </label>
+            <select
+              id="purchase-category-view"
+              className="flex h-9 w-full rounded-md border bg-background px-3 text-sm"
+              value={categoryView}
+              onChange={(event) =>
+                update({
+                  categoryView: event.target.value,
+                  capturedCurrentRevisionId: "",
+                })
+              }
+            >
+              <option value="asClassified">As classified at the time</option>
+              <option value="currentHierarchy">Current hierarchy</option>
+            </select>
+          </div>
+        </div>
+        <details>
+          <summary className="cursor-pointer text-sm">
+            Historical assignment cutoff
+          </summary>
+          <div className="mt-2 flex flex-wrap items-end gap-2">
+            <label
+              htmlFor="purchase-knowledge-cutoff"
+              className="space-y-1 text-sm"
+            >
+              Assignments known by (UTC)
+              <Input
+                id="purchase-knowledge-cutoff"
+                type="datetime-local"
+                value={knowledgeCutoff?.slice(0, 16) ?? ""}
+                onChange={(event) =>
+                  update({
+                    knowledgeCutoff: event.target.value
+                      ? new Date(`${event.target.value}Z`).toISOString()
+                      : "",
+                  })
+                }
+              />
+            </label>
+            {knowledgeCutoff && (
+              <Button
+                variant="outline"
+                onClick={() => update({ knowledgeCutoff: "" })}
+              >
+                Clear cutoff
+              </Button>
+            )}
+          </div>
+        </details>
+      </section>
       {normalizedDescriptionId && (
         <p className="text-sm">
-          Product identity: <code>{normalizedDescriptionId}</code>{" "}
+          Filtered to one product identity.{" "}
           <Button
             variant="link"
             onClick={() => update({ normalizedDescriptionId: "" })}
@@ -196,7 +377,10 @@ export default function PurchaseSearch() {
       )}
       {!valid || !parsedFilters.success ? null : isError ? (
         <RequestFailure
-          message="Purchase history could not be loaded."
+          message={
+            extractErrorMessage(error) ??
+            "Purchase history could not be loaded."
+          }
           retry={() => void refetch()}
           isRetrying={isFetching}
         />
@@ -207,13 +391,17 @@ export default function PurchaseSearch() {
           <>
             <p role="status">
               {data.total.toLocaleString()} matching purchases
-              {q ? ` for “${q}”` : " for this product identity"}
+              {q
+                ? ` for “${q}”`
+                : categoryId
+                  ? " in this category"
+                  : " for this product identity"}
             </p>
             {data.items.length === 0 ? (
               <p>
                 {offset > 0
                   ? "No purchases on this page. Return to the first page to see current results."
-                  : "No purchases match this phrase. Try a shorter item name, code, or store."}
+                  : "No purchases match these filters. Try another category, item name, code, or store."}
               </p>
             ) : (
               <div className="overflow-x-auto rounded-lg border">
@@ -278,6 +466,23 @@ export default function PurchaseSearch() {
                               : {item.normalizedDescription}
                             </div>
                           )}
+                          <div className="text-xs text-muted-foreground">
+                            {item.categoryState === "classified" &&
+                            item.categoryPath.length > 0
+                              ? item.categoryPath
+                                  .map((node) => node.name)
+                                  .join(" / ")
+                              : item.categoryState === "unclassified"
+                                ? "Unclassified"
+                                : item.categoryState === "missingAssignment"
+                                  ? "No category assignment"
+                                  : item.categoryState ===
+                                      "beforeMigrationHistory"
+                                    ? "Category history unavailable before migration"
+                                    : item.categoryState === "unresolvedLegacy"
+                                      ? "Legacy category unresolved"
+                                      : "Category path unresolved"}
+                          </div>
                         </td>
                         <td className="px-4 py-3">{item.location}</td>
                         <td className="whitespace-nowrap px-4 py-3 font-mono">
