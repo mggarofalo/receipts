@@ -59,6 +59,7 @@ import { Spinner } from "@/components/ui/spinner";
 interface DeletedItem {
   entityType: string;
   entityTypeLabel: string;
+  group: string;
   id: string;
   label: string;
 }
@@ -203,12 +204,30 @@ function RecycleBin() {
 
   const restoreMutations = useMemo<RestoreMutationMap>(
     () => ({
-      Receipt: { mutate: restoreReceipt.mutate, isPending: restoreReceipt.isPending },
-      ReceiptItem: { mutate: restoreReceiptItem.mutate, isPending: restoreReceiptItem.isPending },
-      Transaction: { mutate: restoreTransaction.mutate, isPending: restoreTransaction.isPending },
-      ItemTemplate: { mutate: restoreItemTemplate.mutate, isPending: restoreItemTemplate.isPending },
-      Category: { mutate: restoreCategory.mutate, isPending: restoreCategory.isPending },
-      Subcategory: { mutate: restoreSubcategory.mutate, isPending: restoreSubcategory.isPending },
+      Receipt: {
+        mutate: restoreReceipt.mutate,
+        isPending: restoreReceipt.isPending,
+      },
+      ReceiptItem: {
+        mutate: restoreReceiptItem.mutate,
+        isPending: restoreReceiptItem.isPending,
+      },
+      Transaction: {
+        mutate: restoreTransaction.mutate,
+        isPending: restoreTransaction.isPending,
+      },
+      ItemTemplate: {
+        mutate: restoreItemTemplate.mutate,
+        isPending: restoreItemTemplate.isPending,
+      },
+      Category: {
+        mutate: restoreCategory.mutate,
+        isPending: restoreCategory.isPending,
+      },
+      Subcategory: {
+        mutate: restoreSubcategory.mutate,
+        isPending: restoreSubcategory.isPending,
+      },
     }),
     [
       restoreReceipt.mutate,
@@ -277,6 +296,7 @@ function RecycleBin() {
       items.push({
         entityType: "Receipt",
         entityTypeLabel: "Receipt",
+        group: "Receipt",
         id: r.id,
         label: `${r.location} - ${r.date}`,
       });
@@ -285,6 +305,7 @@ function RecycleBin() {
       items.push({
         entityType: "ReceiptItem",
         entityTypeLabel: "Receipt Item",
+        group: "Receipt Item",
         id: ri.id,
         label: `${ri.description} (${ri.receiptItemCode ?? "N/A"})`,
       });
@@ -293,6 +314,7 @@ function RecycleBin() {
       items.push({
         entityType: "Transaction",
         entityTypeLabel: "Transaction",
+        group: "Transaction",
         id: t.id,
         label: `$${Number(t.amount ?? 0).toFixed(2)} - ${t.date}`,
       });
@@ -301,6 +323,7 @@ function RecycleBin() {
       items.push({
         entityType: "ItemTemplate",
         entityTypeLabel: "Item Template",
+        group: "Item Template",
         id: it.id,
         label: it.name,
       });
@@ -308,7 +331,8 @@ function RecycleBin() {
     for (const c of categories.data ?? []) {
       items.push({
         entityType: "Category",
-        entityTypeLabel: "Category",
+        entityTypeLabel: "Legacy category",
+        group: "Legacy categories",
         id: c.id,
         label: c.name,
       });
@@ -316,7 +340,8 @@ function RecycleBin() {
     for (const s of subcategories.data ?? []) {
       items.push({
         entityType: "Subcategory",
-        entityTypeLabel: "Subcategory",
+        entityTypeLabel: "Legacy subcategory",
+        group: "Legacy categories",
         id: s.id,
         label: s.name,
       });
@@ -332,17 +357,18 @@ function RecycleBin() {
     subcategories.data,
   ]);
 
-  const { focusedId, setFocusedIndex, tableRef, containerProps, getRowProps } = useListKeyboardNav({
-    items: allItems,
-    getId: (item) => `${item.entityType}:${item.id}`,
-    listId: "recycle-bin",
-    enabled: !isLoading,
-  });
+  const { focusedId, setFocusedIndex, tableRef, containerProps, getRowProps } =
+    useListKeyboardNav({
+      items: allItems,
+      getId: (item) => `${item.entityType}:${item.id}`,
+      listId: "recycle-bin",
+      enabled: !isLoading,
+    });
 
   const byType = useMemo(() => {
     const map: Record<string, DeletedItem[]> = {};
     for (const item of allItems) {
-      (map[item.entityType] ??= []).push(item);
+      (map[item.group] ??= []).push(item);
     }
     return map;
   }, [allItems]);
@@ -398,12 +424,13 @@ function RecycleBin() {
               <AlertDialogHeader>
                 <AlertDialogTitle>Empty trash?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This will permanently delete{" "}
                   <strong>
-                    {allItems.length}{" "}
-                    {allItems.length === 1 ? "item" : "items"}
+                    {allItems.length} {allItems.length === 1 ? "item" : "items"}
+                    {" currently listed"}
                   </strong>
-                  . This action cannot be undone.
+                  . Empty trash permanently deletes eligible items. Some may be
+                  kept to preserve classification history. Linked records not
+                  shown here may also be deleted. This action cannot be undone.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -420,36 +447,46 @@ function RecycleBin() {
         }
       />
       <div className="space-y-4">
+        {byType["Legacy categories"] && (
+          <p className="text-sm text-muted-foreground">
+            Legacy category records are shown here because Empty trash
+            permanently removes them. Manage archived categories in the
+            Categories tree.
+          </p>
+        )}
 
-      <Tabs defaultValue="all">
-        <TabsList>
-          <TabsTrigger value="all">All ({allItems.length})</TabsTrigger>
-          {Object.entries(byType).map(([type, items]) => (
-            <TabsTrigger key={type} value={type}>
-              {items[0]?.entityTypeLabel ?? type} ({items.length})
-            </TabsTrigger>
-          ))}
-        </TabsList>
+        <Tabs defaultValue="all">
+          <TabsList>
+            <TabsTrigger value="all">All ({allItems.length})</TabsTrigger>
+            {Object.entries(byType).map(([group, items]) => (
+              <TabsTrigger key={group} value={group}>
+                {group} ({items.length})
+              </TabsTrigger>
+            ))}
+          </TabsList>
 
-        <TabsContent value="all">
-          <DeletedItemsTable
-            items={allItems}
-            restoreMutations={restoreMutations}
-            focusedKey={focusedId}
-            tableRef={tableRef}
-            onRowClick={setFocusedIndex}
-            containerProps={containerProps}
-            getRowProps={getRowProps}
-          />
-        </TabsContent>
-
-        {Object.entries(byType).map(([type, items]) => (
-          <TabsContent key={type} value={type}>
-            <DeletedItemsTable items={items} restoreMutations={restoreMutations} />
+          <TabsContent value="all">
+            <DeletedItemsTable
+              items={allItems}
+              restoreMutations={restoreMutations}
+              focusedKey={focusedId}
+              tableRef={tableRef}
+              onRowClick={setFocusedIndex}
+              containerProps={containerProps}
+              getRowProps={getRowProps}
+            />
           </TabsContent>
-        ))}
-      </Tabs>
-    </div>
+
+          {Object.entries(byType).map(([group, items]) => (
+            <TabsContent key={group} value={group}>
+              <DeletedItemsTable
+                items={items}
+                restoreMutations={restoreMutations}
+              />
+            </TabsContent>
+          ))}
+        </Tabs>
+      </div>
     </>
   );
 }

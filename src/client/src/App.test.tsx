@@ -32,9 +32,6 @@ vi.mock("@/pages/Cards", () => ({
 vi.mock("@/pages/Taxonomy", () => ({
   default: () => <div data-testid="page-categories">Categories</div>,
 }));
-vi.mock("@/pages/Subcategories", () => ({
-  default: () => <div data-testid="page-subcategories">Subcategories</div>,
-}));
 vi.mock("@/pages/Receipts", () => ({
   default: () => <div data-testid="page-receipts">Receipts</div>,
 }));
@@ -221,7 +218,6 @@ it.each([
   expect(screen.getByTestId("layout")).toContainElement(
     screen.getByTestId("page-categories"),
   );
-  expect(screen.queryByTestId("page-subcategories")).not.toBeInTheDocument();
   if (path !== "/categories") {
     expect(router.state.historyAction).toBe("REPLACE");
     expect(router.state.location.hash).toBe("#details");

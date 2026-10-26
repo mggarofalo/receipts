@@ -123,13 +123,13 @@ describe("useBreadcrumbs", () => {
     });
   });
 
-  it("maps subcategories correctly", () => {
+  it("labels the legacy subcategories URL as Categories", () => {
     const { result } = renderHook(() => useBreadcrumbs(), {
       wrapper: createWrapper("/subcategories"),
     });
     expect(result.current).toEqual([
       { label: "Home", path: "/" },
-      { label: "Subcategories", path: "/subcategories" },
+      { label: "Categories", path: "/subcategories" },
     ]);
   });
 

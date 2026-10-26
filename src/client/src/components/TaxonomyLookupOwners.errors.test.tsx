@@ -1,13 +1,6 @@
 vi.hoisted(() => vi.stubEnv("VITE_API_URL", "http://taxonomy-owners.test"));
 import type { ReactNode } from "react";
-import {
-  act,
-  cleanup,
-  render,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { http, HttpResponse } from "msw";
@@ -17,8 +10,6 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { AppearanceProvider } from "@/contexts/AppearanceContext";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { RootLayout } from "@/components/RootLayout";
-import { SubcategoryForm } from "./SubcategoryForm";
-import Subcategories from "@/pages/Subcategories";
 import UncategorizedItems from "./reports/UncategorizedItems";
 import { createAppQueryClient } from "@/lib/query-client";
 import { clearTokens, setTokens } from "@/lib/auth";
@@ -26,7 +17,6 @@ import { clearServerErrorPageFlag } from "@/lib/server-error-bus";
 import "@/test/setup-combobox-polyfills";
 let categoryFailure: boolean;
 let scopedFailure: boolean;
-let categoryReads: number;
 let scopedReads: string[];
 let writes: string[];
 const categories = [
@@ -54,7 +44,6 @@ const items = [
 ];
 const server = setupServer(
   http.get("*/api/categories", () => {
-    categoryReads++;
     return categoryFailure
       ? HttpResponse.json(
           { status: 503, detail: "Category lookup unavailable" },
@@ -137,7 +126,6 @@ afterAll(() => server.close());
 beforeEach(() => {
   categoryFailure = false;
   scopedFailure = false;
-  categoryReads = 0;
   scopedReads = [];
   writes = [];
   localStorage.clear();
@@ -155,150 +143,6 @@ afterEach(() => {
   clearTokens();
   server.resetHandlers();
 });
-const subcategory = {
-  name: "Dairy",
-  categoryId: "food",
-  description: "Original",
-  isActive: true,
-};
-function form(submit: (value: unknown) => void) {
-  return (
-    <SubcategoryForm
-      mode="edit"
-      defaultValues={subcategory}
-      onSubmit={submit}
-      onCancel={() => {}}
-    />
-  );
-}
-function noGlobalFailure() {
-  expect(
-    screen.queryByRole("heading", { name: "Global server error route" }),
-  ).not.toBeInTheDocument();
-  expect(
-    document.querySelectorAll('[data-sonner-toast][data-type="error"]'),
-  ).toHaveLength(0);
-}
-it.each(["subcategory"] as const)(
-  "retains the %s form draft and valid manual submission through category failure and retry",
-  async () => {
-    const submitted = vi.fn();
-    const client = renderFeature(form(submitted));
-    await waitFor(() =>
-      expect(
-        client
-          .getQueryCache()
-          .findAll({ queryKey: ["categories", "all"] })
-          .every((query) => query.state.status === "success"),
-      ).toBe(true),
-    );
-    const user = userEvent.setup();
-    await user.clear(screen.getByLabelText("Description (optional)"));
-    await user.type(
-      screen.getByLabelText("Description (optional)"),
-      "Retained draft",
-    );
-    categoryFailure = true;
-    await act(async () => {
-      await client.invalidateQueries({ queryKey: ["categories", "all"] });
-    });
-    const failure = await screen.findByRole("alert");
-    expect(failure).toHaveTextContent(/categor/i);
-    noGlobalFailure();
-    expect(screen.getByLabelText("Description (optional)")).toHaveValue(
-      "Retained draft",
-    );
-    expect(
-      screen
-        .getAllByRole("combobox")
-        .some((select) => select.textContent?.includes("Food")),
-    ).toBe(true);
-    await user.click(
-      screen.getByRole("button", {
-        name: "Update Subcategory",
-      }),
-    );
-    await waitFor(() =>
-      expect(submitted.mock.calls.map(([value]) => value)).toEqual([
-        {
-          ...subcategory,
-          description: "Retained draft",
-        },
-      ]),
-    );
-    categoryFailure = false;
-    await user.click(within(failure).getByRole("button", { name: "Retry" }));
-    await waitFor(() =>
-      expect(screen.queryByRole("alert")).not.toBeInTheDocument(),
-    );
-    expect(screen.getByLabelText("Description (optional)")).toHaveValue(
-      "Retained draft",
-    );
-    expect(categoryReads).toBe(3);
-    expect(writes).toEqual([]);
-  },
-);
-it.each(["subcategory"] as const)(
-  "keeps successful %s lookup and submit behavior",
-  async () => {
-    const submitted = vi.fn();
-    const client = renderFeature(form(submitted));
-    await waitFor(() => expect(client.isFetching()).toBe(0));
-    await userEvent.setup().click(
-      screen.getByRole("button", {
-        name: "Update Subcategory",
-      }),
-    );
-    await waitFor(() =>
-      expect(submitted.mock.calls.map(([value]) => value)).toEqual([
-        subcategory,
-      ]),
-    );
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    noGlobalFailure();
-  },
-);
-it("keeps the Subcategories table, search and open edit dialog after a category lookup fails", async () => {
-  const client = renderFeature(<Subcategories />);
-  const user = userEvent.setup();
-  await user.click(await screen.findByRole("button", { name: "Expand Food" }));
-  await user.type(
-    screen.getByRole("textbox", { name: "Search subcategories" }),
-    "Dairy",
-  );
-  const row = screen.getByText("Dairy").closest("tr")!;
-  await user.click(within(row).getByRole("button", { name: "Edit" }));
-  const dialog = screen.getByRole("dialog", { name: "Edit Subcategory" });
-  await user.clear(within(dialog).getByLabelText("Description (optional)"));
-  await user.type(
-    within(dialog).getByLabelText("Description (optional)"),
-    "Dialog draft",
-  );
-  categoryFailure = true;
-  await act(async () => {
-    await client.invalidateQueries({ queryKey: ["categories", "all"] });
-  });
-  const failure = await within(dialog).findByRole("alert");
-  noGlobalFailure();
-  expect(within(dialog).getByLabelText("Description (optional)")).toHaveValue(
-    "Dialog draft",
-  );
-  categoryFailure = false;
-  await user.click(within(failure).getByRole("button", { name: "Retry" }));
-  await waitFor(() =>
-    expect(within(dialog).queryByRole("alert")).not.toBeInTheDocument(),
-  );
-  expect(within(dialog).getByLabelText("Description (optional)")).toHaveValue(
-    "Dialog draft",
-  );
-  await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
-  expect(
-    screen.getByRole("textbox", { name: "Search subcategories" }),
-  ).toHaveValue("Dairy");
-  expect(screen.getByText("Dairy")).toBeVisible();
-  expect(writes).toEqual([]);
-});
-
 it.each(["report"] as const)(
   "removes the %s owner's obsolete scoped Retry after selecting another parent",
   async (kind) => {
@@ -357,69 +201,3 @@ it.each(["report"] as const)(
     expect(writes).toEqual([]);
   },
 );
-
-it("keeps loaded subcategory rows and an edited dialog mounted while the first successful category lookup is still pending", async () => {
-  categoryFailure = true;
-  const client = renderFeature(<Subcategories />);
-  const user = userEvent.setup();
-  await screen.findByRole("alert");
-  await user.click(
-    await screen.findByRole("button", { name: "Expand Unknown" }),
-  );
-  const table = screen.getByRole("table");
-  const row = screen.getByText("Dairy").closest("tr")!;
-  await user.click(within(row).getByRole("button", { name: "Edit" }));
-  const dialog = screen.getByRole("dialog", { name: "Edit Subcategory" });
-  const failure = await within(dialog).findByRole("alert");
-  await user.clear(within(dialog).getByLabelText("Description (optional)"));
-  await user.type(
-    within(dialog).getByLabelText("Description (optional)"),
-    "Pending retry draft",
-  );
-  let release!: () => void;
-  let started = false;
-  const held = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  server.use(
-    http.get("*/api/categories", async () => {
-      started = true;
-      await held;
-      return HttpResponse.json({
-        data: categories,
-        total: categories.length,
-        offset: 0,
-        limit: 500,
-      });
-    }),
-  );
-  try {
-    await user.click(within(failure).getByRole("button", { name: "Retry" }));
-    await waitFor(() => expect(started).toBe(true));
-    expect(
-      client.getQueryData(["categories", "all", undefined]),
-    ).toBeUndefined();
-    expect(client.getQueryState(["categories", "all", undefined])?.status).toBe(
-      "pending",
-    );
-    expect(table).toBeInTheDocument();
-    expect(dialog).toBeInTheDocument();
-    expect(within(dialog).getByLabelText("Description (optional)")).toHaveValue(
-      "Pending retry draft",
-    );
-    await act(async () => {
-      release();
-      await held;
-    });
-    await waitFor(() =>
-      expect(within(dialog).queryByRole("alert")).not.toBeInTheDocument(),
-    );
-    expect(within(dialog).getByLabelText("Description (optional)")).toHaveValue(
-      "Pending retry draft",
-    );
-    expect(table).toBeInTheDocument();
-    expect(writes).toEqual([]);
-  } finally {
-    release();
-  }
-});
