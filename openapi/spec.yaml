@@ -535,6 +535,18 @@ paths:
               schema: {$ref: '#/components/schemas/CategoryAssistanceActivity'}
         "401": {description: Authentication required}
         "403": {description: Admin required}
+  /api/category-assistance/suggestions/{attemptId}:
+    get:
+      tags: [CategoryAssistance]
+      summary: Read one durable category suggestion for review
+      operationId: CategoryAssistance_Suggestion
+      security: [{BearerAuth: []}, {ApiKey: []}]
+      parameters:
+        - {name: attemptId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        "200": {description: Completed suggestion, content: {application/json: {schema: {$ref: '#/components/schemas/CategoryAssistanceSuggestionRead'}}}}
+        "401": {description: Authentication required}
+        "404": {description: Suggestion unavailable, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ProblemDetails'}}}}
   /api/category-assistance/suggestions/{attemptId}/items:
     get:
       tags: [CategoryAssistance]
@@ -8949,7 +8961,7 @@ components:
         items: {type: array, items: {$ref: '#/components/schemas/CategoryAssistanceSuggestionRead'}}
     CategoryAssistanceSuggestionRead:
       type: object
-      required: [attemptId, source, originalDescription, affectedCount, proposedPath, abstentionReason, confidence, state, isCurrent, createdAt, completedAt]
+      required: [attemptId, source, originalDescription, affectedCount, proposedPath, abstentionReason, confidence, state, isCurrent, createdAt, completedAt, fitProbability, categoryProbability]
       properties:
         attemptId: {type: string, format: uuid}
         source: {$ref: '#/components/schemas/NormalizationSourceKey'}
@@ -8958,6 +8970,8 @@ components:
         proposedPath: {type: array, items: {type: string, format: uuid}}
         abstentionReason: {type: [string, 'null']}
         confidence: {type: [number, 'null'], format: double}
+        fitProbability: {type: [number, 'null'], format: double}
+        categoryProbability: {type: [number, 'null'], format: double}
         state: {type: string}
         isCurrent: {type: boolean}
         createdAt: {type: string, format: date-time}
@@ -8976,12 +8990,25 @@ components:
         todayAttempts: {type: integer, format: int32}
     CategoryAssistanceEligibleItemPage:
       type: object
-      required: [total, offset, limit, itemIds]
+      required: [total, offset, limit, itemIds, items]
       properties:
         total: {type: integer, format: int32}
         offset: {type: integer, format: int32}
         limit: {type: integer, format: int32}
         itemIds: {type: array, items: {type: string, format: uuid}}
+        items: {type: array, items: {$ref: '#/components/schemas/CategoryAssistanceEligibleItem'}}
+    CategoryAssistanceEligibleItem:
+      type: object
+      required: [id, receiptId, date, description, store, quantity, totalAmount, currency]
+      properties:
+        id: {type: string, format: uuid}
+        receiptId: {type: string, format: uuid}
+        date: {type: string, format: date}
+        description: {type: string}
+        store: {type: string}
+        quantity: {type: number, format: double}
+        totalAmount: {type: number, format: double}
+        currency: {type: string}
     CategoryAssistanceDecisionRequest:
       type: object
       required: [operationId, expectedTaxonomyRevision, itemIds]

@@ -22,7 +22,7 @@ public sealed class CategoryAssistanceReadStoreTests(PostgresFixture fixture)
 	[Fact]
 	public async Task CompletedPageOmitsFailuresAndMarksMissingEvidenceStale()
 	{
-		Guid restore = Guid.NewGuid(), category = Guid.NewGuid();
+		Guid restore = Guid.NewGuid(), category = Guid.NewGuid(), failedAttempt = Guid.NewGuid();
 		var now = DateTimeOffset.UtcNow;
 		await using (var db = fixture.CreateDbContext())
 		{
@@ -56,7 +56,7 @@ public sealed class CategoryAssistanceReadStoreTests(PostgresFixture fixture)
 			});
 			db.CategoryAssistanceAttempts.Add(new CategoryAssistanceAttemptEntity
 			{
-				Id = Guid.NewGuid(),
+				Id = failedAttempt,
 				RequestId = Guid.NewGuid(),
 				RestoreGeneration = Guid.NewGuid(),
 				SourceHash = new string('B', 64),
@@ -88,6 +88,7 @@ public sealed class CategoryAssistanceReadStoreTests(PostgresFixture fixture)
 		page.Items[0].AffectedCount.Should().Be(0);
 		page.Items[0].IsCurrent.Should().BeFalse();
 		page.Items[0].ProposedPath.Should().Equal(category);
+		(await store.GetSuggestionAsync(failedAttempt, CancellationToken.None)).Should().BeNull();
 	}
 
 	[Fact]
@@ -155,5 +156,8 @@ public sealed class CategoryAssistanceReadStoreTests(PostgresFixture fixture)
 		var page = await store.ListSuggestionsAsync(0, 100, CancellationToken.None);
 
 		page.Items.Single(x => x.AttemptId == attemptId).OriginalDescription.Should().Be("  Raw purchase  ");
+		(await store.GetSuggestionAsync(attemptId, CancellationToken.None))!
+				.OriginalDescription.Should().Be("  Raw purchase  ");
+		(await store.GetSuggestionAsync(Guid.NewGuid(), CancellationToken.None)).Should().BeNull();
 	}
 }

@@ -95,6 +95,24 @@ public sealed class CategoryAssistanceController(ICategoryAssistanceSettingsStor
 	public async Task<Ok<CategoryAssistanceActivity>> Activity(CancellationToken ct) =>
 		TypedResults.Ok(await readStore.GetActivityAsync(ct));
 
+	[HttpGet("suggestions/{attemptId:guid}")]
+	[EndpointSummary("Read one durable category suggestion for review")]
+	public async Task<Results<Ok<CategoryAssistanceSuggestionRead>, NotFoundProblem>> Suggestion(
+			Guid attemptId, CancellationToken ct)
+	{
+		var settings = await settingsStore.GetAsync(ct);
+		var capability = await capabilitySource.GetAsync(ct);
+		if (!CategoryAssistancePolicy.CanSuggest(settings, capability))
+		{
+			return ApiProblem.NotFound("Suggestion does not exist.");
+		}
+
+		var suggestion = await readStore.GetSuggestionAsync(attemptId, ct);
+		return suggestion is null
+				? ApiProblem.NotFound("Suggestion does not exist.")
+				: TypedResults.Ok(suggestion);
+	}
+
 	[HttpGet("suggestions/{attemptId:guid}/items")]
 	[EndpointSummary("Page eligible receipt items for an assistance suggestion")]
 	public async Task<Results<Ok<CategoryAssistanceEligibleItemPage>, BadRequestProblem, NotFoundProblem>>

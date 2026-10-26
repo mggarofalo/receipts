@@ -22,6 +22,26 @@ public sealed class CategoryAssistanceReadStore(IDbContextFactory<ApplicationDbC
 		int total = await query.CountAsync(ct);
 		var rows = await query.OrderByDescending(x => x.CompletedAt).ThenByDescending(x => x.Id)
 			.Skip(offset).Take(limit).ToListAsync(ct);
+		return new(total, offset, limit, await ProjectAsync(db, rows, ct));
+	}
+
+	public async Task<CategoryAssistanceSuggestionRead?> GetSuggestionAsync(Guid attemptId, CancellationToken ct)
+	{
+		await using var db = await factory.CreateDbContextAsync(ct);
+		var row = await db.CategoryAssistanceAttempts.AsNoTracking()
+				.SingleOrDefaultAsync(x => x.Id == attemptId &&
+						(x.State == "suggested" || x.State == "abstained"), ct);
+		if (row is null)
+		{
+			return null;
+		}
+
+		return (await ProjectAsync(db, [row], ct)).Single();
+	}
+
+	private static async Task<List<CategoryAssistanceSuggestionRead>> ProjectAsync(
+			ApplicationDbContext db, IReadOnlyList<CategoryAssistanceAttemptEntity> rows, CancellationToken ct)
+	{
 		var settings = await db.CategoryAssistanceSettings.AsNoTracking().SingleAsync(ct);
 		var head = await db.TaxonomyHeads.AsNoTracking().SingleAsync(ct);
 		var connection = await db.CategoryAssistanceConnection.AsNoTracking().SingleOrDefaultAsync(ct);
@@ -74,9 +94,10 @@ public sealed class CategoryAssistanceReadStore(IDbContextFactory<ApplicationDbC
 			}
 			items.Add(new(row.Id, source, originalDescription, affected, path,
 				suggestion?.AbstentionReason, suggestion?.Confidence, row.State, current,
-				row.CreatedAt, row.CompletedAt));
+								row.CreatedAt, row.CompletedAt,
+								suggestion?.FitProbability, suggestion?.CategoryProbability));
 		}
-		return new(total, offset, limit, items);
+		return items;
 	}
 
 	public async Task<CategoryAssistanceActivity> GetActivityAsync(CancellationToken ct)

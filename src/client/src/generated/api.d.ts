@@ -210,6 +210,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/category-assistance/suggestions/{attemptId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read one durable category suggestion for review */
+        get: operations["CategoryAssistance_Suggestion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/category-assistance/suggestions/{attemptId}/items": {
         parameters: {
             query?: never;
@@ -3851,6 +3868,10 @@ export interface components {
             abstentionReason: string | null;
             /** Format: double */
             confidence: number | null;
+            /** Format: double */
+            fitProbability: number | null;
+            /** Format: double */
+            categoryProbability: number | null;
             state: string;
             isCurrent: boolean;
             /** Format: date-time */
@@ -3884,6 +3905,22 @@ export interface components {
             /** Format: int32 */
             limit: number;
             itemIds: string[];
+            items: components["schemas"]["CategoryAssistanceEligibleItem"][];
+        };
+        CategoryAssistanceEligibleItem: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            receiptId: string;
+            /** Format: date */
+            date: string;
+            description: string;
+            store: string;
+            /** Format: double */
+            quantity: number;
+            /** Format: double */
+            totalAmount: number;
+            currency: string;
         };
         CategoryAssistanceDecisionRequest: {
             /** Format: uuid */
@@ -7276,6 +7313,44 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    CategoryAssistance_Suggestion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Completed suggestion */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryAssistanceSuggestionRead"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Suggestion unavailable */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
             };
         };
     };

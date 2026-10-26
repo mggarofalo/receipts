@@ -29,8 +29,36 @@ public sealed class CategoryAssistanceDecisionStore(IDbContextFactory<Applicatio
 		var attempt = await db.CategoryAssistanceAttempts.AsNoTracking().SingleOrDefaultAsync(x => x.Id == attemptId, ct)
 			?? throw new TaxonomyException(404, "Suggestion does not exist.");
 		var eligible = await GetEligibleObservationsAsync(db, attempt, null, ct);
-		var ids = eligible.Select(x => x.ReceiptItemId).Order().Skip(offset).Take(limit).ToList();
-		return new(eligible.Count, offset, limit, ids);
+		var markers = eligible.OrderBy(x => x.ReceiptItemId).Skip(offset).Take(limit).ToList();
+		var ids = markers.Select(x => x.ReceiptItemId).ToList();
+		var details = await (from item in db.ReceiptItems.AsNoTracking()
+							 join receipt in db.Receipts.AsNoTracking() on item.ReceiptId equals receipt.Id
+							 where ids.Contains(item.Id)
+							 select new
+							 {
+								 item.Id,
+								 item.ReceiptId,
+								 receipt.Date,
+								 item.Description,
+								 receipt.Location,
+								 item.Quantity,
+								 item.TotalAmount,
+								 item.TotalAmountCurrency,
+								 item.NormalizationRevision,
+								 ReceiptRevision = receipt.NormalizationRevision
+							 })
+				.ToListAsync(ct);
+		var byId = details.ToDictionary(x => x.Id);
+		var items = markers.Where(x => byId.TryGetValue(x.ReceiptItemId, out var detail) &&
+									  detail.ReceiptId == x.ReceiptId &&
+									  detail.NormalizationRevision == x.ItemRevision &&
+									  detail.ReceiptRevision == x.ReceiptRevision)
+				.Select(x => byId[x.ReceiptItemId])
+				.Select(x => new CategoryAssistanceEligibleItem(x.Id, x.ReceiptId, x.Date,
+						x.Description, x.Location, x.Quantity, x.TotalAmount,
+						x.TotalAmountCurrency.ToString()))
+				.ToList();
+		return new(eligible.Count, offset, limit, items.Select(x => x.Id).ToList(), items);
 	}
 
 	public Task<CategoryAssistanceDecisionResult> AcceptAsync(string actor, Guid attemptId,

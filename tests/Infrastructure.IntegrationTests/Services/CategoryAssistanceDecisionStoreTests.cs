@@ -88,8 +88,16 @@ public sealed class CategoryAssistanceDecisionStoreTests(PostgresFixture server)
 		await using var fixture = await server.CreateIsolatedAsync();
 		var seed = await SeedAsync(fixture);
 		var store = CreateStore(fixture);
-		(await store.ListEligibleItemsAsync(seed.Attempt, 0, 10, CancellationToken.None))
-			.ItemIds.Should().Equal(seed.Item);
+		var initialPage = await store.ListEligibleItemsAsync(seed.Attempt, 0, 10, CancellationToken.None);
+		initialPage.ItemIds.Should().Equal(seed.Item);
+		initialPage.Items.Should().ContainSingle().Which.Should().BeEquivalentTo(new
+		{
+			Id = seed.Item,
+			Description = "Bread",
+			Store = "Store",
+			Date = new DateOnly(2026, 10, 26),
+			Currency = "USD"
+		}, options => options.ExcludingMissingMembers());
 		await using (var db = fixture.CreateDbContext())
 		{
 			var first = await db.CategoryAssistanceObservations.SingleAsync();
@@ -117,6 +125,7 @@ public sealed class CategoryAssistanceDecisionStoreTests(PostgresFixture server)
 		}
 		var page = await store.ListEligibleItemsAsync(seed.Attempt, 0, 10, CancellationToken.None);
 		page.Total.Should().Be(0);
+		page.Items.Should().BeEmpty();
 		var read = new CategoryAssistanceReadStore(new Factory(fixture), TimeProvider.System);
 		(await read.ListSuggestionsAsync(0, 100, CancellationToken.None)).Items
 			.Single(x => x.AttemptId == seed.Attempt).AffectedCount.Should().Be(0);
