@@ -26,6 +26,39 @@ namespace Presentation.API.Tests.Controllers;
 
 public class YnabControllerTests
 {
+	[Theory]
+	[InlineData(null, YnabComparisonCategoryView.AsClassified)]
+	[InlineData("asClassified", YnabComparisonCategoryView.AsClassified)]
+	[InlineData("currentHierarchy", YnabComparisonCategoryView.CurrentHierarchy)]
+	public async Task GetReceiptSplitComparison_UsesExplicitCategoryView(
+		string? categoryView, YnabComparisonCategoryView expectedView)
+	{
+		Guid receiptId = Guid.NewGuid();
+		_mediatorMock.Setup(m => m.Send(
+				It.Is<GetReceiptYnabSplitComparisonQuery>(q => q.ReceiptId == receiptId && q.CategoryView == expectedView),
+				It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new ReceiptYnabSplitComparisonResult(false, "Unavailable", [], [])
+			{
+				CategoryView = expectedView == YnabComparisonCategoryView.CurrentHierarchy
+					? "currentHierarchy" : "asClassified",
+			});
+
+		var result = await _controller.GetReceiptSplitComparison(receiptId, categoryView);
+
+		var response = result.Result.Should().BeOfType<Ok<ReceiptYnabSplitComparisonResponse>>().Subject.Value!;
+		response.CategoryView.Should().Be(expectedView == YnabComparisonCategoryView.CurrentHierarchy
+			? ReceiptYnabSplitComparisonResponseCategoryView.CurrentHierarchy
+			: ReceiptYnabSplitComparisonResponseCategoryView.AsClassified);
+	}
+
+	[Fact]
+	public async Task GetReceiptSplitComparison_RejectsUnknownCategoryView()
+	{
+		var result = await _controller.GetReceiptSplitComparison(Guid.NewGuid(), "unknown");
+		result.Result.Should().BeOfType<BadRequestProblem>();
+		_mediatorMock.Verify(m => m.Send(It.IsAny<GetReceiptYnabSplitComparisonQuery>(),
+			It.IsAny<CancellationToken>()), Times.Never);
+	}
 	private static readonly Guid Budget1 = Guid.Parse("11111111-1111-1111-1111-111111111111");
 	private static readonly Guid BudgetB = Guid.Parse("22222222-2222-2222-2222-222222222222");
 	private readonly Mock<IMediator> _mediatorMock;

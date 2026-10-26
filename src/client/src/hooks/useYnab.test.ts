@@ -176,8 +176,12 @@ describe("useYnab", () => {
       const eventsKey = ["ynab", "events", { page: 2 }] as const;
       const statusKey = ["ynab", "status"] as const;
       const unrelatedKey = ["ynab", "account-mappings"] as const;
-      const eventsQuery = vi.fn().mockResolvedValue({ source: "events-refetch" });
-      const statusQuery = vi.fn().mockResolvedValue({ source: "status-refetch" });
+      const eventsQuery = vi
+        .fn()
+        .mockResolvedValue({ source: "events-refetch" });
+      const statusQuery = vi
+        .fn()
+        .mockResolvedValue({ source: "status-refetch" });
       const unrelatedQuery = vi
         .fn()
         .mockResolvedValue({ source: "unrelated-refetch" });
@@ -198,10 +202,9 @@ describe("useYnab", () => {
       const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
       (client.GET as Mock).mockResolvedValue(response);
 
-      const { result, unmount } = renderHook(
-        () => useYnabConnectionStatus(),
-        { wrapper: createWrapper(queryClient) },
-      );
+      const { result, unmount } = renderHook(() => useYnabConnectionStatus(), {
+        wrapper: createWrapper(queryClient),
+      });
 
       await waitFor(() => expect(result.current[terminalState]).toBe(true));
       await waitFor(() => {
@@ -1201,7 +1204,12 @@ describe("useYnab", () => {
       results: [
         {
           receiptId: "r1",
-          result: { success: true, operationStatus: "synced" as const, pushedTransactions: [], error: null },
+          result: {
+            success: true,
+            operationStatus: "synced" as const,
+            pushedTransactions: [],
+            error: null,
+          },
         },
         {
           receiptId: "r2",
@@ -1295,11 +1303,21 @@ describe("useYnab", () => {
       results: [
         {
           receiptId: "r1",
-          result: { success: true, operationStatus: "synced" as const, pushedTransactions: [], error: null },
+          result: {
+            success: true,
+            operationStatus: "synced" as const,
+            pushedTransactions: [],
+            error: null,
+          },
         },
         {
           receiptId: "r2",
-          result: { success: true, operationStatus: "synced" as const, pushedTransactions: [], error: null },
+          result: {
+            success: true,
+            operationStatus: "synced" as const,
+            pushedTransactions: [],
+            error: null,
+          },
         },
       ],
     };
@@ -1708,6 +1726,50 @@ describe("useYnab", () => {
         params: { path: { receiptId: "receipt-1" } },
       },
     );
+  });
+
+  it("useYnabSplitComparison requests and caches the optional current hierarchy preview separately", async () => {
+    (client.GET as Mock).mockResolvedValue({
+      data: {
+        categoryView: "currentHierarchy",
+        capturedCurrentRevisionId: "revision-1",
+        canComputeExpected: true,
+        unmappedCategories: [],
+        transactionComparisons: [],
+      },
+      error: undefined,
+    });
+
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const { result } = renderHook(
+      () => useYnabSplitComparison("receipt-1", true, "currentHierarchy"),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(client.GET).toHaveBeenCalledWith(
+      "/api/ynab/receipts/{receiptId}/split-comparison",
+      {
+        middleware: expect.any(Array),
+        params: {
+          path: { receiptId: "receipt-1" },
+          query: { categoryView: "currentHierarchy" },
+        },
+      },
+    );
+    expect(
+      queryClient.getQueryData([
+        "ynab",
+        "split-comparison",
+        "receipt-1",
+        "currentHierarchy",
+      ]),
+    ).toEqual(result.current.data);
+    expect(
+      queryClient.getQueryData(["ynab", "split-comparison", "receipt-1"]),
+    ).toBeUndefined();
   });
 
   it("useYnabSplitComparison is disabled when receiptId is undefined", () => {

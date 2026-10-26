@@ -314,6 +314,10 @@ public partial class YnabMapper
 		return new ReceiptYnabSplitComparisonResponse
 		{
 			CanComputeExpected = source.CanComputeExpected,
+			CategoryView = source.CategoryView == "currentHierarchy"
+								? ReceiptYnabSplitComparisonResponseCategoryView.CurrentHierarchy
+								: ReceiptYnabSplitComparisonResponseCategoryView.AsClassified,
+			CapturedCurrentRevisionId = source.CapturedCurrentRevisionId,
 			ExpectedUnavailableReason = source.ExpectedUnavailableReason,
 			UnmappedCategories = source.UnmappedCategories,
 			TransactionComparisons = source.TransactionComparisons.Select(ToTransactionSplitComparison).ToList(),

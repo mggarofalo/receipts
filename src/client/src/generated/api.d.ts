@@ -3457,7 +3457,7 @@ export interface paths {
         };
         /**
          * Get expected vs actual YNAB category split for a receipt
-         * @description Returns the expected YNAB category split computed locally alongside the actual state stored in YNAB for any already-pushed transactions. Used by the receipt detail page to validate and preview splits.
+         * @description Returns the expected YNAB category split computed locally alongside the actual state stored in YNAB for any already-pushed transactions. Used by the receipt detail page to validate and preview splits. The default asClassified view uses recorded assignment ancestry; currentHierarchy previews mapping against one captured current taxonomy revision.
          */
         get: operations["GetReceiptYnabSplitComparison"];
         put?: never;
@@ -6286,11 +6286,16 @@ export interface components {
             matches?: null | boolean;
         };
         ReceiptYnabSplitComparisonResponse: {
+            categoryView: components["schemas"]["ReceiptYnabSplitComparisonResponseCategoryView"];
+            /** Format: uuid */
+            capturedCurrentRevisionId?: null | string;
             canComputeExpected: boolean;
             expectedUnavailableReason?: null | string;
             unmappedCategories: string[];
             transactionComparisons: components["schemas"]["TransactionSplitComparison"][];
         };
+        /** @enum {string} */
+        ReceiptYnabSplitComparisonResponseCategoryView: "asClassified" | "currentHierarchy";
         YnabMemoSyncResultItem: {
             /** Format: uuid */
             localTransactionId: string;
@@ -15160,7 +15165,10 @@ export interface operations {
     };
     GetReceiptYnabSplitComparison: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Classification ancestry used for the expected split. Defaults to asClassified. */
+                categoryView?: "asClassified" | "currentHierarchy";
+            };
             header?: never;
             path: {
                 receiptId: string;
@@ -15176,6 +15184,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReceiptYnabSplitComparisonResponse"];
+                };
+            };
+            /** @description Invalid category view */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
             /** @description YNAB integration is not configured */

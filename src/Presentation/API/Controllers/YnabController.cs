@@ -508,14 +508,25 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 	[EndpointDescription("Returns the expected YNAB category split computed locally alongside the actual state stored in YNAB for any already-pushed transactions.")]
 	[ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
 	[RequireYnabConfigured]
-	public async Task<Results<Ok<ReceiptYnabSplitComparisonResponse>, StatusCodeHttpResult>> GetReceiptSplitComparison(
+	public async Task<Results<Ok<ReceiptYnabSplitComparisonResponse>, BadRequestProblem, StatusCodeHttpResult>> GetReceiptSplitComparison(
 		[FromRoute] Guid receiptId,
-		CancellationToken cancellationToken)
+				[FromQuery] string? categoryView = null,
+				CancellationToken cancellationToken = default)
 	{
+		YnabComparisonCategoryView view = categoryView switch
+		{
+			null or "asClassified" => YnabComparisonCategoryView.AsClassified,
+			"currentHierarchy" => YnabComparisonCategoryView.CurrentHierarchy,
+			_ => (YnabComparisonCategoryView)(-1),
+		};
+		if (!Enum.IsDefined(view))
+		{
+			return ApiProblem.BadRequest("categoryView must be asClassified or currentHierarchy");
+		}
 		try
 		{
 			ReceiptYnabSplitComparisonResult result = await mediator.Send(
-				new GetReceiptYnabSplitComparisonQuery(receiptId), cancellationToken);
+								new GetReceiptYnabSplitComparisonQuery(receiptId, view), cancellationToken);
 			return TypedResults.Ok(mapper.ToSplitComparisonResponse(result));
 		}
 		catch (YnabAuthException ex)

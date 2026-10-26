@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { fireEvent, screen } from "@testing-library/react";
 import { renderWithProviders } from "@/test/test-utils";
 import { mockQueryResult } from "@/test/mock-hooks";
 import { YnabSplitComparisonContent } from "./YnabSplitComparisonContent";
@@ -25,6 +25,61 @@ beforeEach(async () => {
 });
 
 describe("YnabSplitComparisonContent", () => {
+  it("defaults to recorded splits and requests current hierarchy only when selected", async () => {
+    const ynab = await import("@/hooks/useYnab");
+    vi.mocked(ynab.useYnabSplitComparison).mockReturnValue(
+      mockQueryResult({
+        isLoading: false,
+        isPending: false,
+        isSuccess: true,
+        data: {
+          categoryView: "currentHierarchy",
+          capturedCurrentRevisionId: "revision-1",
+          canComputeExpected: true,
+          unmappedCategories: [],
+          transactionComparisons: [],
+        },
+      }),
+    );
+
+    renderWithProviders(<YnabSplitComparisonContent receiptId="r1" />);
+
+    const selector = screen.getByRole("combobox", {
+      name: "Expected split view",
+    });
+    expect(selector).toHaveValue("asClassified");
+    expect(ynab.useYnabSplitComparison).toHaveBeenLastCalledWith(
+      "r1",
+      true,
+      "asClassified",
+    );
+    expect(screen.getByText(/recorded with this receipt/)).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Current hierarchy revision:/),
+    ).not.toBeInTheDocument();
+
+    fireEvent.change(selector, { target: { value: "currentHierarchy" } });
+    expect(ynab.useYnabSplitComparison).toHaveBeenLastCalledWith(
+      "r1",
+      true,
+      "currentHierarchy",
+    );
+    expect(screen.getByText(/Preview only:/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Current hierarchy revision: revision-1/),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /push/i }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.change(selector, { target: { value: "asClassified" } });
+    expect(ynab.useYnabSplitComparison).toHaveBeenLastCalledWith(
+      "r1",
+      true,
+      "asClassified",
+    );
+  });
+
   it("renders a loading skeleton while the query is pending", async () => {
     const ynab = await import("@/hooks/useYnab");
     vi.mocked(ynab.useYnabSplitComparison).mockReturnValue(
