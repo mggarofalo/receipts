@@ -33,14 +33,7 @@ public sealed class CategoryAssistanceDispatchStoreTests(PostgresFixture fixture
 		var seed = await SeedAsync("worker acceptance " + Guid.NewGuid());
 		try
 		{
-			Guid categoryId;
-			await using (var db = fixture.CreateDbContext())
-			{
-				categoryId = await db.TaxonomyNodes.Where(x => x.RevisionId == seed.Taxonomy)
-						.Select(x => x.CategoryId).SingleAsync();
-			}
-
-			var handler = new CountingSuggestionHandler(categoryId);
+			var handler = new CountingSuggestionHandler(seed.CategoryId);
 			var options = new JevOptions { Enabled = true, ApiKey = "jev-test-key" };
 			var monitor = new Mock<IOptionsMonitor<JevOptions>>();
 			monitor.SetupGet(x => x.CurrentValue).Returns(() => options);
@@ -121,12 +114,17 @@ public sealed class CategoryAssistanceDispatchStoreTests(PostgresFixture fixture
 	private sealed class CountingSuggestionHandler(Guid categoryId) : HttpMessageHandler
 	{
 		public int Calls { get; private set; }
-		protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+		protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
 		{
 			Calls++;
 			request.RequestUri!.AbsoluteUri.Should().Be("https://api.typesafe.ai/v1/systemone");
 			request.Headers.Authorization!.Parameter.Should().Be("jev-test-key");
 			string id = categoryId.ToString("D");
+			using var requestBody = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct));
+			var probabilities = requestBody.RootElement.GetProperty("state").GetProperty("categories")
+				.EnumerateArray().Select(category => category.GetProperty("id").GetString()!)
+				.ToDictionary(category => category, category => category == id ? 1.0 : 0.0);
+			probabilities.Should().ContainKey(id);
 			string body = JsonSerializer.Serialize(new
 			{
 				model = "jev-1.14.0",
@@ -137,14 +135,14 @@ public sealed class CategoryAssistanceDispatchStoreTests(PostgresFixture fixture
 						type = "choice",
 						choice = id,
 						confidence = 0.9,
-						probabilities = new Dictionary<string, double> { [id] = 1 }
+						probabilities
 					},
 					fits = new { type = "noul", noul = 0.9 }
 				},
 				usage = new { input_tokens = 1, output_tokens = 1 }
 			});
-			return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-			{ Content = new StringContent(body, Encoding.UTF8, "application/json") });
+			return new HttpResponseMessage(HttpStatusCode.OK)
+			{ Content = new StringContent(body, Encoding.UTF8, "application/json") };
 		}
 	}
 	private sealed class Factory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
@@ -437,7 +435,7 @@ public sealed class CategoryAssistanceDispatchStoreTests(PostgresFixture fixture
 		finally { await DisableAsync(seed.Actor); await Connection().InvalidateAsync(); }
 	}
 
-	private async Task<(string Actor, Guid ReceiptId, Guid ItemId, Guid Taxonomy, CategoryAssistanceSettings Settings)> SeedAsync(string description)
+	private async Task<(string Actor, Guid ReceiptId, Guid ItemId, Guid Taxonomy, Guid CategoryId, CategoryAssistanceSettings Settings)> SeedAsync(string description)
 	{
 		string actor = "assistance-dispatch-" + Guid.NewGuid();
 		Guid receiptId = Guid.NewGuid(), itemId = Guid.NewGuid(), categoryId = Guid.NewGuid();
@@ -486,7 +484,7 @@ public sealed class CategoryAssistanceDispatchStoreTests(PostgresFixture fixture
 			(await CategoryAssistanceObservationWriter.RecordNoChoiceSaveAsync(db, actor, Guid.NewGuid(), itemId, false, false)).Should().BeTrue();
 			await tx.CommitAsync();
 		}
-		return (actor, receiptId, itemId, taxonomy, settings);
+		return (actor, receiptId, itemId, taxonomy, categoryId, settings);
 	}
 
 	[Fact]
