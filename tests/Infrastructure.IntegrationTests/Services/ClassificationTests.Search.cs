@@ -86,11 +86,21 @@ public sealed partial class ClassificationTests
 			await db.SaveChangesAsync();
 		}
 
-		ReceiptItemRepository repository = new(new Factory(fixture));
-		(await repository.GetAllAsync(0, 20, SortParams.Default, label, default))
-			.Select(x => x.Id).Should().Equal(legacyItemId);
-		(await repository.GetCountAsync(label, default)).Should().Be(1);
-		(await repository.GetAllAsync(0, 20, SortParams.Default, "Legacy%X", default))
-			.Should().BeEmpty();
+		try
+		{
+			ReceiptItemRepository repository = new(new Factory(fixture));
+			(await repository.GetAllAsync(0, 20, SortParams.Default, label, default))
+					.Select(x => x.Id).Should().Equal(legacyItemId);
+			(await repository.GetCountAsync(label, default)).Should().Be(1);
+			(await repository.GetAllAsync(0, 20, SortParams.Default, "Legacy%X", default))
+					.Should().BeEmpty();
+		}
+		finally
+		{
+			// This fixture is shared by ClassificationTests. Do not leave an
+			// intentionally unassigned legacy item for later readiness checks.
+			await using ApplicationDbContext db = fixture.CreateDbContext();
+			await db.ReceiptItems.Where(x => x.Id == legacyItemId).ExecuteDeleteAsync();
+		}
 	}
 }
