@@ -53,15 +53,17 @@ operation, reason and timestamp. A deterministic item/mapping operation ID and t
 aggregate receipt request replay prevent duplicate assignment evidence. Format 11
 preserves the reason and authoritative classification operation unchanged.
 
-This is still internal workflow integration: approval/revocation HTTP contracts and
-review UI remain required before the feature is enabled or released.
+Authenticated inspect/history and Admin approval/revocation HTTP contracts are available.
+The review UI remains required before the feature is enabled or released.
 
 ## Required before enabling or releasing
 
 - Portable format 11 now preserves the approval history and heads described below.
-- Add spec-first HTTP contracts and review UI for explicit approval and revocation,
-  conflict handling and current mapping provenance. Use a single nested category field.
-  Provide a read surface for current mapping/revision and category paths.
+- Add review UI for the explicit approval/revocation HTTP contracts, conflict handling
+  and current mapping provenance. The API uses one required nullable category field.
+  Inspect/history require authentication; changes require Admin. Category paths use
+  the existing immutable taxonomy revision endpoint. Inspection combines advisory reads;
+  writes always recheck the supplied source, mapping and taxonomy revisions.
 - Add frontend tests covering the eventual approval and entry user flow. The internal
   aggregate reuse path has PostgreSQL tests for precedence, revocation races, atomic
   rollback, retries and portable provenance. Keep model/provider adapters outside these
@@ -87,5 +89,5 @@ Formats 10 and earlier explicitly bring no category approvals. Their domain upse
 and existing taxonomy/history compatibility rules still apply; existing destination
 mapping history and heads are preserved. Offline inspection includes mapping rows
 in factual digests, and offline normalization preserves format 11 and all approval
-evidence unchanged. Mapping writes remain internal until the API and entry-flow
-requirements above are satisfied.
+evidence unchanged. Release enablement still requires the entry-flow requirements
+above; API approval is always an explicit Admin operation, independent of purchase acceptance.

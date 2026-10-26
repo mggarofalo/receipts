@@ -15,8 +15,11 @@ public sealed record CategoryMappingRevision(Guid Id, Guid? PreviousRevisionId, 
 public sealed record CategoryMappingResolution(string Disposition, Guid? CategoryId, Guid TaxonomyRevisionId,
 	Guid? MappingRevisionId = null, Guid? ApprovalTaxonomyRevisionId = null);
 
+public sealed record CategoryMappingHistory(IReadOnlyList<CategoryMappingRevision> Items, Guid? NextBeforeRevisionId);
+
 public interface ICategoryMappingService
 {
+	Task<CategoryMappingHistory> ReadHistoryAsync(NormalizationSourceKey source, Guid? beforeRevisionId, int limit, CancellationToken ct = default);
 	// CategoryId null explicitly revokes. The expected mapping revision is null only for the first approval.
 	Task<CategoryMappingRevision> ChangeAsync(string actor, CategoryMappingCommand command, CancellationToken ct = default);
 	// A non-null explicitChoice includes explicit clearing (CategoryId null), and always takes precedence.

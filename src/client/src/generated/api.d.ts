@@ -4,6 +4,66 @@
  */
 
 export interface paths {
+    "/api/category-mappings/inspect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Inspect exact-source category approval
+         * @description Advisory authenticated read. Only outer ASCII spaces are trimmed. Case, tabs, Unicode, location and codes remain distinct. Category paths are available via /api/taxonomy/revisions/{id} using the returned taxonomy revision.
+         */
+        post: operations["CategoryMappings_Inspect"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/category-mappings/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Read exact-source approval history
+         * @description Advisory authenticated read. Only outer ASCII spaces are trimmed. Case, tabs, Unicode, location and codes remain distinct. Category paths are available via /api/taxonomy/revisions/{id} using the returned taxonomy revision.
+         */
+        post: operations["CategoryMappings_History"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/category-mappings/changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Explicitly approve or revoke future exact-source category reuse
+         * @description Requires Admin. A non-null category approves future exact-source matches; null revokes. Never changes existing purchases. Accepting a purchase category alone never approves reuse. Retries retain the operation ID and payload.
+         */
+        post: operations["CategoryMappings_Changes"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/receipt-items/{id}/classification": {
         parameters: {
             query?: never;
@@ -3315,6 +3375,64 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        CategoryMappingSourceRequest: {
+            source: components["schemas"]["NormalizationSourceKey"];
+        };
+        CategoryMappingHistoryRequest: {
+            source: components["schemas"]["NormalizationSourceKey"];
+            /** Format: uuid */
+            beforeRevisionId?: string | null;
+            /** Format: int32 */
+            limit: number;
+        };
+        CategoryMappingCategory: {
+            /** Format: uuid */
+            id: string;
+        };
+        CategoryMappingChangeRequest: {
+            source: components["schemas"]["NormalizationSourceKey"];
+            sourceFingerprint: string;
+            /** Format: uuid */
+            expectedMappingRevisionId: string | null;
+            /** Format: uuid */
+            expectedTaxonomyRevisionId: string;
+            category: components["schemas"]["CategoryMappingCategory"] | null;
+            /** Format: uuid */
+            operationId: string;
+            reason: string;
+        };
+        CategoryMappingRevisionResponse: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            previousRevisionId?: string | null;
+            source: components["schemas"]["NormalizationSourceKey"];
+            sourceFingerprint: string;
+            category?: components["schemas"]["CategoryMappingCategory"] | null;
+            /** Format: uuid */
+            taxonomyRevisionId: string;
+            semanticFingerprint?: string | null;
+            actor: string;
+            /** Format: uuid */
+            operationId: string;
+            reason: string;
+            /** Format: date-time */
+            recordedAt: string;
+        };
+        CategoryMappingInspectionResponse: {
+            source: components["schemas"]["NormalizationSourceKey"];
+            sourceFingerprint: string;
+            disposition: string;
+            /** Format: uuid */
+            taxonomyRevisionId: string;
+            category?: components["schemas"]["CategoryMappingCategory"] | null;
+            mapping?: components["schemas"]["CategoryMappingRevisionResponse"] | null;
+        };
+        CategoryMappingHistoryResponse: {
+            items: components["schemas"]["CategoryMappingRevisionResponse"][];
+            /** Format: uuid */
+            nextBeforeRevisionId?: string | null;
+        };
         PurgeTrashResult: {
             /**
              * Format: int32
@@ -5900,6 +6018,144 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    CategoryMappings_Inspect: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CategoryMappingSourceRequest"];
+            };
+        };
+        responses: {
+            /** @description Exact-source mapping evidence */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryMappingInspectionResponse"];
+                };
+            };
+            /** @description Request rejected */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CategoryMappings_History: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CategoryMappingHistoryRequest"];
+            };
+        };
+        responses: {
+            /** @description Exact-source mapping evidence */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryMappingHistoryResponse"];
+                };
+            };
+            /** @description Request rejected */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CategoryMappings_Changes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CategoryMappingChangeRequest"];
+            };
+        };
+        responses: {
+            /** @description Exact-source mapping evidence */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryMappingRevisionResponse"];
+                };
+            };
+            /** @description Request rejected */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request rejected */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request rejected */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     Classification_Assign: {
         parameters: {
             query?: never;

@@ -8,6 +8,97 @@ info:
     default version (currently 1.0) is assumed.
 
 paths:
+  /api/category-mappings/inspect:
+    post:
+      tags: [CategoryMappings]
+      summary: Inspect exact-source category approval
+      description: Advisory authenticated read. Only outer ASCII spaces are trimmed. Case, tabs, Unicode, location and codes remain distinct. Category paths are available via /api/taxonomy/revisions/{id} using the returned taxonomy revision.
+      operationId: CategoryMappings_Inspect
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/CategoryMappingSourceRequest"}
+      responses:
+        "200":
+          description: Exact-source mapping evidence
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CategoryMappingInspectionResponse"}
+        "401":
+          description: Authentication required
+        "400":
+          description: Request rejected
+          content:
+            application/problem+json:
+              schema: {$ref: "#/components/schemas/ProblemDetails"}
+  /api/category-mappings/history:
+    post:
+      tags: [CategoryMappings]
+      summary: Read exact-source approval history
+      description: Advisory authenticated read. Only outer ASCII spaces are trimmed. Case, tabs, Unicode, location and codes remain distinct. Category paths are available via /api/taxonomy/revisions/{id} using the returned taxonomy revision.
+      operationId: CategoryMappings_History
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/CategoryMappingHistoryRequest"}
+      responses:
+        "200":
+          description: Exact-source mapping evidence
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CategoryMappingHistoryResponse"}
+        "401":
+          description: Authentication required
+        "400":
+          description: Request rejected
+          content:
+            application/problem+json:
+              schema: {$ref: "#/components/schemas/ProblemDetails"}
+  /api/category-mappings/changes:
+    post:
+      tags: [CategoryMappings]
+      summary: Explicitly approve or revoke future exact-source category reuse
+      description: Requires Admin. A non-null category approves future exact-source matches; null revokes. Never changes existing purchases. Accepting a purchase category alone never approves reuse. Retries retain the operation ID and payload.
+      operationId: CategoryMappings_Changes
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/CategoryMappingChangeRequest"}
+      responses:
+        "200":
+          description: Exact-source mapping evidence
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CategoryMappingRevisionResponse"}
+        "401":
+          description: Authentication required
+        "400":
+          description: Request rejected
+          content:
+            application/problem+json:
+              schema: {$ref: "#/components/schemas/ProblemDetails"}
+        "403":
+          description: Request rejected
+          content:
+            application/problem+json:
+              schema: {$ref: "#/components/schemas/ProblemDetails"}
+        "409":
+          description: Request rejected
+          content:
+            application/problem+json:
+              schema: {$ref: "#/components/schemas/ProblemDetails"}
   /api/receipt-items/{id}/classification:
     put:
       tags: [Classification]
@@ -7765,6 +7856,79 @@ paths:
 
 components:
   schemas:
+    CategoryMappingSourceRequest:
+      type: object
+      required: [source]
+      properties:
+        source: {$ref: "#/components/schemas/NormalizationSourceKey"}
+    CategoryMappingHistoryRequest:
+      type: object
+      required: [source, limit]
+      properties:
+        source: {$ref: "#/components/schemas/NormalizationSourceKey"}
+        beforeRevisionId: {type: [string, 'null'], format: uuid}
+        limit: {type: integer, format: int32, minimum: 1, maximum: 100}
+    CategoryMappingCategory:
+      type: object
+      required: [id]
+      properties:
+        id: {type: string, format: uuid}
+    CategoryMappingChangeRequest:
+      type: object
+      required: [source, sourceFingerprint, expectedMappingRevisionId, expectedTaxonomyRevisionId, category, operationId, reason]
+      properties:
+        source: {$ref: "#/components/schemas/NormalizationSourceKey"}
+        sourceFingerprint: {type: string, pattern: '^[A-F0-9]{64}$'}
+        expectedMappingRevisionId: {type: [string, 'null'], format: uuid}
+        expectedTaxonomyRevisionId: {type: string, format: uuid}
+        category:
+          oneOf:
+            - {$ref: "#/components/schemas/CategoryMappingCategory"}
+            - {type: 'null'}
+        operationId: {type: string, format: uuid}
+        reason: {type: string, minLength: 1, maxLength: 4000}
+    CategoryMappingRevisionResponse:
+      type: object
+      required: [id, source, sourceFingerprint, taxonomyRevisionId, actor, operationId, reason, recordedAt]
+      properties:
+        id: {type: string, format: uuid}
+        previousRevisionId: {type: [string, 'null'], format: uuid}
+        source: {$ref: "#/components/schemas/NormalizationSourceKey"}
+        sourceFingerprint: {type: string}
+        category:
+          oneOf:
+            - {$ref: "#/components/schemas/CategoryMappingCategory"}
+            - {type: 'null'}
+        taxonomyRevisionId: {type: string, format: uuid}
+        semanticFingerprint: {type: [string, 'null']}
+        actor: {type: string}
+        operationId: {type: string, format: uuid}
+        reason: {type: string}
+        recordedAt: {type: string, format: date-time}
+    CategoryMappingInspectionResponse:
+      type: object
+      required: [source, sourceFingerprint, disposition, taxonomyRevisionId]
+      properties:
+        source: {$ref: "#/components/schemas/NormalizationSourceKey"}
+        sourceFingerprint: {type: string}
+        disposition: {type: string}
+        taxonomyRevisionId: {type: string, format: uuid}
+        category:
+          oneOf:
+            - {$ref: "#/components/schemas/CategoryMappingCategory"}
+            - {type: 'null'}
+        mapping:
+          oneOf:
+            - {$ref: "#/components/schemas/CategoryMappingRevisionResponse"}
+            - {type: 'null'}
+    CategoryMappingHistoryResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/CategoryMappingRevisionResponse"}
+        nextBeforeRevisionId: {type: [string, 'null'], format: uuid}
     PurgeTrashResult:
       type: object
       required: [retainedReceipts, retainedItems, retainedRecords, reason]

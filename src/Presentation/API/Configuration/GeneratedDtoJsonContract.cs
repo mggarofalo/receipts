@@ -36,6 +36,12 @@ internal static class GeneratedDtoJsonContract
 			{
 				property.IsRequired = true;
 			}
+			// Nullable values carry explicit intent: omission must never revoke a mapping.
+			if ((typeInfo.Type == typeof(API.Generated.Dtos.CategoryMappingChangeRequest)
+					&& property.Name is "source" or "sourceFingerprint" or "expectedMappingRevisionId" or "expectedTaxonomyRevisionId" or "category" or "operationId" or "reason")
+				|| (typeInfo.Type == typeof(API.Generated.Dtos.CategoryMappingSourceRequest) && property.Name == "source")
+				|| (typeInfo.Type == typeof(API.Generated.Dtos.CategoryMappingHistoryRequest) && property.Name is "source" or "limit"))
+			{ property.IsRequired = true; }
 			Type propertyType = Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType;
 			if (!propertyType.IsEnum || property.AttributeProvider is not ICustomAttributeProvider attributes)
 			{
