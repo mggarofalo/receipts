@@ -58,6 +58,9 @@ const unavailable = () =>
 const page = (data: unknown[]) =>
   HttpResponse.json({ data, total: data.length, offset: 0, limit: 500 });
 const server = setupServer(
+  http.get("*/api/taxonomy", () =>
+    HttpResponse.json({ id: "revision", nodes: [] }),
+  ),
   http.get("*/api/accounts", () =>
     failed === "accounts" ? unavailable() : page([account]),
   ),
