@@ -293,7 +293,7 @@ public sealed class PortableBackupNormalizationService(IOfflinePortableBackupIns
 		}
 	}
 
-	private static int OutputVersion(int sourceVersion) => sourceVersion == 10 ? 10 : 9;
+	private static int OutputVersion(int sourceVersion) => sourceVersion >= 10 ? sourceVersion : 9;
 
 	private static async Task ValidateFileAsync(string path, int version, CancellationToken ct)
 	{
@@ -308,12 +308,13 @@ public sealed class PortableBackupNormalizationService(IOfflinePortableBackupIns
 			catalogSchema.CommandText = "CREATE TABLE normalization_catalog(kind TEXT NOT NULL,id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(kind,id))";
 			await catalogSchema.ExecuteNonQueryAsync(ct);
 		}
-		if (version == 10)
+		if (version >= 10)
 		{
 			await using SqliteCommand taxonomySchema = expected.CreateCommand();
 			taxonomySchema.CommandText = "CREATE TABLE taxonomy_archive(kind TEXT NOT NULL, id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(kind,id)); CREATE TABLE portable_deletion_state(kind TEXT NOT NULL, id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(kind,id));";
+			if (version >= 11) { taxonomySchema.CommandText += " CREATE TABLE category_mapping_archive(kind TEXT NOT NULL, id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(kind,id));"; }
 			await taxonomySchema.ExecuteNonQueryAsync(ct);
-			var taxonomy = await PortableTaxonomyArchive.ReadAsync(sqlite, ct);
+			var taxonomy = await PortableTaxonomyArchive.ReadAsync(sqlite, ct, version);
 			await PortableTaxonomyArchive.ReadDeletionStateAsync(sqlite, taxonomy, ct);
 		}
 		await using (SqliteCommand objects = sqlite.CreateCommand())

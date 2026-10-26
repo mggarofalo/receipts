@@ -16,7 +16,7 @@ public class BackupFormatContractTests
 {
 	[Theory]
 	[InlineData("0")]
-	[InlineData("11")]
+	[InlineData("12")]
 	[InlineData("invalid")]
 	[InlineData("")]
 	public async Task Import_ExplicitUnsupportedOrMalformedVersion_IsRejected(string version)

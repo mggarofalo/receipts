@@ -19,12 +19,12 @@ public sealed partial class OfflinePortableBackupNormalizationTests : IDisposabl
 	private static readonly DateTimeOffset ReviewedAt = DateTimeOffset.UtcNow.AddMinutes(-2);
 	public OfflinePortableBackupNormalizationTests() => Directory.CreateDirectory(directory);
 
-	private async Task<string> CreateAsync(int version = 6)
+	private async Task<string> CreateAsync(int version = 6, int schemaVersion = 9)
 	{
 		string path = Path.Combine(directory, "A.db");
 		await using var db = Open(path);
 		await db.OpenAsync();
-		await BackupService.CreateSchemaAsync(db, CancellationToken.None);
+		await BackupService.CreateSchemaAsync(db, CancellationToken.None, schemaVersion);
 		await using var command = db.CreateCommand();
 		command.CommandText = $"""
             INSERT INTO backup_metadata VALUES('export_version','{version}');

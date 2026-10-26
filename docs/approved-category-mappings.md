@@ -36,17 +36,7 @@ classification evidence. Never use a preview alone to authorize a later write.
 
 ## Required before enabling or releasing
 
-- Extend the portable archive version and manifest with `CategoryMappingRevisions`
-  and `CategoryMappingHeads`. Preserve exact IDs, actor/operation request hashes,
-  source values/fingerprints, previous links, timestamps, revocations, category IDs,
-  semantic fingerprints and referenced taxonomy revisions. Export revoked evidence,
-  not just active heads. Add offline/online inspection, round-trip, rejection, and
-  restore-order tests; validate source and semantic fingerprints, acyclic same-source
-  revision chains, unique actor/operation IDs and head consistency. Old archive versions
-  explicitly import no approvals. Restore taxonomy before mapping evidence and heads.
-- Until that extension ships, backup export/restore must refuse silent loss of mapping
-  evidence, or mapping writes must remain unreachable. Existing API and UI expose no
-  mapping writes in this packet. DI registration alone is not release authorization.
+- Portable format 11 now preserves the approval history and heads described below.
 - Add spec-first HTTP contracts and review UI for explicit approval and revocation,
   conflict handling and current mapping provenance. Use a single nested category field.
   Provide a read surface for current mapping/revision and category paths.
@@ -54,3 +44,26 @@ classification evidence. Never use a preview alone to authorize a later write.
   source-edit invalidation, idempotent retries and current classification provenance.
   Add backend and frontend tests covering this actual user flow. Keep model/provider
   adapters outside these application-owned rules.
+
+## Portable history (format 11)
+
+`category_mapping_archive` stores every revision, including revocations, and each
+source head using strict versioned JSON records. Original IDs, timestamps, actors,
+operation IDs, request hashes, source values/fingerprints, category and taxonomy
+revision IDs, previous revision links and semantic fingerprints survive unchanged.
+Inspection and import validate normalized sources, recompute request and semantic
+hashes, require a single acyclic unbranched chain per source and its latest head,
+and reject unknown or missing taxonomy evidence and duplicate actor/operation IDs.
+
+Restore holds the taxonomy head lock and appends taxonomy snapshots before mapping
+history in the same transaction as domain upserts. Existing immutable mapping rows
+must be an exact subset of the incoming history; an older or divergent format 11
+archive is rejected. History is never updated or deleted and immutable PostgreSQL
+triggers remain enabled. Heads advance only to the validated archived chain tip.
+
+Formats 10 and earlier explicitly bring no category approvals. Their domain upserts
+and existing taxonomy/history compatibility rules still apply; existing destination
+mapping history and heads are preserved. Offline inspection includes mapping rows
+in factual digests, and offline normalization preserves format 11 and all approval
+evidence unchanged. Mapping writes remain internal until the API and entry-flow
+requirements above are satisfied.

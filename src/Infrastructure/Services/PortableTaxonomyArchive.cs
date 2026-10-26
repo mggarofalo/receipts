@@ -25,13 +25,19 @@ internal static partial class PortableTaxonomyArchive
 		List<TaxonomyOperationEntity> Operations, List<PurchaseClassificationEntity> Assignments,
 		List<CurrentClassificationEntity> Current, List<ClassificationOperationEntity> ClassificationOperations,
 		List<LegacyMigrationEntity> Migrations, List<LegacyMigrationCrosswalkEntity> Crosswalks,
-		List<LegacyMigrationItemEntity> MigrationItems);
+		List<LegacyMigrationItemEntity> MigrationItems)
+	{
+		internal bool IncludesMappings { get; init; }
+		internal List<CategoryMappingRevisionEntity> MappingRevisions { get; init; } = [];
+		internal List<CategoryMappingHeadEntity> MappingHeads { get; init; } = [];
+	}
 
 	internal static async Task ExportAsync(ApplicationDbContext source, SqliteConnection sqlite, CancellationToken ct)
 	{
 		await using (var schema = sqlite.CreateCommand())
 		{
 			schema.CommandText = """
+                CREATE TABLE category_mapping_archive(kind TEXT NOT NULL, id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(kind,id));
                 CREATE TABLE taxonomy_archive(kind TEXT NOT NULL, id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(kind,id));
                 CREATE TABLE portable_deletion_state(kind TEXT NOT NULL, id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(kind,id));
                 """;
@@ -51,6 +57,7 @@ internal static partial class PortableTaxonomyArchive
 			await foreach (T row in query.IgnoreQueryFilters().IgnoreAutoIncludes().AsNoTracking().AsAsyncEnumerable().WithCancellation(ct))
 			{ await Write("taxonomy_archive", kind, JsonSerializer.Serialize(key(row), JsonOptions), row); }
 		}
+		await ExportMappingsAsync(source, sqlite, ct);
 		await Rows("identity", source.TaxonomyIdentities, r => r.Id);
 		await Rows("head", source.TaxonomyHeads, r => r.Id);
 		await Rows("revision", source.TaxonomyRevisions, r => r.Id);
@@ -83,7 +90,7 @@ internal static partial class PortableTaxonomyArchive
 		await Deletions("accepted_duplicate_pairs", source.AcceptedDuplicatePairs, r => r.Id);
 	}
 
-	internal static async Task<State> ReadAsync(SqliteConnection sqlite, CancellationToken ct)
+	internal static async Task<State> ReadAsync(SqliteConnection sqlite, CancellationToken ct, int version = 11)
 	{
 		Dictionary<string, List<(string Id, string Payload)>> records = [];
 		await using (var command = sqlite.CreateCommand())
@@ -115,6 +122,7 @@ internal static partial class PortableTaxonomyArchive
 			Read<LegacyMigrationEntity>("migration"), Read<LegacyMigrationCrosswalkEntity>("crosswalk"),
 			Read<LegacyMigrationItemEntity>("migration_item"));
 		Require(records.Count == 0, "Unknown taxonomy archive record kind.");
+		if (version >= 11) { state = await ReadMappingsAsync(sqlite, state, ct); }
 		Validate(state);
 		return state;
 	}
@@ -122,6 +130,7 @@ internal static partial class PortableTaxonomyArchive
 	internal static void Validate(State state)
 	{
 		ValidateUniqueKeys(state);
+		ValidateMappings(state);
 		var revisions = state.Revisions.ToDictionary(r => r.Id);
 		var identities = state.Identities.Select(r => r.Id).ToHashSet();
 		Require(identities.Count == state.Identities.Count && !identities.Contains(Guid.Empty), "Invalid taxonomy identities.");

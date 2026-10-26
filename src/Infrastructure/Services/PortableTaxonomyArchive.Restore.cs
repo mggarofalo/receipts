@@ -52,6 +52,7 @@ internal static partial class PortableTaxonomyArchive
 				foreach (var node in level) { inserted.Add(node.CategoryId); pending.Remove(node); }
 			}
 		}
+		await RestoreMappingsAsync(db, incoming, ct);
 		await Append(incoming.Operations);
 		// Explicit sequence ordering also satisfies immediate previous-assignment FKs.
 		foreach (var group in incoming.Assignments.GroupBy(a => a.Sequence).OrderBy(g => g.Key))

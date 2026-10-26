@@ -11,7 +11,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Infrastructure.Tests.Services;
 
-public sealed class PortableTaxonomyArchiveTests
+public sealed partial class PortableTaxonomyArchiveTests
 {
 	[Fact]
 	public void RequiredTables_V9RemainsCompatibleAndV10RequiresHistoryAndTrash()
@@ -19,7 +19,7 @@ public sealed class PortableTaxonomyArchiveTests
 		PortableBackupFormat.RequiredTablesFor(9).Should().NotContain("taxonomy_archive");
 		PortableBackupFormat.RequiredTablesFor(9).Should().NotContain("portable_deletion_state");
 		PortableBackupFormat.RequiredTablesFor(10).Should().Contain(["taxonomy_archive", "portable_deletion_state"]);
-		FluentActions.Invoking(() => PortableBackupFormat.RequiredTablesFor(11)).Should().Throw<InvalidOperationException>();
+		FluentActions.Invoking(() => PortableBackupFormat.RequiredTablesFor(12)).Should().Throw<InvalidOperationException>();
 	}
 
 	[Fact]
