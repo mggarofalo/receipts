@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using Application.Normalization;
 using Application.Taxonomy;
 using Domain.Taxonomy;
 using Infrastructure.Entities.Core;
@@ -95,6 +96,7 @@ public sealed class ClassificationService(IDbContextFactory<ApplicationDbContext
 		public List<TaxonomyNodeEntity> Nodes { get; set; } = [];
 		public HashSet<Guid> Changed { get; } = [];
 		public HashSet<Guid> Existing { get; } = [];
+		public bool MappingReady { get; set; }
 	}
 	private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<ApplicationDbContext, AggregateState> Aggregates = new();
 
@@ -128,6 +130,10 @@ public sealed class ClassificationService(IDbContextFactory<ApplicationDbContext
 			: await db.TaxonomyHeads.SingleAsync(ct);
 		if (explicitWrite) { await RequireReadyAsync(db, ct); }
 		AggregateState state = Aggregates.GetOrCreateValue(db);
+		// Check preexisting evidence before the new aggregate is persisted. Ordinary
+		// saving retains its legacy fallback while an incomplete backfill is repaired.
+		state.MappingReady = enabled && migrated && (explicitWrite || !await db.ReceiptItems.IgnoreQueryFilters().IgnoreAutoIncludes().AnyAsync(item =>
+			!db.CurrentClassifications.Any(current => current.ReceiptItemId == item.Id), ct));
 		if (migrated)
 		{
 			state.RevisionId = head.RevisionId;
@@ -165,6 +171,11 @@ public sealed class ClassificationService(IDbContextFactory<ApplicationDbContext
 			if (state.RevisionId is not Guid revision) { continue; }
 			CurrentClassificationEntity? current = await db.CurrentClassifications.SingleOrDefaultAsync(x => x.ReceiptItemId == item.Id, ct);
 			if (state.Existing.Contains(item.Id) && !state.Changed.Contains(item.Id)) { continue; }
+			// A replay or incidental edit must never replace an existing assignment, including clear.
+			if (!state.Existing.Contains(item.Id) && current != null) { continue; }
+			if (state.MappingReady && !state.Existing.Contains(item.Id) && string.IsNullOrEmpty(item.Category)
+				&& item.Subcategory == null && await ApplyApprovedMappingAsync(db, item, revision, ct))
+			{ continue; }
 			Guid? target = ResolveLegacy(state, item.Category, item.Subcategory);
 			if (state.Existing.Contains(item.Id) && target == null)
 			{ throw new TaxonomyException(409, "Legacy category labels do not identify one selectable root or two-level path. Refresh and use an explicit classification choice."); }
@@ -174,6 +185,30 @@ public sealed class ClassificationService(IDbContextFactory<ApplicationDbContext
 				target == null ? "unresolved_path" : "resolved_path");
 			await db.SaveChangesAsync(ct);
 		}
+	}
+
+	private static async Task<bool> ApplyApprovedMappingAsync(ApplicationDbContext db, ReceiptItemEntity item,
+		Guid revision, CancellationToken ct)
+	{
+		string location = await db.Receipts.Where(row => row.Id == item.ReceiptId).Select(row => row.Location).SingleAsync(ct);
+		NormalizationSourceKey source = NormalizationCatalogPolicy.Normalize(new(location, item.Description, item.ReceiptItemCode));
+		string fingerprint = NormalizationCatalogPolicy.Hash(source);
+		CategoryMappingResolution resolution = await CategoryMappingService.ResolveInTransactionAsync(db,
+			source, fingerprint, revision, null, ct);
+		if (resolution.Disposition != "approved") { return false; }
+		string actor = db.ReceiptWriteActor ?? throw new TaxonomyException(400, "A signed-in actor is required for classification.");
+		// Stable for retries of this persisted item; separate from user supplied manual operation IDs.
+		Guid operation = new(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(
+			new { Kind = "approved_category_mapping", item.Id, resolution.MappingRevisionId })).AsSpan(0, 16));
+		string reason = JsonSerializer.Serialize(new CategoryMappingReuseEvidence(
+			resolution.MappingRevisionId!.Value, resolution.ApprovalTaxonomyRevisionId!.Value, fingerprint));
+		ClassificationCommand command = new(resolution.CategoryId, revision, null, operation, reason);
+		string hash = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new { itemId = item.Id, command })));
+		PurchaseClassificationEntity assignment = await AppendAsync(db, actor, item.Id, resolution.CategoryId,
+			revision, null, operation, "approved_mapping", reason, TimeProvider.System, ct);
+		db.ClassificationOperations.Add(new() { Actor = actor, OperationId = operation, RequestHash = hash, AssignmentId = assignment.Id });
+		await db.SaveChangesAsync(ct);
+		return true;
 	}
 
 	public async Task<ClassificationHistory> HistoryAsync(Guid itemId, long? beforeSequence, int limit, CancellationToken ct = default)

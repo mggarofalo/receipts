@@ -75,9 +75,18 @@ public sealed class CategoryMappingService(IDbContextFactory<ApplicationDbContex
 	public async Task<CategoryMappingResolution> ResolveAsync(NormalizationSourceKey source, string sourceFingerprint,
 		CategoryMappingExplicitChoice? explicitChoice = null, CancellationToken ct = default)
 	{
-		source = NormalizationCatalogPolicy.Normalize(source);
 		await using ApplicationDbContext db = await factory.CreateDbContextAsync(ct);
 		Guid taxonomyRevision = await db.TaxonomyHeads.Select(row => row.RevisionId).SingleAsync(ct);
+		return await ResolveInTransactionAsync(db, source, sourceFingerprint, taxonomyRevision, explicitChoice, ct);
+	}
+
+	// Purchase writers must already hold taxonomy.Head in their receipt transaction. Approval,
+	// revocation and taxonomy changes take that same lock, so preview evidence cannot race a save.
+	internal static async Task<CategoryMappingResolution> ResolveInTransactionAsync(ApplicationDbContext db,
+		NormalizationSourceKey source, string sourceFingerprint, Guid taxonomyRevision,
+		CategoryMappingExplicitChoice? explicitChoice, CancellationToken ct)
+	{
+		source = NormalizationCatalogPolicy.Normalize(source);
 		if (explicitChoice != null)
 		{
 			if (explicitChoice.TaxonomyRevisionId != taxonomyRevision) { return new("stale_explicit_choice", null, taxonomyRevision); }
