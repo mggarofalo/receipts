@@ -217,11 +217,14 @@ describe("useDashboard hooks", () => {
       expect(mockClient.GET).toHaveBeenCalledWith(
         "/api/dashboard/spending-by-category",
         {
+          signal: expect.any(AbortSignal),
           params: {
             query: {
               startDate: dateRange.startDate,
               endDate: dateRange.endDate,
               limit: 5,
+              categoryView: "asClassified",
+              rollup: "assignedCategory",
             },
           },
         },
@@ -286,10 +289,9 @@ describe("useDashboard hooks", () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any);
 
-      const { result } = renderHook(
-        () => useDashboardEarliestReceiptYear(),
-        { wrapper: createQueryWrapper() },
-      );
+      const { result } = renderHook(() => useDashboardEarliestReceiptYear(), {
+        wrapper: createQueryWrapper(),
+      });
 
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
       expect(result.current.data).toEqual(mockData);
@@ -307,13 +309,77 @@ describe("useDashboard hooks", () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any);
 
-      const { result } = renderHook(
-        () => useDashboardEarliestReceiptYear(),
-        { wrapper: createQueryWrapper() },
-      );
+      const { result } = renderHook(() => useDashboardEarliestReceiptYear(), {
+        wrapper: createQueryWrapper(),
+      });
 
       await waitFor(() => expect(result.current.isError).toBe(true));
       expect(result.current.error).toEqual(apiError);
     });
   });
+});
+
+it("separates selection caches and sends category filters with cancellation", async () => {
+  const { useQueryClient } = await import("@tanstack/react-query");
+  const { repairDomainChange } = await import("@/lib/query-invalidation");
+  mockClient.GET.mockResolvedValue({
+    data: { items: [], view: "currentHierarchy" },
+    response: new Response(),
+  } as never);
+  const filters = {
+    rollup: "root" as const,
+    categoryId: "category",
+    knowledgeCutoff: "2026-01-01T00:00:00Z",
+    capturedCurrentRevisionId: "revision",
+  };
+  const { result, rerender } = renderHook(
+    ({
+      categoryView,
+    }: {
+      categoryView: "asClassified" | "currentHierarchy";
+    }) => {
+      const cache = useQueryClient();
+      cache.setQueryDefaults(["dashboard", "spending-by-category"], {
+        gcTime: Infinity,
+      });
+      return {
+        query: useDashboardSpendingByCategory({}, 5, {
+          ...filters,
+          categoryView,
+        }),
+        cache,
+      };
+    },
+    {
+      initialProps: { categoryView: "currentHierarchy" },
+      wrapper: createQueryWrapper(),
+    },
+  );
+  await waitFor(() => expect(result.current.query.isSuccess).toBe(true));
+  expect(mockClient.GET).toHaveBeenLastCalledWith(
+    "/api/dashboard/spending-by-category",
+    expect.objectContaining({
+      signal: expect.any(AbortSignal),
+      params: {
+        query: {
+          startDate: undefined,
+          endDate: undefined,
+          limit: 5,
+          ...filters,
+          categoryView: "currentHierarchy",
+        },
+      },
+    }),
+  );
+  rerender({ categoryView: "asClassified" });
+  await waitFor(() => expect(result.current.query.isSuccess).toBe(true));
+  const cached = result.current.cache
+    .getQueryCache()
+    .findAll({ queryKey: ["dashboard", "spending-by-category"] });
+  expect(cached).toHaveLength(2);
+  await repairDomainChange(result.current.cache, "receipt-item", () => true);
+  expect(
+    cached.find((query) => query.queryKey[2] === "currentHierarchy")?.state
+      .isInvalidated,
+  ).toBe(true);
 });

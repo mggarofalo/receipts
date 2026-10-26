@@ -127,6 +127,12 @@ function TaxonomyEditor({
         exact: true,
       });
       cache.setQueryData(["taxonomy", "current"], data);
+      await cache.cancelQueries({
+        queryKey: ["dashboard", "spending-by-category", "currentHierarchy"],
+      });
+      await cache.invalidateQueries({
+        queryKey: ["dashboard", "spending-by-category", "currentHierarchy"],
+      });
       onClose();
     },
   });

@@ -454,3 +454,51 @@ describe("Category tree", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });
+
+it("invalidates current dashboard hierarchy after a committed tree edit and retains recorded buckets", async () => {
+  let cache: QueryClient;
+  function Seed() {
+    const queryClient = useQueryClient();
+    useEffect(() => {
+      cache = queryClient;
+      queryClient.setQueryDefaults(["dashboard", "spending-by-category"], {
+        gcTime: Infinity,
+      });
+      queryClient.setQueryData(
+        ["dashboard", "spending-by-category", "currentHierarchy"],
+        { items: [] },
+      );
+      queryClient.setQueryData(
+        ["dashboard", "spending-by-category", "asClassified"],
+        { items: [] },
+      );
+    }, [queryClient]);
+    return null;
+  }
+  renderWithQueryClient(
+    <>
+      <Seed />
+      <Taxonomy />
+    </>,
+  );
+  await screen.findByRole("tree");
+  await userEvent.click(screen.getByRole("button", { name: "New category" }));
+  const dialog = within(screen.getByRole("dialog"));
+  await userEvent.type(dialog.getByLabelText("Name"), "New root");
+  await userEvent.type(dialog.getByLabelText("Reason"), "Testing invalidation");
+  await userEvent.click(dialog.getByRole("button", { name: "New category" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+  );
+  expect(
+    cache!.getQueryState([
+      "dashboard",
+      "spending-by-category",
+      "currentHierarchy",
+    ])?.isInvalidated,
+  ).toBe(true);
+  expect(
+    cache!.getQueryState(["dashboard", "spending-by-category", "asClassified"])
+      ?.isInvalidated,
+  ).toBe(false);
+});

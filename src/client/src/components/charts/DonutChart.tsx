@@ -9,6 +9,7 @@ import {
 import { CHART_COLORS } from "./chart-colors";
 
 interface DonutChartItem {
+  id?: string;
   name: string;
   value: number;
 }
@@ -46,7 +47,7 @@ export function DonutChart({
         </thead>
         <tbody>
           {data.map((item) => (
-            <tr key={item.name}>
+            <tr key={item.id ?? item.name}>
               <td>{item.name}</td>
               <td>{formatValue(item.value)}</td>
             </tr>
@@ -72,9 +73,9 @@ export function DonutChart({
               nameKey="name"
               label={false}
             >
-              {data.map((_entry, index) => (
+              {data.map((entry, index) => (
                 <Cell
-                  key={`cell-${index}`}
+                  key={entry.id ?? `cell-${index}`}
                   fill={CHART_COLORS[index % CHART_COLORS.length]}
                 />
               ))}

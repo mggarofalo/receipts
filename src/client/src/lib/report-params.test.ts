@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { format, subMonths } from "date-fns";
 import {
   getDefaultRange,
+  parseCategoryViewParam,
   parseDateRangeParam,
   serializeDateRangeParam,
   parseEnumParam,
@@ -20,6 +21,16 @@ import {
 function paramsFrom(query: string): URLSearchParams {
   return new URLSearchParams(query);
 }
+
+it("defaults absent or malformed category views to as recorded", () => {
+  expect(parseCategoryViewParam(paramsFrom(""))).toBe("asClassified");
+  expect(parseCategoryViewParam(paramsFrom("categoryView=unknown"))).toBe(
+    "asClassified",
+  );
+  expect(
+    parseCategoryViewParam(paramsFrom("categoryView=currentHierarchy")),
+  ).toBe("currentHierarchy");
+});
 
 describe("getDefaultRange", () => {
   it("returns a 12-month trailing range through today", () => {
@@ -256,9 +267,7 @@ describe("parseSelectedItemParam", () => {
     // A user can toggle into category mode before picking anything — the
     // mode flag must not collapse to false just because there's no
     // description/category pair yet.
-    expect(
-      parseSelectedItemParam(paramsFrom("categoryOnly=true")),
-    ).toEqual({
+    expect(parseSelectedItemParam(paramsFrom("categoryOnly=true"))).toEqual({
       selectedItem: null,
       categoryOnly: true,
     });

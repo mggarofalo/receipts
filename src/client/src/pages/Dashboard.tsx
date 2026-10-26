@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useCallback } from "react";
 import { Link } from "react-router";
 import { format, subMonths } from "date-fns";
 import { usePageTitle } from "@/hooks/usePageTitle";
@@ -13,6 +13,22 @@ import { SpendingOverTimeWidget } from "@/components/dashboard/SpendingOverTimeW
 import { SpendingByCategoryWidget } from "@/components/dashboard/SpendingByCategoryWidget";
 import { SpendingByAccountWidget } from "@/components/dashboard/SpendingByAccountWidget";
 import { SpendingByStoreWidget } from "@/components/dashboard/SpendingByStoreWidget";
+import { useReportSearchParams } from "@/hooks/useReportSearchParams";
+import {
+  parseCategoryViewParam,
+  parseDateRangeParam,
+  serializeDateRangeParam,
+} from "@/lib/report-params";
+
+function parseDashboardParams(params: URLSearchParams) {
+  return {
+    dateRange:
+      params.has("startDate") || params.has("endDate")
+        ? parseDateRangeParam(params)
+        : getDefaultRange(),
+    categoryView: parseCategoryViewParam(params),
+  };
+}
 
 function getDefaultRange(): DateRange {
   const now = new Date();
@@ -30,14 +46,24 @@ function formatMoney(value: number | string | null | undefined): string {
   }).format(n);
 }
 
-
 function Dashboard() {
   usePageTitle("Dashboard");
-  const [dateRange, setDateRange] = useState<DateRange>(getDefaultRange);
+  const [{ dateRange, categoryView }, updateParams] =
+    useReportSearchParams(parseDashboardParams);
 
-  const handleDateRangeChange = useCallback((range: DateRange) => {
-    setDateRange(range);
-  }, []);
+  const handleDateRangeChange = useCallback(
+    (range: DateRange) => {
+      updateParams(serializeDateRangeParam(range));
+    },
+    [updateParams],
+  );
+
+  const reportParams = new URLSearchParams({ categoryView });
+  for (const [key, value] of Object.entries(
+    serializeDateRangeParam(dateRange),
+  )) {
+    if (value) reportParams.set(key, value);
+  }
 
   const recent = useReceipts(0, 4, "date", "desc");
 
@@ -45,7 +71,15 @@ function Dashboard() {
     <>
       <PageHead
         title="Dashboard"
-        sub={`${dateRange.startDate} → ${dateRange.endDate}`}
+        sub={
+          dateRange.startDate && dateRange.endDate
+            ? `${dateRange.startDate} → ${dateRange.endDate}`
+            : dateRange.startDate
+              ? `From ${dateRange.startDate}`
+              : dateRange.endDate
+                ? `Through ${dateRange.endDate}`
+                : "All time"
+        }
         actions={
           <>
             <DateRangeSelector
@@ -62,21 +96,48 @@ function Dashboard() {
       <SummaryStats dateRange={dateRange} />
 
       <div
+        className="grid grid-cols-1 gap-5 lg:grid-cols-2"
         style={{
-          display: "grid",
-          gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
-          gap: 20,
           marginTop: 18,
         }}
       >
         <SpendingOverTimeWidget dateRange={dateRange} />
-        <SpendingByCategoryWidget dateRange={dateRange} />
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+            <label className="text-sm">
+              Category view{" "}
+              <select
+                aria-label="Category view"
+                className="rounded border bg-background p-1"
+                value={categoryView}
+                onChange={(event) =>
+                  updateParams({
+                    categoryView: event.target.value,
+                    page: null,
+                    offset: null,
+                    capturedCurrentRevisionId: null,
+                  })
+                }
+              >
+                <option value="asClassified">As recorded</option>
+                <option value="currentHierarchy">
+                  Current category hierarchy
+                </option>
+              </select>
+            </label>
+            <Link className="card-action" to={`/reports?${reportParams}`}>
+              Reports <Icon.Arrow />
+            </Link>
+          </div>
+          <SpendingByCategoryWidget
+            dateRange={dateRange}
+            options={{ categoryView }}
+          />
+        </div>
       </div>
       <div
+        className="grid grid-cols-1 gap-5 lg:grid-cols-2"
         style={{
-          display: "grid",
-          gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
-          gap: 20,
           marginTop: 14,
         }}
       >
@@ -88,7 +149,9 @@ function Dashboard() {
         <h3>Recent</h3>
         <div className="line" />
         <div className="aux">
-          {recent.total ? `Last ${recent.data?.length ?? 0} of ${recent.total}` : "—"}
+          {recent.total
+            ? `Last ${recent.data?.length ?? 0} of ${recent.total}`
+            : "—"}
         </div>
         <Link to="/receipts" className="card-action">
           See all <Icon.Arrow />
@@ -116,7 +179,11 @@ function Dashboard() {
         ) : recent.data.length === 0 ? (
           <div className="recent" style={{ gridColumn: "1 / -1" }}>
             <div className="r-store">No receipts yet</div>
-            <Link to="/receipts/new" className="btn xs ghost" style={{ marginTop: 6 }}>
+            <Link
+              to="/receipts/new"
+              className="btn xs ghost"
+              style={{ marginTop: 6 }}
+            >
               <Icon.Plus /> New receipt
             </Link>
           </div>

@@ -79,9 +79,7 @@ describe("Dashboard", () => {
     renderWithQueryClient(<Dashboard />);
     // The recent-strip becomes a live region while loading and contains
     // the SR-only "Loading recent receipts…" message.
-    expect(
-      screen.getByText(/loading recent receipts/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/loading recent receipts/i)).toBeInTheDocument();
   });
 
   it("shows an empty state with a New receipt CTA when there are no receipts", async () => {
@@ -94,9 +92,47 @@ describe("Dashboard", () => {
 
     renderWithQueryClient(<Dashboard />);
     expect(screen.getByText("No receipts yet")).toBeInTheDocument();
-    expect(screen.queryByText(/Add your first receipt/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Add your first receipt/),
+    ).not.toBeInTheDocument();
     const cta = screen.getAllByRole("link", { name: /new receipt/i });
     // One in the PageHead actions, one in the empty-state card.
     expect(cta.length).toBeGreaterThanOrEqual(2);
   });
+});
+
+it("persists category view in the URL and report navigation", async () => {
+  const { useLocation } = await import("react-router");
+  const userEvent = (await import("@testing-library/user-event")).default;
+  function Location() {
+    return <output data-testid="location">{useLocation().search}</output>;
+  }
+  renderWithQueryClient(
+    <>
+      <Dashboard />
+      <Location />
+    </>,
+    {
+      route:
+        "/?categoryView=currentHierarchy&startDate=2026-01-01&endDate=2026-02-01&foo=kept&page=3&offset=20",
+    },
+  );
+  expect(screen.getByRole("combobox", { name: "Category view" })).toHaveValue(
+    "currentHierarchy",
+  );
+  expect(screen.getByRole("link", { name: "Reports" })).toHaveAttribute(
+    "href",
+    "/reports?categoryView=currentHierarchy&startDate=2026-01-01&endDate=2026-02-01",
+  );
+  await userEvent.selectOptions(
+    screen.getByRole("combobox", { name: "Category view" }),
+    "asClassified",
+  );
+  const params = new URLSearchParams(
+    screen.getByTestId("location").textContent!,
+  );
+  expect(params.get("categoryView")).toBe("asClassified");
+  expect(params.get("foo")).toBe("kept");
+  expect(params.has("page")).toBe(false);
+  expect(params.has("offset")).toBe(false);
 });
