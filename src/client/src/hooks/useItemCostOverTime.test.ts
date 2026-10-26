@@ -33,10 +33,9 @@ describe("useItemDescriptions", () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
 
-    const { result } = renderHook(
-      () => useItemDescriptions({ search: "mi" }),
-      { wrapper: createQueryWrapper() },
-    );
+    const { result } = renderHook(() => useItemDescriptions({ search: "mi" }), {
+      wrapper: createQueryWrapper(),
+    });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual(mockData);
@@ -118,6 +117,38 @@ describe("useItemDescriptions", () => {
 describe("useItemCostOverTime", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it("requests a stable category subtree with the selected historical lens", async () => {
+    mockClient.GET.mockResolvedValue({
+      data: { buckets: [] },
+      error: undefined,
+      response: {} as Response,
+    } as never);
+    const { result } = renderHook(
+      () =>
+        useItemCostOverTime({
+          categoryId: "22222222-2222-2222-2222-222222222222",
+          categoryView: "currentHierarchy",
+          knowledgeCutoff: "2026-01-01T00:00:00.000Z",
+          capturedCurrentRevisionId: "33333333-3333-3333-3333-333333333333",
+        }),
+      { wrapper: createQueryWrapper() },
+    );
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(mockClient.GET).toHaveBeenCalledWith(
+      "/api/reports/item-cost-over-time",
+      {
+        params: {
+          query: expect.objectContaining({
+            categoryId: "22222222-2222-2222-2222-222222222222",
+            categoryView: "currentHierarchy",
+            knowledgeCutoff: "2026-01-01T00:00:00.000Z",
+            capturedCurrentRevisionId: "33333333-3333-3333-3333-333333333333",
+          }),
+        },
+      },
+    );
   });
 
   it("fetches cost data when description is provided", async () => {
@@ -285,9 +316,12 @@ describe("useItemCostOverTime", () => {
   });
 
   it("does not fetch when description, category, and normalizedDescription are all absent", () => {
-    renderHook(() => useItemCostOverTime({ normalizedDescription: undefined }), {
-      wrapper: createQueryWrapper(),
-    });
+    renderHook(
+      () => useItemCostOverTime({ normalizedDescription: undefined }),
+      {
+        wrapper: createQueryWrapper(),
+      },
+    );
 
     expect(mockClient.GET).not.toHaveBeenCalled();
   });

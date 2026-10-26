@@ -34,6 +34,10 @@ public interface IReportService
 		string granularity,
 		string? normalizedDescription,
 		CancellationToken cancellationToken);
+	Task<ItemCostOverTimeResult> GetItemCostOverTimeAsync(
+			string? description, string? category, DateOnly? startDate, DateOnly? endDate,
+			string granularity, string? normalizedDescription, CancellationToken cancellationToken,
+			CategoryReportOptions options);
 
 	Task<CategoryTrendsResult> GetCategoryTrendsAsync(
 		DateOnly startDate,

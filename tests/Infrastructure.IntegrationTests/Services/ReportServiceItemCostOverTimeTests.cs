@@ -1,7 +1,10 @@
 using Application.Models.Reports;
+using Common;
 using Domain.NormalizedDescriptions;
 using FluentAssertions;
+using Infrastructure.Configurations;
 using Infrastructure.Entities.Core;
+using Infrastructure.Entities.Taxonomy;
 using Infrastructure.IntegrationTests.Fixtures;
 using Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
@@ -21,6 +24,89 @@ namespace Infrastructure.IntegrationTests.Services;
 [Trait("Prerequisite", "Postgres")]
 public class ReportServiceItemCostOverTimeTests(PostgresFixture server) : IsolatedPostgresTest(server)
 {
+	[Fact]
+	public async Task StableCategoryFilter_UsesSubtreeCutoffAndCurrencyBuckets()
+	{
+		Guid old = Guid.NewGuid(), current = Guid.NewGuid();
+		Guid root = Guid.NewGuid(), other = Guid.NewGuid(), leaf = Guid.NewGuid();
+		DateTimeOffset first = new(2025, 1, 1, 0, 0, 0, TimeSpan.Zero);
+		await using (ApplicationDbContext setup = fixture.CreateDbContext())
+		{
+			await using var transaction = await setup.Database.BeginTransactionAsync();
+			setup.TaxonomyIdentities.AddRange(new[] { root, other, leaf }.Select(id => new TaxonomyIdentityEntity { Id = id }));
+			setup.TaxonomyRevisions.AddRange(
+					new TaxonomyRevisionEntity { Id = old, Sequence = 1, PreviousRevisionId = TaxonomyConfiguration.GenesisId },
+					new TaxonomyRevisionEntity { Id = current, Sequence = 2, PreviousRevisionId = old });
+			foreach (Guid revision in new[] { old, current })
+			{
+				setup.TaxonomyNodes.AddRange(
+						new TaxonomyNodeEntity { RevisionId = revision, CategoryId = root, Name = "Food" },
+						new TaxonomyNodeEntity { RevisionId = revision, CategoryId = other, Name = "Other" },
+						new TaxonomyNodeEntity
+						{
+							RevisionId = revision,
+							CategoryId = leaf,
+							ParentId = revision == old ? root : other,
+							Name = "Dairy"
+						});
+			}
+			for (int i = 0; i < 3; i++)
+			{
+				ReceiptEntity receipt = ReceiptEntityGenerator.Generate();
+				receipt.Date = new(2025, 2, 1);
+				ReceiptItemEntity item = ReceiptItemEntityGenerator.Generate(receipt.Id);
+				item.Description = "Milk";
+				item.Category = "Legacy";
+				item.UnitPrice = i == 0 ? 2m : i == 1 ? 4m : 10m;
+				item.UnitPriceCurrency = i == 2 ? (Currency)1 : Currency.USD;
+				setup.Receipts.Add(receipt);
+				setup.ReceiptItems.Add(item);
+				Guid firstId = Guid.NewGuid(), laterId = Guid.NewGuid();
+				setup.Classifications.AddRange(
+						new PurchaseClassificationEntity
+						{
+							Id = firstId,
+							ReceiptItemId = item.Id,
+							Sequence = 1,
+							CategoryId = leaf,
+							TaxonomyRevisionId = old,
+							RecordedAt = first
+						},
+						new PurchaseClassificationEntity
+						{
+							Id = laterId,
+							ReceiptItemId = item.Id,
+							Sequence = 2,
+							PreviousAssignmentId = firstId,
+							CategoryId = i == 1 ? other : leaf,
+							TaxonomyRevisionId = old,
+							RecordedAt = first.AddDays(1)
+						});
+				setup.CurrentClassifications.Add(new CurrentClassificationEntity { ReceiptItemId = item.Id, AssignmentId = laterId });
+			}
+			await setup.SaveChangesAsync();
+			await transaction.CommitAsync();
+		}
+		ReportService service = new(new FixtureDbContextFactory(fixture));
+		var historical = await service.GetItemCostOverTimeAsync(null, null, null, null, "monthly", null,
+				CancellationToken.None, new(CategoryId: root, KnowledgeCutoff: first));
+		historical.Buckets.Should().BeEquivalentTo(new[]
+		{
+					new ItemCostBucket("2025-02", 3m, "USD"),
+					new ItemCostBucket("2025-02", 10m, "1"),
+			});
+		var corrected = await service.GetItemCostOverTimeAsync(null, null, null, null, "monthly", null,
+				CancellationToken.None, new(CategoryId: root));
+		corrected.Buckets.Should().BeEquivalentTo(new[]
+		{
+					new ItemCostBucket("2025-02", 2m, "USD"),
+					new ItemCostBucket("2025-02", 10m, "1"),
+			});
+		var currentView = await service.GetItemCostOverTimeAsync(null, null, null, null, "monthly", null,
+				CancellationToken.None, new(CategoryReportView.CurrentHierarchy, CategoryId: root,
+						CapturedCurrentRevisionId: current));
+		currentView.Buckets.Should().BeEmpty();
+	}
 	[Fact]
 	public async Task GetItemCostOverTimeAsync_FiltersByNormalizedDescription_AcrossDifferentRawDescriptions()
 	{

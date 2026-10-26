@@ -32,6 +32,7 @@ interface CategoryPathPickerProps extends Omit<
   loading?: boolean;
   error?: boolean;
   canCreate?: boolean;
+  allowUnclassified?: boolean;
 }
 
 export const CategoryPathPicker = forwardRef<
@@ -45,6 +46,7 @@ export const CategoryPathPicker = forwardRef<
     loading = false,
     error = false,
     canCreate = false,
+    allowUnclassified = true,
     disabled,
     className,
     ...props
@@ -117,15 +119,22 @@ export const CategoryPathPicker = forwardRef<
             <CommandList>
               <CommandEmpty>No categories found.</CommandEmpty>
               <CommandGroup>
-                <CommandItem value="unclassified" onSelect={() => select(null)}>
-                  <Check
-                    className={cn(
-                      "mr-2 h-4 w-4",
-                      value?.categoryId === null ? "opacity-100" : "opacity-0",
-                    )}
-                  />
-                  Unclassified
-                </CommandItem>
+                {allowUnclassified && (
+                  <CommandItem
+                    value="unclassified"
+                    onSelect={() => select(null)}
+                  >
+                    <Check
+                      className={cn(
+                        "mr-2 h-4 w-4",
+                        value?.categoryId === null
+                          ? "opacity-100"
+                          : "opacity-0",
+                      )}
+                    />
+                    Unclassified
+                  </CommandItem>
+                )}
                 {rows.map((row) => (
                   <CommandItem
                     key={row.node.id}

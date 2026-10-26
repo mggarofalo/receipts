@@ -78,6 +78,28 @@ describe("CategoryPathPicker", () => {
     });
   });
 
+  it("can hide Unclassified for consumers that require a stable category ID", async () => {
+    const user = userEvent.setup();
+    const onValueChange = vi.fn();
+    render(
+      <CategoryPathPicker
+        revision={revision}
+        onValueChange={onValueChange}
+        allowUnclassified={false}
+      />,
+    );
+    await user.click(screen.getByRole("combobox"));
+    expect(
+      screen.queryByRole("option", { name: "Unclassified" }),
+    ).not.toBeInTheDocument();
+    await user.click(
+      screen.getByRole("option", { name: "Food / Fruit / Apple" }),
+    );
+    expect(onValueChange).toHaveBeenCalledWith(
+      expect.objectContaining({ categoryId: "apple" }),
+    );
+  });
+
   it("preserves the selected historical path through refresh and lookup failures", () => {
     const onValueChange = vi.fn();
     const value = {

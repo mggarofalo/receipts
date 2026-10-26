@@ -329,6 +329,33 @@ public class ReportsControllerTests
 	}
 
 	[Fact]
+	public async Task GetItemCostOverTime_AcceptsStableCategoryAndTemporalSelection()
+	{
+		Guid categoryId = Guid.NewGuid(), revisionId = Guid.NewGuid();
+		_mediatorMock.Setup(m => m.Send(
+				It.Is<GetItemCostOverTimeQuery>(q => q.CategoryOptions.CategoryId == categoryId
+						&& q.CategoryOptions.View == AppReports.CategoryReportView.CurrentHierarchy
+						&& q.CategoryOptions.CapturedCurrentRevisionId == revisionId
+						&& q.CategoryOptions.KnowledgeCutoff.HasValue),
+				It.IsAny<CancellationToken>()))
+				.ReturnsAsync(new AppReports.ItemCostOverTimeResult([new("2025-01", 4m, "USD")]));
+
+		var result = await _controller.GetItemCostOverTime(null, null, null, null, "monthly", null,
+				CancellationToken.None, categoryId, "currentHierarchy", "2025-01-02T03:04:05Z", revisionId);
+
+		var ok = Assert.IsType<Ok<ItemCostOverTimeResponse>>(result.Result);
+		ok.Value!.Buckets.Single().Currency.Should().Be("USD");
+	}
+
+	[Fact]
+	public async Task GetItemCostOverTime_RejectsRevisionWithoutCurrentView()
+	{
+		var result = await _controller.GetItemCostOverTime(null, null, null, null, null, null,
+				CancellationToken.None, Guid.NewGuid(), "asClassified", null, Guid.NewGuid());
+		Assert.IsType<BadRequestProblem>(result.Result);
+	}
+
+	[Fact]
 	public async Task GetItemCostOverTime_ReturnsOkResult_WithCategory()
 	{
 		// Arrange
@@ -361,7 +388,7 @@ public class ReportsControllerTests
 
 		// Assert
 		BadRequestProblem badResult = Assert.IsType<BadRequestProblem>(result.Result);
-		badResult.Value!.Detail.Should().Contain("One of description, normalizedDescription, or category is required");
+		badResult.Value!.Detail.Should().Contain("One of description, normalizedDescription, categoryId, or category is required");
 	}
 
 	[Fact]

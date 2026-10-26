@@ -41,6 +41,10 @@ export function useItemDescriptions(params: ItemDescriptionsParams) {
 
 export interface ItemCostOverTimeParams {
   description?: string;
+  categoryId?: string;
+  categoryView?: "asClassified" | "currentHierarchy";
+  knowledgeCutoff?: string;
+  capturedCurrentRevisionId?: string;
   category?: string;
   /** Normalized description canonical name (RECEIPTS-841 drill-down target). */
   normalizedDescription?: string;
@@ -51,7 +55,10 @@ export interface ItemCostOverTimeParams {
 
 export function useItemCostOverTime(params: ItemCostOverTimeParams) {
   const enabled = Boolean(
-    params.description || params.category || params.normalizedDescription,
+    params.description ||
+    params.categoryId ||
+    params.category ||
+    params.normalizedDescription,
   );
 
   return useQuery({
@@ -59,6 +66,10 @@ export function useItemCostOverTime(params: ItemCostOverTimeParams) {
       "reports",
       "item-cost-over-time",
       params.description,
+      params.categoryId,
+      params.categoryView,
+      params.knowledgeCutoff,
+      params.capturedCurrentRevisionId,
       params.category,
       params.normalizedDescription,
       params.startDate,
@@ -74,6 +85,10 @@ export function useItemCostOverTime(params: ItemCostOverTimeParams) {
           params: {
             query: {
               description: params.description,
+              categoryId: params.categoryId,
+              categoryView: params.categoryView,
+              knowledgeCutoff: params.knowledgeCutoff,
+              capturedCurrentRevisionId: params.capturedCurrentRevisionId,
               category: params.category,
               normalizedDescription: params.normalizedDescription,
               startDate: params.startDate,

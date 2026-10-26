@@ -199,11 +199,15 @@ public class ReportsController(IMediator mediator, IEntityChangeNotifier notifie
 		[FromQuery] DateOnly? endDate,
 		[FromQuery] string? granularity,
 		[FromQuery] string? normalizedDescription,
-		CancellationToken cancellationToken)
+			CancellationToken cancellationToken,
+			[FromQuery] Guid? categoryId = null,
+			[FromQuery] string? categoryView = null,
+			[FromQuery] string? knowledgeCutoff = null,
+			[FromQuery] Guid? capturedCurrentRevisionId = null)
 	{
-		if (string.IsNullOrEmpty(description) && string.IsNullOrEmpty(category) && string.IsNullOrEmpty(normalizedDescription))
+		if (string.IsNullOrEmpty(description) && string.IsNullOrEmpty(category) && string.IsNullOrEmpty(normalizedDescription) && !categoryId.HasValue)
 		{
-			return ApiProblem.BadRequest("One of description, normalizedDescription, or category is required");
+			return ApiProblem.BadRequest("One of description, normalizedDescription, categoryId, or category is required");
 		}
 
 		string gran = granularity ?? "exact";
@@ -218,15 +222,40 @@ public class ReportsController(IMediator mediator, IEntityChangeNotifier notifie
 			return ApiProblem.BadRequest("startDate must be before or equal to endDate");
 		}
 
-		GetItemCostOverTimeQuery query = new(description, category, startDate, endDate, gran, normalizedDescription);
-		AppReports.ItemCostOverTimeResult result = await mediator.Send(query, cancellationToken);
+		AppReports.CategoryReportView view;
+		switch (categoryView)
+		{
+			case null or "asClassified": view = AppReports.CategoryReportView.AsClassified; break;
+			case "currentHierarchy": view = AppReports.CategoryReportView.CurrentHierarchy; break;
+			default: return ApiProblem.BadRequest("categoryView must be asClassified or currentHierarchy");
+		}
+		DateTimeOffset? cutoff = null;
+		if (knowledgeCutoff is not null)
+		{
+			if (!knowledgeCutoff.EndsWith('Z') || !DateTimeOffset.TryParseExact(knowledgeCutoff,
+					["yyyy-MM-dd'T'HH:mm:ss'Z'", "yyyy-MM-dd'T'HH:mm:ss.FFFFFFF'Z'"],
+					CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out DateTimeOffset parsed))
+			{ return ApiProblem.BadRequest("knowledgeCutoff must be an ISO UTC timestamp with a Z suffix"); }
+			cutoff = parsed.ToUniversalTime();
+		}
+		if (categoryId == Guid.Empty || capturedCurrentRevisionId == Guid.Empty)
+		{ return ApiProblem.BadRequest("categoryId and capturedCurrentRevisionId must be non-empty UUIDs"); }
+		if (capturedCurrentRevisionId.HasValue && view != AppReports.CategoryReportView.CurrentHierarchy)
+		{ return ApiProblem.BadRequest("capturedCurrentRevisionId requires currentHierarchy"); }
+		GetItemCostOverTimeQuery query = new(description, category, startDate, endDate, gran, normalizedDescription)
+		{ CategoryOptions = new(view, CategoryId: categoryId, KnowledgeCutoff: cutoff, CapturedCurrentRevisionId: capturedCurrentRevisionId) };
+		AppReports.ItemCostOverTimeResult result;
+		try { result = await mediator.Send(query, cancellationToken); }
+		catch (ArgumentException exception) when (exception.ParamName == "capturedCurrentRevisionId")
+		{ return ApiProblem.BadRequest(exception.Message); }
 
 		return TypedResults.Ok(new ItemCostOverTimeResponse
 		{
 			Buckets = result.Buckets.Select(b => new ItemCostBucket
 			{
 				Period = b.Period,
-				Amount = (double)b.Amount
+				Amount = (double)b.Amount,
+				Currency = b.Currency
 			}).ToList()
 		});
 	}
