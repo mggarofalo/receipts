@@ -25,7 +25,7 @@ public sealed class OfflinePortableBackupInspectionTests : IDisposable
 		await using var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path, Pooling = false }.ToString());
 		await connection.OpenAsync();
 		// Use the exporter's DDL: no reduced or invented replacement schema.
-		await BackupService.CreateSchemaAsync(connection, CancellationToken.None);
+		await BackupService.CreateSchemaAsync(connection, CancellationToken.None, version);
 		await using var command = connection.CreateCommand();
 		command.CommandText = $"""
             INSERT INTO backup_metadata VALUES('export_version','{version}');

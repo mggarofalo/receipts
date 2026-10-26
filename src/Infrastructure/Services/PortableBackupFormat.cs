@@ -2,7 +2,7 @@ namespace Infrastructure.Services;
 
 internal static class PortableBackupFormat
 {
-	public const int CurrentVersion = 12;
+	public const int CurrentVersion = 13;
 
 	// v5+ is a complete portable snapshot. Legacy partial-file compatibility is handled
 	// separately by the importer; missing v5 tables must not silently lose durable state.

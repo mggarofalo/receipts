@@ -237,6 +237,9 @@ public class BackupService(
 			CREATE TABLE ynab_category_mappings (
 				id TEXT NOT NULL PRIMARY KEY,
 				receipts_category TEXT NOT NULL,
+				receipts_category_id TEXT,
+				legacy_resolution TEXT NOT NULL,
+				legacy_candidate_category_ids TEXT NOT NULL,
 				ynab_category_id TEXT NOT NULL,
 				ynab_category_name TEXT NOT NULL,
 				ynab_category_group_name TEXT NOT NULL,
@@ -303,6 +306,15 @@ public class BackupService(
 			""",
 		];
 
+		// Offline validation reconstructs the source format's original schema.
+		if (exportVersion < 13)
+		{
+			int mappingTable = Array.FindIndex(ddl, sql => sql.Contains("CREATE TABLE ynab_category_mappings", StringComparison.Ordinal));
+			ddl[mappingTable] = ddl[mappingTable]
+					.Replace("\t\t\t\treceipts_category_id TEXT,\n", "", StringComparison.Ordinal)
+					.Replace("\t\t\t\tlegacy_resolution TEXT NOT NULL,\n", "", StringComparison.Ordinal)
+					.Replace("\t\t\t\tlegacy_candidate_category_ids TEXT NOT NULL,\n", "", StringComparison.Ordinal);
+		}
 		foreach (string sql in ddl)
 		{
 			await using SqliteCommand cmd = sqlite.CreateCommand();
@@ -569,9 +581,11 @@ public class BackupService(
 		List<YnabCategoryMappingEntity> mappings = await source.YnabCategoryMappings.AsNoTracking().ToListAsync(cancellationToken);
 
 		const string sql = """
-			INSERT INTO ynab_category_mappings (id, receipts_category, ynab_category_id, ynab_category_name,
+			INSERT INTO ynab_category_mappings (id, receipts_category, receipts_category_id, legacy_resolution,
+				legacy_candidate_category_ids, ynab_category_id, ynab_category_name,
 				ynab_category_group_name, ynab_budget_id, created_at, updated_at)
-			VALUES ($id, $receiptsCategory, $ynabCategoryId, $ynabCategoryName, $ynabCategoryGroupName,
+			VALUES ($id, $receiptsCategory, $receiptsCategoryId, $legacyResolution,
+				$legacyCandidateCategoryIds, $ynabCategoryId, $ynabCategoryName, $ynabCategoryGroupName,
 				$ynabBudgetId, $createdAt, $updatedAt)
 			""";
 
@@ -581,6 +595,9 @@ public class BackupService(
 			cmd.CommandText = sql;
 			cmd.Parameters.AddWithValue("$id", mapping.Id.ToString());
 			cmd.Parameters.AddWithValue("$receiptsCategory", mapping.ReceiptsCategory);
+			cmd.Parameters.AddWithValue("$receiptsCategoryId", (object?)mapping.ReceiptsCategoryId?.ToString() ?? DBNull.Value);
+			cmd.Parameters.AddWithValue("$legacyResolution", mapping.LegacyResolution);
+			cmd.Parameters.AddWithValue("$legacyCandidateCategoryIds", mapping.LegacyCandidateCategoryIds);
 			cmd.Parameters.AddWithValue("$ynabCategoryId", mapping.YnabCategoryId);
 			cmd.Parameters.AddWithValue("$ynabCategoryName", mapping.YnabCategoryName);
 			cmd.Parameters.AddWithValue("$ynabCategoryGroupName", mapping.YnabCategoryGroupName);

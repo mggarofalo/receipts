@@ -69,7 +69,7 @@ public sealed partial class NormalizationCatalogTests
 			var offline = new PortableBackupNormalizationService();
 			await offline.ApplyAsync(source, manifestPath, output);
 			var transformed = await new OfflinePortableBackupInspection().InspectAsync(output);
-			transformed.FormatVersion.Should().Be(12);
+			transformed.FormatVersion.Should().Be(13);
 			new OfflinePortableBackupInspection().VerifyBaseline(baseline, transformed);
 			Guid archiveAssignmentId;
 			await using (var sqlite = new SqliteConnection($"Data Source={output};Mode=ReadOnly;Pooling=False"))
@@ -150,7 +150,7 @@ public sealed partial class NormalizationCatalogTests
 		{
 			byte[] original = await File.ReadAllBytesAsync(source);
 			var baseline = await new OfflinePortableBackupInspection().InspectAsync(source);
-			baseline.FormatVersion.Should().Be(12);
+			baseline.FormatVersion.Should().Be(13);
 			// Product identities and do-not-merge expectations are arranged above independently.
 			// Observation data binds those choices to the exact exported source.
 			var assignments = beefIds.Select(id => Choice(id, beef.Id, true))

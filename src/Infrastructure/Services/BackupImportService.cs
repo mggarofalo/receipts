@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using Application.Interfaces.Services;
 using Application.Models;
 using Application.Utilities;
@@ -180,7 +181,8 @@ public partial class BackupImportService(
 			// above — so the FK import order is satisfied.
 			(int ynabSelectedBudgetsCreated, int ynabSelectedBudgetsUpdated) = await UpsertYnabSelectedBudgetsAsync(context, sqlite, exportVersion, cancellationToken);
 			(int ynabAccountMappingsCreated, int ynabAccountMappingsUpdated) = await UpsertYnabAccountMappingsAsync(context, sqlite, exportVersion, cancellationToken);
-			(int ynabCategoryMappingsCreated, int ynabCategoryMappingsUpdated) = await UpsertYnabCategoryMappingsAsync(context, sqlite, exportVersion, cancellationToken);
+			(int ynabCategoryMappingsCreated, int ynabCategoryMappingsUpdated) = await UpsertYnabCategoryMappingsAsync(context, sqlite, exportVersion,
+					taxonomy?.Nodes.Select(node => node.CategoryId).ToHashSet(), cancellationToken);
 			(int ynabSyncRecordsCreated, int ynabSyncRecordsUpdated) = await UpsertYnabSyncRecordsAsync(context, sqlite, exportVersion, cancellationToken);
 			(int normalizedDescriptionSettingsCreated, int normalizedDescriptionSettingsUpdated) = await UpsertNormalizedDescriptionSettingsAsync(context, sqlite, exportVersion, cancellationToken);
 
@@ -1028,7 +1030,8 @@ public partial class BackupImportService(
 	}
 
 	private static async Task<(int Created, int Updated)> UpsertYnabCategoryMappingsAsync(
-		ApplicationDbContext context, SqliteConnection sqlite, int exportVersion, CancellationToken cancellationToken)
+				ApplicationDbContext context, SqliteConnection sqlite, int exportVersion,
+				HashSet<Guid>? taxonomyIdentityIds, CancellationToken cancellationToken)
 	{
 		if (exportVersion < 4 || !TableExists(sqlite, "ynab_category_mappings"))
 		{
@@ -1037,7 +1040,9 @@ public partial class BackupImportService(
 
 		int created = 0, updated = 0;
 		await using SqliteCommand cmd = sqlite.CreateCommand();
-		cmd.CommandText = "SELECT id, receipts_category, ynab_category_id, ynab_category_name, ynab_category_group_name, ynab_budget_id, created_at, updated_at FROM ynab_category_mappings";
+		cmd.CommandText = exportVersion >= 13
+				? "SELECT id, receipts_category, ynab_category_id, ynab_category_name, ynab_category_group_name, ynab_budget_id, created_at, updated_at, receipts_category_id, legacy_resolution, legacy_candidate_category_ids FROM ynab_category_mappings"
+				: "SELECT id, receipts_category, ynab_category_id, ynab_category_name, ynab_category_group_name, ynab_budget_id, created_at, updated_at FROM ynab_category_mappings";
 		await using SqliteDataReader reader = await cmd.ExecuteReaderAsync(cancellationToken);
 
 		while (await reader.ReadAsync(cancellationToken))
@@ -1050,11 +1055,50 @@ public partial class BackupImportService(
 			string ynabBudgetId = YnabDestinationId.Canonicalize(reader.GetString(5));
 			DateTimeOffset createdAt = ParseTimestamp(reader.GetString(6));
 			DateTimeOffset updatedAt = ParseTimestamp(reader.GetString(7));
+			Guid? receiptsCategoryId = null;
+			string legacyResolution = "Unmatched";
+			string legacyCandidateCategoryIds = "[]";
+			if (exportVersion >= 13)
+			{
+				if (!reader.IsDBNull(8))
+				{
+					if (!Guid.TryParse(reader.GetString(8), out Guid parsedId) || parsedId == Guid.Empty)
+					{
+						throw new InvalidOperationException($"Invalid stable category ID in YNAB mapping {id}.");
+					}
+
+					receiptsCategoryId = parsedId;
+				}
+				legacyResolution = reader.GetString(9);
+				legacyCandidateCategoryIds = reader.GetString(10);
+				ValidateYnabCategoryEvidence(id, receiptsCategoryId, legacyResolution, legacyCandidateCategoryIds);
+				Guid[] candidates = JsonSerializer.Deserialize<Guid[]>(legacyCandidateCategoryIds)!;
+				if (taxonomyIdentityIds is null ||
+					receiptsCategoryId is Guid stableId && !taxonomyIdentityIds.Contains(stableId) ||
+					candidates.Any(candidate => !taxonomyIdentityIds.Contains(candidate)))
+				{
+					throw new InvalidOperationException($"Unknown taxonomy identity in YNAB mapping {id}.");
+				}
+			}
 
 			YnabCategoryMappingEntity? existing = await context.YnabCategoryMappings.FindAsync([id], cancellationToken);
 			if (existing is not null)
 			{
+				// A mapping's local category and budget identify its scope. Restore may
+				// fill a legacy unbound mapping, but cannot silently rebind an existing one.
+				if (YnabDestinationId.Canonicalize(existing.YnabBudgetId) != ynabBudgetId ||
+					exportVersion >= 13 && existing.ReceiptsCategoryId is Guid boundCategory && receiptsCategoryId != boundCategory)
+				{
+					throw new InvalidOperationException($"Conflicting stable category or budget scope in YNAB mapping {id}.");
+				}
+
 				existing.ReceiptsCategory = receiptsCategory;
+				if (exportVersion >= 13)
+				{
+					existing.ReceiptsCategoryId = receiptsCategoryId;
+					existing.LegacyResolution = legacyResolution;
+					existing.LegacyCandidateCategoryIds = legacyCandidateCategoryIds;
+				}
 				existing.YnabCategoryId = ynabCategoryId;
 				existing.YnabCategoryName = ynabCategoryName;
 				existing.YnabCategoryGroupName = ynabCategoryGroupName;
@@ -1069,6 +1113,9 @@ public partial class BackupImportService(
 				{
 					Id = id,
 					ReceiptsCategory = receiptsCategory,
+					ReceiptsCategoryId = receiptsCategoryId,
+					LegacyResolution = legacyResolution,
+					LegacyCandidateCategoryIds = legacyCandidateCategoryIds,
 					YnabCategoryId = ynabCategoryId,
 					YnabCategoryName = ynabCategoryName,
 					YnabCategoryGroupName = ynabCategoryGroupName,
@@ -1082,6 +1129,33 @@ public partial class BackupImportService(
 
 		await SaveImportedChangesAsync(context, cancellationToken);
 		return (created, updated);
+	}
+
+	private static void ValidateYnabCategoryEvidence(Guid mappingId, Guid? categoryId,
+			string resolution, string candidateJson)
+	{
+		Guid[]? candidates;
+		try { candidates = JsonSerializer.Deserialize<Guid[]>(candidateJson); }
+		catch (JsonException exception)
+		{ throw new InvalidOperationException($"Invalid legacy candidate IDs in YNAB mapping {mappingId}.", exception); }
+		if (candidates is null || candidates.Any(id => id == Guid.Empty) ||
+			candidates.Distinct().Count() != candidates.Length)
+		{
+			throw new InvalidOperationException($"Invalid legacy candidate IDs in YNAB mapping {mappingId}.");
+		}
+
+		bool valid = resolution switch
+		{
+			"Unmatched" => candidates.Length == 0 && categoryId is null,
+			"Ambiguous" => candidates.Length > 1 && categoryId is null,
+			"Unique" => candidates.Length == 1 && categoryId == candidates[0],
+			"Explicit" => categoryId is not null,
+			_ => false,
+		};
+		if (!valid)
+		{
+			throw new InvalidOperationException($"Inconsistent legacy resolution in YNAB mapping {mappingId}.");
+		}
 	}
 
 	// FK: LocalTransactionId → Transactions.Id. Transactions are upserted before this method

@@ -1,3 +1,4 @@
+
 using FluentAssertions;
 using Infrastructure.Services;
 using Microsoft.Data.Sqlite;
@@ -11,7 +12,7 @@ public class BackupFormatContractTests
 {
 	[Theory]
 	[InlineData("0")]
-	[InlineData("12")]
+	[InlineData("14")]
 	[InlineData("invalid")]
 	[InlineData("")]
 	public async Task Import_ExplicitUnsupportedOrMalformedVersion_IsRejected(string version)
@@ -74,7 +75,7 @@ public class BackupFormatContractTests
 		{
 			await BackupService.CreateSchemaAsync(_sqlite, CancellationToken.None);
 			_current = true;
-			Execute("INSERT INTO backup_metadata VALUES ('export_version', '10')");
+			Execute("INSERT INTO backup_metadata VALUES ('export_version', '13')");
 		}
 		public async Task Import(BackupImportService importer)
 		{

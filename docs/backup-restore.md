@@ -4,7 +4,7 @@ The application supports portable SQLite backups for disaster recovery, migratio
 
 ## What gets backed up
 
-The export (current format `export_version = 12`) includes your domain data plus YNAB
+The export (current format `export_version = 13`) includes your domain data plus YNAB
 configuration/state and normalized-description settings:
 
 - Accounts
@@ -18,6 +18,7 @@ configuration/state and normalized-description settings:
 - Adjustments
 - YNAB configuration and state: selected budget, account mappings, category mappings, and
   sync records (current per-transaction sync state)
+- Stable YNAB category bindings and exact legacy-name resolution evidence (format 13)
 - Normalized descriptions, display labels, review/rejection status, recorded neighbour context, and settings
 - Accepted duplicate pairs, including deleted decisions and their receipt dependencies
 - Normalization source mappings, catalog operation observations and membership,
@@ -113,7 +114,7 @@ after applying schema migrations; do not import an old portable file over it.
 
 ### Curation compatibility
 
-The explicit exception to ordinary upserts is format 9/10 offline consolidation authority: reviewed
+The explicit exception to ordinary upserts is format 9 and later offline consolidation authority: reviewed
 `consolidation` records retire named canonical IDs and redirect their purchase,
 template and mapping links to an included active survivor before normal upserts.
 This includes links on purchases in trash. Purchases absent from the artifact
@@ -135,9 +136,11 @@ neighbour comparison history. Product normalization links are separate from
 taxonomy classification assignments.
 
 Missing version metadata means legacy version 1. Malformed or unsupported version
-values are rejected. Versions 5–10 require the complete base table inventory;
-versions 7–10 also require `normalization_catalog`, and version 10 requires
-`taxonomy_archive` and `portable_deletion_state`. Missing tables cannot silently
+values are rejected. Versions 5 and later require the complete base table inventory;
+versions 7 and later also require `normalization_catalog`, and version 10 and later require
+`taxonomy_archive` and `portable_deletion_state`. Versions 11 and later require
+`category_mapping_archive`; versions 12 and later require `historical_operation_archive`
+and `source_revision_archive`. Missing tables cannot silently
 turn a restore into partial recovery. Use an importer that explicitly supports
 the file's format version.
 
@@ -297,3 +300,17 @@ translation, real PostgreSQL partial apply/undo round trips, and rejection rollb
 tests remain required before registering or exposing the historical runner.
 Offline inspection and normalization validate the new evidence and preserve the
 format, table and immutable factual baseline unchanged.
+
+### Stable YNAB category mappings in format 13
+
+Format 13 adds `receipts_category_id`, `legacy_resolution`, and
+`legacy_candidate_category_ids` to `ynab_category_mappings`. The legacy category
+text remains exact. Restore validates the resolution against its candidate IDs
+and requires every referenced stable identity to exist in the included taxonomy
+archive. It restores these fields on fresh and repeated imports. Earlier formats
+do not carry this evidence: importing them preserves any stable binding already
+on a matching destination mapping, while newly imported mappings stay unbound.
+An ambiguous legacy label is never chosen by name during restore. Offline
+inspection and normalization preserve format 13 and its mapping evidence.
+
+A version-13 YNAB mapping may fill an unbound legacy mapping. It cannot change an existing mapping's stable category identity or budget scope; conflicting evidence rejects the restore transaction. Mutable external YNAB category details may be restored normally.
