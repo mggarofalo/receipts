@@ -2,6 +2,16 @@ import { format, subMonths } from "date-fns";
 import { parseDateValue } from "@/lib/format";
 import type { DateRange } from "@/hooks/useDashboard";
 
+export type CategoryReportView = "asClassified" | "currentHierarchy";
+
+export function parseCategoryViewParam(
+  params: URLSearchParams,
+): CategoryReportView {
+  return params.get("categoryView") === "currentHierarchy"
+    ? "currentHierarchy"
+    : "asClassified";
+}
+
 /**
  * The standard default date range for every date-filtered report: the
  * trailing 12 months through today. Centralized here so reports can't drift

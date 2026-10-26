@@ -1,6 +1,12 @@
 import { queryKeys } from "@/lib/query-invalidation";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import client from "@/lib/api-client";
+import type { operations } from "@/generated/api";
+
+export type CategoryReportOptions = Omit<
+  NonNullable<operations["GetSpendingByCategory"]["parameters"]["query"]>,
+  "startDate" | "endDate" | "limit"
+>;
 
 export interface DateRange {
   startDate?: string;
@@ -9,7 +15,12 @@ export interface DateRange {
 
 export function useDashboardSummary(dateRange: DateRange) {
   return useQuery({
-    queryKey: [...queryKeys.dashboard, "summary", dateRange.startDate, dateRange.endDate],
+    queryKey: [
+      ...queryKeys.dashboard,
+      "summary",
+      dateRange.startDate,
+      dateRange.endDate,
+    ],
     placeholderData: keepPreviousData,
     queryFn: async () => {
       const { data, error } = await client.GET("/api/dashboard/summary", {
@@ -75,25 +86,34 @@ export function useDashboardEarliestReceiptYear() {
 export function useDashboardSpendingByCategory(
   dateRange: DateRange,
   limit = 100,
+  options: CategoryReportOptions = {},
 ) {
+  const selection = {
+    ...options,
+    categoryView: options.categoryView ?? "asClassified",
+    rollup: options.rollup ?? "assignedCategory",
+  };
   return useQuery({
     queryKey: [
       ...queryKeys.dashboard,
       "spending-by-category",
+      selection.categoryView,
       dateRange.startDate,
       dateRange.endDate,
       limit,
+      selection,
     ],
-    placeholderData: keepPreviousData,
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET(
         "/api/dashboard/spending-by-category",
         {
+          signal,
           params: {
             query: {
               startDate: dateRange.startDate,
               endDate: dateRange.endDate,
               limit,
+              ...selection,
             },
           },
         },
