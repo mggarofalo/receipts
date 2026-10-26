@@ -8292,7 +8292,9 @@ paths:
       description: >
         Returns the expected YNAB category split computed locally alongside the
         actual state stored in YNAB for any already-pushed transactions. Used by
-        the receipt detail page to validate and preview splits.
+        the receipt detail page to validate and preview splits. The default
+        asClassified view uses recorded assignment ancestry; currentHierarchy
+        previews mapping against one captured current taxonomy revision.
       security:
         - BearerAuth: []
       parameters:
@@ -8302,6 +8304,13 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: categoryView
+          in: query
+          description: Classification ancestry used for the expected split. Defaults to asClassified.
+          schema:
+            type: string
+            enum: [asClassified, currentHierarchy]
+            default: asClassified
       responses:
         "200":
           description: Split comparison for the receipt
@@ -8309,6 +8318,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ReceiptYnabSplitComparisonResponse"
+        "400":
+          description: Invalid category view
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
         "503":
           description: YNAB integration is not configured
 
@@ -13603,8 +13618,15 @@ components:
 
     ReceiptYnabSplitComparisonResponse:
       type: object
-      required: [canComputeExpected, unmappedCategories, transactionComparisons]
+      required: [canComputeExpected, unmappedCategories, transactionComparisons, categoryView]
       properties:
+        categoryView:
+          $ref: "#/components/schemas/ReceiptYnabSplitComparisonResponseCategoryView"
+        capturedCurrentRevisionId:
+          type:
+            - "null"
+            - string
+          format: uuid
         canComputeExpected:
           type: boolean
         expectedUnavailableReason:
@@ -13619,6 +13641,9 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/TransactionSplitComparison"
+    ReceiptYnabSplitComparisonResponseCategoryView:
+      type: string
+      enum: [asClassified, currentHierarchy]
 
     YnabMemoSyncResultItem:
       type: object
