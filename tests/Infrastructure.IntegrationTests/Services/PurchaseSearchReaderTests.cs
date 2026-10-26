@@ -24,7 +24,6 @@ public class PurchaseSearchReaderTests(PostgresFixture server) : IsolatedPostgre
 	[Fact]
 	public async Task SearchAsync_FiltersStableSubtreesBeforeCountAndPageAndReturnsSelectedPaths()
 	{
-		await ResetAsync();
 		Guid old = Guid.NewGuid(), current = Guid.NewGuid();
 		Guid groceries = Guid.NewGuid(), home = Guid.NewGuid(), moved = Guid.NewGuid(), duplicate = Guid.NewGuid();
 		DateTimeOffset firstTime = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);

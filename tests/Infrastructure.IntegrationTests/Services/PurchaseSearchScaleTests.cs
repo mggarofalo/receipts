@@ -20,7 +20,7 @@ namespace Infrastructure.IntegrationTests.Services;
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public sealed class PurchaseSearchScaleTests(PostgresFixture fixture, ITestOutputHelper output)
+public sealed class PurchaseSearchScaleTests(PostgresFixture server, ITestOutputHelper output) : IsolatedPostgresTest(server)
 {
 	[Theory]
 	[InlineData(64, 16_509)]
@@ -35,7 +35,6 @@ public sealed class PurchaseSearchScaleTests(PostgresFixture fixture, ITestOutpu
 		await using (var db = fixture.CreateDbContext())
 		{
 			await using var tx = await db.Database.BeginTransactionAsync();
-			await db.Database.ExecuteSqlRawAsync("TRUNCATE \"ReceiptItems\", \"Receipts\" RESTART IDENTITY CASCADE");
 			db.TaxonomyIdentities.AddRange(new TaxonomyIdentityEntity { Id = root }, new TaxonomyIdentityEntity { Id = child });
 			Guid previous = (await db.TaxonomyHeads.SingleAsync()).RevisionId;
 			long sequence = await db.TaxonomyRevisions.MaxAsync(x => x.Sequence) + 1;
