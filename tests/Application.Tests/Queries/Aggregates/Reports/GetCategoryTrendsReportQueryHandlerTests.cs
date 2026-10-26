@@ -27,7 +27,7 @@ public class GetCategoryTrendsReportQueryHandlerTests
 		CategoryTrendsResult expectedResult = new([], []);
 
 		_reportServiceMock.Setup(s => s.GetCategoryTrendsAsync(
-			start, end, "monthly", 7, It.IsAny<CancellationToken>()))
+			start, end, "monthly", 7, It.IsAny<CancellationToken>(), It.IsAny<CategoryReportOptions>()))
 			.ReturnsAsync(expectedResult);
 
 		// Act
@@ -36,7 +36,7 @@ public class GetCategoryTrendsReportQueryHandlerTests
 		// Assert
 		result.Should().BeSameAs(expectedResult);
 		_reportServiceMock.Verify(s => s.GetCategoryTrendsAsync(
-			start, end, "monthly", 7, It.IsAny<CancellationToken>()), Times.Once);
+			start, end, "monthly", 7, It.IsAny<CancellationToken>(), It.IsAny<CategoryReportOptions>()), Times.Once);
 	}
 
 	[Fact]
@@ -49,7 +49,7 @@ public class GetCategoryTrendsReportQueryHandlerTests
 		CategoryTrendsResult expectedResult = new([], []);
 
 		_reportServiceMock.Setup(s => s.GetCategoryTrendsAsync(
-			start, end, "quarterly", 5, It.IsAny<CancellationToken>()))
+			start, end, "quarterly", 5, It.IsAny<CancellationToken>(), It.IsAny<CategoryReportOptions>()))
 			.ReturnsAsync(expectedResult);
 
 		// Act
@@ -57,7 +57,7 @@ public class GetCategoryTrendsReportQueryHandlerTests
 
 		// Assert
 		_reportServiceMock.Verify(s => s.GetCategoryTrendsAsync(
-			start, end, "quarterly", 5, It.IsAny<CancellationToken>()), Times.Once);
+			start, end, "quarterly", 5, It.IsAny<CancellationToken>(), It.IsAny<CategoryReportOptions>()), Times.Once);
 	}
 
 	[Fact]
@@ -78,7 +78,7 @@ public class GetCategoryTrendsReportQueryHandlerTests
 		_reportServiceMock.Setup(s => s.GetCategoryTrendsAsync(
 			It.IsAny<DateOnly>(), It.IsAny<DateOnly>(),
 			It.IsAny<string>(), It.IsAny<int>(),
-			It.IsAny<CancellationToken>()))
+			It.IsAny<CancellationToken>(), It.IsAny<CategoryReportOptions>()))
 			.ReturnsAsync(expectedResult);
 
 		// Act

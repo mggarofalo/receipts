@@ -3970,6 +3970,34 @@ export interface components {
             /** @description Ordered list of category names. The amounts array in each bucket parallels this list. */
             categories: string[];
             buckets: components["schemas"]["CategoryTrendsBucket"][];
+            view?: string;
+            rollup?: string;
+            assignmentSelection?: string;
+            /** Format: uuid */
+            currentRevisionId?: string | null;
+            /** Format: date-time */
+            knowledgeCutoff?: string | null;
+            series?: components["schemas"]["CategoryTrendsSeries"][];
+            currencyTotals?: components["schemas"]["CategoryTrendsCurrencyTotal"][];
+        };
+        CategoryTrendsCurrencyTotal: {
+            currency: string;
+            /** Format: double */
+            amount: number;
+            /** Format: int32 */
+            purchaseCount: number;
+        };
+        CategoryTrendsSeries: {
+            currency: string;
+            state: string;
+            isOther: boolean;
+            /** Format: int32 */
+            purchaseCount: number;
+            /** Format: uuid */
+            pathRevisionId?: string | null;
+            /** Format: uuid */
+            categoryId?: string | null;
+            path: components["schemas"]["CategoryReportPathNode"][];
         };
         CategoryTrendsBucket: {
             /** @description Time period label (e.g. "2024-01", "2024 Q1", "2024"). */
@@ -12945,6 +12973,16 @@ export interface operations {
                 granularity?: "daily" | "monthly" | "quarterly" | "yearly";
                 /** @description Number of top categories to show. Remaining categories are collapsed into "Other". */
                 topN?: number;
+                /** @description Classification view. Defaults to asClassified. */
+                categoryView?: "asClassified" | "currentHierarchy";
+                /** @description Bucket level. Defaults to assignedCategory. */
+                rollup?: "assignedCategory" | "root";
+                /** @description Include this category and descendants in the selected view. */
+                categoryId?: string;
+                /** @description Inclusive UTC classification knowledge cutoff with Z suffix. Financial facts remain current. */
+                knowledgeCutoff?: string;
+                /** @description Reuse an existing immutable revision; requires currentHierarchy. */
+                capturedCurrentRevisionId?: string;
             };
             header?: never;
             path?: never;

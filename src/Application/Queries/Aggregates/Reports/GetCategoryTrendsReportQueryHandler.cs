@@ -14,6 +14,6 @@ public class GetCategoryTrendsReportQueryHandler(IReportService reportService)
 			request.EndDate,
 			request.Granularity,
 			request.TopN,
-			cancellationToken);
+			cancellationToken, request.CategoryOptions ?? new CategoryReportOptions());
 	}
 }

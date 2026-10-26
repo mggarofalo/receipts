@@ -6624,6 +6624,43 @@ paths:
             maximum: 50
             default: 7
           description: Number of top categories to show. Remaining categories are collapsed into "Other".
+        - name: categoryView
+          in: query
+          required: false
+          description: Classification view. Defaults to asClassified.
+          schema:
+            type: string
+            enum: [asClassified, currentHierarchy]
+            default: asClassified
+        - name: rollup
+          in: query
+          required: false
+          description: Bucket level. Defaults to assignedCategory.
+          schema:
+            type: string
+            enum: [assignedCategory, root]
+            default: assignedCategory
+        - name: categoryId
+          in: query
+          required: false
+          description: Include this category and descendants in the selected view.
+          schema:
+            type: string
+            format: uuid
+        - name: knowledgeCutoff
+          in: query
+          required: false
+          description: Inclusive UTC classification knowledge cutoff with Z suffix. Financial facts remain current.
+          schema:
+            type: string
+            format: date-time
+        - name: capturedCurrentRevisionId
+          in: query
+          required: false
+          description: Reuse an existing immutable revision; requires currentHierarchy.
+          schema:
+            type: string
+            format: uuid
       responses:
         "200":
           description: OK
@@ -9034,6 +9071,64 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CategoryTrendsBucket"
+
+        view:
+          type: string
+        rollup:
+          type: string
+        assignmentSelection:
+          type: string
+        currentRevisionId:
+          type: [string, "null"]
+          format: uuid
+        knowledgeCutoff:
+          type: [string, "null"]
+          format: date-time
+        series:
+          type: array
+          items:
+            $ref: "#/components/schemas/CategoryTrendsSeries"
+        currencyTotals:
+          type: array
+          items:
+            $ref: "#/components/schemas/CategoryTrendsCurrencyTotal"
+
+    CategoryTrendsCurrencyTotal:
+      type: object
+      required: [currency, amount, purchaseCount]
+      properties:
+        currency:
+          type: string
+        amount:
+          type: number
+          format: double
+        purchaseCount:
+          type: integer
+          format: int32
+
+    CategoryTrendsSeries:
+      type: object
+      required: [currency, state, isOther, path, purchaseCount]
+      properties:
+        currency:
+          type: string
+        state:
+          type: string
+        isOther:
+          type: boolean
+        purchaseCount:
+          type: integer
+          format: int32
+        pathRevisionId:
+          type: [string, "null"]
+          format: uuid
+        categoryId:
+          type: [string, "null"]
+          format: uuid
+        path:
+          type: array
+          items:
+            $ref: "#/components/schemas/CategoryReportPathNode"
 
     CategoryTrendsBucket:
       type: object
