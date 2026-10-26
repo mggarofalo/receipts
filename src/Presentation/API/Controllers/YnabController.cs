@@ -297,7 +297,8 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 				request.YnabCategoryId,
 				request.YnabCategoryName,
 				request.YnabCategoryGroupName,
-				request.YnabBudgetId.ToString("D")), cancellationToken);
+				request.YnabBudgetId.ToString("D"),
+				request.ReceiptsCategoryId), cancellationToken);
 
 			YnabCategoryMappingResponse response = mapper.ToCategoryMappingResponse(mapping);
 			return TypedResults.Created($"/api/ynab/category-mappings/{mapping.Id}", response);

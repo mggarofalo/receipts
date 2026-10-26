@@ -8,4 +8,9 @@ public record YnabCategoryMappingDto(
 	string YnabCategoryGroupName,
 	string YnabBudgetId,
 	DateTimeOffset CreatedAt,
-	DateTimeOffset UpdatedAt);
+	DateTimeOffset UpdatedAt)
+{
+	public Guid? ReceiptsCategoryId { get; init; }
+	public string LegacyResolution { get; init; } = "Unmatched";
+	public string LegacyCandidateCategoryIds { get; init; } = "[]";
+}

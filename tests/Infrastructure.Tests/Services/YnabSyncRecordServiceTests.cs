@@ -190,6 +190,7 @@ public class YnabSyncRecordServiceTests
 					return new PreparedYnabPushOperation(persisted, true);
 				}
 
+
 				return new PreparedYnabPushOperation(persisted, false);
 			});
 
@@ -203,6 +204,43 @@ public class YnabSyncRecordServiceTests
 		retry.SourceVersion.Should().Be("source-original");
 		retry.PayloadHash.Should().Be(first.PayloadHash);
 		VerifyPublished(CommittedChangeType.Created, first.SyncRecordId, Times.Once());
+	}
+
+	[Fact]
+	public async Task GetCapturedPushOperationAsync_ReadsAndValidatesSavedRequest()
+	{
+		Guid transactionId = Guid.NewGuid();
+		YnabCreateTransactionRequest original = new(
+				"saved-account", new DateOnly(2026, 9, 1), -1000, "saved memo", "Saved store",
+				"saved-category", false, ImportId: "YNAB:saved:1");
+		YnabSyncRecordEntity? saved = null;
+		_repositoryMock.Setup(r => r.GetOrCreatePushOperationAsync(
+						It.IsAny<YnabSyncRecordEntity>(), It.IsAny<CancellationToken>()))
+				.ReturnsAsync((YnabSyncRecordEntity proposed, CancellationToken _) =>
+				{
+					proposed.Id = Guid.NewGuid();
+					saved = proposed;
+					return new PreparedYnabPushOperation(proposed, true);
+				});
+		await _service.PreparePushOperationAsync(transactionId, SelectedBudgetId, original,
+				"saved-source", CancellationToken.None);
+		_repositoryMock.Setup(r => r.GetByTransactionTypeAndBudgetAsync(
+						transactionId, YnabSyncType.TransactionPush, SelectedBudgetId,
+						It.IsAny<CancellationToken>()))
+				.ReturnsAsync(() => saved);
+
+		YnabPushOperation? captured = await _service.GetCapturedPushOperationAsync(
+				transactionId, SelectedBudgetId, CancellationToken.None);
+
+		captured.Should().NotBeNull();
+		captured!.Request.Should().BeEquivalentTo(original);
+		captured.SourceVersion.Should().Be("saved-source");
+
+		saved!.RequestPayloadJson = "{}";
+		Func<Task> corruptRead = () => _service.GetCapturedPushOperationAsync(
+				transactionId, SelectedBudgetId, CancellationToken.None);
+		await corruptRead.Should().ThrowAsync<InvalidOperationException>()
+				.WithMessage("*corrupt immutable push snapshot*");
 	}
 
 	[Fact]

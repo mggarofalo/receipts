@@ -1,7 +1,10 @@
+using System.Text.Json;
 using Application.Exceptions;
 using Application.Interfaces.Services;
 using Application.Models.CommittedChanges;
 using Application.Models.Ynab;
+using Application.Taxonomy;
+using Domain.Taxonomy;
 using Infrastructure.Entities.Core;
 using Infrastructure.Interfaces.Repositories;
 using Microsoft.EntityFrameworkCore;
@@ -11,7 +14,8 @@ namespace Infrastructure.Services;
 
 public class YnabCategoryMappingService(
 	IYnabCategoryMappingRepository repository,
-	ICommittedChangePublisher committedChangePublisher) : IYnabCategoryMappingService
+	ICommittedChangePublisher committedChangePublisher,
+	ITaxonomyService? taxonomyService = null) : IYnabCategoryMappingService
 {
 	public YnabCategoryMappingService(IYnabCategoryMappingRepository repository)
 		: this(repository, new NullCommittedChangePublisher())
@@ -54,12 +58,41 @@ public class YnabCategoryMappingService(
 		string ynabCategoryName,
 		string ynabCategoryGroupName,
 		string ynabBudgetId,
-		CancellationToken cancellationToken)
+		CancellationToken cancellationToken,
+		Guid? receiptsCategoryId = null)
 	{
+		LegacyExternalCategoryBinding binding = new(LegacyExternalCategoryDisposition.Unmatched,
+			receiptsCategory, []);
+		if (taxonomyService is not null)
+		{
+			TaxonomyRevision? revision = await taxonomyService.ReadAsync(null, cancellationToken);
+			if (revision is null)
+			{
+				throw new ArgumentException("Current taxonomy is unavailable.");
+			}
+
+			binding = ExternalCategoryMappingPolicy.BindLegacyName(receiptsCategory, revision.Nodes);
+			if (receiptsCategoryId is Guid requestedId)
+			{
+				TaxonomyNode? node = revision.Nodes.SingleOrDefault(n => n.Id == requestedId);
+				if (node is null || node.Archived)
+				{
+					throw new ArgumentException("Receipts category ID must identify an active taxonomy category.");
+				}
+			}
+			else
+			{
+				receiptsCategoryId = binding.CategoryId;
+			}
+		}
 		DateTimeOffset now = DateTimeOffset.UtcNow;
 		YnabCategoryMappingEntity entity = new()
 		{
 			ReceiptsCategory = receiptsCategory,
+			ReceiptsCategoryId = receiptsCategoryId,
+			LegacyResolution = receiptsCategoryId is not null && binding.CategoryId != receiptsCategoryId
+				? "Explicit" : binding.Disposition.ToString(),
+			LegacyCandidateCategoryIds = JsonSerializer.Serialize(binding.CandidateCategoryIds),
 			YnabCategoryId = ynabCategoryId,
 			YnabCategoryName = ynabCategoryName,
 			YnabCategoryGroupName = ynabCategoryGroupName,
@@ -169,5 +202,10 @@ public class YnabCategoryMappingService(
 		entity.YnabCategoryGroupName,
 		entity.YnabBudgetId,
 		entity.CreatedAt,
-		entity.UpdatedAt);
+		entity.UpdatedAt)
+	{
+		ReceiptsCategoryId = entity.ReceiptsCategoryId,
+		LegacyResolution = entity.LegacyResolution,
+		LegacyCandidateCategoryIds = entity.LegacyCandidateCategoryIds,
+	};
 }

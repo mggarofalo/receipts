@@ -20,6 +20,11 @@ public class YnabCategoryMappingEntityConfiguration : IEntityTypeConfiguration<Y
 			.IsRequired()
 			.HasMaxLength(200);
 
+		builder.Property(e => e.LegacyResolution).IsRequired().HasMaxLength(20);
+		builder.Property(e => e.LegacyCandidateCategoryIds).IsRequired().HasColumnType("jsonb");
+		builder.HasIndex(e => new { e.ReceiptsCategoryId, e.YnabBudgetId })
+			.IsUnique().HasFilter("\"ReceiptsCategoryId\" IS NOT NULL");
+
 		builder.Property(e => e.YnabCategoryId)
 			.IsRequired()
 			.HasMaxLength(100);
@@ -36,7 +41,6 @@ public class YnabCategoryMappingEntityConfiguration : IEntityTypeConfiguration<Y
 			.IsRequired()
 			.HasMaxLength(100);
 
-		builder.HasIndex(e => new { e.ReceiptsCategory, e.YnabBudgetId })
-			.IsUnique();
+		builder.HasIndex(e => new { e.ReceiptsCategory, e.YnabBudgetId });
 	}
 }

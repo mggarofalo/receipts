@@ -8,7 +8,7 @@ public interface IYnabCategoryMappingService
 	Task<List<YnabCategoryMappingDto>> GetByBudgetIdAsync(string ynabBudgetId, CancellationToken cancellationToken);
 	Task<YnabCategoryMappingDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken);
 	Task<YnabCategoryMappingDto?> GetByReceiptsCategoryAndBudgetAsync(string receiptsCategory, string ynabBudgetId, CancellationToken cancellationToken);
-	Task<YnabCategoryMappingDto> CreateAsync(string receiptsCategory, string ynabCategoryId, string ynabCategoryName, string ynabCategoryGroupName, string ynabBudgetId, CancellationToken cancellationToken);
+	Task<YnabCategoryMappingDto> CreateAsync(string receiptsCategory, string ynabCategoryId, string ynabCategoryName, string ynabCategoryGroupName, string ynabBudgetId, CancellationToken cancellationToken, Guid? receiptsCategoryId = null);
 	Task UpdateAsync(Guid id, string ynabCategoryId, string ynabCategoryName, string ynabCategoryGroupName, string ynabBudgetId, CancellationToken cancellationToken);
 	Task DeleteAsync(Guid id, CancellationToken cancellationToken);
 	Task<List<string>> GetDistinctReceiptItemCategoriesAsync(CancellationToken cancellationToken);
