@@ -8,6 +8,325 @@ info:
     default version (currently 1.0) is assumed.
 
 paths:
+  /api/historical-reclassifications:
+    post:
+      operationId: HistoricalReclassifications_Preview
+      security: [{BearerAuth: []}, {ApiKey: []}]
+      tags:
+        - HistoricalReclassifications
+      summary: Capture an exact historical classification preview
+      parameters:
+        - name: api-version
+          in: header
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HistoricalPreviewBody'
+          text/json:
+            schema:
+              $ref: '#/components/schemas/HistoricalPreviewBody'
+          application/*+json:
+            schema:
+              $ref: '#/components/schemas/HistoricalPreviewBody'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HistoricalProgress'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Authentication required
+        '404':
+          description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/historical-reclassifications/{id}:
+    get:
+      operationId: HistoricalReclassifications_Read
+      security: [{BearerAuth: []}, {ApiKey: []}]
+      tags:
+        - HistoricalReclassifications
+      summary: Read historical classification progress
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: api-version
+          in: header
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HistoricalProgress'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Authentication required
+        '404':
+          description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/historical-reclassifications/{id}/items:
+    get:
+      operationId: HistoricalReclassifications_Items
+      security: [{BearerAuth: []}, {ApiKey: []}]
+      tags:
+        - HistoricalReclassifications
+      summary: Read paged frozen item evidence and outcomes
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: offset
+          in: query
+          schema:
+            pattern: ^-?(?:0|[1-9]\d*)$
+            type:
+              - integer
+              - string
+            format: int32
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            pattern: ^-?(?:0|[1-9]\d*)$
+            type:
+              - integer
+              - string
+            format: int32
+            default: 100
+        - name: api-version
+          in: header
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HistoricalItemPage'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Authentication required
+        '404':
+          description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/historical-reclassifications/{id}/apply:
+    post:
+      operationId: HistoricalReclassifications_Apply
+      security: [{BearerAuth: []}, {ApiKey: []}]
+      tags:
+        - HistoricalReclassifications
+      summary: Apply the next bounded preview chunk
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: api-version
+          in: header
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HistoricalChunkBody'
+          text/json:
+            schema:
+              $ref: '#/components/schemas/HistoricalChunkBody'
+          application/*+json:
+            schema:
+              $ref: '#/components/schemas/HistoricalChunkBody'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HistoricalProgress'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Authentication required
+        '404':
+          description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/historical-reclassifications/{id}/cancel:
+    post:
+      operationId: HistoricalReclassifications_Cancel
+      security: [{BearerAuth: []}, {ApiKey: []}]
+      tags:
+        - HistoricalReclassifications
+      summary: Cancel pending historical classification work
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: api-version
+          in: header
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HistoricalProgress'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Authentication required
+        '404':
+          description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/historical-reclassifications/{id}/undo:
+    post:
+      operationId: HistoricalReclassifications_Undo
+      security: [{BearerAuth: []}, {ApiKey: []}]
+      tags:
+        - HistoricalReclassifications
+      summary: Conditionally undo the next bounded applied chunk
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: api-version
+          in: header
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HistoricalUndoBody'
+          text/json:
+            schema:
+              $ref: '#/components/schemas/HistoricalUndoBody'
+          application/*+json:
+            schema:
+              $ref: '#/components/schemas/HistoricalUndoBody'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HistoricalProgress'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Authentication required
+        '404':
+          description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
   /api/category-mappings/inspect:
     post:
       tags: [CategoryMappings]
@@ -7856,6 +8175,289 @@ paths:
 
 components:
   schemas:
+    HistoricalChunkBody:
+      required:
+        - limit
+      type: object
+      properties:
+        limit:
+          minimum: 1
+          maximum: 100
+          pattern: ^-?(?:0|[1-9]\d*)$
+          type:
+            - integer
+            - string
+          format: int32
+    HistoricalGroupChoiceBody:
+      required:
+        - group
+        - targetCategoryId
+      type: object
+      properties:
+        group:
+          $ref: '#/components/schemas/HistoricalGroupKey'
+        targetCategoryId:
+          type:
+            - 'null'
+            - string
+          format: uuid
+    HistoricalGroupKey:
+      required:
+        - store
+        - rawDescription
+        - itemCode
+      type: object
+      properties:
+        store:
+          type: string
+          minLength: 1
+          maxLength: 1000
+        rawDescription:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        itemCode:
+          type:
+            - 'null'
+            - string
+    HistoricalItemPage:
+      required:
+        - items
+        - undoItems
+        - nextOffset
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/HistoricalItemResult'
+        undoItems:
+          type: array
+          items:
+            $ref: '#/components/schemas/HistoricalUndoResult'
+        nextOffset:
+          pattern: ^-?(?:0|[1-9]\d*)$
+          type:
+            - 'null'
+            - integer
+            - string
+          format: int32
+    HistoricalItemResult:
+      required:
+        - item
+        - state
+        - appliedAssignmentId
+        - reason
+      type: object
+      properties:
+        item:
+          $ref: '#/components/schemas/HistoricalReclassificationItem'
+        state:
+          $ref: '#/components/schemas/HistoricalItemState'
+        appliedAssignmentId:
+          type:
+            - 'null'
+            - string
+          format: uuid
+        reason:
+          type:
+            - 'null'
+            - string
+    HistoricalItemState:
+      enum:
+        - pending
+        - applied
+        - conflicted
+        - skipped
+    HistoricalOperationState:
+      enum:
+        - preview
+        - applying
+        - completed
+        - cancelled
+        - undoing
+        - undone
+    HistoricalPreviewBody:
+      required:
+        - operationId
+        - taxonomyRevisionId
+        - reason
+        - groups
+      type: object
+      properties:
+        operationId:
+          type: string
+          format: uuid
+        taxonomyRevisionId:
+          type: string
+          format: uuid
+        reason:
+          type: string
+        groups:
+          type: array
+          minItems: 1
+          maxItems: 25
+          items:
+            $ref: '#/components/schemas/HistoricalGroupChoiceBody'
+    HistoricalProgress:
+      required:
+        - operationId
+        - state
+        - total
+        - applied
+        - conflicted
+        - skipped
+        - pending
+        - undone
+        - undoConflicted
+        - undoSkipped
+      type: object
+      properties:
+        operationId:
+          type: string
+          format: uuid
+        state:
+          $ref: '#/components/schemas/HistoricalOperationState'
+        total:
+          pattern: ^-?(?:0|[1-9]\d*)$
+          type:
+            - integer
+            - string
+          format: int32
+        applied:
+          pattern: ^-?(?:0|[1-9]\d*)$
+          type:
+            - integer
+            - string
+          format: int32
+        conflicted:
+          pattern: ^-?(?:0|[1-9]\d*)$
+          type:
+            - integer
+            - string
+          format: int32
+        skipped:
+          pattern: ^-?(?:0|[1-9]\d*)$
+          type:
+            - integer
+            - string
+          format: int32
+        pending:
+          pattern: ^-?(?:0|[1-9]\d*)$
+          type:
+            - integer
+            - string
+          format: int32
+        undone:
+          pattern: ^-?(?:0|[1-9]\d*)$
+          type:
+            - integer
+            - string
+          format: int32
+        undoConflicted:
+          pattern: ^-?(?:0|[1-9]\d*)$
+          type:
+            - integer
+            - string
+          format: int32
+        undoSkipped:
+          pattern: ^-?(?:0|[1-9]\d*)$
+          type:
+            - integer
+            - string
+          format: int32
+    HistoricalReclassificationItem:
+      required:
+        - itemId
+        - receiptId
+        - group
+        - itemRevision
+        - receiptRevision
+        - expectedAssignmentId
+        - previousCategoryId
+        - targetCategoryId
+        - applyOperationId
+        - undoOperationId
+      type: object
+      properties:
+        itemId:
+          type: string
+          format: uuid
+        receiptId:
+          type: string
+          format: uuid
+        group:
+          $ref: '#/components/schemas/HistoricalGroupKey'
+        itemRevision:
+          type: string
+          format: uuid
+        receiptRevision:
+          type: string
+          format: uuid
+        expectedAssignmentId:
+          type:
+            - 'null'
+            - string
+          format: uuid
+        previousCategoryId:
+          type:
+            - 'null'
+            - string
+          format: uuid
+        targetCategoryId:
+          type:
+            - 'null'
+            - string
+          format: uuid
+        applyOperationId:
+          type: string
+          format: uuid
+        undoOperationId:
+          type: string
+          format: uuid
+    HistoricalUndoBody:
+      required:
+        - taxonomyRevisionId
+        - reason
+        - limit
+      type: object
+      properties:
+        taxonomyRevisionId:
+          type: string
+          format: uuid
+        reason:
+          type: string
+        limit:
+          minimum: 1
+          maximum: 100
+          pattern: ^-?(?:0|[1-9]\d*)$
+          type:
+            - integer
+            - string
+          format: int32
+    HistoricalUndoResult:
+      required:
+        - itemId
+        - state
+        - undoAssignmentId
+        - reason
+      type: object
+      properties:
+        itemId:
+          type: string
+          format: uuid
+        state:
+          $ref: '#/components/schemas/HistoricalItemState'
+        undoAssignmentId:
+          type:
+            - 'null'
+            - string
+          format: uuid
+        reason:
+          type:
+            - 'null'
+            - string
+
     CategoryMappingSourceRequest:
       type: object
       required: [source]

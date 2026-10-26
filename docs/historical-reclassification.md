@@ -1,8 +1,29 @@
 # Historical reclassification foundation (RECEIPTS-1051)
 
-This change defines contracts and pure policies only. It does not register a service,
-create tables, migrate data, run Jev, or change purchase assignments. The remaining
-persistence and delivery work below is required before exposing the service.
+## Authenticated operation API
+
+`POST /api/historical-reclassifications` captures a server-built preview. The request
+contains only an operation ID, expected taxonomy revision, reason, and one to 25 exact
+source groups with explicit target category choices. The server rejects a selected
+group with no available items. No client item manifest or assignment history is accepted.
+
+`GET /api/historical-reclassifications/{id}` returns durable progress counts. `GET
+/api/historical-reclassifications/{id}/items?offset=0&limit=100` pages frozen item
+evidence and apply/undo outcomes, with `nextOffset` for another page. `POST
+/api/historical-reclassifications/{id}/apply` accepts `{ "limit": 100 }` and advances
+at most 100 pending items. Repeat it while `pending` is nonzero. `POST
+/api/historical-reclassifications/{id}/cancel` stops future chunks without reversing
+committed rows. `POST /api/historical-reclassifications/{id}/undo` accepts a fresh
+`taxonomyRevisionId`, immutable `reason`, and bounded `limit`; repeat with the same
+intent while applied items still have pending undo outcomes.
+
+All operations are scoped to the signed-in actor. A retry with the same operation ID
+and preview intent returns persisted progress; a changed intent conflicts. Reasoned
+rejections use `application/problem+json` with a readable `detail`.
+
+The foundation originally defined contracts and pure policies; persistence and the
+authenticated operation API now implement the workflow described below. The service
+does not run Jev or change purchase assignments until a user applies a captured preview.
 
 ## Explicit evidence and selection
 

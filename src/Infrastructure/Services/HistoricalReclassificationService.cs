@@ -9,9 +9,8 @@ using Microsoft.Extensions.Options;
 
 namespace Infrastructure.Services;
 
-// Deliberately unregistered until migration, archive support and PostgreSQL acceptance are complete.
 public sealed class HistoricalReclassificationService(IDbContextFactory<ApplicationDbContext> factory,
-	TimeProvider clock, IOptions<ClassificationOptions> options)
+		TimeProvider clock, IOptions<ClassificationOptions> options) : IHistoricalOperationService
 {
 	public async Task<HistoricalProgress> SavePreviewAsync(HistoricalPreviewRequest request, CancellationToken ct = default)
 	{
@@ -63,7 +62,7 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 		// The canonical write gate holds source/assignment/taxonomy evidence stable throughout capture.
 		foreach (HistoricalGroupSelection selection in groups)
 		{
-			await db.Database.ExecuteSqlInterpolatedAsync($"""
+			int captured = await db.Database.ExecuteSqlInterpolatedAsync($"""
                 INSERT INTO taxonomy."HistoricalOperationItems"
                 ("OperationId", "ItemId", "ReceiptId", "Store", "RawDescription", "ItemCode",
                  "ItemRevision", "ReceiptRevision", "ExpectedAssignmentId", "PreviousCategoryId", "TargetCategoryId",
@@ -79,6 +78,7 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
                   AND i."Description" COLLATE "C" = {selection.Group.RawDescription}
                   AND i."ReceiptItemCode" COLLATE "C" IS NOT DISTINCT FROM {selection.Group.ItemCode}
                 """, ct);
+			if (captured == 0) { throw new TaxonomyException(400, "Selected exact source has no available items."); }
 		}
 		await transaction.CommitAsync(ct);
 		return await ProgressAsync(db, operation, ct);

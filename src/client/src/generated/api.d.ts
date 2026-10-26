@@ -4,6 +4,108 @@
  */
 
 export interface paths {
+    "/api/historical-reclassifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Capture an exact historical classification preview */
+        post: operations["HistoricalReclassifications_Preview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/historical-reclassifications/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read historical classification progress */
+        get: operations["HistoricalReclassifications_Read"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/historical-reclassifications/{id}/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read paged frozen item evidence and outcomes */
+        get: operations["HistoricalReclassifications_Items"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/historical-reclassifications/{id}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply the next bounded preview chunk */
+        post: operations["HistoricalReclassifications_Apply"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/historical-reclassifications/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel pending historical classification work */
+        post: operations["HistoricalReclassifications_Cancel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/historical-reclassifications/{id}/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Conditionally undo the next bounded applied chunk */
+        post: operations["HistoricalReclassifications_Undo"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/category-mappings/inspect": {
         parameters: {
             query?: never;
@@ -3375,6 +3477,102 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        HistoricalChunkBody: {
+            /** Format: int32 */
+            limit: number | string;
+        };
+        HistoricalGroupChoiceBody: {
+            group: components["schemas"]["HistoricalGroupKey"];
+            /** Format: uuid */
+            targetCategoryId: null | string;
+        };
+        HistoricalGroupKey: {
+            store: string;
+            rawDescription: string;
+            itemCode: null | string;
+        };
+        HistoricalItemPage: {
+            items: components["schemas"]["HistoricalItemResult"][];
+            undoItems: components["schemas"]["HistoricalUndoResult"][];
+            /** Format: int32 */
+            nextOffset: null | number | string;
+        };
+        HistoricalItemResult: {
+            item: components["schemas"]["HistoricalReclassificationItem"];
+            state: components["schemas"]["HistoricalItemState"];
+            /** Format: uuid */
+            appliedAssignmentId: null | string;
+            reason: null | string;
+        };
+        /** @enum {unknown} */
+        HistoricalItemState: "pending" | "applied" | "conflicted" | "skipped";
+        /** @enum {unknown} */
+        HistoricalOperationState: "preview" | "applying" | "completed" | "cancelled" | "undoing" | "undone";
+        HistoricalPreviewBody: {
+            /** Format: uuid */
+            operationId: string;
+            /** Format: uuid */
+            taxonomyRevisionId: string;
+            reason: string;
+            groups: components["schemas"]["HistoricalGroupChoiceBody"][];
+        };
+        HistoricalProgress: {
+            /** Format: uuid */
+            operationId: string;
+            state: components["schemas"]["HistoricalOperationState"];
+            /** Format: int32 */
+            total: number | string;
+            /** Format: int32 */
+            applied: number | string;
+            /** Format: int32 */
+            conflicted: number | string;
+            /** Format: int32 */
+            skipped: number | string;
+            /** Format: int32 */
+            pending: number | string;
+            /** Format: int32 */
+            undone: number | string;
+            /** Format: int32 */
+            undoConflicted: number | string;
+            /** Format: int32 */
+            undoSkipped: number | string;
+        };
+        HistoricalReclassificationItem: {
+            /** Format: uuid */
+            itemId: string;
+            /** Format: uuid */
+            receiptId: string;
+            group: components["schemas"]["HistoricalGroupKey"];
+            /** Format: uuid */
+            itemRevision: string;
+            /** Format: uuid */
+            receiptRevision: string;
+            /** Format: uuid */
+            expectedAssignmentId: null | string;
+            /** Format: uuid */
+            previousCategoryId: null | string;
+            /** Format: uuid */
+            targetCategoryId: null | string;
+            /** Format: uuid */
+            applyOperationId: string;
+            /** Format: uuid */
+            undoOperationId: string;
+        };
+        HistoricalUndoBody: {
+            /** Format: uuid */
+            taxonomyRevisionId: string;
+            reason: string;
+            /** Format: int32 */
+            limit: number | string;
+        };
+        HistoricalUndoResult: {
+            /** Format: uuid */
+            itemId: string;
+            state: components["schemas"]["HistoricalItemState"];
+            /** Format: uuid */
+            undoAssignmentId: null | string;
+            reason: null | string;
+        };
         CategoryMappingSourceRequest: {
             source: components["schemas"]["NormalizationSourceKey"];
         };
@@ -6018,6 +6216,373 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    HistoricalReclassifications_Preview: {
+        parameters: {
+            query?: never;
+            header?: {
+                "api-version"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HistoricalPreviewBody"];
+                "text/json": components["schemas"]["HistoricalPreviewBody"];
+                "application/*+json": components["schemas"]["HistoricalPreviewBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoricalProgress"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    HistoricalReclassifications_Read: {
+        parameters: {
+            query?: never;
+            header?: {
+                "api-version"?: string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoricalProgress"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    HistoricalReclassifications_Items: {
+        parameters: {
+            query?: {
+                offset?: number | string;
+                limit?: number | string;
+            };
+            header?: {
+                "api-version"?: string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoricalItemPage"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    HistoricalReclassifications_Apply: {
+        parameters: {
+            query?: never;
+            header?: {
+                "api-version"?: string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HistoricalChunkBody"];
+                "text/json": components["schemas"]["HistoricalChunkBody"];
+                "application/*+json": components["schemas"]["HistoricalChunkBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoricalProgress"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    HistoricalReclassifications_Cancel: {
+        parameters: {
+            query?: never;
+            header?: {
+                "api-version"?: string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoricalProgress"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    HistoricalReclassifications_Undo: {
+        parameters: {
+            query?: never;
+            header?: {
+                "api-version"?: string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HistoricalUndoBody"];
+                "text/json": components["schemas"]["HistoricalUndoBody"];
+                "application/*+json": components["schemas"]["HistoricalUndoBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoricalProgress"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     CategoryMappings_Inspect: {
         parameters: {
             query?: never;
