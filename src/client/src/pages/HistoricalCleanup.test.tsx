@@ -31,6 +31,8 @@ vi.mock("@/components/categories/CategoryPathPicker", () => ({
 const row = (name: string) => ({
   group: { store: "Shop", rawDescription: name, itemCode: null },
   purchaseCount: 3,
+  impactAmount: 12.5,
+  impactCurrency: "USD",
   conflict: false,
   migratedBroad: true,
   unresolved: false,
@@ -105,6 +107,37 @@ beforeEach(() => {
     },
   );
   mockClient.POST.mockResolvedValue(success(progress()));
+});
+
+it("orders groups by USD impact and clears a prior page selection", async () => {
+  const user = userEvent.setup();
+  renderWithQueryClient(<HistoricalCleanup />);
+  await screen.findByText("Dairy");
+  expect(screen.getAllByText("USD impact: $12.50")).toHaveLength(2);
+  await user.click(
+    screen.getByRole("checkbox", { name: "Select Dairy at Shop" }),
+  );
+  expect(screen.getByText("Selected groups (1/25)")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Next" }));
+  await screen.findByText("Eggs");
+  await user.selectOptions(
+    screen.getByRole("combobox", { name: "Order groups" }),
+    "largestAmount",
+  );
+  await screen.findByText("Dairy");
+  expect(screen.queryByText("Selected groups (1/25)")).not.toBeInTheDocument();
+  expect(mockClient.GET).toHaveBeenCalledWith(
+    "/api/historical-reclassifications/groups",
+    expect.objectContaining({
+      params: {
+        query: expect.objectContaining({
+          offset: 0,
+          sort: "largestAmount",
+          impactCurrency: "USD",
+        }),
+      },
+    }),
+  );
 });
 
 it("shows loading, a local error, and retry for groups", async () => {

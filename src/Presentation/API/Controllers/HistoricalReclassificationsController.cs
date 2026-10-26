@@ -22,14 +22,17 @@ public sealed class HistoricalReclassificationsController(IHistoricalOperationSe
 		[FromQuery] int offset = 0, [FromQuery] int limit = 25, [FromQuery(Name = "q")] string? search = null,
 		[FromQuery] bool conflictsOnly = false, [FromQuery] bool migratedBroadOnly = false,
 		[FromQuery] bool unresolvedOnly = false, [FromQuery] bool unassignedOnly = false,
-				[FromQuery] HistoricalDispositionFilter dispositionFilter = HistoricalDispositionFilter.Visible,
+								[FromQuery] HistoricalDispositionFilter dispositionFilter = HistoricalDispositionFilter.Visible,
+				[FromQuery] string sort = "mostPurchases", [FromQuery] string impactCurrency = "USD",
 		CancellationToken ct = default)
 	{
 		if (offset < 0 || limit is < 1 or > 25 || search is { Length: > 200 } || search?.Contains('\0') == true ||
-				!Enum.IsDefined(dispositionFilter))
-		{ return ApiProblem.BadRequest("Use a nonnegative offset, limit of 1 to 25, and search of at most 200 characters."); }
+								!Enum.IsDefined(dispositionFilter) ||
+								sort is not ("mostPurchases" or "largestAmount") || impactCurrency != "USD")
+		{ return ApiProblem.BadRequest("Use a nonnegative offset, limit of 1 to 25, search of at most 200 characters, a supported sort and impact currency (USD)."); }
 		return TypedResults.Ok(await groups.BrowseAsync(new(offset, limit, search,
-						conflictsOnly, migratedBroadOnly, unresolvedOnly, unassignedOnly, Actor(), dispositionFilter), ct));
+												conflictsOnly, migratedBroadOnly, unresolvedOnly, unassignedOnly, Actor(), dispositionFilter,
+												sort, impactCurrency), ct));
 	}
 
 	[HttpGet]

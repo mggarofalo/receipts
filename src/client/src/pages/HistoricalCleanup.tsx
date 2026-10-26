@@ -35,6 +35,9 @@ export default function HistoricalCleanup() {
   const [offset, setOffset] = useState(0);
   const [stateFilter, setStateFilter] = useState("All");
   const [dispositionFilter, setDispositionFilter] = useState<Filter>("visible");
+  const [sort, setSort] = useState<"mostPurchases" | "largestAmount">(
+    "mostPurchases",
+  );
   const [selected, setSelected] = useState<Record<string, Group>>({});
   const [targets, setTargets] = useState<Record<string, CategoryChoice>>({});
   const [bulkTarget, setBulkTarget] = useState<CategoryChoice>();
@@ -55,6 +58,7 @@ export default function HistoricalCleanup() {
       queryText,
       stateFilter,
       dispositionFilter,
+      sort,
     ],
     queryFn: async ({ signal }) => {
       const { data, error: requestError } = await client.GET(
@@ -72,6 +76,8 @@ export default function HistoricalCleanup() {
               unresolvedOnly: stateFilter === "Unresolved" || undefined,
               unassignedOnly: stateFilter === "Unassigned" || undefined,
               dispositionFilter,
+              sort,
+              impactCurrency: "USD",
             },
           },
         },
@@ -624,6 +630,21 @@ export default function HistoricalCleanup() {
                 )}
               </select>
             </label>
+            <label className="text-sm">
+              Order groups
+              <select
+                aria-label="Order groups"
+                className="block h-9 max-w-full rounded-md border bg-background px-2"
+                value={sort}
+                onChange={(event) => {
+                  changePage(0);
+                  setSort(event.target.value as typeof sort);
+                }}
+              >
+                <option value="mostPurchases">Most purchases</option>
+                <option value="largestAmount">Largest amount (USD)</option>
+              </select>
+            </label>
           </div>
           {groups.isPending && <p role="status">Loading purchase groups…</p>}
           {groups.isError && (
@@ -686,6 +707,13 @@ export default function HistoricalCleanup() {
                             {row.group.store} ·{" "}
                             {row.group.itemCode ?? "No code"} ·{" "}
                             {row.purchaseCount} purchases
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            USD impact:{" "}
+                            {new Intl.NumberFormat("en-US", {
+                              style: "currency",
+                              currency: row.impactCurrency,
+                            }).format(row.impactAmount)}
                           </p>
                           <p className="mt-1 text-xs text-muted-foreground">
                             {[

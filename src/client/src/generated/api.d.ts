@@ -3544,6 +3544,13 @@ export interface components {
             group: components["schemas"]["HistoricalGroupKey"];
             /** Format: int32 */
             purchaseCount: number;
+            /**
+             * Format: double
+             * @description Sum of absolute item amounts for this group in impactCurrency only, including refunds.
+             */
+            impactAmount: number;
+            /** @enum {string} */
+            impactCurrency: "USD";
             conflict: boolean;
             migratedBroad: boolean;
             unresolved: boolean;
@@ -6388,6 +6395,10 @@ export interface operations {
                 unresolvedOnly?: boolean;
                 unassignedOnly?: boolean;
                 dispositionFilter?: components["schemas"]["HistoricalDispositionFilter"];
+                /** @description Rank all exact-source groups by purchase count or absolute item amount in the selected currency. */
+                sort?: "mostPurchases" | "largestAmount";
+                /** @description Currency used only for the impact sum; purchases in other currencies remain in the group and count. */
+                impactCurrency?: "USD";
             };
             header?: {
                 "api-version"?: string;

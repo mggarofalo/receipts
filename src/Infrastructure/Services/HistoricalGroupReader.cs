@@ -13,7 +13,8 @@ public sealed class HistoricalGroupReader(IDbContextFactory<ApplicationDbContext
 		CancellationToken cancellationToken = default)
 	{
 		if (request.Offset < 0 || request.Limit is < 1 or > 25 ||
-			request.Search is { Length: > 200 } || request.Search?.Contains('\0') == true)
+						request.Search is { Length: > 200 } || request.Search?.Contains('\0') == true ||
+						request.Sort is not ("mostPurchases" or "largestAmount") || request.ImpactCurrency != "USD")
 		{ throw new ArgumentException("Use a nonnegative offset, limit of 1 to 25, and search of at most 200 characters."); }
 
 		await using ApplicationDbContext db = await factory.CreateDbContextAsync(cancellationToken);
@@ -29,6 +30,8 @@ public sealed class HistoricalGroupReader(IDbContextFactory<ApplicationDbContext
 		command.Parameters.AddWithValue("unassigned", NpgsqlDbType.Boolean, request.UnassignedOnly);
 		command.Parameters.AddWithValue("actor", NpgsqlDbType.Text, request.Actor);
 		command.Parameters.AddWithValue("disposition_filter", NpgsqlDbType.Text, request.DispositionFilter.ToString());
+		command.Parameters.AddWithValue("sort", NpgsqlDbType.Text, request.Sort);
+		command.Parameters.AddWithValue("impact_currency", NpgsqlDbType.Text, request.ImpactCurrency);
 		List<HistoricalGroupSummary> items = [];
 		int total = 0;
 		await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -41,9 +44,10 @@ public sealed class HistoricalGroupReader(IDbContextFactory<ApplicationDbContext
 				new HistoricalGroupKey(reader.GetString(1), reader.GetString(2), reader.IsDBNull(3) ? null : reader.GetString(3)),
 				reader.GetInt32(4), reader.GetBoolean(5), reader.GetBoolean(6),
 				reader.GetBoolean(7), reader.GetBoolean(8),
-								categories.Select(x => new HistoricalGroupCategory(x.CategoryId, x.Path, x.PurchaseCount)).ToArray(),
+																categories.Select(x => new HistoricalGroupCategory(x.CategoryId, x.Path, x.PurchaseCount)).ToArray(),
+																reader.GetDecimal(12), request.ImpactCurrency,
 								reader.IsDBNull(10) ? null : Enum.Parse<HistoricalGroupDisposition>(reader.GetString(10)),
-								reader.GetInt64(11)));
+																reader.GetInt64(11)));
 		}
 		return new(items, total, (long)request.Offset + items.Count < total ? request.Offset + items.Count : null);
 	}
@@ -66,6 +70,7 @@ public sealed class HistoricalGroupReader(IDbContextFactory<ApplicationDbContext
                    i."Description" COLLATE "C" AS description,
                    i."ReceiptItemCode" COLLATE "C" AS code,
                    a."CategoryId" AS category_id,
+                   i."TotalAmount" AS amount, i."TotalAmountCurrency" AS currency,
                    a."Id" IS NULL AS unassigned,
                    a."Id" IS NOT NULL AND a."CategoryId" IS NULL AS unresolved,
                    a."Source" = 'legacy_import' AND a."CategoryId" IS NOT NULL
@@ -82,6 +87,7 @@ public sealed class HistoricalGroupReader(IDbContextFactory<ApplicationDbContext
                     OR strpos(lower(coalesce(i."ReceiptItemCode", '')), lower(@search)) > 0)
         ), groups AS MATERIALIZED (
             SELECT store, description, code, count(*)::integer AS purchase_count,
+                   coalesce(sum(CASE WHEN currency = @impact_currency THEN abs(amount) ELSE 0 END), 0) AS impact_amount,
                    count(DISTINCT coalesce(category_id::text, '<unassigned>')) > 1 AS conflict,
                    bool_or(broad) AS broad, bool_or(unresolved) AS unresolved,
                    bool_or(unassigned) AS unassigned
@@ -99,7 +105,8 @@ public sealed class HistoricalGroupReader(IDbContextFactory<ApplicationDbContext
                    d."Disposition" = @disposition_filter)
         ), page AS (
             SELECT * FROM filtered
-            ORDER BY purchase_count DESC, store COLLATE "C", description COLLATE "C",
+            ORDER BY CASE WHEN @sort = 'largestAmount' THEN impact_amount END DESC,
+                     purchase_count DESC, store COLLATE "C", description COLLATE "C",
                      code COLLATE "C" NULLS FIRST
             OFFSET @offset LIMIT @limit
         )
@@ -115,7 +122,7 @@ public sealed class HistoricalGroupReader(IDbContextFactory<ApplicationDbContext
                            AND f.code IS NOT DISTINCT FROM p.code
                          GROUP BY f.category_id) counts
                    LEFT JOIN paths ON paths."CategoryId" = counts.category_id), '[]') AS categories,
-               p.disposition, p.disposition_version
+               p.disposition, p.disposition_version, coalesce(p.impact_amount, 0)
         FROM (SELECT 1) anchor LEFT JOIN page p ON true
         """;
 }
