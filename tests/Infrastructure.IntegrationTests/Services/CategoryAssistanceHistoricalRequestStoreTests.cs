@@ -15,7 +15,7 @@ namespace Infrastructure.IntegrationTests.Services;
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public sealed class CategoryAssistanceHistoricalRequestStoreTests(PostgresFixture server)
+public sealed partial class CategoryAssistanceHistoricalRequestStoreTests(PostgresFixture server)
 {
 	private sealed class Factory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
 	{ public ApplicationDbContext CreateDbContext() => fixture.CreateDbContext(); }

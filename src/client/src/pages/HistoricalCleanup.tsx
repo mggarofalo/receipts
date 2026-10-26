@@ -8,6 +8,7 @@ import { extractErrorMessage } from "@/lib/problem-details";
 import { useCategoryTaxonomy } from "@/hooks/useCategoryTaxonomy";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { CategoryPathPicker } from "@/components/categories/CategoryPathPicker";
+import { HistoricalAssistance } from "@/components/categories/HistoricalAssistance";
 import type { CategoryChoice } from "@/lib/category-paths";
 import { categoryPaths } from "@/lib/category-paths";
 import { PageHead } from "@/components/primitives";
@@ -910,6 +911,9 @@ export default function HistoricalCleanup() {
             </div>
           )}
         </section>
+      )}
+      {!operationId && (
+        <HistoricalAssistance selected={selectedVisible} revisionId={revision?.id} />
       )}
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">Recent operations</h2>
