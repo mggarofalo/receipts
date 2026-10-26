@@ -1,5 +1,7 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { renderWithQueryClient } from "@/test/test-utils";
 import mockClient, { resetMockClient } from "@/test/mock-api-client";
 import type { components } from "@/generated/api";
@@ -40,7 +42,8 @@ const failure = (status: number, detail: string) => ({
 });
 async function renderTree(route = "/taxonomy") {
   renderWithQueryClient(<Taxonomy />, { route });
-  await screen.findByText("Food / Dairy / Milk");
+  await screen.findByRole("tree");
+  await userEvent.click(screen.getByRole("button", { name: "Expand all" }));
 }
 async function open(action: string, path: string) {
   await userEvent.click(
@@ -65,7 +68,9 @@ describe("Category tree", () => {
       "Tree unavailable",
     );
     await userEvent.click(screen.getByRole("button", { name: "Retry" }));
-    expect(await screen.findByText("Food / Dairy / Milk")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("treeitem", { name: "Food" }),
+    ).toBeInTheDocument();
   });
   it("searches complete paths and distinguishes duplicate labels", async () => {
     await renderTree();
@@ -73,10 +78,14 @@ describe("Category tree", () => {
       screen.getByRole("textbox", { name: "Search category paths" }),
       "milk",
     );
-    const list = within(screen.getByRole("list", { name: "Category paths" }));
-    expect(list.getByText("Food / Dairy / Milk")).toBeInTheDocument();
-    expect(list.getByText("Plant / Milk")).toBeInTheDocument();
-    expect(list.queryByText(/^Food$/)).not.toBeInTheDocument();
+    const list = within(screen.getByRole("tree", { name: "Categories" }));
+    expect(
+      list.getByRole("treeitem", { name: "Food / Dairy / Milk" }),
+    ).toBeInTheDocument();
+    expect(
+      list.getByRole("treeitem", { name: "Plant / Milk" }),
+    ).toBeInTheDocument();
+    expect(list.getByRole("treeitem", { name: "Food" })).toBeInTheDocument();
   });
   it("supports deep paths without truncation", async () => {
     let parentId: string | undefined;
@@ -92,9 +101,16 @@ describe("Category tree", () => {
     });
     mockClient.GET.mockResolvedValue(success({ ...revision, nodes }));
     renderWithQueryClient(<Taxonomy />);
+    await screen.findByRole("tree");
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Search category paths" }),
+      "Level79",
+    );
     expect(
-      await screen.findByText(nodes.map((n) => n.name).join(" / ")),
-    ).toBeInTheDocument();
+      screen.getByRole("treeitem", {
+        name: nodes.map((n) => n.name).join(" / "),
+      }),
+    ).toHaveAttribute("aria-level", "80");
   });
   it("preserves legacy navigation for an empty tree", async () => {
     mockClient.GET.mockResolvedValue(success({ ...revision, nodes: [] }));
@@ -172,6 +188,83 @@ describe("Category tree", () => {
       ),
     );
   });
+  it.each(["before submit", "while saving"])(
+    "keeps the saved revision after a late background read started %s",
+    async (readTiming) => {
+      let cache!: QueryClient;
+      function CacheProbe() {
+        const queryClient = useQueryClient();
+        useEffect(() => {
+          cache = queryClient;
+        }, [queryClient]);
+        return null;
+      }
+      let finishRead!: (value: ReturnType<typeof success>) => void;
+      const oldRead = new Promise<ReturnType<typeof success>>((resolve) => {
+        finishRead = resolve;
+      });
+      let finishSave!: (value: ReturnType<typeof success>) => void;
+      mockClient.POST.mockReturnValueOnce(
+        new Promise<ReturnType<typeof success>>((resolve) => {
+          finishSave = resolve;
+        }),
+      );
+      renderWithQueryClient(
+        <>
+          <CacheProbe />
+          <Taxonomy />
+        </>,
+      );
+      await screen.findByRole("tree");
+      const d = await open("Rename", "Food");
+      await userEvent.clear(d.getByLabelText("Name"));
+      await userEvent.type(d.getByLabelText("Name"), "Groceries");
+      await userEvent.type(d.getByLabelText("Reason"), "Clarify");
+      mockClient.GET.mockReturnValueOnce(oldRead);
+      let pendingRead!: Promise<void>;
+      function startRead() {
+        act(() => {
+          pendingRead = cache.refetchQueries({
+            queryKey: ["taxonomy", "current"],
+            exact: true,
+          });
+        });
+      }
+      if (readTiming === "before submit") startRead();
+      await userEvent.click(d.getByRole("button", { name: "Rename category" }));
+      await waitFor(() => expect(mockClient.POST).toHaveBeenCalledOnce());
+      if (readTiming === "while saving") startRead();
+      await waitFor(() => expect(mockClient.GET).toHaveBeenCalledTimes(2));
+      const readSignal = mockClient.GET.mock.calls[1][1]!.signal!;
+      const saved = {
+        ...revision,
+        id: "rev-2",
+        sequence: 3,
+        nodes: revision.nodes.map((node) =>
+          node.id === "food" ? { ...node, name: "Groceries" } : node,
+        ),
+      };
+      await act(async () => finishSave(success(saved)));
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+      );
+      expect(
+        screen.getByRole("treeitem", { name: "Groceries" }),
+      ).toBeInTheDocument();
+      // Resolve even if cancelled: a transport completing late must not replace
+      // the authoritative revision returned by the successful change.
+      await act(async () => {
+        finishRead(success(revision));
+        await pendingRead;
+      });
+      expect(cache.getQueryData(["taxonomy", "current"])).toEqual(saved);
+      expect(
+        screen.getByRole("treeitem", { name: "Groceries" }),
+      ).toBeInTheDocument();
+      expect(screen.getByText("Revision details · 3")).toBeInTheDocument();
+      expect(readSignal.aborted).toBe(true);
+    },
+  );
   it("discloses rename scope and saves the name", async () => {
     await renderTree();
     const d = await open("Rename", "Food / Dairy");
