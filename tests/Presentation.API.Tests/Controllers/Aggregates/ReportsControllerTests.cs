@@ -22,6 +22,19 @@ public class ReportsControllerTests
 		_controller = new ReportsController(_mediatorMock.Object, Mock.Of<global::API.Services.IEntityChangeNotifier>());
 	}
 
+	[Theory]
+	[InlineData("invalid", null, null)]
+	[InlineData(null, "invalid", null)]
+	[InlineData(null, null, "2026-10-26T01:00:00+01:00")]
+	[InlineData(null, null, "2026-10-26")]
+	public async Task CategoryTrends_RejectsInvalidSelection(string? view, string? rollup, string? cutoff)
+	{
+		var result = await _controller.GetCategoryTrends(new(2020, 1, 1), new(2020, 12, 31), "monthly", 7,
+			default, view, rollup, knowledgeCutoff: cutoff);
+		Assert.IsType<BadRequestProblem>(result.Result);
+		_mediatorMock.VerifyNoOtherCalls();
+	}
+
 	[Fact]
 	public async Task GetOutOfBalance_ReturnsOkResult_WithDefaultParameters()
 	{

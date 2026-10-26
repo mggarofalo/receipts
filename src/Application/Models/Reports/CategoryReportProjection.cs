@@ -15,7 +15,10 @@ public sealed record CategoryReportBucket(Guid? PathRevisionId, Guid? CategoryId
 	CategoryReportState State, IReadOnlyList<TaxonomyNode> Path, string Currency, decimal Amount, int PurchaseCount);
 public sealed record CategoryReportResult(CategoryReportView View, Guid? CurrentRevisionId,
 	IReadOnlyList<CategoryReportBucket> Buckets, CategoryReportRollup Rollup,
-	DateTimeOffset? KnowledgeCutoff, CategoryReportAssignmentSelection AssignmentSelection);
+	DateTimeOffset? KnowledgeCutoff, CategoryReportAssignmentSelection AssignmentSelection)
+{
+	public IReadOnlyDictionary<string, IReadOnlyList<CategoryReportBucket>> Periods { get; init; } = new Dictionary<string, IReadOnlyList<CategoryReportBucket>>();
+}
 
 /// <summary>Read-only regrouping: never changes assignments or resolves identities using display text.</summary>
 public static class CategoryReportProjection

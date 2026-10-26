@@ -17,7 +17,7 @@ public static class CategoryReportReader
 		IQueryable<ReceiptItemEntity> scopedItems, DateOnly startDate, DateOnly endDate,
 		CategoryReportView view, CategoryReportRollup rollup = CategoryReportRollup.AssignedCategory,
 		Guid? categoryFilter = null, CancellationToken cancellationToken = default,
-		DateTimeOffset? knowledgeCutoff = null, Guid? capturedCurrentRevisionId = null)
+		DateTimeOffset? knowledgeCutoff = null, Guid? capturedCurrentRevisionId = null, string? granularity = null)
 	{
 		if (startDate > endDate) { throw new ArgumentException("Start date must not follow end date."); }
 		if (!Enum.IsDefined(view)) { throw new ArgumentOutOfRangeException(nameof(view)); }
@@ -44,6 +44,9 @@ public static class CategoryReportReader
 						from assignment in assignments.DefaultIfEmpty()
 						select new
 						{
+							Year = granularity == null ? 0 : receipt.Date.Year,
+							Month = granularity == null || granularity == "yearly" ? 1 : granularity == "quarterly" ? ((receipt.Date.Month - 1) / 3) * 3 + 1 : receipt.Date.Month,
+							Day = granularity == "daily" ? receipt.Date.Day : 1,
 							item.TotalAmount,
 							item.TotalAmountCurrency,
 							CategoryId = assignment == null ? (Guid?)null : assignment.CategoryId,
@@ -57,7 +60,7 @@ public static class CategoryReportReader
 										&& evidence.Resolution == "Unresolved") ? CategoryReportState.UnresolvedLegacy
 								: assignment.CategoryId == null ? CategoryReportState.Unclassified : CategoryReportState.Classified
 						};
-		var groups = await purchases.GroupBy(row => new { row.CategoryId, row.RevisionId, row.State, row.TotalAmountCurrency })
+		var groups = await purchases.GroupBy(row => new { row.Year, row.Month, row.Day, row.CategoryId, row.RevisionId, row.State, row.TotalAmountCurrency })
 			.Select(group => new { group.Key, Amount = group.Sum(row => row.TotalAmount), Count = group.Count() })
 			.ToListAsync(cancellationToken);
 		Guid[] revisions = view == CategoryReportView.CurrentHierarchy
@@ -66,9 +69,30 @@ public static class CategoryReportReader
 				.Select(row => row.Key.RevisionId!.Value).Distinct().ToArray();
 		var nodes = await context.TaxonomyNodes.AsNoTracking().Where(row => revisions.Contains(row.RevisionId))
 			.Select(row => new { row.RevisionId, row.CategoryId, row.ParentId, row.Name, row.Archived }).ToListAsync(cancellationToken);
-		return CategoryReportProjection.Project(groups.Select(row => new CategoryReportFact(row.Key.CategoryId,
-				row.Key.RevisionId, row.Key.State, row.Key.TotalAmountCurrency.ToString(), row.Amount, row.Count)),
-			nodes.Select(row => new CategoryReportNode(row.RevisionId, new TaxonomyNode(row.CategoryId, row.ParentId, row.Name, null, row.Archived))),
-			view, head, rollup, categoryFilter, knowledgeCutoff);
+		var snapshotNodes = nodes.Select(row => new CategoryReportNode(row.RevisionId,
+			new TaxonomyNode(row.CategoryId, row.ParentId, row.Name, null, row.Archived))).ToArray();
+		CategoryReportResult Project(IEnumerable<CategoryReportFact> facts) => CategoryReportProjection.Project(
+			facts, snapshotNodes, view, head, rollup, categoryFilter, knowledgeCutoff);
+		var facts = groups.Select(row => new
+		{
+			row.Key.Year,
+			row.Key.Month,
+			row.Key.Day,
+			Fact = new CategoryReportFact(row.Key.CategoryId, row.Key.RevisionId, row.Key.State,
+				row.Key.TotalAmountCurrency.ToString(), row.Amount, row.Count)
+		}).ToArray();
+		var snapshot = Project(facts.Select(row => row.Fact));
+		return granularity == null ? snapshot : snapshot with
+		{
+			Periods = facts.GroupBy(row => new { row.Year, row.Month, row.Day }).ToDictionary(
+				group => granularity switch
+				{
+					"daily" => $"{group.Key.Year:D4}-{group.Key.Month:D2}-{group.Key.Day:D2}",
+					"quarterly" => $"{group.Key.Year} Q{(group.Key.Month - 1) / 3 + 1}",
+					"yearly" => group.Key.Year.ToString(),
+					_ => $"{group.Key.Year:D4}-{group.Key.Month:D2}"
+				},
+				group => Project(group.Select(row => row.Fact)).Buckets)
+		};
 	}
 }

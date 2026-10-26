@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text.Json;
 using API.Generated.Dtos;
 using API.Services;
 using Application.Commands.Reports;
@@ -358,7 +360,12 @@ public class ReportsController(IMediator mediator, IEntityChangeNotifier notifie
 		[FromQuery] DateOnly? endDate,
 		[FromQuery] string? granularity,
 		[FromQuery] int? topN,
-		CancellationToken cancellationToken)
+		CancellationToken cancellationToken,
+		[FromQuery] string? categoryView = null,
+		[FromQuery] string? rollup = null,
+		[FromQuery] Guid? categoryId = null,
+		[FromQuery] string? knowledgeCutoff = null,
+		[FromQuery] Guid? capturedCurrentRevisionId = null)
 	{
 		DateOnly start = startDate ?? DateOnly.MinValue;
 		DateOnly end = endDate ?? DateOnly.FromDateTime(DateTime.Today);
@@ -381,11 +388,70 @@ public class ReportsController(IMediator mediator, IEntityChangeNotifier notifie
 			return ApiProblem.BadRequest("topN must be between 1 and 50");
 		}
 
-		GetCategoryTrendsReportQuery query = new(start, end, gran, top);
-		AppReports.CategoryTrendsResult result = await mediator.Send(query, cancellationToken);
+		AppReports.CategoryReportView view;
+		switch (categoryView)
+		{
+			case null or "asClassified": view = AppReports.CategoryReportView.AsClassified; break;
+			case "currentHierarchy": view = AppReports.CategoryReportView.CurrentHierarchy; break;
+			default: return ApiProblem.BadRequest("categoryView must be asClassified or currentHierarchy");
+		}
+		AppReports.CategoryReportRollup level;
+		switch (rollup)
+		{
+			case null or "assignedCategory": level = AppReports.CategoryReportRollup.AssignedCategory; break;
+			case "root": level = AppReports.CategoryReportRollup.Root; break;
+			default: return ApiProblem.BadRequest("rollup must be assignedCategory or root");
+		}
+		DateTimeOffset? cutoff = null;
+		if (knowledgeCutoff is not null)
+		{
+			if (!knowledgeCutoff.EndsWith('Z') || !DateTimeOffset.TryParseExact(knowledgeCutoff,
+				["yyyy-MM-dd'T'HH:mm:ss'Z'", "yyyy-MM-dd'T'HH:mm:ss.FFFFFFF'Z'"],
+				CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out DateTimeOffset parsed))
+			{ return ApiProblem.BadRequest("knowledgeCutoff must be an ISO UTC timestamp with a Z suffix"); }
+			cutoff = parsed.ToUniversalTime();
+		}
+		if (categoryId == Guid.Empty || capturedCurrentRevisionId == Guid.Empty)
+		{ return ApiProblem.BadRequest("categoryId and capturedCurrentRevisionId must be non-empty UUIDs"); }
+		if (capturedCurrentRevisionId.HasValue && view != AppReports.CategoryReportView.CurrentHierarchy)
+		{ return ApiProblem.BadRequest("capturedCurrentRevisionId requires currentHierarchy"); }
+		GetCategoryTrendsReportQuery query = new(start, end, gran, top)
+		{ CategoryOptions = new(view, level, categoryId, cutoff, capturedCurrentRevisionId) };
+		AppReports.CategoryTrendsResult result;
+		try { result = await mediator.Send(query, cancellationToken); }
+		catch (ArgumentException exception) when (exception.ParamName == "capturedCurrentRevisionId")
+		{ return ApiProblem.BadRequest(exception.Message); }
 
 		return TypedResults.Ok(new CategoryTrendsResponse
 		{
+			View = JsonNamingPolicy.CamelCase.ConvertName((result.Snapshot?.View ?? view).ToString()),
+			Rollup = JsonNamingPolicy.CamelCase.ConvertName((result.Snapshot?.Rollup ?? level).ToString()),
+			AssignmentSelection = JsonNamingPolicy.CamelCase.ConvertName((result.Snapshot?.AssignmentSelection ?? AppReports.CategoryReportAssignmentSelection.CurrentPointer).ToString()),
+			CurrentRevisionId = result.Snapshot?.CurrentRevisionId,
+			KnowledgeCutoff = result.Snapshot?.KnowledgeCutoff,
+			Series = result.Series.Select(entry => new CategoryTrendsSeries
+			{
+				Currency = entry.Currency,
+				IsOther = entry.IsOther,
+				State = entry.IsOther ? "other" : JsonNamingPolicy.CamelCase.ConvertName(entry.Bucket!.State.ToString()),
+				PathRevisionId = entry.Bucket?.PathRevisionId,
+				CategoryId = entry.Bucket?.CategoryId,
+				PurchaseCount = entry.IsOther ? result.Snapshot!.Buckets.Where(bucket => bucket.Currency == entry.Currency
+					&& !result.Series.Any(selected => !selected.IsOther && selected.Bucket == bucket)).Sum(bucket => bucket.PurchaseCount)
+					: entry.Bucket!.PurchaseCount,
+				Path = entry.Bucket?.Path.Select(node => new CategoryReportPathNode
+				{
+					CategoryId = node.Id,
+					Name = node.Name,
+					Archived = node.Archived
+				}).ToList() ?? []
+			}).ToList(),
+			CurrencyTotals = result.Snapshot?.Buckets.GroupBy(bucket => bucket.Currency).Select(group => new CategoryTrendsCurrencyTotal
+			{
+				Currency = group.Key,
+				Amount = (double)group.Sum(bucket => bucket.Amount),
+				PurchaseCount = group.Sum(bucket => bucket.PurchaseCount)
+			}).ToList() ?? [],
 			Categories = result.Categories,
 			Buckets = result.Buckets.Select(b => new CategoryTrendsBucket
 			{

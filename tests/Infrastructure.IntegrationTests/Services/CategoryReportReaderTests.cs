@@ -137,6 +137,19 @@ public sealed class CategoryReportReaderTests(PostgresFixture fixture) : IClassF
 		(await Read(CategoryReportView.AsClassified, scoped: tiny)).Buckets.Single().Amount.Should().Be(0.12m);
 		(await Read(CategoryReportView.CurrentHierarchy, scoped: tiny)).Buckets.Should().ContainSingle();
 
+		foreach (string granularity in new[] { "daily", "monthly", "quarterly", "yearly" })
+		{
+			commands.Commands.Clear();
+			var temporal = await CategoryReportReader.ReadAsync(db, scope, new(2020, 1, 1), new(2020, 12, 31),
+				CategoryReportView.CurrentHierarchy, CategoryReportRollup.Root, granularity: granularity);
+			commands.Commands.Should().HaveCount(3);
+			temporal.Periods.Should().ContainSingle();
+			temporal.Periods.Single().Value.Should().BeEquivalentTo(current.Buckets);
+			commands.Commands.Should().Contain(command => command.CommandText.Contains("GROUP BY")
+				&& command.CommandText.Contains("date_part"));
+			await SavePlansAsync(commands, "trends-" + granularity);
+		}
+
 		var correction = new PurchaseClassificationEntity
 		{
 			Id = Guid.NewGuid(),

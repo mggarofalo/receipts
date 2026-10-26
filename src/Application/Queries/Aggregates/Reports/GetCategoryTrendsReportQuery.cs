@@ -7,4 +7,7 @@ public record GetCategoryTrendsReportQuery(
 	DateOnly StartDate,
 	DateOnly EndDate,
 	string Granularity,
-	int TopN) : IQuery<CategoryTrendsResult>;
+	int TopN) : IQuery<CategoryTrendsResult>
+{
+	public CategoryReportOptions? CategoryOptions { get; init; }
+}

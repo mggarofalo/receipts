@@ -2,8 +2,8 @@
 
 The shared `CategoryReportReader` and `CategoryReportProjection` power
 `GET /api/dashboard/spending-by-category`, including explicit historical and
-current-hierarchy views. Integration with trends, search, exports and their UI
-remains required. Focused PostgreSQL query-plan evidence lives
+current-hierarchy views. Category trends now uses the same reader with a server-side
+period grouping dimension. Integration with search, exports and their UI remains required. Focused PostgreSQL query-plan evidence lives
 in the external RECEIPTS-1050 review/cutoff artifacts; production-scale acceptance remains open.
 
 ## Meaning of a view
@@ -130,3 +130,20 @@ tests exercise corrected current pointers, preexisting item scopes and purchase
 date selection independent of assignment recorded time, cutoff ties/backdated observations, pre-import missing history and caller-supplied captured revisions. They do not prove public
 contract parity, production SQL performance, full endpoint filters, export
 consistency or browser behavior. Those acceptance gates remain open.
+
+## Category trends API cutover
+
+`GET /api/reports/category-trends` accepts the dashboard category selection parameters.
+Its existing `categories` and dense `buckets[].amounts` arrays remain parallel; additive
+`series` entries identify each position by currency, revision, category, state and full path.
+Top N is selected independently per currency; each remaining currency has its own Other
+series. `currencyTotals` retains the full filtered denominator before slicing. Other has
+`isOther=true`, `state=other`, an empty path and no fabricated taxonomy identity.
+The reader groups receipt year/month/day (or quarter) together with assignment identity
+and currency in SQL, then resolves the bounded grouped facts against batched snapshots.
+The response captures one current revision across every period. The cutoff reconstructs
+classification knowledge only; monetary facts remain current. No location filter existed
+on this endpoint before this cutover.
+
+Next consumers: dashboard summary most-used category; purchase search; item-description,
+item-cost category and uncategorized reports; dashboard/report/search UI and CSV exports.

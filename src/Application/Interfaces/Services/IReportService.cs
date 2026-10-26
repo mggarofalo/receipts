@@ -41,6 +41,12 @@ public interface IReportService
 		string granularity,
 		int topN,
 		CancellationToken cancellationToken);
+	Task<CategoryTrendsResult> GetCategoryTrendsAsync(
+		DateOnly startDate,
+		DateOnly endDate,
+		string granularity,
+		int topN,
+		CancellationToken cancellationToken, CategoryReportOptions options);
 
 	Task<UncategorizedItemsResult> GetUncategorizedItemsAsync(
 		string sortBy,

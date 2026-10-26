@@ -316,84 +316,47 @@ public class ReportService(IDbContextFactory<ApplicationDbContext> contextFactor
 		return new ItemCostOverTimeResult(buckets);
 	}
 
-	public async Task<CategoryTrendsResult> GetCategoryTrendsAsync(
-		DateOnly startDate,
-		DateOnly endDate,
-		string granularity,
-		int topN,
-		CancellationToken cancellationToken)
+	public Task<CategoryTrendsResult> GetCategoryTrendsAsync(DateOnly startDate, DateOnly endDate,
+		string granularity, int topN, CancellationToken cancellationToken) =>
+		GetCategoryTrendsAsync(startDate, endDate, granularity, topN, cancellationToken, new());
+
+	public async Task<CategoryTrendsResult> GetCategoryTrendsAsync(DateOnly startDate, DateOnly endDate,
+		string granularity, int topN, CancellationToken cancellationToken, CategoryReportOptions options)
 	{
+		if (topN is < 1 or > 50) { throw new ArgumentOutOfRangeException(nameof(topN)); }
+		granularity = granularity.ToLowerInvariant();
+		if (granularity is not ("daily" or "monthly" or "quarterly" or "yearly"))
+		{ throw new ArgumentException("Invalid granularity", nameof(granularity)); }
 		await using ApplicationDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
-
-		// Join receipt items with receipts for date filtering
-		var itemsInRange = context.ReceiptItems
-			.AsNoTracking()
-			.Where(ri => ri.DeletedAt == null)
-			.Join(
-				context.Receipts.AsNoTracking().Where(r => r.DeletedAt == null && r.Date >= startDate && r.Date <= endDate),
-				ri => ri.ReceiptId,
-				r => r.Id,
-				(ri, r) => new { ri.Category, ri.TotalAmount, r.Date });
-
-		// Materialize for in-memory grouping (bounded by item count in date range)
-		var materialized = await itemsInRange.ToListAsync(cancellationToken);
-
-		if (materialized.Count == 0)
+		if (options.CapturedCurrentRevisionId is Guid revision
+			&& (options.View != CategoryReportView.CurrentHierarchy || revision == Guid.Empty
+				|| !await context.TaxonomyRevisions.AsNoTracking().AnyAsync(row => row.Id == revision, cancellationToken)))
+		{ throw new ArgumentException("capturedCurrentRevisionId must identify an existing revision and requires currentHierarchy", "capturedCurrentRevisionId"); }
+		var snapshot = await CategoryReportReader.ReadAsync(context, context.ReceiptItems, startDate, endDate,
+			options.View, options.Rollup, options.CategoryId, cancellationToken,
+			options.KnowledgeCutoff, options.CapturedCurrentRevisionId, granularity);
+		if (snapshot.Buckets.Count == 0) { return new([], []) { Snapshot = snapshot }; }
+		static (Guid?, Guid?, CategoryReportState, string) Key(CategoryReportBucket bucket) =>
+			(bucket.PathRevisionId, bucket.CategoryId, bucket.State, bucket.Currency);
+		List<CategoryTrendsSeriesResult> series = [];
+		foreach (var currency in snapshot.Buckets.GroupBy(bucket => bucket.Currency).OrderBy(group => group.Key, StringComparer.Ordinal))
 		{
-			return new CategoryTrendsResult([], []);
+			var top = currency.OrderByDescending(bucket => bucket.Amount).ThenBy(bucket => bucket.PathRevisionId)
+				.ThenBy(bucket => bucket.CategoryId).ThenBy(bucket => bucket.State).Take(topN).ToArray();
+			series.AddRange(top.Select(bucket => new CategoryTrendsSeriesResult(currency.Key, false, bucket)));
+			if (currency.Count() > topN) { series.Add(new(currency.Key, true, null)); }
 		}
-
-		// Find top-N categories by total spending
-		var categoryTotals = materialized
-			.GroupBy(x => x.Category)
-			.Select(g => new { Category = g.Key, Total = g.Sum(x => x.TotalAmount) })
-			.OrderByDescending(x => x.Total)
-			.ToList();
-
-		HashSet<string> topCategories = categoryTotals
-			.Take(topN)
-			.Select(x => x.Category)
-			.ToHashSet();
-
-		bool hasOther = categoryTotals.Count > topN;
-
-		// Build ordered category list
-		List<string> categories = categoryTotals
-			.Take(topN)
-			.Select(x => x.Category)
-			.ToList();
-
-		if (hasOther)
+		var selected = series.Where(entry => !entry.IsOther).Select(entry => Key(entry.Bucket!)).ToHashSet();
+		List<CategoryTrendsBucketResult> buckets = GeneratePeriods(startDate, endDate, granularity).Select(period =>
 		{
-			categories.Add("Other");
-		}
-
-		// Map items to resolved category (top-N or "Other")
-		var resolvedItems = materialized.Select(x => new
-		{
-			Category = topCategories.Contains(x.Category) ? x.Category : "Other",
-			x.TotalAmount,
-			x.Date
-		});
-
-		// Generate all periods in range
-		List<string> allPeriods = GeneratePeriods(startDate, endDate, granularity);
-
-		// Group by period and category
-		var grouped = resolvedItems
-			.GroupBy(x => new { Period = FormatPeriod(x.Date, granularity), x.Category })
-			.ToDictionary(g => (g.Key.Period, g.Key.Category), g => g.Sum(x => x.TotalAmount));
-
-		// Build dense zero-filled buckets
-		List<CategoryTrendsBucketResult> buckets = allPeriods.Select(period =>
-		{
-			List<decimal> amounts = categories.Select(cat =>
-				grouped.TryGetValue((period, cat), out decimal amount) ? amount : 0m
-			).ToList();
-			return new CategoryTrendsBucketResult(period, amounts);
+			var facts = snapshot.Periods.TryGetValue(period, out var periodBuckets) ? periodBuckets : [];
+			return new CategoryTrendsBucketResult(period, series.Select(entry => facts
+				.Where(bucket => entry.IsOther ? bucket.Currency == entry.Currency && !selected.Contains(Key(bucket))
+					: Key(bucket) == Key(entry.Bucket!)).Sum(bucket => bucket.Amount)).ToList());
 		}).ToList();
-
-		return new CategoryTrendsResult(categories, buckets);
+		return new(series.Select(entry => entry.IsOther ? "Other" : entry.Bucket!.Path.Count > 0
+			? entry.Bucket.Path[^1].Name : entry.Bucket.State.ToString()).ToList(), buckets)
+		{ Snapshot = snapshot, Series = series };
 	}
 
 	private static string FormatPeriod(DateOnly date, string granularity)
