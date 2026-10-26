@@ -6,6 +6,7 @@ import type { components } from "@/generated/api";
 import { localErrorPolicy } from "@/lib/request-error-policy";
 import { extractErrorMessage } from "@/lib/problem-details";
 import { Button } from "@/components/ui/button";
+import { assistanceFailureMessage } from "@/lib/assistance-failure";
 import { useAuth } from "@/hooks/useAuth";
 
 type Group = components["schemas"]["HistoricalGroupSummary"];
@@ -85,11 +86,14 @@ export function HistoricalAssistance({
     queryKey: ["category-assistance", "historical-requests"],
     enabled: available,
     queryFn: async ({ signal }) => {
-      const result = await client.GET("/api/category-assistance/historical-requests", {
-        ...localErrorPolicy.request,
-        signal,
-        params: { query: { offset: 0, limit: 25 } },
-      });
+      const result = await client.GET(
+        "/api/category-assistance/historical-requests",
+        {
+          ...localErrorPolicy.request,
+          signal,
+          params: { query: { offset: 0, limit: 25 } },
+        },
+      );
       if (result.error || !result.data)
         throw result.error ?? new Error("Response unavailable");
       return result.data;
@@ -249,6 +253,19 @@ export function HistoricalAssistance({
                     {entry.group.store} · {entry.group.rawDescription} ·{" "}
                     {entry.group.itemCode ?? "No code"}: {entry.itemCount}{" "}
                     purchases · {entry.states.join(", ") || "pending"}
+                    {entry.failureReasons.some(Boolean) && (
+                      <ul className="mt-1 list-disc pl-5">
+                        {entry.failureReasons.map(
+                          (reason, index) =>
+                            reason && (
+                              <li key={index}>
+                                Purchase {index + 1}:{" "}
+                                {assistanceFailureMessage(reason)}
+                              </li>
+                            ),
+                        )}
+                      </ul>
+                    )}
                     {entry.attemptIds.map((attemptId) => (
                       <Link
                         key={attemptId}

@@ -27,7 +27,8 @@ const progress = {
       group: group.group,
       itemCount: 12,
       attemptIds: [attemptId],
-      states: ["suggested"],
+      states: ["failed", "suggested"],
+      failureReasons: ["PayloadTooLarge", null],
     },
   ],
 };
@@ -114,6 +115,14 @@ for (const width of [375, 1280]) {
     await expect(
       page.getByRole("link", { name: `Review suggestion ${attemptId}` }),
     ).toHaveAttribute("href", `/classification?attempt=${attemptId}`);
+    await expect(
+      page.getByText(/Purchase 1: The category hierarchy is too large/),
+    ).toBeVisible();
+    await expect(page.getByText(/Purchase 2:/)).toHaveCount(0);
+    await page.screenshot({
+      path: `C:/Users/mggar/Source/receipts-017-artifacts/1057/historical-failure-${width}.png`,
+      fullPage: true,
+    });
     await page.reload();
     await page
       .getByRole("button", { name: new RegExp(`ready.*${requestId}`) })

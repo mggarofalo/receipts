@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Application.Normalization;
 
 namespace Application.Classification;
@@ -11,6 +12,7 @@ public sealed record CategoryAssistanceSuggestionRead(Guid AttemptId, Normalizat
 	public string ReviewState { get; init; } = "active";
 	public Guid ReviewRevision { get; init; }
 	public int ExcludedItemCount { get; init; }
+	[JsonRequired]
 	public string ProbabilityScope { get; init; } = "global_choice";
 }
 
@@ -22,6 +24,7 @@ public sealed record CategoryAssistanceFailureRead(Guid AttemptId, string Failur
 public sealed record CategoryAssistanceActivity(int Queued, int Dispatching, int Suggested,
 	int Abstained, int Failed, int Stale, int Indeterminate, int TodayAttempts)
 {
+	[JsonRequired]
 	public IReadOnlyList<CategoryAssistanceFailureRead> RecentFailures { get; init; } = [];
 }
 

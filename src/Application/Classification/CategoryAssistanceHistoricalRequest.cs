@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Application.Taxonomy;
 
 namespace Application.Classification;
@@ -9,6 +10,7 @@ public sealed record CategoryAssistanceHistoricalGroupProgress(HistoricalGroupKe
 	IReadOnlyList<Guid> AttemptIds, IReadOnlyList<string> States)
 {
 	/// <summary>Sanitized failure codes aligned with States and the captured item order.</summary>
+	[JsonRequired]
 	public IReadOnlyList<string?> FailureReasons { get; init; } = [];
 }
 

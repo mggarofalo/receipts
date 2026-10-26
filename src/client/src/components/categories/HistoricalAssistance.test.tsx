@@ -31,6 +31,7 @@ const progress = (operationId = "op-1") => ({
       itemCount: 3,
       attemptIds: ["attempt-1"],
       states: ["ready"],
+      failureReasons: [null as string | null],
     },
   ],
 });
@@ -259,4 +260,43 @@ it("recovers recent requests after reload and links available attempts", async (
       ),
     ).toHaveLength(2),
   );
+});
+
+it("shows sanitized failure reasons beside captured purchases and keeps manual actions available", async () => {
+  const failed = progress();
+  failed.state = "failed";
+  failed.groups[0].states = ["failed", "ready", "failed"];
+  failed.groups[0].failureReasons = [
+    "PayloadTooLarge",
+    null,
+    "unexpected provider detail",
+  ];
+  mockClient.GET.mockImplementation((path: string) => {
+    if (path === "/api/category-assistance/status")
+      return Promise.resolve(success(ready));
+    if (path === "/api/category-assistance/historical-requests")
+      return Promise.resolve(success({ total: 1, items: [failed] }));
+    if (path === "/api/category-assistance/historical-requests/{operationId}")
+      return Promise.resolve(success(failed));
+    throw new Error(path);
+  });
+  renderWithQueryClient(
+    <HistoricalAssistance selected={[row("Milk")]} revisionId="rev" />,
+  );
+  await userEvent.click(
+    await screen.findByRole("button", { name: /failed · 1 groups/ }),
+  );
+  const detail = within(screen.getByLabelText("Suggestion request progress"));
+  expect(
+    await detail.findByText(/Purchase 1: The category hierarchy is too large/),
+  ).toBeInTheDocument();
+  expect(
+    detail.getByText(/Purchase 3: Category assistance could not complete/),
+  ).toBeInTheDocument();
+  expect(
+    detail.queryByText(/unexpected provider detail/),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: "Request suggestions" }),
+  ).toBeEnabled();
 });

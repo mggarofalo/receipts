@@ -14,7 +14,12 @@ for (const width of [1280, 375]) {
   test(`classification review browser ${width}`, async ({ page }) => {
     await page.setViewportSize({ width, height: width === 375 ? 812 : 900 });
     const accepted: unknown[] = [];
-    const reviewWrites: Array<{ operationId: string; expectedRevision: string; state: string; excludedItemIds: string[] }> = [];
+    const reviewWrites: Array<{
+      operationId: string;
+      expectedRevision: string;
+      state: string;
+      excludedItemIds: string[];
+    }> = [];
     let attemptAccepted = false;
     let reviewState = "active";
     let reviewRevision = "00000000-0000-0000-0000-000000000000";
@@ -34,8 +39,11 @@ for (const width of [1280, 375]) {
             },
           }),
         "**/api/category-assistance/suggestions?*": (route) => {
-          const filter = new URL(route.request().url()).searchParams.get("review") ?? "active";
-          const visible = !attemptAccepted && (filter === "all" || filter === reviewState);
+          const filter =
+            new URL(route.request().url()).searchParams.get("review") ??
+            "active";
+          const visible =
+            !attemptAccepted && (filter === "all" || filter === reviewState);
           return route.fulfill({
             json: {
               total: visible ? 1 : 0,
@@ -51,6 +59,7 @@ for (const width of [1280, 375]) {
                       proposedPath: [taxonomyFixture.nodes[0].id],
                       abstentionReason: null,
                       confidence: 0.9,
+                      probabilityScope: "local_choice",
                       state: "suggested",
                       reviewState,
                       reviewRevision,
@@ -59,20 +68,39 @@ for (const width of [1280, 375]) {
                       createdAt: "2026-10-25T12:00:00Z",
                       completedAt: "2026-10-25T12:00:01Z",
                     },
-                  ] : [],
+                  ]
+                : [],
             },
           });
         },
-        "**/api/category-assistance/suggestions/*/review-preference": (route) => {
+        "**/api/category-assistance/suggestions/*/review-preference": (
+          route,
+        ) => {
           if (route.request().method() === "PUT") {
-            const body = route.request().postDataJSON() as { operationId: string; expectedRevision: string; state: string; excludedItemIds: string[] };
+            const body = route.request().postDataJSON() as {
+              operationId: string;
+              expectedRevision: string;
+              state: string;
+              excludedItemIds: string[];
+            };
             reviewWrites.push(body);
-            if (body.expectedRevision !== reviewRevision) return route.fulfill({ status: 409, json: { detail: "Revision changed" } });
+            if (body.expectedRevision !== reviewRevision)
+              return route.fulfill({
+                status: 409,
+                json: { detail: "Revision changed" },
+              });
             reviewState = body.state;
             excludedItemIds = body.excludedItemIds;
             reviewRevision = "22222222-2222-4222-8222-222222222222";
           }
-          return route.fulfill({ json: { attemptId, state: reviewState, revision: reviewRevision, excludedItemIds } });
+          return route.fulfill({
+            json: {
+              attemptId,
+              state: reviewState,
+              revision: reviewRevision,
+              excludedItemIds,
+            },
+          });
         },
         "**/api/category-assistance/suggestions/*/items?*": (route) =>
           route.fulfill({
@@ -81,18 +109,20 @@ for (const width of [1280, 375]) {
               offset: 0,
               limit: 100,
               itemIds: excludedItemIds.length ? [] : [itemId],
-              items: excludedItemIds.length ? [] : [
-                {
-                  id: itemId,
-                  receiptId: "receipt-a",
-                  date: "2026-10-25",
-                  description: "Whole Milk",
-                  store: "Store",
-                  quantity: 1,
-                  totalAmount: 4.5,
-                  currency: "USD",
-                },
-              ],
+              items: excludedItemIds.length
+                ? []
+                : [
+                    {
+                      id: itemId,
+                      receiptId: "receipt-a",
+                      date: "2026-10-25",
+                      description: "Whole Milk",
+                      store: "Store",
+                      quantity: 1,
+                      totalAmount: 4.5,
+                      currency: "USD",
+                    },
+                  ],
             },
           }),
         "**/api/category-assistance/suggestions/*/accept": async (route) => {
@@ -121,26 +151,56 @@ for (const width of [1280, 375]) {
     await expect(page.getByText("Whole Milk")).toBeVisible();
     await page.getByRole("button", { name: "Review details" }).focus();
     await page.keyboard.press("Enter");
+    await expect(page.getByText(/Final choice confidence: 90%/)).toBeVisible();
     await expect(
       page.getByRole("checkbox", { name: /Select Whole Milk/i }),
     ).toBeVisible();
     await expect(page.getByText(/Current choice: active/)).toBeVisible();
     await page.getByRole("checkbox", { name: /Select Whole Milk/i }).check();
-    await page.getByRole("button", { name: "Exclude selected from assistance" }).click();
-    await expect(page.getByRole("checkbox", { name: `Excluded item ${itemId}` })).toBeVisible();
-    expect(reviewWrites.at(-1)).toMatchObject({ state: "active", excludedItemIds: [itemId] });
-    await page.getByRole("checkbox", { name: `Excluded item ${itemId}` }).check();
-    await page.getByRole("button", { name: "Include selected excluded items" }).click();
-    await expect(page.getByRole("checkbox", { name: /Select Whole Milk/i })).toBeVisible();
-    expect(reviewWrites.at(-1)).toMatchObject({ state: "active", excludedItemIds: [] });
-    await page.getByRole("button", { name: "Later", exact: true }).last().click();
-    await expect(page.getByRole("button", { name: "Review details" })).toHaveCount(0);
-    await page.getByRole("navigation", { name: "Review state" }).getByRole("button", { name: "Later" }).click();
+    await page
+      .getByRole("button", { name: "Exclude selected from assistance" })
+      .click();
+    await expect(
+      page.getByRole("checkbox", { name: `Excluded item ${itemId}` }),
+    ).toBeVisible();
+    expect(reviewWrites.at(-1)).toMatchObject({
+      state: "active",
+      excludedItemIds: [itemId],
+    });
+    await page
+      .getByRole("checkbox", { name: `Excluded item ${itemId}` })
+      .check();
+    await page
+      .getByRole("button", { name: "Include selected excluded items" })
+      .click();
+    await expect(
+      page.getByRole("checkbox", { name: /Select Whole Milk/i }),
+    ).toBeVisible();
+    expect(reviewWrites.at(-1)).toMatchObject({
+      state: "active",
+      excludedItemIds: [],
+    });
+    await page
+      .getByRole("button", { name: "Later", exact: true })
+      .last()
+      .click();
+    await expect(
+      page.getByRole("button", { name: "Review details" }),
+    ).toHaveCount(0);
+    await page
+      .getByRole("navigation", { name: "Review state" })
+      .getByRole("button", { name: "Later" })
+      .click();
     await page.getByRole("button", { name: "Review details" }).click();
     await expect(page.getByText(/Current choice: later/)).toBeVisible();
     await page.getByRole("button", { name: "Reopen" }).click();
-    await expect(page.getByRole("button", { name: "Review details" })).toHaveCount(0);
-    await page.getByRole("navigation", { name: "Review state" }).getByRole("button", { name: "Active" }).click();
+    await expect(
+      page.getByRole("button", { name: "Review details" }),
+    ).toHaveCount(0);
+    await page
+      .getByRole("navigation", { name: "Review state" })
+      .getByRole("button", { name: "Active" })
+      .click();
     await page.getByRole("button", { name: "Review details" }).click();
     await expect(page.getByText(/Current choice: active/)).toBeVisible();
     await page.screenshot({
@@ -152,9 +212,7 @@ for (const width of [1280, 375]) {
         () => document.documentElement.scrollWidth <= innerWidth,
       ),
     ).toBe(true);
-    await page
-      .getByRole("checkbox", { name: /Select Whole Milk/i })
-      .focus();
+    await page.getByRole("checkbox", { name: /Select Whole Milk/i }).focus();
     await page.keyboard.press("Space");
     await page.getByRole("button", { name: "Apply to selected" }).focus();
     await page.keyboard.press("Enter");
@@ -176,7 +234,9 @@ for (const width of [1280, 375]) {
     await expect(
       page.getByRole("button", { name: "Remember category…" }),
     ).toBeVisible();
-    await expect(page.getByRole("link", { name: "Clean up history" })).toHaveAttribute("href", "/categories/cleanup");
+    await expect(
+      page.getByRole("link", { name: "Clean up history" }),
+    ).toHaveAttribute("href", "/categories/cleanup");
   });
 }
 
@@ -215,6 +275,26 @@ test("unknown capability keeps manual browsing and admin settings reachable", as
             revision: "22222222-2222-4222-8222-222222222222",
           },
         }),
+      "**/api/category-assistance/activity": (route) =>
+        route.fulfill({
+          json: {
+            todayAttempts: 1,
+            queued: 0,
+            dispatching: 0,
+            suggested: 0,
+            abstained: 0,
+            failed: 1,
+            stale: 0,
+            indeterminate: 0,
+            recentFailures: [
+              {
+                attemptId: "failed-attempt",
+                failure: "InvalidInput",
+                completedAt: "2026-10-26T12:00:00Z",
+              },
+            ],
+          },
+        }),
     },
   });
   await signInAs(page, ADMIN_FIXTURE_USER);
@@ -236,6 +316,10 @@ test("unknown capability keeps manual browsing and admin settings reachable", as
   await expect(
     page.getByRole("checkbox", { name: /enable automatic/i }),
   ).toBeDisabled();
+  await page.getByRole("button", { name: "Show technical activity" }).click();
+  await expect(
+    page.getByText("Category setup could not be used for this request."),
+  ).toBeVisible();
   await page.screenshot({
     path: `${output}/workspace-admin-unknown.png`,
     fullPage: true,
