@@ -18,6 +18,9 @@ let failed = false;
 let selected = "budget-a";
 let writes: unknown[] = [];
 const server = setupServer(
+  http.get("*/api/taxonomy", () =>
+    HttpResponse.json({ id: "revision", nodes: [] }),
+  ),
   http.get("*/api/ynab/connection-status", () =>
     HttpResponse.json({ isConfigured: true, isConnected: true }),
   ),

@@ -1,8 +1,37 @@
 import type { Mock } from "vitest";
 import { screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import "@/test/setup-combobox-polyfills";
+
+beforeAll(() => {
+  Element.prototype.hasPointerCapture ??= () => false;
+  Element.prototype.setPointerCapture ??= () => {};
+  Element.prototype.releasePointerCapture ??= () => {};
+});
 import { renderWithProviders } from "@/test/test-utils";
 import { mockQueryResult, mockMutationResult } from "@/test/mock-hooks";
 import YnabSettings from "./YnabSettings";
+
+const taxonomy = {
+  id: "revision-1",
+  nodes: [
+    { id: "food", name: "Food", parentId: null, archived: false },
+    { id: "groceries", name: "Groceries", parentId: "food", archived: false },
+    { id: "transport", name: "Transport", parentId: null, archived: false },
+  ],
+};
+
+vi.mock("@/hooks/useCategoryTaxonomy", () => ({
+  useCategoryTaxonomy: vi.fn(() =>
+    mockQueryResult({
+      data: taxonomy,
+      isSuccess: true,
+      isError: false,
+      isLoading: false,
+      isFetching: false,
+    }),
+  ),
+}));
 
 // Match a settled useStableQuery projection and its successful wire payload;
 // loading/error fixtures remain genuinely unverified instead of claiming success.
@@ -118,6 +147,16 @@ vi.mock("@/components/YnabBulkSyncCard", () => ({
 }));
 
 beforeEach(async () => {
+  const { useCategoryTaxonomy } = await import("@/hooks/useCategoryTaxonomy");
+  vi.mocked(useCategoryTaxonomy).mockReturnValue(
+    mockQueryResult({
+      data: taxonomy,
+      isSuccess: true,
+      isError: false,
+      isLoading: false,
+      isFetching: false,
+    }) as ReturnType<typeof useCategoryTaxonomy>,
+  );
   const hooks = await import("@/hooks/useYnab");
   const defaults = {
     useYnabConnectionStatus: {
@@ -328,7 +367,7 @@ describe("YnabSettings – Category Mapping", () => {
     expect(screen.getByText("Loading categories...")).toBeInTheDocument();
   });
 
-  it("shows 'No receipt item categories found.' when preconditions met but categories is empty", async () => {
+  it("shows empty taxonomy guidance when no active categories exist", async () => {
     const {
       useYnabBudgets,
       useSelectedYnabBudget,
@@ -354,13 +393,21 @@ describe("YnabSettings – Category Mapping", () => {
     vi.mocked(useDistinctReceiptItemCategories).mockReturnValue(
       settingsQuery({ categories: [], isLoading: false }, true),
     );
+    const { useCategoryTaxonomy } = await import("@/hooks/useCategoryTaxonomy");
+    vi.mocked(useCategoryTaxonomy).mockReturnValue(
+      mockQueryResult({
+        data: { id: "revision-1", nodes: [] },
+        isSuccess: true,
+        isError: false,
+        isLoading: false,
+        isFetching: false,
+      }) as ReturnType<typeof useCategoryTaxonomy>,
+    );
 
     renderWithProviders(<YnabSettings />);
 
     expect(
-      screen.getByText(
-        "No receipt item categories found. Create some receipts first.",
-      ),
+      screen.getByText("No active categories found. Create a category first."),
     ).toBeInTheDocument();
   });
 
@@ -421,7 +468,7 @@ describe("YnabSettings – Category Mapping", () => {
     expect(screen.queryByTestId("ynab-bulk-sync-card")).not.toBeInTheDocument();
   });
 
-  it("renders mapping rows when fully configured with categories", async () => {
+  it("offers category paths from the current taxonomy", async () => {
     const {
       useYnabBudgets,
       useSelectedYnabBudget,
@@ -473,8 +520,43 @@ describe("YnabSettings – Category Mapping", () => {
 
     renderWithProviders(<YnabSettings />);
 
-    expect(screen.getByText("Food")).toBeInTheDocument();
-    expect(screen.getByText("Transport")).toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: "Receipt category" }),
+    ).toBeInTheDocument();
+  });
+
+  it("creates a mapping for the selected nested category ID", async () => {
+    const user = userEvent.setup();
+    const hooks = await import("@/hooks/useYnab");
+    const create = vi.fn();
+    vi.mocked(hooks.useYnabCategories).mockReturnValue(
+      settingsQuery({
+        categories: [
+          { id: "ynab-food", name: "Food", categoryGroupName: "Living" },
+        ],
+      }),
+    );
+    vi.mocked(hooks.useCreateYnabCategoryMapping).mockReturnValue(
+      mockMutationResult({ mutate: create }) as ReturnType<
+        typeof hooks.useCreateYnabCategoryMapping
+      >,
+    );
+    renderWithProviders(<YnabSettings />);
+    await user.click(
+      screen.getByRole("combobox", { name: "Receipt category" }),
+    );
+    await user.click(screen.getByRole("option", { name: "Food / Groceries" }));
+    expect(screen.getByText("Unmapped")).toBeInTheDocument();
+    await user.click(screen.getByRole("combobox", { name: "YNAB category" }));
+    await user.click(screen.getByRole("option", { name: "Food" }));
+    expect(create).toHaveBeenCalledWith({
+      receiptsCategory: "Groceries",
+      receiptsCategoryId: "groceries",
+      ynabCategoryId: "ynab-food",
+      ynabCategoryName: "Food",
+      ynabCategoryGroupName: "Living",
+      ynabBudgetId: "budget-1",
+    });
   });
 });
 

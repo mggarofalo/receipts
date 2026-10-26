@@ -713,6 +713,7 @@ describe("useYnab", () => {
 
     await result.current.mutateAsync({
       receiptsCategory: "Groceries",
+      receiptsCategoryId: "stable-groceries",
       ynabCategoryId: "cat-1",
       ynabCategoryName: "Groceries",
       ynabCategoryGroupName: "Needs",
@@ -724,6 +725,7 @@ describe("useYnab", () => {
       expect.objectContaining({
         body: {
           receiptsCategory: "Groceries",
+          receiptsCategoryId: "stable-groceries",
           ynabCategoryId: "cat-1",
           ynabCategoryName: "Groceries",
           ynabCategoryGroupName: "Needs",
@@ -810,6 +812,7 @@ describe("useYnab", () => {
     await expect(
       result.current.mutateAsync({
         receiptsCategory: "Groceries",
+        receiptsCategoryId: "stable-groceries",
         ynabCategoryId: "cat-1",
         ynabCategoryName: "Groceries",
         ynabCategoryGroupName: "Needs",

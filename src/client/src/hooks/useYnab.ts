@@ -381,6 +381,7 @@ export function useCreateYnabCategoryMapping() {
     ...toastErrorPolicy.mutation,
     mutationFn: async (body: {
       receiptsCategory: string;
+      receiptsCategoryId: string;
       ynabCategoryId: string;
       ynabCategoryName: string;
       ynabCategoryGroupName: string;
