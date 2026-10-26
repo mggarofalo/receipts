@@ -1,3 +1,4 @@
+import { RememberCategoryControl } from "@/components/categories/RememberCategory";
 import { type CurrentClassification } from "@/lib/category-paths";
 import { calculateLineTotal } from "@/lib/receipt-arithmetic";
 import {
@@ -287,7 +288,16 @@ export function ReceiptItemsCard({
                           ? item.currentClassification.recordedPath
                               .map((node) => node.name)
                               .join(" / ") || "Unclassified"
-                          : item.category}
+                          : item.category}{" "}
+                        {location && (
+                          <RememberCategoryControl
+                            key={normalizationSourceKey(
+                              receiptNormalizationSource(location, item),
+                            )}
+                            source={receiptNormalizationSource(location, item)}
+                            classification={item.currentClassification}
+                          />
+                        )}
                       </TableCell>
                       <TableCell>
                         {item.currentClassification
