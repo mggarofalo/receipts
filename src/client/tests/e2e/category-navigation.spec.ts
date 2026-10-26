@@ -173,3 +173,59 @@ test("category routes require authentication", async ({ page }) => {
     ).toHaveCount(0);
   }
 });
+
+for (const width of [1280, 375]) {
+  test(`classification navigation reaches category tree and cleanup page ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: width === 375 ? 812 : 900 });
+    await installApiMocks(page, {
+      user: FIXTURE_USER,
+      freezeClock: false,
+      overrides: {
+        "**/api/taxonomy": (route) => route.fulfill({ json: taxonomyFixture }),
+        "**/api/category-assistance/status": (route) =>
+          route.fulfill({
+            json: {
+              capability: "unconfigured",
+              consentEnabled: false,
+              suggestionsAvailable: false,
+              provider: null,
+              models: [],
+            },
+          }),
+        "**/api/historical-reclassifications/groups?*": (route) =>
+          route.fulfill({
+            json: {
+              items: [{
+                group: { store: "Market", rawDescription: "MILK 2% GAL", itemCode: null },
+                purchaseCount: 12,
+                impactAmount: 42.5,
+                impactCurrency: "USD",
+                conflict: false,
+                migratedBroad: true,
+                unresolved: false,
+                unassigned: false,
+                currentCategories: [],
+                disposition: null,
+                dispositionVersion: 0,
+              }],
+              totalGroups: 1,
+              nextOffset: null,
+            },
+          }),
+        "**/api/historical-reclassifications?*": (route) =>
+          route.fulfill({ json: { items: [], nextOffset: null } }),
+      },
+    });
+    await signInAs(page, FIXTURE_USER);
+    await page.goto("/classification");
+    await expect(page.getByText(/suggestions are unavailable/i)).toBeVisible();
+    await page.getByRole("link", { name: "Browse categories" }).click();
+    await expect(page).toHaveURL(/\/categories$/);
+    await expect(page.getByRole("treeitem", { name: "Food", exact: true })).toBeVisible();
+    await page.getByRole("navigation", { name: "Classification workspace" })
+      .getByRole("link", { name: "Clean up history" }).click();
+    await expect(page).toHaveURL(/\/categories\/cleanup$/);
+    await expect(page.getByRole("heading", { name: "Clean up history" })).toBeVisible();
+    await expect(page.getByText("MILK 2% GAL")).toBeVisible();
+  });
+}
