@@ -250,6 +250,153 @@ namespace Infrastructure.Migrations
                     b.ToTable("AuthAuditLogs", "audit");
                 });
 
+            modelBuilder.Entity("Infrastructure.Entities.CategoryAssistance.CategoryAssistanceObservationEntity", b =>
+                {
+                    b.Property<Guid>("SaveId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ReceiptItemId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Actor")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("text");
+
+                    b.Property<Guid?>("AssignmentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Evidence")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("ItemCode")
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("ItemRevision")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Location")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("ReceiptId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ReceiptRevision")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("RecordedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<Guid>("RestoreGeneration")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("SettingsRevision")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("SourceHash")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("TaxonomyRevision")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("SaveId", "ReceiptItemId");
+
+                    b.HasIndex("SourceHash");
+
+                    b.ToTable("Observations", "category_assistance");
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.CategoryAssistance.CategoryAssistanceSettingsAuditEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Actor")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("text");
+
+                    b.Property<string>("After")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Before")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("PreviousRevision")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("RecordedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<Guid>("Revision")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Revision")
+                        .IsUnique();
+
+                    b.ToTable("SettingsAudit", "category_assistance");
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.CategoryAssistance.CategoryAssistanceSettingsEntity", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("DailyLimit")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Model")
+                        .HasColumnType("text");
+
+                    b.Property<int>("PendingLimit")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Provider")
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("RestoreGeneration")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Settings", "category_assistance", t =>
+                        {
+                            t.HasCheckConstraint("CK_CategoryAssistance_Limits", "\"DailyLimit\" BETWEEN 1 AND 100 AND \"PendingLimit\" BETWEEN 1 AND 20");
+
+                            t.HasCheckConstraint("CK_CategoryAssistance_Singleton", "\"Id\" = 1");
+                        });
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            DailyLimit = 10,
+                            Enabled = false,
+                            PendingLimit = 3,
+                            RestoreGeneration = new Guid("5c5ebfbf-0833-432d-aefc-c388be8e0460"),
+                            Revision = new Guid("4bb4909f-fb40-433c-a98d-d48a2bd0cd48")
+                        });
+                });
+
             modelBuilder.Entity("Infrastructure.Entities.Core.AcceptedDuplicatePairEntity", b =>
                 {
                     b.Property<Guid>("Id")

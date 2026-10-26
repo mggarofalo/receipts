@@ -314,6 +314,7 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 			if (request is not null) { request.ReceiptId = entities[0].ReceiptId; request.ItemIds = entities.Select(value => value.Id).ToArray(); }
 			await context.SaveChangesAsync(cancellationToken);
 			await ClassificationService.ApplyAggregateAsync(context, entities, classificationOptions?.Value.WritesEnabled == true, cancellationToken);
+			await CategoryAssistanceObservationWriter.RecordAggregateAsync(context, entities, clientRequestId, cancellationToken);
 			await CurrentClassificationReader.PopulateAsync(context, entities, cancellationToken);
 			if (transaction is not null)
 			{
@@ -399,6 +400,7 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 
 		await context.SaveChangesAsync(cancellationToken);
 		await ClassificationService.ApplyAggregateAsync(context, entities, classificationOptions?.Value.WritesEnabled == true, cancellationToken);
+		await CategoryAssistanceObservationWriter.RecordAggregateAsync(context, entities, clientRequestId, cancellationToken);
 		if (transaction is not null)
 		{
 			await transaction.CommitAsync(cancellationToken);

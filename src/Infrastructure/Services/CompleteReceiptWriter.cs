@@ -111,6 +111,7 @@ public class CompleteReceiptWriter(
 		await context.Cards.IgnoreAutoIncludes().Where(card => cardIds.Contains(card.Id)).LoadAsync(cancellationToken);
 		await context.SaveChangesAsync(cancellationToken);
 		await ClassificationService.ApplyAggregateAsync(context, itemEntities, classificationOptions?.Value.WritesEnabled == true, cancellationToken);
+		await CategoryAssistanceObservationWriter.RecordAggregateAsync(context, itemEntities, clientRequestId, cancellationToken);
 		await CurrentClassificationReader.PopulateAsync(context, itemEntities, cancellationToken);
 		if (transaction is not null) { await transaction.CommitAsync(cancellationToken); }
 
