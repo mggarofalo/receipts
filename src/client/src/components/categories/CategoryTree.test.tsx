@@ -118,3 +118,12 @@ describe("CategoryTree", () => {
     );
   });
 });
+
+it("offers the current empty state without obsolete legacy navigation", () => {
+  render(<CategoryTree nodes={[]} />);
+  expect(screen.getByText("No categories yet.")).toBeInTheDocument();
+  expect(
+    screen.queryByText(/legacy receipt categories/i),
+  ).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Expand all" })).toBeDisabled();
+});

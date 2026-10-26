@@ -162,11 +162,7 @@ export function CategoryTree<T extends Category>({
         Tab for category actions. Type a name to jump to a visible category.
       </p>
       {!visible.length && (
-        <p>
-          {nodes.length
-            ? "No matching categories."
-            : "The category tree is empty. Legacy receipt categories remain available above."}
-        </p>
+        <p>{nodes.length ? "No matching categories." : "No categories yet."}</p>
       )}
       <ul
         role="tree"

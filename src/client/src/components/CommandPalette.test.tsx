@@ -46,11 +46,8 @@ vi.mock("@/hooks/useAccounts", () => ({
 vi.mock("@/hooks/useCards", () => ({
   useCards: vi.fn(() => mockQueryResult()),
 }));
-vi.mock("@/hooks/useCategories", () => ({
-  useCategories: vi.fn(() => mockQueryResult()),
-}));
-vi.mock("@/hooks/useSubcategories", () => ({
-  useSubcategories: vi.fn(() => mockQueryResult()),
+vi.mock("@/hooks/useCategoryTaxonomy", () => ({
+  useCategoryTaxonomy: vi.fn(() => mockQueryResult()),
 }));
 vi.mock("@/hooks/useItemTemplates", () => ({
   useItemTemplates: vi.fn(() => mockQueryResult()),
@@ -751,8 +748,14 @@ describe("CommandPalette", () => {
     );
     await user.click(screen.getByText("Empty Trash"));
     const dialog = await screen.findByRole("alertdialog");
-    expect(within(dialog).getByText(/classification history and their linked records/)).toBeInTheDocument();
-    const confirm = within(dialog).getByRole("button", { name: /empty trash/i });
+    expect(
+      within(dialog).getByText(
+        /classification history and their linked records/,
+      ),
+    ).toBeInTheDocument();
+    const confirm = within(dialog).getByRole("button", {
+      name: /empty trash/i,
+    });
     confirm.focus();
     await user.keyboard("{Enter}");
     await waitFor(() => {
@@ -810,13 +813,17 @@ describe("CommandPalette", () => {
   });
 
   it("collapses large entity groups to a Show N more trailer", async () => {
-    const { useCategories } = await import("@/hooks/useCategories");
+    const { useCategoryTaxonomy } = await import("@/hooks/useCategoryTaxonomy");
     const many = Array.from({ length: 12 }, (_, i) => ({
       id: `c${i}`,
       name: `Cat ${i}`,
       description: null,
     }));
-    vi.mocked(useCategories).mockReturnValue(mockQueryResult({ data: many }));
+    vi.mocked(useCategoryTaxonomy).mockReturnValue(
+      mockQueryResult({ data: { nodes: many } }) as ReturnType<
+        typeof useCategoryTaxonomy
+      >,
+    );
     const user = userEvent.setup();
     renderWithQueryClient(
       <CommandPalette open={true} onOpenChange={vi.fn()} />,

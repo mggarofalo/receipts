@@ -1,7 +1,17 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
-import { createMemoryRouter, RouterProvider, Outlet } from "react-router";
+import {
+  createMemoryRouter,
+  RouterProvider,
+  Outlet,
+  Navigate,
+} from "react-router";
 import type { ReactNode } from "react";
+
+const session = vi.hoisted(() => ({ authenticated: true }));
+beforeEach(() => {
+  session.authenticated = true;
+});
 
 vi.mock("@/pages/PurchaseSearch", () => ({
   default: () => <div data-testid="page-purchase-search">Purchase history</div>,
@@ -19,7 +29,7 @@ vi.mock("@/pages/ChangePassword", () => ({
 vi.mock("@/pages/Cards", () => ({
   default: () => <div data-testid="page-cards">Cards Page</div>,
 }));
-vi.mock("@/pages/Categories", () => ({
+vi.mock("@/pages/Taxonomy", () => ({
   default: () => <div data-testid="page-categories">Categories</div>,
 }));
 vi.mock("@/pages/Subcategories", () => ({
@@ -88,7 +98,8 @@ vi.mock("@/components/Layout", () => ({
 }));
 
 vi.mock("@/components/ProtectedRoute", () => ({
-  ProtectedRoute: ({ children }: { children: ReactNode }) => <>{children}</>,
+  ProtectedRoute: ({ children }: { children: ReactNode }) =>
+    session.authenticated ? <>{children}</> : <Navigate to="/login" replace />,
 }));
 
 vi.mock("@/components/AdminRoute", () => ({
@@ -191,3 +202,42 @@ it.each(["/item-templates", "/item-templates?new=true&templateId=old#edit"])(
     router.dispose();
   },
 );
+
+it.each([
+  "/categories",
+  "/taxonomy?revision=rev-42#details",
+  "/subcategories?categoryId=old&new=true#details",
+])("uses the authenticated Categories page for %s", async (path) => {
+  const router = createMemoryRouter(routeConfig, {
+    initialEntries: ["/", path],
+    initialIndex: 1,
+  });
+  render(<RouterProvider router={router} />);
+  expect(await screen.findByTestId("page-categories")).toBeInTheDocument();
+  expect(router.state.location.pathname).toBe("/categories");
+  expect(router.state.location.search).toBe(
+    path.startsWith("/taxonomy") ? "?revision=rev-42" : "",
+  );
+  expect(screen.getByTestId("layout")).toContainElement(
+    screen.getByTestId("page-categories"),
+  );
+  expect(screen.queryByTestId("page-subcategories")).not.toBeInTheDocument();
+  if (path !== "/categories") {
+    expect(router.state.historyAction).toBe("REPLACE");
+    expect(router.state.location.hash).toBe("#details");
+    await router.navigate(-1);
+    await waitFor(() => expect(router.state.location.pathname).toBe("/"));
+  }
+  router.dispose();
+});
+
+it.each([
+  "/categories",
+  "/taxonomy?revision=rev-42",
+  "/subcategories?categoryId=old",
+])("keeps %s behind authentication", async (path) => {
+  session.authenticated = false;
+  renderRoute(path);
+  expect(await screen.findByTestId("page-login")).toBeInTheDocument();
+  expect(screen.queryByTestId("page-categories")).not.toBeInTheDocument();
+});

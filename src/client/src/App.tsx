@@ -1,4 +1,5 @@
 import { Navigate } from "react-router";
+import { CategoryRedirect } from "@/components/CategoryRedirect";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AdminRoute } from "@/components/AdminRoute";
 import { Layout } from "@/components/Layout";
@@ -10,9 +11,7 @@ import ChangePassword from "@/pages/ChangePassword";
 import ApiKeys from "@/pages/ApiKeys";
 import Accounts from "@/pages/Accounts";
 import Cards from "@/pages/Cards";
-import Categories from "@/pages/Categories";
 import Taxonomy from "@/pages/Taxonomy";
-import Subcategories from "@/pages/Subcategories";
 import Receipts from "@/pages/Receipts";
 import Reports from "@/pages/Reports";
 import PurchaseSearch from "@/pages/PurchaseSearch";
@@ -52,9 +51,9 @@ export const routeConfig = [
           { path: "/", element: <Dashboard /> },
           { path: "/accounts", element: <Accounts /> },
           { path: "/cards", element: <Cards /> },
-          { path: "/taxonomy", element: <Taxonomy /> },
-          { path: "/categories", element: <Categories /> },
-          { path: "/subcategories", element: <Subcategories /> },
+          { path: "/taxonomy", element: <CategoryRedirect preserveRevision /> },
+          { path: "/categories", element: <Taxonomy /> },
+          { path: "/subcategories", element: <CategoryRedirect /> },
           { path: "/receipts", element: <Receipts /> },
           { path: "/receipts/new", element: <NewReceipt /> },
           {

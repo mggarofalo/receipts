@@ -42,9 +42,9 @@ product normalization preserves v10 taxonomy, classification, migration and
 deletion records unchanged. See [backup and restore](backup-restore.md) for target
 restrictions, pair identities, compatibility and excluded data.
 
-## Category tree interface (RECEIPTS-1048)
+## Categories interface (RECEIPTS-1048, RECEIPTS-1060)
 
-Authenticated users can browse and search complete category paths at `/taxonomy`.
+Authenticated users can browse and search complete category paths at `/categories`.
 Duplicate labels remain distinct through their full paths. Archived categories are
 available with **Show archived**. **Revision details** exposes the actor, reason,
 time and immutable revision link; **Previous revision** opens a read-only snapshot.
@@ -57,10 +57,16 @@ uncertain request's operation ID for retry. A conflict requires an explicit refr
 the draft survives while the administrator reviews the updated scope before saving.
 Validation failures leave the draft editable. No receipt assignments are rewritten.
 
-The existing `/categories` and `/subcategories` routes, query parameters and library
-links remain compatible until the legacy migration/retirement gates. The tree links
-to those views even when genesis is empty; it does not imply legacy receipt data has
-been imported or hide that data. Taxonomy management does not invoke a provider.
+Categories form one hierarchy at every depth. The Library navigation and command
+palette expose **Categories**. Choose **New category** on that page to add a root
+or choose an existing category as its parent; editing remains administrator-only.
+
+Old `/taxonomy` links redirect to `/categories`, preserving revision links. Old
+`/subcategories` links redirect to `/categories`; legacy parent filters and create
+dialog state are discarded because legacy IDs do not identify tree nodes. These
+redirects require authentication, like the canonical page. Legacy compatibility
+entities and APIs remain available for migration and existing data consumers.
+Category management does not invoke a provider.
 
 
 ### Older portable backup conversion

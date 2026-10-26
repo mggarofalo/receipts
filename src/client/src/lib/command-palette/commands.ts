@@ -142,24 +142,6 @@ export const COMMANDS: Command[] = [
     run: (ctx) => runNewItem("/cards", ctx),
   },
   {
-    id: "create:category",
-    label: "New Category",
-    group: "create",
-    icon: Tag,
-    keywords: ["add", "create"],
-    targetPath: "/categories",
-    run: (ctx) => runNewItem("/categories", ctx),
-  },
-  {
-    id: "create:subcategory",
-    label: "New Subcategory",
-    group: "create",
-    icon: Tags,
-    keywords: ["add", "create"],
-    targetPath: "/subcategories",
-    run: (ctx) => runNewItem("/subcategories", ctx),
-  },
-  {
     id: "create:api-key",
     label: "New API Key",
     group: "create",
@@ -260,13 +242,6 @@ export const COMMANDS: Command[] = [
     group: "navigate",
     icon: Tag,
     run: goTo("/categories"),
-  },
-  {
-    id: "nav:subcategories",
-    label: "Go to Subcategories",
-    group: "navigate",
-    icon: Tags,
-    run: goTo("/subcategories"),
   },
   {
     id: "nav:security",
