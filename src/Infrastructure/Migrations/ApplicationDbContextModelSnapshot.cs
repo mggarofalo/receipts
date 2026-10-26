@@ -250,6 +250,189 @@ namespace Infrastructure.Migrations
                     b.ToTable("AuthAuditLogs", "audit");
                 });
 
+            modelBuilder.Entity("Infrastructure.Entities.CategoryAssistance.CategoryAssistanceAttemptEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("AssignmentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ClaimToken")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<Guid>("ConnectionGeneration")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<DateOnly?>("DebitUtcDay")
+                        .HasColumnType("date");
+
+                    b.Property<int>("Deferrals")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("text");
+
+                    b.Property<string>("ItemCodeKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("ItemId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ItemRevision")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("LeaseExpiresAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("Location")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("text");
+
+                    b.Property<string>("Model")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("NextEligibleAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("text");
+
+                    b.Property<string>("QuestionPolicyVersion")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("ReceiptId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ReceiptRevision")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("RequestJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("RestoreGeneration")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ResultJson")
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("SettingsRevision")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("SourceHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("SourceRevision")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("TaxonomyRevision")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RequestId")
+                        .IsUnique();
+
+                    b.HasIndex("State", "NextEligibleAt", "LeaseExpiresAt");
+
+                    b.HasIndex("RestoreGeneration", "SourceHash", "TaxonomyRevision", "Provider", "Model", "QuestionPolicyVersion", "ConnectionGeneration")
+                        .IsUnique();
+
+                    b.ToTable("Attempts", "category_assistance", t =>
+                        {
+                            t.HasCheckConstraint("CK_CategoryAssistance_AttemptState", "\"State\" IN ('queued','dispatching','suggested','abstained','failed','stale','indeterminate')");
+                        });
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.CategoryAssistance.CategoryAssistanceConnectionEntity", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("Changing")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ConfigurationFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("Generation")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Model")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("text");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Connection", "category_assistance", t =>
+                        {
+                            t.HasCheckConstraint("CK_CategoryAssistance_ConnectionSingleton", "\"Id\" = 1");
+                        });
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            Changing = true,
+                            ConfigurationFingerprint = "",
+                            Generation = new Guid("00000000-0000-0000-0000-000000000000"),
+                            Model = "",
+                            Provider = ""
+                        });
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.CategoryAssistance.CategoryAssistanceDailyUsageEntity", b =>
+                {
+                    b.Property<DateOnly>("UtcDay")
+                        .HasColumnType("date");
+
+                    b.Property<int>("DispatchAttempts")
+                        .HasColumnType("integer");
+
+                    b.HasKey("UtcDay");
+
+                    b.ToTable("DailyUsage", "category_assistance", t =>
+                        {
+                            t.HasCheckConstraint("CK_CategoryAssistance_NonnegativeUsage", "\"DispatchAttempts\" >= 0");
+                        });
+                });
+
             modelBuilder.Entity("Infrastructure.Entities.CategoryAssistance.CategoryAssistanceObservationEntity", b =>
                 {
                     b.Property<Guid>("SaveId")
@@ -266,9 +449,15 @@ namespace Infrastructure.Migrations
                     b.Property<Guid?>("AssignmentId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("AttemptId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Description")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<bool>("DispatchSkipped")
+                        .HasColumnType("boolean");
 
                     b.Property<string>("Evidence")
                         .IsRequired()
@@ -307,6 +496,8 @@ namespace Infrastructure.Migrations
                         .HasColumnType("uuid");
 
                     b.HasKey("SaveId", "ReceiptItemId");
+
+                    b.HasIndex("AttemptId");
 
                     b.HasIndex("SourceHash");
 
@@ -2722,6 +2913,14 @@ namespace Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.CategoryAssistance.CategoryAssistanceObservationEntity", b =>
+                {
+                    b.HasOne("Infrastructure.Entities.CategoryAssistance.CategoryAssistanceAttemptEntity", null)
+                        .WithMany()
+                        .HasForeignKey("AttemptId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("Infrastructure.Entities.Core.AcceptedDuplicatePairEntity", b =>

@@ -319,6 +319,52 @@ public class BackupImportServiceTests : IAsyncLifetime
 	}
 
 	[Fact]
+	public async Task FailedPortableImportRollsBackAssistanceConsentAndGenerations()
+	{
+		Guid cardId = Guid.NewGuid();
+		Guid accountId = Guid.NewGuid();
+		string path = CreateV3SqliteDatabaseWithCards(
+				[(cardId, "ACC001", "Orphan Card", true, (Guid?)null)],
+				(accountId, "Dummy Account", true));
+		Guid revision, restoreGeneration, connectionGeneration;
+		int priorAuditCount;
+		await using (var db = CreateAssertionContext())
+		{
+			var settings = await db.CategoryAssistanceSettings.SingleAsync();
+			settings.Enabled = true;
+			settings.Provider = "jev";
+			settings.Model = "jev-1.14.0";
+			var connection = await db.CategoryAssistanceConnection.SingleAsync();
+			connection.Generation = Guid.NewGuid();
+			connection.Changing = false;
+			connection.Provider = "jev";
+			connection.Model = "jev-1.14.0";
+			connection.ConfigurationFingerprint = new string('A', 64);
+			await db.SaveChangesAsync();
+			revision = settings.Revision;
+			restoreGeneration = settings.RestoreGeneration;
+			connectionGeneration = connection.Generation;
+			priorAuditCount = await db.CategoryAssistanceSettingsAudits.CountAsync();
+		}
+
+		await using (var input = File.OpenRead(path))
+		{
+			Func<Task> import = () => _service.ImportFromSqliteAsync(input, default);
+			await import.Should().ThrowAsync<InvalidOperationException>();
+		}
+
+		await using var verify = CreateAssertionContext();
+		var current = await verify.CategoryAssistanceSettings.AsNoTracking().SingleAsync();
+		current.Enabled.Should().BeTrue();
+		current.Revision.Should().Be(revision);
+		current.RestoreGeneration.Should().Be(restoreGeneration);
+		var bound = await verify.CategoryAssistanceConnection.AsNoTracking().SingleAsync();
+		bound.Generation.Should().Be(connectionGeneration);
+		bound.Changing.Should().BeFalse();
+		(await verify.CategoryAssistanceSettingsAudits.CountAsync()).Should().Be(priorAuditCount);
+	}
+
+	[Fact]
 	public async Task ImportFromSqliteAsync_TransactionsV2_DerivesAccountIdFromCardsParent()
 	{
 		// RECEIPTS-574 regression guard: v2 exports only carry card_id. The importer must
