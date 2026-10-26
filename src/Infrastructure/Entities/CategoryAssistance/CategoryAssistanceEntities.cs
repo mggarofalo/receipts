@@ -59,6 +59,7 @@ public sealed class CategoryAssistanceAttemptEntity
 {
 	public Guid Id { get; set; }
 	public Guid RequestId { get; set; }
+	public Guid RequestScope { get; set; }
 	public Guid RestoreGeneration { get; set; }
 	public string SourceHash { get; set; } = "";
 	public string Location { get; set; } = "";

@@ -247,7 +247,8 @@ public sealed class CategoryAssistanceDecisionStore(IDbContextFactory<Applicatio
 	internal static async Task<List<CategoryAssistanceObservationEntity>> GetEligibleObservationsAsync(
 		ApplicationDbContext db, CategoryAssistanceAttemptEntity attempt, Guid[]? itemIds, CancellationToken ct)
 	{
-		var query = db.CategoryAssistanceObservations.AsNoTracking().Where(x => x.AttemptId == attempt.Id);
+		var query = db.CategoryAssistanceObservations.AsNoTracking().Where(x => x.AttemptId == attempt.Id &&
+			(attempt.RequestScope == Guid.Empty || x.SaveId == attempt.RequestScope));
 		if (itemIds != null)
 		{
 			query = query.Where(x => itemIds.Contains(x.ReceiptItemId));
@@ -302,11 +303,13 @@ public sealed class CategoryAssistanceDecisionStore(IDbContextFactory<Applicatio
 	private static async Task<bool> IsEligibleAsync(ApplicationDbContext db,
 		CategoryAssistanceAttemptEntity attempt, CategoryAssistanceObservationEntity marker, CancellationToken ct)
 	{
-		if (marker.Evidence != "post_consent_no_choice_save" ||
-			marker.SettingsRevision != attempt.SettingsRevision || marker.RestoreGeneration != attempt.RestoreGeneration ||
-			marker.TaxonomyRevision != attempt.TaxonomyRevision || marker.SourceHash != attempt.SourceHash ||
-			marker.Location != attempt.Location || marker.Description != attempt.Description ||
-			(marker.ItemCode ?? "") != attempt.ItemCodeKey)
+		if ((attempt.RequestScope == Guid.Empty && marker.Evidence != "post_consent_no_choice_save") ||
+			(attempt.RequestScope != Guid.Empty &&
+				(marker.Evidence != "explicit_history_request" || marker.SaveId != attempt.RequestScope)) ||
+	marker.SettingsRevision != attempt.SettingsRevision || marker.RestoreGeneration != attempt.RestoreGeneration ||
+	marker.TaxonomyRevision != attempt.TaxonomyRevision || marker.SourceHash != attempt.SourceHash ||
+	marker.Location != attempt.Location || marker.Description != attempt.Description ||
+	(marker.ItemCode ?? "") != attempt.ItemCodeKey)
 		{
 			return false;
 		}
@@ -315,8 +318,9 @@ public sealed class CategoryAssistanceDecisionStore(IDbContextFactory<Applicatio
 		var receipt = await db.Receipts.AsNoTracking().SingleOrDefaultAsync(x => x.Id == marker.ReceiptId, ct);
 		if (item == null || receipt == null || item.ReceiptId != receipt.Id || item.DeletedAt != null ||
 			receipt.DeletedAt != null || item.NormalizationRevision != marker.ItemRevision ||
-			receipt.NormalizationRevision != marker.ReceiptRevision || !string.IsNullOrEmpty(item.Category) ||
-			!string.IsNullOrEmpty(item.Subcategory))
+						receipt.NormalizationRevision != marker.ReceiptRevision ||
+						marker.Evidence == "post_consent_no_choice_save" && (!string.IsNullOrEmpty(item.Category) ||
+						!string.IsNullOrEmpty(item.Subcategory)))
 		{
 			return false;
 		}
@@ -335,9 +339,9 @@ public sealed class CategoryAssistanceDecisionStore(IDbContextFactory<Applicatio
 								join history in db.Classifications.AsNoTracking() on current.AssignmentId equals history.Id
 								where current.ReceiptItemId == item.Id
 								select history).SingleOrDefaultAsync(ct);
-		if (assignment?.Id != marker.AssignmentId || assignment != null && !(assignment.CategoryId == null &&
-			(assignment.Source == "legacy_import" || assignment.Source == "legacy_write" &&
-			 assignment.LegacyResolution == "unresolved_path")))
+		if (assignment?.Id != marker.AssignmentId || assignment != null && marker.Evidence != "explicit_history_request" && !(assignment.CategoryId == null &&
+				(assignment.Source == "legacy_import" || assignment.Source == "legacy_write" &&
+				 assignment.LegacyResolution == "unresolved_path")))
 		{
 			return false;
 		}

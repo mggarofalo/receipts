@@ -13,4 +13,5 @@ public partial class ApplicationDbContext
 	public DbSet<CategoryAssistanceDailyUsageEntity> CategoryAssistanceDailyUsage => Set<CategoryAssistanceDailyUsageEntity>();
 	public DbSet<CategoryAssistanceReviewPreferenceEntity> CategoryAssistanceReviewPreferences => Set<CategoryAssistanceReviewPreferenceEntity>();
 	public DbSet<CategoryAssistanceReviewOperationEntity> CategoryAssistanceReviewOperations => Set<CategoryAssistanceReviewOperationEntity>();
+	public DbSet<CategoryAssistanceHistoricalRequestEntity> CategoryAssistanceHistoricalRequests => Set<CategoryAssistanceHistoricalRequestEntity>();
 }

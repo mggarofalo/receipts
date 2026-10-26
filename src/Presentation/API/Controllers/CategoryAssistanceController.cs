@@ -12,7 +12,8 @@ namespace API.Controllers;
 public sealed record CategoryAssistanceSettingsRequest(bool Enabled, string? Provider, string? Model,
 	int DailyLimit, int PendingLimit, Guid ExpectedRevision);
 public sealed record CategoryAssistanceStatusResponse(string Capability, bool ConsentEnabled,
-	bool SuggestionsAvailable, string Provider, IReadOnlyList<string> Models);
+		bool SuggestionsAvailable, string Provider, IReadOnlyList<string> Models,
+		int DailyLimit, int PendingLimit);
 public sealed record CategoryAssistanceDismissRequest(Guid OperationId);
 
 [ApiVersion("1.0")]
@@ -34,7 +35,7 @@ public sealed class CategoryAssistanceController(ICategoryAssistanceSettingsStor
 		return TypedResults.Ok(new CategoryAssistanceStatusResponse(
 			capability.State.ToString().ToLowerInvariant(), settings.Enabled,
 			CategoryAssistancePolicy.CanSuggest(settings, capability), capability.Provider,
-			capability.Models));
+						capability.Models, settings.DailyLimit, settings.PendingLimit));
 	}
 
 	[HttpGet("settings")]

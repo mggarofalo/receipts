@@ -405,17 +405,17 @@ public sealed class CategoryAssistanceDecisionStoreTests(PostgresFixture server)
 				"Cannot downgrade: category assistance decision history must be retained.");
 			// Later reversible migrations can be removed before this guarded downgrade fails.
 			(await db.Database.GetAppliedMigrationsAsync()).Should().Contain(migration);
-			var preserved = await db.CategoryAssistanceAttempts.AsNoTracking()
-				.SingleAsync(x => x.Id == seed.Attempt);
-			preserved.DecisionActor.Should().Be(decision.DecisionActor);
-			preserved.DecisionOperationId.Should().Be(decision.DecisionOperationId);
-			preserved.DecisionJson.Should().Be(decision.DecisionJson);
-			preserved.State.Should().Be("accepted");
 		}
 		finally
 		{
 			await db.GetService<IMigrator>().MigrateAsync(applied[^1]);
 		}
+		var preserved = await db.CategoryAssistanceAttempts.AsNoTracking()
+				.SingleAsync(x => x.Id == seed.Attempt);
+		preserved.DecisionActor.Should().Be(decision.DecisionActor);
+		preserved.DecisionOperationId.Should().Be(decision.DecisionOperationId);
+		preserved.DecisionJson.Should().Be(decision.DecisionJson);
+		preserved.State.Should().Be("accepted");
 	}
 
 	[Fact]

@@ -25,21 +25,24 @@ namespace Infrastructure.IntegrationTests.Services;
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public sealed class CategoryAssistanceDispatchStoreTests
+public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime
 {
-	private PostgresFixture fixture;
+	private PostgresFixture fixture = null!;
+	private readonly PostgresFixture server;
 
 	public CategoryAssistanceDispatchStoreTests(PostgresFixture server)
 	{
-		fixture = server;
+		this.server = server;
 	}
+
+	public async Task InitializeAsync() => fixture = await server.CreateIsolatedAsync();
+
+	public async Task DisposeAsync() => await fixture.DisposeAsync();
 
 	[Fact]
 	public async Task WorkerSendsOneBoundedRequestFromDurableConsentAndPersistsSuggestion()
 	{
-		// Keep the transport boundary case independent of categories accumulated by other tests.
-		await using var isolated = await fixture.CreateIsolatedAsync();
-		fixture = isolated;
+		// Every test runs against an isolated database.
 		var seed = await SeedAsync("worker acceptance " + Guid.NewGuid());
 		try
 		{
