@@ -1,15 +1,26 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as signalR from "@microsoft/signalr";
 import { useQueryClient } from "@tanstack/react-query";
-import { invalidateAfterReconnect, invalidateAfterBackupImport, isDomainChange, repairDomainChange } from "@/lib/query-invalidation";
-import { getAccessToken, parseJwtPayload, getSessionVersion, addSessionChangeListener } from "@/lib/auth";
+import {
+  invalidateAfterReconnect,
+  invalidateAfterBackupImport,
+  isDomainChange,
+  repairDomainChange,
+} from "@/lib/query-invalidation";
+import {
+  getAccessToken,
+  parseJwtPayload,
+  getSessionVersion,
+  addSessionChangeListener,
+} from "@/lib/auth";
 import { apiUrl } from "@/lib/api-config";
 import { getConnectionAccessToken } from "@/lib/token-refresh";
-import { bufferToast, clearBufferedToasts, type ToastOrigin } from "@/lib/signalr-toast-buffer";
 import {
-  setConnectionId,
-  getConnectionId,
-} from "@/lib/signalr-connection";
+  bufferToast,
+  clearBufferedToasts,
+  type ToastOrigin,
+} from "@/lib/signalr-toast-buffer";
+import { setConnectionId, getConnectionId } from "@/lib/signalr-connection";
 
 export type SignalRConnectionState =
   | "connected"
@@ -34,6 +45,7 @@ const displayNameMap: Record<string, string> = {
   adjustment: "adjustment",
   card: "card",
   account: "account",
+  taxonomy: "category hierarchy",
   category: "category",
   subcategory: "subcategory",
   "item-template": "item template",
@@ -54,7 +66,10 @@ function classifyOrigin(
   myUserId: string | null,
 ): ToastOrigin | null {
   // Same session — suppress toast entirely
-  if (notification.connectionId && notification.connectionId === myConnectionId) {
+  if (
+    notification.connectionId &&
+    notification.connectionId === myConnectionId
+  ) {
     return null;
   }
 
@@ -88,7 +103,8 @@ export function useSignalR(enabled: boolean) {
     const isCurrent = () => active && getSessionVersion() === sessionVersion;
     const connection = new signalR.HubConnectionBuilder()
       .withUrl(apiUrl("/hubs/entities"), {
-        accessTokenFactory: () => getConnectionAccessToken(sessionVersion, lifetime.signal),
+        accessTokenFactory: () =>
+          getConnectionAccessToken(sessionVersion, lifetime.signal),
       })
       .withAutomaticReconnect()
       .configureLogging(
@@ -102,7 +118,11 @@ export function useSignalR(enabled: boolean) {
     };
 
     const connected = () => {
-      if (!isCurrent() || connection.state !== signalR.HubConnectionState.Connected) return;
+      if (
+        !isCurrent() ||
+        connection.state !== signalR.HubConnectionState.Connected
+      )
+        return;
       cancelRetry();
       retryDelay = 1_000;
       setConnectionId(connection.connectionId ?? null);
@@ -110,13 +130,20 @@ export function useSignalR(enabled: boolean) {
       // Publish the ID before catch-up reads attach their origin headers.
       void invalidateAfterReconnect(
         queryClient,
-        () => isCurrent() && connection.state === signalR.HubConnectionState.Connected,
+        () =>
+          isCurrent() &&
+          connection.state === signalR.HubConnectionState.Connected,
       ).catch(() => {});
     };
 
     const scheduleRetry = () => {
-      if (!isCurrent() || starting || retryTimer !== undefined ||
-        connection.state !== signalR.HubConnectionState.Disconnected) return;
+      if (
+        !isCurrent() ||
+        starting ||
+        retryTimer !== undefined ||
+        connection.state !== signalR.HubConnectionState.Disconnected
+      )
+        return;
       retryTimer = setTimeout(() => {
         retryTimer = undefined;
         void start();
@@ -125,7 +152,12 @@ export function useSignalR(enabled: boolean) {
     };
 
     const start = async () => {
-      if (!isCurrent() || starting || connection.state !== signalR.HubConnectionState.Disconnected) return;
+      if (
+        !isCurrent() ||
+        starting ||
+        connection.state !== signalR.HubConnectionState.Disconnected
+      )
+        return;
       starting = true;
       try {
         await connection.start();
@@ -136,7 +168,8 @@ export function useSignalR(enabled: boolean) {
         connected();
       } catch (error: unknown) {
         if (!isCurrent()) return;
-        if (import.meta.env.DEV) console.debug("[SignalR] Connection error:", error);
+        if (import.meta.env.DEV)
+          console.debug("[SignalR] Connection error:", error);
         if (connection.state === signalR.HubConnectionState.Disconnected) {
           setConnectionState("disconnected");
           setConnectionId(null);
@@ -152,7 +185,9 @@ export function useSignalR(enabled: boolean) {
       if (!active) return;
       active = false;
       cancelRetry();
-      lifetime.abort(new DOMException("The connection lifetime ended", "AbortError"));
+      lifetime.abort(
+        new DOMException("The connection lifetime ended", "AbortError"),
+      );
       unsubscribe();
       connection.off("EntityChanged", onEntityChanged);
       if (connectionRef.current === connection) {
@@ -186,7 +221,9 @@ export function useSignalR(enabled: boolean) {
       }
 
       if (notification.entityType === "backup-import") {
-        void invalidateAfterBackupImport(queryClient, isCurrent).catch(() => {});
+        void invalidateAfterBackupImport(queryClient, isCurrent).catch(
+          () => {},
+        );
       } else if (isDomainChange(notification.entityType)) {
         void repairDomainChange(
           queryClient,
@@ -211,7 +248,12 @@ export function useSignalR(enabled: boolean) {
 
       const displayName =
         displayNameMap[notification.entityType] ?? notification.entityType;
-      bufferToast(displayName, notification.changeType, notification.count ?? 1, origin);
+      bufferToast(
+        displayName,
+        notification.changeType,
+        notification.count ?? 1,
+        origin,
+      );
     };
     connection.on("EntityChanged", onEntityChanged);
     connectionRef.current = connection;

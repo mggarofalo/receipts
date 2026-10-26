@@ -1,5 +1,7 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using Application.Interfaces.Services;
+using Application.Models.CommittedChanges;
 using Application.Taxonomy;
 using Common;
 using Domain.Taxonomy;
@@ -8,7 +10,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Infrastructure.Services;
 
-public sealed class TaxonomyService(IDbContextFactory<ApplicationDbContext> factory, TimeProvider clock) : ITaxonomyService
+public sealed class TaxonomyService(IDbContextFactory<ApplicationDbContext> factory, TimeProvider clock, ICommittedChangePublisher? publisher = null) : ITaxonomyService
 {
 	public async Task<TaxonomyRevision?> ReadAsync(Guid? revisionId, CancellationToken cancellationToken = default)
 	{
@@ -96,6 +98,10 @@ public sealed class TaxonomyService(IDbContextFactory<ApplicationDbContext> fact
 		});
 		await context.SaveChangesAsync(cancellationToken);
 		await transaction.CommitAsync(cancellationToken);
+		if (affected != 0 && publisher != null)
+		{
+			await publisher.PublishAsync(new(CommittedEntityType.Taxonomy, CommittedChangeType.Updated));
+		}
 		return (await ReadRevisionAsync(context, resultId, cancellationToken))! with { AffectedCount = affected };
 	}
 }

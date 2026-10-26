@@ -1,5 +1,7 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using Application.Interfaces.Services;
+using Application.Models.CommittedChanges;
 using Application.Normalization;
 using Application.Taxonomy;
 using Domain.Taxonomy;
@@ -9,20 +11,25 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Infrastructure.Services;
 
-public sealed class ClassificationService(IDbContextFactory<ApplicationDbContext> factory, TimeProvider clock, Microsoft.Extensions.Options.IOptions<ClassificationOptions> options) : IClassificationService
+public sealed class ClassificationService(IDbContextFactory<ApplicationDbContext> factory, TimeProvider clock, Microsoft.Extensions.Options.IOptions<ClassificationOptions> options, ICommittedChangePublisher? publisher = null) : IClassificationService
 {
 	public async Task<PurchaseClassification> AssignAsync(string actor, Guid itemId, ClassificationCommand command, CancellationToken ct = default)
 	{
 		await using ApplicationDbContext db = await factory.CreateDbContextAsync(ct);
 		await using var transaction = await db.Database.BeginTransactionAsync(ct);
 		await Infrastructure.Utilities.NormalizationWriteGuard.AcquireWriteGateAsync(db, ct);
-		PurchaseClassification result = await AssignInTransactionAsync(db, actor, itemId, command, options.Value.WritesEnabled, clock, ct);
+		bool changed = false;
+		PurchaseClassification result = await AssignInTransactionAsync(db, actor, itemId, command, options.Value.WritesEnabled, clock, ct, onChanged: () => changed = true);
 		await transaction.CommitAsync(ct);
+		if (changed && publisher != null)
+		{
+			await publisher.PublishAsync(new(CommittedEntityType.ReceiptItem, CommittedChangeType.Updated, itemId));
+		}
 		return result;
 	}
 
 	internal static async Task<PurchaseClassification> AssignInTransactionAsync(ApplicationDbContext db, string actor, Guid itemId,
-		ClassificationCommand command, bool enabled, TimeProvider clock, CancellationToken ct, bool prepared = false)
+		ClassificationCommand command, bool enabled, TimeProvider clock, CancellationToken ct, bool prepared = false, Action? onChanged = null)
 	{
 		if (string.IsNullOrWhiteSpace(actor) || command.OperationId == Guid.Empty || command.TaxonomyRevisionId == Guid.Empty
 			|| string.IsNullOrWhiteSpace(command.Reason) || command.Reason.Contains('\0'))
@@ -50,6 +57,7 @@ public sealed class ClassificationService(IDbContextFactory<ApplicationDbContext
 			current, command.OperationId, "manual", command.Reason, clock, ct);
 		db.ClassificationOperations.Add(new() { Actor = actor, OperationId = command.OperationId, RequestHash = hash, AssignmentId = assignment.Id });
 		await db.SaveChangesAsync(ct);
+		onChanged?.Invoke();
 		return await ReadAsync(db, assignment, ct);
 	}
 
