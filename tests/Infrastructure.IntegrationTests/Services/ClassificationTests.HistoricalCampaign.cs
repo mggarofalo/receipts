@@ -73,6 +73,12 @@ public sealed partial class ClassificationTests
 		HistoricalOperationSummary summary = mine.Items.Single(x => x.OperationId == preview.OperationId);
 		summary.Groups.Should().ContainSingle().Which.Group.Should().Be(preview.Groups.Single().Group);
 		summary.Progress.Pending.Should().Be(1);
+		HistoricalOperationSummary byId = await Historical().ReadSummaryAsync(Actor, preview.OperationId);
+		byId.Groups.Should().BeEquivalentTo(preview.Groups);
+		byId.Reason.Should().Be(preview.Reason);
+		byId.Progress.Should().BeEquivalentTo(summary.Progress);
+		Func<Task> readOtherActor = () => Historical().ReadSummaryAsync("another actor", preview.OperationId);
+		(await readOtherActor.Should().ThrowAsync<TaxonomyException>()).Which.Status.Should().Be(404);
 		(await Historical().ListAsync("another actor", 0, 25)).Items
 				.Should().NotContain(x => x.OperationId == preview.OperationId);
 

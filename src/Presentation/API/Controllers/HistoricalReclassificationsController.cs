@@ -83,6 +83,17 @@ public sealed class HistoricalReclassificationsController(IHistoricalOperationSe
 			id == Guid.Empty ? ApiProblem.BadRequest("Operation ID is required.") :
 			TypedResults.Ok(await service.ReadAsync(Actor(), id, ct)));
 
+	[HttpGet("{id:guid}/summary")]
+	[EndpointSummary("Read own captured historical operation choices and progress")]
+	public async Task<Results<Ok<HistoricalOperationSummary>, BadRequestProblem, NotFoundProblem>> Summary(
+			Guid id, CancellationToken ct)
+	{
+		if (id == Guid.Empty) { return ApiProblem.BadRequest("Operation ID is required."); }
+		try { return TypedResults.Ok(await service.ReadSummaryAsync(Actor(), id, ct)); }
+		catch (TaxonomyException error) when (error.Status == 404)
+		{ return ApiProblem.NotFound(error.Message); }
+	}
+
 	[HttpGet("{id:guid}/items")]
 	[EndpointSummary("Read paged frozen item evidence and outcomes")]
 	public Task<Results<Ok<HistoricalItemPage>, BadRequestProblem, NotFoundProblem, ConflictProblem>> Items(

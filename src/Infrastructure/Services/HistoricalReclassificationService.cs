@@ -23,9 +23,7 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 		List<HistoricalOperationSummary> summaries = [];
 		foreach (HistoricalOperationEntity row in rows.Take(limit))
 		{
-			var selections = JsonSerializer.Deserialize<HistoricalGroupSelection[]>(row.SelectionJson) ?? [];
-			summaries.Add(new(row.Id, row.State, row.CapturedAt, row.TaxonomyRevisionId,
-					row.Reason, selections, await ProgressAsync(db, row, ct)));
+			summaries.Add(await SummaryAsync(db, row, ct));
 		}
 		return new(summaries, rows.Count > limit ? checked(offset + limit) : null);
 	}
@@ -184,6 +182,20 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 	{
 		await using ApplicationDbContext db = await factory.CreateDbContextAsync(ct);
 		return await ProgressAsync(db, await OwnedAsync(db, actor, id, false, ct), ct);
+	}
+
+	public async Task<HistoricalOperationSummary> ReadSummaryAsync(string actor, Guid id, CancellationToken ct = default)
+	{
+		await using ApplicationDbContext db = await factory.CreateDbContextAsync(ct);
+		return await SummaryAsync(db, await OwnedAsync(db, actor, id, false, ct), ct);
+	}
+
+	private static async Task<HistoricalOperationSummary> SummaryAsync(ApplicationDbContext db,
+			HistoricalOperationEntity row, CancellationToken ct)
+	{
+		var selections = JsonSerializer.Deserialize<HistoricalGroupSelection[]>(row.SelectionJson) ?? [];
+		return new(row.Id, row.State, row.CapturedAt, row.TaxonomyRevisionId,
+				row.Reason, selections, await ProgressAsync(db, row, ct));
 	}
 
 	public async Task<HistoricalItemPage> ReadItemsAsync(string actor, Guid id, int offset, int limit, CancellationToken ct = default)

@@ -235,6 +235,38 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
+  /api/historical-reclassifications/{id}/summary:
+    get:
+      operationId: HistoricalReclassifications_Summary
+      security: [{BearerAuth: []}, {ApiKey: []}]
+      tags: [HistoricalReclassifications]
+      summary: Read own captured historical operation choices and progress
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HistoricalOperationSummary'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Authentication required
+        '404':
+          description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
   /api/historical-reclassifications/{id}/items:
     get:
       operationId: HistoricalReclassifications_Items
