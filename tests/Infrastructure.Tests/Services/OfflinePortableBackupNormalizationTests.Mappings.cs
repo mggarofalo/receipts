@@ -20,6 +20,11 @@ public sealed partial class OfflinePortableBackupNormalizationTests
 			await using var sqlite = Open(source);
 			await sqlite.OpenAsync();
 			await PortableTaxonomyArchive.ExportAsync(db, sqlite, CancellationToken.None);
+			// ExportAsync writes the current v12 archives. This fixture represents a
+			// genuine v11 file, which predates historical operations and source revisions.
+			await using var removeV12Tables = sqlite.CreateCommand();
+			removeV12Tables.CommandText = "DROP TABLE historical_operation_archive; DROP TABLE source_revision_archive";
+			await removeV12Tables.ExecuteNonQueryAsync();
 			// This fixture's domain rows were inserted directly into SQLite. Mirror
 			// their active deletion evidence rather than the empty in-memory domain.
 			await using var clear = sqlite.CreateCommand();
