@@ -1,5 +1,6 @@
 import { CategoryPathPicker } from "@/components/categories/CategoryPathPicker";
 import { useCategoryTaxonomy } from "@/hooks/useCategoryTaxonomy";
+import { usePermission } from "@/hooks/usePermission";
 import {
   categoryLegacyLabels,
   type CategoryChoice,
@@ -107,6 +108,7 @@ export function LineItemsSection({
   // Index of the keyboard-highlighted row in the description lookup.
   const [descriptionActiveIndex, setDescriptionActiveIndex] = useState(0);
   const taxonomy = useCategoryTaxonomy();
+  const { isAdmin } = usePermission();
   const [categoryChoice, setCategoryChoice] = useState<CategoryChoice>();
   const [categoryOperationId, setCategoryOperationId] = useState(generateId);
 
@@ -781,6 +783,7 @@ export function LineItemsSection({
                         onBlur={field.onBlur}
                         name={field.name}
                         revision={taxonomy.data}
+                        canCreate={isAdmin()}
                         value={categoryChoice}
                         loading={taxonomy.isLoading}
                         error={taxonomy.isError}
@@ -929,6 +932,7 @@ export function LineItemsSection({
                         <CategoryPathPicker
                           aria-label="Edit category"
                           revision={taxonomy.data}
+                          canCreate={isAdmin()}
                           value={editDraft.categoryChoice}
                           loading={taxonomy.isLoading}
                           error={taxonomy.isError}

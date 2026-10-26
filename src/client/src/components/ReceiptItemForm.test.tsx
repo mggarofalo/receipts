@@ -1,4 +1,7 @@
 import { useCategoryTaxonomy } from "@/hooks/useCategoryTaxonomy";
+vi.mock("@/hooks/usePermission", () => ({
+  usePermission: () => ({ isAdmin: () => false }),
+}));
 vi.mock("@/hooks/useCategoryTaxonomy", () => ({
   useCategoryTaxonomy: vi.fn(() => ({
     data: {
