@@ -28,6 +28,112 @@ public sealed class CategoryAssistanceDecisionStoreTests(PostgresFixture server)
 	{ public ApplicationDbContext CreateDbContext() => fixture.CreateDbContext(); }
 
 	[Fact]
+	public async Task ReviewPreferencesRejectUnrelatedExcludedItemsWithoutRecordingAnOperation()
+	{
+		await using var fixture = await server.CreateIsolatedAsync();
+		var seed = await SeedAsync(fixture);
+		var preferences = new CategoryAssistanceReviewPreferenceStore(new Factory(fixture), TimeProvider.System);
+		var operationId = Guid.NewGuid();
+		var unrelatedItemId = Guid.NewGuid();
+		var request = new CategoryAssistanceReviewPreferenceRequest(operationId, Guid.Empty,
+			"later", [unrelatedItemId]);
+
+		Func<Task> update = () => preferences.UpdateAsync(seed.Actor, seed.Attempt, request, CancellationToken.None);
+		await update.Should().ThrowAsync<TaxonomyException>().Where(x => x.Status == 409);
+		(await preferences.GetAsync(seed.Actor, seed.Attempt, CancellationToken.None)).Should().BeEquivalentTo(
+			new CategoryAssistanceReviewPreference(seed.Attempt, "active", Guid.Empty, Array.Empty<Guid>()));
+		await using var db = fixture.CreateDbContext();
+		(await db.CategoryAssistanceReviewOperations.CountAsync(x => x.Actor == seed.Actor &&
+			x.OperationId == operationId)).Should().Be(0);
+	}
+
+	[Fact]
+	public async Task ReviewPreferencesAreActorScopedRevisionedAndReplayDoesNotRevertNewerState()
+	{
+		await using var fixture = await server.CreateIsolatedAsync();
+		var seed = await SeedAsync(fixture);
+		var other = Guid.NewGuid().ToString();
+		await using (var db = fixture.CreateDbContext())
+		{
+			db.Users.Add(new ApplicationUser
+			{
+				Id = other,
+				UserName = other,
+				NormalizedUserName = other.ToUpperInvariant()
+			});
+			await db.SaveChangesAsync();
+		}
+		var preferences = new CategoryAssistanceReviewPreferenceStore(new Factory(fixture), TimeProvider.System);
+		var read = new CategoryAssistanceReadStore(new Factory(fixture), TimeProvider.System);
+		var decisions = CreateStore(fixture);
+		var laterRequest = new CategoryAssistanceReviewPreferenceRequest(Guid.NewGuid(), Guid.Empty,
+			"later", [seed.Item]);
+		var later = await preferences.UpdateAsync(seed.Actor, seed.Attempt, laterRequest, CancellationToken.None);
+		later.State.Should().Be("later");
+		(await preferences.GetAsync(other, seed.Attempt, CancellationToken.None)).State.Should().Be("active");
+		(await read.ListSuggestionsAsync(seed.Actor, "active", 0, 100, CancellationToken.None)).Items
+			.Should().NotContain(x => x.AttemptId == seed.Attempt);
+		(await read.ListSuggestionsAsync(seed.Actor, "later", 0, 100, CancellationToken.None)).Items
+			.Single(x => x.AttemptId == seed.Attempt).AffectedCount.Should().Be(0);
+		(await read.GetSuggestionAsync(seed.Actor, seed.Attempt, CancellationToken.None))!.ReviewState
+			.Should().Be("later");
+		(await decisions.ListEligibleItemsAsync(seed.Actor, seed.Attempt, 0, 10, CancellationToken.None))
+			.ItemIds.Should().BeEmpty();
+		(await decisions.ListEligibleItemsAsync(other, seed.Attempt, 0, 10, CancellationToken.None))
+			.ItemIds.Should().Equal(seed.Item);
+		Func<Task> excludedAccept = () => decisions.AcceptAsync(seed.Actor, seed.Attempt,
+			new(Guid.NewGuid(), seed.Taxonomy, [seed.Item]), CancellationToken.None);
+		await excludedAccept.Should().ThrowAsync<TaxonomyException>().Where(x => x.Status == 409);
+		await using (var db = fixture.CreateDbContext())
+		{
+			(await db.Classifications.CountAsync(x => x.ReceiptItemId == seed.Item)).Should().Be(1);
+		}
+
+		Func<Task> overLimit = () => preferences.UpdateAsync(seed.Actor, seed.Attempt,
+			new(Guid.NewGuid(), later.Revision, "later", Enumerable.Range(0, 1001)
+				.Select(_ => Guid.NewGuid()).ToArray()), CancellationToken.None);
+		await overLimit.Should().ThrowAsync<TaxonomyException>().Where(x => x.Status == 400);
+
+		var reopenRequest = new CategoryAssistanceReviewPreferenceRequest(Guid.NewGuid(), later.Revision,
+			"active", []);
+		var reopened = await preferences.UpdateAsync(seed.Actor, seed.Attempt, reopenRequest, CancellationToken.None);
+		(await preferences.UpdateAsync(seed.Actor, seed.Attempt, laterRequest, CancellationToken.None))
+			.Should().BeEquivalentTo(later);
+		(await preferences.GetAsync(seed.Actor, seed.Attempt, CancellationToken.None)).Revision
+			.Should().Be(reopened.Revision);
+		Func<Task> stale = () => preferences.UpdateAsync(seed.Actor, seed.Attempt,
+			new(Guid.NewGuid(), later.Revision, "left_as_is", []), CancellationToken.None);
+		await stale.Should().ThrowAsync<TaxonomyException>().Where(x => x.Status == 409);
+		Func<Task> wrongReplay = () => preferences.UpdateAsync(seed.Actor, seed.Attempt,
+			laterRequest with { State = "left_as_is" }, CancellationToken.None);
+		await wrongReplay.Should().ThrowAsync<TaxonomyException>().Where(x => x.Status == 409);
+		var left = await preferences.UpdateAsync(seed.Actor, seed.Attempt,
+			new(Guid.NewGuid(), reopened.Revision, "left_as_is", []), CancellationToken.None);
+		left.State.Should().Be("left_as_is");
+		(await read.ListSuggestionsAsync(other, "active", 0, 100, CancellationToken.None)).Items
+			.Should().Contain(x => x.AttemptId == seed.Attempt);
+		(await preferences.UpdateAsync(other, seed.Attempt, laterRequest, CancellationToken.None))
+			.State.Should().Be("later");
+
+		async Task<bool> CompeteAsync(string state)
+		{
+			try
+			{
+				await preferences.UpdateAsync(seed.Actor, seed.Attempt,
+					new(Guid.NewGuid(), left.Revision, state, []), CancellationToken.None);
+				return true;
+			}
+			catch (TaxonomyException error) when (error.Status == 409) { return false; }
+		}
+		(await Task.WhenAll(CompeteAsync("active"), CompeteAsync("later")))
+			.Count(x => x).Should().Be(1);
+		await decisions.AcceptAsync(seed.Actor, seed.Attempt,
+			new(Guid.NewGuid(), seed.Taxonomy, [seed.Item]), CancellationToken.None);
+		(await preferences.UpdateAsync(seed.Actor, seed.Attempt, laterRequest, CancellationToken.None))
+			.Should().BeEquivalentTo(later);
+	}
+
+	[Fact]
 	public async Task AcceptAssignsSelectedItemAndReplayCannotOverwriteLaterManualChoice()
 	{
 		await using var fixture = await server.CreateIsolatedAsync();
@@ -289,7 +395,8 @@ public sealed class CategoryAssistanceDecisionStoreTests(PostgresFixture server)
 			refusal.SqlState.Should().Be(PostgresErrorCodes.RaiseException);
 			refusal.MessageText.Should().Be(
 				"Cannot downgrade: category assistance decision history must be retained.");
-			(await db.Database.GetAppliedMigrationsAsync()).Should().Equal(applied);
+			// Later reversible migrations can be removed before this guarded downgrade fails.
+			(await db.Database.GetAppliedMigrationsAsync()).Should().Contain(migration);
 			var preserved = await db.CategoryAssistanceAttempts.AsNoTracking()
 				.SingleAsync(x => x.Id == seed.Attempt);
 			preserved.DecisionActor.Should().Be(decision.DecisionActor);

@@ -22,7 +22,8 @@ public sealed record CategoryAssistanceDismissRequest(Guid OperationId);
 [ProducesResponseType(StatusCodes.Status401Unauthorized)]
 public sealed class CategoryAssistanceController(ICategoryAssistanceSettingsStore settingsStore,
 	ICategoryAssistanceReadStore readStore, ICategoryAssistanceCapabilitySource capabilitySource,
-	ICategoryAssistanceDecisionStore decisionStore) : ControllerBase
+	ICategoryAssistanceDecisionStore decisionStore,
+	ICategoryAssistanceReviewPreferenceStore reviewPreferenceStore) : ControllerBase
 {
 	[HttpGet("status")]
 	[EndpointSummary("Read category assistance capability and consent status")]
@@ -71,11 +72,12 @@ public sealed class CategoryAssistanceController(ICategoryAssistanceSettingsStor
 	[HttpGet("suggestions")]
 	[EndpointSummary("List durable category suggestions for review")]
 	public async Task<Results<Ok<CategoryAssistanceSuggestionPage>, BadRequestProblem>> Suggestions(
-		[FromQuery] int offset = 0, [FromQuery] int limit = 25, CancellationToken ct = default)
+		[FromQuery] int offset = 0, [FromQuery] int limit = 25,
+		[FromQuery] string review = "active", CancellationToken ct = default)
 	{
-		if (offset < 0 || limit is < 1 or > 100)
+		if (offset < 0 || limit is < 1 or > 100 || review is not ("active" or "later" or "left_as_is" or "all"))
 		{
-			return ApiProblem.BadRequest("Offset must be nonnegative and limit must be 1 through 100.");
+			return ApiProblem.BadRequest("Offset must be nonnegative, limit must be 1 through 100, and review must be active, later, left_as_is or all.");
 		}
 
 		var settings = await settingsStore.GetAsync(ct);
@@ -85,7 +87,8 @@ public sealed class CategoryAssistanceController(ICategoryAssistanceSettingsStor
 			return TypedResults.Ok(new CategoryAssistanceSuggestionPage(0, offset, limit, []));
 		}
 
-		return TypedResults.Ok(await readStore.ListSuggestionsAsync(offset, limit, ct));
+		var actor = User?.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+		return TypedResults.Ok(await readStore.ListSuggestionsAsync(actor, review, offset, limit, ct));
 	}
 
 	[HttpGet("activity")]
@@ -107,7 +110,8 @@ public sealed class CategoryAssistanceController(ICategoryAssistanceSettingsStor
 			return ApiProblem.NotFound("Suggestion does not exist.");
 		}
 
-		var suggestion = await readStore.GetSuggestionAsync(attemptId, ct);
+		var actor = User?.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+		var suggestion = await readStore.GetSuggestionAsync(actor, attemptId, ct);
 		return suggestion is null
 				? ApiProblem.NotFound("Suggestion does not exist.")
 				: TypedResults.Ok(suggestion);
@@ -119,9 +123,49 @@ public sealed class CategoryAssistanceController(ICategoryAssistanceSettingsStor
 		EligibleItems(Guid attemptId, [FromQuery] int offset = 0, [FromQuery] int limit = 25,
 			CancellationToken ct = default)
 	{
-		try { return TypedResults.Ok(await decisionStore.ListEligibleItemsAsync(attemptId, offset, limit, ct)); }
+		try
+		{
+			return TypedResults.Ok(await decisionStore.ListEligibleItemsAsync(
+			User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "", attemptId, offset, limit, ct));
+		}
 		catch (TaxonomyException error) { return error.Status == 404 ? ApiProblem.NotFound(error.Message) : ApiProblem.BadRequest(error.Message); }
 	}
+
+	[HttpGet("suggestions/{attemptId:guid}/review-preference")]
+	[EndpointSummary("Read your category assistance review preference")]
+	public async Task<Results<Ok<CategoryAssistanceReviewPreference>, BadRequestProblem, ForbiddenProblem,
+		NotFoundProblem, ConflictProblem>> ReviewPreference(Guid attemptId, CancellationToken ct)
+	{
+		try
+		{
+			return TypedResults.Ok(await reviewPreferenceStore.GetAsync(
+			User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "", attemptId, ct));
+		}
+		catch (TaxonomyException error) { return ReviewError(error); }
+	}
+
+	[HttpPut("suggestions/{attemptId:guid}/review-preference")]
+	[EndpointSummary("Set your category assistance review preference and excluded items")]
+	public async Task<Results<Ok<CategoryAssistanceReviewPreference>, BadRequestProblem, ForbiddenProblem,
+		NotFoundProblem, ConflictProblem>> UpdateReviewPreference(Guid attemptId,
+			[FromBody] CategoryAssistanceReviewPreferenceRequest request, CancellationToken ct)
+	{
+		try
+		{
+			return TypedResults.Ok(await reviewPreferenceStore.UpdateAsync(
+			User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "", attemptId, request, ct));
+		}
+		catch (TaxonomyException error) { return ReviewError(error); }
+	}
+
+	private static Results<Ok<CategoryAssistanceReviewPreference>, BadRequestProblem, ForbiddenProblem,
+		NotFoundProblem, ConflictProblem> ReviewError(TaxonomyException error) => error.Status switch
+		{
+			403 => new ForbiddenProblem(error.Message, "writer_required"),
+			404 => ApiProblem.NotFound(error.Message),
+			409 => ApiProblem.Conflict(error.Message),
+			_ => ApiProblem.BadRequest(error.Message)
+		};
 
 	[HttpPost("suggestions/{attemptId:guid}/accept")]
 	[EndpointSummary("Accept a suggestion for explicitly selected receipt items")]

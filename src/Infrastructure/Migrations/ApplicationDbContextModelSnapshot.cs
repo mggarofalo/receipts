@@ -517,6 +517,69 @@ namespace Infrastructure.Migrations
                     b.ToTable("Observations", "category_assistance");
                 });
 
+            modelBuilder.Entity("Infrastructure.Entities.CategoryAssistance.CategoryAssistanceReviewOperationEntity", b =>
+                {
+                    b.Property<string>("Actor")
+                        .HasMaxLength(450)
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("OperationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AttemptId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("RecordedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("text");
+
+                    b.Property<string>("ResultJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Actor", "OperationId");
+
+                    b.HasIndex("AttemptId");
+
+                    b.ToTable("ReviewOperations", "category_assistance");
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.CategoryAssistance.CategoryAssistanceReviewPreferenceEntity", b =>
+                {
+                    b.Property<string>("Actor")
+                        .HasMaxLength(450)
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("AttemptId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ExcludedItemIdsJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("text");
+
+                    b.HasKey("Actor", "AttemptId");
+
+                    b.HasIndex("AttemptId");
+
+                    b.ToTable("ReviewPreferences", "category_assistance", t =>
+                        {
+                            t.HasCheckConstraint("CK_CategoryAssistance_ReviewState", "\"State\" IN ('active','later','left_as_is')");
+                        });
+                });
+
             modelBuilder.Entity("Infrastructure.Entities.CategoryAssistance.CategoryAssistanceSettingsAuditEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3042,6 +3105,24 @@ namespace Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("AttemptId")
                         .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.CategoryAssistance.CategoryAssistanceReviewOperationEntity", b =>
+                {
+                    b.HasOne("Infrastructure.Entities.CategoryAssistance.CategoryAssistanceAttemptEntity", null)
+                        .WithMany()
+                        .HasForeignKey("AttemptId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.CategoryAssistance.CategoryAssistanceReviewPreferenceEntity", b =>
+                {
+                    b.HasOne("Infrastructure.Entities.CategoryAssistance.CategoryAssistanceAttemptEntity", null)
+                        .WithMany()
+                        .HasForeignKey("AttemptId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Infrastructure.Entities.Core.AcceptedDuplicatePairEntity", b =>

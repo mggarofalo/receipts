@@ -12,6 +12,8 @@ public sealed record CategoryAssistanceEligibleItem(Guid Id, Guid ReceiptId, Dat
 public interface ICategoryAssistanceDecisionStore
 {
 	Task<CategoryAssistanceEligibleItemPage> ListEligibleItemsAsync(Guid attemptId, int offset, int limit, CancellationToken ct);
+	Task<CategoryAssistanceEligibleItemPage> ListEligibleItemsAsync(string actor, Guid attemptId,
+		int offset, int limit, CancellationToken ct);
 	Task<CategoryAssistanceDecisionResult> AcceptAsync(string actor, Guid attemptId,
 		CategoryAssistanceDecisionRequest request, CancellationToken ct);
 	Task<CategoryAssistanceDecisionResult> DismissAsync(string actor, Guid attemptId, Guid operationId,

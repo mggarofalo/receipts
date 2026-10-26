@@ -10,6 +10,10 @@ public sealed class CategoryAssistanceReadStore(IDbContextFactory<ApplicationDbC
 	: ICategoryAssistanceReadStore
 {
 	public async Task<CategoryAssistanceSuggestionPage> ListSuggestionsAsync(int offset, int limit, CancellationToken ct)
+		=> await ListSuggestionsAsync("", "all", offset, limit, ct);
+
+	public async Task<CategoryAssistanceSuggestionPage> ListSuggestionsAsync(string actor, string reviewFilter,
+		int offset, int limit, CancellationToken ct)
 	{
 		if (offset < 0 || limit is < 1 or > 100)
 		{
@@ -19,13 +23,28 @@ public sealed class CategoryAssistanceReadStore(IDbContextFactory<ApplicationDbC
 		await using var db = await factory.CreateDbContextAsync(ct);
 		var query = db.CategoryAssistanceAttempts.AsNoTracking()
 			.Where(x => x.State == "suggested" || x.State == "abstained");
+		if (!string.IsNullOrEmpty(actor) && reviewFilter != "all")
+		{
+			query = reviewFilter switch
+			{
+				"active" => query.Where(x => !db.CategoryAssistanceReviewPreferences.Any(p =>
+					p.Actor == actor && p.AttemptId == x.Id && p.State != "active")),
+				"later" or "left_as_is" => query.Where(x => db.CategoryAssistanceReviewPreferences.Any(p =>
+					p.Actor == actor && p.AttemptId == x.Id && p.State == reviewFilter)),
+				_ => throw new ArgumentException("Invalid review filter", nameof(reviewFilter))
+			};
+		}
 		int total = await query.CountAsync(ct);
 		var rows = await query.OrderByDescending(x => x.CompletedAt).ThenByDescending(x => x.Id)
 			.Skip(offset).Take(limit).ToListAsync(ct);
-		return new(total, offset, limit, await ProjectAsync(db, rows, ct));
+		return new(total, offset, limit, await ProjectAsync(db, rows, actor, ct));
 	}
 
 	public async Task<CategoryAssistanceSuggestionRead?> GetSuggestionAsync(Guid attemptId, CancellationToken ct)
+		=> await GetSuggestionAsync("", attemptId, ct);
+
+	public async Task<CategoryAssistanceSuggestionRead?> GetSuggestionAsync(string actor, Guid attemptId,
+		CancellationToken ct)
 	{
 		await using var db = await factory.CreateDbContextAsync(ct);
 		var row = await db.CategoryAssistanceAttempts.AsNoTracking()
@@ -36,18 +55,24 @@ public sealed class CategoryAssistanceReadStore(IDbContextFactory<ApplicationDbC
 			return null;
 		}
 
-		return (await ProjectAsync(db, [row], ct)).Single();
+		return (await ProjectAsync(db, [row], actor, ct)).Single();
 	}
 
 	private static async Task<List<CategoryAssistanceSuggestionRead>> ProjectAsync(
-			ApplicationDbContext db, IReadOnlyList<CategoryAssistanceAttemptEntity> rows, CancellationToken ct)
+		ApplicationDbContext db, IReadOnlyList<CategoryAssistanceAttemptEntity> rows,
+		string actor, CancellationToken ct)
 	{
 		var settings = await db.CategoryAssistanceSettings.AsNoTracking().SingleAsync(ct);
 		var head = await db.TaxonomyHeads.AsNoTracking().SingleAsync(ct);
 		var connection = await db.CategoryAssistanceConnection.AsNoTracking().SingleOrDefaultAsync(ct);
 		var items = new List<CategoryAssistanceSuggestionRead>(rows.Count);
+		var attemptIds = rows.Select(x => x.Id).ToArray();
+		var preferences = string.IsNullOrEmpty(actor) ? [] : await db.CategoryAssistanceReviewPreferences
+			.AsNoTracking().Where(x => x.Actor == actor && attemptIds.Contains(x.AttemptId)).ToListAsync(ct);
 		foreach (var row in rows)
 		{
+			var preference = preferences.FirstOrDefault(x => x.AttemptId == row.Id);
+			var excluded = CategoryAssistanceReviewPreferenceStore.Excluded(preference);
 			CategoryAssistanceCompletion? completion;
 			try { completion = JsonSerializer.Deserialize<CategoryAssistanceCompletion>(row.ResultJson ?? ""); }
 			catch (JsonException) { completion = null; }
@@ -65,7 +90,7 @@ public sealed class CategoryAssistanceReadStore(IDbContextFactory<ApplicationDbC
 			bool current = suggestion != null && await IsCurrentAsync(db, row, settings, head.RevisionId,
 				connection, path, ct);
 			int affected = (await CategoryAssistanceDecisionStore.GetEligibleObservationsAsync(
-				db, row, null, ct)).Count;
+				db, row, null, ct)).Count(x => !excluded.Contains(x.ReceiptItemId));
 			var source = new NormalizationSourceKey(row.Location, row.Description,
 				row.ItemCodeKey == "" ? null : row.ItemCodeKey);
 			// Attempts retain the normalized source, not the raw item text. Only expose
@@ -95,7 +120,12 @@ public sealed class CategoryAssistanceReadStore(IDbContextFactory<ApplicationDbC
 			items.Add(new(row.Id, source, originalDescription, affected, path,
 				suggestion?.AbstentionReason, suggestion?.Confidence, row.State, current,
 								row.CreatedAt, row.CompletedAt,
-								suggestion?.FitProbability, suggestion?.CategoryProbability));
+				suggestion?.FitProbability, suggestion?.CategoryProbability)
+			{
+				ReviewState = preference?.State ?? "active",
+				ReviewRevision = preference?.Revision ?? Guid.Empty,
+				ExcludedItemCount = excluded.Length
+			});
 		}
 		return items;
 	}

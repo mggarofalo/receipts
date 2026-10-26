@@ -1,5 +1,4 @@
 using FluentAssertions;
-using Infrastructure.Entities.CategoryAssistance;
 using Infrastructure.IntegrationTests.Fixtures;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -38,33 +37,23 @@ public sealed class CategoryAssistanceDispatchMigrationTests(PostgresFixture fix
 		db.CategoryAssistanceDailyUsage.Remove(await db.CategoryAssistanceDailyUsage.SingleAsync());
 		await db.SaveChangesAsync();
 		Guid attemptId = Guid.NewGuid();
-		db.CategoryAssistanceAttempts.Add(new CategoryAssistanceAttemptEntity
-		{
-			Id = attemptId,
-			RequestId = Guid.NewGuid(),
-			RestoreGeneration = Guid.NewGuid(),
-			SourceHash = "test-source",
-			Location = "test",
-			Description = "test",
-			ItemCodeKey = "test",
-			SourceRevision = Guid.NewGuid(),
-			TaxonomyRevision = Guid.NewGuid(),
-			Provider = "jev",
-			Model = "jev-1.14.0",
-			QuestionPolicyVersion = "test",
-			SettingsRevision = Guid.NewGuid(),
-			ConnectionGeneration = Guid.NewGuid(),
-			ReceiptId = Guid.NewGuid(),
-			ReceiptRevision = Guid.NewGuid(),
-			ItemId = Guid.NewGuid(),
-			ItemRevision = Guid.NewGuid(),
-			RequestJson = "{}",
-			State = "indeterminate",
-			CreatedAt = DateTimeOffset.UtcNow
-		});
-		await db.SaveChangesAsync();
+		// Exercise the historical schema directly; the current EF entity has later columns.
+		const string requestJson = "{}";
+		await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO category_assistance."Attempts"
+                ("Id", "RequestId", "RestoreGeneration", "SourceHash", "Location",
+                 "Description", "ItemCodeKey", "SourceRevision", "TaxonomyRevision",
+                 "Provider", "Model", "QuestionPolicyVersion", "SettingsRevision",
+                 "ConnectionGeneration", "ReceiptId", "ReceiptRevision", "ItemId",
+                 "ItemRevision", "RequestJson", "State", "Deferrals", "CreatedAt")
+            VALUES ({attemptId}, {Guid.NewGuid()}, {Guid.NewGuid()}, 'test-source', 'test',
+                    'test', 'test', {Guid.NewGuid()}, {Guid.NewGuid()}, 'jev', 'jev-1.14.0',
+                    'test', {Guid.NewGuid()}, {Guid.NewGuid()}, {Guid.NewGuid()},
+                    {Guid.NewGuid()}, {Guid.NewGuid()}, {Guid.NewGuid()}, {requestJson},
+                    'indeterminate', 0, {DateTimeOffset.UtcNow})
+            """);
 		await AssertRefusedAsync(db, migrator, predecessor, applied, "attempt");
-		(await db.CategoryAssistanceAttempts.AsNoTracking().SingleAsync()).Id.Should().Be(attemptId);
+		(await db.CategoryAssistanceAttempts.AsNoTracking().Select(x => x.Id).SingleAsync()).Should().Be(attemptId);
 	}
 
 	private static async Task AssertRefusedAsync(ApplicationDbContext db, IMigrator migrator,

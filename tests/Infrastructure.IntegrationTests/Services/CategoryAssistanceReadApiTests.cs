@@ -23,7 +23,7 @@ public sealed class CategoryAssistanceReadApiTests
 						[CategorySuggestionPolicy.Model]));
 		var read = new Mock<ICategoryAssistanceReadStore>(MockBehavior.Strict);
 		var controller = new CategoryAssistanceController(settings.Object, read.Object, capability.Object,
-				Mock.Of<ICategoryAssistanceDecisionStore>());
+			Mock.Of<ICategoryAssistanceDecisionStore>(), Mock.Of<ICategoryAssistanceReviewPreferenceStore>());
 
 		(await controller.Suggestion(attemptId, CancellationToken.None)).Result
 				.Should().BeOfType<NotFoundProblem>();
@@ -32,7 +32,7 @@ public sealed class CategoryAssistanceReadApiTests
 		settings.Setup(x => x.GetAsync(It.IsAny<CancellationToken>()))
 				.ReturnsAsync(new CategoryAssistanceSettings(true, "jev", CategorySuggestionPolicy.Model,
 						10, 3, Guid.NewGuid()));
-		read.Setup(x => x.GetSuggestionAsync(attemptId, It.IsAny<CancellationToken>()))
+		read.Setup(x => x.GetSuggestionAsync("", attemptId, It.IsAny<CancellationToken>()))
 				.ReturnsAsync((CategoryAssistanceSuggestionRead?)null);
 		(await controller.Suggestion(attemptId, CancellationToken.None)).Result
 				.Should().BeOfType<NotFoundProblem>();
@@ -53,7 +53,7 @@ public sealed class CategoryAssistanceReadApiTests
 			.ReturnsAsync(new CategoryAssistanceCapability("jev", state, [CategorySuggestionPolicy.Model]));
 		var read = new Mock<ICategoryAssistanceReadStore>(MockBehavior.Strict);
 		var controller = new CategoryAssistanceController(settings.Object, read.Object, capability.Object,
-			Mock.Of<ICategoryAssistanceDecisionStore>());
+			Mock.Of<ICategoryAssistanceDecisionStore>(), Mock.Of<ICategoryAssistanceReviewPreferenceStore>());
 
 		var response = await controller.Suggestions(ct: CancellationToken.None);
 
@@ -75,7 +75,7 @@ public sealed class CategoryAssistanceReadApiTests
 				[CategorySuggestionPolicy.Model]));
 		var controller = new CategoryAssistanceController(settings.Object,
 			Mock.Of<ICategoryAssistanceReadStore>(), capability.Object,
-			Mock.Of<ICategoryAssistanceDecisionStore>());
+			Mock.Of<ICategoryAssistanceDecisionStore>(), Mock.Of<ICategoryAssistanceReviewPreferenceStore>());
 
 		var status = (await controller.Status(CancellationToken.None)).Value!;
 

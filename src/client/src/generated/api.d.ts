@@ -244,6 +244,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/category-assistance/suggestions/{attemptId}/review-preference": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the current actor's review state and excluded receipt items */
+        get: operations["CategoryAssistance_ReviewPreference"];
+        /** Set actor review state and excluded receipt items */
+        put: operations["CategoryAssistance_UpdateReviewPreference"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/category-assistance/suggestions/{attemptId}/accept": {
         parameters: {
             query?: never;
@@ -3873,11 +3891,35 @@ export interface components {
             /** Format: double */
             categoryProbability: number | null;
             state: string;
+            /** @enum {string} */
+            reviewState?: "active" | "later" | "left_as_is";
+            /** Format: uuid */
+            reviewRevision?: string;
+            /** Format: int32 */
+            excludedItemCount?: number;
             isCurrent: boolean;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
             completedAt: string | null;
+        };
+        CategoryAssistanceReviewPreference: {
+            /** Format: uuid */
+            attemptId: string;
+            /** @enum {string} */
+            state: "active" | "later" | "left_as_is";
+            /** Format: uuid */
+            revision: string;
+            excludedItemIds: string[];
+        };
+        CategoryAssistanceReviewPreferenceRequest: {
+            /** Format: uuid */
+            operationId: string;
+            /** Format: uuid */
+            expectedRevision: string;
+            /** @enum {string} */
+            state: "active" | "later" | "left_as_is";
+            excludedItemIds: string[];
         };
         CategoryAssistanceActivity: {
             /** Format: int32 */
@@ -7248,6 +7290,7 @@ export interface operations {
             query?: {
                 offset?: number;
                 limit?: number;
+                review?: "active" | "later" | "left_as_is" | "all";
             };
             header?: never;
             path?: never;
@@ -7395,6 +7438,140 @@ export interface operations {
             };
             /** @description Suggestion missing */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    CategoryAssistance_ReviewPreference: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Actor review state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryAssistanceReviewPreference"];
+                };
+            };
+            /** @description Invalid suggestion ID */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Active writer required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Suggestion missing */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Review conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    CategoryAssistance_UpdateReviewPreference: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CategoryAssistanceReviewPreferenceRequest"];
+            };
+        };
+        responses: {
+            /** @description Saved actor review state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryAssistanceReviewPreference"];
+                };
+            };
+            /** @description Invalid review preferences */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Active writer required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Suggestion missing */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Revision or operation conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

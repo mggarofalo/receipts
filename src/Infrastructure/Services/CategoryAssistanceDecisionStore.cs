@@ -19,6 +19,10 @@ public sealed class CategoryAssistanceDecisionStore(IDbContextFactory<Applicatio
 
 	public async Task<CategoryAssistanceEligibleItemPage> ListEligibleItemsAsync(Guid attemptId, int offset,
 		int limit, CancellationToken ct)
+		=> await ListEligibleItemsAsync("", attemptId, offset, limit, ct);
+
+	public async Task<CategoryAssistanceEligibleItemPage> ListEligibleItemsAsync(string actor, Guid attemptId,
+		int offset, int limit, CancellationToken ct)
 	{
 		if (offset < 0 || limit is < 1 or > 100)
 		{
@@ -29,6 +33,13 @@ public sealed class CategoryAssistanceDecisionStore(IDbContextFactory<Applicatio
 		var attempt = await db.CategoryAssistanceAttempts.AsNoTracking().SingleOrDefaultAsync(x => x.Id == attemptId, ct)
 			?? throw new TaxonomyException(404, "Suggestion does not exist.");
 		var eligible = await GetEligibleObservationsAsync(db, attempt, null, ct);
+		if (!string.IsNullOrEmpty(actor))
+		{
+			var preference = await db.CategoryAssistanceReviewPreferences.AsNoTracking()
+				.SingleOrDefaultAsync(x => x.Actor == actor && x.AttemptId == attemptId, ct);
+			var excluded = CategoryAssistanceReviewPreferenceStore.Excluded(preference).ToHashSet();
+			eligible.RemoveAll(x => excluded.Contains(x.ReceiptItemId));
+		}
 		var markers = eligible.OrderBy(x => x.ReceiptItemId).Skip(offset).Take(limit).ToList();
 		var ids = markers.Select(x => x.ReceiptItemId).ToList();
 		var details = await (from item in db.ReceiptItems.AsNoTracking()
@@ -155,6 +166,14 @@ public sealed class CategoryAssistanceDecisionStore(IDbContextFactory<Applicatio
 		Guid? category = null;
 		if (decision == "accepted")
 		{
+			var preference = await db.CategoryAssistanceReviewPreferences.AsNoTracking()
+				.SingleOrDefaultAsync(x => x.Actor == actor && x.AttemptId == attemptId, ct);
+			var excluded = CategoryAssistanceReviewPreferenceStore.Excluded(preference).ToHashSet();
+			if (itemIds.Any(excluded.Contains))
+			{
+				throw new TaxonomyException(409, "Selected items are excluded from your category assistance review.");
+			}
+
 			CategoryAssistanceCompletion completion;
 			try { completion = JsonSerializer.Deserialize<CategoryAssistanceCompletion>(attempt.ResultJson ?? "")!; }
 			catch (JsonException) { throw new TaxonomyException(409, "Suggestion result is unavailable."); }

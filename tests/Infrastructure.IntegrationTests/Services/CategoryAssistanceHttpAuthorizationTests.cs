@@ -61,6 +61,7 @@ public sealed class CategoryAssistanceHttpAuthorizationTests
 		builder.Services.AddSingleton(settings.Object);
 		builder.Services.AddSingleton(capability.Object);
 		builder.Services.AddSingleton(Mock.Of<ICategoryAssistanceReadStore>());
+		builder.Services.AddSingleton(Mock.Of<ICategoryAssistanceReviewPreferenceStore>());
 		var decisions = new Mock<ICategoryAssistanceDecisionStore>();
 		decisions.Setup(x => x.DismissAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<Guid>(),
 			It.IsAny<CancellationToken>())).ReturnsAsync((string actor, Guid attempt, Guid operation, CancellationToken ct) =>
