@@ -44,13 +44,13 @@ public sealed class OfflinePortableBackupInspection : IOfflinePortableBackupInsp
 		await using (SqliteCommand command = sqlite.CreateCommand())
 		{
 			command.CommandText = "SELECT value FROM backup_metadata WHERE key='export_version'";
-			if (!int.TryParse(Convert.ToString(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture), out version) || version is not (6 or 8 or 9 or 10))
-			{ throw new InvalidDataException("Inspection supports portable backup formats 6, 8, 9 and 10."); }
+			if (!int.TryParse(Convert.ToString(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture), out version) || version is not (6 or 8 or 9 or 10 or 11))
+			{ throw new InvalidDataException("Inspection supports portable backup formats 6, 8, 9, 10 and 11."); }
 		}
 		if (version >= 8 && !tables.Contains("normalization_catalog")) { throw new InvalidDataException("Format 8 requires normalization evidence."); }
-		if (version == 10)
+		if (version >= 10)
 		{
-			var taxonomy = await PortableTaxonomyArchive.ReadAsync(sqlite, cancellationToken);
+			var taxonomy = await PortableTaxonomyArchive.ReadAsync(sqlite, cancellationToken, version);
 			await PortableTaxonomyArchive.ReadDeletionStateAsync(sqlite, taxonomy, cancellationToken);
 		}
 		SortedDictionary<string, string> digests = new(StringComparer.Ordinal);

@@ -78,7 +78,7 @@ public partial class BackupImportService(
 			{
 				try
 				{
-					taxonomy = await PortableTaxonomyArchive.ReadAsync(preflight, cancellationToken);
+					taxonomy = await PortableTaxonomyArchive.ReadAsync(preflight, cancellationToken, preflightVersion);
 					deletion = await PortableTaxonomyArchive.ReadDeletionStateAsync(preflight, taxonomy, cancellationToken);
 				}
 				catch (Exception exception) when (exception is InvalidDataException or System.Text.Json.JsonException or ArgumentException)

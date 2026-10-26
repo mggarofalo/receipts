@@ -4,7 +4,7 @@ The application supports portable SQLite backups for disaster recovery, migratio
 
 ## What gets backed up
 
-The export (current format `export_version = 10`) includes your domain data plus YNAB
+The export (current format `export_version = 11`) includes your domain data plus YNAB
 configuration/state and normalized-description settings:
 
 - Accounts
@@ -262,3 +262,16 @@ Refreshing active YNAB queries may read the remote service; restore does not iss
 - Import is transactional: if any step fails, the entire import is rolled back
 - The CLI tool is useful for automated backup schedules (e.g., cron on the host machine)
 - Store backups off-device for true disaster recovery
+
+### Category approvals in format 11
+
+Format 11 additionally requires `category_mapping_archive`. It preserves complete
+approved-category mapping chains, including revoked and renewed approvals, and
+source heads. Restore validates fingerprints, operation hashes and chain/head
+integrity, and appends taxonomy before mappings in the existing import transaction.
+A populated destination must contain only exact immutable rows present in the
+archive; later or divergent mapping evidence rejects the import atomically.
+Formats 10 and earlier carry no approvals and preserve destination mapping history
+and heads. No import deletes approval history or disables immutable triggers.
+Offline inspection and normalization support format 11, retaining its format and
+mapping evidence unchanged.
