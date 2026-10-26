@@ -22,14 +22,17 @@ public sealed class HistoricalReclassificationsController(IHistoricalOperationSe
 		[FromQuery] int offset = 0, [FromQuery] int limit = 25, [FromQuery(Name = "q")] string? search = null,
 		[FromQuery] bool conflictsOnly = false, [FromQuery] bool migratedBroadOnly = false,
 		[FromQuery] bool unresolvedOnly = false, [FromQuery] bool unassignedOnly = false,
-				[FromQuery] HistoricalDispositionFilter dispositionFilter = HistoricalDispositionFilter.Visible,
+								[FromQuery] HistoricalDispositionFilter dispositionFilter = HistoricalDispositionFilter.Visible,
+				[FromQuery] string sort = "mostPurchases", [FromQuery] string impactCurrency = "USD",
 		CancellationToken ct = default)
 	{
 		if (offset < 0 || limit is < 1 or > 25 || search is { Length: > 200 } || search?.Contains('\0') == true ||
-				!Enum.IsDefined(dispositionFilter))
-		{ return ApiProblem.BadRequest("Use a nonnegative offset, limit of 1 to 25, and search of at most 200 characters."); }
+								!Enum.IsDefined(dispositionFilter) ||
+								sort is not ("mostPurchases" or "largestAmount") || impactCurrency != "USD")
+		{ return ApiProblem.BadRequest("Use a nonnegative offset, limit of 1 to 25, search of at most 200 characters, a supported sort and impact currency (USD)."); }
 		return TypedResults.Ok(await groups.BrowseAsync(new(offset, limit, search,
-						conflictsOnly, migratedBroadOnly, unresolvedOnly, unassignedOnly, Actor(), dispositionFilter), ct));
+												conflictsOnly, migratedBroadOnly, unresolvedOnly, unassignedOnly, Actor(), dispositionFilter,
+												sort, impactCurrency), ct));
 	}
 
 	[HttpGet]
@@ -82,6 +85,17 @@ public sealed class HistoricalReclassificationsController(IHistoricalOperationSe
 			Guid id, CancellationToken ct) => Run(async () =>
 			id == Guid.Empty ? ApiProblem.BadRequest("Operation ID is required.") :
 			TypedResults.Ok(await service.ReadAsync(Actor(), id, ct)));
+
+	[HttpGet("{id:guid}/summary")]
+	[EndpointSummary("Read own captured historical operation choices and progress")]
+	public async Task<Results<Ok<HistoricalOperationSummary>, BadRequestProblem, NotFoundProblem>> Summary(
+			Guid id, CancellationToken ct)
+	{
+		if (id == Guid.Empty) { return ApiProblem.BadRequest("Operation ID is required."); }
+		try { return TypedResults.Ok(await service.ReadSummaryAsync(Actor(), id, ct)); }
+		catch (TaxonomyException error) when (error.Status == 404)
+		{ return ApiProblem.NotFound(error.Message); }
+	}
 
 	[HttpGet("{id:guid}/items")]
 	[EndpointSummary("Read paged frozen item evidence and outcomes")]

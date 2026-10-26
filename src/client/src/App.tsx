@@ -12,6 +12,7 @@ import ApiKeys from "@/pages/ApiKeys";
 import Accounts from "@/pages/Accounts";
 import Cards from "@/pages/Cards";
 import Taxonomy from "@/pages/Taxonomy";
+import HistoricalCleanup from "@/pages/HistoricalCleanup";
 import Receipts from "@/pages/Receipts";
 import Reports from "@/pages/Reports";
 import PurchaseSearch from "@/pages/PurchaseSearch";
@@ -53,6 +54,7 @@ export const routeConfig = [
           { path: "/cards", element: <Cards /> },
           { path: "/taxonomy", element: <CategoryRedirect preserveRevision /> },
           { path: "/categories", element: <Taxonomy /> },
+          { path: "/categories/cleanup", element: <HistoricalCleanup /> },
           { path: "/subcategories", element: <CategoryRedirect /> },
           { path: "/receipts", element: <Receipts /> },
           { path: "/receipts/new", element: <NewReceipt /> },

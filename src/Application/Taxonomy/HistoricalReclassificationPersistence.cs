@@ -22,6 +22,7 @@ public interface IHistoricalOperationService
 {
 	Task<HistoricalProgress> SavePreviewAsync(HistoricalPreviewRequest request, CancellationToken ct = default);
 	Task<HistoricalProgress> ReadAsync(string actor, Guid id, CancellationToken ct = default);
+	Task<HistoricalOperationSummary> ReadSummaryAsync(string actor, Guid id, CancellationToken ct = default);
 	Task<HistoricalOperationPage> ListAsync(string actor, int offset, int limit, CancellationToken ct = default);
 	Task<HistoricalDispositionRecord> SetDispositionAsync(string actor, HistoricalDispositionRequest request,
 			CancellationToken ct = default);

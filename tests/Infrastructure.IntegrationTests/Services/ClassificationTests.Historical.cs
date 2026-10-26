@@ -2,17 +2,63 @@ using System.Data.Common;
 using Application.Taxonomy;
 using Domain.Taxonomy;
 using FluentAssertions;
+using Infrastructure.Entities.Core;
 using Infrastructure.Entities.Taxonomy;
 using Infrastructure.IntegrationTests.Fixtures;
 using Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Options;
+using SampleData.Entities;
 
 namespace Infrastructure.IntegrationTests.Services;
 
 public sealed partial class ClassificationTests
 {
+
+	[Fact]
+	public async Task HistoricalGroupsRankAbsoluteUsdImpactBeforePagingWithoutDroppingOtherCurrencyMembers()
+	{
+		var seed = await HistoricalSeedAsync();
+		string prefix = $"Impact-{Guid.NewGuid():N}-";
+		await using ApplicationDbContext db = fixture.CreateDbContext();
+		Guid receiptId = (await db.ReceiptItems.AsNoTracking().SingleAsync(x => x.Id == seed.Item)).ReceiptId;
+		ReceiptItemEntity Make(string suffix, decimal amount)
+		{
+			ReceiptItemEntity item = ReceiptItemEntityGenerator.Generate(receiptId);
+			item.Description = prefix + suffix;
+			item.ReceiptItemCode = null;
+			item.TotalAmount = amount;
+			item.TotalAmountCurrency = Common.Currency.USD;
+			return item;
+		}
+		ReceiptItemEntity[] added = [Make("A", 5), Make("A", -5), Make("B", 20), Make("C", 20), Make("D", 1000)];
+		db.ReceiptItems.AddRange(added);
+		await db.SaveChangesAsync();
+		try
+		{
+			// Historical imports may contain another stored currency even while USD is the only selectable one.
+			await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE receipts.\"ReceiptItems\" SET \"TotalAmountCurrency\" = 'EUR' WHERE \"Id\" = {added[4].Id}");
+			HistoricalGroupReader reader = new(new Factory(fixture));
+			var frequency = await reader.BrowseAsync(new(Search: prefix, Actor: Actor));
+			frequency.Items.Select(x => x.Group.RawDescription).Should().Equal(prefix + "A", prefix + "B", prefix + "C", prefix + "D");
+			frequency.Items[0].PurchaseCount.Should().Be(2);
+			frequency.Items[0].ImpactAmount.Should().Be(10);
+			frequency.Items[3].PurchaseCount.Should().Be(1);
+			frequency.Items[3].ImpactAmount.Should().Be(0);
+			var impact = await reader.BrowseAsync(new(Search: prefix, Actor: Actor, Sort: "largestAmount"));
+			impact.Items.Select(x => x.Group.RawDescription).Should().Equal(prefix + "B", prefix + "C", prefix + "A", prefix + "D");
+			impact.Items.Select(x => x.ImpactAmount).Should().Equal(20, 20, 10, 0);
+			var next = await reader.BrowseAsync(new(Offset: 1, Limit: 1, Search: prefix, Actor: Actor, Sort: "largestAmount"));
+			next.Items.Single().Group.RawDescription.Should().Be(prefix + "C");
+			next.TotalGroups.Should().Be(4);
+			next.NextOffset.Should().Be(2);
+		}
+		finally
+		{
+			await db.Database.ExecuteSqlInterpolatedAsync($"DELETE FROM receipts.\"ReceiptItems\" WHERE \"Description\" LIKE {prefix + "%"}");
+		}
+	}
 	private HistoricalReclassificationService Historical(IDbContextFactory<ApplicationDbContext>? factory = null) =>
 		new(factory ?? new Factory(fixture), TimeProvider.System, Options.Create(new ClassificationOptions { WritesEnabled = true }));
 

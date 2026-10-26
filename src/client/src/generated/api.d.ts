@@ -73,6 +73,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/historical-reclassifications/{id}/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read own captured historical operation choices and progress */
+        get: operations["HistoricalReclassifications_Summary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/historical-reclassifications/{id}/items": {
         parameters: {
             query?: never;
@@ -3682,6 +3699,13 @@ export interface components {
             group: components["schemas"]["HistoricalGroupKey"];
             /** Format: int32 */
             purchaseCount: number;
+            /**
+             * Format: double
+             * @description Sum of absolute item amounts for this group in impactCurrency only, including refunds.
+             */
+            impactAmount: number;
+            /** @enum {string} */
+            impactCurrency: "USD";
             conflict: boolean;
             migratedBroad: boolean;
             unresolved: boolean;
@@ -6680,6 +6704,10 @@ export interface operations {
                 unresolvedOnly?: boolean;
                 unassignedOnly?: boolean;
                 dispositionFilter?: components["schemas"]["HistoricalDispositionFilter"];
+                /** @description Rank all exact-source groups by purchase count or absolute item amount in the selected currency. */
+                sort?: "mostPurchases" | "largestAmount";
+                /** @description Currency used only for the impact sum; purchases in other currencies remain in the group and count. */
+                impactCurrency?: "USD";
             };
             header?: {
                 "api-version"?: string;
@@ -6915,6 +6943,53 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    HistoricalReclassifications_Summary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoricalOperationSummary"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

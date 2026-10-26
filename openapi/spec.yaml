@@ -64,6 +64,20 @@ paths:
           in: query
           schema:
             $ref: '#/components/schemas/HistoricalDispositionFilter'
+        - name: sort
+          in: query
+          description: Rank all exact-source groups by purchase count or absolute item amount in the selected currency.
+          schema:
+            type: string
+            enum: [mostPurchases, largestAmount]
+            default: mostPurchases
+        - name: impactCurrency
+          in: query
+          description: Currency used only for the impact sum; purchases in other currencies remain in the group and count.
+          schema:
+            type: string
+            enum: [USD]
+            default: USD
       responses:
         '200':
           description: OK
@@ -231,6 +245,38 @@ paths:
                 $ref: '#/components/schemas/ProblemDetails'
         '409':
           description: Conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/historical-reclassifications/{id}/summary:
+    get:
+      operationId: HistoricalReclassifications_Summary
+      security: [{BearerAuth: []}, {ApiKey: []}]
+      tags: [HistoricalReclassifications]
+      summary: Read own captured historical operation choices and progress
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HistoricalOperationSummary'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Authentication required
+        '404':
+          description: Not Found
           content:
             application/problem+json:
               schema:
@@ -8944,13 +8990,20 @@ components:
           format: int32
     HistoricalGroupSummary:
       type: object
-      required: [group, purchaseCount, conflict, migratedBroad, unresolved, unassigned, currentCategories, disposition, dispositionVersion]
+      required: [group, purchaseCount, conflict, migratedBroad, unresolved, unassigned, currentCategories, disposition, dispositionVersion, impactAmount, impactCurrency]
       properties:
         group:
           $ref: '#/components/schemas/HistoricalGroupKey'
         purchaseCount:
           type: integer
           format: int32
+        impactAmount:
+          type: number
+          format: double
+          description: Sum of absolute item amounts for this group in impactCurrency only, including refunds.
+        impactCurrency:
+          type: string
+          enum: [USD]
         conflict:
           type: boolean
         migratedBroad:

@@ -85,6 +85,8 @@ public sealed partial class ClassificationTests
 			groups = intent.Groups.Select(x => new { group = x.Group, x.TargetCategoryId }).ToArray()
 		};
 		(await client.PostAsync(route, HistoricalBody(body))).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+		(await client.GetAsync($"{route}/{intent.OperationId}/summary")).StatusCode
+				.Should().Be(HttpStatusCode.Unauthorized);
 		client.DefaultRequestHeaders.Add("X-Test-Actor", Actor);
 		await HistoricalJson(await client.PostAsync(route, HistoricalBody(new
 		{
@@ -128,6 +130,15 @@ public sealed partial class ClassificationTests
 		await HistoricalJson(await client.PostAsync(route, HistoricalBody(new
 		{ intent.OperationId, intent.TaxonomyRevisionId, reason = "changed", groups = intent.Groups })), HttpStatusCode.Conflict);
 		string operation = $"{route}/{intent.OperationId}";
+		JsonElement summary = await HistoricalJson(await client.GetAsync(operation + "/summary"));
+		summary.GetProperty("reason").GetString().Should().Be(intent.Reason);
+		summary.GetProperty("groups")[0].GetProperty("targetCategoryId").GetGuid()
+				.Should().Be(seed.Root);
+		client.DefaultRequestHeaders.Remove("X-Test-Actor");
+		client.DefaultRequestHeaders.Add("X-Test-Actor", "another actor");
+		await HistoricalJson(await client.GetAsync(operation + "/summary"), HttpStatusCode.NotFound);
+		client.DefaultRequestHeaders.Remove("X-Test-Actor");
+		client.DefaultRequestHeaders.Add("X-Test-Actor", Actor);
 		await HistoricalJson(await client.GetAsync(operation + "/items?limit=101"), HttpStatusCode.BadRequest);
 		JsonElement page = await HistoricalJson(await client.GetAsync(operation + "/items?offset=0&limit=1"));
 		JsonElement item = page.GetProperty("items")[0].GetProperty("item");
