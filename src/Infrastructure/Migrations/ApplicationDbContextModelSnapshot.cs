@@ -338,6 +338,9 @@ namespace Infrastructure.Migrations
                     b.Property<Guid>("RequestId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid>("RequestScope")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("RequestJson")
                         .IsRequired()
                         .HasColumnType("text");
@@ -376,7 +379,7 @@ namespace Infrastructure.Migrations
 
                     b.HasIndex("State", "NextEligibleAt", "LeaseExpiresAt");
 
-                    b.HasIndex("RestoreGeneration", "SourceHash", "TaxonomyRevision", "Provider", "Model", "QuestionPolicyVersion", "ConnectionGeneration")
+                    b.HasIndex("RestoreGeneration", "SourceHash", "TaxonomyRevision", "Provider", "Model", "QuestionPolicyVersion", "ConnectionGeneration", "RequestScope")
                         .IsUnique();
 
                     b.ToTable("Attempts", "category_assistance", t =>
@@ -444,6 +447,51 @@ namespace Infrastructure.Migrations
                         {
                             t.HasCheckConstraint("CK_CategoryAssistance_NonnegativeUsage", "\"DispatchAttempts\" >= 0");
                         });
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.CategoryAssistance.CategoryAssistanceHistoricalRequestEntity", b =>
+                {
+                    b.Property<Guid>("OperationId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Actor")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("ConnectionGeneration")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("GroupsJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("ItemCount")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("RestoreGeneration")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("SettingsRevision")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TaxonomyRevision")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("OperationId");
+
+                    b.HasIndex("Actor", "CreatedAt");
+
+                    b.ToTable("HistoricalRequests", "category_assistance");
                 });
 
             modelBuilder.Entity("Infrastructure.Entities.CategoryAssistance.CategoryAssistanceObservationEntity", b =>

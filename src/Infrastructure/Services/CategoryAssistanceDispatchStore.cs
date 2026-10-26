@@ -36,37 +36,38 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 
 		// Attach new save markers to an already known source identity even when its result is terminal.
 		var markers = await db.CategoryAssistanceObservations.Where(x => x.AttemptId == null && !x.DispatchSkipped
-			&& x.Evidence == "post_consent_no_choice_save"
+						&& (x.Evidence == "post_consent_no_choice_save" || x.Evidence == "explicit_history_request")
 			&& x.RestoreGeneration == settings.RestoreGeneration && x.TaxonomyRevision == head.RevisionId
 			&& x.SettingsRevision == settings.Revision)
 			.OrderBy(x => x.RecordedAt).Take(64).ToListAsync(ct);
 		foreach (var marker in markers)
 		{
+			Guid requestScope = marker.Evidence == "explicit_history_request" ? marker.SaveId : Guid.Empty;
 			var existing = db.CategoryAssistanceAttempts.Local.FirstOrDefault(x =>
-				x.RestoreGeneration == marker.RestoreGeneration && x.SourceHash == marker.SourceHash
+								x.RequestScope == requestScope && x.RestoreGeneration == marker.RestoreGeneration && x.SourceHash == marker.SourceHash
 				&& x.Location == marker.Location && x.Description == marker.Description
 				&& x.ItemCodeKey == (marker.ItemCode ?? "") && x.TaxonomyRevision == marker.TaxonomyRevision
 				&& x.Provider == settings.Provider && x.Model == settings.Model
 				&& x.ConnectionGeneration == connection!.Generation
 				&& x.QuestionPolicyVersion == CategorySuggestionPolicy.Version)
 				?? await db.CategoryAssistanceAttempts.SingleOrDefaultAsync(x =>
-				x.RestoreGeneration == marker.RestoreGeneration && x.SourceHash == marker.SourceHash
+								x.RequestScope == requestScope && x.RestoreGeneration == marker.RestoreGeneration && x.SourceHash == marker.SourceHash
 				&& x.Location == marker.Location && x.Description == marker.Description
 				&& x.ItemCodeKey == (marker.ItemCode ?? "") && x.TaxonomyRevision == marker.TaxonomyRevision
 				&& x.Provider == settings.Provider && x.Model == settings.Model
 				&& x.ConnectionGeneration == connection!.Generation
 				&& x.QuestionPolicyVersion == CategorySuggestionPolicy.Version, ct);
 			if (existing != null) { marker.AttemptId = existing.Id; continue; }
-			bool collision = db.CategoryAssistanceAttempts.Local.Any(x => x.RestoreGeneration == marker.RestoreGeneration
-				&& x.SourceHash == marker.SourceHash && x.TaxonomyRevision == marker.TaxonomyRevision
-				&& x.Provider == settings.Provider && x.Model == settings.Model
-				&& x.ConnectionGeneration == connection!.Generation
-				&& x.QuestionPolicyVersion == CategorySuggestionPolicy.Version)
-				|| await db.CategoryAssistanceAttempts.AnyAsync(x => x.RestoreGeneration == marker.RestoreGeneration
-					&& x.SourceHash == marker.SourceHash && x.TaxonomyRevision == marker.TaxonomyRevision
-					&& x.Provider == settings.Provider && x.Model == settings.Model
-					&& x.ConnectionGeneration == connection!.Generation
-					&& x.QuestionPolicyVersion == CategorySuggestionPolicy.Version, ct);
+			bool collision = db.CategoryAssistanceAttempts.Local.Any(x => x.RequestScope == requestScope && x.RestoreGeneration == marker.RestoreGeneration
+	&& x.SourceHash == marker.SourceHash && x.TaxonomyRevision == marker.TaxonomyRevision
+	&& x.Provider == settings.Provider && x.Model == settings.Model
+	&& x.ConnectionGeneration == connection!.Generation
+	&& x.QuestionPolicyVersion == CategorySuggestionPolicy.Version)
+					|| await db.CategoryAssistanceAttempts.AnyAsync(x => x.RequestScope == requestScope && x.RestoreGeneration == marker.RestoreGeneration
+		&& x.SourceHash == marker.SourceHash && x.TaxonomyRevision == marker.TaxonomyRevision
+		&& x.Provider == settings.Provider && x.Model == settings.Model
+		&& x.ConnectionGeneration == connection!.Generation
+		&& x.QuestionPolicyVersion == CategorySuggestionPolicy.Version, ct);
 			if (collision) { marker.DispatchSkipped = true; continue; }
 			if (await PendingCountAsync(db, ct) + db.CategoryAssistanceAttempts.Local.Count(x => db.Entry(x).State == EntityState.Added) >= settings.PendingLimit)
 			{
@@ -80,6 +81,7 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 			{
 				Id = Guid.NewGuid(),
 				RequestId = Guid.NewGuid(),
+				RequestScope = requestScope,
 				RestoreGeneration = marker.RestoreGeneration,
 				SourceHash = marker.SourceHash,
 				Location = marker.Location,
@@ -213,7 +215,8 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 	private static async Task<CategoryAssistanceSettingsEntity> LockSettingsAsync(ApplicationDbContext db, CancellationToken ct)
 		=> await db.CategoryAssistanceSettings.FromSqlRaw("SELECT * FROM category_assistance.\"Settings\" WHERE \"Id\"=1 FOR UPDATE").SingleAsync(ct);
 	private static Task<int> PendingCountAsync(ApplicationDbContext db, CancellationToken ct)
-		=> db.CategoryAssistanceAttempts.CountAsync(x => x.State == "queued" || x.State == "dispatching", ct);
+				=> db.CategoryAssistanceAttempts.CountAsync(x => x.State == "queued" || x.State == "dispatching"
+						|| x.State == "suggested" || x.State == "abstained", ct);
 	private static async Task ExpireAsync(ApplicationDbContext db, DateTimeOffset now, CancellationToken ct)
 	{
 		var expired = await db.CategoryAssistanceAttempts.Where(x => x.State == "dispatching" && x.LeaseExpiresAt <= now).ToListAsync(ct);
@@ -237,9 +240,9 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 	{
 		var item = await db.ReceiptItems.AsNoTracking().SingleOrDefaultAsync(x => x.Id == marker.ReceiptItemId, ct);
 		var receipt = await db.Receipts.AsNoTracking().SingleOrDefaultAsync(x => x.Id == marker.ReceiptId, ct);
-		if (marker.Evidence != "post_consent_no_choice_save" || item == null || receipt == null || item.ReceiptId != receipt.Id || item.DeletedAt != null || receipt.DeletedAt != null
-			|| item.NormalizationRevision != marker.ItemRevision || receipt.NormalizationRevision != marker.ReceiptRevision
-			|| !string.IsNullOrWhiteSpace(item.Category) || !string.IsNullOrWhiteSpace(item.Subcategory))
+		if (marker.Evidence is not ("post_consent_no_choice_save" or "explicit_history_request") || item == null || receipt == null || item.ReceiptId != receipt.Id || item.DeletedAt != null || receipt.DeletedAt != null
+	|| item.NormalizationRevision != marker.ItemRevision || receipt.NormalizationRevision != marker.ReceiptRevision
+				|| marker.Evidence == "post_consent_no_choice_save" && (!string.IsNullOrWhiteSpace(item.Category) || !string.IsNullOrWhiteSpace(item.Subcategory)))
 		{
 			return false;
 		}
@@ -257,8 +260,9 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 								join history in db.Classifications.AsNoTracking() on current.AssignmentId equals history.Id
 								where current.ReceiptItemId == item.Id
 								select history).SingleOrDefaultAsync(ct);
-		if (assignment?.Id != marker.AssignmentId || assignment != null && !(assignment.CategoryId == null
-			&& (assignment.Source == "legacy_import" || assignment.Source == "legacy_write" && assignment.LegacyResolution == "unresolved_path")))
+		if (assignment?.Id != marker.AssignmentId || assignment != null && marker.Evidence != "explicit_history_request" && !(assignment.CategoryId == null
+				&& (assignment.Source == "legacy_import" || assignment.Source == "legacy_write" && assignment.LegacyResolution == "unresolved_path")
+				))
 		{
 			return false;
 		}
@@ -289,11 +293,15 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 		}
 
 		var marker = await db.CategoryAssistanceObservations.AsNoTracking().Where(x => x.AttemptId == row.Id
-			&& x.ReceiptItemId == row.ItemId && x.ItemRevision == row.ItemRevision)
-			.OrderByDescending(x => x.RecordedAt).FirstOrDefaultAsync(ct);
-		if (marker == null || marker.ReceiptRevision != row.ReceiptRevision || marker.AssignmentId != row.AssignmentId
-			|| marker.SourceHash != row.SourceHash || marker.ItemRevision != row.SourceRevision
-			|| !await EligibleAsync(db, marker, taxonomyRevision, ct))
+				&& (row.RequestScope == Guid.Empty || x.SaveId == row.RequestScope)
+	&& x.ReceiptItemId == row.ItemId && x.ItemRevision == row.ItemRevision)
+	.OrderByDescending(x => x.RecordedAt).FirstOrDefaultAsync(ct);
+		if (marker == null ||
+			(row.RequestScope == Guid.Empty && marker.Evidence != "post_consent_no_choice_save") ||
+			(row.RequestScope != Guid.Empty && marker.Evidence != "explicit_history_request") ||
+			marker.ReceiptRevision != row.ReceiptRevision || marker.AssignmentId != row.AssignmentId
+	|| marker.SourceHash != row.SourceHash || marker.ItemRevision != row.SourceRevision
+	|| !await EligibleAsync(db, marker, taxonomyRevision, ct))
 		{
 			return false;
 		}

@@ -175,6 +175,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/category-assistance/historical-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List own recent historical assistance requests */
+        get: operations["CategoryAssistance_ListHistorical"];
+        put?: never;
+        /** Enroll selected exact historical groups for optional assistance */
+        post: operations["CategoryAssistance_EnrollHistorical"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/category-assistance/historical-requests/{operationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read own historical assistance request progress */
+        get: operations["CategoryAssistance_HistoricalProgress"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/category-assistance/settings": {
         parameters: {
             query?: never;
@@ -3867,6 +3902,46 @@ export interface components {
             suggestionsAvailable: boolean;
             provider: string;
             models: string[];
+            /** Format: int32 */
+            dailyLimit: number;
+            /** Format: int32 */
+            pendingLimit: number;
+        };
+        CategoryAssistanceHistoricalRequest: {
+            /** Format: uuid */
+            operationId: string;
+            /** Format: uuid */
+            taxonomyRevisionId: string;
+            groups: components["schemas"]["HistoricalGroupKey"][];
+        };
+        CategoryAssistanceHistoricalGroupProgress: {
+            group: components["schemas"]["HistoricalGroupKey"];
+            /** Format: int32 */
+            itemCount: number;
+            attemptIds: string[];
+            states: string[];
+        };
+        CategoryAssistanceHistoricalProgress: {
+            /** Format: uuid */
+            operationId: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: int32 */
+            groupCount: number;
+            /** Format: int32 */
+            itemCount: number;
+            /** @enum {string} */
+            state: "pending" | "ready" | "partial" | "failed";
+            groups: components["schemas"]["CategoryAssistanceHistoricalGroupProgress"][];
+        };
+        CategoryAssistanceHistoricalPage: {
+            /** Format: int32 */
+            total: number;
+            /** Format: int32 */
+            offset: number;
+            /** Format: int32 */
+            limit: number;
+            items: components["schemas"]["CategoryAssistanceHistoricalProgress"][];
         };
         CategoryAssistanceSettings: {
             enabled: boolean;
@@ -7270,6 +7345,150 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    CategoryAssistance_ListHistorical: {
+        parameters: {
+            query?: {
+                offset?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Actor scoped page */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryAssistanceHistoricalPage"];
+                };
+            };
+            /** @description Invalid paging */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CategoryAssistance_EnrollHistorical: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CategoryAssistanceHistoricalRequest"];
+            };
+        };
+        responses: {
+            /** @description Durable enrollment and current progress */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryAssistanceHistoricalProgress"];
+                };
+            };
+            /** @description Invalid selection or an exact group with more than 100 purchases */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Active receipt writer required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Changed context, unavailable assistance, or exhausted pending limit */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    CategoryAssistance_HistoricalProgress: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Per-group progress and suggestion attempt IDs */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryAssistanceHistoricalProgress"];
+                };
+            };
+            /** @description Invalid operation ID */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request unavailable to this actor */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
             };
         };
     };

@@ -519,6 +519,84 @@ paths:
                   $ref: "#/components/schemas/CategoryAssistanceStatusResponse",
                 }
         "401": { description: Authentication required }
+  /api/category-assistance/historical-requests:
+    post:
+      tags: [CategoryAssistance]
+      summary: Enroll selected exact historical groups for optional assistance
+      operationId: CategoryAssistance_EnrollHistorical
+      security: [{ BearerAuth: [] }, { ApiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CategoryAssistanceHistoricalRequest" }
+      responses:
+        "200":
+          description: Durable enrollment and current progress
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CategoryAssistanceHistoricalProgress" }
+        "400":
+          description: Invalid selection or an exact group with more than 100 purchases
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "401": { description: Authentication required }
+        "403":
+          description: Active receipt writer required
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "409":
+          description: Changed context, unavailable assistance, or exhausted pending limit
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+    get:
+      tags: [CategoryAssistance]
+      summary: List own recent historical assistance requests
+      operationId: CategoryAssistance_ListHistorical
+      security: [{ BearerAuth: [] }, { ApiKey: [] }]
+      parameters:
+        - { name: offset, in: query, schema: { type: integer, format: int32, minimum: 0, default: 0 } }
+        - { name: limit, in: query, schema: { type: integer, format: int32, minimum: 1, maximum: 25, default: 25 } }
+      responses:
+        "200":
+          description: Actor scoped page
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CategoryAssistanceHistoricalPage" }
+        "400":
+          description: Invalid paging
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "401": { description: Authentication required }
+  /api/category-assistance/historical-requests/{operationId}:
+    get:
+      tags: [CategoryAssistance]
+      summary: Read own historical assistance request progress
+      operationId: CategoryAssistance_HistoricalProgress
+      security: [{ BearerAuth: [] }, { ApiKey: [] }]
+      parameters:
+        - { name: operationId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Per-group progress and suggestion attempt IDs
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CategoryAssistanceHistoricalProgress" }
+        "400":
+          description: Invalid operation ID
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "401": { description: Authentication required }
+        "404":
+          description: Request unavailable to this actor
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
   /api/category-assistance/settings:
     get:
       tags: [CategoryAssistance]
@@ -9395,13 +9473,56 @@ components:
     CategoryAssistanceStatusResponse:
       type: object
       required:
-        [capability, consentEnabled, suggestionsAvailable, provider, models]
+        [capability, consentEnabled, suggestionsAvailable, provider, models, dailyLimit, pendingLimit]
       properties:
         capability: { type: string }
         consentEnabled: { type: boolean }
         suggestionsAvailable: { type: boolean }
         provider: { type: string }
         models: { type: array, items: { type: string } }
+        dailyLimit: { type: integer, format: int32, minimum: 1, maximum: 100 }
+        pendingLimit: { type: integer, format: int32, minimum: 1, maximum: 20 }
+    CategoryAssistanceHistoricalRequest:
+      type: object
+      required: [operationId, taxonomyRevisionId, groups]
+      properties:
+        operationId: { type: string, format: uuid }
+        taxonomyRevisionId: { type: string, format: uuid }
+        groups:
+          type: array
+          minItems: 1
+          maxItems: 25
+          items: { $ref: "#/components/schemas/HistoricalGroupKey" }
+    CategoryAssistanceHistoricalGroupProgress:
+      type: object
+      required: [group, itemCount, attemptIds, states]
+      properties:
+        group: { $ref: "#/components/schemas/HistoricalGroupKey" }
+        itemCount: { type: integer, format: int32 }
+        attemptIds: { type: array, items: { type: string, format: uuid } }
+        states: { type: array, items: { type: string } }
+    CategoryAssistanceHistoricalProgress:
+      type: object
+      required: [operationId, createdAt, groupCount, itemCount, state, groups]
+      properties:
+        operationId: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+        groupCount: { type: integer, format: int32 }
+        itemCount: { type: integer, format: int32 }
+        state: { type: string, enum: [pending, ready, partial, failed] }
+        groups:
+          type: array
+          items: { $ref: "#/components/schemas/CategoryAssistanceHistoricalGroupProgress" }
+    CategoryAssistanceHistoricalPage:
+      type: object
+      required: [total, offset, limit, items]
+      properties:
+        total: { type: integer, format: int32 }
+        offset: { type: integer, format: int32 }
+        limit: { type: integer, format: int32 }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/CategoryAssistanceHistoricalProgress" }
     CategoryAssistanceSettings:
       type: object
       required: [enabled, provider, model, dailyLimit, pendingLimit, revision]

@@ -177,14 +177,17 @@ public sealed class CategoryAssistanceReadStore(IDbContextFactory<ApplicationDbC
 			}
 		}
 		var marker = await db.CategoryAssistanceObservations.AsNoTracking()
-			.Where(x => x.AttemptId == row.Id && x.ReceiptItemId == row.ItemId)
+				.Where(x => x.AttemptId == row.Id && x.ReceiptItemId == row.ItemId &&
+					(row.RequestScope == Guid.Empty || x.SaveId == row.RequestScope))
 			.OrderByDescending(x => x.RecordedAt).ThenByDescending(x => x.SaveId)
 			.FirstOrDefaultAsync(ct);
-		if (marker == null || marker.Evidence != "post_consent_no_choice_save" ||
-			marker.ItemRevision != row.ItemRevision || marker.ReceiptRevision != row.ReceiptRevision ||
-			marker.AssignmentId != row.AssignmentId || marker.SourceHash != row.SourceHash ||
-			marker.Location != row.Location || marker.Description != row.Description ||
-			(marker.ItemCode ?? "") != row.ItemCodeKey)
+		if (marker == null ||
+			(row.RequestScope == Guid.Empty && marker.Evidence != "post_consent_no_choice_save") ||
+			(row.RequestScope != Guid.Empty && marker.Evidence != "explicit_history_request") ||
+	marker.ItemRevision != row.ItemRevision || marker.ReceiptRevision != row.ReceiptRevision ||
+	marker.AssignmentId != row.AssignmentId || marker.SourceHash != row.SourceHash ||
+	marker.Location != row.Location || marker.Description != row.Description ||
+	(marker.ItemCode ?? "") != row.ItemCodeKey)
 		{
 			return false;
 		}
@@ -194,7 +197,7 @@ public sealed class CategoryAssistanceReadStore(IDbContextFactory<ApplicationDbC
 		if (item == null || receipt == null || item.ReceiptId != receipt.Id || item.DeletedAt != null ||
 			receipt.DeletedAt != null || item.NormalizationRevision != row.ItemRevision ||
 			receipt.NormalizationRevision != row.ReceiptRevision ||
-			!string.IsNullOrWhiteSpace(item.Category) || !string.IsNullOrWhiteSpace(item.Subcategory))
+						marker.Evidence == "post_consent_no_choice_save" && (!string.IsNullOrWhiteSpace(item.Category) || !string.IsNullOrWhiteSpace(item.Subcategory)))
 		{
 			return false;
 		}
@@ -212,9 +215,9 @@ public sealed class CategoryAssistanceReadStore(IDbContextFactory<ApplicationDbC
 								join history in db.Classifications.AsNoTracking() on current.AssignmentId equals history.Id
 								where current.ReceiptItemId == row.ItemId
 								select history).SingleOrDefaultAsync(ct);
-		if (assignment?.Id != row.AssignmentId || assignment != null && !(assignment.CategoryId == null &&
-			(assignment.Source == "legacy_import" || assignment.Source == "legacy_write" &&
-			 assignment.LegacyResolution == "unresolved_path")))
+		if (assignment?.Id != row.AssignmentId || assignment != null && marker.Evidence != "explicit_history_request" && !(assignment.CategoryId == null &&
+				(assignment.Source == "legacy_import" || assignment.Source == "legacy_write" &&
+				 assignment.LegacyResolution == "unresolved_path")))
 		{
 			return false;
 		}
