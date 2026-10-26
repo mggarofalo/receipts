@@ -21,6 +21,14 @@ All operations are scoped to the signed-in actor. A retry with the same operatio
 and preview intent returns persisted progress; a changed intent conflicts. Reasoned
 rejections use `application/problem+json` with a readable `detail`.
 
+Campaign group dispositions (`Later`, `LeaveAsIs`, or reopened) are actor-private
+operational preferences. Each successful disposition request stores an immutable
+operation ledger entry with its exact source, requested state, expected version, and
+original response in the same transaction as the current disposition. An older
+operation ID therefore replays its original result after later updates; reusing the
+ID with a changed request conflicts. The dispositions and their ledger are outside
+the portable taxonomy archive. Neither is classification or verification evidence.
+
 The foundation originally defined contracts and pure policies; persistence and the
 authenticated operation API now implement the workflow described below. The service
 does not run Jev or change purchase assignments until a user applies a captured preview.

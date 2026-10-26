@@ -2334,6 +2334,99 @@ namespace Infrastructure.Migrations
                     b.ToTable("CurrentAssignments", "taxonomy");
                 });
 
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.HistoricalDispositionOperationEntity", b =>
+                {
+                    b.Property<Guid>("OperationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Actor")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .UseCollation("C");
+
+                    b.Property<string>("Disposition")
+                        .HasColumnType("text");
+
+                    b.Property<long>("ExpectedVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ItemCode")
+                        .HasColumnType("text")
+                        .UseCollation("C");
+
+                    b.Property<string>("RawDescription")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .UseCollation("C");
+
+                    b.Property<DateTimeOffset>("ResultUpdatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<long>("ResultVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("SourceHash")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Store")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .UseCollation("C");
+
+                    b.HasKey("OperationId");
+
+                    b.ToTable("HistoricalDispositionOperations", "taxonomy");
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.HistoricalGroupDispositionEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Actor")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .UseCollation("C");
+
+                    b.Property<string>("Disposition")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ItemCode")
+                        .HasColumnType("text")
+                        .UseCollation("C");
+
+                    b.Property<Guid>("OperationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("RawDescription")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .UseCollation("C");
+
+                    b.Property<string>("SourceHash")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Store")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .UseCollation("C");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Actor", "SourceHash")
+                        .IsUnique();
+
+                    b.ToTable("HistoricalGroupDispositions", "taxonomy");
+                });
+
             modelBuilder.Entity("Infrastructure.Entities.Taxonomy.HistoricalOperationEntity", b =>
                 {
                     b.Property<Guid>("Id")

@@ -12,6 +12,103 @@ namespace Infrastructure.Services;
 public sealed class HistoricalReclassificationService(IDbContextFactory<ApplicationDbContext> factory,
 		TimeProvider clock, IOptions<ClassificationOptions> options) : IHistoricalOperationService
 {
+	public async Task<HistoricalOperationPage> ListAsync(string actor, int offset, int limit, CancellationToken ct = default)
+	{
+		if (string.IsNullOrWhiteSpace(actor) || offset < 0 || limit is < 1 or > 25)
+		{ throw new ArgumentException("Actor, nonnegative offset and limit of 1 to 25 are required."); }
+		await using ApplicationDbContext db = await factory.CreateDbContextAsync(ct);
+		List<HistoricalOperationEntity> rows = await db.HistoricalOperations.AsNoTracking()
+				.Where(x => x.Actor == actor).OrderByDescending(x => x.CapturedAt).ThenByDescending(x => x.Id)
+				.Skip(offset).Take(limit + 1).ToListAsync(ct);
+		List<HistoricalOperationSummary> summaries = [];
+		foreach (HistoricalOperationEntity row in rows.Take(limit))
+		{
+			var selections = JsonSerializer.Deserialize<HistoricalGroupSelection[]>(row.SelectionJson) ?? [];
+			summaries.Add(new(row.Id, row.State, row.CapturedAt, row.TaxonomyRevisionId,
+					row.Reason, selections, await ProgressAsync(db, row, ct)));
+		}
+		return new(summaries, rows.Count > limit ? checked(offset + limit) : null);
+	}
+
+	public async Task<HistoricalDispositionRecord> SetDispositionAsync(string actor,
+			HistoricalDispositionRequest request, CancellationToken ct = default)
+	{
+		if (string.IsNullOrWhiteSpace(actor) || request.Group == null ||
+				string.IsNullOrWhiteSpace(request.Group.Store) || string.IsNullOrWhiteSpace(request.Group.RawDescription) ||
+				request.Group.Store.Contains('\0') || request.Group.RawDescription.Contains('\0') ||
+				request.Group.ItemCode?.Contains('\0') == true || request.ExpectedVersion < 0 ||
+				request.OperationId == Guid.Empty ||
+				request.Disposition is not (null or HistoricalGroupDisposition.Later or HistoricalGroupDisposition.LeaveAsIs))
+		{ throw new TaxonomyException(400, "Valid exact source, disposition, version and operation ID are required."); }
+		string hash = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(request.Group)));
+		await using ApplicationDbContext db = await factory.CreateDbContextAsync(ct);
+		await using var transaction = await db.Database.BeginTransactionAsync(ct);
+		// Operation ID precedes source in the lock order, including when the ID is reused across sources.
+		await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({"historical-disposition-operation:" + request.OperationId.ToString("D")}, 0))", ct);
+		HistoricalDispositionOperationEntity? previous = await db.HistoricalDispositionOperations.AsNoTracking()
+				.SingleOrDefaultAsync(x => x.OperationId == request.OperationId, ct);
+		if (previous != null)
+		{
+			if (previous.Actor != actor || previous.SourceHash != hash ||
+					previous.Store != request.Group.Store ||
+					previous.RawDescription != request.Group.RawDescription ||
+					previous.ItemCode != request.Group.ItemCode ||
+					previous.Disposition != request.Disposition ||
+					previous.ExpectedVersion != request.ExpectedVersion)
+			{ throw new TaxonomyException(409, "Operation ID was already used with a different request."); }
+			return new(new(previous.Store, previous.RawDescription, previous.ItemCode),
+					previous.Disposition, previous.ResultVersion, previous.OperationId,
+					previous.ResultUpdatedAt);
+		}
+		// Serialize first insert and updates for this actor/source without taking the classification write gate.
+		await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({actor + hash}, 0))", ct);
+		HistoricalGroupDispositionEntity? row = await db.HistoricalGroupDispositions
+				.SingleOrDefaultAsync(x => x.Actor == actor && x.SourceHash == hash, ct);
+		if (row != null && (row.Store != request.Group.Store ||
+				row.RawDescription != request.Group.RawDescription || row.ItemCode != request.Group.ItemCode))
+		{ throw new TaxonomyException(409, "Source hash collision."); }
+		if ((row?.Version ?? 0) != request.ExpectedVersion)
+		{ throw new TaxonomyException(409, "Disposition changed. Refresh before updating."); }
+		if (row == null)
+		{
+			row = new HistoricalGroupDispositionEntity
+			{
+				Id = Guid.NewGuid(),
+				Actor = actor,
+				SourceHash = hash,
+				Store = request.Group.Store,
+				RawDescription = request.Group.RawDescription,
+				ItemCode = request.Group.ItemCode
+			};
+			db.HistoricalGroupDispositions.Add(row);
+		}
+		row.Disposition = request.Disposition;
+		row.Version++;
+		row.OperationId = request.OperationId;
+		DateTimeOffset now = clock.GetUtcNow();
+		row.UpdatedAt = now.AddTicks(-(now.Ticks % 10));
+		db.HistoricalDispositionOperations.Add(new HistoricalDispositionOperationEntity
+		{
+			OperationId = request.OperationId,
+			Actor = actor,
+			SourceHash = hash,
+			Store = request.Group.Store,
+			RawDescription = request.Group.RawDescription,
+			ItemCode = request.Group.ItemCode,
+			Disposition = request.Disposition,
+			ExpectedVersion = request.ExpectedVersion,
+			ResultVersion = row.Version,
+			ResultUpdatedAt = row.UpdatedAt
+		});
+		await db.SaveChangesAsync(ct);
+		await transaction.CommitAsync(ct);
+		return ToRecord(row);
+	}
+
+	private static HistoricalDispositionRecord ToRecord(HistoricalGroupDispositionEntity row) =>
+			new(new(row.Store, row.RawDescription, row.ItemCode), row.Disposition,
+					row.Version, row.OperationId, row.UpdatedAt);
+
 	public async Task<HistoricalProgress> SavePreviewAsync(HistoricalPreviewRequest request, CancellationToken ct = default)
 	{
 		if (request.OperationId == Guid.Empty || request.TaxonomyRevisionId == Guid.Empty ||

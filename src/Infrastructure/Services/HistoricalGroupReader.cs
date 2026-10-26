@@ -27,6 +27,8 @@ public sealed class HistoricalGroupReader(IDbContextFactory<ApplicationDbContext
 		command.Parameters.AddWithValue("broad", NpgsqlDbType.Boolean, request.MigratedBroadOnly);
 		command.Parameters.AddWithValue("unresolved", NpgsqlDbType.Boolean, request.UnresolvedOnly);
 		command.Parameters.AddWithValue("unassigned", NpgsqlDbType.Boolean, request.UnassignedOnly);
+		command.Parameters.AddWithValue("actor", NpgsqlDbType.Text, request.Actor);
+		command.Parameters.AddWithValue("disposition_filter", NpgsqlDbType.Text, request.DispositionFilter.ToString());
 		List<HistoricalGroupSummary> items = [];
 		int total = 0;
 		await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -39,7 +41,9 @@ public sealed class HistoricalGroupReader(IDbContextFactory<ApplicationDbContext
 				new HistoricalGroupKey(reader.GetString(1), reader.GetString(2), reader.IsDBNull(3) ? null : reader.GetString(3)),
 				reader.GetInt32(4), reader.GetBoolean(5), reader.GetBoolean(6),
 				reader.GetBoolean(7), reader.GetBoolean(8),
-				categories.Select(x => new HistoricalGroupCategory(x.CategoryId, x.Path, x.PurchaseCount)).ToArray()));
+								categories.Select(x => new HistoricalGroupCategory(x.CategoryId, x.Path, x.PurchaseCount)).ToArray(),
+								reader.IsDBNull(10) ? null : Enum.Parse<HistoricalGroupDisposition>(reader.GetString(10)),
+								reader.GetInt64(11)));
 		}
 		return new(items, total, (long)request.Offset + items.Count < total ? request.Offset + items.Count : null);
 	}
@@ -83,9 +87,16 @@ public sealed class HistoricalGroupReader(IDbContextFactory<ApplicationDbContext
                    bool_or(unassigned) AS unassigned
             FROM facts GROUP BY store, description, code
         ), filtered AS MATERIALIZED (
-            SELECT * FROM groups WHERE (NOT @conflicts OR conflict)
+            SELECT g.*, d."Disposition" AS disposition, coalesce(d."Version", 0) AS disposition_version
+            FROM groups g LEFT JOIN taxonomy."HistoricalGroupDispositions" d
+              ON d."Actor" = @actor AND d."Store" = g.store AND d."RawDescription" = g.description
+              AND d."ItemCode" IS NOT DISTINCT FROM g.code
+            WHERE (NOT @conflicts OR conflict)
               AND (NOT @broad OR broad) AND (NOT @unresolved OR unresolved)
               AND (NOT @unassigned OR unassigned)
+              AND (@disposition_filter = 'All' OR
+                   (@disposition_filter = 'Visible' AND d."Disposition" IS NULL) OR
+                   d."Disposition" = @disposition_filter)
         ), page AS (
             SELECT * FROM filtered
             ORDER BY purchase_count DESC, store COLLATE "C", description COLLATE "C",
@@ -103,7 +114,8 @@ public sealed class HistoricalGroupReader(IDbContextFactory<ApplicationDbContext
                          FROM facts f WHERE f.store = p.store AND f.description = p.description
                            AND f.code IS NOT DISTINCT FROM p.code
                          GROUP BY f.category_id) counts
-                   LEFT JOIN paths ON paths."CategoryId" = counts.category_id), '[]') AS categories
+                   LEFT JOIN paths ON paths."CategoryId" = counts.category_id), '[]') AS categories,
+               p.disposition, p.disposition_version
         FROM (SELECT 1) anchor LEFT JOIN page p ON true
         """;
 }

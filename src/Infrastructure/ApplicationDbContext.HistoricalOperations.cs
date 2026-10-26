@@ -7,4 +7,6 @@ public partial class ApplicationDbContext
 {
 	public DbSet<HistoricalOperationEntity> HistoricalOperations => Set<HistoricalOperationEntity>();
 	public DbSet<HistoricalOperationItemEntity> HistoricalOperationItems => Set<HistoricalOperationItemEntity>();
+	public DbSet<HistoricalGroupDispositionEntity> HistoricalGroupDispositions => Set<HistoricalGroupDispositionEntity>();
+	public DbSet<HistoricalDispositionOperationEntity> HistoricalDispositionOperations => Set<HistoricalDispositionOperationEntity>();
 }

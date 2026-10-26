@@ -42,3 +42,33 @@ public sealed class HistoricalOperationItemEntity
 		new(Store, RawDescription, ItemCode), ItemRevision, ReceiptRevision, ExpectedAssignmentId,
 		PreviousCategoryId, TargetCategoryId, ApplyOperationId, UndoOperationId);
 }
+
+// Operational, actor-private review state. It does not represent a classification or verification.
+public sealed class HistoricalGroupDispositionEntity
+{
+	public Guid Id { get; set; }
+	public string Actor { get; set; } = string.Empty;
+	public string SourceHash { get; set; } = string.Empty;
+	public string Store { get; set; } = string.Empty;
+	public string RawDescription { get; set; } = string.Empty;
+	public string? ItemCode { get; set; }
+	public HistoricalGroupDisposition? Disposition { get; set; }
+	public long Version { get; set; }
+	public Guid OperationId { get; set; }
+	public DateTimeOffset UpdatedAt { get; set; }
+}
+
+// Durable idempotence for operational, actor-private review state; excluded from portable taxonomy.
+public sealed class HistoricalDispositionOperationEntity
+{
+	public Guid OperationId { get; set; }
+	public string Actor { get; set; } = string.Empty;
+	public string SourceHash { get; set; } = string.Empty;
+	public string Store { get; set; } = string.Empty;
+	public string RawDescription { get; set; } = string.Empty;
+	public string? ItemCode { get; set; }
+	public HistoricalGroupDisposition? Disposition { get; set; }
+	public long ExpectedVersion { get; set; }
+	public long ResultVersion { get; set; }
+	public DateTimeOffset ResultUpdatedAt { get; set; }
+}
