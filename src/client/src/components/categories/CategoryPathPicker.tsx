@@ -1,5 +1,5 @@
 import { forwardRef, useMemo, useState, type ComponentProps } from "react";
-import { Check, ChevronsUpDown } from "lucide-react";
+import { Check, ChevronsUpDown, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -20,6 +20,7 @@ import {
   type CategoryRevision,
 } from "@/lib/category-paths";
 import { cn } from "@/lib/utils";
+import { CategoryCreation } from "./CategoryCreation";
 
 interface CategoryPathPickerProps extends Omit<
   ComponentProps<"button">,
@@ -30,9 +31,9 @@ interface CategoryPathPickerProps extends Omit<
   onValueChange: (choice: CategoryChoice) => void;
   loading?: boolean;
   error?: boolean;
+  canCreate?: boolean;
 }
 
-/** Presentation-only: parents own loading, retries, creation and persistence. */
 export const CategoryPathPicker = forwardRef<
   HTMLButtonElement,
   CategoryPathPickerProps
@@ -43,6 +44,7 @@ export const CategoryPathPicker = forwardRef<
     onValueChange,
     loading = false,
     error = false,
+    canCreate = false,
     disabled,
     className,
     ...props
@@ -50,6 +52,7 @@ export const CategoryPathPicker = forwardRef<
   ref,
 ) {
   const [open, setOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
   const rows = useMemo(
     () => categoryPaths(revision?.nodes ?? []),
     [revision?.nodes],
@@ -69,7 +72,13 @@ export const CategoryPathPicker = forwardRef<
     setOpen(false);
   }
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setCreating(false);
+      }}
+    >
       <PopoverTrigger asChild>
         <Button
           {...props}
@@ -98,45 +107,77 @@ export const CategoryPathPicker = forwardRef<
         </Button>
       </PopoverTrigger>
       <PopoverContent
-        className="w-[--radix-popover-trigger-width] p-0"
+        className="w-[--radix-popover-trigger-width] min-w-[18rem] p-0"
         align="start"
         aria-describedby={undefined}
       >
-        <Command>
-          <CommandInput placeholder="Search category paths…" />
-          <CommandList>
-            <CommandEmpty>No categories found.</CommandEmpty>
-            <CommandGroup>
-              <CommandItem value="unclassified" onSelect={() => select(null)}>
-                <Check
-                  className={cn(
-                    "mr-2 h-4 w-4",
-                    value?.categoryId === null ? "opacity-100" : "opacity-0",
-                  )}
-                />
-                Unclassified
-              </CommandItem>
-              {rows.map((row) => (
-                <CommandItem
-                  key={row.node.id}
-                  value={row.node.id}
-                  keywords={[row.label]}
-                  onSelect={() => select(row.node.id)}
-                >
+        {!creating && (
+          <Command>
+            <CommandInput placeholder="Search category paths…" />
+            <CommandList>
+              <CommandEmpty>No categories found.</CommandEmpty>
+              <CommandGroup>
+                <CommandItem value="unclassified" onSelect={() => select(null)}>
                   <Check
                     className={cn(
                       "mr-2 h-4 w-4",
-                      value?.categoryId === row.node.id
-                        ? "opacity-100"
-                        : "opacity-0",
+                      value?.categoryId === null ? "opacity-100" : "opacity-0",
                     )}
                   />
-                  <span>{row.label}</span>
+                  Unclassified
                 </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
+                {rows.map((row) => (
+                  <CommandItem
+                    key={row.node.id}
+                    value={row.node.id}
+                    keywords={[row.label]}
+                    onSelect={() => select(row.node.id)}
+                  >
+                    <Check
+                      className={cn(
+                        "mr-2 h-4 w-4",
+                        value?.categoryId === row.node.id
+                          ? "opacity-100"
+                          : "opacity-0",
+                      )}
+                    />
+                    <span>{row.label}</span>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        )}
+        {canCreate &&
+          revision &&
+          (creating ? (
+            <CategoryCreation
+              revision={revision}
+              suggestedParentId={
+                rows.some((row) => row.node.id === value?.categoryId)
+                  ? value!.categoryId
+                  : null
+              }
+              onCreated={(choice) => {
+                onValueChange(choice);
+                setCreating(false);
+                setOpen(false);
+              }}
+              onCancel={() => setCreating(false)}
+            />
+          ) : (
+            <div className="border-t p-1">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start"
+                onClick={() => setCreating(true)}
+              >
+                <Plus className="mr-2 h-4 w-4" /> Create category
+              </Button>
+            </div>
+          ))}
       </PopoverContent>
     </Popover>
   );

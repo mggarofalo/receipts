@@ -1,10 +1,14 @@
 import "@/test/setup-combobox-polyfills";
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createRef } from "react";
-import { CategoryPathPicker } from "./CategoryPathPicker";
 import type { CategoryRevision } from "@/lib/category-paths";
+import { renderWithQueryClient } from "@/test/test-utils";
+import mockClient, { resetMockClient } from "@/test/mock-api-client";
+import { CategoryPathPicker } from "./CategoryPathPicker";
+
+vi.mock("@/lib/api-client", () => ({ default: mockClient }));
 
 const revision: CategoryRevision = {
   id: "revision",
@@ -23,6 +27,7 @@ const revision: CategoryRevision = {
 };
 
 describe("CategoryPathPicker", () => {
+  beforeEach(() => resetMockClient());
   it("searches full paths and returns stable category and revision IDs", async () => {
     const user = userEvent.setup();
     const onValueChange = vi.fn();
@@ -114,5 +119,234 @@ describe("CategoryPathPicker", () => {
       "Categories unavailable",
     );
     expect(screen.getByRole("combobox")).toBeDisabled();
+  });
+
+  it("creates beneath the chosen stable parent, selects the returned path, and keeps draft fields", async () => {
+    const user = userEvent.setup();
+    const onValueChange = vi.fn();
+    mockClient.POST.mockImplementation(async (_path, { body }) => ({
+      data: {
+        ...revision,
+        id: "revision-2",
+        nodes: [
+          ...revision.nodes,
+          {
+            id: body.changes[0].categoryId,
+            parentId: "fruit",
+            name: "Berries",
+            archived: false,
+          },
+        ],
+      },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    }));
+    renderWithQueryClient(
+      <div>
+        <input aria-label="Item description" defaultValue="Fresh berries" />
+        <CategoryPathPicker
+          revision={revision}
+          value={{
+            categoryId: "fruit",
+            taxonomyRevisionId: revision.id,
+            path: revision.nodes.slice(0, 2),
+          }}
+          onValueChange={onValueChange}
+          canCreate
+        />
+      </div>,
+    );
+    await user.click(screen.getByRole("combobox"));
+    await user.click(screen.getByRole("button", { name: "Create category" }));
+    expect(screen.getByRole("combobox", { name: "Parent" })).toHaveValue(
+      "fruit",
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "New category" }),
+      "Berries",
+    );
+    await user.click(screen.getByRole("button", { name: "Create and select" }));
+    const createdId =
+      mockClient.POST.mock.calls[0][1].body.changes[0].categoryId;
+    await waitFor(() =>
+      expect(onValueChange).toHaveBeenCalledWith({
+        categoryId: createdId,
+        taxonomyRevisionId: "revision-2",
+        path: [
+          revision.nodes[0],
+          revision.nodes[1],
+          {
+            id: createdId,
+            parentId: "fruit",
+            name: "Berries",
+            archived: false,
+          },
+        ],
+      }),
+    );
+    expect(mockClient.POST.mock.calls[0][1].body.changes[0]).toMatchObject({
+      kind: "create",
+      parentId: "fruit",
+      name: "Berries",
+    });
+    expect(
+      screen.getByRole("textbox", { name: "Item description" }),
+    ).toHaveValue("Fresh berries");
+  });
+
+  it("refreshes after a revision conflict and requires review before a fresh operation", async () => {
+    const user = userEvent.setup();
+    const onValueChange = vi.fn();
+    const refreshed = {
+      ...revision,
+      id: "revision-2",
+      nodes: revision.nodes.map((node) =>
+        node.id === "fruit" ? { ...node, archived: true } : node,
+      ),
+    };
+    mockClient.POST.mockResolvedValueOnce({
+      data: undefined,
+      error: { status: 409, detail: "Revision changed" },
+      response: new Response(null, { status: 409 }),
+    }).mockImplementationOnce(async (_path, { body }) => ({
+      data: {
+        ...refreshed,
+        id: "revision-3",
+        nodes: [
+          ...revision.nodes,
+          {
+            id: body.changes[0].categoryId,
+            name: "Household",
+            archived: false,
+          },
+        ],
+      },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    }));
+    mockClient.GET.mockResolvedValue({
+      data: refreshed,
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
+    renderWithQueryClient(
+      <CategoryPathPicker
+        revision={revision}
+        value={{
+          categoryId: "fruit",
+          taxonomyRevisionId: revision.id,
+          path: revision.nodes.slice(0, 2),
+        }}
+        canCreate
+        onValueChange={onValueChange}
+      />,
+    );
+    await user.click(screen.getByRole("combobox"));
+    await user.click(screen.getByRole("button", { name: "Create category" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "New category" }),
+      "Household",
+    );
+    await user.click(screen.getByRole("button", { name: "Create and select" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Revision changed",
+    );
+    expect(
+      screen.getByRole("button", { name: "Retry creation" }),
+    ).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Refresh tree" }));
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Review the parent",
+    );
+    expect(screen.getByRole("textbox", { name: "New category" })).toHaveValue(
+      "Household",
+    );
+    expect(screen.getByText("Choose an active parent.")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Create and select" }),
+    ).toBeDisabled();
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Parent" }),
+      "",
+    );
+    await user.click(screen.getByRole("button", { name: "Create and select" }));
+    await waitFor(() =>
+      expect(onValueChange).toHaveBeenCalledWith(
+        expect.objectContaining({
+          categoryId:
+            mockClient.POST.mock.calls[1][1].body.changes[0].categoryId,
+          taxonomyRevisionId: "revision-3",
+        }),
+      ),
+    );
+    const first = mockClient.POST.mock.calls[0][1].body;
+    const second = mockClient.POST.mock.calls[1][1].body;
+    expect(second.expectedRevisionId).toBe("revision-2");
+    expect(second.operationId).not.toBe(first.operationId);
+    expect(second.changes[0].parentId).toBeNull();
+  });
+
+  it("shows create errors inline and retries with the same operation", async () => {
+    const user = userEvent.setup();
+    const onValueChange = vi.fn();
+    mockClient.POST.mockResolvedValueOnce({
+      data: undefined,
+      error: { status: 503, detail: "Temporarily unavailable" },
+      response: new Response(null, { status: 503 }),
+    }).mockImplementationOnce(async (_path, { body }) => ({
+      data: {
+        ...revision,
+        id: "revision-2",
+        nodes: [
+          ...revision.nodes,
+          { id: body.changes[0].categoryId, name: "Other", archived: false },
+        ],
+      },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    }));
+    renderWithQueryClient(
+      <CategoryPathPicker
+        revision={revision}
+        canCreate
+        onValueChange={onValueChange}
+      />,
+    );
+    await user.click(screen.getByRole("combobox"));
+    await user.click(screen.getByRole("button", { name: "Create category" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "New category" }),
+      "Other",
+    );
+    await user.click(screen.getByRole("button", { name: "Create and select" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Temporarily unavailable",
+    );
+    await user.click(screen.getByRole("button", { name: "Retry creation" }));
+    await waitFor(() => expect(onValueChange).toHaveBeenCalled());
+    expect(mockClient.POST.mock.calls[1][1].body).toEqual(
+      mockClient.POST.mock.calls[0][1].body,
+    );
+  });
+
+  it("keeps creation hidden when the caller has no Admin permission", async () => {
+    const user = userEvent.setup();
+    render(
+      <CategoryPathPicker
+        revision={revision}
+        onValueChange={vi.fn()}
+        canCreate={false}
+      />,
+    );
+    await user.click(screen.getByRole("combobox"));
+    expect(
+      screen.queryByRole("button", { name: "Create category" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "Unclassified" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "Food / Fruit" }),
+    ).toBeInTheDocument();
   });
 });

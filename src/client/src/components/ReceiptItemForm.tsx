@@ -1,5 +1,6 @@
 import { CategoryPathPicker } from "@/components/categories/CategoryPathPicker";
 import { useCategoryTaxonomy } from "@/hooks/useCategoryTaxonomy";
+import { usePermission } from "@/hooks/usePermission";
 import {
   categoryLegacyLabels,
   classificationChange,
@@ -127,6 +128,7 @@ export function ReceiptItemForm({
     useFieldHistory(itemCodeHistory);
 
   const taxonomy = useCategoryTaxonomy();
+  const { isAdmin } = usePermission();
   const [initialClassification] = useState(currentClassification);
   const [categoryChoice, setCategoryChoice] = useState<
     CategoryChoice | undefined
@@ -689,6 +691,7 @@ export function ReceiptItemForm({
                     onBlur={field.onBlur}
                     name={field.name}
                     revision={taxonomy.data}
+                    canCreate={isAdmin()}
                     value={categoryChoice}
                     loading={taxonomy.isLoading}
                     error={taxonomy.isError}
