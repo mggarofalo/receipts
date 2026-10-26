@@ -73,7 +73,7 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 		IQueryable<ReceiptItemEntity> query = context.ReceiptItems
 			.IgnoreAutoIncludes()
 			.AsNoTracking();
-		query = ApplyFilters(query, q, normalizedDescriptionId);
+		query = ApplyFilters(context, query, q, normalizedDescriptionId);
 		List<ReceiptItemEntity> items = await query
 			.ApplySort(sort, AllowedSortColumns, e => e.Description, e => e.Id)
 			.Skip(offset)
@@ -146,9 +146,10 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 		};
 
 	private static IQueryable<ReceiptItemEntity> ApplyFilters(
-		IQueryable<ReceiptItemEntity> query,
-		string? q,
-		Guid? normalizedDescriptionId)
+			ApplicationDbContext context,
+	IQueryable<ReceiptItemEntity> query,
+	string? q,
+	Guid? normalizedDescriptionId)
 	{
 		if (normalizedDescriptionId.HasValue)
 		{
@@ -157,10 +158,11 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 			query = query.Where(ri => ri.NormalizedDescriptionId == normalizedDescriptionId.Value);
 		}
 
-		return ApplySearchFilter(query, q);
+		return ApplySearchFilter(context, query, q);
 	}
 
-	private static IQueryable<ReceiptItemEntity> ApplySearchFilter(IQueryable<ReceiptItemEntity> query, string? q)
+	private static IQueryable<ReceiptItemEntity> ApplySearchFilter(
+			ApplicationDbContext context, IQueryable<ReceiptItemEntity> query, string? q)
 	{
 		if (string.IsNullOrWhiteSpace(q))
 		{
@@ -168,11 +170,37 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 		}
 
 		string pattern = "%" + q.Trim().Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+		// Walk descendants of matching nodes in each recorded revision. The assignment's
+		// leaf is stable across later renames and moves; the current taxonomy is not.
+		// UNION (rather than UNION ALL) also bounds malformed cycles in historical data.
+		IQueryable<Guid> recordedMatches = context.Database.SqlQuery<Guid>($"""
+            WITH RECURSIVE matching_nodes AS (
+                SELECT "RevisionId", "CategoryId"
+                FROM taxonomy."Nodes"
+                WHERE "Name" ILIKE {pattern} ESCAPE '\'
+                UNION
+                SELECT child."RevisionId", child."CategoryId"
+                FROM taxonomy."Nodes" AS child
+                JOIN matching_nodes AS parent
+                  ON child."RevisionId" = parent."RevisionId"
+                 AND child."ParentId" = parent."CategoryId"
+            )
+            SELECT DISTINCT current_assignment."ReceiptItemId" AS "Value"
+            FROM taxonomy."CurrentAssignments" AS current_assignment
+            JOIN taxonomy."Assignments" AS assignment
+              ON assignment."Id" = current_assignment."AssignmentId"
+             AND assignment."ReceiptItemId" = current_assignment."ReceiptItemId"
+            JOIN matching_nodes AS node
+              ON node."RevisionId" = assignment."TaxonomyRevisionId"
+             AND node."CategoryId" = assignment."CategoryId"
+            """);
 		return query.Where(ri =>
 			EF.Functions.ILike(ri.Description, pattern, @"\")
 			|| (ri.ReceiptItemCode != null && EF.Functions.ILike(ri.ReceiptItemCode, pattern, @"\"))
-			|| EF.Functions.ILike(ri.Category, pattern, @"\")
-			|| (ri.Subcategory != null && EF.Functions.ILike(ri.Subcategory, pattern, @"\")));
+						|| recordedMatches.Contains(ri.Id)
+						|| (!context.CurrentClassifications.Any(current => current.ReceiptItemId == ri.Id)
+							&& (EF.Functions.ILike(ri.Category, pattern, @"\")
+								|| (ri.Subcategory != null && EF.Functions.ILike(ri.Subcategory, pattern, @"\")))));
 	}
 
 	public async Task<List<ReceiptItemEntity>> GetDeletedAsync(int offset, int limit, SortParams sort, CancellationToken cancellationToken)
@@ -435,7 +463,7 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		IQueryable<ReceiptItemEntity> query = context.ReceiptItems.IgnoreAutoIncludes().AsNoTracking();
-		query = ApplyFilters(query, q, normalizedDescriptionId);
+		query = ApplyFilters(context, query, q, normalizedDescriptionId);
 		return await query.CountAsync(cancellationToken);
 	}
 
