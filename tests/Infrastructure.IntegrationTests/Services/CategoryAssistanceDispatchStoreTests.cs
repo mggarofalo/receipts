@@ -25,11 +25,16 @@ namespace Infrastructure.IntegrationTests.Services;
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public sealed class CategoryAssistanceDispatchStoreTests(PostgresFixture fixture)
+public sealed class CategoryAssistanceDispatchStoreTests(PostgresFixture server)
 {
+	private PostgresFixture fixture = server;
+
 	[Fact]
 	public async Task WorkerSendsOneBoundedRequestFromDurableConsentAndPersistsSuggestion()
 	{
+		// Keep the transport boundary case independent of categories accumulated by other tests.
+		await using var isolated = await server.CreateIsolatedAsync();
+		fixture = isolated;
 		var seed = await SeedAsync("worker acceptance " + Guid.NewGuid());
 		try
 		{
