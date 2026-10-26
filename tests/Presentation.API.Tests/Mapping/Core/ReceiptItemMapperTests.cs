@@ -10,6 +10,33 @@ public class ReceiptItemMapperTests
 {
 	private readonly ReceiptItemMapper _mapper = new();
 
+	[Theory]
+	[InlineData(false)]
+	[InlineData(true)]
+	public void ToResponse_CurrentClassification_PreservesPinnedIdentityAndPath(bool unclassified)
+	{
+		ReceiptItem item = new(Guid.NewGuid(), null, "Item", 1, new Money(1, Currency.USD), new Money(1, Currency.USD), "Legacy category", "Legacy subcategory");
+		Guid assignment = Guid.NewGuid(), revision = Guid.NewGuid(), category = Guid.NewGuid();
+		item.CurrentClassification = new(assignment, unclassified ? null : category, revision,
+			unclassified ? [] : [new(category, null, "Recorded name", "Recorded definition", true)]);
+		ReceiptItemResponse actual = _mapper.ToResponse(item);
+		Assert.NotNull(actual.CurrentClassification);
+		Assert.Equal(assignment, actual.CurrentClassification.AssignmentId);
+		Assert.Equal(revision, actual.CurrentClassification.TaxonomyRevisionId);
+		Assert.Equal(unclassified ? null : (Guid?)category, actual.CurrentClassification.CategoryId);
+		Assert.Equal(unclassified ? 0 : 1, actual.CurrentClassification.RecordedPath.Count);
+		if (!unclassified) { Assert.Equal("Recorded name", actual.CurrentClassification.RecordedPath.Single().Name); Assert.True(actual.CurrentClassification.RecordedPath.Single().Archived); }
+		Assert.Equal("Legacy category", actual.Category);
+		Assert.Equal("Legacy subcategory", actual.Subcategory);
+	}
+
+	[Fact]
+	public void ToResponse_NoClassification_ReturnsNullProjection()
+	{
+		ReceiptItem item = new(Guid.NewGuid(), null, "Item", 1, new Money(1, Currency.USD), new Money(1, Currency.USD), "Legacy", null);
+		Assert.Null(_mapper.ToResponse(item).CurrentClassification);
+	}
+
 	[Fact]
 	public void ToDomain_FromCreateRequest_MapsAllPropertiesWithEmptyId()
 	{

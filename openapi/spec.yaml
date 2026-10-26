@@ -10548,10 +10548,28 @@ components:
         subcategory:
           type: ["string", "null"]
 
+    CurrentClassificationResponse:
+      type: object
+      description: Current assignment pinned to its recorded taxonomy revision.
+      required: [assignmentId, taxonomyRevisionId, recordedPath]
+      properties:
+        assignmentId: {type: string, format: uuid}
+        categoryId: {type: [string, "null"], format: uuid}
+        taxonomyRevisionId: {type: string, format: uuid}
+        recordedPath:
+          type: array
+          description: Root-to-leaf path in the recorded revision, unaffected by later renames, moves, or archives. Empty for unclassified assignments.
+          items: {$ref: '#/components/schemas/TaxonomyNodeResponse'}
+
     ReceiptItemResponse:
       type: object
       required: [id, receiptId, description, quantity, unitPrice, category]
       properties:
+        currentClassification:
+          description: Null when no assignment exists; an explicit unclassified assignment has a null categoryId and an empty recordedPath. Legacy category and subcategory strings are retained independently.
+          oneOf:
+            - $ref: '#/components/schemas/CurrentClassificationResponse'
+            - type: 'null'
         normalizationRevision:
           type: string
           format: uuid

@@ -4934,7 +4934,20 @@ export interface components {
             category: string;
             subcategory?: string | null;
         };
+        /** @description Current assignment pinned to its recorded taxonomy revision. */
+        CurrentClassificationResponse: {
+            /** Format: uuid */
+            assignmentId: string;
+            /** Format: uuid */
+            categoryId?: string | null;
+            /** Format: uuid */
+            taxonomyRevisionId: string;
+            /** @description Root-to-leaf path in the recorded revision, unaffected by later renames, moves, or archives. Empty for unclassified assignments. */
+            recordedPath: components["schemas"]["TaxonomyNodeResponse"][];
+        };
         ReceiptItemResponse: {
+            /** @description Null when no assignment exists; an explicit unclassified assignment has a null categoryId and an empty recordedPath. Legacy category and subcategory strings are retained independently. */
+            currentClassification?: components["schemas"]["CurrentClassificationResponse"] | null;
             /** Format: uuid */
             normalizationRevision?: string;
             normalizationReviewState?: components["schemas"]["NormalizationReviewState"];

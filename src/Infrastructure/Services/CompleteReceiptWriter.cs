@@ -56,6 +56,7 @@ public class CompleteReceiptWriter(
 				var savedItems = await context.ReceiptItems.Where(value => value.ReceiptId == stored.Id).ToListAsync(cancellationToken);
 				var savedTransactions = await context.Transactions.Where(value => value.ReceiptId == stored.Id).ToListAsync(cancellationToken);
 				var savedAdjustments = await context.Adjustments.Where(value => value.ReceiptId == stored.Id).ToListAsync(cancellationToken);
+				await CurrentClassificationReader.PopulateAsync(context, savedItems, cancellationToken);
 				return new(receiptMapper.ToDomain(stored), savedTransactions.Select(transactionMapper.ToDomain).ToList(), savedItems.Select(receiptItemMapper.ToDomain).ToList(), savedAdjustments.Select(adjustmentMapper.ToDomain).ToList());
 			}
 		}
@@ -110,6 +111,7 @@ public class CompleteReceiptWriter(
 		await context.Cards.IgnoreAutoIncludes().Where(card => cardIds.Contains(card.Id)).LoadAsync(cancellationToken);
 		await context.SaveChangesAsync(cancellationToken);
 		await ClassificationService.ApplyAggregateAsync(context, itemEntities, classificationOptions?.Value.WritesEnabled == true, cancellationToken);
+		await CurrentClassificationReader.PopulateAsync(context, itemEntities, cancellationToken);
 		if (transaction is not null) { await transaction.CommitAsync(cancellationToken); }
 
 

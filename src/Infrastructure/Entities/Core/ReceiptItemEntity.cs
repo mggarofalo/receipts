@@ -8,6 +8,8 @@ namespace Infrastructure.Entities.Core;
 public class ReceiptItemEntity : ISoftDeletable, IOwnedBy<ReceiptEntity>
 {
 	public Guid Id { get; set; }
+	[NotMapped]
+	public Domain.Taxonomy.CurrentClassification? CurrentClassification { get; set; }
 	public Guid NormalizationRevision { get; set; }
 	[NotMapped]
 	public Domain.Taxonomy.ClassificationIntent? Classification { get; set; }
