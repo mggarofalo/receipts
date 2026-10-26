@@ -13,12 +13,20 @@ vi.mock("@/hooks/useReceipts", () => ({
 }));
 
 vi.mock("@/hooks/useReceiptItems", () => ({
-  useDeletedReceiptItems: vi.fn(() => ({ data: [], total: 0, isLoading: false })),
+  useDeletedReceiptItems: vi.fn(() => ({
+    data: [],
+    total: 0,
+    isLoading: false,
+  })),
   useRestoreReceiptItem: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
 }));
 
 vi.mock("@/hooks/useTransactions", () => ({
-  useDeletedTransactions: vi.fn(() => ({ data: [], total: 0, isLoading: false })),
+  useDeletedTransactions: vi.fn(() => ({
+    data: [],
+    total: 0,
+    isLoading: false,
+  })),
   useRestoreTransaction: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
 }));
 
@@ -28,12 +36,20 @@ vi.mock("@/hooks/useCategories", () => ({
 }));
 
 vi.mock("@/hooks/useSubcategories", () => ({
-  useDeletedSubcategories: vi.fn(() => ({ data: [], total: 0, isLoading: false })),
+  useDeletedSubcategories: vi.fn(() => ({
+    data: [],
+    total: 0,
+    isLoading: false,
+  })),
   useRestoreSubcategory: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
 }));
 
 vi.mock("@/hooks/useItemTemplates", () => ({
-  useDeletedItemTemplates: vi.fn(() => ({ data: [], total: 0, isLoading: false })),
+  useDeletedItemTemplates: vi.fn(() => ({
+    data: [],
+    total: 0,
+    isLoading: false,
+  })),
   useRestoreItemTemplate: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
 }));
 
@@ -47,19 +63,30 @@ vi.mock("@/hooks/useListKeyboardNav", () => ({
     focusedIndex: -1,
     setFocusedIndex: vi.fn(),
     tableRef: { current: null },
-    containerProps: { role: "grid" as const, tabIndex: 0, "aria-label": "list", "aria-activedescendant": undefined },
-    getRowProps: (id: string) => ({ id: `list-row-${id}`, role: "row" as const }),
+    containerProps: {
+      role: "grid" as const,
+      tabIndex: 0,
+      "aria-label": "list",
+      "aria-activedescendant": undefined,
+    },
+    getRowProps: (id: string) => ({
+      id: `list-row-${id}`,
+      role: "row" as const,
+    }),
   })),
 }));
 
 describe("RecycleBin", () => {
   beforeEach(async () => {
-    const { useDeletedReceipts, useRestoreReceipt } = await import("@/hooks/useReceipts");
-    vi.mocked(useDeletedReceipts).mockReturnValue(mockQueryResult({
-      data: [],
-      total: 0,
-      isLoading: false,
-    }));
+    const { useDeletedReceipts, useRestoreReceipt } =
+      await import("@/hooks/useReceipts");
+    vi.mocked(useDeletedReceipts).mockReturnValue(
+      mockQueryResult({
+        data: [],
+        total: 0,
+        isLoading: false,
+      }),
+    );
     vi.mocked(useRestoreReceipt).mockReturnValue(mockMutationResult());
   });
 
@@ -73,20 +100,22 @@ describe("RecycleBin", () => {
 
   it("renders loading skeleton when data is loading", async () => {
     const { useDeletedReceipts } = await import("@/hooks/useReceipts");
-    vi.mocked(useDeletedReceipts).mockReturnValue(mockQueryResult({
-      data: undefined,
-      isLoading: true,
-    }));
+    vi.mocked(useDeletedReceipts).mockReturnValue(
+      mockQueryResult({
+        data: undefined,
+        isLoading: true,
+      }),
+    );
 
     const { container } = renderWithProviders(<RecycleBin />);
-    expect(container.querySelector("[data-slot='skeleton']")).toBeInTheDocument();
+    expect(
+      container.querySelector("[data-slot='skeleton']"),
+    ).toBeInTheDocument();
   });
 
   it("renders the All tab", () => {
     renderWithProviders(<RecycleBin />);
-    expect(
-      screen.getByRole("tab", { name: /all/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /all/i })).toBeInTheDocument();
   });
 
   it("renders the Empty Trash button", () => {
@@ -98,25 +127,28 @@ describe("RecycleBin", () => {
 
   it("renders empty state when no deleted items exist", () => {
     renderWithProviders(<RecycleBin />);
-    expect(
-      screen.getByText(/no deleted items found/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/no deleted items found/i)).toBeInTheDocument();
   });
 
   it("renders deleted items in the table when data exists", async () => {
     const { useDeletedReceipts } = await import("@/hooks/useReceipts");
-    vi.mocked(useDeletedReceipts).mockReturnValue(mockQueryResult({
-      data: [{ id: "r1", location: "Store", date: "2026-01-01" }],
-      total: 1,
-      isLoading: false,
-    }));
+    vi.mocked(useDeletedReceipts).mockReturnValue(
+      mockQueryResult({
+        data: [{ id: "r1", location: "Store", date: "2026-01-01" }],
+        total: 1,
+        isLoading: false,
+      }),
+    );
 
-    const { useDeletedItemTemplates } = await import("@/hooks/useItemTemplates");
-    vi.mocked(useDeletedItemTemplates).mockReturnValue(mockQueryResult({
-      data: [{ id: "it1", name: "Deleted Template" }],
-      total: 1,
-      isLoading: false,
-    }));
+    const { useDeletedItemTemplates } =
+      await import("@/hooks/useItemTemplates");
+    vi.mocked(useDeletedItemTemplates).mockReturnValue(
+      mockQueryResult({
+        data: [{ id: "it1", name: "Deleted Template" }],
+        total: 1,
+        isLoading: false,
+      }),
+    );
 
     renderWithProviders(<RecycleBin />);
     expect(screen.getByText("Receipt")).toBeInTheDocument();
@@ -127,11 +159,13 @@ describe("RecycleBin", () => {
 
   it("renders entity type tabs when deleted items exist", async () => {
     const { useDeletedReceipts } = await import("@/hooks/useReceipts");
-    vi.mocked(useDeletedReceipts).mockReturnValue(mockQueryResult({
-      data: [{ id: "r1", location: "Store", date: "2026-01-01" }],
-      total: 1,
-      isLoading: false,
-    }));
+    vi.mocked(useDeletedReceipts).mockReturnValue(
+      mockQueryResult({
+        data: [{ id: "r1", location: "Store", date: "2026-01-01" }],
+        total: 1,
+        isLoading: false,
+      }),
+    );
 
     renderWithProviders(<RecycleBin />);
     // Should have an "All" tab and a "Receipt" tab
@@ -142,13 +176,18 @@ describe("RecycleBin", () => {
   it("calls restoreReceipt.mutate when Restore is clicked on a receipt", async () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const mockMutate = vi.fn();
-    const { useDeletedReceipts, useRestoreReceipt } = await import("@/hooks/useReceipts");
-    vi.mocked(useDeletedReceipts).mockReturnValue(mockQueryResult({
-      data: [{ id: "r1", location: "Store", date: "2026-01-01" }],
-      total: 1,
-      isLoading: false,
-    }));
-    vi.mocked(useRestoreReceipt).mockReturnValue(mockMutationResult({ mutate: mockMutate }));
+    const { useDeletedReceipts, useRestoreReceipt } =
+      await import("@/hooks/useReceipts");
+    vi.mocked(useDeletedReceipts).mockReturnValue(
+      mockQueryResult({
+        data: [{ id: "r1", location: "Store", date: "2026-01-01" }],
+        total: 1,
+        isLoading: false,
+      }),
+    );
+    vi.mocked(useRestoreReceipt).mockReturnValue(
+      mockMutationResult({ mutate: mockMutate }),
+    );
 
     renderWithProviders(<RecycleBin />);
     const restoreButtons = screen.getAllByRole("button", { name: /restore/i });
@@ -160,13 +199,18 @@ describe("RecycleBin", () => {
   it("calls restoreTransaction.mutate when Restore is clicked on a transaction", async () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const mockMutate = vi.fn();
-    const { useDeletedTransactions, useRestoreTransaction } = await import("@/hooks/useTransactions");
-    vi.mocked(useDeletedTransactions).mockReturnValue(mockQueryResult({
-      data: [{ id: "t1", amount: 25.50, date: "2026-01-01" }],
-      total: 1,
-      isLoading: false,
-    }));
-    vi.mocked(useRestoreTransaction).mockReturnValue(mockMutationResult({ mutate: mockMutate }));
+    const { useDeletedTransactions, useRestoreTransaction } =
+      await import("@/hooks/useTransactions");
+    vi.mocked(useDeletedTransactions).mockReturnValue(
+      mockQueryResult({
+        data: [{ id: "t1", amount: 25.5, date: "2026-01-01" }],
+        total: 1,
+        isLoading: false,
+      }),
+    );
+    vi.mocked(useRestoreTransaction).mockReturnValue(
+      mockMutationResult({ mutate: mockMutate }),
+    );
 
     renderWithProviders(<RecycleBin />);
     const restoreButtons = screen.getAllByRole("button", { name: /restore/i });
@@ -178,13 +222,18 @@ describe("RecycleBin", () => {
   it("calls restoreCategory.mutate when Restore is clicked on a category (hoisted mutation map)", async () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const mockMutate = vi.fn();
-    const { useDeletedCategories, useRestoreCategory } = await import("@/hooks/useCategories");
-    vi.mocked(useDeletedCategories).mockReturnValue(mockQueryResult({
-      data: [{ id: "c1", name: "Groceries" }],
-      total: 1,
-      isLoading: false,
-    }));
-    vi.mocked(useRestoreCategory).mockReturnValue(mockMutationResult({ mutate: mockMutate }));
+    const { useDeletedCategories, useRestoreCategory } =
+      await import("@/hooks/useCategories");
+    vi.mocked(useDeletedCategories).mockReturnValue(
+      mockQueryResult({
+        data: [{ id: "c1", name: "Groceries" }],
+        total: 1,
+        isLoading: false,
+      }),
+    );
+    vi.mocked(useRestoreCategory).mockReturnValue(
+      mockMutationResult({ mutate: mockMutate }),
+    );
 
     renderWithProviders(<RecycleBin />);
     // Scope to the category's own row rather than assuming button ordinal
@@ -197,16 +246,55 @@ describe("RecycleBin", () => {
     expect(mockMutate).toHaveBeenCalledWith("c1");
   });
 
+  it("shows both legacy category record types together before global purge", async () => {
+    const { useDeletedCategories } = await import("@/hooks/useCategories");
+    const { useDeletedSubcategories } =
+      await import("@/hooks/useSubcategories");
+    vi.mocked(useDeletedCategories).mockReturnValue(
+      mockQueryResult({
+        data: [{ id: "c1", name: "Food" }],
+        total: 1,
+        isLoading: false,
+      }),
+    );
+    vi.mocked(useDeletedSubcategories).mockReturnValue(
+      mockQueryResult({
+        data: [{ id: "s1", name: "Dairy" }],
+        total: 1,
+        isLoading: false,
+      }),
+    );
+
+    renderWithProviders(<RecycleBin />);
+    expect(
+      screen.getByRole("tab", { name: "Legacy categories (2)" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Food")).toBeInTheDocument();
+    expect(screen.getByText("Dairy")).toBeInTheDocument();
+    expect(screen.getByText("Legacy subcategory")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Empty trash permanently removes them/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("tab", { name: /^Subcategory/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("calls restoreReceiptItem.mutate when Restore is clicked on a receipt item", async () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const mockMutate = vi.fn();
-    const { useDeletedReceiptItems, useRestoreReceiptItem } = await import("@/hooks/useReceiptItems");
-    vi.mocked(useDeletedReceiptItems).mockReturnValue(mockQueryResult({
-      data: [{ id: "ri1", description: "Widget", receiptItemCode: "W-001" }],
-      total: 1,
-      isLoading: false,
-    }));
-    vi.mocked(useRestoreReceiptItem).mockReturnValue(mockMutationResult({ mutate: mockMutate }));
+    const { useDeletedReceiptItems, useRestoreReceiptItem } =
+      await import("@/hooks/useReceiptItems");
+    vi.mocked(useDeletedReceiptItems).mockReturnValue(
+      mockQueryResult({
+        data: [{ id: "ri1", description: "Widget", receiptItemCode: "W-001" }],
+        total: 1,
+        isLoading: false,
+      }),
+    );
+    vi.mocked(useRestoreReceiptItem).mockReturnValue(
+      mockMutationResult({ mutate: mockMutate }),
+    );
 
     renderWithProviders(<RecycleBin />);
     const row = screen.getByText("Widget (W-001)").closest("tr") as HTMLElement;
@@ -217,49 +305,79 @@ describe("RecycleBin", () => {
 
   it("shows the pending state only on the row whose entity type mutation is pending", async () => {
     const { useDeletedReceipts } = await import("@/hooks/useReceipts");
-    const { useDeletedTransactions, useRestoreTransaction } = await import("@/hooks/useTransactions");
-    vi.mocked(useDeletedReceipts).mockReturnValue(mockQueryResult({
-      data: [{ id: "r1", location: "Store", date: "2026-01-01" }],
-      total: 1,
-      isLoading: false,
-    }));
-    vi.mocked(useDeletedTransactions).mockReturnValue(mockQueryResult({
-      data: [{ id: "t1", amount: 10, date: "2026-01-02" }],
-      total: 1,
-      isLoading: false,
-    }));
+    const { useDeletedTransactions, useRestoreTransaction } =
+      await import("@/hooks/useTransactions");
+    vi.mocked(useDeletedReceipts).mockReturnValue(
+      mockQueryResult({
+        data: [{ id: "r1", location: "Store", date: "2026-01-01" }],
+        total: 1,
+        isLoading: false,
+      }),
+    );
+    vi.mocked(useDeletedTransactions).mockReturnValue(
+      mockQueryResult({
+        data: [{ id: "t1", amount: 10, date: "2026-01-02" }],
+        total: 1,
+        isLoading: false,
+      }),
+    );
     // Only the Transaction restore mutation is pending — resolved once in
     // RecycleBin and threaded down via the entityType -> mutation map, so
     // the Receipt row (a different mutation instance) must stay unaffected.
-    vi.mocked(useRestoreTransaction).mockReturnValue(mockMutationResult({ isPending: true }));
+    vi.mocked(useRestoreTransaction).mockReturnValue(
+      mockMutationResult({ isPending: true }),
+    );
 
     renderWithProviders(<RecycleBin />);
 
-    const receiptRow = screen.getByText("Store - 2026-01-01").closest("tr") as HTMLElement;
-    const transactionRow = screen.getByText("$10.00 - 2026-01-02").closest("tr") as HTMLElement;
-    expect(within(transactionRow).getByText("Restoring...")).toBeInTheDocument();
-    expect(within(receiptRow).getByRole("button", { name: /^restore$/i })).toBeInTheDocument();
+    const receiptRow = screen
+      .getByText("Store - 2026-01-01")
+      .closest("tr") as HTMLElement;
+    const transactionRow = screen
+      .getByText("$10.00 - 2026-01-02")
+      .closest("tr") as HTMLElement;
+    expect(
+      within(transactionRow).getByText("Restoring..."),
+    ).toBeInTheDocument();
+    expect(
+      within(receiptRow).getByRole("button", { name: /^restore$/i }),
+    ).toBeInTheDocument();
   });
 
   it("calls purgeTrash.mutate when Empty Trash is confirmed", async () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const mockMutate = vi.fn();
     const { usePurgeTrash } = await import("@/hooks/useTrash");
-    vi.mocked(usePurgeTrash).mockReturnValue(mockMutationResult({ mutate: mockMutate }));
+    vi.mocked(usePurgeTrash).mockReturnValue(
+      mockMutationResult({ mutate: mockMutate }),
+    );
 
     const { useDeletedReceipts } = await import("@/hooks/useReceipts");
-    vi.mocked(useDeletedReceipts).mockReturnValue(mockQueryResult({
-      data: [{ id: "r1", location: "Store", date: "2026-01-01" }],
-      total: 1,
-      isLoading: false,
-    }));
+    vi.mocked(useDeletedReceipts).mockReturnValue(
+      mockQueryResult({
+        data: [{ id: "r1", location: "Store", date: "2026-01-01" }],
+        total: 1,
+        isLoading: false,
+      }),
+    );
 
     renderWithProviders(<RecycleBin />);
     await user.click(screen.getByRole("button", { name: /empty trash/i }));
 
-    expect(screen.getByRole("heading", { name: /empty trash\?/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /empty trash\?/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/items currently listed/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/some may be kept to preserve classification history/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/linked records not shown here may also be deleted/i),
+    ).toBeInTheDocument();
 
-    const confirmButtons = screen.getAllByRole("button", { name: /empty trash/i });
+    const confirmButtons = screen.getAllByRole("button", {
+      name: /empty trash/i,
+    });
     const confirmButton = confirmButtons.find(
       (btn) => btn.closest("[role='alertdialog']") !== null,
     );
@@ -270,11 +388,13 @@ describe("RecycleBin", () => {
 
   it("renders deleted transaction items with amount and date", async () => {
     const { useDeletedTransactions } = await import("@/hooks/useTransactions");
-    vi.mocked(useDeletedTransactions).mockReturnValue(mockQueryResult({
-      data: [{ id: "t1", amount: 42.50, date: "2026-03-15" }],
-      total: 1,
-      isLoading: false,
-    }));
+    vi.mocked(useDeletedTransactions).mockReturnValue(
+      mockQueryResult({
+        data: [{ id: "t1", amount: 42.5, date: "2026-03-15" }],
+        total: 1,
+        isLoading: false,
+      }),
+    );
 
     renderWithProviders(<RecycleBin />);
     expect(screen.getByText("$42.50 - 2026-03-15")).toBeInTheDocument();
@@ -283,11 +403,13 @@ describe("RecycleBin", () => {
 
   it("renders deleted receipt items with receipt item code", async () => {
     const { useDeletedReceiptItems } = await import("@/hooks/useReceiptItems");
-    vi.mocked(useDeletedReceiptItems).mockReturnValue(mockQueryResult({
-      data: [{ id: "ri1", description: "Widget", receiptItemCode: "W-001" }],
-      total: 1,
-      isLoading: false,
-    }));
+    vi.mocked(useDeletedReceiptItems).mockReturnValue(
+      mockQueryResult({
+        data: [{ id: "ri1", description: "Widget", receiptItemCode: "W-001" }],
+        total: 1,
+        isLoading: false,
+      }),
+    );
 
     renderWithProviders(<RecycleBin />);
     expect(screen.getByText("Widget (W-001)")).toBeInTheDocument();
@@ -296,24 +418,31 @@ describe("RecycleBin", () => {
   it("shows filtered items when entity type tab is clicked", async () => {
     const user = (await import("@testing-library/user-event")).default.setup();
     const { useDeletedReceipts } = await import("@/hooks/useReceipts");
-    vi.mocked(useDeletedReceipts).mockReturnValue(mockQueryResult({
-      data: [{ id: "r1", location: "Store", date: "2026-01-01" }],
-      total: 1,
-      isLoading: false,
-    }));
+    vi.mocked(useDeletedReceipts).mockReturnValue(
+      mockQueryResult({
+        data: [{ id: "r1", location: "Store", date: "2026-01-01" }],
+        total: 1,
+        isLoading: false,
+      }),
+    );
 
-    const { useDeletedItemTemplates } = await import("@/hooks/useItemTemplates");
-    vi.mocked(useDeletedItemTemplates).mockReturnValue(mockQueryResult({
-      data: [{ id: "it1", name: "Template" }],
-      total: 1,
-      isLoading: false,
-    }));
+    const { useDeletedItemTemplates } =
+      await import("@/hooks/useItemTemplates");
+    vi.mocked(useDeletedItemTemplates).mockReturnValue(
+      mockQueryResult({
+        data: [{ id: "it1", name: "Template" }],
+        total: 1,
+        isLoading: false,
+      }),
+    );
 
     renderWithProviders(<RecycleBin />);
 
     // Click the Item Template tab (use exact match to avoid ambiguity with Receipt/Receipt Item)
     const tabs = screen.getAllByRole("tab");
-    const templateTab = tabs.find((t) => t.textContent?.includes("Item Template"));
+    const templateTab = tabs.find((t) =>
+      t.textContent?.includes("Item Template"),
+    );
     expect(templateTab).toBeDefined();
     await user.click(templateTab!);
 
@@ -323,11 +452,15 @@ describe("RecycleBin", () => {
 
   it("renders receipt item with null code as N/A", async () => {
     const { useDeletedReceiptItems } = await import("@/hooks/useReceiptItems");
-    vi.mocked(useDeletedReceiptItems).mockReturnValue(mockQueryResult({
-      data: [{ id: "ri1", description: "No Code Item", receiptItemCode: null }],
-      total: 1,
-      isLoading: false,
-    }));
+    vi.mocked(useDeletedReceiptItems).mockReturnValue(
+      mockQueryResult({
+        data: [
+          { id: "ri1", description: "No Code Item", receiptItemCode: null },
+        ],
+        total: 1,
+        isLoading: false,
+      }),
+    );
 
     renderWithProviders(<RecycleBin />);
     expect(screen.getByText("No Code Item (N/A)")).toBeInTheDocument();
@@ -342,16 +475,26 @@ describe("RecycleBin", () => {
       focusedIndex: -1,
       setFocusedIndex: mockSetFocusedIndex,
       tableRef: { current: null },
-      containerProps: { role: "grid" as const, tabIndex: 0, "aria-label": "list", "aria-activedescendant": undefined },
-      getRowProps: (id: string) => ({ id: `list-row-${id}`, role: "row" as const }),
+      containerProps: {
+        role: "grid" as const,
+        tabIndex: 0,
+        "aria-label": "list",
+        "aria-activedescendant": undefined,
+      },
+      getRowProps: (id: string) => ({
+        id: `list-row-${id}`,
+        role: "row" as const,
+      }),
     });
 
     const { useDeletedReceipts } = await import("@/hooks/useReceipts");
-    vi.mocked(useDeletedReceipts).mockReturnValue(mockQueryResult({
-      data: [{ id: "r1", location: "Click Store", date: "2026-01-01" }],
-      total: 1,
-      isLoading: false,
-    }));
+    vi.mocked(useDeletedReceipts).mockReturnValue(
+      mockQueryResult({
+        data: [{ id: "r1", location: "Click Store", date: "2026-01-01" }],
+        total: 1,
+        isLoading: false,
+      }),
+    );
 
     renderWithProviders(<RecycleBin />);
     await user.click(screen.getByText("Click Store - 2026-01-01"));
@@ -366,16 +509,26 @@ describe("RecycleBin", () => {
       focusedIndex: 0,
       setFocusedIndex: vi.fn(),
       tableRef: { current: null },
-      containerProps: { role: "grid" as const, tabIndex: 0, "aria-label": "list", "aria-activedescendant": undefined },
-      getRowProps: (id: string) => ({ id: `list-row-${id}`, role: "row" as const }),
+      containerProps: {
+        role: "grid" as const,
+        tabIndex: 0,
+        "aria-label": "list",
+        "aria-activedescendant": undefined,
+      },
+      getRowProps: (id: string) => ({
+        id: `list-row-${id}`,
+        role: "row" as const,
+      }),
     });
 
     const { useDeletedReceipts } = await import("@/hooks/useReceipts");
-    vi.mocked(useDeletedReceipts).mockReturnValue(mockQueryResult({
-      data: [{ id: "r1", location: "Focused Store", date: "2026-01-01" }],
-      total: 1,
-      isLoading: false,
-    }));
+    vi.mocked(useDeletedReceipts).mockReturnValue(
+      mockQueryResult({
+        data: [{ id: "r1", location: "Focused Store", date: "2026-01-01" }],
+        total: 1,
+        isLoading: false,
+      }),
+    );
 
     renderWithProviders(<RecycleBin />);
     const row = screen.getByText("Focused Store - 2026-01-01").closest("tr");
@@ -384,11 +537,13 @@ describe("RecycleBin", () => {
 
   it("exposes grid role and row id so keyboard focus is announced to assistive tech", async () => {
     const { useDeletedReceipts } = await import("@/hooks/useReceipts");
-    vi.mocked(useDeletedReceipts).mockReturnValue(mockQueryResult({
-      data: [{ id: "r1", location: "Grid Store", date: "2026-01-01" }],
-      total: 1,
-      isLoading: false,
-    }));
+    vi.mocked(useDeletedReceipts).mockReturnValue(
+      mockQueryResult({
+        data: [{ id: "r1", location: "Grid Store", date: "2026-01-01" }],
+        total: 1,
+        isLoading: false,
+      }),
+    );
 
     renderWithProviders(<RecycleBin />);
 
@@ -400,14 +555,18 @@ describe("RecycleBin", () => {
 
   it("shows Emptying state when purge is pending", async () => {
     const { usePurgeTrash } = await import("@/hooks/useTrash");
-    vi.mocked(usePurgeTrash).mockReturnValue(mockMutationResult({ isPending: true }));
+    vi.mocked(usePurgeTrash).mockReturnValue(
+      mockMutationResult({ isPending: true }),
+    );
 
     const { useDeletedReceipts } = await import("@/hooks/useReceipts");
-    vi.mocked(useDeletedReceipts).mockReturnValue(mockQueryResult({
-      data: [{ id: "r1", location: "Store", date: "2026-01-01" }],
-      total: 1,
-      isLoading: false,
-    }));
+    vi.mocked(useDeletedReceipts).mockReturnValue(
+      mockQueryResult({
+        data: [{ id: "r1", location: "Store", date: "2026-01-01" }],
+        total: 1,
+        isLoading: false,
+      }),
+    );
 
     renderWithProviders(<RecycleBin />);
     expect(screen.getByText(/emptying/i)).toBeInTheDocument();
@@ -422,20 +581,24 @@ describe("RecycleBin", () => {
     const { useDeletedReceipts } = await import("@/hooks/useReceipts");
     const { useDeletedReceiptItems } = await import("@/hooks/useReceiptItems");
     const { useDeletedTransactions } = await import("@/hooks/useTransactions");
-    const { useDeletedItemTemplates } = await import("@/hooks/useItemTemplates");
+    const { useDeletedItemTemplates } =
+      await import("@/hooks/useItemTemplates");
     const { useDeletedCategories } = await import("@/hooks/useCategories");
-    const { useDeletedSubcategories } = await import("@/hooks/useSubcategories");
+    const { useDeletedSubcategories } =
+      await import("@/hooks/useSubcategories");
 
     // The receipts query fails; the rest succeed. All must expose refetch since
     // Retry re-runs every deleted-entity query.
-    vi.mocked(useDeletedReceipts).mockReturnValue(mockQueryResult({
-      data: undefined,
-      total: 0,
-      isLoading: false,
-      isError: true,
-      isRefetching: false,
-      refetch,
-    }));
+    vi.mocked(useDeletedReceipts).mockReturnValue(
+      mockQueryResult({
+        data: undefined,
+        total: 0,
+        isLoading: false,
+        isError: true,
+        isRefetching: false,
+        refetch,
+      }),
+    );
     for (const hook of [
       useDeletedReceiptItems,
       useDeletedTransactions,
@@ -467,19 +630,23 @@ describe("RecycleBin", () => {
     const { useDeletedReceipts } = await import("@/hooks/useReceipts");
     const { useDeletedReceiptItems } = await import("@/hooks/useReceiptItems");
     const { useDeletedTransactions } = await import("@/hooks/useTransactions");
-    const { useDeletedItemTemplates } = await import("@/hooks/useItemTemplates");
+    const { useDeletedItemTemplates } =
+      await import("@/hooks/useItemTemplates");
     const { useDeletedCategories } = await import("@/hooks/useCategories");
-    const { useDeletedSubcategories } = await import("@/hooks/useSubcategories");
+    const { useDeletedSubcategories } =
+      await import("@/hooks/useSubcategories");
 
     // Receipts query still holds a cached row but its background refetch errored.
-    vi.mocked(useDeletedReceipts).mockReturnValue(mockQueryResult({
-      data: [{ id: "r1", location: "Store", date: "2026-01-01" }],
-      total: 1,
-      isLoading: false,
-      isError: true,
-      isRefetching: true,
-      refetch: vi.fn(),
-    }));
+    vi.mocked(useDeletedReceipts).mockReturnValue(
+      mockQueryResult({
+        data: [{ id: "r1", location: "Store", date: "2026-01-01" }],
+        total: 1,
+        isLoading: false,
+        isError: true,
+        isRefetching: true,
+        refetch: vi.fn(),
+      }),
+    );
     for (const hook of [
       useDeletedReceiptItems,
       useDeletedTransactions,

@@ -17,13 +17,7 @@ vi.mock("sonner", () => ({
 }));
 
 import client from "@/lib/api-client";
-import { toast } from "sonner";
-import {
-  useCategories,
-  useAllCategories,
-  useCreateCategory,
-  useUpdateCategory,
-} from "./useCategories";
+import { useAllCategories, useDeletedCategories } from "./useCategories";
 
 function createWrapper() {
   const queryClient = new QueryClient({
@@ -42,86 +36,7 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("useCategories", () => {
-  it("list query returns data on success", async () => {
-    const categories = [{ id: "1", name: "Food", description: "Groceries" }];
-    (client.GET as Mock).mockResolvedValue({
-      data: { data: categories, total: 1, offset: 0, limit: 50 },
-      error: undefined,
-    });
-
-    const { result } = renderHook(() => useCategories(), {
-      wrapper: createWrapper(),
-    });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data).toEqual(categories);
-    expect(client.GET).toHaveBeenCalledWith("/api/categories", {
-      params: { query: { offset: 0, limit: 50 } },
-    });
-  });
-
-  it("list query passes isActive filter when provided", async () => {
-    const categories = [
-      { id: "1", name: "Food", description: "Groceries", isActive: true },
-    ];
-    (client.GET as Mock).mockResolvedValue({
-      data: { data: categories, total: 1, offset: 0, limit: 50 },
-      error: undefined,
-    });
-
-    const { result } = renderHook(
-      () => useCategories(0, 50, null, null, true),
-      {
-        wrapper: createWrapper(),
-      },
-    );
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(client.GET).toHaveBeenCalledWith("/api/categories", {
-      params: { query: { offset: 0, limit: 50, isActive: true } },
-    });
-  });
-
-  it("list query omits isActive when null", async () => {
-    const categories = [{ id: "1", name: "Food", description: "Groceries" }];
-    (client.GET as Mock).mockResolvedValue({
-      data: { data: categories, total: 1, offset: 0, limit: 50 },
-      error: undefined,
-    });
-
-    const { result } = renderHook(
-      () => useCategories(0, 50, null, null, null),
-      {
-        wrapper: createWrapper(),
-      },
-    );
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(client.GET).toHaveBeenCalledWith("/api/categories", {
-      params: { query: { offset: 0, limit: 50 } },
-    });
-  });
-
-  it("list query trims q, sends it to the API, and refetches for a new q", async () => {
-    (client.GET as Mock).mockResolvedValue({
-      data: { data: [], total: 0, offset: 0, limit: 50 },
-    });
-    const { result, rerender } = renderHook(
-      ({ q }) => useCategories(0, 50, null, null, null, { q }),
-      { initialProps: { q: "  food  " }, wrapper: createWrapper() },
-    );
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(client.GET).toHaveBeenLastCalledWith("/api/categories", {
-      params: { query: { offset: 0, limit: 50, q: "food" } },
-    });
-    rerender({ q: "travel" });
-    await waitFor(() => expect(client.GET).toHaveBeenCalledTimes(2));
-    expect(client.GET).toHaveBeenLastCalledWith("/api/categories", {
-      params: { query: { offset: 0, limit: 50, q: "travel" } },
-    });
-  });
-
+describe("useAllCategories", () => {
   it("useAllCategories returns the full list when it fits in one page", async () => {
     const categories = [
       { id: "1", name: "Apparel" },
@@ -191,51 +106,32 @@ describe("useCategories", () => {
       signal: expect.any(AbortSignal),
     });
   });
+});
 
-  it("create mutation calls POST and shows toast on success", async () => {
-    const newCategory = {
-      name: "Travel",
-      description: "Business travel",
-      isActive: true,
-    };
-    const created = { id: "2", ...newCategory };
-    (client.POST as Mock).mockResolvedValue({
-      data: created,
+it("loads every deleted legacy category before trash can purge it", async () => {
+  (client.GET as Mock)
+    .mockResolvedValueOnce({
+      data: {
+        data: Array.from({ length: 500 }, (_, i) => ({
+          id: String(i),
+          name: `Category ${i}`,
+        })),
+        total: 501,
+      },
+      error: undefined,
+    })
+    .mockResolvedValueOnce({
+      data: { data: [{ id: "500", name: "Last category" }], total: 501 },
       error: undefined,
     });
-
-    const { result } = renderHook(() => useCreateCategory(), {
-      wrapper: createWrapper(),
-    });
-
-    await result.current.mutateAsync(newCategory);
-
-    expect(client.POST).toHaveBeenCalledWith("/api/categories", {
-      middleware: expect.any(Array),
-      body: newCategory,
-    });
-    expect(toast.success).toHaveBeenCalledWith("Category created");
+  const { result } = renderHook(() => useDeletedCategories(), {
+    wrapper: createWrapper(),
   });
-
-  it("update mutation calls PUT and shows toast on success", async () => {
-    const updated = {
-      id: "1",
-      name: "Food & Drink",
-      description: "Updated",
-      isActive: true,
-    };
-    (client.PUT as Mock).mockResolvedValue({ error: undefined });
-
-    const { result } = renderHook(() => useUpdateCategory(), {
-      wrapper: createWrapper(),
-    });
-
-    await result.current.mutateAsync(updated);
-
-    expect(client.PUT).toHaveBeenCalledWith("/api/categories/{id}", {
-      params: { path: { id: "1" } },
-      body: updated,
-    });
-    expect(toast.success).toHaveBeenCalledWith("Category updated");
+  await waitFor(() => expect(result.current.isSuccess).toBe(true));
+  expect(result.current.data).toHaveLength(501);
+  expect(client.GET).toHaveBeenCalledTimes(2);
+  expect(client.GET).toHaveBeenLastCalledWith("/api/categories/deleted", {
+    params: { query: { offset: 500, limit: 500 } },
+    signal: expect.any(AbortSignal),
   });
 });

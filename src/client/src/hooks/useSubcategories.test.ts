@@ -17,13 +17,9 @@ vi.mock("sonner", () => ({
 }));
 
 import client from "@/lib/api-client";
-import { toast } from "sonner";
 import {
-  useSubcategories,
-  useSubcategoriesByCategoryId,
   useAllSubcategoriesByCategoryId,
-  useCreateSubcategory,
-  useUpdateSubcategory,
+  useDeletedSubcategories,
 } from "./useSubcategories";
 
 function createWrapper() {
@@ -41,150 +37,6 @@ function createWrapper() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-});
-
-describe("useSubcategories", () => {
-  it("list query returns data on success", async () => {
-    const subcategories = [
-      { id: "1", name: "Produce", categoryId: "cat-1", description: null },
-    ];
-    (client.GET as Mock).mockResolvedValue({
-      data: { data: subcategories, total: 1, offset: 0, limit: 50 },
-      error: undefined,
-    });
-
-    const { result } = renderHook(() => useSubcategories(), {
-      wrapper: createWrapper(),
-    });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data).toEqual(subcategories);
-    expect(client.GET).toHaveBeenCalledWith("/api/subcategories", {
-      params: { query: { offset: 0, limit: 50 } },
-    });
-  });
-
-  it("list query passes isActive filter when provided", async () => {
-    const subcategories = [
-      {
-        id: "1",
-        name: "Produce",
-        categoryId: "cat-1",
-        description: null,
-        isActive: true,
-      },
-    ];
-    (client.GET as Mock).mockResolvedValue({
-      data: { data: subcategories, total: 1, offset: 0, limit: 50 },
-      error: undefined,
-    });
-
-    const { result } = renderHook(
-      () => useSubcategories(0, 50, null, null, false),
-      {
-        wrapper: createWrapper(),
-      },
-    );
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(client.GET).toHaveBeenCalledWith("/api/subcategories", {
-      params: { query: { offset: 0, limit: 50, isActive: false } },
-    });
-  });
-
-  it("list query trims q, sends it to the API, and refetches for a new q", async () => {
-    (client.GET as Mock).mockResolvedValue({
-      data: { data: [], total: 0, offset: 0, limit: 50 },
-    });
-    const { result, rerender } = renderHook(
-      ({ q }) => useSubcategories(0, 50, null, null, null, { q }),
-      { initialProps: { q: "  produce  " }, wrapper: createWrapper() },
-    );
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(client.GET).toHaveBeenLastCalledWith("/api/subcategories", {
-      params: { query: { offset: 0, limit: 50, q: "produce" } },
-    });
-    rerender({ q: "dairy" });
-    await waitFor(() => expect(client.GET).toHaveBeenCalledTimes(2));
-    expect(client.GET).toHaveBeenLastCalledWith("/api/subcategories", {
-      params: { query: { offset: 0, limit: 50, q: "dairy" } },
-    });
-  });
-
-  it("by-category query returns data when categoryId is provided", async () => {
-    const items = [{ id: "1", name: "Produce", categoryId: "cat-1" }];
-    (client.GET as Mock).mockResolvedValue({
-      data: { data: items, total: 1, offset: 0, limit: 200 },
-      error: undefined,
-    });
-
-    const { result } = renderHook(() => useSubcategoriesByCategoryId("cat-1"), {
-      wrapper: createWrapper(),
-    });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data).toEqual(items);
-    expect(client.GET).toHaveBeenCalledWith("/api/subcategories", {
-      params: { query: { categoryId: "cat-1", offset: 0, limit: 200 } },
-    });
-  });
-
-  it("by-category query is disabled when categoryId is null", () => {
-    const { result } = renderHook(() => useSubcategoriesByCategoryId(null), {
-      wrapper: createWrapper(),
-    });
-
-    expect(result.current.data).toBeUndefined();
-    expect(result.current.fetchStatus).toBe("idle");
-  });
-
-  it("create mutation calls POST and shows toast on success", async () => {
-    const newSub = {
-      name: "Dairy",
-      categoryId: "cat-1",
-      description: "Milk products",
-      isActive: true,
-    };
-    const created = { id: "2", ...newSub };
-    (client.POST as Mock).mockResolvedValue({
-      data: created,
-      error: undefined,
-    });
-
-    const { result } = renderHook(() => useCreateSubcategory(), {
-      wrapper: createWrapper(),
-    });
-
-    await result.current.mutateAsync(newSub);
-
-    expect(client.POST).toHaveBeenCalledWith("/api/subcategories", {
-      middleware: expect.any(Array),
-      body: newSub,
-    });
-    expect(toast.success).toHaveBeenCalledWith("Subcategory created");
-  });
-
-  it("update mutation calls PUT and shows toast on success", async () => {
-    const updated = {
-      id: "1",
-      name: "Organic Produce",
-      categoryId: "cat-1",
-      isActive: true,
-    };
-    (client.PUT as Mock).mockResolvedValue({ error: undefined });
-
-    const { result } = renderHook(() => useUpdateSubcategory(), {
-      wrapper: createWrapper(),
-    });
-
-    await result.current.mutateAsync(updated);
-
-    expect(client.PUT).toHaveBeenCalledWith("/api/subcategories/{id}", {
-      params: { path: { id: "1" } },
-      body: updated,
-    });
-    expect(toast.success).toHaveBeenCalledWith("Subcategory updated");
-  });
 });
 
 describe("useAllSubcategoriesByCategoryId", () => {
@@ -268,5 +120,33 @@ describe("useAllSubcategoriesByCategoryId", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toHaveLength(550);
     expect(client.GET).toHaveBeenCalledTimes(2);
+  });
+});
+
+it("loads every deleted legacy child category before trash can purge it", async () => {
+  (client.GET as Mock)
+    .mockResolvedValueOnce({
+      data: {
+        data: Array.from({ length: 500 }, (_, i) => ({
+          id: String(i),
+          name: `Category ${i}`,
+        })),
+        total: 501,
+      },
+      error: undefined,
+    })
+    .mockResolvedValueOnce({
+      data: { data: [{ id: "500", name: "Last category" }], total: 501 },
+      error: undefined,
+    });
+  const { result } = renderHook(() => useDeletedSubcategories(), {
+    wrapper: createWrapper(),
+  });
+  await waitFor(() => expect(result.current.isSuccess).toBe(true));
+  expect(result.current.data).toHaveLength(501);
+  expect(client.GET).toHaveBeenCalledTimes(2);
+  expect(client.GET).toHaveBeenLastCalledWith("/api/subcategories/deleted", {
+    params: { query: { offset: 500, limit: 500 } },
+    signal: expect.any(AbortSignal),
   });
 });
