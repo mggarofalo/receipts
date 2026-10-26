@@ -7115,7 +7115,7 @@ paths:
       operationId: GetUncategorizedItemsReport
       tags: [Reports]
       summary: Get uncategorized items report
-      description: Returns all receipt items where the category is "Uncategorized".
+      description: Returns active receipt items whose current classification is missing, unclassified, or unresolved.
       security:
         - BearerAuth: []
         - ApiKey: []
@@ -9633,7 +9633,7 @@ components:
         uncategorizedItemCount:
           type: integer
           format: int32
-          description: Receipt items still filed under the "Uncategorized" category.
+          description: Active receipt items whose current classification is missing, unclassified, or unresolved.
 
     OutOfBalanceResponse:
       type: object
@@ -9983,7 +9983,7 @@ components:
 
     UncategorizedItem:
       type: object
-      required: [id, receiptId, description, quantity, unitPrice, totalAmount, category]
+      required: [id, receiptId, description, quantity, unitPrice, totalAmount, category, classificationState, totalAmountCurrency]
       properties:
         id:
           type: string
@@ -10008,6 +10008,20 @@ components:
           type: string
         subcategory:
           type: ["string", "null"]
+        classificationState:
+          type: string
+          description: One of missing_assignment, unclassified, unresolved_legacy.
+        assignmentId:
+          type: ["string", "null"]
+          format: uuid
+        categoryId:
+          type: ["string", "null"]
+          format: uuid
+        taxonomyRevisionId:
+          type: ["string", "null"]
+          format: uuid
+        totalAmountCurrency:
+          type: string
 
     SpendingByNormalizedDescriptionResponse:
       type: object

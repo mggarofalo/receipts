@@ -1215,11 +1215,26 @@ public class ReportServiceTests
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Cabbage", Quantity = 1, UnitPrice = 3m, TotalAmount = 3m, Category = "Uncategorized" },
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Apple", Quantity = 1, UnitPrice = 1m, TotalAmount = 1m, Category = "Uncategorized" },
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Bread", Quantity = 1, UnitPrice = 2m, TotalAmount = 2m, Category = "Uncategorized" },
-				// Categorized — excluded by the Category == "Uncategorized" filter.
-				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Milk", Quantity = 1, UnitPrice = 4m, TotalAmount = 4m, Category = "Dairy" },
+								// A current assigned category is excluded regardless of legacy label.
+								new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Milk", Quantity = 1, UnitPrice = 4m, TotalAmount = 4m, Category = "Dairy" },
 				// Soft-deleted uncategorized — excluded by the DeletedAt == null filter.
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Ghost", Quantity = 1, UnitPrice = 9m, TotalAmount = 9m, Category = "Uncategorized", DeletedAt = DateTimeOffset.UtcNow });
 
+			Guid milkId = context.ChangeTracker.Entries<ReceiptItemEntity>()
+					.Single(entry => entry.Entity.Description == "Milk").Entity.Id;
+			Guid assignmentId = Guid.NewGuid();
+			context.Classifications.Add(new Infrastructure.Entities.Taxonomy.PurchaseClassificationEntity
+			{
+				Id = assignmentId,
+				ReceiptItemId = milkId,
+				CategoryId = Guid.NewGuid(),
+				TaxonomyRevisionId = Guid.NewGuid(),
+				Actor = "test",
+				Reason = "manual",
+				OperationId = Guid.NewGuid()
+			});
+			context.CurrentClassifications.Add(new Infrastructure.Entities.Taxonomy.CurrentClassificationEntity
+			{ ReceiptItemId = milkId, AssignmentId = assignmentId });
 			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}

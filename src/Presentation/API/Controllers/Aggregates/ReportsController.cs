@@ -463,7 +463,7 @@ public class ReportsController(IMediator mediator, IEntityChangeNotifier notifie
 
 	[HttpGet("uncategorized-items")]
 	[EndpointSummary("Get uncategorized items report")]
-	[EndpointDescription("Returns all receipt items where the category is \"Uncategorized\".")]
+	[EndpointDescription("Returns active receipt items whose current classification is missing, unclassified, or unresolved.")]
 	public async Task<Results<Ok<UncategorizedItemsResponse>, BadRequestProblem>> GetUncategorizedItems(
 		[FromQuery] string? sortBy,
 		[FromQuery] string? sortDirection,
@@ -514,7 +514,12 @@ public class ReportsController(IMediator mediator, IEntityChangeNotifier notifie
 				UnitPrice = (double)i.UnitPrice,
 				TotalAmount = (double)i.TotalAmount,
 				Category = i.Category,
-				Subcategory = i.Subcategory
+				Subcategory = i.Subcategory,
+				ClassificationState = i.ClassificationState,
+				AssignmentId = i.AssignmentId,
+				CategoryId = i.CategoryId,
+				TaxonomyRevisionId = i.TaxonomyRevisionId,
+				TotalAmountCurrency = i.TotalAmountCurrency
 			}).ToList()
 		});
 	}

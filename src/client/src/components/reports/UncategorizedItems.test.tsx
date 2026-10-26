@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { format } from "date-fns";
 import { renderWithQueryClient } from "@/test/test-utils";
 import UncategorizedItems from "./UncategorizedItems";
+import { taxonomyFixture } from "@/test/taxonomy-fixture";
 
 const mockNavigate = vi.fn();
 vi.mock("react-router", async () => {
@@ -12,23 +13,6 @@ vi.mock("react-router", async () => {
 
 vi.mock("@/hooks/useUncategorizedItemsReport", () => ({
   useUncategorizedItemsReport: vi.fn(),
-}));
-
-vi.mock("@/hooks/useCategories", () => ({
-  useAllCategories: vi.fn().mockReturnValue({
-    data: [
-      { id: "cat-1", name: "Groceries" },
-      { id: "cat-2", name: "Uncategorized" },
-    ],
-    isLoading: false,
-  }),
-}));
-
-vi.mock("@/hooks/useSubcategories", () => ({
-  useAllSubcategoriesByCategoryId: vi.fn().mockReturnValue({
-    data: [{ id: "sub-1", name: "Produce" }],
-    isLoading: false,
-  }),
 }));
 
 vi.mock("@/lib/api-client", () => ({
@@ -56,8 +40,11 @@ const mockItems = [
     quantity: 2,
     unitPrice: 1.5,
     totalAmount: 3.0,
-    category: "Uncategorized",
-    subcategory: null,
+    totalAmountCurrency: "USD",
+    classificationState: "missing_assignment",
+    assignmentId: null,
+    categoryId: null,
+    taxonomyRevisionId: null,
   },
   {
     id: "item-2",
@@ -67,8 +54,11 @@ const mockItems = [
     quantity: 1,
     unitPrice: 2.0,
     totalAmount: 2.0,
-    category: "Uncategorized",
-    subcategory: "Fruit",
+    totalAmountCurrency: "USD",
+    classificationState: "unresolved_legacy",
+    assignmentId: "assignment-2",
+    categoryId: null,
+    taxonomyRevisionId: "old-revision",
   },
 ];
 
@@ -88,6 +78,14 @@ function setupMock(overrides: Record<string, unknown> = {}) {
 describe("UncategorizedItems", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockClient.GET.mockImplementation(
+      async (path) =>
+        ({
+          data: path === "/api/taxonomy" ? taxonomyFixture : undefined,
+          error: undefined,
+          response: {} as Response,
+        }) as never,
+    );
   });
 
   it("shows loading skeleton", () => {
@@ -144,7 +142,7 @@ describe("UncategorizedItems", () => {
     expect(within(table).getByText(/Item Code/)).toBeInTheDocument();
     expect(within(table).getByText("Receipt")).toBeInTheDocument();
     expect(within(table).getByText(/Total/)).toBeInTheDocument();
-    expect(within(table).getByText("Subcategory")).toBeInTheDocument();
+    expect(within(table).getByText("Classification")).toBeInTheDocument();
   });
 
   it("displays item code or dash when missing", () => {
@@ -158,10 +156,11 @@ describe("UncategorizedItems", () => {
     );
   });
 
-  it("displays subcategory or dash when missing", () => {
+  it("displays current classification states", () => {
     setupMock();
     renderWithQueryClient(<UncategorizedItems />);
-    expect(screen.getByText("Fruit")).toBeInTheDocument();
+    expect(screen.getByText("missing assignment")).toBeInTheDocument();
+    expect(screen.getByText("unresolved legacy")).toBeInTheDocument();
   });
 
   it("navigates to receipt on View click", async () => {
@@ -217,7 +216,7 @@ describe("UncategorizedItems", () => {
     const checkboxes = screen.getAllByRole("checkbox");
     await user.click(checkboxes[1]); // Select first item
 
-    expect(screen.getByText("1 selected")).toBeInTheDocument();
+    expect(screen.getByText("1 selected on this page")).toBeInTheDocument();
     expect(screen.getByText("Apply to Selected")).toBeInTheDocument();
   });
 
@@ -239,8 +238,11 @@ describe("UncategorizedItems", () => {
       quantity: 1,
       unitPrice: 1.0,
       totalAmount: 1.0,
-      category: "Uncategorized",
-      subcategory: null,
+      totalAmountCurrency: "USD",
+      classificationState: "missing_assignment",
+      assignmentId: null,
+      categoryId: null,
+      taxonomyRevisionId: null,
     }));
     setupMock({
       data: { totalCount: 51, items: manyItems },
@@ -270,10 +272,10 @@ describe("UncategorizedItems", () => {
     const selectAll = screen.getAllByRole("checkbox")[0];
     await user.click(selectAll);
 
-    expect(screen.getByText("2 selected")).toBeInTheDocument();
+    expect(screen.getByText("2 selected on this page")).toBeInTheDocument();
   });
 
-  it("filters Uncategorized from category options", async () => {
+  it("offers the nested taxonomy picker for selected items", async () => {
     const user = userEvent.setup();
     setupMock();
     renderWithQueryClient(<UncategorizedItems />);
@@ -282,8 +284,37 @@ describe("UncategorizedItems", () => {
     const checkboxes = screen.getAllByRole("checkbox");
     await user.click(checkboxes[1]);
 
-    // The category combobox should be present but "Uncategorized" should not be an option
-    expect(screen.getByText("Select category...")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("combobox", {
+        name: "Category for selected items",
+      }),
+    ).toBeEnabled();
+    await user.click(
+      screen.getByRole("combobox", { name: "Category for selected items" }),
+    );
+    expect(
+      screen.getByRole("option", { name: "Food / Dairy" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "Unclassified" }),
+    ).toBeInTheDocument();
+  });
+
+  it("does not submit an explicit Unclassified choice as a categorization", async () => {
+    const user = userEvent.setup();
+    setupMock();
+    renderWithQueryClient(<UncategorizedItems />);
+    await user.click(screen.getByRole("checkbox", { name: "Select Apples" }));
+    await user.click(
+      await screen.findByRole("combobox", {
+        name: "Category for selected items",
+      }),
+    );
+    await user.click(screen.getByRole("option", { name: "Unclassified" }));
+    expect(
+      screen.getByRole("button", { name: "Apply to Selected" }),
+    ).toBeDisabled();
+    expect(mockClient.PUT).not.toHaveBeenCalled();
   });
 
   it("exports the report as csv with the current sort", async () => {
@@ -320,9 +351,9 @@ describe("UncategorizedItems", () => {
       `uncategorized-items_${format(new Date(), "yyyy-MM-dd")}.csv`,
     );
     expect(csv).toBe(
-      "Description,Item Code,Quantity,Unit Price,Total,Subcategory,Receipt ID\r\n" +
-        "Apples,ABC,2,1.5,3,,receipt-1\r\n" +
-        "Bananas,,1,2,2,Fruit,receipt-2\r\n",
+      "Description,Item Code,Quantity,Unit Price,Total,Classification state,Currency,Receipt ID\r\n" +
+        "Apples,ABC,2,1.5,3,missing_assignment,USD,receipt-1\r\n" +
+        "Bananas,,1,2,2,unresolved_legacy,USD,receipt-2\r\n",
     );
   });
 

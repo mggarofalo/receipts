@@ -10,6 +10,7 @@ import { createAppQueryClient } from "@/lib/query-client";
 import { clearTokens, setTokens } from "@/lib/auth";
 import UncategorizedItems from "./UncategorizedItems";
 import "@/test/setup-combobox-polyfills";
+import { taxonomyFixture } from "@/test/taxonomy-fixture";
 
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 const items = [
@@ -20,7 +21,11 @@ const items = [
     quantity: 1,
     unitPrice: 1,
     totalAmount: 1,
-    category: "Uncategorized",
+    totalAmountCurrency: "USD",
+    classificationState: "missing_assignment",
+    assignmentId: null,
+    categoryId: null,
+    taxonomyRevisionId: null,
   },
   {
     id: "item-b",
@@ -29,7 +34,11 @@ const items = [
     quantity: 1,
     unitPrice: 2,
     totalAmount: 2,
-    category: "Uncategorized",
+    totalAmountCurrency: "USD",
+    classificationState: "unresolved_legacy",
+    assignmentId: "prior-assignment",
+    categoryId: null,
+    taxonomyRevisionId: "prior-revision",
   },
 ];
 let rejectFirst = true;
@@ -40,25 +49,20 @@ const server = setupServer(
     reads++;
     return HttpResponse.json({ totalCount: items.length, items });
   }),
-  http.get("*/api/categories", () =>
-    HttpResponse.json({
-      data: [{ id: "category", name: "Groceries", isActive: true }],
-      total: 1,
-    }),
+  http.get("*/api/taxonomy", () => HttpResponse.json(taxonomyFixture)),
+  http.put(
+    "*/api/receipt-items/:id/classification",
+    async ({ request, params }) => {
+      const body = (await request.json()) as Record<string, unknown>;
+      writes.push({ id: params.id, body });
+      return rejectFirst && params.id === "item-a"
+        ? HttpResponse.json(
+            { status: 409, detail: "Current assignment changed" },
+            { status: 409 },
+          )
+        : new HttpResponse(null, { status: 204 });
+    },
   ),
-  http.get("*/api/subcategories", () =>
-    HttpResponse.json({ data: [], total: 0 }),
-  ),
-  http.put("*/api/receipt-items/batch", async ({ request }) => {
-    const body = (await request.json()) as { id: string }[];
-    writes.push(body);
-    return rejectFirst && body[0].id === "item-a"
-      ? HttpResponse.json(
-          { status: 503, detail: "One receipt group is unavailable" },
-          { status: 503 },
-        )
-      : new HttpResponse(null, { status: 204 });
-  }),
 );
 let queryClient: ReturnType<typeof createAppQueryClient>;
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
@@ -78,7 +82,7 @@ afterEach(() => {
 afterAll(() => server.close());
 
 it.each([true, false])(
-  "uses one failure owner and preserves grouped settlement when one group fails: %s",
+  "preserves per-item settlement and assignment fences when one write conflicts: %s",
   async (fails) => {
     rejectFirst = fails;
     const user = userEvent.setup();
@@ -93,10 +97,36 @@ it.each([true, false])(
     await user.click(
       screen.getByRole("checkbox", { name: "Select all items on this page" }),
     );
-    await user.click(screen.getAllByRole("combobox")[0]);
-    await user.click(screen.getByRole("option", { name: "Groceries" }));
+    await user.click(
+      await screen.findByRole("combobox", {
+        name: "Category for selected items",
+      }),
+    );
+    await user.click(screen.getByRole("option", { name: "Food / Dairy" }));
     await user.click(screen.getByRole("button", { name: "Apply to Selected" }));
     await waitFor(() => expect(writes).toHaveLength(2));
+    expect(writes).toEqual(
+      expect.arrayContaining([
+        {
+          id: "item-a",
+          body: expect.objectContaining({
+            categoryId: taxonomyFixture.nodes[1].id,
+            taxonomyRevisionId: taxonomyFixture.id,
+            expectedAssignmentId: null,
+            operationId: expect.any(String),
+          }),
+        },
+        {
+          id: "item-b",
+          body: expect.objectContaining({
+            categoryId: taxonomyFixture.nodes[1].id,
+            taxonomyRevisionId: taxonomyFixture.id,
+            expectedAssignmentId: "prior-assignment",
+            operationId: expect.any(String),
+          }),
+        },
+      ]),
+    );
     await waitFor(() => expect(reads).toBeGreaterThan(1));
     if (fails) {
       await waitFor(() =>
@@ -105,10 +135,10 @@ it.each([true, false])(
         ).toBeEnabled(),
       );
       expect(toast.error).toHaveBeenCalledExactlyOnceWith(
-        "One receipt group is unavailable",
+        "1 item classifications could not be confirmed. Refresh and review before retrying.",
       );
       expect(toast.success).not.toHaveBeenCalled();
-      expect(screen.getByText("2 selected")).toBeInTheDocument();
+      expect(screen.getByText("2 selected on this page")).toBeInTheDocument();
     } else {
       await waitFor(() =>
         expect(toast.success).toHaveBeenCalledExactlyOnceWith(
@@ -116,7 +146,9 @@ it.each([true, false])(
         ),
       );
       expect(toast.error).not.toHaveBeenCalled();
-      expect(screen.queryByText("2 selected")).not.toBeInTheDocument();
+      expect(
+        screen.queryByText("2 selected on this page"),
+      ).not.toBeInTheDocument();
     }
   },
 );

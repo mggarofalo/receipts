@@ -16,6 +16,7 @@ import { server } from "@/test/msw/server";
 import { useCategorizeReceiptItems } from "./useCategorizeReceiptItems";
 import UncategorizedItems from "@/components/reports/UncategorizedItems";
 import "@/test/setup-combobox-polyfills";
+import { taxonomyFixture } from "@/test/taxonomy-fixture";
 
 vi.hoisted(() =>
   vi.stubEnv("VITE_API_URL", "http://categorize-projection.test"),
@@ -48,8 +49,11 @@ it.each(["transport failure", "success"] as const)(
       quantity: 1,
       unitPrice: 2,
       totalAmount: 2,
-      category: "Uncategorized",
-      subcategory: null,
+      totalAmountCurrency: "USD",
+      classificationState: "missing_assignment",
+      assignmentId: null,
+      categoryId: null,
+      taxonomyRevisionId: null,
     };
     const second = {
       ...first,
@@ -59,7 +63,7 @@ it.each(["transport failure", "success"] as const)(
     };
     let stored = [first, second];
     let reads = 0;
-    const groups: string[][] = [];
+    const writes: { id: string; body: Record<string, unknown> }[] = [];
     let release!: () => void;
     const held = new Promise<void>((resolve) => {
       release = resolve;
@@ -69,37 +73,25 @@ it.each(["transport failure", "success"] as const)(
         reads++;
         return HttpResponse.json({ totalCount: stored.length, items: stored });
       }),
-      http.get("*/api/categories", () =>
-        HttpResponse.json({
-          data: [{ id: "food", name: "Food", isActive: true }],
-          total: 1,
-          offset: 0,
-          limit: 500,
-        }),
+      http.get("*/api/taxonomy", () => HttpResponse.json(taxonomyFixture)),
+      http.put(
+        "*/api/receipt-items/:id/classification",
+        async ({ request, params }) => {
+          const body = (await request.json()) as Record<string, unknown>;
+          const id = String(params.id);
+          writes.push({ id, body });
+          expect(body).toMatchObject({
+            categoryId: taxonomyFixture.nodes[0].id,
+            taxonomyRevisionId: taxonomyFixture.id,
+            expectedAssignmentId: null,
+          });
+          if (id === "a" && outcome === "transport failure")
+            return HttpResponse.error();
+          if (id === "b") await held;
+          stored = stored.filter((item) => item.id !== id);
+          return new HttpResponse(null, { status: 204 });
+        },
       ),
-      http.get("*/api/subcategories", () =>
-        HttpResponse.json({ data: [], total: 0, offset: 0, limit: 500 }),
-      ),
-      http.put("*/api/receipt-items/batch", async ({ request }) => {
-        const body = (await request.json()) as {
-          id: string;
-          category: string;
-          subcategory: string | null;
-        }[];
-        groups.push(body.map((item) => item.id));
-        expect(
-          body.every(
-            (item) => item.category === "Food" && item.subcategory === null,
-          ),
-        ).toBe(true);
-        if (body[0].id === "a" && outcome === "transport failure")
-          return HttpResponse.error();
-        if (body[0].id === "b") await held;
-        stored = stored.filter(
-          (item) => !body.some((updated) => updated.id === item.id),
-        );
-        return new HttpResponse(null, { status: 204 });
-      }),
     );
     try {
       renderWithProviders(
@@ -112,13 +104,17 @@ it.each(["transport failure", "success"] as const)(
           name: "Select all items on this page",
         }),
       );
-      await user.click(screen.getByText("Select category..."));
+      await user.click(
+        await screen.findByRole("combobox", {
+          name: "Category for selected items",
+        }),
+      );
       await user.click(await screen.findByRole("option", { name: "Food" }));
       const readsBefore = reads;
       await user.click(
         screen.getByRole("button", { name: "Apply to Selected" }),
       );
-      await waitFor(() => expect(groups).toHaveLength(2));
+      await waitFor(() => expect(writes).toHaveLength(2));
       expect(
         screen.getByRole("button", { name: "Applying..." }),
       ).toBeDisabled();
@@ -128,7 +124,7 @@ it.each(["transport failure", "success"] as const)(
       if (outcome === "transport failure") {
         await waitFor(() =>
           expect(failure).toHaveBeenCalledExactlyOnceWith(
-            "Network error. Please check your connection and try again.",
+            "1 item classifications could not be confirmed. Refresh and review before retrying.",
           ),
         );
         await waitFor(() =>
@@ -148,7 +144,7 @@ it.each(["transport failure", "success"] as const)(
         expect(failure).not.toHaveBeenCalled();
       }
       expect(reads).toBeGreaterThan(readsBefore);
-      expect(groups).toEqual(expect.arrayContaining([["a"], ["b"]]));
+      expect(writes.map((write) => write.id).sort()).toEqual(["a", "b"]);
     } finally {
       release();
       cleanup();
@@ -172,7 +168,7 @@ it.each(["success", "failure"] as const)(
       release = resolve;
     });
     server.use(
-      http.put("*/api/receipt-items/batch", async () => {
+      http.put("*/api/receipt-items/:id/classification", async () => {
         received = true;
         await held;
         return outcome === "success"
@@ -204,12 +200,19 @@ it.each(["success", "failure"] as const)(
                 quantity: 1,
                 unitPrice: 1,
                 totalAmount: 1,
-                category: "Uncategorized",
-                subcategory: null,
+                totalAmountCurrency: "USD",
+                category: "",
+                classificationState: "missing_assignment",
+                assignmentId: null,
+                categoryId: null,
+                taxonomyRevisionId: null,
               },
             ],
-            category: "Food",
-            subcategory: null,
+            choice: {
+              categoryId: taxonomyFixture.nodes[0].id,
+              taxonomyRevisionId: taxonomyFixture.id,
+              path: [taxonomyFixture.nodes[0]],
+            },
           })
           .catch((error: unknown) => error);
       });
@@ -242,7 +245,7 @@ it("keeps a stable mutation result on rerender and invokes the current completio
   );
   server.use(
     http.put(
-      "*/api/receipt-items/batch",
+      "*/api/receipt-items/:id/classification",
       () => new HttpResponse(null, { status: 204 }),
     ),
   );
@@ -265,12 +268,19 @@ it("keeps a stable mutation result on rerender and invokes the current completio
             quantity: 1,
             unitPrice: 1,
             totalAmount: 1,
-            category: "Uncategorized",
-            subcategory: null,
+            totalAmountCurrency: "USD",
+            category: "",
+            classificationState: "missing_assignment",
+            assignmentId: null,
+            categoryId: null,
+            taxonomyRevisionId: null,
           },
         ],
-        category: "Food",
-        subcategory: null,
+        choice: {
+          categoryId: taxonomyFixture.nodes[0].id,
+          taxonomyRevisionId: taxonomyFixture.id,
+          path: [taxonomyFixture.nodes[0]],
+        },
       }),
     );
     expect(first).not.toHaveBeenCalled();

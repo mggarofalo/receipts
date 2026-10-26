@@ -2818,7 +2818,7 @@ export interface paths {
         };
         /**
          * Get uncategorized items report
-         * @description Returns all receipt items where the category is "Uncategorized".
+         * @description Returns active receipt items whose current classification is missing, unclassified, or unresolved.
          */
         get: operations["GetUncategorizedItemsReport"];
         put?: never;
@@ -4176,7 +4176,7 @@ export interface components {
             duplicateGroupCount: number;
             /**
              * Format: int32
-             * @description Receipt items still filed under the "Uncategorized" category.
+             * @description Active receipt items whose current classification is missing, unclassified, or unresolved.
              */
             uncategorizedItemCount: number;
         };
@@ -4359,6 +4359,15 @@ export interface components {
             totalAmount: number;
             category: string;
             subcategory?: string | null;
+            /** @description One of missing_assignment, unclassified, unresolved_legacy. */
+            classificationState: string;
+            /** Format: uuid */
+            assignmentId?: string | null;
+            /** Format: uuid */
+            categoryId?: string | null;
+            /** Format: uuid */
+            taxonomyRevisionId?: string | null;
+            totalAmountCurrency: string;
         };
         SpendingByNormalizedDescriptionResponse: {
             /**

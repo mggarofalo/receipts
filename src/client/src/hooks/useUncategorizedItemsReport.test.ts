@@ -28,8 +28,11 @@ describe("useUncategorizedItemsReport", () => {
           quantity: 1,
           unitPrice: 5.0,
           totalAmount: 5.0,
-          category: "Uncategorized",
-          subcategory: null,
+          totalAmountCurrency: "USD",
+          classificationState: "missing_assignment",
+          assignmentId: null,
+          categoryId: null,
+          taxonomyRevisionId: null,
         },
       ],
     };

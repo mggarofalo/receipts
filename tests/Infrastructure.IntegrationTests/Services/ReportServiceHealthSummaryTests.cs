@@ -1,6 +1,8 @@
 using Application.Models.Reports;
 using FluentAssertions;
+using Infrastructure.Configurations;
 using Infrastructure.Entities.Core;
+using Infrastructure.Entities.Taxonomy;
 using Infrastructure.IntegrationTests.Fixtures;
 using Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
@@ -19,6 +21,114 @@ namespace Infrastructure.IntegrationTests.Services;
 [Trait("Prerequisite", "Postgres")]
 public class ReportServiceHealthSummaryTests(PostgresFixture server) : IsolatedPostgresTest(server)
 {
+	[Fact]
+	public async Task UnclassifiedReport_AndHealthCountAgreeAcrossCurrentEvidenceAndBoundedPages()
+	{
+		Guid receiptId = Guid.NewGuid(), trashedReceiptId = Guid.NewGuid();
+		Guid revisionId = Guid.NewGuid(), categoryId = Guid.NewGuid();
+		Guid missingId = Guid.NewGuid(), clearedId = Guid.NewGuid();
+		Guid unresolvedId = Guid.NewGuid(), evidenceId = Guid.NewGuid(), classifiedId = Guid.NewGuid();
+		Guid deletedItemId = Guid.NewGuid(), deletedReceiptItemId = Guid.NewGuid();
+
+		await using (ApplicationDbContext seed = fixture.CreateDbContext())
+		{
+			await using var transaction = await seed.Database.BeginTransactionAsync();
+			seed.TaxonomyIdentities.Add(new TaxonomyIdentityEntity { Id = categoryId });
+			seed.TaxonomyRevisions.Add(new TaxonomyRevisionEntity
+			{
+				Id = revisionId,
+				Sequence = 1,
+				PreviousRevisionId = TaxonomyConfiguration.GenesisId
+			});
+			seed.TaxonomyNodes.Add(new TaxonomyNodeEntity
+			{
+				RevisionId = revisionId,
+				CategoryId = categoryId,
+				Name = "Food"
+			});
+			(await seed.TaxonomyHeads.SingleAsync()).RevisionId = revisionId;
+			AddReceipt(seed, receiptId, new(2025, 7, 5), "Report Store", 0m);
+			AddReceipt(seed, trashedReceiptId, new(2025, 7, 6), "Deleted Store", 0m);
+			void Add(Guid id, Guid receipt, string description, string oldLabel = "Food", bool deleted = false)
+			{
+				seed.ReceiptItems.Add(new ReceiptItemEntity
+				{
+					Id = id,
+					ReceiptId = receipt,
+					Description = description,
+					Quantity = 1,
+					UnitPrice = 1m,
+					TotalAmount = 1m,
+					Category = oldLabel,
+					DeletedAt = deleted ? DateTimeOffset.UtcNow : null
+				});
+			}
+			Add(missingId, receiptId, "A missing", "Legacy classified label");
+			Add(clearedId, receiptId, "B cleared");
+			Add(unresolvedId, receiptId, "C unresolved");
+			Add(evidenceId, receiptId, "D evidence");
+			Add(classifiedId, receiptId, "E classified", "Uncategorized");
+			Add(deletedItemId, receiptId, "F deleted item", deleted: true);
+			Add(deletedReceiptItemId, trashedReceiptId, "G deleted receipt");
+			Guid Assign(Guid itemId, Guid? category, string? legacyResolution = null)
+			{
+				Guid assignmentId = Guid.NewGuid();
+				seed.Classifications.Add(new PurchaseClassificationEntity
+				{
+					Id = assignmentId,
+					ReceiptItemId = itemId,
+					Sequence = 1,
+					CategoryId = category,
+					TaxonomyRevisionId = revisionId,
+					Actor = "report-test",
+					Source = "manual",
+					Reason = "fixture",
+					OperationId = Guid.NewGuid(),
+					LegacyResolution = legacyResolution
+				});
+				seed.CurrentClassifications.Add(new CurrentClassificationEntity
+				{ ReceiptItemId = itemId, AssignmentId = assignmentId });
+				return assignmentId;
+			}
+			Assign(clearedId, null);
+			Assign(unresolvedId, categoryId, "unresolved_path");
+			Guid evidenceAssignment = Assign(evidenceId, categoryId);
+			seed.LegacyMigrationItems.Add(new LegacyMigrationItemEntity
+			{
+				Actor = "report-test",
+				OperationId = Guid.NewGuid(),
+				ReceiptItemId = evidenceId,
+				AssignmentId = evidenceAssignment,
+				Resolution = "Unresolved"
+			});
+			Assign(classifiedId, categoryId);
+			Assign(deletedItemId, null);
+			Assign(deletedReceiptItemId, null);
+			await seed.SaveChangesAsync();
+			await seed.Database.ExecuteSqlInterpolatedAsync($"UPDATE receipts.\"Receipts\" SET \"DeletedAt\" = {DateTimeOffset.UtcNow} WHERE \"Id\" = {trashedReceiptId}");
+			await transaction.CommitAsync();
+		}
+
+		ReportService report = new(new FixtureDbContextFactory(fixture));
+		UncategorizedItemsResult first = await report.GetUncategorizedItemsAsync("description", "asc", 1, 2, CancellationToken.None);
+		UncategorizedItemsResult second = await report.GetUncategorizedItemsAsync("description", "asc", 2, 2, CancellationToken.None);
+		ReportsHealthSummaryResult health = await report.GetHealthSummaryAsync(CancellationToken.None);
+
+		first.TotalCount.Should().Be(4);
+		second.TotalCount.Should().Be(4);
+		health.UncategorizedItemCount.Should().Be(first.TotalCount);
+		first.Items.Select(item => item.Id).Should().Equal(missingId, clearedId);
+		second.Items.Select(item => item.Id).Should().Equal(unresolvedId, evidenceId);
+		first.Items.Select(item => item.ClassificationState).Should().Equal("missing_assignment", "unclassified");
+		second.Items.Select(item => item.ClassificationState)
+				.Should().Equal("unresolved_legacy", "unresolved_legacy");
+		first.Items[0].AssignmentId.Should().BeNull();
+		first.Items[1].AssignmentId.Should().NotBeNull();
+		second.Items[0].CategoryId.Should().Be(categoryId);
+		first.Items.Concat(second.Items).Select(item => item.Id)
+				.Should().NotContain(new[] { classifiedId, deletedItemId, deletedReceiptItemId });
+	}
+
 	[Fact]
 	public async Task GetHealthSummaryAsync_TracksPairCompletenessWithoutLoadingReceiptTotals()
 	{
