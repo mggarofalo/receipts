@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using Infrastructure.Entities.CategoryAssistance;
+using Infrastructure.Jev;
 using Microsoft.EntityFrameworkCore;
 
 namespace Infrastructure.Services;
@@ -11,6 +12,7 @@ namespace Infrastructure.Services;
 /// before a send. Neither operation sends a request to the provider.
 /// </summary>
 public sealed class CategoryAssistanceConnectionCoordinator(IDbContextFactory<ApplicationDbContext> factory)
+	: ICategoryAssistanceConnectionBinding
 {
 	public sealed record Configuration(string Provider, string Model, string Credential,
 		Uri Server, string TransportOptions);

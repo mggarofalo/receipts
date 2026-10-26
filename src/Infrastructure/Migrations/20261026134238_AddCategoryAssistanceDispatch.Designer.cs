@@ -2322,6 +2322,140 @@ namespace Infrastructure.Migrations
                     b.ToTable("CurrentAssignments", "taxonomy");
                 });
 
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.HistoricalOperationEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Actor")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .UseCollation("C");
+
+                    b.Property<DateTimeOffset>("CapturedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("SelectionJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("TaxonomyRevisionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("UndoReason")
+                        .HasColumnType("text");
+
+                    b.Property<Guid?>("UndoTaxonomyRevisionId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TaxonomyRevisionId");
+
+                    b.HasIndex("UndoTaxonomyRevisionId");
+
+                    b.ToTable("HistoricalOperations", "taxonomy");
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.HistoricalOperationItemEntity", b =>
+                {
+                    b.Property<Guid>("OperationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ItemId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("AppliedAssignmentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ApplyOperationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ExpectedAssignmentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ItemCode")
+                        .HasColumnType("text")
+                        .UseCollation("C");
+
+                    b.Property<Guid>("ItemRevision")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("PreviousCategoryId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("RawDescription")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .UseCollation("C");
+
+                    b.Property<string>("Reason")
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("ReceiptId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ReceiptRevision")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Store")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .UseCollation("C");
+
+                    b.Property<Guid?>("TargetCategoryId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("UndoAssignmentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("UndoOperationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("UndoReason")
+                        .HasColumnType("text");
+
+                    b.Property<string>("UndoState")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("OperationId", "ItemId");
+
+                    b.HasIndex("AppliedAssignmentId");
+
+                    b.HasIndex("ApplyOperationId")
+                        .IsUnique();
+
+                    b.HasIndex("ExpectedAssignmentId");
+
+                    b.HasIndex("UndoAssignmentId");
+
+                    b.HasIndex("UndoOperationId")
+                        .IsUnique();
+
+                    b.HasIndex("OperationId", "State", "ItemId");
+
+                    b.HasIndex("OperationId", "State", "UndoState", "ItemId");
+
+                    b.ToTable("HistoricalOperationItems", "taxonomy");
+                });
+
             modelBuilder.Entity("Infrastructure.Entities.Taxonomy.LegacyMigrationCrosswalkEntity", b =>
                 {
                     b.Property<string>("Actor")
@@ -2999,6 +3133,44 @@ namespace Infrastructure.Migrations
                         .HasPrincipalKey("ReceiptItemId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.HistoricalOperationEntity", b =>
+                {
+                    b.HasOne("Infrastructure.Entities.Taxonomy.TaxonomyRevisionEntity", null)
+                        .WithMany()
+                        .HasForeignKey("TaxonomyRevisionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Infrastructure.Entities.Taxonomy.TaxonomyRevisionEntity", null)
+                        .WithMany()
+                        .HasForeignKey("UndoTaxonomyRevisionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.HistoricalOperationItemEntity", b =>
+                {
+                    b.HasOne("Infrastructure.Entities.Taxonomy.PurchaseClassificationEntity", null)
+                        .WithMany()
+                        .HasForeignKey("AppliedAssignmentId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Infrastructure.Entities.Taxonomy.PurchaseClassificationEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ExpectedAssignmentId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Infrastructure.Entities.Taxonomy.HistoricalOperationEntity", null)
+                        .WithMany()
+                        .HasForeignKey("OperationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Infrastructure.Entities.Taxonomy.PurchaseClassificationEntity", null)
+                        .WithMany()
+                        .HasForeignKey("UndoAssignmentId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("Infrastructure.Entities.Taxonomy.LegacyMigrationEntity", b =>

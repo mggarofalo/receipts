@@ -12,6 +12,14 @@ public sealed class JevSuggestionProvider(HttpClient client, IOptionsMonitor<Jev
 	public bool IsAvailable => options.CurrentValue.Enabled && options.CurrentValue.InferenceEnabled && !string.IsNullOrWhiteSpace(options.CurrentValue.ApiKey);
 
 	public async Task<CategorySuggestionResult> SuggestAsync(CategorySuggestionRequest request, CancellationToken cancellationToken)
+		=> await SuggestCoreAsync(request, null, cancellationToken);
+
+	internal Task<CategorySuggestionResult> SuggestBoundAsync(CategorySuggestionRequest request,
+		Func<string, CancellationToken, Task<bool>> isCurrent, CancellationToken cancellationToken)
+		=> SuggestCoreAsync(request, isCurrent, cancellationToken);
+
+	private async Task<CategorySuggestionResult> SuggestCoreAsync(CategorySuggestionRequest request,
+		Func<string, CancellationToken, Task<bool>>? isCurrent, CancellationToken cancellationToken)
 	{
 		cancellationToken.ThrowIfCancellationRequested();
 		JevOptions current = options.CurrentValue;
@@ -57,6 +65,16 @@ public sealed class JevSuggestionProvider(HttpClient client, IOptionsMonitor<Jev
 			message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
 			message.Content = new ByteArrayContent(payload);
 			message.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+			if (isCurrent is not null && !await isCurrent(key, timeout.Token))
+			{
+				return CategorySuggestionResult.Failed(SuggestionFailure.Disabled);
+			}
+			JevOptions beforeSend = options.CurrentValue;
+			cancellationToken.ThrowIfCancellationRequested();
+			if (!beforeSend.Enabled || !beforeSend.InferenceEnabled || beforeSend.ApiKey != key)
+			{
+				return CategorySuggestionResult.Failed(SuggestionFailure.Disabled);
+			}
 			using HttpResponseMessage response = await client.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
 			if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
 			{
