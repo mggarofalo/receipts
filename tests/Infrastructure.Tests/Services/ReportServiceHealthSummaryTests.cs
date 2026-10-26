@@ -173,10 +173,27 @@ public class ReportServiceHealthSummaryTests
 
 		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
 		{
+			context.Receipts.Add(new ReceiptEntity
+			{ Id = receiptId, Location = "Store", Date = new DateOnly(2025, 3, 1) });
 			context.ReceiptItems.Add(new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "A", Quantity = 1, UnitPrice = 1m, TotalAmount = 1m, Category = "Uncategorized" });
 			context.ReceiptItems.Add(new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "B", Quantity = 1, UnitPrice = 1m, TotalAmount = 1m, Category = "Uncategorized" });
 			context.ReceiptItems.Add(new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "C", Quantity = 1, UnitPrice = 1m, TotalAmount = 1m, Category = "Food" });
 
+			Guid classifiedId = context.ChangeTracker.Entries<ReceiptItemEntity>()
+					.Single(entry => entry.Entity.Description == "C").Entity.Id;
+			Guid assignmentId = Guid.NewGuid();
+			context.Classifications.Add(new Infrastructure.Entities.Taxonomy.PurchaseClassificationEntity
+			{
+				Id = assignmentId,
+				ReceiptItemId = classifiedId,
+				CategoryId = Guid.NewGuid(),
+				TaxonomyRevisionId = Guid.NewGuid(),
+				Actor = "test",
+				Reason = "manual",
+				OperationId = Guid.NewGuid()
+			});
+			context.CurrentClassifications.Add(new Infrastructure.Entities.Taxonomy.CurrentClassificationEntity
+			{ ReceiptItemId = classifiedId, AssignmentId = assignmentId });
 			SeedOriginatingCards(context);
 			await context.SaveChangesAsync();
 		}

@@ -1,14 +1,16 @@
-import { toastErrorPolicy } from "@/lib/request-error-policy";
+import { toast } from "sonner";
+import { localErrorPolicy } from "@/lib/request-error-policy";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSessionMutation } from "@/hooks/useSessionMutation";
 import type { components } from "@/generated/api";
+import type { CategoryChoice } from "@/lib/category-paths";
+import { generateId } from "@/lib/id";
 import client from "@/lib/api-client";
 import { invalidateDomainChange } from "@/lib/query-invalidation";
 
 interface CategorizeReceiptItemsInput {
   items: components["schemas"]["UncategorizedItem"][];
-  category: string;
-  subcategory: string | null;
+  choice: CategoryChoice;
 }
 
 interface CategorizeReceiptItemsCallbacks {
@@ -17,40 +19,49 @@ interface CategorizeReceiptItemsCallbacks {
 }
 
 /** Own the grouped write and repair projections even when only some groups commit. */
-export function useCategorizeReceiptItems(callbacks: CategorizeReceiptItemsCallbacks = {}) {
+export function useCategorizeReceiptItems(
+  callbacks: CategorizeReceiptItemsCallbacks = {},
+) {
   const queryClient = useQueryClient();
   return useSessionMutation({
-    ...toastErrorPolicy.mutation,
-    mutationFn: async ({ items, category, subcategory }: CategorizeReceiptItemsInput) => {
-      const grouped = new Map<string, CategorizeReceiptItemsInput["items"]>();
-      for (const item of items) {
-        const group = grouped.get(item.receiptId) ?? [];
-        group.push(item);
-        grouped.set(item.receiptId, group);
-      }
-
-      // A transport rejection must not trigger cache repair before another group
-      // finishes committing. Keep every request observed and await all settlements.
-      const results = await Promise.allSettled(Array.from(grouped.values(), async (groupItems) => {
-        const { error } = await client.PUT("/api/receipt-items/batch", {
-        ...toastErrorPolicy.request,
-          body: groupItems.map((item) => ({
-            id: item.id,
-            receiptItemCode: item.receiptItemCode ?? null,
-            description: item.description,
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-            category,
-            subcategory: subcategory || null,
-          })),
-        });
-        if (error) throw error;
-      }));
-      const failure = results.find((result) => result.status === "rejected");
-      if (failure) throw failure.reason;
+    ...localErrorPolicy.mutation,
+    mutationFn: async ({ items, choice }: CategorizeReceiptItemsInput) => {
+      // Each item has its own current-assignment fence. Observe all outcomes
+      // before refreshing the report so partial successes remain visible.
+      const results = await Promise.allSettled(
+        items.map(async (item) => {
+          const { error } = await client.PUT(
+            "/api/receipt-items/{id}/classification",
+            {
+              ...localErrorPolicy.request,
+              params: { path: { id: item.id } },
+              body: {
+                categoryId: choice.categoryId,
+                taxonomyRevisionId: choice.taxonomyRevisionId,
+                expectedAssignmentId: item.assignmentId ?? null,
+                operationId: generateId(),
+                reason: "Category selected from unclassified items report",
+              },
+            },
+          );
+          if (error) throw error;
+        }),
+      );
+      const failures = results.filter((result) => result.status === "rejected");
+      if (failures.length)
+        throw new Error(
+          `${failures.length} item classifications could not be confirmed. Refresh and review before retrying.`,
+        );
     },
     onSettled: () => invalidateDomainChange(queryClient, "receipt-item"),
     onSuccess: callbacks.onSuccess,
-    onError: callbacks.onError,
+    onError: (error: unknown) => {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Item classifications could not be confirmed. Refresh and review before retrying.",
+      );
+      callbacks.onError?.(error);
+    },
   });
 }

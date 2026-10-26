@@ -2,15 +2,16 @@ import { Pagination } from "@/components/Pagination";
 import { usePersistedTablePageSize } from "@/hooks/usePersistedTablePageSize";
 import { isPageSize } from "@/lib/page-size";
 import { RequestFailure } from "@/components/RequestFailure";
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router";
 import { useCategorizeReceiptItems } from "@/hooks/useCategorizeReceiptItems";
 import {
   useUncategorizedItemsReport,
   type UncategorizedItemsParams,
 } from "@/hooks/useUncategorizedItemsReport";
-import { useAllCategories } from "@/hooks/useCategories";
-import { useAllSubcategoriesByCategoryId } from "@/hooks/useSubcategories";
+import { useCategoryTaxonomy } from "@/hooks/useCategoryTaxonomy";
+import { CategoryPathPicker } from "@/components/categories/CategoryPathPicker";
+import type { CategoryChoice } from "@/lib/category-paths";
 import { useCsvExport } from "@/hooks/useCsvExport";
 import { useReportSearchParams } from "@/hooks/useReportSearchParams";
 import { csvFilename } from "@/lib/export-csv";
@@ -28,7 +29,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 import { SortableTableHead } from "@/components/SortableTableHead";
 import client from "@/lib/api-client";
 import { toast } from "sonner";
@@ -77,8 +77,7 @@ export default function UncategorizedItems() {
     ? urlParams.pageSize
     : preferredPageSize;
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [selectedCategory, setSelectedCategory] = useState("");
-  const [selectedSubcategory, setSelectedSubcategory] = useState("");
+  const [choice, setChoice] = useState<CategoryChoice>();
 
   const params: UncategorizedItemsParams = {
     sortBy,
@@ -89,8 +88,7 @@ export default function UncategorizedItems() {
 
   const { data, isLoading, isError } = useUncategorizedItemsReport(params);
   const { exportCsv, isExporting } = useCsvExport();
-  const categoriesQuery = useAllCategories(true);
-  const { data: categories } = categoriesQuery;
+  const taxonomy = useCategoryTaxonomy();
 
   function handleExport() {
     exportCsv({
@@ -101,7 +99,8 @@ export default function UncategorizedItems() {
         "Quantity",
         "Unit Price",
         "Total",
-        "Subcategory",
+        "Classification state",
+        "Currency",
         "Receipt ID",
       ],
       rows: async () => {
@@ -133,46 +132,18 @@ export default function UncategorizedItems() {
           item.quantity,
           item.unitPrice,
           item.totalAmount,
-          item.subcategory,
+          item.classificationState,
+          item.totalAmountCurrency,
           item.receiptId,
         ]);
       },
     });
   }
 
-  const categoryOptions: ComboboxOption[] = useMemo(
-    () =>
-      (categories ?? [])
-        .filter((c) => c.name !== "Uncategorized")
-        .map((c) => ({ value: c.name, label: c.name })),
-    [categories],
-  );
-
-  const selectedCategoryId = useMemo(() => {
-    const found = (categories ?? []).find((c) => c.name === selectedCategory);
-    return found?.id ?? null;
-  }, [categories, selectedCategory]);
-
-  const subcategoriesQuery = useAllSubcategoriesByCategoryId(
-    selectedCategoryId,
-    true,
-  );
-  const { data: subcategories } = subcategoriesQuery;
-
-  const subcategoryOptions: ComboboxOption[] = useMemo(
-    () =>
-      (subcategories ?? []).map((s) => ({
-        value: s.name,
-        label: s.name,
-      })),
-    [subcategories],
-  );
-
   const bulkUpdateMutation = useCategorizeReceiptItems({
     onSuccess: () => {
       setSelectedIds(new Set());
-      setSelectedCategory("");
-      setSelectedSubcategory("");
+      setChoice(undefined);
       toast.success("Items categorized successfully");
     },
   });
@@ -224,20 +195,22 @@ export default function UncategorizedItems() {
   }
 
   function handleApply() {
-    if (!data?.items || selectedIds.size === 0 || !selectedCategory) return;
+    if (
+      !data?.items ||
+      selectedIds.size === 0 ||
+      !choice ||
+      !taxonomy.data ||
+      choice.taxonomyRevisionId !== taxonomy.data.id ||
+      choice.categoryId === null
+    )
+      return;
 
     const itemsToUpdate = data.items.filter((item) => selectedIds.has(item.id));
 
     bulkUpdateMutation.mutate({
       items: itemsToUpdate,
-      category: selectedCategory,
-      subcategory: selectedSubcategory || null,
+      choice,
     });
-  }
-
-  function handleCategoryChange(value: string) {
-    setSelectedCategory(value);
-    setSelectedSubcategory("");
   }
 
   const totalPages = data
@@ -296,66 +269,37 @@ export default function UncategorizedItems() {
         </Button>
       </div>
 
-      {categoriesQuery.isError && (
+      {taxonomy.isError && (
         <RequestFailure
-          message="Category choices unavailable. Cached choices and your selection are retained."
+          message="Category choices unavailable. Your selection is retained."
           retry={() => {
-            void categoriesQuery.refetch();
+            void taxonomy.refetch();
           }}
-          isRetrying={categoriesQuery.isFetching}
-        />
-      )}
-      {selectedCategoryId && subcategoriesQuery.isError && (
-        <RequestFailure
-          message="Subcategory choices unavailable. Cached choices and your selection are retained."
-          retry={() => {
-            if (selectedCategoryId) void subcategoriesQuery.refetch();
-          }}
-          isRetrying={subcategoriesQuery.isFetching}
+          isRetrying={taxonomy.isFetching}
         />
       )}
 
-      {selectedIds.size > 0 && (
-        <div className="flex items-center gap-3 rounded-lg border bg-muted/50 p-3">
+      {data.items.some((item) => selectedIds.has(item.id)) && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-muted/50 p-3">
           <span className="text-sm font-medium">
-            {selectedIds.size} selected
+            {data.items.filter((item) => selectedIds.has(item.id)).length}{" "}
+            selected on this page
           </span>
-          <Combobox
-            options={categoryOptions}
-            value={selectedCategory}
-            onValueChange={handleCategoryChange}
-            placeholder="Select category..."
-            searchPlaceholder="Search categories..."
-            emptyMessage={
-              categoriesQuery.isError
-                ? "Category choices unavailable."
-                : categoriesQuery.isLoading
-                  ? "Loading category choices…"
-                  : "No categories found."
-            }
-            className="w-48"
-          />
-          <Combobox
-            options={subcategoryOptions}
-            value={selectedSubcategory}
-            onValueChange={setSelectedSubcategory}
-            placeholder="Subcategory (optional)"
-            searchPlaceholder="Search subcategories..."
-            disabled={!selectedCategory}
-            emptyMessage={
-              subcategoriesQuery.isError
-                ? "Subcategory choices unavailable."
-                : subcategoriesQuery.isLoading
-                  ? "Loading subcategory choices…"
-                  : "No subcategories found."
-            }
-            className="w-48"
+          <CategoryPathPicker
+            aria-label="Category for selected items"
+            revision={taxonomy.data}
+            loading={taxonomy.isLoading}
+            error={taxonomy.isError}
+            value={choice}
+            onValueChange={setChoice}
+            className="w-full sm:w-48"
           />
           <Button
             size="sm"
             disabled={
-              !selectedCategory ||
-              selectedIds.size === 0 ||
+              !choice?.categoryId ||
+              choice.taxonomyRevisionId !== taxonomy.data?.id ||
+              !data.items.some((item) => selectedIds.has(item.id)) ||
               bulkUpdateMutation.isPending
             }
             onClick={handleApply}
@@ -399,7 +343,7 @@ export default function UncategorizedItems() {
               className="text-right"
               align="right"
             />
-            <TableHead>Subcategory</TableHead>
+            <TableHead>Classification</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -424,10 +368,13 @@ export default function UncategorizedItems() {
                 </button>
               </TableCell>
               <TableCell className="text-right money">
-                {formatCurrency(Number(item.totalAmount ?? 0))}
+                {formatCurrency(
+                  Number(item.totalAmount ?? 0),
+                  item.totalAmountCurrency,
+                )}
               </TableCell>
               <TableCell className="text-muted-foreground">
-                {item.subcategory ?? "-"}
+                {item.classificationState.replaceAll("_", " ")}
               </TableCell>
             </TableRow>
           ))}

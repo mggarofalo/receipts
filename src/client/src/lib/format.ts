@@ -1,9 +1,9 @@
 import { format as formatDateFns, parse, isValid } from "date-fns";
 
-export function formatCurrency(amount: number): string {
+export function formatCurrency(amount: number, currency = "USD"): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
-    currency: "USD",
+    currency,
   }).format(amount);
 }
 

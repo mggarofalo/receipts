@@ -523,7 +523,16 @@ public class ReportService(IDbContextFactory<ApplicationDbContext> contextFactor
 		await using ApplicationDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
 
 		var baseQuery = from ri in context.ReceiptItems.AsNoTracking()
-						where ri.DeletedAt == null && ri.Category == "Uncategorized"
+						join receipt in context.Receipts.AsNoTracking() on ri.ReceiptId equals receipt.Id
+						join pointer in context.CurrentClassifications.AsNoTracking() on ri.Id equals pointer.ReceiptItemId into pointers
+						from pointer in pointers.DefaultIfEmpty()
+						join assignment in context.Classifications.AsNoTracking() on pointer.AssignmentId equals assignment.Id into assignments
+						from assignment in assignments.DefaultIfEmpty()
+						where ri.DeletedAt == null && receipt.DeletedAt == null
+						  && (assignment == null || assignment.CategoryId == null
+							  || assignment.LegacyResolution == "unresolved_path"
+							  || context.LegacyMigrationItems.Any(evidence =>
+								  evidence.AssignmentId == assignment.Id && evidence.Resolution == "Unresolved"))
 						select new
 						{
 							ri.Id,
@@ -534,7 +543,16 @@ public class ReportService(IDbContextFactory<ApplicationDbContext> contextFactor
 							ri.UnitPrice,
 							ri.TotalAmount,
 							ri.Category,
-							ri.Subcategory
+							ri.Subcategory,
+							ri.TotalAmountCurrency,
+							AssignmentId = assignment == null ? (Guid?)null : assignment.Id,
+							CategoryId = assignment == null ? (Guid?)null : assignment.CategoryId,
+							TaxonomyRevisionId = assignment == null ? (Guid?)null : assignment.TaxonomyRevisionId,
+							ClassificationState = assignment == null ? "missing_assignment"
+															: assignment.LegacyResolution == "unresolved_path"
+															  || context.LegacyMigrationItems.Any(evidence =>
+																  evidence.AssignmentId == assignment.Id && evidence.Resolution == "Unresolved")
+																? "unresolved_legacy" : "unclassified"
 						};
 
 		// Count in SQL over the filtered set instead of materializing every uncategorized item
@@ -559,20 +577,16 @@ public class ReportService(IDbContextFactory<ApplicationDbContext> contextFactor
 		sortedQuery = sortedQuery.ThenBy(x => x.Id);
 
 		// Skip/Take BEFORE materializing — only the requested page is fetched.
-		List<UncategorizedItemRecord> pagedItems = await sortedQuery
-			.Skip((page - 1) * pageSize)
-			.Take(pageSize)
-			.Select(x => new UncategorizedItemRecord(
-				x.Id,
-				x.ReceiptId,
-				x.ReceiptItemCode,
-				x.Description,
-				x.Quantity,
-				x.UnitPrice,
-				x.TotalAmount,
-				x.Category,
-				x.Subcategory))
-			.ToListAsync(cancellationToken);
+		var pageRows = await sortedQuery
+	.Skip((page - 1) * pageSize)
+	.Take(pageSize)
+	.ToListAsync(cancellationToken);
+		List<UncategorizedItemRecord> pagedItems = pageRows.Select(x =>
+				new UncategorizedItemRecord(x.Id, x.ReceiptId, x.ReceiptItemCode,
+						x.Description, x.Quantity, x.UnitPrice, x.TotalAmount,
+						x.Category, x.Subcategory, x.ClassificationState,
+						x.AssignmentId, x.CategoryId, x.TaxonomyRevisionId,
+						x.TotalAmountCurrency.ToString())).ToList();
 
 		return new UncategorizedItemsResult(pagedItems, totalCount);
 	}
@@ -604,9 +618,19 @@ public class ReportService(IDbContextFactory<ApplicationDbContext> contextFactor
 
 		int duplicateGroupCount = await DuplicateReportReader.CountUnacceptedDefaultGroupsAsync(context, cancellationToken);
 
-		int uncategorizedItemCount = await context.ReceiptItems.AsNoTracking()
-			.Where(ri => ri.DeletedAt == null && ri.Category == "Uncategorized")
-			.CountAsync(cancellationToken);
+		int uncategorizedItemCount = await (
+				from item in context.ReceiptItems.AsNoTracking()
+				join receipt in context.Receipts.AsNoTracking() on item.ReceiptId equals receipt.Id
+				join pointer in context.CurrentClassifications.AsNoTracking() on item.Id equals pointer.ReceiptItemId into pointers
+				from pointer in pointers.DefaultIfEmpty()
+				join assignment in context.Classifications.AsNoTracking() on pointer.AssignmentId equals assignment.Id into assignments
+				from assignment in assignments.DefaultIfEmpty()
+				where item.DeletedAt == null && receipt.DeletedAt == null
+				  && (assignment == null || assignment.CategoryId == null
+					  || assignment.LegacyResolution == "unresolved_path"
+					  || context.LegacyMigrationItems.Any(evidence =>
+						  evidence.AssignmentId == assignment.Id && evidence.Resolution == "Unresolved"))
+				select item.Id).CountAsync(cancellationToken);
 
 		return new ReportsHealthSummaryResult(
 			outOfBalanceCount,
