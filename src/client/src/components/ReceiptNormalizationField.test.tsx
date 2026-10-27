@@ -111,6 +111,10 @@ it("chooses an existing identity for this purchase without creating or linking a
   expect(
     screen.queryByLabelText("Search all product names"),
   ).not.toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /^Choose suggested/ })).not.toBeInTheDocument();
+  expect(client.GET).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Choose product" }));
   await user.click(
     await screen.findByRole("button", {
       name: "Choose suggested Beef franks 8 count",
@@ -129,7 +133,8 @@ it("chooses an existing identity for this purchase without creating or linking a
       }),
     }),
   );
-  expect(screen.getByText(/This purchase only/)).toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(screen.getByText(/Selected for this purchase/)).toHaveTextContent("Beef franks 8 count");
   expect(client.POST).toHaveBeenCalledWith(
     "/api/receipt-items/normalization-preview",
     expect.anything(),
@@ -190,10 +195,67 @@ it("does not commit an unfinished new-product draft when choices are closed", as
     screen.getByLabelText("New product name"),
     "Unconfirmed product",
   );
-  await user.click(screen.getByRole("button", { name: "Close choices" }));
+  await user.click(screen.getByRole("button", { name: "Close" }));
   expect(observed).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "Choose product" }));
   expect(screen.getByLabelText("New product name")).toHaveValue("");
+});
+
+it.each(["Escape", "Close"])(
+  "%s cancels an unfinished edit and preserves the staged product choice",
+  async (dismiss) => {
+    vi.mocked(client.POST).mockResolvedValue({ data: preview, response: new Response() } as never);
+    const { observed } = renderField();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Choose product" }));
+    await user.click(await screen.findByRole("button", { name: "Choose suggested Beef franks 8 count" }));
+    const chosen = observed.mock.calls[0][0];
+    await user.click(screen.getByRole("button", { name: "Change product" }));
+    await user.type(screen.getByLabelText("New product name"), "Unconfirmed replacement");
+    await user.click(screen.getByRole("checkbox", { name: /Remember this exact description/ }));
+    if (dismiss === "Escape") await user.keyboard("{Escape}");
+    else await user.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Change product" })).toHaveFocus());
+    expect(observed).toHaveBeenCalledTimes(1);
+    expect(observed).toHaveBeenLastCalledWith(chosen);
+    expect(screen.getByText(/Selected for this purchase/)).toHaveTextContent("Beef franks 8 count");
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("dialog", { name: "Choose a product" })).toBeVisible();
+    expect(screen.getByLabelText("New product name")).toHaveValue("");
+    expect(screen.getByRole("checkbox", { name: /Remember this exact description/ })).not.toBeChecked();
+  },
+);
+
+it("refreshes available choices without removing an already staged purchase choice", async () => {
+  vi.mocked(client.POST).mockResolvedValue({ data: preview, response: new Response() } as never);
+  const { observed, queryClient } = renderField();
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Choose product" }));
+  await user.click(await screen.findByRole("button", { name: "Choose suggested Beef franks 8 count" }));
+  const chosen = observed.mock.calls[0][0];
+  await user.click(screen.getByRole("button", { name: "Change product" }));
+  await user.click(screen.getByRole("button", { name: "Refresh product choices" }));
+  await waitFor(() => expect(client.POST).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(queryClient.isFetching()).toBe(0));
+  expect(observed).toHaveBeenCalledTimes(1);
+  expect(observed).toHaveBeenLastCalledWith(chosen);
+  await user.keyboard("{Escape}");
+  expect(screen.getByText(/Selected for this purchase/)).toHaveTextContent("Beef franks 8 count");
+});
+
+it("disables product mutations while preview evidence is loading and still permits cancellation", async () => {
+  vi.mocked(client.POST).mockImplementation(() => new Promise(() => {}));
+  const { observed } = renderField();
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Choose product" }));
+  expect(await screen.findByRole("button", { name: "Choose suggested Beef franks 8 count" })).toBeDisabled();
+  await user.type(screen.getByLabelText("New product name"), "Unconfirmed product");
+  expect(screen.getByRole("button", { name: "New product and use it" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Exclude from product grouping" })).toBeDisabled();
+  await user.keyboard("{Escape}");
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(observed).not.toHaveBeenCalled();
 });
 
 it("preserves a reviewed one-off purchase when the exact-source mapping names a different product", async () => {
@@ -267,8 +329,8 @@ it("keeps review-later usable when lookup fails, without pretending the receipt 
   } as never);
   const { observed } = renderField();
   const user = userEvent.setup();
-  await screen.findByText(/Product lookup is unavailable/);
   await user.click(screen.getByRole("button", { name: "Choose product" }));
+  await screen.findByText(/Product lookup is unavailable/);
   expect(
     screen.getByRole("button", { name: "New product and use it" }),
   ).toBeDisabled();
@@ -357,7 +419,7 @@ it("does not show the alphabetical catalog until an explicit search is entered",
   ).toBeEnabled();
 });
 
-it("clears an inline product choice immediately when receipt source changes", async () => {
+it("clears a product choice immediately when receipt source changes", async () => {
   vi.mocked(client.POST).mockResolvedValue({
     data: preview,
     response: new Response(),
@@ -402,13 +464,14 @@ it("clears an inline product choice immediately when receipt source changes", as
   ).not.toBeInTheDocument();
 });
 
-it("supports explicitly remembering an inline choice and staging exclusion", async () => {
+it("supports explicitly remembering each staged choice and exclusion", async () => {
   vi.mocked(client.POST).mockResolvedValue({
     data: preview,
     response: new Response(),
   } as never);
   const { observed } = renderField();
   const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Choose product" }));
   await user.click(
     screen.getByRole("checkbox", { name: /Remember this exact description/ }),
   );
@@ -426,6 +489,8 @@ it("supports explicitly remembering an inline choice and staging exclusion", asy
     }),
   );
   await user.click(screen.getByRole("button", { name: "Change product" }));
+  expect(screen.getByRole("checkbox", { name: /Remember this exact description/ })).not.toBeChecked();
+  await user.click(screen.getByRole("checkbox", { name: /Remember this exact description/ }));
   await user.click(
     screen.getByRole("button", { name: "Exclude from product grouping" }),
   );
@@ -465,6 +530,7 @@ it("reopens alternatives after choosing a product and replaces the staged choice
   } as never);
   const { observed } = renderField();
   const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Choose product" }));
   await user.click(
     await screen.findByRole("button", {
       name: "Choose suggested Beef franks 8 count",

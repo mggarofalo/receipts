@@ -11,18 +11,30 @@ import {
 export type ReceiptNormalizationSuggestion =
   components["schemas"]["ReceiptNormalizationSuggestionResponse"];
 
-export function useReceiptNormalizationCandidates(source: ReceiptNormalizationSource) {
+export function useReceiptNormalizationCandidates(
+  source: ReceiptNormalizationSource,
+  options?: { enabled?: boolean },
+) {
   return useQuery({
     ...localErrorPolicy.query,
-    queryKey: ["normalization-catalog", "entry-candidates", normalizationSourceKey(source)],
-    enabled: !!source.location.trim() && !!source.description.trim(),
+    queryKey: [
+      "normalization-catalog",
+      "entry-candidates",
+      normalizationSourceKey(source),
+    ],
+    enabled:
+      (options?.enabled ?? true) &&
+      !!source.location.trim() &&
+      !!source.description.trim(),
     queryFn: async ({ signal }) => {
       const { data, error, response } = await client.GET(
         "/api/receipt-items/normalization-candidates",
         {
           ...localErrorPolicy.request,
           signal,
-          params: { query: { ...source, itemCode: source.itemCode ?? undefined } },
+          params: {
+            query: { ...source, itemCode: source.itemCode ?? undefined },
+          },
         },
       );
       if (!response.ok) throw toApiError(response.status, error);

@@ -18,8 +18,10 @@ public sealed class ReceiptNormalizationCandidatesService(
 		if (!await context.Users.AnyAsync(user => user.Id == actor && !(user.LockoutEnabled && user.LockoutEnd > now), cancellationToken))
 		{ throw new NormalizationCatalogException(403, "receipt_entry_actor_required", "An enabled signed-in user is required to request receipt product suggestions."); }
 		IReadOnlyList<NormalizationCatalogCandidate> candidates = await NormalizationCandidateRetrieval.RetrieveAsync(
-			context, source, embeddingService, cancellationToken);
+						context, source, embeddingService, cancellationToken,
+						candidate => ReceiptSuggestionEvidence.IsUseful(source, candidate),
+						ReceiptSuggestionEvidence.LexicalTerms);
 		return candidates.Select(candidate => new ReceiptNormalizationSuggestion(candidate.Id, candidate.Revision,
-			candidate.CanonicalName, candidate.DisplayLabel, candidate.Channels)).ToArray();
+	candidate.CanonicalName, candidate.DisplayLabel, candidate.Channels)).ToArray();
 	}
 }

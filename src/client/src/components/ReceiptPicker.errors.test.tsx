@@ -870,11 +870,6 @@ it.each([false, true])(
     expect(lookups).toEqual([
       {
         location: "Known market",
-        description: "Manual milk",
-        itemCode: "MILK",
-      },
-      {
-        location: "Known market",
         description: "Current milk draft",
         itemCode: "MILK",
       },

@@ -53,11 +53,12 @@ public class ValidationCompositionTests
 	public async Task Mediator_ValidBoundaryLimit_DispatchesOnce(int limit)
 	{
 		Mock<IItemTemplateSimilarityService> similarity = new();
-		similarity.Setup(s => s.GetSimilarItemsAsync("aa", limit, 0.3, false, It.IsAny<CancellationToken>())).ReturnsAsync([]);
+		int retrievalLimit = Math.Min(limit * 5, 100);
+		similarity.Setup(s => s.GetSimilarItemsAsync("aa", retrievalLimit, 0.3, false, It.IsAny<CancellationToken>())).ReturnsAsync([]);
 		using ServiceProvider provider = CreateProvider(similarity, new());
 		using IServiceScope scope = provider.CreateScope();
 		(await scope.ServiceProvider.GetRequiredService<IMediator>().Send(new GetSimilarItemsQuery("aa", limit, 0.3, false))).Should().BeEmpty();
-		similarity.Verify(s => s.GetSimilarItemsAsync("aa", limit, 0.3, false, It.IsAny<CancellationToken>()), Times.Once);
+		similarity.Verify(s => s.GetSimilarItemsAsync("aa", retrievalLimit, 0.3, false, It.IsAny<CancellationToken>()), Times.Once);
 	}
 
 	[Fact]
