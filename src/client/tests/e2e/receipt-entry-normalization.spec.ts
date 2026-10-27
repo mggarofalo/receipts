@@ -256,9 +256,12 @@ for (const width of [1280, 375]) {
     await expect(page.getByRole("region", { name: "Suggested products" })).toHaveCount(0);
     await expect(page.getByLabel("New product name")).toHaveCount(0);
     const addItem = page.getByRole("button", { name: "Add Item", exact: true, includeHidden: true });
-    const positionBeforeDialog = await addItem.boundingBox();
     await choose.focus();
     await expect(choose).toBeFocused();
+    // Focusing the trigger may scroll the mobile form. Compare after focus so
+    // this assertion measures dialog layout stability rather than page scrolling.
+    const positionBeforeDialog = await addItem.boundingBox();
+    expect(positionBeforeDialog).not.toBeNull();
     await page.keyboard.press("Enter");
     const dialog = page.getByRole("dialog", { name: "Choose a product" });
     await expect(dialog).toBeVisible();
