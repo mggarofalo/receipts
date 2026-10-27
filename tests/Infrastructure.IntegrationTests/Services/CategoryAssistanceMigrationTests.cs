@@ -46,7 +46,8 @@ public sealed class CategoryAssistanceMigrationTests(PostgresFixture fixture) : 
 		db.Roles.Add(role);
 		db.UserRoles.Add(new IdentityUserRole<string> { UserId = actor, RoleId = role.Id });
 		await db.SaveChangesAsync();
-		var changed = await store.UpdateAsync(actor, defaults.Revision, defaults with { DailyLimit = defaults.DailyLimit + 1 });
+		// Keep this change valid in earlier schemas so downgrade reaches the audit-retention guard.
+		var changed = await store.UpdateAsync(actor, defaults.Revision, defaults with { PendingLimit = defaults.PendingLimit + 1 });
 		var originalAudit = await db.CategoryAssistanceSettingsAudits.AsNoTracking().SingleAsync();
 		originalAudit.Actor.Should().Be(actor);
 		originalAudit.PreviousRevision.Should().Be(defaults.Revision);
