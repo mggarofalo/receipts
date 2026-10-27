@@ -19,17 +19,20 @@ decisions, classification history, and their replay records commit together.
 
 ## Rollout boundary
 
-`Classification:WritesEnabled` defaults to `false`. Keep it disabled until
-RECEIPTS-1047 completes legacy backfill, writer reconciliation, and portable backup
-round-trip validation. This foundation alone is not a production cutover. Ordinary
-receipt saves without classification intent continue to work while it is disabled.
+`Classification:WritesEnabled` defaults to `true` after the classification cutover.
+Explicit classification writes still require completed legacy backfill and a current assignment for every
+existing receipt item. Set `Classification__WritesEnabled=false` during maintenance
+or until the upgrade, writer reconciliation, and portable backup round-trip have
+been verified. Backup validation is an operator rollout step, not a database flag.
+Ordinary receipt saves without classification intent continue while writes are disabled.
 No external classification provider is required by either path.
 
 Initial legacy assignments must record observations at migration time, not invent
 history at the purchase date. Migration must include trash, retain original labels,
 report ambiguity, and validate the current-assignment projection against immutable
 history. Projection reconstruction and recovery evidence belong to that migration
-gate. Direct legacy backup imports are not yet classification-aware in this story.
+gate. See [legacy taxonomy migration](legacy-taxonomy-migration.md) for current
+legacy backup import and cutover procedures.
 
 History migrations deliberately refuse destructive downgrade. Before activation,
 disable new callers and retain the additive tables. After activation, recovery must
