@@ -68,7 +68,19 @@ it("keeps settings discoverable without capability and hides provider controls",
   expect(
     await screen.findByText(/provider is unavailable/i),
   ).toBeInTheDocument();
-  expect(screen.getByText("TYPESAFE_API_KEY")).toBeInTheDocument();
+  const guidance = screen.getByText("TYPESAFE_API_KEY").parentElement!;
+  expect(guidance).toHaveTextContent(/Create a Jev API key/);
+  expect(guidance).toHaveTextContent(/API server environment/);
+  expect(guidance).toHaveTextContent(
+    /restart the API and check the connection/i,
+  );
+  expect(guidance).not.toHaveTextContent(
+    /User Secrets|local development|dotnet/i,
+  );
+  expect(within(guidance).getByRole("link")).toHaveAttribute(
+    "href",
+    "https://github.com/mggarofalo/Receipts/blob/main/docs/jev-setup.md",
+  );
   expect(
     screen.getByRole("link", { name: "Back to classification" }),
   ).toHaveAttribute("href", "/classification");

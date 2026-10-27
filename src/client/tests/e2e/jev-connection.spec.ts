@@ -7,6 +7,56 @@ import {
 } from "../fixtures/api-mocks";
 
 for (const width of [375, 1280]) {
+  test(`category assistance environment setup (${width}px)`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await installApiMocks(page, {
+      user: ADMIN_FIXTURE_USER,
+      freezeClock: false,
+    });
+    await page.route("**/api/category-assistance/status", (route) =>
+      route.fulfill({
+        json: {
+          capability: "unavailable",
+          consentEnabled: false,
+          suggestionsAvailable: false,
+          provider: null,
+          models: [],
+        },
+      }),
+    );
+    await page.route("**/api/category-assistance/settings", (route) =>
+      route.fulfill({
+        json: {
+          enabled: false,
+          provider: null,
+          model: null,
+          dailyLimit: 10,
+          pendingLimit: 3,
+          revision: "11111111-1111-4111-8111-111111111111",
+        },
+      }),
+    );
+    await signInAs(page, ADMIN_FIXTURE_USER);
+    await page.goto("/admin/category-assistance");
+    const guidance = page
+      .getByText("TYPESAFE_API_KEY", { exact: true })
+      .locator("..");
+    await expect(guidance).toBeVisible();
+    await expect(guidance).toContainText("Create a Jev API key");
+    await expect(guidance).toContainText("API server environment");
+    await expect(guidance).toContainText(
+      "restart the API and check the connection",
+    );
+    await expect(guidance).not.toContainText(
+      /User Secrets|local development|dotnet/i,
+    );
+    await expect(
+      page.getByRole("checkbox", { name: /enable automatic/i }),
+    ).toBeDisabled();
+    await expect(page.getByLabel("Model", { exact: true })).toHaveCount(0);
+  });
   test(`admin Jev setup and explicit check (${width}px)`, async ({
     page,
   }, testInfo) => {
@@ -46,11 +96,19 @@ for (const width of [375, 1280]) {
         exact: true,
       }),
     ).toBeVisible();
-    await expect(
-      page.getByText(/Configure TYPESAFE_API_KEY/),
-    ).not.toBeVisible();
+    await expect(page.getByText(/Create a Jev API key/)).not.toBeVisible();
     await page.getByText("Setup", { exact: true }).click();
-    await expect(page.getByText(/Configure TYPESAFE_API_KEY/)).toBeVisible();
+    const guidance = page.getByText(/Create a Jev API key/);
+    await expect(guidance).toBeVisible();
+    await expect(guidance).toContainText(
+      "TYPESAFE_API_KEY in the API server environment",
+    );
+    await expect(guidance).toContainText(
+      "Restart the API, then check the connection",
+    );
+    await expect(guidance).not.toContainText(
+      /User Secrets|local development|dotnet/i,
+    );
     await expect(
       page.getByText(/missingKey|authenticationVerified|configuredUnverified/),
     ).toHaveCount(0);

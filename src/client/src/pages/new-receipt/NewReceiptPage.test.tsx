@@ -327,12 +327,12 @@ describe("NewReceiptPage", () => {
     expect(screen.getByText("Balance details")).toBeInTheDocument();
   });
 
-  it("places full-width items before payments with one reachable save action", () => {
+  it("places payments before items with one reachable save action", () => {
     renderWithProviders(<NewReceiptPage />);
     const items = screen.getByTestId("line-items-section");
     const payments = screen.getByTestId("transactions-section");
     expect(
-      items.compareDocumentPosition(payments) &
+      payments.compareDocumentPosition(items) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(

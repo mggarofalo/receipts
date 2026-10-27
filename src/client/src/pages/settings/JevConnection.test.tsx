@@ -68,6 +68,25 @@ describe("JevConnection", () => {
       expect.objectContaining({ middleware: expect.any(Array) }),
     );
   });
+  it("explains environment setup without local development instructions", async () => {
+    vi.mocked(client.GET).mockResolvedValue({
+      data: { state: "missing", reason: "missingKey", models: [] },
+    } as never);
+    render(<JevConnection />, { wrapper: createQueryWrapper() });
+    await screen.findByText("Not configured");
+    await userEvent.click(screen.getByText("Setup", { exact: true }));
+    const guidance = screen.getByText(/Create a Jev API key/);
+    expect(guidance).toHaveTextContent(
+      /TYPESAFE_API_KEY in the API server environment/,
+    );
+    expect(guidance).toHaveTextContent(
+      /Restart the API, then check the connection/,
+    );
+    expect(guidance).not.toHaveTextContent(
+      /User Secrets|local development|dotnet/i,
+    );
+    expect(client.POST).not.toHaveBeenCalled();
+  });
   it("hides controls while loading", () => {
     vi.mocked(client.GET).mockReturnValue(new Promise(() => {}));
     render(<JevConnection />, { wrapper: createQueryWrapper() });

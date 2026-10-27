@@ -118,6 +118,21 @@ for (const width of [1280, 900, 375, 320]) {
       await expect(
         page.getByRole("button", { name: "Submit Receipt", exact: true }),
       ).toHaveCount(1);
+      const transactionCard = page.locator('[data-slot="card"]').filter({
+        has: page.getByText("Transactions", { exact: true }),
+      });
+      const itemCard = page.locator('[data-slot="card"]').filter({
+        has: page.getByText("Line Items", { exact: true }),
+      });
+      await expect(transactionCard).toHaveCount(1);
+      await expect(itemCard).toHaveCount(1);
+      const transactionBounds = await transactionCard.boundingBox();
+      const itemBounds = await itemCard.boundingBox();
+      expect(transactionBounds).not.toBeNull();
+      expect(itemBounds).not.toBeNull();
+      expect(
+        transactionBounds!.y + transactionBounds!.height,
+      ).toBeLessThanOrEqual(itemBounds!.y);
       if (known && (width === 1280 || width === 375))
         await page.screenshot({
           path: testInfo.outputPath(`entry-empty-${width}.png`),
@@ -253,7 +268,21 @@ for (const width of [1280, 900, 375, 320]) {
       await expect(page.getByRole("alert")).toContainText(
         "Draft retained for browser inspection.",
       );
-      expect(bodies).toHaveLength(1);
+      await expect(
+        page.getByRole("combobox", { name: /^Location/ }),
+      ).toContainText("Market");
+      await expect(page.getByText("MILK", { exact: true })).toBeVisible();
+      await expect(transactionCard).toContainText("Checking");
+      await expect(transactionCard).toContainText("Savings");
+      const balance = page.locator(".sticky.bottom-0");
+      await expect(balance).toContainText("$4.00");
+      await expect(balance).toContainText("Balanced");
+      // Retrying the failed save must preserve the same draft, including calculations.
+      await page
+        .getByRole("button", { name: "Submit Receipt", exact: true })
+        .click();
+      await expect.poll(() => bodies.length).toBe(2);
+      expect(bodies[1]).toEqual(bodies[0]);
       expect(bodies[0]).toMatchObject({
         items: [
           {
