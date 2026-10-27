@@ -105,10 +105,10 @@ it("requires explicit consent, available model, and bounded limits before saving
   await user.selectOptions(screen.getByLabelText("Provider"), "jev");
   await user.selectOptions(screen.getByLabelText("Model"), "jev-1.14.0");
   await user.clear(screen.getByLabelText(/daily request limit/i));
-  await user.type(screen.getByLabelText(/daily request limit/i), "101");
+  await user.type(screen.getByLabelText(/daily request limit/i), "5001");
   expect(screen.getByRole("button", { name: "Save settings" })).toBeDisabled();
   await user.clear(screen.getByLabelText(/daily request limit/i));
-  await user.type(screen.getByLabelText(/daily request limit/i), "12");
+  await user.type(screen.getByLabelText(/daily request limit/i), "5000");
   await user.click(screen.getByRole("button", { name: "Save settings" }));
   await waitFor(() =>
     expect(mockClient.PUT).toHaveBeenCalledWith(
@@ -118,7 +118,7 @@ it("requires explicit consent, available model, and bounded limits before saving
           enabled: true,
           provider: "jev",
           model: "jev-1.14.0",
-          dailyLimit: 12,
+          dailyLimit: 5000,
           pendingLimit: 3,
           expectedRevision: current.revision,
         },

@@ -7,7 +7,7 @@ public sealed class CategoryAssistanceSettingsEntity
 	public bool Enabled { get; set; }
 	public string? Provider { get; set; }
 	public string? Model { get; set; }
-	public int DailyLimit { get; set; } = 10;
+	public int DailyLimit { get; set; } = 100;
 	public int PendingLimit { get; set; } = 3;
 	public Guid Revision { get; set; }
 	public Guid RestoreGeneration { get; set; }

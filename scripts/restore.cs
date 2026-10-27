@@ -7,11 +7,11 @@ using System.IO.Compression;
 string root = GetRoot();
 LoadEnv(Path.Combine(root, ".env"));
 // Deterministic SQL output for the disposable-PostgreSQL restore proof.
-if (args.Length == 2 && args[0] == "--test-fence-sql")
+if ((args.Length == 2 || (args.Length == 3 && args[2] == "--unknown")) && args[0] == "--test-fence-sql")
 {
     string testLedger = await File.ReadAllTextAsync(args[1]);
     Validate(testLedger);
-    Console.Write(FenceSql(testLedger, false));
+    Console.Write(FenceSql(testLedger, args.Length == 3));
     return 0;
 }
 bool reconcile = args.Length > 0 && args[0] == "--reconcile";
@@ -119,7 +119,7 @@ catch (Exception ex)
 static string FenceSql(string ledger, bool unknown)
 {
     string exhaust = unknown
-        ? "INSERT INTO category_assistance.\"DailyUsage\" (\"UtcDay\", \"DispatchAttempts\") VALUES ((now() AT TIME ZONE 'UTC')::date, 100) ON CONFLICT (\"UtcDay\") DO UPDATE SET \"DispatchAttempts\" = GREATEST(category_assistance.\"DailyUsage\".\"DispatchAttempts\", EXCLUDED.\"DispatchAttempts\");"
+        ? "INSERT INTO category_assistance.\"DailyUsage\" (\"UtcDay\", \"DispatchAttempts\") VALUES ((now() AT TIME ZONE 'UTC')::date, 5000) ON CONFLICT (\"UtcDay\") DO UPDATE SET \"DispatchAttempts\" = GREATEST(category_assistance.\"DailyUsage\".\"DispatchAttempts\", EXCLUDED.\"DispatchAttempts\");"
         : "";
     // Same transition and lock order as CategoryAssistanceRestoreFence.
     return $$"""

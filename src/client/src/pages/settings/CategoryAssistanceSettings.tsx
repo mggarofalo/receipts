@@ -83,7 +83,7 @@ export default function CategoryAssistanceSettings() {
     !!values &&
     Number.isInteger(values.dailyLimit) &&
     values.dailyLimit >= 1 &&
-    values.dailyLimit <= 100 &&
+    values.dailyLimit <= 5000 &&
     Number.isInteger(values.pendingLimit) &&
     values.pendingLimit >= 1 &&
     values.pendingLimit <= 20 &&
@@ -271,12 +271,12 @@ export default function CategoryAssistanceSettings() {
             </>
           )}
           <label className="block space-y-1">
-            Daily request limit (1–100)
+            Daily request limit (1–5,000)
             <input
               className="block w-full rounded border p-2"
               type="number"
               min={1}
-              max={100}
+              max={5000}
               step={1}
               value={values.dailyLimit}
               disabled={busy}
