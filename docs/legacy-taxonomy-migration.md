@@ -27,7 +27,8 @@ compatible immutable-history prefix. See [backup and restore](backup-restore.md)
 
 Keep `Classification:WritesEnabled` false (environment form
 `Classification__WritesEnabled=false`) until all cutover gates below are verified.
-The flag defaults to false; it does not stop legacy writers, background services
+The flag defaults to true after the classification cutover; explicitly disable it
+for this maintenance sequence. It does not stop legacy writers, background services
 or administrator taxonomy edits. Stop application traffic and all writers for the
 maintenance window, and do not edit taxonomy before initial backfill.
 

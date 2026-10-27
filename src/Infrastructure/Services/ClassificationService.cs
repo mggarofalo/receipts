@@ -13,6 +13,8 @@ namespace Infrastructure.Services;
 
 public sealed class ClassificationService(IDbContextFactory<ApplicationDbContext> factory, TimeProvider clock, Microsoft.Extensions.Options.IOptions<ClassificationOptions> options, ICommittedChangePublisher? publisher = null) : IClassificationService
 {
+	private const string WritesDisabledMessage = "Classification writes are disabled by server configuration. After verifying migration and backup, enable Classification__WritesEnabled and restart the API.";
+
 	public async Task<PurchaseClassification> AssignAsync(string actor, Guid itemId, ClassificationCommand command, CancellationToken ct = default)
 	{
 		await using ApplicationDbContext db = await factory.CreateDbContextAsync(ct);
@@ -34,7 +36,7 @@ public sealed class ClassificationService(IDbContextFactory<ApplicationDbContext
 		if (string.IsNullOrWhiteSpace(actor) || command.OperationId == Guid.Empty || command.TaxonomyRevisionId == Guid.Empty
 			|| string.IsNullOrWhiteSpace(command.Reason) || command.Reason.Contains('\0'))
 		{ throw new TaxonomyException(400, "Actor, operation ID, taxonomy revision and reason are required."); }
-		if (!enabled) { throw new TaxonomyException(409, "Classification writes require completed migration and portable backup validation."); }
+		if (!enabled) { throw new TaxonomyException(409, WritesDisabledMessage); }
 		TaxonomyHeadEntity head = await db.TaxonomyHeads.FromSqlRaw("SELECT * FROM taxonomy.\"Head\" WHERE \"Id\" = 1 FOR UPDATE").SingleAsync(ct);
 		if (!prepared) { await RequireReadyAsync(db, ct); }
 		string hash = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new { itemId, command })));
@@ -111,7 +113,7 @@ public sealed class ClassificationService(IDbContextFactory<ApplicationDbContext
 	private static async Task RequireReadyAsync(ApplicationDbContext db, CancellationToken ct)
 	{
 		if (!await db.LegacyMigrations.AnyAsync(x => x.OperationKind == LegacyTaxonomyMigrationService.InitialOperationKind, ct))
-		{ throw new TaxonomyException(409, "Classification writes require a completed legacy backfill and portable backup validation."); }
+		{ throw new TaxonomyException(409, "Classification writes require a completed legacy taxonomy backfill."); }
 		if (await db.ReceiptItems.IgnoreQueryFilters().IgnoreAutoIncludes().AnyAsync(item =>
 			!db.CurrentClassifications.Any(current => current.ReceiptItemId == item.Id), ct))
 		{ throw new TaxonomyException(409, "Classification backfill is incomplete: existing receipt items have no assignment. Repair or restore the missing classification evidence before retrying."); }
@@ -130,7 +132,7 @@ public sealed class ClassificationService(IDbContextFactory<ApplicationDbContext
 	{
 		bool explicitWrite = items.Any(x => x.Classification != null);
 		if (explicitWrite && !enabled)
-		{ throw new TaxonomyException(409, "Classification writes require completed migration and portable backup validation."); }
+		{ throw new TaxonomyException(409, WritesDisabledMessage); }
 		bool migrated = await db.LegacyMigrations.AnyAsync(x => x.OperationKind == LegacyTaxonomyMigrationService.InitialOperationKind, ct);
 		if (!explicitWrite && !migrated) { return; }
 		TaxonomyHeadEntity head = db.Database.IsNpgsql()

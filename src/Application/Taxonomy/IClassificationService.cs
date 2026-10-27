@@ -7,7 +7,7 @@ public sealed record PurchaseClassification(Guid Id, Guid ReceiptItemId, long Se
 	Guid? CategoryId, Guid TaxonomyRevisionId, DateTimeOffset RecordedAt, string Actor, string Source, string Reason,
 	Guid OperationId, IReadOnlyList<TaxonomyNode> Path, string? LegacyCategory = null, string? LegacySubcategory = null, string? LegacyResolution = null);
 public sealed record ClassificationHistory(IReadOnlyList<PurchaseClassification> Items, long? NextBeforeSequence);
-public sealed class ClassificationOptions { public bool WritesEnabled { get; set; } }
+public sealed class ClassificationOptions { public bool WritesEnabled { get; set; } = true; }
 public interface IClassificationService
 {
 	Task<PurchaseClassification> AssignAsync(string actor, Guid itemId, ClassificationCommand command, CancellationToken ct = default);

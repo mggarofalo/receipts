@@ -4175,7 +4175,7 @@ export interface components {
             /** @description Why these receipts and their dependencies remain restorable in trash. */
             reason: string;
         };
-        /** @description Manual assignment to any active node or explicit null. Writes are disabled until migration and portable backup validation. Source and actor are server owned. */
+        /** @description Manual assignment to any active node or explicit null. Writes require completed legacy backfill and may be disabled by server configuration. Backup validation is an operator rollout step. Source and actor are server owned. */
         ClassificationRequest: {
             /** Format: uuid */
             categoryId: string | null;
@@ -12891,7 +12891,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Normalization choice rejected; no partial receipt or catalog writes. */
+            /** @description Receipt request, normalization choice, or classification conflict; no partial receipt, catalog, or classification writes. */
             409: {
                 headers: {
                     [name: string]: unknown;
