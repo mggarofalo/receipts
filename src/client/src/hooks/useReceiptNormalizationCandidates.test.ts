@@ -37,3 +37,16 @@ it("preserves a reasoned rejection for local recovery", async () => {
   await waitFor(() => expect(result.current.isError).toBe(true));
   expect(extractErrorMessage(result.current.error)).toBe("Sign in again.");
 });
+
+it("defers network retrieval until explicitly enabled", async () => {
+  api.GET.mockResolvedValue({ data: [], response: new Response(null, { status: 200 }) } as never);
+  const { result, rerender } = renderHook(
+    ({ enabled }) => useReceiptNormalizationCandidates(source, { enabled }),
+    { initialProps: { enabled: false }, wrapper: createQueryWrapper() },
+  );
+  expect(result.current.fetchStatus).toBe("idle");
+  expect(api.GET).not.toHaveBeenCalled();
+  rerender({ enabled: true });
+  await waitFor(() => expect(result.current.isSuccess).toBe(true));
+  expect(api.GET).toHaveBeenCalledTimes(1);
+});

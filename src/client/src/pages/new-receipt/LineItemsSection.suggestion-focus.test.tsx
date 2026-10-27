@@ -1,5 +1,5 @@
 vi.hoisted(() => vi.stubEnv("VITE_API_URL", "http://suggestion-focus.test"));
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { http, HttpResponse } from "msw";
@@ -195,4 +195,39 @@ it("shows a completed description suggestion when its input still owns focus and
     expect(description).toHaveAttribute("aria-expanded", "false"),
   );
   expect(screen.getByLabelText(/^Unit Price/)).toHaveValue("2.0100");
+});
+
+it("hides cached suggestions immediately while the edited description is still debouncing", async () => {
+  withMatch = true;
+  const { description } = await prepare();
+  await act(async () => {
+    responseGate.resolve();
+  });
+  expect(await screen.findByRole("option", { name: /Milk suggestion/ })).toBeVisible();
+
+  // One input event keeps this assertion inside the real hook's 300ms debounce.
+  // This synthetic edit reproduces a stale result, not a retrieval-quality claim.
+  fireEvent.change(description, { target: { value: "Baked beans 12 oz" } });
+
+  expect(screen.queryByRole("option", { name: /Milk suggestion/ })).not.toBeInTheDocument();
+  expect(description).toHaveAttribute("aria-expanded", "false");
+  expect(description).toHaveValue("Baked beans 12 oz");
+  expect(description).toHaveFocus();
+});
+
+it("hides cached item-code suggestions immediately while the edited code is still debouncing", async () => {
+  server.use(http.get("*/api/receipt-items/suggestions", () => HttpResponse.json([{
+    itemCode: "MILK-GAL", description: "Whole milk", category: "Food",
+    subcategory: "Dairy", unitPrice: 2.01, matchType: "location",
+  }])));
+  const { user, description } = await prepare();
+  const code = screen.getByPlaceholderText("e.g. MILK-GAL");
+  await user.type(code, "MILK");
+  expect(await screen.findByRole("option", { name: /MILK-GAL/ })).toBeVisible();
+  fireEvent.change(code, { target: { value: "BEANS" } });
+  expect(screen.queryByRole("option", { name: /MILK-GAL/ })).not.toBeInTheDocument();
+  expect(code).toHaveAttribute("aria-expanded", "false");
+  expect(code).toHaveValue("BEANS");
+  expect(code).toHaveFocus();
+  expect(description).toHaveValue("Manual milk");
 });

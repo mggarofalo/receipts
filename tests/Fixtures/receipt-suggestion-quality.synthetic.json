@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "purpose": "Small synthetic receipt-entry suggestion acceptance corpus; no actual user receipt data.",
+  "expectationScope": "Optional useful suggestions only. Never auto-select, rewrite raw description, or require review. Candidate retrieval is not identity verification.",
+  "cases": [
+    { "id": "beans-mallet-number", "description": "Baked beans 12 oz", "catalog": ["Rubber mallet 12 inch"], "expect": "abstain", "reason": "Only a package number overlaps; unrelated product." },
+    { "id": "beans-hammer-number-unit", "description": "Baked beans 16 oz", "catalog": ["Claw hammer 16 oz"], "expect": "abstain", "reason": "Number and weight unit do not identify beans." },
+    { "id": "beans-mallet-metric", "description": "Baked beans 400 g", "catalog": ["Rubber mallet 400 g"], "expect": "abstain", "reason": "Same mass does not establish a useful product relationship." },
+    { "id": "exact-beans", "description": "Baked beans 12 oz", "catalog": ["Baked beans 12 oz", "Rubber mallet 12 inch"], "expect": "offer", "offer": ["Baked beans 12 oz"], "reject": ["Rubber mallet 12 inch"], "reason": "Exact name supports an optional suggestion." },
+    { "id": "approved-abbreviation", "description": "BF FRANKS 8CT", "catalog": ["Beef franks 8 count"], "approvedExample": { "description": "BF FRANKS 8CT", "target": "Beef franks 8 count", "location": "Synthetic market A", "itemCode": "old-code" }, "location": "Synthetic market B", "itemCode": "new-code", "expect": "offer", "offer": ["Beef franks 8 count"], "reason": "Approved description is advisory evidence across store/code change; exact-source rule must not transfer." },
+    { "id": "useful-whole-word", "description": "Whole milk", "catalog": ["Milk"], "expect": "offer", "offer": ["Milk"], "reason": "Product-bearing whole word supports a useful alternative without claiming exact identity." },
+    { "id": "generic-product", "description": "Baked beans 12 oz", "catalog": ["Baked beans"], "expect": "offer", "offer": ["Baked beans"], "reason": "Product name provides useful optional grouping; package identity remains unconfirmed." },
+    { "id": "ambiguous-brand-size", "description": "Acme baked beans", "catalog": ["Acme baked beans 12 oz", "Acme baked beans 24 oz"], "expect": "offer-ambiguous", "offer": ["Acme baked beans 12 oz", "Acme baked beans 24 oz"], "reason": "Both are plausible alternatives; no automatic choice or invented confidence." },
+    { "id": "short-exact", "description": "Tea", "catalog": ["Tea"], "expect": "offer", "offer": ["Tea"], "reason": "Short exact product name remains useful." },
+    { "id": "short-substring", "description": "BB", "catalog": ["Rubber mallet"], "expect": "abstain", "reason": "Unapproved abbreviation is not identity evidence just because its letters occur inside rubber." },
+    { "id": "lexical-lookalike", "description": "Ham", "catalog": ["Hamburger buns"], "expect": "abstain", "reason": "Shared substring alone does not establish the same product or a useful alternative." },
+    { "id": "store-code-only", "description": "Baked beans", "location": "Synthetic market B", "itemCode": "123", "catalog": ["Rubber mallet"], "unrelatedPriorSource": { "description": "Rubber mallet", "location": "Synthetic market A", "itemCode": "123" }, "expect": "abstain", "reason": "A store item code is not a global product identity." }
+  ],
+  "measurement": {
+    "method": "Report each named case as pass/fail against offered and rejected sets, preserving raw description and optional continuation. Count false offers separately from missed useful suggestions. Record backend retrieval separately from visible UI and distinguish debounced-query mismatch.",
+    "limits": "This is a regression corpus, not a representative accuracy benchmark. No scored confidence, universal correctness, provider comparison, or live usage conclusion is supported. Expand using consented redacted examples before choosing broader quality targets."
+  }
+}

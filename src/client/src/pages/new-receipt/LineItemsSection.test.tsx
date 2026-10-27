@@ -581,19 +581,23 @@ it("retains an explicit nested category identity and operation while editing unr
   });
 });
 
-it("selects a product inline while retaining the raw receipt description on the added line", async () => {
+it("selects a product in the optional dialog while retaining the raw receipt description on the added line", async () => {
   const user = userEvent.setup();
   const onChange = vi.fn();
   renderWithProviders(
     <LineItemsSection items={[]} onChange={onChange} location="Market" />,
   );
   await user.type(screen.getByPlaceholderText("Item description"), "BF FRANKS");
+  expect(screen.queryByRole("dialog", { name: "Choose a product" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /^Choose suggested/ })).not.toBeInTheDocument();
+  await user.click(await screen.findByRole("button", { name: "Choose product" }));
   await user.click(
     await screen.findByRole("button", { name: "Choose suggested Beef franks" }),
   );
   expect(screen.getByPlaceholderText("Item description")).toHaveValue(
     "BF FRANKS",
   );
+  expect(screen.queryByRole("dialog", { name: "Choose a product" })).not.toBeInTheDocument();
   await user.click(screen.getByRole("combobox", { name: /^Category/ }));
   await user.click(screen.getByRole("option", { name: "Food" }));
   await user.click(screen.getByRole("button", { name: /add item/i }));

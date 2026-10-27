@@ -190,7 +190,17 @@ for (const width of [1280, 900, 375, 320]) {
         ).toBe(true);
       }
       if (known) {
-        const candidate = page.getByRole("button", {
+        await expect(
+          page.getByRole("region", { name: "Suggested products" }),
+        ).toHaveCount(0);
+        await page
+          .getByRole("button", { name: "Choose product", exact: true })
+          .click();
+        const productDialog = page.getByRole("dialog", {
+          name: "Choose a product",
+        });
+        await expect(productDialog).toBeVisible();
+        const candidate = productDialog.getByRole("button", {
           name: "Choose suggested Whole milk 1 gallon",
           exact: true,
         });
@@ -201,6 +211,7 @@ for (const width of [1280, 900, 375, 320]) {
             fullPage: true,
           });
         await candidate.click();
+        await expect(productDialog).toHaveCount(0);
         await expect(page.getByPlaceholder("Item description")).toHaveValue(
           "MILK",
         );

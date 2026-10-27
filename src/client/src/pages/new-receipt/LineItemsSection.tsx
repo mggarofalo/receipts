@@ -9,6 +9,7 @@ import { receiptItemDraftSchema } from "@/lib/receipt-item-draft";
 import { ReceiptNormalizationField } from "@/components/ReceiptNormalizationField";
 import {
   currentNormalizationChoice,
+  normalizationSourceKey,
   receiptNormalizationSource,
   type ReceiptNormalizationChoice,
 } from "@/lib/receipt-normalization";
@@ -18,12 +19,15 @@ import {
   calculateSubtotal,
   calculateLineTotal,
 } from "@/lib/receipt-arithmetic";
-import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect, useLayoutEffect } from "react";
 import { generateId } from "@/lib/id";
 import { useForm } from "react-hook-form";
 import { z } from "zod/v4";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useSimilarItems } from "@/hooks/useSimilarItems";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { useReceiptNormalizationCandidates } from "@/hooks/useReceiptNormalizationCandidates";
+import { useReceiptNormalizationPreview } from "@/hooks/useReceiptNormalizationPreview";
 import { useReceiptItemSuggestions } from "@/hooks/useReceiptItemSuggestions";
 import { formatUnitPrice, formatCurrency } from "@/lib/format";
 import { Button } from "@/components/ui/button";
@@ -59,14 +63,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Plus,
-  Trash2,
-  Loader2,
-  Pencil,
-  Check,
-  X,
-} from "lucide-react";
+import { Plus, Trash2, Loader2, Pencil, Check, X } from "lucide-react";
 
 const itemSchema = receiptItemDraftSchema;
 
@@ -100,7 +97,10 @@ export function LineItemsSection({
   const [normalizationChoice, setNormalizationChoice] =
     useState<ReceiptNormalizationChoice>();
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const suggestionsListId = "new-receipt-suggestions-list";
+  const [descriptionList, setDescriptionList] = useState<HTMLDivElement | null>(null);
+  const [itemCodeList, setItemCodeList] = useState<HTMLDivElement | null>(null);
+  const [descriptionAria, setDescriptionAria] = useState<{ list: string; active?: string }>();
+  const [itemCodeAria, setItemCodeAria] = useState<{ list: string; active?: string }>();
   // Index of the keyboard-highlighted row in the description lookup.
   const [descriptionActiveIndex, setDescriptionActiveIndex] = useState(0);
   const taxonomy = useCategoryTaxonomy();
@@ -127,7 +127,6 @@ export function LineItemsSection({
 
   // Item code autocomplete
   const [showItemCodeSuggestions, setShowItemCodeSuggestions] = useState(false);
-  const itemCodeSuggestionsListId = "new-receipt-item-code-suggestions-list";
   const itemCodeInputRef = useRef<HTMLInputElement>(null);
   // Index of the keyboard-highlighted row in the item code lookup.
   const [itemCodeActiveIndex, setItemCodeActiveIndex] = useState(0);
@@ -143,9 +142,10 @@ export function LineItemsSection({
   });
 
   const hasItemCodeResults =
-    !!itemCodeSuggestions && itemCodeSuggestions.length > 0;
+    !itemCodeDebouncing && !!itemCodeSuggestions && itemCodeSuggestions.length > 0;
   const hasNoItemCodeResultsMessage =
     (itemCode ?? "").length >= 1 &&
+    !itemCodeDebouncing &&
     !isFetchingItemCodeSuggestions &&
     !itemCodeSuggestionsError &&
     !!itemCodeSuggestions &&
@@ -153,6 +153,15 @@ export function LineItemsSection({
   const isItemCodeSuggestionsOpen =
     showItemCodeSuggestions &&
     (hasItemCodeResults || hasNoItemCodeResultsMessage);
+
+  useLayoutEffect(() => {
+    const list = isItemCodeSuggestionsOpen ? itemCodeList : null;
+    const active = list?.querySelectorAll<HTMLElement>('[role="option"]')[itemCodeActiveIndex]?.id;
+    setItemCodeAria(previous => {
+      if (!list?.id) return previous === undefined ? previous : undefined;
+      return previous?.list === list.id && previous.active === active ? previous : { list: list.id, active };
+    });
+  }, [isItemCodeSuggestionsOpen, itemCodeList, itemCodeActiveIndex, itemCodeSuggestions]);
 
   const applyItemCodeSuggestion = useCallback(
     (suggestion: NonNullable<typeof itemCodeSuggestions>[number]) => {
@@ -179,6 +188,7 @@ export function LineItemsSection({
       }
       if (!isItemCodeSuggestionsOpen) return;
       const count = itemCodeSuggestions?.length ?? 0;
+      if (count === 0) return;
       if (e.key === "ArrowDown") {
         e.preventDefault();
         setItemCodeActiveIndex((i) => Math.min(i + 1, count - 1));
@@ -210,15 +220,76 @@ export function LineItemsSection({
     refetch: retrySimilarItems,
   } = useSimilarItems(description, { enabled: showSuggestions });
 
-  const hasResults = !!similarItems && similarItems.length > 0;
+  const productSource = useMemo(
+    () =>
+      receiptNormalizationSource(location, {
+        description,
+        receiptItemCode: itemCode,
+      }),
+    [location, description, itemCode],
+  );
+  const productSourceKey = normalizationSourceKey(productSource);
+  const settledProductSourceKey = useDebouncedValue(productSourceKey);
+  const productEnabled =
+    showSuggestions &&
+    productSourceKey === settledProductSourceKey &&
+    !!productSource.location.trim() &&
+    !!productSource.description.trim();
+  const productPreview = useReceiptNormalizationPreview(productSource);
+  const productLookup = useReceiptNormalizationCandidates(productSource, {
+    enabled: productEnabled,
+  });
+  const productReady =
+    productEnabled &&
+    productPreview.isSuccess &&
+    !!productPreview.data?.sourceFingerprint &&
+    productLookup.isSuccess &&
+    !productPreview.isFetching &&
+    !productPreview.isDebouncing &&
+    !productLookup.isFetching;
+  const productSuggestions = useMemo(
+    () =>
+      productReady && !normalizationChoice
+        ? (productLookup.data ?? []).slice(0, 5)
+        : [],
+    [productReady, normalizationChoice, productLookup.data],
+  );
+  const descriptionSuggestions = useMemo(() => {
+    if (similarItemsDebouncing) return [];
+    const productNames = new Set(productSuggestions.flatMap(item =>
+      [item.canonicalName, item.displayLabel].filter((name): name is string => !!name)
+        .map(name => name.trim().toLocaleLowerCase())));
+    return (similarItems ?? [])
+      .filter((item) => !productNames.has(item.name.trim().toLocaleLowerCase()))
+      .slice(0, Math.max(0, 5 - productSuggestions.length));
+  }, [similarItems, similarItemsDebouncing, productSuggestions]);
+
+  // Results belong to the debounced query, not necessarily the current text.
+  const hasResults =
+    productSuggestions.length + descriptionSuggestions.length > 0;
   const hasNoResultsMessage =
     description.length >= 2 &&
+    !similarItemsDebouncing &&
     !isFetchingSimilar &&
     !similarItemsError &&
     !!similarItems &&
-    similarItems.length === 0;
+    !hasResults &&
+    (!productEnabled ||
+      (!productLookup.isPending &&
+        !productLookup.isFetching &&
+        !productPreview.isFetching &&
+        !productPreview.isDebouncing));
   const isSuggestionsOpen =
     showSuggestions && (hasResults || hasNoResultsMessage);
+
+  useLayoutEffect(() => {
+    const list = isSuggestionsOpen ? descriptionList : null;
+    const active = list?.querySelectorAll<HTMLElement>('[role="option"]')[descriptionActiveIndex]?.id;
+    setDescriptionAria(previous => {
+      if (!list?.id) return previous === undefined ? previous : undefined;
+      return previous?.list === list.id && previous.active === active ? previous : { list: list.id, active };
+    });
+  }, [isSuggestionsOpen, descriptionList, descriptionActiveIndex, productSuggestions, descriptionSuggestions]);
 
   const subtotal = useMemo(() => calculateSubtotal(items), [items]);
 
@@ -232,10 +303,30 @@ export function LineItemsSection({
     [form],
   );
 
+  const applyProductSuggestion = useCallback(
+    (suggestion: (typeof productSuggestions)[number]) => {
+      if (!productReady || !productPreview.data) return;
+      setNormalizationChoice({
+        sourceKey: productSourceKey,
+        label: suggestion.displayLabel ?? suggestion.canonicalName,
+        intent: {
+          kind: "confirmExisting",
+          clientRowId: draftRowId,
+          sourceFingerprint: productPreview.data.sourceFingerprint,
+          targetId: suggestion.id,
+          expectedTargetRevision: suggestion.revision,
+          rememberSource: false,
+        },
+      });
+      setShowSuggestions(false);
+    },
+    [draftRowId, productPreview.data, productReady, productSourceKey],
+  );
+
   // Reset the highlight to the first row whenever the result set changes.
   useEffect(() => {
     setDescriptionActiveIndex(0);
-  }, [similarItems]);
+  }, [similarItems, productSuggestions]);
 
   const handleDescriptionKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -244,7 +335,8 @@ export function LineItemsSection({
         return;
       }
       if (!isSuggestionsOpen) return;
-      const count = similarItems?.length ?? 0;
+      const count = productSuggestions.length + descriptionSuggestions.length;
+      if (count === 0) return;
       if (e.key === "ArrowDown") {
         e.preventDefault();
         setDescriptionActiveIndex((i) => Math.min(i + 1, count - 1));
@@ -252,19 +344,26 @@ export function LineItemsSection({
         e.preventDefault();
         setDescriptionActiveIndex((i) => Math.max(i - 1, 0));
       } else if (e.key === "Enter") {
-        const suggestion = similarItems?.[descriptionActiveIndex];
-        if (suggestion) {
+        const product = productSuggestions[descriptionActiveIndex];
+        const suggestion =
+          descriptionSuggestions[
+            descriptionActiveIndex - productSuggestions.length
+          ];
+        if (product || suggestion) {
           // Prevent the form from submitting — Enter picks the suggestion.
           e.preventDefault();
-          applySuggestion(suggestion);
+          if (product) applyProductSuggestion(product);
+          else if (suggestion) applySuggestion(suggestion);
         }
       }
     },
     [
       isSuggestionsOpen,
-      similarItems,
+      productSuggestions,
+      descriptionSuggestions,
       descriptionActiveIndex,
       applySuggestion,
+      applyProductSuggestion,
     ],
   );
 
@@ -431,7 +530,8 @@ export function LineItemsSection({
                               placeholder="e.g. MILK-GAL"
                               aria-autocomplete="list"
                               aria-expanded={isItemCodeSuggestionsOpen}
-                              aria-controls={itemCodeSuggestionsListId}
+                              aria-controls={itemCodeAria?.list}
+                              aria-activedescendant={itemCodeAria?.active}
                               autoComplete="off"
                               {...field}
                               ref={(el) => {
@@ -479,7 +579,7 @@ export function LineItemsSection({
                             if (!Number.isNaN(n)) setItemCodeActiveIndex(n);
                           }}
                         >
-                          <CommandList id={itemCodeSuggestionsListId}>
+                          <CommandList ref={setItemCodeList}>
                             <CommandEmpty>No suggestions found</CommandEmpty>
                             {itemCodeSuggestions?.map((suggestion, index) => (
                               <CommandItem
@@ -554,7 +654,8 @@ export function LineItemsSection({
                               aria-required="true"
                               aria-autocomplete="list"
                               aria-expanded={isSuggestionsOpen}
-                              aria-controls={suggestionsListId}
+                              aria-controls={descriptionAria?.list}
+                              aria-activedescendant={descriptionAria?.active}
                               autoComplete="off"
                               {...field}
                               onChange={(e) => {
@@ -602,15 +703,34 @@ export function LineItemsSection({
                             if (!Number.isNaN(n)) setDescriptionActiveIndex(n);
                           }}
                         >
-                          <CommandList id={suggestionsListId}>
+                          <CommandList ref={setDescriptionList}>
                             <p className="px-3 py-2 text-xs text-muted-foreground">
-                              Receipt history � raw descriptions
+                              Matching descriptions
                             </p>
                             <CommandEmpty>No similar items found</CommandEmpty>
-                            {similarItems?.map((item, index) => (
+                            {productSuggestions.map((item, index) => (
+                              <CommandItem
+                                key={`product-${item.id}`}
+                                value={`idx-${index}`}
+                                onSelect={() => applyProductSuggestion(item)}
+                              >
+                                <div className="flex w-full items-center justify-between gap-2">
+                                  <span className="font-medium">
+                                    {item.displayLabel ?? item.canonicalName}
+                                  </span>
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[10px] px-1.5 py-0"
+                                  >
+                                    Product
+                                  </Badge>
+                                </div>
+                              </CommandItem>
+                            ))}
+                            {descriptionSuggestions.map((item, index) => (
                               <CommandItem
                                 key={`${item.name}-${item.source}`}
-                                value={`idx-${index}`}
+                                value={`idx-${index + productSuggestions.length}`}
                                 onSelect={() => applySuggestion(item)}
                               >
                                 <div className="flex w-full items-center justify-between">
@@ -628,12 +748,6 @@ export function LineItemsSection({
                                         ? "Template"
                                         : "History"}
                                     </Badge>
-                                    <span className="text-[10px] text-muted-foreground">
-                                      {Math.round(
-                                        Number(item.combinedScore ?? 0) * 100,
-                                      )}
-                                      %
-                                    </span>
                                   </div>
                                 </div>
                               </CommandItem>
@@ -643,15 +757,17 @@ export function LineItemsSection({
                       </PopoverContent>
                     </Popover>
                     <FormMessage />
-                    <ReceiptNormalizationField
-                      source={receiptNormalizationSource(location, {
-                        description,
-                        receiptItemCode: itemCode,
-                      })}
-                      clientRowId={draftRowId}
-                      value={normalizationChoice}
-                      onChange={setNormalizationChoice}
-                    />
+                    <div className="min-h-9">
+                      <ReceiptNormalizationField
+                        source={receiptNormalizationSource(location, {
+                          description,
+                          receiptItemCode: itemCode,
+                        })}
+                        clientRowId={draftRowId}
+                        value={normalizationChoice}
+                        onChange={setNormalizationChoice}
+                      />
+                    </div>
                     {similarItemsError &&
                       description.length >= 2 &&
                       !similarItemsDebouncing && (
@@ -871,7 +987,6 @@ export function LineItemsSection({
                     <TableCell className="whitespace-normal break-words max-w-[32ch]">
                       <div>{item.description}</div>
                       <ReceiptNormalizationField
-                        inlineSuggestions={false}
                         source={receiptNormalizationSource(location, item)}
                         clientRowId={item.id}
                         value={item.normalizationChoice}
