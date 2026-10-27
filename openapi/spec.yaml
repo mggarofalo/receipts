@@ -9480,7 +9480,7 @@ components:
         suggestionsAvailable: { type: boolean }
         provider: { type: string }
         models: { type: array, items: { type: string } }
-        dailyLimit: { type: integer, format: int32, minimum: 1, maximum: 100 }
+        dailyLimit: { type: integer, format: int32, minimum: 1, maximum: 5000 }
         pendingLimit: { type: integer, format: int32, minimum: 1, maximum: 20 }
     CategoryAssistanceHistoricalRequest:
       type: object
@@ -9534,7 +9534,7 @@ components:
         enabled: { type: boolean }
         provider: { type: [string, "null"] }
         model: { type: [string, "null"] }
-        dailyLimit: { type: integer, format: int32, minimum: 1, maximum: 100 }
+        dailyLimit: { type: integer, format: int32, minimum: 1, maximum: 5000 }
         pendingLimit: { type: integer, format: int32, minimum: 1, maximum: 20 }
         revision: { type: string, format: uuid }
     CategoryAssistanceSettingsRequest:
@@ -9545,7 +9545,7 @@ components:
         enabled: { type: boolean }
         provider: { type: [string, "null"] }
         model: { type: [string, "null"] }
-        dailyLimit: { type: integer, format: int32, minimum: 1, maximum: 100 }
+        dailyLimit: { type: integer, format: int32, minimum: 1, maximum: 5000 }
         pendingLimit: { type: integer, format: int32, minimum: 1, maximum: 20 }
         expectedRevision: { type: string, format: uuid }
     CategoryAssistanceSuggestionPage:

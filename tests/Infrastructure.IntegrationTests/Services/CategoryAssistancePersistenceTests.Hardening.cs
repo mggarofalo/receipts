@@ -48,7 +48,7 @@ public sealed partial class CategoryAssistancePersistenceTests
 
 	[Theory]
 	[InlineData(0, 3)]
-	[InlineData(101, 3)]
+	[InlineData(5001, 3)]
 	[InlineData(10, 0)]
 	[InlineData(10, 21)]
 	public async Task InvalidLimitsCannotChangeSettingsOrCreateAudit(int daily, int pending)

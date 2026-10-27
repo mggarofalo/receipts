@@ -6,7 +6,7 @@ namespace Application.Classification;
 public sealed record CategoryAssistanceSettings(bool Enabled, string? Provider, string? Model,
 	int DailyLimit, int PendingLimit, Guid Revision)
 {
-	public static CategoryAssistanceSettings Default => new(false, null, null, 10, 3, Guid.NewGuid());
+	public static CategoryAssistanceSettings Default => new(false, null, null, 100, 3, Guid.NewGuid());
 }
 
 /// <summary>Unknown capability fails closed. Connection status does not establish this capability.</summary>
@@ -32,7 +32,7 @@ public sealed record CategoryAssistanceDailyUsage(DateOnly UtcDay, int DispatchA
 public static class CategoryAssistancePolicy
 {
 	public static bool IsValid(CategoryAssistanceSettings settings) =>
-		settings.Revision != Guid.Empty && settings.DailyLimit is >= 1 and <= 100 && settings.PendingLimit is >= 1 and <= 20
+				settings.Revision != Guid.Empty && settings.DailyLimit is >= 1 and <= 5000 && settings.PendingLimit is >= 1 and <= 20
 		&& (!settings.Enabled || (!string.IsNullOrWhiteSpace(settings.Provider) && !string.IsNullOrWhiteSpace(settings.Model)));
 
 	/// <summary>Any currently authorized active Admin may update; persistence must audit actor and atomically compare revision.</summary>

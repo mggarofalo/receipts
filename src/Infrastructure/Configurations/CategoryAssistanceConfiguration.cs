@@ -12,7 +12,7 @@ public sealed class CategoryAssistanceConfiguration : IEntityTypeConfiguration<C
 		b.ToTable("Settings", "category_assistance", t =>
 		{
 			t.HasCheckConstraint("CK_CategoryAssistance_Singleton", "\"Id\" = 1");
-			t.HasCheckConstraint("CK_CategoryAssistance_Limits", "\"DailyLimit\" BETWEEN 1 AND 100 AND \"PendingLimit\" BETWEEN 1 AND 20");
+			t.HasCheckConstraint("CK_CategoryAssistance_Limits", "\"DailyLimit\" BETWEEN 1 AND 5000 AND \"PendingLimit\" BETWEEN 1 AND 20");
 		});
 		b.HasKey(x => x.Id); b.Property(x => x.Id).ValueGeneratedNever();
 		b.Property(x => x.Revision).IsConcurrencyToken();

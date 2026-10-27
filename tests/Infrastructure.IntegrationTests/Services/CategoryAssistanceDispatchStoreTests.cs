@@ -456,7 +456,32 @@ public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime
 		finally { await DisableAsync(seed.Actor); await Connection().InvalidateAsync(); }
 	}
 
-	private async Task<(string Actor, Guid ReceiptId, Guid ItemId, Guid Taxonomy, Guid CategoryId, CategoryAssistanceSettings Settings)> SeedAsync(string description)
+	[Fact]
+	public async Task FiveThousandLimitDebitsLastAvailableAttemptExactlyOnce()
+	{
+		var seed = await SeedAsync("high allowance " + Guid.NewGuid(), 5000);
+		try
+		{
+			DateOnly today = DateOnly.FromDateTime(DateTime.UtcNow);
+			await using (var db = fixture.CreateDbContext())
+			{
+				db.CategoryAssistanceDailyUsage.Add(new() { UtcDay = today, DispatchAttempts = 4999 });
+				await db.SaveChangesAsync();
+			}
+			var store = Dispatch();
+			var work = (await store.ClaimQueuedAsync(default))!;
+			work.Should().NotBeNull();
+			var claim = await store.TryStartDispatchAsync(work, Ready, DateTimeOffset.UtcNow, default);
+			claim.Should().NotBeNull();
+			(await store.TryStartDispatchAsync(work, Ready, DateTimeOffset.UtcNow, default)).Should().BeNull();
+			await using var verify = fixture.CreateDbContext();
+			(await verify.CategoryAssistanceDailyUsage.SingleAsync(x => x.UtcDay == today)).DispatchAttempts.Should().Be(5000);
+			(await verify.CategoryAssistanceAttempts.SingleAsync(x => x.Id == work.AttemptId)).DebitUtcDay.Should().Be(today);
+		}
+		finally { await DisableAsync(seed.Actor); }
+	}
+
+	private async Task<(string Actor, Guid ReceiptId, Guid ItemId, Guid Taxonomy, Guid CategoryId, CategoryAssistanceSettings Settings)> SeedAsync(string description, int dailyLimit = 100)
 	{
 		string actor = "assistance-dispatch-" + Guid.NewGuid();
 		Guid receiptId = Guid.NewGuid(), itemId = Guid.NewGuid(), categoryId = Guid.NewGuid();
@@ -483,7 +508,7 @@ public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime
 			new(before, Guid.NewGuid(), "Dispatch store test", [new TaxonomyEdit("create", categoryId, Name: "Category " + categoryId)]))).Id;
 		var settings = await Settings().GetAsync();
 		settings = await Settings().UpdateAsync(actor, settings.Revision, settings with
-		{ Enabled = true, Provider = "jev", Model = "jev-1.14.0", DailyLimit = 100, PendingLimit = 1 });
+		{ Enabled = true, Provider = "jev", Model = "jev-1.14.0", DailyLimit = dailyLimit, PendingLimit = 1 });
 		await Connection().ReconcileAsync(Binding());
 		await using (var db = fixture.CreateDbContext())
 		{

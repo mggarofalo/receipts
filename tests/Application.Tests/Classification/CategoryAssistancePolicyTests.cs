@@ -13,6 +13,7 @@ public class CategoryAssistancePolicyTests
 	public void DefaultsRequireExplicitGlobalConsentEvenWithReadyProvider()
 	{
 		Assert.False(CategoryAssistanceSettings.Default.Enabled);
+		Assert.Equal(100, CategoryAssistanceSettings.Default.DailyLimit);
 		Assert.False(CategoryAssistancePolicy.CanSuggest(CategoryAssistanceSettings.Default, Capability));
 		Assert.True(CategoryAssistancePolicy.CanSuggest(Settings, Capability));
 	}
@@ -63,11 +64,31 @@ public class CategoryAssistancePolicyTests
 
 	[Theory]
 	[InlineData(0, 3)]
-	[InlineData(101, 3)]
+	[InlineData(5001, 3)]
+	[InlineData(-1, 3)]
+	[InlineData(int.MaxValue, 3)]
 	[InlineData(10, 0)]
 	[InlineData(10, 21)]
 	public void InvalidLimitsDoNotAuthorizeInference(int daily, int pending) =>
 		Assert.False(CategoryAssistancePolicy.CanSuggest(Settings with { DailyLimit = daily, PendingLimit = pending }, Capability));
+
+	[Theory]
+	[InlineData(101)]
+	[InlineData(5000)]
+	public void HighConfiguredLimitAllowsInference(int daily) =>
+		Assert.True(CategoryAssistancePolicy.CanSuggest(Settings with { DailyLimit = daily }, Capability));
+
+	[Fact]
+	public void HighLimitExhaustsExactlyAtFiveThousandAndResetsAtUtcMidnight()
+	{
+		var settings = Settings with { DailyLimit = 5000 };
+		DateTimeOffset now = new(2026, 10, 26, 23, 59, 59, TimeSpan.Zero);
+		CategoryAssistanceDailyUsage usage = new(new(2026, 10, 26), 4999);
+		Assert.True(CategoryAssistancePolicy.CanReserveDailyAttempt(settings, usage, now));
+		Assert.False(CategoryAssistancePolicy.CanReserveDailyAttempt(settings, usage with { DispatchAttempts = 5000 }, now));
+		Assert.False(CategoryAssistancePolicy.CanReserveDailyAttempt(settings, usage with { DispatchAttempts = int.MaxValue }, now));
+		Assert.True(CategoryAssistancePolicy.CanReserveDailyAttempt(settings, usage with { DispatchAttempts = 5000 }, now.AddSeconds(1)));
+	}
 
 	[Fact]
 	public void ManualClearsAndProtectedAssignmentsWinAndMappingsNeedNoProvider()

@@ -338,12 +338,12 @@ namespace Infrastructure.Migrations
                     b.Property<Guid>("RequestId")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid>("RequestScope")
-                        .HasColumnType("uuid");
-
                     b.Property<string>("RequestJson")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<Guid>("RequestScope")
+                        .HasColumnType("uuid");
 
                     b.Property<Guid>("RestoreGeneration")
                         .HasColumnType("uuid");
@@ -695,7 +695,7 @@ namespace Infrastructure.Migrations
 
                     b.ToTable("Settings", "category_assistance", t =>
                         {
-                            t.HasCheckConstraint("CK_CategoryAssistance_Limits", "\"DailyLimit\" BETWEEN 1 AND 100 AND \"PendingLimit\" BETWEEN 1 AND 20");
+                            t.HasCheckConstraint("CK_CategoryAssistance_Limits", "\"DailyLimit\" BETWEEN 1 AND 5000 AND \"PendingLimit\" BETWEEN 1 AND 20");
 
                             t.HasCheckConstraint("CK_CategoryAssistance_Singleton", "\"Id\" = 1");
                         });
@@ -704,7 +704,7 @@ namespace Infrastructure.Migrations
                         new
                         {
                             Id = 1,
-                            DailyLimit = 10,
+                            DailyLimit = 100,
                             Enabled = false,
                             PendingLimit = 3,
                             RestoreGeneration = new Guid("5c5ebfbf-0833-432d-aefc-c388be8e0460"),
