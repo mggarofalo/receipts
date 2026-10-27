@@ -421,10 +421,6 @@ export default function NewReceiptPage() {
         </div>
       </Form>
 
-      <LineItemsSection items={items} onChange={setItems} location={location} />
-
-      <AdjustmentsSection adjustments={adjustments} onChange={setAdjustments} />
-
       <div className="min-w-0">
         <TransactionsSection
           transactions={transactions}
@@ -432,6 +428,10 @@ export default function NewReceiptPage() {
           onChange={setTransactions}
         />
       </div>
+
+      <LineItemsSection items={items} onChange={setItems} location={location} />
+
+      <AdjustmentsSection adjustments={adjustments} onChange={setAdjustments} />
 
       <div className="sticky bottom-0 z-10 rounded-t-xl border bg-background/95 p-3 backdrop-blur [@media(max-width:900px)]:bottom-[60px] supports-[backdrop-filter]:bg-background/90">
         <BalanceSidebar

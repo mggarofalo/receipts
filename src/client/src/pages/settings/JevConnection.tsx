@@ -56,9 +56,8 @@ export function JevConnection() {
         <details className="text-sm">
           <summary className="cursor-pointer font-medium">Setup</summary>
           <p className="mt-2 text-muted-foreground">
-            Configure TYPESAFE_API_KEY on the API server using .NET User Secrets
-            in development or deployment secrets. Restart the API after changes.
-            Check connection verifies authentication and lists available models.
+            Create a Jev API key and set TYPESAFE_API_KEY in the API server
+            environment. Restart the API, then check the connection.
           </p>
         </details>
         {status.isPending && <p role="status">Loading connection status…</p>}

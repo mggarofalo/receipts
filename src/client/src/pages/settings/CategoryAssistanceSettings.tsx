@@ -189,8 +189,9 @@ export default function CategoryAssistanceSettings() {
             </p>
           ) : (
             <p>
-              Configure the API server with <code>TYPESAFE_API_KEY</code> using
-              .NET User Secrets for local development. See{" "}
+              Create a Jev API key and set <code>TYPESAFE_API_KEY</code> in the
+              API server environment, then restart the API and check the
+              connection. See{" "}
               <a
                 className="underline"
                 href="https://github.com/mggarofalo/Receipts/blob/main/docs/jev-setup.md"
