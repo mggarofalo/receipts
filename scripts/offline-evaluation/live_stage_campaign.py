@@ -14,6 +14,8 @@ import frozen_runner
 import guarded_exchange
 import paired_stage_campaign
 import stage_campaign
+import safe_os_diagnostics
+from safe_os_diagnostics import Operation, Stage, safe_os
 from campaign_ledger import LedgerError, _canonical, require_plain_absolute_path
 from guarded_exchange import MODEL, MAX_RESPONSE_BYTES, validate_envelope, verify_artifacts
 from paired_stage_campaign import PairedStageCampaign
@@ -57,7 +59,8 @@ class LivePairedStageCampaign(PairedStageCampaign):
     def _verify_live_files(self, artifacts):
         # Exact executing source/interpreter membership, not a revision assertion.
         sources = [__file__, self.worker, *(module.__file__ for module in (
-            campaign_ledger, frozen_runner, guarded_exchange, paired_stage_campaign, stage_campaign))]
+            campaign_ledger, frozen_runner, guarded_exchange, paired_stage_campaign, stage_campaign,
+            safe_os_diagnostics))]
         if (any(str(Path(p)) not in artifacts['source'] for p in sources)
                 or self.python not in artifacts['dependency']):
             raise LedgerError('executing Python source and interpreter inventories required')
@@ -83,19 +86,20 @@ class LivePairedStageCampaign(PairedStageCampaign):
         if not key:
             raise LedgerError('named credential unavailable; reservation retained')
         try:
-            result = subprocess.run([self.python, '-I', '-B', self.worker, self.key_environment],
-                input=payload, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                cwd=str(Path(self.worker).parent), env={**system_environment(), self.key_environment: key},
-                timeout=30, check=False,
-                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
-        except (OSError, subprocess.TimeoutExpired):
+            with safe_os(Stage.TRANSPORT, Operation.SPAWN):
+                result = subprocess.run([self.python, '-I', '-B', self.worker, self.key_environment],
+                    input=payload, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                    cwd=str(Path(self.worker).parent), env={**system_environment(), self.key_environment: key},
+                    timeout=30, check=False,
+                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        except subprocess.TimeoutExpired:
             raise LedgerError('live transport failed or timed out; reservation retained') from None
         if result.returncode != 0 or not 0 < len(result.stdout) <= MAX_RESPONSE_BYTES:
             raise LedgerError('live transport rejected response; reservation retained')
         return result.stdout
 
     def exchange(self, stage):
-        with owner():
+        with owner(), safe_os(Stage.EXCHANGE, Operation.DISPATCH):
             done, pending, verifier = self._state()
             if pending or self.ledger.snapshot()['missing_outcomes']:
                 raise LedgerError('unfinished stage or attempt; stop and inspect')
@@ -107,13 +111,16 @@ class LivePairedStageCampaign(PairedStageCampaign):
             output = require_plain_absolute_path(self.root / f'stage-{index}', allow_missing_leaf=True)
             if output.exists():
                 raise LedgerError('new private stage output required')
-            self.ledger.append_stage_event({'op': 'start', 'index': index, 'request_sha256': digest(payload)})
-            attempt = self.ledger.reserve_attempt(payload)
-            output.mkdir()
-            self._persist(output / 'request.json', payload)
+            with safe_os(Stage.START, Operation.JOURNAL_APPEND):
+                self.ledger.append_stage_event({'op': 'start', 'index': index, 'request_sha256': digest(payload)})
+            with safe_os(Stage.RESERVATION, Operation.JOURNAL_APPEND):
+                attempt = self.ledger.reserve_attempt(payload)
+            with safe_os(Stage.DIRECTORY, Operation.MKDIR):
+                output.mkdir()
+            self._persist(output / 'request.json', payload, stage=Stage.REQUEST)
             self._verify_runner()
             response = self._send_reserved(payload)
-            self._persist(output / 'response.json', response)
+            self._persist(output / 'response.json', response, stage=Stage.RESPONSE)
             usage = validate_envelope(payload, response)
             # Real production/shortlist/verifier C# parsers run before success.
             self._validate_response(index, response)
@@ -121,14 +128,32 @@ class LivePairedStageCampaign(PairedStageCampaign):
             receipt = {'format': self.FORMAT, 'attempt': attempt, 'network_calls': 1,
                 'model': MODEL, 'artifacts': self.artifacts, 'usage': usage,
                 'request_sha256': digest(payload), 'response_sha256': digest(response)}
-            self._persist(output / 'receipt.json', _canonical(receipt))
-            self.ledger.record_outcome(attempt, 'success')
-            self._finish(index, receipt)
+            self._persist(output / 'receipt.json', _canonical(receipt), stage=Stage.RECEIPT)
+            with safe_os(Stage.OUTCOME, Operation.JOURNAL_APPEND):
+                self.ledger.record_outcome(attempt, 'success')
+            with safe_os(Stage.FINISH, Operation.JOURNAL_APPEND):
+                self._finish(index, receipt)
             return receipt
 
     @staticmethod
-    def _persist(path, raw):
-        with require_plain_absolute_path(path, allow_missing_leaf=True).open('xb') as stream:
-            stream.write(raw)
-            stream.flush()
-            os.fsync(stream.fileno())
+    def _persist(path, raw, *, stage=Stage.ARTIFACT):
+        with safe_os(stage, Operation.OPEN):
+            stream = require_plain_absolute_path(path, allow_missing_leaf=True).open('xb')
+        # Preserve the first failure if close also fails. No overwrite or retry.
+        try:
+            with safe_os(stage, Operation.WRITE):
+                if stream.write(raw) != len(raw):
+                    raise LedgerError('partial artifact write; stop and inspect')
+            with safe_os(stage, Operation.FLUSH):
+                stream.flush()
+            with safe_os(stage, Operation.FSYNC):
+                os.fsync(stream.fileno())
+        except BaseException:
+            try:
+                stream.close()
+            except OSError:
+                pass
+            raise
+        else:
+            with safe_os(stage, Operation.CLOSE):
+                stream.close()

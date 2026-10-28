@@ -83,6 +83,7 @@ secret lookup or private SQLite access occurred during implementation/testing.
 Synthetic transport tests:
 `python -m unittest discover -s scripts/offline-evaluation -p test_live_transport.py -v`.
 They fake HTTPS/subprocesses and test durable reservation/failure ordering with
+
 the real Windows ledger. Run the separate frozen integration evidence with
 `python -B -m unittest discover -s scripts/offline-evaluation -p test_live_frozen_campaign.py -v`.
 It requires restored local .NET assets and never sends a provider request.
@@ -150,3 +151,48 @@ successful multiple path batches plus final global coverage, public reopen,
 malformed global replies, unknown usage and aggregate capacity rejection. It reads
 no credentials and sends no provider request. Run it with
 `python -B -m unittest discover -s scripts/offline-evaluation -p test_live_batched_frozen_campaign.py -v`.
+
+## Safe terminal OS diagnostics
+
+`safe_os_diagnostics.py` supplies fixed `Stage` and `Operation` identifiers and
+`SafeOSError.diagnostic`, containing only `kind`, `stage`, `operation`, integer
+`errno`/`winerror` (or null when unavailable). It never copies exception text,
+filenames, response bodies, receipt contents, credentials, or exception class
+names supplied by a caller. The live campaign annotates stage start, reservation,
+directory creation, request/response/receipt open/write/flush/fsync/close, outcome,
+finish, and child creation. Other OS faults receive the exchange/dispatch fallback.
+The helper is required in the frozen source inventory like other executing modules.
+
+An external launcher should catch `SafeOSError` before its generic exception
+handler and serialize **only** the diagnostic dictionary into its terminal report:
+
+```python
+except SafeOSError as error:
+    terminal_report['os_error'] = dict(error.diagnostic)
+    # Continue the launcher's existing terminal, no-retry exit path.
+```
+
+For launcher-owned IO, use `with safe_os(Stage.RECEIPT, Operation.FSYNC):`
+around the corresponding operation, selecting reviewed enum members rather than
+deriving labels from input, paths, stage payloads, or exception text. Do not dump
+exception attributes, `__context__`, tracebacks, or the entire terminal report to
+public output. Persist any additional report with create-new semantics and do
+not overwrite original terminal reports, journals, or retained artifacts. If
+report persistence itself fails, the structured diagnostic can be emitted to the
+launcher's existing safe terminal output; do not retry the exchange.
+
+This repository does not contain the private pilot launcher or its v6 terminal
+report writer. The public campaign is instrumented; the launcher must integrate
+the catch above and include this helper in its reviewed frozen source snapshot
+before new dispatch. Existing private evidence was neither read nor changed.
+These identifiers diagnose a boundary; they do not establish whether a failed
+write/fsync became durable. Full reservations, unresolved outcomes, poisoned
+journals, pending stages, cap enforcement, and no-retry behavior remain in force.
+No exception is converted to a successful or refunded outcome.
+
+`test_safe_os_diagnostics.py` injects synthetic failures at every artifact
+durability boundary and at post-validation receipt/outcome/finish boundaries.
+It verifies numeric codes, exclusion of sensitive error strings/paths, primary
+failure preservation, create-new protection, retained full reservations, and
+terminal behavior after reopen. Runner and transport are fake in these fault
+tests; they do not claim to execute the real C# parser or make paid calls.
