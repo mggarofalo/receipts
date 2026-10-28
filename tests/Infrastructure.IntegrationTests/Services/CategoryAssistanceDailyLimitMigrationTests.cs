@@ -20,7 +20,9 @@ public sealed class CategoryAssistanceDailyLimitMigrationTests(PostgresFixture f
 		await using var database = await MigrationDatabase.CreateAsync(fixture, "0");
 		await using var db = database.CreateDbContext();
 		var migrator = db.GetService<IMigrator>();
-		await migrator.MigrateAsync();
+		// Start at the guarded migration: EF can commit later migration rollbacks
+		// before reaching this migration's refusal.
+		await migrator.MigrateAsync("20261027110503_RaiseCategoryAssistanceDailyLimit");
 		var settings = await db.CategoryAssistanceSettings.SingleAsync();
 		settings.DailyLimit = 5000;
 		settings.Revision = Guid.NewGuid();
