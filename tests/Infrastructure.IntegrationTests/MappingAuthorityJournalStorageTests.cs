@@ -101,6 +101,32 @@ public sealed class MappingAuthorityJournalStorageTests(PostgresFixture server) 
 		(await TipAsync(db)).Should().Be(1);
 	}
 
+
+	[Theory]
+	[InlineData(1)]
+	[InlineData(2)]
+	public async Task Transition_RejectsWitnessVersionButAllowsUntypedTransition(int witnessVersion)
+	{
+		var (baseline, mapping) = await SeedAsync();
+		await using var db = fixture.CreateDbContext();
+		var previous = await db.CategoryMappingRevisions.SingleAsync();
+		CategoryMappingService service = new(new Factory(fixture), TimeProvider.System);
+		var revoked = await service.ChangeAsync(previous.Actor, new(new(previous.Location, previous.Description, previous.ItemCode),
+			previous.SourceFingerprint, mapping, previous.TaxonomyRevisionId, null, Guid.NewGuid(), "Revoke"));
+		Func<Task> typedTransition = () => db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO taxonomy."MappingAuthorityEvents" ("Id","BaselineId","Kind","MappingRevisionId","CaptureWitnessVersion")
+            VALUES ({Guid.NewGuid()},{baseline},1,{revoked.Id},{witnessVersion})
+            """);
+		(await typedTransition.Should().ThrowAsync<PostgresException>()).Which.SqlState
+			.Should().Be(PostgresErrorCodes.CheckViolation);
+		(await TipAsync(db)).Should().Be(0);
+		await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO taxonomy."MappingAuthorityEvents" ("Id","BaselineId","Kind","MappingRevisionId","CaptureWitnessVersion")
+            VALUES ({Guid.NewGuid()},{baseline},1,{revoked.Id},NULL)
+            """);
+		(await TipAsync(db)).Should().Be(1);
+	}
+
 	[Theory]
 	[InlineData(IsolationLevel.RepeatableRead)]
 	[InlineData(IsolationLevel.Serializable)]

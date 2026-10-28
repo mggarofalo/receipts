@@ -195,7 +195,7 @@ public sealed partial class OrganizationDiscoveryTests(PostgresFixture server) :
 	[Fact]
 	public async Task MigrationDownAndUpRemoveAndReinstallAllInboxTriggersWithoutChangingReceiptFacts()
 	{
-		var fixture = await server.CreateIsolatedAsync();
+		var fixture = await server.CreateIsolatedAsync("20261028105726_AddOrganizationDiscovery");
 		try
 		{
 			await using var db = fixture.CreateDbContext();

@@ -14,7 +14,7 @@ namespace Infrastructure.IntegrationTests.Services;
 
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public sealed class CategoryAssistanceMigrationTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
+public sealed class CategoryAssistanceMigrationTests(PostgresFixture server) : IClassFixture<PostgresFixture>
 {
 	private sealed class Factory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
 	{
@@ -24,6 +24,7 @@ public sealed class CategoryAssistanceMigrationTests(PostgresFixture fixture) : 
 	[Fact]
 	public async Task DowngradeAllowsEmptyDefaultsButRetainsSettingsAndAuditAfterARealChange()
 	{
+		await using var fixture = await server.CreateIsolatedAsync("20261027110503_RaiseCategoryAssistanceDailyLimit");
 		await using var db = fixture.CreateDbContext();
 		string[] applied = (await db.Database.GetAppliedMigrationsAsync()).ToArray();
 		int foundationIndex = Array.IndexOf(applied, "20261026114208_AddCategoryAssistanceFoundation");

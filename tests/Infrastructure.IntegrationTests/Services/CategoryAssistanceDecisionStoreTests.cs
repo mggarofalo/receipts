@@ -385,7 +385,7 @@ public sealed class CategoryAssistanceDecisionStoreTests(PostgresFixture server)
 	[Fact]
 	public async Task DecisionMigrationDowngradeRefusesAndPreservesAcceptedEvidence()
 	{
-		await using var fixture = await server.CreateIsolatedAsync();
+		await using var fixture = await server.CreateIsolatedAsync("20261027110503_RaiseCategoryAssistanceDailyLimit");
 		var seed = await SeedAsync(fixture);
 		await CreateStore(fixture).AcceptAsync(seed.Actor, seed.Attempt,
 			new(Guid.NewGuid(), seed.Taxonomy, [seed.Item]), CancellationToken.None);

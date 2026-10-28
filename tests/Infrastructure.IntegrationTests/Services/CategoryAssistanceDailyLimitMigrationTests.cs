@@ -49,7 +49,7 @@ public sealed class CategoryAssistanceDailyLimitMigrationTests(PostgresFixture f
 		await using var database = await MigrationDatabase.CreateAsync(fixture, "0");
 		await using var db = database.CreateDbContext();
 		var migrator = db.GetService<IMigrator>();
-		await migrator.MigrateAsync();
+		await migrator.MigrateAsync("20261027110503_RaiseCategoryAssistanceDailyLimit");
 		var settings = await db.CategoryAssistanceSettings.SingleAsync();
 		settings.DailyLimit.Should().Be(100);
 		if (configured)

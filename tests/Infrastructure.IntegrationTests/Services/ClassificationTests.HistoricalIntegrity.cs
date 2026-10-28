@@ -133,7 +133,7 @@ public sealed partial class ClassificationTests
 	{
 		// A separate database excludes source-restore audit from other fixture tests:
 		// that audit correctly protects its own later migration first.
-		var isolated = new PostgresFixture();
+		var isolated = new PostgresFixture("20261027110503_RaiseCategoryAssistanceDailyLimit");
 		await isolated.InitializeAsync();
 		try { await new ClassificationTests(isolated).AssertHistoricalDowngradeBoundary(); }
 		finally { await isolated.DisposeAsync(); }
@@ -152,7 +152,7 @@ public sealed partial class ClassificationTests
 		(await downgrade.Should().ThrowAsync<PostgresException>()).Which.MessageText.Should().Contain("historical reclassification evidence is retained");
 		// EF safely removes later empty migrations before the protected migration refuses.
 		(await db.Database.GetAppliedMigrationsAsync()).Should().Equal(applied.Take(index + 1));
-		await db.GetService<IMigrator>().MigrateAsync();
+		await db.GetService<IMigrator>().MigrateAsync(applied[^1]);
 		(await Historical().ReadAsync(Actor, request.OperationId)).Total.Should().Be(1);
 		(await Historical().ApplyChunkAsync(Actor, request.OperationId, 1)).Applied.Should().Be(1);
 	}

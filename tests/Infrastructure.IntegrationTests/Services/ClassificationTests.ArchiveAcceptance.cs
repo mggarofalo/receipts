@@ -148,7 +148,7 @@ public sealed partial class ClassificationTests
 	[InlineData(true)]
 	public async Task ArchiveAcceptanceSourceMigrationDowngradeBoundary(bool retainedAudit)
 	{
-		var isolated = new PostgresFixture(); await isolated.InitializeAsync();
+		var isolated = new PostgresFixture("20261027110503_RaiseCategoryAssistanceDailyLimit"); await isolated.InitializeAsync();
 		try { await new ClassificationTests(isolated).AcceptanceSourceDowngrade(retainedAudit); }
 		finally { await isolated.DisposeAsync(); }
 	}
@@ -182,7 +182,7 @@ public sealed partial class ClassificationTests
 		{
 			await db.GetService<IMigrator>().MigrateAsync(applied[index - 1]);
 			(await db.Database.GetAppliedMigrationsAsync()).Should().NotContain(migration);
-			await db.GetService<IMigrator>().MigrateAsync();
+			await db.GetService<IMigrator>().MigrateAsync(applied[^1]);
 			(await db.Database.GetAppliedMigrationsAsync()).Should().Equal(applied);
 			(await db.Database.SqlQueryRaw<int>("SELECT count(*)::int AS \"Value\" FROM matching.\"SourceRevisionRestores\"").SingleAsync()).Should().Be(0);
 		}

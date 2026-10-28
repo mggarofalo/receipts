@@ -143,7 +143,7 @@ public sealed partial class AddOrganizationEffectCaptureWitnessV1 : Migration
             ALTER TABLE taxonomy."OrganizationEffectManifests" ADD COLUMN "CaptureWitnessVersion" integer
                 CHECK ("CaptureWitnessVersion" = 1);
             ALTER TABLE taxonomy."MappingAuthorityEvents" ADD COLUMN "CaptureWitnessVersion" integer
-                CHECK ("CaptureWitnessVersion" = 1 AND "Kind" = 2);
+                CHECK ("CaptureWitnessVersion" IS NULL OR ("CaptureWitnessVersion" = 1 AND "Kind" = 2));
             ALTER TABLE taxonomy."MappingAuthorityEvents" ADD COLUMN "WriteTransaction" bigint;
             CREATE FUNCTION taxonomy.stamp_authority_event_transaction() RETURNS trigger LANGUAGE plpgsql AS $$
             BEGIN NEW."WriteTransaction" := txid_current(); RETURN NEW; END $$;

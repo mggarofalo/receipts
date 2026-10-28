@@ -68,6 +68,12 @@ public sealed class CategoryMappingHistoryIntegrityTests(PostgresFixture fixture
 	[Fact]
 	public async Task MigrationDowngradeRefusesToRemoveMappingHistoryAndPreservesReplay()
 	{
+		await using var isolated = await fixture.CreateIsolatedAsync("20261027110503_RaiseCategoryAssistanceDailyLimit");
+		await new CategoryMappingHistoryIntegrityTests(isolated).AssertMappingDowngradeBoundary();
+	}
+
+	private async Task AssertMappingDowngradeBoundary()
+	{
 		(string actor, CategoryMappingCommand command, CategoryMappingService service) = await CreateApprovalCommandAsync();
 		CategoryMappingRevision approval = await service.ChangeAsync(actor, command);
 		await using ApplicationDbContext db = fixture.CreateDbContext();
