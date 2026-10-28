@@ -33,11 +33,7 @@ public static class OfflineNormalizationManifestPolicy
 		WriteIndented = true
 	};
 
-	public static OfflineNormalizationManifest Read(string json, bool requireReviewed, DateTimeOffset now) => ReadCore(json, requireReviewed, now, false);
-
-	internal static OfflineNormalizationManifest ReadV14Candidate(string json, bool requireReviewed, DateTimeOffset now) => ReadCore(json, requireReviewed, now, true);
-
-	private static OfflineNormalizationManifest ReadCore(string json, bool requireReviewed, DateTimeOffset now, bool candidate)
+	public static OfflineNormalizationManifest Read(string json, bool requireReviewed, DateTimeOffset now)
 	{
 		using (JsonDocument document = JsonDocument.Parse(json, new JsonDocumentOptions { MaxDepth = 16 }))
 		{
@@ -45,7 +41,7 @@ public static class OfflineNormalizationManifestPolicy
 		}
 		OfflineNormalizationManifest manifest = JsonSerializer.Deserialize<OfflineNormalizationManifest>(json, JsonOptions)
 			?? throw new InvalidDataException("A manifest object is required.");
-		Validate(candidate && manifest.SourceFormatVersion == 14 ? manifest with { SourceFormatVersion = 13 } : manifest, requireReviewed, now);
+		Validate(manifest, requireReviewed, now);
 		return manifest;
 	}
 

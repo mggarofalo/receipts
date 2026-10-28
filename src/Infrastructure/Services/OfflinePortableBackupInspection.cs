@@ -10,10 +10,6 @@ namespace Infrastructure.Services;
 /// <summary>Inspects a closed portable SQLite artifact without importing or changing it.</summary>
 public sealed class OfflinePortableBackupInspection : IOfflinePortableBackupInspection
 {
-	private readonly bool candidate;
-	internal bool CandidateEnabled => candidate;
-	public OfflinePortableBackupInspection() { }
-	internal OfflinePortableBackupInspection(bool candidate) => this.candidate = candidate;
 	public async Task<OfflineBackupInspection> InspectAsync(string sourcePath, CancellationToken cancellationToken = default)
 	{
 		string path = Path.GetFullPath(sourcePath);
@@ -48,17 +44,13 @@ public sealed class OfflinePortableBackupInspection : IOfflinePortableBackupInsp
 		await using (SqliteCommand command = sqlite.CreateCommand())
 		{
 			command.CommandText = "SELECT value FROM backup_metadata WHERE key='export_version'";
-			if (!int.TryParse(Convert.ToString(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture), out version) || (version is not (6 or 8 or 9 or 10 or 11 or 12 or 13) && !(candidate && version == 14)))
+			if (!int.TryParse(Convert.ToString(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture), out version) || version is not (6 or 8 or 9 or 10 or 11 or 12 or 13))
 			{ throw new InvalidDataException("Inspection supports portable backup formats 6, 8, 9, 10, 11, 12 and 13."); }
 		}
-		// Candidate inspection applies the same complete schema and ordinary evidence gates as normalization.
-		if (version == 14) { await new PortableBackupNormalizationService(true).ValidateFileAsync(path, version, cancellationToken); }
 		if (version >= 8 && !tables.Contains("normalization_catalog")) { throw new InvalidDataException("Format 8 requires normalization evidence."); }
 		if (version >= 10)
 		{
-			var taxonomy = version == 14
-				? (await PortableTaxonomyArchive.ReadV14CandidateAsync(sqlite, cancellationToken)).History
-				: await PortableTaxonomyArchive.ReadAsync(sqlite, cancellationToken, version);
+			var taxonomy = await PortableTaxonomyArchive.ReadAsync(sqlite, cancellationToken, version);
 			await PortableTaxonomyArchive.ReadDeletionStateAsync(sqlite, taxonomy, cancellationToken);
 		}
 		SortedDictionary<string, string> digests = new(StringComparer.Ordinal);
@@ -177,7 +169,7 @@ public sealed class OfflinePortableBackupInspection : IOfflinePortableBackupInsp
 
 	public void ValidateManifest(OfflineNormalizationManifest manifest, OfflineBackupInspection source, bool requireReviewed, DateTimeOffset now)
 	{
-		OfflineNormalizationManifestPolicy.Validate(candidate && manifest.SourceFormatVersion == 14 ? manifest with { SourceFormatVersion = 13 } : manifest, requireReviewed, now);
+		OfflineNormalizationManifestPolicy.Validate(manifest, requireReviewed, now);
 		if (manifest.SourceSha256 != source.SourceSha256 || manifest.SourceFormatVersion != source.FormatVersion || manifest.FactualBaselineSha256 != source.FactualBaselineSha256)
 		{ throw new InvalidDataException("Manifest does not describe this exact source and baseline."); }
 		Dictionary<(string, Guid), OfflineSourceObservation> observations = source.Observations.ToDictionary(o => (o.EntityKind, o.EntityId));

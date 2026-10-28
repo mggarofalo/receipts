@@ -26,6 +26,27 @@ public class BackupFormatContractTests
 		await import.Should().ThrowAsync<InvalidOperationException>().WithMessage("*export_version*");
 	}
 
+	[Fact]
+	public async Task Import_V14_IsRejectedBeforeUpdatingExistingRows()
+	{
+		DbContextOptions<ApplicationDbContext> options = Options();
+		Guid receiptId = Guid.NewGuid();
+		await using (ApplicationDbContext seed = new(options))
+		{
+			seed.Receipts.Add(new() { Id = receiptId, Location = "Before", Date = new(2024, 1, 1) });
+			await seed.SaveChangesAsync();
+		}
+		using Artifact artifact = new();
+		await artifact.CreateCurrentSchema();
+		artifact.Execute("UPDATE backup_metadata SET value = '14' WHERE key = 'export_version'");
+		artifact.Execute("INSERT INTO receipts VALUES ($id, 'After', '2024-01-01', '0', 'USD', NULL, NULL)", ("$id", receiptId.ToString()));
+
+		Func<Task> import = () => artifact.Import(Importer(options));
+		await import.Should().ThrowAsync<InvalidOperationException>().WithMessage("*export_version*");
+		await using ApplicationDbContext read = new(options);
+		(await read.Receipts.SingleAsync()).Location.Should().Be("Before");
+	}
+
 	[Theory]
 	[InlineData("accepted_duplicate_pairs")]
 	[InlineData("normalized_descriptions")]
