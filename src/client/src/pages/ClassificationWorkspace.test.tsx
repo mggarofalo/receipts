@@ -465,7 +465,9 @@ it("supports manual correction before grouped approval", async () => {
   );
   await userEvent.click(screen.getByRole("combobox"));
   await userEvent.click(
-    within(screen.getByRole("dialog")).getByText("Food / Bakery"),
+    within(screen.getByRole("dialog")).getByRole("option", {
+      name: "Food / Bakery",
+    }),
   );
   await userEvent.click(
     screen.getByRole("button", { name: "Apply to selected" }),

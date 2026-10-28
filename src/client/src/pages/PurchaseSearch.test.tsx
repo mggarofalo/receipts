@@ -495,9 +495,10 @@ it("loads category-only history from a shared URL and changes category views wit
       location: "Market",
     }),
   );
-  expect(screen.getByRole("combobox", { name: "Category" })).toHaveTextContent(
-    "Food / Dairy",
-  );
+  const picker = screen.getByRole("combobox", { name: "Category" });
+  expect(picker).toHaveAttribute("title", "Food / Dairy");
+  expect(picker).toHaveTextContent("Dairy");
+  expect(picker).toHaveTextContent("Food");
   await userEvent.selectOptions(
     screen.getByLabelText("Category view"),
     "asClassified",

@@ -230,7 +230,7 @@ describe("ItemCostOverTime", () => {
     expect(screen.getByRole("heading", { name: "Milk" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("combobox", { name: "Category path" }));
-    await user.click(screen.getByText("Food / Dairy"));
+    await user.click(screen.getByRole("option", { name: "Food / Dairy" }));
 
     expect(screen.getByText("Category: Food / Dairy")).toBeInTheDocument();
     expect(
@@ -404,7 +404,7 @@ describe("ItemCostOverTime", () => {
       ).toBeInTheDocument();
 
       await user.click(screen.getByRole("combobox", { name: "Category path" }));
-      await user.click(screen.getByText("Food / Dairy"));
+      await user.click(screen.getByRole("option", { name: "Food / Dairy" }));
 
       expect(
         screen.queryByRole("heading", { name: /^normalized:/i }),

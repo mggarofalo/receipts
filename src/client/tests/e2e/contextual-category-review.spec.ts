@@ -96,7 +96,10 @@ for (const width of [1280, 375]) {
     await page.getByRole("button", { name: "Create and select" }).click();
     await expect(
       page.getByRole("combobox", { name: /^Category/ }),
-    ).toContainText("Pantry / Canned goods");
+    ).toHaveAttribute("title", "Pantry / Canned goods");
+    await expect(
+      page.getByRole("combobox", { name: /^Category/ }),
+    ).toContainText("Canned goods");
     await expect(page.getByPlaceholder("Item description")).toHaveValue(
       "Keep this draft",
     );
@@ -141,6 +144,9 @@ for (const width of [1280, 375]) {
     await page.getByRole("option", { name: "Food / Dairy" }).click();
     await expect(
       page.getByRole("combobox", { name: /^Category/ }),
-    ).toContainText("Food / Dairy");
+    ).toHaveAttribute("title", "Food / Dairy");
+    await expect(
+      page.getByRole("combobox", { name: /^Category/ }),
+    ).toContainText("Dairy");
   });
 }

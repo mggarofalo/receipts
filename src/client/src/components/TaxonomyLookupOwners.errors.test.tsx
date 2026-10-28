@@ -139,7 +139,9 @@ it("keeps report selection and restores nested category choices after taxonomy r
   expect(picker).toBeEnabled();
   await user.click(picker);
   await user.click(screen.getByRole("option", { name: "Food / Dairy" }));
-  expect(picker).toHaveTextContent("Food / Dairy");
+  expect(picker).toHaveAttribute("title", "Food / Dairy");
+  expect(picker).toHaveTextContent("Dairy");
+  expect(picker).toHaveTextContent("Food");
   expect(
     screen.getByRole("button", { name: "Apply to Selected" }),
   ).toBeEnabled();

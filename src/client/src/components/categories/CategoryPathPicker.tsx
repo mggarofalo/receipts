@@ -17,6 +17,7 @@ import {
 import {
   categoryPaths,
   type CategoryChoice,
+  type CategoryPath,
   type CategoryRevision,
 } from "@/lib/category-paths";
 import { cn } from "@/lib/utils";
@@ -33,6 +34,13 @@ interface CategoryPathPickerProps extends Omit<
   error?: boolean;
   canCreate?: boolean;
   allowUnclassified?: boolean;
+}
+
+function compactAncestry(path: CategoryChoice["path"]) {
+  const ancestors = path.slice(0, -1);
+  return ancestors.length > 2
+    ? `${ancestors[0].name} / … / ${ancestors.at(-1)!.name}`
+    : ancestors.map((node) => node.name).join(" / ");
 }
 
 export const CategoryPathPicker = forwardRef<
@@ -59,6 +67,16 @@ export const CategoryPathPicker = forwardRef<
     () => categoryPaths(revision?.nodes ?? []),
     [revision?.nodes],
   );
+  const groups = useMemo(() => {
+    const grouped = new Map<string, { name: string; rows: CategoryPath[] }>();
+    for (const row of rows) {
+      const root = row.path[0];
+      const group = grouped.get(root.id) ?? { name: root.name, rows: [] };
+      group.rows.push(row);
+      grouped.set(root.id, group);
+    }
+    return Array.from(grouped.entries());
+  }, [rows]);
   const label = value
     ? value.path.map((node) => node.name).join(" / ") || "Unclassified"
     : "Choose category";
@@ -90,26 +108,40 @@ export const CategoryPathPicker = forwardRef<
           role="combobox"
           aria-expanded={open}
           aria-busy={loading || undefined}
+          title={label}
           disabled={disabled || !revision || loading || error}
           className={cn(
-            "h-9 w-full min-w-0 justify-between font-normal",
+            "h-auto min-h-9 w-full min-w-0 justify-between py-1.5 text-left font-normal",
             className,
           )}
         >
-          <span className="truncate">
-            {value
-              ? label
-              : loading
-                ? "Loading categories…"
-                : error
-                  ? "Categories unavailable"
-                  : label}
+          <span className="min-w-0">
+            <span className="block truncate">
+              {value?.path.length
+                ? value.path.at(-1)!.name
+                : value
+                  ? label
+                  : loading
+                    ? "Loading categories…"
+                    : error
+                      ? "Categories unavailable"
+                      : label}
+            </span>
+            {value && value.path.length > 1 && (
+              <span className="block truncate text-xs text-muted-foreground">
+                {compactAncestry(value.path)}
+              </span>
+            )}
           </span>
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent
-        className="w-[--radix-popover-trigger-width] min-w-[18rem] p-0"
+        className="w-[var(--radix-popover-trigger-width)] min-w-[min(24rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] max-h-[var(--radix-popover-content-available-height)] overflow-y-auto p-0 shadow-lg"
+        style={{
+          backgroundColor: "var(--popover)",
+          color: "var(--popover-foreground)",
+        }}
         align="start"
         aria-describedby={undefined}
       >
@@ -135,25 +167,46 @@ export const CategoryPathPicker = forwardRef<
                     Unclassified
                   </CommandItem>
                 )}
-                {rows.map((row) => (
-                  <CommandItem
-                    key={row.node.id}
-                    value={row.node.id}
-                    keywords={[row.label]}
-                    onSelect={() => select(row.node.id)}
-                  >
-                    <Check
-                      className={cn(
-                        "mr-2 h-4 w-4",
-                        value?.categoryId === row.node.id
-                          ? "opacity-100"
-                          : "opacity-0",
-                      )}
-                    />
-                    <span>{row.label}</span>
-                  </CommandItem>
-                ))}
               </CommandGroup>
+              {groups.map(([rootId, group]) => (
+                <CommandGroup key={rootId} heading={group.name}>
+                  {group.rows.map((row) => (
+                    <CommandItem
+                      key={row.node.id}
+                      value={row.node.id}
+                      keywords={[row.label]}
+                      aria-label={row.label}
+                      title={row.label}
+                      className="items-start py-2"
+                      onSelect={() => select(row.node.id)}
+                    >
+                      <Check
+                        className={cn(
+                          "mt-0.5 h-4 w-4 shrink-0",
+                          value?.categoryId === row.node.id
+                            ? "opacity-100"
+                            : "opacity-0",
+                        )}
+                      />
+                      <span
+                        className="min-w-0 flex-1"
+                        style={{
+                          paddingInlineStart: `${Math.min(row.path.length - 1, 3) * 0.5}rem`,
+                        }}
+                      >
+                        <span className="block break-words font-medium">
+                          {row.node.name}
+                        </span>
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {row.path.length === 1
+                            ? "General · use this category"
+                            : compactAncestry(row.path)}
+                        </span>
+                      </span>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              ))}
             </CommandList>
           </Command>
         )}

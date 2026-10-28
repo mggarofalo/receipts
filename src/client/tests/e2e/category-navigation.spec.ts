@@ -68,10 +68,22 @@ for (const width of [1280, 375]) {
       ).toHaveCount(admin ? 1 : 0);
       await expect(
         page.getByRole("button", {
-          name: "Rename category: Food",
+          name: "Category actions: Food",
           exact: true,
         }),
       ).toHaveCount(admin ? 1 : 0);
+      if (admin) {
+        await page
+          .getByRole("button", { name: "Category actions: Food", exact: true })
+          .click();
+        await expect(
+          page.getByRole("menuitem", {
+            name: "Rename category: Food",
+            exact: true,
+          }),
+        ).toBeVisible();
+        await page.keyboard.press("Escape");
+      }
       await page.screenshot({
         path: `${output}/${width}-${admin ? "admin" : "reader"}-tree.png`,
         fullPage: true,
@@ -106,7 +118,9 @@ for (const width of [1280, 375]) {
       await expect(
         page.getByRole("heading", { name: "Classification", exact: true }),
       ).toBeVisible();
-      await expect(page.getByText(/suggestions are unavailable/i)).toBeVisible();
+      await expect(
+        page.getByText(/suggestions are unavailable/i),
+      ).toBeVisible();
       await page.getByRole("link", { name: "Browse categories" }).click();
       await expect(page).toHaveURL(/\/categories$/);
       await expect(
@@ -138,7 +152,7 @@ for (const width of [1280, 375]) {
         page.getByRole("button", { name: "New category", exact: true }),
       ).toHaveCount(0);
       await expect(
-        page.getByRole("button", { name: /^Rename category:/ }),
+        page.getByRole("button", { name: /^Category actions:/ }),
       ).toHaveCount(0);
       await page.screenshot({
         path: `${output}/${width}-${admin ? "admin" : "reader"}-history.png`,
@@ -175,7 +189,9 @@ test("category routes require authentication", async ({ page }) => {
 });
 
 for (const width of [1280, 375]) {
-  test(`classification navigation reaches category tree and cleanup page ${width}`, async ({ page }) => {
+  test(`classification navigation reaches category tree and cleanup page ${width}`, async ({
+    page,
+  }) => {
     await page.setViewportSize({ width, height: width === 375 ? 812 : 900 });
     await installApiMocks(page, {
       user: FIXTURE_USER,
@@ -195,19 +211,25 @@ for (const width of [1280, 375]) {
         "**/api/historical-reclassifications/groups?*": (route) =>
           route.fulfill({
             json: {
-              items: [{
-                group: { store: "Market", rawDescription: "MILK 2% GAL", itemCode: null },
-                purchaseCount: 12,
-                impactAmount: 42.5,
-                impactCurrency: "USD",
-                conflict: false,
-                migratedBroad: true,
-                unresolved: false,
-                unassigned: false,
-                currentCategories: [],
-                disposition: null,
-                dispositionVersion: 0,
-              }],
+              items: [
+                {
+                  group: {
+                    store: "Market",
+                    rawDescription: "MILK 2% GAL",
+                    itemCode: null,
+                  },
+                  purchaseCount: 12,
+                  impactAmount: 42.5,
+                  impactCurrency: "USD",
+                  conflict: false,
+                  migratedBroad: true,
+                  unresolved: false,
+                  unassigned: false,
+                  currentCategories: [],
+                  disposition: null,
+                  dispositionVersion: 0,
+                },
+              ],
               totalGroups: 1,
               nextOffset: null,
             },
@@ -221,11 +243,17 @@ for (const width of [1280, 375]) {
     await expect(page.getByText(/suggestions are unavailable/i)).toBeVisible();
     await page.getByRole("link", { name: "Browse categories" }).click();
     await expect(page).toHaveURL(/\/categories$/);
-    await expect(page.getByRole("treeitem", { name: "Food", exact: true })).toBeVisible();
-    await page.getByRole("navigation", { name: "Classification workspace" })
-      .getByRole("link", { name: "Clean up history" }).click();
+    await expect(
+      page.getByRole("treeitem", { name: "Food", exact: true }),
+    ).toBeVisible();
+    await page
+      .getByRole("navigation", { name: "Classification workspace" })
+      .getByRole("link", { name: "Clean up history" })
+      .click();
     await expect(page).toHaveURL(/\/categories\/cleanup$/);
-    await expect(page.getByRole("heading", { name: "Clean up history" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Clean up history" }),
+    ).toBeVisible();
     await expect(page.getByText("MILK 2% GAL")).toBeVisible();
   });
 }

@@ -188,6 +188,11 @@ export async function installApiMocks(page: Page, opts: ApiMockOptions = {}): Pr
   await page.route("**/api/categories**", (route) => route.fulfill(json({ data: [], totalCount: 0 })));
   await page.route("**/api/subcategories**", (route) => route.fulfill(json({ data: [], totalCount: 0 })));
   await page.route("**/api/item-templates**", (route) => route.fulfill(json({ data: [], totalCount: 0 })));
+  // Advisory item suggestions return arrays, unlike paginated template lists.
+  await page.route(
+    (url) => ["/api/item-templates/similar", "/api/item-templates/category-suggestions"].includes(url.pathname),
+    (route) => route.fulfill(json([])),
+  );
 
   // Receipt-entry suggestions are an advisory array, not a paginated list.
   await page.route(
