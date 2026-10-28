@@ -4,7 +4,10 @@ This Python 3.11+ standard-library tool splits labeled cohorts and scores previo
 recorded classification results. It does not call providers, read environment
 credentials, locate databases, or search for data. Supply every input and output
 path explicitly. Keep evaluation data and generated reports outside the repository.
-The tests construct synthetic cases in memory and temporary directories.
+The tests construct synthetic cases in memory and temporary directories. A
+separate [authored safety challenge](synthetic-safety/README.md) is intentionally
+checked in; its fictional taxonomy and cases are not real-data evaluation inputs
+and must retain separate denominators.
 
 Run from the repository root:
 
