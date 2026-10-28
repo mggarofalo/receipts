@@ -256,12 +256,14 @@ export default function ClassificationWorkspace() {
           </Button>
         </div>
       )}
-      {status.data && !available && (
-        <p role="status">
-          Category suggestions are unavailable. You can still browse categories
-          and classify receipts manually.
-        </p>
-      )}
+      {status.data &&
+        status.data.capability !== "unavailable" &&
+        !available && (
+          <p role="status">
+            Category suggestions are unavailable. You can still browse
+            categories and classify receipts manually.
+          </p>
+        )}
       {available && (
         <>
           {!attemptId && (

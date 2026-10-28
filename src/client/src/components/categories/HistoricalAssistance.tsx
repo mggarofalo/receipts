@@ -168,6 +168,11 @@ function HistoricalAssistanceForActor({
       return result.data;
     },
   });
+  // The passive capability source reads Jev's enabled flag and API key locally:
+  // "unavailable" means no configured provider, not a failed network check.
+  // Wait for that read before restoring Jev-only request controls.
+  const canReviewRequests =
+    !status.isPending && status.data?.capability !== "unavailable";
   const available =
     !status.isError &&
     status.data?.capability === "ready" &&
@@ -186,7 +191,8 @@ function HistoricalAssistanceForActor({
     ...localErrorPolicy.query,
     queryKey: ["category-assistance", "historical-requests", actor],
     enabled: (query) =>
-      available || hasLocalOperation || !!query.state.data?.items.length,
+      canReviewRequests &&
+      (available || hasLocalOperation || !!query.state.data?.items.length),
     refetchInterval: 15_000,
     queryFn: async ({ signal }) => {
       const result = await client.GET(
@@ -212,7 +218,7 @@ function HistoricalAssistanceForActor({
       actor,
       savedIntent?.operationId,
     ],
-    enabled: !!savedIntent && !busy,
+    enabled: canReviewRequests && !!savedIntent && !busy,
     refetchInterval: (query) => (query.state.data ? false : 5_000),
     queryFn: async ({ signal }) => {
       const result = await client.GET(
@@ -246,7 +252,7 @@ function HistoricalAssistanceForActor({
   const active = useQuery<Progress>({
     ...localErrorPolicy.query,
     queryKey: ["category-assistance", "historical-request", actor, displayedId],
-    enabled: !!displayedId,
+    enabled: canReviewRequests && !!displayedId,
     refetchInterval: (query) =>
       query.state.data?.state === "pending" ? 5_000 : 15_000,
     queryFn: async ({ signal }) => {
@@ -264,10 +270,11 @@ function HistoricalAssistanceForActor({
     },
   });
   if (
-    !available &&
-    !hasLocalOperation &&
-    !recent.data?.items.length &&
-    !recovered
+    !canReviewRequests ||
+    (!available &&
+      !hasLocalOperation &&
+      !recent.data?.items.length &&
+      !recovered)
   )
     return null;
 

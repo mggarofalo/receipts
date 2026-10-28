@@ -95,7 +95,11 @@ beforeEach(() => {
 });
 
 it.each([
-  { capability: "absent", consentEnabled: true, suggestionsAvailable: true },
+  {
+    capability: "unavailable",
+    consentEnabled: true,
+    suggestionsAvailable: true,
+  },
   { capability: "ready", consentEnabled: false, suggestionsAvailable: false },
   { capability: "unknown", consentEnabled: true, suggestionsAvailable: false },
 ])(
@@ -972,4 +976,38 @@ it("does not expose authenticated assistance or read saved requests after sign o
   ).not.toBeInTheDocument();
   expect(mockClient.GET).not.toHaveBeenCalled();
   expect(mockClient.POST).not.toHaveBeenCalled();
+});
+
+it("hides saved Jev request controls while configuration loads and when unavailable", async () => {
+  const body = savedBody();
+  sessionStorage.setItem(savedKey(), JSON.stringify(body));
+  let finish!: (value: ReturnType<typeof success>) => void;
+  mockClient.GET.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  renderWithQueryClient(
+    <HistoricalAssistance selected={[row("Milk")]} revisionId="rev" />,
+  );
+  expect(
+    screen.queryByRole("region", { name: "Historical suggestions" }),
+  ).not.toBeInTheDocument();
+  expect(mockClient.GET).toHaveBeenCalledTimes(1);
+  await act(async () =>
+    finish(
+      success({
+        ...ready,
+        capability: "unavailable",
+        suggestionsAvailable: false,
+      }),
+    ),
+  );
+  expect(
+    screen.queryByRole("region", { name: "Historical suggestions" }),
+  ).not.toBeInTheDocument();
+  expect(mockClient.GET).toHaveBeenCalledTimes(1);
+  expect(mockClient.POST).not.toHaveBeenCalled();
+  expect(sessionStorage.getItem(savedKey())).toBe(JSON.stringify(body));
 });
