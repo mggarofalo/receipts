@@ -18,3 +18,20 @@ arm, record source/build/runtime/policy provenance, or export predictions. A
 caller-provided parser is not evidence that a real C# parser ran. It is not an
 API client or authorization for live calls. The same-case guard only prevents
 progress past an unresolved earlier reservation; it does not prove dependencies.
+
+## Actual C# synthetic integration check
+
+`test_offline_actual_arms.py` drives the coordinator with recorded invented
+answers and invokes the checkout's paired C# executable to prepare requests,
+validate each retained response, derive the verifier and replay both decisions.
+It exercises two named cases against one ledger, asserts the case/arm/phase
+identities and resulting categories, and checks an invalid actual-parser response
+across reopen while another case continues. It also checks a missing response
+after reservation and exhaustion of the shared budget before an additional
+response is consumed. The executable is built from the
+local package cache. Responses are scripted fixtures, not model observations.
+This is test harness code, not a general campaign scheduler or live client; it
+does not attest the runtime or establish model accuracy. The cases use distinct
+invented purchase descriptions with the same taxonomy and answer pattern.
+Existing coordinator limitations
+above continue to apply.
