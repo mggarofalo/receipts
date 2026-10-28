@@ -18,3 +18,26 @@ This first stage has no campaign ledger integration, persisted output, private-d
 The source revision strings are declarations, not executable attestation. Project references compile the code present in this checkout; a later edit to reducer logic could preserve a version string and payload binding. Before frozen or live execution, verify exact source and executable hashes against the independently reviewed artifacts. Do not trust the revision strings or request bindings as proof of which decision implementation executed.
 
 Payloads, response bytes, hashes and verification outputs can reveal user evidence. Keep any future private artifacts outside the checkout in private storage; never commit real purchase evidence, response bodies or credentials. The checked-in demonstration contains invented inputs only.
+
+## Purchase-evidence diagnostic exchange
+
+`prepare-purchase-experiment` and `validate-purchase-experiment` are offline file
+commands with the same absolute paths, private output and CreateNew rules as the
+other commands. The input object has `purchase`, `taxonomyRevision`, `taxonomy`,
+and `terminalIds`. Supply a nonempty, sorted, unique array of category IDs before
+seeing any responses. The existing candidate planner validates the taxonomy and
+expands each terminal to include its ancestors. The resulting complete ordered
+paths are exported explicitly. Prepare takes a replies file containing JSON
+`null`; its output includes both exact payload strings, their plan hashes and
+question-to-path mappings. Keep inputs and outputs private.
+
+Validation takes a replies object containing `variant` (`purchase-only` or
+`unresolved-purpose`) and `response` (the exact raw JSON response as a string).
+It reconstructs the request from the input and invokes the corresponding real
+`PurchaseExperimentRequest.ParseResponse`; invalid, mismatched or stale responses
+fail without creating an output. Successful output includes the plan hash and
+parsed answers. These commands have no network or credential access, no retries,
+and do not make a category decision. They are not a campaign controller: a future
+controller must bind exact input, payload and executable/dependency hashes, enforce
+shared reservations, ordering and terminal failure, and revalidate on restart.
+No live experiment is authorized by these commands.

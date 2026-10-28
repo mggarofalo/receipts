@@ -11,9 +11,9 @@ namespace Receipts.JevPairedRunner
 	{
 		public static async Task<int> RunAsync(string[] args)
 		{
-			if (args.Length != 4 || args[0] is not ("prepare" or "replay" or "validate" or "prepare-batched" or "replay-batched" or "validate-batched"))
+			if (args.Length != 4 || args[0] is not ("prepare" or "replay" or "validate" or "prepare-batched" or "replay-batched" or "validate-batched" or "prepare-purchase-experiment" or "validate-purchase-experiment"))
 			{
-				Console.Error.WriteLine("Usage: prepare|replay|validate <absolute-input.json> <absolute-replies.json> <absolute-output.json>");
+				Console.Error.WriteLine("Usage: <offline-command> <absolute-input.json> <absolute-replies.json> <absolute-output.json>");
 				return 2;
 			}
 			try
@@ -27,6 +27,16 @@ namespace Receipts.JevPairedRunner
 					{
 						throw new ArgumentException();
 					}
+				}
+				if (args[0] is "prepare-purchase-experiment" or "validate-purchase-experiment")
+				{
+					PurchaseExperimentInput experiment = ReadExperiment<PurchaseExperimentInput>(args[1]) ?? throw new JsonException();
+					PurchaseExperimentReply? reply = ReadExperiment<PurchaseExperimentReply>(args[2]);
+					object experimentResult = PurchaseExperimentExchange.Execute(args[0], experiment, reply);
+					using FileStream experimentOutput = new(args[3], FileMode.CreateNew, FileAccess.Write, FileShare.None);
+					await JsonSerializer.SerializeAsync(experimentOutput, experimentResult, CandidateParity.JsonOptions);
+					experimentOutput.Flush(flushToDisk: true);
+					return 0;
 				}
 				PairedInput input = Read<PairedInput>(args[1]);
 				if (args[0].EndsWith("-batched", StringComparison.Ordinal))
@@ -112,6 +122,43 @@ namespace Receipts.JevPairedRunner
 				// Never print exception text, paths, payloads, response bodies or secrets.
 				Console.Error.WriteLine("Offline exchange failed. Inspect private inputs and output location.");
 				return 2;
+			}
+		}
+
+		private static T? ReadExperiment<T>(string path) where T : class
+		{
+			using FileStream input = File.OpenRead(path);
+			if (input.Length > 8 * 1024 * 1024)
+			{
+				throw new ArgumentException();
+			}
+			byte[] bytes = new byte[checked((int)input.Length)];
+			input.ReadExactly(bytes);
+			using JsonDocument document = JsonDocument.Parse(bytes);
+			RejectDuplicateMembers(document.RootElement);
+			return JsonSerializer.Deserialize<T>(bytes, CandidateParity.JsonOptions);
+		}
+
+		private static void RejectDuplicateMembers(JsonElement element)
+		{
+			if (element.ValueKind == JsonValueKind.Object)
+			{
+				HashSet<string> names = new(StringComparer.OrdinalIgnoreCase);
+				foreach (JsonProperty property in element.EnumerateObject())
+				{
+					if (!names.Add(property.Name))
+					{
+						throw new JsonException();
+					}
+					RejectDuplicateMembers(property.Value);
+				}
+			}
+			else if (element.ValueKind == JsonValueKind.Array)
+			{
+				foreach (JsonElement item in element.EnumerateArray())
+				{
+					RejectDuplicateMembers(item);
+				}
 			}
 		}
 
