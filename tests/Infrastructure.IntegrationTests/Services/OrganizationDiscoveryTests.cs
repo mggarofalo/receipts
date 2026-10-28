@@ -28,7 +28,13 @@ public sealed partial class OrganizationDiscoveryTests(PostgresFixture server) :
 	private static async Task<Guid> Start(PostgresFixture fixture)
 	{
 		await using var db = fixture.CreateDbContext();
+		await Enable(fixture);
 		return await Store(fixture).StartAsync((await db.CategoryAssistanceSettings.SingleAsync()).Revision, default);
+	}
+	private static async Task Enable(PostgresFixture fixture)
+	{
+		await using var db = fixture.CreateDbContext();
+		await db.Database.ExecuteSqlRawAsync("UPDATE category_assistance.\"Settings\" SET \"Enabled\" = TRUE, \"Provider\" = 'jev', \"Model\" = 'synthetic-local-only'");
 	}
 	private static ReceiptItemEntity Item(Guid receipt, Guid id, string description = "Repeated purchase") => new()
 	{

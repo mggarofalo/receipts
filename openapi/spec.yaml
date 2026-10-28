@@ -503,6 +503,20 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
+  /api/category-assistance/discovery:
+    get:
+      tags: [CategoryAssistance]
+      summary: Read aggregate background discovery progress
+      description: Discovery captures local observations only. It does not classify purchases or create categories. Disable category assistance settings to stop further discovery. Provider readiness does not authorize automatic effects.
+      operationId: OrganizationDiscovery_Status
+      security: [{ BearerAuth: [] }, { ApiKey: [] }]
+      responses:
+        "200":
+          description: Current discovery context and aggregate counts, without receipt or source details
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationDiscoveryStatusResponse" }
+        "401": { description: Authentication required }
   /api/category-assistance/status:
     get:
       tags: [CategoryAssistance]
@@ -9470,6 +9484,36 @@ components:
           type:
             - 'null'
             - string
+    OrganizationDiscoveryStatusResponse:
+      type: object
+      required: [discovery, capability, automaticClassificationAvailable]
+      properties:
+        discovery: { $ref: "#/components/schemas/OrganizationDiscoveryProgress" }
+        capability:
+          type: string
+          description: Suggestion provider capability; discovery remains local when unavailable.
+        automaticClassificationAvailable:
+          type: boolean
+          description: Always false in this discovery-only release.
+    OrganizationDiscoveryProgress:
+      type: object
+      required: [enabled, state, sourceGroups, observedItems, protectedItems, unavailableItems, invalidSourceItems, updatedAt]
+      properties:
+        enabled: { type: boolean }
+        state:
+          type: string
+          description: Disabled or awaiting_run returns zero counts. Scanning and watching report only the current settings, restore and taxonomy context.
+        sourceGroups:
+          type: integer
+          format: int64
+          description: Distinct exact sources currently attached to observed purchases.
+        observedItems: { type: integer, format: int64 }
+        protectedItems: { type: integer, format: int64 }
+        unavailableItems: { type: integer, format: int64 }
+        invalidSourceItems: { type: integer, format: int64 }
+        updatedAt:
+          type: [string, "null"]
+          format: date-time
     CategoryAssistanceStatusResponse:
       type: object
       required:

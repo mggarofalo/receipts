@@ -76,6 +76,7 @@ if (!isContractGeneration && !isChatGptCommand)
 	services.AddHostedService<NormalizationCatalogWorker>();
 	services.AddHostedService<NormalizationReviewInboxWorker>();
 	services.AddHostedService<CategoryAssistanceWorker>();
+	services.AddHostedService<OrganizationDiscoveryWorker>();
 }
 
 // Build application

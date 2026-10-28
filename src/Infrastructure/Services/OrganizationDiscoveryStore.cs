@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using Application.Classification;
 using Application.Normalization;
 using Infrastructure.Entities.Organization;
 using Microsoft.EntityFrameworkCore;
@@ -7,13 +8,40 @@ using Microsoft.EntityFrameworkCore;
 namespace Infrastructure.Services;
 
 /// <summary>
-/// Inert discovery foundation, deliberately not registered as a hosted service or exposed by API.
+/// Bounded deployment-local discovery. The scheduler never dispatches provider work.
 /// Observed means captured, never authorized to apply. Every future effect must independently
 /// recheck source, assignment, correction, policy, taxonomy and restore fences in its transaction.
 /// </summary>
 public sealed class OrganizationDiscoveryStore(IDbContextFactory<ApplicationDbContext> factory, TimeProvider clock)
+	: IOrganizationDiscoveryReader
 {
 	public const int MaximumChunkSize = 200;
+	public async Task<OrganizationDiscoveryProgress> GetProgressAsync(CancellationToken ct = default)
+	{
+		await using ApplicationDbContext db = await factory.CreateDbContextAsync(ct);
+		// A coherent snapshot keeps counts and fences aligned during concurrent saves/settings updates.
+		await using var tx = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead, ct);
+		var settings = await db.CategoryAssistanceSettings.AsNoTracking().SingleAsync(ct);
+		bool enabled = CanDiscover(settings);
+		if (!enabled) { return new(false, "disabled", 0, 0, 0, 0, 0, null); }
+		Guid taxonomyRevision = await db.TaxonomyHeads.AsNoTracking().Select(x => x.RevisionId).SingleAsync(ct);
+		var run = await db.OrganizationRuns.AsNoTracking().SingleOrDefaultAsync(x => x.Active &&
+			x.PolicyRevision == settings.Revision && x.RestoreGeneration == settings.RestoreGeneration &&
+			x.TaxonomyRevision == taxonomyRevision, ct);
+		if (run == null) { return new(true, "awaiting_run", 0, 0, 0, 0, 0, null); }
+		var counts = await db.OrganizationItems.AsNoTracking().Where(x => x.RunId == run.Id)
+			.GroupBy(x => x.State).Select(x => new { State = x.Key, Count = x.LongCount() })
+			.ToDictionaryAsync(x => x.State, x => x.Count, ct);
+		long sources = await db.OrganizationItems.AsNoTracking()
+			.Where(x => x.RunId == run.Id && x.State == "observed" && x.SourceId != null)
+			.Select(x => x.SourceId).Distinct().LongCountAsync(ct);
+		return new(true, run.State, sources, counts.GetValueOrDefault("observed"),
+			counts.GetValueOrDefault("protected"), counts.GetValueOrDefault("unavailable"),
+			counts.GetValueOrDefault("invalid_source"), run.UpdatedAt);
+	}
+
+	private static bool CanDiscover(Entities.CategoryAssistance.CategoryAssistanceSettingsEntity settings) =>
+		settings.Enabled && CategoryAssistancePolicy.IsValid(CategoryAssistanceSettingsStore.Read(settings));
 	private sealed class SourceCandidate
 	{
 		public Guid Id { get; set; }
@@ -28,6 +56,7 @@ public sealed class OrganizationDiscoveryStore(IDbContextFactory<ApplicationDbCo
 		await using var tx = await db.Database.BeginTransactionAsync(ct);
 		var head = await db.TaxonomyHeads.FromSqlRaw("SELECT * FROM taxonomy.\"Head\" WHERE \"Id\"=1 FOR UPDATE").SingleAsync(ct);
 		var settings = await db.CategoryAssistanceSettings.FromSqlRaw("SELECT * FROM category_assistance.\"Settings\" WHERE \"Id\"=1 FOR UPDATE").SingleAsync(ct);
+		if (!CanDiscover(settings)) { return Guid.Empty; }
 		if (expectedSettingsRevision == Guid.Empty || settings.Revision != expectedSettingsRevision)
 		{
 			throw new InvalidOperationException("organization_context_changed");
@@ -85,7 +114,6 @@ public sealed class OrganizationDiscoveryStore(IDbContextFactory<ApplicationDbCo
 		{
 			return 0;
 		}
-
 		if (run.PolicyRevision != settings.Revision || run.RestoreGeneration != settings.RestoreGeneration || run.TaxonomyRevision != head.RevisionId)
 		{
 			run.Active = false;
@@ -95,6 +123,8 @@ public sealed class OrganizationDiscoveryStore(IDbContextFactory<ApplicationDbCo
 			await tx.CommitAsync(ct);
 			return 0;
 		}
+		// Disabling settings is the durable stop switch, checked under the same lock as updates/restore.
+		if (!CanDiscover(settings)) { return 0; }
 		// Lock inbox rows before reading committed facts. A concurrent producer's UPSERT waits;
 		// after our DELETE commits it inserts a new row, rather than losing the newer change.
 		List<OrganizationDirtyItemEntity> dirty = await db.OrganizationDirtyItems.FromSqlInterpolated(

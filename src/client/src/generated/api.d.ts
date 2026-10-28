@@ -158,6 +158,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/category-assistance/discovery": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read aggregate background discovery progress
+         * @description Discovery captures local observations only. It does not classify purchases or create categories. Disable category assistance settings to stop further discovery. Provider readiness does not authorize automatic effects.
+         */
+        get: operations["OrganizationDiscovery_Status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/category-assistance/status": {
         parameters: {
             query?: never;
@@ -3896,6 +3916,33 @@ export interface components {
             undoAssignmentId: null | string;
             reason: null | string;
         };
+        OrganizationDiscoveryStatusResponse: {
+            discovery: components["schemas"]["OrganizationDiscoveryProgress"];
+            /** @description Suggestion provider capability; discovery remains local when unavailable. */
+            capability: string;
+            /** @description Always false in this discovery-only release. */
+            automaticClassificationAvailable: boolean;
+        };
+        OrganizationDiscoveryProgress: {
+            enabled: boolean;
+            /** @description Disabled or awaiting_run returns zero counts. Scanning and watching report only the current settings, restore and taxonomy context. */
+            state: string;
+            /**
+             * Format: int64
+             * @description Distinct exact sources currently attached to observed purchases.
+             */
+            sourceGroups: number;
+            /** Format: int64 */
+            observedItems: number;
+            /** Format: int64 */
+            protectedItems: number;
+            /** Format: int64 */
+            unavailableItems: number;
+            /** Format: int64 */
+            invalidSourceItems: number;
+            /** Format: date-time */
+            updatedAt: string | null;
+        };
         CategoryAssistanceStatusResponse: {
             capability: string;
             consentEnabled: boolean;
@@ -7331,6 +7378,33 @@ export interface operations {
                 content: {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
+            };
+        };
+    };
+    OrganizationDiscovery_Status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current discovery context and aggregate counts, without receipt or source details */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationDiscoveryStatusResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

@@ -60,6 +60,9 @@ public sealed class CategoryAssistanceHttpAuthorizationTests
 			.ReturnsAsync(new CategoryAssistanceCapability("jev", CategoryAssistanceCapabilityState.Unavailable, []));
 		builder.Services.AddSingleton(settings.Object);
 		builder.Services.AddSingleton(capability.Object);
+		var discovery = new Mock<IOrganizationDiscoveryReader>();
+		discovery.Setup(x => x.GetProgressAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new OrganizationDiscoveryProgress(true, "watching", 1, 2, 3, 4, 5, null));
+		builder.Services.AddSingleton(discovery.Object);
 		builder.Services.AddSingleton(Mock.Of<ICategoryAssistanceReadStore>());
 		builder.Services.AddSingleton(Mock.Of<ICategoryAssistanceReviewPreferenceStore>());
 		var decisions = new Mock<ICategoryAssistanceDecisionStore>();
@@ -73,11 +76,19 @@ public sealed class CategoryAssistanceHttpAuthorizationTests
 		using var client = app.GetTestClient();
 
 		(await client.GetAsync("/api/category-assistance/status")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+		(await client.GetAsync("/api/category-assistance/discovery")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+		discovery.Verify(x => x.GetProgressAsync(It.IsAny<CancellationToken>()), Times.Never);
 		(await client.GetAsync("/api/category-assistance/suggestions")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
 		(await client.PostAsJsonAsync($"/api/category-assistance/suggestions/{Guid.NewGuid()}/dismiss",
 			new CategoryAssistanceDismissRequest(Guid.NewGuid()))).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
 		client.DefaultRequestHeaders.Add("X-Test-Role", AppRoles.User);
 		(await client.GetAsync("/api/category-assistance/status")).StatusCode.Should().Be(HttpStatusCode.OK);
+		var discoveryResponse = await client.GetFromJsonAsync<OrganizationDiscoveryStatusResponse>("/api/category-assistance/discovery");
+		discoveryResponse!.Discovery.ObservedItems.Should().Be(2);
+		discoveryResponse.Capability.Should().Be("unavailable");
+		discoveryResponse.AutomaticClassificationAvailable.Should().BeFalse();
+		string discoveryJson = await client.GetStringAsync("/api/category-assistance/discovery");
+		discoveryJson.Should().NotContain("description").And.NotContain("credential").And.NotContain("itemId").And.NotContain("store");
 		(await client.GetAsync("/api/category-assistance/settings")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
 		(await client.GetAsync("/api/category-assistance/suggestions")).StatusCode.Should().Be(HttpStatusCode.OK);
 		(await client.GetAsync("/api/category-assistance/suggestions?offset=-1")).StatusCode
