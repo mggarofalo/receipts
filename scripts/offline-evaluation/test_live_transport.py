@@ -105,7 +105,7 @@ class LiveStageReservationTests(unittest.TestCase):
         # Exercise the new exchange transition with the real Windows ledger.
         # Fake ONLY runner/transport here; real C# parser integration is covered
         # separately by test_paired_stage_campaign.py, not claimed by this test.
-        for failure in ('parser', 'timeout', 'usage'):
+        for failure in ('parser', 'timeout', 'usage', 'distribution'):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as name:
                 root = Path(name)
                 source = root / 'source.txt'
@@ -113,6 +113,9 @@ class LiveStageReservationTests(unittest.TestCase):
                 artifact = {str(source): hashlib.sha256(b'synthetic').hexdigest()}
                 artifacts = {'source': artifact, 'executable': artifact}
                 payload = json.dumps({'model': 'jev-1.14.0', 'questions': {'q': {'type': 'noul'}}})
+                if failure == 'distribution':
+                    payload = json.dumps({'model': 'jev-1.14.0', 'questions': {'q': {
+                        'type': 'choice', 'criteria': {'a': 'Synthetic A', 'b': 'Synthetic B'}}}})
                 plan = {'case': 'synthetic', 'plan_sha256': 'a' * 64,
                         'production': payload, 'shortlist': [payload]}
                 with CampaignLedger(root / 'ledger', create_policy=Policy('synthetic', 4, 5_000_000_000, 0)) as ledger:
@@ -130,7 +133,10 @@ class LiveStageReservationTests(unittest.TestCase):
                         self.assertEqual(ledger.stage_history()[1]['event']['op'], 'start')
                         if failure == 'timeout':
                             raise LedgerError('synthetic timeout')
-                        return json.dumps({'model': 'jev-1.14.0', 'answers': {'q': {'type': 'noul', 'noul': .95}},
+                        answer = ({'type': 'choice', 'choice': 'a', 'confidence': .5,
+                                   'probabilities': {'a': .6, 'b': .389999999998}}
+                                  if failure == 'distribution' else {'type': 'noul', 'noul': .95})
+                        return json.dumps({'model': 'jev-1.14.0', 'answers': {'q': answer},
                             'usage': None if failure == 'usage' else {'input_tokens': 2, 'output_tokens': 1}}).encode()
                     controller._send_reserved = Mock(side_effect=send)
                     with self.assertRaises(LedgerError):

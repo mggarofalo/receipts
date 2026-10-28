@@ -68,6 +68,18 @@ def _probability(value):
     return type(value) in (int, float) and math.isfinite(value) and 0 <= value <= 1
 
 
+def _distribution_total_valid(values):
+    # Match CategorySuggestionPolicy.DistributionTotalValid, including its
+    # inclusive one-percent tolerance and accumulation rounding allowance.
+    # Dictionary.Values uses sequential double addition in Enumerable.Sum.
+    # Python 3.12+ sum compensates rounding instead, so accumulate explicitly
+    # to keep boundary decisions identical across supported Python versions.
+    total = 0.0
+    for value in values:
+        total += float(value)
+    return abs(total - 1.0) <= 0.01 + 1e-12
+
+
 def validate_envelope(payload, response):
     """Strict wire envelope checks; actual reducers still decide via PairedReplay.
 
@@ -97,8 +109,9 @@ def validate_envelope(payload, response):
             if (not isinstance(probabilities, dict) or set(probabilities) != set(question["criteria"])
                     or answer["choice"] not in probabilities or not _probability(answer["confidence"])
                     or not all(_probability(value) for value in probabilities.values())
-                    or abs(sum(probabilities.values()) - 1) > 1e-6
-                    or probabilities[answer["choice"]] != max(probabilities.values())):
+                    or not _distribution_total_valid(probabilities.values())
+                    or any(value > probabilities[answer["choice"]] + 1e-9
+                           for value in probabilities.values())):
                 raise LedgerError("invalid choice distribution")
         else:
             raise LedgerError("unsupported question type")

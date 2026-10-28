@@ -63,6 +63,24 @@ class GuardedRecordedTests(unittest.TestCase):
                 self.exchange(ledger, output='next')
             self.assertEqual(ledger.snapshot()['attempts'], 1)
 
+    def test_invalid_choice_total_stops_after_restart_without_consuming_another_response(self):
+        from test_choice_validation_parity import envelope
+        payload, reply = envelope([.6, .389999999998])
+        payload, reply = json.dumps(payload).encode(), json.dumps(reply).encode()
+        with CampaignLedger(self.journal) as ledger:
+            with self.assertRaisesRegex(LedgerError, 'invalid choice distribution'):
+                exchange_recorded(ledger, payload, RecordedTransport(reply), artifacts=self.artifacts,
+                                  private_output=self.root / 'invalid-choice')
+        transport = RecordedTransport(reply)
+        with CampaignLedger(self.journal) as ledger:
+            with self.assertRaisesRegex(LedgerError, 'unresolved attempt'):
+                exchange_recorded(ledger, payload, transport, artifacts=self.artifacts,
+                                  private_output=self.root / 'next-choice')
+            self.assertFalse(transport.used)
+            self.assertEqual(ledger.snapshot()['attempts'], 1)
+            self.assertEqual(ledger.snapshot()['missing_outcomes'], 1)
+            self.assertEqual(ledger.snapshot()['reserved_nanodollars'], RESERVATION_NANODOLLARS)
+
     def test_crashed_process_after_reserve_cannot_implicitly_resume(self):
         code = "from campaign_ledger import CampaignLedger; import os,sys; l=CampaignLedger(sys.argv[1]); l.reserve_attempt(b'synthetic'); os._exit(17)"
         process = subprocess.run([sys.executable, '-c', code, str(self.journal)],

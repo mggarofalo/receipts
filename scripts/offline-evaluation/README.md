@@ -25,6 +25,19 @@ python scripts/offline-evaluation/evaluation.py split --cases <cases.json> --hol
 python scripts/offline-evaluation/evaluation.py score --cases <heldout-cases.json> --predictions <predictions.json> --output <report.json>
 ```
 
+The recorded and live wire guards share `guarded_exchange.validate_envelope`.
+For Choice answers they follow the production `CategorySuggestionPolicy`:
+total mass may differ from one by at most `0.01 + 1e-12`, inclusively, and the
+selected probability may be at most `1e-9` below another option. These are
+application validation allowances; the TypeSafe schema describes a sum of one.
+Finite probabilities in [0, 1], exact option membership, confidence and envelope
+checks still apply. Invalid responses stop the campaign with the reservation
+retained and cannot trigger another send. The HTTPS worker only returns raw
+bytes; it does not retry or maintain a second probability validator.
+`test_choice_validation_parity.py` compiles the actual production policy source
+when the .NET 10 SDK is available and checks both production decision modes
+against synthetic wire responses, including floating-point boundary neighbours.
+
 Output files must not already exist. Input files are UTF-8 JSON arrays; malformed
 JSON, duplicate object keys, unknown prediction IDs and duplicate
 IDs are rejected. Probability validation rejects nonfinite values in distributions;
