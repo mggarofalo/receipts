@@ -361,3 +361,56 @@ triggers. A future restore path needs its own validated, atomic protocol for
 baseline completeness, event lineage, independently trusted terminal anchors,
 and final mapping heads; it cannot replay historical events against the live
 head guard or bypass isolation/immutability guards and claim equivalent trust.
+
+## Inactive manifest capture intent contract v1
+
+`OrganizationEffectContractV1.ManifestRequest` is a pure, unwired declaration of
+the complete ordered membership of one capture. Its version, manifest identity,
+actor, policy version, pinned target taxonomy revision and capture timestamp are
+bound together with every complete typed `ItemRequest` in `Members`. Members must
+repeat that same manifest context, including capture time. Item identities must
+be unique and all apply/undo operation identities share one collision namespace.
+An empty vector is a valid declaration of zero members. The vector's order is
+explicit intent: neither timestamps nor item IDs sort it. Equal capture times
+are expected and do not establish any causal order.
+
+`WriteManifestRequest` emits canonical JSON using the existing v1 contract's
+ordinal object-key ordering, explicit nulls, exact Unicode strings and strict
+UTC microsecond timestamps. It preserves member and category-path array order.
+`ReadManifestRequest` rejects unknown, duplicate or missing fields and validates
+every nested typed item. `ManifestRequestHash` is uppercase SHA-256 over UTF-8
+`receipts.organization-effect.manifest-request.v1`, a zero byte, then that JSON.
+It binds full member requests, rather than only their IDs or item hashes, and is
+domain-separated from item request and archive membership digests. Removing,
+adding or reordering a member changes the declaration and digest. Approval
+taxonomy revision in mapping evidence is historical evidence and need not equal
+the manifest's pinned target taxonomy revision; this codec does not evaluate it.
+
+The existing canonicalizer imposes a 1 MiB (1,048,576 byte) limit on the entire
+manifest JSON, including all nested members. On read, both UTF-16 code-unit length
+and UTF-8 byte count of the supplied JSON, including whitespace, must be within
+that limit. On write, the serialized whole request must fit before canonicalizing;
+JSON escaping contributes to its size. This is not a per-member allowance or a
+fixed member-count limit. Oversized declarations fail without producing a hash.
+
+This digest is a claim binding, not proof that a capture observed a mapping head,
+that the declared vector is the sealed database membership, or that any operation
+is authorized. No current manifest hash is reinterpreted, compared or upgraded.
+The existing journal's arbitrary `CaptureId` still has no durable typed witness.
+No writer, schema migration, archive version or applied-effect authority gate is
+changed by this contract.
+
+A future activation must persist a versioned witness linking the journal capture
+identity and stream position to manifest identity and this exact request digest,
+and seal the complete ordered typed request vector together with all effect rows
+in the same transaction under the existing taxonomy lock. Durable member ordinals
+or the retained canonical vector must preserve order; SQL row enumeration and
+wall-clock times cannot recover it. The witness must enforce its foreign-key and
+mapping evidence relationships and verify the frozen row projection against the
+request; this codec performs no database observation. Every mapping transition
+must participate in that ordering protocol. Baseline completeness/provenance and
+an independently trusted terminal checkpoint remain prerequisites. A self-supplied
+digest or journal tip is not a trust anchor, and historical captures cannot be
+retroactively promoted from timestamps or recomputed hashes. Until the witness,
+transactional producer and trust protocol exist and are validated, replay success
+and codec success grant no assignment authority; the applied barrier stays closed.

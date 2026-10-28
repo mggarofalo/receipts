@@ -19,6 +19,10 @@ internal static class OrganizationEffectContractV1
 	internal sealed record ItemRequest(int Version, Guid ManifestId, string Actor, string PolicyVersion,
 		DateTimeOffset CapturedAt, Source Source, Guid? ExpectedAssignmentId, CategoryIntent Target,
 		Guid ApplyOperationId, Guid UndoOperationId, MappingEvidence Decision);
+	// Members is the complete caller-declared ordered vector, not a set or timestamp order.
+	// A digest binds the declaration only; a future transactional witness must attest completeness.
+	internal sealed record ManifestRequest(int Version, Guid ManifestId, string Actor, string PolicyVersion,
+		Guid TaxonomyRevisionId, DateTimeOffset CapturedAt, ItemRequest[] Members);
 	internal sealed record PhaseCommand(int Version, string Phase, string ItemRequestHash,
 		Guid OperationId, Guid? ExpectedAssignmentId, CategoryIntent Target, DateTimeOffset RecordedAt);
 
@@ -43,6 +47,22 @@ internal static class OrganizationEffectContractV1
 		Validate(request);
 		return request;
 	}
+
+	internal static ManifestRequest ReadManifestRequest(string json)
+	{
+		var request = Read<ManifestRequest>(json);
+		Validate(request);
+		return request;
+	}
+
+	internal static string WriteManifestRequest(ManifestRequest request)
+	{
+		Validate(request);
+		return Canonical(request);
+	}
+
+	internal static string ManifestRequestHash(ManifestRequest request) =>
+		Digest("receipts.organization-effect.manifest-request.v1", WriteManifestRequest(request));
 
 	internal static PhaseCommand ReadPhase(string json)
 	{
@@ -102,6 +122,28 @@ internal static class OrganizationEffectContractV1
 		Id(request.ApplyOperationId); Id(request.UndoOperationId);
 		Check(request.ApplyOperationId != request.UndoOperationId, "Effect phase operations must differ.");
 		Validate(request.Decision);
+	}
+
+	private static void Validate(ManifestRequest request)
+	{
+		Check(request is not null && request.Version == 1 && request.Members is not null,
+			"Invalid effect manifest request contract.");
+		Id(request!.ManifestId); Text(request.Actor); Text(request.PolicyVersion);
+		Id(request.TaxonomyRevisionId); Timestamp(request.CapturedAt);
+		HashSet<Guid> members = [];
+		HashSet<Guid> operations = [];
+		foreach (var member in request.Members)
+		{
+			Validate(member);
+			Check(member.ManifestId == request.ManifestId && member.Actor == request.Actor
+				&& member.PolicyVersion == request.PolicyVersion
+				&& member.Target.TaxonomyRevisionId == request.TaxonomyRevisionId
+				&& member.CapturedAt == request.CapturedAt,
+				"Effect member references differ from manifest context.");
+			Check(members.Add(member.Source.ItemId), "Duplicate effect manifest member.");
+			Check(operations.Add(member.ApplyOperationId) && operations.Add(member.UndoOperationId),
+				"Duplicate effect manifest operation.");
+		}
 	}
 
 	private static void Validate(PhaseCommand command)
