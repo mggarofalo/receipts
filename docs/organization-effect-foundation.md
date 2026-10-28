@@ -590,3 +590,45 @@ can therefore fail ordinary source-revision prefix validation.
 This is bounded integration evidence, not archive activation. Offline inspection/
 normalization preservation, typed witnesses, independent journal trust anchors,
 applied assignment authority and broader version compatibility remain prerequisites.
+
+
+## Inactive SQL capture policy fence v1
+
+Migration `20261028190000_AddOrganizationEffectCaptureFencesV1` adds a separate
+SQL-owned policy attestation, explicitly opted into with nullable
+`OrganizationEffectCaptureWitnessesV1.CaptureFenceVersion = 1`. Historical and
+ordinary v1 witnesses retain NULL; they cannot be updated or retroactively granted
+this attestation. There is no production producer. Portable format remains v13;
+the v14 candidate, UI/approval gates, provider calls and applied-effect barrier
+remain unchanged.
+
+Before the existing typed seal locks receipt/item rows, the opted-in seal acquires
+RCPT/NORM, taxonomy Head and category_assistance.Settings in that order. A producer
+must acquire the gate at transaction entry, before baseline, event or mapping work
+that can lock Head; nested triggers cannot repair an order already inverted by
+caller work. The Head -> Settings order agrees with restore, enrollment, dispatch
+and discovery. READ COMMITTED ensures statement-fresh policy after waiting. The
+attestation derives Revision and RestoreGeneration from the locked Settings row,
+never organization.Runs or other discovery cache. Disabled/invalid settings fail
+closed. Settings updates and restore generation transitions serialize with this
+lock until transaction completion.
+
+After successful typed witness insertion, a trigger inserts one immutable
+OrganizationEffectCaptureFencesV1 row, referencing that witness. Canonical bytes
+and the domain-separated hash match OrganizationEffectFenceContractV1.CaptureEvidence;
+the manifest hash comes from the SQL-derived witness. Direct DML cannot supply
+arbitrary policy facts. A failure or outer rollback removes declarations, witness
+and fence atomically. Ordinary table owners/superusers capable of changing trigger
+or schema definitions remain outside the DML trust boundary.
+
+This attests policy at capture only. It does not authenticate arbitrary future
+execution facts, actor permissions, undo lineage, mapping command/source-hash
+semantics, suppression/disposition checks or an independent journal checkpoint.
+Every future execution must recheck authoritative current settings/generation and
+source/assignment/taxonomy under the established locks. Every mapping transition
+must still join the journal, every ordinary writer must join the global operation
+registry, and portable witness restoration must be implemented before activation.
+The registry foundation alone does not establish global enforcement. No effect
+application or automatic categorization is enabled.
+
+Verification (2026-10-28): all 53 OrganizationEffectCaptureWitnessTests passed on real PostgreSQL (zero skipped), including SQL/.NET canonical parity, disabled/generation lock races, gate-before-baseline composition, immutable/retroactive-fact rejection and outer rollback. Build completed with zero warnings/errors. Independent review found no blocker in the SQL fence foundation. Additional reverse-contention evidence uses the actual settings update store and CategoryAssistanceRestoreFence inside a gate-protected restore transaction, confirming that capture blocks later policy changes and that restore rotation, disable and audit commit or roll back together while captured evidence remains unchanged. This exercises the restore fence transaction, not a complete portable archive import.

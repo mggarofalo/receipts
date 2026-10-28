@@ -56,6 +56,217 @@ public sealed class OrganizationEffectCaptureWitnessTests(PostgresFixture server
 		}
 	}
 
+
+	[Fact]
+	public async Task PolicyFence_DerivesContractBytesFromLockedSettings_AndRetainsEvidence()
+	{
+		var seed = await SeedAsync();
+		await using var db = fixture.CreateDbContext();
+		await db.Database.ExecuteSqlRawAsync("UPDATE category_assistance.\"Settings\" SET \"Enabled\"=true, \"Provider\"='jev', \"Model\"='jev-1.14.0'");
+		await using var tx = await db.Database.BeginTransactionAsync();
+		var capture = await DeclareAsync(db, seed);
+		await SealAsync(db, capture, fence: true);
+		var settings = await db.CategoryAssistanceSettings.AsNoTracking().SingleAsync();
+		var expected = new OrganizationEffectFenceContractV1.CaptureEvidence(1, capture.Request.ManifestId,
+			OrganizationEffectContractV1.ManifestRequestHash(capture.Request), settings.Revision, settings.RestoreGeneration);
+		byte[] bytes = await db.Database.SqlQueryRaw<byte[]>("SELECT \"CanonicalEvidence\" AS \"Value\" FROM taxonomy.\"OrganizationEffectCaptureFencesV1\"").SingleAsync();
+		Encoding.UTF8.GetString(bytes).Should().Be(OrganizationEffectFenceContractV1.WriteCapture(expected));
+		(await db.Database.SqlQueryRaw<string>("SELECT \"EvidenceHash\" AS \"Value\" FROM taxonomy.\"OrganizationEffectCaptureFencesV1\"").SingleAsync())
+			.Should().Be(OrganizationEffectFenceContractV1.CaptureHash(expected));
+		await tx.CommitAsync();
+		foreach (string sql in new[] { "UPDATE taxonomy.\"OrganizationEffectCaptureFencesV1\" SET \"EvidenceHash\"='forged'", "DELETE FROM taxonomy.\"OrganizationEffectCaptureFencesV1\"", "TRUNCATE taxonomy.\"OrganizationEffectCaptureFencesV1\"" })
+		{
+			Func<Task> mutate = () => db.Database.ExecuteSqlRawAsync(sql);
+			await mutate.Should().ThrowAsync<PostgresException>();
+		}
+	}
+
+	[Fact]
+	public async Task PolicyFence_OpaqueWitnessCannotBeUpgradedOrGivenForgedFacts()
+	{
+		var seed = await SeedAsync();
+		await using var db = fixture.CreateDbContext();
+		await using (var tx = await db.Database.BeginTransactionAsync())
+		{
+			var capture = await DeclareAsync(db, seed);
+			await SealAsync(db, capture);
+			await tx.CommitAsync();
+		}
+		(await db.Database.SqlQueryRaw<long>("SELECT count(*) AS \"Value\" FROM taxonomy.\"OrganizationEffectCaptureFencesV1\"").SingleAsync()).Should().Be(0);
+		Func<Task> upgrade = () => db.Database.ExecuteSqlRawAsync("UPDATE taxonomy.\"OrganizationEffectCaptureWitnessesV1\" SET \"CaptureFenceVersion\"=1");
+		await upgrade.Should().ThrowAsync<PostgresException>();
+		Func<Task> fabricate = () => db.Database.ExecuteSqlRawAsync("INSERT INTO taxonomy.\"OrganizationEffectCaptureFencesV1\" SELECT \"ManifestId\",1,gen_random_uuid(),gen_random_uuid(),decode('00','hex'),'forged' FROM taxonomy.\"OrganizationEffectCaptureWitnessesV1\"");
+		await fabricate.Should().ThrowAsync<PostgresException>();
+	}
+
+	[Theory]
+	[InlineData(false)]
+	[InlineData(true)]
+	public async Task PolicyFence_SettingsRaceWaitsThenReadsCommittedDisableOrGeneration(bool disable)
+	{
+		var seed = await SeedAsync();
+		await using var blocker = fixture.CreateDbContext();
+		await blocker.Database.ExecuteSqlRawAsync("UPDATE category_assistance.\"Settings\" SET \"Enabled\"=true, \"Provider\"='jev', \"Model\"='jev-1.14.0'");
+		await using var tx = await blocker.Database.BeginTransactionAsync();
+		await blocker.Database.ExecuteSqlRawAsync("SELECT 1 FROM category_assistance.\"Settings\" WHERE \"Id\"=1 FOR UPDATE");
+		Guid generation = Guid.NewGuid();
+		await blocker.Database.ExecuteSqlInterpolatedAsync($"UPDATE category_assistance.\"Settings\" SET \"Enabled\"={!disable}, \"RestoreGeneration\"={generation}, \"Revision\"={Guid.NewGuid()}");
+		await using var contender = fixture.CreateDbContext();
+		await contender.Database.OpenConnectionAsync();
+		int pid = await contender.Database.SqlQueryRaw<int>("SELECT pg_backend_pid() AS \"Value\"").SingleAsync();
+		int blockerPid = await blocker.Database.SqlQueryRaw<int>("SELECT pg_backend_pid() AS \"Value\"").SingleAsync();
+		async Task CaptureAsync()
+		{
+			await using var captureTx = await contender.Database.BeginTransactionAsync();
+			var capture = await DeclareAsync(contender, seed);
+			await SealAsync(contender, capture, fence: true);
+			await captureTx.CommitAsync();
+		}
+		Task pending = CaptureAsync();
+		await using var observer = fixture.CreateDbContext();
+		bool waiting = false;
+		var timer = Stopwatch.StartNew();
+		while (timer.Elapsed < TimeSpan.FromSeconds(10) && !pending.IsCompleted)
+		{
+			if (await observer.Database.SqlQuery<bool>($"SELECT {blockerPid}=ANY(pg_blocking_pids({pid})) AS \"Value\"").SingleAsync()) { waiting = true; break; }
+			await Task.Delay(25);
+		}
+		await tx.CommitAsync();
+		waiting.Should().BeTrue();
+		if (disable)
+		{
+			Func<Task> finish = () => pending.WaitAsync(TimeSpan.FromSeconds(20));
+			await finish.Should().ThrowAsync<PostgresException>();
+			await AssertNoCaptureAsync();
+		}
+		else
+		{
+			await pending.WaitAsync(TimeSpan.FromSeconds(20));
+			(await observer.Database.SqlQueryRaw<Guid>("SELECT \"RestoreGeneration\" AS \"Value\" FROM taxonomy.\"OrganizationEffectCaptureFencesV1\"").SingleAsync()).Should().Be(generation);
+		}
+	}
+
+
+
+	[Fact]
+	public async Task PolicyFence_SealedCaptureBlocksSettingsUpdateUntilCommit()
+	{
+		var seed = await SeedAsync();
+		await using var captureDb = fixture.CreateDbContext();
+		await captureDb.Database.ExecuteSqlRawAsync("UPDATE category_assistance.\"Settings\" SET \"Enabled\"=true, \"Provider\"='jev', \"Model\"='jev-1.14.0'");
+		var policy = await captureDb.CategoryAssistanceSettings.AsNoTracking().SingleAsync();
+		await using var captureTx = await captureDb.Database.BeginTransactionAsync();
+		var capture = await DeclareAsync(captureDb, seed);
+		await SealAsync(captureDb, capture, fence: true);
+		await using var updateDb = fixture.CreateDbContext();
+		await updateDb.Database.OpenConnectionAsync();
+		int updatePid = await updateDb.Database.SqlQueryRaw<int>("SELECT pg_backend_pid() AS \"Value\"").SingleAsync();
+		int capturePid = await captureDb.Database.SqlQueryRaw<int>("SELECT pg_backend_pid() AS \"Value\"").SingleAsync();
+		async Task UpdateAsync()
+		{
+			await using var updateTx = await updateDb.Database.BeginTransactionAsync();
+			await CategoryAssistanceSettingsStore.UpdateInTransactionAsync(updateDb, Actor, policy.Revision,
+				new(false, policy.Provider, policy.Model, policy.DailyLimit, policy.PendingLimit, policy.Revision), DateTimeOffset.UtcNow);
+			await updateTx.CommitAsync();
+		}
+		Task pending = UpdateAsync();
+		bool waiting = await IsBlockedByAsync(updatePid, capturePid, pending);
+		await captureTx.CommitAsync();
+		await pending.WaitAsync(TimeSpan.FromSeconds(20));
+		waiting.Should().BeTrue();
+		await using var observer = fixture.CreateDbContext();
+		var updated = await observer.CategoryAssistanceSettings.AsNoTracking().SingleAsync();
+		updated.Enabled.Should().BeFalse();
+		updated.Revision.Should().NotBe(policy.Revision);
+		(await observer.Database.SqlQueryRaw<Guid>("SELECT \"SettingsRevision\" AS \"Value\" FROM taxonomy.\"OrganizationEffectCaptureFencesV1\"").SingleAsync()).Should().Be(policy.Revision);
+	}
+
+	[Theory]
+	[InlineData(false)]
+	[InlineData(true)]
+	public async Task PolicyFence_RestoreWaitsForCapture_ThenRotatesGenerationAtomically(bool rollbackRestore)
+	{
+		var seed = await SeedAsync();
+		await using var captureDb = fixture.CreateDbContext();
+		await captureDb.Database.ExecuteSqlRawAsync("UPDATE category_assistance.\"Settings\" SET \"Enabled\"=true, \"Provider\"='jev', \"Model\"='jev-1.14.0'");
+		var policy = await captureDb.CategoryAssistanceSettings.AsNoTracking().SingleAsync();
+		await using var captureTx = await captureDb.Database.BeginTransactionAsync();
+		var capture = await DeclareAsync(captureDb, seed);
+		await SealAsync(captureDb, capture, fence: true);
+		await using var restoreDb = fixture.CreateDbContext();
+		await restoreDb.Database.OpenConnectionAsync();
+		int restorePid = await restoreDb.Database.SqlQueryRaw<int>("SELECT pg_backend_pid() AS \"Value\"").SingleAsync();
+		int capturePid = await captureDb.Database.SqlQueryRaw<int>("SELECT pg_backend_pid() AS \"Value\"").SingleAsync();
+		Guid restoredGeneration = Guid.Empty, restoredRevision = Guid.Empty;
+		async Task RestoreAsync()
+		{
+			await using var restoreTx = await restoreDb.Database.BeginTransactionAsync();
+			await Infrastructure.Utilities.NormalizationWriteGuard.AcquireWriteGateAsync(restoreDb, default);
+			await CategoryAssistanceRestoreFence.FenceAsync(restoreDb, default);
+			var restored = await restoreDb.CategoryAssistanceSettings.AsNoTracking().SingleAsync();
+			restoredGeneration = restored.RestoreGeneration;
+			restoredRevision = restored.Revision;
+			restored.Enabled.Should().BeFalse();
+			restored.Revision.Should().NotBe(policy.Revision);
+			restoredGeneration.Should().NotBe(policy.RestoreGeneration);
+			if (rollbackRestore) { await restoreTx.RollbackAsync(); }
+			else { await restoreTx.CommitAsync(); }
+		}
+		Task pending = RestoreAsync();
+		bool waiting = await IsBlockedByAsync(restorePid, capturePid, pending);
+		await captureTx.CommitAsync();
+		await pending.WaitAsync(TimeSpan.FromSeconds(20));
+		waiting.Should().BeTrue();
+		await using var observer = fixture.CreateDbContext();
+		var current = await observer.CategoryAssistanceSettings.AsNoTracking().SingleAsync();
+		current.RestoreGeneration.Should().Be(rollbackRestore ? policy.RestoreGeneration : restoredGeneration);
+		current.Enabled.Should().Be(rollbackRestore);
+		current.Revision.Should().Be(rollbackRestore ? policy.Revision : restoredRevision);
+		(await observer.CategoryAssistanceSettingsAudits.CountAsync(x => x.Actor == "backup_restore")).Should().Be(rollbackRestore ? 0 : 1);
+		(await observer.Database.SqlQueryRaw<Guid>("SELECT \"RestoreGeneration\" AS \"Value\" FROM taxonomy.\"OrganizationEffectCaptureFencesV1\"").SingleAsync()).Should().Be(policy.RestoreGeneration);
+	}
+
+	private async Task<bool> IsBlockedByAsync(int waitingPid, int blockerPid, Task pending)
+	{
+		await using var observer = fixture.CreateDbContext();
+		var timer = Stopwatch.StartNew();
+		while (timer.Elapsed < TimeSpan.FromSeconds(10) && !pending.IsCompleted)
+		{
+			if (await observer.Database.SqlQuery<bool>($"SELECT {blockerPid}=ANY(pg_blocking_pids({waitingPid})) AS \"Value\"").SingleAsync()) { return true; }
+			await Task.Delay(25);
+		}
+		return false;
+	}
+
+	[Fact]
+	public async Task PolicyFence_GateBeforeBaseline_AllowsSameTransactionCapture()
+	{
+		var seed = await SeedAsync(createBaseline: false);
+		await using var db = fixture.CreateDbContext();
+		await db.Database.ExecuteSqlRawAsync("UPDATE category_assistance.\"Settings\" SET \"Enabled\"=true, \"Provider\"='jev', \"Model\"='jev-1.14.0'");
+		await using var tx = await db.Database.BeginTransactionAsync();
+		await Infrastructure.Utilities.NormalizationWriteGuard.AcquireWriteGateAsync(db, default);
+		await db.Database.ExecuteSqlInterpolatedAsync($"INSERT INTO taxonomy.\"MappingAuthorityBaseline\" (\"Singleton\",\"Id\",\"StreamId\") VALUES (1,{seed.Baseline},{Guid.NewGuid()})");
+		var capture = await DeclareAsync(db, seed);
+		await SealAsync(db, capture, fence: true);
+		await tx.CommitAsync();
+		(await db.Database.SqlQueryRaw<long>("SELECT count(*) AS \"Value\" FROM taxonomy.\"OrganizationEffectCaptureFencesV1\"").SingleAsync()).Should().Be(1);
+	}
+
+	[Fact]
+	public async Task PolicyFence_RollbackRemovesWitnessFenceAndDeclarations()
+	{
+		var seed = await SeedAsync();
+		await using var db = fixture.CreateDbContext();
+		await db.Database.ExecuteSqlRawAsync("UPDATE category_assistance.\"Settings\" SET \"Enabled\"=true, \"Provider\"='jev', \"Model\"='jev-1.14.0'");
+		await using var tx = await db.Database.BeginTransactionAsync();
+		var capture = await DeclareAsync(db, seed);
+		await SealAsync(db, capture, fence: true);
+		await tx.RollbackAsync();
+		await AssertNoCaptureAsync();
+		(await db.Database.SqlQueryRaw<long>("SELECT count(*) AS \"Value\" FROM taxonomy.\"OrganizationEffectCaptureFencesV1\"").SingleAsync()).Should().Be(0);
+	}
+
 	[Theory]
 	[InlineData("empty")]
 	[InlineData("duplicate")]
@@ -418,9 +629,9 @@ public sealed class OrganizationEffectCaptureWitnessTests(PostgresFixture server
 		(await db.Database.SqlQueryRaw<long>("SELECT count(*) AS \"Value\" FROM taxonomy.\"MappingAuthorityEvents\"").SingleAsync()).Should().Be(0);
 	}
 
-	private static Task SealAsync(ApplicationDbContext db, Capture capture, Guid[]? ids = null) => db.Database.ExecuteSqlInterpolatedAsync($"""
-        INSERT INTO taxonomy."OrganizationEffectCaptureWitnessesV1" ("ManifestId","EventId","OrderedItemIds","CanonicalRequest","RequestHash")
-        VALUES ({capture.Request.ManifestId},{capture.Event},{ids ?? capture.Request.Members.Select(x => x.Source.ItemId).ToArray()},{Encoding.UTF8.GetBytes("forged caller bytes")},'forged caller hash')
+	private static Task SealAsync(ApplicationDbContext db, Capture capture, Guid[]? ids = null, bool fence = false) => db.Database.ExecuteSqlInterpolatedAsync($"""
+        INSERT INTO taxonomy."OrganizationEffectCaptureWitnessesV1" ("ManifestId","EventId","OrderedItemIds","CanonicalRequest","RequestHash","CaptureFenceVersion")
+        VALUES ({capture.Request.ManifestId},{capture.Event},{ids ?? capture.Request.Members.Select(x => x.Source.ItemId).ToArray()},{Encoding.UTF8.GetBytes("forged caller bytes")},'forged caller hash',{(int?)(fence ? 1 : null)})
         """);
 
 	private static async Task<Capture> DeclareAsync(ApplicationDbContext db, Seed seed, bool typedManifest = true, bool typedEvent = true, bool mixedGroup = false, bool wrongCaptureId = false, Guid? collision = null, string phase = "apply")
@@ -454,7 +665,7 @@ public sealed class OrganizationEffectCaptureWitnessTests(PostgresFixture server
         VALUES ({m.ManifestId},{m.Source.ItemId},{m.Source.ReceiptId},{m.Source.Store},{m.Source.RawDescription},{m.Source.ItemCode},{m.Source.ItemRevision},{m.Source.ReceiptRevision},{m.ExpectedAssignmentId},{m.Target.TaxonomyRevisionId},{m.Target.CategoryId},{m.ApplyOperationId},{m.UndoOperationId},CAST({JsonSerializer.Serialize(m.Decision)} AS jsonb))
         """);
 
-	private async Task<Seed> SeedAsync()
+	private async Task<Seed> SeedAsync(bool createBaseline = true)
 	{
 		await using var db = fixture.CreateDbContext();
 		db.Users.Add(new ApplicationUser { Id = Actor, UserName = Actor });
@@ -470,7 +681,7 @@ public sealed class OrganizationEffectCaptureWitnessTests(PostgresFixture server
 		CategoryMappingService mappings = new(new Factory(fixture), TimeProvider.System);
 		var mapping = await mappings.ChangeAsync(Actor, new(source, fingerprint, null, revision.Id, category, Guid.NewGuid(), "Approve"));
 		Guid baseline = Guid.NewGuid();
-		await db.Database.ExecuteSqlInterpolatedAsync($"INSERT INTO taxonomy.\"MappingAuthorityBaseline\" (\"Singleton\",\"Id\",\"StreamId\") VALUES (1,{baseline},{Guid.NewGuid()})");
+		if (createBaseline) { await db.Database.ExecuteSqlInterpolatedAsync($"INSERT INTO taxonomy.\"MappingAuthorityBaseline\" (\"Singleton\",\"Id\",\"StreamId\") VALUES (1,{baseline},{Guid.NewGuid()})"); }
 		var receipt = SampleData.Entities.ReceiptEntityGenerator.Generate();
 		receipt.Location = source.Location;
 		db.Add(receipt);
