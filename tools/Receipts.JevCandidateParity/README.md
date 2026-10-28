@@ -1,5 +1,57 @@
 # Offline experimental candidate plan and decision parity
 
+## Offline exhaustive shortlist experiment
+
+`ExhaustiveShortlist.Prepare(purchase, revision, taxonomy, model)` creates an
+immutable offline plan. It asks one independent typed Noul about **every category's
+complete path**, including broad categories and every competing root. Each question
+includes all names and definitions on that path. No root answer controls whether
+another question is asked. The input uses the existing candidate's validation and
+1,024-category/16-level bounds. This is a C# API; no CLI or production registration
+was added. It has no transport, credential access or live inference.
+
+Planning sorts category IDs ordinally, then fills batches in that order with at most
+16 questions and 64 KiB of serialized UTF-8 JSON per batch. A complete path that
+cannot fit fails planning explicitly; no description or definition is truncated.
+The SHA-256 plan binding includes the purchase, revision, complete sorted taxonomy,
+model, question/criteria, evidence rule, retention threshold and bounds. Every question
+ID includes that binding. Reordering the taxonomy preserves the plan and batches.
+
+`plan.Aggregate(responses)` requires one raw response for each batch, in batch order.
+Each response must contain exactly `model`, `answers`, and `usage`; every planned
+question ID must appear exactly once as `{ "type": "noul", "noul": probability }`.
+Usage requires nonnegative integer `input_tokens` and `output_tokens`. Unknown,
+missing or duplicate fields, invalid probabilities, failed/missing batches, mismatched
+models, and answers from another plan produce a failure with no partial shortlist.
+The caller must represent a transport failure as a missing/invalid response, never
+as fabricated low probabilities. The response parser bounds each response to 1 MiB.
+
+All answers above the fixed candidate rejection boundary of 0.3 remain plausible,
+including uncertain answers. Descendant retention never depends on ancestor scores.
+The reducer keeps maximal retained paths and expands their full ancestor closure;
+retained ancestors are represented in that closure. More than 32 maximal paths or
+128 closure categories produces `shortlist-overflow` abstention with no top-k
+truncation. No retained path produces `no-plausible-path`. Success returns only an
+existing `CandidateVerificationPlan`, which still needs independent support/context,
+purchase-evidence and unlisted-alternative judgments for the candidate verifier.
+It is neither a classification nor authorization to assign a category.
+
+Exhaustive enumeration proves that every supplied category received a question;
+it does **not** prove semantic recall. A wrongly low plausibility answer can still
+discard a correct category. No model call or holdout tuning has been performed.
+Synthetic tests cover competing roots, uncertainty, ancestor closure, both overflow
+bounds, deterministic 309-category batching, complete definitions and malformed,
+missing, duplicate and replayed responses.
+
+The byte and question limits are **offline memory/payload bounds, not model token
+limits**. Before any separately authorized live evaluation, verify the pinned model's
+current per-question, shared-state, request and output token limits using its documented
+tokenizer/accounting; check every batch against those limits and reject or replan
+explicitly if one does not fit. Verify current pricing and reserve an enforceable
+experiment budget (including verifier calls, retries and output). This planner does
+not estimate tokens or dollars, does not enforce a $5 spending cap, and has made no
+inference charges. Live compatibility and model quality remain unverified.
+
 This adapter invokes `SupportedCategoryCandidate.Plan` and `SupportedCategoryCandidate.Decide`
 from Application directly. All question wording, criteria, evidence rules and thresholds
 come from that candidate. No candidate algorithm is copied. It creates no application
