@@ -118,7 +118,7 @@ public sealed class OrganizationEffectPostgresStringPrototypeTests(PostgresFixtu
 	// UTF-8 PostgreSQL text contains Unicode scalars, never NUL or isolated surrogates.
 	// Default .NET encoding emits only ASCII, with uppercase UTF-16 escapes outside its allowlist.
 	// SQL NULL deliberately stays NULL; the enclosing JSON projection must choose its null token.
-	private const string PrototypeSql = """
+	internal const string PrototypeSql = """
 		CREATE OR REPLACE FUNCTION pg_temp.effect_v1_string(value text) RETURNS bytea
 		LANGUAGE plpgsql IMMUTABLE STRICT AS $body$
 		DECLARE
