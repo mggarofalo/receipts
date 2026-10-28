@@ -102,3 +102,17 @@ and table integration, ordinary retained-history validation, destination retenti
 prefix/collision checks, preflight, transactional restore and trigger reconstruction,
 offline inspection/normalization, and older-format compatibility. Do not bump the
 archive version or enable production effect writers until these are complete together.
+
+Candidate destination preflight now exists in
+`PortableTaxonomyArchive.Effects.Preflight.cs`, also unwired from v13. It validates
+each side and the retained union, preserves manifests omitted by the incoming
+archive (including older formats), requires shared manifests to have identical
+metadata and complete canonical membership, and requires their terminal outcomes
+to be an immutable prefix. Additional outcomes can append; existing outcomes cannot
+be removed or rewritten. Retained effects must still close over incoming assignment
+and taxonomy evidence. Reservations are checked against both retained and incoming
+historical operations and across the combined effect manifests. The returned union
+does not attach or write database rows. The caller must separately validate ordinary
+history and hold the restore coordination locks through commit. Transactional
+manifest/item restoration, trigger reconstruction and apply-before-undo insertion
+are still unimplemented; these checks do not establish portable recovery.
