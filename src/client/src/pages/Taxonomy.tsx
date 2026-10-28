@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router";
+import { MoreHorizontal, Plus } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import client from "@/lib/api-client";
 import type { components } from "@/generated/api";
@@ -13,6 +14,12 @@ import { PageHead } from "@/components/primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Dialog,
   DialogContent,
@@ -61,16 +68,19 @@ function project(nodes: Node[]) {
 interface Editor {
   action: Action;
   node?: Node;
+  parentId?: string;
   revision: Revision;
 }
 
 function TaxonomyEditor({
   editor,
   onClose,
+  onCreated,
   onRestoreFocus,
 }: {
   editor: Editor;
   onClose: () => void;
+  onCreated: (categoryId: string, revision: Revision) => void;
   onRestoreFocus: () => void;
 }) {
   const { isAdmin } = usePermission();
@@ -82,7 +92,7 @@ function TaxonomyEditor({
     action === "rename" ? (node?.name ?? "") : "",
   );
   const [parentId, setParentId] = useState(
-    action === "move" ? (node?.parentId ?? "") : "",
+    action === "move" ? (node?.parentId ?? "") : (editor.parentId ?? ""),
   );
   const [reason, setReason] = useState("");
   const [request, setRequest] = useState<Request>();
@@ -119,7 +129,7 @@ function TaxonomyEditor({
       if (status && status >= 400 && status < 500 && status !== 409)
         setRequest(undefined);
     },
-    onSuccess: async (data) => {
+    onSuccess: async (data, body) => {
       // A background read may predate this change, including one started while
       // the change was saving. Cancel it before publishing the saved revision.
       await cache.cancelQueries({
@@ -133,6 +143,8 @@ function TaxonomyEditor({
       await cache.invalidateQueries({
         queryKey: ["dashboard", "spending-by-category", "currentHierarchy"],
       });
+      const change = body.changes[0];
+      if (change.kind === "create") onCreated(change.categoryId, data);
       onClose();
     },
   });
@@ -205,7 +217,9 @@ function TaxonomyEditor({
           <DialogDescription>
             {node
               ? rows.find((row) => row.id === node.id)?.path
-              : "Choose a place in the hierarchy."}
+              : editor.parentId
+                ? `Add a child category under ${rows.find((row) => row.id === editor.parentId)?.path ?? "the selected category"}.`
+                : "Choose a place in the hierarchy."}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="space-y-4">
@@ -244,7 +258,7 @@ function TaxonomyEditor({
                   value={parentId}
                   onChange={(e) => setParentId(e.target.value)}
                 >
-                  <option value="">Root</option>
+                  <option value="">Top level (no parent)</option>
                   {rows
                     .filter(
                       (row) =>
@@ -338,8 +352,10 @@ export default function Taxonomy() {
   const historicalId = params.get("revision");
   const [search, setSearch] = useState("");
   const [showArchived, setShowArchived] = useState(false);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [editor, setEditor] = useState<Editor>();
   const editorOpener = useRef<HTMLButtonElement>(null);
+  const categoryActionButtons = useRef(new Map<string, HTMLButtonElement>());
   const newCategoryButton = useRef<HTMLButtonElement>(null);
   const query = useQuery({
     ...localErrorPolicy.query,
@@ -394,6 +410,10 @@ export default function Taxonomy() {
           )
         }
       />
+      <p className="mb-4 max-w-2xl text-sm text-muted-foreground">
+        Start with broad categories, then add child categories wherever more
+        detail helps. Expand a category to see what belongs inside it.
+      </p>
       {historicalId && (
         <p className="mb-4">
           Historical revision ·{" "}
@@ -463,28 +483,95 @@ export default function Taxonomy() {
             nodes={query.data.nodes}
             search={search}
             showArchived={showArchived}
+            expansion={
+              historicalId
+                ? undefined
+                : { ids: expanded, onChange: setExpanded }
+            }
             renderActions={
               editable
                 ? (node, path, focused) => (
-                    <div className="flex shrink-0 flex-wrap gap-1">
-                      {(node.archived
-                        ? (["restore"] as const)
-                        : (["rename", "move", "archive"] as const)
-                      ).map((action) => (
+                    <div className="flex shrink-0 items-center gap-1 text-muted-foreground">
+                      {!node.archived && (
                         <Button
-                          key={action}
-                          variant="outline"
-                          size="sm"
+                          variant="ghost"
+                          size="icon"
+                          className="size-9"
                           tabIndex={focused ? 0 : -1}
+                          aria-label={`Add child category: ${path}`}
+                          title={`Add child category to ${node.name}`}
                           onClick={(event) => {
                             editorOpener.current = event.currentTarget;
-                            setEditor({ action, node, revision: query.data! });
+                            setEditor({
+                              action: "create",
+                              parentId: node.id,
+                              revision: query.data!,
+                            });
                           }}
-                          aria-label={`${titles[action]}: ${path}`}
                         >
-                          {action[0].toUpperCase() + action.slice(1)}
+                          <Plus aria-hidden="true" className="size-4" />
                         </Button>
-                      ))}
+                      )}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-9"
+                            tabIndex={focused ? 0 : -1}
+                            aria-label={`Category actions: ${path}`}
+                            title={`Actions for ${node.name}`}
+                            ref={(element) => {
+                              if (element)
+                                categoryActionButtons.current.set(
+                                  node.id,
+                                  element,
+                                );
+                              else
+                                categoryActionButtons.current.delete(node.id);
+                            }}
+                          >
+                            <MoreHorizontal
+                              aria-hidden="true"
+                              className="size-4"
+                            />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent
+                          align="end"
+                          onCloseAutoFocus={(event) => {
+                            if (editor) event.preventDefault();
+                          }}
+                        >
+                          {(node.archived
+                            ? (["restore"] as const)
+                            : (["rename", "move", "archive"] as const)
+                          ).map((action) => (
+                            <DropdownMenuItem
+                              key={action}
+                              className="min-h-9"
+                              variant={
+                                action === "archive" ? "destructive" : "default"
+                              }
+                              aria-label={`${titles[action]}: ${path}`}
+                              onSelect={() => {
+                                // Pointer opening need not focus a Radix menu trigger.
+                                // Retain the trigger itself before its menu unmounts.
+                                editorOpener.current =
+                                  categoryActionButtons.current.get(node.id) ??
+                                  null;
+                                setEditor({
+                                  action,
+                                  node,
+                                  revision: query.data!,
+                                });
+                              }}
+                            >
+                              {action[0].toUpperCase() + action.slice(1)}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   )
                 : undefined
@@ -496,6 +583,29 @@ export default function Taxonomy() {
         <TaxonomyEditor
           editor={editor}
           onClose={() => setEditor(undefined)}
+          onCreated={(categoryId, revision) => {
+            if (!editable) return;
+            const created = project(revision.nodes).find(
+              (row) => row.id === categoryId,
+            );
+            if (!created || created.archived) return;
+            setExpanded((previous) => {
+              const next = new Set(previous);
+              for (const id of created.ancestors) {
+                if (id !== categoryId) next.add(id);
+              }
+              return next;
+            });
+            // Keep a matching search, but do not let an unrelated filter hide
+            // the category the user has just successfully created.
+            if (
+              !created.path
+                .toLocaleLowerCase()
+                .includes(search.trim().toLocaleLowerCase())
+            ) {
+              setSearch("");
+            }
+          }}
           onRestoreFocus={() => {
             const opener = editorOpener.current;
             (opener?.isConnected ? opener : newCategoryButton.current)?.focus();

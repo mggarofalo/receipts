@@ -1,4 +1,12 @@
-import { useId, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+} from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -14,6 +22,10 @@ interface Props<T extends Category> {
   nodes: T[];
   search?: string;
   showArchived?: boolean;
+  expansion?: {
+    ids: Set<string>;
+    onChange: Dispatch<SetStateAction<Set<string>>>;
+  };
   renderActions?: (node: T, path: string, focused: boolean) => ReactNode;
 }
 
@@ -22,10 +34,13 @@ export function CategoryTree<T extends Category>({
   nodes,
   search = "",
   showArchived = false,
+  expansion,
   renderActions,
 }: Props<T>) {
   const helpId = useId();
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [localExpanded, setLocalExpanded] = useState<Set<string>>(new Set());
+  const expanded = expansion?.ids ?? localExpanded;
+  const setExpanded = expansion?.onChange ?? setLocalExpanded;
   const [focusedId, setFocusedId] = useState<string>();
   const items = useRef(new Map<string, HTMLLIElement>());
   const typeahead = useRef({ value: "", at: 0 });
@@ -157,7 +172,7 @@ export function CategoryTree<T extends Category>({
           {term ? " · Matching paths and ancestors" : ""}
         </span>
       </div>
-      <p id={helpId} className="text-sm text-muted-foreground">
+      <p id={helpId} className="sr-only">
         Use arrow keys to browse and expand categories, Home or End to jump, and
         Tab for category actions. Type a name to jump to a visible category.
       </p>
@@ -248,9 +263,9 @@ export function CategoryTree<T extends Category>({
               style={{
                 paddingInlineStart: `${Math.min(level - 1, 6) * 0.75 + 0.75}rem`,
               }}
-              className="flex min-w-0 flex-col gap-2 border-b p-3 last:border-b-0 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring sm:flex-row sm:items-center sm:justify-between"
+              className={`flex min-w-0 items-center justify-between gap-2 border-b px-3 py-2.5 last:border-b-0 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring ${level === 1 ? "bg-muted/50" : ""}`}
             >
-              <div className="flex min-w-0 items-start gap-2">
+              <div className="flex min-w-0 flex-1 items-start gap-2">
                 {hasChildren ? (
                   <button
                     type="button"
@@ -270,18 +285,29 @@ export function CategoryTree<T extends Category>({
                     )}
                   </button>
                 ) : (
-                  <span className="w-5 shrink-0" />
+                  <span
+                    aria-hidden="true"
+                    className={`mt-1 h-3 w-5 shrink-0 ${level > 1 ? "border-b border-l border-border" : ""}`}
+                  />
                 )}
                 <div className="min-w-0">
-                  <p className="break-words font-medium">
+                  <p className="flex flex-wrap items-center gap-x-2 gap-y-1 break-words font-medium">
                     {node.name}
+                    {hasChildren && (
+                      <span className="rounded-full bg-background px-2 py-0.5 text-xs font-normal text-muted-foreground">
+                        {model.children.get(node.id)!.length}{" "}
+                        {model.children.get(node.id)!.length === 1
+                          ? "child"
+                          : "children"}
+                      </span>
+                    )}
                     {node.archived && (
                       <span className="ml-2 text-sm text-muted-foreground">
                         Archived
                       </span>
                     )}
                   </p>
-                  {level > 1 && (
+                  {level > 1 && (term || level > 7) && (
                     <p className="break-words text-xs text-muted-foreground">
                       {path.slice(0, -(node.name.length + 3))}
                     </p>
@@ -291,15 +317,6 @@ export function CategoryTree<T extends Category>({
                       {node.definition}
                     </p>
                   )}
-                  <details className="mt-1 text-sm text-muted-foreground">
-                    <summary
-                      tabIndex={focused ? 0 : -1}
-                      className="cursor-pointer"
-                    >
-                      Category details
-                    </summary>
-                    <p className="break-all">{node.id}</p>
-                  </details>
                 </div>
               </div>
               {renderActions?.(node, path, focused)}

@@ -1,3 +1,4 @@
+import "@/test/setup-combobox-polyfills";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
@@ -47,7 +48,10 @@ async function renderTree(route = "/categories") {
 }
 async function open(action: string, path: string) {
   await userEvent.click(
-    screen.getByRole("button", { name: `${action} category: ${path}` }),
+    screen.getByRole("button", { name: `Category actions: ${path}` }),
+  );
+  await userEvent.click(
+    screen.getByRole("menuitem", { name: `${action} category: ${path}` }),
   );
   return within(screen.getByRole("dialog"));
 }
@@ -115,9 +119,7 @@ describe("Category tree", () => {
   it("presents one Categories page even when the tree is empty", async () => {
     mockClient.GET.mockResolvedValue(success({ ...revision, nodes: [] }));
     renderWithQueryClient(<Taxonomy />);
-    expect(
-      await screen.findByText("No categories yet."),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("No categories yet.")).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: "Categories" }),
     ).toBeInTheDocument();
@@ -135,12 +137,23 @@ describe("Category tree", () => {
       screen.queryByRole("button", { name: "New category" }),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: /Rename category/ }),
+      screen.queryByRole("button", { name: /^Category actions:/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^Add child category:/ }),
     ).not.toBeInTheDocument();
     expect(mockClient.POST).not.toHaveBeenCalled();
   });
   it("loads history as read-only with revision details on demand", async () => {
     await renderTree("/categories?revision=rev-1");
+    expect(
+      screen.queryByRole("button", { name: /^Add child category:/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", {
+        name: /^Category actions:/,
+      }),
+    ).not.toBeInTheDocument();
     expect(mockClient.GET).toHaveBeenCalledWith(
       "/api/taxonomy/revisions/{id}",
       expect.objectContaining({
@@ -188,6 +201,47 @@ describe("Category tree", () => {
         }),
       ),
     );
+  });
+  it("adds directly beneath the chosen row with a fresh category ID", async () => {
+    await renderTree();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Add child category: Food / Dairy" }),
+    );
+    const d = within(screen.getByRole("dialog"));
+    expect(d.getByLabelText("Parent")).toHaveValue("dairy");
+    expect(d.getByLabelText("Name")).toHaveValue("");
+    await userEvent.type(d.getByLabelText("Name"), "Cream");
+    await userEvent.type(d.getByLabelText("Reason"), "More precise categories");
+    await userEvent.click(d.getByRole("button", { name: "New category" }));
+    await waitFor(() => expect(mockClient.POST).toHaveBeenCalledOnce());
+    const body = mockClient.POST.mock.calls[0][1].body;
+    expect(body.expectedRevisionId).toBe(revision.id);
+    expect(body.changes).toEqual([
+      {
+        kind: "create",
+        categoryId: expect.any(String),
+        parentId: "dairy",
+        name: "Cream",
+      },
+    ]);
+    expect(revision.nodes.map((node) => node.id)).not.toContain(
+      body.changes[0].categoryId,
+    );
+  });
+
+  it("offers only restore on archived rows", async () => {
+    await renderTree();
+    await userEvent.click(screen.getByLabelText("Show archived"));
+    const old = within(screen.getByRole("treeitem", { name: "Food / Old" }));
+    expect(old.getAllByRole("button")).toHaveLength(1);
+    expect(
+      old.getByRole("button", { name: "Category actions: Food / Old" }),
+    ).toBeInTheDocument();
+    await userEvent.click(old.getByRole("button"));
+    expect(screen.getAllByRole("menuitem")).toHaveLength(1);
+    expect(
+      screen.getByRole("menuitem", { name: "Restore category: Food / Old" }),
+    ).toBeInTheDocument();
   });
   it.each(["before submit", "while saving"])(
     "keeps the saved revision after a late background read started %s",
@@ -376,9 +430,10 @@ describe("Category tree", () => {
   it("supports opening and cancelling with the keyboard", async () => {
     await renderTree();
     const button = screen.getByRole("button", {
-      name: "Rename category: Food",
+      name: "Category actions: Food",
     });
     button.focus();
+    await userEvent.keyboard("{Enter}");
     await userEvent.keyboard("{Enter}");
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     await userEvent.keyboard("{Escape}");
@@ -392,9 +447,12 @@ describe("Category tree", () => {
     async (dismiss) => {
       await renderTree();
       const button = screen.getByRole("button", {
-        name: "Move category: Food / Dairy",
+        name: "Category actions: Food / Dairy",
       });
       await userEvent.click(button);
+      await userEvent.click(
+        screen.getByRole("menuitem", { name: "Move category: Food / Dairy" }),
+      );
       await userEvent.click(
         within(screen.getByRole("dialog")).getByRole("button", {
           name: dismiss,
@@ -421,7 +479,7 @@ describe("Category tree", () => {
     await userEvent.click(d.getByRole("button", { name: "Rename category" }));
     await waitFor(() =>
       expect(
-        screen.getByRole("button", { name: "Rename category: Groceries" }),
+        screen.getByRole("button", { name: "Category actions: Groceries" }),
       ).toHaveFocus(),
     );
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -444,7 +502,7 @@ describe("Category tree", () => {
     await userEvent.click(d.getByRole("button", { name: "Archive category" }));
     await waitFor(() =>
       expect(
-        screen.queryByRole("button", { name: "Archive category: Food" }),
+        screen.queryByRole("button", { name: "Category actions: Food" }),
       ).not.toBeInTheDocument(),
     );
     await waitFor(() =>

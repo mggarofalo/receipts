@@ -28,6 +28,48 @@ const revision: CategoryRevision = {
 
 describe("CategoryPathPicker", () => {
   beforeEach(() => resetMockClient());
+  it("groups duplicate leaf names by root and selects the searched path with the keyboard", async () => {
+    const user = userEvent.setup();
+    const onValueChange = vi.fn();
+    const otherRoot = { id: "home", name: "Home", archived: false };
+    const otherApple = {
+      id: "home-apple",
+      parentId: "home",
+      name: "Apple",
+      archived: false,
+    };
+    render(
+      <CategoryPathPicker
+        revision={{
+          ...revision,
+          nodes: [...revision.nodes, otherRoot, otherApple],
+        }}
+        onValueChange={onValueChange}
+      />,
+    );
+    await user.click(screen.getByRole("combobox"));
+    expect(
+      screen.getByRole("option", { name: "Food / Fruit / Apple" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "Home / Apple" }),
+    ).toBeInTheDocument();
+    await user.type(
+      screen.getByPlaceholderText("Search category paths…"),
+      "Home Apple",
+    );
+    expect(
+      screen.queryByRole("option", { name: "Food / Fruit / Apple" }),
+    ).not.toBeInTheDocument();
+    await user.keyboard("{ArrowDown}{Enter}");
+    expect(onValueChange).toHaveBeenCalledWith({
+      categoryId: "home-apple",
+      taxonomyRevisionId: revision.id,
+      path: [otherRoot, otherApple],
+    });
+    expect(screen.queryByRole("option")).not.toBeInTheDocument();
+  });
+
   it("searches full paths and returns stable category and revision IDs", async () => {
     const user = userEvent.setup();
     const onValueChange = vi.fn();
