@@ -51,3 +51,42 @@ comparisons. Logs: `postgres-prototypes-test.log`; TRX:
 ISO text cast into the typed `timestamptz` column to avoid Npgsql's default
 `DateTimeOffset.MinValue` to PostgreSQL `-infinity` sentinel conversion. Production
 input/validation would need to define its timestamp transport and reject infinity.
+
+## Relational extension (still inactive)
+
+`OrganizationEffectPostgresRelationalPrototypeTests` reads the actual migrated
+`OrganizationEffectManifests`, `OrganizationEffectItems`, operation reservations,
+immutable mapping revisions and frozen taxonomy nodes. Its only caller inputs are
+the manifest ID and ordered item-ID vector. The schema does not persist member
+order; the caller must retain that vector for any future witness. SQL rejects
+empty, duplicate, missing and extra IDs by exact equality with the stored item
+set, then derives all values from database rows. It never accepts request JSON,
+paths, projected member fields or caller hashes. The existing session-local
+serializer receives its typed rows exclusively from that SQL projection.
+
+The bounded experiment supports one normalized source group with one or more
+members. Raw fields remain untouched in the manifest; mapping tuple linkage uses
+ordinary U+0020 trimming and null/empty item-code normalization. It checks decision
+shape and mapping/source/category/approval context, reserved operation identities,
+manifest taxonomy context, nonempty source revisions and the selected-to-root
+path, rejecting missing, archived and cyclic ancestry. It assumes ordinary
+mapping source hashes, request hashes and semantic fingerprints have already
+passed the application's existing mapping validation. It does not recompute those
+policies, establish current approval/head ownership, validate live source
+eligibility or assignment authority, or define concurrency/locking. Those remain
+future witness prerequisites; byte/hash parity cannot authorize any effect.
+
+Differential tests compare complete bytes and domain-separated SHA-256 with the
+actual .NET v1 codec for one and two members, reverse physical insertion and
+caller order. Rejection cases include malformed decision/context and incomplete
+vectors. Missing ancestry, cyclic ancestry, mismatched taxonomy, empty revision
+and absent operation tests deliberately bypass immutable/FK guards only inside a
+rolled-back transaction in a private test database. No application schema or
+production guard changes are part of the experiment.
+
+The relational metadata guard uses the complete `.NET char.IsWhiteSpace` BMP set,
+not PostgreSQL collation/regex whitespace. Tests compare that set with the running
+.NET implementation and exhaust every PostgreSQL-representable BMP scalar against
+the SQL predicate. Empty and all-whitespace Actor/PolicyVersion values (including
+tabs, line breaks and NBSP) reject; surrounding whitespace, zero-width space and
+supplementary characters retain exact codec byte/hash parity.

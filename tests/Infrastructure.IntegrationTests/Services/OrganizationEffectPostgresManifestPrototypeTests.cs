@@ -179,7 +179,7 @@ public sealed class OrganizationEffectPostgresManifestPrototypeTests(PostgresFix
 		}
 	}
 
-	private const string ProjectionSql = """
+	internal const string ProjectionSql = """
 		SET TIME ZONE 'Pacific/Honolulu';
 		CREATE TEMP TABLE prototype_header(version integer NOT NULL, id uuid PRIMARY KEY, actor text NOT NULL,
 			policy text NOT NULL, taxonomy uuid NOT NULL, captured timestamptz NOT NULL);
@@ -219,5 +219,3 @@ public sealed class OrganizationEffectPostgresManifestPrototypeTests(PostgresFix
 		$$;
 		""";
 }
-
-
