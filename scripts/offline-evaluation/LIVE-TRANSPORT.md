@@ -124,7 +124,29 @@ Stage names are `baseline`, ordered `shortlist:N`, ordered `verifier:N`, then
 actual complete aggregation precedes final coverage success. `result` rejects
 incomplete campaigns; explicit actual-reducer abstention has no verification
 requests. Interrupted, malformed or failed stages remain terminal across reopen;
-there is no retry, refund, automatic repair, live batch controller, multi-case
+there is no retry, refund, automatic repair, multi-case
 continuation, private-data discovery or activation. Run synthetic frozen
 integration and capacity evidence with:
 `python -B -m unittest discover -s scripts/offline-evaluation -p test_batched_stage_campaign.py -v`.
+
+`live_batched_stage_campaign.LiveBatchedPairedStageCampaign` is the explicit
+opt-in live counterpart. It uses the same required constructor arguments and
+reviewed subprocess HTTPS transport as `LivePairedStageCampaign`, including
+reservation before credential access or network, fixed host/model, stripped
+environment, deadlines and no retries. Its frozen source inventory additionally
+requires both batched controller modules. It uses the ordered batched stage names
+above and actual frozen C# planning, prefix validation and complete aggregation.
+The original live and recorded controllers keep their existing behavior.
+
+The journal remains capped at 2 MiB, with at most four path batches followed by
+one global coverage request. Byte-based splitting can require more than four
+path batches even when the selected leaf count fits; that vector is rejected
+before binding and before any verification request is reserved or sent. Aggregate
+record overflow also fails before verification, without increasing journal caps.
+
+`test_live_batched_frozen_campaign.py` uses only invented taxonomy data, isolated
+frozen Python and real frozen C# with a fake transport send boundary. It exercises
+successful multiple path batches plus final global coverage, public reopen,
+malformed global replies, unknown usage and aggregate capacity rejection. It reads
+no credentials and sends no provider request. Run it with
+`python -B -m unittest discover -s scripts/offline-evaluation -p test_live_batched_frozen_campaign.py -v`.

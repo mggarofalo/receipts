@@ -100,7 +100,7 @@ class LivePairedStageCampaign(PairedStageCampaign):
             if pending or self.ledger.snapshot()['missing_outcomes']:
                 raise LedgerError('unfinished stage or attempt; stop and inspect')
             index = len(done)
-            expected = self.names[index] if index < len(self.names) else 'verifier'
+            expected = self._expected_stage(index, verifier)
             payload = self._payload(index, verifier)
             if stage != expected:
                 raise LedgerError('stage skipping/reordering/replay rejected')

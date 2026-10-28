@@ -154,6 +154,7 @@ def frozen_case(config_path, scenario):
 
 @unittest.skipUnless(os.name == 'nt', 'Windows ledger and frozen runtime')
 class FrozenLiveCampaignTests(unittest.TestCase):
+    FROZEN_CASE_SCRIPT = Path(__file__).name
     @classmethod
     def setUpClass(cls):
         paired_tests.ActualPairedStageTests.setUpClass.__func__(cls)
@@ -168,7 +169,7 @@ class FrozenLiveCampaignTests(unittest.TestCase):
         config.write_text(json.dumps({'roots': self.roots, 'artifacts': self.artifacts,
             'host': str(Path(self.roots['dependency']) / 'dotnet.exe'),
             'assembly': str(Path(self.roots['executable']) / 'Receipts.JevPairedRunner.dll')}))
-        process = subprocess.run([str(self.python), '-I', '-B', str(self.scripts / Path(__file__).name),
+        process = subprocess.run([str(self.python), '-I', '-B', str(self.scripts / self.FROZEN_CASE_SCRIPT),
             '--frozen-case', str(config), scenario], env={'SystemRoot': os.environ['SystemRoot']}, capture_output=True,
             # Full directory membership + byte hashes are intentionally checked
             # at every gate. Allow slow disks/antivirus a synthetic-test budget;

@@ -50,7 +50,7 @@ def _record_kind(body):
         if kind == "bind":
             required = {"op", "format", "plan", "artifacts", "private_root"}
             if (not required <= set(event) or set(event) - required - {"executor", "transport"}
-                    or event["format"] not in ("offline-stage-v1", "offline-paired-stage-v1", "offline-batched-paired-stage-v1", "live-paired-stage-v1")
+                    or event["format"] not in ("offline-stage-v1", "offline-paired-stage-v1", "offline-batched-paired-stage-v1", "live-paired-stage-v1", "live-batched-paired-stage-v1")
                     or not isinstance(event["plan"], dict) or not isinstance(event["artifacts"], dict)
                     or not isinstance(event["private_root"], str)):
                 raise LedgerError("invalid binding event")
