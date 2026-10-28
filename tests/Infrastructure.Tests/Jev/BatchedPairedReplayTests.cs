@@ -55,6 +55,75 @@ public class BatchedPairedReplayTests
 		});
 	}
 
+	[Theory]
+	[InlineData(433)]
+	[InlineData(449)]
+	[InlineData(465)]
+	[InlineData(1024)]
+	public void InitialPlanRejectsCallOverflowBeforeExposingAnyPayload(int nodes)
+	{
+		ArgumentException error = Assert.Throws<ArgumentException>(() => new BatchedPairedReplayPlan(CallBoundInput(nodes)));
+		Assert.Contains("30-request replay bound", error.Message);
+	}
+
+	[Fact]
+	public void InitialBoundaryReservesVerificationAndExactVectorStillMustFit()
+	{
+		BatchedPairedReplayPlan plan = new(CallBoundInput(432));
+		Assert.Equal(BatchedPairedReplayPlan.MaximumReplayRequests,
+				1 + plan.ShortlistBatches.Count + BatchedPairedReplayPlan.MinimumVerificationRequests);
+		// A selected root fits in the reserved minimum; no alternatives are pruned.
+		string[] replies = plan.ShortlistBatches.Select(batch => ShortlistReply(batch.Payload, "_plausible_0")).ToArray();
+		BatchedVerificationPlan verification = plan.PrepareVerification(replies)!;
+		Assert.Equal(2, verification.Batches.Count);
+		string[] wide = plan.ShortlistBatches.Select(batch => ShortlistReply(batch.Payload, "", 128)).ToArray();
+		ArgumentException overflow = Assert.Throws<ArgumentException>(() => plan.PrepareVerification(wide));
+		Assert.Contains("Complete verification exceeds the 30-request replay bound", overflow.Message);
+	}
+
+	[Fact]
+	public async Task EveryCoveragePartitionRejectsCrossPlanRepliesThroughActualPairedParser()
+	{
+		PairedInput input = new(new("Synthetic goods", null, null), "synthetic-v1",
+				Enumerable.Range(0, 309).Select(i => new SuggestionCategory($"node-{i:D3}", $"Kind {i}", new string('x', 80), i < 4 ? null : $"node-{i % 4:D3}")).ToArray());
+		BatchedPairedReplayPlan plan = new(input);
+		BatchedPairedReplayPlan other = new(input with { Purchase = new("Other synthetic goods", null, null) });
+		string[] shortlist = plan.ShortlistBatches.Select(b => ShortlistReply(b.Payload, "_plausible_0")).ToArray();
+		string[] otherShortlist = other.ShortlistBatches.Select(b => ShortlistReply(b.Payload, "_plausible_0")).ToArray();
+		BatchedVerificationPlan verification = plan.PrepareVerification(shortlist)!;
+		BatchedVerificationPlan crossPlan = other.PrepareVerification(otherShortlist)!;
+		Assert.True(verification.Batches.Count(b => b.IsGlobalCoverage) > 1);
+		string[] responses = verification.Batches.Select(b => Reply(b.Payload)).ToArray();
+		var valid = await plan.ReplayAsync(new("{}", shortlist, responses));
+		Assert.Null(valid.Candidate.Failure);
+		Assert.NotNull(valid.Candidate.CategoryId);
+		foreach (VerificationBatch partition in verification.Batches.Where(b => b.IsGlobalCoverage))
+		{
+			string[] swapped = responses.ToArray();
+			swapped[partition.Index] = Reply(crossPlan.Batches[partition.Index].Payload);
+			Assert.False(verification.ValidatePrefix(swapped));
+			var invalid = await plan.ReplayAsync(new("{}", shortlist, swapped));
+			Assert.NotNull(invalid.Candidate.Failure);
+			Assert.Null(invalid.Candidate.CategoryId);
+		}
+	}
+
+	private static PairedInput CallBoundInput(int nodes) => new(new("Goods", null, null), "v1",
+			Enumerable.Range(0, nodes).Select(i => new SuggestionCategory($"c{i:D4}", "C", "G",
+					i < 4 ? null : $"c{i % 4:D4}")).ToArray());
+
+	private static string ShortlistReply(string payload, string selectedSuffix, int? plausibleLimit = null)
+	{
+		using JsonDocument document = JsonDocument.Parse(payload);
+		return JsonSerializer.Serialize(new
+		{
+			model = CandidateWire.SupportedEvaluationModel,
+			answers = document.RootElement.GetProperty("questions").EnumerateObject().ToDictionary(
+						q => q.Name, q => new { type = "noul", noul = (plausibleLimit is int limit ? int.Parse(q.Name.Split('_')[^1]) < limit : q.Name.EndsWith(selectedSuffix)) ? .95 : .05 }),
+			usage = new { input_tokens = 2, output_tokens = 1 }
+		});
+	}
+
 	[Fact]
 	public async Task SeventyTerminalsRemainCompetitorsUntilCoverageLastAndCompleteAggregation()
 	{

@@ -14,22 +14,34 @@ public sealed record BatchedPairedResult(CategorySuggestionResult Production, Ca
 /// <summary>Opt-in offline paired execution. Every shortlist reply precedes verification planning.</summary>
 public sealed class BatchedPairedReplayPlan
 {
-	public const string Version = "paired-offline-batched-replay-v1";
+	public const string Version = "paired-offline-batched-replay-v2";
+	public const int MaximumReplayRequests = 30;
+	public const int MinimumVerificationRequests = 2;
 	private readonly PairedReplayPlan baseline;
 	private readonly ExhaustiveShortlistPlan shortlist;
 
 	public BatchedPairedReplayPlan(PairedInput input)
 	{
-		baseline = PairedReplay.Prepare(input);
+		ArgumentNullException.ThrowIfNull(input);
 		shortlist = ExhaustiveShortlist.PrepareForBatchedVerification(input.Purchase,
-			input.TaxonomyRevision, input.Taxonomy, baseline.Model);
+			input.TaxonomyRevision, input.Taxonomy, CandidateWire.SupportedEvaluationModel);
+		// Reserve at least one path request and one coverage request before exporting
+		// any initial stage. Exact byte-driven verification count is checked once
+		// the complete shortlist is available, before exporting that vector.
+		if (1 + shortlist.Batches.Count + MinimumVerificationRequests > MaximumReplayRequests)
+		{
+			throw new ArgumentException("Initial stages leave insufficient room within the 30-request replay bound; no shortlist alternatives were omitted.", nameof(input));
+		}
+		baseline = PairedReplay.Prepare(input);
 		PlanSha256 = Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new
 		{
 			Version,
 			baseline.PlanSha256,
 			shortlist = shortlist.PlanSha256,
 			verifier = BatchedVerification.Version,
-			globalCoverageLast = true
+			globalCoverageLast = true,
+			MaximumReplayRequests,
+			MinimumVerificationRequests
 		})));
 	}
 
@@ -46,8 +58,13 @@ public sealed class BatchedPairedReplayPlan
 		{
 			throw new ArgumentException("Complete valid ordered shortlist required.", nameof(replies));
 		}
-		return selected.VerificationPlan is null ? null : BatchedVerification.Prepare(
-			selected.VerificationPlan, baseline.Model, globalCoverageLast: true);
+		BatchedVerificationPlan? verification = selected.VerificationPlan is null ? null : BatchedVerification.Prepare(
+						selected.VerificationPlan, baseline.Model, globalCoverageLast: true);
+		if (1 + shortlist.Batches.Count + (verification?.Batches.Count ?? 0) > MaximumReplayRequests)
+		{
+			throw new ArgumentException("Complete verification exceeds the 30-request replay bound; no alternatives were omitted.", nameof(replies));
+		}
+		return verification;
 	}
 
 	/// <summary>Actual parsers validate an ordered response prefix before a journal may mark success.</summary>

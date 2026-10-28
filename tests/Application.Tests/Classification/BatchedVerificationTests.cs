@@ -23,7 +23,7 @@ public class BatchedVerificationTests
 		Assert.Equal(226, verification.Batches.SelectMany(batch => batch.QuestionIds).Distinct().Count());
 		JsonNode global = JsonNode.Parse(verification.Batches[0].Payload)!;
 		Assert.Equal(112, global["state"]!["taxonomy"]!.AsArray().Count);
-		Assert.Equal(112, global["state"]!["paths"]!.AsArray().Count);
+		Assert.Equal(112, global["state"]!["verifiedCategoryIds"]!.AsArray().Count);
 		Assert.All(verification.Batches, batch => Assert.InRange(Encoding.UTF8.GetByteCount(batch.Payload), 1, BatchedVerification.MaximumBatchBytes));
 		Assert.Equal("conflicting-paths", verification.Aggregate(Responses(verification)).Decision.AbstentionReason);
 		Assert.NotNull(verification.Aggregate(Responses(verification).SkipLast(1).ToArray()).Decision.Failure);
@@ -110,14 +110,57 @@ public class BatchedVerificationTests
 	}
 
 	[Fact]
-	public void OversizedGlobalTaxonomyFailsWithoutTruncation()
+	public void OversizedSingleAlternativeFailsWithoutTruncation()
 	{
 		SuggestionCategory[] taxonomy = Enumerable.Range(0, 30).Select(i => new SuggestionCategory($"c{i}", "Goods", new string('界', 4096), null)).ToArray();
 		Assert.Throws<ArgumentException>(() => Prepare(taxonomy, ["c0"]));
 	}
 
+	[Fact]
+	public void LargeTaxonomyPartitionsPreserveEveryNodeAncestorAndUnion()
+	{
+		SuggestionCategory[] taxonomy = Enumerable.Range(0, 309).Select(i => new SuggestionCategory(
+				$"c{i:D3}", $"Category {i}", new string('x', 170), i == 0 ? null : "c000")).ToArray();
+		Assert.True(Encoding.UTF8.GetByteCount(System.Text.Json.JsonSerializer.Serialize(taxonomy)) > 40000);
+		BatchedVerificationPlan plan = Prepare(taxonomy, ["c001"]);
+		VerificationBatch[] coverage = plan.Batches.Where(b => b.IsGlobalCoverage).ToArray();
+		Assert.True(coverage.Length > 1);
+		List<string> ids = [];
+		foreach (VerificationBatch batch in coverage)
+		{
+			Assert.InRange(Encoding.UTF8.GetByteCount(batch.Payload), 1, BatchedVerification.MaximumBatchBytes);
+			JsonNode state = JsonNode.Parse(batch.Payload)!["state"]!;
+			ids.AddRange(state["taxonomy"]!.AsArray().Select(n => n!["id"]!.GetValue<string>()));
+			Assert.Equal(new[] { "c000", "c001" }, state["verifiedCategoryIds"]!.AsArray().Select(n => n!.GetValue<string>()).Order());
+			Assert.Contains("c000", state["taxonomy"]!.AsArray().Concat(state["taxonomyAncestors"]!.AsArray()).Select(n => n!["id"]!.GetValue<string>()));
+			Assert.All(state["taxonomy"]!.AsArray().Concat(state["taxonomyAncestors"]!.AsArray()),
+					node => Assert.Equal(new string('x', 170), node!["definition"]!.GetValue<string>()));
+		}
+		Assert.Equal(taxonomy.Select(n => n.Id), ids);
+		Assert.Equal(309, ids.Distinct().Count());
+		Assert.Equal(plan.PlanSha256, Prepare(taxonomy.Reverse().ToArray(), ["c001"]).PlanSha256);
+		Assert.Null(plan.Aggregate(Responses(plan)).Decision.Failure);
+		foreach (VerificationBatch batch in coverage)
+		{
+			string unlisted = batch.QuestionIds.Single(id => id.EndsWith("_unlisted"));
+			foreach (double value in new[] { .31, .5, .9 })
+			{
+				var result = plan.Aggregate(Responses(plan, id => id == unlisted ? value : id.EndsWith("_unlisted") ? .1 : .9));
+				Assert.Null(result.Decision.CategoryId);
+				Assert.Equal("uncovered-alternatives", result.Decision.AbstentionReason);
+			}
+			Assert.NotNull(plan.Aggregate(Responses(plan).Where((_, i) => i != batch.Index).ToArray()).Decision.Failure);
+			string[] duplicated = Responses(plan);
+			duplicated[batch.Index] = Responses(plan)[coverage.First(b => b != batch).Index];
+			Assert.NotNull(plan.Aggregate(duplicated).Decision.Failure);
+			string[] malformed = Responses(plan);
+			malformed[batch.Index] = "{";
+			Assert.NotNull(plan.Aggregate(malformed).Decision.Failure);
+		}
+	}
+
 	private static SuggestionCategory[] LargeTaxonomy() => Enumerable.Range(0, 42).Select(i => new SuggestionCategory($"root{i:D2}", "Goods", "Goods", null))
-		.Concat(Enumerable.Range(0, 70).Select(i => new SuggestionCategory($"leaf{i:D2}", "Goods", "Goods", $"root{i % 42:D2}"))).ToArray();
+	.Concat(Enumerable.Range(0, 70).Select(i => new SuggestionCategory($"leaf{i:D2}", "Goods", "Goods", $"root{i % 42:D2}"))).ToArray();
 
 	private static BatchedVerificationPlan Prepare(SuggestionCategory[] taxonomy, string[] ids, string purchase = "Synthetic goods") =>
 		BatchedVerification.Prepare(SupportedCategoryCandidate.PlanForBatchedVerification(new(purchase, null, null), "v1", taxonomy, ids), CandidateWire.SupportedEvaluationModel);
