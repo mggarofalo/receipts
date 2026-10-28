@@ -372,14 +372,14 @@ other isolation levels fail before acquiring the lock. PostgreSQL snapshot
 isolation can retain old mapping heads even after waiting for this lock, because
 mapping changes need not update the taxonomy head row itself. Statement-fresh
 reads after lock acquisition are part of this candidate live-write contract.
-The baseline stores identities and immutable revision references; a future
-trusted reader must project exact source tuples and calculate the v1 baseline
-hash. No archive seal or independent export anchor is created here.
+The baseline stores identities and immutable revision references. The later
+anchor migration below retains its exact v1 commitment at the snapshot boundary.
 
 Event insertion takes the same lock, derives the next ordinal and predecessor
 from committed/transaction-local events, and rejects supplied gaps or forks.
-Rollback consumes no ordinal. The tip is a derived view, so it cannot drift from
-retained events. Transitions extend the journal's exact source head and must
+Rollback consumes no ordinal. The original tip was a derived view; the later
+anchor migration replaces it with an independently retained checkpoint view.
+Transitions extend the journal's exact source head and must
 reference the actual mapping head; captures require that same approved head.
 Baseline/event rows reject update, delete and truncate. Source equality uses
 ordinal C collation; timestamps and SQL sequences have no ordering role.
@@ -400,6 +400,45 @@ triggers. A future restore path needs its own validated, atomic protocol for
 baseline completeness, event lineage, independently trusted terminal anchors,
 and final mapping heads; it cannot replay historical events against the live
 head guard or bypass isolation/immutability guards and claim equivalent trust.
+
+### Inactive database baseline and terminal anchors v1
+
+Migration `20261028210000_AddMappingAuthorityAnchorsV1` retains a baseline
+commitment and a terminal checkpoint outside the mutable EF model. The baseline
+snapshot trigger derives exact source tuples from the stored immutable revision
+rows, serializes the policy's property order and .NET JSON escaping, sorts source
+tuples by UTF-16 ordinal order (including null item codes first), and retains the
+canonical bytes plus the domain-separated `MappingAuthorityJournalPolicyV1`
+baseline hash. No incoming hash or caller-supplied source projection is trusted.
+PostgreSQL integration tests compare the retained hash to the .NET policy across
+escaping, supplementary Unicode and BMP ordering.
+
+The same baseline transaction creates checkpoint `(0, baselineId)`. Each event
+append holds the existing taxonomy head lock, checks the retained checkpoint
+against the event count and terminal identity, and advances it in an AFTER
+trigger. Failure or rollback rolls back both event and checkpoint. Concurrent
+appends serialize under the existing READ COMMITTED boundary. The public
+append contract permits one event per SQL statement: a multi-row INSERT fails
+the checkpoint consistency check and rolls back the entire statement. Multiple
+separate append statements in one transaction are supported. The
+`MappingAuthorityTip` SQL view now reads this independent checkpoint; losing an
+event suffix cannot silently rewind it. Direct insert/update/delete/truncate of
+anchor evidence is rejected except for the specific nested baseline/append
+trigger maintenance. Database owners, DDL and disabled triggers remain outside
+this protection.
+
+Existing baselines, heads and events survive upgrade unchanged. They receive no
+synthetic anchor: their original completeness cannot be established by hashing
+the surviving rows. Legacy streams have no retained tip and reject new appends;
+there is deliberately no automatic reseal, reset or destructive replacement.
+Future activation needs an explicit migration/provenance protocol for them.
+
+These are local structural completeness anchors, not cryptographic external
+authenticity or authenticated export provenance. A portable reader must obtain
+the seal and checkpoint independently of the untrusted incoming rows; recomputing
+both from those rows provides no protection. Archive portability and restore
+consumption remain unimplemented. Public backup version stays **13**, the applied
+effect barrier remains, and production mapping/capture writers remain unactivated.
 
 ## Inactive manifest capture intent contract v1
 

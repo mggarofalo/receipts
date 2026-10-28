@@ -10,6 +10,8 @@ using Infrastructure.IntegrationTests.Fixtures;
 using Infrastructure.Services;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Npgsql;
 
 namespace Infrastructure.IntegrationTests;
@@ -17,8 +19,140 @@ namespace Infrastructure.IntegrationTests;
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public sealed class MappingAuthorityJournalStorageTests(PostgresFixture server) : IsolatedPostgresTest(server)
+public sealed class MappingAuthorityJournalStorageTests : IsolatedPostgresTest
 {
+	private readonly PostgresFixture server;
+
+	public MappingAuthorityJournalStorageTests(PostgresFixture server) : base(server) => this.server = server;
+
+	[Fact]
+	public async Task MultiRowAppend_RejectsWholeStatementThenAllowsSeparateStatementsInOneTransaction()
+	{
+		var (baseline, mapping) = await SeedAsync();
+		await using var db = fixture.CreateDbContext();
+		Func<Task> batch = () => db.Database.ExecuteSqlInterpolatedAsync($"""
+                    INSERT INTO taxonomy."MappingAuthorityEvents" ("Id","BaselineId","Kind","MappingRevisionId","CaptureId")
+                    VALUES ({Guid.NewGuid()},{baseline},2,{mapping},{Guid.NewGuid()}),
+                           ({Guid.NewGuid()},{baseline},2,{mapping},{Guid.NewGuid()})
+                    """);
+		(await batch.Should().ThrowAsync<PostgresException>()).Which.SqlState.Should().Be(PostgresErrorCodes.CheckViolation);
+		(await TipAsync(db)).Should().Be(0);
+		(await db.Database.SqlQueryRaw<long>("SELECT count(*) AS \"Value\" FROM taxonomy.\"MappingAuthorityEvents\"").SingleAsync()).Should().Be(0);
+		await using var transaction = await db.Database.BeginTransactionAsync();
+		await AppendAsync(db, baseline, mapping);
+		await AppendAsync(db, baseline, mapping);
+		await transaction.CommitAsync();
+		(await TipAsync(db)).Should().Be(2);
+	}
+
+	[Fact]
+	public async Task EmptyBaseline_RollbackRetainsNeitherCommitmentNorCheckpoint()
+	{
+		await using var db = fixture.CreateDbContext();
+		Guid baseline = Guid.NewGuid(), stream = Guid.NewGuid();
+		FormattableString insert = $"""
+                    INSERT INTO taxonomy."MappingAuthorityBaseline" ("Singleton","Id","StreamId") VALUES (1,{baseline},{stream})
+                    """;
+		await using (var transaction = await db.Database.BeginTransactionAsync())
+		{
+			await db.Database.ExecuteSqlInterpolatedAsync(insert);
+			(await TipAsync(db)).Should().Be(0);
+			await transaction.RollbackAsync();
+		}
+		(await db.Database.SqlQueryRaw<long>("""
+                    SELECT (SELECT count(*) FROM taxonomy."MappingAuthorityBaseline")
+                        + (SELECT count(*) FROM taxonomy."MappingAuthorityBaselineAnchorsV1")
+                        + (SELECT count(*) FROM taxonomy."MappingAuthorityCheckpointsV1") AS "Value"
+                    """).SingleAsync()).Should().Be(0);
+		await db.Database.ExecuteSqlInterpolatedAsync(insert);
+		string hash = await db.Database.SqlQueryRaw<string>("SELECT \"BaselineHash\" AS \"Value\" FROM taxonomy.\"MappingAuthorityBaselineAnchorsV1\"").SingleAsync();
+		hash.Should().Be(MappingAuthorityJournalPolicyV1.BaselineHash(new(1, stream, baseline, [])));
+		(await TipAsync(db)).Should().Be(0);
+	}
+
+	[Fact]
+	public async Task BaselineAnchor_MatchesDotNetOrdinalHashAndRejectsOrdinaryMutation()
+	{
+		var (baseline, _) = await SeedAsync(createBaseline: false);
+		await using var db = fixture.CreateDbContext();
+		var previous = await db.CategoryMappingRevisions.SingleAsync();
+		CategoryMappingService service = new(new Factory(fixture), TimeProvider.System);
+		// UTF-16 ordinal order puts the supplementary scalar before U+E000; C collation reverses it.
+		foreach (string location in new[] { "\U00010000", "\uE000", "\"&'+<>`\\\t\n\u007Fé", "ascii" })
+		{
+			NormalizationSourceKey source = new(location, "anchor", "code");
+			await service.ChangeAsync(previous.Actor, new(source, NormalizationCatalogPolicy.Hash(source), null,
+					previous.TaxonomyRevisionId, previous.CategoryId, Guid.NewGuid(), "Anchor parity"));
+		}
+		Guid stream = Guid.NewGuid();
+		await db.Database.ExecuteSqlInterpolatedAsync($"""
+                    INSERT INTO taxonomy."MappingAuthorityBaseline" ("Singleton","Id","StreamId") VALUES (1,{baseline},{stream})
+                    """);
+		var revisions = await db.CategoryMappingRevisions.AsNoTracking().ToListAsync();
+		MappingAuthorityBaseline value = new(1, stream, baseline, revisions.Select(r =>
+				new MappingAuthorityHead(new(r.Location, r.Description, r.ItemCode), r.Id)).ToArray());
+		string actual = await db.Database.SqlQueryRaw<string>(
+				"SELECT \"BaselineHash\" AS \"Value\" FROM taxonomy.\"MappingAuthorityBaselineAnchorsV1\"").SingleAsync();
+		actual.Should().Be(MappingAuthorityJournalPolicyV1.BaselineHash(value));
+		foreach (string sql in new[]
+		{
+						"INSERT INTO taxonomy.\"MappingAuthorityCheckpointsV1\" SELECT * FROM taxonomy.\"MappingAuthorityCheckpointsV1\"",
+						"INSERT INTO taxonomy.\"MappingAuthorityBaselineAnchorsV1\" SELECT * FROM taxonomy.\"MappingAuthorityBaselineAnchorsV1\""
+				})
+		{
+			Func<Task> insert = () => db.Database.ExecuteSqlRawAsync(sql);
+			PostgresException error = (await insert.Should().ThrowAsync<PostgresException>()).Which;
+			error.SqlState.Should().Be(PostgresErrorCodes.CheckViolation);
+			error.MessageText.Should().Contain("maintained only");
+		}
+		foreach (string sql in new[]
+		{
+						"UPDATE taxonomy.\"MappingAuthorityCheckpointsV1\" SET \"Sequence\" = 0",
+						"DELETE FROM taxonomy.\"MappingAuthorityCheckpointsV1\"",
+						"TRUNCATE taxonomy.\"MappingAuthorityCheckpointsV1\"",
+						"UPDATE taxonomy.\"MappingAuthorityBaselineAnchorsV1\" SET \"Version\" = 1",
+						"DELETE FROM taxonomy.\"MappingAuthorityBaselineAnchorsV1\"",
+						"TRUNCATE taxonomy.\"MappingAuthorityBaselineAnchorsV1\" CASCADE"
+				})
+		{
+			Func<Task> mutate = () => db.Database.ExecuteSqlRawAsync(sql);
+			await mutate.Should().ThrowAsync<PostgresException>();
+		}
+	}
+
+	[Fact]
+	public async Task PrivilegedSuffixLoss_DoesNotRewindCheckpointAndBlocksAppend()
+	{
+		var (baseline, mapping) = await SeedAsync();
+		await using var db = fixture.CreateDbContext();
+		await AppendAsync(db, baseline, mapping);
+		// Simulate damage requiring privileges beyond ordinary DML; anchors remain independent.
+		await db.Database.ExecuteSqlRawAsync("""
+                    ALTER TABLE taxonomy."MappingAuthorityEvents" DISABLE TRIGGER immutable_authority_events;
+                    DELETE FROM taxonomy."MappingAuthorityEvents";
+                    ALTER TABLE taxonomy."MappingAuthorityEvents" ENABLE TRIGGER immutable_authority_events;
+                    """);
+		(await TipAsync(db)).Should().Be(1);
+		Func<Task> append = () => AppendAsync(db, baseline, mapping);
+		(await append.Should().ThrowAsync<PostgresException>()).Which.MessageText.Should().Contain("retained checkpoint");
+	}
+
+	[Fact]
+	public async Task Upgrade_RetainsLegacyEvidenceWithoutManufacturingAnchor()
+	{
+		await fixture.DisposeAsync();
+		fixture = await server.CreateIsolatedAsync("20261028190000_AddOrganizationEffectCaptureFencesV1");
+		var (baseline, mapping) = await SeedAsync();
+		await using var db = fixture.CreateDbContext();
+		await AppendAsync(db, baseline, mapping);
+		await db.GetService<IMigrator>().MigrateAsync();
+		(await db.Database.SqlQueryRaw<long>("SELECT count(*) AS \"Value\" FROM taxonomy.\"MappingAuthorityEvents\"").SingleAsync()).Should().Be(1);
+		(await db.Database.SqlQueryRaw<long>("SELECT count(*) AS \"Value\" FROM taxonomy.\"MappingAuthorityBaselineHeads\"").SingleAsync()).Should().Be(1);
+		(await db.Database.SqlQueryRaw<long>("SELECT count(*) AS \"Value\" FROM taxonomy.\"MappingAuthorityBaselineAnchorsV1\"").SingleAsync()).Should().Be(0);
+		Func<Task> append = () => AppendAsync(db, baseline, mapping);
+		(await append.Should().ThrowAsync<PostgresException>()).Which.MessageText.Should().Contain("legacy");
+	}
+
 	private sealed class Factory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
 	{
 		public ApplicationDbContext CreateDbContext() => fixture.CreateDbContext();
