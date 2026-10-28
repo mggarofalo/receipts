@@ -4,6 +4,10 @@ The separate [campaign reservation foundation](CAMPAIGN-LEDGER.md) provides
 offline durable attempted-call accounting for a future provider adapter. It
 contains no dispatch integration and makes no provider billing guarantee.
 
+A separate explicit single-case HTTPS component is described in
+[live transport](LIVE-TRANSPORT.md). It has no CLI and has not been dispatched;
+the original offline APIs below remain offline.
+
 This Python 3.11+ standard-library tool splits labeled cohorts and scores previously
 recorded classification results. It does not call providers, read environment
 credentials, locate databases, or search for data. Supply every input and output
