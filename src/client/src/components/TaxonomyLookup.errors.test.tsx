@@ -298,7 +298,9 @@ for (const consumer of ["item-form", "line-add", "line-edit"] as const) {
         queryKey: ["taxonomy", "current"],
       });
     });
-    expect(c.picker).toHaveTextContent("Food / Dairy");
+    expect(c.picker).toHaveAttribute("title", "Food / Dairy");
+    expect(within(c.picker).getByText("Dairy")).toBeVisible();
+    expect(within(c.picker).getByText("Food")).toBeVisible();
     await waitFor(() => expect(c.picker).toBeDisabled());
     expect(c.description).toHaveValue("Retained milk");
     expect(c.router.state.location.pathname).toBe("/");
@@ -323,7 +325,9 @@ for (const consumer of ["item-form", "line-add", "line-edit"] as const) {
       gate.resolve();
     });
     await waitFor(() => expect(c.picker).toBeEnabled());
-    expect(c.picker).toHaveTextContent("Food / Dairy");
+    expect(c.picker).toHaveAttribute("title", "Food / Dairy");
+    expect(within(c.picker).getByText("Dairy")).toBeVisible();
+    expect(within(c.picker).getByText("Food")).toBeVisible();
     await save(consumer, c);
     expect(writes).toEqual([]);
   });
@@ -382,7 +386,9 @@ for (const consumer of ["item-form", "line-add", "line-edit"] as const) {
     const c = await prepare(consumer);
     await select(c, "Food");
     await select(c);
-    expect(c.picker).toHaveTextContent("Food / Dairy");
+    expect(c.picker).toHaveAttribute("title", "Food / Dairy");
+    expect(within(c.picker).getByText("Dairy")).toBeVisible();
+    expect(within(c.picker).getByText("Food")).toBeVisible();
     const value = await save(consumer, c);
     expect(value).toMatchObject({ category: "Food", subcategory: "Dairy" });
     expect(writes).toEqual([]);

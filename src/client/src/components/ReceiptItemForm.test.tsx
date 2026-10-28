@@ -754,7 +754,9 @@ describe("classification submissions", () => {
     );
     expect(
       screen.getByRole("combobox", { name: /Category/ }),
-    ).toHaveTextContent("Old Food / Old Produce / Old Fruit");
+    ).toHaveAttribute("title", "Old Food / Old Produce / Old Fruit");
+    expect(screen.getByText("Old Fruit")).toBeVisible();
+    expect(screen.getByText("Old Food / Old Produce")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Update Item" }));
     await waitFor(() => expect(submit).toHaveBeenCalled());
     expect(submit.mock.calls[0][0].classification).toBeUndefined();

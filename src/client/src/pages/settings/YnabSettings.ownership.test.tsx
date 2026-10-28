@@ -325,7 +325,9 @@ it("shows the current path after a taxonomy revision and uses its current node n
   await userEvent
     .setup()
     .click(await screen.findByRole("option", { name: "Food / Produce" }));
-  expect(picker).toHaveTextContent("Food / Produce");
+  expect(picker).toHaveAttribute("title", "Food / Produce");
+  expect(picker).toHaveTextContent("Produce");
+  expect(picker).toHaveTextContent("Food");
 
   act(() => {
     queryClient.setQueryData(["taxonomy", "current"], {
@@ -342,8 +344,10 @@ it("shows the current path after a taxonomy revision and uses its current node n
     });
   });
   await waitFor(() =>
-    expect(picker).toHaveTextContent("Market / Fresh Produce"),
+    expect(picker).toHaveAttribute("title", "Market / Fresh Produce"),
   );
+  expect(within(picker).getByText("Fresh Produce")).toBeVisible();
+  expect(within(picker).getByText("Market")).toBeVisible();
   screen.getByRole("combobox", { name: "YNAB category" }).focus();
   await userEvent.setup().keyboard("{Enter}");
   await userEvent
