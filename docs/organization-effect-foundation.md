@@ -445,3 +445,70 @@ hashing. A future database witness must independently construct and validate the
 complete v1 canonical request from frozen rows before comparing a digest. Caller
 JSON or a caller-supplied hash alone cannot establish that relationship. No
 witness, writer, archive version or authority activation is supplied here.
+
+
+## Inactive transactional capture binding candidate v1
+
+Migration `20261028170000_AddOrganizationEffectCaptureWitnessV1` introduces an
+explicit nullable `CaptureWitnessVersion` discriminator on manifests and journal
+events. Existing opaque rows retain SQL NULL and acquire no typed authority.
+No writer sets this field today. This migration does not activate automatic effects,
+change the archive format, or remove the applied-effect authority barrier.
+
+A future transactional producer opts both declarations into version 1, inserts every
+frozen member and the journal capture event, and inserts one
+`OrganizationEffectCaptureWitnessesV1` row with manifest ID, event ID and the complete
+ordered item-ID vector. The declarations and seal must share the same database
+transaction. The seal supplies canonical bytes and hash itself; supplied values are
+overwritten. It verifies the frozen row projection, the complete exact member set,
+one normalized source and the event's single current approved mapping. It compares
+the SQL-derived hash with the typed manifest's request hash and retains order durably.
+The stateless SQL encoder derives complete actual v1 canonical JSON from immutable
+rows without caller JSON, path arrays, hashes or mutable temporary staging tables.
+The entire canonical request must fit the existing 1 MiB limit.
+
+Typed declarations require READ COMMITTED and take the existing RCPT/NORM transaction
+gate before the taxonomy lock. Seal reads after the lock are statement-fresh. It
+checks current taxonomy and mapping heads, locks receipts and items in ID order,
+and checks active source identity, raw tuple, business revisions, expected assignment,
+and preservation of deliberate or existing category choices. Membership seals
+immediately: even another insert in the same transaction rejects after sealing.
+Deferred constraints on both declarations require the seal, including when a failed
+seal is caught and its statement/savepoint rolled back. Both declarations must be
+explicitly typed; historical events and manifests cannot be retroactively sealed.
+Witness rows reject update, deletion and truncation.
+
+This is a bounded capture-binding candidate, not complete execution authority.
+Ordinary mapping command/request/source-hash and semantic fingerprint validation
+remain application prerequisites. Consent, policy/restore fences, source corrections
+and suppression preferences are not attested by this witness; a future producer must
+validate them under their established write protocol. There is no producer requiring
+every mapping transition to join the journal, no authenticated baseline/export anchor,
+portable witness restore, conditional effect application or undo implementation.
+The independently trusted terminal checkpoint and applied-effect barrier remain
+required. Superusers and owners able to disable triggers/alter schema remain outside
+the ordinary-DML protection boundary.
+
+Verification on 2026-10-28: the Infrastructure project builds with zero warnings/errors.
+All 44 `OrganizationEffectCaptureWitnessTests` passed against real PostgreSQL,
+including canonical parity, complete membership, invalid context, rollback,
+concurrency, legacy-choice preservation and occupied-operation regressions.
+Independent review and final re-review found no remaining issue within this inactive
+scope. These checks establish the bounded capture-binding candidate only; all
+activation prerequisites and authority limitations below remain in force.
+
+
+Capture witness operation checks reject apply/undo identities already visible in
+ordinary taxonomy, assignment, mapping, historical/legacy, category assistance,
+normalization catalog and receipt request history at sealing. This is an
+existing-visible-history check, not durable cross-table uniqueness: ordinary
+writers that do not share the capture locks can race, and later writes can reuse
+an identity. Before activation, every participating writer must coordinate through
+a durable global operation namespace protocol. The applied-effect barrier remains
+closed; this candidate does not supply that protocol.
+
+A future producer must acquire the RCPT/NORM gate at transaction entry before
+any baseline, journal event, mapping or taxonomy operation that takes
+`taxonomy.Head`. Typed declaration triggers cannot repair an inverted order when
+a transaction already holds Head from an earlier untyped action. No global
+deadlock-proof ordering is claimed for mixed caller protocols.
