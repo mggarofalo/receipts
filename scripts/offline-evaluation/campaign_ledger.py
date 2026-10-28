@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import stat
 import threading
 import uuid
 
@@ -24,6 +25,30 @@ class LedgerError(ValueError):
 
 class LedgerBusy(LedgerError):
     """Another owner holds the journal; no automatic retry."""
+
+
+def require_plain_absolute_path(path, *, allow_missing_leaf=False):
+    """Reject link/reparse ancestry before following any component.
+
+    The caller must keep its private directory and ancestry stable while operating;
+    this check is not protection against malicious concurrent filesystem changes.
+    """
+    path = Path(path)
+    if not path.is_absolute() or '..' in path.parts:
+        raise LedgerError("absolute path without parent traversal required")
+    current = Path(path.anchor)
+    for part in ('', *path.parts[1:]):
+        if part:
+            current = current / part
+        try:
+            info = current.lstat()
+        except FileNotFoundError:
+            if allow_missing_leaf and current == path:
+                return path
+            raise FileNotFoundError("path ancestor does not exist") from None
+        if stat.S_ISLNK(info.st_mode) or getattr(info, 'st_file_attributes', 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT:
+            raise LedgerError("reparse/link ancestry is not permitted")
+    return path
 
 
 @dataclass(frozen=True)
@@ -78,7 +103,8 @@ class CampaignLedger:
     """
 
     def __init__(self, path, *, create_policy=None):
-        self.path = Path(path).resolve()
+        self.path = require_plain_absolute_path(path, allow_missing_leaf=create_policy is not None)
+        require_plain_absolute_path(str(self.path) + ".lock", allow_missing_leaf=True)
         self._lock_file = None
         self._journal = None
         self._mutex = threading.Lock()

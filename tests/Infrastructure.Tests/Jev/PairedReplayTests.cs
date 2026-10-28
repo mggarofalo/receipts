@@ -9,6 +9,81 @@ namespace Infrastructure.Tests.Jev;
 
 public class PairedReplayTests
 {
+	[Fact]
+	public async Task OfflineExchangeRejectsRealJunctionInEveryPrivatePath()
+	{
+		if (!OperatingSystem.IsWindows())
+		{
+			return;
+		}
+		string directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+		string target = Path.Combine(directory, "target");
+		string junction = Path.Combine(directory, "junction");
+		Directory.CreateDirectory(target);
+		try
+		{
+			var start = new System.Diagnostics.ProcessStartInfo("cmd.exe")
+			{
+				UseShellExecute = false,
+				CreateNoWindow = true,
+				RedirectStandardOutput = true,
+				RedirectStandardError = true
+			};
+			foreach (string argument in new[] { "/d", "/c", "mklink", "/J", junction, target })
+			{
+				start.ArgumentList.Add(argument);
+			}
+			using var process = System.Diagnostics.Process.Start(start)!;
+			await process.WaitForExitAsync();
+			Assert.Equal(0, process.ExitCode);
+			Assert.True((File.GetAttributes(junction) & FileAttributes.ReparsePoint) != 0);
+			string input = Path.Combine(target, "input.json");
+			string replies = Path.Combine(target, "replies.json");
+			string output = Path.Combine(target, "output.json");
+			await File.WriteAllTextAsync(input, JsonSerializer.Serialize(Input(), Receipts.JevCandidateParity.CandidateParity.JsonOptions));
+			await File.WriteAllTextAsync(replies, "{\"production\":\"\",\"shortlist\":[],\"verification\":null}");
+
+			Assert.Equal(2, await OfflineExchangeCommand.RunAsync(["prepare", Path.Combine(junction, "input.json"), replies, output]));
+			Assert.Equal(2, await OfflineExchangeCommand.RunAsync(["prepare", input, Path.Combine(junction, "replies.json"), output]));
+			Assert.Equal(2, await OfflineExchangeCommand.RunAsync(["prepare", input, replies, Path.Combine(junction, "output.json")]));
+			Assert.False(File.Exists(output));
+		}
+		finally
+		{
+			if (Directory.Exists(junction))
+			{
+				Directory.Delete(junction);
+			}
+			Directory.Delete(directory, recursive: true);
+		}
+	}
+
+	[Fact]
+	public async Task OfflineExchangeExportsActualBytesAndNeverOverwrites()
+	{
+		string directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+		Directory.CreateDirectory(directory);
+		try
+		{
+			string input = Path.Combine(directory, "input.json");
+			string replies = Path.Combine(directory, "replies.json");
+			string output = Path.Combine(directory, "output.json");
+			await File.WriteAllTextAsync(input, JsonSerializer.Serialize(Input(), Receipts.JevCandidateParity.CandidateParity.JsonOptions));
+			await File.WriteAllTextAsync(replies, "{\"production\":\"\",\"shortlist\":[],\"verification\":null}");
+
+			Assert.Equal(0, await OfflineExchangeCommand.RunAsync(["prepare", input, replies, output]));
+			using JsonDocument document = JsonDocument.Parse(await File.ReadAllTextAsync(output));
+			Assert.Equal(PairedReplay.Prepare(Input()).ProductionPayload,
+				document.RootElement.GetProperty("productionPayload").GetString());
+			Assert.Equal(0, document.RootElement.GetProperty("maximumNetworkCalls").GetInt32());
+			Assert.Equal(2, await OfflineExchangeCommand.RunAsync(["prepare", input, replies, output]));
+		}
+		finally
+		{
+			Directory.Delete(directory, recursive: true);
+		}
+	}
+
 	private static PairedInput Input(string? store = null, string? code = null) => new(
 		new CandidatePurchase("Purchased fresh apples", store, code), "synthetic-v1",
 		[new("food", "Food", "Edible goods", null), new("apple", "Apples", "Fresh apples", "food"),

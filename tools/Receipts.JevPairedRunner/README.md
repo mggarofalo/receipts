@@ -1,5 +1,10 @@
 # Paired offline evaluation runner, version 1
 
+An offline file-exchange executable and a separate recorded-response ledger seam
+are now available; see [guarded exchange](GUARDED-EXCHANGE.md). They add no live
+transport or credential access. The original library behavior described below is
+unchanged; statements about absence of an executable apply to its initial stage.
+
 This library stages the same purchase description, taxonomy revision and ordered taxonomy through the actual production Jev provider and the experimental exhaustive shortlist, then candidate verifier. Production ignores store and product code because its real contract only accepts description. Candidate receives those optional fields through its existing purchase contract. No labels, gold answers, groups, IDs or scoring metadata belong in `PairedInput`.
 
 `PairedReplay.Prepare` creates immutable request snapshots and a SHA-256 binding over version, exact production payload, exhaustive shortlist payloads, model, policy versions, source revisions and limits. `PrepareVerification` reduces a complete ordered set of supplied shortlist replies using the actual candidate reducer. Its dynamic verification payload has its own existing candidate binding. `ReplayAsync` invokes the real production provider using a sealed in-memory `HttpMessageHandler`, and uses the actual shortlist and verification parsers and reducers. The dummy credential is a constant; nothing reads environment variables, secrets, configuration files or remote endpoints. There is no live execution option, executable or dependency injection hook for a network handler. All replies must be supplied by the caller.
