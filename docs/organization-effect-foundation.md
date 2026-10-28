@@ -81,3 +81,24 @@ strict version/table validation, ordinary retained-history validation, destinati
 prefix/collision checks and older-archive retention, preflight, transactional restore
 with trigger reconstruction, and offline inspection/normalization. Define the policy
 and request hash contract before trusting decision evidence in a production writer.
+
+Candidate SQLite export and strict reading now exist in
+`PortableTaxonomyArchive.Effects.Sqlite.cs`. They remain unwired from v13. Export
+seals membership and validates effect dependencies against caller-supplied history,
+then creates and inserts `organization_effect_archive` atomically. The eventual
+caller must provide the same source snapshot as ordinary history export and must
+validate ordinary history separately. Read rejects duplicate keys even in tables
+without a primary key, then validates membership and effect lineage. Both paths
+reuse the exact canonical evidence codec described above.
+
+Candidate limits are 1 MiB of UTF-8 per decision, 4,096 characters per numeric token,
+and 8 MiB of UTF-8 per record payload. Decision size is checked before JSON parsing;
+numeric size is checked before arbitrary-precision exponent parsing. SQLite payload
+byte lengths are checked before materializing strings. Accepted values retain exact
+decimal semantics. These are candidate format constraints, not policy authorization.
+
+Remaining activation work includes a consistent export snapshot and strict version
+and table integration, ordinary retained-history validation, destination retention,
+prefix/collision checks, preflight, transactional restore and trigger reconstruction,
+offline inspection/normalization, and older-format compatibility. Do not bump the
+archive version or enable production effect writers until these are complete together.

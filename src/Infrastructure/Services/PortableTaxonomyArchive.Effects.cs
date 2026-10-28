@@ -9,6 +9,10 @@ namespace Infrastructure.Services;
 
 internal static partial class PortableTaxonomyArchive
 {
+	// Candidate format limits, checked before parsing untrusted JSON or decimal exponents.
+	internal const int MaximumEffectDecisionBytes = 1024 * 1024;
+	internal const int MaximumEffectNumberCharacters = 4096;
+	internal const int MaximumEffectPayloadBytes = 8 * 1024 * 1024;
 	// Candidate representation only: deliberately not wired into the current archive version.
 	// Membership is sealed by the exporter, not by deployment-local transaction stamps.
 	internal sealed record EffectManifest(OrganizationEffectManifestEntity Manifest, int ItemCount, string ItemsHash);
@@ -30,12 +34,17 @@ internal static partial class PortableTaxonomyArchive
 		HashSet<(string, string)> seen = [];
 		foreach (var row in records)
 		{
-			Require(seen.Add((row.Kind, row.Id)), "Duplicate effect record key.");
+			Require(row != null && row.Kind is "manifest" or "item" or "outcome"
+				&& row.Id != null && row.Id.Length <= 256, "Invalid effect record envelope.");
+			Require(row!.Payload != null && row.Payload.Length <= MaximumEffectPayloadBytes
+				&& Encoding.UTF8.GetByteCount(row.Payload) <= MaximumEffectPayloadBytes,
+				"Effect record payload exceeds size limit.");
+			Require(seen.Add((row.Kind, row.Id!)), "Duplicate effect record key.");
 			object value = row.Kind switch
 			{
-				"manifest" => DeserializeStrict<EffectManifest>(row.Payload) ?? throw new InvalidDataException("Null effect manifest."),
-				"item" => DeserializeStrict<OrganizationEffectItemEntity>(row.Payload) ?? throw new InvalidDataException("Null effect item."),
-				"outcome" => DeserializeStrict<OrganizationEffectOutcomeEntity>(row.Payload) ?? throw new InvalidDataException("Null effect outcome."),
+				"manifest" => DeserializeStrict<EffectManifest>(row.Payload!) ?? throw new InvalidDataException("Null effect manifest."),
+				"item" => DeserializeStrict<OrganizationEffectItemEntity>(row.Payload!) ?? throw new InvalidDataException("Null effect item."),
+				"outcome" => DeserializeStrict<OrganizationEffectOutcomeEntity>(row.Payload!) ?? throw new InvalidDataException("Null effect outcome."),
 				_ => throw new InvalidDataException("Unknown effect record kind.")
 			};
 			Require(row.Id == EffectKey(value), "Effect archive key differs from payload.");
@@ -139,6 +148,8 @@ internal static partial class PortableTaxonomyArchive
 	internal static string CanonicalEffectDecision(string json)
 	{
 		Require(json != null, "Null effect decision evidence.");
+		Require(json!.Length <= MaximumEffectDecisionBytes && Encoding.UTF8.GetByteCount(json) <= MaximumEffectDecisionBytes,
+			"Effect decision evidence exceeds size limit.");
 		using var document = JsonDocument.Parse(json!, new JsonDocumentOptions { MaxDepth = 32 });
 		Require(document.RootElement.ValueKind == JsonValueKind.Object, "Effect decision evidence must be an object.");
 		using var output = new MemoryStream();
@@ -170,6 +181,7 @@ internal static partial class PortableTaxonomyArchive
 	// or decimal: neither can represent PostgreSQL numeric's complete precision/range.
 	private static string CanonicalEffectNumber(string token)
 	{
+		Require(token.Length <= MaximumEffectNumberCharacters, "Effect decision number exceeds size limit.");
 		bool negative = token[0] == '-';
 		string unsigned = negative ? token[1..] : token;
 		int exponentAt = unsigned.IndexOfAny(['e', 'E']);
