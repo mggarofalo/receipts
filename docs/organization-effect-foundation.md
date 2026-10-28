@@ -414,3 +414,34 @@ digest or journal tip is not a trust anchor, and historical captures cannot be
 retroactively promoted from timestamps or recomputed hashes. Until the witness,
 transactional producer and trust protocol exist and are validated, replay success
 and codec success grant no assignment authority; the applied barrier stays closed.
+
+## PostgreSQL string encoding compatibility prototype
+
+`OrganizationEffectPostgresStringPrototypeTests` contains a session-local
+`pg_temp.effect_v1_string(text)` research helper. It is not installed by a migration
+and has no production caller. It independently derives a quoted JSON string's
+UTF-8 bytes from PostgreSQL UTF8 text. PostgreSQL `to_json`/`jsonb::text` escaping
+is not interchangeable with the current default .NET writer's bytes.
+
+The differential test compares the helper with actual default `Utf8JsonWriter`
+output for every PostgreSQL-representable Unicode scalar (U+0001 through U+10FFFF,
+excluding surrogate code points). Mixed strings also pass through the actual v1
+canonicalizer. Cases cover quotes, backslashes, short control escapes, other
+controls, HTML-sensitive ASCII, combining characters, BMP noncharacters and
+supplementary pairs. The helper retains code points exactly, without normalization,
+uses uppercase UTF-16 escapes, and requires UTF8 server encoding. SQL NULL remains
+SQL NULL; it is not the empty string or a quoted JSON null token.
+
+NUL, isolated surrogates, invalid UTF-8 and out-of-range scalar encodings cannot
+be PostgreSQL text inputs. Tests verify database rejection and v1's managed-text
+rejection before serialization can replace malformed UTF-16. These restrictions
+must remain explicit at future persistence boundaries.
+
+This establishes string-encoding parity for the runtime exercised by the tests,
+not a permanent promise about future .NET encoders. Keep the differential gate
+when upgrading the runtime. It does not implement object ordering, numbers,
+timestamps, typed row projections, whole-request size limits or domain-separated
+hashing. A future database witness must independently construct and validate the
+complete v1 canonical request from frozen rows before comparing a digest. Caller
+JSON or a caller-supplied hash alone cannot establish that relationship. No
+witness, writer, archive version or authority activation is supplied here.
